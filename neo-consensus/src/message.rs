@@ -1,5 +1,5 @@
 use alloc::vec::Vec;
-use core::convert::TryFrom;
+use core::{convert::TryFrom, fmt};
 
 use neo_base::{hash::Hash256, read_varint, write_varint, NeoDecode, NeoEncode, NeoRead, NeoWrite};
 use neo_crypto::SignatureBytes;
@@ -199,7 +199,7 @@ impl TryFrom<u8> for MessageKind {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum ChangeViewReason {
     Timeout = 0,
@@ -208,12 +208,22 @@ pub enum ChangeViewReason {
 }
 
 impl ChangeViewReason {
-    fn from_u8(value: u8) -> Result<Self, neo_base::encoding::DecodeError> {
+    pub fn from_u8(value: u8) -> Result<Self, neo_base::encoding::DecodeError> {
         match value {
             0 => Ok(Self::Timeout),
             1 => Ok(Self::InvalidProposal),
             2 => Ok(Self::Manual),
             _ => Err(neo_base::encoding::DecodeError::InvalidValue("change view")),
+        }
+    }
+}
+
+impl fmt::Display for ChangeViewReason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ChangeViewReason::Timeout => f.write_str("Timeout"),
+            ChangeViewReason::InvalidProposal => f.write_str("InvalidProposal"),
+            ChangeViewReason::Manual => f.write_str("Manual"),
         }
     }
 }

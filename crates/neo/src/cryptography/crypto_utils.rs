@@ -17,13 +17,16 @@ use p256::{
 };
 use rand::{rngs::OsRng, RngCore};
 use ripemd::Ripemd160;
-use secp256k1::{
-    Message, PublicKey as Secp256k1PublicKey, Secp256k1, SecretKey as Secp256k1SecretKey,
-};
+use secp256k1::{PublicKey as Secp256k1PublicKey, Secp256k1, SecretKey as Secp256k1SecretKey};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sha2::{Digest, Sha256, Sha512};
 use sha3::Keccak256;
 use std::cmp::Ordering;
+
+use neo_crypto::{
+    secp256k1_recover_public_key, secp256k1_sign_recoverable, sign_message, verify_signature,
+    Curve, HashAlgorithm as NeoHashAlgorithm,
+};
 
 /// Hash algorithms supported by Neo
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -127,16 +130,13 @@ impl Secp256k1Crypto {
 
     /// Signs a message with secp256k1
     pub fn sign(message: &[u8], private_key: &[u8; 32]) -> Result<[u8; 64], String> {
-        let secp = Secp256k1::new();
-        let secret_key = Secp256k1SecretKey::from_slice(private_key)
-            .map_err(|e| format!("Invalid private key: {}", e))?;
-
-        let message_hash = Sha256::digest(message);
-        let message = Message::from_digest_slice(&message_hash)
-            .map_err(|e| format!("Invalid message: {}", e))?;
-
-        let signature = secp.sign_ecdsa(&message, &secret_key);
-        Ok(signature.serialize_compact())
+        sign_message(
+            message,
+            private_key,
+            Curve::Secp256k1,
+            NeoHashAlgorithm::Sha256,
+        )
+        .map_err(|e| format!("Signing failed: {e}"))
     }
 
     /// Verifies a secp256k1 signature
@@ -145,18 +145,34 @@ impl Secp256k1Crypto {
         signature: &[u8; 64],
         public_key: &[u8; 33],
     ) -> Result<bool, String> {
-        let secp = Secp256k1::verification_only();
-        let public_key = Secp256k1PublicKey::from_slice(public_key)
-            .map_err(|e| format!("Invalid public key: {}", e))?;
+        verify_signature(
+            message,
+            signature,
+            public_key,
+            Curve::Secp256k1,
+            NeoHashAlgorithm::Sha256,
+        )
+        .map(|_| true)
+        .map_err(|e| format!("Verification failed: {e}"))
+    }
 
-        let message_hash = Sha256::digest(message);
-        let message = Message::from_digest_slice(&message_hash)
-            .map_err(|e| format!("Invalid message: {}", e))?;
+    /// Signs a message returning a recoverable signature.
+    pub fn sign_recoverable(
+        message: &[u8],
+        private_key: &[u8; 32],
+    ) -> Result<([u8; 64], u8), String> {
+        secp256k1_sign_recoverable(message, private_key, NeoHashAlgorithm::Sha256)
+            .map_err(|e| format!("Signing failed: {e}"))
+    }
 
-        let signature = secp256k1::ecdsa::Signature::from_compact(signature)
-            .map_err(|e| format!("Invalid signature: {}", e))?;
-
-        Ok(secp.verify_ecdsa(&message, &signature, &public_key).is_ok())
+    /// Recovers a compressed public key from a recoverable signature.
+    pub fn recover_public_key(
+        message: &[u8],
+        signature: &[u8; 64],
+        recovery: u8,
+    ) -> Result<Vec<u8>, String> {
+        secp256k1_recover_public_key(message, signature, recovery, NeoHashAlgorithm::Sha256)
+            .map_err(|e| format!("Failed to recover public key: {e}"))
     }
 }
 
@@ -183,23 +199,26 @@ impl Secp256r1Crypto {
 
     /// Signs a message with secp256r1
     pub fn sign(message: &[u8], private_key: &[u8; 32]) -> Result<[u8; 64], String> {
-        let signing_key = SigningKey::try_from(private_key.as_slice())
-            .map_err(|e| format!("Invalid private key: {}", e))?;
-        let signature: Signature = signing_key.sign(message);
-        let bytes: [u8; 64] = signature.to_bytes().into();
-        Ok(bytes)
+        sign_message(
+            message,
+            private_key,
+            Curve::Secp256r1,
+            NeoHashAlgorithm::Sha256,
+        )
+        .map_err(|e| format!("Signing failed: {e}"))
     }
 
     /// Verifies a secp256r1 signature
     pub fn verify(message: &[u8], signature: &[u8; 64], public_key: &[u8]) -> Result<bool, String> {
-        let public_key = P256PublicKey::from_sec1_bytes(public_key)
-            .map_err(|e| format!("Invalid public key: {}", e))?;
-        let verifying_key = VerifyingKey::from(public_key);
-
-        let signature = Signature::try_from(signature.as_slice())
-            .map_err(|e| format!("Invalid signature: {}", e))?;
-
-        Ok(verifying_key.verify(message, &signature).is_ok())
+        verify_signature(
+            message,
+            signature,
+            public_key,
+            Curve::Secp256r1,
+            NeoHashAlgorithm::Sha256,
+        )
+        .map(|_| true)
+        .map_err(|e| format!("Verification failed: {e}"))
     }
 }
 
@@ -497,6 +516,31 @@ impl ECDsa {
             }
         }
     }
+
+    /// Signs data with a recoverable ECDSA signature (available for secp256k1).
+    pub fn sign_recoverable(
+        data: &[u8],
+        private_key: &[u8; 32],
+        curve: ECCurve,
+    ) -> Result<([u8; 64], u8), String> {
+        match curve {
+            ECCurve::Secp256k1 => Secp256k1Crypto::sign_recoverable(data, private_key),
+            _ => Err("Recoverable signatures are only supported for secp256k1".to_string()),
+        }
+    }
+
+    /// Recovers the compressed public key from a recoverable signature (secp256k1 only).
+    pub fn recover_public_key(
+        data: &[u8],
+        signature: &[u8; 64],
+        recovery: u8,
+        curve: ECCurve,
+    ) -> Result<Vec<u8>, String> {
+        match curve {
+            ECCurve::Secp256k1 => Secp256k1Crypto::recover_public_key(data, signature, recovery),
+            _ => Err("Recoverable signatures are only supported for secp256k1".to_string()),
+        }
+    }
 }
 
 /// ECC operations wrapper
@@ -587,6 +631,51 @@ impl Crypto {
         _hash_algorithm: HashAlgorithm,
     ) -> bool {
         ECDsa::verify(data, signature, public_key, *curve).unwrap_or(false)
+    }
+
+    /// Signs data with secp256k1 and returns a 65-byte recoverable signature (r || s || v).
+    pub fn sign_recoverable_secp256k1(
+        data: &[u8],
+        private_key: &[u8; 32],
+    ) -> Result<Vec<u8>, String> {
+        let (signature, recovery) = Secp256k1Crypto::sign_recoverable(data, private_key)?;
+        let mut out = Vec::with_capacity(65);
+        out.extend_from_slice(&signature);
+        out.push(recovery);
+        Ok(out)
+    }
+
+    /// Recovers the compressed secp256k1 public key from a recoverable signature.
+    ///
+    /// Accepts both the canonical 65-byte `(r || s || v)` format used across Neo
+    /// and the 64-byte EIP-2098 compact representation where the recovery id is
+    /// encoded in the top bit of the first byte of `s`.
+    pub fn recover_public_key_secp256k1(data: &[u8], signature: &[u8]) -> Result<Vec<u8>, String> {
+        if signature.len() != 65 && signature.len() != 64 {
+            return Err("recoverable signature must be 64 or 65 bytes".to_string());
+        }
+        let mut sig = [0u8; 64];
+        sig.copy_from_slice(&signature[..64]);
+
+        let rec = if signature.len() == 65 {
+            let mut v = signature[64];
+            if v >= 27 {
+                v = v.saturating_sub(27);
+            }
+            if v > 3 {
+                return Err("invalid recovery id".to_string());
+            }
+            v
+        } else {
+            let mut s_bytes = [0u8; 32];
+            s_bytes.copy_from_slice(&signature[32..64]);
+            let parity = (s_bytes[0] >> 7) & 1;
+            s_bytes[0] &= 0x7F;
+            sig[32..64].copy_from_slice(&s_bytes);
+            parity
+        };
+
+        Secp256k1Crypto::recover_public_key(data, &sig, rec)
     }
 
     /// Verifies a signature against the supplied public key, inferring the curve where possible.

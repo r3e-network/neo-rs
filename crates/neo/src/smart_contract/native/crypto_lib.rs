@@ -28,6 +28,7 @@ impl CryptoLib {
             // Hash functions
             NativeMethod::safe("sha256".to_string(), 1 << 15),
             NativeMethod::safe("ripemd160".to_string(), 1 << 15),
+            NativeMethod::safe("recoverSecp256k1".to_string(), 1 << 15),
             // ECDSA functions
             NativeMethod::safe("verifyWithECDsa".to_string(), 1 << 15),
             NativeMethod::safe("verifyWithECDsaSecp256k1".to_string(), 1 << 15),
@@ -68,6 +69,23 @@ impl CryptoLib {
         })?;
 
         Ok(Crypto::ripemd160(data).to_vec())
+    }
+
+    /// Recover a secp256k1 public key from a recoverable signature.
+    fn recover_secp256k1(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
+        if args.len() < 2 {
+            return Err(Error::native_contract(
+                "recoverSecp256k1 requires message hash and signature arguments".to_string(),
+            ));
+        }
+
+        let message = &args[0];
+        let signature = &args[1];
+
+        match Crypto::recover_public_key_secp256k1(message, signature) {
+            Ok(pk) => Ok(pk),
+            Err(_) => Ok(Vec::new()),
+        }
     }
 
     /// Verify ECDSA signature (default secp256r1)
@@ -304,6 +322,7 @@ impl NativeContract for CryptoLib {
             // Hash functions
             "sha256" => self.sha256(args),
             "ripemd160" => self.ripemd160(args),
+            "recoverSecp256k1" => self.recover_secp256k1(args),
 
             // ECDSA verification
             "verifyWithECDsa" => self.verify_with_ecdsa(args),

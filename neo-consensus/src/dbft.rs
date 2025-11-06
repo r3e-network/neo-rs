@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 
 use neo_crypto::Secp256r1Verify;
 
-use crate::message::MessageKind;
+use crate::message::{ChangeViewReason, MessageKind};
 use crate::validator::ValidatorId;
 use crate::{
     error::ConsensusError,
@@ -25,7 +25,7 @@ pub enum ReplayResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::message::{ConsensusMessage, MessageKind, ViewNumber};
+    use crate::message::{ChangeViewReason, ConsensusMessage, MessageKind, ViewNumber};
     use crate::state::{ConsensusState, SnapshotState};
     use crate::validator::{Validator, ValidatorId, ValidatorSet};
     use crate::ConsensusError;
@@ -152,6 +152,169 @@ mod tests {
                 .unwrap(),
             responded.len()
         );
+    }
+
+    #[test]
+    fn commit_quorum_reports_missing_validators_sorted() {
+        let (set, priv_keys) = generate_validators_with_count(7);
+        let state = ConsensusState::new(HEIGHT, ViewNumber::ZERO, set.clone());
+        let mut engine = DbftEngine::new(state);
+        let primary = set.primary_id(HEIGHT, ViewNumber::ZERO).unwrap();
+        let primary_index = set.index_of(primary).unwrap();
+        let proposal = Hash256::new(hex!(
+            "6f9f17959d0baf7e40b3f12694d21fb3acbd0a5f1c11472edb7458060f0b43a1"
+        ));
+
+        let prepare_request = build_signed(
+            &priv_keys[primary_index],
+            primary.0,
+            ViewNumber::ZERO,
+            ConsensusMessage::PrepareRequest {
+                proposal_hash: proposal,
+                height: HEIGHT,
+                tx_hashes: vec![],
+            },
+        );
+        engine.process_message(prepare_request).unwrap();
+
+        let response_order = [6u16, 0, 5, 3, 2, 4, 1];
+        for validator in response_order {
+            let response = build_signed(
+                &priv_keys[validator as usize],
+                validator,
+                ViewNumber::ZERO,
+                ConsensusMessage::PrepareResponse {
+                    proposal_hash: proposal,
+                },
+            );
+            engine.process_message(response).unwrap();
+        }
+
+        let expected_missing: Vec<_> = (0..set.len() as u16).map(ValidatorId).collect();
+        assert_eq!(
+            engine.missing_validators(MessageKind::Commit),
+            expected_missing
+        );
+
+        let mut decision = QuorumDecision::Pending;
+        let committers = [6u16, 0, 5, 3, 2];
+        for validator in committers {
+            let commit = build_signed(
+                &priv_keys[validator as usize],
+                validator,
+                ViewNumber::ZERO,
+                ConsensusMessage::Commit {
+                    proposal_hash: proposal,
+                },
+            );
+            decision = engine.process_message(commit).unwrap();
+        }
+
+        match decision {
+            QuorumDecision::Proposal {
+                kind,
+                missing,
+                proposal: observed,
+            } => {
+                assert_eq!(kind, MessageKind::Commit);
+                assert_eq!(observed, proposal);
+                assert_eq!(missing, vec![ValidatorId(1), ValidatorId(4)]);
+            }
+            other => panic!("expected commit proposal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn change_view_reasons_tracked_and_restored() {
+        let (set, priv_keys) = generate_validators();
+        let state = ConsensusState::new(HEIGHT, ViewNumber::ZERO, set.clone());
+        let mut engine = DbftEngine::new(state);
+        let target_view = ViewNumber(1);
+
+        let changes = [
+            (0u16, ChangeViewReason::Timeout),
+            (2u16, ChangeViewReason::InvalidProposal),
+        ];
+
+        for (validator, reason) in changes {
+            let change = build_signed(
+                &priv_keys[validator as usize],
+                validator,
+                ViewNumber::ZERO,
+                ConsensusMessage::ChangeView {
+                    new_view: target_view,
+                    reason,
+                },
+            );
+            engine.process_message(change).unwrap();
+        }
+
+        let reasons = engine.change_view_reasons();
+        assert_eq!(
+            reasons
+                .keys()
+                .copied()
+                .collect::<Vec<ValidatorId>>(),
+            vec![ValidatorId(0), ValidatorId(2)]
+        );
+        assert_eq!(
+            reasons.get(&ValidatorId(0)),
+            Some(&ChangeViewReason::Timeout)
+        );
+        assert_eq!(
+            reasons.get(&ValidatorId(2)),
+            Some(&ChangeViewReason::InvalidProposal)
+        );
+        let counts = engine.change_view_reason_counts();
+        assert_eq!(counts.get(&ChangeViewReason::Timeout), Some(&1usize));
+        assert_eq!(
+            counts.get(&ChangeViewReason::InvalidProposal),
+            Some(&1usize)
+        );
+        assert_eq!(engine.change_view_total(), 2);
+
+        let snapshot = engine.snapshot();
+        assert_eq!(snapshot.change_view_reasons.len(), 2);
+        assert_eq!(
+            snapshot
+                .change_view_reasons
+                .get(&ValidatorId(0))
+                .copied()
+                .unwrap(),
+            ChangeViewReason::Timeout
+        );
+        assert_eq!(
+            snapshot
+                .change_view_reason_counts
+                .get(&ChangeViewReason::Timeout),
+            Some(&1usize)
+        );
+        assert_eq!(snapshot.change_view_total, 2);
+
+        let mut restored = DbftEngine::from_snapshot(set.clone(), snapshot).unwrap();
+        assert_eq!(restored.change_view_reasons(), reasons);
+        assert_eq!(restored.change_view_reason_counts(), counts);
+        assert_eq!(restored.change_view_total(), 2);
+
+        // Add a new participant to reach quorum and trigger the view change.
+        let trigger = build_signed(
+            &priv_keys[1],
+            1,
+            ViewNumber::ZERO,
+            ConsensusMessage::ChangeView {
+                new_view: target_view,
+                reason: ChangeViewReason::Manual,
+            },
+        );
+        let decision = restored.process_message(trigger).unwrap();
+        assert!(matches!(
+            decision,
+            QuorumDecision::ViewChange {
+                new_view,
+                ..
+            } if new_view == target_view
+        ));
+        assert!(restored.change_view_reasons().is_empty());
     }
 
     #[test]
@@ -856,10 +1019,14 @@ mod tests {
     }
 
     fn generate_validators() -> (ValidatorSet, Vec<PrivateKey>) {
+        generate_validators_with_count(4)
+    }
+
+    fn generate_validators_with_count(count: u16) -> (ValidatorSet, Vec<PrivateKey>) {
         let mut privs = Vec::new();
         let mut validators = Vec::new();
         let mut rng = StdRng::seed_from_u64(1337);
-        for idx in 0..4u16 {
+        for idx in 0..count {
             let mut bytes = [0u8; 32];
             rng.fill_bytes(&mut bytes);
             let private = PrivateKey::new(bytes);
@@ -934,6 +1101,18 @@ impl DbftEngine {
 
     pub fn primary(&self) -> Option<ValidatorId> {
         self.state.primary()
+    }
+
+    pub fn change_view_reasons(&self) -> BTreeMap<ValidatorId, ChangeViewReason> {
+        self.state.change_view_reasons()
+    }
+
+    pub fn change_view_reason_counts(&self) -> BTreeMap<ChangeViewReason, usize> {
+        self.state.change_view_reason_counts()
+    }
+
+    pub fn change_view_total(&self) -> u64 {
+        self.state.change_view_total()
     }
 
     pub fn missing_validators(&self, kind: MessageKind) -> Vec<ValidatorId> {

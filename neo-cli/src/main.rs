@@ -1,11 +1,13 @@
-use std::{collections::BTreeMap, fs, path::Path, time::Duration};
+use std::{collections::BTreeMap, fs, path::Path, str::FromStr, time::Duration};
 
-use anyhow::Result;
-use clap::{Parser, Subcommand};
+use anyhow::{bail, ensure, Context, Result};
 use chrono::Utc;
+use clap::{Parser, Subcommand};
 use neo_base::hash::Hash160;
+use neo_consensus::ChangeViewReason;
 use neo_node::{NodeStatus, StageState, StageStatus, ValidatorDescriptor};
-use serde::Deserialize;
+use neo_wallet::SignerScopes;
+use serde::{Deserialize, Serialize};
 use tokio::time::timeout;
 
 const CONSENSUS_STAGES: &[&str] = &["PrepareRequest", "PrepareResponse", "Commit", "ChangeView"];
@@ -41,7 +43,10 @@ enum Commands {
     },
 
     /// Wallet management operations
-    Wallet { #[command(subcommand)] command: WalletCommands },
+    Wallet {
+        #[command(subcommand)]
+        command: WalletCommands,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -50,6 +55,88 @@ enum WalletCommands {
     Accounts,
     /// List pending transaction identifiers (demo data)
     Pending,
+    /// List wallet accounts with metadata
+    AccountsDetail {
+        /// Wallet password used to decrypt stored entries
+        password: String,
+    },
+    /// Export the WIF private key for an account
+    ExportWif {
+        /// Script hash of the account to export (hex string, e.g. 0x...)
+        script_hash: String,
+        /// Wallet password used to decrypt the keystore entry
+        password: String,
+    },
+    /// Export the NEP-2 key for an account
+    ExportNep2 {
+        /// Script hash of the account to export (hex string, e.g. 0x...)
+        script_hash: String,
+        /// Wallet password used to decrypt the keystore entry
+        password: String,
+        /// Passphrase to encrypt the NEP-2 key
+        passphrase: String,
+        /// Override scrypt N parameter (default 16384)
+        #[arg(long)]
+        n: Option<u64>,
+        /// Override scrypt r parameter (default 8)
+        #[arg(long)]
+        r: Option<u32>,
+        /// Override scrypt p parameter (default 8)
+        #[arg(long)]
+        p: Option<u32>,
+        /// Override address version byte (default 0x35)
+        #[arg(long)]
+        address_version: Option<u8>,
+    },
+    /// Import an account from a WIF-encoded private key
+    ImportWif {
+        /// Base58Check-encoded WIF string
+        wif: String,
+        /// Wallet password used to encrypt the keystore entry
+        password: String,
+        /// Mark the imported account as default
+        #[arg(long, default_value_t = false)]
+        make_default: bool,
+    },
+    /// Import an account from a NEP-2 encrypted key
+    ImportNep2 {
+        /// NEP-2 encrypted key string
+        nep2: String,
+        /// Passphrase used to decrypt the NEP-2 key
+        passphrase: String,
+        /// Wallet password used to encrypt the keystore entry
+        password: String,
+        /// Mark the imported account as default
+        #[arg(long, default_value_t = false)]
+        make_default: bool,
+        /// Override scrypt N parameter (default 16384)
+        #[arg(long)]
+        n: Option<u64>,
+        /// Override scrypt r parameter (default 8)
+        #[arg(long)]
+        r: Option<u32>,
+        /// Override scrypt p parameter (default 8)
+        #[arg(long)]
+        p: Option<u32>,
+        /// Override address version byte (default 0x35)
+        #[arg(long)]
+        address_version: Option<u8>,
+    },
+    /// Update signer scopes/permissions for an account
+    SetSigner {
+        /// Script hash of the account to update (hex string, e.g. 0x...)
+        script_hash: String,
+        /// Wallet password used to decrypt the keystore entry
+        password: String,
+        /// Witness scopes (e.g. `CalledByEntry|CustomContracts`, `Global`)
+        scopes: String,
+        /// Allowed contract script hashes (repeat flag)
+        #[arg(long = "contract")]
+        allowed_contracts: Vec<String>,
+        /// Allowed group public keys in hex (repeat flag)
+        #[arg(long = "group")]
+        allowed_groups: Vec<String>,
+    },
 }
 
 #[tokio::main]
@@ -79,6 +166,90 @@ async fn main() -> Result<()> {
             WalletCommands::Pending => {
                 let pending = fetch_wallet_pending(&cli.endpoint).await?;
                 render_pending_transactions(&pending);
+            }
+            WalletCommands::AccountsDetail { password } => {
+                let details =
+                    fetch_wallet_accounts_detail(&cli.endpoint, &password).await?;
+                render_wallet_account_details(&details);
+            }
+            WalletCommands::ExportWif {
+                script_hash,
+                password,
+            } => {
+                let wif = export_wallet_wif(&cli.endpoint, &script_hash, &password).await?;
+                println!("WIF: {wif}");
+            }
+            WalletCommands::ExportNep2 {
+                script_hash,
+                password,
+                passphrase,
+                n,
+                r,
+                p,
+                address_version,
+            } => {
+                let nep2 = export_wallet_nep2(
+                    &cli.endpoint,
+                    &script_hash,
+                    &password,
+                    &passphrase,
+                    n,
+                    r,
+                    p,
+                    address_version,
+                )
+                .await?;
+                println!("NEP-2: {nep2}");
+            }
+            WalletCommands::ImportWif {
+                wif,
+                password,
+                make_default,
+            } => {
+                let hash = import_wallet_wif(&cli.endpoint, &wif, &password, make_default).await?;
+                println!("Imported account {}", hash);
+            }
+            WalletCommands::ImportNep2 {
+                nep2,
+                passphrase,
+                password,
+                make_default,
+                n,
+                r,
+                p,
+                address_version,
+            } => {
+                let hash = import_wallet_nep2(
+                    &cli.endpoint,
+                    &nep2,
+                    &passphrase,
+                    &password,
+                    make_default,
+                    n,
+                    r,
+                    p,
+                    address_version,
+                )
+                .await?;
+                println!("Imported account {}", hash);
+            }
+            WalletCommands::SetSigner {
+                script_hash,
+                password,
+                scopes,
+                allowed_contracts,
+                allowed_groups,
+            } => {
+                set_wallet_signer(
+                    &cli.endpoint,
+                    &script_hash,
+                    &password,
+                    &scopes,
+                    &allowed_contracts,
+                    &allowed_groups,
+                )
+                .await?;
+                println!("Updated signer metadata for {}", script_hash);
             }
         },
     }
@@ -146,16 +317,35 @@ fn render_status(status: &NodeStatus, stale_override: Option<u128>) {
         }
     }
 
+    if status.consensus_change_view_reason_counts.is_empty() {
+        println!("Change-view cnts: <none>");
+    } else {
+        println!("Change-view cnts:");
+        for (reason, count) in &status.consensus_change_view_reason_counts {
+            println!("  {:<16} {}", reason, count);
+        }
+    }
+    println!(
+        "Change-view total: {}",
+        status.consensus_change_view_total
+    );
+
+    let status_change_view = format_change_view_reasons(&status.consensus_change_view_reasons);
+    if status_change_view.is_empty() {
+        println!("Change-view     : <none>");
+    } else {
+        println!("Change-view:");
+        for line in status_change_view {
+            println!("  {line}");
+        }
+    }
+
     if status.consensus_missing.is_empty() {
         println!("Missing         : <none>");
     } else {
         println!("Missing:");
         for (kind, validators) in &status.consensus_missing {
-            println!(
-                "  {:<16} [{}]",
-                kind,
-                format_id_list(validators)
-            );
+            println!("  {:<16} [{}]", kind, format_id_list(validators));
         }
     }
 
@@ -170,10 +360,7 @@ fn render_status(status: &NodeStatus, stale_override: Option<u128>) {
 }
 
 async fn fetch_wallet_accounts(endpoint: &str) -> Result<Vec<Hash160>> {
-    let url = format!(
-        "{}/wallet/accounts",
-        endpoint.trim_end_matches('/')
-    );
+    let url = format!("{}/wallet/accounts", endpoint.trim_end_matches('/'));
     let response = timeout(Duration::from_secs(3), reqwest::get(url)).await??;
     Ok(response.error_for_status()?.json().await?)
 }
@@ -190,12 +377,313 @@ fn render_wallet_accounts(accounts: &[Hash160]) {
 }
 
 async fn fetch_wallet_pending(endpoint: &str) -> Result<Vec<String>> {
-    let url = format!(
-        "{}/wallet/pending",
-        endpoint.trim_end_matches('/')
-    );
+    let url = format!("{}/wallet/pending", endpoint.trim_end_matches('/'));
     let response = timeout(Duration::from_secs(3), reqwest::get(url)).await??;
     Ok(response.error_for_status()?.json().await?)
+}
+
+#[derive(Serialize)]
+struct ImportWifPayload<'a> {
+    wif: &'a str,
+    password: &'a str,
+    make_default: bool,
+}
+
+async fn import_wallet_wif(
+    endpoint: &str,
+    wif: &str,
+    password: &str,
+    make_default: bool,
+) -> Result<Hash160> {
+    let url = format!("{}/wallet/import/wif", endpoint.trim_end_matches('/'));
+    let client = reqwest::Client::new();
+    let response = timeout(
+        Duration::from_secs(3),
+        client
+            .post(url)
+            .json(&ImportWifPayload {
+                wif,
+                password,
+                make_default,
+            })
+            .send(),
+    )
+    .await??;
+    Ok(response.error_for_status()?.json().await?)
+}
+
+#[derive(Serialize)]
+struct ImportNep2Payload<'a> {
+    nep2: &'a str,
+    passphrase: &'a str,
+    password: &'a str,
+    make_default: bool,
+    n: Option<u64>,
+    r: Option<u32>,
+    p: Option<u32>,
+    address_version: Option<u8>,
+}
+
+async fn import_wallet_nep2(
+    endpoint: &str,
+    nep2: &str,
+    passphrase: &str,
+    password: &str,
+    make_default: bool,
+    n: Option<u64>,
+    r: Option<u32>,
+    p: Option<u32>,
+    address_version: Option<u8>,
+) -> Result<Hash160> {
+    let url = format!("{}/wallet/import/nep2", endpoint.trim_end_matches('/'));
+    let client = reqwest::Client::new();
+    let response = timeout(
+        Duration::from_secs(3),
+        client
+            .post(url)
+            .json(&ImportNep2Payload {
+                nep2,
+                passphrase,
+                password,
+                make_default,
+                n,
+                r,
+                p,
+                address_version,
+            })
+            .send(),
+    )
+    .await??;
+    Ok(response.error_for_status()?.json().await?)
+}
+
+#[derive(Serialize)]
+struct ExportWifPayload<'a> {
+    script_hash: &'a str,
+    password: &'a str,
+}
+
+async fn export_wallet_wif(endpoint: &str, script_hash: &str, password: &str) -> Result<String> {
+    let url = format!("{}/wallet/export/wif", endpoint.trim_end_matches('/'));
+    let client = reqwest::Client::new();
+    let response = timeout(
+        Duration::from_secs(3),
+        client
+            .post(url)
+            .json(&ExportWifPayload {
+                script_hash,
+                password,
+            })
+            .send(),
+    )
+    .await??;
+    Ok(response.error_for_status()?.json().await?)
+}
+
+#[derive(Serialize)]
+struct ExportNep2Payload<'a> {
+    script_hash: &'a str,
+    password: &'a str,
+    passphrase: &'a str,
+    n: Option<u64>,
+    r: Option<u32>,
+    p: Option<u32>,
+    address_version: Option<u8>,
+}
+
+async fn export_wallet_nep2(
+    endpoint: &str,
+    script_hash: &str,
+    password: &str,
+    passphrase: &str,
+    n: Option<u64>,
+    r: Option<u32>,
+    p: Option<u32>,
+    address_version: Option<u8>,
+) -> Result<String> {
+    let url = format!("{}/wallet/export/nep2", endpoint.trim_end_matches('/'));
+    let client = reqwest::Client::new();
+    let response = timeout(
+        Duration::from_secs(3),
+        client
+            .post(url)
+            .json(&ExportNep2Payload {
+                script_hash,
+                password,
+                passphrase,
+                n,
+                r,
+                p,
+                address_version,
+            })
+            .send(),
+    )
+    .await??;
+    Ok(response.error_for_status()?.json().await?)
+}
+
+#[derive(Deserialize)]
+struct AccountDetailModel {
+    script_hash: String,
+    label: Option<String>,
+    is_default: bool,
+    lock: bool,
+    scopes: String,
+    allowed_contracts: Vec<String>,
+    allowed_groups: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct AccountsDetailRequest<'a> {
+    password: &'a str,
+}
+
+async fn fetch_wallet_accounts_detail(
+    endpoint: &str,
+    password: &str,
+) -> Result<Vec<AccountDetailModel>> {
+    let url = format!(
+        "{}/wallet/accounts/detail",
+        endpoint.trim_end_matches('/')
+    );
+    let client = reqwest::Client::new();
+    let response = timeout(
+        Duration::from_secs(3),
+        client
+            .post(url)
+            .json(&AccountsDetailRequest { password })
+            .send(),
+    )
+    .await??;
+    Ok(response.error_for_status()?.json().await?)
+}
+
+fn render_wallet_account_details(accounts: &[AccountDetailModel]) {
+    if accounts.is_empty() {
+        println!("No accounts stored.");
+        return;
+    }
+    for detail in accounts {
+        println!("{}", detail.script_hash);
+        if let Some(label) = &detail.label {
+            println!("  Label     : {label}");
+        }
+        println!("  Default   : {}", detail.is_default);
+        println!("  Locked    : {}", detail.lock);
+        println!("  Scopes    : {}", detail.scopes);
+        if !detail.allowed_contracts.is_empty() {
+            println!("  Contracts : {:?}", detail.allowed_contracts);
+        }
+        if !detail.allowed_groups.is_empty() {
+            println!("  Groups    : {:?}", detail.allowed_groups);
+        }
+        println!();
+    }
+}
+
+#[derive(Serialize)]
+struct UpdateSignerPayload {
+    script_hash: String,
+    password: String,
+    scopes: String,
+    allowed_contracts: Vec<String>,
+    allowed_groups: Vec<String>,
+}
+
+async fn set_wallet_signer(
+    endpoint: &str,
+    script_hash: &str,
+    password: &str,
+    scopes: &str,
+    allowed_contracts: &[String],
+    allowed_groups: &[String],
+) -> Result<()> {
+    let parsed_hash = Hash160::from_str(script_hash)
+        .with_context(|| format!("invalid script hash '{script_hash}'"))?;
+    let mut parsed_scopes = SignerScopes::from_witness_scope_string(scopes)
+        .ok_or_else(|| anyhow::anyhow!(format!("invalid scopes '{scopes}'")))?
+        .clone();
+    if parsed_scopes.is_empty() {
+        parsed_scopes = SignerScopes::CALLED_BY_ENTRY;
+    }
+    if parsed_scopes.contains(SignerScopes::WITNESS_RULES) {
+        bail!("WitnessRules scope is not supported yet");
+    }
+    if !parsed_scopes.is_valid() {
+        bail!("invalid scope combination: {}", parsed_scopes.to_witness_scope_string());
+    }
+    if parsed_scopes.contains(SignerScopes::GLOBAL)
+        && (!allowed_contracts.is_empty() || !allowed_groups.is_empty())
+    {
+        bail!("Global scope cannot be combined with allowed contracts or groups");
+    }
+
+    let normalized_contracts = allowed_contracts
+        .iter()
+        .map(|value| {
+            Hash160::from_str(value)
+                .map(|hash| hash.to_string())
+                .with_context(|| format!("invalid allowed contract '{value}'"))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    if parsed_scopes.contains(SignerScopes::CUSTOM_CONTRACTS) {
+        ensure!(
+            !normalized_contracts.is_empty(),
+            "CustomContracts scope requires at least one allowed contract"
+        );
+    } else {
+        ensure!(
+            normalized_contracts.is_empty(),
+            "Allowed contracts require the CustomContracts scope"
+        );
+    }
+
+    let normalized_groups = allowed_groups
+        .iter()
+        .map(|value| {
+            let trimmed = value.trim();
+            let trimmed = trimmed.strip_prefix("0x").unwrap_or(trimmed);
+            let bytes = hex::decode(trimmed)
+                .with_context(|| format!("invalid allowed group '{value}'"))?;
+            ensure!(
+                bytes.len() == 33,
+                "allowed groups must be 33-byte compressed public keys"
+            );
+            Ok(format!("0x{}", hex::encode(bytes)))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    if parsed_scopes.contains(SignerScopes::CUSTOM_GROUPS) {
+        ensure!(
+            !normalized_groups.is_empty(),
+            "CustomGroups scope requires at least one allowed group"
+        );
+    } else {
+        ensure!(
+            normalized_groups.is_empty(),
+            "Allowed groups require the CustomGroups scope"
+        );
+    }
+
+    let payload = UpdateSignerPayload {
+        script_hash: parsed_hash.to_string(),
+        password: password.to_owned(),
+        scopes: parsed_scopes.to_witness_scope_string(),
+        allowed_contracts: normalized_contracts,
+        allowed_groups: normalized_groups,
+    };
+
+    let url = format!(
+        "{}/wallet/update/signer",
+        endpoint.trim_end_matches('/')
+    );
+    let client = reqwest::Client::new();
+    let response = timeout(
+        Duration::from_secs(3),
+        client.post(url).json(&payload).send(),
+    )
+    .await??;
+    response.error_for_status()?;
+    Ok(())
 }
 
 fn render_pending_transactions(pending: &[String]) {
@@ -267,18 +755,15 @@ fn summarize_stages(
     let mut rows = Vec::new();
     let effective_threshold = override_threshold.or(server_threshold);
     for stage in CONSENSUS_STAGES {
-        let status = stages
-            .get(*stage)
-            .cloned()
-            .unwrap_or_else(|| StageStatus {
-                state: StageState::Inactive,
-                expected: None,
-                responded: 0,
-                missing: Vec::new(),
-                last_updated: Utc::now(),
-                age_ms: 0,
-                stale: false,
-            });
+        let status = stages.get(*stage).cloned().unwrap_or_else(|| StageStatus {
+            state: StageState::Inactive,
+            expected: None,
+            responded: 0,
+            missing: Vec::new(),
+            last_updated: Utc::now(),
+            age_ms: 0,
+            stale: false,
+        });
         let stale = stage_is_stale(&status, effective_threshold, server_threshold);
         rows.push(StageDisplay {
             name: stage.to_string(),
@@ -318,17 +803,16 @@ fn print_stage_line(
     );
 }
 
-fn render_validators(
-    label: &str,
-    validators: &[ValidatorDescriptor],
-    primary: Option<u16>,
-) {
+fn render_validators(label: &str, validators: &[ValidatorDescriptor], primary: Option<u16>) {
     if validators.is_empty() {
         println!("{:<16}: <none>", label);
         return;
     }
     println!("{label}:");
-    println!("  {:<4} {:<18} {:<20} {}", "ID", "Alias", "Script hash", "Public key");
+    println!(
+        "  {:<4} {:<18} {:<20} {}",
+        "ID", "Alias", "Script hash", "Public key"
+    );
     for descriptor in validators {
         println!(
             "  {:<4} {:<18} {:<20} {}",
@@ -422,6 +906,15 @@ fn format_id_list(ids: &[u16]) -> String {
     }
 }
 
+fn format_change_view_reasons(
+    reasons: &BTreeMap<u16, ChangeViewReason>,
+) -> Vec<String> {
+    reasons
+        .iter()
+        .map(|(validator, reason)| format!("validator {:<3} -> {}", validator, reason))
+        .collect()
+}
+
 fn format_age(age_ms: u128) -> String {
     const MS_PER_SECOND: u128 = 1_000;
     const MS_PER_MINUTE: u128 = 60 * MS_PER_SECOND;
@@ -493,10 +986,7 @@ mod tests {
             format_state_label(&StageState::Pending, true),
             "pending (stale)"
         );
-        assert_eq!(
-            format_state_label(&StageState::Complete, false),
-            "complete"
-        );
+        assert_eq!(format_state_label(&StageState::Complete, false), "complete");
     }
 
     #[test]
@@ -572,6 +1062,21 @@ mod tests {
         let roster = Vec::<ValidatorDescriptor>::new();
         export_validators(Path::new("-"), &roster).unwrap();
     }
+
+    #[test]
+    fn format_change_view_reasons_outputs_lines() {
+        let mut reasons = BTreeMap::new();
+        reasons.insert(3, ChangeViewReason::Manual);
+        reasons.insert(1, ChangeViewReason::Timeout);
+        let lines = format_change_view_reasons(&reasons);
+        assert_eq!(
+            lines,
+            vec![
+                "validator 1   -> Timeout".to_string(),
+                "validator 3   -> Manual".to_string()
+            ]
+        );
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -587,6 +1092,12 @@ struct ConsensusStats {
     expected: BTreeMap<String, usize>,
     stages: BTreeMap<String, StageStatus>,
     stale_threshold_ms: Option<u128>,
+    #[serde(default)]
+    change_view_reasons: BTreeMap<u16, ChangeViewReason>,
+    #[serde(default)]
+    change_view_reason_counts: BTreeMap<String, usize>,
+    #[serde(default)]
+    change_view_total: u64,
 }
 
 async fn fetch_consensus_status(endpoint: &str) -> Result<ConsensusStats> {
@@ -652,16 +1163,32 @@ fn render_consensus(
         }
     }
 
+    if status.change_view_reason_counts.is_empty() {
+        println!("Change-view cnts : <none>");
+    } else {
+        println!("Change-view cnts:");
+        for (reason, count) in &status.change_view_reason_counts {
+            println!("  {:<16} {}", reason, count);
+        }
+    }
+    println!("Change-view total: {}", status.change_view_total);
+
+    let change_view_lines = format_change_view_reasons(&status.change_view_reasons);
+    if change_view_lines.is_empty() {
+        println!("Change-view      : <none>");
+    } else {
+        println!("Change-view:");
+        for line in change_view_lines {
+            println!("  {line}");
+        }
+    }
+
     if status.missing.is_empty() {
         println!("Missing          : <none>");
     } else {
         println!("Missing:");
         for (kind, validators) in &status.missing {
-            println!(
-                "  {:<16} [{}]",
-                kind,
-                format_id_list(validators)
-            );
+            println!("  {:<16} [{}]", kind, format_id_list(validators));
         }
     }
 

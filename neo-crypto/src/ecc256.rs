@@ -131,8 +131,17 @@ impl PublicKey {
     }
 
     #[inline]
+    pub fn signature_redeem_script(&self) -> [u8; 35] {
+        let mut script = [0u8; 35];
+        script[0] = 0x21; // PUSHBYTES33
+        script[1..34].copy_from_slice(&self.to_compressed());
+        script[34] = 0xAC; // CHECKSIG
+        script
+    }
+
+    #[inline]
     pub fn script_hash(&self) -> Hash160 {
-        Hash160::from_slice(&hash160(self.to_compressed())).expect("hash160 length is 20")
+        Hash160::from_slice(&hash160(self.signature_redeem_script())).expect("hash160 length is 20")
     }
 }
 

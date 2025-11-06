@@ -12,15 +12,15 @@ pub fn merkle_root(leaves: &[Hash256]) -> Hash256 {
             while level.len() > 1 {
                 let mut next = Vec::with_capacity((level.len() + 1) / 2);
                 for chunk in level.chunks(2) {
-                    let left = chunk[0].0;
+                    let left = chunk[0].as_slice();
                     let right = if chunk.len() == 2 {
-                        chunk[1].0
+                        chunk[1].as_slice()
                     } else {
-                        chunk[0].0
+                        left
                     };
                     let mut buffer = [0u8; 64];
-                    buffer[..32].copy_from_slice(&left);
-                    buffer[32..].copy_from_slice(&right);
+                    buffer[..32].copy_from_slice(left);
+                    buffer[32..].copy_from_slice(right);
                     next.push(Hash256::new(double_sha256(&buffer)));
                 }
                 level = next;

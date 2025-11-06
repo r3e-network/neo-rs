@@ -112,25 +112,36 @@ fn test_ec_recover() {
     // Recover public key
     let recovered_key = helper::recover_public_key(message, &recoverable_signature).unwrap();
 
-    if public_key.len() != recovered_key.len() {
-        if public_key.len() == 33 && recovered_key.len() == 65 {
-            let compressed_recovered = compress_public_key(&recovered_key);
-            assert_eq!(public_key, compressed_recovered);
-        } else if public_key.len() == 65 && recovered_key.len() == 33 {
-            let compressed_original = compress_public_key(&public_key);
-            assert_eq!(compressed_original, recovered_key);
+    let keys_equivalent = |expected: &[u8], recovered: &[u8]| -> bool {
+        if expected.len() != recovered.len() {
+            if expected.len() == 33 && recovered.len() == 65 {
+                let compressed_recovered = compress_public_key(recovered);
+                return expected == compressed_recovered;
+            }
+            if expected.len() == 65 && recovered.len() == 33 {
+                let compressed_expected = compress_public_key(expected);
+                return compressed_expected == recovered;
+            }
+            return false;
         }
-    } else {
-        assert_eq!(public_key, recovered_key);
-    }
+        expected == recovered
+    };
+
+    assert!(keys_equivalent(&public_key, &recovered_key));
+
+    // Recover from EIP-2098 compact signature form (64 bytes).
+    let compact_signature = helper::to_compact_recoverable(&recoverable_signature).unwrap();
+    let recovered_from_compact =
+        helper::recover_public_key(message, &compact_signature).unwrap();
+    assert!(keys_equivalent(&public_key, &recovered_from_compact));
 
     // Test invalid signature length
-    let invalid_signature = vec![0u8; 64]; // Missing recovery byte
+    let invalid_signature = vec![0u8; 63]; // Too short
     assert!(helper::recover_public_key(message, &invalid_signature).is_err());
 
     // Test invalid recovery value
     let mut invalid_recovery_signature = recoverable_signature.clone();
-    invalid_recovery_signature[64] = 29; // Invalid recovery value
+    invalid_recovery_signature[64] = 31; // Invalid recovery value (maps to recid 4)
     assert!(helper::recover_public_key(message, &invalid_recovery_signature).is_err());
 
     // Test with wrong message - should recover different key
@@ -139,22 +150,8 @@ fn test_ec_recover() {
         helper::recover_public_key(wrong_message, &recoverable_signature).unwrap();
 
     // The recovered key should be different when using wrong message
-    let keys_match = if public_key.len() != recovered_wrong.len() {
-        if public_key.len() == 33 && recovered_wrong.len() == 65 {
-            let compressed_wrong = compress_public_key(&recovered_wrong);
-            public_key == compressed_wrong
-        } else if public_key.len() == 65 && recovered_wrong.len() == 33 {
-            let compressed_original = compress_public_key(&public_key);
-            compressed_original == recovered_wrong
-        } else {
-            false
-        }
-    } else {
-        public_key == recovered_wrong
-    };
-
     assert!(
-        !keys_match,
+        !keys_equivalent(&public_key, &recovered_wrong),
         "ECRecover should produce different keys for different messages"
     );
 }
@@ -410,75 +407,70 @@ fn test_compress_public_key_helper() {
 }
 
 mod helper {
-    use super::Secp256k1Crypto;
-    use neo_core::cryptography::crypto_utils::ECPoint;
+    use neo_core::cryptography::crypto_utils::{Crypto, ECPoint};
     use neo_core::smart_contract::contract::Contract;
     use neo_core::UInt160;
-    use secp256k1::{
-        ecdsa::RecoverableSignature, ecdsa::RecoveryId, Message, Secp256k1, SecretKey,
-    };
-    use sha2::{Digest, Sha256};
+    use neo_crypto::{Curve, HashAlgorithm};
+    use rand::{thread_rng, RngCore};
+    use secp256k1::{PublicKey, Secp256k1, SecretKey};
     use std::convert::TryInto;
 
     pub fn generate_private_key() -> [u8; 32] {
-        Secp256k1Crypto::generate_private_key()
+        let mut rng = thread_rng();
+        loop {
+            let mut candidate = [0u8; 32];
+            rng.fill_bytes(&mut candidate);
+            if secp256k1::SecretKey::from_slice(&candidate).is_ok() {
+                return candidate;
+            }
+        }
     }
 
     pub fn private_key_to_public_key(private_key: &[u8]) -> Result<Vec<u8>, String> {
         let key: [u8; 32] = private_key
             .try_into()
             .map_err(|_| "invalid private key length".to_string())?;
-        Secp256k1Crypto::derive_public_key(&key).map(|pk| pk.to_vec())
+        let secp = Secp256k1::new();
+        let secret =
+            SecretKey::from_slice(&key).map_err(|e| format!("invalid private key: {e}"))?;
+        Ok(PublicKey::from_secret_key(&secp, &secret)
+            .serialize()
+            .to_vec())
     }
 
     pub fn sign_message(message: &[u8], private_key: &[u8]) -> Result<Vec<u8>, String> {
         let key: [u8; 32] = private_key
             .try_into()
             .map_err(|_| "invalid private key length".to_string())?;
-        Secp256k1Crypto::sign(message, &key).map(|sig| sig.to_vec())
+        neo_crypto::sign_message(message, &key, Curve::Secp256k1, HashAlgorithm::Sha256)
+            .map(|sig| sig.to_vec())
     }
 
     pub fn sign_message_recoverable(message: &[u8], private_key: &[u8]) -> Result<Vec<u8>, String> {
-        let secp = Secp256k1::new();
-        let secret =
-            SecretKey::from_slice(private_key).map_err(|e| format!("invalid private key: {e}"))?;
-
-        let message_hash = Sha256::digest(message);
-        let msg = Message::from_digest_slice(&message_hash)
-            .map_err(|e| format!("invalid message: {e}"))?;
-
-        let signature = secp.sign_ecdsa_recoverable(&msg, &secret);
-        let (recovery_id, bytes) = signature.serialize_compact();
-
-        let mut output = Vec::with_capacity(65);
-        output.extend_from_slice(&bytes);
-        output.push(recovery_id.to_i32() as u8);
-        Ok(output)
+        let key: [u8; 32] = private_key
+            .try_into()
+            .map_err(|_| "invalid private key length".to_string())?;
+        Crypto::sign_recoverable_secp256k1(message, &key)
     }
 
     pub fn recover_public_key(message: &[u8], signature: &[u8]) -> Result<Vec<u8>, String> {
+        if signature.len() != 65 && signature.len() != 64 {
+            return Err("recoverable signature must be 64 or 65 bytes".to_string());
+        }
+
+        Crypto::recover_public_key_secp256k1(message, signature)
+    }
+
+    pub fn to_compact_recoverable(signature: &[u8]) -> Result<Vec<u8>, String> {
         if signature.len() != 65 {
             return Err("recoverable signature must be 65 bytes".to_string());
         }
 
-        let rec_id = RecoveryId::from_i32(signature[64] as i32)
-            .map_err(|e| format!("invalid recovery id: {e}"))?;
-
-        let mut sig_bytes = [0u8; 64];
-        sig_bytes.copy_from_slice(&signature[..64]);
-        let recoverable = RecoverableSignature::from_compact(&sig_bytes, rec_id)
-            .map_err(|e| format!("invalid signature: {e}"))?;
-
-        let message_hash = Sha256::digest(message);
-        let msg = Message::from_digest_slice(&message_hash)
-            .map_err(|e| format!("invalid message: {e}"))?;
-
-        let secp = Secp256k1::new();
-        let public_key = secp
-            .recover_ecdsa(&msg, &recoverable)
-            .map_err(|e| format!("failed to recover public key: {e}"))?;
-
-        Ok(public_key.serialize().to_vec())
+        let mut compact = signature[..64].to_vec();
+        let parity = signature[64] & 0x01;
+        compact[32] &= 0x7F;
+        compact[32] |= parity << 7;
+        Ok(compact)
     }
 
     pub fn public_key_to_script_hash(public_key: &[u8]) -> UInt160 {

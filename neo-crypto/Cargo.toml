@@ -9,6 +9,7 @@ zeroize   = { version = "1.8", default-features = false, features = ["alloc", "z
 subtle    = { version = "2.6", default-features = false }
 aes       = { version = "0.8", default-features = false }
 p256      = { version = "0.13", default-features = false, features = ["arithmetic", "ecdsa", "ecdh"] }
+secp256k1 = { version = "0.28", default-features = false, features = ["std", "global-context", "recovery"] }
 sha2      = { version = "0.10", default-features = false }
 hmac      = { version = "0.12", default-features = false }
 scrypt    = { version = "0.11", default-features = false }
@@ -21,6 +22,7 @@ std = [
     "thiserror/std",
     "neo-base/std",
     "sha2/default",
+    "secp256k1/std",
 ]
 
 enclave = [

@@ -23,6 +23,7 @@ pub mod bytes;
 pub mod encoding;
 pub mod hash;
 pub mod merkle;
+pub mod uint;
 
 #[cfg(feature = "std")]
 pub mod time;
@@ -31,7 +32,11 @@ pub use bytes::Bytes;
 pub use encoding::{
     read_varint, write_varint, DecodeError, NeoDecode, NeoEncode, NeoRead, NeoWrite, SliceReader,
 };
-pub use hash::{double_sha256, hash160, keccak256, ripemd160, sha256, Hash160, Hash256};
+pub use hash::{
+    double_sha256, hash160, keccak256, murmur128, murmur32, ripemd160, sha256, sha512, Hash160,
+    Hash256,
+};
+pub use uint::{AddressError, AddressVersion, UInt160, UInt256};
 
 #[cfg(feature = "derive")]
 pub use neo_proc_macros::{NeoDecode as NeoDecodeDerive, NeoEncode as NeoEncodeDerive};

@@ -13,10 +13,15 @@
 extern crate alloc;
 
 pub mod aes;
+pub mod bloom;
+pub mod crypto;
 pub mod ecc256;
 pub mod ecdsa;
+pub mod hash_algorithm;
 pub mod hmac;
+pub mod nep2;
 pub mod scrypt;
+pub mod secp256k1;
 
 use alloc::fmt;
 use subtle::ConstantTimeEq;
@@ -100,5 +105,15 @@ impl<const N: usize> NeoDecode for SecretKey<N> {
     }
 }
 
+pub use bloom::{BloomError, BloomFilter};
+pub use crypto::{hash160, hash256, sign as sign_message, verify as verify_signature, Curve};
 pub use ecc256::{Keypair, PrivateKey, PublicKey};
-pub use ecdsa::{Secp256r1Sign, Secp256r1Verify, SignatureBytes};
+pub use ecdsa::{
+    sign_with_algorithm, verify_with_algorithm, Secp256r1Sign, Secp256r1Verify, SignatureBytes,
+};
+pub use hash_algorithm::HashAlgorithm;
+pub use nep2::{decrypt_nep2, encrypt_nep2, Nep2Error};
+pub use secp256k1::{
+    recover_public_key as secp256k1_recover_public_key,
+    sign_recoverable as secp256k1_sign_recoverable, Secp256k1Error,
+};

@@ -1,8 +1,9 @@
 use alloc::string::String;
 
+use neo_crypto::nep2::Nep2Error;
 use thiserror::Error;
 
-#[derive(Debug, Error, PartialEq, Eq)]
+#[derive(Debug, Error)]
 pub enum WalletError {
     #[error("account not found")]
     AccountNotFound,
@@ -24,4 +25,25 @@ pub enum WalletError {
 
     #[error("wallet storage error: {0}")]
     Storage(String),
+
+    #[error("nep2 error: {0}")]
+    Nep2(#[from] Nep2Error),
+
+    #[error("invalid NEP-6 payload: {0}")]
+    InvalidNep6(&'static str),
+
+    #[error("invalid address: {0}")]
+    InvalidAddress(String),
+
+    #[error("serialization error: {0}")]
+    Serialization(String),
+
+    #[error("watch-only account cannot sign or export private material")]
+    WatchOnly,
+
+    #[error("invalid WIF: {0}")]
+    InvalidWif(String),
+
+    #[error("invalid signer metadata: {0}")]
+    InvalidSignerMetadata(&'static str),
 }

@@ -1,4 +1,7 @@
-use alloc::{collections::BTreeMap, vec::Vec};
+use alloc::{
+    collections::BTreeMap,
+    vec::Vec,
+};
 use core::convert::TryFrom;
 
 use hashbrown::{HashMap, HashSet};
@@ -6,7 +9,7 @@ use neo_base::{hash::Hash256, read_varint, write_varint, NeoDecode, NeoEncode, N
 
 use crate::{
     error::ConsensusError,
-    message::{ConsensusMessage, MessageKind, SignedMessage, ViewNumber},
+    message::{ChangeViewReason, ConsensusMessage, MessageKind, SignedMessage, ViewNumber},
     validator::{ValidatorId, ValidatorSet},
 };
 
@@ -31,6 +34,9 @@ pub struct ConsensusState {
     records: HashMap<MessageKind, Vec<SignedMessage>>,
     proposal: Option<Hash256>,
     expected: HashMap<MessageKind, Vec<ValidatorId>>,
+    change_view_reasons: HashMap<ValidatorId, ChangeViewReason>,
+    change_view_reason_counts: BTreeMap<ChangeViewReason, usize>,
+    change_view_total: u64,
 }
 
 impl ConsensusState {
@@ -42,6 +48,9 @@ impl ConsensusState {
             records: HashMap::new(),
             proposal: None,
             expected: HashMap::new(),
+            change_view_reasons: HashMap::new(),
+            change_view_reason_counts: BTreeMap::new(),
+            change_view_total: 0,
         };
         state.seed_prepare_request_expectation();
         state
@@ -118,10 +127,12 @@ impl ConsensusState {
                 let present = recorded
                     .map(|entries| entries.iter().map(|m| m.validator).collect::<HashSet<_>>())
                     .unwrap_or_default();
-                expected
+                let mut missing: Vec<ValidatorId> = expected
                     .into_iter()
                     .filter(|validator| !present.contains(validator))
-                    .collect()
+                    .collect();
+                missing.sort();
+                missing
             }
         }
     }
@@ -141,6 +152,22 @@ impl ConsensusState {
         self.expected.get(&kind).cloned()
     }
 
+    pub fn change_view_reasons(&self) -> BTreeMap<ValidatorId, ChangeViewReason> {
+        let mut reasons = BTreeMap::new();
+        for (validator, reason) in &self.change_view_reasons {
+            reasons.insert(*validator, *reason);
+        }
+        reasons
+    }
+
+    pub fn change_view_reason_counts(&self) -> BTreeMap<ChangeViewReason, usize> {
+        self.change_view_reason_counts.clone()
+    }
+
+    pub fn change_view_total(&self) -> u64 {
+        self.change_view_total
+    }
+
     pub fn snapshot(&self) -> SnapshotState {
         SnapshotState::from(self)
     }
@@ -155,6 +182,9 @@ impl ConsensusState {
             proposal,
             participation,
             expected,
+            change_view_reasons,
+            change_view_reason_counts,
+            change_view_total,
         } = snapshot;
         let mut records = HashMap::new();
         let mut proposal = proposal;
@@ -240,6 +270,8 @@ impl ConsensusState {
             expected_map.insert(kind, validators_list);
         }
 
+        let change_view_reasons_map: HashMap<_, _> = change_view_reasons.into_iter().collect();
+
         let mut state = Self {
             height,
             view,
@@ -247,6 +279,9 @@ impl ConsensusState {
             records,
             proposal,
             expected: expected_map,
+            change_view_reasons: change_view_reasons_map,
+            change_view_reason_counts,
+            change_view_total,
         };
         state.seed_prepare_request_expectation();
         Ok(state)
@@ -378,6 +413,15 @@ impl ConsensusState {
             }
         }
 
+        if let ConsensusMessage::ChangeView { reason, .. } = &message.message {
+            self.change_view_reasons.insert(message.validator, *reason);
+            *self
+                .change_view_reason_counts
+                .entry(*reason)
+                .or_insert(0) += 1;
+            self.change_view_total = self.change_view_total.saturating_add(1);
+        }
+
         self.records.entry(kind).or_default().push(message);
         self.refresh_expected(kind);
         Ok(())
@@ -426,6 +470,8 @@ impl ConsensusState {
         self.records.clear();
         self.proposal = None;
         self.expected.clear();
+        self.change_view_reasons.clear();
+        self.change_view_reason_counts.clear();
         self.seed_prepare_request_expectation();
     }
 
@@ -441,6 +487,8 @@ impl ConsensusState {
         self.records.clear();
         self.proposal = None;
         self.expected.clear();
+        self.change_view_reasons.clear();
+        self.change_view_reason_counts.clear();
         self.seed_prepare_request_expectation();
         Ok(())
     }
@@ -521,6 +569,9 @@ pub struct SnapshotState {
     pub proposal: Option<Hash256>,
     pub participation: BTreeMap<MessageKind, Vec<SignedMessage>>,
     pub expected: BTreeMap<MessageKind, Vec<ValidatorId>>,
+    pub change_view_reasons: BTreeMap<ValidatorId, ChangeViewReason>,
+    pub change_view_reason_counts: BTreeMap<ChangeViewReason, usize>,
+    pub change_view_total: u64,
 }
 
 impl From<&ConsensusState> for SnapshotState {
@@ -535,12 +586,18 @@ impl From<&ConsensusState> for SnapshotState {
             expected.insert(*kind, validators.clone());
         }
 
+        let reasons = state.change_view_reasons();
+        let reason_counts = state.change_view_reason_counts();
+
         Self {
             height: state.height,
             view: state.view,
             proposal: state.proposal,
             participation,
             expected,
+            change_view_reasons: reasons,
+            change_view_reason_counts: reason_counts,
+            change_view_total: state.change_view_total,
         }
     }
 }
@@ -572,6 +629,17 @@ impl NeoEncode for SnapshotState {
                 validator.neo_encode(writer);
             }
         }
+        write_varint(writer, self.change_view_reasons.len() as u64);
+        for (validator, reason) in &self.change_view_reasons {
+            validator.neo_encode(writer);
+            writer.write_u8(*reason as u8);
+        }
+        write_varint(writer, self.change_view_reason_counts.len() as u64);
+        for (reason, count) in &self.change_view_reason_counts {
+            writer.write_u8(*reason as u8);
+            write_varint(writer, *count as u64);
+        }
+        writer.write_u64(self.change_view_total);
     }
 }
 
@@ -609,12 +677,40 @@ impl NeoDecode for SnapshotState {
             }
         }
 
+        let mut change_view_reasons = BTreeMap::new();
+        if reader.remaining() > 0 {
+            let count = read_varint(reader)? as usize;
+            for _ in 0..count {
+                let validator = ValidatorId::neo_decode(reader)?;
+                let reason = ChangeViewReason::from_u8(reader.read_u8()?)?;
+                change_view_reasons.insert(validator, reason);
+            }
+        }
+
+        let mut change_view_reason_counts = BTreeMap::new();
+        if reader.remaining() > 0 {
+            let count = read_varint(reader)? as usize;
+            for _ in 0..count {
+                let reason = ChangeViewReason::from_u8(reader.read_u8()?)?;
+                let value = read_varint(reader)? as usize;
+                change_view_reason_counts.insert(reason, value);
+            }
+        }
+        let change_view_total = if reader.remaining() > 0 {
+            reader.read_u64()?
+        } else {
+            0
+        };
+
         Ok(Self {
             height,
             view,
             proposal,
             participation,
             expected,
+            change_view_reasons,
+            change_view_reason_counts,
+            change_view_total,
         })
     }
 }

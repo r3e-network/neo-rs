@@ -19,7 +19,7 @@ mod validator;
 
 pub use dbft::{DbftEngine, ReplayResult};
 pub use error::ConsensusError;
-pub use message::{ConsensusMessage, MessageKind, SignedMessage, ViewNumber};
+pub use message::{ChangeViewReason, ConsensusMessage, MessageKind, SignedMessage, ViewNumber};
 #[cfg(feature = "store")]
 pub use persistence::{
     clear_snapshot, load_engine, persist_engine, ConsensusColumn, PersistenceError, SnapshotKey,

@@ -1,30 +1,27 @@
-use std::{collections::BTreeMap, fs, net::SocketAddr, path::PathBuf, sync::Arc};
+use std::{collections::BTreeMap, fs, net::SocketAddr, path::PathBuf, str::FromStr, sync::Arc};
 
 use anyhow::{anyhow, Context, Result};
-use axum::{routing::get, Json, Router};
-use chrono::{DateTime, Utc};
-use neo_consensus::{
-    load_engine,
-    persist_engine,
-    ConsensusState,
-    DbftEngine,
-    MessageKind,
-    SnapshotKey,
-    Validator,
-    ValidatorId,
-    ValidatorSet,
-    ViewNumber,
+use axum::{
+    routing::{get, post},
+    Json, Router,
 };
-use neo_wallet::WalletStorage;
-use neo_runtime::{BlockSummary, PendingTransaction, Runtime, RuntimeStats};
+use chrono::{DateTime, Utc};
+use hex::decode;
+use neo_base::{encoding::ToHex, hash::Hash160, AddressVersion};
+use neo_consensus::{
+    load_engine, persist_engine, ChangeViewReason, ConsensusState, DbftEngine, MessageKind,
+    SnapshotKey, Validator, ValidatorId, ValidatorSet, ViewNumber,
+};
 use neo_crypto::{
     ecc256::{PrivateKey, PublicKey},
+    scrypt::ScryptParams,
     Keypair,
 };
+use neo_runtime::{BlockSummary, PendingTransaction, Runtime, RuntimeStats};
 use neo_store::{ColumnId, SledStore, Store};
-use neo_base::{encoding::ToHex, hash::Hash160};
-use hex::decode;
+use neo_wallet::{SignerScopes, WalletError, WalletStorage};
 
+use axum::http::StatusCode;
 #[cfg(test)]
 use neo_store::{Column, MemoryStore};
 use serde::{Deserialize, Serialize};
@@ -35,6 +32,12 @@ type DynStore = dyn Store + Send + Sync;
 type SharedStore = Arc<DynStore>;
 
 pub const DEFAULT_STAGE_STALE_AFTER_MS: u128 = 5_000;
+const DEFAULT_ADDRESS_VERSION: AddressVersion = AddressVersion::MAINNET;
+const DEFAULT_SCRYPT_PARAMS: ScryptParams = ScryptParams {
+    n: 16_384,
+    r: 8,
+    p: 8,
+};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -98,6 +101,12 @@ pub struct NodeStatus {
     #[serde(default)]
     pub consensus_expected: BTreeMap<String, usize>,
     #[serde(default)]
+    pub consensus_change_view_reason_counts: BTreeMap<String, usize>,
+    #[serde(default)]
+    pub consensus_change_view_total: u64,
+    #[serde(default)]
+    pub consensus_change_view_reasons: BTreeMap<u16, ChangeViewReason>,
+    #[serde(default)]
     pub consensus_stages: BTreeMap<String, StageStatus>,
     #[serde(default)]
     pub consensus_stale_threshold_ms: Option<u128>,
@@ -125,6 +134,9 @@ impl NodeStatus {
             consensus_validators: Vec::new(),
             consensus_missing: BTreeMap::new(),
             consensus_expected: BTreeMap::new(),
+            consensus_change_view_reason_counts: BTreeMap::new(),
+            consensus_change_view_total: 0,
+            consensus_change_view_reasons: BTreeMap::new(),
             consensus_stages: BTreeMap::new(),
             consensus_stale_threshold_ms: None,
             consensus_stage_timestamp: None,
@@ -142,6 +154,9 @@ impl NodeStatus {
         let tallies = engine.tallies();
         let (missing, expected, stages) = gather_consensus_metrics(engine, &participation);
         let validators = describe_validators(engine.state().validators());
+        let change_view_reasons = engine.change_view_reasons();
+        let change_view_reason_counts = engine.change_view_reason_counts();
+        let change_view_total = engine.change_view_total();
         status.apply_consensus(
             engine.state().height(),
             engine.state().view(),
@@ -152,6 +167,9 @@ impl NodeStatus {
             validators,
             missing,
             expected,
+            change_view_reason_counts,
+            change_view_reasons,
+            change_view_total,
             stages,
             stale_after_ms,
         );
@@ -170,6 +188,9 @@ impl NodeStatus {
         validators: Vec<ValidatorDescriptor>,
         missing: BTreeMap<MessageKind, Vec<u16>>,
         expected: BTreeMap<MessageKind, usize>,
+        change_view_reason_counts: BTreeMap<ChangeViewReason, usize>,
+        change_view_reasons: BTreeMap<ValidatorId, ChangeViewReason>,
+        change_view_total: u64,
         stages: BTreeMap<MessageKind, StageStatus>,
         stale_after_ms: u128,
     ) {
@@ -204,6 +225,19 @@ impl NodeStatus {
             expected_map.insert(format!("{kind:?}"), count);
         }
         self.consensus_expected = expected_map;
+
+        let mut reason_counts_map = BTreeMap::new();
+        for (reason, count) in change_view_reason_counts {
+            reason_counts_map.insert(reason.to_string(), count);
+        }
+        self.consensus_change_view_reason_counts = reason_counts_map;
+        self.consensus_change_view_total = change_view_total;
+
+        let mut reasons_map = BTreeMap::new();
+        for (validator, reason) in change_view_reasons {
+            reasons_map.insert(validator.0, reason);
+        }
+        self.consensus_change_view_reasons = reasons_map;
 
         let now = Utc::now();
         let mut stage_map = BTreeMap::new();
@@ -379,8 +413,9 @@ impl Node {
     pub fn with_store(config: NodeConfig, store: SharedStore) -> Result<Self> {
         let snapshot_key = config.snapshot_key();
         let validators = match &config.validators {
-            Some(entries) => configured_validators(entries)
-                .with_context(|| "invalid validator configuration")?,
+            Some(entries) => {
+                configured_validators(entries).with_context(|| "invalid validator configuration")?
+            }
             None => default_validators(),
         };
         let maybe_engine = load_engine(store.as_ref(), validators.clone(), snapshot_key)
@@ -388,11 +423,7 @@ impl Node {
         let (engine, has_snapshot) = match maybe_engine {
             Some(engine) => (engine, true),
             None => (
-                DbftEngine::new(ConsensusState::new(
-                    0,
-                    ViewNumber::ZERO,
-                    validators.clone(),
-                )),
+                DbftEngine::new(ConsensusState::new(0, ViewNumber::ZERO, validators.clone())),
                 false,
             ),
         };
@@ -441,12 +472,12 @@ impl Node {
 
         let stage_stale_after_ms = config.stage_stale_after_ms;
         let rpc_state = state.clone();
-    let router = build_router(
-        rpc_state.clone(),
-        wallet.clone(),
-        runtime.clone(),
-        stage_stale_after_ms,
-    );
+        let router = build_router(
+            rpc_state.clone(),
+            wallet.clone(),
+            runtime.clone(),
+            stage_stale_after_ms,
+        );
         let listener = TcpListener::bind(config.rpc_bind).await?;
 
         info!(target: "neo-node", "RPC listening on {}", config.rpc_bind);
@@ -492,6 +523,13 @@ fn build_router(
     runtime: Arc<RwLock<Runtime>>,
     default_stale_after_ms: u128,
 ) -> Router {
+    let wallet_for_accounts = wallet.clone();
+    let wallet_for_accounts_detail = wallet.clone();
+    let wallet_for_import_wif = wallet.clone();
+    let wallet_for_import_nep2 = wallet.clone();
+    let wallet_for_export_wif = wallet.clone();
+    let wallet_for_export_nep2 = wallet.clone();
+    let wallet_for_update_signer = wallet.clone();
     Router::new()
         .route("/status", {
             let state = state.clone();
@@ -500,13 +538,39 @@ fn build_router(
         .route("/consensus", {
             let state = state.clone();
             let default = default_stale_after_ms;
-            get(move |params| {
-                consensus_handler(state.clone(), params, default)
-            })
+            get(move |params| consensus_handler(state.clone(), params, default))
         })
         .route(
             "/wallet/accounts",
-            get(move || wallet_accounts_handler(wallet.clone())),
+            get(move || wallet_accounts_handler(wallet_for_accounts.clone())),
+        )
+        .route(
+            "/wallet/import/wif",
+            post(move |payload| wallet_import_wif_handler(wallet_for_import_wif.clone(), payload)),
+        )
+        .route(
+            "/wallet/import/nep2",
+            post(move |payload| {
+                wallet_import_nep2_handler(wallet_for_import_nep2.clone(), payload)
+            }),
+        )
+        .route(
+            "/wallet/accounts/detail",
+            post(move |payload| wallet_accounts_detail_handler(wallet_for_accounts_detail.clone(), payload)),
+        )
+        .route(
+            "/wallet/export/wif",
+            post(move |payload| wallet_export_wif_handler(wallet_for_export_wif.clone(), payload)),
+        )
+        .route(
+            "/wallet/export/nep2",
+            post(move |payload| {
+                wallet_export_nep2_handler(wallet_for_export_nep2.clone(), payload)
+            }),
+        )
+        .route(
+            "/wallet/update/signer",
+            post(move |payload| wallet_update_signer_handler(wallet_for_update_signer.clone(), payload)),
         )
         .route(
             "/wallet/pending",
@@ -535,6 +599,12 @@ pub struct ConsensusStatus {
     pub expected: BTreeMap<String, usize>,
     pub stages: BTreeMap<String, StageStatus>,
     pub stale_threshold_ms: Option<u128>,
+    #[serde(default)]
+    pub change_view_reason_counts: BTreeMap<String, usize>,
+    #[serde(default)]
+    pub change_view_reasons: BTreeMap<u16, ChangeViewReason>,
+    #[serde(default)]
+    pub change_view_total: u64,
 }
 
 #[derive(Deserialize)]
@@ -577,6 +647,15 @@ async fn consensus_handler(
         expected: snapshot.consensus_expected.clone(),
         stages,
         stale_threshold_ms: Some(effective),
+        change_view_reasons: snapshot
+            .consensus_change_view_reasons
+            .clone()
+            .into_iter()
+            .collect(),
+        change_view_reason_counts: snapshot
+            .consensus_change_view_reason_counts
+            .clone(),
+        change_view_total: snapshot.consensus_change_view_total,
     })
 }
 
@@ -587,12 +666,253 @@ async fn wallet_accounts_handler(
     Json(hashes)
 }
 
+#[derive(Deserialize)]
+struct ImportWifRequest {
+    wif: String,
+    password: String,
+    #[serde(default)]
+    make_default: bool,
+}
+
+#[derive(Deserialize)]
+struct ImportNep2Request {
+    nep2: String,
+    passphrase: String,
+    password: String,
+    #[serde(default)]
+    make_default: bool,
+    #[serde(default)]
+    n: Option<u64>,
+    #[serde(default)]
+    r: Option<u32>,
+    #[serde(default)]
+    p: Option<u32>,
+    #[serde(default = "default_address_version_byte")]
+    address_version: u8,
+}
+
+const fn default_address_version_byte() -> u8 {
+    DEFAULT_ADDRESS_VERSION.0
+}
+
+async fn wallet_import_wif_handler(
+    wallet: Arc<RwLock<WalletStorage<DynStore>>>,
+    Json(payload): Json<ImportWifRequest>,
+) -> Result<Json<Hash160>, (StatusCode, String)> {
+    let mut wallet = wallet.write().await;
+    let hash = wallet
+        .import_wif(&payload.wif, &payload.password, payload.make_default)
+        .map_err(internal_wallet_error)?;
+    Ok(Json(hash))
+}
+
+async fn wallet_import_nep2_handler(
+    wallet: Arc<RwLock<WalletStorage<DynStore>>>,
+    Json(payload): Json<ImportNep2Request>,
+) -> Result<Json<Hash160>, (StatusCode, String)> {
+    let mut wallet = wallet.write().await;
+    let scrypt = ScryptParams {
+        n: payload.n.unwrap_or(DEFAULT_SCRYPT_PARAMS.n),
+        r: payload.r.unwrap_or(DEFAULT_SCRYPT_PARAMS.r),
+        p: payload.p.unwrap_or(DEFAULT_SCRYPT_PARAMS.p),
+    };
+    let address_version = AddressVersion::new(payload.address_version);
+    let hash = wallet
+        .import_nep2(
+            &payload.nep2,
+            &payload.passphrase,
+            &payload.password,
+            scrypt,
+            address_version,
+            payload.make_default,
+        )
+        .map_err(internal_wallet_error)?;
+    Ok(Json(hash))
+}
+
+#[derive(Deserialize)]
+struct AccountsDetailRequest {
+    password: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct AccountDetailResponse {
+    script_hash: String,
+    label: Option<String>,
+    is_default: bool,
+    lock: bool,
+    scopes: String,
+    allowed_contracts: Vec<String>,
+    allowed_groups: Vec<String>,
+}
+
+async fn wallet_accounts_detail_handler(
+    wallet: Arc<RwLock<WalletStorage<DynStore>>>,
+    Json(payload): Json<AccountsDetailRequest>,
+) -> Result<Json<Vec<AccountDetailResponse>>, (StatusCode, String)> {
+    let details = wallet
+        .write()
+        .await
+        .account_details(&payload.password)
+        .map_err(internal_wallet_error)?;
+    let response = details
+        .into_iter()
+        .map(|detail| AccountDetailResponse {
+            script_hash: format!("{}", detail.script_hash),
+            label: detail.label,
+            is_default: detail.is_default,
+            lock: detail.lock,
+            scopes: detail.scopes.to_witness_scope_string(),
+            allowed_contracts: detail
+                .allowed_contracts
+                .into_iter()
+                .map(|hash| format!("{}", hash))
+                .collect(),
+            allowed_groups: detail
+                .allowed_groups
+                .into_iter()
+                .map(|group| format!("0x{}", hex::encode(group)))
+                .collect(),
+        })
+        .collect();
+    Ok(Json(response))
+}
+
+#[derive(Deserialize)]
+struct ExportWifRequest {
+    script_hash: String,
+    password: String,
+}
+
+#[derive(Deserialize)]
+struct ExportNep2Request {
+    script_hash: String,
+    password: String,
+    passphrase: String,
+    #[serde(default)]
+    n: Option<u64>,
+    #[serde(default)]
+    r: Option<u32>,
+    #[serde(default)]
+    p: Option<u32>,
+    #[serde(default = "default_address_version_byte")]
+    address_version: u8,
+}
+
+async fn wallet_export_wif_handler(
+    wallet: Arc<RwLock<WalletStorage<DynStore>>>,
+    Json(payload): Json<ExportWifRequest>,
+) -> Result<Json<String>, (StatusCode, String)> {
+    let hash = parse_hash160(&payload.script_hash)?;
+    let wallet = wallet.write().await;
+    let wif = wallet
+        .export_wif(&hash, &payload.password)
+        .map_err(internal_wallet_error)?;
+    Ok(Json(wif))
+}
+
+async fn wallet_export_nep2_handler(
+    wallet: Arc<RwLock<WalletStorage<DynStore>>>,
+    Json(payload): Json<ExportNep2Request>,
+) -> Result<Json<String>, (StatusCode, String)> {
+    let hash = parse_hash160(&payload.script_hash)?;
+    let scrypt = ScryptParams {
+        n: payload.n.unwrap_or(DEFAULT_SCRYPT_PARAMS.n),
+        r: payload.r.unwrap_or(DEFAULT_SCRYPT_PARAMS.r),
+        p: payload.p.unwrap_or(DEFAULT_SCRYPT_PARAMS.p),
+    };
+    let address_version = AddressVersion::new(payload.address_version);
+    let wallet = wallet.write().await;
+    let nep2 = wallet
+        .export_nep2(
+            &hash,
+            &payload.password,
+            &payload.passphrase,
+            scrypt,
+            address_version,
+        )
+        .map_err(internal_wallet_error)?;
+    Ok(Json(nep2))
+}
+
+#[derive(Deserialize)]
+struct UpdateSignerRequest {
+    script_hash: String,
+    password: String,
+    scopes: String,
+    #[serde(default)]
+    allowed_contracts: Vec<String>,
+    #[serde(default)]
+    allowed_groups: Vec<String>,
+}
+
+async fn wallet_update_signer_handler(
+    wallet: Arc<RwLock<WalletStorage<DynStore>>>,
+    Json(payload): Json<UpdateSignerRequest>,
+) -> Result<Json<()>, (StatusCode, String)> {
+    let hash = parse_hash160(&payload.script_hash)?;
+    let scopes = SignerScopes::from_witness_scope_string(&payload.scopes)
+        .ok_or((StatusCode::BAD_REQUEST, "invalid scopes".to_string()))?;
+    let allowed_contracts = payload
+        .allowed_contracts
+        .iter()
+        .map(|value| parse_hash160(value))
+        .collect::<Result<Vec<_>, _>>()?;
+    let allowed_groups = payload
+        .allowed_groups
+        .iter()
+        .map(|value| {
+            let trimmed = value.strip_prefix("0x").unwrap_or(value);
+            hex::decode(trimmed).map_err(|_| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    format!("invalid allowed group: {value}"),
+                )
+            })
+            .and_then(|bytes| {
+                if bytes.len() != 33 {
+                    Err((
+                        StatusCode::BAD_REQUEST,
+                        format!("invalid allowed group length: {value}"),
+                    ))
+                } else {
+                    Ok(bytes)
+                }
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    wallet
+        .write()
+        .await
+        .update_signer_metadata(
+            &hash,
+            &payload.password,
+            scopes,
+            allowed_contracts,
+            allowed_groups,
+        )
+        .map_err(internal_wallet_error)?;
+
+    Ok(Json(()))
+}
+
+fn internal_wallet_error(err: WalletError) -> (StatusCode, String) {
+    (StatusCode::BAD_REQUEST, err.to_string())
+}
+
+fn parse_hash160(value: &str) -> Result<Hash160, (StatusCode, String)> {
+    Hash160::from_str(value).map_err(|_| {
+        (
+            StatusCode::BAD_REQUEST,
+            format!("invalid script hash: {value}"),
+        )
+    })
+}
+
 async fn wallet_pending_handler(runtime: Arc<RwLock<Runtime>>) -> Json<Vec<String>> {
     let runtime = runtime.read().await;
-    let ids = runtime
-        .pending_ids()
-        .cloned()
-        .collect::<Vec<_>>();
+    let ids = runtime.pending_ids().cloned().collect::<Vec<_>>();
     Json(ids)
 }
 
@@ -607,7 +927,22 @@ async fn run_background_tasks(
     let mut interval = tokio::time::interval(Duration::from_secs(5));
     loop {
         interval.tick().await;
-        let (height, view, participation, tallies, quorum, primary, validators, missing, expected, stages, stats) = {
+        let (
+            height,
+            view,
+            participation,
+            tallies,
+            quorum,
+            primary,
+            validators,
+            missing,
+            expected,
+            change_view_reason_counts,
+            change_view_reasons,
+            change_view_total,
+            stages,
+            stats,
+        ) = {
             let mut engine = consensus.write().await;
             let next_height = engine.state().height() + 1;
             engine
@@ -624,9 +959,7 @@ async fn run_background_tasks(
             runtime_guard.queue_transaction(PendingTransaction::new(next_id, 10, 256));
             let spill_id = format!("tick-extra-{}", next_height);
             runtime_guard.queue_transaction(PendingTransaction::new(spill_id, 5, 128));
-            let reserved = runtime_guard
-                .tx_pool_mut()
-                .reserve_for_block(64, 64 * 1024);
+            let reserved = runtime_guard.tx_pool_mut().reserve_for_block(64, 64 * 1024);
             let fees = reserved.iter().map(|tx| tx.fee).sum();
             runtime_guard.commit_block(BlockSummary::new(
                 engine.state().height(),
@@ -639,8 +972,10 @@ async fn run_background_tasks(
             let quorum = engine.quorum_threshold();
             let primary = engine.primary();
             let validators = describe_validators(engine.state().validators());
-            let (missing, expected, stages) =
-                gather_consensus_metrics(&engine, &participation);
+            let (missing, expected, stages) = gather_consensus_metrics(&engine, &participation);
+            let change_view_reason_counts = engine.change_view_reason_counts();
+            let change_view_reasons = engine.change_view_reasons();
+            let change_view_total = engine.change_view_total();
             let stats = runtime_guard.stats();
             (
                 engine.state().height(),
@@ -652,6 +987,9 @@ async fn run_background_tasks(
                 validators,
                 missing,
                 expected,
+                change_view_reason_counts,
+                change_view_reasons,
+                change_view_total,
                 stages,
                 stats,
             )
@@ -668,6 +1006,9 @@ async fn run_background_tasks(
             validators,
             missing,
             expected,
+            change_view_reason_counts,
+            change_view_reasons,
+            change_view_total,
             stages,
             stale_after_ms,
         );
@@ -721,8 +1062,7 @@ fn describe_validators(set: &ValidatorSet) -> Vec<ValidatorDescriptor> {
 fn decode_public_key(input: &str) -> Result<Vec<u8>> {
     let trimmed = input.trim();
     let without_prefix = trimmed.strip_prefix("0x").unwrap_or(trimmed);
-    let bytes = decode(without_prefix)
-        .map_err(|err| anyhow!("invalid hex public key: {err}"))?;
+    let bytes = decode(without_prefix).map_err(|err| anyhow!("invalid hex public key: {err}"))?;
     if bytes.len() != 33 && bytes.len() != 65 {
         return Err(anyhow!(
             "public key must be 33-byte compressed or 65-byte uncompressed"
@@ -737,12 +1077,14 @@ mod tests {
     use axum::body::{to_bytes, Body};
     use axum::http::Request;
     use chrono::{Duration, Utc};
+    use neo_base::encoding::WifEncode;
     use neo_consensus::{persist_engine, ConsensusColumn, ConsensusState, MessageKind};
-    use neo_crypto::ecc256::PrivateKey;
+    use neo_crypto::{ecc256::PrivateKey, nep2::encrypt_nep2, scrypt::ScryptParams};
     use neo_runtime::Runtime;
+    use serde_json::json;
     use std::collections::BTreeMap;
-    use tower::ServiceExt;
     use tempfile::tempdir;
+    use tower::ServiceExt;
 
     #[tokio::test]
     async fn status_endpoint_returns_snapshot() {
@@ -808,7 +1150,8 @@ mod tests {
         let mut config = NodeConfig::default();
         config.validators = Some(configs.clone());
 
-        let node = Node::with_store(config, store).expect("node initializes with config validators");
+        let node =
+            Node::with_store(config, store).expect("node initializes with config validators");
         let status = node.state.read().await;
 
         assert_eq!(status.consensus_validators.len(), configs.len());
@@ -854,7 +1197,11 @@ mod tests {
         );
 
         let response = app
-            .oneshot(Request::get("/wallet/accounts").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::get("/wallet/accounts")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(response.status(), axum::http::StatusCode::OK);
@@ -869,8 +1216,7 @@ mod tests {
                 .await
                 .queue_transaction(PendingTransaction::new("tx-test", 1, 10));
         }
-        let pending_app =
-            super::build_router(state, wallet, runtime, DEFAULT_STAGE_STALE_AFTER_MS);
+        let pending_app = super::build_router(state, wallet, runtime, DEFAULT_STAGE_STALE_AFTER_MS);
         let response = pending_app
             .oneshot(Request::get("/wallet/pending").body(Body::empty()).unwrap())
             .await
@@ -878,6 +1224,229 @@ mod tests {
         let body = to_bytes(response.into_body(), 4096).await.unwrap();
         let pending: Vec<String> = serde_json::from_slice(&body).unwrap();
         assert!(pending.contains(&"tx-test".to_string()));
+    }
+
+    #[tokio::test]
+    async fn wallet_import_wif_endpoint_imports_account() {
+        let state = Arc::new(RwLock::new(NodeStatus::new("testnet".into())));
+        let wallet = empty_wallet();
+        let runtime = Arc::new(RwLock::new(Runtime::new(100, 1)));
+        let app = super::build_router(state, wallet.clone(), runtime, DEFAULT_STAGE_STALE_AFTER_MS);
+
+        let payload = json!({
+            "wif": "L3tgppXLgdaeqSGSFw1Go3skBiy8vQAM7YMXvTHsKQtE16PBncSU",
+            "password": "pass",
+            "make_default": true
+        });
+
+        let response = app
+            .oneshot(
+                Request::post("/wallet/import/wif")
+                    .header("content-type", "application/json")
+                    .body(Body::from(payload.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 4096).await.unwrap();
+        let imported: Hash160 = serde_json::from_slice(&body).unwrap();
+        let hashes = wallet.read().await.script_hashes();
+        assert_eq!(hashes, vec![imported]);
+    }
+
+    #[tokio::test]
+    async fn wallet_import_nep2_endpoint_imports_account() {
+        let state = Arc::new(RwLock::new(NodeStatus::new("testnet".into())));
+        let wallet = empty_wallet();
+        let runtime = Arc::new(RwLock::new(Runtime::new(100, 1)));
+        let app = super::build_router(state, wallet.clone(), runtime, DEFAULT_STAGE_STALE_AFTER_MS);
+
+        let payload = json!({
+            "nep2": "6PYRzCDe46gkaR1E9AX3GyhLgQehypFvLG2KknbYjeNHQ3MZR2iqg8mcN3",
+            "passphrase": "Satoshi",
+            "password": "pass",
+            "make_default": false,
+            "n": 2,
+            "r": 1,
+            "p": 1,
+            "address_version": DEFAULT_ADDRESS_VERSION.0,
+        });
+
+        let response = app
+            .oneshot(
+                Request::post("/wallet/import/nep2")
+                    .header("content-type", "application/json")
+                    .body(Body::from(payload.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 4096).await.unwrap();
+        let imported: Hash160 = serde_json::from_slice(&body).unwrap();
+        let hashes = wallet.read().await.script_hashes();
+        assert_eq!(hashes, vec![imported]);
+    }
+
+    #[tokio::test]
+    async fn wallet_accounts_detail_endpoint_returns_metadata() {
+        let state = Arc::new(RwLock::new(NodeStatus::new("testnet".into())));
+        let (wallet, hash) = wallet_with_account();
+        let runtime = Arc::new(RwLock::new(Runtime::new(100, 1)));
+        let app = super::build_router(state, wallet, runtime, DEFAULT_STAGE_STALE_AFTER_MS);
+
+        let payload = json!({ "password": "pass" });
+        let response = app
+            .oneshot(
+                Request::post("/wallet/accounts/detail")
+                    .header("content-type", "application/json")
+                    .body(Body::from(payload.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 4096).await.unwrap();
+        let accounts: Vec<AccountDetailResponse> = serde_json::from_slice(&body).unwrap();
+        assert_eq!(accounts.len(), 1);
+        assert_eq!(accounts[0].script_hash, format!("{}", hash));
+    }
+
+    #[tokio::test]
+    async fn wallet_export_wif_endpoint_returns_wif() {
+        let state = Arc::new(RwLock::new(NodeStatus::new("testnet".into())));
+        let (wallet, hash) = wallet_with_account();
+        let runtime = Arc::new(RwLock::new(Runtime::new(100, 1)));
+        let app = super::build_router(state, wallet, runtime, DEFAULT_STAGE_STALE_AFTER_MS);
+
+        let payload = json!({
+            "script_hash": hash.to_string(),
+            "password": "pass"
+        });
+
+        let response = app
+            .oneshot(
+                Request::post("/wallet/export/wif")
+                    .header("content-type", "application/json")
+                    .body(Body::from(payload.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 4096).await.unwrap();
+        let wif: String = serde_json::from_slice(&body).unwrap();
+        let expected = PrivateKey::new([1u8; 32])
+            .as_be_bytes()
+            .wif_encode(0x80, true);
+        assert_eq!(wif, expected);
+    }
+
+    #[tokio::test]
+    async fn wallet_export_nep2_endpoint_returns_nep2() {
+        let state = Arc::new(RwLock::new(NodeStatus::new("testnet".into())));
+        let (wallet, hash) = wallet_with_account();
+        let runtime = Arc::new(RwLock::new(Runtime::new(100, 1)));
+        let app = super::build_router(state, wallet, runtime, DEFAULT_STAGE_STALE_AFTER_MS);
+
+        let payload = json!({
+            "script_hash": hash.to_string(),
+            "password": "pass",
+            "passphrase": "Satoshi",
+            "n": 2,
+            "r": 1,
+            "p": 1,
+            "address_version": DEFAULT_ADDRESS_VERSION.0
+        });
+
+        let response = app
+            .oneshot(
+                Request::post("/wallet/export/nep2")
+                    .header("content-type", "application/json")
+                    .body(Body::from(payload.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 4096).await.unwrap();
+        let nep2: String = serde_json::from_slice(&body).unwrap();
+        let expected = encrypt_nep2(
+            &PrivateKey::new([1u8; 32]),
+            "Satoshi",
+            DEFAULT_ADDRESS_VERSION,
+            ScryptParams { n: 2, r: 1, p: 1 },
+        )
+        .expect("encrypt nep2");
+        assert_eq!(nep2, expected);
+    }
+
+    #[tokio::test]
+    async fn wallet_update_signer_endpoint_applies_metadata() {
+        let (wallet, hash) = wallet_with_account();
+        let state = Arc::new(RwLock::new(NodeStatus::new("testnet".into())));
+        let runtime = Arc::new(RwLock::new(Runtime::new(100, 1)));
+        let app = super::build_router(state, wallet.clone(), runtime, DEFAULT_STAGE_STALE_AFTER_MS);
+
+        let payload = json!({
+            "script_hash": hash.to_string(),
+            "password": "pass",
+            "scopes": "CustomContracts",
+            "allowed_contracts": [hash.to_string()],
+            "allowed_groups": [],
+        });
+
+        let response = app
+            .oneshot(
+                Request::post("/wallet/update/signer")
+                    .header("content-type", "application/json")
+                    .body(Body::from(payload.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let details = wallet
+            .read()
+            .await
+            .account_details("pass")
+            .expect("account details");
+        let metadata = details
+            .into_iter()
+            .find(|detail| detail.script_hash == hash)
+            .expect("account metadata");
+        assert_eq!(metadata.scopes, SignerScopes::CUSTOM_CONTRACTS);
+        assert_eq!(metadata.allowed_contracts, vec![hash]);
+        assert!(metadata.allowed_groups.is_empty());
+    }
+
+    #[tokio::test]
+    async fn wallet_update_signer_endpoint_rejects_inconsistent_input() {
+        let (wallet, hash) = wallet_with_account();
+        let state = Arc::new(RwLock::new(NodeStatus::new("testnet".into())));
+        let runtime = Arc::new(RwLock::new(Runtime::new(100, 1)));
+        let app = super::build_router(state, wallet, runtime, DEFAULT_STAGE_STALE_AFTER_MS);
+
+        let payload = json!({
+            "script_hash": hash.to_string(),
+            "password": "pass",
+            "scopes": "CalledByEntry",
+            "allowed_contracts": [hash.to_string()],
+            "allowed_groups": [],
+        });
+
+        let response = app
+            .oneshot(
+                Request::post("/wallet/update/signer")
+                    .header("content-type", "application/json")
+                    .body(Body::from(payload.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]
@@ -898,9 +1467,14 @@ mod tests {
             guard
                 .consensus_missing
                 .insert("PrepareResponse".into(), vec![4, 5]);
+            guard.consensus_expected.insert("PrepareResponse".into(), 4);
             guard
-                .consensus_expected
-                .insert("PrepareResponse".into(), 4);
+                .consensus_change_view_reasons
+                .insert(2, ChangeViewReason::Timeout);
+            guard
+                .consensus_change_view_reason_counts
+                .insert("Timeout".into(), 1);
+            guard.consensus_change_view_total = 1;
             guard.consensus_stale_threshold_ms = Some(DEFAULT_STAGE_STALE_AFTER_MS);
             guard.consensus_stages.insert(
                 "PrepareResponse".into(),
@@ -937,11 +1511,14 @@ mod tests {
             stats.participation.get("PrepareResponse"),
             Some(&vec![1, 2, 3])
         );
-        assert_eq!(
-            stats.missing.get("PrepareResponse"),
-            Some(&vec![4, 5])
-        );
+        assert_eq!(stats.missing.get("PrepareResponse"), Some(&vec![4, 5]));
         assert_eq!(stats.expected.get("PrepareResponse"), Some(&4usize));
+        assert_eq!(stats.change_view_reason_counts.get("Timeout"), Some(&1usize));
+        assert_eq!(
+            stats.change_view_reasons.get(&2),
+            Some(&ChangeViewReason::Timeout)
+        );
+        assert_eq!(stats.change_view_total, 1);
         let stage = stats.stages.get("PrepareResponse").unwrap();
         assert_eq!(stage.state, StageState::Pending);
         assert_eq!(stage.expected, Some(4));
@@ -949,10 +1526,7 @@ mod tests {
         assert_eq!(stage.missing, vec![4, 5]);
         assert!(stage.last_updated <= Utc::now());
         assert!(!stage.stale);
-        assert_eq!(
-            stats.stale_threshold_ms,
-            Some(DEFAULT_STAGE_STALE_AFTER_MS)
-        );
+        assert_eq!(stats.stale_threshold_ms, Some(DEFAULT_STAGE_STALE_AFTER_MS));
     }
 
     #[tokio::test]
@@ -981,6 +1555,9 @@ mod tests {
             Vec::new(),
             BTreeMap::new(),
             BTreeMap::new(),
+            BTreeMap::new(),
+            BTreeMap::new(),
+            0,
             stages,
             5_000,
         );
@@ -1057,12 +1634,8 @@ mod tests {
         let column = ColumnId::new("wallet.keystore");
         raw_store.create_column(column);
         let shared: SharedStore = raw_store.clone();
-        let mut storage = WalletStorage::<DynStore>::open(
-            shared,
-            column,
-            b"default".to_vec(),
-        )
-        .expect("wallet storage open");
+        let mut storage = WalletStorage::<DynStore>::open(shared, column, b"default".to_vec())
+            .expect("wallet storage open");
         let hash = if let Some(private) = private {
             let account = storage
                 .import_private_key(private, "pass")

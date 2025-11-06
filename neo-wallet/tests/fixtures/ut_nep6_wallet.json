@@ -1,0 +1,23 @@
+{
+  "name": "name",
+  "version": "1.0",
+  "scrypt": { "n": 2, "r": 1, "p": 1 },
+  "accounts": [
+    {
+      "address": "NdtB8RXRmJ7Nhw1FPTm7E6HoDZGnDw37nf",
+      "label": null,
+      "isDefault": false,
+      "lock": false,
+      "key": null,
+      "contract": {
+        "script": "IQNgPziA63rqCtRQCJOSXkpC/qSKRO5viYoQs8fOBdKiZ6w=",
+        "parameters": [
+          { "name": "Sig", "type": 0 }
+        ],
+        "deployed": false
+      },
+      "extra": null
+    }
+  ],
+  "extra": {}
+}
