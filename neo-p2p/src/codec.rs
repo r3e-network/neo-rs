@@ -106,6 +106,7 @@ mod tests {
     fn codec_roundtrip() {
         let mut codec = NeoMessageCodec::new();
         let version = Message::Version(VersionPayload::new(
+            860_833_102,
             1,
             1,
             0,
@@ -116,7 +117,11 @@ mod tests {
             100,
             true,
         ));
-        let ping = Message::Ping(PingPayload { nonce: 99 });
+        let ping = Message::Ping(PingPayload {
+            last_block_index: 42,
+            timestamp: 1_700_000_123,
+            nonce: 99,
+        });
         let inventory = Message::Inventory(InventoryPayload::new(vec![InventoryItem {
             kind: InventoryKind::Transaction,
             hash: Hash256::new([42u8; 32]),

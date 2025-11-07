@@ -86,6 +86,7 @@ impl HandshakeMachine {
 
 /// Utility for constructing a standard version payload for local node.
 pub fn build_version_payload(
+    network: u32,
     protocol: u32,
     services: u64,
     receiver: Endpoint,
@@ -98,6 +99,7 @@ pub fn build_version_payload(
         .as_secs() as i64;
     let nonce = rand::thread_rng().gen::<u64>();
     VersionPayload::new(
+        network,
         protocol,
         services,
         timestamp,
@@ -121,6 +123,7 @@ mod tests {
 
     fn sample_version(port: u16) -> VersionPayload {
         build_version_payload(
+            0x74746e41,
             0x03,
             1,
             sample_endpoint(port),

@@ -45,6 +45,7 @@ pub enum ConsensusMessage {
     ChangeView {
         new_view: ViewNumber,
         reason: ChangeViewReason,
+        timestamp_ms: u64,
     },
 }
 
@@ -87,9 +88,14 @@ impl NeoEncode for ConsensusMessage {
             Self::PrepareResponse { proposal_hash } | Self::Commit { proposal_hash } => {
                 proposal_hash.neo_encode(writer);
             }
-            Self::ChangeView { new_view, reason } => {
+            Self::ChangeView {
+                new_view,
+                reason,
+                timestamp_ms,
+            } => {
                 new_view.neo_encode(writer);
                 writer.write_u8(*reason as u8);
+                timestamp_ms.neo_encode(writer);
             }
         }
     }
@@ -122,9 +128,11 @@ impl NeoDecode for ConsensusMessage {
             MessageKind::ChangeView => {
                 let view = ViewNumber::neo_decode(reader)?;
                 let reason = ChangeViewReason::from_u8(reader.read_u8()?)?;
+                let timestamp_ms = u64::neo_decode(reader)?;
                 ConsensusMessage::ChangeView {
                     new_view: view,
                     reason,
+                    timestamp_ms,
                 }
             }
         })
@@ -203,16 +211,22 @@ impl TryFrom<u8> for MessageKind {
 #[repr(u8)]
 pub enum ChangeViewReason {
     Timeout = 0,
-    InvalidProposal = 1,
-    Manual = 2,
+    ChangeAgreement = 1,
+    TxNotFound = 2,
+    TxRejectedByPolicy = 3,
+    TxInvalid = 4,
+    BlockRejectedByPolicy = 5,
 }
 
 impl ChangeViewReason {
     pub fn from_u8(value: u8) -> Result<Self, neo_base::encoding::DecodeError> {
         match value {
             0 => Ok(Self::Timeout),
-            1 => Ok(Self::InvalidProposal),
-            2 => Ok(Self::Manual),
+            1 => Ok(Self::ChangeAgreement),
+            2 => Ok(Self::TxNotFound),
+            3 => Ok(Self::TxRejectedByPolicy),
+            4 => Ok(Self::TxInvalid),
+            5 => Ok(Self::BlockRejectedByPolicy),
             _ => Err(neo_base::encoding::DecodeError::InvalidValue("change view")),
         }
     }
@@ -222,8 +236,11 @@ impl fmt::Display for ChangeViewReason {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ChangeViewReason::Timeout => f.write_str("Timeout"),
-            ChangeViewReason::InvalidProposal => f.write_str("InvalidProposal"),
-            ChangeViewReason::Manual => f.write_str("Manual"),
+            ChangeViewReason::ChangeAgreement => f.write_str("ChangeAgreement"),
+            ChangeViewReason::TxNotFound => f.write_str("TxNotFound"),
+            ChangeViewReason::TxRejectedByPolicy => f.write_str("TxRejectedByPolicy"),
+            ChangeViewReason::TxInvalid => f.write_str("TxInvalid"),
+            ChangeViewReason::BlockRejectedByPolicy => f.write_str("BlockRejectedByPolicy"),
         }
     }
 }

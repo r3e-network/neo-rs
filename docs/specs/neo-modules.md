@@ -165,6 +165,7 @@ let block = BlockRecord {
 
 // Drive the P2P handshake and publish inventory.
 let local_version = build_version_payload(
+    860_833_102,
     0x03,
     1,
     Endpoint::new("0.0.0.0".parse()?, 20333),

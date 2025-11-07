@@ -36,6 +36,7 @@ struct DemoConfig {
     store: bool,
     crypto: bool,
     handshake: bool,
+    network_magic: u32,
 }
 
 impl From<Cli> for DemoConfig {
@@ -44,6 +45,7 @@ impl From<Cli> for DemoConfig {
             store: !cli.skip_store,
             crypto: !cli.skip_crypto,
             handshake: !cli.skip_handshake,
+            network_magic: 860_833_102, // mainnet magic
         }
     }
 }
@@ -54,6 +56,7 @@ impl Default for DemoConfig {
             store: true,
             crypto: true,
             handshake: true,
+            network_magic: 860_833_102,
         }
     }
 }
@@ -114,10 +117,22 @@ fn run_demo(config: DemoConfig) -> Result<()> {
     if config.handshake {
         let local_endpoint = Endpoint::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 20333);
         let remote_endpoint = Endpoint::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 20334);
-        let local_version =
-            build_version_payload(0x03, 1, remote_endpoint.clone(), local_endpoint.clone(), 0);
-        let remote_version =
-            build_version_payload(0x03, 1, local_endpoint.clone(), remote_endpoint.clone(), 0);
+        let local_version = build_version_payload(
+            config.network_magic,
+            0x03,
+            1,
+            remote_endpoint.clone(),
+            local_endpoint.clone(),
+            0,
+        );
+        let remote_version = build_version_payload(
+            config.network_magic,
+            0x03,
+            1,
+            local_endpoint.clone(),
+            remote_endpoint.clone(),
+            0,
+        );
 
         let mut peer = Peer::outbound(remote_endpoint.clone(), local_version.clone());
         let mut codec = NeoMessageCodec::new();

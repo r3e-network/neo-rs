@@ -347,6 +347,9 @@ impl Account {
     }
 
     pub fn sign(&self, payload: &[u8]) -> Result<SignatureBytes, WalletError> {
+        if self.lock {
+            return Err(WalletError::AccountLocked);
+        }
         let private = self
             .private_key
             .as_ref()
@@ -369,18 +372,10 @@ impl Account {
         version: AddressVersion,
         encrypted_key: Option<String>,
     ) -> Result<Nep6Account, WalletError> {
-        let contract = self.contract.as_ref().map(|contract| Nep6Contract {
-            script: BASE64.encode(contract.script()),
-            parameters: contract
-                .parameters()
-                .iter()
-                .map(|param| Nep6Parameter {
-                    name: param.name().to_string(),
-                    type_id: param.parameter_type().into(),
-                })
-                .collect(),
-            deployed: contract.deployed(),
-        });
+        let contract = self
+            .contract
+            .as_ref()
+            .map(contract_to_nep6);
 
         let extra = embed_signer_extra(&self.extra, self);
 
@@ -428,20 +423,7 @@ impl Account {
         }
 
         let contract = if let Some(contract) = &account.contract {
-            let script = BASE64
-                .decode(contract.script.as_bytes())
-                .map_err(|_| WalletError::InvalidNep6("invalid contract script encoding"))?;
-            let parameters = contract
-                .parameters
-                .iter()
-                .map(|param| {
-                    Ok(ContractParameter::new(
-                        param.name.clone(),
-                        ContractParameterType::try_from(param.type_id)?,
-                    ))
-                })
-                .collect::<Result<Vec<_>, WalletError>>()?;
-            Some(Contract::new(script, parameters, contract.deployed))
+            Some(contract_from_nep6(contract)?)
         } else if let Some(pk) = public_key.as_ref() {
             Some(Contract::signature(pk))
         } else {
@@ -563,6 +545,46 @@ mod tests {
             .expect("metadata applied");
         assert_eq!(account.signer_scopes(), SignerScopes::CALLED_BY_ENTRY);
     }
+
+    #[test]
+    fn account_sign_fails_when_locked() {
+        let mut account = Account::from_private_key(PrivateKey::new([5u8; 32])).unwrap();
+        account.set_lock(true);
+        let err = account.sign(b"payload").unwrap_err();
+        assert!(matches!(err, WalletError::AccountLocked));
+    }
+}
+
+pub(crate) fn contract_to_nep6(contract: &Contract) -> Nep6Contract {
+    Nep6Contract {
+        script: BASE64.encode(contract.script()),
+        parameters: contract
+            .parameters()
+            .iter()
+            .map(|param| Nep6Parameter {
+                name: param.name().to_string(),
+                type_id: param.parameter_type().into(),
+            })
+            .collect(),
+        deployed: contract.deployed(),
+    }
+}
+
+pub(crate) fn contract_from_nep6(contract: &Nep6Contract) -> Result<Contract, WalletError> {
+    let script = BASE64
+        .decode(contract.script.as_bytes())
+        .map_err(|_| WalletError::InvalidNep6("invalid contract script encoding"))?;
+    let parameters = contract
+        .parameters
+        .iter()
+        .map(|param| {
+            Ok(ContractParameter::new(
+                param.name.clone(),
+                ContractParameterType::try_from(param.type_id)?,
+            ))
+        })
+        .collect::<Result<Vec<_>, WalletError>>()?;
+    Ok(Contract::new(script, parameters, contract.deployed))
 }
 
 fn embed_signer_extra(extra: &Option<Value>, account: &Account) -> Option<Value> {

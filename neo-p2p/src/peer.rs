@@ -79,7 +79,14 @@ mod tests {
 
     #[test]
     fn peer_outbound_sequence() {
-        let local_version = build_version_payload(0x03, 1, endpoint(2000), endpoint(2001), 10);
+        let local_version = build_version_payload(
+            860_833_102,
+            0x03,
+            1,
+            endpoint(2000),
+            endpoint(2001),
+            10,
+        );
         let mut peer = Peer::outbound(endpoint(2002), local_version.clone());
         let bootstrap = peer.bootstrap();
         assert_eq!(bootstrap.len(), 1);

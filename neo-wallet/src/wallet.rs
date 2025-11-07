@@ -12,7 +12,7 @@ use crate::keystore::{load_keystore, persist_keystore};
 #[cfg(feature = "std")]
 use serde::{Deserialize, Serialize};
 use crate::{
-    account::{Account, Contract},
+    account::{self, Account, Contract},
     error::WalletError,
     keystore::{decrypt_entry, Keystore},
     nep6::Nep6Wallet,
@@ -44,11 +44,20 @@ impl Wallet {
         }
     }
 
-    pub fn add_account(&mut self, account: Account) -> Result<(), WalletError> {
-        if self.accounts.contains_key(&account.script_hash()) {
-            return Err(WalletError::DuplicateAccount);
-        }
+    pub fn add_account(&mut self, mut account: Account) -> Result<(), WalletError> {
         let hash = account.script_hash();
+        if let Some(existing) = self.accounts.get(&hash) {
+            if existing.is_watch_only() && !account.is_watch_only() {
+                if let Some(label) = existing.label() {
+                    account.set_label(label.to_string());
+                }
+                account.set_default(existing.is_default() || account.is_default());
+                account.set_lock(existing.is_locked());
+                self.accounts.remove(&hash);
+            } else {
+                return Err(WalletError::DuplicateAccount);
+            }
+        }
         let is_default = account.is_default();
         self.accounts.insert(hash, account);
         if is_default {
@@ -96,6 +105,15 @@ impl Wallet {
             if account.script_hash() != entry.script_hash {
                 return Err(WalletError::IntegrityMismatch);
             }
+            wallet.add_account(account)?;
+        }
+        for watch in &keystore.watch_only {
+            let contract = watch
+                .contract
+                .as_ref()
+                .map(account::contract_from_nep6)
+                .transpose()?;
+            let account = Account::watch_only_from_script(watch.script_hash, contract);
             wallet.add_account(account)?;
         }
         Ok(wallet)
@@ -656,6 +674,28 @@ mod tests {
             wallet.export_wif(&hash),
             Err(WalletError::WatchOnly)
         ));
+    }
+
+    #[test]
+    fn wallet_upgrades_watch_only_account() {
+        let private = PrivateKey::new([9u8; 32]);
+        let hash = Account::from_private_key(private.clone())
+            .unwrap()
+            .script_hash();
+        let mut wallet = Wallet::new();
+        wallet.add_watch_only(hash, None, false).unwrap();
+        wallet.import_private_key(private, false).unwrap();
+        assert!(!wallet.account(&hash).unwrap().is_watch_only());
+    }
+
+    #[test]
+    fn wallet_keystore_retains_watch_only_accounts() {
+        let mut wallet = Wallet::new();
+        let hash = Hash160::from_slice(&[0x33; 20]).unwrap();
+        wallet.add_watch_only(hash, None, false).unwrap();
+        let keystore = wallet.to_keystore("pass").unwrap();
+        let restored = Wallet::from_keystore(&keystore, "pass").unwrap();
+        assert!(restored.account(&hash).unwrap().is_watch_only());
     }
 
     #[cfg(feature = "std")]

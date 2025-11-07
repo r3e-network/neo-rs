@@ -28,7 +28,7 @@ impl SignerScopes {
 
     pub fn is_valid(self) -> bool {
         if self.is_empty() {
-            return false;
+            return true;
         }
         if self.contains(Self::GLOBAL) {
             return self == Self::GLOBAL;

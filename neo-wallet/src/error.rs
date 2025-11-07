@@ -38,6 +38,9 @@ pub enum WalletError {
     #[error("serialization error: {0}")]
     Serialization(String),
 
+    #[error("account is locked")]
+    AccountLocked,
+
     #[error("watch-only account cannot sign or export private material")]
     WatchOnly,
 

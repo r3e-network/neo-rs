@@ -39,6 +39,14 @@ mod tests {
 
     const HEIGHT: u64 = 10;
 
+    fn change_view_msg(new_view: ViewNumber, reason: ChangeViewReason) -> ConsensusMessage {
+        ConsensusMessage::ChangeView {
+            new_view,
+            reason,
+            timestamp_ms: 0,
+        }
+    }
+
     #[test]
     fn quorum_progression() {
         let (set, priv_keys) = generate_validators();
@@ -233,7 +241,7 @@ mod tests {
 
         let changes = [
             (0u16, ChangeViewReason::Timeout),
-            (2u16, ChangeViewReason::InvalidProposal),
+            (2u16, ChangeViewReason::TxInvalid),
         ];
 
         for (validator, reason) in changes {
@@ -241,10 +249,7 @@ mod tests {
                 &priv_keys[validator as usize],
                 validator,
                 ViewNumber::ZERO,
-                ConsensusMessage::ChangeView {
-                    new_view: target_view,
-                    reason,
-                },
+                change_view_msg(target_view, reason),
             );
             engine.process_message(change).unwrap();
         }
@@ -263,12 +268,12 @@ mod tests {
         );
         assert_eq!(
             reasons.get(&ValidatorId(2)),
-            Some(&ChangeViewReason::InvalidProposal)
+            Some(&ChangeViewReason::TxInvalid)
         );
         let counts = engine.change_view_reason_counts();
         assert_eq!(counts.get(&ChangeViewReason::Timeout), Some(&1usize));
         assert_eq!(
-            counts.get(&ChangeViewReason::InvalidProposal),
+            counts.get(&ChangeViewReason::TxInvalid),
             Some(&1usize)
         );
         assert_eq!(engine.change_view_total(), 2);
@@ -301,10 +306,7 @@ mod tests {
             &priv_keys[1],
             1,
             ViewNumber::ZERO,
-            ConsensusMessage::ChangeView {
-                new_view: target_view,
-                reason: ChangeViewReason::Manual,
-            },
+            change_view_msg(target_view, ChangeViewReason::ChangeAgreement),
         );
         let decision = restored.process_message(trigger).unwrap();
         assert!(matches!(
@@ -359,10 +361,7 @@ mod tests {
                 &priv_keys[idx],
                 idx as u16,
                 ViewNumber::ZERO,
-                ConsensusMessage::ChangeView {
-                    new_view: target_view,
-                    reason: crate::message::ChangeViewReason::Timeout,
-                },
+                change_view_msg(target_view, crate::message::ChangeViewReason::Timeout),
             );
             matches!(
                 engine.process_message(change).unwrap(),
@@ -375,10 +374,7 @@ mod tests {
                 &priv_keys[participants[set.quorum() - 1]],
                 participants[set.quorum() - 1] as u16,
                 ViewNumber::ZERO,
-                ConsensusMessage::ChangeView {
-                    new_view: target_view,
-                    reason: crate::message::ChangeViewReason::Timeout,
-                },
+                change_view_msg(target_view, crate::message::ChangeViewReason::Timeout),
             ))
             .unwrap();
         assert!(matches!(
@@ -515,10 +511,7 @@ mod tests {
                 &priv_keys[idx],
                 idx as u16,
                 ViewNumber::ZERO,
-                ConsensusMessage::ChangeView {
-                    new_view: target_view,
-                    reason: crate::message::ChangeViewReason::Timeout,
-                },
+                change_view_msg(target_view, crate::message::ChangeViewReason::Timeout),
             );
             let decision = engine.process_message(change).unwrap();
             if idx + 1 == set.quorum() {
@@ -621,10 +614,7 @@ mod tests {
             &priv_keys[0],
             0,
             ViewNumber::ZERO,
-            ConsensusMessage::ChangeView {
-                new_view: ViewNumber(1),
-                reason: crate::message::ChangeViewReason::Timeout,
-            },
+            change_view_msg(ViewNumber(1), crate::message::ChangeViewReason::Timeout),
         );
         engine.process_message(change).unwrap();
 
@@ -884,10 +874,7 @@ mod tests {
                 &priv_keys[idx],
                 idx as u16,
                 ViewNumber::ZERO,
-                ConsensusMessage::ChangeView {
-                    new_view: target_view,
-                    reason: crate::message::ChangeViewReason::Timeout,
-                },
+                change_view_msg(target_view, crate::message::ChangeViewReason::Timeout),
             );
             engine.process_message(change).unwrap();
         }
@@ -897,10 +884,7 @@ mod tests {
             &priv_keys[set.quorum()],
             set.quorum() as u16,
             ViewNumber::ZERO,
-            ConsensusMessage::ChangeView {
-                new_view: ViewNumber(2),
-                reason: crate::message::ChangeViewReason::Timeout,
-            },
+            change_view_msg(ViewNumber(2), crate::message::ChangeViewReason::Timeout),
         );
         let err = engine.process_message(stale).unwrap_err();
         assert!(matches!(
