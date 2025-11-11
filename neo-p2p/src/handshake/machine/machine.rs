@@ -25,6 +25,12 @@ pub enum HandshakeError {
 
     #[error("handshake: already completed")]
     AlreadyCompleted,
+
+    #[error("handshake: network magic mismatch (expected {expected:#x}, got {found:#x})")]
+    NetworkMismatch { expected: u32, found: u32 },
+
+    #[error("handshake: detected self-connection")]
+    SelfConnection,
 }
 
 impl HandshakeMachine {
@@ -52,6 +58,10 @@ impl HandshakeMachine {
         self.remote_version.as_ref()
     }
 
+    pub fn local_version(&self) -> &VersionPayload {
+        &self.local_version
+    }
+
     pub fn on_message(&mut self, message: &Message) -> Result<Vec<Message>, HandshakeError> {
         if self.is_complete() {
             return Err(HandshakeError::AlreadyCompleted);
@@ -59,6 +69,15 @@ impl HandshakeMachine {
 
         match (&self.state, message) {
             (HandshakeState::AwaitingRemoteVersion, Message::Version(payload)) => {
+                if payload.network != self.local_version.network {
+                    return Err(HandshakeError::NetworkMismatch {
+                        expected: self.local_version.network,
+                        found: payload.network,
+                    });
+                }
+                if payload.nonce == self.local_version.nonce {
+                    return Err(HandshakeError::SelfConnection);
+                }
                 self.remote_version = Some(payload.clone());
                 self.state = HandshakeState::AwaitingRemoteVerack;
                 let mut replies = Vec::new();

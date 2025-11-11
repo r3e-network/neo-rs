@@ -145,7 +145,7 @@ use neo_p2p::{
     build_version_payload, handshake::HandshakeRole, message::Endpoint, Message, NeoMessageCodec,
     Peer, PeerEvent,
 };
-use neo_p2p::message::{InventoryItem, InventoryKind, InventoryPayload, PayloadWithData};
+use neo_p2p::message::{Capability, InventoryItem, InventoryKind, InventoryPayload, PayloadWithData};
 use neo_store::{BlockRecord, Blocks, Column, HeaderRecord, Headers, MemoryStore, StoreExt};
 
 // Start with a clean in-memory store and seed a header record.
@@ -167,10 +167,8 @@ let block = BlockRecord {
 let local_version = build_version_payload(
     860_833_102,
     0x03,
-    1,
-    Endpoint::new("0.0.0.0".parse()?, 20333),
-    Endpoint::new("0.0.0.0".parse()?, 20334),
-    header.height,
+    "/neo-rs:demo".to_string(),
+    vec![Capability::tcp_server(20333), Capability::full_node(header.height)],
 );
 let remote = Endpoint::new("127.0.0.1".parse()?, 20335);
 let mut peer = Peer::outbound(remote, local_version);
@@ -188,6 +186,7 @@ if let PeerEvent::HandshakeCompleted = peer.on_message(Message::Verack)? {
 
 // Encode/decode messages over the wire with the shared codec.
 let mut codec = NeoMessageCodec::new();
+codec.set_compression_allowed(peer.compression_allowed());
 let payload = PayloadWithData::new(block.hash, block.raw.clone());
 codec.encode(Message::Transaction(payload), &mut socket_buf)?;
 ```

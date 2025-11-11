@@ -3,20 +3,31 @@ use std::io;
 use bytes::{Buf, BytesMut};
 use tokio_util::codec::{Decoder, Encoder};
 
-use neo_base::encoding::{
-    read_varint, write_varint, DecodeError, NeoDecode, NeoEncode, SliceReader,
-};
+use neo_base::encoding::{read_varint, write_varint, DecodeError, NeoDecode, SliceReader};
 
 use crate::message::{Message, PAYLOAD_MAX_SIZE};
 
 #[derive(Default)]
 pub struct NeoMessageCodec {
     expected_len: Option<usize>,
+    compression_allowed: bool,
 }
 
 impl NeoMessageCodec {
     pub fn new() -> Self {
-        Self { expected_len: None }
+        Self {
+            expected_len: None,
+            compression_allowed: false,
+        }
+    }
+
+    pub fn with_compression_allowed(mut self, allowed: bool) -> Self {
+        self.compression_allowed = allowed;
+        self
+    }
+
+    pub fn set_compression_allowed(&mut self, allowed: bool) {
+        self.compression_allowed = allowed;
     }
 
     fn read_length(src: &mut BytesMut) -> io::Result<Option<usize>> {
@@ -42,12 +53,16 @@ impl Encoder<Message> for NeoMessageCodec {
 
     fn encode(&mut self, item: Message, dst: &mut BytesMut) -> Result<(), Self::Error> {
         let mut payload = Vec::new();
-        item.neo_encode(&mut payload);
+        item.neo_encode_with_compression(&mut payload, self.compression_allowed);
         if payload.len() > PAYLOAD_MAX_SIZE {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "message too large",
             ));
+        }
+
+        if self.compression_allowed {
+            // compression handled inside message encoding flags; no-op for now
         }
 
         write_varint(dst, payload.len() as u64);

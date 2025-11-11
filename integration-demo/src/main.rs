@@ -6,8 +6,8 @@ use neo_base::{Hash256, NeoDecodeDerive, NeoEncodeDerive};
 use neo_crypto::ecc256::{PrivateKey, PublicKey};
 use neo_crypto::{Secp256r1Sign, Secp256r1Verify};
 use neo_p2p::message::{
-    AddressEntry, AddressPayload, Endpoint, InventoryItem, InventoryKind, InventoryPayload,
-    Message, NetworkAddress, PayloadWithData,
+    AddressEntry, AddressPayload, Capability, Endpoint, InventoryItem, InventoryKind,
+    InventoryPayload, Message, NetworkAddress, PayloadWithData,
 };
 use neo_p2p::{build_version_payload, NeoMessageCodec, Peer, PeerEvent};
 use neo_store::{BlockRecord, Blocks, Column, HeaderRecord, Headers, MemoryStore, StoreExt};
@@ -117,22 +117,21 @@ fn run_demo(config: DemoConfig) -> Result<()> {
     if config.handshake {
         let local_endpoint = Endpoint::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 20333);
         let remote_endpoint = Endpoint::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 20334);
+        let local_caps = vec![Capability::tcp_server(local_endpoint.port)];
+        let remote_caps = vec![Capability::tcp_server(remote_endpoint.port)];
         let local_version = build_version_payload(
             config.network_magic,
             0x03,
-            1,
-            remote_endpoint.clone(),
-            local_endpoint.clone(),
-            0,
+            "/integration-demo".to_string(),
+            local_caps,
         );
-        let remote_version = build_version_payload(
+        let mut remote_version = build_version_payload(
             config.network_magic,
             0x03,
-            1,
-            local_endpoint.clone(),
-            remote_endpoint.clone(),
-            0,
+            "/integration-demo".to_string(),
+            remote_caps,
         );
+        remote_version.nonce = remote_version.nonce.wrapping_add(1);
 
         let mut peer = Peer::outbound(remote_endpoint.clone(), local_version.clone());
         let mut codec = NeoMessageCodec::new();
@@ -148,7 +147,9 @@ fn run_demo(config: DemoConfig) -> Result<()> {
             }
         }
 
-        match peer.on_message(Message::Verack)? {
+        let event = peer.on_message(Message::Verack)?;
+        codec.set_compression_allowed(peer.compression_allowed());
+        match event {
             PeerEvent::HandshakeCompleted | PeerEvent::None => {
                 println!("handshake complete: {}", peer.is_ready());
             }

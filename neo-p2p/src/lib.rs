@@ -11,5 +11,5 @@ pub mod peer;
 
 pub use codec::NeoMessageCodec;
 pub use handshake::{build_version_payload, HandshakeError, HandshakeMachine, HandshakeRole};
-pub use message::{Message, VersionPayload};
+pub use message::{Capability, CapabilityType, Message, VersionPayload};
 pub use peer::{Peer, PeerEvent};
