@@ -7,11 +7,14 @@
 
 extern crate alloc;
 
+pub mod engine;
 pub mod error;
 pub mod manifest;
 pub mod native;
 pub mod runtime;
+pub mod script_decoder;
 
-pub use manifest::{ContractManifest, ContractMethod, ContractParameter, PermissionKind};
+pub use engine::{ApplicationEngine, EngineConfig};
+pub use manifest::{ContractManifest, ContractMethod, ContractParameter};
 pub use native::{NativeContract, NativeRegistry};
 pub use runtime::{ExecutionContext, GasMeter, InvocationResult};

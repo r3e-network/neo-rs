@@ -8,11 +8,14 @@ extern crate alloc;
 
 mod error;
 mod instruction;
+mod runtime;
+mod syscall;
 mod value;
 mod vm;
-mod syscall;
 
 pub use error::VmError;
 pub use instruction::Instruction;
+pub use runtime::{RuntimeHost, Trigger};
+pub use syscall::SyscallDispatcher;
 pub use value::VmValue;
 pub use vm::{NativeInvoker, VirtualMachine};

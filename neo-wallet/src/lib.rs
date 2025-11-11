@@ -19,6 +19,6 @@ pub use signer::{Signer, SignerScopes};
 
 #[cfg(feature = "std")]
 pub use keystore::{load_keystore, persist_keystore};
-pub use wallet::Wallet;
 #[cfg(feature = "std")]
 pub use wallet::WalletStorage;
+pub use wallet::{AccountDetails, Wallet};

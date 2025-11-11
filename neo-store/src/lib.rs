@@ -9,11 +9,13 @@
 mod columns;
 mod error;
 mod memory;
-#[cfg(feature = "sled")] mod sled_store;
+#[cfg(feature = "sled")]
+mod sled_store;
 mod traits;
 
 pub use columns::{BlockRecord, Blocks, HashKey, HeaderRecord, Headers, HeightKey};
 pub use error::StoreError;
 pub use memory::{MemorySnapshot, MemoryStore};
-#[cfg(feature = "sled")] pub use sled_store::SledStore;
+#[cfg(feature = "sled")]
+pub use sled_store::SledStore;
 pub use traits::{BatchOp, Column, ColumnId, Store, StoreExt, WriteBatch};

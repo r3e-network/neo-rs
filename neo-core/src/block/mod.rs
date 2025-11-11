@@ -3,5 +3,6 @@
 
 mod genesis;
 mod header;
+pub mod merkle;
 
 pub use header::*;

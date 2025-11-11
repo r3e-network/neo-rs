@@ -13,6 +13,9 @@ neo-consensus = { path = "../neo-consensus" }
 neo-p2p = { path = "../neo-p2p" }
 neo-wallet = { path = "../neo-wallet" }
 neo-runtime = { path = "../neo-runtime" }
+neo-core = { path = "../neo-core", features = ["std"] }
+neo-contract = { path = "../neo-contract" }
+neo-rpc = { path = "../neo-rpc" }
 anyhow = "1.0"
 axum = { version = "0.7", default-features = false, features = ["macros", "json", "tokio", "http1", "query"] }
 serde = { version = "1.0", features = ["derive"] }

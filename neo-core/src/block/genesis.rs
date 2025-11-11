@@ -11,6 +11,7 @@ use neo_crypto::ecc256::PublicKey;
 use crate::script::Script;
 use crate::tx::Role;
 
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct Genesis {
     // #[serde(rename = "Roles")]
@@ -20,6 +21,7 @@ pub struct Genesis {
     pub tx: GenesisTx,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GenesisTx {
     #[serde(rename = "Script")]

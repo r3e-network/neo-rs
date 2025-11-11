@@ -15,6 +15,7 @@ serde      = { version = "1", default-features = false, features = ["alloc", "de
 serde_json = { version = "1", default-features = false, features = ["alloc"] }
 
 hex = { version = "0.4", default-features = false, features = ["alloc"] }
+toml = { version = "0.8", default-features = false, features = ["parse"] }
 
 [features]
 default = []
