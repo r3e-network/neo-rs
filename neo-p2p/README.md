@@ -13,7 +13,9 @@ drive a handshake from higher-level networking code.
   - `getaddr` / `addr`
   - `inv` / `getdata`
   - `block` / `tx`
-- `NeoMessageCodec` (Tokio codec) for length-prefixed framing using the shared
+- `NeoMessageCodec` (Tokio codec) for Neo wire frames (network magic,
+  ASCII command padded to 12 bytes, payload length, checksum, and the inner
+  message with compression support). Configure it via `with_network_magic`.
   `neo-base` binary encoding.
 - `HandshakeMachine` and `Peer` helpers to manage the version/verack exchange
   and track readiness.
@@ -29,3 +31,17 @@ cargo test --manifest-path neo-p2p/Cargo.toml
 
 The integration demo (`integration-demo/`) uses these APIs to simulate a small
 handshake and inventory broadcast.
+
+## Examples
+
+An async handshake helper showcases how to connect to a Neo node, drive the
+version/verack exchange, request peer addresses, send a ping, optionally ask
+for headers, and (with `--request-data`) issue `getdata` when peers announce
+inventory:
+
+```bash
+cargo run --manifest-path neo-p2p/Cargo.toml --example handshake -- \
+  --target seed1.ngd.network:10333 --network 860833102 \
+  --request-headers --start-index 1000 \
+  --request-data --store-blocks --store-txs --dump-dir ./payloads
+```

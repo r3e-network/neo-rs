@@ -134,7 +134,7 @@ fn run_demo(config: DemoConfig) -> Result<()> {
         remote_version.nonce = remote_version.nonce.wrapping_add(1);
 
         let mut peer = Peer::outbound(remote_endpoint.clone(), local_version.clone());
-        let mut codec = NeoMessageCodec::new();
+        let mut codec = NeoMessageCodec::new().with_network_magic(config.network_magic);
         let mut buffer = BytesMut::new();
 
         for outbound in peer.bootstrap() {

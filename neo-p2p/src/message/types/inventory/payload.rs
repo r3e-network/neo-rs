@@ -4,6 +4,11 @@ use neo_base::encoding::{
 
 use super::{InventoryItem, MAX_ITEMS};
 
+#[cfg(test)]
+use super::InventoryKind;
+#[cfg(test)]
+use neo_base::hash::Hash256;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InventoryPayload {
     pub items: Vec<InventoryItem>,
@@ -43,5 +48,31 @@ impl NeoDecode for InventoryPayload {
             items.push(InventoryItem::neo_decode(reader)?);
         }
         Ok(Self { items })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use neo_base::encoding::{write_varint, SliceReader};
+
+    #[test]
+    fn inventory_payload_rejects_over_limit() {
+        let mut bytes = Vec::new();
+        let count = (MAX_ITEMS + 1) as u64;
+        write_varint(&mut bytes, count);
+        for i in 0..count as usize {
+            let mut hash_bytes = [0u8; 32];
+            hash_bytes[0] = (i & 0xFF) as u8;
+            let item = InventoryItem {
+                kind: InventoryKind::Block,
+                hash: Hash256::new(hash_bytes),
+            };
+            item.neo_encode(&mut bytes);
+        }
+
+        let mut reader = SliceReader::new(bytes.as_slice());
+        let err = InventoryPayload::neo_decode(&mut reader).unwrap_err();
+        assert!(matches!(err, DecodeError::LengthOutOfRange { .. }));
     }
 }

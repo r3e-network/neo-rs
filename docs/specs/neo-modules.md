@@ -140,53 +140,139 @@ This document captures the high–level intent and API surface for the standalon
 ## Integration sketch
 
 ```rust
+use std::{net::SocketAddr, time::Duration};
+
+use bytes::BytesMut;
 use neo_base::{Bytes, Hash256};
+use rand::random;
 use neo_p2p::{
-    build_version_payload, handshake::HandshakeRole, message::Endpoint, Message, NeoMessageCodec,
-    Peer, PeerEvent,
+    build_version_payload,
+    message::{
+        Capability, Endpoint, GetBlockByIndexPayload, InventoryItem, InventoryKind,
+        InventoryPayload, Message, PayloadWithData, PingPayload,
+    },
+    NeoMessageCodec, Peer, PeerEvent,
 };
-use neo_p2p::message::{Capability, InventoryItem, InventoryKind, InventoryPayload, PayloadWithData};
 use neo_store::{BlockRecord, Blocks, Column, HeaderRecord, Headers, MemoryStore, StoreExt};
+use tokio::net::TcpStream;
+use tokio::time::timeout;
+use tokio_util::codec::{Decoder, Encoder, Framed};
 
-// Start with a clean in-memory store and seed a header record.
-let store = MemoryStore::with_columns(&[Headers::ID, Blocks::ID]);
-let header = HeaderRecord {
-    hash: Hash256::new([0u8; 32]),
-    height: 0,
-    raw: Bytes::from(vec![0x01, 0x02, 0x03]),
-};
-store.put_encoded(Headers::ID, &header.key(), &header)?;
+async fn handshake_demo() -> anyhow::Result<()> {
+    // Seed in-memory storage with a header + block pair.
+    let store = MemoryStore::with_columns(&[Headers::ID, Blocks::ID]);
+    let header = HeaderRecord {
+        hash: Hash256::new([0u8; 32]),
+        height: 0,
+        raw: Bytes::from(vec![0x01, 0x02, 0x03]),
+    };
+    store.put_encoded(Headers::ID, &header.key(), &header)?;
+    let block = BlockRecord {
+        hash: header.hash,
+        raw: Bytes::from(vec![0x04, 0x05]),
+    };
 
-// Prepare a block payload ready to broadcast once peers request it.
-let block = BlockRecord {
-    hash: header.hash,
-    raw: Bytes::from(vec![0x04, 0x05]),
-};
+    // Drive the version/verack exchange.
+    let remote: SocketAddr = "127.0.0.1:20333".parse()?;
+    let endpoint = Endpoint::new(remote.ip(), remote.port());
+    let mut peer = Peer::outbound(
+        endpoint,
+        build_version_payload(
+            860_833_102,
+            0x03,
+            "/neo-rs:demo".to_string(),
+            vec![Capability::tcp_server(20333), Capability::full_node(header.height)],
+        ),
+    );
+    let stream = TcpStream::connect(remote).await?;
+    let mut framed = Framed::new(
+        stream,
+        NeoMessageCodec::new().with_network_magic(860_833_102),
+    );
+    for msg in peer.bootstrap() {
+        framed.send(msg).await?;
+    }
 
-// Drive the P2P handshake and publish inventory.
-let local_version = build_version_payload(
-    860_833_102,
-    0x03,
-    "/neo-rs:demo".to_string(),
-    vec![Capability::tcp_server(20333), Capability::full_node(header.height)],
-);
-let remote = Endpoint::new("127.0.0.1".parse()?, 20335);
-let mut peer = Peer::outbound(remote, local_version);
-for outbound in peer.bootstrap() {
-    send_message(outbound);
+    while let Some(frame) = timeout(Duration::from_secs(5), framed.next()).await? {
+        match peer.on_message(frame?)? {
+            PeerEvent::HandshakeCompleted => {
+                framed
+                    .codec_mut()
+                    .set_compression_allowed(peer.compression_allowed());
+                framed.send(Message::GetAddr).await?;
+                framed.send(Message::Ping(PingPayload {
+                    last_block_index: header.height,
+                    timestamp: current_timestamp(),
+                    nonce: random(),
+                })).await?;
+                break;
+            }
+            PeerEvent::Messages(responses) => {
+                for response in responses {
+                    framed.send(response).await?;
+                }
+            }
+            PeerEvent::None => {}
+        }
+    }
+
+    // Request headers and react to peer announcements.
+    let headers = Message::GetHeaders(GetBlockByIndexPayload {
+        start_index: header.height,
+        count: -1,
+    });
+    framed.send(headers).await?;
+    while let Some(frame) = timeout(Duration::from_secs(5), framed.next()).await? {
+        match frame? {
+            Message::Headers(payload) => {
+                println!("received {} headers", payload.headers.len());
+            }
+            Message::Inventory(payload) => {
+                println!("inventory items: {}", payload.items.len());
+                framed.send(Message::GetData(payload)).await?;
+            }
+            Message::Block(payload) => {
+                println!("received block {} ({} bytes)", payload.hash, payload.data.len());
+            }
+            Message::Transaction(payload) => {
+                println!(
+                    "received transaction {} ({} bytes)",
+                    payload.hash,
+                    payload.data.len()
+                );
+            }
+            Message::Ping(payload) => {
+                framed.send(Message::Pong(payload)).await?;
+            }
+            Message::Pong(_) => println!("received pong"),
+            _ => break,
+        }
+    }
+
+    // Encode/decode block payloads via the codec.
+    let mut codec = NeoMessageCodec::new()
+        .with_network_magic(860_833_102)
+        .with_compression_allowed(peer.compression_allowed());
+    let mut socket_buf = BytesMut::new();
+    let payload = PayloadWithData::new(block.hash, block.raw.clone());
+    codec.encode(Message::Transaction(payload), &mut socket_buf)?;
+    assert!(codec.decode(&mut socket_buf)?.is_some());
+    Ok(())
 }
 
-if let PeerEvent::HandshakeCompleted = peer.on_message(Message::Verack)? {
-    let inv = Message::Inventory(InventoryPayload::new(vec![InventoryItem {
-        kind: InventoryKind::Block,
-        hash: block.hash,
-    }]));
-    send_message(inv);
+fn current_timestamp() -> u32 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as u32
 }
+```
 
-// Encode/decode messages over the wire with the shared codec.
-let mut codec = NeoMessageCodec::new();
-codec.set_compression_allowed(peer.compression_allowed());
-let payload = PayloadWithData::new(block.hash, block.raw.clone());
-codec.encode(Message::Transaction(payload), &mut socket_buf)?;
+See `neo-p2p/examples/handshake.rs` for a runnable version:
+
+```bash
+cargo run --manifest-path neo-p2p/Cargo.toml --example handshake -- \
+  --target seed1.ngd.network:10333 --request-headers --start-index 1000 \
+  --request-data --store-blocks --store-txs --dump-dir ./payloads
 ```

@@ -4,8 +4,8 @@ mod payload;
 use frame::{decode_inner as frame_decode, encode_inner as frame_encode};
 use payload::{decode_payload as payload_decode, encode_payload as payload_encode};
 
-pub(super) fn encode_inner(message: &Message, writer: &mut impl NeoWrite) {
-    frame_encode(message, writer)
+pub(super) fn encode_inner(message: &Message, writer: &mut impl NeoWrite, allow_compression: bool) {
+    frame_encode(message, writer, allow_compression)
 }
 
 pub(super) fn decode_inner(reader: &mut impl NeoRead) -> Result<Message, DecodeError> {

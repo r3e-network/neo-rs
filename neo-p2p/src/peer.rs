@@ -65,12 +65,24 @@ impl Peer {
     pub fn last_message_since(&self) -> Option<Duration> {
         self.last_message.map(|inst| inst.elapsed())
     }
+
+    pub fn remote_version(&self) -> Option<&VersionPayload> {
+        self.handshake.remote_version()
+    }
+
+    pub fn compression_allowed(&self) -> bool {
+        if let Some(remote) = self.remote_version() {
+            remote.allows_compression() && self.handshake.local_version().allows_compression()
+        } else {
+            false
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::handshake::build_version_payload;
+    use crate::{handshake::build_version_payload, message::Capability};
     use std::net::{IpAddr, Ipv4Addr};
 
     fn endpoint(port: u16) -> Endpoint {
@@ -79,15 +91,24 @@ mod tests {
 
     #[test]
     fn peer_outbound_sequence() {
-        let local_version =
-            build_version_payload(860_833_102, 0x03, 1, endpoint(2000), endpoint(2001), 10);
+        let local_version = build_version_payload(
+            860_833_102,
+            0x03,
+            "/test-peer".to_string(),
+            vec![
+                Capability::tcp_server(2000),
+                Capability::full_node(10),
+                Capability::ArchivalNode,
+            ],
+        );
         let mut peer = Peer::outbound(endpoint(2002), local_version.clone());
         let bootstrap = peer.bootstrap();
         assert_eq!(bootstrap.len(), 1);
         assert!(matches!(&bootstrap[0], Message::Version(_)));
 
-        peer.on_message(Message::Version(local_version.clone()))
-            .unwrap();
+        let mut remote_version = local_version.clone();
+        remote_version.nonce = local_version.nonce.wrapping_add(1);
+        peer.on_message(Message::Version(remote_version)).unwrap();
         let event = peer.on_message(Message::Verack).unwrap();
         assert!(matches!(event, PeerEvent::HandshakeCompleted));
         assert!(peer.is_ready());

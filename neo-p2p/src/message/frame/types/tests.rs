@@ -1,6 +1,6 @@
 use super::Message;
 use crate::message::command::MessageCommand;
-use crate::message::types::VersionPayload;
+use crate::message::types::{Capability, VersionPayload};
 use crate::message::{AddressEntry, AddressPayload, Endpoint, NetworkAddress, RejectPayload};
 use neo_base::{Bytes, NeoDecode, NeoEncode, SliceReader};
 use std::net::{IpAddr, Ipv4Addr};
@@ -10,14 +10,10 @@ fn message_roundtrip() {
     let msg = Message::Version(VersionPayload::new(
         860_833_102,
         0x03,
-        1,
         1_700_000_000,
-        Endpoint::new(IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1)), 20333),
-        Endpoint::new(IpAddr::V4(Ipv4Addr::new(2, 2, 2, 2)), 30333),
         42,
         "/neo-rs:0.1.0".to_string(),
-        12345,
-        true,
+        vec![Capability::tcp_server(20333), Capability::full_node(12345)],
     ));
 
     let mut buf = Vec::new();
@@ -49,7 +45,7 @@ fn addr_payload_roundtrip() {
 
 #[test]
 fn compression_flag_roundtrip() {
-    let entries = (0..300)
+    let entries = (0..crate::message::MAX_ADDRESS_COUNT as u32)
         .map(|i| {
             AddressEntry::new(
                 i,

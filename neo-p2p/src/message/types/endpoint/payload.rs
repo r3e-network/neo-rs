@@ -6,6 +6,11 @@ use neo_base::encoding::{
 
 use super::{AddressEntry, MAX_ADDRESSES};
 
+#[cfg(test)]
+use super::{Endpoint, NetworkAddress};
+#[cfg(test)]
+use std::net::{IpAddr, Ipv4Addr};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AddressPayload {
     pub entries: Vec<AddressEntry>,
@@ -45,5 +50,28 @@ impl NeoDecode for AddressPayload {
             entries.push(AddressEntry::neo_decode(reader)?);
         }
         Ok(Self { entries })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use neo_base::encoding::{write_varint, SliceReader};
+
+    #[test]
+    fn address_payload_rejects_over_limit() {
+        let mut bytes = Vec::new();
+        let count = (MAX_ADDRESSES + 1) as u64;
+        write_varint(&mut bytes, count);
+        for idx in 0..count as usize {
+            let endpoint =
+                Endpoint::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 2000 + (idx as u16 % 100));
+            let entry = AddressEntry::new(idx as u32, NetworkAddress::new(1, endpoint));
+            entry.neo_encode(&mut bytes);
+        }
+
+        let mut reader = SliceReader::new(bytes.as_slice());
+        let err = AddressPayload::neo_decode(&mut reader).unwrap_err();
+        assert!(matches!(err, DecodeError::LengthOutOfRange { .. }));
     }
 }

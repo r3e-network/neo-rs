@@ -1,22 +1,18 @@
-use std::net::{IpAddr, Ipv4Addr};
-
 use crate::{
-    handshake::{build_version_payload, HandshakeMachine, HandshakeRole},
-    message::{Endpoint, Message, VersionPayload},
+    handshake::{build_version_payload, HandshakeError, HandshakeMachine, HandshakeRole},
+    message::{Capability, Message, VersionPayload},
 };
-
-fn sample_endpoint(port: u16) -> Endpoint {
-    Endpoint::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port)
-}
 
 fn sample_version(port: u16) -> VersionPayload {
     build_version_payload(
         0x74746e41,
         0x03,
-        1,
-        sample_endpoint(port),
-        sample_endpoint(port + 1),
-        100,
+        format!("/test-node:{port}"),
+        vec![
+            Capability::tcp_server(port),
+            Capability::full_node(100),
+            Capability::ArchivalNode,
+        ],
     )
 }
 
@@ -35,6 +31,28 @@ fn outbound_handshake_flow() {
     let replies = machine.on_message(&Message::Verack).unwrap();
     assert!(replies.is_empty());
     assert!(machine.is_complete());
+}
+
+#[test]
+fn rejects_network_mismatch() {
+    let mut machine = HandshakeMachine::new(HandshakeRole::Outbound, sample_version(9000));
+    let mut other = sample_version(9001);
+    other.network = 0xDEADBEEF;
+    let err = machine
+        .on_message(&Message::Version(other))
+        .expect_err("network mismatch error");
+    assert!(matches!(err, HandshakeError::NetworkMismatch { .. }));
+}
+
+#[test]
+fn rejects_self_connection() {
+    let version = sample_version(9100);
+    let other = version.clone();
+    let mut machine = HandshakeMachine::new(HandshakeRole::Outbound, version);
+    let err = machine
+        .on_message(&Message::Version(other))
+        .expect_err("self connection");
+    assert!(matches!(err, HandshakeError::SelfConnection));
 }
 
 #[test]

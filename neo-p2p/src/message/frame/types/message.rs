@@ -68,11 +68,19 @@ impl Message {
     pub fn command_name(&self) -> &'static str {
         self.command().as_str()
     }
+
+    pub fn neo_encode_with_compression<W: NeoWrite>(
+        &self,
+        writer: &mut W,
+        allow_compression: bool,
+    ) {
+        super::codec::encode_inner(self, writer, allow_compression);
+    }
 }
 
 impl NeoEncode for Message {
     fn neo_encode<W: NeoWrite>(&self, writer: &mut W) {
-        super::codec::encode_inner(self, writer);
+        self.neo_encode_with_compression(writer, true);
     }
 }
 

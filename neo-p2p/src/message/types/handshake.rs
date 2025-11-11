@@ -1,78 +1,116 @@
-use neo_base::encoding::{DecodeError, NeoDecode, NeoEncode, NeoRead, NeoWrite};
+mod capability;
 
-use super::Endpoint;
+pub use capability::{Capability, CapabilityType};
+
+use std::collections::BTreeSet;
+
+use neo_base::encoding::{
+    read_varint, write_varint, DecodeError, NeoDecode, NeoEncode, NeoRead, NeoWrite,
+};
+
+pub const MAX_CAPABILITIES: u64 = 32;
+pub const MAX_USER_AGENT_LEN: usize = 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VersionPayload {
     pub network: u32,
-    pub protocol: u32,
-    pub services: u64,
-    pub timestamp: i64,
-    pub receiver: Endpoint,
-    pub sender: Endpoint,
-    pub nonce: u64,
+    pub version: u32,
+    pub timestamp: u32,
+    pub nonce: u32,
     pub user_agent: String,
-    pub start_height: u32,
-    pub relay: bool,
+    pub capabilities: Vec<Capability>,
 }
 
 impl VersionPayload {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         network: u32,
-        protocol: u32,
-        services: u64,
-        timestamp: i64,
-        receiver: Endpoint,
-        sender: Endpoint,
-        nonce: u64,
+        version: u32,
+        timestamp: u32,
+        nonce: u32,
         user_agent: String,
-        start_height: u32,
-        relay: bool,
+        capabilities: Vec<Capability>,
     ) -> Self {
+        debug_assert!(
+            user_agent.len() <= MAX_USER_AGENT_LEN,
+            "user agent exceeds {} bytes",
+            MAX_USER_AGENT_LEN
+        );
+        debug_assert!(
+            capabilities.len() as u64 <= MAX_CAPABILITIES,
+            "too many capabilities (max {})",
+            MAX_CAPABILITIES
+        );
+        debug_assert!(
+            !has_duplicate_known_capabilities(&capabilities),
+            "duplicate capability type"
+        );
         Self {
             network,
-            protocol,
-            services,
+            version,
             timestamp,
-            receiver,
-            sender,
             nonce,
             user_agent,
-            start_height,
-            relay,
+            capabilities,
         }
+    }
+
+    pub fn allows_compression(&self) -> bool {
+        !self
+            .capabilities
+            .iter()
+            .any(|cap| matches!(cap, Capability::DisableCompression))
     }
 }
 
 impl NeoEncode for VersionPayload {
     fn neo_encode<W: NeoWrite>(&self, writer: &mut W) {
         self.network.neo_encode(writer);
-        self.protocol.neo_encode(writer);
-        self.services.neo_encode(writer);
+        self.version.neo_encode(writer);
         self.timestamp.neo_encode(writer);
-        self.receiver.neo_encode(writer);
-        self.sender.neo_encode(writer);
         self.nonce.neo_encode(writer);
         self.user_agent.neo_encode(writer);
-        self.start_height.neo_encode(writer);
-        self.relay.neo_encode(writer);
+        write_varint(writer, self.capabilities.len() as u64);
+        for capability in &self.capabilities {
+            capability.neo_encode(writer);
+        }
     }
 }
 
 impl NeoDecode for VersionPayload {
     fn neo_decode<R: NeoRead>(reader: &mut R) -> Result<Self, DecodeError> {
+        let network = u32::neo_decode(reader)?;
+        let version = u32::neo_decode(reader)?;
+        let timestamp = u32::neo_decode(reader)?;
+        let nonce = u32::neo_decode(reader)?;
+        let user_agent = String::neo_decode(reader)?;
+        if user_agent.len() > MAX_USER_AGENT_LEN {
+            return Err(DecodeError::LengthOutOfRange {
+                len: user_agent.len() as u64,
+                max: MAX_USER_AGENT_LEN as u64,
+            });
+        }
+        let capability_count = read_varint(reader)?;
+        if capability_count > MAX_CAPABILITIES {
+            return Err(DecodeError::LengthOutOfRange {
+                len: capability_count,
+                max: MAX_CAPABILITIES,
+            });
+        }
+        let mut capabilities = Vec::with_capacity(capability_count as usize);
+        for _ in 0..capability_count {
+            capabilities.push(Capability::neo_decode(reader)?);
+        }
+        if has_duplicate_known_capabilities(&capabilities) {
+            return Err(DecodeError::InvalidValue("duplicate capability type"));
+        }
+
         Ok(Self {
-            network: u32::neo_decode(reader)?,
-            protocol: u32::neo_decode(reader)?,
-            services: u64::neo_decode(reader)?,
-            timestamp: i64::neo_decode(reader)?,
-            receiver: Endpoint::neo_decode(reader)?,
-            sender: Endpoint::neo_decode(reader)?,
-            nonce: u64::neo_decode(reader)?,
-            user_agent: String::neo_decode(reader)?,
-            start_height: u32::neo_decode(reader)?,
-            relay: bool::neo_decode(reader)?,
+            network,
+            version,
+            timestamp,
+            nonce,
+            user_agent,
+            capabilities,
         })
     }
 }
@@ -100,4 +138,18 @@ impl NeoDecode for PingPayload {
             nonce: u32::neo_decode(reader)?,
         })
     }
+}
+
+fn has_duplicate_known_capabilities(capabilities: &[Capability]) -> bool {
+    let mut seen = BTreeSet::new();
+    for capability in capabilities {
+        let ty = capability.capability_type();
+        if matches!(ty, CapabilityType::Unknown(_) | CapabilityType::Extension0) {
+            continue;
+        }
+        if !seen.insert(ty) {
+            return true;
+        }
+    }
+    false
 }

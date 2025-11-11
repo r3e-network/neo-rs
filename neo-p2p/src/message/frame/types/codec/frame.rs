@@ -11,12 +11,15 @@ use super::super::{
 };
 use super::{decode_payload, encode_payload};
 
-pub(super) fn encode_inner(message: &Message, writer: &mut impl NeoWrite) {
+pub(super) fn encode_inner(message: &Message, writer: &mut impl NeoWrite, allow_compression: bool) {
     let mut payload = Vec::new();
     encode_payload(message, &mut payload);
 
     let mut flags = MessageFlags::NONE;
-    if message.command().allows_compression() && payload.len() >= COMPRESSION_MIN_SIZE {
+    if allow_compression
+        && message.command().allows_compression()
+        && payload.len() >= COMPRESSION_MIN_SIZE
+    {
         if let Ok(compressed) = try_compress(&payload) {
             if compressed.len() + COMPRESSION_THRESHOLD < payload.len() {
                 payload = compressed;

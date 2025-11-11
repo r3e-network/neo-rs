@@ -72,6 +72,36 @@ impl MessageCommand {
                 | MessageCommand::FilterAdd
         )
     }
+
+    pub fn from_name(name: &str) -> Result<Self, DecodeError> {
+        use MessageCommand::*;
+        Ok(match name {
+            "version" => Version,
+            "verack" => Verack,
+            "getaddr" => GetAddr,
+            "addr" => Addr,
+            "ping" => Ping,
+            "pong" => Pong,
+            "getheaders" => GetHeaders,
+            "headers" => Headers,
+            "getblocks" => GetBlocks,
+            "mempool" => Mempool,
+            "inv" => Inv,
+            "getdata" => GetData,
+            "getblockbyindex" => GetBlockByIndex,
+            "notfound" => NotFound,
+            "tx" => Transaction,
+            "block" => Block,
+            "extensible" => Extensible,
+            "reject" => Reject,
+            "filterload" => FilterLoad,
+            "filteradd" => FilterAdd,
+            "filterclear" => FilterClear,
+            "merkleblock" => MerkleBlock,
+            "alert" => Alert,
+            _ => return Err(DecodeError::InvalidValue("message command name")),
+        })
+    }
 }
 
 impl TryFrom<u8> for MessageCommand {
