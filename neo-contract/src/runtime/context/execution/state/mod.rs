@@ -10,7 +10,10 @@ use neo_store::Store;
 use neo_vm::Trigger;
 
 use super::super::storage::StorageContext;
-use crate::runtime::{gas::GasMeter, value::Value};
+use crate::{
+    nef::CallFlags,
+    runtime::{gas::GasMeter, value::Value},
+};
 
 pub struct ExecutionContext<'a> {
     pub(super) store: &'a mut dyn Store,
@@ -28,6 +31,7 @@ pub struct ExecutionContext<'a> {
     pub(super) calling_script_hash: Option<Hash160>,
     pub(super) current_contract_groups: Vec<PublicKey>,
     pub(super) calling_contract_groups: Vec<PublicKey>,
+    pub(super) current_call_flags: CallFlags,
     pub(super) trigger: Trigger,
     pub(super) platform: String,
 }

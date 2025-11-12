@@ -91,6 +91,12 @@ The Rust `neo-contract` crate offers a trimmed-down manifest (name, groups, meth
 3. Runtime enforcement (call flags, storage, events).
 4. Contract management flow integrated with runtime.
 
+## Status Snapshot
+
+- ✅ Manifest/ABI/NEF validation mirrors C# (checksum + manifest rules).
+- ✅ Runtime host enforces storage context access and call flags for storage/notify syscalls; iterator handles feed VM `System.Storage.Find/Next`.
+- ⏳ `System.Storage.Find` still lacks `DeserializeValues`/`PickField*` semantics, and call flags are not yet threaded through contract invocation/deploy flows.
+
 ## Next Steps
 
 - Align manifest changes with wallet signer scopes (see wallet parity doc).

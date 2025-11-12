@@ -2,7 +2,7 @@ use neo_base::hash::Hash160;
 use neo_store::ColumnId;
 use neo_vm::{RuntimeHost, Trigger, VmError, VmValue};
 
-use crate::runtime::value::Value;
+use crate::{nef::CallFlags, runtime::value::Value};
 
 use super::ExecutionContext;
 
@@ -12,6 +12,8 @@ impl RuntimeHost for ExecutionContext<'_> {
     }
 
     fn notify(&mut self, event: String, payload: Vec<VmValue>) -> Result<(), VmError> {
+        self.require_call_flag(CallFlags::ALLOW_NOTIFY)
+            .map_err(|_| VmError::NativeFailure("notify requires AllowNotify"))?;
         let converted = payload.into_iter().map(Value::from).collect();
         self.push_notification(event, converted);
         Ok(())

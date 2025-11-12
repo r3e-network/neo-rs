@@ -4,7 +4,7 @@ use neo_base::hash::Hash160;
 use neo_store::Store;
 use neo_vm::Trigger;
 
-use crate::runtime::gas::GasMeter;
+use crate::{nef::CallFlags, runtime::gas::GasMeter};
 
 use super::ExecutionContext;
 
@@ -26,6 +26,7 @@ impl<'a> ExecutionContext<'a> {
             calling_script_hash: None,
             current_contract_groups: Vec::new(),
             calling_contract_groups: Vec::new(),
+            current_call_flags: CallFlags::ALL,
             trigger: Trigger::Application,
             platform: "NEO".to_string(),
         }
@@ -41,5 +42,13 @@ impl<'a> ExecutionContext<'a> {
         ctx.timestamp = timestamp;
         ctx.invocation_counter = 0;
         ctx
+    }
+
+    pub fn set_call_flags(&mut self, flags: CallFlags) {
+        self.current_call_flags = flags;
+    }
+
+    pub fn call_flags(&self) -> CallFlags {
+        self.current_call_flags
     }
 }
