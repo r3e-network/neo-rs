@@ -72,4 +72,29 @@ impl Store for MemoryStore {
 
         Ok(())
     }
+
+    fn scan_prefix(
+        &self,
+        column: ColumnId,
+        prefix: &[u8],
+    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>, StoreError> {
+        if let Some(col) = self.columns.get(&column) {
+            let mut entries: Vec<(Vec<u8>, Vec<u8>)> = col
+                .value()
+                .iter()
+                .filter_map(|kv| {
+                    let key = kv.key();
+                    if key.starts_with(prefix) {
+                        Some((key.clone(), kv.value().clone()))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            entries.sort_by(|a, b| a.0.cmp(&b.0));
+            Ok(entries)
+        } else {
+            Ok(Vec::new())
+        }
+    }
 }

@@ -78,4 +78,21 @@ impl Store for SledStore {
             .map_err(|err| StoreError::backend(err.to_string()))?;
         Ok(())
     }
+
+    fn scan_prefix(
+        &self,
+        column: ColumnId,
+        prefix: &[u8],
+    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>, StoreError> {
+        let tree = self.column_tree(column)?;
+        let mut entries = Vec::new();
+        for item in tree
+            .scan_prefix(prefix)
+            .map_err(|err| StoreError::backend(err.to_string()))?
+        {
+            let (key, value) = item.map_err(|err| StoreError::backend(err.to_string()))?;
+            entries.push((key.as_ref().to_vec(), value.as_ref().to_vec()));
+        }
+        Ok(entries)
+    }
 }

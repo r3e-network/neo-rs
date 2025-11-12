@@ -12,7 +12,7 @@ use neo_vm::Trigger;
 use super::super::storage::StorageContext;
 use crate::{
     nef::CallFlags,
-    runtime::{gas::GasMeter, value::Value},
+    runtime::{gas::GasMeter, storage::StorageIterator, value::Value},
 };
 
 pub struct ExecutionContext<'a> {
@@ -34,6 +34,7 @@ pub struct ExecutionContext<'a> {
     pub(super) current_call_flags: CallFlags,
     pub(super) trigger: Trigger,
     pub(super) platform: String,
+    pub(super) storage_iterators: Vec<Option<StorageIterator>>,
 }
 
 pub use builder::ExecutionContextBuilder;

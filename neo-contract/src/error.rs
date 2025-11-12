@@ -29,6 +29,9 @@ pub enum ContractError {
     #[error("storage error: {0}")]
     Storage(&'static str),
 
+    #[error("invalid storage find options: {0}")]
+    InvalidFindOptions(String),
+
     #[error("script returned fault: {0:?}")]
     Fault(Bytes),
 }

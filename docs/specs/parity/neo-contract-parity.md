@@ -94,8 +94,8 @@ The Rust `neo-contract` crate offers a trimmed-down manifest (name, groups, meth
 ## Status Snapshot
 
 - ✅ Manifest/ABI/NEF validation mirrors C# (checksum + manifest rules).
-- ✅ Runtime host enforces storage context access and call flags for storage/notify syscalls; iterator handles feed VM `System.Storage.Find/Next`.
-- ⏳ `System.Storage.Find` still lacks `DeserializeValues`/`PickField*` semantics, and call flags are not yet threaded through contract invocation/deploy flows.
+- ✅ Runtime host enforces storage context access and call flags for storage/notify syscalls; ExecutionContext now exposes storage iterator handles (KeysOnly/ValuesOnly/RemovePrefix/Backwards).
+- ⏳ `System.Storage.Find` still lacks `DeserializeValues`/`PickField*` semantics, isn’t wired into VM syscalls yet, and call flags are not yet threaded through contract invocation/deploy flows.
 
 ## Next Steps
 

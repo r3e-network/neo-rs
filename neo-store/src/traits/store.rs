@@ -13,6 +13,12 @@ pub trait Store: Send + Sync {
     fn delete(&self, column: ColumnId, key: &[u8]) -> Result<(), StoreError>;
 
     fn write_batch(&self, batch: WriteBatch) -> Result<(), StoreError>;
+
+    fn scan_prefix(
+        &self,
+        column: ColumnId,
+        prefix: &[u8],
+    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>, StoreError>;
 }
 
 /// Convenience helpers for working with strongly typed keys and values.

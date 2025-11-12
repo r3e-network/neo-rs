@@ -29,6 +29,7 @@ impl<'a> ExecutionContext<'a> {
             current_call_flags: CallFlags::ALL,
             trigger: Trigger::Application,
             platform: "NEO".to_string(),
+            storage_iterators: Vec::new(),
         }
     }
 
