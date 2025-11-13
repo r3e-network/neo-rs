@@ -1,4 +1,5 @@
 mod builder;
+mod call;
 mod view;
 
 use alloc::{string::String, vec::Vec};
@@ -38,4 +39,5 @@ pub struct ExecutionContext<'a> {
 }
 
 pub use builder::ExecutionContextBuilder;
+pub(super) use call::ExecutionContextCallExt;
 pub use view::ExecutionContextView;

@@ -4,7 +4,7 @@ use neo_vm::{RuntimeHost, Trigger, VmError, VmValue};
 
 use crate::{nef::CallFlags, runtime::value::Value};
 
-use super::ExecutionContext;
+use super::{ExecutionContext, ExecutionContextCallExt};
 
 impl RuntimeHost for ExecutionContext<'_> {
     fn log(&mut self, message: String) {
@@ -95,13 +95,11 @@ impl RuntimeHost for ExecutionContext<'_> {
 
     fn call_contract(
         &mut self,
-        _hash: &Hash160,
-        _method: &str,
-        _call_flags: u8,
-        _args: Vec<VmValue>,
+        hash: &Hash160,
+        method: &str,
+        call_flags: u8,
+        args: Vec<VmValue>,
     ) -> Result<VmValue, VmError> {
-        Err(VmError::NativeFailure(
-            "contract calls are not supported yet",
-        ))
+        self.handle_contract_call(hash, method, call_flags, args)
     }
 }
