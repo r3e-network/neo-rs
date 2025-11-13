@@ -1,4 +1,4 @@
-use alloc::string::String;
+use alloc::{string::String, vec::Vec};
 
 use neo_base::Bytes;
 
@@ -9,6 +9,7 @@ pub enum VmValue {
     Int(i64),
     Bytes(Bytes),
     String(String),
+    Array(Vec<VmValue>),
 }
 
 impl VmValue {
@@ -36,6 +37,13 @@ impl VmValue {
     pub fn as_str(&self) -> Option<&str> {
         match self {
             VmValue::String(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    pub fn as_array(&self) -> Option<&[VmValue]> {
+        match self {
+            VmValue::Array(values) => Some(values.as_slice()),
             _ => None,
         }
     }

@@ -1,6 +1,3 @@
-use alloc::vec::Vec;
-use core::convert::TryFrom;
-
 use neo_base::Bytes;
 use neo_store::ColumnId;
 
@@ -94,7 +91,12 @@ fn storage_next(host: &mut dyn RuntimeHost, args: &[VmValue]) -> Result<VmValue,
         .map_err(|_| VmError::NativeFailure("storage next"))?
     {
         None => Ok(VmValue::Null),
-        Some((key, value)) => Ok(encode_iterator_entry(key, value)?),
+        Some((key, value)) => Ok(match (key, value) {
+            (Some(k), Some(v)) => VmValue::Array(vec![VmValue::Bytes(k), VmValue::Bytes(v)]),
+            (Some(k), None) => VmValue::Bytes(k),
+            (None, Some(v)) => VmValue::Bytes(v),
+            (None, None) => VmValue::Null,
+        }),
     }
 }
 
@@ -115,35 +117,6 @@ fn parse_context(value: Option<&VmValue>) -> Result<ColumnId, VmError> {
             _ => Err(VmError::InvalidType),
         }
     }
-}
-
-fn encode_iterator_entry(key: Option<Bytes>, value: Option<Bytes>) -> Result<VmValue, VmError> {
-    if key.is_none() && value.is_none() {
-        return Ok(VmValue::Null);
-    }
-    let mut buf = Vec::new();
-    let mut mask = 0u8;
-    if key.is_some() {
-        mask |= 0b01;
-    }
-    if value.is_some() {
-        mask |= 0b10;
-    }
-    buf.push(mask);
-    if let Some(bytes) = key {
-        append_length_prefixed(&mut buf, bytes)?;
-    }
-    if let Some(bytes) = value {
-        append_length_prefixed(&mut buf, bytes)?;
-    }
-    Ok(VmValue::Bytes(Bytes::from(buf)))
-}
-
-fn append_length_prefixed(buf: &mut Vec<u8>, data: Bytes) -> Result<(), VmError> {
-    let len = u32::try_from(data.len()).map_err(|_| VmError::InvalidType)?;
-    buf.extend_from_slice(&len.to_le_bytes());
-    buf.extend_from_slice(data.as_slice());
-    Ok(())
 }
 
 #[cfg(test)]
@@ -169,16 +142,14 @@ mod tests {
         assert_eq!(handle, VmValue::Int(0));
 
         let first = storage_next(&mut host, &[VmValue::Int(0)]).unwrap();
-        assert_eq!(
-            decode_iterator_bytes(match first {
-                VmValue::Bytes(bytes) => bytes,
-                other => panic!("expected bytes, got {other:?}"),
-            }),
-            (
-                Some(b"app:a".as_slice().to_vec()),
-                Some(b"A".as_slice().to_vec())
-            )
-        );
+        match first {
+            VmValue::Array(items) => {
+                assert_eq!(items.len(), 2);
+                assert_eq!(items[0], VmValue::Bytes(Bytes::from(&b"app:a"[..])));
+                assert_eq!(items[1], VmValue::Bytes(Bytes::from(&b"A"[..])));
+            }
+            other => panic!("expected array result, got {other:?}"),
+        }
     }
 
     #[test]
@@ -198,27 +169,6 @@ mod tests {
             storage_next(&mut host, &[VmValue::Int(0)]).unwrap(),
             VmValue::Null
         );
-    }
-
-    fn decode_iterator_bytes(bytes: Bytes) -> (Option<Vec<u8>>, Option<Vec<u8>>) {
-        let data = bytes.as_slice();
-        let mask = data[0];
-        let mut offset = 1;
-        let mut read_value = |present: bool| -> Option<Vec<u8>> {
-            if !present {
-                return None;
-            }
-            let mut len_buf = [0u8; 4];
-            len_buf.copy_from_slice(&data[offset..offset + 4]);
-            offset += 4;
-            let len = u32::from_le_bytes(len_buf) as usize;
-            let value = data[offset..offset + len].to_vec();
-            offset += len;
-            Some(value)
-        };
-        let key = read_value(mask & 0b01 != 0);
-        let value = read_value(mask & 0b10 != 0);
-        (key, value)
     }
 
     struct TestHost {

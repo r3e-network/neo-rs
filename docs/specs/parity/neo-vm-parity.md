@@ -97,8 +97,8 @@ The current `neo-vm` crate models only a minimal subset of the Neo N3 Virtual Ma
 
 ## Status Snapshot
 
-- ✅ `System.Storage.Find/Next` now dispatches through the VM’s syscall layer into the host with deterministic iterator ordering; unit tests cover the handle lifecycle and tuple encoding used until StackItems arrive.
-- ⚠️ Results are still returned as encoded byte tuples because the StackItem hierarchy/`VmValue::Array` support is not in place yet; iterator value deserialization is pending.
+- ✅ `System.Storage.Find/Next` now dispatches through the VM’s syscall layer into the host with deterministic iterator ordering, and iterator values are surfaced as `VmValue::Array` pairs so contracts can manipulate them without custom decoding.
+- ⚠️ Full StackItem hierarchy (struct/map/iterator) plus BinarySerializer-backed deserialization is still pending; iterator values are limited to byte-array pairs for now.
 
 ## Follow-up
 

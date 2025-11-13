@@ -56,6 +56,7 @@ impl<'a> VirtualMachine<'a> {
             VmValue::Bytes(bytes) => Ok(bytes.iter().any(|b| *b != 0)),
             VmValue::String(s) => Ok(!s.is_empty()),
             VmValue::Null => Ok(false),
+            VmValue::Array(_) => Err(VmError::InvalidType),
         }
     }
 
@@ -71,6 +72,7 @@ impl<'a> VirtualMachine<'a> {
                 buf[..bytes.len()].copy_from_slice(bytes.as_slice());
                 Ok(i64::from_le_bytes(buf))
             }
+            VmValue::Array(_) => Err(VmError::InvalidType),
             _ => Err(VmError::InvalidType),
         }
     }
@@ -82,6 +84,7 @@ impl<'a> VirtualMachine<'a> {
             VmValue::Bool(v) => Ok(Bytes::from(vec![if v { 1 } else { 0 }])),
             VmValue::Int(v) => Ok(Bytes::from(v.to_le_bytes().to_vec())),
             VmValue::Null => Ok(Bytes::default()),
+            VmValue::Array(_) => Err(VmError::InvalidType),
         }
     }
 
@@ -94,6 +97,7 @@ impl<'a> VirtualMachine<'a> {
             VmValue::Bool(v) => Ok(if v { "true" } else { "false" }.to_string()),
             VmValue::Int(v) => Ok(v.to_string()),
             VmValue::Null => Ok(String::new()),
+            VmValue::Array(_) => Err(VmError::InvalidType),
         }
     }
 }

@@ -15,6 +15,7 @@ pub enum Value {
     Int(i64),
     Bytes(Bytes),
     String(String),
+    Sequence(Vec<Value>),
 }
 
 impl Value {
@@ -25,6 +26,7 @@ impl Value {
             Value::Int(_) => ParameterKind::Integer,
             Value::Bytes(_) => ParameterKind::ByteArray,
             Value::String(_) => ParameterKind::String,
+            Value::Sequence(_) => ParameterKind::Array,
         }
     }
 
@@ -39,6 +41,10 @@ impl Value {
                 "value": hex::encode(bytes.as_slice())
             }),
             Value::String(value) => json!({ "type": "String", "value": value }),
+            Value::Sequence(values) => json!({
+                "type": "Array",
+                "value": values.iter().map(|v| v.to_stack_json()).collect::<Vec<_>>()
+            }),
         }
     }
 }
@@ -51,6 +57,9 @@ impl From<VmValue> for Value {
             VmValue::Int(v) => Value::Int(v),
             VmValue::Bytes(bytes) => Value::Bytes(bytes),
             VmValue::String(s) => Value::String(s),
+            VmValue::Array(values) => {
+                Value::Sequence(values.into_iter().map(Value::from).collect())
+            }
         }
     }
 }
