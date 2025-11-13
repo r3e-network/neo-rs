@@ -1,6 +1,9 @@
 use alloc::vec::Vec;
 
-use neo_base::hash::Hash160;
+use neo_base::{
+    hash::Hash160,
+    Bytes,
+};
 use neo_vm::{VmError, VmValue};
 
 use crate::{nef::CallFlags, runtime::contract_store, state::ContractState};
@@ -27,6 +30,9 @@ impl<'a> ExecutionContext<'a> {
             .find_method(method, args.len())
             .ok_or(VmError::NativeFailure("method not found"))?;
 
+        let script_bytes = Bytes::from(contract.nef.script.clone());
+        let _guard = ContractCallGuard::enter(self, &contract, requested, script_bytes);
+
         Err(VmError::NativeFailure(
             "contract calls are not supported yet",
         ))
@@ -38,5 +44,47 @@ impl<'a> ExecutionContext<'a> {
             Ok(None) => Err(VmError::NativeFailure("contract not found")),
             Err(_) => Err(VmError::NativeFailure("contract lookup failed")),
         }
+    }
+}
+
+struct ContractCallGuard<'a> {
+    ctx: &'a mut ExecutionContext<'a>,
+    prev_script: Bytes,
+    prev_calling_hash: Option<Hash160>,
+    prev_entry_hash: Option<Hash160>,
+    prev_flags: CallFlags,
+}
+
+impl<'a> ContractCallGuard<'a> {
+    fn enter(
+        ctx: &'a mut ExecutionContext<'a>,
+        contract: &ContractState,
+        requested: CallFlags,
+        script: Bytes,
+    ) -> Self {
+        let guard = Self {
+            prev_script: ctx.script().clone(),
+            prev_calling_hash: ctx.calling_script_hash(),
+            prev_entry_hash: ctx.entry_script_hash(),
+            prev_flags: ctx.call_flags(),
+            ctx,
+        };
+
+        let previous_current = guard.ctx.current_script_hash();
+        guard.ctx.set_calling_script_hash(previous_current);
+        guard.ctx.set_script(script);
+        guard.ctx.set_current_script_hash(contract.hash);
+        guard.ctx.set_call_flags(requested);
+
+        guard
+    }
+}
+
+impl<'a> Drop for ContractCallGuard<'a> {
+    fn drop(&mut self) {
+        self.ctx.set_script(self.prev_script.clone());
+        self.ctx.set_calling_script_hash(self.prev_calling_hash);
+        self.ctx.entry_script_hash = self.prev_entry_hash;
+        self.ctx.set_call_flags(self.prev_flags);
     }
 }
