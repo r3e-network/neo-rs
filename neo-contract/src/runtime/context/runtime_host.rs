@@ -88,4 +88,8 @@ impl RuntimeHost for ExecutionContext<'_> {
     fn trigger(&self) -> Trigger {
         self.trigger()
     }
+
+    fn call_flags(&self) -> u8 {
+        self.call_flags().bits()
+    }
 }

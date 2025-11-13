@@ -1,3 +1,4 @@
+mod contract;
 mod dispatch;
 mod runtime;
 mod storage;

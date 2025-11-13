@@ -94,7 +94,7 @@ The Rust `neo-contract` crate offers a trimmed-down manifest (name, groups, meth
 ## Status Snapshot
 
 - ✅ Manifest/ABI/NEF validation mirrors C# (checksum + manifest rules).
-- ✅ Runtime host enforces storage context access and call flags for storage/notify syscalls; ExecutionContext now exposes storage iterator handles (KeysOnly/ValuesOnly/RemovePrefix/Backwards), `System.Storage.Find/Next` is routed through the VM syscall path with deterministic iterator ordering, and iterator results honor `DeserializeValues`/`PickField*` by decoding BinarySerializer payloads into VM stack items.
+- ✅ Runtime host enforces storage context access and call flags for storage/notify syscalls; ExecutionContext now exposes storage iterator handles (KeysOnly/ValuesOnly/RemovePrefix/Backwards), `System.Storage.Find/Next` is routed through the VM syscall path with deterministic iterator ordering, iterator results honor `DeserializeValues`/`PickField*` by decoding BinarySerializer payloads into VM stack items, and `System.Contract.GetCallFlags` surfaces the current flag set.
 - ⏳ Call flags are not yet threaded through contract invocation/deploy flows, and deserialize support is limited to the currently supported StackItem types (maps/interop handles still pending).
 
 ## Next Steps

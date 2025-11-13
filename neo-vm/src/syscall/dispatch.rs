@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 
 use crate::{error::VmError, runtime::RuntimeHost, value::VmValue};
 
-use super::{runtime, storage};
+use super::{contract, runtime, storage};
 
 pub struct SyscallDispatcher<'a> {
     host: &'a mut dyn RuntimeHost,
@@ -36,6 +36,7 @@ impl<'a> SyscallDispatcher<'a> {
         };
         runtime::register_runtime(&mut dispatcher);
         storage::register_storage(&mut dispatcher);
+        contract::register_contract(&mut dispatcher);
         dispatcher
     }
 

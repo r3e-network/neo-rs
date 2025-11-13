@@ -43,4 +43,5 @@ pub trait RuntimeHost {
     fn platform(&self) -> &str;
     fn trigger(&self) -> Trigger;
     fn check_witness(&self, target: &Hash160) -> bool;
+    fn call_flags(&self) -> u8;
 }

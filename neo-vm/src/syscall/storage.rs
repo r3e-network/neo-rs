@@ -286,5 +286,9 @@ mod tests {
         fn check_witness(&self, _target: &Hash160) -> bool {
             false
         }
+
+        fn call_flags(&self) -> u8 {
+            0
+        }
     }
 }
