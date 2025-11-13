@@ -2,15 +2,13 @@ use alloc::vec::Vec;
 
 use neo_base::Bytes;
 use neo_store::ColumnId;
+use neo_vm::{StackItem, VmValue};
 
 use super::ExecutionContext;
 use crate::{
     error::ContractError,
     nef::CallFlags,
-    runtime::storage::{
-        StorageFindItem, StorageFindItemKind, StorageFindOptions, StorageFindOptionsError,
-        StorageIterator,
-    },
+    runtime::storage::{StorageFindOptions, StorageFindOptionsError, StorageIterator},
 };
 
 impl<'a> ExecutionContext<'a> {
@@ -61,7 +59,7 @@ impl<'a> ExecutionContext<'a> {
         column: ColumnId,
         prefix: &[u8],
         options: StorageFindOptions,
-    ) -> Result<Vec<StorageFindItem>, ContractError> {
+    ) -> Result<Vec<VmValue>, ContractError> {
         self.require_call_flag(CallFlags::READ_STATES)?;
         Self::validate_options(options)?;
 
@@ -79,15 +77,16 @@ impl<'a> ExecutionContext<'a> {
             if options.contains(StorageFindOptions::REMOVE_PREFIX) && key.starts_with(prefix) {
                 key.drain(..prefix.len());
             }
-
-            let item = if options.contains(StorageFindOptions::KEYS_ONLY) {
-                StorageFindItem::key(Bytes::from(key))
+            let key_bytes = Bytes::from(key);
+            let value_vm = self.decode_storage_value(value, options)?;
+            let entry = if options.contains(StorageFindOptions::KEYS_ONLY) {
+                VmValue::Bytes(key_bytes)
             } else if options.contains(StorageFindOptions::VALUES_ONLY) {
-                StorageFindItem::value(Bytes::from(value))
+                value_vm
             } else {
-                StorageFindItem::key_value(Bytes::from(key), Bytes::from(value))
+                VmValue::Array(vec![VmValue::Bytes(key_bytes), value_vm])
             };
-            items.push(item);
+            items.push(entry);
         }
         Ok(items)
     }
@@ -102,10 +101,18 @@ impl<'a> ExecutionContext<'a> {
         Ok(self.insert_storage_iterator(StorageIterator::new(items)))
     }
 
-    pub fn storage_iterator_next(
+    pub fn create_storage_iterator_from_bits(
         &mut self,
-        handle: u32,
-    ) -> Result<Option<StorageFindItem>, ContractError> {
+        column: ColumnId,
+        prefix: &[u8],
+        options_bits: u8,
+    ) -> Result<u32, ContractError> {
+        let options = StorageFindOptions::from_bits(options_bits)
+            .ok_or_else(|| ContractError::InvalidFindOptions("unknown flags".into()))?;
+        self.create_storage_iterator(column, prefix, options)
+    }
+
+    pub fn storage_iterator_next(&mut self, handle: u32) -> Result<Option<VmValue>, ContractError> {
         if let Some(entry) = self.storage_iterators.get_mut(handle as usize) {
             if let Some(iterator) = entry {
                 if let Some(item) = iterator.next() {
@@ -154,5 +161,40 @@ impl<'a> ExecutionContext<'a> {
                 ContractError::InvalidFindOptions("PickField requires DeserializeValues".into())
             }
         })
+    }
+
+    fn decode_storage_value(
+        &self,
+        value: Vec<u8>,
+        options: StorageFindOptions,
+    ) -> Result<VmValue, ContractError> {
+        if options.contains(StorageFindOptions::DESERIALIZE_VALUES) {
+            let mut item = StackItem::deserialize(&value).map_err(|_| {
+                ContractError::InvalidFindOptions("failed to deserialize stack item".into())
+            })?;
+            if options.contains(StorageFindOptions::PICK_FIELD0) {
+                item = Self::pick_field(item, 0)?;
+            } else if options.contains(StorageFindOptions::PICK_FIELD1) {
+                item = Self::pick_field(item, 1)?;
+            }
+            VmValue::try_from(item).map_err(|_| {
+                ContractError::InvalidFindOptions("deserialized value not representable".into())
+            })
+        } else {
+            Ok(VmValue::Bytes(Bytes::from(value)))
+        }
+    }
+
+    fn pick_field(item: StackItem, index: usize) -> Result<StackItem, ContractError> {
+        match item {
+            StackItem::Array(values) | StackItem::Struct(values) => {
+                values.get(index).cloned().ok_or_else(|| {
+                    ContractError::InvalidFindOptions("PickField index out of bounds".into())
+                })
+            }
+            _ => Err(ContractError::InvalidFindOptions(
+                "PickField requires array or struct values".into(),
+            )),
+        }
     }
 }

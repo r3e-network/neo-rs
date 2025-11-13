@@ -34,6 +34,21 @@ impl RuntimeHost for ExecutionContext<'_> {
             .map_err(|_| VmError::NativeFailure("storage delete"))
     }
 
+    fn find_storage_iterator(
+        &mut self,
+        column: ColumnId,
+        prefix: &[u8],
+        options: u8,
+    ) -> Result<u32, VmError> {
+        self.create_storage_iterator_from_bits(column, prefix, options)
+            .map_err(|_| VmError::NativeFailure("storage find"))
+    }
+
+    fn storage_iterator_next(&mut self, handle: u32) -> Result<Option<VmValue>, VmError> {
+        ExecutionContext::storage_iterator_next(self, handle)
+            .map_err(|_| VmError::NativeFailure("storage next"))
+    }
+
     fn timestamp(&self) -> i64 {
         self.timestamp()
     }

@@ -1,8 +1,12 @@
 use alloc::vec::Vec;
 
-use neo_base::Bytes;
+use neo_base::{Bytes, DecodeError, NeoRead, SliceReader};
 
 use crate::{error::VmError, value::VmValue};
+
+const MAX_STACK_ITEMS: usize = 2048;
+const MAX_ITEM_SIZE: u32 = u16::MAX as u32 * 2;
+const MAX_INTEGER_SIZE: usize = 32;
 
 /// Minimal StackItem model used to bridge VM values with higher-level
 /// serialization (BinarySerializer) logic.
@@ -14,6 +18,32 @@ pub enum StackItem {
     ByteString(Bytes),
     Array(Vec<StackItem>),
     Struct(Vec<StackItem>),
+}
+
+#[repr(u8)]
+enum StackItemType {
+    Any = 0x00,
+    Boolean = 0x20,
+    Integer = 0x21,
+    ByteString = 0x28,
+    Array = 0x40,
+    Struct = 0x41,
+}
+
+impl TryFrom<u8> for StackItemType {
+    type Error = VmError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0x00 => Ok(StackItemType::Any),
+            0x20 => Ok(StackItemType::Boolean),
+            0x21 => Ok(StackItemType::Integer),
+            0x28 => Ok(StackItemType::ByteString),
+            0x40 => Ok(StackItemType::Array),
+            0x41 => Ok(StackItemType::Struct),
+            _ => Err(VmError::InvalidType),
+        }
+    }
 }
 
 impl StackItem {
@@ -78,6 +108,62 @@ impl StackItem {
             }
         }
     }
+
+    pub fn deserialize(data: &[u8]) -> Result<Self, VmError> {
+        let mut reader = SliceReader::new(data);
+        let mut remaining = MAX_STACK_ITEMS;
+        let item = Self::deserialize_with_limits(&mut reader, &mut remaining)?;
+        if reader.remaining() != 0 {
+            return Err(VmError::InvalidType);
+        }
+        Ok(item)
+    }
+
+    fn deserialize_with_limits(
+        reader: &mut SliceReader<'_>,
+        remaining: &mut usize,
+    ) -> Result<Self, VmError> {
+        if *remaining == 0 {
+            return Err(VmError::InvalidType);
+        }
+        *remaining -= 1;
+        let ty = StackItemType::try_from(read_byte(reader)?)?;
+        match ty {
+            StackItemType::Any => Ok(StackItem::Null),
+            StackItemType::Boolean => Ok(StackItem::Boolean(read_bool(reader)?)),
+            StackItemType::Integer => {
+                let bytes = reader
+                    .read_var_bytes(MAX_INTEGER_SIZE as u64)
+                    .map_err(map_decode_error)?;
+                Ok(StackItem::Integer(decode_integer(&bytes)?))
+            }
+            StackItemType::ByteString => Ok(StackItem::ByteString(Bytes::from(
+                reader
+                    .read_var_bytes(MAX_ITEM_SIZE as u64)
+                    .map_err(map_decode_error)?,
+            ))),
+            StackItemType::Array | StackItemType::Struct => {
+                let count = reader
+                    .read_varint()
+                    .map_err(map_decode_error)?
+                    .try_into()
+                    .map_err(|_| VmError::InvalidType)?;
+                let count: usize = count;
+                if count > *remaining {
+                    return Err(VmError::InvalidType);
+                }
+                let mut values = Vec::with_capacity(count);
+                for _ in 0..count {
+                    values.push(Self::deserialize_with_limits(reader, remaining)?);
+                }
+                Ok(if matches!(ty, StackItemType::Struct) {
+                    StackItem::Struct(values)
+                } else {
+                    StackItem::Array(values)
+                })
+            }
+        }
+    }
 }
 
 impl TryFrom<VmValue> for StackItem {
@@ -94,6 +180,35 @@ impl TryFrom<StackItem> for VmValue {
     fn try_from(item: StackItem) -> Result<Self, Self::Error> {
         item.try_into_vm_value()
     }
+}
+
+fn read_byte(reader: &mut SliceReader<'_>) -> Result<u8, VmError> {
+    reader.read_u8().map_err(map_decode_error)
+}
+
+fn read_bool(reader: &mut SliceReader<'_>) -> Result<bool, VmError> {
+    match read_byte(reader)? {
+        0 => Ok(false),
+        1 => Ok(true),
+        _ => Err(VmError::InvalidType),
+    }
+}
+
+fn decode_integer(bytes: &[u8]) -> Result<i128, VmError> {
+    if bytes.len() > 16 {
+        return Err(VmError::InvalidType);
+    }
+    if bytes.is_empty() {
+        return Ok(0);
+    }
+    let sign_extend = bytes.last().copied().unwrap_or(0) & 0x80 != 0;
+    let mut buf = if sign_extend { [0xFFu8; 16] } else { [0u8; 16] };
+    buf[..bytes.len()].copy_from_slice(bytes);
+    Ok(i128::from_le_bytes(buf))
+}
+
+fn map_decode_error(_err: DecodeError) -> VmError {
+    VmError::InvalidType
 }
 
 #[cfg(test)]

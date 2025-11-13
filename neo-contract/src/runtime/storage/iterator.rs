@@ -1,19 +1,19 @@
 use alloc::vec::Vec;
 
-use super::StorageFindItem;
+use neo_vm::VmValue;
 
 #[derive(Debug, Default)]
 pub struct StorageIterator {
-    items: Vec<StorageFindItem>,
+    items: Vec<VmValue>,
     index: usize,
 }
 
 impl StorageIterator {
-    pub fn new(items: Vec<StorageFindItem>) -> Self {
+    pub fn new(items: Vec<VmValue>) -> Self {
         Self { items, index: 0 }
     }
 
-    pub fn next(&mut self) -> Option<StorageFindItem> {
+    pub fn next(&mut self) -> Option<VmValue> {
         if self.index >= self.items.len() {
             None
         } else {

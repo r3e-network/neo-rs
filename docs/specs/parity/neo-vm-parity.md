@@ -97,9 +97,9 @@ The current `neo-vm` crate models only a minimal subset of the Neo N3 Virtual Ma
 
 ## Status Snapshot
 
-- ✅ `System.Storage.Find/Next` now dispatches through the VM’s syscall layer into the host with deterministic iterator ordering, and iterator values are surfaced as `VmValue::Array` pairs so contracts can manipulate them without custom decoding.
-- 🟧 StackItem scaffolding (Null/Boolean/Integer/ByteString/Array/Struct) exists with conversions to/from `VmValue`, paving the way for BinarySerializer and richer iterator results.
-- ⚠️ Full StackItem hierarchy (struct/map/iterator) plus BinarySerializer-backed deserialization is still pending; iterator values are limited to byte-array pairs for now.
+- ✅ `System.Storage.Find/Next` now dispatches through the VM’s syscall layer into the host with deterministic iterator ordering; iterator values are surfaced as `VmValue::Array` pairs and ExecutionContext can decode BinarySerializer payloads using the new StackItem deserializer.
+- 🟧 StackItem scaffolding (Null/Boolean/Integer/ByteString/Array/Struct) with conversions to/from `VmValue` and a limited binary deserializer exist, but maps/buffers/interop handles are still unsupported.
+- ⚠️ Full StackItem hierarchy (map/iterator) plus gas accounting, TRY/CATCH, and iterator registries remain unimplemented; iterator values are limited to the types supported by the new deserializer.
 
 ## Follow-up
 

@@ -86,18 +86,9 @@ fn storage_next(host: &mut dyn RuntimeHost, args: &[VmValue]) -> Result<VmValue,
     if handle < 0 {
         return Err(VmError::InvalidType);
     }
-    match host
-        .storage_iterator_next(handle as u32)
+    host.storage_iterator_next(handle as u32)
         .map_err(|_| VmError::NativeFailure("storage next"))?
-    {
-        None => Ok(VmValue::Null),
-        Some((key, value)) => Ok(match (key, value) {
-            (Some(k), Some(v)) => VmValue::Array(vec![VmValue::Bytes(k), VmValue::Bytes(v)]),
-            (Some(k), None) => VmValue::Bytes(k),
-            (None, Some(v)) => VmValue::Bytes(v),
-            (None, None) => VmValue::Null,
-        }),
-    }
+        .map_or(Ok(VmValue::Null), Ok)
 }
 
 fn parse_context(value: Option<&VmValue>) -> Result<ColumnId, VmError> {
@@ -173,7 +164,7 @@ mod tests {
 
     struct TestHost {
         data: BTreeMap<&'static str, Vec<(Vec<u8>, Vec<u8>)>>,
-        iterators: Vec<Option<VecDeque<(Option<Bytes>, Option<Bytes>)>>>,
+        iterators: Vec<Option<VecDeque<VmValue>>>,
     }
 
     impl TestHost {
@@ -229,10 +220,10 @@ mod tests {
             if let Some(entries) = self.data.get(column.name()) {
                 for (key, value) in entries {
                     if key.starts_with(prefix) {
-                        items.push_back((
-                            Some(Bytes::from(key.clone())),
-                            Some(Bytes::from(value.clone())),
-                        ));
+                        items.push_back(VmValue::Array(vec![
+                            VmValue::Bytes(Bytes::from(key.clone())),
+                            VmValue::Bytes(Bytes::from(value.clone())),
+                        ]));
                     }
                 }
             }
@@ -241,10 +232,7 @@ mod tests {
             Ok(handle)
         }
 
-        fn storage_iterator_next(
-            &mut self,
-            handle: u32,
-        ) -> Result<Option<(Option<Bytes>, Option<Bytes>)>, VmError> {
+        fn storage_iterator_next(&mut self, handle: u32) -> Result<Option<VmValue>, VmError> {
             if let Some(entry) = self.iterators.get_mut(handle as usize) {
                 if let Some(queue) = entry {
                     if let Some(item) = queue.pop_front() {
