@@ -95,6 +95,11 @@ The current `neo-vm` crate models only a minimal subset of the Neo N3 Virtual Ma
 - Automated parity tests comparing Rust outputs to C# golden vectors.
 - Documentation of any intentional deviations (e.g., idiomatic error handling or ownership semantics).
 
+## Status Snapshot
+
+- ✅ `System.Storage.Find/Next` now dispatches through the VM’s syscall layer into the host with deterministic iterator ordering; unit tests cover the handle lifecycle and tuple encoding used until StackItems arrive.
+- ⚠️ Results are still returned as encoded byte tuples because the StackItem hierarchy/`VmValue::Array` support is not in place yet; iterator value deserialization is pending.
+
 ## Follow-up
 
 This checklist is part of the broader parity plan. Similar documents are required for consensus, runtime, networking, wallet, contract, and crypto crates. Once specs are agreed, feature development can proceed in tracked milestones. 

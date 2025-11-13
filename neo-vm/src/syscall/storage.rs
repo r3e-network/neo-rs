@@ -1,3 +1,6 @@
+use alloc::vec::Vec;
+use core::convert::TryFrom;
+
 use neo_base::Bytes;
 use neo_store::ColumnId;
 
@@ -10,6 +13,8 @@ pub(super) fn register_storage(dispatcher: &mut SyscallDispatcher) {
     dispatcher.register("System.Storage.Get", storage_get);
     dispatcher.register("System.Storage.Put", storage_put);
     dispatcher.register("System.Storage.Delete", storage_delete);
+    dispatcher.register("System.Storage.Find", storage_find);
+    dispatcher.register("System.Storage.Next", storage_next);
 }
 
 fn storage_get_context(host: &mut dyn RuntimeHost, _args: &[VmValue]) -> Result<VmValue, VmError> {
@@ -57,6 +62,42 @@ fn storage_delete(host: &mut dyn RuntimeHost, args: &[VmValue]) -> Result<VmValu
     Ok(VmValue::Null)
 }
 
+fn storage_find(host: &mut dyn RuntimeHost, args: &[VmValue]) -> Result<VmValue, VmError> {
+    let column = parse_context(args.get(0))?;
+    let prefix = args
+        .get(1)
+        .and_then(|value| value.as_bytes())
+        .ok_or(VmError::InvalidType)?;
+    let options = args
+        .get(2)
+        .and_then(|value| value.as_int())
+        .ok_or(VmError::InvalidType)?;
+    if !(0..=u8::MAX as i64).contains(&options) {
+        return Err(VmError::InvalidType);
+    }
+    let handle = host
+        .find_storage_iterator(column, prefix.as_slice(), options as u8)
+        .map_err(|_| VmError::NativeFailure("storage find"))?;
+    Ok(VmValue::Int(handle as i64))
+}
+
+fn storage_next(host: &mut dyn RuntimeHost, args: &[VmValue]) -> Result<VmValue, VmError> {
+    let handle = args
+        .get(0)
+        .and_then(|value| value.as_int())
+        .ok_or(VmError::InvalidType)?;
+    if handle < 0 {
+        return Err(VmError::InvalidType);
+    }
+    match host
+        .storage_iterator_next(handle as u32)
+        .map_err(|_| VmError::NativeFailure("storage next"))?
+    {
+        None => Ok(VmValue::Null),
+        Some((key, value)) => Ok(encode_iterator_entry(key, value)?),
+    }
+}
+
 fn parse_context(value: Option<&VmValue>) -> Result<ColumnId, VmError> {
     let bytes = value
         .and_then(|val| val.as_bytes())
@@ -72,6 +113,240 @@ fn parse_context(value: Option<&VmValue>) -> Result<ColumnId, VmError> {
             b"contract" => Ok(ColumnId::new("contract")),
             b"storage" => Ok(ColumnId::new("storage")),
             _ => Err(VmError::InvalidType),
+        }
+    }
+}
+
+fn encode_iterator_entry(key: Option<Bytes>, value: Option<Bytes>) -> Result<VmValue, VmError> {
+    if key.is_none() && value.is_none() {
+        return Ok(VmValue::Null);
+    }
+    let mut buf = Vec::new();
+    let mut mask = 0u8;
+    if key.is_some() {
+        mask |= 0b01;
+    }
+    if value.is_some() {
+        mask |= 0b10;
+    }
+    buf.push(mask);
+    if let Some(bytes) = key {
+        append_length_prefixed(&mut buf, bytes)?;
+    }
+    if let Some(bytes) = value {
+        append_length_prefixed(&mut buf, bytes)?;
+    }
+    Ok(VmValue::Bytes(Bytes::from(buf)))
+}
+
+fn append_length_prefixed(buf: &mut Vec<u8>, data: Bytes) -> Result<(), VmError> {
+    let len = u32::try_from(data.len()).map_err(|_| VmError::InvalidType)?;
+    buf.extend_from_slice(&len.to_le_bytes());
+    buf.extend_from_slice(data.as_slice());
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::collections::{BTreeMap, VecDeque};
+
+    use super::*;
+    use crate::{runtime::Trigger, value::VmValue};
+    use neo_base::hash::Hash160;
+
+    #[test]
+    fn storage_find_and_next_roundtrip() {
+        let mut host = TestHost::with_entries(vec![
+            (b"app:a".to_vec(), b"A".to_vec()),
+            (b"app:b".to_vec(), b"B".to_vec()),
+        ]);
+        let args = vec![
+            VmValue::Bytes(Bytes::from(b"contract".as_slice())),
+            VmValue::Bytes(Bytes::from(b"app:".as_slice())),
+            VmValue::Int(0),
+        ];
+        let handle = storage_find(&mut host, &args).unwrap();
+        assert_eq!(handle, VmValue::Int(0));
+
+        let first = storage_next(&mut host, &[VmValue::Int(0)]).unwrap();
+        assert_eq!(
+            decode_iterator_bytes(match first {
+                VmValue::Bytes(bytes) => bytes,
+                other => panic!("expected bytes, got {other:?}"),
+            }),
+            (
+                Some(b"app:a".as_slice().to_vec()),
+                Some(b"A".as_slice().to_vec())
+            )
+        );
+    }
+
+    #[test]
+    fn storage_next_returns_null_when_exhausted() {
+        let mut host = TestHost::with_entries(vec![(b"app:a".to_vec(), b"A".to_vec())]);
+        storage_find(
+            &mut host,
+            &[
+                VmValue::Bytes(Bytes::from(b"contract".as_slice())),
+                VmValue::Bytes(Bytes::from(b"app:".as_slice())),
+                VmValue::Int(0),
+            ],
+        )
+        .unwrap();
+        let _ = storage_next(&mut host, &[VmValue::Int(0)]).unwrap();
+        assert_eq!(
+            storage_next(&mut host, &[VmValue::Int(0)]).unwrap(),
+            VmValue::Null
+        );
+    }
+
+    fn decode_iterator_bytes(bytes: Bytes) -> (Option<Vec<u8>>, Option<Vec<u8>>) {
+        let data = bytes.as_slice();
+        let mask = data[0];
+        let mut offset = 1;
+        let mut read_value = |present: bool| -> Option<Vec<u8>> {
+            if !present {
+                return None;
+            }
+            let mut len_buf = [0u8; 4];
+            len_buf.copy_from_slice(&data[offset..offset + 4]);
+            offset += 4;
+            let len = u32::from_le_bytes(len_buf) as usize;
+            let value = data[offset..offset + len].to_vec();
+            offset += len;
+            Some(value)
+        };
+        let key = read_value(mask & 0b01 != 0);
+        let value = read_value(mask & 0b10 != 0);
+        (key, value)
+    }
+
+    struct TestHost {
+        data: BTreeMap<&'static str, Vec<(Vec<u8>, Vec<u8>)>>,
+        iterators: Vec<Option<VecDeque<(Option<Bytes>, Option<Bytes>)>>>,
+    }
+
+    impl TestHost {
+        fn with_entries(entries: Vec<(Vec<u8>, Vec<u8>)>) -> Self {
+            let mut data = BTreeMap::new();
+            data.insert("contract", entries);
+            Self {
+                data,
+                iterators: Vec::new(),
+            }
+        }
+    }
+
+    impl RuntimeHost for TestHost {
+        fn log(&mut self, _message: String) {}
+
+        fn notify(&mut self, _event: String, _payload: Vec<VmValue>) -> Result<(), VmError> {
+            Ok(())
+        }
+
+        fn load_storage(
+            &mut self,
+            column: ColumnId,
+            key: &[u8],
+        ) -> Result<Option<Vec<u8>>, VmError> {
+            Ok(self
+                .data
+                .get(column.name())
+                .and_then(|entries| entries.iter().find(|(k, _)| k.as_slice() == key))
+                .map(|(_, v)| v.clone()))
+        }
+
+        fn put_storage(
+            &mut self,
+            _column: ColumnId,
+            _key: &[u8],
+            _value: &[u8],
+        ) -> Result<(), VmError> {
+            Ok(())
+        }
+
+        fn delete_storage(&mut self, _column: ColumnId, _key: &[u8]) -> Result<(), VmError> {
+            Ok(())
+        }
+
+        fn find_storage_iterator(
+            &mut self,
+            column: ColumnId,
+            prefix: &[u8],
+            _options: u8,
+        ) -> Result<u32, VmError> {
+            let mut items = VecDeque::new();
+            if let Some(entries) = self.data.get(column.name()) {
+                for (key, value) in entries {
+                    if key.starts_with(prefix) {
+                        items.push_back((
+                            Some(Bytes::from(key.clone())),
+                            Some(Bytes::from(value.clone())),
+                        ));
+                    }
+                }
+            }
+            let handle = self.iterators.len() as u32;
+            self.iterators.push(Some(items));
+            Ok(handle)
+        }
+
+        fn storage_iterator_next(
+            &mut self,
+            handle: u32,
+        ) -> Result<Option<(Option<Bytes>, Option<Bytes>)>, VmError> {
+            if let Some(entry) = self.iterators.get_mut(handle as usize) {
+                if let Some(queue) = entry {
+                    if let Some(item) = queue.pop_front() {
+                        if queue.is_empty() {
+                            *entry = None;
+                        }
+                        return Ok(Some(item));
+                    }
+                    *entry = None;
+                }
+            }
+            Ok(None)
+        }
+
+        fn timestamp(&self) -> i64 {
+            0
+        }
+
+        fn invocation_counter(&self) -> u32 {
+            0
+        }
+
+        fn storage_context_bytes(&self) -> Bytes {
+            Bytes::from(b"contract".as_slice())
+        }
+
+        fn script(&self) -> Bytes {
+            Bytes::default()
+        }
+
+        fn script_hash(&self) -> Option<Hash160> {
+            None
+        }
+
+        fn calling_script_hash(&self) -> Option<Hash160> {
+            None
+        }
+
+        fn entry_script_hash(&self) -> Option<Hash160> {
+            None
+        }
+
+        fn platform(&self) -> &str {
+            "NEO"
+        }
+
+        fn trigger(&self) -> Trigger {
+            Trigger::Application
+        }
+
+        fn check_witness(&self, _target: &Hash160) -> bool {
+            false
         }
     }
 }
