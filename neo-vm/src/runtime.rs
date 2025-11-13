@@ -44,4 +44,11 @@ pub trait RuntimeHost {
     fn trigger(&self) -> Trigger;
     fn check_witness(&self, target: &Hash160) -> bool;
     fn call_flags(&self) -> u8;
+    fn call_contract(
+        &mut self,
+        hash: &Hash160,
+        method: &str,
+        call_flags: u8,
+        args: Vec<VmValue>,
+    ) -> Result<VmValue, VmError>;
 }

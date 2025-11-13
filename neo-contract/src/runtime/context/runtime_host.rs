@@ -92,4 +92,16 @@ impl RuntimeHost for ExecutionContext<'_> {
     fn call_flags(&self) -> u8 {
         self.call_flags().bits()
     }
+
+    fn call_contract(
+        &mut self,
+        _hash: &Hash160,
+        _method: &str,
+        _call_flags: u8,
+        _args: Vec<VmValue>,
+    ) -> Result<VmValue, VmError> {
+        Err(VmError::NativeFailure(
+            "contract calls are not supported yet",
+        ))
+    }
 }
