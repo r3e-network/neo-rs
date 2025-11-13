@@ -1,4 +1,5 @@
 mod context;
+pub(crate) mod contract_store;
 pub mod gas;
 pub mod value;
 
