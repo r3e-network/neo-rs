@@ -10,10 +10,10 @@
 // modifications are permitted.
 
 use neo_core::{
-    Block, BlockHeader, Contract, ECPoint, KeyPair, NativeContract, ProtocolSettings, Transaction,
-    UInt160, UInt256, Wallet, Witness,
+    Block, BlockHeader, Contract, ECPoint, KeyPair, NativeContract, ProtocolSettings,
+    Transaction, UInt160, UInt256, Wallet, Witness, WitnessCondition,
 };
-use neo_json::{JObject, JToken};
+use neo_json::{JArray, JObject, JToken};
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
@@ -383,20 +383,56 @@ fn rule_to_json(rule: &neo_core::WitnessRule) -> JObject {
     json
 }
 
-fn condition_to_json(condition: &neo_core::WitnessCondition) -> JObject {
-    // TODO: Implement witness condition to JSON conversion
-    JObject::new()
+fn condition_to_json(condition: &WitnessCondition) -> JObject {
+    use neo_core::WitnessCondition as WC;
+
+    let mut json = JObject::new();
+    json.insert(
+        "type".to_string(),
+        JToken::String(condition.condition_type().to_string()),
+    );
+
+    match condition {
+        WC::Boolean { value } => {
+            json.insert("expression".to_string(), JToken::Boolean(*value));
+        }
+        WC::Not { condition } => {
+            json.insert(
+                "expression".to_string(),
+                JToken::Object(condition_to_json(condition)),
+            );
+        }
+        WC::And { conditions } | WC::Or { conditions } => {
+            let expressions = conditions
+                .iter()
+                .map(|c| JToken::Object(condition_to_json(c)))
+                .collect::<Vec<_>>();
+            json.insert(
+                "expressions".to_string(),
+                JToken::Array(JArray::from(expressions)),
+            );
+        }
+        WC::ScriptHash { hash } | WC::CalledByContract { hash } => {
+            json.insert("hash".to_string(), JToken::String(hash.to_string()));
+        }
+        WC::Group { group } | WC::CalledByGroup { group } => {
+            json.insert("group".to_string(), JToken::String(hex::encode(group)));
+        }
+        WC::CalledByEntry => { /* no additional properties */ }
+    }
+
+    json
 }
 
 /// Creates a witness from JSON (invocation/verification scripts encoded as base64).
 pub fn witness_from_json(json: &JObject) -> Result<Witness, String> {
     let invocation = json
         .get("invocation")
-        .and_then(|v| v.as_string())
+        .map(|v| v.as_string())
         .ok_or("Missing 'invocation' field")?;
     let verification = json
         .get("verification")
-        .and_then(|v| v.as_string())
+        .map(|v| v.as_string())
         .ok_or("Missing 'verification' field")?;
 
     let invocation_bytes =

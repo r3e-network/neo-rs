@@ -21,8 +21,8 @@ fn strip_0x(value: &str) -> &str {
     value.strip_prefix("0x").unwrap_or(value)
 }
 
-fn encode_with_0x(bytes: &[u8]) -> String {
-    format!("0x{}", hex_encode(bytes))
+fn encode_hex(bytes: &[u8]) -> String {
+    hex_encode(bytes)
 }
 
 fn decode_hex(value: &str) -> Result<Vec<u8>, String> {
@@ -255,7 +255,7 @@ impl WitnessCondition {
         match self {
             WitnessCondition::Boolean { value } => json!({
                 "type": "Boolean",
-                "value": value,
+                "expression": value,
             }),
             WitnessCondition::Not { condition } => json!({
                 "type": "Not",
@@ -275,7 +275,7 @@ impl WitnessCondition {
             }),
             WitnessCondition::Group { group } => json!({
                 "type": "Group",
-                "group": encode_with_0x(group),
+                "group": encode_hex(group),
             }),
             WitnessCondition::CalledByEntry => json!({
                 "type": "CalledByEntry",
@@ -286,7 +286,7 @@ impl WitnessCondition {
             }),
             WitnessCondition::CalledByGroup { group } => json!({
                 "type": "CalledByGroup",
-                "group": encode_with_0x(group),
+                "group": encode_hex(group),
             }),
         }
     }
@@ -299,9 +299,10 @@ impl WitnessCondition {
         match condition_type {
             "Boolean" => {
                 let value = json
-                    .get("value")
+                    .get("expression")
                     .and_then(Value::as_bool)
-                    .ok_or_else(|| "Boolean condition missing value".to_string())?;
+                    .or_else(|| json.get("value").and_then(Value::as_bool))
+                    .ok_or_else(|| "Boolean condition missing expression".to_string())?;
                 Ok(WitnessCondition::Boolean { value })
             }
             "Not" => {
@@ -705,5 +706,32 @@ mod tests {
         let rule = WitnessRule::new(WitnessRuleAction::Allow, condition);
         assert_eq!(rule.action, WitnessRuleAction::Allow);
         assert!(rule.is_valid());
+    }
+
+    #[test]
+    fn boolean_condition_json_matches_csharp_structure() {
+        let condition = WitnessCondition::Boolean { value: true };
+        let json = condition.to_json();
+        assert_eq!(json["type"], "Boolean");
+        assert_eq!(json["expression"], true);
+        assert_eq!(
+            WitnessCondition::from_json(&json).unwrap(),
+            WitnessCondition::Boolean { value: true }
+        );
+    }
+
+    #[test]
+    fn group_condition_json_roundtrip_without_prefix() {
+        let bytes = vec![
+            0x02, 0x7b, 0xcd, 0x7c, 0xee, 0xab, 0x4e, 0x13, 0x44, 0xb4, 0xe5, 0x5c, 0x99, 0x95,
+            0x08, 0x71, 0xcc, 0xb8, 0xaa, 0xde, 0x64, 0xd5, 0x00, 0x93, 0xbe, 0xd8, 0x77, 0x26,
+            0x5b, 0x3f, 0x6f, 0x7a, 0x6b,
+        ];
+        let condition = WitnessCondition::Group { group: bytes.clone() };
+        let json = condition.to_json();
+        assert_eq!(json["type"], "Group");
+        assert_eq!(json["group"], hex_encode(&bytes));
+        let decoded = WitnessCondition::from_json(&json).unwrap();
+        assert_eq!(decoded, condition);
     }
 }

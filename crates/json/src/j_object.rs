@@ -43,6 +43,11 @@ impl JObject {
         self.properties.insert(name, value);
     }
 
+    /// Convenience helper mirroring the older API that accepted a `JToken` directly.
+    pub fn insert(&mut self, name: String, value: JToken) {
+        self.set(name, Some(value));
+    }
+
     /// Number of stored properties.
     pub fn len(&self) -> usize {
         self.properties.count()
