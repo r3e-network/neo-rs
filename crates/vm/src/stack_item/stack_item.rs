@@ -244,23 +244,7 @@ impl StackItem {
         match self {
             StackItem::Null => Ok(vec![]),
             StackItem::Boolean(b) => Ok(vec![if *b { 1 } else { 0 }]),
-            StackItem::Integer(i) => {
-                if i.is_zero() {
-                    return Ok(vec![]);
-                }
-
-                let (sign, mut bytes) = i.to_bytes_le();
-
-                // Handle negative numbers using two's complement
-                if matches!(sign, num_bigint::Sign::Minus) {
-                    // Set the sign bit in the most significant byte
-                    if let Some(last) = bytes.last_mut() {
-                        *last |= 0x80;
-                    }
-                }
-
-                Ok(bytes)
-            }
+            StackItem::Integer(i) => Ok(normalize_bigint_bytes(i)),
             StackItem::ByteString(b) => Ok(b.clone()),
             StackItem::Buffer(b) => Ok(b.data().to_vec()),
             _ => Err(VmError::invalid_type_simple("Cannot convert to ByteArray")),
@@ -562,6 +546,26 @@ impl StackItem {
 
         result
     }
+}
+
+fn normalize_bigint_bytes(value: &BigInt) -> Vec<u8> {
+    if value.is_zero() {
+        return vec![];
+    }
+
+    let mut bytes = value.to_signed_bytes_le();
+    let negative = value.sign() == num_bigint::Sign::Minus;
+
+    if let Some(last) = bytes.last() {
+        let sign_bit_set = last & 0x80 != 0;
+        if !negative && sign_bit_set {
+            bytes.push(0);
+        } else if negative && !sign_bit_set {
+            bytes.push(0xFF);
+        }
+    }
+
+    bytes
 }
 
 // Implement PartialEq to allow stack items to be compared and used as keys in collections

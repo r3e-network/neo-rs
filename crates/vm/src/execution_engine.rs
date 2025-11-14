@@ -405,18 +405,7 @@ impl ExecutionEngine {
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
         // Get the current instruction
-        let instruction = match context.current_instruction() {
-            Ok(instruction) => instruction,
-            Err(err) => {
-                let error_msg = format!("{err:?}");
-                if error_msg.contains("Instruction pointer is out of range") {
-                    Instruction::ret()
-                } else {
-                    // Instruction parsing error - this should cause a FAULT
-                    return Err(err);
-                }
-            }
-        };
+        let instruction = context.current_instruction()?;
 
         self.pre_execute_instruction(&instruction)?;
 

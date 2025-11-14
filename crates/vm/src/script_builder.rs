@@ -308,7 +308,7 @@ impl ScriptBuilder {
         self.emit_instruction(OpCode::SYSCALL, &hash.to_le_bytes())
     }
 
-    /// Computes the C#-compatible syscall hash (double SHA-256, little-endian u32).
+    /// Computes the C#-compatible syscall hash (single SHA-256 over raw ASCII, little-endian u32).
     pub fn hash_syscall(api: &str) -> VmResult<u32> {
         if api.as_bytes().len() > 252 {
             return Err(VmError::invalid_operation_msg(format!(
@@ -319,14 +319,10 @@ impl ScriptBuilder {
 
         let mut hasher = Sha256::new();
         hasher.update(api.as_bytes());
-        let first = hasher.finalize();
-
-        let mut hasher = Sha256::new();
-        hasher.update(first);
         let digest = hasher.finalize();
-
-        let bytes = &digest[..4];
-        Ok(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+        Ok(u32::from_le_bytes([
+            digest[0], digest[1], digest[2], digest[3],
+        ]))
     }
 
     /// Emits an append operation.

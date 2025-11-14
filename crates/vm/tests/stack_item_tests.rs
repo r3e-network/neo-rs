@@ -50,7 +50,15 @@ fn test_integer_stack_item() {
 
     // Test conversion to bytes
     assert_eq!(int_item.as_bytes().unwrap(), vec![42]);
-    assert_eq!(zero_item.as_bytes().unwrap(), vec![0]);
+    assert_eq!(zero_item.as_bytes().unwrap(), Vec::<u8>::new());
+
+    // Encoding matches .NET two's complement semantics
+    let high_bit = StackItem::from_int(128);
+    assert_eq!(high_bit.as_bytes().unwrap(), vec![0x80, 0x00]);
+    let neg_one = StackItem::from_int(-1);
+    assert_eq!(neg_one.as_bytes().unwrap(), vec![0xFF]);
+    let neg_128 = StackItem::from_int(-128);
+    assert_eq!(neg_128.as_bytes().unwrap(), vec![0x80]);
 
     // Test equality
     assert!(int_item.equals(&int_item).unwrap());
