@@ -1,24 +1,26 @@
-use super::fungible_token::PREFIX_ACCOUNT as ACCOUNT_PREFIX;
+use super::fungible_token::{PREFIX_ACCOUNT as ACCOUNT_PREFIX, PREFIX_TOTAL_SUPPLY};
+use super::helpers::NativeHelpers;
 use super::native_contract::{NativeContract, NativeMethod};
 use crate::error::{CoreError, CoreResult};
+use crate::neo_config::SECONDS_PER_BLOCK;
 use crate::persistence::i_read_only_store::IReadOnlyStoreGeneric;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::helper::Helper;
-use crate::smart_contract::{StorageItem, StorageKey};
+use crate::smart_contract::storage_context::StorageContext;
+use crate::smart_contract::storage_key::StorageKey;
+use crate::smart_contract::StorageItem;
 use crate::UInt160;
 use lazy_static::lazy_static;
 use num_bigint::BigInt;
-use num_traits::Zero;
+use num_traits::{Signed, Zero};
 use std::any::Any;
 
 lazy_static! {
     static ref GAS_HASH: UInt160 = Helper::get_contract_hash(&UInt160::zero(), 0, "GasToken");
 }
 
-/// Simplified GAS native contract exposing canonical metadata. The
-/// full implementation (including minting, burning, and distribution)
-/// will be added once the supporting runtime subsystems are ported.
+/// GAS native token with NEP-17 compliant behaviour.
 pub struct GasToken {
     methods: Vec<NativeMethod>,
 }
@@ -33,20 +35,16 @@ impl GasToken {
         let methods = vec![
             NativeMethod::safe("symbol".to_string(), 1),
             NativeMethod::safe("decimals".to_string(), 1),
+            NativeMethod::safe("totalSupply".to_string(), 1 << 4),
+            NativeMethod::safe("balanceOf".to_string(), 1 << 4),
+            NativeMethod::unsafe_method(
+                "transfer".to_string(),
+                1 << SECONDS_PER_BLOCK,
+                crate::smart_contract::call_flags::CallFlags::ALL.bits(),
+            ),
         ];
 
         Self { methods }
-    }
-
-    fn invoke_method(&self, method: &str) -> CoreResult<Vec<u8>> {
-        match method {
-            "symbol" => Ok(Self::SYMBOL.as_bytes().to_vec()),
-            "decimals" => Ok(vec![Self::DECIMALS]),
-            _ => Err(CoreError::native_contract(format!(
-                "Method not implemented: {}",
-                method
-            ))),
-        }
     }
 
     pub fn symbol(&self) -> &'static str {
@@ -57,16 +55,256 @@ impl GasToken {
         Self::DECIMALS
     }
 
-    /// GAS is inflationary; its supply depends on protocol settings and runtime
-    /// conditions. Until the full economic model is ported we surface a zero
-    /// placeholder for callers that inspect the context directly.
-    pub fn total_supply_placeholder(&self) -> BigInt {
-        BigInt::from(0)
+    fn invoke_method(
+        &self,
+        engine: &mut ApplicationEngine,
+        method: &str,
+        args: &[Vec<u8>],
+    ) -> CoreResult<Vec<u8>> {
+        match method {
+            "symbol" => Ok(Self::SYMBOL.as_bytes().to_vec()),
+            "decimals" => Ok(vec![Self::DECIMALS]),
+            "totalSupply" => {
+                let snapshot = engine.snapshot_cache();
+                let total = self.total_supply_snapshot(snapshot.as_ref());
+                Ok(Self::encode_amount(&total))
+            }
+            "balanceOf" => self.balance_of(engine, args),
+            "transfer" => self.transfer(engine, args),
+            _ => Err(CoreError::native_contract(format!(
+                "Method not implemented: {}",
+                method
+            ))),
+        }
     }
 
-    /// Reads the balance of `account` from the underlying snapshot, falling back to zero when no
-    /// account state exists. Mirrors the semantics of the C# `BalanceOf` helper without requiring
-    /// a full ApplicationEngine context.
+    fn balance_of(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
+        if args.len() != 1 {
+            return Err(CoreError::native_contract(
+                "balanceOf expects exactly one argument".to_string(),
+            ));
+        }
+        if args[0].len() != 20 {
+            return Err(CoreError::native_contract(
+                "Account argument must be 20 bytes".to_string(),
+            ));
+        }
+        let account = UInt160::from_bytes(&args[0])
+            .map_err(|err| CoreError::native_contract(err.to_string()))?;
+        let snapshot = engine.snapshot_cache();
+        let balance = self.balance_of_snapshot(snapshot.as_ref(), &account);
+        Ok(Self::encode_amount(&balance))
+    }
+
+    fn transfer(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
+        if args.len() != 3 {
+            return Err(CoreError::native_contract(
+                "transfer expects from, to, amount".to_string(),
+            ));
+        }
+        let from = self.read_account(&args[0])?;
+        let to = self.read_account(&args[1])?;
+        let amount = Self::decode_amount(&args[2]);
+        if amount.is_negative() {
+            return Err(CoreError::native_contract(
+                "Amount cannot be negative".to_string(),
+            ));
+        }
+
+        let caller = engine.calling_script_hash();
+        if from != caller && !engine.check_witness_hash(&from) {
+            return Ok(vec![0]);
+        }
+
+        if amount.is_zero() {
+            self.emit_transfer_event(engine, Some(&from), Some(&to), &amount)?;
+            return Ok(vec![1]);
+        }
+
+        let snapshot = engine.snapshot_cache();
+        let snapshot_ref = snapshot.as_ref();
+        let mut from_balance = self.balance_of_snapshot(snapshot_ref, &from);
+        if from_balance < amount {
+            return Ok(vec![0]);
+        }
+        from_balance -= &amount;
+        let mut to_balance = self.balance_of_snapshot(snapshot_ref, &to);
+        to_balance += &amount;
+
+        let context = engine.get_native_storage_context(&self.hash())?;
+        self.write_account_balance(&context, engine, &from, &from_balance)?;
+        self.write_account_balance(&context, engine, &to, &to_balance)?;
+        self.emit_transfer_event(engine, Some(&from), Some(&to), &amount)?;
+        Ok(vec![1])
+    }
+
+    fn read_account(&self, data: &[u8]) -> CoreResult<UInt160> {
+        if data.len() != 20 {
+            return Err(CoreError::native_contract(
+                "Account argument must be 20 bytes".to_string(),
+            ));
+        }
+        UInt160::from_bytes(data).map_err(|err| CoreError::native_contract(err.to_string()))
+    }
+
+    fn total_supply_key() -> StorageKey {
+        StorageKey::create(Self::ID, PREFIX_TOTAL_SUPPLY)
+    }
+
+    fn total_supply_suffix() -> Vec<u8> {
+        Self::total_supply_key().suffix().to_vec()
+    }
+
+    fn account_suffix(account: &UInt160) -> Vec<u8> {
+        StorageKey::create_with_uint160(Self::ID, ACCOUNT_PREFIX, account)
+            .suffix()
+            .to_vec()
+    }
+
+    fn encode_amount(value: &BigInt) -> Vec<u8> {
+        let mut bytes = value.to_signed_bytes_le();
+        if bytes.is_empty() {
+            bytes.push(0);
+        }
+        bytes
+    }
+
+    fn decode_amount(data: &[u8]) -> BigInt {
+        BigInt::from_signed_bytes_le(data)
+    }
+
+    fn write_account_balance(
+        &self,
+        context: &StorageContext,
+        engine: &mut ApplicationEngine,
+        account: &UInt160,
+        balance: &BigInt,
+    ) -> CoreResult<()> {
+        let key = Self::account_suffix(account);
+        if balance.is_zero() {
+            engine.delete_storage_item(context, &key)?;
+        } else {
+            let bytes = Self::encode_amount(balance);
+            engine.put_storage_item(context, &key, &bytes)?;
+        }
+        Ok(())
+    }
+
+    fn adjust_total_supply(
+        &self,
+        context: &StorageContext,
+        engine: &mut ApplicationEngine,
+        delta: &BigInt,
+    ) -> CoreResult<BigInt> {
+        let snapshot = engine.snapshot_cache();
+        let snapshot_ref = snapshot.as_ref();
+        let current = self.total_supply_snapshot(snapshot_ref);
+        let updated = current + delta;
+        if updated.is_negative() {
+            return Err(CoreError::native_contract(
+                "Total supply cannot be negative".to_string(),
+            ));
+        }
+
+        let key = Self::total_supply_suffix();
+        if updated.is_zero() {
+            engine.delete_storage_item(context, &key)?;
+        } else {
+            let bytes = Self::encode_amount(&updated);
+            engine.put_storage_item(context, &key, &bytes)?;
+        }
+        Ok(updated)
+    }
+
+    fn emit_transfer_event(
+        &self,
+        engine: &mut ApplicationEngine,
+        from: Option<&UInt160>,
+        to: Option<&UInt160>,
+        amount: &BigInt,
+    ) -> CoreResult<()> {
+        let from_bytes = from.map(|addr| addr.to_bytes()).unwrap_or_default();
+        let to_bytes = to.map(|addr| addr.to_bytes()).unwrap_or_default();
+        let amount_bytes = Self::encode_amount(amount);
+        engine.emit_event("Transfer", vec![from_bytes, to_bytes, amount_bytes])?;
+        Ok(())
+    }
+
+    /// Mints new GAS to the specified account.
+    pub fn mint(
+        &self,
+        engine: &mut ApplicationEngine,
+        account: &UInt160,
+        amount: &BigInt,
+        _call_on_payment: bool,
+    ) -> CoreResult<()> {
+        if amount.is_zero() {
+            return Ok(());
+        }
+        if amount.is_negative() {
+            return Err(CoreError::native_contract(
+                "Mint amount cannot be negative".to_string(),
+            ));
+        }
+
+        let context = engine.get_native_storage_context(&self.hash())?;
+        let snapshot = engine.snapshot_cache();
+        let snapshot_ref = snapshot.as_ref();
+        let mut balance = self.balance_of_snapshot(snapshot_ref, account);
+        balance += amount;
+        self.write_account_balance(&context, engine, account, &balance)?;
+        self.adjust_total_supply(&context, engine, amount)?;
+        self.emit_transfer_event(engine, None, Some(account), amount)?;
+        Ok(())
+    }
+
+    /// Burns GAS from the specified account.
+    pub fn burn(
+        &self,
+        engine: &mut ApplicationEngine,
+        account: &UInt160,
+        amount: &BigInt,
+    ) -> CoreResult<()> {
+        if amount.is_zero() {
+            return Ok(());
+        }
+        if amount.is_negative() {
+            return Err(CoreError::native_contract(
+                "Burn amount cannot be negative".to_string(),
+            ));
+        }
+
+        let snapshot = engine.snapshot_cache();
+        let snapshot_ref = snapshot.as_ref();
+        let mut balance = self.balance_of_snapshot(snapshot_ref, account);
+        if balance < *amount {
+            return Err(CoreError::native_contract(
+                "Insufficient balance for burn".to_string(),
+            ));
+        }
+        balance -= amount;
+
+        let context = engine.get_native_storage_context(&self.hash())?;
+        self.write_account_balance(&context, engine, account, &balance)?;
+        let negative = -amount;
+        self.adjust_total_supply(&context, engine, &negative)?;
+        self.emit_transfer_event(engine, Some(account), None, amount)?;
+        Ok(())
+    }
+
+    /// Gets total supply from a snapshot (used by RPC/tests).
+    pub fn total_supply_snapshot<S>(&self, snapshot: &S) -> BigInt
+    where
+        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+    {
+        let key = Self::total_supply_key();
+        snapshot
+            .try_get(&key)
+            .map(|item| item.to_bigint())
+            .unwrap_or_else(BigInt::zero)
+    }
+
+    /// Reads the balance of `account` from the snapshot.
     pub fn balance_of_snapshot<S>(&self, snapshot: &S, account: &UInt160) -> BigInt
     where
         S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
@@ -100,13 +338,32 @@ impl NativeContract for GasToken {
         true
     }
 
+    fn initialize(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
+        let snapshot = engine.snapshot_cache();
+        if snapshot
+            .as_ref()
+            .try_get(&Self::total_supply_key())
+            .is_some()
+        {
+            return Ok(());
+        }
+
+        let validators = engine.protocol_settings().standby_validators();
+        if validators.is_empty() {
+            return Ok(());
+        }
+        let account = NativeHelpers::get_bft_address(&validators);
+        let amount = BigInt::from(engine.protocol_settings().initial_gas_distribution);
+        self.mint(engine, &account, &amount, false)
+    }
+
     fn invoke(
         &self,
-        _engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine,
         method: &str,
-        _args: &[Vec<u8>],
+        args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
-        self.invoke_method(method)
+        self.invoke_method(engine, method, args)
     }
 
     fn as_any(&self) -> &dyn Any {

@@ -480,16 +480,28 @@ impl NativeContract for LedgerContract {
                     ));
                 };
 
-                if let Some(block) = self.get_block(snapshot, target)? {
-                    if Self::is_traceable_block(current_index, block.index(), max_traceable_blocks)
-                    {
-                        let bytes = serialize_full_block(&block)?;
-                        Ok(bytes)
-                    } else {
-                        Ok(Vec::new())
+                let maybe_trimmed = match &target {
+                    HashOrIndex::Hash(hash) => self.get_trimmed_block(snapshot, hash)?,
+                    HashOrIndex::Index(index) => {
+                        if let Some(hash) = self.load_block_hash(snapshot, *index)? {
+                            self.get_trimmed_block(snapshot, &hash)?
+                        } else {
+                            None
+                        }
                     }
-                } else {
-                    Ok(Vec::new())
+                };
+
+                match maybe_trimmed {
+                    Some(trimmed)
+                        if Self::is_traceable_block(
+                            current_index,
+                            trimmed.index(),
+                            max_traceable_blocks,
+                        ) =>
+                    {
+                        serialize_trimmed_block(&trimmed)
+                    }
+                    _ => Ok(Vec::new()),
                 }
             }
             "getTransaction" => {
@@ -785,10 +797,6 @@ fn deserialize_trimmed_block(bytes: &[u8]) -> Result<TrimmedBlock> {
     let mut reader = MemoryReader::new(bytes);
     <TrimmedBlock as Serializable>::deserialize(&mut reader)
         .map_err(|e| Error::serialization(e.to_string()))
-}
-
-fn serialize_full_block(block: &Block) -> Result<Vec<u8>> {
-    bincode::serialize(block).map_err(|e| Error::serialization(e.to_string()))
 }
 
 #[derive(Clone, Serialize, Deserialize)]

@@ -397,6 +397,11 @@ impl ApplicationEngine {
         self.fee_consumed
     }
 
+    /// Returns the current storage price (datoshi per byte) cached from the Policy contract.
+    pub fn storage_price(&self) -> u32 {
+        self.storage_price
+    }
+
     pub fn fault_exception(&self) -> Option<&str> {
         self.fault_exception.as_deref()
     }

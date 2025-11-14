@@ -944,6 +944,8 @@ impl NeoSystem {
             committed_handlers: Arc::new(RwLock::new(Vec::new())),
         });
 
+        NativeHelpers::attach_system_context(context.clone());
+
         if let Ok(mut pool) = memory_pool.lock() {
             let local_node_ref = local_node.clone();
             let blockchain_ref = blockchain.clone();

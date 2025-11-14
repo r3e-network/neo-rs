@@ -10,12 +10,13 @@ use crate::neo_config::MAX_SCRIPT_SIZE;
 use crate::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use crate::persistence::{DataCache, StoreCache};
 use crate::smart_contract::application_engine::ApplicationEngine;
+use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::contract_state::{ContractState, NefFile};
 use crate::smart_contract::manifest::{ContractManifest, ContractPermissionDescriptor};
-use crate::smart_contract::native::{NativeContract, NativeMethod};
+use crate::smart_contract::native::{NativeContract, NativeMethod, PolicyContract};
 use crate::smart_contract::StorageKey;
 use crate::UInt160;
-use neo_vm::{call_flags::CallFlags, StackItem};
+use neo_vm::{call_flags::CallFlags, ExecutionEngineLimits, StackItem};
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::sync::{Arc, RwLock};
@@ -104,19 +105,20 @@ impl ContractManagement {
     }
 
     #[inline]
-    fn stack_item_from_payload(data: Vec<u8>) -> StackItem {
+    fn stack_item_from_payload(data: &[u8]) -> StackItem {
         if data.is_empty() {
-            StackItem::null()
-        } else {
-            StackItem::from_byte_string(data)
+            return StackItem::null();
         }
+
+        BinarySerializer::deserialize(data, &ExecutionEngineLimits::default(), None)
+            .unwrap_or_else(|_| StackItem::from_byte_string(data.to_vec()))
     }
 
     fn invoke_deploy_hook(
         &self,
         engine: &mut ApplicationEngine,
         contract_hash: &UInt160,
-        data: Vec<u8>,
+        data: &[u8],
         is_update: bool,
     ) -> Result<()> {
         let args = vec![
@@ -255,7 +257,7 @@ impl ContractManagement {
         &self,
         engine: &mut ApplicationEngine,
         nef_file: Vec<u8>,
-        manifest_json: String,
+        manifest_bytes: Vec<u8>,
         data: Vec<u8>,
     ) -> Result<ContractState> {
         // Parse and validate NEF file
@@ -265,19 +267,34 @@ impl ContractManagement {
 
         Self::validate_nef_file(&nef)?;
 
+        let manifest_size = manifest_bytes.len();
         // Parse and validate manifest
+        let manifest_json = String::from_utf8(manifest_bytes)
+            .map_err(|e| Error::deserialization(format!("Invalid manifest encoding: {}", e)))?;
         let manifest: ContractManifest = serde_json::from_str(&manifest_json)
             .map_err(|e| Error::deserialization(format!("Invalid manifest: {}", e)))?;
 
         Self::validate_manifest(&manifest)?;
 
-        // Get sender (deployer)
-        let sender = engine
-            .get_calling_script_hash()
-            .ok_or_else(|| Error::invalid_operation("No calling context".to_string()))?;
+        // Require transaction sender (matches C# behaviour)
+        let sender = engine.get_transaction_sender().ok_or_else(|| {
+            Error::invalid_operation("Deploy must be invoked by a transaction".to_string())
+        })?;
 
         // Calculate contract hash
         let contract_hash = Self::calculate_contract_hash(&sender, nef.checksum, &manifest.name);
+
+        // Ensure hash is not blocked by policy
+        let policy = PolicyContract::new();
+        let snapshot = engine.snapshot_cache();
+        if policy
+            .is_blocked_snapshot(snapshot.as_ref(), &contract_hash)
+            .map_err(|e| Error::native_contract(e.to_string()))?
+        {
+            return Err(Error::invalid_operation(
+                "Contract hash is blocked".to_string(),
+            ));
+        }
 
         // Check if contract already exists
         {
@@ -300,8 +317,14 @@ impl ContractManagement {
             storage.minimum_deployment_fee
         };
 
-        // Deduct deployment fee from sender's GAS balance
-        engine.add_gas(deployment_fee)?;
+        // Deduct the larger of storage fee and minimum deployment fee
+        let payload_size = nef_file.len().saturating_add(manifest_size);
+        let storage_fee = (engine.storage_price() as u64).saturating_mul(payload_size as u64);
+        let minimum_fee = deployment_fee.max(0) as u64;
+        let fee_to_charge = storage_fee.max(minimum_fee);
+        if fee_to_charge > 0 {
+            engine.charge_execution_fee(fee_to_charge)?;
+        }
 
         // Get next contract ID
         let contract_id = self.get_next_available_id()?;
@@ -362,11 +385,11 @@ impl ContractManagement {
             .iter()
             .any(|m| m.name == "_deploy")
         {
-            self.invoke_deploy_hook(engine, &contract_hash, data, false)?;
+            self.invoke_deploy_hook(engine, &contract_hash, &data, false)?;
         }
 
         // Emit Deploy event
-        engine.emit_notification(&contract_hash, "Deploy", &[contract_hash.to_bytes()])?;
+        engine.emit_notification(&self.hash, "Deploy", &[contract_hash.to_bytes()])?;
 
         Ok(contract)
     }
@@ -376,9 +399,15 @@ impl ContractManagement {
         &self,
         engine: &mut ApplicationEngine,
         nef_file: Option<Vec<u8>>,
-        manifest_json: Option<String>,
+        manifest_bytes: Option<Vec<u8>>,
         data: Vec<u8>,
     ) -> Result<()> {
+        if nef_file.is_none() && manifest_bytes.is_none() {
+            return Err(Error::invalid_argument(
+                "NEF file and manifest cannot both be empty".to_string(),
+            ));
+        }
+
         // Get calling contract hash
         let contract_hash = engine
             .get_calling_script_hash()
@@ -397,6 +426,16 @@ impl ContractManagement {
                 .ok_or_else(|| Error::invalid_operation("Contract not found".to_string()))?
         };
 
+        let nef_len = nef_file.as_ref().map(|v| v.len()).unwrap_or(0);
+        let manifest_len = manifest_bytes.as_ref().map(|v| v.len()).unwrap_or(0);
+        let payload_size = nef_len.saturating_add(manifest_len);
+        if payload_size > 0 {
+            let storage_fee = (engine.storage_price() as u64).saturating_mul(payload_size as u64);
+            if storage_fee > 0 {
+                engine.charge_execution_fee(storage_fee)?;
+            }
+        }
+
         // Update NEF if provided
         if let Some(nef_bytes) = nef_file {
             let mut reader = MemoryReader::new(&nef_bytes);
@@ -408,10 +447,17 @@ impl ContractManagement {
         }
 
         // Update manifest if provided
-        if let Some(manifest_str) = manifest_json {
-            let manifest: ContractManifest = serde_json::from_str(&manifest_str)
+        if let Some(manifest_payload) = manifest_bytes {
+            let manifest_json = String::from_utf8(manifest_payload)
+                .map_err(|e| Error::deserialization(format!("Invalid manifest encoding: {}", e)))?;
+            let manifest: ContractManifest = serde_json::from_str(&manifest_json)
                 .map_err(|e| Error::deserialization(format!("Invalid manifest: {}", e)))?;
 
+            if manifest.name != contract.manifest.name {
+                return Err(Error::invalid_operation(
+                    "The name of the contract cannot be changed".to_string(),
+                ));
+            }
             Self::validate_manifest(&manifest)?;
             contract.manifest = manifest;
         }
@@ -449,11 +495,11 @@ impl ContractManagement {
             .iter()
             .any(|m| m.name == "_deploy")
         {
-            self.invoke_deploy_hook(engine, &contract_hash, data, true)?;
+            self.invoke_deploy_hook(engine, &contract_hash, &data, true)?;
         }
 
         // Emit Update event
-        engine.emit_notification(&contract_hash, "Update", &[contract_hash.to_bytes()])?;
+        engine.emit_notification(&self.hash, "Update", &[contract_hash.to_bytes()])?;
 
         Ok(())
     }
@@ -496,14 +542,8 @@ impl ContractManagement {
         };
 
         let context = engine.get_native_storage_context(&self.hash)?;
-        engine.delete_storage(&StorageKey::new(
-            context.id,
-            Self::contract_storage_key(&contract_hash),
-        ))?;
-        engine.delete_storage(&StorageKey::new(
-            context.id,
-            Self::contract_id_storage_key(contract.id),
-        ))?;
+        engine.delete_storage_item(&context, &Self::contract_storage_key(&contract_hash))?;
+        engine.delete_storage_item(&context, &Self::contract_id_storage_key(contract.id))?;
         engine.put_storage_item(&context, &Self::contract_count_key(), &contract_count_bytes)?;
         engine.put_storage_item(&context, &Self::next_id_key(), &next_id_bytes)?;
         engine.put_storage_item(
@@ -515,8 +555,11 @@ impl ContractManagement {
         // Clear all contract storage (would interact with persistence layer)
         engine.clear_contract_storage(&contract_hash)?;
 
+        // Block the contract hash so it cannot be redeployed without governance approval
+        PolicyContract::new().block_account_internal(engine, &contract_hash)?;
+
         // Emit Destroy event
-        engine.emit_notification(&contract_hash, "Destroy", &[contract_hash.to_bytes()])?;
+        engine.emit_notification(&self.hash, "Destroy", &[contract_hash.to_bytes()])?;
 
         Ok(())
     }
@@ -813,12 +856,10 @@ impl NativeContract for ContractManagement {
                     ));
                 }
                 let nef_bytes = args[0].clone();
-                let manifest_str = String::from_utf8(args[1].clone()).map_err(|e| {
-                    Error::invalid_argument(format!("Invalid manifest string: {}", e))
-                })?;
+                let manifest_bytes = args[1].clone();
                 let data = args[2].clone();
 
-                let contract = self.deploy(engine, nef_bytes, manifest_str, data)?;
+                let contract = self.deploy(engine, nef_bytes, manifest_bytes, data)?;
 
                 // Serialize contract state
                 let mut writer = BinaryWriter::new();
@@ -840,17 +881,15 @@ impl NativeContract for ContractManagement {
                     Some(args[0].clone())
                 };
 
-                let manifest_str = if args[1].is_empty() {
+                let manifest_bytes = if args[1].is_empty() {
                     None
                 } else {
-                    Some(String::from_utf8(args[1].clone()).map_err(|e| {
-                        Error::invalid_argument(format!("Invalid manifest string: {}", e))
-                    })?)
+                    Some(args[1].clone())
                 };
 
                 let data = args[2].clone();
 
-                self.update(engine, nef_bytes, manifest_str, data)?;
+                self.update(engine, nef_bytes, manifest_bytes, data)?;
                 Ok(vec![])
             }
             "destroy" => {

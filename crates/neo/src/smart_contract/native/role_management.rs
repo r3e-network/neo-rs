@@ -1,17 +1,18 @@
 //! Role Management native contract implementation.
 //!
-//! The RoleManagement contract manages designated roles in the Neo blockchain,
-//! including Oracle nodes, State validators, and other system roles.
+//! Mirrors the behaviour of `Neo.SmartContract.Native.RoleManagement` by
+//! persisting designated nodes per role and enforcing committee authorization.
 
-use crate::error::CoreError as Error;
-use crate::error::CoreResult as Result;
+use crate::error::{CoreError as Error, CoreResult as Result};
+use crate::hardfork::Hardfork;
 use crate::neo_config::SECONDS_PER_BLOCK;
+use crate::persistence::{DataCache, IReadOnlyStoreGeneric, SeekDirection};
 use crate::smart_contract::application_engine::ApplicationEngine;
-use crate::smart_contract::native::{NativeContract, NativeMethod};
+use crate::smart_contract::native::{LedgerContract, NativeContract, NativeMethod};
+use crate::smart_contract::storage_key::StorageKey;
 use crate::{ECPoint, UInt160};
-// Removed neo_cryptography dependency - using external crypto crates directly
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::convert::TryInto;
 
 /// Designated roles in the Neo blockchain.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -55,12 +56,11 @@ pub struct RoleManagement {
     id: i32,
     hash: UInt160,
     methods: Vec<NativeMethod>,
-    /// Role designations: Role -> (block_index, public keys)
-    designations: HashMap<Role, (u32, Vec<ECPoint>)>,
 }
 
 impl RoleManagement {
     const ID: i32 = -8;
+    const MAX_NODES: usize = 32;
 
     /// Creates a new RoleManagement contract.
     pub fn new() -> Self {
@@ -84,19 +84,17 @@ impl RoleManagement {
             id: Self::ID,
             hash,
             methods,
-            designations: HashMap::new(),
         }
     }
 
-    /// Invokes a method on the RoleManagement contract.
-    pub fn invoke_method(
+    fn invoke_method(
         &self,
         engine: &mut ApplicationEngine,
         method: &str,
         args: &[Vec<u8>],
     ) -> Result<Vec<u8>> {
         match method {
-            "getDesignatedByRole" => self.get_designated_by_role(args),
+            "getDesignatedByRole" => self.get_designated_by_role(engine, args),
             "designateAsRole" => self.designate_as_role(engine, args),
             _ => Err(Error::native_contract(format!(
                 "Unknown method: {}",
@@ -105,176 +103,230 @@ impl RoleManagement {
         }
     }
 
-    /// Gets the designated public keys for a specific role.
-    pub fn get_designated_by_role(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
-        if args.len() < 2 {
-            return Err(Error::native_contract(
-                "getDesignatedByRole requires role and index arguments".to_string(),
-            ));
-        }
-
-        // Parse role
-        if args[0].is_empty() {
-            return Err(Error::native_contract("Invalid role argument".to_string()));
-        }
-        let role_value = args[0][0];
-        let role = Role::from_u8(role_value)
-            .ok_or_else(|| Error::native_contract(format!("Invalid role: {}", role_value)))?;
-
-        // Parse block index
-        if args[1].len() != 4 {
-            return Err(Error::native_contract("Invalid index argument".to_string()));
-        }
-        let index = u32::from_le_bytes([args[1][0], args[1][1], args[1][2], args[1][3]]);
-
-        match self.designations.get(&role) {
-            Some((designation_index, public_keys)) => {
-                if index >= *designation_index {
-                    // Return the public keys as a serialized array
-                    self.serialize_public_keys(public_keys)
-                } else {
-                    Ok(vec![0]) // Empty array
-                }
-            }
-            None => Ok(vec![0]), // Empty array
-        }
-    }
-
-    /// Designates public keys for a specific role.
-    pub fn designate_as_role(
+    fn get_designated_by_role(
         &self,
         engine: &mut ApplicationEngine,
         args: &[Vec<u8>],
     ) -> Result<Vec<u8>> {
+        let (role, index) = self.parse_role_and_index(args)?;
+        let snapshot = engine.snapshot_cache();
+        let snapshot_ref = snapshot.as_ref();
+
+        let ledger = LedgerContract::new();
+        let current_index = ledger
+            .current_index(snapshot_ref)
+            .map_err(|err| Error::native_contract(err.to_string()))?;
+        if index > current_index.saturating_add(1) {
+            return Err(Error::native_contract(format!(
+                "Index {} exceeds current index + 1 ({})",
+                index,
+                current_index.saturating_add(1)
+            )));
+        }
+
+        match self.find_designation_bytes(snapshot_ref, role, index)? {
+            Some(bytes) => Ok(bytes),
+            None => self.serialize_public_keys(&[]),
+        }
+    }
+
+    fn designate_as_role(
+        &self,
+        engine: &mut ApplicationEngine,
+        args: &[Vec<u8>],
+    ) -> Result<Vec<u8>> {
+        if !engine
+            .check_committee_witness()
+            .map_err(|err| Error::runtime_error(err.to_string()))?
+        {
+            return Err(Error::invalid_operation(
+                "Committee authorization required".to_string(),
+            ));
+        }
+
+        if args.is_empty() {
+            return Err(Error::native_contract(
+                "designateAsRole requires role argument".to_string(),
+            ));
+        }
+        let (role, _) = self.parse_role_and_index(&args[..1])?;
         if args.len() < 2 {
             return Err(Error::native_contract(
                 "designateAsRole requires role and public keys arguments".to_string(),
             ));
         }
 
-        // Parse role
-        if args[0].is_empty() {
-            return Err(Error::native_contract("Invalid role argument".to_string()));
+        let mut public_keys = self.parse_public_keys(&args[1])?;
+        if public_keys.is_empty() || public_keys.len() > Self::MAX_NODES {
+            return Err(Error::native_contract(format!(
+                "Nodes count {} must be between 1 and {}",
+                public_keys.len(),
+                Self::MAX_NODES
+            )));
         }
-        let role_value = args[0][0];
-        let role = Role::from_u8(role_value)
-            .ok_or_else(|| Error::native_contract(format!("Invalid role: {}", role_value)))?;
+        public_keys.sort();
 
-        // Real C# Neo N3 implementation: Public key parsing
-        let public_keys = self.parse_public_keys(&args[1])?;
+        let persisting_block = engine.persisting_block().ok_or_else(|| {
+            Error::invalid_operation("Persisting block is not available".to_string())
+        })?;
+        let persisting_index = persisting_block.header.index;
+        let designation_index = persisting_index
+            .checked_add(1)
+            .ok_or_else(|| Error::invalid_operation("Block index overflowed".to_string()))?;
 
-        // Validate public keys
-        for pubkey in &public_keys {
-            if !pubkey.is_valid() {
-                return Err(Error::native_contract("Invalid public key".to_string()));
+        let context = engine.get_native_storage_context(&self.hash)?;
+        let key_suffix = Self::role_key_suffix(role, designation_index);
+        if engine.get_storage_item(&context, &key_suffix).is_some() {
+            return Err(Error::invalid_operation(
+                "Role already designated at this height".to_string(),
+            ));
+        }
+
+        let serialized_keys = self.serialize_public_keys(&public_keys)?;
+        engine.put_storage_item(&context, &key_suffix, &serialized_keys)?;
+
+        let snapshot = engine.snapshot_cache();
+        let snapshot_ref = snapshot.as_ref();
+        let previous = match self.find_designation_bytes(
+            snapshot_ref,
+            role,
+            designation_index.saturating_sub(1),
+        )? {
+            Some(bytes) => bytes,
+            None => self.serialize_public_keys(&[])?,
+        };
+
+        let block_index_bytes = persisting_index.to_le_bytes().to_vec();
+        let role_bytes = vec![role as u8];
+        if engine.is_hardfork_enabled(Hardfork::HfEchidna) {
+            engine.emit_event(
+                "Designation",
+                vec![
+                    role_bytes,
+                    block_index_bytes,
+                    previous,
+                    serialized_keys.clone(),
+                ],
+            )?;
+        } else {
+            engine.emit_event("Designation", vec![role_bytes, block_index_bytes])?;
+        }
+
+        Ok(vec![1])
+    }
+
+    fn parse_role_and_index(&self, args: &[Vec<u8>]) -> Result<(Role, u32)> {
+        if args.is_empty() {
+            return Err(Error::native_contract("Missing role argument".to_string()));
+        }
+        let role = if let Some(&value) = args[0].first() {
+            Role::from_u8(value).ok_or_else(|| {
+                Error::native_contract(format!("Invalid role identifier: {}", value))
+            })?
+        } else {
+            return Err(Error::native_contract("Invalid role argument".to_string()));
+        };
+
+        let index = if args.len() >= 2 {
+            if args[1].len() != 4 {
+                return Err(Error::native_contract(
+                    "Index argument must be 4 bytes".to_string(),
+                ));
+            }
+            let mut buffer = [0u8; 4];
+            buffer.copy_from_slice(&args[1]);
+            u32::from_le_bytes(buffer)
+        } else {
+            0
+        };
+
+        Ok((role, index))
+    }
+
+    fn find_designation_bytes(
+        &self,
+        snapshot: &DataCache,
+        role: Role,
+        index: u32,
+    ) -> Result<Option<Vec<u8>>> {
+        let prefix = Self::role_prefix_key(role);
+        let mut iter = snapshot.find(Some(&prefix), SeekDirection::Backward);
+        while let Some((key, item)) = iter.next() {
+            if let Some(designation_index) = Self::parse_designation_index(&key, role) {
+                if designation_index <= index {
+                    return Ok(Some(item.get_value()));
+                }
             }
         }
-
-        // 1. Check permissions (only committee can designate)
-
-        // 2. Store the designation in blockchain storage
-        let context = engine.get_native_storage_context(&self.hash)?;
-        let storage_key = format!("role:{}", role as u8);
-        let serialized_keys = self.serialize_public_keys(&public_keys)?;
-        engine.put_storage_item(&context, storage_key.as_bytes(), &serialized_keys)?;
-
-        // 3. Emit a designation event (production implementation matching C# Neo exactly)
-        log::info!(
-            "Role {:?} designated to {} public keys (production event emission)",
-            role,
-            public_keys.len()
-        );
-
-        // Emit proper Designation event to the blockchain
-        let role_bytes = vec![role as u8];
-        let key_count_bytes = vec![public_keys.len() as u8];
-        let event_data = vec![role_bytes, key_count_bytes];
-
-        // Store the designation change in blockchain state
-        // This matches C# Neo.SmartContract.Native.RoleManagement behavior
-        engine.emit_event("Designation", event_data)?;
-
-        // Log successful designation for monitoring
-        tracing::info!(
-            "Role designation completed: role={:?}, public_keys_count={}",
-            role,
-            public_keys.len(),
-        );
-
-        Ok(vec![1]) // Return true for success
+        Ok(None)
     }
 
-    /// Gets the current designations for all roles.
-    pub fn get_all_designations(&self) -> &HashMap<Role, (u32, Vec<ECPoint>)> {
-        &self.designations
+    fn parse_designation_index(key: &StorageKey, role: Role) -> Option<u32> {
+        let suffix = key.suffix();
+        if suffix.first().copied() != Some(role as u8) || suffix.len() != 5 {
+            return None;
+        }
+        let bytes: [u8; 4] = suffix[1..].try_into().ok()?;
+        Some(u32::from_be_bytes(bytes))
     }
 
-    /// Sets a designation (for testing purposes).
-    pub fn set_designation(&mut self, role: Role, index: u32, public_keys: Vec<ECPoint>) {
-        self.designations.insert(role, (index, public_keys));
+    fn role_prefix_key(role: Role) -> StorageKey {
+        StorageKey::create(Self::ID, role as u8)
+    }
+
+    fn role_key_suffix(role: Role, index: u32) -> Vec<u8> {
+        let mut suffix = vec![role as u8];
+        suffix.extend_from_slice(&index.to_be_bytes());
+        suffix
     }
 
     /// Serializes public keys to bytes.
     fn serialize_public_keys(&self, public_keys: &[ECPoint]) -> Result<Vec<u8>> {
-        let mut result = Vec::new();
-
-        // Write array length
+        let mut result = Vec::with_capacity(4 + public_keys.len() * 33);
         result.extend_from_slice(&(public_keys.len() as u32).to_le_bytes());
-
-        // Write each public key
         for pubkey in public_keys {
             let encoded = pubkey
                 .encode_compressed()
                 .map_err(|_| Error::native_contract("Failed to encode public key".to_string()))?;
             result.extend_from_slice(&encoded);
         }
-
         Ok(result)
     }
 
-    /// Parses public keys from bytes.
+    /// Parses public keys from bytes (little-endian count + compressed points).
     fn parse_public_keys(&self, data: &[u8]) -> Result<Vec<ECPoint>> {
         if data.len() < 4 {
             return Err(Error::native_contract(
-                "Invalid public keys data".to_string(),
+                "Invalid public keys payload".to_string(),
             ));
         }
-
-        let count = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
-        let mut public_keys = Vec::with_capacity(count);
+        let count = u32::from_le_bytes(data[0..4].try_into().unwrap()) as usize;
+        let mut keys = Vec::with_capacity(count);
         let mut offset = 4;
-
         for _ in 0..count {
             if offset + 33 > data.len() {
                 return Err(Error::native_contract(
-                    "Invalid public key data".to_string(),
+                    "Invalid public key data length".to_string(),
                 ));
             }
-
             let mut key_bytes = [0u8; 33];
             key_bytes.copy_from_slice(&data[offset..offset + 33]);
-
-            if key_bytes.iter().all(|&b| b == 0) {
-                return Err(Error::native_contract(
-                    "Invalid public key: cannot be all zeros".to_string(),
-                ));
-            }
-
             if key_bytes[0] != 0x02 && key_bytes[0] != 0x03 {
                 return Err(Error::native_contract(
-                    "Invalid public key: invalid compression prefix".to_string(),
+                    "Invalid public key prefix".to_string(),
                 ));
             }
-
-            // Removed neo_cryptography dependency - using external crypto crates directly
             let pubkey = ECPoint::decode_compressed(&key_bytes)
                 .map_err(|_| Error::native_contract("Invalid public key encoding".to_string()))?;
-
-            public_keys.push(pubkey);
+            keys.push(pubkey);
             offset += 33;
         }
-
-        Ok(public_keys)
+        if offset != data.len() {
+            return Err(Error::native_contract(
+                "Unexpected trailing data in public key payload".to_string(),
+            ));
+        }
+        Ok(keys)
     }
 }
 
@@ -312,5 +364,63 @@ impl NativeContract for RoleManagement {
 impl Default for RoleManagement {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::smart_contract::StorageItem;
+
+    fn sample_point(tag: u8) -> ECPoint {
+        let mut bytes = [0u8; 33];
+        bytes[0] = 0x02;
+        for b in bytes.iter_mut().skip(1) {
+            *b = tag;
+        }
+        ECPoint::decode_compressed(&bytes).expect("valid test key")
+    }
+
+    #[test]
+    fn serialize_and_parse_roundtrip() {
+        let contract = RoleManagement::new();
+        let keys = vec![sample_point(0xAA), sample_point(0xBB)];
+        let encoded = contract.serialize_public_keys(&keys).unwrap();
+        let decoded = contract.parse_public_keys(&encoded).unwrap();
+        assert_eq!(decoded, keys);
+    }
+
+    #[test]
+    fn find_designation_returns_latest_entry() {
+        let contract = RoleManagement::new();
+        let cache = DataCache::new(false);
+        let role = Role::Oracle;
+
+        let key_old = StorageKey::new(RoleManagement::ID, RoleManagement::role_key_suffix(role, 5));
+        let bytes_old = contract
+            .serialize_public_keys(&[sample_point(0x10)])
+            .unwrap();
+        cache.add(key_old, StorageItem::from_bytes(bytes_old.clone()));
+
+        let key_new = StorageKey::new(
+            RoleManagement::ID,
+            RoleManagement::role_key_suffix(role, 12),
+        );
+        let bytes_new = contract
+            .serialize_public_keys(&[sample_point(0x11)])
+            .unwrap();
+        cache.add(key_new, StorageItem::from_bytes(bytes_new.clone()));
+
+        let result_before = contract
+            .find_designation_bytes(&cache, role, 7)
+            .unwrap()
+            .expect("entry");
+        assert_eq!(result_before, bytes_old);
+
+        let result_after = contract
+            .find_designation_bytes(&cache, role, 99)
+            .unwrap()
+            .expect("entry");
+        assert_eq!(result_after, bytes_new);
     }
 }

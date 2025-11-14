@@ -10,22 +10,22 @@ use num_traits::ToPrimitive;
 pub struct OracleRequest {
     /// The original transaction hash
     pub original_tx_id: UInt256,
-    
+
     /// The gas for callback
     pub gas_for_response: i64,
-    
+
     /// The URL to fetch
     pub url: String,
-    
+
     /// The filter expression
     pub filter: Option<String>,
-    
+
     /// The callback contract hash
     pub callback_contract: UInt160,
-    
+
     /// The callback method name
     pub callback_method: String,
-    
+
     /// User data to pass to callback
     pub user_data: Vec<u8>,
 }
@@ -63,7 +63,9 @@ impl IInteroperable for OracleRequest {
 
             if let Ok(bytes) = items[0].as_bytes() {
                 if bytes.len() == 32 {
-                    self.original_tx_id = UInt256::from_bytes(&bytes);
+                    if let Ok(hash) = UInt256::from_bytes(&bytes) {
+                        self.original_tx_id = hash;
+                    }
                 }
             }
 
@@ -89,7 +91,9 @@ impl IInteroperable for OracleRequest {
 
             if let Ok(bytes) = items[4].as_bytes() {
                 if bytes.len() == 20 {
-                    self.callback_contract = UInt160::from_bytes(&bytes);
+                    if let Ok(hash) = UInt160::from_bytes(&bytes) {
+                        self.callback_contract = hash;
+                    }
                 }
             }
 

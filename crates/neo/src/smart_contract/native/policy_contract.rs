@@ -776,6 +776,19 @@ impl PolicyContract {
     }
 
     /// Get blocked accounts list from storage
+    pub fn block_account_internal(
+        &self,
+        engine: &mut ApplicationEngine,
+        account: &UInt160,
+    ) -> Result<()> {
+        let mut blocked_accounts = self.get_blocked_accounts_list(engine)?;
+        if blocked_accounts.contains(account) {
+            return Ok(());
+        }
+        blocked_accounts.push(*account);
+        self.store_blocked_accounts_list(engine, &blocked_accounts)
+    }
+
     fn get_blocked_accounts_list(&self, engine: &mut ApplicationEngine) -> Result<Vec<UInt160>> {
         let context = engine.get_native_storage_context(&self.hash)?;
         let key = Self::config_key(Self::BLOCKED_ACCOUNTS_NAME);
