@@ -28,3 +28,15 @@ impl LogLevel {
     /// Convenience constant matching the C#  value.
     pub const FATAL_LEVEL: u8 = 4;
 }
+
+impl From<neo_extensions::LogLevel> for LogLevel {
+    fn from(level: neo_extensions::LogLevel) -> Self {
+        match level {
+            neo_extensions::LogLevel::Debug => LogLevel::Debug,
+            neo_extensions::LogLevel::Info => LogLevel::Info,
+            neo_extensions::LogLevel::Warning => LogLevel::Warning,
+            neo_extensions::LogLevel::Error => LogLevel::Error,
+            neo_extensions::LogLevel::Fatal => LogLevel::Fatal,
+        }
+    }
+}

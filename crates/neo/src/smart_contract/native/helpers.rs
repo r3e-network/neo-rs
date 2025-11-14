@@ -38,7 +38,7 @@ impl NativeHelpers {
         *guard = None;
     }
 
-    fn context() -> Option<Arc<NeoSystemContext>> {
+    pub fn context() -> Option<Arc<NeoSystemContext>> {
         let weak = SYSTEM_CONTEXT
             .read()
             .ok()

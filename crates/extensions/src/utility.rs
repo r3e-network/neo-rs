@@ -15,7 +15,7 @@ use std::sync::Mutex;
 
 /// Log event handler delegate
 /// Matches C# LogEventHandler delegate
-pub type LogEventHandler = fn(source: String, level: LogLevel, message: String);
+pub type LogEventHandler = Box<dyn Fn(String, LogLevel, String) + Send + Sync + 'static>;
 
 lazy_static! {
     static ref LOG_LEVEL: Mutex<LogLevel> = Mutex::new(LogLevel::Info);
@@ -55,7 +55,7 @@ impl Utility {
         }
 
         if let Ok(handler_guard) = LOGGING.lock() {
-            if let Some(handler) = *handler_guard {
+            if let Some(handler) = handler_guard.as_ref() {
                 handler(source.to_string(), level, message.to_string());
             }
         }

@@ -34,10 +34,11 @@ const _BLOCKS_TILL_REBROADCAST: i32 = 10;
 /// Used to cache verified transactions before being written into the block.
 pub struct MemoryPool {
     /// Callback invoked when a transaction is added to the pool.
-    pub transaction_added: Option<Box<dyn Fn(&Transaction) + Send + Sync>>,
+    pub transaction_added: Option<Box<dyn Fn(&MemoryPool, &Transaction) + Send + Sync>>,
 
     /// Callback invoked when a transaction (or set of transactions) is removed from the pool.
-    pub transaction_removed: Option<Box<dyn Fn(&TransactionRemovedEventArgs) + Send + Sync>>,
+    pub transaction_removed:
+        Option<Box<dyn Fn(&MemoryPool, &TransactionRemovedEventArgs) + Send + Sync>>,
 
     /// Callback invoked when a transaction should be rebroadcast to the network.
     pub transaction_relay: Option<Box<dyn Fn(&Transaction) + Send + Sync>>,
@@ -270,10 +271,13 @@ impl MemoryPool {
 
             if let Some(handler) = &self.transaction_removed {
                 if !removed_conflicts.is_empty() {
-                    handler(&TransactionRemovedEventArgs {
-                        transactions: removed_conflicts,
-                        reason: TransactionRemovalReason::Conflict,
-                    });
+                    handler(
+                        self,
+                        &TransactionRemovedEventArgs {
+                            transactions: removed_conflicts,
+                            reason: TransactionRemovalReason::Conflict,
+                        },
+                    );
                 }
             }
         }
@@ -282,10 +286,13 @@ impl MemoryPool {
             let removed = self.remove_over_capacity();
             if let Some(handler) = &self.transaction_removed {
                 if !removed.is_empty() {
-                    handler(&TransactionRemovedEventArgs {
-                        transactions: removed.clone(),
-                        reason: TransactionRemovalReason::CapacityExceeded,
-                    });
+                    handler(
+                        self,
+                        &TransactionRemovedEventArgs {
+                            transactions: removed.clone(),
+                            reason: TransactionRemovalReason::CapacityExceeded,
+                        },
+                    );
                 }
             }
             if !self.verified_transactions.contains_key(&hash) {
@@ -294,7 +301,7 @@ impl MemoryPool {
         }
 
         if let Some(handler) = &self.transaction_added {
-            handler(&tx);
+            handler(self, &tx);
         }
 
         VerifyResult::Succeed
@@ -377,10 +384,13 @@ impl MemoryPool {
 
         if !removed.is_empty() {
             if let Some(handler) = &self.transaction_removed {
-                handler(&TransactionRemovedEventArgs {
-                    transactions: removed,
-                    reason: TransactionRemovalReason::NoLongerValid,
-                });
+                handler(
+                    self,
+                    &TransactionRemovedEventArgs {
+                        transactions: removed,
+                        reason: TransactionRemovalReason::NoLongerValid,
+                    },
+                );
             }
         }
     }
@@ -530,10 +540,13 @@ impl MemoryPool {
 
         if !invalidated.is_empty() {
             if let Some(handler) = &self.transaction_removed {
-                handler(&TransactionRemovedEventArgs {
-                    transactions: invalidated,
-                    reason: TransactionRemovalReason::NoLongerValid,
-                });
+                handler(
+                    self,
+                    &TransactionRemovedEventArgs {
+                        transactions: invalidated,
+                        reason: TransactionRemovalReason::NoLongerValid,
+                    },
+                );
             }
         }
 

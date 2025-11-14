@@ -4,7 +4,9 @@ use super::{
     channels_config::ChannelsConfig,
     connection::{ConnectionState, PeerConnection},
     local_node::{LocalNode, RemoteNodeSnapshot},
+    message::Message as WireMessage,
     message_command::MessageCommand,
+    message_flags::MessageFlags,
     payloads::{
         addr_payload::{AddrPayload, MAX_COUNT_TO_SEND},
         block::Block,
@@ -24,8 +26,10 @@ use super::{
     peer::PeerCommand,
     task_manager::TaskManagerCommand,
 };
+use crate::compression::compress_lz4;
 use crate::contains_transaction_type::ContainsTransactionType;
 use crate::cryptography::BloomFilter;
+use crate::i_event_handlers::IMessageReceivedHandler;
 use crate::ledger::blockchain::BlockchainCommand;
 use crate::network::error::NetworkError;
 use crate::network::p2p::messages::{NetworkMessage, ProtocolMessage};
@@ -42,7 +46,10 @@ use rand::{seq::IteratorRandom, thread_rng};
 use std::any::type_name_of_val;
 use std::collections::{HashSet, VecDeque};
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc, OnceLock, RwLock,
+};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{oneshot, Mutex};
@@ -99,6 +106,69 @@ impl PendingKnownHashes {
         }
         removed
     }
+}
+
+struct MessageHandlerEntry {
+    id: usize,
+    handler: Arc<dyn IMessageReceivedHandler + Send + Sync>,
+}
+
+static MESSAGE_HANDLERS: OnceLock<RwLock<Vec<MessageHandlerEntry>>> = OnceLock::new();
+static NEXT_HANDLER_ID: AtomicUsize = AtomicUsize::new(1);
+
+fn handler_registry() -> &'static RwLock<Vec<MessageHandlerEntry>> {
+    MESSAGE_HANDLERS.get_or_init(|| RwLock::new(Vec::new()))
+}
+
+/// Subscription handle returned when registering message-received callbacks.
+#[derive(Debug)]
+pub struct MessageHandlerSubscription {
+    id: Option<usize>,
+}
+
+impl MessageHandlerSubscription {
+    /// Explicitly unregisters the handler associated with this subscription.
+    pub fn unregister(mut self) {
+        if let Some(id) = self.id.take() {
+            remove_handler(id);
+        }
+    }
+}
+
+impl Drop for MessageHandlerSubscription {
+    fn drop(&mut self) {
+        if let Some(id) = self.id.take() {
+            remove_handler(id);
+        }
+    }
+}
+
+fn remove_handler(id: usize) {
+    if let Ok(mut handlers) = handler_registry().write() {
+        handlers.retain(|entry| entry.id != id);
+    }
+}
+
+/// Registers a new message-received handler (parity with C# `RemoteNode.MessageReceived`).
+pub fn register_message_received_handler(
+    handler: Arc<dyn IMessageReceivedHandler + Send + Sync>,
+) -> MessageHandlerSubscription {
+    let id = NEXT_HANDLER_ID.fetch_add(1, Ordering::Relaxed);
+    let entry = MessageHandlerEntry { id, handler };
+    if let Ok(mut handlers) = handler_registry().write() {
+        handlers.push(entry);
+    } else {
+        warn!(
+            target: "neo",
+            "message handler registry poisoned; handler will not be retained"
+        );
+    }
+    MessageHandlerSubscription { id: Some(id) }
+}
+
+/// Removes a previously registered handler using its subscription token.
+pub fn unregister_message_received_handler(subscription: MessageHandlerSubscription) {
+    subscription.unregister();
 }
 
 const TIMER_INTERVAL: Duration = Duration::from_secs(30);
@@ -169,6 +239,80 @@ impl RemoteNode {
         if let Some(timer) = self.timer.take() {
             timer.cancel();
         }
+    }
+
+    fn dispatch_message_received(&self, message: &NetworkMessage) -> bool {
+        let Some(system) = self.system.neo_system() else {
+            return true;
+        };
+
+        let registry = handler_registry();
+        let guard = match registry.read() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                warn!(target: "neo", "message handler registry poisoned: {}", poisoned);
+                return true;
+            }
+        };
+        if guard.is_empty() {
+            return true;
+        }
+
+        let Some(wire_message) = Self::build_wire_message(message) else {
+            return true;
+        };
+
+        for entry in guard.iter() {
+            if !entry
+                .handler
+                .remote_node_message_received_handler(&system, &wire_message)
+            {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn build_wire_message(message: &NetworkMessage) -> Option<WireMessage> {
+        if let Some(raw) = message.wire_payload() {
+            return WireMessage::from_wire_parts(message.flags, message.command(), raw).ok();
+        }
+
+        let payload = match message.payload.to_bytes() {
+            Ok(bytes) => bytes,
+            Err(err) => {
+                warn!(
+                    target: "neo",
+                    error = %err,
+                    "failed to serialize protocol payload for message handlers"
+                );
+                return None;
+            }
+        };
+
+        let mut wire = WireMessage {
+            flags: message.flags,
+            command: message.command(),
+            payload_raw: payload.clone(),
+            payload_compressed: payload.clone(),
+        };
+
+        if wire.flags.is_compressed() {
+            match compress_lz4(&wire.payload_raw) {
+                Ok(compressed) => wire.payload_compressed = compressed,
+                Err(err) => {
+                    warn!(
+                        target: "neo",
+                        error = %err,
+                        "failed to recompress payload for message handlers"
+                    );
+                    wire.flags = MessageFlags::NONE;
+                    wire.payload_compressed = wire.payload_raw.clone();
+                }
+            }
+        }
+
+        Some(wire)
     }
 
     fn on_filter_load(&mut self, payload: &FilterLoadPayload) {
@@ -422,6 +566,15 @@ impl RemoteNode {
     }
 
     async fn on_inbound(&mut self, message: NetworkMessage, ctx: &mut ActorContext) -> ActorResult {
+        if !self.dispatch_message_received(&message) {
+            trace!(
+                target: "neo",
+                command = ?message.command(),
+                "message processing cancelled by handler"
+            );
+            return Ok(());
+        }
+
         match &message.payload {
             ProtocolMessage::Version(payload) => self.on_version(payload.clone(), ctx).await,
             ProtocolMessage::Verack => self.on_verack(ctx).await,
@@ -775,6 +928,36 @@ impl RemoteNode {
         Ok(())
     }
 
+    async fn on_get_block_by_index(&mut self, payload: GetBlockByIndexPayload) -> ActorResult {
+        let count = Self::normalize_request(payload.count, MAX_HASHES_COUNT);
+        if count == 0 {
+            return Ok(());
+        }
+
+        for offset in 0..count {
+            let index = payload.index_start.saturating_add(offset as u32);
+
+            let Some(hash) = self.system.block_hash_at(index) else {
+                break;
+            };
+
+            let Some(mut block) = self.system.try_get_block(&hash) else {
+                break;
+            };
+
+            if let Some(flags) = self.bloom_filter_flags(&block) {
+                let payload = MerkleBlockPayload::create(&mut block, flags);
+                self.enqueue_message(NetworkMessage::new(ProtocolMessage::MerkleBlock(payload)))
+                    .await?;
+            } else {
+                self.enqueue_message(NetworkMessage::new(ProtocolMessage::Block(block)))
+                    .await?;
+            }
+        }
+
+        Ok(())
+    }
+
     fn on_not_found(&mut self, payload: InvPayload, ctx: &ActorContext) {
         for hash in &payload.hashes {
             self.pending_known_hashes.remove(hash);
@@ -965,6 +1148,9 @@ impl RemoteNode {
             ProtocolMessage::Block(block) => self.on_block(block.clone(), ctx).await,
             ProtocolMessage::Extensible(payload) => self.on_extensible(payload.clone(), ctx).await,
             ProtocolMessage::GetBlocks(payload) => self.on_get_blocks(payload.clone()).await,
+            ProtocolMessage::GetBlockByIndex(payload) => {
+                self.on_get_block_by_index(payload.clone()).await
+            }
             ProtocolMessage::GetHeaders(payload) => self.on_get_headers(payload.clone()).await,
             ProtocolMessage::Headers(payload) => {
                 self.on_headers(payload.clone(), ctx);
@@ -1158,8 +1344,17 @@ fn current_unix_timestamp() -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{PendingKnownHashes, UInt256};
-    use std::time::{Duration, Instant};
+    use super::{
+        handler_registry, register_message_received_handler, IMessageReceivedHandler, Message,
+        PendingKnownHashes, UInt256,
+    };
+    use std::{
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        },
+        time::{Duration, Instant},
+    };
 
     fn make_hash(byte: u8) -> UInt256 {
         let mut data = [0u8; 32];
@@ -1179,5 +1374,39 @@ mod tests {
         assert_eq!(removed, 1);
         assert!(!cache.contains(&make_hash(1)));
         assert!(cache.contains(&make_hash(2)));
+    }
+
+    #[derive(Default)]
+    struct TestHandler {
+        invocations: AtomicUsize,
+    }
+
+    impl IMessageReceivedHandler for TestHandler {
+        fn remote_node_message_received_handler(
+            &self,
+            _system: &crate::neo_system::NeoSystem,
+            _message: &Message,
+        ) -> bool {
+            self.invocations.fetch_add(1, Ordering::Relaxed);
+            true
+        }
+    }
+
+    #[test]
+    fn register_handler_tracks_subscription() {
+        // ensure registry starts empty
+        handler_registry().write().unwrap().clear();
+
+        let handler = Arc::new(TestHandler::default());
+        let subscription = register_message_received_handler(handler.clone());
+        {
+            let guard = handler_registry().read().unwrap();
+            assert_eq!(guard.len(), 1);
+        }
+        drop(subscription);
+        {
+            let guard = handler_registry().read().unwrap();
+            assert!(guard.is_empty());
+        }
     }
 }

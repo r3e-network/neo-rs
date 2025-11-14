@@ -10,11 +10,15 @@
 // modifications are permitted.
 use crate::wallets::Wallet;
 
+use std::any::Any;
 use std::sync::{mpsc, Arc};
 
 /// A provider for obtaining wallet instance.
 /// Matches C# IWalletProvider exactly
-pub trait IWalletProvider {
+pub trait IWalletProvider: Send + Sync + Any {
+    /// Returns a type-erased view of the provider for event dispatch.
+    fn as_any(&self) -> &dyn Any;
+
     /// Triggered when a wallet is opened or closed.
     /// Matches C# WalletChanged event
     fn wallet_changed(&self) -> mpsc::Receiver<Arc<dyn Wallet>>;

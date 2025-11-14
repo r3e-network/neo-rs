@@ -237,8 +237,17 @@ pub enum PluginEvent {
         block_hash: String,
         block_height: u32,
     },
-    /// New transaction received event.
+    /// New transaction received event (validated and relayed).
     TransactionReceived { tx_hash: String },
+    /// Transaction accepted into the mempool.
+    MempoolTransactionAdded { tx_hash: String },
+    /// Transactions removed from the mempool along with the reason.
+    MempoolTransactionRemoved {
+        tx_hashes: Vec<String>,
+        reason: String,
+    },
+    /// Wallet was opened or closed.
+    WalletChanged { wallet_name: String },
     /// Consensus state change notification.
     ConsensusStateChanged { state: String },
     /// RPC request processed by the runtime.
@@ -282,6 +291,19 @@ impl std::fmt::Debug for PluginEvent {
             PluginEvent::ConsensusStateChanged { state } => f
                 .debug_struct("PluginEvent::ConsensusStateChanged")
                 .field("state", state)
+                .finish(),
+            PluginEvent::MempoolTransactionAdded { tx_hash } => f
+                .debug_struct("PluginEvent::MempoolTransactionAdded")
+                .field("tx_hash", tx_hash)
+                .finish(),
+            PluginEvent::MempoolTransactionRemoved { tx_hashes, reason } => f
+                .debug_struct("PluginEvent::MempoolTransactionRemoved")
+                .field("tx_hashes", tx_hashes)
+                .field("reason", reason)
+                .finish(),
+            PluginEvent::WalletChanged { wallet_name } => f
+                .debug_struct("PluginEvent::WalletChanged")
+                .field("wallet_name", wallet_name)
                 .finish(),
             PluginEvent::RpcRequest { method, params } => f
                 .debug_struct("PluginEvent::RpcRequest")

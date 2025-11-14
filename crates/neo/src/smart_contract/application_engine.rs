@@ -25,6 +25,7 @@ use crate::smart_contract::iterators::i_iterator::IIterator;
 use crate::smart_contract::iterators::StorageIterator;
 use crate::smart_contract::log_event_args::LogEventArgs;
 use crate::smart_contract::manifest::ContractMethodDescriptor;
+use crate::smart_contract::native::helpers::NativeHelpers;
 use crate::smart_contract::native::ContractManagement;
 use crate::smart_contract::native::{
     LedgerTransactionStates, NativeContract, NativeContractsCache, NativeRegistry, PolicyContract,
@@ -433,10 +434,16 @@ impl ApplicationEngine {
     }
 
     pub fn push_log(&mut self, event: LogEventArgs) {
+        if let Some(context) = NativeHelpers::context() {
+            context.notify_application_log(self, &event);
+        }
         self.logs.push(event);
     }
 
     pub fn push_notification(&mut self, event: NotifyEventArgs) {
+        if let Some(context) = NativeHelpers::context() {
+            context.notify_application_notify(self, &event);
+        }
         self.notifications.push(event);
     }
 

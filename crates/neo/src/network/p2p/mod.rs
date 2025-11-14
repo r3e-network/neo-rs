@@ -38,6 +38,9 @@ pub use message_command::MessageCommand;
 pub use message_flags::MessageFlags;
 pub use messages::{MessageHeader, NetworkMessage, ProtocolMessage};
 pub use peer::{ConnectedPeer, PeerCommand, PeerState, PeerTimer, MAX_COUNT_FROM_SEED_LIST};
-pub use remote_node::{RemoteNode, RemoteNodeCommand};
+pub use remote_node::{
+    register_message_received_handler, unregister_message_received_handler,
+    MessageHandlerSubscription, RemoteNode, RemoteNodeCommand,
+};
 pub use task_manager::{TaskManager, TaskManagerActor, TaskManagerCommand};
 pub use task_session::TaskSession;

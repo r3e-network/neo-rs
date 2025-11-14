@@ -19,7 +19,12 @@ use tracing::{debug, warn};
 use crate::constants::GENESIS_TIMESTAMP_MS;
 use crate::contains_transaction_type::ContainsTransactionType;
 use crate::error::{CoreError, CoreResult};
-use crate::i_event_handlers::{ICommittedHandler, ICommittingHandler, IServiceAddedHandler};
+use crate::extensions::log_level::LogLevel;
+use crate::i_event_handlers::{
+    ICommittedHandler, ICommittingHandler, ILogHandler, ILoggingHandler, INotifyHandler,
+    IServiceAddedHandler, ITransactionAddedHandler, ITransactionRemovedHandler,
+    IWalletChangedHandler,
+};
 use crate::ledger::blockchain::{Blockchain, BlockchainCommand, PreverifyCompleted};
 use crate::ledger::{
     block::Block as LedgerBlock, block_header::BlockHeader as LedgerBlockHeader,
@@ -42,20 +47,25 @@ pub use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::application_engine::TEST_MODE_GAS;
 use crate::smart_contract::call_flags::CallFlags;
+use crate::smart_contract::log_event_args::LogEventArgs;
 use crate::smart_contract::native::helpers::NativeHelpers;
 use crate::smart_contract::native::ledger_contract::{
     HashOrIndex, LedgerContract, LedgerTransactionStates, PersistedTransactionState,
 };
+use crate::smart_contract::notify_event_args::NotifyEventArgs;
 use crate::smart_contract::trigger_type::TriggerType;
 use crate::uint160::UInt160;
 use crate::uint256::UInt256;
+use crate::wallets::IWalletProvider;
 use neo_extensions::error::ExtensionError;
 use neo_extensions::plugin::{
     broadcast_global_event, initialise_global_runtime, shutdown_global_runtime, PluginContext,
     PluginEvent,
 };
+use neo_extensions::utility::Utility;
 use neo_io_crate::{InventoryHash, RelayCache};
 use neo_vm::{vm_state::VMState, OpCode};
+use std::thread;
 
 fn block_on_extension<F, T>(future: F) -> Result<T, ExtensionError>
 where
@@ -236,6 +246,7 @@ pub struct NeoSystemContext {
     pub service_added_handlers: Arc<RwLock<Vec<Arc<dyn IServiceAddedHandler + Send + Sync>>>>,
     /// Plugin manager shared state for hot-pluggable extensions.
     pub plugin_manager: Arc<RwLock<PluginManager>>,
+    pub wallet_changed_handlers: Arc<RwLock<Vec<Arc<dyn IWalletChangedHandler + Send + Sync>>>>,
     /// Store provider used to instantiate persistence backends.
     pub store_provider: Arc<dyn IStoreProvider>,
     /// Active persistence store.
@@ -250,6 +261,12 @@ pub struct NeoSystemContext {
     system: RwLock<Option<Weak<NeoSystem>>>,
     committing_handlers: Arc<RwLock<Vec<Arc<dyn ICommittingHandler + Send + Sync>>>>,
     committed_handlers: Arc<RwLock<Vec<Arc<dyn ICommittedHandler + Send + Sync>>>>,
+    transaction_added_handlers: Arc<RwLock<Vec<Arc<dyn ITransactionAddedHandler + Send + Sync>>>>,
+    transaction_removed_handlers:
+        Arc<RwLock<Vec<Arc<dyn ITransactionRemovedHandler + Send + Sync>>>>,
+    log_handlers: Arc<RwLock<Vec<Arc<dyn ILogHandler + Send + Sync>>>>,
+    logging_handlers: Arc<RwLock<Vec<Arc<dyn ILoggingHandler + Send + Sync>>>>,
+    notify_handlers: Arc<RwLock<Vec<Arc<dyn INotifyHandler + Send + Sync>>>>,
 }
 
 impl fmt::Debug for NeoSystemContext {
@@ -355,6 +372,138 @@ impl NeoSystemContext {
             .write()
             .map_err(|_| CoreError::system("committed handler registry poisoned"))?;
         guard.push(handler);
+        Ok(())
+    }
+
+    pub fn register_transaction_added_handler(
+        &self,
+        handler: Arc<dyn ITransactionAddedHandler + Send + Sync>,
+    ) -> CoreResult<()> {
+        let mut guard = self
+            .transaction_added_handlers
+            .write()
+            .map_err(|_| CoreError::system("transaction added handler registry poisoned"))?;
+        guard.push(handler);
+        Ok(())
+    }
+
+    pub fn register_transaction_removed_handler(
+        &self,
+        handler: Arc<dyn ITransactionRemovedHandler + Send + Sync>,
+    ) -> CoreResult<()> {
+        let mut guard = self
+            .transaction_removed_handlers
+            .write()
+            .map_err(|_| CoreError::system("transaction removed handler registry poisoned"))?;
+        guard.push(handler);
+        Ok(())
+    }
+
+    pub fn register_log_handler(
+        &self,
+        handler: Arc<dyn ILogHandler + Send + Sync>,
+    ) -> CoreResult<()> {
+        let mut guard = self
+            .log_handlers
+            .write()
+            .map_err(|_| CoreError::system("log handler registry poisoned"))?;
+        guard.push(handler);
+        Ok(())
+    }
+
+    pub fn register_logging_handler(
+        &self,
+        handler: Arc<dyn ILoggingHandler + Send + Sync>,
+    ) -> CoreResult<()> {
+        let mut guard = self
+            .logging_handlers
+            .write()
+            .map_err(|_| CoreError::system("logging handler registry poisoned"))?;
+        guard.push(handler);
+        Ok(())
+    }
+
+    pub fn register_notify_handler(
+        &self,
+        handler: Arc<dyn INotifyHandler + Send + Sync>,
+    ) -> CoreResult<()> {
+        self.notify_handlers
+            .write()
+            .map_err(|_| CoreError::system("notify handler registry poisoned"))?
+            .push(handler);
+        Ok(())
+    }
+
+    pub fn register_wallet_changed_handler(
+        &self,
+        handler: Arc<dyn IWalletChangedHandler + Send + Sync>,
+    ) -> CoreResult<()> {
+        self.wallet_changed_handlers
+            .write()
+            .map_err(|_| CoreError::system("wallet changed handler registry poisoned"))?
+            .push(handler);
+        Ok(())
+    }
+
+    pub fn notify_application_log(&self, engine: &ApplicationEngine, args: &LogEventArgs) {
+        if let Ok(handlers) = self.log_handlers.read() {
+            for handler in handlers.iter() {
+                handler.application_engine_log_handler(engine, args);
+            }
+        }
+    }
+
+    pub fn notify_logging_handlers(&self, source: &str, level: LogLevel, message: &str) {
+        if let Ok(handlers) = self.logging_handlers.read() {
+            for handler in handlers.iter() {
+                handler.utility_logging_handler(source, level, message);
+            }
+        }
+    }
+
+    pub fn notify_application_notify(&self, engine: &ApplicationEngine, args: &NotifyEventArgs) {
+        if let Ok(handlers) = self.notify_handlers.read() {
+            for handler in handlers.iter() {
+                handler.application_engine_notify_handler(engine, args);
+            }
+        }
+    }
+
+    pub fn notify_wallet_changed(&self, sender: &dyn Any, wallet: &dyn crate::wallets::Wallet) {
+        if let Ok(handlers) = self.wallet_changed_handlers.read() {
+            for handler in handlers.iter() {
+                handler.i_wallet_provider_wallet_changed_handler(sender, wallet);
+            }
+        }
+        self.broadcast_plugin_event(PluginEvent::WalletChanged {
+            wallet_name: wallet.name().to_string(),
+        });
+    }
+
+    pub fn attach_wallet_provider(
+        context: &Arc<Self>,
+        provider: Arc<dyn IWalletProvider + Send + Sync>,
+    ) -> CoreResult<()> {
+        let receiver = provider.wallet_changed();
+        let provider = Arc::clone(&provider);
+        let weak_context = Arc::downgrade(context);
+
+        thread::Builder::new()
+            .name("wallet-provider-listener".to_string())
+            .spawn(move || {
+                for wallet in receiver {
+                    if let Some(ctx) = weak_context.upgrade() {
+                        let sender = provider.as_any();
+                        ctx.notify_wallet_changed(sender, wallet.as_ref());
+                    } else {
+                        break;
+                    }
+                }
+            })
+            .map_err(|err| {
+                CoreError::system(format!("failed to spawn wallet provider listener: {err}"))
+            })?;
+
         Ok(())
     }
 
@@ -869,6 +1018,7 @@ impl NeoSystem {
         let service_added_handlers: Arc<RwLock<Vec<Arc<dyn IServiceAddedHandler + Send + Sync>>>> =
             Arc::new(RwLock::new(Vec::new()));
         let plugin_manager = Arc::new(RwLock::new(PluginManager::new()));
+        let wallet_changed_handlers = Arc::new(RwLock::new(Vec::new()));
 
         let store_provider = storage_provider.unwrap_or_else(|| {
             StoreFactory::get_store_provider("Memory")
@@ -931,6 +1081,7 @@ impl NeoSystem {
             services: services.clone(),
             service_added_handlers: service_added_handlers.clone(),
             plugin_manager: plugin_manager.clone(),
+            wallet_changed_handlers: wallet_changed_handlers.clone(),
             store_provider: store_provider.clone(),
             store: store.clone(),
             genesis_block: genesis_block.clone(),
@@ -942,11 +1093,53 @@ impl NeoSystem {
             system: RwLock::new(None),
             committing_handlers: Arc::new(RwLock::new(Vec::new())),
             committed_handlers: Arc::new(RwLock::new(Vec::new())),
+            transaction_added_handlers: Arc::new(RwLock::new(Vec::new())),
+            transaction_removed_handlers: Arc::new(RwLock::new(Vec::new())),
+            log_handlers: Arc::new(RwLock::new(Vec::new())),
+            logging_handlers: Arc::new(RwLock::new(Vec::new())),
+            notify_handlers: Arc::new(RwLock::new(Vec::new())),
         });
 
         NativeHelpers::attach_system_context(context.clone());
+        let logging_context = Arc::downgrade(&context);
+        Utility::set_logging(Some(Box::new(move |source, level, message| {
+            if let Some(ctx) = logging_context.upgrade() {
+                let local_level: LogLevel = level.into();
+                ctx.notify_logging_handlers(&source, local_level, &message);
+            }
+        })));
 
         if let Ok(mut pool) = memory_pool.lock() {
+            let context_added = context.clone();
+            pool.transaction_added = Some(Box::new(move |sender, tx| {
+                if let Ok(handlers) = context_added.transaction_added_handlers.read() {
+                    for handler in handlers.iter() {
+                        handler.memory_pool_transaction_added_handler(sender, tx);
+                    }
+                }
+                context_added.broadcast_plugin_event(PluginEvent::MempoolTransactionAdded {
+                    tx_hash: tx.hash().to_string(),
+                });
+            }));
+
+            let context_removed = context.clone();
+            pool.transaction_removed = Some(Box::new(move |sender, args| {
+                if let Ok(handlers) = context_removed.transaction_removed_handlers.read() {
+                    for handler in handlers.iter() {
+                        handler.memory_pool_transaction_removed_handler(sender, args);
+                    }
+                }
+                let hashes = args
+                    .transactions
+                    .iter()
+                    .map(|tx| tx.hash().to_string())
+                    .collect::<Vec<_>>();
+                context_removed.broadcast_plugin_event(PluginEvent::MempoolTransactionRemoved {
+                    tx_hashes: hashes,
+                    reason: format!("{:?}", args.reason),
+                });
+            }));
+
             let local_node_ref = local_node.clone();
             let blockchain_ref = blockchain.clone();
             pool.transaction_relay = Some(Box::new(move |tx: &Transaction| {
@@ -1223,6 +1416,62 @@ impl NeoSystem {
         self.context.register_committed_handler(handler)
     }
 
+    /// Registers a handler invoked when transactions enter the memory pool.
+    pub fn register_transaction_added_handler(
+        &self,
+        handler: Arc<dyn ITransactionAddedHandler + Send + Sync>,
+    ) -> CoreResult<()> {
+        self.context.register_transaction_added_handler(handler)
+    }
+
+    /// Registers a handler invoked when transactions leave the memory pool.
+    pub fn register_transaction_removed_handler(
+        &self,
+        handler: Arc<dyn ITransactionRemovedHandler + Send + Sync>,
+    ) -> CoreResult<()> {
+        self.context.register_transaction_removed_handler(handler)
+    }
+
+    /// Registers a handler for `ApplicationEngine.Log` events.
+    pub fn register_log_handler(
+        &self,
+        handler: Arc<dyn ILogHandler + Send + Sync>,
+    ) -> CoreResult<()> {
+        self.context.register_log_handler(handler)
+    }
+
+    /// Registers a handler for `Utility.Logging` events.
+    pub fn register_logging_handler(
+        &self,
+        handler: Arc<dyn ILoggingHandler + Send + Sync>,
+    ) -> CoreResult<()> {
+        self.context.register_logging_handler(handler)
+    }
+
+    /// Registers a handler for `ApplicationEngine.Notify` events.
+    pub fn register_notify_handler(
+        &self,
+        handler: Arc<dyn INotifyHandler + Send + Sync>,
+    ) -> CoreResult<()> {
+        self.context.register_notify_handler(handler)
+    }
+
+    /// Registers a handler for wallet provider changes.
+    pub fn register_wallet_changed_handler(
+        &self,
+        handler: Arc<dyn IWalletChangedHandler + Send + Sync>,
+    ) -> CoreResult<()> {
+        self.context.register_wallet_changed_handler(handler)
+    }
+
+    /// Attaches a wallet provider so wallet-change notifications propagate to handlers.
+    pub fn attach_wallet_provider(
+        &self,
+        provider: Arc<dyn IWalletProvider + Send + Sync>,
+    ) -> CoreResult<()> {
+        NeoSystemContext::attach_wallet_provider(&self.context, provider)
+    }
+
     fn add_service_internal<T>(&self, name: Option<String>, service: Arc<T>) -> CoreResult<()>
     where
         T: Any + Send + Sync + 'static,
@@ -1450,8 +1699,23 @@ pub enum TransactionRouterMessage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ledger::{
+        transaction_removal_reason::TransactionRemovalReason,
+        transaction_removed_event_args::TransactionRemovedEventArgs,
+    };
     use crate::network::p2p::payloads::witness::Witness as PayloadWitness;
-    use crate::{UInt160, UInt256};
+    use crate::network::p2p::payloads::Transaction;
+    use crate::smart_contract::contract::Contract;
+    use crate::smart_contract::notify_event_args::NotifyEventArgs;
+    use crate::wallets::key_pair::KeyPair;
+    use crate::wallets::{Version, Wallet, WalletAccount, WalletError, WalletResult};
+    use crate::{IVerifiable, UInt160, UInt256};
+    use async_trait::async_trait;
+    use neo_vm::StackItem;
+    use std::any::Any;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{mpsc, Mutex};
+    use tokio::time::{sleep, timeout, Duration};
 
     fn sample_u256(byte: u8) -> UInt256 {
         UInt256::from_bytes(&[byte; 32]).expect("uint256 from bytes")
@@ -1514,6 +1778,352 @@ mod tests {
         let block = NeoSystemContext::convert_ledger_block(ledger_block);
         assert_eq!(block.transactions.len(), txs.len());
         assert_eq!(block.header.index(), 10);
+    }
+
+    #[derive(Default)]
+    struct EventProbe {
+        added: AtomicUsize,
+        removed: AtomicUsize,
+        logs: AtomicUsize,
+        logging: AtomicUsize,
+        notify: AtomicUsize,
+        wallet_changes: AtomicUsize,
+    }
+
+    impl EventProbe {
+        fn added(&self) -> usize {
+            self.added.load(Ordering::Relaxed)
+        }
+
+        fn removed(&self) -> usize {
+            self.removed.load(Ordering::Relaxed)
+        }
+
+        fn logs(&self) -> usize {
+            self.logs.load(Ordering::Relaxed)
+        }
+
+        fn logging(&self) -> usize {
+            self.logging.load(Ordering::Relaxed)
+        }
+
+        fn notifies(&self) -> usize {
+            self.notify.load(Ordering::Relaxed)
+        }
+
+        fn wallet_changes(&self) -> usize {
+            self.wallet_changes.load(Ordering::Relaxed)
+        }
+    }
+
+    impl ITransactionAddedHandler for EventProbe {
+        fn memory_pool_transaction_added_handler(&self, _sender: &dyn Any, _tx: &Transaction) {
+            self.added.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    impl ITransactionRemovedHandler for EventProbe {
+        fn memory_pool_transaction_removed_handler(
+            &self,
+            _sender: &dyn Any,
+            _args: &TransactionRemovedEventArgs,
+        ) {
+            self.removed.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    impl ILogHandler for EventProbe {
+        fn application_engine_log_handler(
+            &self,
+            _sender: &ApplicationEngine,
+            _log_event_args: &LogEventArgs,
+        ) {
+            self.logs.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    impl ILoggingHandler for EventProbe {
+        fn utility_logging_handler(&self, _source: &str, _level: LogLevel, _message: &str) {
+            self.logging.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    impl INotifyHandler for EventProbe {
+        fn application_engine_notify_handler(
+            &self,
+            _sender: &ApplicationEngine,
+            _notify_event_args: &NotifyEventArgs,
+        ) {
+            self.notify.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    impl IWalletChangedHandler for EventProbe {
+        fn i_wallet_provider_wallet_changed_handler(
+            &self,
+            _sender: &dyn Any,
+            _wallet: &dyn Wallet,
+        ) {
+            self.wallet_changes.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    #[derive(Default)]
+    struct DummyWallet {
+        version: Version,
+    }
+
+    #[async_trait]
+    impl Wallet for DummyWallet {
+        fn name(&self) -> &str {
+            "dummy"
+        }
+
+        fn path(&self) -> Option<&str> {
+            None
+        }
+
+        fn version(&self) -> &Version {
+            &self.version
+        }
+
+        async fn change_password(
+            &mut self,
+            _old_password: &str,
+            _new_password: &str,
+        ) -> WalletResult<bool> {
+            Ok(false)
+        }
+
+        fn contains(&self, _script_hash: &UInt160) -> bool {
+            false
+        }
+
+        async fn create_account(
+            &mut self,
+            _private_key: &[u8],
+        ) -> WalletResult<Arc<dyn WalletAccount>> {
+            Err(WalletError::Other("not implemented".to_string()))
+        }
+
+        async fn create_account_with_contract(
+            &mut self,
+            _contract: Contract,
+            _key_pair: Option<KeyPair>,
+        ) -> WalletResult<Arc<dyn WalletAccount>> {
+            Err(WalletError::Other("not implemented".to_string()))
+        }
+
+        async fn create_account_watch_only(
+            &mut self,
+            _script_hash: UInt160,
+        ) -> WalletResult<Arc<dyn WalletAccount>> {
+            Err(WalletError::Other("not implemented".to_string()))
+        }
+
+        async fn delete_account(&mut self, _script_hash: &UInt160) -> WalletResult<bool> {
+            Ok(false)
+        }
+
+        async fn export(&self, _path: &str, _password: &str) -> WalletResult<()> {
+            Err(WalletError::Other("not implemented".to_string()))
+        }
+
+        fn get_account(&self, _script_hash: &UInt160) -> Option<Arc<dyn WalletAccount>> {
+            None
+        }
+
+        fn get_accounts(&self) -> Vec<Arc<dyn WalletAccount>> {
+            Vec::new()
+        }
+
+        async fn get_available_balance(&self, _asset_id: &UInt256) -> WalletResult<i64> {
+            Ok(0)
+        }
+
+        async fn get_unclaimed_gas(&self) -> WalletResult<i64> {
+            Ok(0)
+        }
+
+        async fn import_wif(&mut self, _wif: &str) -> WalletResult<Arc<dyn WalletAccount>> {
+            Err(WalletError::Other("not implemented".to_string()))
+        }
+
+        async fn import_nep2(
+            &mut self,
+            _nep2_key: &str,
+            _password: &str,
+        ) -> WalletResult<Arc<dyn WalletAccount>> {
+            Err(WalletError::Other("not implemented".to_string()))
+        }
+
+        fn get_default_account(&self) -> Option<Arc<dyn WalletAccount>> {
+            None
+        }
+
+        async fn set_default_account(&mut self, _script_hash: &UInt160) -> WalletResult<()> {
+            Ok(())
+        }
+
+        async fn sign(&self, _data: &[u8], _script_hash: &UInt160) -> WalletResult<Vec<u8>> {
+            Err(WalletError::Other("not implemented".to_string()))
+        }
+
+        async fn sign_transaction(&self, _transaction: &mut Transaction) -> WalletResult<()> {
+            Ok(())
+        }
+
+        async fn unlock(&mut self, _password: &str) -> WalletResult<bool> {
+            Ok(true)
+        }
+
+        fn lock(&mut self) {}
+
+        async fn verify_password(&self, _password: &str) -> WalletResult<bool> {
+            Ok(true)
+        }
+
+        async fn save(&self) -> WalletResult<()> {
+            Ok(())
+        }
+    }
+
+    struct TestWalletProvider {
+        receiver: Mutex<Option<mpsc::Receiver<Arc<dyn Wallet>>>>,
+    }
+
+    impl TestWalletProvider {
+        fn new() -> (Arc<Self>, mpsc::Sender<Arc<dyn Wallet>>) {
+            let (tx, rx) = mpsc::channel();
+            let provider = Arc::new(Self {
+                receiver: Mutex::new(Some(rx)),
+            });
+            (provider, tx)
+        }
+    }
+
+    impl IWalletProvider for TestWalletProvider {
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn wallet_changed(&self) -> mpsc::Receiver<Arc<dyn Wallet>> {
+            self.receiver
+                .lock()
+                .unwrap()
+                .take()
+                .expect("wallet changed receiver already taken")
+        }
+
+        fn get_wallet(&self) -> Option<Arc<dyn Wallet>> {
+            None
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn transaction_event_handlers_receive_callbacks() {
+        let system =
+            NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+        let handler = Arc::new(EventProbe::default());
+
+        system
+            .register_transaction_added_handler(handler.clone())
+            .expect("register added");
+        system
+            .register_transaction_removed_handler(handler.clone())
+            .expect("register removed");
+
+        let tx = Transaction::default();
+        let pool = system.memory_pool();
+        let args = TransactionRemovedEventArgs {
+            transactions: vec![tx.clone()],
+            reason: TransactionRemovalReason::Evicted,
+        };
+
+        {
+            let mut guard = pool.lock().expect("lock mempool");
+            if let Some(callback) = &guard.transaction_added {
+                callback(&guard, &tx);
+            }
+            if let Some(callback) = &guard.transaction_removed {
+                callback(&guard, &args);
+            }
+        }
+
+        assert_eq!(handler.added(), 1);
+        assert_eq!(handler.removed(), 1);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn log_and_logging_handlers_fire() {
+        let system =
+            NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+        let handler = Arc::new(EventProbe::default());
+
+        system
+            .register_log_handler(handler.clone())
+            .expect("register log handler");
+        system
+            .register_logging_handler(handler.clone())
+            .expect("register logging handler");
+        system
+            .register_notify_handler(handler.clone())
+            .expect("register notify handler");
+
+        let snapshot = Arc::new(DataCache::new(false));
+        let mut engine = ApplicationEngine::new(
+            TriggerType::Application,
+            None,
+            Arc::clone(&snapshot),
+            None,
+            ProtocolSettings::default(),
+            TEST_MODE_GAS,
+            None,
+        )
+        .expect("engine");
+
+        let container: Arc<dyn IVerifiable> = Arc::new(Transaction::default());
+        let log_event = LogEventArgs::new(container, UInt160::default(), "hello".to_string());
+        engine.push_log(log_event);
+        assert_eq!(handler.logs(), 1);
+
+        Utility::log("test", LogLevel::Info, "message");
+        assert_eq!(handler.logging(), 1);
+
+        let notify = NotifyEventArgs::new(
+            Arc::new(Transaction::default()) as Arc<dyn IVerifiable>,
+            UInt160::default(),
+            "evt".to_string(),
+            vec![StackItem::from_int(1)],
+        );
+        engine.push_notification(notify);
+        assert_eq!(handler.notifies(), 1);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn wallet_changed_handlers_receive_events() {
+        let system =
+            NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+        let handler = Arc::new(EventProbe::default());
+        system
+            .register_wallet_changed_handler(handler.clone())
+            .expect("register wallet handler");
+
+        let (provider, tx) = TestWalletProvider::new();
+        system
+            .attach_wallet_provider(provider)
+            .expect("attach wallet provider");
+
+        tx.send(Arc::new(DummyWallet::default()) as Arc<dyn Wallet>)
+            .expect("send wallet");
+
+        timeout(Duration::from_secs(1), async {
+            while handler.wallet_changes() == 0 {
+                sleep(Duration::from_millis(50)).await;
+            }
+        })
+        .await
+        .expect("wallet handler triggered");
     }
 
     #[tokio::test(flavor = "multi_thread")]

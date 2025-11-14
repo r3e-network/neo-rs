@@ -37,6 +37,8 @@ pub struct NetworkMessage {
     pub flags: MessageFlags,
     /// Strongly typed payload.
     pub payload: ProtocolMessage,
+    /// Raw payload bytes as sent on the wire (compressed when flag is set).
+    wire_payload: Option<Vec<u8>>,
 }
 
 impl NetworkMessage {
@@ -45,14 +47,20 @@ impl NetworkMessage {
         let command = payload.command();
         Self {
             header: MessageHeader { command },
-            flags: MessageFlags::None,
+            flags: MessageFlags::NONE,
             payload,
+            wire_payload: None,
         }
     }
 
     /// Convenience accessor for the command associated with the payload.
     pub fn command(&self) -> MessageCommand {
         self.header.command
+    }
+
+    /// Returns the original wire-format payload if available.
+    pub fn wire_payload(&self) -> Option<&[u8]> {
+        self.wire_payload.as_deref()
     }
 
     /// Returns the message encoded exactly as it would appear on the wire.
@@ -74,13 +82,13 @@ impl NetworkMessage {
             && self.payload.should_try_compress()
             && payload_bytes.len() >= COMPRESSION_MIN_SIZE;
 
-        let mut flags = MessageFlags::None;
+        let mut flags = MessageFlags::NONE;
         if should_compress {
             if let Ok(compressed) = compress_lz4(&payload_bytes) {
                 // Honour the threshold check from the C# implementation.
                 if compressed.len() + COMPRESSION_THRESHOLD < payload_bytes.len() {
                     payload_bytes = compressed;
-                    flags = MessageFlags::Compressed;
+                    flags = MessageFlags::COMPRESSED;
                 }
             }
         }
@@ -115,6 +123,7 @@ impl NetworkMessage {
             .read_var_int(PAYLOAD_MAX_SIZE as u64)
             .map_err(map_io_error)? as usize;
         let payload_raw = reader.read_bytes(payload_len).map_err(map_io_error)?;
+        let wire_payload = payload_raw.clone();
 
         if reader.remaining() != 0 {
             return Err(NetworkError::InvalidMessage(
@@ -134,6 +143,7 @@ impl NetworkMessage {
             header: MessageHeader { command },
             flags,
             payload,
+            wire_payload: Some(wire_payload),
         })
     }
 }
@@ -224,6 +234,16 @@ impl ProtocolMessage {
                 | Self::FilterLoad(_)
                 | Self::FilterAdd(_)
         )
+    }
+
+    /// Serializes the payload into its binary representation.
+    pub fn to_bytes(&self) -> NetworkResult<Vec<u8>> {
+        self.serialize()
+    }
+
+    /// Reconstructs the payload from its binary form and command discriminator.
+    pub fn from_bytes(command: MessageCommand, data: &[u8]) -> NetworkResult<Self> {
+        Self::deserialize(command, data)
     }
 
     fn serialize(&self) -> NetworkResult<Vec<u8>> {
