@@ -300,9 +300,7 @@ impl Serializable for Signer {
             }
             writer.write_var_uint(self.allowed_groups.len() as u64)?;
             for group in &self.allowed_groups {
-                let encoded = group
-                    .encode_point(true)
-                    .map_err(|e| IoError::invalid_data(e))?;
+                let encoded = group.encode_point(true).map_err(IoError::invalid_data)?;
                 if encoded.len() != 33 {
                     return Err(IoError::invalid_data("Group must be compressed"));
                 }
@@ -381,8 +379,7 @@ impl Serializable for Signer {
                 if encoded.len() != ECPOINT_COMPRESSED_SIZE {
                     return Err(IoError::invalid_data("Invalid ECPoint length"));
                 }
-                let point =
-                    ECPoint::decode_compressed(&encoded).map_err(|e| IoError::invalid_data(e))?;
+                let point = ECPoint::decode_compressed(&encoded).map_err(IoError::invalid_data)?;
                 allowed_groups.push(point);
             }
 

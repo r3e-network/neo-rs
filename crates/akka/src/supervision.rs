@@ -109,7 +109,7 @@ impl FailureTracker {
                     break;
                 }
             }
-        } else if self.failures.len() >= limit + 1 {
+        } else if self.failures.len() > limit {
             self.failures.pop_front();
         }
 

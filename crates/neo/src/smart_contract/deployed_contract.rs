@@ -24,7 +24,7 @@ impl DeployedContract {
 
     /// Gets the contract hash
     pub fn hash(&self) -> UInt160 {
-        self.state.hash.clone()
+        self.state.hash
     }
 
     /// Gets the NEF file

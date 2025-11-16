@@ -53,10 +53,7 @@ impl RpcNep17Transfers {
 
         json.insert(
             "address".to_string(),
-            JToken::String(
-                self.user_script_hash
-                    .to_address(protocol_settings.address_version),
-            ),
+            JToken::String(self.user_script_hash.to_address()),
         );
 
         json
@@ -70,7 +67,8 @@ impl RpcNep17Transfers {
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
-                    .filter_map(|item| item.as_object())
+                    .filter_map(|item| item.as_ref())
+                    .filter_map(|token| token.as_object())
                     .filter_map(|obj| RpcNep17Transfer::from_json(obj, protocol_settings).ok())
                     .collect()
             })
@@ -81,7 +79,8 @@ impl RpcNep17Transfers {
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
-                    .filter_map(|item| item.as_object())
+                    .filter_map(|item| item.as_ref())
+                    .filter_map(|token| token.as_object())
                     .filter_map(|obj| RpcNep17Transfer::from_json(obj, protocol_settings).ok())
                     .collect()
             })
@@ -92,8 +91,8 @@ impl RpcNep17Transfers {
             .and_then(|v| v.as_string())
             .ok_or("Missing or invalid 'address' field")?;
 
-        let user_script_hash = UInt160::from_address(address, protocol_settings.address_version)
-            .map_err(|_| format!("Invalid address: {}", address))?;
+        let user_script_hash =
+            UInt160::from_address(&address).map_err(|_| format!("Invalid address: {}", address))?;
 
         Ok(Self {
             user_script_hash,
@@ -145,7 +144,7 @@ impl RpcNep17Transfer {
         if let Some(ref user_script_hash) = self.user_script_hash {
             json.insert(
                 "transferaddress".to_string(),
-                JToken::String(user_script_hash.to_address(protocol_settings.address_version)),
+                JToken::String(user_script_hash.to_address()),
             );
         } else {
             json.insert("transferaddress".to_string(), JToken::Null);
@@ -184,9 +183,9 @@ impl RpcNep17Transfer {
             .ok_or("Missing or invalid 'assethash' field")?;
 
         let asset_hash = if asset_hash_str.starts_with("0x") {
-            UInt160::parse(asset_hash_str)
+            UInt160::parse(&asset_hash_str)
         } else {
-            UInt160::from_address(asset_hash_str, protocol_settings.address_version)
+            UInt160::from_address(&asset_hash_str)
         }
         .map_err(|_| format!("Invalid asset hash: {}", asset_hash_str))?;
 
@@ -195,9 +194,9 @@ impl RpcNep17Transfer {
             .and_then(|v| v.as_string())
             .and_then(|addr| {
                 if addr.starts_with("0x") {
-                    UInt160::parse(addr).ok()
+                    UInt160::parse(&addr).ok()
                 } else {
-                    UInt160::from_address(addr, protocol_settings.address_version).ok()
+                    UInt160::from_address(&addr).ok()
                 }
             });
 
@@ -206,7 +205,7 @@ impl RpcNep17Transfer {
             .and_then(|v| v.as_string())
             .ok_or("Missing or invalid 'amount' field")?;
         let amount =
-            BigInt::from_str(amount_str).map_err(|_| format!("Invalid amount: {}", amount_str))?;
+            BigInt::from_str(&amount_str).map_err(|_| format!("Invalid amount: {}", amount_str))?;
 
         let block_index = json
             .get("blockindex")
@@ -221,7 +220,7 @@ impl RpcNep17Transfer {
         let tx_hash = json
             .get("txhash")
             .and_then(|v| v.as_string())
-            .and_then(|s| UInt256::parse(s).ok())
+            .and_then(|s| UInt256::parse(&s).ok())
             .ok_or("Missing or invalid 'txhash' field")?;
 
         Ok(Self {

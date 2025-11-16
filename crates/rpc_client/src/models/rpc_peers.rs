@@ -69,7 +69,8 @@ impl RpcPeers {
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
-                    .filter_map(|item| item.as_object())
+                    .filter_map(|item| item.as_ref())
+                    .filter_map(|token| token.as_object())
                     .filter_map(|obj| RpcPeer::from_json(obj).ok())
                     .collect()
             })
@@ -80,7 +81,8 @@ impl RpcPeers {
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
-                    .filter_map(|item| item.as_object())
+                    .filter_map(|item| item.as_ref())
+                    .filter_map(|token| token.as_object())
                     .filter_map(|obj| RpcPeer::from_json(obj).ok())
                     .collect()
             })
@@ -91,7 +93,8 @@ impl RpcPeers {
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
-                    .filter_map(|item| item.as_object())
+                    .filter_map(|item| item.as_ref())
+                    .filter_map(|token| token.as_object())
                     .filter_map(|obj| RpcPeer::from_json(obj).ok())
                     .collect()
             })

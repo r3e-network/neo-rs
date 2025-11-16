@@ -39,13 +39,13 @@ impl RpcBlockHeader {
         let previous_hash = json
             .get("previousblockhash")
             .and_then(|v| v.as_string())
-            .and_then(|s| UInt256::parse(s).ok())
+            .and_then(|s| UInt256::parse(&s).ok())
             .ok_or("Missing or invalid 'previousblockhash' field")?;
 
         let merkle_root = json
             .get("merkleroot")
             .and_then(|v| v.as_string())
-            .and_then(|s| UInt256::parse(s).ok())
+            .and_then(|s| UInt256::parse(&s).ok())
             .ok_or("Missing or invalid 'merkleroot' field")?;
 
         let timestamp = json
@@ -74,7 +74,7 @@ impl RpcBlockHeader {
             .get("nextconsensus")
             .and_then(|v| v.as_string())
             .ok_or("Missing or invalid 'nextconsensus' field")?;
-        let next_consensus = Utility::get_script_hash(next_consensus_str, protocol_settings)
+        let next_consensus = Utility::get_script_hash(&next_consensus_str, protocol_settings)
             .map_err(|err| format!("Invalid next consensus value: {err}"))?;
 
         let witnesses = json
@@ -82,8 +82,9 @@ impl RpcBlockHeader {
             .and_then(|v| v.as_array())
             .ok_or("Missing 'witnesses' array")?;
         let mut parsed_witnesses = Vec::with_capacity(witnesses.len());
-        for entry in witnesses {
-            let witness_obj = entry
+        for entry in witnesses.iter() {
+            let witness_token = entry.as_ref().ok_or("Invalid witness entry: null value")?;
+            let witness_obj = witness_token
                 .as_object()
                 .ok_or("Invalid witness entry: expected object")?;
             parsed_witnesses.push(Utility::witness_from_json(witness_obj)?);
@@ -109,7 +110,7 @@ impl RpcBlockHeader {
         let next_block_hash = json
             .get("nextblockhash")
             .and_then(|v| v.as_string())
-            .and_then(|s| UInt256::parse(s).ok());
+            .and_then(|s| UInt256::parse(&s).ok());
 
         Ok(Self {
             header,

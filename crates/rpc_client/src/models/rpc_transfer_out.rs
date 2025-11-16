@@ -35,10 +35,7 @@ impl RpcTransferOut {
         json.insert("value".to_string(), JToken::String(self.value.clone()));
         json.insert(
             "address".to_string(),
-            JToken::String(
-                self.script_hash
-                    .to_address(protocol_settings.address_version),
-            ),
+            JToken::String(self.script_hash.to_address()),
         );
         json
     }
@@ -52,9 +49,9 @@ impl RpcTransferOut {
             .ok_or("Missing or invalid 'asset' field")?;
 
         let asset = if asset_str.starts_with("0x") {
-            UInt160::parse(asset_str)
+            UInt160::parse(&asset_str)
         } else {
-            UInt160::from_address(asset_str, protocol_settings.address_version)
+            UInt160::from_address(asset_str)
         }
         .map_err(|_| format!("Invalid asset: {}", asset_str))?;
 
@@ -69,8 +66,8 @@ impl RpcTransferOut {
             .and_then(|v| v.as_string())
             .ok_or("Missing or invalid 'address' field")?;
 
-        let script_hash = UInt160::from_address(address, protocol_settings.address_version)
-            .map_err(|_| format!("Invalid address: {}", address))?;
+        let script_hash =
+            UInt160::from_address(&address).map_err(|_| format!("Invalid address: {}", address))?;
 
         Ok(Self {
             asset,

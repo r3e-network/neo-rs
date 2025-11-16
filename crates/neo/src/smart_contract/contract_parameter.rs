@@ -136,7 +136,7 @@ impl ContractParameter {
                 serde_json::Value::String(general_purpose::STANDARD.encode(bytes))
             }
             ContractParameterValue::PublicKey(key) => {
-                serde_json::Value::String(hex::encode(&key.encoded()))
+                serde_json::Value::String(hex::encode(key.encoded()))
             }
             ContractParameterValue::String(s) => serde_json::Value::String(s.clone()),
             ContractParameterValue::Array(arr) => {
@@ -214,7 +214,7 @@ impl ContractParameter {
                     ContractParameterType::Array => {
                         if let Some(arr) = value_json.as_array() {
                             let items: Result<Vec<_>, _> =
-                                arr.iter().map(|item| Self::from_json(item)).collect();
+                                arr.iter().map(Self::from_json).collect();
                             param.value = ContractParameterValue::Array(items?);
                         }
                     }

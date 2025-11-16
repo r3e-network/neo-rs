@@ -12,7 +12,6 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 /// namespace Neo.VM -> public class Debugger
-
 /// A simple debugger for ExecutionEngine.
 pub struct Debugger {
     // private readonly ExecutionEngine _engine;
@@ -46,7 +45,7 @@ impl Debugger {
     /// The VM will break the execution when it reaches the breakpoint.
     /// public void AddBreakPoint(Script script, uint position)
     pub fn add_break_point(&mut self, script: Arc<Script>, position: u32) {
-        let hashset = self.break_points.entry(script).or_insert_with(HashSet::new);
+        let hashset = self.break_points.entry(script).or_default();
         hashset.insert(position);
     }
 

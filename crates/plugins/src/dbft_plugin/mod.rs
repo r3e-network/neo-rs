@@ -7,11 +7,11 @@
 #[cfg(feature = "dbft-full")]
 pub mod consensus;
 #[cfg(feature = "dbft-full")]
-pub mod dbft_plugin;
-#[cfg(feature = "dbft-full")]
 pub mod dbft_settings;
 #[cfg(feature = "dbft-full")]
 pub mod messages;
+#[cfg(feature = "dbft-full")]
+pub mod plugin;
 #[cfg(feature = "dbft-full")]
 pub mod types;
 
@@ -22,11 +22,11 @@ mod stub;
 #[cfg(feature = "dbft-full")]
 pub use consensus::consensus_service::ConsensusService;
 #[cfg(feature = "dbft-full")]
-pub use dbft_plugin::DBFTPlugin;
-#[cfg(feature = "dbft-full")]
 pub use dbft_settings::DbftSettings;
 #[cfg(feature = "dbft-full")]
 pub use messages::*;
+#[cfg(feature = "dbft-full")]
+pub use plugin::DBFTPlugin;
 #[cfg(feature = "dbft-full")]
 pub use types::*;
 

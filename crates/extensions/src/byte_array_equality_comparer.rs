@@ -15,6 +15,12 @@ use xxhash_rust::xxh32::xxh32;
 /// Byte array equality comparer matching C# ByteArrayEqualityComparer exactly
 pub struct ByteArrayEqualityComparer;
 
+impl Default for ByteArrayEqualityComparer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ByteArrayEqualityComparer {
     /// Default comparer
     /// Matches C# Default property

@@ -8,6 +8,7 @@ use crate::IVerifiable;
 /// A provider for creating ApplicationEngine instances (matches C# IApplicationEngineProvider)
 pub trait IApplicationEngineProvider {
     /// Creates a new instance of the ApplicationEngine class or its subclass
+    #[allow(clippy::too_many_arguments)]
     fn create(
         &self,
         trigger: TriggerType,
@@ -42,7 +43,9 @@ pub struct ProtocolSettings {
 }
 
 /// Placeholder for JumpTable from VM
+type EngineHandler = fn(&mut ApplicationEngine) -> Result<(), String>;
+
 #[derive(Clone, Debug)]
 pub struct JumpTable {
-    pub handlers: std::collections::HashMap<u8, fn(&mut ApplicationEngine) -> Result<(), String>>,
+    pub handlers: std::collections::HashMap<u8, EngineHandler>,
 }

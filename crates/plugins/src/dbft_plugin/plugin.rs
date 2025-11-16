@@ -156,7 +156,7 @@ impl Plugin for DBFTPlugin {
                 if let Some(consensus) = &self.consensus {
                     let svc = consensus.clone();
                     tokio::spawn(async move {
-                        let mut guard = svc.lock().await;
+                        let guard = svc.lock().await;
                         guard.set_store(store).await;
                     });
                 }
@@ -168,6 +168,12 @@ impl Plugin for DBFTPlugin {
             // is wired within the node networking once available.
             _ => Ok(()),
         }
+    }
+}
+
+impl Default for DBFTPlugin {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

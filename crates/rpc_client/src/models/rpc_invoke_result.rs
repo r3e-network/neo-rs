@@ -9,12 +9,12 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use neo_json::{JArray, JObject, JToken};
+use super::vm_state_utils::vm_state_from_str;
+use neo_json::{JObject, JToken};
 use neo_vm::{StackItem, VMState};
-use serde::{Deserialize, Serialize};
 
 /// RPC invoke result matching C# RpcInvokeResult
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct RpcInvokeResult {
     /// The script that was invoked
     pub script: String,
@@ -29,64 +29,16 @@ pub struct RpcInvokeResult {
     pub stack: Vec<StackItem>,
 
     /// Transaction if available
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub tx: Option<String>,
 
     /// Exception message if any
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub exception: Option<String>,
 
     /// Session ID if available
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub session: Option<String>,
 }
 
 impl RpcInvokeResult {
-    /// Converts to JSON
-    /// Matches C# ToJson
-    pub fn to_json(&self) -> JObject {
-        let mut json = JObject::new();
-        json.insert("script".to_string(), JToken::String(self.script.clone()));
-        json.insert("state".to_string(), JToken::String(self.state.to_string()));
-        json.insert(
-            "gasconsumed".to_string(),
-            JToken::String(self.gas_consumed.to_string()),
-        );
-
-        if let Some(ref exception) = self.exception {
-            json.insert("exception".to_string(), JToken::String(exception.clone()));
-        }
-
-        // Try to serialize stack items
-        match self
-            .stack
-            .iter()
-            .map(|item| item.to_json())
-            .collect::<Result<Vec<_>, _>>()
-        {
-            Ok(stack_json) => {
-                json.insert("stack".to_string(), JToken::Array(JArray::from(stack_json)));
-            }
-            Err(_) => {
-                // Handle recursive reference error
-                json.insert(
-                    "stack".to_string(),
-                    JToken::String("error: recursive reference".to_string()),
-                );
-            }
-        }
-
-        if let Some(ref tx) = self.tx {
-            json.insert("tx".to_string(), JToken::String(tx.clone()));
-        }
-
-        if let Some(ref session) = self.session {
-            json.insert("session".to_string(), JToken::String(session.clone()));
-        }
-
-        json
-    }
-
     /// Creates from JSON
     /// Matches C# FromJson
     pub fn from_json(json: &JObject) -> Result<Self, String> {
@@ -100,8 +52,8 @@ impl RpcInvokeResult {
             .get("state")
             .and_then(|v| v.as_string())
             .ok_or("Missing or invalid 'state' field")?;
-        let state =
-            VMState::from_str(state_str).map_err(|_| format!("Invalid VM state: {}", state_str))?;
+        let state = vm_state_from_str(&state_str)
+            .ok_or_else(|| format!("Invalid VM state: {}", state_str))?;
 
         let gas_consumed_str = json
             .get("gasconsumed")
@@ -132,7 +84,8 @@ impl RpcInvokeResult {
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
-                    .filter_map(|item| item.as_object())
+                    .filter_map(|item| item.as_ref())
+                    .filter_map(|token| token.as_object())
                     .filter_map(|obj| crate::utility::stack_item_from_json(obj).ok())
                     .collect()
             })
@@ -151,10 +104,9 @@ impl RpcInvokeResult {
 }
 
 /// RPC stack item representation matching C# RpcStack
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct RpcStack {
     /// Stack item type
-    #[serde(rename = "type")]
     pub item_type: String,
 
     /// Stack item value
@@ -162,15 +114,6 @@ pub struct RpcStack {
 }
 
 impl RpcStack {
-    /// Converts to JSON
-    /// Matches C# ToJson
-    pub fn to_json(&self) -> JObject {
-        let mut json = JObject::new();
-        json.insert("type".to_string(), JToken::String(self.item_type.clone()));
-        json.insert("value".to_string(), self.value.clone());
-        json
-    }
-
     /// Creates from JSON
     /// Matches C# FromJson
     pub fn from_json(json: &JObject) -> Result<Self, String> {

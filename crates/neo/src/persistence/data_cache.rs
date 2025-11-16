@@ -39,19 +39,17 @@ impl Trackable {
 pub type OnEntryDelegate = Box<dyn Fn(&DataCache, &StorageKey, &StorageItem) + Send + Sync>;
 
 /// Represents a cache for the underlying storage of the NEO blockchain.
+type StoreGetFn = dyn Fn(&StorageKey) -> Option<StorageItem> + Send + Sync;
+type StoreFindFn =
+    dyn Fn(Option<&StorageKey>, SeekDirection) -> Vec<(StorageKey, StorageItem)> + Send + Sync;
+
 pub struct DataCache {
     dictionary: Arc<RwLock<HashMap<StorageKey, Trackable>>>,
     change_set: Option<Arc<RwLock<HashSet<StorageKey>>>>,
     on_read: Arc<RwLock<Vec<OnEntryDelegate>>>,
     on_update: Arc<RwLock<Vec<OnEntryDelegate>>>,
-    store_get: Option<Arc<dyn Fn(&StorageKey) -> Option<StorageItem> + Send + Sync>>,
-    store_find: Option<
-        Arc<
-            dyn Fn(Option<&StorageKey>, SeekDirection) -> Vec<(StorageKey, StorageItem)>
-                + Send
-                + Sync,
-        >,
-    >,
+    store_get: Option<Arc<StoreGetFn>>,
+    store_find: Option<Arc<StoreFindFn>>,
 }
 
 impl Clone for DataCache {
@@ -76,14 +74,8 @@ impl DataCache {
     /// Creates a new DataCache with an optional backing store.
     pub fn new_with_store(
         read_only: bool,
-        store_get: Option<Arc<dyn Fn(&StorageKey) -> Option<StorageItem> + Send + Sync>>,
-        store_find: Option<
-            Arc<
-                dyn Fn(Option<&StorageKey>, SeekDirection) -> Vec<(StorageKey, StorageItem)>
-                    + Send
-                    + Sync,
-            >,
-        >,
+        store_get: Option<Arc<StoreGetFn>>,
+        store_find: Option<Arc<StoreFindFn>>,
     ) -> Self {
         Self {
             dictionary: Arc::new(RwLock::new(HashMap::new())),

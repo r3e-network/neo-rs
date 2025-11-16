@@ -408,6 +408,7 @@ impl RemoteNode {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn props(
         system: Arc<NeoSystemContext>,
         local_node: Arc<LocalNode>,
@@ -559,6 +560,17 @@ impl RemoteNode {
         }
 
         Ok(())
+    }
+
+    fn consume_sent_command(&mut self, command: MessageCommand) -> bool {
+        let index = command.to_byte() as usize;
+        if let Some(flag) = self.sent_commands.get_mut(index) {
+            if *flag {
+                *flag = false;
+                return true;
+            }
+        }
+        false
     }
 
     fn current_local_block_index(&self) -> u32 {
@@ -778,7 +790,7 @@ impl RemoteNode {
         if let Err(err) = self.system.task_manager.tell_from(
             TaskManagerCommand::InventoryCompleted {
                 hash,
-                block,
+                block: Box::new(block),
                 block_index,
             },
             Some(ctx.self_ref()),
@@ -886,6 +898,10 @@ impl RemoteNode {
     }
 
     fn on_addr(&mut self, payload: AddrPayload, ctx: &ActorContext) {
+        if !self.consume_sent_command(MessageCommand::GetAddr) {
+            return;
+        }
+
         let mut endpoints = Vec::new();
         let mut seen = HashSet::new();
 

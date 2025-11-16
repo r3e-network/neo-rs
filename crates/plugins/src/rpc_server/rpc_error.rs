@@ -4,7 +4,7 @@
 // following idiomatic Rust patterns. It provides strongly-typed error instances
 // that can be serialised to JSON responses for the RPC subsystem.
 
-use neo_json::{JNumber, JObject, JString, JToken};
+use neo_json::{JObject, JToken};
 use std::fmt::{self, Display};
 
 /// Represents a JSON-RPC error returned by the RPC server (matches the C#

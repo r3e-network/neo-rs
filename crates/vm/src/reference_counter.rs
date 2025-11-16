@@ -168,7 +168,7 @@ impl ReferenceCounter {
         }
 
         let mut components_to_remove: Vec<Vec<ItemId>> = Vec::new();
-        for component in tarjan.find_components().to_vec() {
+        for component in tarjan.find_components().iter().cloned() {
             if !component.iter().any(|id| candidate_filter.contains(id)) {
                 continue;
             }
@@ -355,9 +355,7 @@ struct ReferenceCounterInner {
 
 impl ReferenceCounterInner {
     fn ensure_record(&mut self, id: ItemId) -> &mut ItemRecord {
-        self.tracked_items
-            .entry(id)
-            .or_insert_with(ItemRecord::default)
+        self.tracked_items.entry(id).or_default()
     }
 }
 

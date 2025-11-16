@@ -10,7 +10,7 @@
 // modifications are permitted.
 
 use crate::{Nep17Api, RpcClient, Utility};
-use neo_core::{Contract, KeyPair, NativeContract, Signer, Transaction, UInt160, WitnessScope};
+use neo_core::{Contract, KeyPair, NativeContract, Transaction, UInt160};
 use num_bigint::BigInt;
 use std::sync::Arc;
 

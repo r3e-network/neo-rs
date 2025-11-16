@@ -307,23 +307,22 @@ impl TaskManager {
                 .unwrap_or(0)
                 < MAX_CONCURRENT_TASKS)
             && header_height < session.last_block_index
+            && self.increment_inv_task(HEADER_TASK_HASH)
         {
-            if self.increment_inv_task(HEADER_TASK_HASH) {
-                session.register_inv_task(HEADER_TASK_HASH);
-                let payload = GetBlockByIndexPayload::create(header_height + 1, -1);
-                let message = NetworkMessage::new(ProtocolMessage::GetHeaders(payload));
-                if let Err(error) = actor.tell(RemoteNodeCommand::Send(message)) {
-                    warn!(
-                        target: "neo",
-                        actor = %actor.path(),
-                        %error,
-                        "failed to request headers from peer"
-                    );
-                    self.decrement_inv_task(&HEADER_TASK_HASH);
-                    session.complete_inv_task(&HEADER_TASK_HASH);
-                }
-                return;
+            session.register_inv_task(HEADER_TASK_HASH);
+            let payload = GetBlockByIndexPayload::create(header_height + 1, -1);
+            let message = NetworkMessage::new(ProtocolMessage::GetHeaders(payload));
+            if let Err(error) = actor.tell(RemoteNodeCommand::Send(message)) {
+                warn!(
+                    target: "neo",
+                    actor = %actor.path(),
+                    %error,
+                    "failed to request headers from peer"
+                );
+                self.decrement_inv_task(&HEADER_TASK_HASH);
+                session.complete_inv_task(&HEADER_TASK_HASH);
             }
+            return;
         }
 
         if current_height < session.last_block_index {
@@ -751,6 +750,12 @@ impl TaskManager {
     }
 }
 
+impl Default for TaskManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Akka actor wrapper around [`TaskManager`].
 pub struct TaskManagerActor {
     state: TaskManager,
@@ -834,7 +839,7 @@ impl Actor for TaskManagerActor {
                     } => {
                         if let Some(sender) = ctx.sender() {
                             self.state
-                                .complete_inventory(&sender, hash, block, block_index);
+                                .complete_inventory(&sender, hash, *block, block_index);
                         }
                     }
                     TaskManagerCommand::Headers { .. } => {
@@ -907,7 +912,7 @@ pub enum TaskManagerCommand {
     },
     InventoryCompleted {
         hash: UInt256,
-        block: Option<Block>,
+        block: Box<Option<Block>>,
         block_index: Option<u32>,
     },
     Headers {

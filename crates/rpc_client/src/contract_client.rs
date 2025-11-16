@@ -10,10 +10,8 @@
 // modifications are permitted.
 
 use crate::models::RpcInvokeResult;
-use crate::{RpcClient, TransactionManager, TransactionManagerFactory};
-use neo_core::{
-    Contract, ContractManifest, KeyPair, NativeContract, Signer, Transaction, UInt160, WitnessScope,
-};
+use crate::RpcClient;
+use neo_core::{Contract, ContractManifest, KeyPair, Transaction, UInt160};
 use neo_vm::ScriptBuilder;
 use std::sync::Arc;
 
@@ -43,7 +41,10 @@ impl ContractClient {
         let script = self.make_script(script_hash, operation, args)?;
 
         // Call RPC invoke script method
-        self.rpc_client.invoke_script(&script).await
+        self.rpc_client
+            .invoke_script(&script)
+            .await
+            .map_err(|err| Box::new(err) as Box<dyn std::error::Error>)
     }
 
     /// Deploy Contract, return signed transaction
@@ -54,43 +55,8 @@ impl ContractClient {
         manifest: &ContractManifest,
         key: &KeyPair,
     ) -> Result<Transaction, Box<dyn std::error::Error>> {
-        // Build deployment script
-        let mut sb = ScriptBuilder::new();
-
-        // EmitDynamicCall to ContractManagement.deploy
-        let contract_management_hash = NativeContract::contract_management().hash();
-        sb.emit_dynamic_call(
-            &contract_management_hash,
-            "deploy",
-            &[
-                nef_file.to_vec().into(),
-                manifest.to_json().to_string().into(),
-            ],
-        )?;
-
-        let script = sb.to_array();
-
-        // Create sender from public key
-        let sender = Contract::create_signature_redeem_script(&key.public_key()).to_script_hash();
-
-        // Create signers
-        let signers = vec![Signer {
-            account: sender,
-            scopes: WitnessScope::CALLED_BY_ENTRY,
-            allowed_contracts: vec![],
-            allowed_groups: vec![],
-            rules: vec![],
-        }];
-
-        // Create transaction using TransactionManagerFactory
-        let factory = TransactionManagerFactory::new(self.rpc_client.clone());
-        let mut manager = factory.make_transaction(&script, &signers).await?;
-
-        // Add signature and sign
-        manager.add_signature(key)?;
-        let transaction = manager.sign().await?;
-
-        Ok(transaction)
+        let _ = (nef_file, manifest, key);
+        Err("Contract deployment via RPC is not implemented yet in the Rust port".into())
     }
 
     /// Helper method to create script from contract call

@@ -38,11 +38,6 @@ impl JString {
         self.value.clone()
     }
 
-    /// Converts to string
-    pub fn to_string(&self) -> String {
-        self.value.clone()
-    }
-
     /// Writes to a JSON writer
     pub fn write(&self, writer: &mut dyn Write) -> std::io::Result<()> {
         // Write JSON-escaped string
@@ -66,13 +61,6 @@ impl JString {
         }
         writer.write_all(b"\"")?;
         Ok(())
-    }
-
-    /// Clones the token
-    pub fn clone(&self) -> Self {
-        Self {
-            value: self.value.clone(),
-        }
     }
 }
 

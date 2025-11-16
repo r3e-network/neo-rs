@@ -88,11 +88,15 @@ impl Node {
 
     /// Creates a new branch node with default children.
     pub fn new_branch() -> Self {
-        let mut node = Self::default();
-        node.node_type = NodeType::BranchNode;
-        node.reference = 1;
-        node.children = (0..BRANCH_CHILD_COUNT).map(|_| Node::new()).collect();
-        node
+        Self {
+            node_type: NodeType::BranchNode,
+            reference: 1,
+            hash: RefCell::new(None),
+            children: (0..BRANCH_CHILD_COUNT).map(|_| Node::new()).collect(),
+            key: Vec::new(),
+            next: None,
+            value: Vec::new(),
+        }
     }
 
     /// Creates a new extension node with the given path and child.
@@ -101,29 +105,41 @@ impl Node {
             return Err(MptError::invalid("extension node requires non-empty key"));
         }
 
-        let mut node = Self::default();
-        node.node_type = NodeType::ExtensionNode;
-        node.reference = 1;
-        node.key = key;
-        node.next = Some(Box::new(next));
-        Ok(node)
+        Ok(Self {
+            node_type: NodeType::ExtensionNode,
+            reference: 1,
+            hash: RefCell::new(None),
+            children: Vec::new(),
+            key,
+            next: Some(Box::new(next)),
+            value: Vec::new(),
+        })
     }
 
     /// Creates a new leaf node with the supplied value.
     pub fn new_leaf(value: Vec<u8>) -> Self {
-        let mut node = Self::default();
-        node.node_type = NodeType::LeafNode;
-        node.reference = 1;
-        node.value = value;
-        node
+        Self {
+            node_type: NodeType::LeafNode,
+            reference: 1,
+            hash: RefCell::new(None),
+            children: Vec::new(),
+            key: Vec::new(),
+            next: None,
+            value,
+        }
     }
 
     /// Creates a new hash placeholder node.
     pub fn new_hash(hash: UInt256) -> Self {
-        let mut node = Self::default();
-        node.node_type = NodeType::HashNode;
-        *node.hash.borrow_mut() = Some(hash);
-        node
+        Self {
+            node_type: NodeType::HashNode,
+            reference: 0,
+            hash: RefCell::new(Some(hash)),
+            children: Vec::new(),
+            key: Vec::new(),
+            next: None,
+            value: Vec::new(),
+        }
     }
 
     /// Returns `true` if the node represents the empty sentinel.
@@ -312,32 +328,61 @@ impl Node {
 
 impl Serializable for Node {
     fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
-        let node_type =
-            NodeType::from_byte(reader.read_byte()?).map_err(|e| IoError::invalid_data(e))?;
-        let mut node = Node::default();
-        node.node_type = node_type;
+        let node_type = NodeType::from_byte(reader.read_byte()?).map_err(IoError::invalid_data)?;
         match node_type {
             NodeType::BranchNode => {
-                node.children = Self::deserialize_branch(reader)?;
-                node.reference = reader.read_var_uint()? as u32;
+                let children = Self::deserialize_branch(reader)?;
+                let reference = reader.read_var_uint()? as u32;
+                Ok(Self {
+                    node_type,
+                    reference,
+                    hash: RefCell::new(None),
+                    children,
+                    key: Vec::new(),
+                    next: None,
+                    value: Vec::new(),
+                })
             }
             NodeType::ExtensionNode => {
                 let (key, next) = Self::deserialize_extension(reader)?;
-                node.key = key;
-                node.next = Some(Box::new(next));
-                node.reference = reader.read_var_uint()? as u32;
+                let reference = reader.read_var_uint()? as u32;
+                Ok(Self {
+                    node_type,
+                    reference,
+                    hash: RefCell::new(None),
+                    children: Vec::new(),
+                    key,
+                    next: Some(Box::new(next)),
+                    value: Vec::new(),
+                })
             }
             NodeType::LeafNode => {
-                node.value = Self::deserialize_leaf(reader)?;
-                node.reference = reader.read_var_uint()? as u32;
+                let value = Self::deserialize_leaf(reader)?;
+                let reference = reader.read_var_uint()? as u32;
+                Ok(Self {
+                    node_type,
+                    reference,
+                    hash: RefCell::new(None),
+                    children: Vec::new(),
+                    key: Vec::new(),
+                    next: None,
+                    value,
+                })
             }
             NodeType::HashNode => {
                 let hash = Self::deserialize_hash(reader)?;
-                *node.hash.borrow_mut() = Some(hash);
+                Ok(Self {
+                    node_type,
+                    reference: 0,
+                    hash: RefCell::new(Some(hash)),
+                    children: Vec::new(),
+                    key: Vec::new(),
+                    next: None,
+                    value: Vec::new(),
+                })
             }
-            NodeType::Empty => {}
+            NodeType::Empty => Ok(Node::default()),
         }
-        Ok(node)
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {

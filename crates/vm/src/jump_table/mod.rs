@@ -5,6 +5,7 @@
 pub mod bitwisee; // Matches JumpTable.Bitwisee.cs
 pub mod compound; // Matches JumpTable.Compound.cs
 pub mod control; // Matches JumpTable.Control.cs
+#[allow(clippy::module_inception)]
 pub mod jump_table; // Matches JumpTable.cs
 pub mod numeric; // Matches JumpTable.Numeric.cs
 pub mod push; // Matches JumpTable.Push.cs
@@ -59,7 +60,7 @@ impl JumpTable {
     #[allow(clippy::should_implement_trait)]
     pub fn default() -> Self {
         // Use OnceLock for safe one-time initialization
-        DEFAULT.get_or_init(|| Self::new()).clone()
+        DEFAULT.get_or_init(Self::new).clone()
     }
 
     /// Registers a handler for an opcode.

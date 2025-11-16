@@ -1,3 +1,5 @@
+#![allow(clippy::mutable_key_type)]
+
 //! Map stack item implementation for the Neo Virtual Machine.
 //!
 //! This module provides the Map stack item implementation used in the Neo VM.

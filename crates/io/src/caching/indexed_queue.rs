@@ -28,16 +28,6 @@ impl<T> IndexedQueue<T> {
         }
     }
 
-    /// Creates a queue filled with the specified items (C# constructor from IEnumerable).
-    pub fn from_iter<I>(iter: I) -> Self
-    where
-        I: IntoIterator<Item = T>,
-    {
-        Self {
-            items: VecDeque::from_iter(iter),
-        }
-    }
-
     /// Gets the number of items in the queue (C# Count property).
     pub fn count(&self) -> usize {
         self.items.len()
@@ -158,5 +148,29 @@ impl<T> IntoIterator for IndexedQueue<T> {
 
     fn into_iter(self) -> Self::IntoIter {
         self.items.into_iter()
+    }
+}
+
+impl<T> Default for IndexedQueue<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T> FromIterator<T> for IndexedQueue<T> {
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        Self {
+            items: VecDeque::from_iter(iter),
+        }
+    }
+}
+
+impl<T> IndexedQueue<T> {
+    /// Creates a queue filled with the specified items (C# constructor from IEnumerable).
+    pub fn from_iterable<I>(iter: I) -> Self
+    where
+        I: IntoIterator<Item = T>,
+    {
+        iter.into_iter().collect()
     }
 }

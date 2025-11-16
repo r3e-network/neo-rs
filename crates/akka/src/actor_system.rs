@@ -188,7 +188,7 @@ impl ActorSystem {
         let name = name.into();
         let inner = ActorSystemInner::new(name.clone())?;
         let guardian_props =
-            Props::new(|| Guardian::default()).with_mailbox_factory(default_mailbox_factory());
+            Props::new(|| Guardian).with_mailbox_factory(default_mailbox_factory());
         let user_guardian = inner.clone().spawn_root(guardian_props, "user")?;
 
         Ok(Self {
@@ -378,11 +378,7 @@ impl ActorCell {
                 let _ = self.actor.post_stop(ctx).await;
                 self.actor = self.props.create();
                 ctx.sender = None;
-                if let Err(_err) = self.actor.pre_start(ctx).await {
-                    false
-                } else {
-                    true
-                }
+                self.actor.pre_start(ctx).await.is_ok()
             }
         }
     }

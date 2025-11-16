@@ -56,7 +56,7 @@ impl ParameterConverter {
 
 impl RpcConvertible for String {
     fn from_token(token: &JToken, _ctx: &ConversionContext) -> Result<Self, RpcException> {
-        Ok(token.as_string())
+        expect_string(token, "Expected string value")
     }
 }
 
@@ -71,9 +71,14 @@ macro_rules! impl_numeric_convertible {
         $(
             impl RpcConvertible for $ty {
                 fn from_token(token: &JToken, _ctx: &ConversionContext) -> Result<Self, RpcException> {
-                    let value = token.as_number();
+                    let value = token
+                        .as_number()
+                        .ok_or_else(|| invalid_params("Expected numeric value"))?;
                     if value.is_nan() || value.is_infinite() {
-                        return Err(invalid_params(format!("Invalid numeric value: {}", token.as_string())));
+                        return Err(invalid_params(format!(
+                            "Invalid numeric value: {}",
+                            token.to_string_value()
+                        )));
                     }
 
                     let min = <$ty>::MIN as f64;
@@ -101,7 +106,7 @@ impl_numeric_convertible!(i8, u8, i16, u16, i32, u32, i64, u64, f64);
 
 impl RpcConvertible for Vec<u8> {
     fn from_token(token: &JToken, _ctx: &ConversionContext) -> Result<Self, RpcException> {
-        let text = token.as_string();
+        let text = expect_string(token, "Expected Base64 string")?;
         BASE64_STANDARD
             .decode(text.trim())
             .map_err(|_| invalid_params("Invalid Base64-encoded bytes"))
@@ -110,7 +115,7 @@ impl RpcConvertible for Vec<u8> {
 
 impl RpcConvertible for Address {
     fn from_token(token: &JToken, ctx: &ConversionContext) -> Result<Self, RpcException> {
-        let text = token.as_string();
+        let text = expect_string(token, "Expected address string")?;
         parse_address(&text, ctx.address_version)
     }
 }
@@ -131,7 +136,7 @@ impl RpcConvertible for Vec<Address> {
 
 impl RpcConvertible for BlockHashOrIndex {
     fn from_token(token: &JToken, _ctx: &ConversionContext) -> Result<Self, RpcException> {
-        let text = token.as_string();
+        let text = expect_string(token, "Expected block hash or index string")?;
         BlockHashOrIndex::try_parse(&text)
             .ok_or_else(|| invalid_params(format!("Invalid block hash or index: {}", text)))
     }
@@ -139,7 +144,7 @@ impl RpcConvertible for BlockHashOrIndex {
 
 impl RpcConvertible for ContractNameOrHashOrId {
     fn from_token(token: &JToken, _ctx: &ConversionContext) -> Result<Self, RpcException> {
-        let text = token.as_string();
+        let text = expect_string(token, "Expected contract identifier string")?;
         ContractNameOrHashOrId::try_parse(&text)
             .ok_or_else(|| invalid_params(format!("Invalid contract identifier: {}", text)))
     }
@@ -147,7 +152,7 @@ impl RpcConvertible for ContractNameOrHashOrId {
 
 impl RpcConvertible for Uuid {
     fn from_token(token: &JToken, _ctx: &ConversionContext) -> Result<Self, RpcException> {
-        let text = token.as_string();
+        let text = expect_string(token, "Expected UUID string")?;
         Uuid::from_str(text.trim()).map_err(|_| invalid_params(format!("Invalid UUID: {}", text)))
     }
 }
@@ -175,7 +180,7 @@ impl RpcConvertible for SignersAndWitnesses {
             signers.push(signer);
 
             if let Some(witness_token) = obj.get("witness") {
-                if !witness_token.is_null() {
+                if !matches!(witness_token, JToken::Null) {
                     let witness = parse_witness(witness_token)?;
                     witnesses.push(witness);
                 }
@@ -282,12 +287,16 @@ fn parse_signer(token: &JToken, ctx: &ConversionContext) -> Result<Signer, RpcEx
     let account_token = obj
         .get("account")
         .ok_or_else(|| invalid_params("Signer is missing 'account' field"))?;
-    let account = parse_address(&account_token.as_string(), ctx.address_version)?.script_hash;
+    let account_text = expect_string(account_token, "Signer 'account' must be a string")?;
+    let account = parse_address(&account_text, ctx.address_version)?
+        .script_hash()
+        .clone();
 
     let scopes_token = obj
         .get("scopes")
         .ok_or_else(|| invalid_params("Signer is missing 'scopes' field"))?;
-    let scopes = parse_witness_scope(&scopes_token.as_string())?;
+    let scopes_text = expect_string(scopes_token, "Signer 'scopes' must be a string")?;
+    let scopes = parse_witness_scope(&scopes_text)?;
 
     let mut signer = Signer {
         account,
@@ -304,10 +313,10 @@ fn parse_signer(token: &JToken, ctx: &ConversionContext) -> Result<Signer, RpcEx
                 .children()
                 .iter()
                 .map(|item| {
-                    let text = item
+                    let contract = item
                         .as_ref()
-                        .ok_or_else(|| invalid_params("Null contract entry"))?
-                        .as_string();
+                        .ok_or_else(|| invalid_params("Null contract entry"))?;
+                    let text = expect_string(contract, "Allowed contract entries must be strings")?;
                     parse_uint160(&text)
                 })
                 .collect::<Result<Vec<_>, _>>()?;
@@ -321,10 +330,10 @@ fn parse_signer(token: &JToken, ctx: &ConversionContext) -> Result<Signer, RpcEx
                 .children()
                 .iter()
                 .map(|item| {
-                    let text = item
+                    let group = item
                         .as_ref()
-                        .ok_or_else(|| invalid_params("Null group entry"))?
-                        .as_string();
+                        .ok_or_else(|| invalid_params("Null group entry"))?;
+                    let text = expect_string(group, "Allowed group entries must be strings")?;
                     let bytes = hex::decode(text.trim_start_matches("0x"))
                         .map_err(|_| invalid_params("Invalid ECPoint"))?;
                     Ok(ECPoint::new(bytes))
@@ -359,8 +368,9 @@ fn parse_witness(token: &JToken) -> Result<Witness, RpcException> {
     let invocation = obj
         .get("invocation")
         .map(|t| {
+            let text = expect_string(t, "Invocation script must be a string")?;
             BASE64_STANDARD
-                .decode(t.as_string().trim())
+                .decode(text.trim())
                 .map_err(|_| invalid_params("Invalid invocation script"))
         })
         .transpose()? // Option<Result> -> Result<Option>
@@ -369,17 +379,15 @@ fn parse_witness(token: &JToken) -> Result<Witness, RpcException> {
     let verification = obj
         .get("verification")
         .map(|t| {
+            let text = expect_string(t, "Verification script must be a string")?;
             BASE64_STANDARD
-                .decode(t.as_string().trim())
+                .decode(text.trim())
                 .map_err(|_| invalid_params("Invalid verification script"))
         })
         .transpose()? // Option<Result> -> Result<Option>
         .unwrap_or_default();
 
-    Ok(Witness {
-        invocation_script: invocation,
-        verification_script: verification,
-    })
+    Ok(Witness::new_with_scripts(invocation, verification))
 }
 
 fn parse_witness_scope(text: &str) -> Result<WitnessScope, RpcException> {
@@ -428,6 +436,12 @@ fn expect_object(token: &JToken) -> Result<&JObject, RpcException> {
         JToken::Object(obj) => Ok(obj),
         _ => Err(invalid_params("Expected JSON object")),
     }
+}
+
+fn expect_string(token: &JToken, context: impl Into<String>) -> Result<String, RpcException> {
+    token
+        .as_string()
+        .ok_or_else(|| invalid_params(context.into()))
 }
 
 fn invalid_params<T: Into<String>>(message: T) -> RpcException {

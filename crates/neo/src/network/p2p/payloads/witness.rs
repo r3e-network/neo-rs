@@ -99,7 +99,7 @@ impl Witness {
     /// Clones the witness.
     /// Matches C# Clone() exactly.
     pub fn clone_witness(&self) -> Self {
-        let hash = self._script_hash.lock().unwrap().clone();
+        let hash = *self._script_hash.lock().unwrap();
         Self {
             invocation_script: self.invocation_script.clone(),
             verification_script: self.verification_script.clone(),

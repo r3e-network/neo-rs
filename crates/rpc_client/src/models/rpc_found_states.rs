@@ -9,6 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
+use base64::{engine::general_purpose, Engine as _};
 use neo_json::JObject;
 use serde::{Deserialize, Serialize};
 
@@ -34,7 +35,7 @@ impl RpcFoundStates {
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let truncated = json
             .get("truncated")
-            .and_then(|v| v.as_boolean())
+            .map(|v| v.as_boolean())
             .ok_or("Missing or invalid 'truncated' field")?;
 
         let results = json
@@ -42,16 +43,17 @@ impl RpcFoundStates {
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
-                    .filter_map(|item| item.as_object())
+                    .filter_map(|item| item.as_ref())
+                    .filter_map(|token| token.as_object())
                     .filter_map(|obj| {
                         let key = obj
                             .get("key")
                             .and_then(|v| v.as_string())
-                            .and_then(|s| base64::decode(s).ok())?;
+                            .and_then(|s| general_purpose::STANDARD.decode(s).ok())?;
                         let value = obj
                             .get("value")
                             .and_then(|v| v.as_string())
-                            .and_then(|s| base64::decode(s).ok())?;
+                            .and_then(|s| general_purpose::STANDARD.decode(s).ok())?;
                         Some((key, value))
                     })
                     .collect()
@@ -61,12 +63,12 @@ impl RpcFoundStates {
         let first_proof = json
             .get("firstProof")
             .and_then(|v| v.as_string())
-            .and_then(|s| base64::decode(s).ok());
+            .and_then(|s| general_purpose::STANDARD.decode(s).ok());
 
         let last_proof = json
             .get("lastProof")
             .and_then(|v| v.as_string())
-            .and_then(|s| base64::decode(s).ok());
+            .and_then(|s| general_purpose::STANDARD.decode(s).ok());
 
         Ok(Self {
             truncated,

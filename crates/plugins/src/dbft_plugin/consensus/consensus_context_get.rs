@@ -10,7 +10,7 @@
 // modifications are permitted.
 
 use crate::dbft_plugin::consensus::consensus_context::ConsensusContext;
-use crate::dbft_plugin::messages::recovery_message::{
+use crate::dbft_plugin::messages::recovery::{
     ChangeViewPayloadCompact, CommitPayloadCompact, PreparationPayloadCompact,
 };
 use crate::dbft_plugin::messages::ConsensusMessagePayload;

@@ -13,7 +13,7 @@ pub trait MemoryReaderExtensions {
     fn read_serializable_array<T: Serializable>(&mut self, max: usize) -> IoResult<Vec<T>>;
 }
 
-impl<'a> MemoryReaderExtensions for MemoryReader<'a> {
+impl MemoryReaderExtensions for MemoryReader<'_> {
     fn read_nullable_array<T: Serializable + Default>(
         &mut self,
         max: usize,

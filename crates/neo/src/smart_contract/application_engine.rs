@@ -688,6 +688,7 @@ impl ApplicationEngine {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn load_contract_context(
         &mut self,
         contract: ContractState,
@@ -927,7 +928,6 @@ impl ApplicationEngine {
     }
 
     /// Adds gas to the consumed amount
-
     pub fn add_gas(&mut self, amount: i64) -> Result<()> {
         self.gas_consumed = self.gas_consumed.saturating_add(amount);
         if self.gas_consumed > self.gas_limit {
@@ -1604,7 +1604,7 @@ impl ApplicationEngine {
     /// Puts a storage item (legacy API for native contracts).
     pub fn put_storage_item_legacy(&mut self, key: &[u8], value: &[u8]) -> Result<()> {
         if let Some(current_hash) = &self.current_script_hash {
-            let context = self.get_native_storage_context(&current_hash)?;
+            let context = self.get_native_storage_context(current_hash)?;
             return self.put_storage_item(&context, key, value);
         }
         Err(Error::invalid_operation(
@@ -1688,7 +1688,7 @@ impl ApplicationEngine {
     /// Deletes a storage item (legacy API for native contracts).
     pub fn delete_storage_item_legacy(&mut self, key: &[u8]) -> Result<()> {
         if let Some(current_hash) = &self.current_script_hash {
-            let context = self.get_native_storage_context(&current_hash)?;
+            let context = self.get_native_storage_context(current_hash)?;
             return self.delete_storage_item(&context, key);
         }
         Err(Error::invalid_operation(

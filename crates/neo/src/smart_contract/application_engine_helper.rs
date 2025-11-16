@@ -203,13 +203,12 @@ impl ApplicationEngine {
 
         if self.is_hardfork_enabled(Hardfork::HfEchidna)
             && self.trigger_type() == TriggerType::Application
+            && state.notification_count >= MAX_NOTIFICATION_COUNT
         {
-            if state.notification_count >= MAX_NOTIFICATION_COUNT {
-                return Err(format!(
-                    "Maximum number of notifications `{}` is reached.",
-                    MAX_NOTIFICATION_COUNT
-                ));
-            }
+            return Err(format!(
+                "Maximum number of notifications `{}` is reached.",
+                MAX_NOTIFICATION_COUNT
+            ));
         }
 
         state.notification_count = state.notification_count.saturating_add(1);

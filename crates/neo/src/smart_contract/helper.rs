@@ -11,7 +11,7 @@ pub struct Helper;
 
 impl Helper {
     /// The maximum GAS that can be consumed when verifying witnesses (in datoshi).
-    pub const MAX_VERIFICATION_GAS: i64 = 1_500_000_00;
+    pub const MAX_VERIFICATION_GAS: i64 = 150_000_000;
 
     /// Calculates the verification cost for a single-signature contract (in datoshi).
     pub fn signature_contract_cost() -> i64 {
@@ -63,7 +63,7 @@ impl Helper {
         script[0] == 0x0C && // PUSHDATA1
         script[1] == 33 &&   // 33 bytes
         script[35] == 0x41 && // SYSCALL
-        &script[36..40] == &Self::check_sig_hash()
+        script[36..40] == Self::check_sig_hash()
     }
 
     /// Checks if a script is a multi-sig contract
@@ -81,7 +81,7 @@ impl Helper {
         // Verify ending with SYSCALL CheckMultisig
         let len = script.len();
         script[len - 5] == 0x41 && // SYSCALL
-        &script[len - 4..] == &Self::check_multisig_hash()
+        script[len - 4..] == Self::check_multisig_hash()
     }
 
     /// Gets the script hash from a contract

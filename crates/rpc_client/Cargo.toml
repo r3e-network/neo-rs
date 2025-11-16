@@ -6,6 +6,10 @@ authors = ["Neo Core Developers"]
 description = "Neo RPC Client implementation"
 license = "MIT"
 
+[features]
+full = []
+default = []
+
 [dependencies]
 neo-core = { path = "../neo", package = "neo-core" }
 neo-io = { path = "../io" }
@@ -34,6 +38,8 @@ hex = "0.4"
 num-bigint = "0.4"
 num-traits = "0.2"
 tracing = "0.1"
+regex = "1.10"
+rand = { workspace = true }
 
 [dev-dependencies]
 mockito = "1.0"

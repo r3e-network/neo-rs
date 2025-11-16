@@ -13,6 +13,7 @@ pub mod map;
 pub mod null;
 pub mod pointer;
 pub mod primitive_type;
+#[allow(clippy::module_inception)]
 pub mod stack_item;
 pub mod stack_item_type;
 pub mod stack_item_vertex; // allow module inception for clarity of type name

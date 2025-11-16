@@ -9,13 +9,13 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
+use super::vm_state_utils::{vm_state_from_str, vm_state_to_string};
 use neo_core::{ProtocolSettings, Transaction, UInt256};
 use neo_json::JObject;
 use neo_vm::VMState;
-use serde::{Deserialize, Serialize};
 
 /// RPC transaction information matching C# RpcTransaction
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct RpcTransaction {
     /// The transaction
     pub transaction: Transaction,
@@ -61,7 +61,7 @@ impl RpcTransaction {
             if let Some(ref vm_state) = self.vm_state {
                 json.insert(
                     "vmstate".to_string(),
-                    neo_json::JToken::String(vm_state.to_string()),
+                    neo_json::JToken::String(vm_state_to_string(*vm_state)),
                 );
             }
         }
@@ -79,7 +79,7 @@ impl RpcTransaction {
                 let block_hash = json
                     .get("blockhash")
                     .and_then(|v| v.as_string())
-                    .and_then(|s| UInt256::parse(s).ok());
+                    .and_then(|s| UInt256::parse(&s).ok());
 
                 let confirmations = json
                     .get("confirmations")
@@ -94,7 +94,7 @@ impl RpcTransaction {
                 let vm_state = json
                     .get("vmstate")
                     .and_then(|v| v.as_string())
-                    .and_then(|s| VMState::from_str(s).ok());
+                    .and_then(|s| vm_state_from_str(&s));
 
                 (block_hash, confirmations, block_time, vm_state)
             } else {

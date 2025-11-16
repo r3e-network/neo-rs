@@ -204,14 +204,16 @@ impl PartialOrd for BigDecimal {
 
 impl Ord for BigDecimal {
     fn cmp(&self, other: &Self) -> Ordering {
-        let (left, right) = if self.decimals < other.decimals {
-            let factor = BigInt::from(10).pow(other.decimals - self.decimals);
-            (self.value.clone() * factor, other.value.clone())
-        } else if self.decimals > other.decimals {
-            let factor = BigInt::from(10).pow(self.decimals - other.decimals);
-            (self.value.clone(), other.value.clone() * factor)
-        } else {
-            (self.value.clone(), other.value.clone())
+        let (left, right) = match self.decimals.cmp(&other.decimals) {
+            Ordering::Less => {
+                let factor = BigInt::from(10).pow(other.decimals - self.decimals);
+                (self.value.clone() * factor, other.value.clone())
+            }
+            Ordering::Greater => {
+                let factor = BigInt::from(10).pow(self.decimals - other.decimals);
+                (self.value.clone(), other.value.clone() * factor)
+            }
+            Ordering::Equal => (self.value.clone(), other.value.clone()),
         };
 
         left.cmp(&right)

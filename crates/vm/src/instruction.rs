@@ -421,7 +421,7 @@ impl Instruction {
 
     /// Creates a RET instruction.
     pub fn token_i8(&self) -> i8 {
-        self.operand.get(0).copied().unwrap_or(0) as i8
+        self.operand.first().copied().unwrap_or(0) as i8
     }
 
     /// Returns the second signed byte operand (used by TRY instructions).

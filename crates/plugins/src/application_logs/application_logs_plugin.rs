@@ -23,7 +23,7 @@ pub struct ApplicationLogsPlugin {
 impl ApplicationLogsPlugin {
     /// Creates a new plugin instance using default settings.
     pub fn new() -> Self {
-        Self::with_settings(ApplicationLogsSettings::default())
+        Self::with_settings(ApplicationLogsSettings::current())
     }
 
     /// Creates a new plugin instance with the supplied settings.
@@ -129,6 +129,12 @@ impl Plugin for ApplicationLogsPlugin {
             reader.configure(Some(config));
         }
         Ok(())
+    }
+}
+
+impl Default for ApplicationLogsPlugin {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

@@ -39,19 +39,9 @@ impl JBoolean {
         self.value
     }
 
-    /// Converts to string
-    pub fn to_string(&self) -> String {
-        self.as_string()
-    }
-
     /// Writes to a JSON writer
     pub fn write(&self, writer: &mut dyn Write) -> std::io::Result<()> {
         writer.write_all(self.as_string().as_bytes())
-    }
-
-    /// Clones the token
-    pub fn clone(&self) -> Self {
-        Self { value: self.value }
     }
 }
 

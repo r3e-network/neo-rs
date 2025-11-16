@@ -108,6 +108,22 @@ impl JToken {
         }
     }
 
+    /// Attempts to view this token as a JSON array.
+    pub fn as_array(&self) -> Option<&JArray> {
+        match self {
+            JToken::Array(array) => Some(array),
+            _ => None,
+        }
+    }
+
+    /// Attempts to view this token as a JSON object.
+    pub fn as_object(&self) -> Option<&JObject> {
+        match self {
+            JToken::Object(object) => Some(object),
+            _ => None,
+        }
+    }
+
     pub fn as_boolean(&self) -> bool {
         match self {
             JToken::Null => false,
@@ -119,22 +135,31 @@ impl JToken {
         }
     }
 
-    pub fn as_number(&self) -> f64 {
+    pub fn as_number(&self) -> Option<f64> {
         match self {
             JToken::Boolean(value) => {
                 if *value {
-                    1.0
+                    Some(1.0)
                 } else {
-                    0.0
+                    Some(0.0)
                 }
             }
-            JToken::Number(value) => *value,
-            JToken::String(value) => value.parse::<f64>().unwrap_or(f64::NAN),
-            _ => f64::NAN,
+            JToken::Number(value) => Some(*value),
+            JToken::String(value) => value.parse::<f64>().ok(),
+            _ => None,
         }
     }
 
-    pub fn as_string(&self) -> String {
+    /// Returns the underlying string value if the token represents a JSON string.
+    pub fn as_string(&self) -> Option<String> {
+        match self {
+            JToken::String(value) => Some(value.clone()),
+            _ => None,
+        }
+    }
+
+    /// Converts the token to a string representation (used for diagnostics/logging).
+    pub fn to_string_value(&self) -> String {
         match self {
             JToken::Null => "null".to_string(),
             JToken::Boolean(value) => value.to_string(),

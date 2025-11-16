@@ -61,6 +61,11 @@ impl<'a> MemoryReader<'a> {
         self.buffer.len()
     }
 
+    /// Returns true when the backing buffer contains zero bytes.
+    pub fn is_empty(&self) -> bool {
+        self.buffer.is_empty()
+    }
+
     /// Returns the number of unread bytes remaining in the buffer.
     #[inline]
     pub fn remaining(&self) -> usize {

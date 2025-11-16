@@ -17,9 +17,9 @@ use crate::dbft_plugin::messages::consensus_message::{
 };
 use crate::dbft_plugin::messages::prepare_request::PrepareRequest;
 use crate::dbft_plugin::messages::prepare_response::PrepareResponse;
-use crate::dbft_plugin::messages::recovery_message::recovery_message_change_view_payload_compact::ChangeViewPayloadCompact;
-use crate::dbft_plugin::messages::recovery_message::recovery_message_commit_payload_compact::CommitPayloadCompact;
-use crate::dbft_plugin::messages::recovery_message::recovery_message_preparation_payload_compact::PreparationPayloadCompact;
+use crate::dbft_plugin::messages::recovery::recovery_message_change_view_payload_compact::ChangeViewPayloadCompact;
+use crate::dbft_plugin::messages::recovery::recovery_message_commit_payload_compact::CommitPayloadCompact;
+use crate::dbft_plugin::messages::recovery::recovery_message_preparation_payload_compact::PreparationPayloadCompact;
 use crate::dbft_plugin::types::change_view_reason::ChangeViewReason;
 use crate::dbft_plugin::types::consensus_message_type::ConsensusMessageType;
 use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
@@ -224,7 +224,7 @@ impl RecoveryMessage {
         let change_view_messages = read_compact_map(
             reader,
             u8::MAX as u64,
-            |reader| ChangeViewPayloadCompact::deserialize(reader),
+            ChangeViewPayloadCompact::deserialize,
             |payload| payload.validator_index,
         )?;
 
@@ -259,14 +259,14 @@ impl RecoveryMessage {
         let preparation_messages = read_compact_map(
             reader,
             u8::MAX as u64,
-            |reader| PreparationPayloadCompact::deserialize(reader),
+            PreparationPayloadCompact::deserialize,
             |payload| payload.validator_index,
         )?;
 
         let commit_messages = read_compact_map(
             reader,
             u8::MAX as u64,
-            |reader| CommitPayloadCompact::deserialize(reader),
+            CommitPayloadCompact::deserialize,
             |payload| payload.validator_index,
         )?;
 
@@ -379,7 +379,7 @@ impl RecoveryMessage {
             }
         };
 
-        let primary_index = context.block().primary_index() as u8;
+        let primary_index = context.block().primary_index();
         let mut payloads = Vec::new();
 
         for compact in self.preparation_messages.values() {

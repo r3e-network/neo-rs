@@ -18,6 +18,7 @@ pub struct BlockHeader {
 }
 
 impl BlockHeader {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         version: u32,
         previous_hash: UInt256,

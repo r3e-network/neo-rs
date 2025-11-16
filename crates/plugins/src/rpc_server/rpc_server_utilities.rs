@@ -8,10 +8,12 @@ use super::rpc_server::RpcServer;
 
 impl RpcServer {
     pub fn list_plugins(&self) -> Value {
-        let infos = match self.system.plugin_manager().read() {
-            Ok(manager) => manager.plugin_infos(),
-            Err(_) => Vec::new(),
-        };
+        let infos = self
+            .system()
+            .plugin_manager()
+            .read()
+            .map(|manager| manager.plugin_infos())
+            .unwrap_or_default();
 
         let items: Vec<Value> = infos
             .into_iter()
@@ -29,7 +31,8 @@ impl RpcServer {
 
     pub fn validate_address(&self, address: &str) -> Value {
         let address = address.trim();
-        let is_valid = parse_address_with_version(address, self.system.settings().address_version)
+        let address_version = self.system().settings().address_version;
+        let is_valid = parse_address_with_version(address, address_version)
             .or_else(|_| parse_address_with_version(address, 0x35))
             .is_ok();
 

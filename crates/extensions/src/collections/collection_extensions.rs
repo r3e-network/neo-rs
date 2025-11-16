@@ -56,7 +56,7 @@ where
     where
         V: Clone,
     {
-        if chunk_size <= 0 {
+        if chunk_size == 0 {
             return Err("Chunk size must > 0".to_string());
         }
 
@@ -106,7 +106,7 @@ where
     where
         T: Clone,
     {
-        if chunk_size <= 0 {
+        if chunk_size == 0 {
             return Err("Chunk size must > 0".to_string());
         }
 

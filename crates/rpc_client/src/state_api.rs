@@ -11,8 +11,9 @@
 
 use crate::models::{RpcFoundStates, RpcStateRoot};
 use crate::RpcClient;
+use base64::{engine::general_purpose, Engine as _};
 use neo_core::{UInt160, UInt256};
-use neo_json::{JObject, JToken};
+use neo_json::JToken;
 use std::sync::Arc;
 
 /// State service API
@@ -60,14 +61,16 @@ impl StateApi {
                 vec![
                     JToken::String(root_hash.to_string()),
                     JToken::String(script_hash.to_string()),
-                    JToken::String(base64::encode(key)),
+                    JToken::String(general_purpose::STANDARD.encode(key)),
                 ],
             )
             .await?;
 
         let proof_str = result.as_string().ok_or("Invalid response format")?;
 
-        base64::decode(proof_str).map_err(|e| e.into())
+        general_purpose::STANDARD
+            .decode(proof_str)
+            .map_err(|e| e.into())
     }
 
     /// Verify a proof
@@ -83,14 +86,16 @@ impl StateApi {
                 "verifyproof",
                 vec![
                     JToken::String(root_hash.to_string()),
-                    JToken::String(base64::encode(proof_bytes)),
+                    JToken::String(general_purpose::STANDARD.encode(proof_bytes)),
                 ],
             )
             .await?;
 
         let value_str = result.as_string().ok_or("Invalid response format")?;
 
-        base64::decode(value_str).map_err(|e| e.into())
+        general_purpose::STANDARD
+            .decode(value_str)
+            .map_err(|e| e.into())
     }
 
     /// Get state height information
@@ -130,8 +135,8 @@ impl StateApi {
         let mut params = vec![
             JToken::String(root_hash.to_string()),
             JToken::String(script_hash.to_string()),
-            JToken::String(base64::encode(prefix)),
-            JToken::String(base64::encode(from.unwrap_or(&[]))),
+            JToken::String(general_purpose::STANDARD.encode(prefix)),
+            JToken::String(general_purpose::STANDARD.encode(from.unwrap_or(&[]))),
         ];
 
         if let Some(c) = count {
@@ -175,13 +180,15 @@ impl StateApi {
                 vec![
                     JToken::String(root_hash.to_string()),
                     JToken::String(script_hash.to_string()),
-                    JToken::String(base64::encode(key)),
+                    JToken::String(general_purpose::STANDARD.encode(key)),
                 ],
             )
             .await?;
 
         let value_str = result.as_string().ok_or("Invalid response format")?;
 
-        base64::decode(value_str).map_err(|e| e.into())
+        general_purpose::STANDARD
+            .decode(value_str)
+            .map_err(|e| e.into())
     }
 }

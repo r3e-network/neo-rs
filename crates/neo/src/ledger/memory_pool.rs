@@ -27,21 +27,23 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::{Duration, Instant, SystemTime};
 
 /// namespace Neo.Ledger -> public class MemoryPool : IReadOnlyCollection<Transaction>
-
 /// Allow a reverified transaction to be rebroadcast if it has been this many block times since last broadcast.
 const _BLOCKS_TILL_REBROADCAST: i32 = 10;
 
 /// Used to cache verified transactions before being written into the block.
+type TransactionAddedCallback = dyn Fn(&MemoryPool, &Transaction) + Send + Sync;
+type TransactionRemovedCallback = dyn Fn(&MemoryPool, &TransactionRemovedEventArgs) + Send + Sync;
+type TransactionRelayCallback = dyn Fn(&Transaction) + Send + Sync;
+
 pub struct MemoryPool {
     /// Callback invoked when a transaction is added to the pool.
-    pub transaction_added: Option<Box<dyn Fn(&MemoryPool, &Transaction) + Send + Sync>>,
+    pub transaction_added: Option<Box<TransactionAddedCallback>>,
 
     /// Callback invoked when a transaction (or set of transactions) is removed from the pool.
-    pub transaction_removed:
-        Option<Box<dyn Fn(&MemoryPool, &TransactionRemovedEventArgs) + Send + Sync>>,
+    pub transaction_removed: Option<Box<TransactionRemovedCallback>>,
 
     /// Callback invoked when a transaction should be rebroadcast to the network.
-    pub transaction_relay: Option<Box<dyn Fn(&Transaction) + Send + Sync>>,
+    pub transaction_relay: Option<Box<TransactionRelayCallback>>,
 
     _max_milliseconds_to_reverify_tx: f64,
     _max_milliseconds_to_reverify_tx_per_idle: f64,
@@ -193,10 +195,7 @@ impl MemoryPool {
     fn register_conflicts(&mut self, tx_hash: UInt256, tx: &Transaction) {
         for attr in tx.attributes() {
             if let TransactionAttribute::Conflicts(Conflicts { hash }) = attr {
-                self.conflicts
-                    .entry(*hash)
-                    .or_insert_with(HashSet::new)
-                    .insert(tx_hash);
+                self.conflicts.entry(*hash).or_default().insert(tx_hash);
             }
         }
     }

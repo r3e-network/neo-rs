@@ -70,14 +70,6 @@ impl JArray {
         self.items.push(item);
     }
 
-    /// Creates an array from an iterator of items.
-    pub fn from_iter<I>(iter: I) -> Self
-    where
-        I: IntoIterator<Item = Option<JToken>>,
-    {
-        Self::from_vec(iter.into_iter().collect())
-    }
-
     /// Returns a mutable reference to the element at `index`.
     pub fn get_mut(&mut self, index: usize) -> Option<&mut Option<JToken>> {
         self.items.get_mut(index)

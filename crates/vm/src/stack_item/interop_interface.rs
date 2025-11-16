@@ -45,7 +45,7 @@ impl InteropInterfaceItem {
 
         // Attempt to downcast to the requested type
         interface_any.downcast_ref::<T>().ok_or_else(|| {
-            VmError::invalid_type_simple(&format!(
+            VmError::invalid_type_simple(format!(
                 "Cannot cast InteropInterface to type {}",
                 std::any::type_name::<T>()
             ))

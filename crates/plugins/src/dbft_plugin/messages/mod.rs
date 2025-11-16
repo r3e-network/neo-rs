@@ -7,7 +7,7 @@ pub mod commit;
 pub mod consensus_message;
 pub mod prepare_request;
 pub mod prepare_response;
-pub mod recovery_message;
+pub mod recovery;
 
 // Re-export commonly used types
 pub use change_view::ChangeView;
@@ -17,4 +17,4 @@ pub use consensus_message::{
 };
 pub use prepare_request::PrepareRequest;
 pub use prepare_response::PrepareResponse;
-pub use recovery_message::*;
+pub use recovery::*;

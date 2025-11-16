@@ -140,7 +140,7 @@ impl StringExtensions for String {
         }
 
         for c in self.chars() {
-            if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+            if !c.is_ascii_hexdigit() {
                 return false;
             }
         }
@@ -212,7 +212,7 @@ impl StringExtensions for &str {
         }
 
         for c in self.chars() {
-            if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+            if !c.is_ascii_hexdigit() {
                 return false;
             }
         }

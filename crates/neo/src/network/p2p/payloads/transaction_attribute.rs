@@ -78,10 +78,7 @@ impl TransactionAttribute {
     /// Indicates whether multiple instances of this attribute are allowed.
     /// Matches C# AllowMultiple property.
     pub fn allow_multiple(&self) -> bool {
-        match self {
-            Self::Conflicts(_) => true,
-            _ => false,
-        }
+        matches!(self, Self::Conflicts(_))
     }
 
     /// Verify the attribute.
@@ -93,7 +90,7 @@ impl TransactionAttribute {
         tx: &Transaction,
     ) -> bool {
         match self {
-            Self::HighPriority => HighPriorityAttribute::default().verify(settings, snapshot, tx),
+            Self::HighPriority => HighPriorityAttribute.verify(settings, snapshot, tx),
             Self::OracleResponse(attr) => attr.verify(settings, snapshot, tx),
             Self::NotValidBefore(attr) => attr.verify(settings, snapshot, tx),
             Self::Conflicts(attr) => attr.verify(settings, snapshot, tx),

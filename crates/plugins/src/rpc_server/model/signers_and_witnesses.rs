@@ -2,7 +2,7 @@ use neo_core::network::p2p::payloads::{Signer, Witness};
 
 /// Mirrors `Neo.Plugins.RpcServer.Model.SignersAndWitnesses`, bundling a set of
 /// signers together with their optional witness scripts supplied via RPC.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct SignersAndWitnesses {
     pub signers: Vec<Signer>,
     pub witnesses: Vec<Witness>,

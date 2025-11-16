@@ -55,7 +55,7 @@ impl CryptoLib {
     /// SHA256 hash function backed by the shared cryptography crate.
     fn sha256(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         let data = args
-            .get(0)
+            .first()
             .ok_or_else(|| Error::native_contract("sha256 requires data argument".to_string()))?;
 
         Ok(Crypto::sha256(data).to_vec())
@@ -63,7 +63,7 @@ impl CryptoLib {
 
     /// RIPEMD160 hash function backed by the shared cryptography crate.
     fn ripemd160(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
-        let data = args.get(0).ok_or_else(|| {
+        let data = args.first().ok_or_else(|| {
             Error::native_contract("ripemd160 requires data argument".to_string())
         })?;
 

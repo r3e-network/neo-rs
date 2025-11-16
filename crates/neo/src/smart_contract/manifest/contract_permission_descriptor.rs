@@ -83,7 +83,7 @@ impl ContractPermissionDescriptor {
             ContractPermissionDescriptor::Wildcard => serde_json::Value::String("*".to_string()),
             ContractPermissionDescriptor::Hash(h) => serde_json::Value::String(h.to_string()),
             ContractPermissionDescriptor::Group(g) => {
-                serde_json::Value::String(hex::encode(&g.encoded()))
+                serde_json::Value::String(hex::encode(g.encoded()))
             }
         }
     }
@@ -161,6 +161,6 @@ impl<'de> Deserialize<'de> for ContractPermissionDescriptor {
         D: serde::Deserializer<'de>,
     {
         let value = Value::deserialize(deserializer)?;
-        ContractPermissionDescriptor::from_json(&value).map_err(|e| serde::de::Error::custom(e))
+        ContractPermissionDescriptor::from_json(&value).map_err(serde::de::Error::custom)
     }
 }

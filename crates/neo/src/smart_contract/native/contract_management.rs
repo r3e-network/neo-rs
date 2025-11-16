@@ -146,9 +146,13 @@ impl ContractManagement {
             NativeMethod::new("getContractHashes".to_string(), 1 << 15, true, 0x01),
         ];
 
-        let mut storage = ContractStorage::default();
-        storage.next_id = 1;
-        storage.minimum_deployment_fee = DEFAULT_MINIMUM_DEPLOYMENT_FEE;
+        let storage = ContractStorage {
+            contracts: HashMap::new(),
+            contract_ids: HashMap::new(),
+            next_id: 1,
+            minimum_deployment_fee: DEFAULT_MINIMUM_DEPLOYMENT_FEE,
+            contract_count: 0,
+        };
 
         Self {
             id: Self::ID,

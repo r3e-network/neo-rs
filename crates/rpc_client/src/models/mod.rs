@@ -9,6 +9,8 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
+mod vm_state_utils;
+
 // Core RPC types
 pub mod rpc_request;
 pub mod rpc_response;

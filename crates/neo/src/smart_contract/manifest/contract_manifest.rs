@@ -1,3 +1,5 @@
+#![allow(clippy::mutable_key_type)]
+
 //! Contract manifest implementation.
 //!
 //! Represents the manifest of a smart contract which declares the features
@@ -443,7 +445,7 @@ impl IInteroperable for ContractManifest {
             StackItem::Array(array) => array
                 .items()
                 .iter()
-                .map(|item| ContractGroup::from_stack_item_value(item))
+                .map(ContractGroup::from_stack_item_value)
                 .collect(),
             _ => panic!("ContractManifest groups must be an array"),
         };

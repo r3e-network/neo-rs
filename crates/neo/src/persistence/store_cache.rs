@@ -20,6 +20,10 @@ use crate::smart_contract::{StorageItem, StorageKey};
 use std::sync::Arc;
 
 /// Represents a cache for the snapshot or database of the NEO blockchain.
+type StoreGetFn = dyn Fn(&StorageKey) -> Option<StorageItem> + Send + Sync;
+type StoreFindFn =
+    dyn Fn(Option<&StorageKey>, SeekDirection) -> Vec<(StorageKey, StorageItem)> + Send + Sync;
+
 pub struct StoreCache {
     data_cache: DataCache,
     store: Option<Arc<dyn IStore>>,
@@ -31,13 +35,9 @@ impl StoreCache {
     pub fn new_from_store(store: Arc<dyn IStore>, read_only: bool) -> Self {
         let store_for_get = store.clone();
         let store_for_find = store.clone();
-        let store_get: Arc<dyn Fn(&StorageKey) -> Option<StorageItem> + Send + Sync> =
+        let store_get: Arc<StoreGetFn> =
             Arc::new(move |key: &StorageKey| store_for_get.try_get(key));
-        let store_find: Arc<
-            dyn Fn(Option<&StorageKey>, SeekDirection) -> Vec<(StorageKey, StorageItem)>
-                + Send
-                + Sync,
-        > = Arc::new(move |prefix, direction| {
+        let store_find: Arc<StoreFindFn> = Arc::new(move |prefix, direction| {
             store_for_find
                 .find(prefix, direction)
                 .collect::<Vec<(StorageKey, StorageItem)>>()

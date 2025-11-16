@@ -20,7 +20,7 @@ use neo_core::neo_io::Serializable;
 use neo_core::network::p2p::payloads::ExtensiblePayload;
 use neo_core::network::p2p::payloads::Witness;
 use neo_core::smart_contract::Contract;
-use neo_core::{TimeProvider, Transaction, UInt160, UInt256};
+use neo_core::{TimeProvider, Transaction, UInt160};
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::debug;
@@ -107,7 +107,6 @@ impl ConsensusContext {
             }
             Err(ex) => {
                 self.log(&format!("SignPayload error: {}", ex));
-                return;
             }
         }
     }
@@ -168,7 +167,7 @@ impl ConsensusContext {
             self.my_index as u8,
             self.view_number,
             self.block.version(),
-            self.block.prev_hash().clone(),
+            *self.block.prev_hash(),
             timestamp,
             nonce,
             self.transaction_hashes.clone().unwrap_or_default(),
@@ -200,10 +199,10 @@ impl ConsensusContext {
         if let Some(transaction_hashes) = &self.transaction_hashes {
             prepare_request_message = Some(PrepareRequest::with_params(
                 self.block.index(),
-                self.block.primary_index() as u8,
+                self.block.primary_index(),
                 self.view_number,
                 self.block.version(),
-                self.block.prev_hash().clone(),
+                *self.block.prev_hash(),
                 self.block.header.timestamp(),
                 self.block.header.nonce(),
                 transaction_hashes.clone(),
@@ -235,7 +234,7 @@ impl ConsensusContext {
             for payload in preparation_payloads {
                 if let Some(message) = self.get_message(&payload) {
                     if let Some(response) = message.as_prepare_response() {
-                        let candidate = response.preparation_hash().clone();
+                        let candidate = *response.preparation_hash();
                         if preparation_hash
                             .as_ref()
                             .map_or(false, |current| current >= &candidate)
@@ -300,7 +299,7 @@ impl ConsensusContext {
             .get(self.block.primary_index() as usize)
             .and_then(|payload| payload.clone())
             .map(|mut payload| payload.hash())
-            .unwrap_or_else(UInt256::default);
+            .unwrap_or_default();
 
         let prepare_response = PrepareResponse::with_params(
             self.block.index(),
@@ -387,8 +386,7 @@ impl ConsensusContext {
         // Fetch sorted verified transactions from the mempool if available.
         // Falls back to an empty set (empty block proposal) if not accessible.
         // TODO: Integrate with the Rust mempool once transaction ordering is exposed.
-        #[allow(unused_variables)]
-        let limit = limit;
+        let _ = limit;
         Vec::new()
     }
 }

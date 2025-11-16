@@ -14,6 +14,11 @@ impl BinaryWriter {
         self.buffer.len()
     }
 
+    /// Returns true when the writer contains zero bytes.
+    pub fn is_empty(&self) -> bool {
+        self.buffer.is_empty()
+    }
+
     #[inline]
     pub fn write_u8(&mut self, value: u8) -> IoResult<()> {
         self.buffer.push(value);

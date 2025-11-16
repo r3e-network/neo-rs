@@ -80,21 +80,20 @@ impl TransactionManagerFactory {
         let nonce = rng.gen::<u32>();
 
         // Create transaction
-        let tx = Transaction {
-            version: 0,
-            nonce,
-            script: script.to_vec(),
-            signers: signers.to_vec(),
-            valid_until_block: block_count - 1
+        let mut tx = Transaction::new();
+        tx.set_nonce(nonce);
+        tx.set_script(script.to_vec());
+        tx.set_signers(signers.to_vec());
+        tx.set_valid_until_block(
+            block_count - 1
                 + self
                     .rpc_client
                     .protocol_settings
                     .max_valid_until_block_increment,
-            system_fee,
-            network_fee: 0, // Will be calculated later
-            attributes: attributes.to_vec(),
-            witnesses: vec![],
-        };
+        );
+        tx.set_system_fee(system_fee);
+        tx.set_attributes(attributes.to_vec());
+        tx.set_witnesses(Vec::new());
 
         Ok(TransactionManager::new(tx, self.rpc_client.clone()))
     }

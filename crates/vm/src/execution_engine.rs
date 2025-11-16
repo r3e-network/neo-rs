@@ -39,9 +39,8 @@ pub struct ExecutionEngine {
     /// Used for reference counting of objects in the VM
     reference_counter: ReferenceCounter,
 
-    /// Gas calculator for execution cost tracking (matches C# ApplicationEngine)
+    // Gas calculator for execution cost tracking (matches C# ApplicationEngine)
     // gas_calculator: GasCalculator, // Removed - no C# counterpart
-
     /// Optional interop service used for handling syscalls
     interop_service: Option<InteropService>,
 
@@ -464,7 +463,7 @@ impl ExecutionEngine {
         // }
         if let Some(host_ptr) = self.interop_host {
             if let Some(context) = self.current_context().cloned() {
-                unsafe { (&mut *host_ptr).pre_execute_instruction(self, &context, instruction)? };
+                unsafe { (*host_ptr).pre_execute_instruction(self, &context, instruction)? };
             }
         }
         Ok(())
@@ -475,9 +474,7 @@ impl ExecutionEngine {
         if self.reference_counter.count() < self.limits.max_stack_size as usize {
             if let Some(host_ptr) = self.interop_host {
                 if let Some(context) = self.current_context().cloned() {
-                    unsafe {
-                        (&mut *host_ptr).post_execute_instruction(self, &context, instruction)?
-                    };
+                    unsafe { (*host_ptr).post_execute_instruction(self, &context, instruction)? };
                 }
             }
             return Ok(());
@@ -493,7 +490,7 @@ impl ExecutionEngine {
 
         if let Some(host_ptr) = self.interop_host {
             if let Some(context) = self.current_context().cloned() {
-                unsafe { (&mut *host_ptr).post_execute_instruction(self, &context, instruction)? };
+                unsafe { (*host_ptr).post_execute_instruction(self, &context, instruction)? };
             }
         }
 
@@ -514,7 +511,7 @@ impl ExecutionEngine {
 
         if let Some(host_ptr) = self.interop_host {
             if let Some(new_context) = self.current_context().cloned() {
-                unsafe { (&mut *host_ptr).on_context_loaded(self, &new_context)? };
+                unsafe { (*host_ptr).on_context_loaded(self, &new_context)? };
             }
         }
 

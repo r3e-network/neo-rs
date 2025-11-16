@@ -46,14 +46,15 @@ impl RpcStateRoot {
         let root_hash = json
             .get("roothash")
             .and_then(|v| v.as_string())
-            .and_then(|s| UInt256::parse(s).ok())
+            .and_then(|s| UInt256::parse(&s).ok())
             .ok_or("Missing or invalid 'roothash' field")?;
 
         let witness = json
             .get("witnesses")
             .and_then(|v| v.as_array())
-            .and_then(|arr| arr.first())
-            .and_then(|w| w.as_object())
+            .and_then(|arr| arr.iter().next())
+            .and_then(|entry| entry.as_ref())
+            .and_then(|token| token.as_object())
             .and_then(|obj| crate::utility::witness_from_json(obj).ok());
 
         Ok(Self {

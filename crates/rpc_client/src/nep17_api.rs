@@ -9,8 +9,8 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use crate::models::{RpcInvokeResult, RpcNep17TokenInfo, RpcNep17Transfers};
-use crate::{ContractClient, RpcClient, TransactionManager, TransactionManagerFactory};
+use crate::models::{RpcNep17TokenInfo, RpcNep17Transfers};
+use crate::{ContractClient, RpcClient, TransactionManagerFactory};
 use neo_core::{Contract, KeyPair, Signer, Transaction, UInt160, WitnessScope};
 use neo_vm::ScriptBuilder;
 use num_bigint::BigInt;

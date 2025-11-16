@@ -127,7 +127,6 @@ impl SharedStates {
 
 /// Represents an execution context in the Neo Virtual Machine.
 /// This matches the C# implementation's ExecutionContext class.
-#[derive(Clone)]
 pub struct ExecutionContext {
     /// The shared states (script, evaluation stack, static fields)
     shared_states: SharedStates,
@@ -405,10 +404,7 @@ impl ExecutionContext {
 
     /// Peek at an item on the evaluation stack without removing it
     pub fn peek(&self, index: usize) -> VmResult<crate::stack_item::StackItem> {
-        self.shared_states
-            .evaluation_stack()
-            .peek(index)
-            .map(|item| item.clone())
+        self.shared_states.evaluation_stack().peek(index).cloned()
     }
 
     /// Clones the context with a new reference counter.
@@ -434,12 +430,6 @@ impl ExecutionContext {
             arguments: None,
             try_stack: self.try_stack.clone(),
         }
-    }
-
-    /// Clones the context so that they share the same script, stack, and static fields.
-    /// This matches the C# implementation's Clone method.
-    pub fn clone(&self) -> Self {
-        self.clone_with_position(self.instruction_pointer)
     }
 
     /// Clones the context so that they share the same script, stack, and static fields.
@@ -570,6 +560,12 @@ impl ExecutionContext {
         } else {
             Err(VmError::invalid_operation_msg("No arguments initialized"))
         }
+    }
+}
+
+impl Clone for ExecutionContext {
+    fn clone(&self) -> Self {
+        self.clone_with_position(self.instruction_pointer)
     }
 }
 

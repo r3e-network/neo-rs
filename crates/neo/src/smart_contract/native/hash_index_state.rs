@@ -6,7 +6,7 @@ use neo_vm::StackItem;
 use num_traits::ToPrimitive;
 
 /// State for hash index tracking (matches C# HashIndexState)
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct HashIndexState {
     /// The hash value
     pub hash: UInt256,
@@ -19,14 +19,6 @@ impl HashIndexState {
     /// Creates a new hash index state
     pub fn new(hash: UInt256, index: u32) -> Self {
         Self { hash, index }
-    }
-
-    /// Creates default state
-    pub fn default() -> Self {
-        Self {
-            hash: UInt256::default(),
-            index: 0,
-        }
     }
 }
 

@@ -60,7 +60,11 @@ impl RpcRequest {
         let params = json
             .get("params")
             .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().cloned().collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|item| item.clone())
+                    .collect::<Vec<_>>()
+            })
             .unwrap_or_default();
 
         Ok(Self {

@@ -9,13 +9,11 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use neo_core::{ECCurve, ECPoint, Hardfork};
 use neo_json::{JArray, JObject, JToken};
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// RPC version information matching C# RpcVersion
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct RpcVersion {
     /// TCP port
     pub tcp_port: i32,
@@ -87,7 +85,7 @@ impl RpcVersion {
 }
 
 /// RPC protocol information matching C# RpcProtocol
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct RpcProtocol {
     /// Network ID
     pub network: u32,
@@ -117,13 +115,13 @@ pub struct RpcProtocol {
     pub initial_gas_distribution: u64,
 
     /// Hardforks
-    pub hardforks: HashMap<Hardfork, u32>,
+    pub hardforks: HashMap<String, u32>,
 
     /// Seed list
     pub seed_list: Vec<String>,
 
     /// Standby committee
-    pub standby_committee: Vec<ECPoint>,
+    pub standby_committee: Vec<String>,
 }
 
 impl RpcProtocol {
@@ -169,17 +167,10 @@ impl RpcProtocol {
         let hardforks_array: Vec<JToken> = self
             .hardforks
             .iter()
-            .map(|(k, v)| {
+            .map(|(name, height)| {
                 let mut obj = JObject::new();
-                // Strip HF_ prefix
-                let name = k.to_string();
-                let name = if name.starts_with("HF_") {
-                    &name[3..]
-                } else {
-                    &name
-                };
-                obj.insert("name".to_string(), JToken::String(name.to_string()));
-                obj.insert("blockheight".to_string(), JToken::Number(*v as f64));
+                obj.insert("name".to_string(), JToken::String(name.clone()));
+                obj.insert("blockheight".to_string(), JToken::Number(*height as f64));
                 JToken::Object(obj)
             })
             .collect();
@@ -192,7 +183,7 @@ impl RpcProtocol {
         let committee_array: Vec<JToken> = self
             .standby_committee
             .iter()
-            .map(|p| JToken::String(p.to_string()))
+            .map(|member| JToken::String(member.clone()))
             .collect();
         json.insert(
             "standbycommittee".to_string(),
@@ -268,20 +259,14 @@ impl RpcProtocol {
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
-                    .filter_map(|item| item.as_object())
+                    .filter_map(|item| item.as_ref())
+                    .filter_map(|token| token.as_object())
                     .filter_map(|obj| {
                         let name = obj.get("name")?.as_string()?;
-                        // Add HF_ prefix if not present
-                        let hardfork_name = if name.starts_with("HF_") {
-                            name.to_string()
-                        } else {
-                            format!("HF_{}", name)
-                        };
-                        let hardfork = Hardfork::from_str(&hardfork_name).ok()?;
                         let block_height = obj.get("blockheight")?.as_number()? as u32;
-                        Some((hardfork, block_height))
+                        Some((name, block_height))
                     })
-                    .collect()
+                    .collect::<HashMap<_, _>>()
             })
             .unwrap_or_default();
 
@@ -291,7 +276,8 @@ impl RpcProtocol {
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
-                    .filter_map(|item| item.as_string())
+                    .filter_map(|item| item.as_ref())
+                    .filter_map(|token| token.as_string())
                     .map(|s| s.to_string())
                     .collect()
             })
@@ -303,8 +289,8 @@ impl RpcProtocol {
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
-                    .filter_map(|item| item.as_string())
-                    .filter_map(|s| ECPoint::parse(s, &ECCurve::Secp256r1).ok())
+                    .filter_map(|item| item.as_ref())
+                    .filter_map(|token| token.as_string())
                     .collect()
             })
             .unwrap_or_default();

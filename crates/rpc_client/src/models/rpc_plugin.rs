@@ -66,7 +66,8 @@ impl RpcPlugin {
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
-                    .filter_map(|item| item.as_string())
+                    .filter_map(|item| item.as_ref())
+                    .filter_map(|token| token.as_string())
                     .map(|s| s.to_string())
                     .collect()
             })

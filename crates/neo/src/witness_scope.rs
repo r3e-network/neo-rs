@@ -201,7 +201,7 @@ impl FromStr for WitnessScope {
         let mut scope = WitnessScope::NONE;
         let mut has_parts = false;
         for part in trimmed
-            .split(|c| c == '|' || c == ',')
+            .split(['|', ','])
             .map(|p| p.trim())
             .filter(|p| !p.is_empty())
         {
@@ -225,7 +225,7 @@ impl FromStr for WitnessScope {
                 return Err("Global scope cannot be combined with other flags".to_string());
             }
 
-            scope = scope | flag;
+            scope |= flag;
         }
 
         if !has_parts {

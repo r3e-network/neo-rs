@@ -15,7 +15,7 @@ use crate::{
 };
 use serde::Deserialize;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{hash_map::Entry, HashMap};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
@@ -196,12 +196,12 @@ impl ProtocolSettings {
         let mut hardforks = hardforks;
         let mut encountered_configured = false;
         for hardfork in HardforkManager::all() {
-            if hardforks.contains_key(&hardfork) {
-                encountered_configured = true;
-            } else if !encountered_configured {
-                hardforks.insert(hardfork, 0);
-            } else {
-                break;
+            match hardforks.entry(hardfork) {
+                Entry::Occupied(_) => encountered_configured = true,
+                Entry::Vacant(entry) if !encountered_configured => {
+                    entry.insert(0);
+                }
+                _ => break,
             }
         }
         hardforks

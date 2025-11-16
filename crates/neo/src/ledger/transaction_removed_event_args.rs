@@ -10,7 +10,6 @@ use super::TransactionRemovalReason;
 use crate::network::p2p::payloads::Transaction;
 
 /// namespace Neo.Ledger -> public sealed class TransactionRemovedEventArgs
-
 /// Represents the event data of MemoryPool.TransactionRemoved.
 pub struct TransactionRemovedEventArgs {
     /// The Transactions that is being removed.

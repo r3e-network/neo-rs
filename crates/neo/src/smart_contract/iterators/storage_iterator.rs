@@ -100,12 +100,12 @@ impl IIterator for StorageIterator {
             value_item = match value_item {
                 StackItem::Array(array) => array
                     .items()
-                    .get(0)
+                    .first()
                     .cloned()
                     .unwrap_or_else(StackItem::null),
                 StackItem::Struct(struct_item) => struct_item
                     .items()
-                    .get(0)
+                    .first()
                     .cloned()
                     .unwrap_or_else(StackItem::null),
                 other => other,

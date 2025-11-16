@@ -43,7 +43,7 @@ impl RpcValidateAddressResult {
 
         let is_valid = json
             .get("isvalid")
-            .and_then(|v| v.as_boolean())
+            .map(|v| v.as_boolean())
             .ok_or("Missing or invalid 'isvalid' field")?;
 
         Ok(Self { address, is_valid })

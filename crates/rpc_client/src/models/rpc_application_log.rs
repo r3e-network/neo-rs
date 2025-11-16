@@ -9,13 +9,15 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use neo_core::{ProtocolSettings, TriggerType, UInt160, UInt256};
-use neo_json::{JArray, JObject, JToken};
+use super::vm_state_utils::vm_state_from_str;
+use neo_core::smart_contract::TriggerType;
+use neo_core::{ProtocolSettings, UInt160, UInt256};
+use neo_json::JObject;
 use neo_vm::{StackItem, VMState};
-use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 
 /// Application log information matching C# RpcApplicationLog
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct RpcApplicationLog {
     /// Transaction ID
     pub tx_id: Option<UInt256>,
@@ -28,54 +30,26 @@ pub struct RpcApplicationLog {
 }
 
 impl RpcApplicationLog {
-    /// Converts to JSON
-    /// Matches C# ToJson
-    pub fn to_json(&self) -> JObject {
-        let mut json = JObject::new();
-
-        if let Some(ref tx_id) = self.tx_id {
-            json.insert("txid".to_string(), JToken::String(tx_id.to_string()));
-        }
-
-        if let Some(ref block_hash) = self.block_hash {
-            json.insert(
-                "blockhash".to_string(),
-                JToken::String(block_hash.to_string()),
-            );
-        }
-
-        let executions_array: Vec<JToken> = self
-            .executions
-            .iter()
-            .map(|e| JToken::Object(e.to_json()))
-            .collect();
-        json.insert(
-            "executions".to_string(),
-            JToken::Array(JArray::from(executions_array)),
-        );
-
-        json
-    }
-
     /// Creates from JSON
     /// Matches C# FromJson
     pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
         let tx_id = json
             .get("txid")
             .and_then(|v| v.as_string())
-            .and_then(|s| UInt256::parse(s).ok());
+            .and_then(|s| UInt256::parse(&s).ok());
 
         let block_hash = json
             .get("blockhash")
             .and_then(|v| v.as_string())
-            .and_then(|s| UInt256::parse(s).ok());
+            .and_then(|s| UInt256::parse(&s).ok());
 
         let executions = json
             .get("executions")
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
-                    .filter_map(|item| item.as_object())
+                    .filter_map(|item| item.as_ref())
+                    .filter_map(|token| token.as_object())
                     .filter_map(|obj| Execution::from_json(obj, protocol_settings).ok())
                     .collect()
             })
@@ -90,7 +64,7 @@ impl RpcApplicationLog {
 }
 
 /// Execution information matching C# Execution
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Execution {
     /// Trigger type
     pub trigger: TriggerType,
@@ -112,51 +86,6 @@ pub struct Execution {
 }
 
 impl Execution {
-    /// Converts to JSON
-    /// Matches C# ToJson
-    pub fn to_json(&self) -> JObject {
-        let mut json = JObject::new();
-        json.insert(
-            "trigger".to_string(),
-            JToken::String(self.trigger.to_string()),
-        );
-        json.insert(
-            "vmstate".to_string(),
-            JToken::String(self.vm_state.to_string()),
-        );
-        json.insert(
-            "gasconsumed".to_string(),
-            JToken::String(self.gas_consumed.to_string()),
-        );
-
-        if let Some(ref exception) = self.exception_message {
-            json.insert("exception".to_string(), JToken::String(exception.clone()));
-        }
-
-        let stack_array: Vec<JToken> = self
-            .stack
-            .iter()
-            .filter_map(|s| s.to_json().ok())
-            .map(JToken::Object)
-            .collect();
-        json.insert(
-            "stack".to_string(),
-            JToken::Array(JArray::from(stack_array)),
-        );
-
-        let notifications_array: Vec<JToken> = self
-            .notifications
-            .iter()
-            .map(|n| JToken::Object(n.to_json()))
-            .collect();
-        json.insert(
-            "notifications".to_string(),
-            JToken::Array(JArray::from(notifications_array)),
-        );
-
-        json
-    }
-
     /// Creates from JSON
     /// Matches C# FromJson
     pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
@@ -171,8 +100,8 @@ impl Execution {
             .get("vmstate")
             .and_then(|v| v.as_string())
             .ok_or("Missing or invalid 'vmstate' field")?;
-        let vm_state = VMState::from_str(vm_state_str)
-            .map_err(|_| format!("Invalid VM state: {}", vm_state_str))?;
+        let vm_state = vm_state_from_str(&vm_state_str)
+            .ok_or_else(|| format!("Invalid VM state: {}", vm_state_str))?;
 
         let gas_consumed_str = json
             .get("gasconsumed")
@@ -192,7 +121,8 @@ impl Execution {
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
-                    .filter_map(|item| item.as_object())
+                    .filter_map(|item| item.as_ref())
+                    .filter_map(|token| token.as_object())
                     .filter_map(|obj| crate::utility::stack_item_from_json(obj).ok())
                     .collect()
             })
@@ -203,7 +133,8 @@ impl Execution {
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
-                    .filter_map(|item| item.as_object())
+                    .filter_map(|item| item.as_ref())
+                    .filter_map(|token| token.as_object())
                     .filter_map(|obj| RpcNotifyEventArgs::from_json(obj, protocol_settings).ok())
                     .collect()
             })
@@ -221,7 +152,7 @@ impl Execution {
 }
 
 /// Notification event arguments matching C# RpcNotifyEventArgs
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct RpcNotifyEventArgs {
     /// Contract that emitted the notification
     pub contract: UInt160,
@@ -234,26 +165,6 @@ pub struct RpcNotifyEventArgs {
 }
 
 impl RpcNotifyEventArgs {
-    /// Converts to JSON
-    /// Matches C# ToJson
-    pub fn to_json(&self) -> JObject {
-        let mut json = JObject::new();
-        json.insert(
-            "contract".to_string(),
-            JToken::String(self.contract.to_string()),
-        );
-        json.insert(
-            "eventname".to_string(),
-            JToken::String(self.event_name.clone()),
-        );
-
-        if let Ok(state_json) = self.state.to_json() {
-            json.insert("state".to_string(), JToken::Object(state_json));
-        }
-
-        json
-    }
-
     /// Creates from JSON
     /// Matches C# FromJson
     pub fn from_json(
@@ -263,7 +174,7 @@ impl RpcNotifyEventArgs {
         let contract = json
             .get("contract")
             .and_then(|v| v.as_string())
-            .and_then(|s| UInt160::parse(s).ok())
+            .and_then(|s| UInt160::parse(&s).ok())
             .ok_or("Missing or invalid 'contract' field")?;
 
         let event_name = json

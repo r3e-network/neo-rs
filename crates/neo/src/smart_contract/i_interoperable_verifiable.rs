@@ -3,6 +3,7 @@
 use crate::smart_contract::i_interoperable::{IInteroperable, SmartContractStackItem};
 
 /// Extends [`IInteroperable`] with the ability to request verified conversions.
+#[allow(clippy::wrong_self_convention)]
 pub trait IInteroperableVerifiable: IInteroperable {
     /// Convert a [`StackItem`](SmartContractStackItem) to the current object with optional
     /// verification of the payload contents.

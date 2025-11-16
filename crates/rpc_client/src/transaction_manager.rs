@@ -11,10 +11,10 @@
 
 use crate::{RpcClient, TransactionManagerFactory};
 use neo_core::{
-    Contract, ContractParametersContext, ECPoint, KeyPair, Signer, Transaction,
+    smart_contract::ContractParametersContext, Contract, ECPoint, KeyPair, Signer, Transaction,
     TransactionAttribute, Witness,
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::Arc;
 
 /// Sign item for transaction signing
@@ -89,7 +89,7 @@ impl TransactionManager {
         let mut manager = factory
             .make_transaction(script, &signers.unwrap_or_default())
             .await?;
-        manager.tx.system_fee = system_fee;
+        manager.tx.set_system_fee(system_fee);
 
         if let Some(attrs) = attributes {
             manager.tx.set_attributes(attrs);
@@ -104,7 +104,8 @@ impl TransactionManager {
         &mut self,
         key: &KeyPair,
     ) -> Result<&mut Self, Box<dyn std::error::Error>> {
-        let contract = Contract::create_signature_contract(&key.public_key());
+        let public_point = key.get_public_key_point()?;
+        let contract = Contract::create_signature_contract(public_point);
         self.add_sign_item(contract, key.clone());
         Ok(self)
     }

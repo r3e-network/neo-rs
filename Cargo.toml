@@ -29,6 +29,7 @@ members = [
     "crates/plugins",
     
     # Node implementation
+    "crates/cli",
 ]
 exclude = [
     "target",
@@ -64,7 +65,7 @@ neo-io = { path = "crates/io", version = "0.4.0" }
 neo-vm = { path = "crates/vm", version = "0.4.0" }
 neo-json = { path = "crates/json", version = "0.4.0" }
 # Removed crates that don't exist in C# structure
-# neo-cli = { path = "crates/cli", version = "0.4.0" } # Temporarily disabled
+neo-cli = { path = "crates/cli", version = "0.4.0" }
 neo-extensions = { path = "crates/extensions", version = "0.4.0" }
 # Removed neo-monitoring - not in C# structure
 neo-plugins = { path = "crates/plugins", version = "0.4.0" }

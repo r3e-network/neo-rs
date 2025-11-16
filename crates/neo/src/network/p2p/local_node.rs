@@ -315,7 +315,7 @@ impl LocalNode {
             .filter(|entry| entry.snapshot.listen_tcp_port > 0)
             .choose_multiple(&mut rng, MAX_COUNT_TO_SEND)
             .into_iter()
-            .filter_map(|entry| {
+            .map(|entry| {
                 let ip = entry.snapshot.remote_address.ip();
                 let mut capabilities = entry.version.capabilities.clone();
 
@@ -331,11 +331,7 @@ impl LocalNode {
                     capabilities.push(NodeCapability::tcp_server(entry.snapshot.listen_tcp_port));
                 }
 
-                Some(NetworkAddressWithTime::new(
-                    entry.snapshot.timestamp as u32,
-                    ip,
-                    capabilities,
-                ))
+                NetworkAddressWithTime::new(entry.snapshot.timestamp as u32, ip, capabilities)
             })
             .collect()
     }
@@ -1056,7 +1052,7 @@ impl LocalNodeActor {
                 Ok(listener) => loop {
                     match listener.accept().await {
                         Ok((stream, remote)) => {
-                            let local = stream.local_addr().unwrap_or_else(|_| endpoint);
+                            let local = stream.local_addr().unwrap_or(endpoint);
                             if let Err(err) = stream.set_nodelay(true) {
                                 warn!(target: "neo", endpoint = %remote, error = %err, "failed to enable TCP_NODELAY for inbound connection");
                             }

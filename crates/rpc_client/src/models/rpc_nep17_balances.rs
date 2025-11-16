@@ -43,10 +43,7 @@ impl RpcNep17Balances {
 
         json.insert(
             "address".to_string(),
-            JToken::String(
-                self.user_script_hash
-                    .to_address(protocol_settings.address_version),
-            ),
+            JToken::String(self.user_script_hash.to_address()),
         );
 
         json
@@ -60,7 +57,8 @@ impl RpcNep17Balances {
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
-                    .filter_map(|item| item.as_object())
+                    .filter_map(|item| item.as_ref())
+                    .filter_map(|token| token.as_object())
                     .filter_map(|obj| RpcNep17Balance::from_json(obj, protocol_settings).ok())
                     .collect()
             })
@@ -71,8 +69,8 @@ impl RpcNep17Balances {
             .and_then(|v| v.as_string())
             .ok_or("Missing or invalid 'address' field")?;
 
-        let user_script_hash = UInt160::from_address(address, protocol_settings.address_version)
-            .map_err(|_| format!("Invalid address: {}", address))?;
+        let user_script_hash =
+            UInt160::from_address(&address).map_err(|_| format!("Invalid address: {}", address))?;
 
         Ok(Self {
             user_script_hash,
@@ -123,9 +121,9 @@ impl RpcNep17Balance {
             .ok_or("Missing or invalid 'assethash' field")?;
 
         let asset_hash = if asset_hash_str.starts_with("0x") {
-            UInt160::parse(asset_hash_str)
+            UInt160::parse(&asset_hash_str)
         } else {
-            UInt160::from_address(asset_hash_str, protocol_settings.address_version)
+            UInt160::from_address(&asset_hash_str)
         }
         .map_err(|_| format!("Invalid asset hash: {}", asset_hash_str))?;
 
@@ -134,7 +132,7 @@ impl RpcNep17Balance {
             .and_then(|v| v.as_string())
             .ok_or("Missing or invalid 'amount' field")?;
         let amount =
-            BigInt::from_str(amount_str).map_err(|_| format!("Invalid amount: {}", amount_str))?;
+            BigInt::from_str(&amount_str).map_err(|_| format!("Invalid amount: {}", amount_str))?;
 
         let last_updated_block =
             json.get("lastupdatedblock")

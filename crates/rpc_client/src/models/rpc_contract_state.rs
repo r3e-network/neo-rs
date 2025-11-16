@@ -12,22 +12,15 @@
 use crate::models::RpcNefFile;
 use neo_core::{ContractManifest, ContractState, UInt160};
 use neo_json::JObject;
-use serde::{Deserialize, Serialize};
 
 /// RPC contract state information matching C# RpcContractState
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct RpcContractState {
     /// The contract state
     pub contract_state: ContractState,
 }
 
 impl RpcContractState {
-    /// Converts to JSON
-    /// Matches C# ToJson
-    pub fn to_json(&self) -> JObject {
-        self.contract_state.to_json()
-    }
-
     /// Creates from JSON
     /// Matches C# FromJson
     pub fn from_json(json: &JObject) -> Result<Self, String> {
@@ -44,7 +37,7 @@ impl RpcContractState {
         let hash = json
             .get("hash")
             .and_then(|v| v.as_string())
-            .and_then(|s| UInt160::parse(s).ok())
+            .and_then(|s| UInt160::parse(&s).ok())
             .ok_or("Missing or invalid 'hash' field")?;
 
         let nef_json = json
@@ -57,7 +50,9 @@ impl RpcContractState {
             .get("manifest")
             .and_then(|v| v.as_object())
             .ok_or("Missing or invalid 'manifest' field")?;
-        let manifest = ContractManifest::from_json(manifest_json)?;
+        let manifest_str = manifest_json.to_string();
+        let manifest = ContractManifest::from_json(&manifest_str)
+            .map_err(|err| format!("Invalid manifest: {err}"))?;
 
         Ok(Self {
             contract_state: ContractState {

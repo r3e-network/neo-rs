@@ -9,7 +9,6 @@ use std::error::Error;
 use std::fmt;
 
 /// namespace Neo.VM -> public class BadScriptException : Exception
-
 /// Represents the exception thrown when the bad script is parsed.
 #[derive(Debug, Clone)]
 pub struct BadScriptException {
@@ -39,3 +38,9 @@ impl fmt::Display for BadScriptException {
 }
 
 impl Error for BadScriptException {}
+
+impl Default for BadScriptException {
+    fn default() -> Self {
+        Self::new()
+    }
+}

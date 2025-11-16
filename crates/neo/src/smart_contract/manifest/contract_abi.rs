@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Represents the ABI of a smart contract (matches C# ContractAbi)
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct ContractAbi {
     /// The methods in the ABI
     pub methods: Vec<ContractMethodDescriptor>,
@@ -128,16 +128,6 @@ impl ContractAbi {
             return Err("ABI must contain at least one method".to_string());
         }
         Ok(())
-    }
-}
-
-impl Default for ContractAbi {
-    fn default() -> Self {
-        Self {
-            methods: Vec::new(),
-            events: Vec::new(),
-            method_dictionary: None,
-        }
     }
 }
 

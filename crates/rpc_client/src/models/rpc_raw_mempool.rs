@@ -73,7 +73,7 @@ impl RpcRawMemPool {
             .map(|arr| {
                 arr.iter()
                     .filter_map(|item| item.as_string())
-                    .filter_map(|s| UInt256::parse(s).ok())
+                    .filter_map(|s| UInt256::parse(&s).ok())
                     .collect()
             })
             .unwrap_or_default();
@@ -84,7 +84,7 @@ impl RpcRawMemPool {
             .map(|arr| {
                 arr.iter()
                     .filter_map(|item| item.as_string())
-                    .filter_map(|s| UInt256::parse(s).ok())
+                    .filter_map(|s| UInt256::parse(&s).ok())
                     .collect()
             })
             .unwrap_or_default();

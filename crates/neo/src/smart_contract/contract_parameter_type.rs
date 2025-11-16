@@ -2,9 +2,10 @@
 
 /// Represents the type of ContractParameter (matches C# ContractParameterType)
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ContractParameterType {
     /// Indicates that the parameter can be of any type
+    #[default]
     Any = 0x00,
 
     /// Indicates that the parameter is of Boolean type
@@ -65,12 +66,6 @@ impl ContractParameterType {
     }
 }
 
-impl Default for ContractParameterType {
-    fn default() -> Self {
-        ContractParameterType::Any
-    }
-}
-
 impl serde::Serialize for ContractParameterType {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
@@ -86,6 +81,6 @@ impl<'de> serde::Deserialize<'de> for ContractParameterType {
         D: serde::Deserializer<'de>,
     {
         let value = <String as serde::Deserialize>::deserialize(deserializer)?;
-        ContractParameterType::from_string(&value).map_err(|e| serde::de::Error::custom(e))
+        ContractParameterType::from_string(&value).map_err(serde::de::Error::custom)
     }
 }

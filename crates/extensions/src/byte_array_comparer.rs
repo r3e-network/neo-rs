@@ -64,7 +64,7 @@ impl Eq for ByteArrayComparer {}
 
 impl PartialOrd for ByteArrayComparer {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.direction.partial_cmp(&other.direction)
+        Some(self.cmp(other))
     }
 }
 

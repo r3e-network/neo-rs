@@ -1,3 +1,5 @@
+#![allow(clippy::mutable_key_type)]
+
 //! JsonSerializer - mirrors `Neo.SmartContract.JsonSerializer`.
 
 use neo_vm::stack_item::array::Array as ArrayItem;
@@ -44,7 +46,7 @@ impl JsonSerializer {
                 let int_value = integer
                     .to_i64()
                     .ok_or_else(|| "Integer too large for JSON".to_string())?;
-                if int_value < Self::MIN_SAFE_INTEGER || int_value > Self::MAX_SAFE_INTEGER {
+                if !(Self::MIN_SAFE_INTEGER..=Self::MAX_SAFE_INTEGER).contains(&int_value) {
                     return Err("Integer out of safe JSON range".to_string());
                 }
                 Ok(JsonValue::Number(JsonNumber::from(int_value)))

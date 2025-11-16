@@ -661,7 +661,7 @@ impl NeoSystemContext {
         let ledger_contract = LedgerContract::new();
         let store_cache = self.store_cache();
         ledger_contract
-            .get_block(&store_cache, HashOrIndex::Hash(hash.clone()))
+            .get_block(&store_cache, HashOrIndex::Hash(*hash))
             .ok()
             .flatten()
             .map(Self::convert_ledger_block)
@@ -686,7 +686,7 @@ impl NeoSystemContext {
         let ledger_contract = LedgerContract::new();
         let store_cache = self.store_cache();
         if let Ok(Some(block)) =
-            ledger_contract.get_block(&store_cache, HashOrIndex::Hash(hash_start.clone()))
+            ledger_contract.get_block(&store_cache, HashOrIndex::Hash(*hash_start))
         {
             let mut next_index = block.index().saturating_add(1 + hashes.len() as u32);
             while hashes.len() < count {
@@ -1677,7 +1677,7 @@ impl Actor for TransactionRouterActor {
             Err(payload) => {
                 warn!(
                     target: "neo",
-                    message_type = ?payload.type_id(),
+                    message_type = ?(*payload).type_id(),
                     "unknown message routed to transaction router actor"
                 );
                 Ok(())

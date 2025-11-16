@@ -128,19 +128,19 @@ pub use hardfork::Hardfork;
 pub use ledger::{Block, BlockHeader};
 pub use neo_system::NeoSystem;
 pub use network::p2p::payloads::{
-    Transaction, TransactionAttribute, TransactionAttributeType, HEADER_SIZE,
-    MAX_TRANSACTION_ATTRIBUTES, MAX_TRANSACTION_SIZE, Signer,
+    Signer, Transaction, TransactionAttribute, TransactionAttributeType, HEADER_SIZE,
+    MAX_TRANSACTION_ATTRIBUTES, MAX_TRANSACTION_SIZE,
 };
 pub use protocol_settings::ProtocolSettings;
-pub use smart_contract::{Contract, ContractManifest, ContractState};
 pub use smart_contract::native::NativeContract;
+pub use smart_contract::{Contract, ContractManifest, ContractState};
 pub use time_provider::TimeProvider;
 pub use uint160::UInt160;
 pub use uint256::UInt256;
+pub use wallets::{KeyPair, Wallet};
 pub use witness::Witness;
 pub use witness_rule::{WitnessCondition, WitnessConditionType, WitnessRule, WitnessRuleAction};
 pub use witness_scope::WitnessScope;
-pub use wallets::{KeyPair, Wallet};
 
 /// Compatibility re-export ensuring modules translated from C# continue to compile.
 pub mod system {

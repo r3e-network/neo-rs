@@ -11,17 +11,12 @@ use std::sync::{Arc, RwLock};
 use once_cell::sync::Lazy;
 
 /// Matches `Neo.Plugins.UnhandledExceptionPolicy` from the C# node.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum UnhandledExceptionPolicy {
     Ignore,
     StopPlugin,
+    #[default]
     StopNode,
-}
-
-impl Default for UnhandledExceptionPolicy {
-    fn default() -> Self {
-        UnhandledExceptionPolicy::StopNode
-    }
 }
 
 /// Equivalent to `Neo.Plugins.IPluginSettings` providing per-plugin

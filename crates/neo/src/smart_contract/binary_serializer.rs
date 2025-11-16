@@ -1,3 +1,5 @@
+#![allow(clippy::mutable_key_type)]
+
 //! BinarySerializer - aligns with `Neo.SmartContract.BinarySerializer`.
 
 use crate::neo_io::{IoError, MemoryReader};
@@ -38,8 +40,8 @@ impl BinarySerializer {
         let mut reader = MemoryReader::new(data);
         Self::deserialize_with_limits(
             &mut reader,
-            limits.max_item_size as u32,
-            limits.max_stack_size as u32,
+            limits.max_item_size,
+            limits.max_stack_size,
             reference_counter,
         )
     }

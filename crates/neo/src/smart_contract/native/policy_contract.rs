@@ -324,7 +324,7 @@ impl PolicyContract {
         let value_bytes = &args[0];
         let value = Self::parse_u32_le(value_bytes)?;
 
-        if value < 1 || value > 1000 {
+        if !(1..=1000).contains(&value) {
             return Err(Error::native_contract(
                 "Max transactions per block must be between 1 and 1000".to_string(),
             ));
@@ -398,7 +398,7 @@ impl PolicyContract {
         let value_bytes = &args[0];
         let value = Self::parse_i64_le(value_bytes)?;
 
-        if value <= 0 || value > 10_000_000_000_000 {
+        if !(1..=10_000_000_000_000).contains(&value) {
             // 100,000 GAS max
             return Err(Error::native_contract(
                 "Max block system fee must be positive and reasonable".to_string(),
@@ -462,7 +462,7 @@ impl PolicyContract {
         let value_bytes = &args[0];
         let value = Self::parse_i64_le(value_bytes)?;
 
-        if value < 0 || value > 100_000_000 {
+        if !(0..=100_000_000).contains(&value) {
             return Err(Error::native_contract(
                 "Fee per byte must be between 0 and 100,000,000".to_string(),
             ));
@@ -489,7 +489,7 @@ impl PolicyContract {
         let value_bytes = &args[0];
         let value = Self::parse_u32_le(value_bytes)?;
 
-        if value == 0 || value > 1000 {
+        if !(1..=1000).contains(&value) {
             return Err(Error::native_contract(
                 "Exec fee factor must be between 1 and 1000".to_string(),
             ));
@@ -516,7 +516,7 @@ impl PolicyContract {
         let value_bytes = &args[0];
         let value = Self::parse_u32_le(value_bytes)?;
 
-        if value == 0 || value > 100_000 {
+        if !(1..=100_000).contains(&value) {
             return Err(Error::native_contract(
                 "Storage price must be between 1 and 100,000 datoshi per byte".to_string(),
             ));
@@ -543,7 +543,7 @@ impl PolicyContract {
         let value_bytes = &args[0];
         let value = Self::parse_i64_le(value_bytes)?;
 
-        if value < 0 || value > 1_000_000_000 {
+        if !(0..=1_000_000_000).contains(&value) {
             // Max 10 GAS
             return Err(Error::native_contract(
                 "Attribute fee must be between 0 and 1,000,000,000 datoshi".to_string(),

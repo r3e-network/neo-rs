@@ -10,7 +10,7 @@
 // modifications are permitted.
 
 use crate::dbft_plugin::consensus::consensus_context::ConsensusContext;
-use crate::dbft_plugin::consensus::consensus_service::ConsensusService;
+use crate::dbft_plugin::consensus::consensus_service::{ConsensusService, TimerContextState};
 use crate::dbft_plugin::messages::{
     ChangeView, Commit, ConsensusMessagePayload, PrepareRequest, PrepareResponse, RecoveryMessage,
     RecoveryRequest,
@@ -71,9 +71,7 @@ impl ConsensusService {
             }
 
             let validator_index = message.validator_index() as usize;
-            let Some(validator) = context.validators().get(validator_index).cloned() else {
-                return None;
-            };
+            let validator = context.validators().get(validator_index).cloned()?;
 
             context
                 .last_seen_message_mut()
@@ -118,7 +116,7 @@ impl ConsensusService {
         payload: ExtensiblePayload,
         message: PrepareRequest,
     ) {
-        let missing_hashes = {
+        let (missing_hashes, timer_state) = {
             let mut context = self.context.write().await;
 
             if context.request_sent_or_received()
@@ -152,6 +150,7 @@ impl ConsensusService {
                 block_mut.header.set_nonce(message.nonce());
             }
 
+            let timer_state = TimerContextState::from_context(&mut context);
             context.transaction_hashes = Some(message.transaction_hashes().to_vec());
             context.transactions = Some(Default::default());
             context.verification_context = TransactionVerificationContext::new();
@@ -168,8 +167,10 @@ impl ConsensusService {
                 context.preparation_payloads[primary_index] = Some(payload.clone());
             }
 
-            message.transaction_hashes().to_vec()
+            (message.transaction_hashes().to_vec(), timer_state)
         };
+
+        self.extend_timer_by_factor(&timer_state, 2);
 
         if !missing_hashes.is_empty() {
             self.request_missing_transactions(&missing_hashes);
@@ -183,7 +184,7 @@ impl ConsensusService {
         payload: ExtensiblePayload,
         message: PrepareResponse,
     ) {
-        let should_check = {
+        let (should_check, timer_state) = {
             let mut context = self.context.write().await;
 
             if message.view_number() != context.view_number() {
@@ -218,6 +219,8 @@ impl ConsensusService {
                 return;
             }
 
+            let timer_state = TimerContextState::from_context(&mut context);
+
             self.log(&format!(
                 "OnPrepareResponseReceived: height={} view={} index={}",
                 message.block_index(),
@@ -227,8 +230,15 @@ impl ConsensusService {
 
             context.preparation_payloads[index] = Some(payload.clone());
 
-            !context.watch_only() && !context.commit_sent() && context.request_sent_or_received()
+            (
+                !context.watch_only()
+                    && !context.commit_sent()
+                    && context.request_sent_or_received(),
+                timer_state,
+            )
         };
+
+        self.extend_timer_by_factor(&timer_state, 2);
 
         if should_check {
             self.check_preparations().await;
@@ -265,7 +275,7 @@ impl ConsensusService {
     }
 
     async fn on_commit_received(&mut self, payload: ExtensiblePayload, message: Commit) {
-        let should_check = {
+        let (should_check, timer_state) = {
             let mut context = self.context.write().await;
 
             if message.view_number() != context.view_number() {
@@ -281,6 +291,8 @@ impl ConsensusService {
                 return;
             }
 
+            let timer_state = TimerContextState::from_context(&mut context);
+
             self.log(&format!(
                 "OnCommitReceived: height={} view={} index={}",
                 message.block_index(),
@@ -290,8 +302,10 @@ impl ConsensusService {
 
             context.commit_payloads[index] = Some(payload.clone());
 
-            true
+            (true, timer_state)
         };
+
+        self.extend_timer_by_factor(&timer_state, 4);
 
         if should_check {
             self.check_commits().await;

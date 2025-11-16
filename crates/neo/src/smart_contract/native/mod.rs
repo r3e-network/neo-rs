@@ -78,7 +78,7 @@ impl NativeRegistry {
         self.contracts
             .iter()
             .find(|(_, contract)| contract.name().eq_ignore_ascii_case(name))
-            .map(|(hash, _)| hash.clone())
+            .map(|(hash, _)| *hash)
     }
 
     pub fn take_contract_by_name(&mut self, name: &str) -> Option<Arc<dyn NativeContract>> {

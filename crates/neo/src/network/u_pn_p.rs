@@ -151,11 +151,8 @@ impl UPnP {
                 Event::Text(t) => {
                     let text = t.unescape().unwrap_or_default().to_string();
                     if in_service_type {
-                        if text.contains("WANIPConnection") || text.contains("WANPPPConnection") {
-                            in_service = true;
-                        } else {
-                            in_service = false;
-                        }
+                        in_service =
+                            text.contains("WANIPConnection") || text.contains("WANPPPConnection");
                         in_service_type = false;
                     } else if in_control_url && in_service {
                         control_url = Some(text);

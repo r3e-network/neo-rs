@@ -9,15 +9,14 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use crate::dbft_plugin::consensus::consensus_service::ConsensusService;
+use crate::dbft_plugin::consensus::consensus_service::{ConsensusService, TimerContextState};
 use crate::dbft_plugin::types::change_view_reason::ChangeViewReason;
 
 impl ConsensusService {
     /// Checks prepare response
     /// Matches C# CheckPrepareResponse method
     pub async fn check_prepare_response(&mut self) -> bool {
-        let payload;
-        {
+        let (payload, timer_state) = {
             let mut context = self.context.write().await;
 
             let ready = match (context.transaction_hashes(), context.transactions()) {
@@ -55,8 +54,12 @@ impl ConsensusService {
                 return false;
             }
 
-            payload = context.make_prepare_response();
-        }
+            let timer_state = TimerContextState::from_context(&mut context);
+            let payload = context.make_prepare_response();
+            (payload, timer_state)
+        };
+
+        self.extend_timer_by_factor(&timer_state, 2);
 
         self.extend_timer_async(2).await;
 

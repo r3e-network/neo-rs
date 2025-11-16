@@ -68,13 +68,11 @@ impl IReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MemoryStore {
             data.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
         };
 
-        let result = if direction == SeekDirection::Backward {
+        if direction == SeekDirection::Backward {
             Box::new(iter.into_iter().rev()) as Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)>>
         } else {
             Box::new(iter.into_iter()) as Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)>>
-        };
-
-        result
+        }
     }
 }
 

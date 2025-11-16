@@ -9,6 +9,9 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
+type ErrorCallback<T> = fn(&T, &dyn std::error::Error);
+type ErrorCallbackWithResult<T, R> = fn(&T, &dyn std::error::Error) -> Option<R>;
+
 /// Try-catch extensions matching C# TryCatchExtensions exactly
 pub trait TryCatchExtensions<T> {
     /// Executes an action and catches any exception.
@@ -19,11 +22,7 @@ pub trait TryCatchExtensions<T> {
 
     /// Executes an action and catches specific exceptions.
     /// Matches C# TryCatch method with exception type
-    fn try_catch_exception<F>(
-        &self,
-        action: F,
-        on_error: Option<fn(&Self, &dyn std::error::Error)>,
-    ) -> &Self
+    fn try_catch_exception<F>(&self, action: F, on_error: Option<ErrorCallback<T>>) -> &Self
     where
         F: FnOnce(&Self);
 
@@ -32,7 +31,7 @@ pub trait TryCatchExtensions<T> {
     fn try_catch_function<F, R>(
         &self,
         func: F,
-        on_error: Option<fn(&Self, &dyn std::error::Error) -> Option<R>>,
+        on_error: Option<ErrorCallbackWithResult<T, R>>,
     ) -> Option<R>
     where
         F: FnOnce(&Self) -> Option<R>;
@@ -79,11 +78,7 @@ impl<T> TryCatchExtensions<T> for T {
         self
     }
 
-    fn try_catch_exception<F>(
-        &self,
-        action: F,
-        on_error: Option<fn(&Self, &dyn std::error::Error)>,
-    ) -> &Self
+    fn try_catch_exception<F>(&self, action: F, on_error: Option<ErrorCallback<T>>) -> &Self
     where
         F: FnOnce(&Self),
     {
@@ -102,7 +97,7 @@ impl<T> TryCatchExtensions<T> for T {
     fn try_catch_function<F, R>(
         &self,
         func: F,
-        on_error: Option<fn(&Self, &dyn std::error::Error) -> Option<R>>,
+        on_error: Option<ErrorCallbackWithResult<T, R>>,
     ) -> Option<R>
     where
         F: FnOnce(&Self) -> Option<R>,
@@ -127,7 +122,7 @@ impl<T> TryCatchExtensions<T> for T {
         E: std::error::Error,
     {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| action(self)));
-        if let Err(_) = result {
+        if result.is_err() {
             // In a real implementation, this would re-throw the specific exception
             panic!("Exception occurred in try_catch_throw");
         }
@@ -155,7 +150,7 @@ impl<T> TryCatchExtensions<T> for T {
         E: std::error::Error + std::fmt::Display,
     {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| action(self)));
-        if let Err(_) = result {
+        if result.is_err() {
             if let Some(message) = error_message {
                 panic!("{}", message);
             } else {

@@ -76,7 +76,7 @@ impl OracleResponse {
         }
 
         // Check that the script matches the fixed script
-        if tx.script() != &Self::get_fixed_script() {
+        if tx.script() != Self::get_fixed_script() {
             return false;
         }
 

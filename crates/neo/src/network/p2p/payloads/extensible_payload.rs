@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 const MAX_CATEGORY_LENGTH: usize = 32;
-const MAX_DATA_LENGTH: usize = 0x1_0000_00; // 16 MB, matches C# ReadVarMemory upper bound
+const MAX_DATA_LENGTH: usize = 0x0100_0000; // 16 MB, matches C# ReadVarMemory upper bound
 
 /// Represents an extensible message that can be relayed.
 #[derive(Debug, Clone, Serialize, Deserialize)]

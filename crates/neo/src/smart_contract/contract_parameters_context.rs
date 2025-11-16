@@ -98,7 +98,7 @@ impl ContextItem {
         let mut sigs = serde_json::Map::new();
         for (key, value) in &self.signatures {
             sigs.insert(
-                hex::encode(&key.encoded()),
+                hex::encode(key.encoded()),
                 serde_json::Value::String(general_purpose::STANDARD.encode(value)),
             );
         }
@@ -136,9 +136,7 @@ impl ContractParametersContext {
 
     /// Determines whether all witnesses are ready
     pub fn completed(&self) -> bool {
-        self.context_items
-            .values()
-            .all(|item| Self::check_item_completed(item))
+        self.context_items.values().all(Self::check_item_completed)
     }
 
     /// Checks if a context item is completed
@@ -212,7 +210,7 @@ impl ContractParametersContext {
 
         let mut witnesses = Vec::new();
 
-        for (_hash, item) in &self.context_items {
+        for item in self.context_items.values() {
             // Build invocation script from parameters
             let invocation = Self::build_invocation_script(&item.parameters);
 

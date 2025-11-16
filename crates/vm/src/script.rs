@@ -49,7 +49,7 @@ pub struct InstructionIterator<'a> {
     position: usize,
 }
 
-impl<'a> Iterator for InstructionIterator<'a> {
+impl Iterator for InstructionIterator<'_> {
     type Item = VmResult<(usize, Instruction)>;
 
     fn next(&mut self) -> Option<Self::Item> {

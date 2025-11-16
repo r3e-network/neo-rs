@@ -50,9 +50,8 @@ impl ApplicationLogsSettings {
         }
     }
 
-    /// Gets the default settings
-    /// Matches C# Default property
-    pub fn default() -> ApplicationLogsSettings {
+    /// Gets the current shared settings snapshot (matches C# Default property)
+    pub fn current() -> ApplicationLogsSettings {
         DEFAULT_SETTINGS
             .read()
             .map(|guard| guard.clone())

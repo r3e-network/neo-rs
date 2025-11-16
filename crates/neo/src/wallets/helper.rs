@@ -87,15 +87,22 @@ impl Helper {
         wallet: Option<&dyn Wallet>,
         max_execution_cost: i64,
     ) -> Result<i64, String> {
-        if let Some(wallet) = wallet {
-            let lookup = |hash: &UInt160| -> Option<Vec<u8>> {
-                wallet
-                    .get_account(hash)
-                    .and_then(|account| account.contract().map(|c| c.script.clone()))
-            };
-            calculate_network_fee_impl(tx, snapshot, settings, Some(&lookup), max_execution_cost)
-        } else {
-            calculate_network_fee_impl(tx, snapshot, settings, None, max_execution_cost)
+        match wallet {
+            Some(wallet) => {
+                let resolver: Box<AccountScriptResolver<'_>> = Box::new(move |hash: &UInt160| {
+                    wallet
+                        .get_account(hash)
+                        .and_then(|account| account.contract().map(|c| c.script.clone()))
+                });
+                calculate_network_fee_impl(
+                    tx,
+                    snapshot,
+                    settings,
+                    Some(resolver.as_ref()),
+                    max_execution_cost,
+                )
+            }
+            None => calculate_network_fee_impl(tx, snapshot, settings, None, max_execution_cost),
         }
     }
 
@@ -105,10 +112,16 @@ impl Helper {
         tx: &Transaction,
         snapshot: &DataCache,
         settings: &ProtocolSettings,
-        account_script: Option<&dyn Fn(&UInt160) -> Option<Vec<u8>>>,
+        account_script: Option<Box<AccountScriptResolver<'_>>>,
         max_execution_cost: i64,
     ) -> Result<i64, String> {
-        calculate_network_fee_impl(tx, snapshot, settings, account_script, max_execution_cost)
+        calculate_network_fee_impl(
+            tx,
+            snapshot,
+            settings,
+            account_script.as_deref(),
+            max_execution_cost,
+        )
     }
 }
 
@@ -116,7 +129,7 @@ fn calculate_network_fee_impl(
     tx: &Transaction,
     snapshot: &DataCache,
     settings: &ProtocolSettings,
-    account_script: Option<&dyn Fn(&UInt160) -> Option<Vec<u8>>>,
+    account_script: Option<&AccountScriptResolver<'_>>,
     _max_execution_cost: i64,
 ) -> Result<i64, String> {
     let mut hashes = PayloadIVerifiable::get_script_hashes_for_verifying(tx, snapshot);
@@ -280,3 +293,4 @@ impl Base58CheckDecode for str {
         Ok(payload.to_vec())
     }
 }
+pub type AccountScriptResolver<'a> = dyn Fn(&UInt160) -> Option<Vec<u8>> + 'a;

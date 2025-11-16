@@ -276,10 +276,10 @@ impl LedgerContract {
     where
         S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
-        Ok(snapshot
+        snapshot
             .try_get(key)
             .map(|item| deserialize_transaction_record(&item.get_value()))
-            .transpose()?)
+            .transpose()
     }
 
     pub fn get_transaction_state<S>(
@@ -363,12 +363,12 @@ impl LedgerContract {
         vm_state: VMState,
     ) -> Result<()> {
         let key = transaction_storage_key(self.id, hash);
-        if let Some(record) = self.read_transaction_record(snapshot, &key)? {
-            if let TransactionStateRecord::Full(mut state) = record {
-                state.set_vm_state(vm_state);
-                let updated = serialize_transaction_record(&TransactionStateRecord::Full(state))?;
-                put_item(snapshot, key, StorageItem::from_bytes(updated));
-            }
+        if let Some(TransactionStateRecord::Full(mut state)) =
+            self.read_transaction_record(snapshot, &key)?
+        {
+            state.set_vm_state(vm_state);
+            let updated = serialize_transaction_record(&TransactionStateRecord::Full(state))?;
+            put_item(snapshot, key, StorageItem::from_bytes(updated));
         }
         Ok(())
     }
@@ -888,6 +888,7 @@ fn serialize_transaction(tx: &Transaction) -> Result<Vec<u8>> {
     Ok(writer.to_bytes())
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone)]
 enum TransactionStateRecord {
     Full(PersistedTransactionState),

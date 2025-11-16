@@ -10,8 +10,9 @@
 // modifications are permitted.
 
 use crate::models::RpcMethodToken;
-use neo_core::NefFile;
-use neo_json::{JArray, JObject};
+use base64::{engine::general_purpose, Engine as _};
+use neo_core::smart_contract::NefFile;
+use neo_json::JObject;
 
 /// RPC NEF file helper matching C# RpcNefFile
 pub struct RpcNefFile {
@@ -40,7 +41,8 @@ impl RpcNefFile {
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
-                    .filter_map(|item| item.as_object())
+                    .filter_map(|item| item.as_ref())
+                    .filter_map(|token| token.as_object())
                     .filter_map(|obj| RpcMethodToken::from_json(obj).ok())
                     .collect::<Vec<_>>()
             })
@@ -49,7 +51,7 @@ impl RpcNefFile {
         let script = json
             .get("script")
             .and_then(|v| v.as_string())
-            .and_then(|s| base64::decode(s).ok())
+            .and_then(|s| general_purpose::STANDARD.decode(s).ok())
             .ok_or("Missing or invalid 'script' field")?;
 
         let checksum = json

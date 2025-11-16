@@ -18,10 +18,12 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, RwLock};
 
 /// On-chain write operations on a snapshot cannot be concurrent.
+type WriteBatch = Arc<RwLock<BTreeMap<Vec<u8>, Option<Vec<u8>>>>>;
+
 pub struct MemorySnapshot {
     store: Arc<dyn IStore>,
     immutable_data: BTreeMap<Vec<u8>, Vec<u8>>,
-    write_batch: Arc<RwLock<BTreeMap<Vec<u8>, Option<Vec<u8>>>>>,
+    write_batch: WriteBatch,
 }
 
 impl MemorySnapshot {

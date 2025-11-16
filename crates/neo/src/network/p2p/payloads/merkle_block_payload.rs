@@ -15,6 +15,7 @@ use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable}
 use crate::uint256::UINT256_SIZE;
 use crate::{neo_cryptography::MerkleTree, UInt256};
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 
 /// Represents a block that is filtered by a BloomFilter.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,12 +67,17 @@ fn pad_flags(mut flags: Vec<bool>, depth: usize) -> Vec<bool> {
     }
 
     let target_len = 1usize << (depth - 1);
-    if flags.len() > target_len {
-        flags.truncate(target_len);
-    } else if flags.len() < target_len {
-        flags.resize(target_len, false);
+    match flags.len().cmp(&target_len) {
+        Ordering::Greater => {
+            flags.truncate(target_len);
+            flags
+        }
+        Ordering::Less => {
+            flags.resize(target_len, false);
+            flags
+        }
+        Ordering::Equal => flags,
     }
-    flags
 }
 
 fn pack_flags(flags: &[bool]) -> Vec<u8> {

@@ -55,7 +55,7 @@ impl RpcAccount {
 
         let has_key = json
             .get("haskey")
-            .and_then(|v| v.as_boolean())
+            .map(|v| v.as_boolean())
             .ok_or("Missing or invalid 'haskey' field")?;
 
         let label = json
@@ -65,7 +65,7 @@ impl RpcAccount {
 
         let watch_only = json
             .get("watchonly")
-            .and_then(|v| v.as_boolean())
+            .map(|v| v.as_boolean())
             .ok_or("Missing or invalid 'watchonly' field")?;
 
         Ok(Self {

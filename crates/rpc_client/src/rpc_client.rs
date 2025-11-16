@@ -9,16 +9,18 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use crate::models::{RpcRequest, RpcResponse};
+use crate::models::{RpcInvokeResult, RpcRequest, RpcResponse};
 use crate::rpc_exception::RpcException;
-use neo_core::ProtocolSettings;
-use neo_json::JToken;
+use base64::{engine::general_purpose, Engine as _};
+use neo_core::{ProtocolSettings, Signer};
+use neo_json::{JArray, JObject, JToken};
 use regex::Regex;
 use reqwest::{Client, Url};
 use std::sync::Arc;
 use std::sync::OnceLock;
 
 static RPC_NAME_REGEX: OnceLock<Regex> = OnceLock::new();
+const MAX_JSON_NESTING: usize = 128;
 
 /// The RPC client to call NEO RPC methods
 /// Matches C# RpcClient
@@ -42,7 +44,7 @@ impl RpcClient {
         // Add basic auth if provided
         if let (Some(user), Some(pass)) = (rpc_user, rpc_pass) {
             let auth = format!("{}:{}", user, pass);
-            let encoded = base64::encode(auth.as_bytes());
+            let encoded = general_purpose::STANDARD.encode(auth.as_bytes());
             builder = builder.default_headers({
                 let mut headers = reqwest::header::HeaderMap::new();
                 headers.insert(
@@ -88,14 +90,20 @@ impl RpcClient {
     /// Processes an RPC response
     /// Matches C# AsRpcResponse
     fn as_rpc_response(content: &str, throw_on_error: bool) -> Result<RpcResponse, RpcException> {
-        let json = JToken::parse(content)
+        let json = JToken::parse(content, MAX_JSON_NESTING)
             .map_err(|e| RpcException::new(-32700, format!("Parse error: {}", e)))?;
 
-        let obj = json
-            .as_object()
-            .ok_or_else(|| RpcException::new(-32700, "Invalid response format".to_string()))?;
+        let response_obj = match json {
+            JToken::Object(obj) => obj,
+            _ => {
+                return Err(RpcException::new(
+                    -32700,
+                    "Invalid response format".to_string(),
+                ))
+            }
+        };
 
-        let mut response = RpcResponse::from_json(obj)
+        let mut response = RpcResponse::from_json(&response_obj)
             .map_err(|e| RpcException::new(-32700, format!("Invalid response: {}", e)))?;
 
         response.raw_response = Some(content.to_string());
@@ -186,10 +194,7 @@ impl RpcClient {
     /// Matches C# GetBestBlockHashAsync
     pub async fn get_best_block_hash(&self) -> Result<String, RpcException> {
         let result = self.rpc_send_async("getbestblockhash", vec![]).await?;
-        result
-            .as_string()
-            .ok_or_else(|| RpcException::new(-32603, "Invalid response type".to_string()))
-            .map(|s| s.to_string())
+        token_as_string(result, "getbestblockhash")
     }
 
     /// Internal helper for sending requests by hash or index
@@ -212,16 +217,54 @@ impl RpcClient {
         self.rpc_send_async(rpc_name, params).await
     }
 
+    /// Invokes a VM script without affecting blockchain state.
+    pub async fn invoke_script(&self, script: &[u8]) -> Result<RpcInvokeResult, RpcException> {
+        self.invoke_script_with_signers(script, &[]).await
+    }
+
+    /// Invokes a VM script with optional signer context.
+    pub async fn invoke_script_with_signers(
+        &self,
+        script: &[u8],
+        signers: &[Signer],
+    ) -> Result<RpcInvokeResult, RpcException> {
+        let mut parameters = Vec::with_capacity(2);
+        parameters.push(JToken::String(general_purpose::STANDARD.encode(script)));
+
+        if !signers.is_empty() {
+            let mut signer_tokens = Vec::with_capacity(signers.len());
+            for signer in signers {
+                let serialized = serde_json::to_string(signer).map_err(|err| {
+                    RpcException::new(
+                        -32603,
+                        format!("Failed to serialize signer for invokescript: {err}"),
+                    )
+                })?;
+                let token = JToken::parse(&serialized, MAX_JSON_NESTING).map_err(|err| {
+                    RpcException::new(
+                        -32603,
+                        format!("Failed to convert signer JSON to neo-json token: {err}"),
+                    )
+                })?;
+                signer_tokens.push(token);
+            }
+            parameters.push(JToken::Array(JArray::from(signer_tokens)));
+        }
+
+        let result = self.rpc_send_async("invokescript", parameters).await?;
+
+        let obj = token_as_object(result, "invokescript")?;
+
+        RpcInvokeResult::from_json(&obj).map_err(|err| RpcException::new(-32603, err))
+    }
+
     /// Returns the serialized block as hex string
     /// Matches C# GetBlockHexAsync
     pub async fn get_block_hex(&self, hash_or_index: &str) -> Result<String, RpcException> {
         let result = self
             .rpc_send_by_hash_or_index("getblock", hash_or_index, vec![])
             .await?;
-        result
-            .as_string()
-            .ok_or_else(|| RpcException::new(-32603, "Invalid response type".to_string()))
-            .map(|s| s.to_string())
+        token_as_string(result, "getblock hex")
     }
 
     /// Returns the block information
@@ -233,10 +276,8 @@ impl RpcClient {
         let result = self
             .rpc_send_by_hash_or_index("getblock", hash_or_index, vec![JToken::Boolean(true)])
             .await?;
-        let obj = result
-            .as_object()
-            .ok_or_else(|| RpcException::new(-32603, "Invalid response type".to_string()))?;
-        crate::models::RpcBlock::from_json(obj, &self.protocol_settings)
+        let obj = token_as_object(result, "getblock detailed")?;
+        crate::models::RpcBlock::from_json(&obj, &self.protocol_settings)
             .map_err(|e| RpcException::new(-32603, format!("Failed to parse block: {}", e)))
     }
 
@@ -244,20 +285,14 @@ impl RpcClient {
     /// Matches C# GetBlockHeaderCountAsync
     pub async fn get_block_header_count(&self) -> Result<u32, RpcException> {
         let result = self.rpc_send_async("getblockheadercount", vec![]).await?;
-        result
-            .as_number()
-            .ok_or_else(|| RpcException::new(-32603, "Invalid response type".to_string()))
-            .map(|n| n as u32)
+        token_as_number(result, "getblockheadercount").map(|n| n as u32)
     }
 
     /// Gets the number of blocks in the main chain
     /// Matches C# GetBlockCountAsync
     pub async fn get_block_count(&self) -> Result<u32, RpcException> {
         let result = self.rpc_send_async("getblockcount", vec![]).await?;
-        result
-            .as_number()
-            .ok_or_else(|| RpcException::new(-32603, "Invalid response type".to_string()))
-            .map(|n| n as u32)
+        token_as_number(result, "getblockcount").map(|n| n as u32)
     }
 
     /// Gets the hash value of the corresponding block based on the specified index
@@ -266,10 +301,7 @@ impl RpcClient {
         let result = self
             .rpc_send_async("getblockhash", vec![JToken::Number(index as f64)])
             .await?;
-        result
-            .as_string()
-            .ok_or_else(|| RpcException::new(-32603, "Invalid response type".to_string()))
-            .map(|s| s.to_string())
+        token_as_string(result, "getblockhash")
     }
 
     /// Returns the corresponding block header information by hash or index
@@ -278,10 +310,7 @@ impl RpcClient {
         let result = self
             .rpc_send_by_hash_or_index("getblockheader", hash_or_index, vec![])
             .await?;
-        result
-            .as_string()
-            .ok_or_else(|| RpcException::new(-32603, "Invalid response type".to_string()))
-            .map(|s| s.to_string())
+        token_as_string(result, "getblockheader hash")
     }
 
     /// Returns the corresponding block header information by hash or index
@@ -293,10 +322,38 @@ impl RpcClient {
         let result = self
             .rpc_send_by_hash_or_index("getblockheader", hash_or_index, vec![JToken::Boolean(true)])
             .await?;
-        let obj = result
-            .as_object()
-            .ok_or_else(|| RpcException::new(-32603, "Invalid response type".to_string()))?;
-        crate::models::RpcBlockHeader::from_json(obj, &self.protocol_settings)
+        let obj = token_as_object(result, "getblockheader")?;
+        crate::models::RpcBlockHeader::from_json(&obj, &self.protocol_settings)
             .map_err(|e| RpcException::new(-32603, format!("Failed to parse block header: {}", e)))
+    }
+}
+
+fn token_as_string(token: JToken, context: &str) -> Result<String, RpcException> {
+    match token {
+        JToken::String(value) => Ok(value),
+        _ => Err(RpcException::new(
+            -32603,
+            format!("{context}: expected string token"),
+        )),
+    }
+}
+
+fn token_as_number(token: JToken, context: &str) -> Result<f64, RpcException> {
+    match token {
+        JToken::Number(value) => Ok(value),
+        _ => Err(RpcException::new(
+            -32603,
+            format!("{context}: expected numeric token"),
+        )),
+    }
+}
+
+fn token_as_object(token: JToken, context: &str) -> Result<JObject, RpcException> {
+    match token {
+        JToken::Object(obj) => Ok(obj),
+        _ => Err(RpcException::new(
+            -32603,
+            format!("{context}: expected object token"),
+        )),
     }
 }

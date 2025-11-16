@@ -51,14 +51,6 @@ impl WitnessRuleAction {
             _ => None,
         }
     }
-
-    pub fn from_str(s: &str) -> Result<Self, String> {
-        match s {
-            "Deny" | "deny" => Ok(Self::Deny),
-            "Allow" | "allow" => Ok(Self::Allow),
-            other => Err(format!("Invalid witness rule action: {other}")),
-        }
-    }
 }
 
 impl Serialize for WitnessRuleAction {
@@ -78,6 +70,18 @@ impl<'de> Deserialize<'de> for WitnessRuleAction {
         let byte = u8::deserialize(deserializer)?;
         WitnessRuleAction::from_byte(byte)
             .ok_or_else(|| D::Error::custom(format!("Invalid witness rule action byte: {byte}")))
+    }
+}
+
+impl FromStr for WitnessRuleAction {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Deny" | "deny" => Ok(Self::Deny),
+            "Allow" | "allow" => Ok(Self::Allow),
+            other => Err(format!("Invalid witness rule action: {other}")),
+        }
     }
 }
 
@@ -403,7 +407,7 @@ impl WitnessRule {
             .get("action")
             .and_then(Value::as_str)
             .ok_or_else(|| "WitnessRule missing action".to_string())?;
-        let action = WitnessRuleAction::from_str(action_str)?;
+        let action: WitnessRuleAction = action_str.parse()?;
         let condition_value = value
             .get("condition")
             .ok_or_else(|| "WitnessRule missing condition".to_string())?;
@@ -727,7 +731,9 @@ mod tests {
             0x08, 0x71, 0xcc, 0xb8, 0xaa, 0xde, 0x64, 0xd5, 0x00, 0x93, 0xbe, 0xd8, 0x77, 0x26,
             0x5b, 0x3f, 0x6f, 0x7a, 0x6b,
         ];
-        let condition = WitnessCondition::Group { group: bytes.clone() };
+        let condition = WitnessCondition::Group {
+            group: bytes.clone(),
+        };
         let json = condition.to_json();
         assert_eq!(json["type"], "Group");
         assert_eq!(json["group"], hex_encode(&bytes));

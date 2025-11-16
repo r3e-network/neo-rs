@@ -34,6 +34,10 @@ impl RpcServer {
         self.settings = settings;
     }
 
+    pub fn system(&self) -> Arc<NeoSystem> {
+        Arc::clone(&self.system)
+    }
+
     pub fn start_rpc_server(&mut self) {
         if self.started {
             return;
@@ -103,7 +107,7 @@ pub fn register_server(network: u32, server: Arc<RwLock<RpcServer>>) {
             "Replacing existing RPC server instance for network {}",
             network
         );
-        if let Ok(mut previous_guard) = previous.try_write() {
+        if let Some(mut previous_guard) = previous.try_write() {
             previous_guard.dispose();
         }
     }

@@ -245,26 +245,20 @@ fn bit_count(w: u8) -> u8 {
             } else {
                 2
             }
+        } else if w < 8 {
+            3
         } else {
-            if w < 8 {
-                3
-            } else {
-                4
-            }
+            4
         }
+    } else if w < 64 {
+        if w < 32 {
+            5
+        } else {
+            6
+        }
+    } else if w < 128 {
+        7
     } else {
-        if w < 64 {
-            if w < 32 {
-                5
-            } else {
-                6
-            }
-        } else {
-            if w < 128 {
-                7
-            } else {
-                8
-            }
-        }
+        8
     }
 }

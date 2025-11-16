@@ -15,7 +15,7 @@ use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 /// Mirrors the per-peer bookkeeping performed by the C# task manager.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct TaskSession {
     /// Inventory hashes currently requested from the peer.
     pub inv_tasks: HashMap<UInt256, Instant>,
@@ -144,20 +144,5 @@ impl TaskSession {
     /// Returns an iterator of indexes currently requested from the peer.
     pub fn pending_indexes(&self) -> impl Iterator<Item = u32> + '_ {
         self.index_tasks.keys().copied()
-    }
-}
-
-impl Default for TaskSession {
-    fn default() -> Self {
-        // Default to a non-full-node peer with no advertised height.
-        Self {
-            inv_tasks: HashMap::new(),
-            index_tasks: HashMap::new(),
-            available_tasks: HashSet::new(),
-            received_block: HashMap::new(),
-            is_full_node: false,
-            last_block_index: 0,
-            mempool_sent: false,
-        }
     }
 }

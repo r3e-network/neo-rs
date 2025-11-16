@@ -280,7 +280,7 @@ impl ConsensusContext {
         let timestamp = header.timestamp();
         let nonce = header.nonce();
         let primary_index = header.primary_index();
-        let next_consensus = header.next_consensus().clone();
+        let next_consensus = *header.next_consensus();
 
         let _ = writer.write_u32(version);
         let _ = writer.write_u32(index);

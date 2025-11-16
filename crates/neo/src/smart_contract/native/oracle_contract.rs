@@ -410,10 +410,10 @@ impl OracleContract {
 
     fn read_request(&self, snapshot: &DataCache, id: u64) -> Result<Option<PendingRequest>> {
         let key = self.request_storage_key(id);
-        Ok(snapshot
+        snapshot
             .try_get(&key)
             .map(|item| self.deserialize_request(&item.get_value()))
-            .transpose()?)
+            .transpose()
     }
 
     fn write_request(&self, snapshot: &DataCache, request: &PendingRequest) -> Result<()> {
@@ -547,7 +547,7 @@ impl OracleContract {
         ];
         engine
             .send_notification(self.hash, "OracleRequest".to_string(), state)
-            .map_err(|err| Error::runtime_error(err))
+            .map_err(Error::runtime_error)
     }
 
     fn emit_oracle_response(
@@ -562,7 +562,7 @@ impl OracleContract {
         ];
         engine
             .send_notification(self.hash, "OracleResponse".to_string(), state)
-            .map_err(|err| Error::runtime_error(err))
+            .map_err(Error::runtime_error)
     }
 
     fn cleanup_persisted_responses(&self, engine: &mut ApplicationEngine) -> Result<()> {

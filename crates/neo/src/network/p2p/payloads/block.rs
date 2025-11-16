@@ -184,7 +184,7 @@ impl Serializable for Block {
             return Err(IoError::invalid_data("Too many transactions"));
         }
 
-        let mut transactions = Vec::with_capacity(tx_count as usize);
+        let mut transactions = Vec::with_capacity(tx_count);
         for _ in 0..tx_count {
             transactions.push(<Transaction as Serializable>::deserialize(reader)?);
         }

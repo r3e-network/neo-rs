@@ -6,6 +6,7 @@ use neo_vm::StackItem;
 ///
 /// This trait mirrors the C# `Neo.SmartContract.IInteroperable` interface, enabling
 /// smart-contract state to round-trip through VM stack items.
+#[allow(clippy::wrong_self_convention)]
 pub trait IInteroperable: std::fmt::Debug + Send + Sync {
     /// Convert a [`StackItem`] to the current object.
     fn from_stack_item(&mut self, stack_item: StackItem);

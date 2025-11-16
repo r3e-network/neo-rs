@@ -137,7 +137,7 @@ impl Nep6Wallet {
         let content = fs::read_to_string(path)?;
         let wallet_file: Nep6WalletFile = serde_json::from_str(&content)
             .map_err(|e| WalletError::Other(format!("Invalid wallet format: {e}")))?;
-        let version = Version::parse(&wallet_file.version).map_err(|e| WalletError::Other(e))?;
+        let version = Version::parse(&wallet_file.version).map_err(WalletError::Other)?;
 
         let wallet = Self {
             name: wallet_file.name.clone(),
@@ -393,7 +393,7 @@ impl Wallet for Nep6Wallet {
         let accounts = self.accounts.blocking_read();
         let account = accounts
             .get(script_hash)
-            .ok_or_else(|| WalletError::AccountNotFound(*script_hash))?
+            .ok_or(WalletError::AccountNotFound(*script_hash))?
             .clone();
 
         if account.inner.is_locked() {
@@ -480,10 +480,8 @@ impl Wallet for Nep6Wallet {
     async fn verify_password(&self, password: &str) -> WalletResult<bool> {
         let accounts = self.accounts.blocking_read();
         for account in accounts.values() {
-            if account.inner.nep2_key().is_some() {
-                if !account.inner.verify_password(password)? {
-                    return Ok(false);
-                }
+            if account.inner.nep2_key().is_some() && !account.inner.verify_password(password)? {
+                return Ok(false);
             }
         }
         Ok(true)

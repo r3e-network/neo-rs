@@ -153,7 +153,7 @@ impl ApplicationEngine {
     /// Executes the supplied script and returns the resulting VM state.
     pub fn execute(&mut self, script: Script) -> VMState {
         let script_cost = script.len() as u64;
-        if let Err(_) = self.engine.load_script(script.clone(), -1, 0) {
+        if self.engine.load_script(script.clone(), -1, 0).is_err() {
             let _ = self.consume_gas(script_cost);
             self.engine.set_state(VMState::FAULT);
             return VMState::FAULT;

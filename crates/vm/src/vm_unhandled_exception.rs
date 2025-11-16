@@ -13,7 +13,6 @@ use std::error::Error;
 use std::fmt;
 
 /// namespace Neo.VM -> public class VMUnhandledException : Exception
-
 /// Represents an unhandled exception in the VM.
 /// Thrown when there is an exception in the VM that is not caught by any script.
 #[derive(Debug, Clone)]

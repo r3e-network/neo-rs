@@ -39,7 +39,7 @@ impl TimeSource for SystemTimeSource {
 
 /// Global holder for the currently active time source.
 static CURRENT_TIME_SOURCE: Lazy<RwLock<Arc<dyn TimeSource>>> =
-    Lazy::new(|| RwLock::new(Arc::new(SystemTimeSource::default()) as Arc<dyn TimeSource>));
+    Lazy::new(|| RwLock::new(Arc::new(SystemTimeSource) as Arc<dyn TimeSource>));
 
 /// Time provider facade replicating the behaviour of the C# implementation.
 #[derive(Debug, Clone, Copy)]
@@ -58,7 +58,7 @@ impl TimeProvider {
 
     /// Resets the time source back to the default system implementation.
     pub fn reset_to_default() {
-        *CURRENT_TIME_SOURCE.write() = Arc::new(SystemTimeSource::default());
+        *CURRENT_TIME_SOURCE.write() = Arc::new(SystemTimeSource);
     }
 }
 

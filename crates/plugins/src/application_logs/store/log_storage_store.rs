@@ -168,7 +168,7 @@ impl LogStorageStore {
             .into_vec();
 
         let mut limits = ExecutionEngineLimits::DEFAULT;
-        limits.max_item_size = ApplicationLogsSettings::default().max_stack_size as u32;
+        limits.max_item_size = ApplicationLogsSettings::current().max_stack_size as u32;
 
         let data = BinarySerializer::serialize(item, &limits)
             .or_else(|_| BinarySerializer::serialize(&StackItem::null(), &limits))
@@ -513,10 +513,6 @@ impl KeyBuilder {
     fn add_be_u32(mut self, value: u32) -> Self {
         self.buffer.extend_from_slice(&value.to_be_bytes());
         self
-    }
-
-    fn clone_vec(&self) -> Vec<u8> {
-        self.buffer.clone()
     }
 
     fn into_vec(self) -> Vec<u8> {

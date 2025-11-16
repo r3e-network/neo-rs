@@ -5,7 +5,6 @@
 // No using directives in C# file
 
 /// namespace Neo.Ledger -> public enum TransactionRemovalReason : byte
-
 /// The reason a transaction was removed.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

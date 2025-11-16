@@ -25,6 +25,12 @@ pub struct NeoToken {
     methods: Vec<NativeMethod>,
 }
 
+impl Default for NeoToken {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NeoToken {
     const ID: i32 = -5;
     const SYMBOL: &'static str = "NEO";
@@ -109,7 +115,7 @@ impl NeoToken {
             };
 
             let first = elements
-                .get(0)
+                .first()
                 .ok_or_else(|| "committee entry missing public key".to_string())?;
             let key_bytes = stack_item_to_bytes(first)
                 .ok_or_else(|| "committee entry public key must be byte array".to_string())?;

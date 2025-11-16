@@ -65,7 +65,7 @@ impl RpcServerPlugin {
     fn ensure_server_for_network(&self, system: Arc<NeoSystem>, config: RpcServerConfig) {
         let network = config.network;
         if let Some(server_arc) = get_server(network) {
-            if let Ok(mut server) = server_arc.try_write() {
+            if let Some(mut server) = server_arc.try_write() {
                 server.update_settings(config);
                 if !server.is_started() {
                     server.start_rpc_server();
@@ -86,7 +86,7 @@ impl RpcServerPlugin {
 
     fn stop_server_for_network(&self, network: u32) {
         if let Some(server_arc) = get_server(network) {
-            if let Ok(mut server) = server_arc.try_write() {
+            if let Some(mut server) = server_arc.try_write() {
                 server.dispose();
             }
             remove_server(network);
@@ -95,7 +95,7 @@ impl RpcServerPlugin {
 
     pub fn register_methods(handler: RpcHandler, network: u32) {
         if let Some(server_arc) = get_server(network) {
-            if let Ok(mut server) = server_arc.try_write() {
+            if let Some(mut server) = server_arc.try_write() {
                 server.register_methods(handler);
                 return;
             }

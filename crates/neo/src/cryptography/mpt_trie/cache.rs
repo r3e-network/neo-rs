@@ -68,7 +68,7 @@ where
     /// in-memory cache or the underlying store.
     pub fn resolve(&mut self, hash: &UInt256) -> MptResult<Option<Node>> {
         let entry = self.resolve_internal(hash)?;
-        Ok(entry.node.as_ref().map(Node::clone))
+        Ok(entry.node.clone())
     }
 
     /// Adds or updates the supplied node inside the cache.
@@ -152,7 +152,7 @@ where
             return Ok(None);
         };
         let mut reader = MemoryReader::new(&bytes);
-        let node = Node::deserialize(&mut reader).map_err(|e| MptError::Io(e))?;
+        let node = Node::deserialize(&mut reader).map_err(MptError::Io)?;
         Ok(Some(node))
     }
 

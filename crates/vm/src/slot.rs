@@ -14,7 +14,6 @@ use crate::stack_item::StackItem;
 use std::ops::Index;
 
 /// namespace Neo.VM -> public class Slot : IReadOnlyList<StackItem>
-
 /// Used to store local variables, arguments and static fields in the VM.
 #[derive(Clone, Debug)]
 pub struct Slot {
@@ -99,6 +98,11 @@ impl Slot {
     /// Returns the number of items in the slot (Rust-style).
     pub fn len(&self) -> usize {
         self.items.len()
+    }
+
+    /// Returns true when the slot holds zero items.
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
     }
 
     /// internal void ClearReferences()

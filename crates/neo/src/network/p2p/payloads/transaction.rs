@@ -878,11 +878,7 @@ impl Transaction {
                 return false;
             }
             if engine
-                .load_script(
-                    verification_script,
-                    CallFlags::READ_ONLY,
-                    Some(hash.clone()),
-                )
+                .load_script(verification_script, CallFlags::READ_ONLY, Some(*hash))
                 .is_err()
             {
                 return false;

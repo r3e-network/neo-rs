@@ -718,6 +718,7 @@ impl Blockchain {
         );
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn publish_inventory_relay_result(
         &self,
         context: &Arc<NeoSystemContext>,

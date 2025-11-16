@@ -349,6 +349,11 @@ impl ScriptBuilder {
     pub fn len(&self) -> usize {
         self.script.len()
     }
+
+    /// Returns true when no opcodes have been emitted.
+    pub fn is_empty(&self) -> bool {
+        self.script.is_empty()
+    }
 }
 
 impl Default for ScriptBuilder {

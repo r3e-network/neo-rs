@@ -28,7 +28,7 @@ where
     /// Creates a new trie instance using the supplied store snapshot and optional root hash.
     pub fn new(store: Arc<S>, root: Option<UInt256>, full_state: bool) -> Self {
         let cache = Cache::new(store, CACHE_PREFIX);
-        let root_node = root.map(Node::new_hash).unwrap_or_else(Node::new);
+        let root_node = root.map_or_else(Node::new, Node::new_hash);
         Self {
             cache,
             root: root_node,
@@ -205,7 +205,7 @@ where
 
     fn try_get_node(
         cache: &mut Cache<S>,
-        full_state: bool,
+        _full_state: bool,
         node: &mut Node,
         path: &[u8],
     ) -> MptResult<Option<Vec<u8>>> {
@@ -223,19 +223,19 @@ where
                     .resolve(&node.hash())?
                     .ok_or_else(|| MptError::storage("unable to resolve hash during trie get"))?;
                 *node = resolved;
-                Self::try_get_node(cache, full_state, node, path)
+                Self::try_get_node(cache, _full_state, node, path)
             }
             NodeType::BranchNode => {
                 if path.is_empty() {
                     Self::try_get_node(
                         cache,
-                        full_state,
+                        _full_state,
                         &mut node.children[BRANCH_VALUE_INDEX],
                         path,
                     )
                 } else {
                     let index = path[0] as usize;
-                    Self::try_get_node(cache, full_state, &mut node.children[index], &path[1..])
+                    Self::try_get_node(cache, _full_state, &mut node.children[index], &path[1..])
                 }
             }
             NodeType::ExtensionNode => {
@@ -245,7 +245,7 @@ where
                         .next
                         .as_mut()
                         .ok_or_else(|| MptError::invalid("extension node missing child"))?;
-                    Self::try_get_node(cache, full_state, next, &path[consumed..])
+                    Self::try_get_node(cache, _full_state, next, &path[consumed..])
                 } else {
                     Ok(None)
                 }
@@ -438,7 +438,7 @@ where
                         cache.delete_node(old_hash)?;
                     }
                     if node.next.as_ref().map(|n| n.is_empty()).unwrap_or(true) {
-                        let next = node.next.take().map(|n| *n).unwrap_or_else(Node::new);
+                        let next = node.next.take().map(|n| *n).unwrap_or_default();
                         *node = next;
                         return Ok(true);
                     }
@@ -491,7 +491,7 @@ where
                     cache.put_node(node.clone())?;
                     return Ok(true);
                 }
-                let last_index = indexes.get(0).copied().unwrap_or(BRANCH_VALUE_INDEX as u8);
+                let last_index = indexes.first().copied().unwrap_or(BRANCH_VALUE_INDEX as u8);
                 let mut last_child =
                     std::mem::replace(&mut node.children[last_index as usize], Node::new());
                 if last_index as usize == BRANCH_VALUE_INDEX {
@@ -678,28 +678,32 @@ where
                 if offset < from.len() {
                     for i in 0..(BRANCH_CHILD_COUNT - 1) {
                         let nibble = i as u8;
-                        if from[offset] < nibble {
-                            let mut new_path = path.clone();
-                            new_path.push(nibble);
-                            Self::traverse(
-                                cache,
-                                Some(node.children[i].clone()),
-                                new_path,
-                                from,
-                                from.len(),
-                                results,
-                            )?;
-                        } else if nibble == from[offset] {
-                            let mut new_path = path.clone();
-                            new_path.push(nibble);
-                            Self::traverse(
-                                cache,
-                                Some(node.children[i].clone()),
-                                new_path,
-                                from,
-                                offset + 1,
-                                results,
-                            )?;
+                        match from[offset].cmp(&nibble) {
+                            Ordering::Less => {
+                                let mut new_path = path.clone();
+                                new_path.push(nibble);
+                                Self::traverse(
+                                    cache,
+                                    Some(node.children[i].clone()),
+                                    new_path,
+                                    from,
+                                    from.len(),
+                                    results,
+                                )?;
+                            }
+                            Ordering::Equal => {
+                                let mut new_path = path.clone();
+                                new_path.push(nibble);
+                                Self::traverse(
+                                    cache,
+                                    Some(node.children[i].clone()),
+                                    new_path,
+                                    from,
+                                    offset + 1,
+                                    results,
+                                )?;
+                            }
+                            Ordering::Greater => {}
                         }
                     }
                 } else {

@@ -71,17 +71,12 @@ pub enum PluginCategory {
 }
 
 /// Behaviour when plugins throw unhandled exceptions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum UnhandledExceptionPolicy {
     Ignore,
     StopPlugin,
+    #[default]
     StopNode,
-}
-
-impl Default for UnhandledExceptionPolicy {
-    fn default() -> Self {
-        UnhandledExceptionPolicy::StopNode
-    }
 }
 
 /// Returns the base directory where plugins reside (equivalent to C# `PluginsDirectory`).

@@ -193,10 +193,14 @@ impl RpcServerSettings {
     pub fn load(config: Option<&Value>) {
         let mut guard = CURRENT_SETTINGS.write();
         if let Some(value) = config {
-            let servers_section = value.get("Servers").cloned().unwrap_or(Value::Null);
+            let plugin_configuration = value.get("PluginConfiguration").unwrap_or(value);
+            let servers_section = plugin_configuration
+                .get("Servers")
+                .cloned()
+                .unwrap_or(Value::Null);
             let servers: Vec<RpcServerConfig> = serde_json::from_value(servers_section)
                 .unwrap_or_else(|_| vec![RpcServerConfig::default()]);
-            let exception_policy = value
+            let exception_policy = plugin_configuration
                 .get("UnhandledExceptionPolicy")
                 .and_then(|policy| serde_json::from_value(policy.clone()).ok())
                 .unwrap_or_default();

@@ -187,7 +187,10 @@ impl StorageItem {
 
     /// Mutable access to the stored value. Panics if the item is flagged constant.
     pub fn value_mut(&mut self) -> &mut Vec<u8> {
-        assert!(!self.constant, "attempted to mutate a constant storage item");
+        assert!(
+            !self.constant,
+            "attempted to mutate a constant storage item"
+        );
         &mut self.value
     }
 
@@ -198,7 +201,10 @@ impl StorageItem {
 
     /// Replaces the stored value. Panics if the item is constant.
     pub fn set_value<V: Into<Vec<u8>>>(&mut self, value: V) {
-        assert!(!self.constant, "attempted to mutate a constant storage item");
+        assert!(
+            !self.constant,
+            "attempted to mutate a constant storage item"
+        );
         self.value = value.into();
     }
 

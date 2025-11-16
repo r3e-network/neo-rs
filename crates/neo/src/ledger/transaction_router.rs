@@ -13,7 +13,6 @@ use crate::network::p2p::payloads::Transaction;
 use crate::protocol_settings::ProtocolSettings;
 
 /// namespace Neo.Ledger -> internal class TransactionRouter(NeoSystem system) : UntypedActor
-
 /// public record Preverify(Transaction Transaction, bool Relay);
 pub struct Preverify {
     pub transaction: Transaction,

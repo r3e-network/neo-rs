@@ -68,7 +68,7 @@ impl PluginCollection {
         }
         #[cfg(feature = "rpc-server")]
         {
-            plugins.push(Box::new(rpc_server::RpcServerPlugin::new()));
+            plugins.push(Box::new(RpcServerPlugin::new()));
         }
         #[cfg(feature = "sign-client")]
         {
@@ -109,7 +109,7 @@ impl PluginCollection {
         }
         #[cfg(feature = "rpc-server")]
         {
-            plugins.push(Box::new(rpc_server::RpcServerPlugin::new()));
+            plugins.push(Box::new(RpcServerPlugin::new()));
         }
         #[cfg(feature = "tokens-tracker")]
         {
@@ -126,7 +126,7 @@ impl PluginCollection {
 
         #[cfg(feature = "rpc-server")]
         {
-            plugins.push(Box::new(rpc_server::RpcServerPlugin::new()));
+            plugins.push(Box::new(RpcServerPlugin::new()));
         }
         #[cfg(feature = "rest-server")]
         {
@@ -157,3 +157,5 @@ impl PluginCollection {
         plugins
     }
 }
+#[cfg(feature = "rpc-server")]
+use crate::rpc_server::rpc_server_plugin::RpcServerPlugin;

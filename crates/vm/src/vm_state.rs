@@ -3,7 +3,6 @@
 //! This module provides the VMState functionality exactly matching C# Neo.VM.VMState.
 
 /// namespace Neo.VM -> public enum VMState : byte
-
 /// Indicates the status of the VM.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

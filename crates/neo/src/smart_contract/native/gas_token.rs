@@ -25,6 +25,12 @@ pub struct GasToken {
     methods: Vec<NativeMethod>,
 }
 
+impl Default for GasToken {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GasToken {
     const ID: i32 = -6;
     const SYMBOL: &'static str = "GAS";

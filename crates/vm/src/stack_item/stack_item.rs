@@ -1,3 +1,5 @@
+#![allow(clippy::mutable_key_type)]
+
 //! Stack item implementation for the Neo Virtual Machine.
 //!
 //! This module provides the stack item implementations used in the Neo VM.
@@ -278,7 +280,7 @@ impl StackItem {
 
                 // Attempt to downcast to the requested type
                 interface_any.downcast_ref::<T>().ok_or_else(|| {
-                    VmError::invalid_type_simple(&format!(
+                    VmError::invalid_type_simple(format!(
                         "Cannot cast InteropInterface to type {}",
                         std::any::type_name::<T>()
                     ))

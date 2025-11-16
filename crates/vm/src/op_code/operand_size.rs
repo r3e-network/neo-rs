@@ -7,7 +7,6 @@
 
 /// namespace Neo.VM -> [AttributeUsage(AttributeTargets.Field, AllowMultiple = false)]
 /// public class OperandSizeAttribute : Attribute
-
 /// Indicates the operand length of an OpCode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OperandSizeAttribute {
@@ -58,3 +57,9 @@ impl OperandSizeAttribute {
 
 // Alias for compatibility
 pub type OperandSize = OperandSizeAttribute;
+
+impl Default for OperandSizeAttribute {
+    fn default() -> Self {
+        Self::new()
+    }
+}

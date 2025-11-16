@@ -109,10 +109,8 @@ impl ConsensusService {
             let mut context = self.context.write().await;
             let mut check_preparations = false;
 
-            if !self.dbft_settings.ignore_recovery_logs && context.load() {
-                if context.commit_sent() {
-                    check_preparations = true;
-                }
+            if !self.dbft_settings.ignore_recovery_logs && context.load() && context.commit_sent() {
+                check_preparations = true;
             }
 
             (
@@ -147,9 +145,9 @@ impl ConsensusService {
         let action = {
             let context = self.context.read().await;
 
-            if context.watch_only() || context.block_sent() {
-                TimerAction::None
-            } else if timer.height != context.block().index()
+            if context.watch_only()
+                || context.block_sent()
+                || timer.height != context.block().index()
                 || timer.view_number != context.view_number()
             {
                 TimerAction::None
@@ -451,24 +449,24 @@ impl ConsensusService {
 
     pub(crate) fn extend_timer_by_factor(
         &mut self,
-        context: &mut ConsensusContext,
+        state: &TimerContextState,
         max_delay_in_block_times: i32,
     ) {
         if max_delay_in_block_times <= 0 {
             return;
         }
 
-        if context.watch_only() || context.view_changing() || context.commit_sent() {
+        if state.should_skip() {
             return;
         }
 
         let elapsed = self.clock_started.elapsed();
         let mut remaining = self.expected_delay.saturating_sub(elapsed);
 
-        if context.m() > 0 {
-            let factor = max_delay_in_block_times as f64 / context.m() as f64;
+        if state.validator_threshold > 0 {
+            let factor = max_delay_in_block_times as f64 / state.validator_threshold as f64;
             if factor.is_finite() && factor > 0.0 {
-                let additional = context.time_per_block.mul_f64(factor);
+                let additional = state.time_per_block.mul_f64(factor);
                 remaining = remaining.saturating_add(additional);
             }
         }
@@ -487,5 +485,30 @@ impl ConsensusService {
 
     pub(crate) fn log(&self, message: &str) {
         info!(target: "dbft::consensus_service", "{}", message);
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct TimerContextState {
+    watch_only: bool,
+    view_changing: bool,
+    commit_sent: bool,
+    validator_threshold: usize,
+    time_per_block: Duration,
+}
+
+impl TimerContextState {
+    pub(crate) fn from_context(context: &mut ConsensusContext) -> Self {
+        Self {
+            watch_only: context.watch_only(),
+            view_changing: context.view_changing(),
+            commit_sent: context.commit_sent(),
+            validator_threshold: context.m(),
+            time_per_block: context.time_per_block,
+        }
+    }
+
+    fn should_skip(&self) -> bool {
+        self.watch_only || self.view_changing || self.commit_sent
     }
 }

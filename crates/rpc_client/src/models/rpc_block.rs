@@ -61,7 +61,7 @@ impl RpcBlock {
         let next_block_hash = json
             .get("nextblockhash")
             .and_then(|v| v.as_string())
-            .and_then(|s| UInt256::parse(s).ok());
+            .and_then(|s| UInt256::parse(&s).ok());
 
         Ok(Self {
             block,
