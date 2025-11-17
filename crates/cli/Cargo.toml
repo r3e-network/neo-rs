@@ -6,6 +6,10 @@ description = "Command-line interface for the neo-rs node"
 authors = ["R3E Network <jimmy@r3e.network>"]
 license = "MIT"
 
+[features]
+default = []
+sqlite-wallet = ["neo-plugins/sqlite-wallet"]
+
 [dependencies]
 neo-core = { path = "../neo" }
 neo-extensions = { path = "../extensions" }
@@ -19,5 +23,16 @@ toml.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+tracing-appender.workspace = true
+reqwest.workspace = true
+chrono.workspace = true
+zip.workspace = true
+akka = { path = "../akka" }
+async-trait.workspace = true
 crossterm = "0.27"
 hex.workspace = true
+num-bigint.workspace = true
+num-traits.workspace = true
+rand.workspace = true
+uuid.workspace = true
+sysinfo.workspace = true
