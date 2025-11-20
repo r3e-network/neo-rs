@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use neo_core::{
     network::p2p::channels_config::ChannelsConfig,
     persistence::storage::{CompressionAlgorithm, StorageConfig},
@@ -22,12 +22,18 @@ pub struct NodeConfig {
     pub storage: StorageSection,
     pub blockchain: BlockchainSection,
     pub rpc: RpcSection,
+    pub logging: LoggingSection,
+    pub unlock_wallet: UnlockWalletSection,
+    pub contracts: ContractsSection,
+    pub plugins: PluginsSection,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct NetworkSection {
+    #[serde(alias = "NetworkType")]
     pub network_type: Option<String>,
+    #[serde(alias = "Network")]
     pub network_magic: Option<u32>,
 }
 
@@ -43,11 +49,19 @@ impl Default for NetworkSection {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct P2PSection {
+    #[serde(alias = "Port")]
     pub listen_port: Option<u16>,
+    #[serde(alias = "MinDesiredConnections")]
     pub min_desired_connections: Option<usize>,
+    #[serde(alias = "MaxConnections")]
     pub max_connections: Option<usize>,
+    #[serde(alias = "MaxConnectionsPerAddress")]
     pub max_connections_per_address: Option<usize>,
+    #[serde(alias = "MaxKnownHashes")]
+    pub max_known_hashes: Option<usize>,
+    #[serde(alias = "EnableCompression")]
     pub enable_compression: Option<bool>,
+    #[serde(alias = "SeedList")]
     pub seed_nodes: Vec<String>,
 }
 
@@ -58,6 +72,7 @@ impl Default for P2PSection {
             min_desired_connections: None,
             max_connections: None,
             max_connections_per_address: None,
+            max_known_hashes: None,
             enable_compression: None,
             seed_nodes: Vec::new(),
         }
@@ -67,11 +82,17 @@ impl Default for P2PSection {
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(default)]
 pub struct StorageSection {
+    #[serde(alias = "Path")]
     pub path: Option<String>,
+    #[serde(alias = "Engine")]
     pub backend: Option<String>,
+    #[serde(alias = "CacheSize")]
     pub cache_size: Option<u64>,
+    #[serde(alias = "Compression")]
     pub compression: Option<String>,
+    #[serde(alias = "WriteBufferSize")]
     pub write_buffer_size: Option<u64>,
+    #[serde(alias = "MaxOpenFiles")]
     pub max_open_files: Option<u32>,
 }
 
@@ -84,29 +105,125 @@ pub struct BlockchainSection {
 #[derive(Debug, Clone, Deserialize, Default, Serialize)]
 #[serde(default)]
 pub struct RpcSection {
+    #[serde(alias = "Enabled")]
     pub enabled: bool,
+    #[serde(alias = "BindAddress")]
     pub bind_address: Option<String>,
+    #[serde(alias = "Port")]
     pub port: Option<u16>,
+    #[serde(alias = "EnableCors")]
     pub cors_enabled: Option<bool>,
+    #[serde(alias = "AllowOrigins")]
     pub allow_origins: Vec<String>,
+    #[serde(alias = "MaxConcurrentConnections", alias = "MaxConnections")]
     pub max_connections: Option<usize>,
+    #[serde(alias = "MaxRequestBodySize")]
     pub max_request_body_size: Option<usize>,
+    #[serde(alias = "MaxGasInvoke")]
     pub max_gas_invoke: Option<f64>,
+    #[serde(alias = "MaxFee")]
     pub max_fee: Option<f64>,
+    #[serde(alias = "MaxIteratorResultItems")]
     pub max_iterator_result_items: Option<usize>,
+    #[serde(alias = "MaxStackSize")]
     pub max_stack_size: Option<usize>,
+    #[serde(alias = "KeepAliveTimeout")]
     pub keep_alive_timeout: Option<i32>,
+    #[serde(alias = "RequestHeadersTimeout")]
     pub request_headers_timeout: Option<u64>,
+    #[serde(alias = "AuthEnabled")]
+    pub auth_enabled: bool,
+    #[serde(alias = "SessionEnabled")]
     pub session_enabled: Option<bool>,
+    #[serde(alias = "SessionExpirationTime")]
     pub session_expiration_time: Option<u64>,
+    #[serde(alias = "FindStoragePageSize")]
     pub find_storage_page_size: Option<usize>,
+    #[serde(alias = "UnhandledExceptionPolicy")]
     pub unhandled_exception_policy: Option<String>,
+    #[serde(alias = "RpcUser")]
     pub rpc_user: Option<String>,
+    #[serde(alias = "RpcPass")]
     pub rpc_pass: Option<String>,
+    #[serde(alias = "SslCert")]
     pub tls_cert_file: Option<String>,
+    #[serde(alias = "SslCertPassword")]
     pub tls_cert_password: Option<String>,
+    #[serde(alias = "TrustedAuthorities")]
     pub trusted_authorities: Vec<String>,
+    #[serde(alias = "DisabledMethods")]
     pub disabled_methods: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct LoggingSection {
+    #[serde(alias = "Active")]
+    pub active: bool,
+    pub level: Option<String>,
+    pub format: Option<String>,
+    #[serde(alias = "ConsoleOutput")]
+    pub console_output: bool,
+    #[serde(alias = "FileEnabled")]
+    pub file_enabled: bool,
+    #[serde(alias = "Path", alias = "path")]
+    pub file_path: Option<String>,
+    pub max_file_size: Option<String>,
+    pub max_files: Option<u32>,
+}
+
+impl Default for LoggingSection {
+    fn default() -> Self {
+        Self {
+            active: false,
+            level: None,
+            format: None,
+            console_output: false,
+            file_enabled: false,
+            file_path: Some("Logs".to_string()),
+            max_file_size: None,
+            max_files: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default)]
+pub struct UnlockWalletSection {
+    #[serde(alias = "Path")]
+    pub path: Option<String>,
+    #[serde(alias = "Password")]
+    pub password: Option<String>,
+    #[serde(alias = "IsActive")]
+    pub is_active: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default)]
+pub struct ContractsSection {
+    #[serde(alias = "NeoNameService")]
+    pub neo_name_service: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct PluginsSection {
+    #[serde(alias = "DownloadUrl")]
+    pub download_url: String,
+    #[serde(alias = "Prerelease")]
+    pub prerelease: bool,
+    #[serde(alias = "Version")]
+    pub version: Option<String>,
+}
+
+impl Default for PluginsSection {
+    fn default() -> Self {
+        Self {
+            download_url: "https://api.github.com/repos/neo-project/neo/releases".to_string(),
+            prerelease: false,
+            version: None,
+        }
+    }
 }
 
 impl NodeConfig {
@@ -167,6 +284,9 @@ impl NodeConfig {
         if let Some(max_per_address) = self.p2p.max_connections_per_address {
             config.max_connections_per_address = max_per_address;
         }
+        if let Some(max_hashes) = self.p2p.max_known_hashes {
+            config.max_known_hashes = max_hashes;
+        }
 
         config
     }
@@ -211,6 +331,10 @@ impl NodeConfig {
     ) -> Result<Option<PathBuf>> {
         if !self.rpc.enabled {
             return Ok(None);
+        }
+
+        if self.rpc.auth_enabled && (self.rpc.rpc_user.is_none() || self.rpc.rpc_pass.is_none()) {
+            bail!("rpc.auth_enabled requires both rpc_user and rpc_pass");
         }
 
         let plugins_dir = plugins_directory();
@@ -266,10 +390,10 @@ impl NodeConfig {
             server.insert("MaxRequestBodySize".into(), json!(body_size));
         }
         if let Some(max_gas) = self.rpc.max_gas_invoke {
-            server.insert("MaxGasInvoke".into(), json!(gas_to_datoshi(max_gas)));
+            server.insert("MaxGasInvoke".into(), json!(max_gas));
         }
         if let Some(max_fee) = self.rpc.max_fee {
-            server.insert("MaxFee".into(), json!(gas_to_datoshi(max_fee)));
+            server.insert("MaxFee".into(), json!(max_fee));
         }
         if let Some(max_iter) = self.rpc.max_iterator_result_items {
             server.insert("MaxIteratorResultItems".into(), json!(max_iter));
@@ -294,11 +418,13 @@ impl NodeConfig {
         if let Some(page_size) = self.rpc.find_storage_page_size {
             server.insert("FindStoragePageSize".into(), json!(page_size));
         }
-        if let Some(user) = &self.rpc.rpc_user {
-            server.insert("RpcUser".into(), json!(user));
-        }
-        if let Some(pass) = &self.rpc.rpc_pass {
-            server.insert("RpcPass".into(), json!(pass));
+        if self.rpc.auth_enabled {
+            if let Some(user) = &self.rpc.rpc_user {
+                server.insert("RpcUser".into(), json!(user));
+            }
+            if let Some(pass) = &self.rpc.rpc_pass {
+                server.insert("RpcPass".into(), json!(pass));
+            }
         }
         if let Some(cert) = &self.rpc.tls_cert_file {
             server.insert("SslCert".into(), json!(cert));
@@ -344,9 +470,4 @@ fn megabytes_to_bytes(value_mb: u64) -> usize {
     const MB: u64 = 1024 * 1024;
     let bytes = value_mb.saturating_mul(MB);
     usize::try_from(bytes).unwrap_or(usize::MAX)
-}
-
-fn gas_to_datoshi(amount: f64) -> i64 {
-    const FACTOR: f64 = 100_000_000.0;
-    (amount * FACTOR) as i64
 }

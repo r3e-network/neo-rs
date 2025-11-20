@@ -21,7 +21,7 @@ pub trait IWalletProvider: Send + Sync + Any {
 
     /// Triggered when a wallet is opened or closed.
     /// Matches C# WalletChanged event
-    fn wallet_changed(&self) -> mpsc::Receiver<Arc<dyn Wallet>>;
+    fn wallet_changed(&self) -> mpsc::Receiver<Option<Arc<dyn Wallet>>>;
 
     /// Get the currently opened Wallet instance.
     /// Matches C# GetWallet method

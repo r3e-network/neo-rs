@@ -42,7 +42,7 @@ pub mod rpc_version;
 
 // Application and execution types
 pub mod rpc_application_log;
-pub mod rpc_raw_mempool;
+pub mod rpc_raw_mem_pool;
 
 // Account and wallet types
 pub mod rpc_account;
@@ -75,7 +75,7 @@ pub use rpc_nep17_token_info::RpcNep17TokenInfo;
 pub use rpc_nep17_transfers::{RpcNep17Transfer, RpcNep17Transfers};
 pub use rpc_peers::{RpcPeer, RpcPeers};
 pub use rpc_plugin::RpcPlugin;
-pub use rpc_raw_mempool::RpcRawMemPool;
+pub use rpc_raw_mem_pool::RpcRawMemPool;
 pub use rpc_request::RpcRequest;
 pub use rpc_response::{RpcResponse, RpcResponseError};
 pub use rpc_state_root::RpcStateRoot;

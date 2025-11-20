@@ -9,6 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 use crate::wallets::Wallet;
+use std::sync::Arc;
 
 /// Wallet changed handler interface matching C# IWalletChangedHandler exactly
 pub trait IWalletChangedHandler {
@@ -18,6 +19,6 @@ pub trait IWalletChangedHandler {
     fn i_wallet_provider_wallet_changed_handler(
         &self,
         sender: &dyn std::any::Any,
-        wallet: &dyn Wallet,
+        wallet: Option<Arc<dyn Wallet>>,
     );
 }

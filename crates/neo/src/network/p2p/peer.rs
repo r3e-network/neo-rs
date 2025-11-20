@@ -92,10 +92,8 @@ impl PeerState {
     /// Applies the runtime configuration and starts the periodic maintenance
     /// timer exactly like `Peer.OnStart`.
     pub fn configure(&mut self, config: ChannelsConfig, ctx: &mut ActorContext) {
-        self.config = config.clone();
-        if let Some(endpoint) = config.tcp {
-            self.listener_tcp_port = endpoint.port();
-        }
+        self.listener_tcp_port = config.tcp.map(|endpoint| endpoint.port()).unwrap_or(0);
+        self.config = config;
         self.configure_upnp();
         self.ensure_timer(ctx);
     }
@@ -296,6 +294,16 @@ impl PeerState {
             .values()
             .map(|peer| peer.endpoint)
             .collect()
+    }
+
+    /// Returns the queued unconnected peers.
+    pub fn unconnected_peers(&self) -> Vec<SocketAddr> {
+        self.unconnected_peers.iter().copied().collect()
+    }
+
+    /// Number of known unconnected peers queued for dialing.
+    pub fn unconnected_count(&self) -> usize {
+        self.unconnected_peers.len()
     }
 
     /// Provides a snapshot of endpoints currently under connection attempts.

@@ -10,17 +10,30 @@
 // modifications are permitted.
 
 use crate::network::p2p::payloads::i_verifiable::IVerifiable as PayloadIVerifiable;
+use crate::network::p2p::payloads::signer::Signer;
+use crate::witness_scope::WitnessScope;
 use crate::IVerifiable as CoreIVerifiable;
 use crate::{
     network::p2p,
     persistence::DataCache,
     protocol_settings::ProtocolSettings,
-    smart_contract::helper::Helper as ContractHelper,
-    smart_contract::native::PolicyContract,
-    wallets::{wallet::Wallet, KeyPair},
+    smart_contract::{
+        application_engine::ApplicationEngine,
+        call_flags::CallFlags,
+        helper::Helper as ContractHelper,
+        native::{
+            ledger_contract::LedgerContract, native_contract::NativeContract,
+            policy_contract::PolicyContract, GasToken,
+        },
+        trigger_type::TriggerType,
+    },
+    wallets::{transfer_output::TransferOutput, wallet::Wallet, wallet::WalletError, KeyPair},
     Transaction, UInt160,
 };
-use neo_vm::op_code::OpCode;
+use neo_vm::{op_code::OpCode, ScriptBuilder};
+use num_bigint::{BigInt, Sign};
+use rand::Rng;
+use std::sync::Arc;
 
 /// A helper class related to wallets.
 /// Matches C# Helper class exactly
@@ -123,6 +136,206 @@ impl Helper {
             max_execution_cost,
         )
     }
+
+    /// Builds a NEP-17 transfer transaction matching the C# wallet implementation.
+    #[allow(clippy::too_many_arguments)]
+    pub fn make_transfer_transaction(
+        wallet: &dyn Wallet,
+        snapshot: &DataCache,
+        outputs: &[TransferOutput],
+        from: Option<UInt160>,
+        cosigners: Option<&[Signer]>,
+        settings: &ProtocolSettings,
+        persisting_block: Option<&crate::ledger::Block>,
+        max_gas: i64,
+    ) -> Result<Transaction, WalletError> {
+        let accounts: Vec<UInt160> = if let Some(sender) = from {
+            vec![sender]
+        } else {
+            wallet
+                .get_accounts()
+                .into_iter()
+                .filter(|a| !a.is_locked() && a.has_key())
+                .map(|a| a.script_hash())
+                .collect()
+        };
+
+        if accounts.is_empty() {
+            return Err(WalletError::InsufficientFunds);
+        }
+
+        let mut cosigner_map: std::collections::HashMap<UInt160, Signer> = cosigners
+            .map(|list| list.iter().cloned().map(|s| (s.account, s)).collect())
+            .unwrap_or_default();
+
+        let mut script_builder = ScriptBuilder::new();
+        let mut balances_gas: Option<Vec<(UInt160, BigInt)>> = None;
+
+        // Group outputs by asset id
+        let mut grouped: std::collections::HashMap<UInt160, Vec<&TransferOutput>> =
+            std::collections::HashMap::new();
+        for output in outputs {
+            grouped.entry(output.asset_id).or_default().push(output);
+        }
+
+        for (asset_id, group) in grouped {
+            let mut balances: Vec<(UInt160, BigInt)> = Vec::new();
+            for account in &accounts {
+                let mut inner = ScriptBuilder::new();
+                inner.emit_push(&account.to_bytes());
+                inner.emit_opcode(OpCode::PACK);
+                inner.emit_push_int(CallFlags::READ_ONLY.bits() as i64);
+                inner.emit_push("balanceOf".as_bytes());
+                inner.emit_push(&asset_id.to_bytes());
+                inner
+                    .emit_syscall("System.Contract.Call")
+                    .map_err(|e| WalletError::Other(e.to_string()))?;
+
+                let mut engine = ApplicationEngine::new(
+                    TriggerType::Application,
+                    None,
+                    Arc::new(snapshot.clone()),
+                    persisting_block.cloned(),
+                    settings.clone(),
+                    max_gas,
+                    None,
+                )
+                .map_err(|e| WalletError::Other(e.to_string()))?;
+                engine
+                    .load_script(inner.to_array(), CallFlags::READ_ONLY, Some(asset_id))
+                    .map_err(|e| WalletError::Other(e.to_string()))?;
+                engine
+                    .execute()
+                    .map_err(|e| WalletError::Other(e.to_string()))?;
+                if let Ok(value) = engine
+                    .peek(0)
+                    .map_err(|e| WalletError::Other(e.to_string()))
+                    .and_then(|item| item.as_int().map_err(|e| WalletError::Other(e.to_string())))
+                {
+                    if value.sign() == Sign::Plus {
+                        balances.push((*account, value));
+                    }
+                }
+            }
+
+            let required: BigInt = group
+                .iter()
+                .map(|o| o.value.value().clone())
+                .fold(BigInt::from(0), |acc, v| acc + v);
+            let available: BigInt = balances
+                .iter()
+                .map(|(_, v)| v.clone())
+                .fold(BigInt::from(0), |acc, v| acc + v);
+            if available < required {
+                return Err(WalletError::InsufficientFunds);
+            }
+
+            for output in group {
+                balances.sort_by(|a, b| a.1.cmp(&b.1));
+                let payments = find_paying_accounts(&mut balances, output.value.value());
+                for (account, value) in payments {
+                    if let Some(signer) = cosigner_map.get_mut(&account) {
+                        if signer.scopes != WitnessScope::GLOBAL {
+                            signer.scopes |= WitnessScope::CALLED_BY_ENTRY;
+                        }
+                    } else {
+                        cosigner_map
+                            .insert(account, Signer::new(account, WitnessScope::CALLED_BY_ENTRY));
+                    }
+                    emit_transfer(
+                        &mut script_builder,
+                        &output.asset_id,
+                        &account,
+                        &output.script_hash,
+                        &value,
+                        output.data.as_deref(),
+                    )?;
+                }
+            }
+
+            if asset_id == GasToken::new().hash() {
+                balances_gas = Some(balances);
+            }
+        }
+
+        let balances_gas = balances_gas.unwrap_or_else(|| {
+            accounts
+                .iter()
+                .filter_map(|account| {
+                    let gas = GasToken::new().balance_of_snapshot(snapshot, account);
+                    if gas.sign() == Sign::Plus {
+                        Some((*account, gas))
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        });
+
+        let mut tx = Transaction::new();
+        tx.set_nonce(rand::thread_rng().gen::<u32>());
+        tx.set_script(script_builder.to_array());
+
+        let ledger = LedgerContract::new();
+        let policy = PolicyContract::new();
+        let current_height = ledger
+            .current_index(snapshot)
+            .map_err(|e| WalletError::Other(e.to_string()))?;
+        let valid_until = current_height
+            + policy
+                .get_max_valid_until_block_increment_snapshot(snapshot, settings)
+                .unwrap_or(settings.max_valid_until_block_increment);
+        tx.set_valid_until_block(valid_until);
+
+        let signers = reorder_signers(
+            from.unwrap_or(accounts[0]),
+            cosigner_map.values().cloned().collect(),
+        );
+        tx.set_signers(signers);
+
+        // Execute script to calculate system fee
+        let mut engine = ApplicationEngine::new(
+            TriggerType::Application,
+            None,
+            Arc::new(snapshot.clone()),
+            persisting_block.cloned(),
+            settings.clone(),
+            max_gas,
+            None,
+        )
+        .map_err(|e| WalletError::TransactionCreationFailed(e.to_string()))?;
+        engine
+            .load_script(tx.script().to_vec(), CallFlags::ALL, None)
+            .map_err(|e| WalletError::TransactionCreationFailed(e.to_string()))?;
+        engine
+            .execute()
+            .map_err(|e| WalletError::TransactionCreationFailed(e.to_string()))?;
+        if engine.state() == neo_vm::vm_state::VMState::FAULT {
+            return Err(WalletError::TransactionCreationFailed(
+                "Smart contract execution failed.".to_string(),
+            ));
+        }
+        tx.set_system_fee(engine.fee_consumed());
+
+        let network_fee = Helper::calculate_network_fee_with_wallet(
+            &tx,
+            snapshot,
+            settings,
+            Some(wallet),
+            max_gas,
+        )
+        .map_err(WalletError::TransactionCreationFailed)?;
+        tx.set_network_fee(network_fee);
+
+        // Ensure gas balances can pay for fees
+        for (_, gas_balance) in balances_gas {
+            if gas_balance >= BigInt::from(tx.system_fee() + tx.network_fee()) {
+                return Ok(tx);
+            }
+        }
+
+        Err(WalletError::InsufficientFunds)
+    }
 }
 
 fn calculate_network_fee_impl(
@@ -132,7 +345,7 @@ fn calculate_network_fee_impl(
     account_script: Option<&AccountScriptResolver<'_>>,
     _max_execution_cost: i64,
 ) -> Result<i64, String> {
-    let mut hashes = PayloadIVerifiable::get_script_hashes_for_verifying(tx, snapshot);
+    let mut hashes = tx.get_script_hashes_for_verifying(snapshot);
     hashes.sort();
     hashes.dedup();
 
@@ -204,6 +417,127 @@ fn var_size_prefix(len: usize) -> i64 {
 
 fn var_size_with_payload(len: usize) -> i64 {
     var_size_prefix(len) + len as i64
+}
+
+/// Finds paying accounts for a required amount (C# FindPayingAccounts).
+fn find_paying_accounts(
+    ordered_accounts: &mut Vec<(UInt160, BigInt)>,
+    amount: &BigInt,
+) -> Vec<(UInt160, BigInt)> {
+    let mut result = Vec::new();
+    let mut remaining = amount.clone();
+    let sum_balance: BigInt = ordered_accounts
+        .iter()
+        .map(|(_, v)| v.clone())
+        .fold(BigInt::from(0), |acc, v| acc + v);
+
+    if sum_balance == *amount {
+        result.append(ordered_accounts);
+        return result;
+    }
+
+    for i in 0..ordered_accounts.len() {
+        if ordered_accounts[i].1 < remaining {
+            continue;
+        }
+        if ordered_accounts[i].1 == remaining {
+            result.push(ordered_accounts.remove(i));
+        } else {
+            let (account, value) = &ordered_accounts[i];
+            result.push((*account, remaining.clone()));
+            ordered_accounts[i].1 = value - remaining.clone();
+        }
+        return result;
+    }
+
+    let mut idx = ordered_accounts.len();
+    while idx > 0 {
+        idx -= 1;
+        let (account, value) = ordered_accounts[idx].clone();
+        if value <= remaining {
+            result.push((account, value.clone()));
+            remaining -= value;
+            ordered_accounts.remove(idx);
+        }
+        if remaining.sign() != Sign::Plus {
+            return result;
+        }
+    }
+
+    if remaining.sign() == Sign::Plus {
+        for (account, value) in ordered_accounts.iter_mut() {
+            if *value >= remaining {
+                result.push((*account, remaining.clone()));
+                *value -= remaining.clone();
+                break;
+            }
+        }
+    }
+
+    result
+}
+
+fn emit_transfer(
+    builder: &mut ScriptBuilder,
+    asset_id: &UInt160,
+    from: &UInt160,
+    to: &UInt160,
+    amount: &BigInt,
+    data: Option<&dyn std::any::Any>,
+) -> Result<(), WalletError> {
+    let mut args = Vec::new();
+    args.push(from.to_bytes());
+    args.push(to.to_bytes());
+    let mut amount_bytes = amount.to_signed_bytes_le();
+    if amount_bytes.is_empty() {
+        amount_bytes.push(0);
+    }
+    args.push(amount_bytes);
+    if let Some(extra) = data {
+        if let Some(bytes) = extra.downcast_ref::<Vec<u8>>() {
+            args.push(bytes.clone());
+        } else if let Some(text) = extra.downcast_ref::<String>() {
+            args.push(text.as_bytes().to_vec());
+        } else {
+            args.push(Vec::new());
+        }
+    } else {
+        args.push(Vec::new());
+    }
+
+    if args.is_empty() {
+        builder.emit_opcode(OpCode::NEWARRAY0);
+    } else {
+        for arg in args.iter().rev() {
+            builder.emit_push(arg);
+        }
+        builder.emit_push_int(args.len() as i64);
+        builder.emit_opcode(OpCode::PACK);
+    }
+
+    builder.emit_push_int(CallFlags::ALL.bits() as i64);
+    builder.emit_push("transfer".as_bytes());
+    builder.emit_push(&asset_id.to_bytes());
+    builder
+        .emit_syscall("System.Contract.Call")
+        .map_err(|e| WalletError::TransactionCreationFailed(e.to_string()))?;
+    builder.emit_opcode(OpCode::ASSERT);
+    Ok(())
+}
+
+fn reorder_signers(sender: UInt160, mut signers: Vec<Signer>) -> Vec<Signer> {
+    if let Some(pos) = signers.iter().position(|s| s.account == sender) {
+        if pos != 0 {
+            let signer = signers.remove(pos);
+            signers.insert(0, signer);
+        }
+        signers
+    } else {
+        let mut list = Vec::with_capacity(signers.len() + 1);
+        list.push(Signer::new(sender, WitnessScope::NONE));
+        list.extend(signers);
+        list
+    }
 }
 
 fn parse_multi_sig_contract(script: &[u8]) -> Option<(usize, usize)> {

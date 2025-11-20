@@ -75,33 +75,29 @@ pub trait Wallet: Send + Sync {
     fn version(&self) -> &Version;
 
     /// Changes the password of the wallet.
-    async fn change_password(
-        &mut self,
-        old_password: &str,
-        new_password: &str,
-    ) -> WalletResult<bool>;
+    async fn change_password(&self, old_password: &str, new_password: &str) -> WalletResult<bool>;
 
     /// Checks whether the wallet contains the specified account.
     fn contains(&self, script_hash: &UInt160) -> bool;
 
     /// Creates a new account with the specified private key.
-    async fn create_account(&mut self, private_key: &[u8]) -> WalletResult<Arc<dyn WalletAccount>>;
+    async fn create_account(&self, private_key: &[u8]) -> WalletResult<Arc<dyn WalletAccount>>;
 
     /// Creates a new account with the specified contract and key pair.
     async fn create_account_with_contract(
-        &mut self,
+        &self,
         contract: Contract,
         key_pair: Option<KeyPair>,
     ) -> WalletResult<Arc<dyn WalletAccount>>;
 
     /// Creates a new account with the specified script hash (watch-only).
     async fn create_account_watch_only(
-        &mut self,
+        &self,
         script_hash: UInt160,
     ) -> WalletResult<Arc<dyn WalletAccount>>;
 
     /// Deletes the specified account from the wallet.
-    async fn delete_account(&mut self, script_hash: &UInt160) -> WalletResult<bool>;
+    async fn delete_account(&self, script_hash: &UInt160) -> WalletResult<bool>;
 
     /// Exports the wallet to the specified path.
     async fn export(&self, path: &str, password: &str) -> WalletResult<()>;
@@ -119,11 +115,11 @@ pub trait Wallet: Send + Sync {
     async fn get_unclaimed_gas(&self) -> WalletResult<i64>;
 
     /// Imports an account from a WIF (Wallet Import Format) private key.
-    async fn import_wif(&mut self, wif: &str) -> WalletResult<Arc<dyn WalletAccount>>;
+    async fn import_wif(&self, wif: &str) -> WalletResult<Arc<dyn WalletAccount>>;
 
     /// Imports an account from a NEP-2 encrypted private key.
     async fn import_nep2(
-        &mut self,
+        &self,
         nep2_key: &str,
         password: &str,
     ) -> WalletResult<Arc<dyn WalletAccount>>;
@@ -135,10 +131,10 @@ pub trait Wallet: Send + Sync {
     async fn sign_transaction(&self, transaction: &mut Transaction) -> WalletResult<()>;
 
     /// Unlocks the wallet with the specified password.
-    async fn unlock(&mut self, password: &str) -> WalletResult<bool>;
+    async fn unlock(&self, password: &str) -> WalletResult<bool>;
 
     /// Locks the wallet.
-    fn lock(&mut self);
+    fn lock(&self);
 
     /// Checks whether the specified password is correct.
     async fn verify_password(&self, password: &str) -> WalletResult<bool>;
@@ -150,7 +146,7 @@ pub trait Wallet: Send + Sync {
     fn get_default_account(&self) -> Option<Arc<dyn WalletAccount>>;
 
     /// Sets the default account.
-    async fn set_default_account(&mut self, script_hash: &UInt160) -> WalletResult<()>;
+    async fn set_default_account(&self, script_hash: &UInt160) -> WalletResult<()>;
 }
 
 /// Static wallet factory methods.
@@ -227,7 +223,7 @@ impl WalletManager {
             .map_err(WalletError::Other)?;
 
         // Create new wallet
-        let mut new_wallet = new_factory
+        let new_wallet = new_factory
             .create_wallet(old_wallet.name(), new_path, password, settings)
             .map_err(WalletError::Other)?;
 

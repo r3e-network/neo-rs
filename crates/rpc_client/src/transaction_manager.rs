@@ -46,8 +46,12 @@ impl TransactionManager {
     /// TransactionManager Constructor
     /// Matches C# constructor
     pub fn new(tx: Transaction, rpc_client: Arc<RpcClient>) -> Self {
-        let context =
-            ContractParametersContext::new(None, tx.clone(), rpc_client.protocol_settings.network);
+        let snapshot = std::sync::Arc::new(neo_core::persistence::DataCache::new(true));
+        let context = ContractParametersContext::new(
+            snapshot,
+            tx.clone(),
+            rpc_client.protocol_settings.network,
+        );
 
         Self {
             rpc_client,

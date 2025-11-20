@@ -211,11 +211,7 @@ impl Wallet for Nep6Wallet {
         &self.version
     }
 
-    async fn change_password(
-        &mut self,
-        old_password: &str,
-        new_password: &str,
-    ) -> WalletResult<bool> {
+    async fn change_password(&self, old_password: &str, new_password: &str) -> WalletResult<bool> {
         if old_password == new_password {
             return Ok(true);
         }
@@ -265,7 +261,7 @@ impl Wallet for Nep6Wallet {
     }
 
     async fn create_account(
-        &mut self,
+        &self,
         private_key: &[u8],
     ) -> WalletResult<Arc<dyn crate::wallets::wallet_account::WalletAccount>> {
         let key_pair = KeyPair::from_private_key(private_key)
@@ -283,7 +279,7 @@ impl Wallet for Nep6Wallet {
     }
 
     async fn create_account_with_contract(
-        &mut self,
+        &self,
         contract: Contract,
         key_pair: Option<KeyPair>,
     ) -> WalletResult<Arc<dyn crate::wallets::wallet_account::WalletAccount>> {
@@ -300,7 +296,7 @@ impl Wallet for Nep6Wallet {
     }
 
     async fn create_account_watch_only(
-        &mut self,
+        &self,
         script_hash: UInt160,
     ) -> WalletResult<Arc<dyn crate::wallets::wallet_account::WalletAccount>> {
         let account = Nep6Account::watch_only(self.clone(), script_hash, None);
@@ -310,7 +306,7 @@ impl Wallet for Nep6Wallet {
         Ok(account_arc)
     }
 
-    async fn delete_account(&mut self, script_hash: &UInt160) -> WalletResult<bool> {
+    async fn delete_account(&self, script_hash: &UInt160) -> WalletResult<bool> {
         let mut accounts = self.accounts.write().await;
         Ok(accounts.remove(script_hash).is_some())
     }
@@ -352,7 +348,7 @@ impl Wallet for Nep6Wallet {
     }
 
     async fn import_wif(
-        &mut self,
+        &self,
         wif: &str,
     ) -> WalletResult<Arc<dyn crate::wallets::wallet_account::WalletAccount>> {
         let key_pair = KeyPair::from_wif(wif).map_err(|e| WalletError::Other(e.to_string()))?;
@@ -369,7 +365,7 @@ impl Wallet for Nep6Wallet {
     }
 
     async fn import_nep2(
-        &mut self,
+        &self,
         nep2_key: &str,
         password: &str,
     ) -> WalletResult<Arc<dyn crate::wallets::wallet_account::WalletAccount>> {
@@ -428,7 +424,7 @@ impl Wallet for Nep6Wallet {
         Ok(())
     }
 
-    async fn unlock(&mut self, password: &str) -> WalletResult<bool> {
+    async fn unlock(&self, password: &str) -> WalletResult<bool> {
         let mut updated_accounts = Vec::new();
 
         {
@@ -458,7 +454,7 @@ impl Wallet for Nep6Wallet {
         Ok(true)
     }
 
-    fn lock(&mut self) {
+    fn lock(&self) {
         let mut updated_accounts = Vec::new();
 
         {
@@ -502,7 +498,7 @@ impl Wallet for Nep6Wallet {
             .map(|account| account as Arc<dyn crate::wallets::wallet_account::WalletAccount>)
     }
 
-    async fn set_default_account(&mut self, script_hash: &UInt160) -> WalletResult<()> {
+    async fn set_default_account(&self, script_hash: &UInt160) -> WalletResult<()> {
         let mut updated_accounts = Vec::new();
         let mut found = false;
 

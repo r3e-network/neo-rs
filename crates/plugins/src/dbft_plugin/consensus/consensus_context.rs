@@ -10,6 +10,7 @@ use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_core::network::p2p::payloads::{Block, ExtensiblePayload, Witness};
 use neo_core::persistence::{DataCache, IStore, StoreCache};
 use neo_core::sign::ISigner;
+use neo_core::smart_contract::native::ledger_contract::{HashOrIndex, LedgerContract};
 use neo_core::smart_contract::native::NativeHelpers;
 use neo_core::smart_contract::Contract;
 use neo_core::UInt160;
@@ -45,6 +46,7 @@ pub struct ConsensusContext {
     pub data_cache: DataCache,
     pub witness_size: usize,
     pub my_public_key: Option<ECPoint>,
+    block_sent: bool,
 }
 
 impl ConsensusContext {
@@ -80,6 +82,7 @@ impl ConsensusContext {
             data_cache: DataCache::new(true),
             witness_size: 0,
             my_public_key: None,
+            block_sent: false,
         }
     }
 
@@ -200,12 +203,7 @@ impl ConsensusContext {
 
     /// Returns true if the block has already been assembled and broadcast.
     pub fn block_sent(&self) -> bool {
-        match (&self.transaction_hashes, &self.transactions) {
-            (Some(hashes), Some(transactions)) => {
-                hashes.iter().all(|hash| transactions.contains_key(hash))
-            }
-            _ => false,
-        }
+        self.block_sent
     }
 
     /// Returns true if the node is currently in a view-change state.
@@ -482,6 +480,7 @@ impl ConsensusContext {
         self.verification_context = TransactionVerificationContext::new();
         self.cached_messages.clear();
         self.resize_payload_buffers();
+        self.block_sent = false;
 
         if !self.validators.is_empty() {
             let primary = self.get_primary_index(view_number);
@@ -574,6 +573,11 @@ impl ConsensusContext {
         &self.commit_payloads
     }
 
+    /// Marks the current proposal as sent.
+    pub fn set_block_sent(&mut self) {
+        self.block_sent = true;
+    }
+
     /// Returns a mutable reference to the last-seen message registry.
     pub fn last_seen_message_mut(&mut self) -> &mut HashMap<ECPoint, u32> {
         &mut self.last_seen_message
@@ -601,8 +605,76 @@ impl ConsensusContext {
         &self.block
     }
 
-    /// Returns the previous block header when available. Placeholder until store integration is complete.
-    pub fn prev_header(&self) -> Option<neo_core::network::p2p::payloads::Header> {
-        None
+    /// Builds a block from the collected transactions and commit signatures.
+    /// Returns `None` when required transactions or signatures are missing.
+    pub fn create_block(&mut self) -> Option<Block> {
+        let hashes = self.transaction_hashes.clone()?;
+        let transactions = self.transactions.as_ref()?;
+
+        // Assemble transactions in the order proposed by the speaker.
+        let mut txs = Vec::with_capacity(hashes.len());
+        for hash in hashes.iter() {
+            txs.push(transactions.get(hash)?.clone());
+        }
+
+        self.ensure_header();
+
+        // Collect commit signatures in validator index order.
+        let commit_payloads = self.commit_payloads.clone();
+        let mut script_builder = ScriptBuilder::new();
+        let mut signature_count = 0usize;
+        for payload_opt in commit_payloads.iter() {
+            let Some(payload) = payload_opt else {
+                continue;
+            };
+
+            let Some(commit) = self
+                .get_message(payload)
+                .and_then(|message| message.as_commit().cloned())
+            else {
+                continue;
+            };
+
+            if commit.view_number() != self.view_number {
+                continue;
+            }
+
+            // Signatures must align with the validator order; emit them sequentially.
+            let _ = script_builder.emit_push(commit.signature());
+            signature_count += 1;
+            if signature_count >= self.m() {
+                // We only need M signatures to build a valid multi-sig witness.
+                break;
+            }
+        }
+
+        if signature_count < self.m() {
+            return None;
+        }
+
+        let invocation = script_builder.to_array();
+        let verification = Contract::create_multi_sig_redeem_script(self.m(), &self.validators);
+        let witness = Witness::new_with_scripts(invocation, verification);
+
+        let mut block = self.block.clone();
+        block.header.witness = witness;
+        block.transactions = txs;
+        Some(block)
+    }
+
+    /// Returns the previous block header when available.
+    pub fn prev_header(&self) -> Option<neo_core::ledger::block_header::BlockHeader> {
+        let prev_hash = self.block.prev_hash();
+        if prev_hash.is_zero() {
+            return None;
+        }
+
+        let ledger = LedgerContract::new();
+        let store_cache = self.neo_system.context().store_cache();
+        ledger
+            .get_block(&store_cache, HashOrIndex::Hash(*prev_hash))
+            .ok()
+            .flatten()
+            .map(|block| block.header)
     }
 }

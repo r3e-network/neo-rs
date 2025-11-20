@@ -132,10 +132,7 @@ impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbStore {
         direction: SeekDirection,
     ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
         let prefix_bytes = key_prefix.map(|k| k.to_array());
-        let start = prefix_bytes
-            .as_ref()
-            .map(|vec| vec.as_slice())
-            .unwrap_or(&[]);
+        let start = prefix_bytes.as_deref().unwrap_or(&[]);
         let iter = self.iterator_from(start, direction);
         Box::new(iter.filter_map(move |res| {
             let (key, value) = match res {
@@ -278,10 +275,7 @@ impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbSnapshot {
         direction: SeekDirection,
     ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
         let prefix_bytes = key_prefix.map(|k| k.to_array());
-        let start = prefix_bytes
-            .as_ref()
-            .map(|vec| vec.as_slice())
-            .unwrap_or(&[]);
+        let start = prefix_bytes.as_deref().unwrap_or(&[]);
         let iter = iterator_from(
             self.db.as_ref(),
             Some(self.read_options()),

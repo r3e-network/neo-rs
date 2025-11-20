@@ -3,7 +3,7 @@
 
 use neo_core::{Transaction, UInt160, UInt256, Witness, WitnessScope};
 use std::collections::HashMap;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 // ============================================================================
 // Core Data Structure Performance Tests (15 tests)
@@ -170,7 +170,7 @@ fn test_transaction_creation_performance() {
         // Focus on serialization performance
 
         // Create witness using available constructors
-        let witness = Witness::new_with_scripts(
+        let _witness = Witness::new_with_scripts(
             vec![0u8; 64], // invocation_script
             vec![0u8; 32], // verification_script
         );

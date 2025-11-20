@@ -153,6 +153,11 @@ impl RpcError {
         Self::simple(-108, "Unknown iterator")
     }
 
+    /// Unknown iterator session identifier.
+    pub fn unknown_session() -> Self {
+        Self::simple(-107, "Unknown session")
+    }
+
     /// Unknown block height.
     pub fn unknown_height() -> Self {
         Self::simple(-109, "Unknown height")

@@ -707,6 +707,18 @@ impl ContractManagement {
         Ok(Some(contract))
     }
 
+    /// Gets a contract by ID from the provided store cache.
+    pub fn get_contract_by_id_from_store_cache(
+        store_cache: &StoreCache,
+        id: i32,
+    ) -> Result<Option<ContractState>> {
+        let hash = match Self::get_contract_hash_by_id_from_store_cache(store_cache, id)? {
+            Some(hash) => hash,
+            None => return Ok(None),
+        };
+        Self::get_contract_from_store_cache(store_cache, &hash)
+    }
+
     /// Gets a contract by ID
     pub fn get_contract_by_id(&self, id: i32) -> Result<Option<ContractState>> {
         let storage = self
@@ -719,6 +731,25 @@ impl ContractManagement {
         } else {
             Ok(None)
         }
+    }
+
+    fn get_contract_hash_by_id_from_store_cache(
+        store_cache: &StoreCache,
+        id: i32,
+    ) -> Result<Option<UInt160>> {
+        let storage_key = StorageKey::new(Self::ID, Self::contract_id_storage_key(id));
+        let Some(item) = store_cache.get(&storage_key) else {
+            return Ok(None);
+        };
+
+        let bytes = item.get_value();
+        if bytes.is_empty() {
+            return Ok(None);
+        }
+
+        let hash = UInt160::from_bytes(&bytes)
+            .map_err(|e| Error::invalid_data(format!("Invalid contract hash bytes: {e}")))?;
+        Ok(Some(hash))
     }
 
     /// Checks if a contract has a specific method

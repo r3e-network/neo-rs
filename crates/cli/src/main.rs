@@ -6,21 +6,36 @@ mod console;
 #[allow(dead_code)]
 mod console_service;
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
+use chrono::Local;
 use clap::Parser;
-use commands::command_line::CommandLine;
-use commands::wallet::WalletCommands;
+use commands::{
+    block::BlockCommands, blockchain::BlockchainCommands, command_line::CommandLine,
+    contracts::ContractCommands, logger::LoggerCommands, native::NativeCommands,
+    nep17::Nep17Commands, network::NetworkCommands, node::NodeCommands, plugins::PluginCommands,
+    tools::ToolCommands, vote::VoteCommands, wallet::WalletCommands,
+};
 use config::NodeConfig;
 use neo_core::{
     neo_system::NeoSystem,
     persistence::{providers::RocksDBStoreProvider, storage::StorageConfig, IStoreProvider},
     protocol_settings::ProtocolSettings,
+    wallets::IWalletProvider,
 };
 #[allow(unused_imports)]
 use neo_plugins as _;
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    fs::{self, OpenOptions},
+    io::{self, Write},
+    path::{Path, PathBuf},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+};
 use tokio::{signal, task};
-use tracing::{error, info};
+use tracing::{error, info, warn};
+use tracing_appender::{non_blocking, non_blocking::WorkerGuard};
 use tracing_subscriber::{fmt, EnvFilter};
 
 #[derive(Parser, Debug)]
@@ -70,6 +85,10 @@ struct Cli {
     #[arg(long, value_name = "SECONDS")]
     block_time: Option<u64>,
 
+    /// Disables verification when importing `chain*.acc` bootstrap files.
+    #[arg(long)]
+    no_verify_import: bool,
+
     /// Unlocks the specified NEP-6 wallet at startup.
     #[arg(long, value_name = "PATH")]
     wallet: Option<PathBuf>,
@@ -81,10 +100,11 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    init_tracing();
-
     let cli = Cli::parse();
     let mut node_config = NodeConfig::load(&cli.config)?;
+    let logging_handles = init_tracing(&node_config.logging)?;
+    let console_log_state = logging_handles.console_enabled.clone();
+    let _log_guard = logging_handles.guard;
 
     if let Some(magic) = cli.network_magic {
         node_config.network.network_magic = Some(magic);
@@ -157,10 +177,69 @@ async fn main() -> Result<()> {
     )
     .map_err(|err| anyhow::Error::new(err))?;
 
-    let wallet_commands = Arc::new(WalletCommands::new(wallet_settings));
+    let wallet_commands = Arc::new(WalletCommands::new(wallet_settings, Arc::clone(&system)));
+    let wallet_provider: Arc<dyn IWalletProvider + Send + Sync> =
+        Arc::clone(&wallet_commands) as Arc<dyn IWalletProvider + Send + Sync>;
+    system
+        .attach_wallet_provider(wallet_provider)
+        .map_err(|err| anyhow::Error::new(err))?;
+    let plugin_commands = Arc::new(PluginCommands::new(&node_config.plugins));
+    let block_commands = Arc::new(BlockCommands::new(Arc::clone(&system)));
+    let blockchain_commands = Arc::new(BlockchainCommands::new(Arc::clone(&system)));
+    let native_commands = Arc::new(NativeCommands::new(Arc::clone(&system)));
+    let node_commands = Arc::new(NodeCommands::new(Arc::clone(&system)));
+    let network_commands = Arc::new(NetworkCommands::new(Arc::clone(&system)));
+    let nep17_commands = Arc::new(Nep17Commands::new(
+        Arc::clone(&system),
+        Arc::clone(&wallet_commands),
+    ));
+    let logger_commands = Arc::new(LoggerCommands::new(console_log_state));
+    let tool_commands = Arc::new(ToolCommands::new(Arc::new(system.settings().clone())));
+    let contract_commands = Arc::new(ContractCommands::new(
+        Arc::clone(&system),
+        Arc::clone(&wallet_commands),
+    ));
+    let vote_commands = Arc::new(VoteCommands::new(
+        Arc::clone(&system),
+        Arc::clone(&wallet_commands),
+        Arc::clone(&contract_commands),
+    ));
+    let verify_import = !cli.no_verify_import;
+    if let Err(err) = block_commands.import_default_chain_files(verify_import) {
+        warn!(
+            target: "neo",
+            error = %err,
+            "failed to import bootstrap blocks; continuing without import"
+        );
+    }
 
-    if let Some(wallet_path) = cli.wallet.as_deref() {
-        let password = cli.password.as_deref().unwrap_or("");
+    let mut wallet_path = cli.wallet.clone();
+    let mut wallet_password = cli.password.clone();
+
+    if wallet_path.is_none() && node_config.unlock_wallet.is_active {
+        match &node_config.unlock_wallet.path {
+            Some(path) if !path.is_empty() => {
+                wallet_path = Some(PathBuf::from(path));
+            }
+            _ => error!(
+                target: "neo",
+                "unlock_wallet.is_active is true but no wallet path was provided"
+            ),
+        }
+
+        if wallet_password.is_none() {
+            match &node_config.unlock_wallet.password {
+                Some(pass) => wallet_password = Some(pass.clone()),
+                None => error!(
+                    target: "neo",
+                    "unlock_wallet.is_active is true but no wallet password was provided"
+                ),
+            }
+        }
+    }
+
+    if let Some(wallet_path) = wallet_path.as_deref() {
+        let password = wallet_password.as_deref().unwrap_or("");
         wallet_commands
             .open_wallet(wallet_path, password)
             .map_err(|err| anyhow::anyhow!(err))?;
@@ -180,7 +259,20 @@ async fn main() -> Result<()> {
         "neo-rs node started; press Ctrl+C to exit"
     );
 
-    let command_line = Arc::new(CommandLine::new(wallet_commands));
+    let command_line = Arc::new(CommandLine::new(
+        wallet_commands,
+        plugin_commands,
+        logger_commands,
+        block_commands,
+        blockchain_commands,
+        native_commands,
+        node_commands,
+        network_commands,
+        nep17_commands,
+        tool_commands,
+        contract_commands,
+        vote_commands,
+    ));
 
     let shell_handle = task::spawn_blocking({
         let command_line = Arc::clone(&command_line);
@@ -208,10 +300,161 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-fn init_tracing() {
+fn init_tracing(logging: &config::LoggingSection) -> Result<LoggingHandles> {
+    use tracing_subscriber::fmt::writer::{BoxMakeWriter, MakeWriterExt};
+
+    if !logging.active {
+        return Ok(LoggingHandles {
+            guard: None,
+            console_enabled: None,
+        });
+    }
+
+    let level = logging.level.as_deref().unwrap_or("info");
+    let filter_spec = format!("{level},neo={level}");
     let env_filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,neo=info"));
-    let _ = fmt().with_env_filter(env_filter).try_init();
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(filter_spec));
+
+    let mut guard = None;
+
+    let path_value = logging
+        .file_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+
+    let file_requested = logging.file_enabled || path_value.is_some();
+    let file_writer = if file_requested {
+        if let Some(path) = path_value {
+            let (writer, file_guard) = create_file_writer(path)?;
+            guard = Some(file_guard);
+            Some(writer)
+        } else {
+            warn!(
+                target: "neo",
+                "file logging requested but logging.path is empty; disabling file logs"
+            );
+            None
+        }
+    } else {
+        None
+    };
+
+    let has_file = file_writer.is_some();
+    let console_enabled = Arc::new(AtomicBool::new(logging.console_output));
+    let console_writer = ConsoleToggleWriter::new(Arc::clone(&console_enabled));
+    let writer: BoxMakeWriter = match file_writer {
+        Some(file) => BoxMakeWriter::new(console_writer.and(file)),
+        None => BoxMakeWriter::new(console_writer),
+    };
+
+    let builder = fmt()
+        .with_env_filter(env_filter)
+        .with_writer(writer)
+        .with_ansi(logging.console_output && !has_file);
+
+    let normalized = logging
+        .format
+        .as_deref()
+        .map(|value| value.to_ascii_lowercase())
+        .unwrap_or_else(|| "text".to_string());
+
+    match normalized.as_str() {
+        "json" => {
+            let _ = builder.json().try_init();
+        }
+        "pretty" => {
+            let _ = builder.pretty().try_init();
+        }
+        _ => {
+            let _ = builder.try_init();
+        }
+    }
+    Ok(LoggingHandles {
+        guard,
+        console_enabled: Some(console_enabled),
+    })
+}
+
+struct LoggingHandles {
+    guard: Option<WorkerGuard>,
+    console_enabled: Option<Arc<AtomicBool>>,
+}
+
+#[derive(Clone)]
+struct ConsoleToggleWriter {
+    enabled: Arc<AtomicBool>,
+}
+
+impl ConsoleToggleWriter {
+    fn new(enabled: Arc<AtomicBool>) -> Self {
+        Self { enabled }
+    }
+}
+
+struct ConditionalConsoleWriter {
+    enabled: Arc<AtomicBool>,
+    stderr: io::Stderr,
+}
+
+impl<'a> tracing_subscriber::fmt::writer::MakeWriter<'a> for ConsoleToggleWriter {
+    type Writer = ConditionalConsoleWriter;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        ConditionalConsoleWriter {
+            enabled: Arc::clone(&self.enabled),
+            stderr: io::stderr(),
+        }
+    }
+}
+
+impl Write for ConditionalConsoleWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        if self.enabled.load(Ordering::Relaxed) {
+            self.stderr.write(buf)
+        } else {
+            Ok(buf.len())
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        if self.enabled.load(Ordering::Relaxed) {
+            self.stderr.flush()
+        } else {
+            Ok(())
+        }
+    }
+}
+
+fn create_file_writer(path: &str) -> Result<(non_blocking::NonBlocking, WorkerGuard)> {
+    let provided = Path::new(path);
+    let file_path = if provided.exists() && provided.is_file() {
+        provided.to_path_buf()
+    } else if provided.extension().is_some() {
+        provided.to_path_buf()
+    } else {
+        fs::create_dir_all(provided)
+            .with_context(|| format!("failed to create log directory {}", provided.display()))?;
+        provided.join(default_log_name())
+    };
+
+    if let Some(parent) = file_path.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("failed to create log directory {}", parent.display()))?;
+        }
+    }
+
+    let file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&file_path)
+        .with_context(|| format!("failed to open log file {}", file_path.display()))?;
+    Ok(non_blocking(file))
+}
+
+fn default_log_name() -> String {
+    format!("neo-cli-{}.log", Local::now().format("%Y-%m-%d"))
 }
 
 fn select_store_provider(

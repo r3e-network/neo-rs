@@ -141,16 +141,11 @@ pub struct RpcServerSettings {
     exception_policy: UnhandledExceptionPolicy,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
 pub enum UnhandledExceptionPolicy {
+    #[default]
     Ignore,
     Terminate,
-}
-
-impl Default for UnhandledExceptionPolicy {
-    fn default() -> Self {
-        UnhandledExceptionPolicy::Ignore
-    }
 }
 
 static CURRENT_SETTINGS: Lazy<RwLock<RpcServerSettings>> = Lazy::new(|| {

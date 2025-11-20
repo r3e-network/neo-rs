@@ -74,6 +74,8 @@ impl RemoteNodeSnapshot {
 pub struct LocalNode {
     /// Runtime protocol settings shared with the wider system.
     settings: Arc<ProtocolSettings>,
+    /// Last applied channel configuration (parity with C# LocalNode.Config).
+    config: RwLock<ChannelsConfig>,
     /// Random nonce identifying this node instance.
     pub nonce: u32,
     /// User agent advertised during version handshake.
@@ -110,6 +112,7 @@ impl LocalNode {
     pub fn new(settings: Arc<ProtocolSettings>, port: u16, user_agent: String) -> Self {
         Self {
             settings,
+            config: RwLock::new(ChannelsConfig::default()),
             nonce: rand::random(),
             user_agent,
             port: RwLock::new(port),
@@ -196,6 +199,28 @@ impl LocalNode {
             .unwrap_or_default()
     }
 
+    /// Returns snapshots for remote peers tracked by the local node.
+    pub fn remote_snapshots(&self) -> Vec<RemoteNodeSnapshot> {
+        self.remote_nodes
+            .read()
+            .map(|guard| guard.values().map(|entry| entry.snapshot.clone()).collect())
+            .unwrap_or_default()
+    }
+
+    /// Returns the maximum reported block height across connected peers.
+    pub fn max_peer_block_height(&self) -> u32 {
+        self.remote_nodes
+            .read()
+            .map(|guard| {
+                guard
+                    .values()
+                    .map(|entry| entry.snapshot.last_block_index)
+                    .max()
+                    .unwrap_or(0)
+            })
+            .unwrap_or(0)
+    }
+
     /// Records a relay broadcast (mirrors LocalNode.OnRelayDirectly semantics).
     pub fn record_relay(&self, inventory: &RelayInventory) {
         self.record_broadcast(BroadcastEvent::Relay(inventory.to_bytes()));
@@ -261,6 +286,14 @@ impl LocalNode {
     /// Provides a handle to the shared protocol settings.
     pub fn settings(&self) -> Arc<ProtocolSettings> {
         Arc::clone(&self.settings)
+    }
+
+    /// Returns the last applied channel configuration snapshot.
+    pub fn config(&self) -> ChannelsConfig {
+        self.config
+            .read()
+            .map(|cfg| cfg.clone())
+            .unwrap_or_default()
     }
 
     /// Generates the version payload broadcast during handshake.
@@ -338,9 +371,12 @@ impl LocalNode {
 
     /// Applies channel configuration updates to the internal capability view.
     pub fn apply_channels_config(&self, config: &ChannelsConfig) {
-        if let Some(endpoint) = config.tcp {
-            self.set_port(endpoint.port());
+        if let Ok(mut stored) = self.config.write() {
+            *stored = config.clone();
         }
+
+        let listener_port = config.tcp.map(|endpoint| endpoint.port()).unwrap_or(0);
+        self.set_port(listener_port);
 
         let mut capabilities = self
             .capabilities
@@ -360,6 +396,8 @@ impl LocalNode {
             if !updated {
                 capabilities.push(NodeCapability::tcp_server(endpoint.port()));
             }
+        } else {
+            capabilities.retain(|cap| !matches!(cap, NodeCapability::TcpServer { .. }));
         }
 
         // Toggle compression capability.
@@ -786,6 +824,17 @@ impl LocalNodeActor {
                 let actors = self.state.remote_actor_refs();
                 let _ = reply.send(actors);
             }
+            LocalNodeCommand::UnconnectedCount { reply } => {
+                let count = self.peer.unconnected_count();
+                let _ = reply.send(count);
+            }
+            LocalNodeCommand::GetUnconnectedPeers { reply } => {
+                let peers = self.peer.unconnected_peers();
+                let _ = reply.send(peers);
+            }
+            LocalNodeCommand::AddUnconnectedPeers { endpoints } => {
+                self.peer.add_unconnected_peers(endpoints);
+            }
             LocalNodeCommand::InboundTcpAccepted {
                 stream,
                 remote,
@@ -991,6 +1040,17 @@ impl LocalNodeActor {
 
         if self.peer.connected_count() > 0 {
             trace!(target: "neo", requested, "requesting additional peers from network");
+            let message = NetworkMessage::new(ProtocolMessage::GetAddr);
+            for entry in self.state.remote_entries() {
+                if let Err(error) = entry.actor.tell(RemoteNodeCommand::Send(message.clone())) {
+                    warn!(
+                        target: "neo",
+                        remote = %entry.snapshot.remote_address,
+                        %error,
+                        "failed to request peers from remote node"
+                    );
+                }
+            }
             return Ok(());
         }
 
@@ -1165,9 +1225,81 @@ pub enum LocalNodeCommand {
     GetRemoteActors {
         reply: oneshot::Sender<Vec<ActorRef>>,
     },
+    UnconnectedCount {
+        reply: oneshot::Sender<usize>,
+    },
+    GetUnconnectedPeers {
+        reply: oneshot::Sender<Vec<SocketAddr>>,
+    },
+    AddUnconnectedPeers {
+        endpoints: Vec<SocketAddr>,
+    },
     InboundTcpAccepted {
         stream: TcpStream,
         remote: SocketAddr,
         local: SocketAddr,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    #[test]
+    fn tcp_server_capability_tracks_channels_config() {
+        let settings = Arc::new(ProtocolSettings::default());
+        let node = LocalNode::new(settings, 10333, "/agent".to_string());
+
+        // No TCP endpoint configured should clear the advertised server capability.
+        node.apply_channels_config(&ChannelsConfig::default());
+        assert_eq!(node.port(), 0);
+        let payload = node.version_payload();
+        assert!(payload
+            .capabilities
+            .iter()
+            .all(|cap| !matches!(cap, NodeCapability::TcpServer { .. })));
+
+        // Enabling a TCP endpoint should advertise the matching capability and port.
+        let mut config = ChannelsConfig::default();
+        config.tcp = Some("127.0.0.1:20333".parse().expect("endpoint"));
+        node.apply_channels_config(&config);
+        assert_eq!(node.port(), 20333);
+
+        let payload = node.version_payload();
+        assert!(payload
+            .capabilities
+            .iter()
+            .any(|cap| { matches!(cap, NodeCapability::TcpServer { port } if *port == 20333) }));
+    }
+
+    #[test]
+    fn compression_capability_respects_configuration() {
+        let settings = Arc::new(ProtocolSettings::default());
+        let node = LocalNode::new(settings, 10333, "/agent".to_string());
+
+        let mut config = ChannelsConfig::default();
+        node.apply_channels_config(&config);
+        assert!(node.version_payload().allow_compression);
+
+        config.enable_compression = false;
+        node.apply_channels_config(&config);
+        let payload = node.version_payload();
+        assert!(!payload.allow_compression);
+        assert!(payload
+            .capabilities
+            .iter()
+            .any(|cap| matches!(cap, NodeCapability::DisableCompression)));
+
+        let stored = node.config();
+        assert_eq!(stored.enable_compression, config.enable_compression);
+        assert_eq!(
+            stored.min_desired_connections,
+            ChannelsConfig::DEFAULT_MIN_DESIRED_CONNECTIONS
+        );
+        assert_eq!(
+            stored.max_connections_per_address,
+            ChannelsConfig::DEFAULT_MAX_CONNECTIONS_PER_ADDRESS
+        );
+    }
 }

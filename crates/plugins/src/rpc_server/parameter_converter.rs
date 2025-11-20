@@ -6,7 +6,6 @@ use neo_core::network::p2p::payloads::transaction::MAX_TRANSACTION_ATTRIBUTES;
 use neo_core::network::p2p::payloads::witness::Witness;
 use neo_core::smart_contract::contract_parameter::ContractParameter;
 use neo_core::uint160::UInt160;
-use neo_core::uint256::UInt256;
 use neo_core::{WitnessRule, WitnessScope};
 use neo_json::{JArray, JObject, JToken};
 use std::str::FromStr;
@@ -223,7 +222,7 @@ fn jtoken_to_serde(token: &JToken) -> serde_json::Value {
         JToken::String(s) => serde_json::Value::String(s.clone()),
         JToken::Array(arr) => serde_json::Value::Array(
             arr.children()
-                .into_iter()
+                .iter()
                 .map(|item| {
                     item.as_ref()
                         .map(jtoken_to_serde)
@@ -271,16 +270,6 @@ fn parse_uint160(text: &str) -> Result<UInt160, RpcException> {
     Err(invalid_params(format!("Invalid UInt160 value: {}", text)))
 }
 
-fn parse_uint256(text: &str) -> Result<UInt256, RpcException> {
-    let mut result = None;
-    if UInt256::try_parse(text.trim(), &mut result) {
-        if let Some(value) = result {
-            return Ok(value);
-        }
-    }
-    Err(invalid_params(format!("Invalid UInt256 value: {}", text)))
-}
-
 fn parse_signer(token: &JToken, ctx: &ConversionContext) -> Result<Signer, RpcException> {
     let obj = expect_object(token)?;
 
@@ -288,9 +277,7 @@ fn parse_signer(token: &JToken, ctx: &ConversionContext) -> Result<Signer, RpcEx
         .get("account")
         .ok_or_else(|| invalid_params("Signer is missing 'account' field"))?;
     let account_text = expect_string(account_token, "Signer 'account' must be a string")?;
-    let account = parse_address(&account_text, ctx.address_version)?
-        .script_hash()
-        .clone();
+    let account = *parse_address(&account_text, ctx.address_version)?.script_hash();
 
     let scopes_token = obj
         .get("scopes")

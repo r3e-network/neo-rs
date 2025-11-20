@@ -1,7 +1,11 @@
-//! Tokens tracker plugin module wiring.
+//! Tokens tracker plugin wiring (stub implementation).
+//!
+//! The full TokensTracker port from the C# codebase is not yet available in
+//! this repository. To keep the workspace compiling when the `tokens-tracker`
+//! feature is enabled, we expose a minimal no-op plugin that satisfies the
+//! `Plugin` interface. Once the tracker logic is ported, this module can be
+//! replaced with the real implementation.
 
-pub mod extensions;
-pub mod tokens_tracker;
-pub mod trackers;
+mod stub;
 
-pub use tokens_tracker::TokensTracker;
+pub use stub::TokensTrackerPlugin;

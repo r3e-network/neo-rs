@@ -10,12 +10,16 @@ network_magic = 0x334F454E  # MainNet magic
 [p2p]
 # P2P listening port (standard Neo port)
 listen_port = 10333
-# Maximum number of connected peers (production scale)
-max_connections = 200
-# Connection timeout in seconds
-connect_timeout = 15
-# Ping interval in seconds
-ping_interval = 30
+# Whether to enable message compression (matches C# default)
+enable_compression = true
+# Minimum desired peer connections (C# default)
+min_desired_connections = 10
+# Maximum number of connected peers (C# default)
+max_connections = 40
+# Maximum connections from the same address (C# default)
+max_connections_per_address = 3
+# Maximum known hashes tracked (C# default)
+max_known_hashes = 1000
 
 # MainNet seed nodes (official Neo infrastructure)
 seed_nodes = [
@@ -59,6 +63,33 @@ port = 10332
 cors_enabled = false
 # Authentication required for sensitive operations
 auth_enabled = true
+# Maximum concurrent connections (C# default)
+max_connections = 40
+# Maximum request body size in bytes (C# default 5MB)
+max_request_body_size = 5242880
+# Maximum GAS allowed per invoke (GAS units)
+max_gas_invoke = 20.0
+# Maximum GAS fee allowed (GAS units)
+max_fee = 0.1
+# Maximum iterator result items
+max_iterator_result_items = 100
+# Maximum VM stack size
+max_stack_size = 65535
+# Keep-alive timeout in seconds
+keep_alive_timeout = 60
+# Request headers timeout in seconds
+request_headers_timeout = 15
+# Session support disabled by default
+session_enabled = false
+# Session expiration time in seconds
+session_expiration_time = 60
+# FindStorage page size
+find_storage_page_size = 50
+# Disabled RPC methods (matches RpcServer default)
+disabled_methods = ["openwallet"]
+# RPC authentication credentials (change for production)
+rpc_user = "neo"
+rpc_pass = "change_me"
 
 [consensus]
 # Consensus participation enabled
@@ -71,16 +102,37 @@ view_change_timeout = 20000
 validator_key_file = "/etc/neo/validator.key"
 
 [logging]
+# Enable CLI logging output (matches C# Logger.Active)
+active = false
+# Print logs to the console (matches C# Logger.ConsoleOutput)
+console_output = false
 # Production log level
 level = "info"
 # Structured logging for production
 format = "json"
-# Production log files
-file_enabled = true
-file_path = "/var/log/neo-node.log"
+# Directory for log files (matches C# Logger.Path semantics)
+path = "Logs"
 # Log rotation
 max_file_size = "100MB"
 max_files = 10
+
+[contracts]
+# Neo Name Service contract hash (matches C# config.json)
+neo_name_service = "0x50ac1c37690cc2cfc594472833cf57505d5f46de"
+
+[plugins]
+# Download URL used by the plugin bootstrapper
+download_url = "https://api.github.com/repos/neo-project/neo/releases"
+# Allow prerelease versions (C# default: false)
+prerelease = false
+
+[unlock_wallet]
+# Automatically open a NEP-6 wallet on startup
+is_active = false
+# Path to the wallet file
+path = ""
+# Password used to decrypt the wallet
+password = ""
 
 [monitoring]
 # Production health monitoring

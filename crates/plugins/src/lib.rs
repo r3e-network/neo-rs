@@ -15,7 +15,7 @@ pub mod oracle_service;
 pub mod rest_server;
 #[cfg(feature = "rocksdb-store")]
 pub mod rocksdb_store;
-#[cfg(feature = "rpc-server")]
+#[cfg(any(feature = "rpc-server", test))]
 pub mod rpc_server;
 #[cfg(feature = "sign-client")]
 pub mod sign_client;

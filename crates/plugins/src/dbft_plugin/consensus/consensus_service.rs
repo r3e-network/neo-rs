@@ -12,7 +12,12 @@
 use crate::dbft_plugin::consensus::consensus_context::ConsensusContext;
 use crate::dbft_plugin::dbft_settings::DbftSettings;
 use crate::dbft_plugin::types::change_view_reason::ChangeViewReason;
+use neo_core::network::p2p::local_node::LocalNodeCommand;
+use neo_core::network::p2p::payloads::inv_payload::InvPayload;
+use neo_core::network::p2p::payloads::inventory_type::InventoryType;
 use neo_core::network::p2p::payloads::ExtensiblePayload;
+use neo_core::network::p2p::task_manager::TaskManagerCommand;
+use neo_core::network::p2p::RelayInventory;
 use neo_core::persistence::IStore;
 use neo_core::{NeoSystem, Transaction, UInt256};
 use std::collections::HashSet;
@@ -45,9 +50,9 @@ pub struct ConsensusService {
     /// Neo system reference
     pub(crate) neo_system: Arc<NeoSystem>,
     /// Timestamp of the last timer change
-    clock_started: Instant,
+    pub(crate) clock_started: Instant,
     /// Expected delay for the active timer
-    expected_delay: Duration,
+    pub(crate) expected_delay: Duration,
     /// Timestamp of the last prepare request received
     pub(crate) prepare_request_received_time: Option<Instant>,
     /// Block index accompanying the last prepare request
@@ -395,10 +400,28 @@ impl ConsensusService {
     pub(crate) fn broadcast_payload(&self, payload: ExtensiblePayload) {
         let mut payload_clone = payload.clone();
         let hash = payload_clone.hash();
-        self.log(&format!(
-            "Broadcast payload category={} hash={hash}",
-            payload.category
-        ));
+        let block_index = self
+            .context
+            .try_read()
+            .map(|guard| guard.block().index())
+            .unwrap_or(0);
+
+        let result = self.neo_system.local_node_actor().tell(LocalNodeCommand::SendDirectly {
+            inventory: RelayInventory::Extensible(payload),
+            block_index: Some(block_index),
+        });
+
+        if let Err(err) = result {
+            self.log(&format!(
+                "Failed to broadcast payload category={} hash={hash}: {err}",
+                payload_clone.category
+            ));
+        } else {
+            self.log(&format!(
+                "Broadcast payload category={} hash={hash}",
+                payload_clone.category
+            ));
+        }
     }
 
     pub(crate) fn request_missing_transactions(&self, hashes: &[UInt256]) {
@@ -406,6 +429,13 @@ impl ConsensusService {
             return;
         }
         self.log(&format!("Requesting {} missing transactions", hashes.len()));
+
+        let payload = InvPayload::create(InventoryType::Transaction, hashes);
+        let sender = self.neo_system.local_node_actor();
+        let _ = self.neo_system.task_manager_actor().tell_from(
+            TaskManagerCommand::RestartTasks { payload },
+            Some(sender),
+        );
     }
 
     pub(crate) fn change_timer(&mut self, delay: Duration) {

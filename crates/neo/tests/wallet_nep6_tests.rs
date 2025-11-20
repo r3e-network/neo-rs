@@ -32,7 +32,7 @@ fn temp_wallet_path() -> String {
 fn nep6_wallet_imports_and_signs() -> WalletResult<()> {
     let settings = Arc::new(ProtocolSettings::default());
     let wallet_path = temp_wallet_path();
-    let mut wallet = Nep6Wallet::new(
+    let wallet = Nep6Wallet::new(
         Some("test".to_string()),
         Some(wallet_path.clone()),
         Arc::clone(&settings),
@@ -77,7 +77,7 @@ fn nep6_wallet_imports_and_signs() -> WalletResult<()> {
 fn nep6_wallet_changes_password_and_unlocks() -> WalletResult<()> {
     let settings = Arc::new(ProtocolSettings::default());
     let wallet_path = temp_wallet_path();
-    let mut wallet = Nep6Wallet::new(
+    let wallet = Nep6Wallet::new(
         Some("test".to_string()),
         Some(wallet_path.clone()),
         Arc::clone(&settings),

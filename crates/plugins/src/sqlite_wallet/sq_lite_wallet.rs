@@ -1,301 +1,618 @@
-//! SQLite Wallet implementation
+//! SQLite wallet loader for DB3 migration.
 //!
-//! Provides SQLite-based wallet functionality for Neo blockchain.
+//! Implements the C# `SQLiteWallet` surface sufficient to open existing `.db3`
+//! files, validate the password, recover NEP-2 keys, and expose accounts for
+//! migration to NEP-6. Contracts are reconstructed from stored scripts when
+//! present, ensuring contract hashes remain consistent during migration.
 
-use rusqlite::{params, Connection, Result as SqliteResult};
-use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
-use std::sync::Arc;
-use tokio::sync::RwLock;
-
-use super::{
-    address::Address, contract::Contract, key::Key, sq_lite_wallet_account::SQLiteWalletAccount,
-    verification_contract::VerificationContract, wallet_data_context::WalletDataContext,
+use aes::Aes256;
+use async_trait::async_trait;
+use bs58;
+use cipher::{block_padding::NoPadding, BlockDecrypt, BlockDecryptMut, KeyInit, KeyIvInit};
+use neo_core::{
+    cryptography::crypto_utils::NeoHash,
+    io::BinaryReader,
+    neo_config::MAX_SCRIPT_SIZE,
+    protocol_settings::ProtocolSettings,
+    smart_contract::{contract::Contract, contract_parameter_type::ContractParameterType},
+    wallets::{
+        wallet::WalletError, wallet::WalletResult, wallet_account::WalletAccount, Version, Wallet,
+    },
+    KeyPair, Transaction, UInt160, UInt256,
 };
+use rusqlite::Connection;
+use scrypt::Params;
+use sha2::{Digest, Sha256};
+use std::collections::HashMap;
+use std::io::Cursor;
+use std::path::Path;
+use std::sync::Arc;
 
-/// SQLite Wallet implementation
+type Aes256CbcDec = cbc::Decryptor<Aes256>;
+
+#[derive(Clone)]
 pub struct SQLiteWallet {
-    /// Database connection
-    pub connection: Arc<RwLock<Connection>>,
-    /// Wallet file path
-    pub wallet_path: PathBuf,
-    /// Wallet name
-    pub name: String,
-    /// Wallet version
-    pub version: String,
-    /// Is wallet open
-    pub is_open: bool,
-    /// Wallet accounts
-    pub accounts: Arc<RwLock<Vec<SQLiteWalletAccount>>>,
+    path: String,
+    _settings: Arc<ProtocolSettings>,
+    version: Version,
+    _master_key: Vec<u8>,
+    salt: Vec<u8>,
+    _scrypt_params: Params,
+    password_hash: Vec<u8>,
+    accounts: Vec<Arc<SQLiteWalletAccount>>,
+}
+
+#[derive(Clone)]
+struct SQLiteWalletAccount {
+    script_hash: UInt160,
+    key: Option<KeyPair>,
+    contract: Option<Contract>,
+    protocol_settings: Arc<ProtocolSettings>,
+}
+
+impl SQLiteWalletAccount {
+    fn new(
+        script_hash: UInt160,
+        key: Option<KeyPair>,
+        contract: Option<Contract>,
+        settings: Arc<ProtocolSettings>,
+    ) -> Self {
+        Self {
+            script_hash,
+            key,
+            contract,
+            protocol_settings: settings,
+        }
+    }
+}
+
+impl WalletAccount for SQLiteWalletAccount {
+    fn script_hash(&self) -> UInt160 {
+        self.script_hash
+    }
+
+    fn address(&self) -> String {
+        neo_core::wallets::helper::Helper::to_address(
+            &self.script_hash,
+            self.protocol_settings.address_version,
+        )
+    }
+
+    fn label(&self) -> Option<&str> {
+        None
+    }
+
+    fn set_label(&mut self, _label: Option<String>) {}
+
+    fn is_default(&self) -> bool {
+        false
+    }
+
+    fn set_is_default(&mut self, _is_default: bool) {}
+
+    fn is_locked(&self) -> bool {
+        false
+    }
+
+    fn has_key(&self) -> bool {
+        self.key.is_some()
+    }
+
+    fn get_key(&self) -> Option<KeyPair> {
+        self.key.clone()
+    }
+
+    fn contract(&self) -> Option<&Contract> {
+        self.contract.as_ref()
+    }
+
+    fn set_contract(&mut self, contract: Option<Contract>) {
+        self.contract = contract;
+    }
+
+    fn protocol_settings(&self) -> &Arc<ProtocolSettings> {
+        &self.protocol_settings
+    }
+
+    fn unlock(&mut self, _password: &str) -> WalletResult<bool> {
+        Ok(true)
+    }
+
+    fn lock(&mut self) {}
+
+    fn verify_password(&self, _password: &str) -> WalletResult<bool> {
+        Ok(true)
+    }
+
+    fn export_wif(&self) -> WalletResult<String> {
+        Err(WalletError::Other(
+            "export_wif is not supported for SQLite wallets".to_string(),
+        ))
+    }
+
+    fn export_nep2(&self, _password: &str) -> WalletResult<String> {
+        Err(WalletError::Other(
+            "export_nep2 is not supported for SQLite wallets".to_string(),
+        ))
+    }
+
+    fn create_witness(
+        &self,
+        _transaction: &Transaction,
+    ) -> WalletResult<neo_core::network::p2p::payloads::witness::Witness> {
+        Err(WalletError::Other(
+            "create_witness is not supported for SQLite wallets".to_string(),
+        ))
+    }
 }
 
 impl SQLiteWallet {
-    /// Create a new SQLite wallet
-    pub fn new(wallet_path: PathBuf, name: String) -> Self {
-        Self {
-            connection: Arc::new(RwLock::new(Connection::open_in_memory().unwrap())),
-            wallet_path,
-            name,
-            version: "1.0.0".to_string(),
-            is_open: false,
-            accounts: Arc::new(RwLock::new(Vec::new())),
+    pub fn create(
+        path: &str,
+        _password: &str,
+        _settings: &ProtocolSettings,
+    ) -> Result<Self, String> {
+        Err(format!(
+            "SQLite wallets cannot be created by neo-rs yet (requested path '{}')",
+            path
+        ))
+    }
+
+    pub fn open(path: &str, password: &str, settings: &ProtocolSettings) -> Result<Self, String> {
+        if !Path::new(path).exists() {
+            return Err(format!("Wallet file '{}' not found", path));
         }
-    }
+        let conn = Connection::open(path).map_err(|err| err.to_string())?;
+        let keys = Self::load_keys(&conn)?;
 
-    /// Open the wallet
-    pub async fn open(&mut self) -> Result<(), String> {
-        if self.is_open {
-            return Ok(());
+        let salt = keys
+            .get("Salt")
+            .ok_or_else(|| "Salt was not found".to_string())?
+            .clone();
+        let password_hash = keys
+            .get("PasswordHash")
+            .ok_or_else(|| "PasswordHash was not found".to_string())?;
+        let iv = keys
+            .get("IV")
+            .ok_or_else(|| "IV was not found".to_string())?;
+        let scrypt_n = Self::read_int(&keys, "ScryptN", 16384)?;
+        let scrypt_r = Self::read_int(&keys, "ScryptR", 8)?;
+        let scrypt_p = Self::read_int(&keys, "ScryptP", 8)?;
+        let log_n = (32 - scrypt_n.leading_zeros() - 1) as u8;
+        let scrypt_params =
+            Params::new(log_n, scrypt_r, scrypt_p, 64).map_err(|err| err.to_string())?;
+
+        let password_key = Self::to_aes_key(password);
+        let expected = Sha256::digest([password_key.as_slice(), salt.as_slice()].concat());
+        if expected.as_slice() != password_hash.as_slice() {
+            return Err("Invalid password".to_string());
         }
 
-        // Open SQLite database
-        let conn = Connection::open(&self.wallet_path)
-            .map_err(|e| format!("Failed to open wallet database: {}", e))?;
+        let master_key_encrypted = keys
+            .get("MasterKey")
+            .ok_or_else(|| "MasterKey was not found".to_string())?;
+        let master_key = Self::decrypt_master_key(master_key_encrypted, &password_key, iv)?;
 
-        // Create tables if they don't exist
-        self.create_tables(&conn).await?;
+        let addresses = Self::load_addresses(&conn)?;
+        let mut accounts = Vec::new();
+        let contract_rows = Self::load_contracts(&conn)?;
 
-        // Load accounts
-        self.load_accounts(&conn).await?;
+        for contract_row in contract_rows {
+            let key_pair = if let Some(nep2) = contract_row.nep2_key {
+                Some(Self::private_key_from_nep2(
+                    &nep2,
+                    &master_key,
+                    settings.address_version,
+                    &scrypt_params,
+                )?)
+            } else {
+                None
+            };
 
-        self.connection = Arc::new(RwLock::new(conn));
-        self.is_open = true;
+            let contract = if !contract_row.raw_data.is_empty() {
+                if let Some(contract) = Self::parse_verification_contract(&contract_row.raw_data) {
+                    Some(contract)
+                } else if let Some(ref key_pair) = key_pair {
+                    let point = key_pair
+                        .get_public_key_point()
+                        .map_err(|err| err.to_string())?;
+                    Some(Contract::create_signature_contract(point))
+                } else {
+                    contract_row
+                        .script_hash
+                        .map(|hash| Contract::create_with_hash(hash, Vec::new()))
+                }
+            } else if let Some(ref key_pair) = key_pair {
+                let point = key_pair
+                    .get_public_key_point()
+                    .map_err(|err| err.to_string())?;
+                Some(Contract::create_signature_contract(point))
+            } else {
+                contract_row
+                    .script_hash
+                    .map(|hash| Contract::create_with_hash(hash, Vec::new()))
+            };
 
-        Ok(())
-    }
+            let script_hash = contract
+                .as_ref()
+                .map(|c| c.script_hash())
+                .unwrap_or_else(|| {
+                    key_pair
+                        .as_ref()
+                        .map(|kp| kp.get_script_hash())
+                        .unwrap_or_else(UInt160::zero)
+                });
 
-    /// Close the wallet
-    pub async fn close(&mut self) -> Result<(), String> {
-        if !self.is_open {
-            return Ok(());
+            accounts.push(Arc::new(SQLiteWalletAccount::new(
+                script_hash,
+                key_pair,
+                contract,
+                Arc::new(settings.clone()),
+            )));
         }
 
-        // Save accounts
-        self.save_accounts().await?;
+        for script_hash in addresses {
+            if accounts.iter().any(|acct| acct.script_hash == script_hash) {
+                continue;
+            }
+            accounts.push(Arc::new(SQLiteWalletAccount::new(
+                script_hash,
+                None,
+                None,
+                Arc::new(settings.clone()),
+            )));
+        }
 
-        self.is_open = false;
-        Ok(())
+        let version = keys
+            .get("Version")
+            .and_then(Self::read_version)
+            .unwrap_or_default();
+
+        Ok(Self {
+            path: path.to_string(),
+            _settings: Arc::new(settings.clone()),
+            version,
+            _master_key: master_key,
+            salt,
+            _scrypt_params: scrypt_params,
+            password_hash: password_hash.clone(),
+            accounts,
+        })
     }
 
-    /// Create database tables
-    async fn create_tables(&self, conn: &Connection) -> Result<(), String> {
-        // Create accounts table
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS accounts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                address TEXT NOT NULL UNIQUE,
-                label TEXT,
-                is_default INTEGER NOT NULL DEFAULT 0,
-                lock BOOLEAN NOT NULL DEFAULT 0,
-                contract TEXT,
-                created_at INTEGER NOT NULL
-            )",
-            [],
-        )
-        .map_err(|e| format!("Failed to create accounts table: {}", e))?;
-
-        // Create keys table
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS keys (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                account_id INTEGER NOT NULL,
-                private_key TEXT NOT NULL,
-                public_key TEXT NOT NULL,
-                created_at INTEGER NOT NULL,
-                FOREIGN KEY (account_id) REFERENCES accounts (id)
-            )",
-            [],
-        )
-        .map_err(|e| format!("Failed to create keys table: {}", e))?;
-
-        // Create contracts table
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS contracts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                account_id INTEGER NOT NULL,
-                script TEXT NOT NULL,
-                parameter_list TEXT NOT NULL,
-                created_at INTEGER NOT NULL,
-                FOREIGN KEY (account_id) REFERENCES accounts (id)
-            )",
-            [],
-        )
-        .map_err(|e| format!("Failed to create contracts table: {}", e))?;
-
-        Ok(())
-    }
-
-    /// Load accounts from database
-    async fn load_accounts(&self, conn: &Connection) -> Result<(), String> {
+    fn load_keys(conn: &Connection) -> Result<HashMap<String, Vec<u8>>, String> {
         let mut stmt = conn
-            .prepare(
-                "SELECT id, address, label, is_default, lock, contract, created_at FROM accounts",
-            )
-            .map_err(|e| format!("Failed to prepare accounts query: {}", e))?;
+            .prepare("SELECT Name, Value FROM Key")
+            .map_err(|err| err.to_string())?;
+        let mut rows = stmt.query([]).map_err(|err| err.to_string())?;
+        let mut map = HashMap::new();
+        while let Some(row) = rows.next().map_err(|err| err.to_string())? {
+            let name: String = row.get(0).map_err(|err| err.to_string())?;
+            let value: Vec<u8> = row.get(1).map_err(|err| err.to_string())?;
+            map.insert(name, value);
+        }
+        Ok(map)
+    }
 
-        let account_iter = stmt
+    fn load_addresses(conn: &Connection) -> Result<Vec<UInt160>, String> {
+        let mut stmt = conn
+            .prepare("SELECT ScriptHash FROM Address")
+            .map_err(|err| err.to_string())?;
+        let rows = stmt
             .query_map([], |row| {
-                Ok(SQLiteWalletAccount {
-                    id: row.get(0)?,
-                    address: Address::from_string(row.get::<_, String>(1)?)?,
-                    label: row.get(2)?,
-                    is_default: row.get::<_, i32>(3)? != 0,
-                    lock: row.get::<_, i32>(4)? != 0,
-                    contract: row.get(5)?,
-                    created_at: row.get(6)?,
+                let bytes: Vec<u8> = row.get(0)?;
+                UInt160::from_bytes(&bytes).map_err(|_| rusqlite::Error::InvalidQuery)
+            })
+            .map_err(|err| err.to_string())?;
+        let mut hashes = Vec::new();
+        for hash in rows {
+            hashes.push(hash.map_err(|err| err.to_string())?);
+        }
+        Ok(hashes)
+    }
+
+    fn load_contracts(conn: &Connection) -> Result<Vec<ContractRow>, String> {
+        let mut stmt = conn.prepare(
+            "SELECT c.ScriptHash, c.RawData, a.Nep2key FROM Contract c LEFT JOIN Account a ON c.PublicKeyHash = a.PublicKeyHash",
+        ).map_err(|err| err.to_string())?;
+        let rows = stmt
+            .query_map([], |row| {
+                let script_hash_bytes: Vec<u8> = row.get(0)?;
+                let script_hash = UInt160::from_bytes(&script_hash_bytes)
+                    .map_err(|_| rusqlite::Error::InvalidQuery)?;
+                let raw_data: Option<Vec<u8>> = row.get(1).ok();
+                let nep2: Option<String> = row.get(2).ok();
+                Ok(ContractRow {
+                    script_hash: Some(script_hash),
+                    raw_data: raw_data.unwrap_or_default(),
+                    nep2_key: nep2,
                 })
             })
-            .map_err(|e| format!("Failed to query accounts: {}", e))?;
-
-        let mut accounts = Vec::new();
-        for account_result in account_iter {
-            let account = account_result.map_err(|e| format!("Failed to parse account: {}", e))?;
-            accounts.push(account);
+            .map_err(|err| err.to_string())?;
+        let mut result = Vec::new();
+        for row in rows {
+            result.push(row.map_err(|err| err.to_string())?);
         }
-
-        let mut accounts_guard = self.accounts.write().await;
-        *accounts_guard = accounts;
-
-        Ok(())
+        Ok(result)
     }
 
-    /// Save accounts to database
-    async fn save_accounts(&self) -> Result<(), String> {
-        let conn = self.connection.read().await;
-        let accounts = self.accounts.read().await;
-
-        for account in accounts.iter() {
-            conn.execute(
-                "INSERT OR REPLACE INTO accounts (id, address, label, is_default, lock, contract, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                params![
-                    account.id,
-                    account.address.to_string(),
-                    account.label,
-                    if account.is_default { 1 } else { 0 },
-                    if account.lock { 1 } else { 0 },
-                    account.contract,
-                    account.created_at
-                ],
-            ).map_err(|e| format!("Failed to save account: {}", e))?;
-        }
-
-        Ok(())
+    fn read_int(keys: &HashMap<String, Vec<u8>>, name: &str, default: u32) -> Result<u32, String> {
+        keys.get(name)
+            .map(|bytes| {
+                if bytes.len() >= 4 {
+                    let mut buf = [0u8; 4];
+                    buf.copy_from_slice(&bytes[..4]);
+                    Ok(u32::from_le_bytes(buf))
+                } else {
+                    Err(format!("{} was not found", name))
+                }
+            })
+            .unwrap_or(Ok(default))
     }
 
-    /// Create a new account
-    pub async fn create_account(
+    fn decrypt_master_key(
+        encrypted: &[u8],
+        password_key: &[u8],
+        iv: &[u8],
+    ) -> Result<Vec<u8>, String> {
+        let cipher =
+            Aes256CbcDec::new_from_slices(password_key, iv).map_err(|err| err.to_string())?;
+        let mut buf = encrypted.to_vec();
+        let decrypted = cipher
+            .decrypt_padded_mut::<NoPadding>(&mut buf)
+            .map_err(|err| err.to_string())?;
+        Ok(decrypted.to_vec())
+    }
+
+    fn read_version(bytes: &Vec<u8>) -> Option<Version> {
+        if bytes.len() < 16 {
+            return None;
+        }
+        let major = i32::from_le_bytes(bytes[0..4].try_into().ok()?).max(0) as u32;
+        let minor = i32::from_le_bytes(bytes[4..8].try_into().ok()?).max(0) as u32;
+        let build = i32::from_le_bytes(bytes[8..12].try_into().ok()?).max(0) as u32;
+        Some(Version::new(major, minor, build))
+    }
+
+    fn to_aes_key(password: &str) -> Vec<u8> {
+        let mut hasher = Sha256::new();
+        hasher.update(password.as_bytes());
+        let first = hasher.finalize_reset();
+        hasher.update(first);
+        hasher.finalize().to_vec()
+    }
+
+    fn private_key_from_nep2(
+        nep2: &str,
+        master_key: &[u8],
+        address_version: u8,
+        params: &Params,
+    ) -> Result<KeyPair, String> {
+        let decoded = bs58::decode(nep2)
+            .into_vec()
+            .map_err(|err| format!("invalid NEP2 key: {}", err))?;
+        if decoded.len() != 43 || decoded[0] != 0x01 || decoded[1] != 0x42 || decoded[2] != 0xe0 {
+            return Err("invalid NEP2 key".to_string());
+        }
+        let (payload, checksum) = decoded.split_at(39);
+        let expected_checksum = NeoHash::hash256(payload);
+        if expected_checksum[..4] != checksum[..4] {
+            return Err("invalid NEP2 checksum".to_string());
+        }
+        let address_hash = &payload[3..7];
+        let encrypted = &payload[7..39];
+
+        let mut derived = vec![0u8; 64];
+        scrypt::scrypt(master_key, address_hash, params, &mut derived)
+            .map_err(|err| err.to_string())?;
+        let (derived_half1, derived_half2) = derived.split_at(32);
+
+        let cipher = Aes256::new_from_slice(derived_half2).map_err(|err| err.to_string())?;
+        let mut block = aes::cipher::generic_array::GenericArray::clone_from_slice(encrypted);
+        cipher.decrypt_block(&mut block);
+        let mut private_key = Vec::with_capacity(32);
+        for (a, b) in block.iter().zip(derived_half1.iter()) {
+            private_key.push(a ^ b);
+        }
+
+        let key_pair = KeyPair::from_private_key(&private_key).map_err(|err| err.to_string())?;
+
+        // Validate address hash
+        let script_hash = key_pair.get_script_hash();
+        let mut data = Vec::with_capacity(1 + script_hash.to_array().len() + 4);
+        data.push(address_version);
+        data.extend_from_slice(&script_hash.to_array());
+        let checksum = NeoHash::hash256(&data);
+        if &checksum[..4] != address_hash {
+            return Err("address check failed for NEP2 key".to_string());
+        }
+        Ok(key_pair)
+    }
+
+    fn parse_verification_contract(raw: &[u8]) -> Option<Contract> {
+        let mut cursor = Cursor::new(raw);
+        let param_bytes = BinaryReader::read_var_bytes(&mut cursor, MAX_SCRIPT_SIZE).ok()?;
+        let mut parameters = Vec::with_capacity(param_bytes.len());
+        for byte in param_bytes {
+            let param = match byte {
+                0x00 => ContractParameterType::Any,
+                0x10 => ContractParameterType::Boolean,
+                0x11 => ContractParameterType::Integer,
+                0x12 => ContractParameterType::ByteArray,
+                0x13 => ContractParameterType::String,
+                0x14 => ContractParameterType::Hash160,
+                0x15 => ContractParameterType::Hash256,
+                0x16 => ContractParameterType::PublicKey,
+                0x17 => ContractParameterType::Signature,
+                0x20 => ContractParameterType::Array,
+                0x22 => ContractParameterType::Map,
+                0x30 => ContractParameterType::InteropInterface,
+                0xff => ContractParameterType::Void,
+                _ => return None,
+            };
+            parameters.push(param);
+        }
+        let script =
+            BinaryReader::read_var_bytes(&mut cursor, MAX_SCRIPT_SIZE * MAX_SCRIPT_SIZE).ok()?;
+        Some(Contract::create(parameters, script))
+    }
+}
+
+struct ContractRow {
+    script_hash: Option<UInt160>,
+    raw_data: Vec<u8>,
+    nep2_key: Option<String>,
+}
+
+#[async_trait]
+impl Wallet for SQLiteWallet {
+    fn name(&self) -> &str {
+        &self.path
+    }
+
+    fn path(&self) -> Option<&str> {
+        Some(&self.path)
+    }
+
+    fn version(&self) -> &Version {
+        &self.version
+    }
+
+    async fn change_password(
         &self,
-        label: Option<String>,
-    ) -> Result<SQLiteWalletAccount, String> {
-        if !self.is_open {
-            return Err("Wallet is not open".to_string());
-        }
-
-        // Generate new key pair
-        let key = Key::generate()?;
-        let address = Address::from_public_key(&key.public_key)?;
-
-        let account = SQLiteWalletAccount {
-            id: 0, // Will be set by database
-            address,
-            label: label.unwrap_or_else(|| "Default".to_string()),
-            is_default: false,
-            lock: false,
-            contract: None,
-            created_at: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
-        };
-
-        // Save to database
-        let conn = self.connection.read().await;
-        conn.execute(
-            "INSERT INTO accounts (address, label, is_default, lock, contract, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![
-                account.address.to_string(),
-                account.label,
-                if account.is_default { 1 } else { 0 },
-                if account.lock { 1 } else { 0 },
-                account.contract,
-                account.created_at
-            ],
-        ).map_err(|e| format!("Failed to create account: {}", e))?;
-
-        // Add to in-memory list
-        let mut accounts = self.accounts.write().await;
-        accounts.push(account.clone());
-
-        Ok(account)
+        _old_password: &str,
+        _new_password: &str,
+    ) -> WalletResult<bool> {
+        Err(WalletError::Other(
+            "SQLite wallets are read-only".to_string(),
+        ))
     }
 
-    /// Get account by address
-    pub async fn get_account(
+    fn contains(&self, script_hash: &UInt160) -> bool {
+        self.accounts
+            .iter()
+            .any(|acct| &acct.script_hash == script_hash)
+    }
+
+    async fn create_account(&self, _private_key: &[u8]) -> WalletResult<Arc<dyn WalletAccount>> {
+        Err(WalletError::Other(
+            "SQLite wallets are read-only".to_string(),
+        ))
+    }
+
+    async fn create_account_with_contract(
         &self,
-        address: &Address,
-    ) -> Result<Option<SQLiteWalletAccount>, String> {
-        let accounts = self.accounts.read().await;
-        Ok(accounts.iter().find(|a| &a.address == address).cloned())
+        _contract: Contract,
+        _key_pair: Option<KeyPair>,
+    ) -> WalletResult<Arc<dyn WalletAccount>> {
+        Err(WalletError::Other(
+            "SQLite wallets are read-only".to_string(),
+        ))
     }
 
-    /// Get all accounts
-    pub async fn get_accounts(&self) -> Result<Vec<SQLiteWalletAccount>, String> {
-        let accounts = self.accounts.read().await;
-        Ok(accounts.clone())
+    async fn create_account_watch_only(
+        &self,
+        _script_hash: UInt160,
+    ) -> WalletResult<Arc<dyn WalletAccount>> {
+        Err(WalletError::Other(
+            "SQLite wallets are read-only".to_string(),
+        ))
     }
 
-    /// Delete an account
-    pub async fn delete_account(&self, address: &Address) -> Result<(), String> {
-        if !self.is_open {
-            return Err("Wallet is not open".to_string());
-        }
+    async fn delete_account(&self, _script_hash: &UInt160) -> WalletResult<bool> {
+        Err(WalletError::Other(
+            "SQLite wallets are read-only".to_string(),
+        ))
+    }
 
-        // Remove from database
-        let conn = self.connection.read().await;
-        conn.execute(
-            "DELETE FROM accounts WHERE address = ?1",
-            params![address.to_string()],
-        )
-        .map_err(|e| format!("Failed to delete account: {}", e))?;
+    async fn export(&self, _path: &str, _password: &str) -> WalletResult<()> {
+        Err(WalletError::Other(
+            "SQLite wallets are read-only".to_string(),
+        ))
+    }
 
-        // Remove from in-memory list
-        let mut accounts = self.accounts.write().await;
-        accounts.retain(|a| &a.address != address);
+    fn get_account(&self, script_hash: &UInt160) -> Option<Arc<dyn WalletAccount>> {
+        self.accounts
+            .iter()
+            .find(|acct| &acct.script_hash == script_hash)
+            .cloned()
+            .map(|acct| acct as Arc<dyn WalletAccount>)
+    }
 
+    fn get_accounts(&self) -> Vec<Arc<dyn WalletAccount>> {
+        self.accounts
+            .iter()
+            .cloned()
+            .map(|acct| acct as Arc<dyn WalletAccount>)
+            .collect()
+    }
+
+    async fn get_available_balance(&self, _asset_id: &UInt256) -> WalletResult<i64> {
+        Err(WalletError::Other(
+            "SQLite wallets are read-only".to_string(),
+        ))
+    }
+
+    async fn get_unclaimed_gas(&self) -> WalletResult<i64> {
+        Err(WalletError::Other(
+            "SQLite wallets are read-only".to_string(),
+        ))
+    }
+
+    async fn import_wif(&self, _wif: &str) -> WalletResult<Arc<dyn WalletAccount>> {
+        Err(WalletError::Other(
+            "SQLite wallets are read-only".to_string(),
+        ))
+    }
+
+    async fn import_nep2(
+        &self,
+        _nep2_key: &str,
+        _password: &str,
+    ) -> WalletResult<Arc<dyn WalletAccount>> {
+        Err(WalletError::Other(
+            "SQLite wallets are read-only".to_string(),
+        ))
+    }
+
+    async fn sign(&self, _data: &[u8], _script_hash: &UInt160) -> WalletResult<Vec<u8>> {
+        Err(WalletError::Other(
+            "SQLite wallets are read-only".to_string(),
+        ))
+    }
+
+    async fn sign_transaction(&self, _transaction: &mut Transaction) -> WalletResult<()> {
+        Err(WalletError::Other(
+            "SQLite wallets are read-only".to_string(),
+        ))
+    }
+
+    async fn unlock(&self, _password: &str) -> WalletResult<bool> {
+        Ok(true)
+    }
+
+    fn lock(&self) {}
+
+    async fn verify_password(&self, password: &str) -> WalletResult<bool> {
+        let derived = Self::to_aes_key(password);
+        let candidate = Sha256::digest([derived.as_slice(), self.salt.as_slice()].concat());
+        Ok(candidate.as_slice() == self.password_hash.as_slice())
+    }
+
+    async fn save(&self) -> WalletResult<()> {
         Ok(())
     }
 
-    /// Set default account
-    pub async fn set_default_account(&self, address: &Address) -> Result<(), String> {
-        if !self.is_open {
-            return Err("Wallet is not open".to_string());
-        }
-
-        // Update database
-        let conn = self.connection.read().await;
-
-        // Clear all default flags
-        conn.execute("UPDATE accounts SET is_default = 0", [])
-            .map_err(|e| format!("Failed to clear default flags: {}", e))?;
-
-        // Set new default
-        conn.execute(
-            "UPDATE accounts SET is_default = 1 WHERE address = ?1",
-            params![address.to_string()],
-        )
-        .map_err(|e| format!("Failed to set default account: {}", e))?;
-
-        // Update in-memory list
-        let mut accounts = self.accounts.write().await;
-        for account in accounts.iter_mut() {
-            account.is_default = &account.address == address;
-        }
-
-        Ok(())
+    fn get_default_account(&self) -> Option<Arc<dyn WalletAccount>> {
+        self.accounts
+            .first()
+            .cloned()
+            .map(|acct| acct as Arc<dyn WalletAccount>)
     }
 
-    /// Get wallet information
-    pub fn get_wallet_info(&self) -> (String, String, bool) {
-        (self.name.clone(), self.version.clone(), self.is_open)
+    async fn set_default_account(&self, _script_hash: &UInt160) -> WalletResult<()> {
+        Err(WalletError::Other(
+            "SQLite wallets are read-only".to_string(),
+        ))
     }
 }

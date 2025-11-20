@@ -1361,9 +1361,10 @@ fn current_unix_timestamp() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::{
-        handler_registry, register_message_received_handler, IMessageReceivedHandler, Message,
+        handler_registry, register_message_received_handler, IMessageReceivedHandler,
         PendingKnownHashes, UInt256,
     };
+    use crate::network::p2p::message::Message;
     use std::{
         sync::{
             atomic::{AtomicUsize, Ordering},

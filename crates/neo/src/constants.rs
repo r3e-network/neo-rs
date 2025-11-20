@@ -104,8 +104,8 @@ pub const TESTNET_RPC_PORT: u16 = 20332;
 pub const TESTNET_P2P_PORT: u16 = 20333;
 
 // MainNet configuration
-/// Magic number for MainNet network identification
-pub const MAINNET_MAGIC: u32 = 0x4e454f4e;
+/// Magic number for MainNet network identification (matches C# config.mainnet.json)
+pub const MAINNET_MAGIC: u32 = 0x334F454E;
 /// Default RPC port for MainNet
 pub const MAINNET_RPC_PORT: u16 = 10332;
 /// Default P2P port for MainNet

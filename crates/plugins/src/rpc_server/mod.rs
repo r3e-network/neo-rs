@@ -5,6 +5,7 @@ pub mod rpc_error;
 pub mod rpc_error_factory;
 pub mod rpc_exception;
 pub mod rpc_method_attribute;
+#[allow(clippy::module_inception)]
 pub mod rpc_server;
 pub mod rpc_server_plugin;
 pub mod session;

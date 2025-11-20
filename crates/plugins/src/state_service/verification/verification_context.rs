@@ -250,7 +250,7 @@ impl VerificationContext {
                 // Create multi-sig contract
                 let contract = Contract::create_multi_sig_contract(m, &self.verifiers);
                 let mut sc = ContractParametersContext::new(
-                    StatePlugin::neo_system().store_view(),
+                    std::sync::Arc::new(StatePlugin::neo_system().store_view()),
                     state_root,
                     StatePlugin::neo_system().settings().network(),
                 );
@@ -309,7 +309,7 @@ impl VerificationContext {
         
         // Sign the message
         let mut sc = ContractParametersContext::new(
-            StatePlugin::neo_system().store_view(),
+            std::sync::Arc::new(StatePlugin::neo_system().store_view()),
             &msg,
             StatePlugin::neo_system().settings().network(),
         );

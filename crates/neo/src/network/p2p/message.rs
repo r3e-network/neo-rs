@@ -278,7 +278,7 @@ mod tests {
         assert_eq!(uncompressed[0], MessageFlags::NONE.to_byte());
 
         let mut reader = MemoryReader::new(&compressed);
-        let decoded = Message::deserialize(&mut reader).unwrap();
+        let decoded = <Message as Serializable>::deserialize(&mut reader).unwrap();
         assert_eq!(decoded.payload(), data.as_slice());
     }
 }

@@ -156,7 +156,7 @@ impl ConsensusContext {
 
         let timestamp = std::cmp::max(
             TimeProvider::current().utc_now().timestamp_millis() as u64,
-            self.prev_header().map(|h| h.timestamp() + 1).unwrap_or(0),
+            self.prev_header().map(|h| h.timestamp + 1).unwrap_or(0),
         );
         self.block.header.set_timestamp(timestamp);
         let nonce = self.get_nonce();
@@ -383,10 +383,16 @@ impl ConsensusContext {
     }
 
     fn collect_transactions(&self, limit: usize) -> Vec<Transaction> {
-        // Fetch sorted verified transactions from the mempool if available.
-        // Falls back to an empty set (empty block proposal) if not accessible.
-        // TODO: Integrate with the Rust mempool once transaction ordering is exposed.
-        let _ = limit;
-        Vec::new()
+        if limit == 0 {
+            return Vec::new();
+        }
+
+        match self.neo_system.mempool().lock() {
+            Ok(pool) => pool.get_sorted_verified_transactions(limit),
+            Err(err) => {
+                debug!("ConsensusContext: failed to acquire mempool lock: {}", err);
+                Vec::new()
+            }
+        }
     }
 }

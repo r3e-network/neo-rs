@@ -11,6 +11,7 @@
 
 use crate::dbft_plugin::consensus::consensus_service::{ConsensusService, TimerContextState};
 use crate::dbft_plugin::types::change_view_reason::ChangeViewReason;
+use neo_core::ledger::blockchain::BlockchainCommand;
 
 impl ConsensusService {
     /// Checks prepare response
@@ -72,6 +73,14 @@ impl ConsensusService {
     /// Checks commits
     /// Matches C# CheckCommits method
     pub async fn check_commits(&mut self) {
+        {
+            if let Ok(context) = self.context.try_read() {
+                if context.block_sent() {
+                    return;
+                }
+            }
+        }
+
         let ready = {
             let mut context = self.context.write().await;
 
@@ -113,6 +122,23 @@ impl ConsensusService {
                 "Ready to send Block: height={height} tx={tx_count}"
             ));
             self.known_hashes.clear();
+
+            // Build and publish the finalized block to the blockchain actor.
+            if let Ok(mut context) = self.context.try_write() {
+                if let Some(mut block) = context.create_block() {
+                    let hash = block.hash();
+                    self.log(&format!(
+                        "Sending Block: height={} hash={hash} tx={}",
+                        block.index(),
+                        block.transactions.len()
+                    ));
+                    let _ = self.neo_system.blockchain_actor().tell(BlockchainCommand::InventoryBlock {
+                        block,
+                        relay: true,
+                    });
+                    context.set_block_sent();
+                }
+            }
         }
     }
 

@@ -56,13 +56,15 @@ use crate::smart_contract::notify_event_args::NotifyEventArgs;
 use crate::smart_contract::trigger_type::TriggerType;
 use crate::uint160::UInt160;
 use crate::uint256::UInt256;
-use crate::wallets::IWalletProvider;
+use crate::wallets::{IWalletProvider, Wallet};
 use neo_extensions::error::ExtensionError;
 use neo_extensions::plugin::{
     broadcast_global_event, initialise_global_runtime, shutdown_global_runtime, PluginContext,
     PluginEvent,
 };
 use neo_extensions::utility::Utility;
+#[cfg(test)]
+use neo_extensions::LogLevel as ExternalLogLevel;
 use neo_io_crate::{InventoryHash, RelayCache};
 use neo_vm::{vm_state::VMState, OpCode};
 use std::thread;
@@ -247,6 +249,7 @@ pub struct NeoSystemContext {
     /// Plugin manager shared state for hot-pluggable extensions.
     pub plugin_manager: Arc<RwLock<PluginManager>>,
     pub wallet_changed_handlers: Arc<RwLock<Vec<Arc<dyn IWalletChangedHandler + Send + Sync>>>>,
+    pub current_wallet: Arc<RwLock<Option<Arc<dyn Wallet>>>>,
     /// Store provider used to instantiate persistence backends.
     pub store_provider: Arc<dyn IStoreProvider>,
     /// Active persistence store.
@@ -438,10 +441,17 @@ impl NeoSystemContext {
         &self,
         handler: Arc<dyn IWalletChangedHandler + Send + Sync>,
     ) -> CoreResult<()> {
+        let handler_clone = handler.clone();
         self.wallet_changed_handlers
             .write()
             .map_err(|_| CoreError::system("wallet changed handler registry poisoned"))?
             .push(handler);
+        let current = self
+            .current_wallet
+            .read()
+            .map_err(|_| CoreError::system("current wallet lock poisoned"))?
+            .clone();
+        handler_clone.i_wallet_provider_wallet_changed_handler(self, current);
         Ok(())
     }
 
@@ -469,15 +479,20 @@ impl NeoSystemContext {
         }
     }
 
-    pub fn notify_wallet_changed(&self, sender: &dyn Any, wallet: &dyn crate::wallets::Wallet) {
+    pub fn notify_wallet_changed(&self, sender: &dyn Any, wallet: Option<Arc<dyn Wallet>>) {
+        if let Ok(mut current) = self.current_wallet.write() {
+            *current = wallet.clone();
+        }
         if let Ok(handlers) = self.wallet_changed_handlers.read() {
             for handler in handlers.iter() {
-                handler.i_wallet_provider_wallet_changed_handler(sender, wallet);
+                handler.i_wallet_provider_wallet_changed_handler(sender, wallet.clone());
             }
         }
-        self.broadcast_plugin_event(PluginEvent::WalletChanged {
-            wallet_name: wallet.name().to_string(),
-        });
+        let wallet_name = wallet
+            .as_ref()
+            .map(|w| w.name().to_string())
+            .unwrap_or_default();
+        self.broadcast_plugin_event(PluginEvent::WalletChanged { wallet_name });
     }
 
     pub fn attach_wallet_provider(
@@ -485,7 +500,7 @@ impl NeoSystemContext {
         provider: Arc<dyn IWalletProvider + Send + Sync>,
     ) -> CoreResult<()> {
         let receiver = provider.wallet_changed();
-        let provider = Arc::clone(&provider);
+        let provider_thread = Arc::clone(&provider);
         let weak_context = Arc::downgrade(context);
 
         thread::Builder::new()
@@ -493,8 +508,8 @@ impl NeoSystemContext {
             .spawn(move || {
                 for wallet in receiver {
                     if let Some(ctx) = weak_context.upgrade() {
-                        let sender = provider.as_any();
-                        ctx.notify_wallet_changed(sender, wallet.as_ref());
+                        let sender = provider_thread.as_any();
+                        ctx.notify_wallet_changed(sender, wallet.clone());
                     } else {
                         break;
                     }
@@ -503,7 +518,7 @@ impl NeoSystemContext {
             .map_err(|err| {
                 CoreError::system(format!("failed to spawn wallet provider listener: {err}"))
             })?;
-
+        context.notify_wallet_changed(provider.as_any(), provider.get_wallet());
         Ok(())
     }
 
@@ -1082,6 +1097,7 @@ impl NeoSystem {
             service_added_handlers: service_added_handlers.clone(),
             plugin_manager: plugin_manager.clone(),
             wallet_changed_handlers: wallet_changed_handlers.clone(),
+            current_wallet: Arc::new(RwLock::new(None)),
             store_provider: store_provider.clone(),
             store: store.clone(),
             genesis_block: genesis_block.clone(),
@@ -1293,6 +1309,13 @@ impl NeoSystem {
             .map_err(to_core_error)
     }
 
+    /// Adds endpoints to the unconnected peer queue (parity with C# `LocalNode.AddPeers`).
+    pub fn add_unconnected_peers(&self, endpoints: Vec<SocketAddr>) -> CoreResult<()> {
+        self.local_node
+            .tell(LocalNodeCommand::AddUnconnectedPeers { endpoints })
+            .map_err(to_core_error)
+    }
+
     /// Updates the last reported block height for the specified peer.
     pub fn update_peer_height(
         &self,
@@ -1336,6 +1359,18 @@ impl NeoSystem {
             .await
     }
 
+    /// Returns the number of queued unconnected peers.
+    pub async fn unconnected_count(&self) -> CoreResult<usize> {
+        self.ask_local_node(|reply| LocalNodeCommand::UnconnectedCount { reply })
+            .await
+    }
+
+    /// Returns the queued unconnected peers.
+    pub async fn unconnected_peers(&self) -> CoreResult<Vec<SocketAddr>> {
+        self.ask_local_node(|reply| LocalNodeCommand::GetUnconnectedPeers { reply })
+            .await
+    }
+
     /// Returns the socket addresses for each connected peer.
     pub async fn peers(&self) -> CoreResult<Vec<SocketAddr>> {
         self.ask_local_node(|reply| LocalNodeCommand::GetPeers { reply })
@@ -1346,6 +1381,16 @@ impl NeoSystem {
     pub async fn remote_node_snapshots(&self) -> CoreResult<Vec<RemoteNodeSnapshot>> {
         self.ask_local_node(|reply| LocalNodeCommand::GetRemoteNodes { reply })
             .await
+    }
+
+    /// Returns the maximum reported block height among connected peers.
+    pub async fn max_peer_block_height(&self) -> CoreResult<u32> {
+        let snapshots = self.remote_node_snapshots().await?;
+        Ok(snapshots
+            .into_iter()
+            .map(|snap| snap.last_block_index)
+            .max()
+            .unwrap_or(0))
     }
 
     /// Fetches the shared local node snapshot for advanced operations.
@@ -1862,8 +1907,9 @@ mod tests {
         fn i_wallet_provider_wallet_changed_handler(
             &self,
             _sender: &dyn Any,
-            _wallet: &dyn Wallet,
+            _wallet: Option<Arc<dyn Wallet>>,
         ) {
+            let _ = _wallet;
             self.wallet_changes.fetch_add(1, Ordering::Relaxed);
         }
     }
@@ -1888,7 +1934,7 @@ mod tests {
         }
 
         async fn change_password(
-            &mut self,
+            &self,
             _old_password: &str,
             _new_password: &str,
         ) -> WalletResult<bool> {
@@ -1900,14 +1946,14 @@ mod tests {
         }
 
         async fn create_account(
-            &mut self,
+            &self,
             _private_key: &[u8],
         ) -> WalletResult<Arc<dyn WalletAccount>> {
             Err(WalletError::Other("not implemented".to_string()))
         }
 
         async fn create_account_with_contract(
-            &mut self,
+            &self,
             _contract: Contract,
             _key_pair: Option<KeyPair>,
         ) -> WalletResult<Arc<dyn WalletAccount>> {
@@ -1915,13 +1961,13 @@ mod tests {
         }
 
         async fn create_account_watch_only(
-            &mut self,
+            &self,
             _script_hash: UInt160,
         ) -> WalletResult<Arc<dyn WalletAccount>> {
             Err(WalletError::Other("not implemented".to_string()))
         }
 
-        async fn delete_account(&mut self, _script_hash: &UInt160) -> WalletResult<bool> {
+        async fn delete_account(&self, _script_hash: &UInt160) -> WalletResult<bool> {
             Ok(false)
         }
 
@@ -1945,12 +1991,12 @@ mod tests {
             Ok(0)
         }
 
-        async fn import_wif(&mut self, _wif: &str) -> WalletResult<Arc<dyn WalletAccount>> {
+        async fn import_wif(&self, _wif: &str) -> WalletResult<Arc<dyn WalletAccount>> {
             Err(WalletError::Other("not implemented".to_string()))
         }
 
         async fn import_nep2(
-            &mut self,
+            &self,
             _nep2_key: &str,
             _password: &str,
         ) -> WalletResult<Arc<dyn WalletAccount>> {
@@ -1961,7 +2007,7 @@ mod tests {
             None
         }
 
-        async fn set_default_account(&mut self, _script_hash: &UInt160) -> WalletResult<()> {
+        async fn set_default_account(&self, _script_hash: &UInt160) -> WalletResult<()> {
             Ok(())
         }
 
@@ -1973,11 +2019,11 @@ mod tests {
             Ok(())
         }
 
-        async fn unlock(&mut self, _password: &str) -> WalletResult<bool> {
+        async fn unlock(&self, _password: &str) -> WalletResult<bool> {
             Ok(true)
         }
 
-        fn lock(&mut self) {}
+        fn lock(&self) {}
 
         async fn verify_password(&self, _password: &str) -> WalletResult<bool> {
             Ok(true)
@@ -1989,11 +2035,11 @@ mod tests {
     }
 
     struct TestWalletProvider {
-        receiver: Mutex<Option<mpsc::Receiver<Arc<dyn Wallet>>>>,
+        receiver: Mutex<Option<mpsc::Receiver<Option<Arc<dyn Wallet>>>>>,
     }
 
     impl TestWalletProvider {
-        fn new() -> (Arc<Self>, mpsc::Sender<Arc<dyn Wallet>>) {
+        fn new() -> (Arc<Self>, mpsc::Sender<Option<Arc<dyn Wallet>>>) {
             let (tx, rx) = mpsc::channel();
             let provider = Arc::new(Self {
                 receiver: Mutex::new(Some(rx)),
@@ -2007,7 +2053,7 @@ mod tests {
             self
         }
 
-        fn wallet_changed(&self) -> mpsc::Receiver<Arc<dyn Wallet>> {
+        fn wallet_changed(&self) -> mpsc::Receiver<Option<Arc<dyn Wallet>>> {
             self.receiver
                 .lock()
                 .unwrap()
@@ -2018,6 +2064,56 @@ mod tests {
         fn get_wallet(&self) -> Option<Arc<dyn Wallet>> {
             None
         }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn local_node_defaults_match_csharp() {
+        let system =
+            NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+
+        system
+            .start_node(ChannelsConfig::default())
+            .expect("start local node");
+        sleep(Duration::from_millis(50)).await;
+
+        let snapshot = system
+            .local_node_state()
+            .await
+            .expect("local node snapshot");
+        assert_eq!(snapshot.port(), 0);
+        assert_eq!(snapshot.connected_peers_count(), 0);
+        assert!(snapshot.remote_nodes().is_empty());
+        assert!(system.peers().await.expect("peer query").is_empty());
+        assert_eq!(system.unconnected_count().await.expect("unconnected"), 0);
+
+        let _ = system.shutdown().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn add_unconnected_peers_tracks_queue() {
+        let system =
+            NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+
+        let endpoints: Vec<SocketAddr> = vec![
+            "127.0.0.1:20000".parse().unwrap(),
+            "127.0.0.1:20001".parse().unwrap(),
+        ];
+
+        system
+            .add_unconnected_peers(endpoints.clone())
+            .expect("enqueue peers");
+
+        let count = system.unconnected_count().await.expect("unconnected count");
+        assert_eq!(count, endpoints.len());
+
+        let mut returned = system.unconnected_peers().await.expect("unconnected peers");
+        returned.sort();
+
+        let mut expected = endpoints;
+        expected.sort();
+        assert_eq!(returned, expected);
+
+        let _ = system.shutdown().await;
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -2034,14 +2130,14 @@ mod tests {
             .expect("register removed");
 
         let tx = Transaction::default();
-        let pool = system.memory_pool();
+        let pool = system.mempool();
         let args = TransactionRemovedEventArgs {
             transactions: vec![tx.clone()],
-            reason: TransactionRemovalReason::Evicted,
+            reason: TransactionRemovalReason::CapacityExceeded,
         };
 
         {
-            let mut guard = pool.lock().expect("lock mempool");
+            let guard = pool.lock().expect("lock mempool");
             if let Some(callback) = &guard.transaction_added {
                 callback(&guard, &tx);
             }
@@ -2087,7 +2183,7 @@ mod tests {
         engine.push_log(log_event);
         assert_eq!(handler.logs(), 1);
 
-        Utility::log("test", LogLevel::Info, "message");
+        Utility::log("test", ExternalLogLevel::Info, "message");
         assert_eq!(handler.logging(), 1);
 
         let notify = NotifyEventArgs::new(
@@ -2114,7 +2210,7 @@ mod tests {
             .attach_wallet_provider(provider)
             .expect("attach wallet provider");
 
-        tx.send(Arc::new(DummyWallet::default()) as Arc<dyn Wallet>)
+        tx.send(Some(Arc::new(DummyWallet::default()) as Arc<dyn Wallet>))
             .expect("send wallet");
 
         timeout(Duration::from_secs(1), async {

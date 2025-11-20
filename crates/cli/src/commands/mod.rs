@@ -1,13 +1,6 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 
 pub type CommandResult = Result<()>;
-
-fn not_implemented(command: &str) -> CommandResult {
-    Err(anyhow!(
-        "{}: command not implemented yet. See PORTING_PLAN.md for the migration roadmap.",
-        command
-    ))
-}
 
 pub mod block;
 pub mod blockchain;

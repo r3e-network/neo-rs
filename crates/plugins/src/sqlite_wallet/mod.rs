@@ -1,18 +1,14 @@
-//! SQLite wallet module
+//! SQLite wallet plugin (stub)
 //!
-//! This module wires together the SQLite wallet components ported from the
-//! C# implementation. The detailed implementations live in the sibling files.
+//! The C# node supports SQLite-based wallets (`.db3`). The full implementation
+//! has not been ported yet, but we expose a stubbed wallet and plugin so builds
+//! that enable the `sqlite-wallet` feature continue to compile cleanly and fail
+//! with clear messaging.
 
-pub mod account;
-pub mod address;
-pub mod contract;
-pub mod key;
+pub mod plugin;
 pub mod sq_lite_wallet;
-pub mod sq_lite_wallet_account;
 pub mod sq_lite_wallet_factory;
-pub mod verification_contract;
-pub mod wallet_data_context;
 
+pub use plugin::SqliteWalletPlugin;
 pub use sq_lite_wallet::SQLiteWallet;
-pub use sq_lite_wallet_account::SQLiteWalletAccount;
 pub use sq_lite_wallet_factory::SQLiteWalletFactory;

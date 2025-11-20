@@ -1,9 +1,10 @@
+use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use neo_core::NeoSystem;
+use neo_core::{i_event_handlers::IWalletChangedHandler, wallets::Wallet, NeoSystem};
 use neo_extensions::error::{ExtensionError, ExtensionResult};
 use neo_extensions::plugin::{
     Plugin, PluginBase, PluginCategory, PluginContext, PluginEvent, PluginInfo,
@@ -17,10 +18,15 @@ use super::rpc_server::{
     add_pending_handler, get_server, register_server, remove_server, take_pending_handlers,
     RpcHandler, RpcServer, SERVERS,
 };
+use super::rpc_server_blockchain::RpcServerBlockchain;
+use super::rpc_server_node::RpcServerNode;
+use super::rpc_server_smart_contract::RpcServerSmartContract;
+use super::rpc_server_wallet::RpcServerWallet;
 
 pub struct RpcServerPlugin {
     base: PluginBase,
     settings: RpcServerSettings,
+    wallet_handlers: HashSet<u32>,
 }
 
 impl RpcServerPlugin {
@@ -39,6 +45,7 @@ impl RpcServerPlugin {
         Self {
             base: PluginBase::new(info),
             settings: RpcServerSettings::default(),
+            wallet_handlers: HashSet::new(),
         }
     }
 
@@ -68,20 +75,29 @@ impl RpcServerPlugin {
             if let Some(mut server) = server_arc.try_write() {
                 server.update_settings(config);
                 if !server.is_started() {
-                    server.start_rpc_server();
+                    server.start_rpc_server(Arc::downgrade(&server_arc));
                 }
             }
             return;
         }
 
         let mut server = RpcServer::new(system, config.clone());
+        server.register_handlers(RpcServerBlockchain::register_handlers());
+        server.register_handlers(RpcServerNode::register_handlers());
+        server.register_handlers(RpcServerSmartContract::register_handlers());
+        server.register_handlers(RpcServerWallet::register_handlers());
         let pending = take_pending_handlers(network);
         if !pending.is_empty() {
             server.register_handlers(pending);
         }
-        server.start_rpc_server();
-
-        register_server(network, Arc::new(RwLock::new(server)));
+        let server_arc = Arc::new(RwLock::new(server));
+        {
+            let weak = Arc::downgrade(&server_arc);
+            if let Some(mut guard) = server_arc.try_write() {
+                guard.start_rpc_server(weak);
+            }
+        }
+        register_server(network, Arc::clone(&server_arc));
     }
 
     fn stop_server_for_network(&self, network: u32) {
@@ -96,7 +112,7 @@ impl RpcServerPlugin {
     pub fn register_methods(handler: RpcHandler, network: u32) {
         if let Some(server_arc) = get_server(network) {
             if let Some(mut server) = server_arc.try_write() {
-                server.register_methods(handler);
+                server.register_method(handler);
                 return;
             }
         }
@@ -151,16 +167,53 @@ impl Plugin for RpcServerPlugin {
                     }
                 };
                 self.ensure_server_for_network(system.clone(), config);
+                if !self.wallet_handlers.contains(&network) {
+                    let handler = Arc::new(RpcServerWalletHandler { network });
+                    match system.register_wallet_changed_handler(handler) {
+                        Ok(()) => {
+                            self.wallet_handlers.insert(network);
+                        }
+                        Err(err) => warn!(
+                            "RpcServer: failed to register wallet handler for network {}: {}",
+                            network, err
+                        ),
+                    }
+                }
                 Ok(())
             }
             PluginEvent::NodeStopping => {
                 let networks: Vec<u32> = SERVERS.read().keys().copied().collect();
                 for network in networks {
                     self.stop_server_for_network(network);
+                    self.wallet_handlers.remove(&network);
                 }
                 Ok(())
             }
             _ => Ok(()),
+        }
+    }
+}
+
+impl Default for RpcServerPlugin {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+struct RpcServerWalletHandler {
+    network: u32,
+}
+
+impl IWalletChangedHandler for RpcServerWalletHandler {
+    fn i_wallet_provider_wallet_changed_handler(
+        &self,
+        _sender: &dyn std::any::Any,
+        wallet: Option<Arc<dyn Wallet>>,
+    ) {
+        if let Some(server_arc) = get_server(self.network) {
+            if let Some(server) = server_arc.try_write() {
+                server.set_wallet(wallet);
+            }
         }
     }
 }
