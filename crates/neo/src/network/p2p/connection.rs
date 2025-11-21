@@ -219,6 +219,17 @@ impl PeerConnection {
 
         self.update_activity();
 
+        tracing::debug!(
+            "Received message from {}: {} bytes, command: {:?}",
+            self.address,
+            message_bytes.len(),
+            message.command()
+        );
+        tracing::debug!(
+            "First bytes: {:02x?}",
+            &message_bytes[..24.min(message_bytes.len())]
+        );
+
         Ok(message)
     }
 

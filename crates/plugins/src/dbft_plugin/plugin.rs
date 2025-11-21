@@ -11,8 +11,8 @@
 
 use crate::dbft_plugin::consensus::consensus_service::ConsensusService;
 use crate::dbft_plugin::dbft_settings::DbftSettings;
-use async_trait::async_trait;
 use akka::{Actor, ActorContext, ActorRef, ActorResult, Cancelable, Props};
+use async_trait::async_trait;
 use neo_core::i_event_handlers::ITransactionAddedHandler;
 use neo_core::ledger::{PersistCompleted, RelayResult, VerifyResult};
 use neo_core::network::p2p::payloads::inventory_type::InventoryType;
@@ -388,11 +388,7 @@ struct ConsensusTxHandler {
 }
 
 impl ITransactionAddedHandler for ConsensusTxHandler {
-    fn memory_pool_transaction_added_handler(
-        &self,
-        _sender: &dyn std::any::Any,
-        tx: &Transaction,
-    ) {
+    fn memory_pool_transaction_added_handler(&self, _sender: &dyn std::any::Any, tx: &Transaction) {
         if !self.active.load(Ordering::Relaxed) {
             return;
         }

@@ -460,6 +460,7 @@ impl Blockchain {
                         target: "neo",
                         index = block_index,
                         %hash,
+                        prev = %block.prev_hash(),
                         "block verification failed against header cache"
                     );
                     return VerifyResult::Invalid;

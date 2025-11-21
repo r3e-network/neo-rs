@@ -22,6 +22,8 @@ pub struct ChannelsConfig {
     pub max_connections_per_address: usize,
     /// Number of inventory hashes we keep track of to avoid duplicates.
     pub max_known_hashes: usize,
+    /// Maximum number of recent broadcasts to retain for diagnostics (0 disables retention).
+    pub broadcast_history_limit: usize,
 }
 
 impl ChannelsConfig {
@@ -35,6 +37,8 @@ impl ChannelsConfig {
     pub const DEFAULT_MAX_CONNECTIONS_PER_ADDRESS: usize = 3;
     /// Default size of the known-hash cache.
     pub const DEFAULT_MAX_KNOWN_HASHES: usize = 1000;
+    /// Default number of broadcast history entries to retain.
+    pub const DEFAULT_BROADCAST_HISTORY_LIMIT: usize = 1024;
 
     /// Creates a new configuration with optional overrides.
     pub fn new(tcp: Option<SocketAddr>) -> Self {
@@ -54,6 +58,7 @@ impl Default for ChannelsConfig {
             max_connections: Self::DEFAULT_MAX_CONNECTIONS,
             max_connections_per_address: Self::DEFAULT_MAX_CONNECTIONS_PER_ADDRESS,
             max_known_hashes: Self::DEFAULT_MAX_KNOWN_HASHES,
+            broadcast_history_limit: Self::DEFAULT_BROADCAST_HISTORY_LIMIT,
         }
     }
 }

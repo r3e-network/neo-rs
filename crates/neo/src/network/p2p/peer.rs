@@ -198,7 +198,7 @@ impl PeerState {
         snapshot: &RemoteNodeSnapshot,
         is_trusted: bool,
         ctx: &mut ActorContext,
-    ) {
+    ) -> bool {
         let remote_endpoint = normalize_endpoint(snapshot.remote_address);
         self.connecting_peers.remove(&remote_endpoint);
 
@@ -207,7 +207,7 @@ impl PeerState {
                 target: "neo", endpoint = %remote_endpoint,
                 "connection limit reached while registering peer"
             );
-            return;
+            return false;
         }
 
         if let Some(existing) = self
@@ -228,7 +228,7 @@ impl PeerState {
                 existing = %existing.actor,
                 "duplicate peer connection ignored"
             );
-            return;
+            return false;
         }
 
         let count = self
@@ -263,6 +263,7 @@ impl PeerState {
         if let Err(error) = ctx.watch(&actor) {
             warn!(target: "neo", error = %error, "failed to watch remote node actor");
         }
+        true
     }
 
     /// Removes bookkeeping for the specified actor and returns the associated

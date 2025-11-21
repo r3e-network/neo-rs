@@ -661,7 +661,8 @@ fn test_serialization_round_trip_uint256() {
 /// Test serialization round-trip with Transaction (basic test)
 #[test]
 fn test_serialization_round_trip_transaction() {
-    let original = Transaction::new();
+    let mut original = Transaction::new();
+    original.set_nonce(0);
 
     // Test that we can get the size
     let size = original.size();

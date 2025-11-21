@@ -34,7 +34,10 @@ impl Plugin for TokensTrackerPlugin {
         self.base.info()
     }
 
-    async fn initialize(&mut self, _context: &PluginContext) -> neo_extensions::error::ExtensionResult<()> {
+    async fn initialize(
+        &mut self,
+        _context: &PluginContext,
+    ) -> neo_extensions::error::ExtensionResult<()> {
         Ok(())
     }
 
@@ -46,7 +49,10 @@ impl Plugin for TokensTrackerPlugin {
         Ok(())
     }
 
-    async fn handle_event(&mut self, _event: &PluginEvent) -> neo_extensions::error::ExtensionResult<()> {
+    async fn handle_event(
+        &mut self,
+        _event: &PluginEvent,
+    ) -> neo_extensions::error::ExtensionResult<()> {
         Ok(())
     }
 }

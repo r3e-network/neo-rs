@@ -406,10 +406,13 @@ impl ConsensusService {
             .map(|guard| guard.block().index())
             .unwrap_or(0);
 
-        let result = self.neo_system.local_node_actor().tell(LocalNodeCommand::SendDirectly {
-            inventory: RelayInventory::Extensible(payload),
-            block_index: Some(block_index),
-        });
+        let result = self
+            .neo_system
+            .local_node_actor()
+            .tell(LocalNodeCommand::SendDirectly {
+                inventory: RelayInventory::Extensible(payload),
+                block_index: Some(block_index),
+            });
 
         if let Err(err) = result {
             self.log(&format!(
@@ -432,10 +435,10 @@ impl ConsensusService {
 
         let payload = InvPayload::create(InventoryType::Transaction, hashes);
         let sender = self.neo_system.local_node_actor();
-        let _ = self.neo_system.task_manager_actor().tell_from(
-            TaskManagerCommand::RestartTasks { payload },
-            Some(sender),
-        );
+        let _ = self
+            .neo_system
+            .task_manager_actor()
+            .tell_from(TaskManagerCommand::RestartTasks { payload }, Some(sender));
     }
 
     pub(crate) fn change_timer(&mut self, delay: Duration) {

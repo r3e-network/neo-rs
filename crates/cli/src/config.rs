@@ -59,6 +59,8 @@ pub struct P2PSection {
     pub max_connections_per_address: Option<usize>,
     #[serde(alias = "MaxKnownHashes")]
     pub max_known_hashes: Option<usize>,
+    #[serde(alias = "BroadcastHistoryLimit")]
+    pub broadcast_history_limit: Option<usize>,
     #[serde(alias = "EnableCompression")]
     pub enable_compression: Option<bool>,
     #[serde(alias = "SeedList")]
@@ -73,6 +75,7 @@ impl Default for P2PSection {
             max_connections: None,
             max_connections_per_address: None,
             max_known_hashes: None,
+            broadcast_history_limit: None,
             enable_compression: None,
             seed_nodes: Vec::new(),
         }
@@ -238,7 +241,20 @@ impl NodeConfig {
 
     /// Converts the parsed config into `ProtocolSettings`, overriding the defaults.
     pub fn protocol_settings(&self) -> ProtocolSettings {
-        let mut settings = ProtocolSettings::default();
+        let base_settings = match self
+            .network
+            .network_type
+            .as_deref()
+            .map(|value| value.to_ascii_lowercase())
+        {
+            Some(ref ty) if ty == "testnet" || ty == "test" => ProtocolSettings::testnet(),
+            Some(ref ty) if ty == "privatenet" || ty == "private" => {
+                ProtocolSettings::default_settings()
+            }
+            _ => ProtocolSettings::mainnet(),
+        };
+
+        let mut settings = base_settings;
 
         if let Some(magic) = self.network.network_magic.or_else(|| {
             self.network
@@ -286,6 +302,9 @@ impl NodeConfig {
         }
         if let Some(max_hashes) = self.p2p.max_known_hashes {
             config.max_known_hashes = max_hashes;
+        }
+        if let Some(limit) = self.p2p.broadcast_history_limit {
+            config.broadcast_history_limit = limit;
         }
 
         config

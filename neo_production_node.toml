@@ -20,6 +20,8 @@ max_connections = 40
 max_connections_per_address = 3
 # Maximum known hashes tracked (C# default)
 max_known_hashes = 1000
+# Broadcast history entries to retain (0 disables capture)
+broadcast_history_limit = 1024
 
 # TestNet seed nodes (official Neo infrastructure)
 seed_nodes = [
@@ -92,15 +94,15 @@ view_change_timeout = 20000
 
 [logging]
 # Enable CLI logging output (matches C# Logger.Active)
-active = false
+active = true
 # Print logs to the console (matches C# Logger.ConsoleOutput)
-console_output = false
+console_output = true
 # Log level: error, warn, info, debug, trace
-level = "info"
+level = "debug"
 # Log format: json, pretty
 format = "pretty"
 # Directory for log files (matches C# Logger.Path semantics)
-path = "Logs"
+path = "/tmp/neo-cli.log"
 
 [contracts]
 # Neo Name Service contract hash (matches C# config.json)
@@ -119,21 +121,3 @@ is_active = false
 path = ""
 # Password used to decrypt the wallet
 password = ""
-
-[monitoring]
-# Health check interval in seconds
-health_check_interval = 30
-# Metrics collection enabled
-metrics_enabled = true
-# Prometheus metrics port
-metrics_port = 9090
-
-[security]
-# Rate limiting enabled
-rate_limiting_enabled = true
-# Maximum requests per second per peer
-max_requests_per_second = 100
-# DDoS protection enabled
-ddos_protection_enabled = true
-# Maximum message size in bytes
-max_message_size = 16777216  # 16MB

@@ -5,6 +5,7 @@ use crate::error::{CoreError as Error, Result};
 use crate::hardfork::Hardfork;
 use crate::ledger::Block;
 use crate::neo_config::HASH_SIZE;
+use crate::neo_system::NeoSystemContext;
 use crate::network::p2p::payloads::Transaction;
 use crate::persistence::data_cache::DataCache;
 use crate::persistence::i_read_only_store::IReadOnlyStoreGeneric;
@@ -143,6 +144,7 @@ pub struct ApplicationEngine {
     diagnostic: Option<Box<dyn IDiagnostic>>,
     fault_exception: Option<String>,
     states: HashMap<TypeId, Box<dyn Any + Send + Sync>>,
+    runtime_context: Option<Arc<NeoSystemContext>>,
 }
 
 impl ApplicationEngine {
@@ -192,6 +194,7 @@ impl ApplicationEngine {
             diagnostic,
             fault_exception: None,
             states: HashMap::new(),
+            runtime_context: NativeHelpers::context(),
         };
 
         app.attach_host();
@@ -411,6 +414,13 @@ impl ApplicationEngine {
         self.vm_engine.engine().result_stack()
     }
 
+    pub(crate) fn current_evaluation_stack(&self) -> Option<&EvaluationStack> {
+        self.vm_engine
+            .engine()
+            .current_context()
+            .map(|ctx| ctx.evaluation_stack())
+    }
+
     pub fn protocol_settings(&self) -> &ProtocolSettings {
         &self.protocol_settings
     }
@@ -434,14 +444,24 @@ impl ApplicationEngine {
     }
 
     pub fn push_log(&mut self, event: LogEventArgs) {
-        if let Some(context) = NativeHelpers::context() {
+        let context = self
+            .runtime_context
+            .as_ref()
+            .cloned()
+            .or_else(NativeHelpers::context);
+        if let Some(context) = context {
             context.notify_application_log(self, &event);
         }
         self.logs.push(event);
     }
 
     pub fn push_notification(&mut self, event: NotifyEventArgs) {
-        if let Some(context) = NativeHelpers::context() {
+        let context = self
+            .runtime_context
+            .as_ref()
+            .cloned()
+            .or_else(NativeHelpers::context);
+        if let Some(context) = context {
             context.notify_application_notify(self, &event);
         }
         self.notifications.push(event);
@@ -602,7 +622,7 @@ impl ApplicationEngine {
         Ok(iterator.value())
     }
 
-    fn load_script_with_state<F>(
+    pub(crate) fn load_script_with_state<F>(
         &mut self,
         script_bytes: Vec<u8>,
         rvcount: i32,
@@ -612,6 +632,9 @@ impl ApplicationEngine {
     where
         F: FnOnce(&mut ExecutionContextState),
     {
+        // Ensure the VM has a valid host pointer in case the engine has moved since creation.
+        self.attach_host();
+
         let script = Script::from(script_bytes)
             .map_err(|e| Error::invalid_operation(format!("Invalid script: {e}")))?;
 
@@ -915,6 +938,9 @@ impl ApplicationEngine {
 
     /// Executes the loaded scripts until the VM halts or faults.
     pub fn execute(&mut self) -> Result<()> {
+        // Keep the engine host pointer aligned with this instance across moves.
+        self.attach_host();
+
         let state = self.vm_engine.engine_mut().execute();
         if state == VMState::FAULT {
             if self.vm_engine.engine().uncaught_exception().is_some() {

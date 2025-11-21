@@ -26,7 +26,7 @@ use neo_core::{
 use neo_plugins as _;
 use std::{
     fs::{self, OpenOptions},
-    io::{self, Write},
+    io::{self, IsTerminal, Write},
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -76,6 +76,10 @@ struct Cli {
     /// Overrides the per-address connection cap.
     #[arg(long, value_name = "N")]
     max_connections_per_address: Option<usize>,
+
+    /// Maximum broadcast history entries to retain in memory (0 disables capture).
+    #[arg(long, value_name = "N")]
+    broadcast_history_limit: Option<usize>,
 
     /// Disables compression for outbound connections.
     #[arg(long)]
@@ -130,6 +134,10 @@ async fn main() -> Result<()> {
         node_config.p2p.max_connections_per_address = Some(max_per_address);
     }
 
+    if let Some(limit) = cli.broadcast_history_limit {
+        node_config.p2p.broadcast_history_limit = Some(limit);
+    }
+
     if cli.disable_compression {
         node_config.p2p.enable_compression = Some(false);
     }
@@ -150,6 +158,31 @@ async fn main() -> Result<()> {
         .or_else(|| node_config.storage_path());
 
     let protocol_settings: ProtocolSettings = node_config.protocol_settings();
+    if let Some(canonical) = node_config
+        .network
+        .network_type
+        .as_deref()
+        .and_then(config::infer_magic_from_type)
+    {
+        if canonical != protocol_settings.network {
+            warn!(
+                target: "neo",
+                network_type = ?node_config.network.network_type,
+                configured_magic = format_args!("0x{:08x}", protocol_settings.network),
+                canonical_magic = format_args!("0x{:08x}", canonical),
+                "network type and magic differ; ensure this is intentional"
+            );
+        }
+    }
+    info!(
+        target: "neo",
+        seeds = ?protocol_settings.seed_list,
+        network_magic = format_args!("0x{:08x}", protocol_settings.network),
+        listen_port = node_config.p2p.listen_port,
+        storage = storage_path.as_deref().unwrap_or("<none>"),
+        backend = backend_name.as_deref().unwrap_or("memory"),
+        "using protocol settings"
+    );
     let wallet_settings = Arc::new(protocol_settings.clone());
     if let Some(path) = node_config.write_rpc_server_plugin_config(&protocol_settings)? {
         info!(
@@ -161,6 +194,9 @@ async fn main() -> Result<()> {
 
     let backend_name = node_config.storage_backend().map(|name| name.to_string());
     let store_provider = select_store_provider(backend_name.as_deref(), storage_config)?;
+    if let (Some(_provider), Some(path)) = (&store_provider, &storage_path) {
+        check_storage_network(path, protocol_settings.network_magic)?;
+    }
 
     if store_provider.is_some() && storage_path.is_none() {
         let backend = backend_name.unwrap_or_else(|| "unknown".to_string());
@@ -259,6 +295,8 @@ async fn main() -> Result<()> {
         "neo-rs node started; press Ctrl+C to exit"
     );
 
+    let stdin_is_tty = io::stdin().is_terminal();
+
     let command_line = Arc::new(CommandLine::new(
         wallet_commands,
         plugin_commands,
@@ -274,26 +312,34 @@ async fn main() -> Result<()> {
         vote_commands,
     ));
 
-    let shell_handle = task::spawn_blocking({
-        let command_line = Arc::clone(&command_line);
-        move || command_line.run_shell()
-    });
+    let shell_handle = if stdin_is_tty {
+        Some(task::spawn_blocking({
+            let command_line = Arc::clone(&command_line);
+            move || command_line.run_shell()
+        }))
+    } else {
+        None
+    };
 
-    tokio::select! {
-        result = signal::ctrl_c() => {
-            if let Err(err) = result {
-                error!(target: "neo", error = %err, "failed to wait for shutdown signal");
-            } else {
-                info!(target: "neo", "shutdown signal received (Ctrl+C)");
+    if let Some(shell_handle) = shell_handle {
+        tokio::select! {
+            result = signal::ctrl_c() => {
+                if let Err(err) = result {
+                    error!(target: "neo", error = %err, "failed to wait for shutdown signal");
+                } else {
+                    info!(target: "neo", "shutdown signal received (Ctrl+C)");
+                }
+            }
+            shell = shell_handle => {
+                match shell {
+                    Ok(Ok(())) => info!(target: "neo", "console session ended"),
+                    Ok(Err(err)) => error!(target: "neo", error = %err, "console session failed"),
+                    Err(err) => error!(target: "neo", error = %err, "console task error"),
+                }
             }
         }
-        shell = shell_handle => {
-            match shell {
-                Ok(Ok(())) => info!(target: "neo", "console session ended"),
-                Ok(Err(err)) => error!(target: "neo", error = %err, "console session failed"),
-                Err(err) => error!(target: "neo", error = %err, "console task error"),
-            }
-        }
+    } else if let Err(err) = signal::ctrl_c().await {
+        error!(target: "neo", error = %err, "failed to wait for shutdown signal");
     }
 
     info!(target: "neo", "shutdown signal received, exiting");
@@ -323,19 +369,12 @@ fn init_tracing(logging: &config::LoggingSection) -> Result<LoggingHandles> {
         .map(str::trim)
         .filter(|value| !value.is_empty());
 
-    let file_requested = logging.file_enabled || path_value.is_some();
+    let file_requested = logging.file_enabled;
     let file_writer = if file_requested {
-        if let Some(path) = path_value {
-            let (writer, file_guard) = create_file_writer(path)?;
-            guard = Some(file_guard);
-            Some(writer)
-        } else {
-            warn!(
-                target: "neo",
-                "file logging requested but logging.path is empty; disabling file logs"
-            );
-            None
-        }
+        let path = path_value.unwrap_or("Logs");
+        let (writer, file_guard) = create_file_writer(path)?;
+        guard = Some(file_guard);
+        Some(writer)
     } else {
         None
     };
@@ -475,4 +514,34 @@ fn select_store_provider(
         }
         other => bail!("unsupported storage backend '{}'", other),
     }
+}
+
+fn check_storage_network(path: &str, magic: u32) -> Result<()> {
+    let storage_path = Path::new(path);
+    if !storage_path.exists() {
+        fs::create_dir_all(storage_path)
+            .with_context(|| format!("failed to create storage path {}", path))?;
+    }
+
+    let marker = storage_path.join("NETWORK_MAGIC");
+    if marker.exists() {
+        let contents = fs::read_to_string(&marker)
+            .with_context(|| format!("failed to read network marker {}", marker.display()))?;
+        let parsed = contents.trim_start_matches("0x").trim().to_string();
+        let stored_magic = u32::from_str_radix(&parsed, 16)
+            .or_else(|_| u32::from_str_radix(&parsed, 10))
+            .with_context(|| format!("invalid magic in {}: {}", marker.display(), contents))?;
+        if stored_magic != magic {
+            bail!(
+                "storage at {} was initialized for network magic 0x{:08x}, but current config is 0x{:08x}. Use a fresh storage path or clear the directory.",
+                path,
+                stored_magic,
+                magic
+            );
+        }
+    } else {
+        fs::write(&marker, format!("0x{magic:08x}"))
+            .with_context(|| format!("failed to write network marker {}", marker.display()))?;
+    }
+    Ok(())
 }

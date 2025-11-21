@@ -132,10 +132,10 @@ impl ConsensusService {
                         block.index(),
                         block.transactions.len()
                     ));
-                    let _ = self.neo_system.blockchain_actor().tell(BlockchainCommand::InventoryBlock {
-                        block,
-                        relay: true,
-                    });
+                    let _ = self
+                        .neo_system
+                        .blockchain_actor()
+                        .tell(BlockchainCommand::InventoryBlock { block, relay: true });
                     context.set_block_sent();
                 }
             }

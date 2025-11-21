@@ -24,8 +24,26 @@ pub fn compress_lz4(data: &[u8]) -> CompressionResult<Vec<u8>> {
 
 /// Decompresses LZ4 data (with prepended length) enforcing a maximum size.
 pub fn decompress_lz4(data: &[u8], max_size: usize) -> CompressionResult<Vec<u8>> {
+    if data.len() < 4 {
+        return Err(CompressionError::Decompression(
+            "compressed data missing length prefix".to_string(),
+        ));
+    }
+
+    let declared_size =
+        u32::from_le_bytes(data[0..4].try_into().expect("length prefix must be 4 bytes")) as usize;
+
     let decompressed = lz4_flex::block::decompress_size_prepended(data)
         .map_err(|e| CompressionError::Decompression(e.to_string()))?;
+
+    if decompressed.len() != declared_size {
+        return Err(CompressionError::Decompression(format!(
+            "declared size {} does not match decompressed size {}",
+            declared_size,
+            decompressed.len()
+        )));
+    }
+
     if decompressed.len() > max_size {
         return Err(CompressionError::TooLarge { max: max_size });
     }

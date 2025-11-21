@@ -51,7 +51,7 @@ impl MockTransactionVerificationContext {
         let current_system = self.total_system_fees.get(&sender).copied().unwrap_or(0);
         let new_total = current_network + current_system + tx.network_fee() + tx.system_fee();
 
-        let available_balance = 8_00000000i64; // 8 GAS in datoshi
+        let available_balance = 7_00000000i64; // 7 GAS in datoshi
         new_total <= available_balance
     }
 
@@ -280,7 +280,7 @@ mod tests {
         ];
         tx.set_signers(signers);
         tx.set_attributes(vec![]);
-        tx.set_witnesses(vec![Witness::empty()]);
+        tx.set_witnesses(vec![Witness::empty(), Witness::empty()]);
 
         // Serialization should handle duplicate signers
         let serialized = tx.to_bytes();

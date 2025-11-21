@@ -74,7 +74,10 @@ impl WitnessScope {
     ///
     /// true if the flag is set, false otherwise
     pub fn has_flag(self, flag: WitnessScope) -> bool {
-        self.0 & flag.0 != 0
+        if flag.0 == 0 {
+            return self.0 == 0;
+        }
+        (self.0 & flag.0) == flag.0
     }
 
     /// Checks if this scope contains the specified flag (alias for has_flag).

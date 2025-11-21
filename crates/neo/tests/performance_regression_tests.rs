@@ -602,7 +602,12 @@ fn test_concurrent_hashmap_operations() {
             let map = Arc::clone(&map);
             thread::spawn(move || {
                 for i in 0..iterations_per_thread {
-                    let key = UInt160::from([((thread_id * 100 + i) % 256) as u8; 20]);
+                    let value_key = thread_id * iterations_per_thread + i;
+                    let mut raw = [0u8; 20];
+                    raw[..8].copy_from_slice(&(value_key as u64).to_le_bytes());
+                    raw[8..16].copy_from_slice(&(i as u64).to_le_bytes());
+                    raw[16..20].copy_from_slice(&(thread_id as u32).to_le_bytes());
+                    let key = UInt160::from(raw);
                     let value = (thread_id * iterations_per_thread + i) as u64;
 
                     // Insert

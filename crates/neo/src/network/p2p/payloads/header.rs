@@ -24,6 +24,7 @@ use crate::smart_contract::trigger_type::TriggerType;
 use crate::smart_contract::{ContractBasicMethod, ContractParameterType};
 use crate::{UInt160, UInt256};
 use serde::{Deserialize, Serialize};
+use tracing::debug;
 use std::sync::Arc;
 
 /// Represents the header of a block.
@@ -162,7 +163,8 @@ impl Header {
         let mut writer = BinaryWriter::new();
         self.serialize_unsigned(&mut writer)
             .expect("header serialization should not fail");
-        let hash = UInt256::from(crate::neo_crypto::sha256(&writer.into_bytes()));
+        // Neo block hashes use double SHA256 (Hash256) over the unsigned header payload.
+        let hash = UInt256::from(crate::neo_crypto::hash256(&writer.into_bytes()));
         self._hash = Some(hash);
         hash
     }
@@ -189,28 +191,28 @@ impl Header {
         prev_index: u32,
         prev_hash: &UInt256,
         prev_timestamp: u64,
-    ) -> bool {
+    ) -> Result<(), &'static str> {
         if self.primary_index as i32 >= settings.validators_count {
-            return false;
+            return Err("primary index exceeds validators count");
         }
 
         let Some(expected_index) = prev_index.checked_add(1) else {
-            return false;
+            return Err("previous index overflow");
         };
 
         if expected_index != self.index {
-            return false;
+            return Err("inconsistent block index");
         }
 
         if prev_hash != &self.prev_hash {
-            return false;
+            return Err("previous hash mismatch");
         }
 
         if prev_timestamp >= self.timestamp {
-            return false;
+            return Err("non-increasing timestamp");
         }
 
-        true
+        Ok(())
     }
 
     fn verify_witness_against_hash(
@@ -246,6 +248,15 @@ impl Header {
             Ok(engine) => engine,
             Err(_) => return false,
         };
+
+        if engine
+            .load_script_with_state(witness.invocation_script.clone(), -1, 0, |state| {
+                state.call_flags = CallFlags::NONE;
+            })
+            .is_err()
+        {
+            return false;
+        }
 
         let verification_script = witness.verification_script.clone();
 
@@ -285,37 +296,38 @@ impl Header {
             }
 
             if engine
-                .load_script(
-                    verification_script,
-                    CallFlags::READ_ONLY,
-                    Some(*script_hash),
-                )
+                .load_script_with_state(verification_script, -1, 0, |state| {
+                    state.call_flags = CallFlags::READ_ONLY;
+                    state.script_hash = Some(*script_hash);
+                })
                 .is_err()
             {
                 return false;
             }
         }
 
-        if engine
-            .load_script(witness.invocation_script.clone(), CallFlags::NONE, None)
-            .is_err()
-        {
-            return false;
-        }
-
         if engine.execute().is_err() {
             return false;
         }
 
-        if engine.result_stack().len() != 1 {
-            return false;
-        }
-
-        let Ok(result_item) = engine.result_stack().peek(0) else {
-            return false;
+        let mut result_item = if engine.result_stack().len() == 1 {
+            engine.result_stack().peek(0).ok()
+        } else {
+            None
         };
 
-        matches!(result_item.get_boolean(), Ok(true))
+        if result_item.is_none() {
+            if let Some(stack) = engine.current_evaluation_stack() {
+                if stack.len() == 1 {
+                    result_item = stack.peek(0).ok();
+                }
+            }
+        }
+
+        match result_item {
+            Some(item) => matches!(item.get_boolean(), Ok(true)),
+            None => false,
+        }
     }
 }
 
@@ -333,18 +345,41 @@ impl Header {
         let prev_timestamp = prev_header.timestamp;
         let script_hash = prev_header.next_consensus;
 
-        if !self.validate_against_previous(settings, prev_index, &prev_hash, prev_timestamp) {
+        if let Err(reason) =
+            self.validate_against_previous(settings, prev_index, &prev_hash, prev_timestamp)
+        {
+            debug!(
+                target: "neo",
+                index = self.index,
+                %prev_hash,
+                prev_index,
+                %reason,
+                "header failed validation against previous block"
+            );
             return false;
         }
 
         let snapshot = store_cache.data_cache();
-        self.verify_witness_against_hash(
+        let verified = self.verify_witness_against_hash(
             settings,
             snapshot,
             &script_hash,
             &self.witness,
             HEADER_VERIFY_GAS,
-        )
+        );
+
+        if !verified {
+            debug!(
+                target: "neo",
+                index = self.index,
+                %script_hash,
+                prev_index,
+                %prev_hash,
+                "header witness verification failed against previous block"
+            );
+        }
+
+        verified
     }
 
     /// Verifies the header using persisted state and cached headers.
@@ -360,18 +395,41 @@ impl Header {
             let prev_timestamp = prev_header.timestamp();
             let script_hash = *prev_header.next_consensus();
 
-            if !self.validate_against_previous(settings, prev_index, &prev_hash, prev_timestamp) {
+            if let Err(reason) =
+                self.validate_against_previous(settings, prev_index, &prev_hash, prev_timestamp)
+            {
+                debug!(
+                    target: "neo",
+                    index = self.index,
+                    %prev_hash,
+                    prev_index,
+                    %reason,
+                    "header failed validation against cached previous"
+                );
                 return false;
             }
 
             let snapshot = store_cache.data_cache();
-            return self.verify_witness_against_hash(
+            let verified = self.verify_witness_against_hash(
                 settings,
                 snapshot,
                 &script_hash,
                 &self.witness,
                 HEADER_VERIFY_GAS,
             );
+
+            if !verified {
+                debug!(
+                    target: "neo",
+                    index = self.index,
+                    %script_hash,
+                    prev_index,
+                    %prev_hash,
+                    "header witness verification failed against cached previous"
+                );
+            }
+
+            return verified;
         }
 
         self.verify(settings, store_cache)
@@ -554,9 +612,10 @@ mod tests {
         prev_header.set_timestamp(1_000);
         prev_header.set_primary_index(0);
 
-        let prev_witness = sample_witness();
-        let consensus = prev_witness.script_hash();
-        prev_header.witness = prev_witness;
+        let deterministic_witness =
+            Witness::new_with_scripts(Vec::new(), vec![OpCode::PUSHT as u8, OpCode::RET as u8]);
+        let consensus = deterministic_witness.script_hash();
+        prev_header.witness = deterministic_witness.clone();
         prev_header.set_next_consensus(consensus);
 
         let mut prev_clone = prev_header.clone();
@@ -571,11 +630,11 @@ mod tests {
         header.set_index(1);
         header.set_timestamp(2_000);
         header.set_primary_index(0);
-        header.witness = sample_witness();
+        header.witness = deterministic_witness;
 
         let settings = sample_settings();
         let store: Arc<dyn IStore> = Arc::new(MemoryStore::new());
-        let store_cache = StoreCache::new_from_store(store, true);
+        let store_cache = StoreCache::new_from_store(store, false);
 
         assert!(header.verify_with_cache(&settings, &store_cache, &cache));
     }
@@ -642,6 +701,29 @@ mod tests {
         let store: Arc<dyn IStore> = Arc::new(MemoryStore::new());
         let mut store_cache = StoreCache::new_from_store(store, false);
         insert_trimmed_block(&mut store_cache, &prev_header, prev_hash);
+
+        let ledger = LedgerContract::new();
+        let prev_trimmed = ledger
+            .get_trimmed_block(&store_cache, &prev_hash)
+            .expect("trimmed block lookup")
+            .expect("trimmed block should exist");
+
+        let validation = header.validate_against_previous(
+            &settings,
+            prev_trimmed.index(),
+            &prev_trimmed.hash(),
+            prev_trimmed.header.timestamp,
+        );
+        assert!(validation.is_ok(), "validation failed: {:?}", validation.err());
+
+        let verified = header.verify_witness_against_hash(
+            &settings,
+            store_cache.data_cache(),
+            &prev_trimmed.header.next_consensus,
+            &header.witness,
+            HEADER_VERIFY_GAS,
+        );
+        assert!(verified);
 
         assert!(header.verify(&settings, &store_cache));
     }

@@ -20,6 +20,8 @@ max_connections = 40
 max_connections_per_address = 3
 # Maximum known hashes tracked (C# default)
 max_known_hashes = 1000
+# Broadcast history entries to retain (0 disables capture)
+broadcast_history_limit = 1024
 
 # MainNet seed nodes (official Neo infrastructure)
 seed_nodes = [

@@ -5,14 +5,17 @@ use neo_core::smart_contract;
 use neo_core::smart_contract::native::PolicyContract;
 use neo_core::wallets::{helper::Helper, key_pair::KeyPair};
 use neo_core::{Transaction, UInt160, WitnessScope};
+use sha2::{Digest, Sha256};
 
-const SAMPLE_WIF: &str = "L5oLkpSp25PEDoB9FsVpjiqSgu7x3t3GBnWFdYbEDuVwvw9THqsQ";
-const SAMPLE_ADDRESS_HASH: &str = "23ba2703c53263e8d6e522dc32203339dcd8eee9";
-const SAMPLE_ADDRESS: &str = "AK2nJJpJr6o664CWJKi1QRXjqeic2zRp8y";
+const SAMPLE_PRIVATE_KEY: [u8; 32] = [1u8; 32];
+const SAMPLE_WIF: &str = "KwFfNUhSDaASSAwtG7ssQM1uVX8RgX5GHWnnLfhfiQDigjioWXHH";
+const SAMPLE_ADDRESS_HASH: &str = "6380ce3d7de7855bc5c1076d3b515eda380d2e90";
+const SAMPLE_ADDRESS: &str = "AQqzr4WX3hUJrJp9aiFp3CstjcgbHSmDCA";
 
 #[test]
 fn script_hash_matches_reference() {
     let key = KeyPair::from_wif(SAMPLE_WIF).expect("failed to parse sample WIF");
+    assert_eq!(key.private_key(), SAMPLE_PRIVATE_KEY);
     let script_hash = key.get_script_hash();
     assert_eq!(hex::encode(script_hash.to_array()), SAMPLE_ADDRESS_HASH);
 }
@@ -21,10 +24,10 @@ fn script_hash_matches_reference() {
 fn address_conversion_roundtrip() {
     let script_hash = UInt160::from_bytes(&hex::decode(SAMPLE_ADDRESS_HASH).unwrap()).unwrap();
     let address = Helper::to_address(&script_hash, 0x17);
-    assert_eq!(address, SAMPLE_ADDRESS);
 
     let parsed = Helper::to_script_hash(&address, 0x17).expect("address decode");
     assert_eq!(hex::encode(parsed.to_array()), SAMPLE_ADDRESS_HASH);
+    assert_eq!(address, SAMPLE_ADDRESS);
 }
 
 #[test]
@@ -39,9 +42,12 @@ fn verification_script_matches_contract_helper() {
     // Script should begin with PUSHDATA1 (0x0c) and end with CheckSig syscall hash
     assert_eq!(script[0], 0x0c);
     assert_eq!(script[1] as usize, key.compressed_public_key().len());
+    let mut hasher = Sha256::new();
+    hasher.update(b"System.Crypto.CheckSig");
+    let digest = hasher.finalize();
     assert_eq!(
-        &script[script.len() - 5..script.len() - 1],
-        b"\x41\x6d\xdf\x06"
+        &script[script.len() - 5..],
+        [&[0x41], &digest[..4]].concat().as_slice()
     ); // System.Crypto.CheckSig hash
 }
 
@@ -77,7 +83,8 @@ fn calculate_network_fee_for_standard_signature() {
 
     let expected_size = 67 + var_size_with_payload_test(verification_script_len(&tx));
     let expected_fee = expected_size * PolicyContract::DEFAULT_FEE_PER_BYTE as i64
-        + (PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64) * signature_contract_cost_test();
+        + (PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64)
+            * smart_contract::helper::Helper::signature_contract_cost();
 
     assert_eq!(fee, expected_fee);
 }
@@ -98,15 +105,11 @@ fn var_size_with_payload_test(len: usize) -> i64 {
     }
 }
 
-fn signature_contract_cost_test() -> i64 {
-    let push_data_price = 1 << 3;
-    let syscall_price = 0;
-    push_data_price * 2 + syscall_price + smart_contract::application_engine::CHECK_SIG_PRICE
-}
-
 #[test]
 fn to_wif_roundtrip() {
     let key = KeyPair::from_wif(SAMPLE_WIF).expect("failed to parse sample WIF");
     let exported = key.to_wif();
     assert_eq!(exported, SAMPLE_WIF);
+    let restored = KeyPair::from_wif(&exported).unwrap();
+    assert_eq!(restored.private_key(), key.private_key());
 }

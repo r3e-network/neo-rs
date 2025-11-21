@@ -231,7 +231,7 @@ impl ActorSystem {
         ActorSystemHandle::new(self.inner.clone())
     }
 
-    pub async fn shutdown(self) -> AkkaResult<()> {
+    pub async fn shutdown(&self) -> AkkaResult<()> {
         self.user_guardian.stop()?;
         Ok(())
     }

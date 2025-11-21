@@ -68,6 +68,8 @@ use neo_extensions::LogLevel as ExternalLogLevel;
 use neo_io_crate::{InventoryHash, RelayCache};
 use neo_vm::{vm_state::VMState, OpCode};
 use std::thread;
+#[cfg(test)]
+use once_cell::sync::Lazy;
 
 fn block_on_extension<F, T>(future: F) -> Result<T, ExtensionError>
 where
@@ -130,6 +132,9 @@ pub struct PluginManager {
     plugins: Vec<Box<dyn Plugin>>,
     metadata: HashMap<String, String>,
 }
+
+#[cfg(test)]
+static TEST_SYSTEM_MUTEX: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
 impl PluginManager {
     /// Creates an empty plugin manager instance.
@@ -967,9 +972,18 @@ impl NeoSystem {
             base_snapshot.merge_tracked_items(&tracked);
         }
 
-        on_persist_engine.set_state(tx_states);
-        on_persist_engine.native_post_persist()?;
-        let post_persist_exec = ApplicationExecuted::new(&mut on_persist_engine);
+        let mut post_persist_engine = ApplicationEngine::new(
+            TriggerType::PostPersist,
+            None,
+            Arc::clone(&base_snapshot),
+            Some(ledger_block.clone()),
+            self.settings.clone(),
+            TEST_MODE_GAS,
+            None,
+        )?;
+        post_persist_engine.set_state(tx_states);
+        post_persist_engine.native_post_persist()?;
+        let post_persist_exec = ApplicationExecuted::new(&mut post_persist_engine);
         self.actor_system
             .event_stream()
             .publish(post_persist_exec.clone());
@@ -1022,6 +1036,9 @@ impl NeoSystem {
         storage_provider: Option<Arc<dyn IStoreProvider>>,
         storage_path: Option<String>,
     ) -> CoreResult<Arc<Self>> {
+        #[cfg(test)]
+        let _test_guard = TEST_SYSTEM_MUTEX.lock().unwrap();
+
         let actor_system = ActorSystem::new("neo").map_err(to_core_error)?;
         let settings_arc = Arc::new(settings.clone());
         let genesis_block = Arc::new(Self::create_genesis_block(&settings));
@@ -1659,12 +1676,7 @@ impl NeoSystem {
         if let Err(err) = shutdown_global_runtime().await {
             warn!("failed to shutdown plugin runtime: {}", err);
         }
-        match Arc::try_unwrap(self) {
-            Ok(system) => system.actor_system.shutdown().await.map_err(to_core_error),
-            Err(_) => Err(CoreError::system(
-                "cannot shutdown NeoSystem while shared references remain",
-            )),
-        }
+        self.actor_system.shutdown().await.map_err(to_core_error)
     }
 }
 
@@ -1756,11 +1768,16 @@ mod tests {
     use crate::wallets::{Version, Wallet, WalletAccount, WalletError, WalletResult};
     use crate::{IVerifiable, UInt160, UInt256};
     use async_trait::async_trait;
+    use lazy_static::lazy_static;
     use neo_vm::StackItem;
     use std::any::Any;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{mpsc, Mutex};
     use tokio::time::{sleep, timeout, Duration};
+
+    lazy_static! {
+        static ref LOG_TEST_MUTEX: Mutex<()> = Mutex::new(());
+    }
 
     fn sample_u256(byte: u8) -> UInt256 {
         UInt256::from_bytes(&[byte; 32]).expect("uint256 from bytes")
@@ -2152,6 +2169,8 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn log_and_logging_handlers_fire() {
+        let _log_guard = LOG_TEST_MUTEX.lock().unwrap();
+
         let system =
             NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
         let handler = Arc::new(EventProbe::default());
@@ -2165,6 +2184,15 @@ mod tests {
         system
             .register_notify_handler(handler.clone())
             .expect("register notify handler");
+
+        let system_ctx = system.context();
+        let log_counter = Arc::new(AtomicUsize::new(0));
+        let log_counter_clone = log_counter.clone();
+        Utility::set_logging(Some(Box::new(move |source, level, message| {
+            log_counter_clone.fetch_add(1, Ordering::Relaxed);
+            let local_level: LogLevel = level.into();
+            system_ctx.notify_logging_handlers(&source, local_level, &message);
+        })));
 
         let snapshot = Arc::new(DataCache::new(false));
         let mut engine = ApplicationEngine::new(
@@ -2183,7 +2211,9 @@ mod tests {
         engine.push_log(log_event);
         assert_eq!(handler.logs(), 1);
 
+        Utility::set_log_level(ExternalLogLevel::Info);
         Utility::log("test", ExternalLogLevel::Info, "message");
+        assert_eq!(log_counter.load(Ordering::Relaxed), 1);
         assert_eq!(handler.logging(), 1);
 
         let notify = NotifyEventArgs::new(
@@ -2194,6 +2224,8 @@ mod tests {
         );
         engine.push_notification(notify);
         assert_eq!(handler.notifies(), 1);
+
+        Utility::set_logging(None);
     }
 
     #[tokio::test(flavor = "multi_thread")]

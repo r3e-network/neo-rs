@@ -232,36 +232,15 @@ impl UInt160 {
             return false;
         }
 
-        match hex::decode(s) {
-            Ok(bytes) => {
-                // Map big-endian hex bytes to little-endian internal storage
-                let mut value1_bytes = [0u8; 8];
-                let mut value2_bytes = [0u8; 8];
-                let mut value3_bytes = [0u8; 4];
+        let Ok(mut bytes) = hex::decode(s) else {
+            return false;
+        };
 
-                // Correct mapping:
+        bytes.reverse();
 
-                value3_bytes[3] = bytes[19];
-                value3_bytes[2] = bytes[18];
-                value3_bytes[1] = bytes[17];
-                value3_bytes[0] = bytes[16];
-
-                for i in 0..8 {
-                    value2_bytes[7 - i] = bytes[8 + i];
-                }
-
-                for i in 0..8 {
-                    value1_bytes[7 - i] = bytes[i];
-                }
-
-                // Convert to little-endian u64/u32 values
-                let mut uint = Self::new();
-                uint.value1 = u64::from_le_bytes(value1_bytes);
-                uint.value2 = u64::from_le_bytes(value2_bytes);
-                uint.value3 = u32::from_le_bytes(value3_bytes);
-
+        match Self::from_bytes(&bytes) {
+            Ok(uint) => {
                 *result = Some(uint);
-
                 true
             }
             Err(_) => false,
@@ -274,31 +253,9 @@ impl UInt160 {
     ///
     /// A hexadecimal string representation of the UInt160.
     pub fn to_hex_string(&self) -> String {
-        let mut result_bytes = [0u8; UINT160_SIZE];
-
-        let value1_bytes = self.value1.to_le_bytes();
-        let value2_bytes = self.value2.to_le_bytes();
-        let value3_bytes = self.value3.to_le_bytes();
-
-        // Reverse the parsing process:
-        // value3 -> bytes[16..ADDRESS_SIZE]
-        // value2 -> bytes[8..16]
-        // value1 -> bytes[0..8]
-
-        result_bytes[19] = value3_bytes[3];
-        result_bytes[18] = value3_bytes[2];
-        result_bytes[17] = value3_bytes[1];
-        result_bytes[16] = value3_bytes[0];
-
-        for i in 0..8 {
-            result_bytes[15 - i] = value2_bytes[i];
-        }
-
-        for i in 0..8 {
-            result_bytes[7 - i] = value1_bytes[i];
-        }
-
-        format!("0x{}", hex::encode(result_bytes))
+        let mut bytes = self.to_array();
+        bytes.reverse();
+        format!("0x{}", hex::encode(bytes))
     }
 
     /// Gets a hash code for the current UInt160 instance.
@@ -545,9 +502,9 @@ mod tests {
     fn test_uint160_parse() {
         let hex_str = "0x0000000000000000000000000000000000000001";
         let uint = UInt160::parse(hex_str).unwrap();
-        assert_eq!(uint.value1, 0);
+        assert_eq!(uint.value1, 1);
         assert_eq!(uint.value2, 0);
-        assert_eq!(uint.value3, 0x01000000);
+        assert_eq!(uint.value3, 0);
     }
     #[test]
     fn test_uint160_try_parse() {
@@ -570,7 +527,7 @@ mod tests {
         let mut uint = UInt160::new();
         uint.value3 = 0x01000000; // 1 in little-endian
         let hex_str = uint.to_hex_string();
-        assert_eq!(hex_str, "0x0000000000000000000000000000000000000001");
+        assert_eq!(hex_str, "0x0100000000000000000000000000000000000000");
     }
     #[test]
     fn test_uint160_serialization() {

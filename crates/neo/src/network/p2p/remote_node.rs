@@ -53,7 +53,7 @@ use std::sync::{
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{oneshot, Mutex};
-use tracing::{debug, error, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 
 #[derive(Clone, Copy)]
 struct PendingKnownHash {
@@ -438,6 +438,12 @@ impl RemoteNode {
     }
 
     async fn start_protocol(&mut self, ctx: &mut ActorContext) -> ActorResult {
+        debug!(
+            target: "neo",
+            endpoint = %self.endpoint,
+            reader_spawned = self.reader_spawned,
+            "starting protocol handshake"
+        );
         self.ensure_timer(ctx);
         self.spawn_reader(ctx);
 
@@ -462,18 +468,28 @@ impl RemoteNode {
 
         let actor = ctx.self_ref();
         let connection = Arc::clone(&self.connection);
+        let endpoint = self.endpoint;
         tokio::spawn(async move {
             loop {
                 let result = {
                     let mut guard = connection.lock().await;
+                    debug!(target: "neo", endpoint = %guard.address, "waiting for inbound message");
                     guard.receive_message().await
                 };
 
                 match result {
                     Ok(message) => {
+                        let command = message.command();
                         if let Err(err) = actor.tell(RemoteNodeCommand::Inbound(message)) {
                             warn!(target: "neo", error = %err, "failed to deliver inbound message to remote node actor");
                             break;
+                        } else {
+                            debug!(
+                                target: "neo",
+                                endpoint = %endpoint,
+                                ?command,
+                                "enqueued inbound message to actor"
+                            );
                         }
                     }
                     Err(error) => {
@@ -481,6 +497,8 @@ impl RemoteNode {
                         break;
                     }
                 }
+
+                tokio::task::yield_now().await;
             }
         });
 
@@ -578,6 +596,12 @@ impl RemoteNode {
     }
 
     async fn on_inbound(&mut self, message: NetworkMessage, ctx: &mut ActorContext) -> ActorResult {
+        debug!(
+            target: "neo",
+            endpoint = %self.endpoint,
+            command = ?message.command(),
+            "processing inbound message"
+        );
         if !self.dispatch_message_received(&message) {
             trace!(
                 target: "neo",
@@ -608,8 +632,9 @@ impl RemoteNode {
 
         {
             let mut connection = self.connection.lock().await;
-            connection.compression_allowed =
-                connection.compression_allowed && payload.allow_compression;
+            connection.compression_allowed = self.config.enable_compression
+                && self.local_version.allow_compression
+                && payload.allow_compression;
             connection.set_node_info();
         }
 
@@ -619,6 +644,16 @@ impl RemoteNode {
             Some(parent) => parent,
             None => return Ok(()),
         };
+
+        debug!(
+            target: "neo",
+            endpoint = %self.endpoint,
+            user_agent = %payload.user_agent,
+            start_height = snapshot.last_block_index,
+            listen_port = snapshot.listen_tcp_port,
+            allow_compression = payload.allow_compression,
+            "received version payload"
+        );
 
         let self_ref = ctx.self_ref();
         let (reply_tx, reply_rx) = oneshot::channel();
@@ -647,8 +682,18 @@ impl RemoteNode {
                 self.last_block_index = snapshot.last_block_index;
                 self.local_node
                     .update_peer_height(&self.endpoint, snapshot.last_block_index);
+                debug!(
+                    target: "neo",
+                    endpoint = %self.endpoint,
+                    "connection accepted by local node"
+                );
             }
             Ok(false) => {
+                debug!(
+                    target: "neo",
+                    endpoint = %self.endpoint,
+                    "connection rejected by local node"
+                );
                 let error = NetworkError::ProtocolViolation {
                     peer: self.endpoint,
                     violation: "connection rejected by local node".to_string(),
@@ -656,6 +701,11 @@ impl RemoteNode {
                 return self.fail(ctx, error).await;
             }
             Err(_) => {
+                debug!(
+                    target: "neo",
+                    endpoint = %self.endpoint,
+                    "connection authorization response dropped"
+                );
                 let error = NetworkError::ConnectionError(
                     "connection authorization response dropped".to_string(),
                 );
@@ -663,7 +713,9 @@ impl RemoteNode {
             }
         }
 
+        debug!(target: "neo", endpoint = %self.endpoint, "sending verack after version");
         self.send_verack().await?;
+        debug!(target: "neo", endpoint = %self.endpoint, "verack sent after version");
         Ok(())
     }
 
@@ -677,6 +729,13 @@ impl RemoteNode {
         self.ack_ready = true;
         self.local_node
             .update_peer_height(&self.endpoint, self.last_block_index);
+
+        info!(
+            target: "neo",
+            endpoint = %self.endpoint,
+            last_block_index = self.last_block_index,
+            "verack received; handshake complete"
+        );
 
         if let Some(version) = self.remote_version.clone() {
             let register = TaskManagerCommand::Register { version };
@@ -1308,11 +1367,8 @@ impl Actor for RemoteNode {
                 }
             },
             Err(other) => {
-                warn!(
-                    target: "neo",
-                    message_type = %type_name_of_val(other.as_ref()),
-                    "unknown message routed to remote node actor"
-                );
+                // Drop unknown message types quietly to avoid log spam and mismatched routing.
+                trace!(target: "neo", message_type = %type_name_of_val(other.as_ref()), "unknown message routed to remote node actor");
                 Ok(())
             }
         }

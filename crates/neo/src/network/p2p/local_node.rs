@@ -29,7 +29,8 @@ use async_trait::async_trait;
 use rand::{seq::IteratorRandom, thread_rng};
 use std::any::{type_name_of_val, Any};
 use std::collections::{HashMap, HashSet};
-use std::net::{IpAddr, SocketAddr};
+use std::io::ErrorKind;
+use std::net::{IpAddr, SocketAddr, TcpListener as StdTcpListener};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::task::JoinHandle;
@@ -37,7 +38,7 @@ use tokio::{
     net::{lookup_host, TcpListener, TcpStream},
     sync::{oneshot, Mutex},
 };
-use tracing::{debug, trace, warn};
+use tracing::{debug, error, trace, warn};
 
 /// The protocol version supported by this node implementation (matches C# LocalNode.ProtocolVersion).
 pub const PROTOCOL_VERSION: u32 = 0;
@@ -409,7 +410,21 @@ impl LocalNode {
 
     fn record_broadcast(&self, event: BroadcastEvent) {
         if let Ok(mut guard) = self.broadcasts.write() {
+            let limit = self
+                .config
+                .read()
+                .map(|cfg| cfg.broadcast_history_limit)
+                .unwrap_or(ChannelsConfig::DEFAULT_BROADCAST_HISTORY_LIMIT);
+
+            if limit == 0 {
+                return;
+            }
+
             guard.push(event);
+            if guard.len() > limit {
+                let excess = guard.len() - limit;
+                guard.drain(0..excess);
+            }
         }
     }
 
@@ -429,6 +444,25 @@ impl LocalNode {
         }
 
         let remote_ip = Self::normalize_ip(snapshot.remote_address);
+        let config = self.config();
+        let peers = self.read_peers();
+
+        if config.max_connections > 0 && peers.len() >= config.max_connections {
+            return false;
+        }
+
+        if config.max_connections_per_address > 0 {
+            let per_address = peers
+                .values()
+                .filter(|entry| Self::normalize_ip(entry.remote_address) == remote_ip)
+                .count();
+
+            if per_address >= config.max_connections_per_address {
+                return false;
+            }
+        }
+
+        drop(peers);
         let nodes = self.read_remote_nodes();
         let duplicate = nodes.values().any(|entry| {
             let existing_ip = Self::normalize_ip(entry.snapshot.remote_address);
@@ -698,10 +732,31 @@ impl LocalNodeActor {
                 version,
                 reply,
             } => {
+                debug!(
+                    target: "neo",
+                    remote = %snapshot.remote_address,
+                    inbound,
+                    start_height = snapshot.last_block_index,
+                    listen_port = snapshot.listen_tcp_port,
+                    "processing connection establishment request"
+                );
                 let allowed = self.state.allow_new_connection(&snapshot, &version);
                 if allowed {
-                    self.peer
-                        .register_connection(actor.clone(), &snapshot, is_trusted, ctx);
+                    let registered =
+                        self.peer
+                            .register_connection(actor.clone(), &snapshot, is_trusted, ctx);
+                    if !registered {
+                        debug!(
+                            target: "neo",
+                            remote = %snapshot.remote_address,
+                            "connection rejected because peer limits are reached"
+                        );
+                        if !inbound {
+                            self.state.clear_pending(&snapshot.remote_address);
+                        }
+                        let _ = reply.send(false);
+                        return Ok(());
+                    }
                     self.state.register_remote_node(
                         actor.clone(),
                         snapshot.clone(),
@@ -915,10 +970,16 @@ impl LocalNodeActor {
                     .await
             }
             Err(error) => {
-                debug!(target: "neo", endpoint = %endpoint, error = %error, "connection attempt failed");
-                self.peer.connection_failed(endpoint);
-                self.state.clear_pending(&endpoint);
-                self.requeue_endpoint(endpoint);
+                if error.kind() == ErrorKind::PermissionDenied {
+                    error!(target: "neo", endpoint = %endpoint, error = %error, "permission denied opening outbound connection; not retrying");
+                    self.peer.connection_failed(endpoint);
+                    self.state.clear_pending(&endpoint);
+                } else {
+                    debug!(target: "neo", endpoint = %endpoint, error = %error, "connection attempt failed");
+                    self.peer.connection_failed(endpoint);
+                    self.state.clear_pending(&endpoint);
+                    self.requeue_endpoint(endpoint);
+                }
                 Ok(())
             }
         }
@@ -1106,32 +1167,43 @@ impl LocalNodeActor {
             return;
         };
 
+        // Bind synchronously to detect errors early and avoid silent listener failures.
+        let std_listener = match StdTcpListener::bind(endpoint) {
+            Ok(listener) => listener,
+            Err(error) => {
+                error!(target: "neo", endpoint = %endpoint, %error, "failed to bind TCP listener; local node will stop");
+                if let Err(err) = ctx.stop_self() {
+                    warn!(target: "neo", error = %err, "failed to stop local node after bind error");
+                }
+                return;
+            }
+        };
+        std_listener
+            .set_nonblocking(true)
+            .unwrap_or_else(|err| warn!(target: "neo", error = %err, "failed to set listener non-blocking"));
+
+        let listener = TcpListener::from_std(std_listener).expect("listener conversion");
         let actor_ref = ctx.self_ref();
         self.listener = Some(tokio::spawn(async move {
-            match TcpListener::bind(endpoint).await {
-                Ok(listener) => loop {
-                    match listener.accept().await {
-                        Ok((stream, remote)) => {
-                            let local = stream.local_addr().unwrap_or(endpoint);
-                            if let Err(err) = stream.set_nodelay(true) {
-                                warn!(target: "neo", endpoint = %remote, error = %err, "failed to enable TCP_NODELAY for inbound connection");
-                            }
-                            if let Err(err) = actor_ref.tell(LocalNodeCommand::InboundTcpAccepted {
-                                stream,
-                                remote,
-                                local,
-                            }) {
-                                warn!(target: "neo", error = %err, "failed to enqueue inbound connection");
-                            }
+            loop {
+                match listener.accept().await {
+                    Ok((stream, remote)) => {
+                        let local = stream.local_addr().unwrap_or(endpoint);
+                        if let Err(err) = stream.set_nodelay(true) {
+                            warn!(target: "neo", endpoint = %remote, error = %err, "failed to enable TCP_NODELAY for inbound connection");
                         }
-                        Err(error) => {
-                            warn!(target: "neo", error = %error, "failed to accept inbound connection");
-                            tokio::time::sleep(Duration::from_millis(200)).await;
+                        if let Err(err) = actor_ref.tell(LocalNodeCommand::InboundTcpAccepted {
+                            stream,
+                            remote,
+                            local,
+                        }) {
+                            warn!(target: "neo", error = %err, "failed to enqueue inbound connection");
                         }
                     }
-                },
-                Err(error) => {
-                    warn!(target: "neo", endpoint = %endpoint, error = %error, "failed to bind TCP listener");
+                    Err(error) => {
+                        warn!(target: "neo", error = %error, "failed to accept inbound connection");
+                        tokio::time::sleep(Duration::from_millis(200)).await;
+                    }
                 }
             }
         }));
@@ -1244,6 +1316,7 @@ pub enum LocalNodeCommand {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::network::p2p::payloads::extensible_payload::ExtensiblePayload;
     use std::sync::Arc;
 
     #[test]
@@ -1301,5 +1374,83 @@ mod tests {
             stored.max_connections_per_address,
             ChannelsConfig::DEFAULT_MAX_CONNECTIONS_PER_ADDRESS
         );
+    }
+
+    #[test]
+    fn allow_new_connection_respects_limits() {
+        let settings = Arc::new(ProtocolSettings::default());
+        let node = LocalNode::new(settings.clone(), 10333, "/agent".to_string());
+
+        let mut config = ChannelsConfig::default();
+        config.max_connections = 1;
+        config.max_connections_per_address = 1;
+        node.apply_channels_config(&config);
+
+        let version = VersionPayload::create(settings.network, 1, "/peer".to_string(), Vec::new());
+        let existing = RemoteNodeSnapshot {
+            remote_address: "10.0.0.1:20000".parse().unwrap(),
+            remote_port: 20000,
+            listen_tcp_port: 20000,
+            last_block_index: 0,
+            version: version.version,
+            services: 0,
+            timestamp: 0,
+        };
+        node.add_peer(
+            existing.remote_address,
+            Some(existing.listen_tcp_port),
+            existing.version,
+            existing.services,
+            existing.last_block_index,
+        );
+
+        let incoming = RemoteNodeSnapshot {
+            remote_address: "10.0.0.2:20001".parse().unwrap(),
+            remote_port: 20001,
+            listen_tcp_port: 20001,
+            last_block_index: 0,
+            version: version.version,
+            services: 0,
+            timestamp: 0,
+        };
+
+        assert!(!node.allow_new_connection(&incoming, &version));
+    }
+
+    #[test]
+    fn broadcast_history_is_bounded() {
+        let settings = Arc::new(ProtocolSettings::default());
+        let node = LocalNode::new(settings, 10333, "/agent".to_string());
+
+        let mut payload = ExtensiblePayload::new();
+        payload.valid_block_end = 1;
+        let inventory = RelayInventory::Extensible(payload);
+
+        let cap = ChannelsConfig::DEFAULT_BROADCAST_HISTORY_LIMIT;
+        for _ in 0..(cap + 50) {
+            node.record_relay(&inventory);
+        }
+
+        assert!(
+            node.broadcast_history().len() <= cap,
+            "broadcast history exceeded configured cap"
+        );
+    }
+
+    #[test]
+    fn broadcast_history_can_be_disabled() {
+        let settings = Arc::new(ProtocolSettings::default());
+        let node = LocalNode::new(settings, 10333, "/agent".to_string());
+
+        let mut config = node.config();
+        config.broadcast_history_limit = 0;
+        node.apply_channels_config(&config);
+
+        let mut payload = ExtensiblePayload::new();
+        payload.valid_block_end = 1;
+        let inventory = RelayInventory::Extensible(payload);
+
+        node.record_relay(&inventory);
+        assert!(node.broadcast_history().is_empty());
     }
 }

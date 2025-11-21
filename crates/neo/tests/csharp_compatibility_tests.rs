@@ -210,7 +210,8 @@ fn test_uint256_parse() {
 #[test]
 fn test_transaction_get_hash_code() {
     let tx1 = Transaction::new();
-    let tx2 = Transaction::new();
+    let mut tx2 = Transaction::new();
+    tx2.set_nonce(tx1.nonce());
 
     // Test that identical transactions have the same hash
     // Note: calculate_hash is private, so we test the public interface
@@ -235,7 +236,8 @@ fn test_transaction_get_size() {
 /// Test converted from C# UT_Transaction.TestToArray
 #[test]
 fn test_transaction_to_array() {
-    let tx = Transaction::new();
+    let mut tx = Transaction::new();
+    tx.set_nonce(0);
 
     // Test that transaction has proper structure
     assert_eq!(tx.version(), 0);

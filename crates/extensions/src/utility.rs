@@ -41,9 +41,10 @@ impl Utility {
 
     /// Registers a logging handler.
     pub fn set_logging(handler: Option<LogEventHandler>) {
-        if let Ok(mut guard) = LOGGING.lock() {
-            *guard = handler;
-        }
+        let mut guard = LOGGING
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *guard = handler;
     }
 
     /// Writes a log.
@@ -54,10 +55,11 @@ impl Utility {
             return;
         }
 
-        if let Ok(handler_guard) = LOGGING.lock() {
-            if let Some(handler) = handler_guard.as_ref() {
-                handler(source.to_string(), level, message.to_string());
-            }
+        let handler_guard = LOGGING
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(handler) = handler_guard.as_ref() {
+            handler(source.to_string(), level, message.to_string());
         }
     }
 }

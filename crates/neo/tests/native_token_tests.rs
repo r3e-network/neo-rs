@@ -12,8 +12,8 @@ use std::sync::Arc;
 fn neo_token_hash_matches_reference() {
     let neo = NeoToken::new();
     assert_eq!(
-        hex::encode(neo.hash().to_array()),
-        "ef4073a0f2b305a38ec4050e4d3d28bc40ea63f5"
+        neo.hash().to_hex_string(),
+        "0xef4073a0f2b305a38ec4050e4d3d28bc40ea63f5"
     );
     assert_eq!(neo.symbol(), "NEO");
     assert_eq!(neo.decimals(), 0);
@@ -23,14 +23,15 @@ fn neo_token_hash_matches_reference() {
 fn gas_token_hash_matches_reference() {
     let gas = GasToken::new();
     assert_eq!(
-        hex::encode(gas.hash().to_array()),
-        "d2a4cff31913016155e38e474a2c06d08be276cf"
+        gas.hash().to_hex_string(),
+        "0xd2a4cff31913016155e38e474a2c06d08be276cf"
     );
     assert_eq!(gas.symbol(), "GAS");
     assert_eq!(gas.decimals(), 8);
 }
 
 fn make_engine(snapshot: Arc<DataCache>, signer: UInt160) -> ApplicationEngine {
+    const TEST_GAS_LIMIT: i64 = 400_000_000;
     let mut container = Transaction::new();
     container.set_signers(vec![Signer::new(signer, WitnessScope::GLOBAL)]);
     let script_container: Arc<dyn IVerifiable> = Arc::new(container);
@@ -40,7 +41,7 @@ fn make_engine(snapshot: Arc<DataCache>, signer: UInt160) -> ApplicationEngine {
         snapshot,
         None,
         Default::default(),
-        200_000_000,
+        TEST_GAS_LIMIT,
         None,
     )
     .expect("engine")
