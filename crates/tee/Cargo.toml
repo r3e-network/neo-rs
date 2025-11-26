@@ -1,0 +1,41 @@
+[package]
+name = "neo-tee"
+version = "0.5.0"
+edition = "2021"
+description = "TEE (Trusted Execution Environment) support for Neo N3 blockchain"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/R3E-Network/neo-rs"
+
+[features]
+default = ["simulation"]
+# Use simulation mode (no real SGX hardware required)
+simulation = []
+# Enable real SGX hardware support
+sgx-hw = ["sgx-isa"]
+# Enable remote attestation
+attestation = ["sgx-hw"]
+
+[dependencies]
+# Core dependencies
+thiserror = "2.0"
+anyhow = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+hex = "0.4"
+bs58 = "0.5"
+base64 = "0.22"
+rand = "0.8"
+sha2 = "0.10"
+aes-gcm = "0.10"
+zeroize = { version = "1.8", features = ["derive"] }
+parking_lot = "0.12"
+async-trait = "0.1"
+tokio = { version = "1", features = ["sync"] }
+tracing = "0.1"
+
+# SGX dependencies (optional)
+sgx-isa = { version = "0.4", optional = true }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+tempfile = "3.10"

@@ -1,582 +1,568 @@
-#[allow(dead_code)]
+//! Neo CLI - Command-line client for Neo N3 blockchain nodes
+//!
+//! This CLI tool communicates with a Neo node via JSON-RPC.
+//!
+//! Usage:
+//!   neo-cli [OPTIONS] <COMMAND> [ARGS]
+//!
+//! Examples:
+//!   neo-cli version                          # Get node version
+//!   neo-cli state                            # Show node state
+//!   neo-cli block 1000                       # Get block by index
+//!   neo-cli tx <hash>                        # Get transaction
+//!   neo-cli --rpc-url http://localhost:10332 state
+
+use anyhow::{Context, Result};
+use clap::{Parser, Subcommand};
+use neo_rpc_client::RpcClient;
+use url::Url;
+
 mod commands;
-mod config;
-#[allow(dead_code)]
-mod console;
-#[allow(dead_code)]
-mod console_service;
 
-use anyhow::{bail, Context, Result};
-use chrono::Local;
-use clap::Parser;
-use commands::{
-    block::BlockCommands, blockchain::BlockchainCommands, command_line::CommandLine,
-    contracts::ContractCommands, logger::LoggerCommands, native::NativeCommands,
-    nep17::Nep17Commands, network::NetworkCommands, node::NodeCommands, plugins::PluginCommands,
-    tools::ToolCommands, vote::VoteCommands, wallet::WalletCommands,
-};
-use config::NodeConfig;
-use neo_core::{
-    neo_system::NeoSystem,
-    persistence::{providers::RocksDBStoreProvider, storage::StorageConfig, IStoreProvider},
-    protocol_settings::ProtocolSettings,
-    wallets::IWalletProvider,
-};
-#[allow(unused_imports)]
-use neo_plugins as _;
-use std::{
-    fs::{self, OpenOptions},
-    io::{self, IsTerminal, Write},
-    path::{Path, PathBuf},
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
-};
-use tokio::{signal, task};
-use tracing::{error, info, warn};
-use tracing_appender::{non_blocking, non_blocking::WorkerGuard};
-use tracing_subscriber::{fmt, EnvFilter};
+use commands::*;
 
+/// Neo CLI - Command-line client for Neo N3 blockchain nodes
 #[derive(Parser, Debug)]
-#[command(name = "neo-cli", about = "Neo N3 node (Rust) command-line interface")]
+#[command(name = "neo-cli", version, about, long_about = None)]
 struct Cli {
-    /// Path to the TOML configuration file (matches the Neo CLI format).
-    #[arg(long, default_value = "neo_mainnet_node.toml", value_name = "PATH")]
-    config: PathBuf,
+    /// RPC server URL
+    #[arg(long, short = 'u', default_value = "http://localhost:10332", global = true)]
+    rpc_url: String,
 
-    /// Overrides the configured storage path.
-    #[arg(long, value_name = "PATH")]
-    storage: Option<PathBuf>,
+    /// RPC basic auth username
+    #[arg(long, global = true)]
+    rpc_user: Option<String>,
 
-    /// Overrides the storage backend (memory, rocksdb).
-    #[arg(long, value_name = "BACKEND")]
-    backend: Option<String>,
+    /// RPC basic auth password
+    #[arg(long, global = true)]
+    rpc_pass: Option<String>,
 
-    /// Overrides the network magic used during the P2P handshake.
-    #[arg(long, value_name = "MAGIC")]
-    network_magic: Option<u32>,
+    /// Output format (json, table, plain)
+    #[arg(long, short = 'o', default_value = "plain", global = true)]
+    output: OutputFormat,
 
-    /// Overrides the P2P listening port.
-    #[arg(long, value_name = "PORT")]
-    listen_port: Option<u16>,
+    #[command(subcommand)]
+    command: Commands,
+}
 
-    /// Replaces the configured seed nodes (comma separated).
-    #[arg(long = "seed", value_delimiter = ',', value_name = "HOST:PORT")]
-    seed_nodes: Vec<String>,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum OutputFormat {
+    Json,
+    Table,
+    Plain,
+}
 
-    /// Overrides the maximum number of concurrent connections.
-    #[arg(long, value_name = "N")]
-    max_connections: Option<usize>,
+#[derive(Subcommand, Debug)]
+enum Commands {
+    // ==================== Node Information ====================
+    /// Get node version information
+    Version,
 
-    /// Overrides the minimum desired number of peers.
-    #[arg(long, value_name = "N")]
-    min_connections: Option<usize>,
+    /// Show node state (block height, network, etc.)
+    State,
 
-    /// Overrides the per-address connection cap.
-    #[arg(long, value_name = "N")]
-    max_connections_per_address: Option<usize>,
+    /// Show connected peers (alias: show node)
+    Peers,
 
-    /// Maximum broadcast history entries to retain in memory (0 disables capture).
-    #[arg(long, value_name = "N")]
-    broadcast_history_limit: Option<usize>,
+    /// Show memory pool status (alias: show pool)
+    Mempool {
+        /// Show verbose transaction list
+        #[arg(long, short = 'v')]
+        verbose: bool,
+    },
 
-    /// Disables compression for outbound connections.
-    #[arg(long)]
-    disable_compression: bool,
+    /// List loaded plugins on the node
+    Plugins,
 
-    /// Overrides the block time in seconds.
-    #[arg(long, value_name = "SECONDS")]
-    block_time: Option<u64>,
+    // ==================== Blockchain Queries ====================
+    /// Get block by index or hash (alias: show block)
+    Block {
+        /// Block index (number) or hash
+        index_or_hash: String,
 
-    /// Disables verification when importing `chain*.acc` bootstrap files.
-    #[arg(long)]
-    no_verify_import: bool,
+        /// Output raw hex instead of parsed block
+        #[arg(long)]
+        raw: bool,
+    },
 
-    /// Unlocks the specified NEP-6 wallet at startup.
-    #[arg(long, value_name = "PATH")]
-    wallet: Option<PathBuf>,
+    /// Get block header by index or hash
+    Header {
+        /// Block index (number) or hash
+        index_or_hash: String,
 
-    /// Password used to decrypt the unlocked wallet (requires `--wallet`).
-    #[arg(long, value_name = "PASSWORD")]
-    password: Option<String>,
+        /// Output raw hex instead of parsed header
+        #[arg(long)]
+        raw: bool,
+    },
+
+    /// Get transaction by hash (alias: show tx)
+    Tx {
+        /// Transaction hash (hex string)
+        hash: String,
+
+        /// Output raw hex instead of parsed transaction
+        #[arg(long)]
+        raw: bool,
+    },
+
+    /// Get contract state by hash (alias: show contract)
+    Contract {
+        /// Contract script hash or name
+        hash: String,
+    },
+
+    /// Get best block hash
+    BestBlockHash,
+
+    /// Get block count (height + 1)
+    BlockCount,
+
+    /// Get block hash by index
+    BlockHash {
+        /// Block index
+        index: u32,
+    },
+
+    // ==================== Token Operations ====================
+    /// Get NEP-17 token balances for an address
+    Balance {
+        /// Account address
+        address: String,
+    },
+
+    /// Get NEP-17 transfer history for an address
+    Transfers {
+        /// Account address
+        address: String,
+
+        /// Start timestamp (optional)
+        #[arg(long)]
+        from: Option<u64>,
+
+        /// End timestamp (optional)
+        #[arg(long)]
+        to: Option<u64>,
+    },
+
+    /// Show unclaimed GAS for an address (alias: show gas)
+    Gas {
+        /// Account address
+        address: String,
+    },
+
+    // ==================== Contract Invocation ====================
+    /// Invoke a contract method (read-only)
+    Invoke {
+        /// Contract script hash
+        hash: String,
+
+        /// Method name
+        method: String,
+
+        /// Method parameters as JSON array
+        #[arg(default_value = "[]")]
+        params: String,
+    },
+
+    /// Test invoke a script (read-only, alias: testinvoke)
+    TestInvoke {
+        /// Base64-encoded script
+        script: String,
+    },
+
+    // ==================== Wallet Commands ====================
+    /// Wallet management commands
+    #[command(subcommand)]
+    Wallet(WalletCommands),
+
+    // ==================== Send/Transfer ====================
+    /// Send assets to an address
+    Send {
+        /// Asset hash (e.g., NEO, GAS, or contract hash)
+        asset: String,
+
+        /// Recipient address
+        to: String,
+
+        /// Amount to send
+        amount: String,
+
+        /// Sender address (optional, uses default if not specified)
+        #[arg(long)]
+        from: Option<String>,
+    },
+
+    /// Transfer NEP-17 tokens
+    Transfer {
+        /// Token contract hash
+        token: String,
+
+        /// Recipient address
+        to: String,
+
+        /// Amount to transfer
+        amount: String,
+
+        /// Sender address (optional)
+        #[arg(long)]
+        from: Option<String>,
+
+        /// Additional data (optional)
+        #[arg(long)]
+        data: Option<String>,
+    },
+
+    // ==================== Voting ====================
+    /// Vote for a candidate
+    Vote {
+        /// Voter address
+        address: String,
+
+        /// Candidate public key (hex)
+        pubkey: String,
+    },
+
+    /// Remove vote
+    Unvote {
+        /// Voter address
+        address: String,
+    },
+
+    /// Register as a candidate
+    RegisterCandidate {
+        /// Public key to register
+        pubkey: String,
+    },
+
+    /// Unregister as a candidate
+    UnregisterCandidate {
+        /// Public key to unregister
+        pubkey: String,
+    },
+
+    /// Get list of candidates
+    Candidates,
+
+    /// Get committee members
+    Committee,
+
+    /// Get next block validators
+    Validators,
+
+    // ==================== Native Contracts ====================
+    /// List native contracts
+    NativeContracts,
+
+    /// Query NEO token info
+    Neo {
+        #[command(subcommand)]
+        cmd: NeoTokenCmd,
+    },
+
+    /// Query GAS token info
+    GasToken {
+        #[command(subcommand)]
+        cmd: GasTokenCmd,
+    },
+
+    // ==================== Tools ====================
+    /// Parse address, script hash, or public key
+    Parse {
+        /// Value to parse
+        value: String,
+    },
+
+    /// Parse and disassemble a script
+    ParseScript {
+        /// Base64-encoded script
+        script: String,
+    },
+
+    /// Validate an address
+    ValidateAddress {
+        /// Address to validate
+        address: String,
+    },
+
+    /// Sign data with a private key
+    Sign {
+        /// Data to sign (hex)
+        data: String,
+
+        /// Private key (WIF format)
+        #[arg(long)]
+        key: String,
+    },
+
+    /// Relay a signed transaction
+    Relay {
+        /// Signed transaction (hex or base64)
+        transaction: String,
+    },
+
+    // ==================== Network ====================
+    /// Broadcast commands
+    #[command(subcommand)]
+    Broadcast(BroadcastCommands),
+
+    // ==================== Import/Export ====================
+    /// Export blocks to a file
+    ExportBlocks {
+        /// Output file path
+        #[arg(default_value = "chain.acc")]
+        path: String,
+
+        /// Start block index
+        #[arg(long, default_value = "0")]
+        start: u32,
+
+        /// Number of blocks to export (0 = all)
+        #[arg(long, default_value = "0")]
+        count: u32,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum WalletCommands {
+    /// Open a wallet file
+    Open {
+        /// Path to wallet file
+        path: String,
+
+        /// Wallet password
+        #[arg(long, short = 'p')]
+        password: Option<String>,
+    },
+
+    /// Create a new wallet
+    Create {
+        /// Path for new wallet file
+        path: String,
+    },
+
+    /// List addresses in wallet
+    List,
+
+    /// List assets in wallet
+    Assets,
+
+    /// List keys in wallet
+    Keys,
+
+    /// Create new address in wallet
+    CreateAddress {
+        /// Number of addresses to create
+        #[arg(default_value = "1")]
+        count: u32,
+    },
+
+    /// Delete an address from wallet
+    DeleteAddress {
+        /// Address to delete
+        address: String,
+    },
+
+    /// Import private key
+    ImportKey {
+        /// WIF private key or path to key file
+        key: String,
+    },
+
+    /// Import watch-only address
+    ImportWatchOnly {
+        /// Address or public key
+        address: String,
+    },
+
+    /// Export private key
+    ExportKey {
+        /// Address to export (optional, exports all if not specified)
+        address: Option<String>,
+
+        /// Output file path
+        #[arg(long)]
+        path: Option<String>,
+    },
+
+    /// Change wallet password
+    ChangePassword,
+
+    /// Upgrade wallet format
+    Upgrade {
+        /// Path to wallet file
+        path: String,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum BroadcastCommands {
+    /// Broadcast address message
+    Addr,
+
+    /// Broadcast block
+    Block {
+        /// Block hash or index
+        block: String,
+    },
+
+    /// Broadcast getblocks request
+    GetBlocks {
+        /// Start hash
+        start: String,
+    },
+
+    /// Broadcast getdata request
+    GetData {
+        /// Inventory type (tx, block, consensus)
+        inv_type: String,
+
+        /// Hash
+        hash: String,
+    },
+
+    /// Broadcast getheaders request
+    GetHeaders {
+        /// Start hash
+        start: String,
+    },
+
+    /// Broadcast inventory
+    Inv {
+        /// Inventory type
+        inv_type: String,
+
+        /// Hash
+        hash: String,
+    },
+
+    /// Broadcast transaction
+    Transaction {
+        /// Transaction hash
+        hash: String,
+    },
+
+    /// Broadcast ping
+    Ping,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum NeoTokenCmd {
+    /// Get total supply
+    TotalSupply,
+
+    /// Get decimals
+    Decimals,
+
+    /// Get symbol
+    Symbol,
+
+    /// Get balance of address
+    BalanceOf {
+        /// Address
+        address: String,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum GasTokenCmd {
+    /// Get total supply
+    TotalSupply,
+
+    /// Get decimals
+    Decimals,
+
+    /// Get symbol
+    Symbol,
+
+    /// Get balance of address
+    BalanceOf {
+        /// Address
+        address: String,
+    },
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
-    let mut node_config = NodeConfig::load(&cli.config)?;
-    let logging_handles = init_tracing(&node_config.logging)?;
-    let console_log_state = logging_handles.console_enabled.clone();
-    let _log_guard = logging_handles.guard;
 
-    if let Some(magic) = cli.network_magic {
-        node_config.network.network_magic = Some(magic);
-    }
+    // Create RPC client
+    let url = Url::parse(&cli.rpc_url)
+        .with_context(|| format!("Invalid RPC URL: {}", cli.rpc_url))?;
 
-    if let Some(port) = cli.listen_port {
-        node_config.p2p.listen_port = Some(port);
-    }
+    let client = RpcClient::new(url, cli.rpc_user.clone(), cli.rpc_pass.clone(), None)
+        .map_err(|e| anyhow::anyhow!("Failed to create RPC client: {}", e))?;
 
-    if !cli.seed_nodes.is_empty() {
-        node_config.p2p.seed_nodes = cli.seed_nodes.clone();
-    }
+    // Execute command
+    let result = match cli.command {
+        // Node Information
+        Commands::Version => version::execute(&client).await,
+        Commands::State => state::execute(&client).await,
+        Commands::Peers => peers::execute(&client).await,
+        Commands::Mempool { verbose } => mempool::execute(&client, verbose).await,
+        Commands::Plugins => plugins::execute(&client).await,
 
-    if let Some(max_conn) = cli.max_connections {
-        node_config.p2p.max_connections = Some(max_conn);
-    }
+        // Blockchain Queries
+        Commands::Block { index_or_hash, raw } => block::execute(&client, &index_or_hash, raw).await,
+        Commands::Header { index_or_hash, raw } => header::execute(&client, &index_or_hash, raw).await,
+        Commands::Tx { hash, raw } => tx::execute(&client, &hash, raw).await,
+        Commands::Contract { hash } => contract::execute(&client, &hash).await,
+        Commands::BestBlockHash => best_block_hash::execute(&client).await,
+        Commands::BlockCount => block_count::execute(&client).await,
+        Commands::BlockHash { index } => block_hash::execute(&client, index).await,
 
-    if let Some(min_conn) = cli.min_connections {
-        node_config.p2p.min_desired_connections = Some(min_conn);
-    }
+        // Token Operations
+        Commands::Balance { address } => balance::execute(&client, &address).await,
+        Commands::Transfers { address, from, to } => transfers::execute(&client, &address, from, to).await,
+        Commands::Gas { address } => gas::execute(&client, &address).await,
 
-    if let Some(max_per_address) = cli.max_connections_per_address {
-        node_config.p2p.max_connections_per_address = Some(max_per_address);
-    }
+        // Contract Invocation
+        Commands::Invoke { hash, method, params } => invoke::execute(&client, &hash, &method, &params).await,
+        Commands::TestInvoke { script } => test_invoke::execute(&client, &script).await,
 
-    if let Some(limit) = cli.broadcast_history_limit {
-        node_config.p2p.broadcast_history_limit = Some(limit);
-    }
+        // Wallet
+        Commands::Wallet(cmd) => wallet::execute(&client, cmd).await,
 
-    if cli.disable_compression {
-        node_config.p2p.enable_compression = Some(false);
-    }
+        // Send/Transfer
+        Commands::Send { asset, to, amount, from } => send::execute(&client, &asset, &to, &amount, from.as_deref()).await,
+        Commands::Transfer { token, to, amount, from, data } => transfer::execute(&client, &token, &to, &amount, from.as_deref(), data.as_deref()).await,
 
-    if let Some(seconds) = cli.block_time {
-        node_config.blockchain.block_time = Some(seconds);
-    }
+        // Voting
+        Commands::Vote { address, pubkey } => vote::execute(&client, &address, &pubkey).await,
+        Commands::Unvote { address } => vote::unvote(&client, &address).await,
+        Commands::RegisterCandidate { pubkey } => vote::register_candidate(&client, &pubkey).await,
+        Commands::UnregisterCandidate { pubkey } => vote::unregister_candidate(&client, &pubkey).await,
+        Commands::Candidates => vote::get_candidates(&client).await,
+        Commands::Committee => vote::get_committee(&client).await,
+        Commands::Validators => vote::get_validators(&client).await,
 
-    if let Some(backend) = &cli.backend {
-        node_config.storage.backend = Some(backend.clone());
-    }
+        // Native Contracts
+        Commands::NativeContracts => native::list_contracts(&client).await,
+        Commands::Neo { cmd } => native::neo_token(&client, cmd).await,
+        Commands::GasToken { cmd } => native::gas_token(&client, cmd).await,
 
-    let storage_config = node_config.storage_config();
-    let storage_path = cli
-        .storage
-        .as_ref()
-        .map(|path| path.to_string_lossy().to_string())
-        .or_else(|| node_config.storage_path());
-    let backend_name = node_config.storage_backend().map(|name| name.to_string());
+        // Tools
+        Commands::Parse { value } => tools::parse(&value).await,
+        Commands::ParseScript { script } => tools::parse_script(&client, &script).await,
+        Commands::ValidateAddress { address } => validate::execute(&client, &address).await,
+        Commands::Sign { data, key } => tools::sign(&data, &key).await,
+        Commands::Relay { transaction } => relay::execute(&client, &transaction).await,
 
-    let protocol_settings: ProtocolSettings = node_config.protocol_settings();
-    if let Some(canonical) = node_config
-        .network
-        .network_type
-        .as_deref()
-        .and_then(config::infer_magic_from_type)
-    {
-        if canonical != protocol_settings.network {
-            warn!(
-                target: "neo",
-                network_type = ?node_config.network.network_type,
-                configured_magic = format_args!("0x{:08x}", protocol_settings.network),
-                canonical_magic = format_args!("0x{:08x}", canonical),
-                "network type and magic differ; ensure this is intentional"
-            );
-        }
-    }
-    info!(
-        target: "neo",
-        seeds = ?protocol_settings.seed_list,
-        network_magic = format_args!("0x{:08x}", protocol_settings.network),
-        listen_port = node_config.p2p.listen_port,
-        storage = storage_path.as_deref().unwrap_or("<none>"),
-        backend = backend_name.as_deref().unwrap_or("memory"),
-        "using protocol settings"
-    );
-    info!(
-        target: "neo",
-        build = %build_feature_summary(),
-        "build profile"
-    );
-    let wallet_settings = Arc::new(protocol_settings.clone());
-    if let Some(path) = node_config.write_rpc_server_plugin_config(&protocol_settings)? {
-        info!(
-            target: "neo",
-            path = %path.display(),
-            "rpc server configuration emitted"
-        );
-    }
+        // Network/Broadcast
+        Commands::Broadcast(cmd) => broadcast::execute(&client, cmd).await,
 
-    let store_provider = select_store_provider(backend_name.as_deref(), storage_config)?;
-    if let (Some(_provider), Some(path)) = (&store_provider, &storage_path) {
-        check_storage_network(path, protocol_settings.network)?;
-    }
-
-    if store_provider.is_some() && storage_path.is_none() {
-        let backend = backend_name.unwrap_or_else(|| "unknown".to_string());
-        bail!(
-            "storage backend '{}' requires a data path (--storage or [storage.path])",
-            backend
-        );
-    }
-
-    let system: Arc<NeoSystem> = NeoSystem::new(
-        protocol_settings,
-        store_provider.clone(),
-        storage_path.clone(),
-    )
-    .map_err(anyhow::Error::new)?;
-    log_registered_plugins().await;
-
-    let wallet_commands = Arc::new(WalletCommands::new(wallet_settings, Arc::clone(&system)));
-    let wallet_provider: Arc<dyn IWalletProvider + Send + Sync> =
-        Arc::clone(&wallet_commands) as Arc<dyn IWalletProvider + Send + Sync>;
-    system
-        .attach_wallet_provider(wallet_provider)
-        .map_err(anyhow::Error::new)?;
-    let plugin_commands = Arc::new(PluginCommands::new(&node_config.plugins));
-    let block_commands = Arc::new(BlockCommands::new(Arc::clone(&system)));
-    let blockchain_commands = Arc::new(BlockchainCommands::new(Arc::clone(&system)));
-    let native_commands = Arc::new(NativeCommands::new(Arc::clone(&system)));
-    let node_commands = Arc::new(NodeCommands::new(Arc::clone(&system)));
-    let network_commands = Arc::new(NetworkCommands::new(Arc::clone(&system)));
-    let nep17_commands = Arc::new(Nep17Commands::new(
-        Arc::clone(&system),
-        Arc::clone(&wallet_commands),
-    ));
-    let logger_commands = Arc::new(LoggerCommands::new(console_log_state));
-    let tool_commands = Arc::new(ToolCommands::new(Arc::new(system.settings().clone())));
-    let contract_commands = Arc::new(ContractCommands::new(
-        Arc::clone(&system),
-        Arc::clone(&wallet_commands),
-    ));
-    let vote_commands = Arc::new(VoteCommands::new(
-        Arc::clone(&system),
-        Arc::clone(&wallet_commands),
-        Arc::clone(&contract_commands),
-    ));
-    let verify_import = !cli.no_verify_import;
-    if let Err(err) = block_commands.import_default_chain_files(verify_import) {
-        warn!(
-            target: "neo",
-            error = %err,
-            "failed to import bootstrap blocks; continuing without import"
-        );
-    }
-
-    let mut wallet_path = cli.wallet.clone();
-    let mut wallet_password = cli.password.clone();
-
-    if wallet_path.is_none() && node_config.unlock_wallet.is_active {
-        match &node_config.unlock_wallet.path {
-            Some(path) if !path.is_empty() => {
-                wallet_path = Some(PathBuf::from(path));
-            }
-            _ => error!(
-                target: "neo",
-                "unlock_wallet.is_active is true but no wallet path was provided"
-            ),
-        }
-
-        if wallet_password.is_none() {
-            match &node_config.unlock_wallet.password {
-                Some(pass) => wallet_password = Some(pass.clone()),
-                None => error!(
-                    target: "neo",
-                    "unlock_wallet.is_active is true but no wallet password was provided"
-                ),
-            }
-        }
-    }
-
-    if let Some(wallet_path) = wallet_path.as_deref() {
-        let password = wallet_password.as_deref().unwrap_or("");
-        wallet_commands
-            .open_wallet(wallet_path, password)
-            .map_err(|err| anyhow::anyhow!(err))?;
-    }
-
-    system
-        .start_node(node_config.channels_config())
-        .map_err(anyhow::Error::new)?;
-
-    info!(
-        target: "neo",
-        network = format!("{:#X}", system.settings().network),
-        backend = backend_name.as_deref().unwrap_or("memory"),
-        storage = storage_path
-            .as_deref()
-            .unwrap_or("<in-memory>"),
-        "neo-rs node started; press Ctrl+C to exit"
-    );
-
-    let stdin_is_tty = io::stdin().is_terminal();
-
-    let command_line = Arc::new(CommandLine::new(
-        wallet_commands,
-        plugin_commands,
-        logger_commands,
-        block_commands,
-        blockchain_commands,
-        native_commands,
-        node_commands,
-        network_commands,
-        nep17_commands,
-        tool_commands,
-        contract_commands,
-        vote_commands,
-    ));
-
-    let mut shell_handle = if stdin_is_tty {
-        Some(task::spawn_blocking({
-            let command_line = Arc::clone(&command_line);
-            move || command_line.run_shell()
-        }))
-    } else {
-        None
+        // Import/Export
+        Commands::ExportBlocks { path, start, count } => export::execute(&client, &path, start, count).await,
     };
 
-    if let Some(mut handle) = shell_handle.take() {
-        tokio::select! {
-            result = signal::ctrl_c() => {
-                if let Err(err) = result {
-                    error!(target: "neo", error = %err, "failed to wait for shutdown signal");
-                } else {
-                    info!(target: "neo", "shutdown signal received (Ctrl+C)");
-                }
-                handle.abort();
-                if let Err(err) = handle.await {
-                    warn!(target: "neo", error = %err, "console task did not shut down cleanly");
-                }
-            }
-            shell = &mut handle => {
-                match shell {
-                    Ok(Ok(())) => info!(target: "neo", "console session ended"),
-                    Ok(Err(err)) => error!(target: "neo", error = %err, "console session failed"),
-                    Err(err) => error!(target: "neo", error = %err, "console task error"),
-                }
-            }
-        }
-    } else if let Err(err) = signal::ctrl_c().await {
-        error!(target: "neo", error = %err, "failed to wait for shutdown signal");
-    } else {
-        info!(target: "neo", "shutdown signal received (Ctrl+C)");
-    }
-
-    info!(target: "neo", "stopping neo system");
-    system.shutdown().await.map_err(anyhow::Error::new)?;
-    info!(target: "neo", "shutdown complete");
-    Ok(())
-}
-
-fn init_tracing(logging: &config::LoggingSection) -> Result<LoggingHandles> {
-    use tracing_subscriber::fmt::writer::{BoxMakeWriter, MakeWriterExt};
-
-    if !logging.active {
-        return Ok(LoggingHandles {
-            guard: None,
-            console_enabled: None,
-        });
-    }
-
-    let level = logging.level.as_deref().unwrap_or("info");
-    let filter_spec = format!("{level},neo={level}");
-    let env_filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(filter_spec));
-
-    let mut guard = None;
-
-    let path_value = logging
-        .file_path
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
-
-    let file_requested = logging.file_enabled;
-    let file_writer = if file_requested {
-        let path = path_value.unwrap_or("Logs");
-        let (writer, file_guard) = create_file_writer(path)?;
-        guard = Some(file_guard);
-        Some(writer)
-    } else {
-        None
-    };
-
-    let has_file = file_writer.is_some();
-    let console_enabled = Arc::new(AtomicBool::new(logging.console_output));
-    let console_writer = ConsoleToggleWriter::new(Arc::clone(&console_enabled));
-    let writer: BoxMakeWriter = match file_writer {
-        Some(file) => BoxMakeWriter::new(console_writer.and(file)),
-        None => BoxMakeWriter::new(console_writer),
-    };
-
-    let builder = fmt()
-        .with_env_filter(env_filter)
-        .with_writer(writer)
-        .with_ansi(logging.console_output && !has_file);
-
-    let normalized = logging
-        .format
-        .as_deref()
-        .map(|value| value.to_ascii_lowercase())
-        .unwrap_or_else(|| "text".to_string());
-
-    match normalized.as_str() {
-        "json" => {
-            let _ = builder.json().try_init();
-        }
-        "pretty" => {
-            let _ = builder.pretty().try_init();
-        }
-        _ => {
-            let _ = builder.try_init();
-        }
-    }
-    Ok(LoggingHandles {
-        guard,
-        console_enabled: Some(console_enabled),
-    })
-}
-
-struct LoggingHandles {
-    guard: Option<WorkerGuard>,
-    console_enabled: Option<Arc<AtomicBool>>,
-}
-
-#[derive(Clone)]
-struct ConsoleToggleWriter {
-    enabled: Arc<AtomicBool>,
-}
-
-impl ConsoleToggleWriter {
-    fn new(enabled: Arc<AtomicBool>) -> Self {
-        Self { enabled }
-    }
-}
-
-struct ConditionalConsoleWriter {
-    enabled: Arc<AtomicBool>,
-    stderr: io::Stderr,
-}
-
-impl<'a> tracing_subscriber::fmt::writer::MakeWriter<'a> for ConsoleToggleWriter {
-    type Writer = ConditionalConsoleWriter;
-
-    fn make_writer(&'a self) -> Self::Writer {
-        ConditionalConsoleWriter {
-            enabled: Arc::clone(&self.enabled),
-            stderr: io::stderr(),
-        }
-    }
-}
-
-impl Write for ConditionalConsoleWriter {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        if self.enabled.load(Ordering::Relaxed) {
-            self.stderr.write(buf)
-        } else {
-            Ok(buf.len())
-        }
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        if self.enabled.load(Ordering::Relaxed) {
-            self.stderr.flush()
-        } else {
+    // Handle result
+    match result {
+        Ok(output) => {
+            println!("{}", output);
             Ok(())
         }
-    }
-}
-
-fn create_file_writer(path: &str) -> Result<(non_blocking::NonBlocking, WorkerGuard)> {
-    let provided = Path::new(path);
-    let file_path = if provided.is_file() || provided.extension().is_some() {
-        provided.to_path_buf()
-    } else {
-        fs::create_dir_all(provided)
-            .with_context(|| format!("failed to create log directory {}", provided.display()))?;
-        provided.join(default_log_name())
-    };
-
-    if let Some(parent) = file_path.parent() {
-        if !parent.as_os_str().is_empty() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("failed to create log directory {}", parent.display()))?;
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            std::process::exit(1);
         }
     }
-
-    let file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&file_path)
-        .with_context(|| format!("failed to open log file {}", file_path.display()))?;
-    Ok(non_blocking(file))
-}
-
-fn default_log_name() -> String {
-    format!("neo-cli-{}.log", Local::now().format("%Y-%m-%d"))
-}
-
-fn build_feature_summary() -> String {
-    "plugins: dbft,rpc-server,rocksdb-store,tokens-tracker,application-logs,sqlite-wallet"
-        .to_string()
-}
-
-async fn log_registered_plugins() {
-    let plugins = neo_extensions::plugin::global_plugin_infos().await;
-    if plugins.is_empty() {
-        info!(target: "neo", "no plugins registered");
-    } else {
-        let summary: Vec<String> = plugins
-            .iter()
-            .map(|p| format!("{} v{} ({:?})", p.name, p.version, p.category))
-            .collect();
-        info!(
-            target: "neo",
-            count = plugins.len(),
-            plugins = %summary.join(", "),
-            "plugins registered"
-        );
-    }
-}
-
-fn select_store_provider(
-    backend: Option<&str>,
-    storage_config: StorageConfig,
-) -> Result<Option<Arc<dyn IStoreProvider>>> {
-    let Some(name) = backend else {
-        return Ok(None);
-    };
-
-    let normalized = name.trim().to_ascii_lowercase();
-    match normalized.as_str() {
-        "" | "memory" | "mem" | "inmemory" => Ok(None),
-        "rocksdb" | "rocksdbstore" | "rocksdb-store" => {
-            let provider: Arc<dyn IStoreProvider> =
-                Arc::new(RocksDBStoreProvider::new(storage_config));
-            Ok(Some(provider))
-        }
-        other => bail!("unsupported storage backend '{}'", other),
-    }
-}
-
-fn check_storage_network(path: &str, magic: u32) -> Result<()> {
-    let storage_path = Path::new(path);
-    if !storage_path.exists() {
-        fs::create_dir_all(storage_path)
-            .with_context(|| format!("failed to create storage path {}", path))?;
-    }
-
-    let marker = storage_path.join("NETWORK_MAGIC");
-    if marker.exists() {
-        let contents = fs::read_to_string(&marker)
-            .with_context(|| format!("failed to read network marker {}", marker.display()))?;
-        let parsed = contents.trim_start_matches("0x").trim().to_string();
-        let stored_magic = u32::from_str_radix(&parsed, 16)
-            .or_else(|_| parsed.parse::<u32>())
-            .with_context(|| format!("invalid magic in {}: {}", marker.display(), contents))?;
-        if stored_magic != magic {
-            bail!(
-                "storage at {} was initialized for network magic 0x{:08x}, but current config is 0x{:08x}. Use a fresh storage path or clear the directory.",
-                path,
-                stored_magic,
-                magic
-            );
-        }
-    } else {
-        fs::write(&marker, format!("0x{magic:08x}"))
-            .with_context(|| format!("failed to write network marker {}", marker.display()))?;
-    }
-    Ok(())
 }

@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.5.0] - 2025-01-21
+
+### Compatibility
+- Compatible with Neo N3 v3.8.2 (C# reference commit: `ede620e5722c48e199a0f3f2ab482ae090c1b878`)
+
+### Added
+- **TEE (Trusted Execution Environment) Support**: New `neo-tee` crate for Intel SGX-based security
+  - Enclave runtime with sealing key derivation and monotonic counters
+  - AES-256-GCM data sealing with replay protection
+  - Protected wallet with sealed private key storage (`TeeWallet`, `TeeWalletProvider`)
+  - Protected mempool with fair transaction ordering to prevent MEV attacks
+  - Five fair ordering policies: FCFS, BatchedRandom, CommitReveal, ThresholdEncryption, FCFSWithGasCap
+  - Remote attestation framework with SGX report generation
+  - Merkle tree proofs for ordering verification
+  - Simulation mode for development without SGX hardware
+- **neo-node**: New standalone RPC server daemon split from neo-cli
+  - Dedicated binary for running headless Neo nodes
+  - TEE integration via feature flags (`--features tee`, `--features tee-sgx`)
+  - Configurable ordering policies for TEE mempool
+- **neo-cli**: Refactored as lightweight RPC client
+  - 40+ individual command modules for better maintainability
+  - Commands: balance, block, broadcast, contract, export, gas, header, invoke, mempool, peers, relay, send, state, transfer, tx, validate, version, wallet, vote, and more
+  - Clean separation from node runtime
+
+### Changed
+- Workspace version bumped to 0.5.0
+- neo-cli binary size reduced to ~3MB (stripped)
+- neo-node with TEE support ~19MB
+
+### Architecture
+- `crates/tee/` - TEE enclave, wallet protection, mempool protection, attestation
+- `crates/node/` - Standalone RPC server with optional TEE integration
+- `crates/cli/` - RPC client CLI with modular commands
+
 ## [0.4.0] - 2025-01-20
 
 ### Compatibility

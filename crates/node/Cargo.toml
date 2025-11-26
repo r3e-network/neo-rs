@@ -1,0 +1,51 @@
+[package]
+name = "neo-node"
+version = "0.5.0"
+edition = "2021"
+description = "Neo N3 blockchain node daemon"
+authors = ["R3E Network <jimmy@r3e.network>"]
+license = "MIT"
+
+[[bin]]
+name = "neo-node"
+path = "src/main.rs"
+
+[features]
+default = []
+# Enable TEE (Trusted Execution Environment) support
+tee = ["neo-tee"]
+# Enable TEE with SGX hardware
+tee-sgx = ["tee", "neo-tee/sgx-hw"]
+
+[dependencies]
+neo-core = { path = "../neo" }
+neo-extensions = { path = "../extensions" }
+neo-plugins = { path = "../plugins" }
+neo-tee = { path = "../tee", optional = true }
+
+# CLI and configuration
+clap = { workspace = true, features = ["derive"] }
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+
+# Async runtime
+tokio.workspace = true
+async-trait.workspace = true
+
+# Logging
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tracing-appender.workspace = true
+
+# Error handling
+anyhow.workspace = true
+thiserror.workspace = true
+
+# Utilities
+chrono.workspace = true
+uuid.workspace = true
+sysinfo.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
