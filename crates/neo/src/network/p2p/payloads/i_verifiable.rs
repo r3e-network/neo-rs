@@ -11,6 +11,7 @@
 
 use super::witness::Witness;
 use crate::neo_io::Serializable;
+use crate::smart_contract::helper::Helper;
 use crate::{persistence::DataCache, protocol_settings::ProtocolSettings, UInt160};
 
 /// Represents an object that can be verified in the NEO network.
@@ -25,19 +26,22 @@ pub trait IVerifiable: Serializable {
     fn get_witnesses_mut(&mut self) -> Vec<&mut Witness>;
 
     /// Verify witnesses with a gas limit.
+    /// Matches C# IVerifiable.VerifyWitnesses extension method.
+    ///
+    /// This method verifies all witnesses by:
+    /// 1. Getting script hashes to verify
+    /// 2. Getting witnesses
+    /// 3. Executing verification scripts with gas limit
+    /// 4. Returning true if all verifications pass
     fn verify_witnesses(
         &self,
-        _settings: &ProtocolSettings,
-        _snapshot: &DataCache,
-        _max_gas: i64,
-    ) -> bool {
-        // This would require VM execution to verify scripts
-        // For now, return a placeholder
-        // In full implementation, this would:
-        // 1. Get script hashes for verifying
-        // 2. Get witnesses
-        // 3. Execute verification scripts with gas limit
-        // 4. Return true if all verifications pass
-        true
+        settings: &ProtocolSettings,
+        snapshot: &DataCache,
+        max_gas: i64,
+    ) -> bool
+    where
+        Self: Sized,
+    {
+        Helper::verify_witnesses(self, settings, snapshot, max_gas)
     }
 }

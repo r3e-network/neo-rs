@@ -167,13 +167,10 @@ criterion = { version = "0.5", features = ["html_reports"] }
 proptest = "1.4"
 mockall = "0.12"
 
-# === Optional dependencies for features ===
-# Compression
+# Compression and metrics (always enabled)
 flate2 = "1.0"
 # zstd = "0.13" # Temporarily disabled due to C header issues
 lz4_flex = "0.11"
-
-# Metrics and monitoring
 prometheus = "0.13"
 sysinfo = "0.29"
 
@@ -221,58 +218,24 @@ url.workspace = true
 thiserror.workspace = true
 anyhow.workspace = true
 
-[features]
-default = ["full"]
-
-# Feature groups
-full = ["consensus", "metrics", "compression"]
-minimal = []
-
-# Individual features
-consensus = ["neo-plugins"]
-# Removed rpc feature - RPC is handled as plugins in C# 
-metrics = ["prometheus", "sysinfo"]
-compression = ["flate2"] # removed zstd due to build issues
-testing = ["tempfile", "mockall"]
-integration-tests = []
-
-# Development features
-dev = ["testing", "tracing-subscriber/json"]
-
-# Optional consensus (can be disabled for minimal builds)
 [dependencies.neo-plugins]
 workspace = true
-optional = true
 
-# Removed RPC dependencies - RPC is handled as plugins in C#
-
-# Optional metrics
 [dependencies.prometheus]
 workspace = true
-optional = true
 
 [dependencies.sysinfo]
 workspace = true
-optional = true
 
-# Optional compression
 [dependencies.flate2]
 workspace = true
-optional = true
 
 # [dependencies.zstd]
 # workspace = true
-# optional = true
 # Temporarily disabled due to C header issues
 
-# Optional testing dependencies
 [dependencies.tempfile]
 workspace = true
-optional = true
-
-[dependencies.mockall]
-workspace = true
-optional = true
 
 # Development dependencies
 [dev-dependencies]
@@ -294,13 +257,11 @@ futures.workspace = true
 # [[bench]]
 # name = "node_performance"
 # harness = false
-# required-features = ["full"]
 
 # Examples (temporarily disabled due to API mismatches)
 # [[example]]
 # name = "live_network_test"
 # path = "examples/live_network_test.rs"
-# required-features = ["full"]
 
 # [[example]]
 # name = "network_test"
@@ -342,7 +303,6 @@ lto = "fat"
 
 # Documentation settings
 [package.metadata.docs.rs]
-all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 # Integration tests (disabled after cleanup)

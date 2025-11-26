@@ -30,6 +30,7 @@ impl RpcServerNode {
         vec![
             Self::handler("getconnectioncount", Self::get_connection_count),
             Self::handler("getpeers", Self::get_peers),
+            Self::handler("getplugins", Self::get_plugins),
             Self::handler("getversion", Self::get_version),
             Self::handler("sendrawtransaction", Self::send_raw_transaction),
             Self::handler("submitblock", Self::submit_block),
@@ -40,10 +41,7 @@ impl RpcServerNode {
         name: &'static str,
         func: fn(&RpcServer, &[Value]) -> Result<Value, RpcException>,
     ) -> RpcHandler {
-        RpcHandler::new(
-            RpcMethodDescriptor::new(name),
-            Arc::new(move |server, params| func(server, params)),
-        )
+        RpcHandler::new(RpcMethodDescriptor::new(name), Arc::new(func))
     }
 
     fn get_connection_count(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {
@@ -95,6 +93,10 @@ impl RpcServerNode {
                 "connected": connected,
             })
         })
+    }
+
+    fn get_plugins(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {
+        Ok(server.list_plugins())
     }
 
     fn get_version(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {
@@ -254,7 +256,7 @@ impl RpcServerNode {
     }
 
     fn format_hardfork(fork: Hardfork) -> String {
-        format!("{}", format!("{:?}", fork).trim_start_matches("Hf"))
+        format!("{:?}", fork).trim_start_matches("Hf").to_string()
     }
 
     fn format_public_key(bytes: &[u8]) -> String {

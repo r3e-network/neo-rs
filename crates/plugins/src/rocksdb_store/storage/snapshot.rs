@@ -1,10 +1,11 @@
 use super::options;
 use super::store::Store;
-use neo_core::persistence::i_read_only_store::IReadOnlyStoreGeneric;
+use neo_core::persistence::i_read_only_store::{IReadOnlyStore, IReadOnlyStoreGeneric};
 use neo_core::persistence::i_store::IStore;
 use neo_core::persistence::i_store_snapshot::IStoreSnapshot;
 use neo_core::persistence::i_write_store::IWriteStore;
 use neo_core::persistence::seek_direction::SeekDirection;
+use neo_core::smart_contract::{StorageItem, StorageKey};
 use rocksdb::{DBIteratorWithThreadMode, IteratorMode, ReadOptions, WriteBatch, DB};
 use std::mem;
 use std::sync::{Arc, Mutex};
@@ -39,16 +40,24 @@ impl Snapshot {
     fn iterator_from(
         &self,
         key_or_prefix: &[u8],
+        prefix: Option<Vec<u8>>,
         direction: SeekDirection,
     ) -> SnapshotIterator<'_> {
         let read_options = self.read_options();
-        SnapshotIterator::new(self.db.as_ref(), read_options, key_or_prefix, direction)
+        SnapshotIterator::new(
+            self.db.as_ref(),
+            read_options,
+            key_or_prefix,
+            prefix,
+            direction,
+        )
     }
 }
 
 struct SnapshotIterator<'a> {
     inner: DBIteratorWithThreadMode<'a, DB>,
-    direction: SeekDirection,
+    prefix: Option<Vec<u8>>,
+    done: bool,
 }
 
 impl<'a> SnapshotIterator<'a> {
@@ -56,6 +65,7 @@ impl<'a> SnapshotIterator<'a> {
         db: &'a DB,
         read_options: ReadOptions,
         key_or_prefix: &[u8],
+        prefix: Option<Vec<u8>>,
         direction: SeekDirection,
     ) -> Self {
         let mode = match direction {
@@ -76,7 +86,19 @@ impl<'a> SnapshotIterator<'a> {
         };
 
         let inner = db.iterator_opt(mode, read_options);
-        Self { inner, direction }
+        Self {
+            inner,
+            prefix,
+            done: false,
+        }
+    }
+
+    fn matches_prefix(&self, key: &[u8]) -> bool {
+        if let Some(prefix) = &self.prefix {
+            key.starts_with(prefix)
+        } else {
+            true
+        }
     }
 }
 
@@ -84,23 +106,31 @@ impl<'a> Iterator for SnapshotIterator<'a> {
     type Item = (Vec<u8>, Vec<u8>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        if !self.inner.valid() {
+        if self.done {
             return None;
         }
 
-        let key = self.inner.key().to_vec();
-        let value = self.inner.value().to_vec();
+        while let Some(result) = self.inner.next() {
+            match result {
+                Ok((key, value)) => {
+                    let key_vec = key.to_vec();
+                    if self.matches_prefix(&key_vec) {
+                        return Some((key_vec, value.to_vec()));
+                    }
 
-        match self.direction {
-            SeekDirection::Forward => {
-                self.inner.next();
-            }
-            SeekDirection::Backward => {
-                self.inner.prev();
+                    if self.prefix.is_some() {
+                        self.done = true;
+                        return None;
+                    }
+                }
+                Err(_) => {
+                    self.done = true;
+                    return None;
+                }
             }
         }
 
-        Some((key, value))
+        None
     }
 }
 
@@ -123,11 +153,53 @@ impl IReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for Snapshot {
         key_prefix: Option<&Vec<u8>>,
         direction: SeekDirection,
     ) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)> + '_> {
-        let start = key_prefix.map(|k| k.as_slice()).unwrap_or(&[]);
-        let iterator = self.iterator_from(start, direction);
+        let prefix = key_prefix.cloned();
+        let start_prefix = prefix.clone();
+        let start = start_prefix.as_deref().unwrap_or(&[]);
+        let iterator = self.iterator_from(start, prefix, direction);
         Box::new(iterator)
     }
 }
+
+impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for Snapshot {
+    fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {
+        let raw = key.to_array();
+        self.db
+            .get_opt(raw, &self.read_options())
+            .ok()
+            .flatten()
+            .map(StorageItem::from_bytes)
+    }
+
+    fn contains(&self, key: &StorageKey) -> bool {
+        let raw = key.to_array();
+        self.db
+            .get_pinned_opt(raw, &self.read_options())
+            .ok()
+            .flatten()
+            .is_some()
+    }
+
+    fn find(
+        &self,
+        key_prefix: Option<&StorageKey>,
+        direction: SeekDirection,
+    ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
+        let prefix_bytes = key_prefix.map(|k| k.to_array());
+        let start = prefix_bytes.as_deref().unwrap_or(&[]);
+        let iter = self.iterator_from(start, prefix_bytes.clone(), direction);
+        Box::new(iter.filter_map(move |(key, value)| {
+            if let Some(prefix) = &prefix_bytes {
+                if !key.starts_with(prefix) {
+                    return None;
+                }
+            }
+            Some((StorageKey::from_bytes(&key), StorageItem::from_bytes(value)))
+        }))
+    }
+}
+
+impl IReadOnlyStore for Snapshot {}
 
 impl IWriteStore<Vec<u8>, Vec<u8>> for Snapshot {
     fn delete(&mut self, key: Vec<u8>) {

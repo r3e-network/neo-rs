@@ -58,7 +58,8 @@ fn executes_syscall_through_engine_service() {
     assert!(engine.invocation_stack().is_empty());
 
     let stack = engine.result_stack();
-    assert!(stack.is_empty());
+    assert_eq!(stack.len(), 1);
+    assert_eq!(stack.peek(0).unwrap().as_int().unwrap(), 1.into());
 
     // The pushed value should reside on the evaluation stack of the last context prior to RET.
     // Since RET moves items to the caller (result stack when root), we can assert via gas state by reloading script.

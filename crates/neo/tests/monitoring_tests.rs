@@ -1,9 +1,9 @@
-#![cfg(feature = "neo_full_tests")]
+#![cfg(all(test, feature = "monitoring"))]
+
 //! Integration tests for the monitoring system
 
 use neo_core::monitoring::{
-    init_monitoring, AlertLevel, ExporterFactory, HealthStatus, PerformanceThreshold, Profiler,
-    ThresholdType,
+    init_monitoring, ExporterFactory, HealthStatus, PerformanceThreshold, Profiler, ThresholdType,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -46,7 +46,7 @@ async fn test_health_checks() {
     }
 
     // Check uptime
-    assert!(health_report.uptime.as_secs() >= 0);
+    assert!(health_report.uptime.as_secs_f64() >= 0.0);
 }
 
 #[tokio::test]
@@ -148,7 +148,7 @@ async fn test_profiler() {
     sleep(Duration::from_millis(10)).await;
 
     // Stop and record
-    profiler.stop_and_record().await;
+    let _ = profiler.stop_and_record().await;
 
     // Check that the metric was recorded
     let stats = system

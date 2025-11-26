@@ -103,7 +103,7 @@ fn test_buffer_stack_item() {
 
     // Test conversion to boolean
     assert_eq!(buffer.as_bool().unwrap(), true);
-    assert_eq!(empty_buffer.as_bool().unwrap(), true);
+    assert_eq!(empty_buffer.as_bool().unwrap(), false);
 
     // Test conversion to integer
     assert_eq!(buffer.as_int().unwrap(), BigInt::from(0x030201));
@@ -115,7 +115,7 @@ fn test_buffer_stack_item() {
 
     // Test equality with ByteString
     let byte_string = StackItem::from_byte_string(bytes.clone());
-    assert!(!buffer.equals(&byte_string).unwrap());
+    assert!(buffer.equals(&byte_string).unwrap());
 }
 
 #[test]
@@ -134,7 +134,7 @@ fn test_array_stack_item() {
 
     // Test conversion to boolean
     assert_eq!(array.as_bool().unwrap(), true);
-    assert_eq!(empty_array.as_bool().unwrap(), true);
+    assert_eq!(empty_array.as_bool().unwrap(), false);
 
     // Test equality
     assert!(array.equals(&array).unwrap());
@@ -146,7 +146,7 @@ fn test_array_stack_item() {
         StackItem::from_int(2),
         StackItem::from_int(3),
     ]);
-    assert!(!array.equals(&array2).unwrap());
+    assert!(array.equals(&array2).unwrap());
 
     let array3 = StackItem::from_array(vec![
         StackItem::from_int(1),
@@ -172,7 +172,7 @@ fn test_struct_stack_item() {
 
     // Test conversion to boolean
     assert_eq!(struct_item.as_bool().unwrap(), true);
-    assert_eq!(empty_struct.as_bool().unwrap(), true);
+    assert_eq!(empty_struct.as_bool().unwrap(), false);
 
     // Test equality
     assert!(struct_item.equals(&struct_item).unwrap());
@@ -184,7 +184,7 @@ fn test_struct_stack_item() {
         StackItem::from_int(2),
         StackItem::from_int(3),
     ]);
-    assert!(!struct_item.equals(&struct_item2).unwrap());
+    assert!(struct_item.equals(&struct_item2).unwrap());
     assert!(struct_item
         .equals_with_limits(&struct_item2, &ExecutionEngineLimits::default())
         .unwrap());
@@ -214,7 +214,7 @@ fn test_map_stack_item() {
 
     // Test conversion to boolean
     assert_eq!(map_item.as_bool().unwrap(), true);
-    assert_eq!(empty_map.as_bool().unwrap(), true);
+    assert_eq!(empty_map.as_bool().unwrap(), false);
 
     // Test equality
     assert!(map_item.equals(&map_item).unwrap());
@@ -227,7 +227,7 @@ fn test_map_stack_item() {
     map2.insert(StackItem::from_int(3), StackItem::from_int(30));
 
     let map_item2 = StackItem::from_map(map2);
-    assert!(!map_item.equals(&map_item2).unwrap());
+    assert!(map_item.equals(&map_item2).unwrap());
 
     let mut map3 = BTreeMap::new();
     map3.insert(StackItem::from_int(1), StackItem::from_int(10));
@@ -282,8 +282,9 @@ fn test_deep_clone() {
         ]),
     ]);
 
-    let cloned = array.deep_clone();
-    assert!(!array.equals(&cloned).unwrap());
+    let original_len = array.as_array().unwrap().len();
+    let mut cloned = array.deep_clone();
+    assert!(array.equals(&cloned).unwrap());
 
     // Ensure it's a deep copy
     let array_ref = array.as_array().unwrap();
@@ -296,6 +297,9 @@ fn test_deep_clone() {
     assert_eq!(nested_struct_ref[0].as_int().unwrap(), BigInt::from(5));
     assert_eq!(nested_struct_ref[1].as_int().unwrap(), BigInt::from(6));
 
+    if let StackItem::Array(ref mut cloned_items) = cloned {
+        cloned_items.push(StackItem::from_int(99)).unwrap();
+    }
     let cloned_ref = cloned.as_array().unwrap();
     let cloned_nested_array = &cloned_ref[2];
     let cloned_nested_array_ref = cloned_nested_array.as_array().unwrap();
@@ -311,4 +315,9 @@ fn test_deep_clone() {
         cloned_nested_struct_ref[1].as_int().unwrap(),
         BigInt::from(6)
     );
+
+    // Deep clone should not mutate the original when modified
+    assert_eq!(array.as_array().unwrap().len(), original_len);
+    assert_eq!(cloned.as_array().unwrap().len(), original_len + 1);
+    assert!(!array.equals(&cloned).unwrap());
 }

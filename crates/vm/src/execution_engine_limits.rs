@@ -24,14 +24,15 @@ pub struct ExecutionEngineLimits {
 }
 
 impl ExecutionEngineLimits {
-    /// Default execution limits matching the C# implementation.
+    /// Default execution limits matching the C# implementation exactly.
+    /// In C#: MaxItemSize = ushort.MaxValue = 65535
     pub const DEFAULT: Self = Self {
         max_shift: 256,
-        max_stack_size: 2 * 1024,
-        max_item_size: 65_536,
-        max_comparable_size: 65_536,
-        max_invocation_stack_size: 1_024,
-        max_try_nesting_depth: 16,
+        max_stack_size: 2 * 1024,             // C#: 2 * 1024
+        max_item_size: u16::MAX as u32,       // C#: ushort.MaxValue = 65535
+        max_comparable_size: u16::MAX as u32, // C#: ushort.MaxValue = 65535
+        max_invocation_stack_size: 1_024,     // C#: 1024
+        max_try_nesting_depth: 16,            // C#: 16
         catch_engine_exceptions: true,
     };
 

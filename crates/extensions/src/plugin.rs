@@ -81,6 +81,13 @@ pub enum UnhandledExceptionPolicy {
 
 /// Returns the base directory where plugins reside (equivalent to C# `PluginsDirectory`).
 pub fn plugins_directory() -> PathBuf {
+    if let Ok(dir) = env::var("NEO_PLUGINS_DIR") {
+        let trimmed = dir.trim();
+        if !trimmed.is_empty() {
+            return PathBuf::from(trimmed);
+        }
+    }
+
     application_root()
         .map(|root| root.join("Plugins"))
         .unwrap_or_else(|| PathBuf::from("Plugins"))
@@ -369,6 +376,14 @@ impl PluginManager {
         Ok(())
     }
 
+    /// Returns metadata for all registered plugins in priority order.
+    pub fn plugin_infos(&self) -> Vec<PluginInfo> {
+        self.plugin_order
+            .iter()
+            .filter_map(|name| self.plugins.get(name).map(|p| p.info().clone()))
+            .collect()
+    }
+
     /// Initialise all registered plugins.
     pub async fn initialize_all(&mut self) -> ExtensionResult<()> {
         if self.is_initialized {
@@ -595,6 +610,15 @@ pub async fn broadcast_global_event(event: &PluginEvent) -> ExtensionResult<()> 
         runtime.broadcast(event).await?;
     }
     Ok(())
+}
+
+/// Returns metadata for all plugins registered in the global runtime, if initialised.
+pub async fn global_plugin_infos() -> Vec<PluginInfo> {
+    let guard = GLOBAL_RUNTIME.read().await;
+    guard
+        .as_ref()
+        .map(|rt| rt.manager().plugin_infos())
+        .unwrap_or_default()
 }
 
 /// Helper macro for registering plugins via `inventory`.

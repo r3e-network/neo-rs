@@ -1,4 +1,4 @@
-use crate::neo_crypto::hash256;
+use crate::neo_crypto::sha256;
 use crate::neo_io::serializable::helper::{deserialize_array, get_var_size, serialize_array};
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::{UInt160, UInt256, Witness};
@@ -89,8 +89,8 @@ impl BlockHeader {
         let mut writer = BinaryWriter::new();
         self.serialize_unsigned(&mut writer)
             .expect("block header serialization should not fail");
-        // Ledger header hashes use double SHA256 (Hash256), identical to C# neo-core.
-        UInt256::from(hash256(&writer.into_bytes()))
+        // Neo block hashes use single SHA256 over the unsigned header payload.
+        UInt256::from(sha256(&writer.into_bytes()))
     }
 
     /// Returns the index (height) of the block header.

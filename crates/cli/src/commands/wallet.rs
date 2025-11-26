@@ -3,8 +3,6 @@ use crate::console::{helper::StringPromptExt, percent::ConsolePercent};
 use crate::console_service::ConsoleHelper;
 use anyhow::{anyhow, bail};
 use hex;
-#[cfg(feature = "sqlite-wallet")]
-use neo_core::wallets::WalletManager;
 use neo_core::{
     big_decimal::BigDecimal,
     cryptography::crypto_utils::{ECCurve, ECPoint},
@@ -29,12 +27,11 @@ use neo_core::{
     wallets::{
         asset_descriptor::AssetDescriptor, helper::Helper as WalletHelper,
         transfer_output::TransferOutput, IWalletFactory, IWalletProvider, KeyPair, Nep6Wallet,
-        Wallet, WalletAccount,
+        Wallet, WalletAccount, WalletManager,
     },
     witness_scope::WitnessScope,
     UInt160, UInt256,
 };
-#[cfg(feature = "sqlite-wallet")]
 use neo_plugins::sqlite_wallet::SQLiteWalletFactory;
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
@@ -50,6 +47,7 @@ use tokio::runtime::Handle;
 use uuid::Uuid;
 
 /// Wallet management (`MainService.Wallet`).
+#[allow(clippy::type_complexity)]
 pub struct WalletCommands {
     settings: Arc<ProtocolSettings>,
     system: Arc<NeoSystem>,
@@ -170,48 +168,39 @@ impl WalletCommands {
             bail!("File '{}' already exists", new_path.display());
         }
 
-        #[cfg(not(feature = "sqlite-wallet"))]
-        {
-            bail!("DB3 wallet migration is not supported in this build; recompile with the 'sqlite-wallet' feature to enable it.");
-        }
+        let mut manager = WalletManager::default();
+        manager.register_factory(Box::new(SQLiteWalletFactory::default()));
+        manager.register_factory(Box::new(Nep6WalletFactory::default()));
+        let migrated = Handle::current().block_on(manager.migrate_wallet(
+            path,
+            new_path.to_str().unwrap_or_default(),
+            &password,
+            &self.settings,
+        ));
 
-        #[cfg(feature = "sqlite-wallet")]
-        {
-            let mut manager = WalletManager::default();
-            manager.register_factory(Box::new(SQLiteWalletFactory::default()));
-            manager.register_factory(Box::new(Nep6WalletFactory::default()));
-            let migrated = Handle::current().block_on(manager.migrate_wallet(
-                path,
-                new_path.to_str().unwrap_or_default(),
-                &password,
-                &self.settings,
-            ));
-
-            match migrated {
-                Ok(wallet) => {
-                    if let Err(err) = Handle::current().block_on(wallet.save()) {
-                        bail!("failed to save migrated wallet: {}", err);
-                    }
-                    ConsoleHelper::info([
-                        "Wallet file upgrade complete. New wallet file has been auto-saved at: ",
-                        &new_path.display().to_string(),
-                    ]);
-                    Ok(())
+        match migrated {
+            Ok(wallet) => {
+                if let Err(err) = Handle::current().block_on(wallet.save()) {
+                    bail!("failed to save migrated wallet: {}", err);
                 }
-                Err(err) => bail!("DB3 wallet migration failed: {}", err.to_string()),
+                ConsoleHelper::info([
+                    "Wallet file upgrade complete. New wallet file has been auto-saved at: ",
+                    &new_path.display().to_string(),
+                ]);
+                Ok(())
             }
+            Err(err) => bail!("DB3 wallet migration failed: {}", err.to_string()),
         }
     }
 
     /// Exports a DB3 wallet to a specified NEP-6 path without mutating the source.
     pub fn export_db3_wallet(&self, source: &str, destination: &str) -> CommandResult {
         let source_path = Path::new(source);
-        if source_path
+        if !source_path
             .extension()
             .and_then(|ext| ext.to_str())
             .map(|ext| ext.eq_ignore_ascii_case("db3"))
             .unwrap_or(false)
-            == false
         {
             bail!("Source must be a DB3 wallet file.");
         }
@@ -233,36 +222,28 @@ impl WalletCommands {
             return Ok(());
         }
 
-        #[cfg(not(feature = "sqlite-wallet"))]
-        {
-            bail!("DB3 wallet migration is not supported in this build; recompile with the 'sqlite-wallet' feature to enable it.");
-        }
+        let mut manager = WalletManager::default();
+        manager.register_factory(Box::new(SQLiteWalletFactory::default()));
+        manager.register_factory(Box::new(Nep6WalletFactory::default()));
+        let migrated = Handle::current().block_on(manager.migrate_wallet(
+            source,
+            destination,
+            &password,
+            &self.settings,
+        ));
 
-        #[cfg(feature = "sqlite-wallet")]
-        {
-            let mut manager = WalletManager::default();
-            manager.register_factory(Box::new(SQLiteWalletFactory::default()));
-            manager.register_factory(Box::new(Nep6WalletFactory::default()));
-            let migrated = Handle::current().block_on(manager.migrate_wallet(
-                source,
-                destination,
-                &password,
-                &self.settings,
-            ));
-
-            match migrated {
-                Ok(wallet) => {
-                    if let Err(err) = Handle::current().block_on(wallet.save()) {
-                        bail!("failed to save migrated wallet: {}", err);
-                    }
-                    ConsoleHelper::info([
-                        "DB3 wallet exported successfully to: ",
-                        &dest_path.display().to_string(),
-                    ]);
-                    Ok(())
+        match migrated {
+            Ok(wallet) => {
+                if let Err(err) = Handle::current().block_on(wallet.save()) {
+                    bail!("failed to save migrated wallet: {}", err);
                 }
-                Err(err) => bail!("DB3 wallet migration failed: {}", err.to_string()),
+                ConsoleHelper::info([
+                    "DB3 wallet exported successfully to: ",
+                    &dest_path.display().to_string(),
+                ]);
+                Ok(())
             }
+            Err(err) => bail!("DB3 wallet migration failed: {}", err.to_string()),
         }
     }
 
@@ -1007,8 +988,7 @@ impl WalletCommands {
             bail!("This tx is already confirmed, can't be cancelled.");
         }
 
-        let mut attributes = Vec::new();
-        attributes.push(TransactionAttribute::Conflicts(Conflicts { hash }));
+        let attributes = vec![TransactionAttribute::Conflicts(Conflicts { hash })];
 
         let sender_hash = sender
             .map(|value| self.parse_script_hash(value))

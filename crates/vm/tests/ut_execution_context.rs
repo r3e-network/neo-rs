@@ -6,7 +6,6 @@ use neo_vm::{
     exception_handling_state::ExceptionHandlingState, execution_context::ExecutionContext,
     op_code::OpCode, reference_counter::ReferenceCounter, script::Script, slot::Slot,
 };
-use std::sync::Mutex;
 
 #[derive(Clone, Default)]
 struct TestState {

@@ -30,8 +30,11 @@ pub fn decompress_lz4(data: &[u8], max_size: usize) -> CompressionResult<Vec<u8>
         ));
     }
 
-    let declared_size =
-        u32::from_le_bytes(data[0..4].try_into().expect("length prefix must be 4 bytes")) as usize;
+    let declared_size = u32::from_le_bytes(
+        data[0..4]
+            .try_into()
+            .expect("length prefix must be 4 bytes"),
+    ) as usize;
 
     let decompressed = lz4_flex::block::decompress_size_prepended(data)
         .map_err(|e| CompressionError::Decompression(e.to_string()))?;

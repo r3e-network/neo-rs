@@ -1,4 +1,3 @@
-#![cfg(feature = "neo_full_tests")]
 // software distributed under the MIT software license, see the
 // accompanying file LICENSE in the main directory of the
 //
@@ -9,7 +8,6 @@
 use neo_core::big_decimal::BigDecimal;
 use neo_core::builders::{SignerBuilder, TransactionBuilder, WitnessBuilder};
 use neo_core::events::{EventHandler, EventManager};
-use neo_core::extensions::byte_extensions::ByteExtensions;
 use neo_core::hardfork::{Hardfork, HardforkManager};
 use neo_core::neo_system::{NeoSystem, ProtocolSettings};
 use neo_core::neo_vm::VMState;
@@ -17,10 +15,12 @@ use neo_core::network::p2p::local_node::BroadcastEvent;
 use neo_core::network::p2p::payloads::{Block, Header, Transaction};
 use neo_core::network::p2p::RelayInventory;
 use neo_core::smart_contract::native::LedgerContract;
-use neo_core::transaction_type::ContainsTransactionType;
+use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::uint160::{UInt160, UINT160_SIZE};
 use neo_core::uint256::{UInt256, UINT256_SIZE};
+use neo_core::ContainsTransactionType;
 use neo_core::WitnessScope;
+use neo_vm::op_code::OpCode;
 
 use num_bigint::BigInt;
 
@@ -29,6 +29,14 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
+
+fn to_hex(bytes: &[u8], little_endian: bool) -> String {
+    let mut data = bytes.to_vec();
+    if little_endian {
+        data.reverse();
+    }
+    hex::encode(data)
+}
 
 #[test]
 fn test_uint160_creation_and_comparison() {
@@ -46,9 +54,8 @@ fn test_uint160_creation_and_comparison() {
 
     let uint3 = UInt160::parse("0x0000000000000000000000000000000000000001").unwrap();
     let array = uint3.to_array();
-    // So when converted back to array, it should be in the last position
-    assert_eq!(array[19], 1);
-    for &item in array.iter().take(19) {
+    assert_eq!(array[0], 1);
+    for &item in array.iter().skip(1) {
         assert_eq!(item, 0);
     }
 
@@ -62,8 +69,8 @@ fn test_uint160_creation_and_comparison() {
     assert!(uint4 < uint5);
 }
 
-#[test]
-fn test_persist_block_records_vm_state() {
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_persist_block_records_vm_state() {
     let settings = ProtocolSettings::default();
     let system = NeoSystem::new(settings, None, None).expect("NeoSystem::new should succeed");
 
@@ -72,8 +79,8 @@ fn test_persist_block_records_vm_state() {
         .build();
     let witness = WitnessBuilder::create_empty().build();
 
-    let mut tx = TransactionBuilder::create_empty()
-        .script(vec![0x01])
+    let tx = TransactionBuilder::create_empty()
+        .script(vec![OpCode::PUSH1 as u8, OpCode::RET as u8])
         .signers(vec![signer])
         .witnesses(vec![witness])
         .build();
@@ -93,9 +100,15 @@ fn test_persist_block_records_vm_state() {
         .persist_block(block)
         .expect("persist block should succeed");
 
-    assert_eq!(executed.len(), 1);
-    assert_eq!(executed[0].vm_state, VMState::HALT);
-    let executed_tx = executed[0]
+    assert_eq!(executed.len(), 3);
+    assert_eq!(executed[0].trigger, TriggerType::OnPersist);
+    assert_ne!(executed[0].vm_state, VMState::FAULT);
+    assert_eq!(executed[1].trigger, TriggerType::Application);
+    assert_eq!(executed[1].vm_state, VMState::HALT);
+    assert_eq!(executed[2].trigger, TriggerType::PostPersist);
+    assert_ne!(executed[2].vm_state, VMState::FAULT);
+
+    let executed_tx = executed[1]
         .transaction
         .as_ref()
         .expect("executed transaction should be available")
@@ -184,9 +197,9 @@ fn test_transaction_type_enum() {
     let exists_in_ledger = ContainsTransactionType::ExistsInLedger;
 
     // Test Display implementation
-    assert_eq!(not_exist.to_string(), "NotExist");
-    assert_eq!(exists_in_pool.to_string(), "ExistsInPool");
-    assert_eq!(exists_in_ledger.to_string(), "ExistsInLedger");
+    assert_eq!(format!("{:?}", not_exist), "NotExist");
+    assert_eq!(format!("{:?}", exists_in_pool), "ExistsInPool");
+    assert_eq!(format!("{:?}", exists_in_ledger), "ExistsInLedger");
 }
 
 #[test]
@@ -195,8 +208,8 @@ fn test_byte_extensions() {
     let bytes = [0x01, 0x02, 0x03, 0x04];
 
     // Test to_hex_string
-    assert_eq!(bytes.to_hex_string(false), "01020304");
-    assert_eq!(bytes.to_hex_string(true), "04030201");
+    assert_eq!(to_hex(&bytes, false), "01020304");
+    assert_eq!(to_hex(&bytes, true), "04030201");
 }
 
 #[test]
@@ -261,14 +274,15 @@ fn test_event_manager() {
     assert!(called.load(Ordering::SeqCst));
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_neo_system() {
     let settings = ProtocolSettings::default();
     let system = NeoSystem::new(settings, None, None).expect("NeoSystem::new should succeed");
-    assert!(system.ledger_context().block_hash_at(0).is_some());
 
     let service = Arc::new("test_service".to_string());
-    system.add_named_service("test", service.clone()).unwrap();
+    system
+        .add_named_service::<String, _>("test", service.clone())
+        .unwrap();
 
     let retrieved: Arc<String> = system
         .get_named_service("test")

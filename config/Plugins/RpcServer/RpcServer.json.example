@@ -1,0 +1,34 @@
+{
+  "PluginConfiguration": {
+    "Servers": [
+      {
+        "network": 894710606,
+        "bind_address": "127.0.0.1",
+        "port": 20332,
+        "ssl_cert": "",
+        "ssl_cert_password": "",
+        "trusted_authorities": [],
+        "max_concurrent_connections": 40,
+        "max_request_body_size": 5242880,
+        "rpc_user": "change-me",
+        "rpc_pass": "change-me-strongly",
+        "enable_cors": false,
+        "allow_origins": [],
+        "keep_alive_timeout": 60,
+        "request_headers_timeout": 15,
+        "max_gas_invoke": 2000000000,
+        "max_fee": 10000000,
+        "max_iterator_result_items": 100,
+        "max_stack_size": 65535,
+        "disabled_methods": [
+          "openwallet",
+          "getplugins"
+        ],
+        "session_enabled": false,
+        "session_expiration_time": 60,
+        "find_storage_page_size": 50
+      }
+    ],
+    "UnhandledExceptionPolicy": "Ignore"
+  }
+}

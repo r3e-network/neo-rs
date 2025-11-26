@@ -242,7 +242,7 @@ impl StateShower {
     ) -> std::io::Result<()> {
         let (width, height) = terminal::size()?;
         let mut box_width = width.saturating_sub(2) as usize;
-        box_width = cmp::min(70, cmp::max(box_width, 10));
+        box_width = box_width.clamp(10, 70);
 
         self.lines.clear();
         self.render_title_box(box_width);

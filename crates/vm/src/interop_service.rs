@@ -81,6 +81,23 @@ pub trait InteropHost {
     ) -> VmResult<()> {
         Ok(())
     }
+
+    /// Called when CALLT opcode is executed. The host should resolve the method token
+    /// and perform the cross-contract call.
+    ///
+    /// # Arguments
+    /// * `engine` - The execution engine
+    /// * `token_id` - The method token index from the instruction operand
+    ///
+    /// # Returns
+    /// Default implementation returns an error indicating CALLT requires ApplicationEngine.
+    fn on_callt(&mut self, _engine: &mut ExecutionEngine, token_id: u16) -> VmResult<()> {
+        Err(VmError::invalid_operation_msg(format!(
+            "CALLT (token {}) requires ApplicationEngine context. \
+             This opcode cannot be executed in standalone VM mode.",
+            token_id
+        )))
+    }
 }
 
 /// InteropService manages syscall descriptors and dispatches them just like the C# implementation.

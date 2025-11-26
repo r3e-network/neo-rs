@@ -9,15 +9,16 @@ license = "MIT"
 readme = "README.md"
 
 [dependencies]
-log = "0.4"# External dependencies
+# External dependencies
+log = "0.4"
 num-bigint = "0.4"
 num-traits = "0.2"
 thiserror = "1.0"
 bitflags = "2.4"
 derive_more = "0.99"
 hashbrown = "0.14"
-serde = { version = "1.0", features = ["derive"], optional = true }
-serde_json = { version = "1.0", optional = true }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0" }
 paste = "1.0"
 lazy_static = "1.4"
 once_cell = "1.19"
@@ -35,9 +36,3 @@ murmur3 = "0.5"
 
 # Mock neo-io for tests
 [dev-dependencies]
-
-[features]
-default = ["std", "serde-types"]
-std = []
-serde-types = ["serde", "serde_json"]
-minimal = []  # Minimal feature set for compilation

@@ -32,11 +32,10 @@ WORKDIR /app
 # Copy manifests
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ crates/
-COPY node/ node/
-COPY demo/ demo/
+COPY src/ src/
 
-# Build release binaries (both neo-cli and neo-node)
-RUN cargo build --release --workspace
+# Build release binaries (neo-cli and workspace crates)
+RUN cargo build --release --workspace --locked
 
 # Runtime stage
 FROM debian:bullseye-slim
@@ -44,6 +43,7 @@ FROM debian:bullseye-slim
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
     ca-certificates \
+    bash \
     librocksdb-dev \
     libsnappy1v5 \
     liblz4-1 \
@@ -54,21 +54,29 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Create neo user
-RUN groupadd -r neo && useradd -r -g neo neo
+# Create neo user and home
+RUN groupadd -r neo && useradd -r -g neo -d /home/neo neo \
+    && mkdir -p /home/neo && chown -R neo:neo /home/neo
 
-# Create data directories
-RUN mkdir -p /data /data/blocks /data/logs && chown -R neo:neo /data
+# Create data directories (Logs for default config; keep /data/logs for backward compatibility)
+RUN mkdir -p /data /data/blocks /data/Logs /data/logs && chown -R neo:neo /data
 
 # Copy binaries from builder stage
-COPY --from=builder /app/target/release/neo-node /usr/local/bin/neo-node
 COPY --from=builder /app/target/release/neo-cli /usr/local/bin/neo-cli
+
+# Copy default configs and entrypoint
+COPY neo_mainnet_node.toml /etc/neo/neo_mainnet_node.toml
+COPY neo_production_node.toml /etc/neo/neo_production_node.toml
+COPY scripts/docker-entrypoint.sh /usr/local/bin/neo-entrypoint.sh
+RUN chmod +x /usr/local/bin/neo-entrypoint.sh && chown -R neo:neo /etc/neo
 
 # Set up volumes
 VOLUME ["/data"]
 
-# Switch to neo user
+# Switch to neo user and working directory
 USER neo
+WORKDIR /data
+ENV HOME=/home/neo
 
 # Expose ports
 # TestNet ports
@@ -78,17 +86,19 @@ EXPOSE 10332 10333
 # Private network ports
 EXPOSE 30332 30333
 
-# Health check - check if RPC is responsive
+# Health check - JSON-RPC getversion on the configured RPC port
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:20332/health || exit 1
+    CMD ["sh", "-c", "port_file=/tmp/neo_rpc_port; if [ -f \"$port_file\" ]; then port=$(cat \"$port_file\"); else port=${NEO_RPC_PORT:-}; fi; if [ -z \"$port\" ]; then port=20332; case \"${NEO_NETWORK:-testnet}\" in [Mm]ain*) port=10332 ;; esac; fi; curl -sf -X POST -H 'Content-Type: application/json' --data '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"getversion\",\"params\":[]}' http://127.0.0.1:${port} >/dev/null"]
 
 # Environment variables
-ENV NEO_NETWORK=testnet
-ENV NEO_DATA_DIR=/data
+ENV NEO_NETWORK=testnet \
+    NEO_BACKEND=rocksdb \
+    NEO_PLUGINS_DIR=/data/Plugins \
+    RUST_LOG=info
 
-# Default command for neo-cli
-ENTRYPOINT ["neo-cli"]
-CMD ["--network", "testnet", "--data-dir", "/data", "--daemon"]
+# Default command for neo-cli (configurable via env)
+ENTRYPOINT ["/usr/local/bin/neo-entrypoint.sh"]
+CMD []
 
 # Metadata
 LABEL org.opencontainers.image.title="Neo-Rust-Node"

@@ -13,7 +13,6 @@ use crate::UInt160;
 use neo_vm::{StackItem, VMState};
 use num_traits::ToPrimitive;
 use std::fmt::Write;
-use std::sync::Arc;
 
 impl ApplicationEngine {
     /// Provides detailed stack information when the engine faults.
@@ -242,23 +241,27 @@ impl ApplicationEngine {
     }
 
     /// Sends a notification once all validation passes.
+    /// The container can be None for system invocations (OnPersist/PostPersist).
     pub fn send_notification(
         &mut self,
         script_hash: UInt160,
         event_name: String,
         state: Vec<StackItem>,
     ) -> Result<(), String> {
-        let container = self
-            .script_container()
-            .ok_or_else(|| "No script container".to_string())?;
+        // Get optional container (can be None for OnPersist/PostPersist triggers)
+        let container = self.script_container().cloned();
 
         let mut copied = Vec::with_capacity(state.len());
         for item in state {
             copied.push(item.deep_clone());
         }
 
-        let notification =
-            NotifyEventArgs::new(Arc::clone(container), script_hash, event_name, copied);
+        let notification = NotifyEventArgs::new_with_optional_container(
+            container,
+            script_hash,
+            event_name,
+            copied,
+        );
         self.emit_notify_event(notification);
         Ok(())
     }

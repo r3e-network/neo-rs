@@ -66,10 +66,7 @@ impl RpcServerWallet {
         name: &'static str,
         func: fn(&RpcServer, &[Value]) -> Result<Value, RpcException>,
     ) -> RpcHandler {
-        RpcHandler::new(
-            RpcMethodDescriptor::new(name),
-            Arc::new(move |server, params| func(server, params)),
-        )
+        RpcHandler::new(RpcMethodDescriptor::new(name), Arc::new(func))
     }
 
     fn close_wallet(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {
@@ -102,7 +99,7 @@ impl RpcServerWallet {
         })?;
         let private_key = key_pair.private_key();
         let wallet_clone = Arc::clone(&wallet);
-        let key_bytes = private_key.clone();
+        let key_bytes = private_key;
         let account = Self::await_wallet_future(Box::pin(async move {
             wallet_clone.create_account(&key_bytes).await
         }))?;
@@ -253,7 +250,7 @@ impl RpcServerWallet {
             wallet_ref,
             server.settings().max_gas_invoke,
         )
-        .map_err(|err| Self::invalid_params(err))?;
+        .map_err(Self::invalid_params)?;
         Ok(json!({ "networkfee": fee.to_string() }))
     }
 
@@ -348,7 +345,7 @@ impl RpcServerWallet {
             let asset = UInt160::from_str(asset_str)
                 .map_err(|e| Self::invalid_params(format!("invalid asset {}: {}", asset_str, e)))?;
             let descriptor =
-                descriptor_cache(&asset).map_err(|e| Self::invalid_params(format!("{}", e)))?;
+                descriptor_cache(&asset).map_err(|e| Self::invalid_params(e.to_string()))?;
             let value_str = obj
                 .get("value")
                 .and_then(|v| v.as_str())
@@ -379,7 +376,7 @@ impl RpcServerWallet {
             return Ok(hash);
         }
         let version = server.system().settings().address_version;
-        WalletHelper::to_script_hash(value, version).map_err(|err| Self::invalid_params(err))
+        WalletHelper::to_script_hash(value, version).map_err(Self::invalid_params)
     }
 
     fn parse_signers(server: &RpcServer, value: &Value) -> Result<Vec<Signer>, RpcException> {
@@ -537,7 +534,7 @@ impl RpcServerWallet {
         }
         let decimals_value = engine
             .peek(0)
-            .map_err(|err| Self::internal_error(err))?
+            .map_err(Self::internal_error)?
             .as_int()
             .map_err(|err| Self::internal_error(err.to_string()))?;
         let decimals = decimals_value
@@ -545,7 +542,7 @@ impl RpcServerWallet {
             .ok_or_else(|| Self::invalid_params("invalid decimals value"))?;
         let amount_value = engine
             .peek(1)
-            .map_err(|err| Self::internal_error(err))?
+            .map_err(Self::internal_error)?
             .as_int()
             .map_err(|err| Self::internal_error(err.to_string()))?;
         Ok(BigDecimal::new(amount_value, decimals))
@@ -621,7 +618,7 @@ impl RpcServerWallet {
         let store = server.system().store_cache();
         let descriptor =
             AssetDescriptor::new(store.data_cache(), server.system().settings(), asset)
-                .map_err(|e| Self::invalid_params(e))?;
+                .map_err(Self::invalid_params)?;
         let (ok, value) = BigDecimal::try_parse(&amount, descriptor.decimals);
         if !ok || value.sign() <= 0 {
             return Err(Self::invalid_params("Amount can't be negative."));
@@ -688,7 +685,7 @@ impl RpcServerWallet {
                         if account.has_key() && !account.is_locked() {
                             let signature =
                                 Helper::sign(&tx, &key, server.system().settings().network)
-                                    .map_err(|err| Self::internal_error(err))?;
+                                    .map_err(Self::internal_error)?;
                             let pub_key = ECPoint::new(key.compressed_public_key());
                             let _ = context.add_signature(contract.clone(), pub_key, signature);
                         }

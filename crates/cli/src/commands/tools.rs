@@ -208,7 +208,7 @@ impl ToolCommands {
 
     fn parse_address_to_script_hash_be(&self, input: &str) -> Result<Option<String>> {
         let script = self.to_script_hash(input)?;
-        Ok(Some(format!("0x{}", script.to_string())))
+        Ok(Some(format!("0x{script}")))
     }
 
     fn parse_address_to_script_hash_le(&self, input: &str) -> Result<Option<String>> {

@@ -11,7 +11,8 @@
 
 use crate::models::RpcInvokeResult;
 use crate::RpcClient;
-use neo_core::{Contract, ContractManifest, KeyPair, Transaction, UInt160};
+use neo_core::{ContractManifest, KeyPair, Transaction, UInt160};
+use neo_vm::op_code::OpCode;
 use neo_vm::ScriptBuilder;
 use std::sync::Arc;
 
@@ -74,8 +75,8 @@ impl ContractClient {
         }
 
         // Emit operation and script hash
-        sb.emit_push(operation.as_bytes())?;
-        sb.emit_push(&script_hash.to_array())?;
+        sb.emit_push(operation.as_bytes());
+        sb.emit_push(&script_hash.to_array());
         sb.emit_syscall("System.Contract.Call")?;
 
         Ok(sb.to_array())
@@ -88,24 +89,36 @@ impl ContractClient {
         arg: &serde_json::Value,
     ) -> Result<(), Box<dyn std::error::Error>> {
         match arg {
-            serde_json::Value::Null => sb.emit_push_null(),
-            serde_json::Value::Bool(b) => sb.emit_push(*b),
+            serde_json::Value::Null => {
+                sb.emit_opcode(OpCode::PUSHNULL);
+                Ok(())
+            }
+            serde_json::Value::Bool(b) => {
+                sb.emit_push_bool(*b);
+                Ok(())
+            }
             serde_json::Value::Number(n) => {
                 if let Some(i) = n.as_i64() {
-                    sb.emit_push_int(i)
+                    sb.emit_push_int(i);
+                    Ok(())
                 } else if let Some(u) = n.as_u64() {
-                    sb.emit_push_int(u as i64)
+                    sb.emit_push_int(u as i64);
+                    Ok(())
                 } else {
                     Err("Invalid number format".into())
                 }
             }
-            serde_json::Value::String(s) => sb.emit_push(s.as_bytes()),
+            serde_json::Value::String(s) => {
+                sb.emit_push(s.as_bytes());
+                Ok(())
+            }
             serde_json::Value::Array(arr) => {
                 for item in arr {
                     self.emit_argument(sb, item)?;
                 }
-                sb.emit_push_int(arr.len() as i64)?;
-                sb.emit_pack()
+                sb.emit_push_int(arr.len() as i64);
+                sb.emit_pack();
+                Ok(())
             }
             _ => Err("Unsupported argument type".into()),
         }

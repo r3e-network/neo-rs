@@ -9,8 +9,9 @@ use std::sync::Arc;
 /// The EventArgs of ApplicationEngine.Notify (matches C# NotifyEventArgs)
 #[derive(Clone)]
 pub struct NotifyEventArgs {
-    /// The container that containing the executed script
-    pub script_container: Arc<dyn IVerifiable>,
+    /// The container that containing the executed script.
+    /// This can be None when the contract is invoked by system (e.g., OnPersist/PostPersist).
+    pub script_container: Option<Arc<dyn IVerifiable>>,
 
     /// The script hash of the contract that sends the log
     pub script_hash: UInt160,
@@ -23,9 +24,24 @@ pub struct NotifyEventArgs {
 }
 
 impl NotifyEventArgs {
-    /// Initializes a new instance
+    /// Initializes a new instance with a container
     pub fn new(
         container: Arc<dyn IVerifiable>,
+        script_hash: UInt160,
+        event_name: String,
+        state: Vec<StackItem>,
+    ) -> Self {
+        Self {
+            script_container: Some(container),
+            script_hash,
+            event_name,
+            state,
+        }
+    }
+
+    /// Initializes a new instance with an optional container (for system invocations)
+    pub fn new_with_optional_container(
+        container: Option<Arc<dyn IVerifiable>>,
         script_hash: UInt160,
         event_name: String,
         state: Vec<StackItem>,

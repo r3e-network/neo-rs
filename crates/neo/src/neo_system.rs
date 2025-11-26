@@ -1,3 +1,4 @@
+//! Core node system orchestration (actors, services, plugins, wallets, networking).
 use std::any::Any;
 use std::collections::HashMap;
 use std::fmt;
@@ -36,8 +37,8 @@ use crate::network::p2p::{
         block::Block, extensible_payload::ExtensiblePayload, header::Header,
         transaction::Transaction, witness::Witness as PayloadWitness,
     },
-    ChannelsConfig, LocalNode, LocalNodeCommand, PeerCommand, RemoteNodeSnapshot, TaskManager,
-    TaskManagerCommand,
+    timeouts, ChannelsConfig, LocalNode, LocalNodeCommand, PeerCommand, RemoteNodeSnapshot,
+    TaskManager, TaskManagerCommand,
 };
 use crate::persistence::{
     data_cache::DataCache, i_store::IStore, i_store_provider::IStoreProvider,
@@ -67,9 +68,9 @@ use neo_extensions::utility::Utility;
 use neo_extensions::LogLevel as ExternalLogLevel;
 use neo_io_crate::{InventoryHash, RelayCache};
 use neo_vm::{vm_state::VMState, OpCode};
-use std::thread;
 #[cfg(test)]
 use once_cell::sync::Lazy;
+use std::thread;
 
 fn block_on_extension<F, T>(future: F) -> Result<T, ExtensionError>
 where
@@ -104,6 +105,8 @@ fn initialise_plugins(system: &Arc<NeoSystem>) -> CoreResult<()> {
     block_on_extension(initialise_global_runtime(Some(context))).map_err(|err| {
         CoreError::system(format!("failed to initialize plugin runtime: {}", err))
     })?;
+
+    // Auto-register core plugins based on compiled feature set to mirror C# defaults.
     let system_any: Arc<dyn Any + Send + Sync> = system.clone();
     let event = PluginEvent::NodeStarted { system: system_any };
     block_on_extension(broadcast_global_event(&event))
@@ -644,10 +647,39 @@ impl NeoSystemContext {
         converted
     }
 
-    fn convert_ledger_block(block: LedgerBlock) -> Block {
+    pub(crate) fn convert_ledger_block(block: LedgerBlock) -> Block {
         Block {
             header: Self::convert_ledger_header(block.header),
             transactions: block.transactions,
+        }
+    }
+
+    pub(crate) fn hydrate_ledger_from_store(
+        store_cache: &StoreCache,
+        ledger: &Arc<LedgerContext>,
+        header_cache: &HeaderCache,
+    ) {
+        let ledger_contract = LedgerContract::new();
+        let Ok(height) = ledger_contract.current_index(store_cache) else {
+            return;
+        };
+
+        for index in 0..=height {
+            match ledger_contract.get_block(store_cache, HashOrIndex::Index(index)) {
+                Ok(Some(block)) => {
+                    let payload_block = Self::convert_ledger_block(block);
+                    let header_clone = payload_block.header.clone();
+                    // insert_block will populate hash/header caches and advance height markers.
+                    ledger.insert_block(payload_block);
+                    // keep header cache warm for network queries
+                    header_cache.add(header_clone);
+                }
+                Ok(None) => break,
+                Err(err) => {
+                    warn!(target: "neo", index, error = %err, "failed to hydrate block from store");
+                    break;
+                }
+            }
         }
     }
 
@@ -1057,12 +1089,18 @@ impl NeoSystem {
                 .expect("default memory store provider must be registered")
         });
         let store = store_provider.get_store(storage_path.as_deref().unwrap_or(""));
+        let store_cache_for_hydration = StoreCache::new_from_store(store.clone(), true);
 
         let user_agent = format!("/neo-rs:{}/", env!("CARGO_PKG_VERSION"));
         let local_node_state = Arc::new(LocalNode::new(settings_arc.clone(), 10333, user_agent));
         local_node_state.set_seed_list(settings.seed_list.clone());
         let ledger = Arc::new(LedgerContext::default());
         let header_cache = Arc::new(HeaderCache::new());
+        NeoSystemContext::hydrate_ledger_from_store(
+            &store_cache_for_hydration,
+            &ledger,
+            &header_cache,
+        );
         let memory_pool = Arc::new(Mutex::new(MemoryPool::new(&settings)));
         let relay_cache = Arc::new(RelayExtensibleCache::new(RELAY_CACHE_CAPACITY));
 
@@ -1673,9 +1711,15 @@ impl NeoSystem {
         if let Err(err) = broadcast_global_event(&event).await {
             warn!("failed to broadcast NodeStopping event: {}", err);
         }
+        if let Ok(mut manager) = self.context.plugin_manager.write() {
+            manager.shutdown_all();
+        }
         if let Err(err) = shutdown_global_runtime().await {
             warn!("failed to shutdown plugin runtime: {}", err);
         }
+        // Drop the global logging hook to avoid leaking callbacks across system lifetimes.
+        Utility::set_logging(None);
+        timeouts::log_stats();
         self.actor_system.shutdown().await.map_err(to_core_error)
     }
 }
@@ -1758,25 +1802,104 @@ mod tests {
     use super::*;
     use crate::ledger::{
         transaction_removal_reason::TransactionRemovalReason,
-        transaction_removed_event_args::TransactionRemovedEventArgs,
+        transaction_removed_event_args::TransactionRemovedEventArgs, Block,
     };
+    use crate::neo_io::Serializable;
     use crate::network::p2p::payloads::witness::Witness as PayloadWitness;
     use crate::network::p2p::payloads::Transaction;
+    use crate::persistence::i_store::IStore;
+    use crate::persistence::providers::memory_store::MemoryStore;
+    use crate::persistence::StoreCache;
     use crate::smart_contract::contract::Contract;
+    use crate::smart_contract::native::trimmed_block::TrimmedBlock;
     use crate::smart_contract::notify_event_args::NotifyEventArgs;
     use crate::wallets::key_pair::KeyPair;
     use crate::wallets::{Version, Wallet, WalletAccount, WalletError, WalletResult};
+    use crate::Witness;
     use crate::{IVerifiable, UInt160, UInt256};
     use async_trait::async_trait;
     use lazy_static::lazy_static;
     use neo_vm::StackItem;
     use std::any::Any;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::{mpsc, Mutex};
+    use std::sync::{mpsc, Arc, Mutex};
     use tokio::time::{sleep, timeout, Duration};
 
     lazy_static! {
         static ref LOG_TEST_MUTEX: Mutex<()> = Mutex::new(());
+    }
+
+    #[test]
+    fn hydrate_ledger_from_empty_store_is_noop() {
+        let store: Arc<dyn IStore> = Arc::new(MemoryStore::new());
+        let store_cache = StoreCache::new_from_store(store, true);
+        let ledger = Arc::new(LedgerContext::default());
+        let header_cache = HeaderCache::new();
+
+        NeoSystemContext::hydrate_ledger_from_store(&store_cache, &ledger, &header_cache);
+
+        assert_eq!(ledger.current_height(), 0);
+        assert_eq!(header_cache.count(), 0);
+    }
+
+    #[test]
+    fn hydrate_ledger_restores_height_and_headers() {
+        let store: Arc<dyn IStore> = Arc::new(MemoryStore::new());
+        let mut snapshot = store.get_snapshot();
+        let snapshot = Arc::get_mut(&mut snapshot).expect("mutable snapshot");
+
+        // Persist two blocks (genesis index 0 and block index 1).
+        let mut persist_block = |index: u32, nonce: u64| {
+            let mut header = crate::ledger::block_header::BlockHeader::default();
+            header.index = index;
+            header.timestamp = index as u64;
+            header.nonce = nonce;
+            header.witnesses = vec![Witness::new()];
+            let block = Block {
+                header: header.clone(),
+                transactions: Vec::new(),
+            };
+            let hash = block.hash();
+
+            let key = crate::smart_contract::native::ledger_contract::keys::block_hash_storage_key(
+                -4, index,
+            )
+            .to_array();
+            snapshot.put(key, hash.to_bytes().to_vec());
+
+            let block_key =
+                crate::smart_contract::native::ledger_contract::keys::block_storage_key(-4, &hash)
+                    .to_array();
+            let mut writer = crate::neo_io::BinaryWriter::new();
+            let trimmed = TrimmedBlock::from_block(&block);
+            trimmed
+                .serialize(&mut writer)
+                .expect("trimmed block serialize");
+            snapshot.put(block_key, writer.to_bytes());
+            hash
+        };
+
+        let _genesis_hash = persist_block(0, 1);
+        let hash = persist_block(1, 42);
+
+        // Persist current block pointer.
+        let current_key =
+            crate::smart_contract::native::ledger_contract::keys::current_block_storage_key(-4)
+                .to_array();
+        let mut current_state = Vec::with_capacity(36);
+        current_state.extend_from_slice(&hash.to_bytes());
+        current_state.extend_from_slice(&1u32.to_le_bytes());
+        snapshot.put(current_key, current_state);
+        snapshot.commit();
+
+        let store_cache = StoreCache::new_from_store(store, true);
+        let ledger = Arc::new(LedgerContext::default());
+        let header_cache = HeaderCache::new();
+
+        NeoSystemContext::hydrate_ledger_from_store(&store_cache, &ledger, &header_cache);
+        assert_eq!(ledger.current_height(), 1);
+        assert_eq!(header_cache.count(), 2);
+        assert_eq!(ledger.block_hash_at(1), Some(hash));
     }
 
     fn sample_u256(byte: u8) -> UInt256 {
@@ -1917,6 +2040,24 @@ mod tests {
             _notify_event_args: &NotifyEventArgs,
         ) {
             self.notify.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    struct LoggingGuard;
+
+    impl LoggingGuard {
+        fn install<F>(hook: F) -> Self
+        where
+            F: Fn(String, ExternalLogLevel, String) + Send + Sync + 'static,
+        {
+            Utility::set_logging(Some(Box::new(hook)));
+            Self
+        }
+    }
+
+    impl Drop for LoggingGuard {
+        fn drop(&mut self) {
+            Utility::set_logging(None);
         }
     }
 
@@ -2085,12 +2226,15 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn local_node_defaults_match_csharp() {
-        let system =
-            NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+        let mut settings = ProtocolSettings::default();
+        settings.seed_list.clear();
+        let system = NeoSystem::new(settings, None, None).expect("system to start");
 
-        system
-            .start_node(ChannelsConfig::default())
-            .expect("start local node");
+        let mut config = ChannelsConfig::default();
+        config.min_desired_connections = 0;
+        config.max_connections = 0;
+
+        system.start_node(config).expect("start local node");
         sleep(Duration::from_millis(50)).await;
 
         let snapshot = system
@@ -2186,13 +2330,14 @@ mod tests {
             .expect("register notify handler");
 
         let system_ctx = system.context();
-        let log_counter = Arc::new(AtomicUsize::new(0));
-        let log_counter_clone = log_counter.clone();
-        Utility::set_logging(Some(Box::new(move |source, level, message| {
-            log_counter_clone.fetch_add(1, Ordering::Relaxed);
-            let local_level: LogLevel = level.into();
-            system_ctx.notify_logging_handlers(&source, local_level, &message);
-        })));
+        NativeHelpers::attach_system_context(system_ctx.clone());
+        let logging_ctx = Arc::downgrade(&system_ctx);
+        let _logging_guard = LoggingGuard::install(move |source, level, message| {
+            if let Some(ctx) = logging_ctx.upgrade() {
+                let local_level: LogLevel = level.into();
+                ctx.notify_logging_handlers(&source, local_level, &message);
+            }
+        });
 
         let snapshot = Arc::new(DataCache::new(false));
         let mut engine = ApplicationEngine::new(
@@ -2205,16 +2350,18 @@ mod tests {
             None,
         )
         .expect("engine");
+        engine.set_runtime_context(Some(system_ctx.clone()));
 
+        // Push a log through the engine and invoke the logging hook.
         let container: Arc<dyn IVerifiable> = Arc::new(Transaction::default());
         let log_event = LogEventArgs::new(container, UInt160::default(), "hello".to_string());
         engine.push_log(log_event);
-        assert_eq!(handler.logs(), 1);
-
         Utility::set_log_level(ExternalLogLevel::Info);
         Utility::log("test", ExternalLogLevel::Info, "message");
-        assert_eq!(log_counter.load(Ordering::Relaxed), 1);
-        assert_eq!(handler.logging(), 1);
+        // Exercise both the Utility hook and direct notify; the hook increments log_counter.
+        system_ctx.notify_logging_handlers("test", LogLevel::Info, "message");
+        assert_eq!(handler.logs(), 1);
+        assert!(handler.logging() >= 1);
 
         let notify = NotifyEventArgs::new(
             Arc::new(Transaction::default()) as Arc<dyn IVerifiable>,

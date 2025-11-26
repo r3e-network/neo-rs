@@ -1,0 +1,106 @@
+# Neo Rust Node TestNet Configuration
+# For testing Neo N3 TestNet connectivity
+
+[network]
+# Network type: TestNet
+network_type = "TestNet"
+# Magic number for TestNet (Neo N3 T5)
+network_magic = 0x3554334E  # TestNet magic N3T5
+
+[p2p]
+# P2P listening port (TestNet standard)
+listen_port = 20333
+# Whether to enable message compression
+enable_compression = true
+# Minimum desired peer connections
+min_desired_connections = 5
+# Maximum number of connected peers
+max_connections = 20
+# Maximum connections from the same address
+max_connections_per_address = 3
+# Maximum known hashes tracked
+max_known_hashes = 1000
+# Broadcast history entries to retain
+broadcast_history_limit = 1024
+
+# TestNet seed nodes (official Neo TestNet infrastructure)
+seed_nodes = [
+    "seed1t5.neo.org:20333",
+    "seed2t5.neo.org:20333",
+    "seed3t5.neo.org:20333",
+    "seed4t5.neo.org:20333",
+    "seed5t5.neo.org:20333"
+]
+
+[blockchain]
+# Data directory for blockchain storage (test path)
+data_dir = "./data/testnet"
+# Maximum block size in bytes
+max_block_size = 262144
+# Block time in seconds (Neo N3 standard)
+block_time = 15
+
+[storage]
+# Storage backend: rocksdb for persistence test
+backend = "rocksdb"
+# Storage path (test)
+path = "./data/testnet/blockchain"
+# Cache size in MB (reduced for testing)
+cache_size = 256
+# Compression algorithm
+compression = "lz4"
+# Write buffer size in MB
+write_buffer_size = 32
+# Max open files
+max_open_files = 100
+
+[rpc]
+# RPC server disabled for connectivity test
+enabled = false
+bind_address = "127.0.0.1"
+port = 20332
+
+[consensus]
+# Consensus participation disabled for sync test
+enabled = false
+
+[logging]
+# Enable CLI logging output for debugging
+active = true
+# Print logs to the console
+console_output = true
+# Debug log level for testing
+level = "debug"
+# Plain text format for readability
+format = "plain"
+# Directory for log files
+path = "Logs"
+
+[plugins]
+download_url = "https://api.github.com/repos/neo-project/neo/releases"
+prerelease = false
+
+[unlock_wallet]
+is_active = false
+path = ""
+password = ""
+
+[monitoring]
+health_check_interval = 30
+metrics_enabled = false
+metrics_port = 9090
+performance_monitoring = false
+
+[security]
+rate_limiting_enabled = false
+max_requests_per_second = 100
+ddos_protection_enabled = false
+max_message_size = 16777216
+firewall_enabled = false
+tls_enabled = false
+
+[performance]
+worker_threads = 4
+mempool_size = 10000
+block_processor_threads = 2
+network_threads = 2

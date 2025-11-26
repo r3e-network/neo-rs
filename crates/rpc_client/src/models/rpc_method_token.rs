@@ -36,23 +36,24 @@ impl RpcMethodToken {
             .ok_or("Missing or invalid 'method' field")?
             .to_string();
 
-        let parameters_count = json
-            .get("paramcount")
-            .and_then(|v| v.as_number())
-            .ok_or("Missing or invalid 'paramcount' field")? as u16;
+        let parameters_count = parse_u16_field(json, "paramcount")?;
 
         let has_return_value = json
             .get("hasreturnvalue")
             .map(|v| v.as_boolean())
             .ok_or("Missing or invalid 'hasreturnvalue' field")?;
 
-        let call_flags_str = json
+        let call_flags_token = json
             .get("callflags")
-            .and_then(|v| v.as_string())
             .ok_or("Missing or invalid 'callflags' field")?;
-
-        let call_flags = parse_call_flags(&call_flags_str)
-            .ok_or_else(|| format!("Invalid call flags: {}", call_flags_str))?;
+        let call_flags = if let Some(text) = call_flags_token.as_string() {
+            parse_call_flags(&text).ok_or_else(|| format!("Invalid call flags: {text}"))?
+        } else if let Some(number) = call_flags_token.as_number() {
+            CallFlags::from_bits(number as u8)
+                .ok_or_else(|| format!("Invalid call flags bits: {}", number as u8))?
+        } else {
+            return Err("Invalid 'callflags' field".to_string());
+        };
 
         Ok(Self {
             method_token: contract_state::MethodToken {
@@ -63,6 +64,33 @@ impl RpcMethodToken {
                 call_flags,
             },
         })
+    }
+
+    /// Converts to JSON
+    /// Matches C# ToJson
+    pub fn to_json(&self) -> JObject {
+        let mut json = JObject::new();
+        json.insert(
+            "hash".to_string(),
+            neo_json::JToken::String(self.method_token.hash.to_string()),
+        );
+        json.insert(
+            "method".to_string(),
+            neo_json::JToken::String(self.method_token.method.clone()),
+        );
+        json.insert(
+            "paramcount".to_string(),
+            neo_json::JToken::Number(self.method_token.parameters_count as f64),
+        );
+        json.insert(
+            "hasreturnvalue".to_string(),
+            neo_json::JToken::Boolean(self.method_token.has_return_value),
+        );
+        json.insert(
+            "callflags".to_string(),
+            neo_json::JToken::String(self.method_token.call_flags.bits().to_string()),
+        );
+        json
     }
 }
 
@@ -89,7 +117,7 @@ fn parse_call_flags(value: &str) -> Option<CallFlags> {
             "STATES" => CallFlags::STATES,
             "READONLY" => CallFlags::READ_ONLY,
             "ALL" => CallFlags::ALL,
-            other => return None,
+            _other => return None,
         };
         result |= flag;
     }
@@ -98,5 +126,94 @@ fn parse_call_flags(value: &str) -> Option<CallFlags> {
         Some(result)
     } else {
         None
+    }
+}
+
+fn parse_u16_field(json: &JObject, field: &str) -> Result<u16, String> {
+    let token = json
+        .get(field)
+        .ok_or_else(|| format!("Missing '{field}' field"))?;
+    if let Some(number) = token.as_number() {
+        Ok(number as u16)
+    } else if let Some(text) = token.as_string() {
+        text.parse::<u16>()
+            .map_err(|_| format!("Invalid {field} value: {text}"))
+    } else {
+        Err(format!("Invalid '{field}' field"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use neo_json::JToken;
+
+    #[test]
+    fn parses_method_token() {
+        let mut json = JObject::new();
+        json.insert(
+            "hash".to_string(),
+            JToken::String("0000000000000000000000000000000000000000".to_string()),
+        );
+        json.insert(
+            "method".to_string(),
+            JToken::String("balanceOf".to_string()),
+        );
+        json.insert("paramcount".to_string(), JToken::Number(1f64));
+        json.insert("hasreturnvalue".to_string(), JToken::Boolean(true));
+        json.insert(
+            "callflags".to_string(),
+            JToken::String("ReadOnly".to_string()),
+        );
+
+        let parsed = RpcMethodToken::from_json(&json).unwrap();
+        assert_eq!(parsed.method_token.method, "balanceOf");
+        assert!(parsed.method_token.has_return_value);
+        assert_eq!(parsed.method_token.parameters_count, 1);
+        assert!(parsed
+            .method_token
+            .call_flags
+            .contains(CallFlags::READ_ONLY));
+    }
+
+    #[test]
+    fn parses_numeric_flags_and_paramcount_strings() {
+        let mut json = JObject::new();
+        json.insert(
+            "hash".to_string(),
+            JToken::String("0000000000000000000000000000000000000000".to_string()),
+        );
+        json.insert("method".to_string(), JToken::String("transfer".to_string()));
+        json.insert("paramcount".to_string(), JToken::String("2".to_string()));
+        json.insert("hasreturnvalue".to_string(), JToken::Boolean(true));
+        json.insert("callflags".to_string(), JToken::Number(3f64));
+
+        let parsed = RpcMethodToken::from_json(&json).unwrap();
+        assert_eq!(parsed.method_token.parameters_count, 2);
+        assert!(parsed
+            .method_token
+            .call_flags
+            .contains(CallFlags::READ_STATES));
+        assert!(parsed
+            .method_token
+            .call_flags
+            .contains(CallFlags::WRITE_STATES));
+    }
+
+    #[test]
+    fn method_token_roundtrip_json() {
+        let token = RpcMethodToken {
+            method_token: contract_state::MethodToken {
+                hash: UInt160::zero(),
+                method: "transfer".into(),
+                parameters_count: 2,
+                has_return_value: true,
+                call_flags: CallFlags::ALL,
+            },
+        };
+        let json = token.to_json();
+        let parsed = RpcMethodToken::from_json(&json).expect("method token");
+        assert_eq!(parsed.method_token.method, token.method_token.method);
+        assert_eq!(parsed.method_token.call_flags, CallFlags::ALL);
     }
 }

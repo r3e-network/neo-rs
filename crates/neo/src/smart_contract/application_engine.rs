@@ -12,6 +12,7 @@ use crate::persistence::i_read_only_store::IReadOnlyStoreGeneric;
 use crate::persistence::seek_direction::SeekDirection;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::application_engine_contract::register_contract_interops;
+use crate::smart_contract::application_engine_crypto::register_crypto_interops;
 use crate::smart_contract::application_engine_iterator::register_iterator_interops;
 use crate::smart_contract::application_engine_runtime::register_runtime_interops;
 use crate::smart_contract::application_engine_storage::register_storage_interops;
@@ -26,7 +27,6 @@ use crate::smart_contract::iterators::i_iterator::IIterator;
 use crate::smart_contract::iterators::StorageIterator;
 use crate::smart_contract::log_event_args::LogEventArgs;
 use crate::smart_contract::manifest::ContractMethodDescriptor;
-use crate::smart_contract::native::helpers::NativeHelpers;
 use crate::smart_contract::native::ContractManagement;
 use crate::smart_contract::native::{
     LedgerTransactionStates, NativeContract, NativeContractsCache, NativeRegistry, PolicyContract,
@@ -194,7 +194,7 @@ impl ApplicationEngine {
             diagnostic,
             fault_exception: None,
             states: HashMap::new(),
-            runtime_context: NativeHelpers::context(),
+            runtime_context: None,
         };
 
         app.attach_host();
@@ -222,6 +222,7 @@ impl ApplicationEngine {
         register_storage_interops(self).map_err(|err| Self::map_vm_error("System.Storage", err))?;
         register_iterator_interops(self)
             .map_err(|err| Self::map_vm_error("System.Iterator", err))?;
+        register_crypto_interops(self).map_err(|err| Self::map_vm_error("System.Crypto", err))?;
         Ok(())
     }
 
@@ -444,24 +445,14 @@ impl ApplicationEngine {
     }
 
     pub fn push_log(&mut self, event: LogEventArgs) {
-        let context = self
-            .runtime_context
-            .as_ref()
-            .cloned()
-            .or_else(NativeHelpers::context);
-        if let Some(context) = context {
+        if let Some(context) = self.runtime_context.as_ref() {
             context.notify_application_log(self, &event);
         }
         self.logs.push(event);
     }
 
     pub fn push_notification(&mut self, event: NotifyEventArgs) {
-        let context = self
-            .runtime_context
-            .as_ref()
-            .cloned()
-            .or_else(NativeHelpers::context);
-        if let Some(context) = context {
+        if let Some(context) = self.runtime_context.as_ref() {
             context.notify_application_notify(self, &event);
         }
         self.notifications.push(event);
@@ -469,6 +460,11 @@ impl ApplicationEngine {
 
     pub fn notifications(&self) -> &[NotifyEventArgs] {
         &self.notifications
+    }
+
+    /// Sets the runtime context used for logging/notify callbacks.
+    pub fn set_runtime_context(&mut self, context: Option<Arc<NeoSystemContext>>) {
+        self.runtime_context = context;
     }
 
     pub fn get_invocation_counter(&self, script_hash: &UInt160) -> u32 {
@@ -1957,6 +1953,104 @@ impl InteropHost for ApplicationEngine {
         if let Some(diagnostic) = self.diagnostic.as_mut() {
             diagnostic.post_execute_instruction(instruction);
         }
+        Ok(())
+    }
+
+    /// Handles CALLT opcode - calls a contract method via method token.
+    ///
+    /// This implements the C# ApplicationEngine.OnCallT logic:
+    /// 1. Validates call flags (ReadStates | AllowCall)
+    /// 2. Gets the current contract's NEF tokens
+    /// 3. Looks up the method token by index
+    /// 4. Pops the required arguments from the stack
+    /// 5. Performs the cross-contract call
+    fn on_callt(&mut self, engine: &mut ExecutionEngine, token_id: u16) -> VmResult<()> {
+        // 1. Validate call flags - need ReadStates | AllowCall
+        let required_flags = CallFlags::READ_STATES | CallFlags::ALLOW_CALL;
+        let current_flags = self.get_current_call_flags().map_err(|e| {
+            VmError::invalid_operation_msg(format!("Failed to get call flags: {}", e))
+        })?;
+
+        if !current_flags.contains(required_flags) {
+            return Err(VmError::invalid_operation_msg(format!(
+                "CALLT requires {:?} but current context has {:?}",
+                required_flags, current_flags
+            )));
+        }
+
+        // 2. Get the current execution context and contract state
+        let context = engine
+            .current_context()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current execution context"))?;
+
+        let state_arc =
+            context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+        let contract = {
+            let state = state_arc
+                .lock()
+                .map_err(|_| VmError::invalid_operation_msg("State lock poisoned"))?;
+            state.contract.clone().ok_or_else(|| {
+                VmError::invalid_operation_msg("No contract in current execution context")
+            })?
+        };
+
+        // 3. Validate token index and get the method token
+        let token_idx = token_id as usize;
+        if token_idx >= contract.nef.tokens.len() {
+            return Err(VmError::invalid_operation_msg(format!(
+                "Token index {} out of range (max: {})",
+                token_idx,
+                contract.nef.tokens.len()
+            )));
+        }
+        let token = contract.nef.tokens[token_idx].clone();
+
+        // 4. Validate stack has enough parameters
+        let stack_count = context.evaluation_stack().len();
+        if (token.parameters_count as usize) > stack_count {
+            return Err(VmError::invalid_operation_msg(format!(
+                "CALLT token requires {} parameters but stack has {}",
+                token.parameters_count, stack_count
+            )));
+        }
+
+        // 5. Pop arguments from the stack (in reverse order)
+        let mut args = Vec::with_capacity(token.parameters_count as usize);
+        for _ in 0..token.parameters_count {
+            args.push(engine.pop()?);
+        }
+
+        // 6. Look up the target contract
+        let target_contract = self.fetch_contract(&token.hash).map_err(|e| {
+            VmError::invalid_operation_msg(format!(
+                "Failed to fetch contract {}: {}",
+                token.hash, e
+            ))
+        })?;
+
+        // 7. Find the method descriptor in the target contract's ABI
+        let method = target_contract
+            .manifest
+            .abi
+            .get_method_ref(&token.method, token.parameters_count as usize)
+            .cloned()
+            .ok_or_else(|| {
+                VmError::invalid_operation_msg(format!(
+                    "Method '{}' with {} parameters not found in contract {}",
+                    token.method, token.parameters_count, token.hash
+                ))
+            })?;
+
+        // 8. Execute the cross-contract call
+        self.call_contract_internal(
+            &target_contract,
+            &method,
+            token.call_flags,
+            token.has_return_value,
+            &args,
+        )
+        .map_err(|e| VmError::invalid_operation_msg(format!("CALLT failed: {}", e)))?;
+
         Ok(())
     }
 }

@@ -1,4 +1,4 @@
-//! Neo Message implementation matching the C# `Message` class.
+//! Neo `Message` implementation (mirrors the C# class).
 
 use super::{
     message_command::MessageCommand, message_flags::MessageFlags, messages::ProtocolMessage,
@@ -65,9 +65,11 @@ impl Message {
             payload_compressed: payload_bytes,
         };
 
+        // C# uses strict > comparison for compression threshold
+        // Match this exactly to ensure cross-implementation compatibility
         if enable_compression
             && Self::should_try_compress(command)
-            && message.payload_compressed.len() >= COMPRESSION_MIN_SIZE
+            && message.payload_compressed.len() > COMPRESSION_MIN_SIZE
         {
             if let Ok(compressed) = compress_lz4(&message.payload_compressed) {
                 if compressed.len() + COMPRESSION_THRESHOLD < message.payload_compressed.len() {
@@ -236,8 +238,10 @@ mod tests {
             writer.write_bytes(&self.bytes)
         }
 
-        fn deserialize(_reader: &mut MemoryReader) -> crate::neo_io::IoResult<Self> {
-            unimplemented!("deserialization not required for tests")
+        fn deserialize(reader: &mut MemoryReader) -> crate::neo_io::IoResult<Self> {
+            // Consume the remaining buffer as the payload for test round-trips.
+            let remaining = reader.read_to_end()?.to_vec();
+            Ok(Self { bytes: remaining })
         }
 
         fn size(&self) -> usize {

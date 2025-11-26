@@ -48,68 +48,70 @@ impl ApplicationEngine {
             0x54 => 500, // REVERSE4
             0x55 => 500, // REVERSEN
 
-            // Splice operations
+            // Slot operations
             0x56 => 80000,     // INITSSLOT
             0x57 => 80000,     // INITSLOT
-            0x58..=0x5F => 60, // LDSFLD0-LDSFLD7
-            0x60 => 60,        // LDSFLD
-            0x61..=0x68 => 60, // STSFLD0-STSFLD7
-            0x69 => 60,        // STSFLD
-            0x6A..=0x71 => 60, // LDLOC0-LDLOC7
-            0x72 => 60,        // LDLOC
-            0x73..=0x7A => 60, // STLOC0-STLOC7
-            0x7B => 60,        // STLOC
-            0x7C..=0x83 => 60, // LDARG0-LDARG7
-            0x84 => 60,        // LDARG
-            0x85..=0x8C => 60, // STARG0-STARG7
-            0x8D => 60,        // STARG
-            0x8E => 500,       // NEWBUFFER
-            0x8F => 300000,    // MEMCPY
-            0x90 => 80000,     // CAT
-            0x91 => 80000,     // SUBSTR
-            0x92 => 80000,     // LEFT
-            0x93 => 80000,     // RIGHT
+            0x58..=0x5E => 60, // LDSFLD0-LDSFLD6
+            0x5F => 60,        // LDSFLD
+            0x60..=0x66 => 60, // STSFLD0-STSFLD6
+            0x67 => 60,        // STSFLD
+            0x68..=0x6E => 60, // LDLOC0-LDLOC6
+            0x6F => 60,        // LDLOC
+            0x70..=0x76 => 60, // STLOC0-STLOC6
+            0x77 => 60,        // STLOC
+            0x78..=0x7E => 60, // LDARG0-LDARG6
+            0x7F => 60,        // LDARG
+            0x80..=0x86 => 60, // STARG0-STARG6
+            0x87 => 60,        // STARG
 
-            // Bitwise operations
-            0x95 => 30, // INVERT
-            0x96 => 80, // AND
-            0x97 => 80, // OR
-            0x98 => 80, // XOR
-            0x99 => 80, // EQUAL
-            0x9A => 80, // NOTEQUAL
+            // Splice operations
+            0x88 => 500,    // NEWBUFFER
+            0x89 => 300000, // MEMCPY
+            0x8B => 80000,  // CAT
+            0x8C => 80000,  // SUBSTR
+            0x8D => 80000,  // LEFT
+            0x8E => 80000,  // RIGHT
 
-            // Arithmetic operations
-            0x9B => 30,  // SIGN
-            0x9C => 30,  // ABS
-            0x9D => 30,  // NEGATE
-            0x9E => 30,  // INC
-            0x9F => 30,  // DEC
-            0xA0 => 80,  // ADD
-            0xA1 => 80,  // SUB
-            0xA2 => 80,  // MUL
-            0xA3 => 80,  // DIV
-            0xA4 => 80,  // MOD
-            0xA5 => 300, // POW
-            0xA6 => 300, // SQRT
-            0xA7 => 300, // MODMUL
-            0xA8 => 300, // MODPOW
-            0xA9 => 80,  // SHL
-            0xAA => 80,  // SHR
-            0xAB => 30,  // NOT
-            0xAC => 100, // BOOLAND
-            0xAD => 100, // BOOLOR
-            0xAE => 30,  // NZ
-            0xB1 => 80,  // NUMEQUAL
-            0xB2 => 80,  // NUMNOTEQUAL
-            0xB3 => 80,  // LT
-            0xB4 => 80,  // LE
-            0xB5 => 80,  // GT
-            0xB6 => 80,  // GE
-            0xB7 => 80,  // MIN
-            0xB8 => 80,  // MAX
-            0xB9 => 80,  // WITHIN
+            // Bitwise operations (FIXED: correct opcode byte values)
+            0x90 => 30, // INVERT
+            0x91 => 80, // AND
+            0x92 => 80, // OR
+            0x93 => 80, // XOR
+            0x97 => 80, // EQUAL
+            0x98 => 80, // NOTEQUAL
 
-            // Compound types
+            // Arithmetic operations (FIXED: correct opcode byte values)
+            0x99 => 30,  // SIGN
+            0x9A => 30,  // ABS
+            0x9B => 30,  // NEGATE
+            0x9C => 30,  // INC
+            0x9D => 30,  // DEC
+            0x9E => 80,  // ADD
+            0x9F => 80,  // SUB
+            0xA0 => 80,  // MUL
+            0xA1 => 80,  // DIV
+            0xA2 => 80,  // MOD
+            0xA3 => 300, // POW
+            0xA4 => 300, // SQRT
+            0xA5 => 300, // MODMUL
+            0xA6 => 300, // MODPOW
+            0xA8 => 80,  // SHL
+            0xA9 => 80,  // SHR
+            0xAA => 30,  // NOT
+            0xAB => 100, // BOOLAND
+            0xAC => 100, // BOOLOR
+            0xB1 => 30,  // NZ
+            0xB3 => 80,  // NUMEQUAL
+            0xB4 => 80,  // NUMNOTEQUAL
+            0xB5 => 80,  // LT
+            0xB6 => 80,  // LE
+            0xB7 => 80,  // GT
+            0xB8 => 80,  // GE
+            0xB9 => 80,  // MIN
+            0xBA => 80,  // MAX
+            0xBB => 80,  // WITHIN
+
+            // Compound types (FIXED: correct opcode byte values)
             0xBE => 400,     // PACKMAP
             0xBF => 400,     // PACKSTRUCT
             0xC0 => 400,     // PACK
@@ -119,26 +121,27 @@ impl ApplicationEngine {
             0xC4 => 15000,   // NEWARRAY_T
             0xC5 => 16000,   // NEWSTRUCT0
             0xC6 => 15000,   // NEWSTRUCT
-            0xC8 => 500,     // SIZE
-            0xC9 => 30,      // HASKEY
-            0xCA => 1000000, // KEYS
-            0xCB => 500000,  // VALUES
-            0xCC => 270,     // PICKITEM
-            0xCD => 15000,   // APPEND
-            0xCE => 270,     // SETITEM
-            0xCF => 500,     // REVERSEITEMS
-            0xD0 => 500,     // REMOVE
-            0xD1 => 500,     // CLEARITEMS
-            0xD2 => 60,      // POPITEM
+            0xC8 => 200,     // NEWMAP
+            0xCA => 500,     // SIZE
+            0xCB => 30,      // HASKEY
+            0xCC => 1000000, // KEYS
+            0xCD => 500000,  // VALUES
+            0xCE => 270,     // PICKITEM
+            0xCF => 15000,   // APPEND
+            0xD0 => 270,     // SETITEM
+            0xD1 => 500,     // REVERSEITEMS
+            0xD2 => 500,     // REMOVE
+            0xD3 => 500,     // CLEARITEMS
+            0xD4 => 60,      // POPITEM
 
-            // Types
-            0xD3 => 30,    // ISNULL
-            0xD4 => 30,    // ISTYPE
-            0xD5 => 80000, // CONVERT
+            // Types (FIXED: correct opcode byte values)
+            0xD8 => 30,    // ISNULL
+            0xD9 => 30,    // ISTYPE
+            0xDB => 80000, // CONVERT
 
-            // Exceptions (not priced in C#)
-            0xF0 => 30, // ABORTMSG
-            0xF1 => 30, // ASSERTMSG
+            // Extensions
+            0xE0 => 30, // ABORTMSG
+            0xE1 => 30, // ASSERTMSG
 
             _ => 30, // Default price
         }

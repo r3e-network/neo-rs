@@ -128,3 +128,41 @@ impl RpcStack {
         Ok(Self { item_type, value })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use neo_json::{JArray, JToken};
+
+    #[test]
+    fn invoke_result_roundtrip() {
+        let mut stack_item = JObject::new();
+        stack_item.insert("type".to_string(), JToken::String("Boolean".to_string()));
+        stack_item.insert("value".to_string(), JToken::Boolean(true));
+
+        let mut stack_array = JArray::new();
+        stack_array.add(Some(JToken::Object(stack_item)));
+
+        let mut json = JObject::new();
+        json.insert("script".to_string(), JToken::String("00".to_string()));
+        json.insert("state".to_string(), JToken::String("HALT".to_string()));
+        json.insert("gasconsumed".to_string(), JToken::String("1".to_string()));
+        json.insert("stack".to_string(), JToken::Array(stack_array));
+
+        let parsed = RpcInvokeResult::from_json(&json).unwrap();
+        assert_eq!(parsed.script, "00");
+        assert_eq!(parsed.state, VMState::HALT);
+        assert_eq!(parsed.gas_consumed, 1);
+        assert_eq!(parsed.stack.len(), 1);
+    }
+
+    #[test]
+    fn rpc_stack_parses() {
+        let mut obj = JObject::new();
+        obj.insert("type".to_string(), JToken::String("Integer".to_string()));
+        obj.insert("value".to_string(), JToken::String("123".to_string()));
+        let parsed = RpcStack::from_json(&obj).unwrap();
+        assert_eq!(parsed.item_type, "Integer");
+        assert_eq!(parsed.value.as_string().unwrap(), "123");
+    }
+}

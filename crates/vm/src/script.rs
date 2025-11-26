@@ -478,18 +478,17 @@ impl Script {
     pub fn get_jump_target(&self, instruction: &Instruction) -> VmResult<usize> {
         let opcode = instruction.opcode();
         let position = instruction.pointer();
-        let next_position = position + instruction.size();
 
         match opcode {
             OpCode::JMP | OpCode::JMPIF | OpCode::JMPIFNOT | OpCode::CALL => {
                 // 1-byte offset
                 let offset = instruction.operand_as::<i8>()?;
-                self.get_jump_offset(next_position, offset as i32)
+                self.get_jump_offset(position, offset as i32)
             }
             OpCode::JMP_L | OpCode::JMPIF_L | OpCode::JMPIFNOT_L | OpCode::CALL_L => {
                 // 4-byte offset
                 let offset = instruction.operand_as::<i32>()?;
-                self.get_jump_offset(next_position, offset)
+                self.get_jump_offset(position, offset)
             }
             OpCode::JMPEQ
             | OpCode::JMPNE
@@ -499,7 +498,7 @@ impl Script {
             | OpCode::JMPLE => {
                 // 1-byte offset
                 let offset = instruction.operand_as::<i8>()?;
-                self.get_jump_offset(next_position, offset as i32)
+                self.get_jump_offset(position, offset as i32)
             }
             OpCode::JMPEQ_L
             | OpCode::JMPNE_L
@@ -509,7 +508,7 @@ impl Script {
             | OpCode::JMPLE_L => {
                 // 4-byte offset
                 let offset = instruction.operand_as::<i32>()?;
-                self.get_jump_offset(next_position, offset)
+                self.get_jump_offset(position, offset)
             }
             _ => Err(VmError::invalid_instruction_msg(format!(
                 "Not a jump instruction: {opcode:?}"
@@ -529,7 +528,6 @@ impl Script {
     pub fn get_try_offsets(&self, instruction: &Instruction) -> VmResult<(usize, usize)> {
         let opcode = instruction.opcode();
         let position = instruction.pointer();
-        let next_position = position + instruction.size();
 
         if opcode != OpCode::TRY {
             return Err(VmError::invalid_instruction_msg(format!(
@@ -537,13 +535,19 @@ impl Script {
             )));
         }
 
-        // Get the catch and finally offsets
-        let catch_offset = instruction.operand_as::<i16>()?;
-        let finally_offset = instruction.operand_as::<i16>()?;
+        // Get the catch and finally offsets (signed 16-bit values)
+        let operand = instruction.operand();
+        let catch_offset = i16::from_le_bytes([
+            *operand.first().unwrap_or(&0),
+            *operand.get(1).unwrap_or(&0),
+        ]) as i32;
+        let finally_offset =
+            i16::from_le_bytes([*operand.get(2).unwrap_or(&0), *operand.get(3).unwrap_or(&0)])
+                as i32;
 
         // Calculate the absolute positions
-        let catch_position = self.get_jump_offset(next_position, catch_offset as i32)?;
-        let finally_position = self.get_jump_offset(next_position, finally_offset as i32)?;
+        let catch_position = self.get_jump_offset(position, catch_offset)?;
+        let finally_position = self.get_jump_offset(position, finally_offset)?;
 
         Ok((catch_position, finally_position))
     }
@@ -668,7 +672,7 @@ mod tests {
         let script_bytes = vec![
             OpCode::PUSH1 as u8,
             OpCode::JMP as u8,
-            0x00, // 1: Jump to position 3 (offset 0 from next instruction at 3)
+            0x02, // 1: Jump to position 3 (offset from current instruction)
             OpCode::PUSH2 as u8,
             OpCode::ADD as u8,
             OpCode::RET as u8,

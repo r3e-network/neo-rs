@@ -139,7 +139,7 @@ impl Nep17Commands {
             return Err(anyhow!("VM faulted while invoking {}", method));
         }
         let stack = engine.result_stack();
-        if stack.len() < 1 {
+        if stack.is_empty() {
             return Err(anyhow!("Contract call returned empty stack"));
         }
         let item = stack.peek(0).map_err(|err| anyhow!(err.to_string()))?;

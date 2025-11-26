@@ -466,26 +466,6 @@ impl From<std::str::Utf8Error> for CoreError {
     }
 }
 
-// Neo-specific error conversions
-#[cfg(feature = "neo-io")]
-impl From<crate::neo_io::Error> for CoreError {
-    fn from(error: crate::neo_io::Error) -> Self {
-        match error {
-            crate::neo_io::Error::EndOfStream => CoreError::EndOfStream,
-            crate::neo_io::Error::invalid_data(msg) => CoreError::invalid_data(msg),
-            crate::neo_io::Error::FormatException => CoreError::invalid_format("Format exception"),
-            crate::neo_io::Error::deserialization(msg) => CoreError::deserialization(msg),
-            crate::neo_io::Error::invalid_operation(msg) => CoreError::invalid_operation(msg),
-            crate::neo_io::Error::Io(msg) => CoreError::io(msg),
-            crate::neo_io::Error::serialization(msg) => CoreError::serialization(msg),
-            crate::neo_io::Error::InvalidFormat(msg) => CoreError::invalid_format(msg),
-            crate::neo_io::Error::BufferOverflow => {
-                CoreError::buffer_overflow(usize::MAX, 0) // Unknown exact sizes
-            }
-        }
-    }
-}
-
 // Removed neo-cryptography dependency - using external crypto crates directly
 
 #[cfg(test)]

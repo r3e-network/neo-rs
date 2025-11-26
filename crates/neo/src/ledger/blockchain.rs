@@ -487,15 +487,13 @@ impl Blockchain {
             }
         }
 
+        // Use write lock directly to prevent race condition where another
+        // thread could insert the same block between read check and write insert.
         {
-            let cache = self._block_cache.read().await;
+            let mut cache = self._block_cache.write().await;
             if cache.contains_key(&hash) {
                 return VerifyResult::AlreadyExists;
             }
-        }
-
-        {
-            let mut cache = self._block_cache.write().await;
             cache.insert(hash, block.clone());
         }
 

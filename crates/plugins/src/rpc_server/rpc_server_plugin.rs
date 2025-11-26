@@ -21,6 +21,7 @@ use super::rpc_server::{
 use super::rpc_server_blockchain::RpcServerBlockchain;
 use super::rpc_server_node::RpcServerNode;
 use super::rpc_server_smart_contract::RpcServerSmartContract;
+use super::rpc_server_utilities::RpcServerUtilities;
 use super::rpc_server_wallet::RpcServerWallet;
 
 pub struct RpcServerPlugin {
@@ -86,6 +87,7 @@ impl RpcServerPlugin {
         server.register_handlers(RpcServerNode::register_handlers());
         server.register_handlers(RpcServerSmartContract::register_handlers());
         server.register_handlers(RpcServerWallet::register_handlers());
+        server.register_handlers(RpcServerUtilities::register_handlers());
         let pending = take_pending_handlers(network);
         if !pending.is_empty() {
             server.register_handlers(pending);

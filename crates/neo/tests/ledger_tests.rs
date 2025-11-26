@@ -1,5 +1,3 @@
-#![cfg(feature = "neo_full_tests")]
-
 use neo_core::ledger::header_cache::{HeaderCache, MAX_HEADERS};
 
 use neo_core::network::p2p::payloads::Header;
@@ -50,9 +48,10 @@ fn header_cache_respects_capacity() {
     assert!(cache.full());
     assert_eq!(cache.last().unwrap().index(), (MAX_HEADERS - 1) as u32);
 
-    // Adding beyond the limit must fail and not alter state
-    assert!(!cache.add(header_with_index(MAX_HEADERS as u32)));
+    // Adding beyond the limit evicts the oldest but keeps capacity bounded.
+    assert!(cache.add(header_with_index(MAX_HEADERS as u32)));
     assert_eq!(cache.count(), MAX_HEADERS);
-    assert_eq!(cache.last().unwrap().index(), (MAX_HEADERS - 1) as u32);
-    assert!(cache.get(MAX_HEADERS as u32).is_none());
+    assert_eq!(cache.first_index().unwrap(), 1);
+    assert_eq!(cache.last().unwrap().index(), MAX_HEADERS as u32);
+    assert!(cache.get(0).is_none());
 }

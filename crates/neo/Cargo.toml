@@ -7,11 +7,6 @@ authors = ["R3E Network <jimmy@r3e.network>"]
 repository = "https://github.com/r3e-network/neo-rs"
 license = "MIT"
 
-[features]
-default = []
-neo-io = []
-neo_full_tests = []
-
 [dependencies]
 # External dependencies
 num-bigint = "0.4"
@@ -73,6 +68,10 @@ neo_io_crate = { path = "../io", package = "neo-io" }
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
 tempfile = "3.5"
+
+[features]
+monitoring = []
+performance-tests = []
 
 # Benchmarks removed during cleanup
 # [[bench]]

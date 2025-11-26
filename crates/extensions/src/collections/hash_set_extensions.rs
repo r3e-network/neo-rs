@@ -32,6 +32,31 @@ pub trait HashSetExtensions<T> {
     where
         T: Hash + Eq + Clone,
         K: Hash + Eq + Clone + PartialEq<T>;
+
+    /// Determines whether the set is a subset of another.
+    fn is_subset_of(&self, other: &HashSet<T>) -> bool
+    where
+        T: Hash + Eq;
+
+    /// Determines whether the set is a superset of another.
+    fn is_superset_of(&self, other: &HashSet<T>) -> bool
+    where
+        T: Hash + Eq;
+
+    /// Returns the intersection with another set.
+    fn intersection_with(&self, other: &HashSet<T>) -> HashSet<T>
+    where
+        T: Hash + Eq + Clone;
+
+    /// Returns the union with another set.
+    fn union_with(&self, other: &HashSet<T>) -> HashSet<T>
+    where
+        T: Hash + Eq + Clone;
+
+    /// Returns the difference with another set.
+    fn difference_with(&self, other: &HashSet<T>) -> HashSet<T>
+    where
+        T: Hash + Eq + Clone;
 }
 
 impl<T> HashSetExtensions<T> for HashSet<T>
@@ -64,5 +89,40 @@ where
         } else {
             self.retain(|item| !other.keys().any(|key| key == item));
         }
+    }
+
+    fn is_subset_of(&self, other: &HashSet<T>) -> bool
+    where
+        T: Hash + Eq,
+    {
+        self.is_subset(other)
+    }
+
+    fn is_superset_of(&self, other: &HashSet<T>) -> bool
+    where
+        T: Hash + Eq,
+    {
+        self.is_superset(other)
+    }
+
+    fn intersection_with(&self, other: &HashSet<T>) -> HashSet<T>
+    where
+        T: Hash + Eq + Clone,
+    {
+        self.intersection(other).cloned().collect()
+    }
+
+    fn union_with(&self, other: &HashSet<T>) -> HashSet<T>
+    where
+        T: Hash + Eq + Clone,
+    {
+        self.union(other).cloned().collect()
+    }
+
+    fn difference_with(&self, other: &HashSet<T>) -> HashSet<T>
+    where
+        T: Hash + Eq + Clone,
+    {
+        self.difference(other).cloned().collect()
     }
 }

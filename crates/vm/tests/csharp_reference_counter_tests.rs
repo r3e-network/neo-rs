@@ -4,26 +4,13 @@ use neo_vm::{script::Script, script_builder::ScriptBuilder, stack_item::StackIte
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 
-/// Helper that computes the C#-style syscall hash directly.
-fn double_sha256(bytes: &[u8]) -> [u8; 32] {
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    let first = hasher.finalize();
-
-    let mut hasher = Sha256::new();
-    hasher.update(first);
-    let digest = hasher.finalize();
-
-    let mut result = [0u8; 32];
-    result.copy_from_slice(&digest);
-    result
-}
-
 #[test]
 fn script_builder_syscall_hash_matches_csharp() {
     let api = "System.Runtime.Log";
-    let expected = double_sha256(api.as_bytes());
-    let expected_prefix = u32::from_le_bytes([expected[0], expected[1], expected[2], expected[3]]);
+    let mut hasher = Sha256::new();
+    hasher.update(api.as_bytes());
+    let digest = hasher.finalize();
+    let expected_prefix = u32::from_le_bytes([digest[0], digest[1], digest[2], digest[3]]);
 
     let computed = ScriptBuilder::hash_syscall(api).expect("hash_syscall should succeed");
     assert_eq!(computed, expected_prefix);

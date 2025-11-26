@@ -30,7 +30,7 @@ pub fn read_options() -> ReadOptions {
 /// Returns read options configured with the supplied snapshot.
 pub fn read_options_with_snapshot<'a>(snapshot: &'a rocksdb::Snapshot<'a>) -> ReadOptions {
     let mut options = ReadOptions::default();
-    options.set_fill_cache(false);
+    options.fill_cache(false);
     options.set_snapshot(snapshot);
     options
 }

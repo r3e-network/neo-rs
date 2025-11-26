@@ -4,7 +4,6 @@
 
 use neo_vm::{
     execution_engine::{ExecutionEngine, VMState},
-    instruction::Instruction,
     op_code::OpCode,
     script::Script,
     stack_item::StackItem,

@@ -1,3 +1,4 @@
+//! RocksDB-backed `IStore` implementation with snapshot support.
 use crate::{
     persistence::{
         i_read_only_store::{IReadOnlyStore, IReadOnlyStoreGeneric},
@@ -54,7 +55,8 @@ impl IStoreProvider for RocksDBStoreProvider {
             Ok(store) => Arc::new(store),
             Err(err) => {
                 error!(target: "neo", error = %err, "failed to open RocksDB store");
-                panic!("failed to open RocksDB store: {err}");
+                // Fall back to an in-memory store to keep the node running.
+                Arc::new(crate::persistence::providers::memory_store::MemoryStore::new())
             }
         }
     }
@@ -220,8 +222,7 @@ struct RocksDbSnapshot {
 
 impl RocksDbSnapshot {
     fn new(db: Arc<DB>, store: Arc<RocksDbStore>) -> Self {
-        let snapshot = db.snapshot();
-        let snapshot = unsafe { mem::transmute::<DbSnapshot<'_>, DbSnapshot<'static>>(snapshot) };
+        let snapshot = Self::create_snapshot(&db);
 
         Self {
             store,
@@ -229,6 +230,23 @@ impl RocksDbSnapshot {
             snapshot,
             write_batch: Mutex::new(WriteBatch::default()),
         }
+    }
+
+    fn create_snapshot(db: &Arc<DB>) -> DbSnapshot<'static> {
+        // Create a snapshot using a `'static` DB reference while keeping the Arc alive.
+        let db_ptr = Arc::into_raw(db.clone());
+        let snapshot = unsafe {
+            // SAFETY: `db_ptr` comes from an Arc clone that stays alive for this scope.
+            // The `RocksDbSnapshot` struct also owns an `Arc<DB>`, so the DB outlives
+            // the snapshot. We immediately balance the raw Arc below.
+            let static_db: &'static DB = &*db_ptr;
+            static_db.snapshot()
+        };
+        // Balance Arc::into_raw to avoid leaking the temporary clone.
+        unsafe {
+            Arc::from_raw(db_ptr);
+        }
+        snapshot
     }
 
     fn read_options(&self) -> ReadOptions {

@@ -154,20 +154,14 @@ fn test_debugger_step_over() {
         let context = engine.current_context_mut().unwrap();
 
         let operand_bytes = instruction.operand();
-        if operand_bytes.len() >= 2 {
-            let offset = i16::from_le_bytes([operand_bytes[0], operand_bytes[1]]);
-
-            // Calculate the call target
-            let call_target = context.instruction_pointer() as i32 + offset as i32;
-
-            let script = context.script().clone();
-            let new_context = engine.create_context(script, 0, call_target as usize);
-
-            // Load the new context
-            engine.load_context(new_context)?;
-
-            // Set the jumping flag
-            engine.is_jumping = true;
+        if let Some(offset) = operand_bytes.get(0) {
+            let offset = *offset as i8 as isize;
+            // Calculate the call target relative to the current instruction pointer
+            if let Some(call_target) = context.instruction_pointer().checked_add_signed(offset) {
+                let new_context = context.clone_with_position(call_target as usize);
+                engine.load_context(new_context)?;
+                engine.is_jumping = true;
+            }
         }
 
         Ok(())
@@ -197,8 +191,7 @@ fn test_debugger_step_over() {
     let script_bytes = vec![
         OpCode::PUSH1 as u8, // Main: Push 1
         OpCode::CALL as u8,
-        0x04,
-        0x00,                // Main: Call function at offset 4
+        0x03,                // Main: Call function at offset 3 (relative)
         OpCode::RET as u8,   // Main: Return
         OpCode::PUSH2 as u8, // Function: Push 2
         OpCode::ADD as u8,   // Function: Add
@@ -230,7 +223,7 @@ fn test_debugger_step_over() {
             .current_context()
             .unwrap()
             .instruction_pointer(),
-        4
+        3
     );
 
     // Continue execution
@@ -248,20 +241,13 @@ fn test_debugger_step_out() {
         let context = engine.current_context_mut().unwrap();
 
         let operand_bytes = instruction.operand();
-        if operand_bytes.len() >= 2 {
-            let offset = i16::from_le_bytes([operand_bytes[0], operand_bytes[1]]);
-
-            // Calculate the call target
-            let call_target = context.instruction_pointer() as i32 + offset as i32;
-
-            let script = context.script().clone();
-            let new_context = engine.create_context(script, 0, call_target as usize);
-
-            // Load the new context
-            engine.load_context(new_context)?;
-
-            // Set the jumping flag
-            engine.is_jumping = true;
+        if let Some(offset) = operand_bytes.get(0) {
+            let offset = *offset as i8 as isize;
+            if let Some(call_target) = context.instruction_pointer().checked_add_signed(offset) {
+                let new_context = context.clone_with_position(call_target as usize);
+                engine.load_context(new_context)?;
+                engine.is_jumping = true;
+            }
         }
 
         Ok(())
@@ -291,8 +277,7 @@ fn test_debugger_step_out() {
     let script_bytes = vec![
         OpCode::PUSH1 as u8, // Main: Push 1
         OpCode::CALL as u8,
-        0x04,
-        0x00,                // Main: Call function at offset 4
+        0x03,                // Main: Call function at offset 3 (relative)
         OpCode::RET as u8,   // Main: Return
         OpCode::PUSH2 as u8, // Function: Push 2
         OpCode::ADD as u8,   // Function: Add
@@ -335,7 +320,7 @@ fn test_debugger_step_out() {
             .current_context()
             .unwrap()
             .instruction_pointer(),
-        2
+        3
     );
 
     // Continue execution

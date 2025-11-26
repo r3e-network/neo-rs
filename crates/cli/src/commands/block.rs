@@ -184,6 +184,7 @@ impl BlockCommands {
             .read(true)
             .write(true)
             .create(true)
+            .truncate(true)
             .open(path.as_ref())
             .with_context(|| format!("failed to open {}", path.as_ref().display()))?;
 

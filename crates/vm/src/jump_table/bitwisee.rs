@@ -23,10 +23,12 @@ pub fn register_handlers(jump_table: &mut JumpTable) {
 /// Implements the INVERT operation.
 fn invert(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().expect("No current context");
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the value from the stack
-    let value = context.pop().expect("stack pop failed");
+    let value = context.pop()?;
 
     // Invert the value
     let result = match value {
@@ -52,11 +54,13 @@ fn invert(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
 /// Implements the AND operation.
 fn and(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().expect("No current context");
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the values from the stack
-    let b = context.pop().expect("stack pop failed");
-    let a = context.pop().expect("stack pop failed");
+    let b = context.pop()?;
+    let a = context.pop()?;
 
     // Perform the AND operation
     let result = match (&a, &b) {
@@ -88,11 +92,13 @@ fn and(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
 /// Implements the OR operation.
 fn or(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().expect("No current context");
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the values from the stack
-    let b = context.pop().expect("stack pop failed");
-    let a = context.pop().expect("stack pop failed");
+    let b = context.pop()?;
+    let a = context.pop()?;
 
     // Perform the OR operation
     let result = match (&a, &b) {
@@ -124,11 +130,13 @@ fn or(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> 
 /// Implements the XOR operation.
 fn xor(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().expect("No current context");
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the values from the stack
-    let b = context.pop().expect("stack pop failed");
-    let a = context.pop().expect("stack pop failed");
+    let b = context.pop()?;
+    let a = context.pop()?;
 
     // Perform the XOR operation
     let result = match (&a, &b) {

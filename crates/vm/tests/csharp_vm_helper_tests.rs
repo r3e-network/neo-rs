@@ -190,8 +190,16 @@ fn test_create_map() {
     sb.emit_opcode(OpCode::SETITEM);
 
     let result = sb.to_array();
-    assert!(result.len() > 10);
-    assert_eq!(result[0], OpCode::NEWMAP as u8);
+    let expected = vec![
+        OpCode::NEWMAP as u8,
+        OpCode::PUSH1 as u8,
+        OpCode::PUSH2 as u8,
+        OpCode::SETITEM as u8,
+        OpCode::PUSH3 as u8,
+        OpCode::PUSH4 as u8,
+        OpCode::SETITEM as u8,
+    ];
+    assert_eq!(result, expected);
 }
 
 #[test]
@@ -432,7 +440,8 @@ fn test_emit_push_data_size_boundaries() {
     let data_small = vec![0x42; 75]; // 75 bytes (max for direct push)
     sb.emit_push(&data_small);
 
-    let mut expected = vec![data_small.len() as u8]; // Length as opcode
+    // The builder always uses PUSHDATA1 for byte pushes up to 255 bytes to mirror C#.
+    let mut expected = vec![OpCode::PUSHDATA1 as u8, data_small.len() as u8];
     expected.extend_from_slice(&data_small);
     assert_eq!(sb.to_array(), expected);
 

@@ -1,13 +1,4 @@
-// Copyright (C) 2015-2025 The Neo Project.
-//
-// error.rs file belongs to the neo project and is free
-// software distributed under the MIT software license, see the
-// accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
-// modifications are permitted.
+//! Network error types for P2P operations.
 
 use std::fmt;
 use std::net::SocketAddr;
@@ -54,3 +45,22 @@ impl std::error::Error for NetworkError {}
 
 /// Result type for network operations.
 pub type NetworkResult<T> = Result<T, NetworkError>;
+
+impl NetworkError {
+    /// Returns true when the error represents a timeout condition.
+    pub fn is_timeout(&self) -> bool {
+        matches!(self, NetworkError::Timeout)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::NetworkError;
+
+    #[test]
+    fn timeout_check_matches_variant() {
+        assert!(NetworkError::Timeout.is_timeout());
+        assert!(!NetworkError::ConnectionError("x".into()).is_timeout());
+        assert!(!NetworkError::InvalidMessage("x".into()).is_timeout());
+    }
+}

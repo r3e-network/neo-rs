@@ -3,8 +3,7 @@
 //! This module contains the JsonTestRunner implementation that executes
 //! C# Neo VM JSON test files and verifies the results match expected behavior.
 
-use neo_vm::stack_item::{StackItem, StackItemType};
-use neo_vm::{ExecutionEngine, Script, VMState};
+use neo_vm::{ExecutionEngine, Script};
 use serde_json;
 use std::collections::HashMap;
 use std::fs;

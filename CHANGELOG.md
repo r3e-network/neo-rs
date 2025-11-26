@@ -1,0 +1,50 @@
+# Changelog
+
+## [0.4.0] - 2025-01-20
+
+### Compatibility
+- Compatible with Neo N3 v3.8.2 (C# reference commit: `ede620e5722c48e199a0f3f2ab482ae090c1b878`)
+- Verified TestNet connectivity with Neo nodes running v3.8.2
+- Byte-for-byte serialization compatibility for Transaction, Block, and Header types
+
+### Added
+- Transaction serialization compatibility tests (ported from C# UT_Transaction)
+- Block serialization compatibility tests (ported from C# UT_Block)
+- Header serialization tests with witness exclusion verification
+- Merkle root calculation and validation tests
+- P2P handshake protocol verified against live TestNet nodes
+
+### Changed
+- Add GitHub Actions workflow to run fmt, clippy (warns as errors), and full test suite on pushes/PRs with RocksDB dependency preinstalled.
+- Ship a root README with build/run/lint instructions, configuration pointers, and test targets for the Rust Neo N3 node stack.
+- Docker packaging now launches `neo-cli` via an entrypoint that respects `NEO_NETWORK`/`NEO_CONFIG`/`NEO_STORAGE`, persists plugins to `/data/Plugins`, and exposes a JSON-RPC health check; compose defaults updated accordingly.
+- Container entrypoint accepts `NEO_BACKEND` and `NEO_RPC_PORT` to align health checks and storage selection with custom deployments.
+- Docker runtime hardening: runs as unprivileged `neo` user with a dedicated home directory.
+- Entrypoint now auto-detects the RPC port from the TOML `[rpc]` section and shares it with the container health check (falls back to network defaults when parsing is not possible).
+- Docker build now copies the actual workspace sources and installs the `neo-cli` binary (the unused `neo-node` binary path was removed).
+- Docker builds now ignore heavy local artifacts (target, data, logs) via `.dockerignore` to keep contexts lean.
+- Entrypoint now validates writable volumes, logs startup parameters, uses the correct `--listen-port` flag, and allows overriding P2P listen port via `NEO_LISTEN_PORT`.
+- Compose defaults raise `nofile`/`nproc` ulimits for production-friendlier container runs and include documented compose usage.
+- Compose environment exposes `NEO_CONFIG`/`NEO_BACKEND` alongside port overrides for easier custom deployments.
+- Added `.env.example` for compose/docker users and ignore `.env` in build contexts to avoid leaking secrets.
+- Entry point auto-selects per-network storage directories (`/data/testnet` or `/data/mainnet`) when none is provided and defaults the container backend to `rocksdb`.
+- Makefile now exposes compose helpers (`compose-up`, `compose-down`, `compose-logs`, `compose-ps`, `compose-monitor`) and lists them in `make help`.
+- Optional Grafana service is gated behind a compose profile (`monitoring`) to avoid starting monitoring by default.
+- Added `SECURITY.md` with coordinated disclosure and contact details.
+- Added `LICENSE` (MIT) and `CONTRIBUTING.md` with testing/PR guidelines.
+- Added `docs/OPERATIONS.md` with runbooks for health checks, backups, monitoring, and incident response.
+- Added a PR template to enforce fmt/clippy/test runs, changelog/doc updates, and summary/testing notes.
+- Added GitHub issue templates (bug/feature) and disabled blank issues, pointing security reports to `SECURITY.md`.
+- Plugins honour a `NEO_PLUGINS_DIR` override so non-root/container installs can keep plugin config on writable storage; added coverage in `neo-extensions`.
+- Added release workflow to build/push versioned Docker images to GHCR on tags and manual dispatch.
+- Added `docs/MONITORING.md` for signals/alerts and `docs/RPC_HARDENING.md` for a secured `RpcServer.json`.
+- Added `docs/RELEASE.md` outlining tagging/publish steps and tied Makefile to the RocksDB backup helper.
+- Added a hardened sample `Plugins/RpcServer/RpcServer.json.example` for quick setup.
+- VM/runtime fixes:
+  - Aligned TRY/ENDTRY handling, syscall dispatch, and debugger step semantics with the C# reference behaviour.
+  - Brought stack item equality, conversion, and complex type handling into parity; refreshed compatibility tests accordingly.
+  - Stabilised script builder/jump offsets, syscall hashing, and exception propagation; all workspace tests now pass.
+- Performance harness: relaxed debug thresholds to avoid false negatives while keeping behaviour in check.
+- Tooling: Makefile now targets the `neo-cli` binary and uses the provided TOML configs for mainnet/testnet runs; dist packages include the sample configs.
+- Production config hardening: RPC CORS defaults to disabled, logging path points to `/data/Logs/neo-cli.log`, and default log level is `info`.
+- Added `scripts/backup-rocksdb.sh` to snapshot RocksDB data directories; Docker image now provisions `/data/Logs` for persisted logs.

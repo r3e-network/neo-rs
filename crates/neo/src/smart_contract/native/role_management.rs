@@ -280,6 +280,20 @@ impl RoleManagement {
         suffix
     }
 
+    /// Gets designated nodes for a role at a specific block index.
+    /// This is a public API used by other native contracts like Notary.
+    pub fn get_designated_by_role_at(
+        &self,
+        snapshot: &DataCache,
+        role: Role,
+        index: u32,
+    ) -> Result<Vec<ECPoint>> {
+        match self.find_designation_bytes(snapshot, role, index)? {
+            Some(bytes) => self.parse_public_keys(&bytes),
+            None => Ok(vec![]),
+        }
+    }
+
     /// Serializes public keys to bytes.
     fn serialize_public_keys(&self, public_keys: &[ECPoint]) -> Result<Vec<u8>> {
         let mut result = Vec::with_capacity(4 + public_keys.len() * 33);

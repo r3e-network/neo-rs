@@ -9,11 +9,12 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-//! P2P networking module matching C# Neo.Network.P2P
+//! P2P networking module matching C# `Neo.Network.P2P`.
 
 pub mod capabilities;
 pub mod channels_config;
 pub mod connection;
+pub mod framed;
 pub mod helper;
 pub mod local_node;
 pub mod message;
@@ -25,10 +26,12 @@ pub mod peer;
 pub mod remote_node;
 pub mod task_manager;
 pub mod task_session;
+pub mod timeouts;
 
 // Re-export commonly used types
 pub use channels_config::ChannelsConfig;
 pub use connection::PeerConnection;
+pub use framed::FrameConfig;
 pub use helper::Helper;
 pub use local_node::{
     BroadcastEvent, LocalNode, LocalNodeActor, LocalNodeCommand, RelayInventory, RemoteNodeSnapshot,

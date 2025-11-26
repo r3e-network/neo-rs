@@ -6,11 +6,24 @@ use crate::{VmError, VmResult};
 use num_bigint::BigInt;
 
 /// Represents a mutable byte buffer in the VM.
-#[derive(Debug, PartialEq, Eq)]
+///
+/// In C# Neo, Buffer uses reference equality (ReferenceEquals), meaning two Buffer
+/// instances are only equal if they are the same instance. We achieve this in Rust
+/// by assigning each Buffer a unique `id` at creation and comparing only the `id`.
+#[derive(Debug)]
 pub struct Buffer {
     data: Vec<u8>,
     id: usize,
 }
+
+impl PartialEq for Buffer {
+    /// Compares Buffers by identity (id), matching C# ReferenceEquals semantics.
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl Eq for Buffer {}
 
 impl Buffer {
     /// Creates a new buffer with the specified data.

@@ -1,13 +1,19 @@
 //! Application Logs plugin wiring.
 
 use crate::application_logs::log_reader::LogReader;
+use crate::application_logs::rpc_handlers::{
+    register_log_reader, unregister_log_reader, ApplicationLogsRpcHandlers,
+};
 use crate::application_logs::settings::ApplicationLogsSettings;
+use crate::rpc_server::rpc_server_plugin::RpcServerPlugin;
 use neo_core::NeoSystem;
 use neo_extensions::error::{ExtensionError, ExtensionResult};
 use neo_extensions::plugin::{
     Plugin, PluginBase, PluginCategory, PluginContext, PluginEvent, PluginInfo,
 };
+use parking_lot::RwLock;
 use serde_json::Value as JsonValue;
+use std::collections::HashSet;
 use std::io::ErrorKind;
 use std::sync::Arc;
 use tokio::fs;
@@ -17,7 +23,8 @@ use tracing::warn;
 pub struct ApplicationLogsPlugin {
     base: PluginBase,
     settings: ApplicationLogsSettings,
-    log_reader: Option<LogReader>,
+    log_reader: Option<Arc<RwLock<LogReader>>>,
+    registered_networks: HashSet<u32>,
 }
 
 impl ApplicationLogsPlugin {
@@ -43,12 +50,13 @@ impl ApplicationLogsPlugin {
             base: PluginBase::new(info),
             settings,
             log_reader: None,
+            registered_networks: HashSet::new(),
         }
     }
 
     fn ensure_reader(&mut self) {
         if self.log_reader.is_none() {
-            self.log_reader = Some(LogReader::new(self.settings.clone()));
+            self.log_reader = Some(Arc::new(RwLock::new(LogReader::new(self.settings.clone()))));
         }
     }
 }
@@ -85,8 +93,8 @@ impl Plugin for ApplicationLogsPlugin {
         }
 
         self.ensure_reader();
-        if let Some(reader) = &mut self.log_reader {
-            reader.configure(config_value);
+        if let Some(reader_arc) = &self.log_reader {
+            reader_arc.write().configure(config_value);
         }
 
         Ok(())
@@ -98,8 +106,12 @@ impl Plugin for ApplicationLogsPlugin {
     }
 
     async fn stop(&mut self) -> ExtensionResult<()> {
-        if let Some(reader) = &mut self.log_reader {
-            reader.dispose();
+        // Unregister from all networks
+        for network in self.registered_networks.drain() {
+            unregister_log_reader(network);
+        }
+        if let Some(reader_arc) = &self.log_reader {
+            reader_arc.write().dispose();
         }
         self.log_reader = None;
         Ok(())
@@ -109,9 +121,19 @@ impl Plugin for ApplicationLogsPlugin {
         if let PluginEvent::NodeStarted { system } = event {
             match Arc::downcast::<NeoSystem>(system.clone()) {
                 Ok(neo_system) => {
+                    let network = neo_system.settings().network;
                     self.ensure_reader();
-                    if let Some(reader) = &mut self.log_reader {
-                        reader.on_system_loaded(neo_system);
+                    if let Some(reader_arc) = &self.log_reader {
+                        reader_arc.write().on_system_loaded(neo_system);
+
+                        // Register RPC handlers for this network if not already done
+                        if !self.registered_networks.contains(&network) {
+                            register_log_reader(network, Arc::clone(reader_arc));
+                            for handler in ApplicationLogsRpcHandlers::register_handlers() {
+                                RpcServerPlugin::register_methods(handler, network);
+                            }
+                            self.registered_networks.insert(network);
+                        }
                     }
                 }
                 Err(_) => {
@@ -125,8 +147,8 @@ impl Plugin for ApplicationLogsPlugin {
     async fn update_config(&mut self, config: JsonValue) -> ExtensionResult<()> {
         ApplicationLogsSettings::load(&config);
         self.settings = ApplicationLogsSettings::from_config(&config);
-        if let Some(reader) = &mut self.log_reader {
-            reader.configure(Some(config));
+        if let Some(reader_arc) = &self.log_reader {
+            reader_arc.write().configure(Some(config));
         }
         Ok(())
     }

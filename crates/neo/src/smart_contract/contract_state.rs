@@ -111,11 +111,10 @@ impl ContractState {
 
     /// Gets the size of the contract state in bytes.
     pub fn size(&self) -> usize {
-        4 +
-        2 + // update_counter
-        ADDRESS_SIZE +
-        self.nef.size() +
-        self.manifest.size()
+        let mut writer = BinaryWriter::new();
+        self.serialize(&mut writer)
+            .expect("ContractState serialization should succeed for size calculation");
+        writer.len()
     }
 
     /// Calculates the hash of the contract from its NEF and manifest.
@@ -138,7 +137,7 @@ impl ContractState {
 
     /// Deserializes the contract state from bytes.
     pub fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
-        let id = reader.read_u32()? as i32;
+        let id = reader.read_i32()?;
         let update_counter = reader.read_uint16()?;
         let hash = <UInt160 as Serializable>::deserialize(reader)?;
         let nef = <NefFile as Serializable>::deserialize(reader)?;
@@ -162,6 +161,33 @@ impl ContractState {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::smart_contract::manifest::ContractManifest;
+
+    #[test]
+    fn contract_state_roundtrip_matches_signed_id() {
+        let nef = NefFile::new("compiler".to_string(), vec![1, 2, 3]);
+        let manifest = ContractManifest::new("test".to_string());
+        let state = ContractState::new(-1, UInt160::zero(), nef.clone(), manifest.clone());
+
+        let mut writer = BinaryWriter::new();
+        state.serialize(&mut writer).expect("serialize");
+        let bytes = writer.into_bytes();
+
+        let mut reader = MemoryReader::new(&bytes);
+        let parsed = ContractState::deserialize(&mut reader).expect("deserialize");
+
+        assert_eq!(parsed.id, state.id);
+        assert_eq!(parsed.update_counter, state.update_counter);
+        assert_eq!(parsed.hash, state.hash);
+        assert_eq!(parsed.nef.script, nef.script);
+        assert_eq!(parsed.manifest.name, manifest.name);
+        assert_eq!(bytes.len(), state.size());
+    }
+}
+
 impl NefFile {
     /// Creates a new NEF file.
     pub fn new(compiler: String, script: Vec<u8>) -> Self {
@@ -178,13 +204,10 @@ impl NefFile {
 
     /// Gets the size of the NEF file in bytes.
     pub fn size(&self) -> usize {
-        self.compiler.len() + 1 + // compiler with length prefix
-        self.source.len() + 1 + // source with length prefix
-        4 + // tokens count
-        self.tokens.iter().map(|t| t.size()).sum::<usize>() +
-        4 + // script length
-        self.script.len() +
-        4 // checksum
+        let mut writer = BinaryWriter::new();
+        self.serialize(&mut writer)
+            .expect("NefFile serialization should succeed for size calculation");
+        writer.len()
     }
 
     /// Calculates the checksum of the script.
@@ -242,18 +265,16 @@ impl MethodToken {
 
 impl Serializable for ContractState {
     fn size(&self) -> usize {
-        // Calculate the size of the serialized ContractState
-        // This matches C# Neo's ContractState.Size property exactly
-        4 + // id (u32)
-        4 + // update_counter (u32)
-        ADDRESS_SIZE + // hash (UInt160)
-        self.nef.size() + // nef file size
-        self.manifest.size() // manifest size
+        let mut writer = BinaryWriter::new();
+        // Serialization cannot fail for in-memory values; panic on unexpected errors.
+        self.serialize(&mut writer)
+            .expect("ContractState serialization should succeed for size calculation");
+        writer.len()
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
-        writer.write_u32(self.id as u32)?;
-        writer.write_u32(self.update_counter as u32)?;
+        writer.write_i32(self.id)?;
+        writer.write_u16(self.update_counter)?;
         writer.write_bytes(&self.hash.as_bytes())?;
         Serializable::serialize(&self.nef, writer)?;
         Serializable::serialize(&self.manifest, writer)
@@ -262,8 +283,8 @@ impl Serializable for ContractState {
     }
 
     fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
-        let id = reader.read_u32()? as i32;
-        let update_counter = reader.read_uint16()?;
+        let id = reader.read_i32()?;
+        let update_counter = reader.read_u16()?;
         let hash = <UInt160 as Serializable>::deserialize(reader)?;
         let nef = <NefFile as Serializable>::deserialize(reader)?;
 
@@ -288,16 +309,10 @@ impl Serializable for ContractState {
 
 impl Serializable for NefFile {
     fn size(&self) -> usize {
-        // Calculate the size of the serialized NefFile
-        // This matches C# Neo's NefFile.Size property exactly
-        4 + // magic (u32)
-        self.compiler.len() + 1 + // compiler string + length byte
-        self.source.len() + 1 + // source string + length byte
-        1 + // tokens count
-        (self.tokens.len() * 16) + // tokens (each MethodToken is 16 bytes)
-        4 + // script length
-        self.script.len() + // script bytes
-        4 // checksum (u32)
+        let mut writer = BinaryWriter::new();
+        self.serialize(&mut writer)
+            .expect("NefFile serialization should succeed for size calculation");
+        writer.len()
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
@@ -344,13 +359,10 @@ impl Serializable for NefFile {
 
 impl Serializable for MethodToken {
     fn size(&self) -> usize {
-        // Calculate the size of the serialized MethodToken
-        // This matches C# Neo's MethodToken.Size property exactly
-        ADDRESS_SIZE + // hash (UInt160)
-        self.method.len() + 1 + // method string + length byte
-        2 + // parameters_count (u16)
-        1 + // has_return_value (bool)
-        4 // call_flags (u32)
+        let mut writer = BinaryWriter::new();
+        self.serialize(&mut writer)
+            .expect("MethodToken serialization should succeed for size calculation");
+        writer.len()
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {

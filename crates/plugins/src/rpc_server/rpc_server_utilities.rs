@@ -1,27 +1,68 @@
 use bs58;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use std::sync::Arc;
+use tokio::runtime::{Handle, Runtime};
+use tokio::task::block_in_place;
 
 use neo_core::uint160::UInt160;
 
-use super::rpc_server::RpcServer;
+use super::rpc_error::RpcError;
+use super::rpc_exception::RpcException;
+use super::rpc_method_attribute::RpcMethodDescriptor;
+use super::rpc_server::{RpcHandler, RpcServer};
+
+pub struct RpcServerUtilities;
+
+impl RpcServerUtilities {
+    pub fn register_handlers() -> Vec<RpcHandler> {
+        vec![
+            Self::handler("listplugins", Self::list_plugins_handler),
+            Self::handler("validateaddress", Self::validate_address_handler),
+        ]
+    }
+
+    fn handler(
+        name: &'static str,
+        func: fn(&RpcServer, &[Value]) -> Result<Value, RpcException>,
+    ) -> RpcHandler {
+        RpcHandler::new(RpcMethodDescriptor::new(name), Arc::new(func))
+    }
+
+    fn list_plugins_handler(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {
+        Ok(server.list_plugins())
+    }
+
+    fn validate_address_handler(
+        server: &RpcServer,
+        params: &[Value],
+    ) -> Result<Value, RpcException> {
+        let address = params.first().and_then(|v| v.as_str()).ok_or_else(|| {
+            RpcException::new(RpcError::invalid_params().with_data("address parameter required"))
+        })?;
+        Ok(server.validate_address(address))
+    }
+}
 
 impl RpcServer {
     pub fn list_plugins(&self) -> Value {
-        let infos = self
-            .system()
-            .plugin_manager()
-            .read()
-            .map(|manager| manager.plugin_infos())
-            .unwrap_or_default();
+        let fut = neo_extensions::plugin::global_plugin_infos();
+        let infos = match Handle::try_current() {
+            Ok(handle) => block_in_place(|| handle.block_on(fut)),
+            Err(_) => {
+                let rt = Runtime::new().expect("failed to build tokio runtime");
+                rt.block_on(fut)
+            }
+        };
 
         let items: Vec<Value> = infos
             .into_iter()
-            .map(|(name, version)| {
+            .map(|info| {
                 json!({
-                    "name": name,
-                    "version": version,
+                    "name": info.name,
+                    "version": info.version,
                     "interfaces": Vec::<Value>::new(),
+                    "category": format!("{:?}", info.category),
                 })
             })
             .collect();

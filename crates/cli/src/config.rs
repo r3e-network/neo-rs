@@ -28,7 +28,7 @@ pub struct NodeConfig {
     pub plugins: PluginsSection,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 #[serde(default)]
 pub struct NetworkSection {
     #[serde(alias = "NetworkType")]
@@ -37,16 +37,7 @@ pub struct NetworkSection {
     pub network_magic: Option<u32>,
 }
 
-impl Default for NetworkSection {
-    fn default() -> Self {
-        Self {
-            network_type: None,
-            network_magic: None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 #[serde(default)]
 pub struct P2PSection {
     #[serde(alias = "Port")]
@@ -65,21 +56,6 @@ pub struct P2PSection {
     pub enable_compression: Option<bool>,
     #[serde(alias = "SeedList")]
     pub seed_nodes: Vec<String>,
-}
-
-impl Default for P2PSection {
-    fn default() -> Self {
-        Self {
-            listen_port: None,
-            min_desired_connections: None,
-            max_connections: None,
-            max_connections_per_address: None,
-            max_known_hashes: None,
-            broadcast_history_limit: None,
-            enable_compression: None,
-            seed_nodes: Vec::new(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -467,7 +443,7 @@ impl NodeConfig {
     }
 }
 
-fn infer_magic_from_type(network_type: &str) -> Option<u32> {
+pub(crate) fn infer_magic_from_type(network_type: &str) -> Option<u32> {
     match network_type.to_ascii_lowercase().as_str() {
         "mainnet" | "main" => Some(0x334F454E),
         "testnet" | "test" => Some(0x3554334E),

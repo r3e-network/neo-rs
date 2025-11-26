@@ -41,6 +41,7 @@ fn endfinally_without_pending_exception_advances() {
     context.set_try_stack(Some(vec![ExceptionHandlingContext::new(5, -1)]));
     if let Some(stack) = context.try_stack_mut() {
         stack[0].set_end_pointer(7);
+        stack[0].set_state(ExceptionHandlingState::Finally);
     }
 
     vm_try::endfinally(&mut engine, &Instruction::new(OpCode::ENDFINALLY, &[]))

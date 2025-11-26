@@ -17,22 +17,15 @@ lru = { workspace = true }
 hashbrown = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tokio = { workspace = true, optional = true }
-async-trait = { workspace = true, optional = true }
-futures = { workspace = true, optional = true }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
 indexmap = "2.0"
 linked-hash-map = "0.5"
 
 # Internal dependencies
 # Temporarily commented out to break dependency cycle
 # Removed neo-cryptography - using external crypto crates directly
-
-[features]
-default = ["std", "async"]
-std = []
-async = ["tokio", "async-trait", "futures"]
-# Temporarily commented out to break dependency cycle
-# Removed crypto feature - using external crypto crates directly
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full"] }

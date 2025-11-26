@@ -27,7 +27,7 @@ impl NativeCommands {
         let settings = self.system.settings();
 
         for contract in contracts {
-            let active = contract.is_active(&settings, height);
+            let active = contract.is_active(settings, height);
             let name = format!("\t{:<20}", contract.name());
             let mut details = contract.hash().to_string();
             if !active {

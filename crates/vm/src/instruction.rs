@@ -380,6 +380,7 @@ impl Instruction {
             OpCode::PUSHDATA1 => OperandSizePrefix(1),
             OpCode::PUSHDATA2 => OperandSizePrefix(2),
             OpCode::PUSHDATA4 => OperandSizePrefix(4),
+            OpCode::TRY => OperandSizePrefix(4),
             // Jump instructions with 1-byte offset
             OpCode::JMP
             | OpCode::JMPIF
@@ -392,6 +393,7 @@ impl Instruction {
             | OpCode::JMPLT
             | OpCode::JMPLE
             | OpCode::ENDTRY => OperandSizePrefix(1),
+            OpCode::CALLT => OperandSizePrefix(2),
             // Jump instructions with 4-byte offset
             OpCode::JMP_L
             | OpCode::JMPIF_L
@@ -404,6 +406,7 @@ impl Instruction {
             | OpCode::JMPLT_L
             | OpCode::JMPLE_L
             | OpCode::ENDTRY_L => OperandSizePrefix(4),
+            OpCode::TRY_L => OperandSizePrefix(8),
             OpCode::SYSCALL => OperandSizePrefix(4),
             // Slot operations with operands
             OpCode::INITSLOT => OperandSizePrefix(2), // local_count (1 byte) + argument_count (1 byte)
@@ -563,7 +566,6 @@ impl FromOperand for u64 {
 #[allow(dead_code)]
 mod tests {
     use super::*;
-    use crate::execution_engine::ExecutionEngine;
 
     #[test]
     fn test_instruction_parsing() {

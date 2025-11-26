@@ -96,7 +96,6 @@ fn test_base58_functions_exist() {
 // 3. Ensure all test vectors from C# pass
 
 #[test]
-#[ignore] // Ignore until Base58 algorithm is fixed
 fn test_base58_encode_decode_basic() {
     // This should work but currently fails due to algorithm issues
     let basic_test_vectors = vec![("", ""), ("00", "1")];
@@ -112,7 +111,6 @@ fn test_base58_encode_decode_basic() {
 }
 
 #[test]
-#[ignore] // Ignore until Base58 algorithm is fixed
 fn test_base58_round_trip_simple() {
     // This should work but currently fails
     let test_cases = vec![vec![1, 2, 3], vec![42, 123, 200]];
@@ -128,7 +126,6 @@ fn test_base58_round_trip_simple() {
 }
 
 #[test]
-#[ignore] // Ignore until Base58 algorithm is fixed
 fn test_base58_check_encode_decode_simple() {
     // This should work but currently fails
     let test_cases = vec![vec![1, 2, 3], b"Neo".to_vec()];
@@ -144,7 +141,6 @@ fn test_base58_check_encode_decode_simple() {
 }
 
 #[test]
-#[ignore] // Ignore until Base58 algorithm is fixed
 fn test_base58_encode_decode_full_compatibility() {
     // Full test vectors from Bitcoin Core tests - currently failing
     let bitcoin_test_vectors = vec![("61", "2g"), ("626262", "a3gV"), ("636363", "aPEr")];

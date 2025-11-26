@@ -89,3 +89,39 @@ impl RpcRequest {
         json
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rpc_request_roundtrip() {
+        let req = RpcRequest {
+            id: JToken::Number(7f64),
+            json_rpc: "2.0".to_string(),
+            method: "getblock".to_string(),
+            params: vec![JToken::String("0xabc".to_string())],
+        };
+        let json = req.to_json();
+        let parsed = RpcRequest::from_json(&json).unwrap();
+        assert_eq!(parsed.id.as_number(), Some(7f64));
+        assert_eq!(parsed.json_rpc, req.json_rpc);
+        assert_eq!(parsed.method, req.method);
+        assert_eq!(parsed.params.len(), 1);
+    }
+
+    #[test]
+    fn rpc_request_defaults_params_and_accepts_string_id() {
+        let mut json = JObject::new();
+        json.insert("id".to_string(), JToken::String("abc".to_string()));
+        json.insert("jsonrpc".to_string(), JToken::String("2.0".to_string()));
+        json.insert(
+            "method".to_string(),
+            JToken::String("getversion".to_string()),
+        );
+
+        let parsed = RpcRequest::from_json(&json).unwrap();
+        assert_eq!(parsed.id.as_string().unwrap(), "abc");
+        assert!(parsed.params.is_empty());
+    }
+}

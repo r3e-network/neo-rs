@@ -57,8 +57,8 @@ enabled = true
 bind_address = "127.0.0.1"
 # RPC port
 port = 20332
-# CORS enabled for web access
-cors_enabled = true
+# CORS enabled for web access (leave disabled for production; front RPC with a proxy if exposing)
+cors_enabled = false
 # Maximum concurrent connections (C# default)
 max_connections = 40
 # Maximum request body size in bytes (C# default 5MB)
@@ -82,7 +82,7 @@ session_expiration_time = 60
 # FindStorage page size
 find_storage_page_size = 50
 # Disabled RPC methods (matches RpcServer default)
-disabled_methods = ["openwallet"]
+disabled_methods = ["openwallet", "getplugins"]
 
 [consensus]
 # Consensus participation enabled
@@ -98,11 +98,11 @@ active = true
 # Print logs to the console (matches C# Logger.ConsoleOutput)
 console_output = true
 # Log level: error, warn, info, debug, trace
-level = "debug"
+level = "info"
 # Log format: json, pretty
 format = "pretty"
-# Directory for log files (matches C# Logger.Path semantics)
-path = "/tmp/neo-cli.log"
+# Directory for log files (matches C# Logger.Path semantics). Ensure this path exists/writable.
+path = "/data/Logs/neo-cli.log"
 
 [contracts]
 # Neo Name Service contract hash (matches C# config.json)

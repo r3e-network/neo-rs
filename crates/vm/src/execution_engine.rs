@@ -113,6 +113,13 @@ impl ExecutionEngine {
     fn on_fault(&mut self, err: VmError) {
         #[cfg(debug_assertions)]
         println!("ExecutionEngine fault: {:?}", err);
+        if self.uncaught_exception.is_none() {
+            let message = match &err {
+                VmError::CatchableException { message } => message.clone(),
+                _ => err.to_string(),
+            };
+            self.uncaught_exception = Some(StackItem::from_byte_string(message.into_bytes()));
+        }
         self.set_state(VMState::FAULT);
     }
 
@@ -228,6 +235,25 @@ impl ExecutionEngine {
         self.interop_host
     }
 
+    /// Invokes the CALLT opcode by delegating to the interop host.
+    ///
+    /// This method is called by the CALLT instruction handler to resolve method tokens
+    /// and perform cross-contract calls via the ApplicationEngine.
+    pub fn invoke_callt(&mut self, token_id: u16) -> VmResult<()> {
+        if let Some(host_ptr) = self.interop_host {
+            // SAFETY: The host pointer is managed by the caller (ApplicationEngine)
+            // and guaranteed to remain valid while the execution engine lives.
+            let host = unsafe { &mut *host_ptr };
+            host.on_callt(self, token_id)
+        } else {
+            Err(VmError::invalid_operation_msg(format!(
+                "CALLT (token {}) requires ApplicationEngine context. \
+                 No interop host configured.",
+                token_id
+            )))
+        }
+    }
+
     /// Returns the effective call flags for this engine.
     pub fn call_flags(&self) -> CallFlags {
         self.call_flags
@@ -297,11 +323,10 @@ impl ExecutionEngine {
             // Get return value count from the current context
             let rvcount = context.rvcount();
 
+            // Collect items to transfer before removing the context
+            let mut items = Vec::new();
             if rvcount != 0 {
                 let eval_stack_len = context.evaluation_stack().len();
-
-                // Collect items to transfer
-                let mut items = Vec::new();
 
                 if rvcount == -1 {
                     // Return all items
@@ -320,16 +345,29 @@ impl ExecutionEngine {
                     }
                 }
 
-                // Push to result stack in reverse order
+                // Preserve original order when pushing to target stack
                 items.reverse();
-                for item in items {
-                    self.result_stack.push(item);
-                }
             }
 
             // Remove the current context
             let context_index = self.invocation_stack.len() - 1;
             self.remove_context(context_index)?;
+
+            // Route return items to caller or result stack
+            if !items.is_empty() {
+                if self.invocation_stack.is_empty() {
+                    for item in items {
+                        self.result_stack.push(item);
+                    }
+                } else {
+                    let caller = self
+                        .current_context_mut()
+                        .ok_or_else(|| VmError::invalid_operation_msg("No caller context"))?;
+                    for item in items {
+                        caller.evaluation_stack_mut().push(item);
+                    }
+                }
+            }
 
             // If no more contexts, halt
             if self.invocation_stack.is_empty() {
@@ -358,8 +396,7 @@ impl ExecutionEngine {
 
         if !self.is_jumping {
             if let Some(context) = self.current_context_mut() {
-                let next_position = context.instruction_pointer() + instruction.size();
-                context.set_instruction_pointer(next_position);
+                let _ = context.move_next(); // Ignore errors for out-of-range pointers
             }
         }
 
@@ -970,8 +1007,9 @@ impl ExecutionEngine {
             }
         }
 
-        if let Some(exception) = &self.uncaught_exception {
-            Err(VmError::UnhandledException(exception.clone()))
+        if let Some(exception) = self.uncaught_exception.clone() {
+            self.set_state(VMState::FAULT);
+            Err(VmError::UnhandledException(exception))
         } else {
             Ok(())
         }
@@ -1228,7 +1266,7 @@ mod tests {
         let script = Script::new_relaxed(script_bytes);
 
         // Load the script
-        let context = engine
+        let _context = engine
             .load_script(script, -1, 0)
             .expect("VM operation should succeed");
 
@@ -1241,7 +1279,7 @@ mod tests {
             .expect("VM operation should succeed");
 
         // Remove the context
-        let mut context = engine
+        let _context = engine
             .remove_context(0)
             .expect("VM operation should succeed");
 

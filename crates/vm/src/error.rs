@@ -613,9 +613,13 @@ mod tests {
         let limit =
             crate::execution_engine_limits::ExecutionEngineLimits::DEFAULT.max_item_size as usize;
         let error = VmError::memory_limit_exceeded(2048, limit);
+        // C#: ushort.MaxValue = 65535
         assert_eq!(
             error.to_string(),
-            "Memory limit exceeded: used 2048 bytes, limit 65536 bytes"
+            format!(
+                "Memory limit exceeded: used 2048 bytes, limit {} bytes",
+                limit
+            )
         );
 
         let error = VmError::gas_exhausted(1000, 800);

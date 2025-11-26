@@ -4,35 +4,22 @@
 
 use crate::CompressionAlgorithm;
 
+// Compression is always compiled in; the previous feature gate is removed to keep
+// behaviour deterministic across builds.
+
 /// Compresses data using the specified algorithm (production-ready implementation)
 pub fn compress(data: &[u8], algorithm: CompressionAlgorithm) -> crate::Result<Vec<u8>> {
     match algorithm {
         CompressionAlgorithm::None => Ok(data.to_vec()),
         CompressionAlgorithm::Lz4 => {
-            #[cfg(feature = "compression")]
-            {
-                use lz4_flex::compress_prepend_size;
-                Ok(compress_prepend_size(data))
-            }
-            #[cfg(not(feature = "compression"))]
-            {
-                // Fallback when compression feature is disabled
-                Ok(data.to_vec())
-            }
+            use lz4_flex::compress_prepend_size;
+            Ok(compress_prepend_size(data))
         }
         CompressionAlgorithm::Zstd => {
-            #[cfg(feature = "compression")]
-            {
-                // ZSTD temporarily disabled due to build issues
-                Err(crate::Error::CompressionError(
-                    "ZSTD compression not available".to_string(),
-                ))
-            }
-            #[cfg(not(feature = "compression"))]
-            {
-                // Fallback when compression feature is disabled
-                Ok(data.to_vec())
-            }
+            // ZSTD temporarily disabled due to build issues
+            Err(crate::Error::CompressionError(
+                "ZSTD compression not available".to_string(),
+            ))
         }
     }
 }
@@ -45,31 +32,15 @@ pub fn decompress(
     match algorithm {
         CompressionAlgorithm::None => Ok(compressed_data.to_vec()),
         CompressionAlgorithm::Lz4 => {
-            #[cfg(feature = "compression")]
-            {
-                use lz4_flex::decompress_size_prepended;
-                decompress_size_prepended(compressed_data)
-                    .map_err(|e| crate::Error::CompressionError(e.to_string()))
-            }
-            #[cfg(not(feature = "compression"))]
-            {
-                // Fallback when compression feature is disabled
-                Ok(compressed_data.to_vec())
-            }
+            use lz4_flex::decompress_size_prepended;
+            decompress_size_prepended(compressed_data)
+                .map_err(|e| crate::Error::CompressionError(e.to_string()))
         }
         CompressionAlgorithm::Zstd => {
-            #[cfg(feature = "compression")]
-            {
-                // ZSTD temporarily disabled due to build issues
-                Err(crate::Error::CompressionError(
-                    "ZSTD decompression not available".to_string(),
-                ))
-            }
-            #[cfg(not(feature = "compression"))]
-            {
-                // Fallback when compression feature is disabled
-                Ok(compressed_data.to_vec())
-            }
+            // ZSTD temporarily disabled due to build issues
+            Err(crate::Error::CompressionError(
+                "ZSTD decompression not available".to_string(),
+            ))
         }
     }
 }

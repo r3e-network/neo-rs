@@ -21,6 +21,11 @@ pub struct RpcNefFile {
 }
 
 impl RpcNefFile {
+    /// Creates a new wrapper from a NEF file
+    pub fn new(nef_file: NefFile) -> Self {
+        Self { nef_file }
+    }
+
     /// Creates from JSON
     /// Matches C# FromJson
     pub fn from_json(json: &JObject) -> Result<Self, String> {
@@ -68,5 +73,83 @@ impl RpcNefFile {
                 checksum,
             },
         })
+    }
+
+    /// Converts to JSON
+    /// Matches C# ToJson
+    pub fn to_json(&self) -> JObject {
+        let mut json = JObject::new();
+        json.insert(
+            "compiler".to_string(),
+            neo_json::JToken::String(self.nef_file.compiler.clone()),
+        );
+        json.insert(
+            "source".to_string(),
+            neo_json::JToken::String(self.nef_file.source.clone()),
+        );
+        let tokens: Vec<neo_json::JToken> = self
+            .nef_file
+            .tokens
+            .iter()
+            .map(|t| {
+                let rpc_token = RpcMethodToken {
+                    method_token: t.clone(),
+                };
+                neo_json::JToken::Object(rpc_token.to_json())
+            })
+            .collect();
+        json.insert(
+            "tokens".to_string(),
+            neo_json::JToken::Array(neo_json::JArray::from(tokens)),
+        );
+        json.insert(
+            "script".to_string(),
+            neo_json::JToken::String(general_purpose::STANDARD.encode(&self.nef_file.script)),
+        );
+        json.insert(
+            "checksum".to_string(),
+            neo_json::JToken::Number(self.nef_file.checksum as f64),
+        );
+        json
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use neo_core::smart_contract::contract_state::MethodToken;
+    use neo_json::JToken;
+
+    fn sample_nef() -> NefFile {
+        NefFile {
+            compiler: "neo".into(),
+            source: "src".into(),
+            tokens: vec![MethodToken::default()],
+            script: vec![1, 2, 3],
+            checksum: 999,
+        }
+    }
+
+    #[test]
+    fn rpc_nef_file_roundtrip() {
+        let nef = sample_nef();
+        let rpc = RpcNefFile::new(nef.clone());
+        let json = rpc.to_json();
+        let parsed = RpcNefFile::from_json(&json).expect("nef");
+        assert_eq!(parsed.nef_file.compiler, nef.compiler);
+        assert_eq!(parsed.nef_file.tokens.len(), nef.tokens.len());
+        assert_eq!(parsed.nef_file.script, nef.script);
+        assert_eq!(parsed.nef_file.checksum, nef.checksum);
+    }
+
+    #[test]
+    fn rpc_nef_file_rejects_missing_script() {
+        let mut json = JObject::new();
+        json.insert("compiler".to_string(), JToken::String("neo".into()));
+        json.insert("source".to_string(), JToken::String("src".into()));
+        json.insert("tokens".to_string(), JToken::Array(neo_json::JArray::new()));
+        json.insert("checksum".to_string(), JToken::Number(1f64));
+
+        assert!(RpcNefFile::from_json(&json).is_err());
     }
 }

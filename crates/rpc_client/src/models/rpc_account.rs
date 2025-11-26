@@ -76,3 +76,41 @@ impl RpcAccount {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rpc_account_roundtrip_with_label() {
+        let account = RpcAccount {
+            address: "NQ7cbaBqX1p5quJDQr6b1qnBZBHae3mJzA".to_string(),
+            has_key: true,
+            label: Some("main".to_string()),
+            watch_only: false,
+        };
+
+        let json = account.to_json();
+        let parsed = RpcAccount::from_json(&json).expect("account");
+        assert_eq!(parsed.address, account.address);
+        assert_eq!(parsed.has_key, account.has_key);
+        assert_eq!(parsed.label, account.label);
+        assert_eq!(parsed.watch_only, account.watch_only);
+    }
+
+    #[test]
+    fn rpc_account_roundtrip_without_label() {
+        let account = RpcAccount {
+            address: "NQ7cbaBqX1p5quJDQr6b1qnBZBHae3mJzA".to_string(),
+            has_key: false,
+            label: None,
+            watch_only: true,
+        };
+
+        let json = account.to_json();
+        assert!(json.get("label").is_none());
+        let parsed = RpcAccount::from_json(&json).expect("account");
+        assert!(parsed.label.is_none());
+        assert!(parsed.watch_only);
+    }
+}

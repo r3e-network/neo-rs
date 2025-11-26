@@ -91,6 +91,10 @@ pub mod witness_rule;
 /// Witness scope definitions
 pub mod witness_scope;
 
+// Monitoring (feature-gated)
+#[cfg(feature = "monitoring")]
+pub mod monitoring;
+
 // === C# Neo Main Project Structure ===
 // SmartContract module (matches C# Neo.SmartContract)
 pub mod smart_contract;
@@ -116,6 +120,8 @@ pub mod io;
 pub mod plugins;
 // Time provider module (matches C# Neo.TimeProvider)
 pub mod time_provider;
+// State service module (matches C# Neo.Plugins.StateService)
+pub mod state_service;
 
 // Re-exports for convenient access
 pub use big_decimal::BigDecimal;
@@ -416,7 +422,40 @@ pub mod neo_cryptography {
         }
 
         /// Computes the merkle root for the supplied hashes.
+        ///
+        /// Performance: Uses an optimized in-place algorithm that avoids building
+        /// the full tree structure. Only allocates a single working buffer.
+        /// Time complexity: O(n), Space complexity: O(n) where n = number of hashes.
         pub fn compute_root(hashes: &[UInt256]) -> Option<UInt256> {
+            if hashes.is_empty() {
+                return None;
+            }
+            if hashes.len() == 1 {
+                return Some(hashes[0]);
+            }
+
+            // Work buffer - we'll reduce this in-place level by level
+            let mut current: Vec<UInt256> = hashes.to_vec();
+
+            while current.len() > 1 {
+                let mut next = Vec::with_capacity((current.len() + 1) / 2);
+                let mut i = 0;
+                while i < current.len() {
+                    let left = &current[i];
+                    // If odd number of elements, duplicate the last one
+                    let right = current.get(i + 1).unwrap_or(left);
+                    next.push(hash_pair(left, right));
+                    i += 2;
+                }
+                current = next;
+            }
+
+            current.pop()
+        }
+
+        /// Computes the merkle root by building the full tree.
+        /// Use this when you need the tree structure for trimming or proof generation.
+        pub fn compute_root_with_tree(hashes: &[UInt256]) -> Option<UInt256> {
             let tree = Self::new(hashes);
             tree.root().copied()
         }

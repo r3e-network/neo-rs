@@ -28,7 +28,7 @@ pub struct RpcNep17Balances {
 impl RpcNep17Balances {
     /// Converts to JSON
     /// Matches C# ToJson
-    pub fn to_json(&self, protocol_settings: &ProtocolSettings) -> JObject {
+    pub fn to_json(&self, _protocol_settings: &ProtocolSettings) -> JObject {
         let mut json = JObject::new();
 
         let balances_array: Vec<JToken> = self
@@ -51,7 +51,10 @@ impl RpcNep17Balances {
 
     /// Creates from JSON
     /// Matches C# FromJson
-    pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
+    pub fn from_json(
+        json: &JObject,
+        _protocol_settings: &ProtocolSettings,
+    ) -> Result<Self, String> {
         let balances = json
             .get("balance")
             .and_then(|v| v.as_array())
@@ -59,7 +62,7 @@ impl RpcNep17Balances {
                 arr.iter()
                     .filter_map(|item| item.as_ref())
                     .filter_map(|token| token.as_object())
-                    .filter_map(|obj| RpcNep17Balance::from_json(obj, protocol_settings).ok())
+                    .filter_map(|obj| RpcNep17Balance::from_json(obj, _protocol_settings).ok())
                     .collect()
             })
             .unwrap_or_default();
@@ -114,7 +117,10 @@ impl RpcNep17Balance {
 
     /// Creates from JSON
     /// Matches C# FromJson
-    pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
+    pub fn from_json(
+        json: &JObject,
+        _protocol_settings: &ProtocolSettings,
+    ) -> Result<Self, String> {
         let asset_hash_str = json
             .get("assethash")
             .and_then(|v| v.as_string())
@@ -144,5 +150,46 @@ impl RpcNep17Balance {
             amount,
             last_updated_block,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use neo_core::ProtocolSettings;
+
+    #[test]
+    fn balance_roundtrip() {
+        let entry = RpcNep17Balance {
+            asset_hash: UInt160::zero(),
+            amount: BigInt::from(42),
+            last_updated_block: 10,
+        };
+        let json = entry.to_json();
+        let parsed =
+            RpcNep17Balance::from_json(&json, &ProtocolSettings::default_settings()).unwrap();
+        assert_eq!(parsed.asset_hash, entry.asset_hash);
+        assert_eq!(parsed.amount, entry.amount);
+        assert_eq!(parsed.last_updated_block, entry.last_updated_block);
+    }
+
+    #[test]
+    fn balances_roundtrip() {
+        let entry = RpcNep17Balance {
+            asset_hash: UInt160::zero(),
+            amount: BigInt::from(5),
+            last_updated_block: 3,
+        };
+        let balances = RpcNep17Balances {
+            user_script_hash: UInt160::zero(),
+            balances: vec![entry.clone()],
+        };
+        let json = balances.to_json(&ProtocolSettings::default_settings());
+        let parsed =
+            RpcNep17Balances::from_json(&json, &ProtocolSettings::default_settings()).unwrap();
+
+        assert_eq!(parsed.user_script_hash, balances.user_script_hash);
+        assert_eq!(parsed.balances.len(), 1);
+        assert_eq!(parsed.balances[0].amount, entry.amount);
     }
 }

@@ -46,13 +46,53 @@ impl RpcValidator {
             .ok_or("Missing or invalid 'publickey' field")?
             .to_string();
 
-        let votes_str = json
+        let votes_token = json
             .get("votes")
-            .and_then(|v| v.as_string())
             .ok_or("Missing or invalid 'votes' field")?;
-        let votes = BigInt::from_str(votes_str)
-            .map_err(|_| format!("Invalid votes value: {}", votes_str))?;
+        let votes = if let Some(text) = votes_token.as_string() {
+            BigInt::from_str(&text).map_err(|_| format!("Invalid votes value: {text}"))?
+        } else if let Some(number) = votes_token.as_number() {
+            BigInt::from(number as i64)
+        } else {
+            return Err("Invalid 'votes' field".to_string());
+        };
 
         Ok(Self { public_key, votes })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rpc_validator_roundtrip() {
+        let validator = RpcValidator {
+            public_key: "03abcdef".to_string(),
+            votes: BigInt::from(123_456u64),
+        };
+        let json = validator.to_json();
+        let parsed = RpcValidator::from_json(&json).expect("validator");
+        assert_eq!(parsed.public_key, validator.public_key);
+        assert_eq!(parsed.votes, validator.votes);
+    }
+
+    #[test]
+    fn rpc_validator_rejects_invalid_votes() {
+        let mut json = JObject::new();
+        json.insert("publickey".to_string(), JToken::String("03abcdef".into()));
+        json.insert("votes".to_string(), JToken::String("not-a-number".into()));
+
+        assert!(RpcValidator::from_json(&json).is_err());
+    }
+
+    #[test]
+    fn rpc_validator_accepts_numeric_votes() {
+        let mut json = JObject::new();
+        json.insert("publickey".to_string(), JToken::String("03abcdef".into()));
+        json.insert("votes".to_string(), JToken::Number(5f64));
+
+        let parsed = RpcValidator::from_json(&json).expect("validator");
+        assert_eq!(parsed.votes, BigInt::from(5));
     }
 }

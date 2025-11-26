@@ -323,7 +323,8 @@ impl Wallet for Nep6Wallet {
         script_hash: &UInt160,
     ) -> Option<Arc<dyn crate::wallets::wallet_account::WalletAccount>> {
         self.accounts
-            .read().unwrap()
+            .read()
+            .unwrap()
             .get(script_hash)
             .cloned()
             .map(|account| account as Arc<dyn crate::wallets::wallet_account::WalletAccount>)
@@ -331,7 +332,8 @@ impl Wallet for Nep6Wallet {
 
     fn get_accounts(&self) -> Vec<Arc<dyn crate::wallets::wallet_account::WalletAccount>> {
         self.accounts
-            .read().unwrap()
+            .read()
+            .unwrap()
             .values()
             .cloned()
             .map(|account| account as Arc<dyn crate::wallets::wallet_account::WalletAccount>)
@@ -495,7 +497,8 @@ impl Wallet for Nep6Wallet {
         &self,
     ) -> Option<Arc<dyn crate::wallets::wallet_account::WalletAccount>> {
         self.accounts
-            .read().unwrap()
+            .read()
+            .unwrap()
             .values()
             .find(|account| account.is_default)
             .cloned()

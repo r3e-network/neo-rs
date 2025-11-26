@@ -9,6 +9,11 @@ DOCKER_TAG = latest
 RELEASE_DIR = target/release
 DEBUG_DIR = target/debug
 DATA_DIR = data
+CLI_BIN = neo-cli
+MAINNET_CONFIG ?= neo_mainnet_node.toml
+TESTNET_CONFIG ?= neo_production_node.toml
+BACKUP_DIR ?= backups
+ROCKSDB_PATH ?=
 
 # Color codes for output
 GREEN = \033[0;32m
@@ -27,18 +32,26 @@ help:
 	@echo "  make clean          - Clean build artifacts"
 	@echo ""
 	@echo "$(YELLOW)Running:$(NC)"
-	@echo "  make run            - Run neo-node on mainnet"
-	@echo "  make run testnet    - Run neo-node on testnet"
-	@echo "  make run docker     - Run neo-node in Docker container"
-	@echo "  make run-release    - Run neo-node in release mode"
-	@echo "  make run-daemon     - Run neo-node in daemon mode"
+	@echo "  make run            - Run neo-cli on mainnet (uses $(MAINNET_CONFIG))"
+	@echo "  make run-testnet    - Run neo-cli on testnet (uses $(TESTNET_CONFIG))"
+	@echo "  make run-mainnet    - Run neo-cli on mainnet (explicit target)"
+	@echo "  make docker-run     - Run neo-cli in Docker container"
+	@echo "  make run-release    - Run neo-cli in release mode"
+	@echo "  make run-daemon     - Run neo-cli in background (testnet config)"
 	@echo ""
 	@echo "$(YELLOW)Docker:$(NC)"
 	@echo "  make docker         - Build Docker image"
-	@echo "  make docker-run     - Run Docker container"
+	@echo "  make docker-run     - Run Docker container (expects image to exist)"
 	@echo "  make docker-stop    - Stop Docker container"
 	@echo "  make docker-logs    - View Docker logs"
 	@echo "  make docker-clean   - Remove Docker image"
+	@echo ""
+	@echo "$(YELLOW)Docker Compose:$(NC)"
+	@echo "  make compose-up     - Start docker-compose stack (neo-node)"
+	@echo "  make compose-down   - Stop docker-compose stack"
+	@echo "  make compose-logs   - Tail neo-node logs from docker-compose"
+	@echo "  make compose-ps     - Show docker-compose container status"
+	@echo "  make compose-monitor - Start Grafana (monitoring profile)"
 	@echo ""
 	@echo "$(YELLOW)Development:$(NC)"
 	@echo "  make test           - Run all tests"
@@ -53,6 +66,7 @@ help:
 	@echo "  make db-clean       - Clean blockchain database"
 	@echo "  make db-backup      - Backup blockchain database"
 	@echo "  make db-restore     - Restore blockchain database"
+	@echo "  make backup-rocksdb - Snapshot RocksDB dir (ROCKSDB_PATH=/path/to/db)"
 	@echo ""
 	@echo "$(YELLOW)Release:$(NC)"
 	@echo "  make release        - Create release binaries"
@@ -81,27 +95,28 @@ clean:
 .PHONY: run
 run: build-release
 	@echo "$(GREEN)Starting Neo Node on MainNet...$(NC)"
-	./$(RELEASE_DIR)/neo-node --network mainnet
+	./$(RELEASE_DIR)/$(CLI_BIN) --config $(MAINNET_CONFIG)
 
 .PHONY: run-release
 run-release: build-release
 	@echo "$(GREEN)Starting Neo Node (release)...$(NC)"
-	./$(RELEASE_DIR)/neo-node
+	./$(RELEASE_DIR)/$(CLI_BIN) --config $(MAINNET_CONFIG)
 
 .PHONY: run-testnet
 run-testnet: build
 	@echo "$(GREEN)Starting Neo Node on TestNet...$(NC)"
-	./$(DEBUG_DIR)/neo-node --network testnet
+	./$(DEBUG_DIR)/$(CLI_BIN) --config $(TESTNET_CONFIG)
 
 .PHONY: run-mainnet
 run-mainnet: build-release
 	@echo "$(GREEN)Starting Neo Node on MainNet...$(NC)"
-	./$(RELEASE_DIR)/neo-node --network mainnet
+	./$(RELEASE_DIR)/$(CLI_BIN) --config $(MAINNET_CONFIG)
 
 .PHONY: run-daemon
 run-daemon: build
 	@echo "$(GREEN)Starting Neo Node in daemon mode...$(NC)"
-	./$(DEBUG_DIR)/neo-node --network testnet --daemon
+	nohup ./$(DEBUG_DIR)/$(CLI_BIN) --config $(TESTNET_CONFIG) > Logs/neo-daemon.log 2>&1 &
+	@echo "$(GREEN)Daemon started; logs in Logs/neo-daemon.log$(NC)"
 
 # Docker targets
 .PHONY: docker
@@ -164,7 +179,7 @@ fmt:
 .PHONY: clippy
 clippy:
 	@echo "$(GREEN)Running clippy...$(NC)"
-	$(CARGO) clippy --workspace --all-targets --all-features -- -D warnings
+	$(CARGO) clippy --workspace --all-targets -- -D warnings
 
 .PHONY: check
 check:
@@ -191,15 +206,15 @@ db-clean:
 .PHONY: db-backup
 db-backup:
 	@echo "$(GREEN)Backing up blockchain database...$(NC)"
-	@mkdir -p backups
-	tar -czf backups/neo-db-backup-$(shell date +%Y%m%d-%H%M%S).tar.gz $(DATA_DIR)/
+	@mkdir -p $(BACKUP_DIR)
+	tar -czf $(BACKUP_DIR)/neo-db-backup-$(shell date +%Y%m%d-%H%M%S).tar.gz $(DATA_DIR)/
 	@echo "$(GREEN)Backup complete$(NC)"
 
 .PHONY: db-restore
 db-restore:
 	@echo "$(GREEN)Restoring blockchain database...$(NC)"
 	@echo "Available backups:"
-	@ls -la backups/neo-db-backup-*.tar.gz 2>/dev/null || echo "No backups found"
+	@ls -la $(BACKUP_DIR)/neo-db-backup-*.tar.gz 2>/dev/null || echo "No backups found"
 	@read -p "Enter backup filename to restore: " backup; \
 	if [ -f "$$backup" ]; then \
 		tar -xzf $$backup; \
@@ -208,12 +223,21 @@ db-restore:
 		echo "$(RED)Backup file not found$(NC)"; \
 	fi
 
+# RocksDB backup helper (uses scripts/backup-rocksdb.sh)
+.PHONY: backup-rocksdb
+backup-rocksdb:
+	@if [ -z "$(ROCKSDB_PATH)" ]; then echo "$(RED)Set ROCKSDB_PATH=/path/to/rocksdb$(NC)"; exit 1; fi
+	@echo "$(GREEN)Backing up RocksDB from $(ROCKSDB_PATH) -> $(BACKUP_DIR)...$(NC)"
+	./scripts/backup-rocksdb.sh "$(ROCKSDB_PATH)" "$(BACKUP_DIR)"
+
 # Release targets
 .PHONY: release
 release: build-release
 	@echo "$(GREEN)Creating release binaries...$(NC)"
 	@mkdir -p dist/bin
-	cp $(RELEASE_DIR)/neo-node dist/bin/
+	cp $(RELEASE_DIR)/$(CLI_BIN) dist/bin/
+	cp $(MAINNET_CONFIG) dist/bin/ 2>/dev/null || true
+	cp $(TESTNET_CONFIG) dist/bin/ 2>/dev/null || true
 	@echo "$(GREEN)Release binaries created in dist/bin/$(NC)"
 
 .PHONY: dist
@@ -221,6 +245,8 @@ dist: release
 	@echo "$(GREEN)Creating distribution package...$(NC)"
 	@mkdir -p dist/config dist/scripts
 	@cp -r config/* dist/config/ 2>/dev/null || true
+	@cp $(MAINNET_CONFIG) dist/config/ 2>/dev/null || true
+	@cp $(TESTNET_CONFIG) dist/config/ 2>/dev/null || true
 	@cp -r scripts/* dist/scripts/ 2>/dev/null || true
 	tar -czf neo-rust-node-$(shell date +%Y%m%d).tar.gz -C dist .
 	@echo "$(GREEN)Distribution package created: neo-rust-node-$(shell date +%Y%m%d).tar.gz$(NC)"
@@ -236,3 +262,28 @@ ci: check fmt clippy test
 .PHONY: testnet
 testnet: run-testnet
 
+# Docker Compose helpers (use .env/.env.example to configure)
+.PHONY: compose-up
+compose-up:
+	@echo "$(GREEN)Starting docker-compose stack...$(NC)"
+	docker compose up -d neo-node
+
+.PHONY: compose-down
+compose-down:
+	@echo "$(YELLOW)Stopping docker-compose stack...$(NC)"
+	docker compose down
+
+.PHONY: compose-logs
+compose-logs:
+	@echo "$(GREEN)Tailing neo-node logs (Ctrl+C to exit)...$(NC)"
+	docker compose logs -f neo-node
+
+.PHONY: compose-ps
+compose-ps:
+	@echo "$(GREEN)Container status:$(NC)"
+	docker compose ps
+
+.PHONY: compose-monitor
+compose-monitor:
+	@echo "$(GREEN)Starting monitoring stack (Grafana profile)...$(NC)"
+	docker compose --profile monitoring up -d neo-monitor

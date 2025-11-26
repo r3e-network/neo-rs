@@ -1,15 +1,12 @@
 //! Blockchain RPC endpoints (`RpcServer.Blockchain.cs`).
 
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
-
-#[cfg(feature = "rest-server")]
-use crate::rest_server::RestServerUtility;
 use crate::rpc_server::model::block_hash_or_index::BlockHashOrIndex as RpcBlockHashOrIndex;
 use crate::rpc_server::model::contract_name_or_hash_or_id::ContractNameOrHashOrId;
 use crate::rpc_server::rpc_error::RpcError;
 use crate::rpc_server::rpc_exception::RpcException;
 use crate::rpc_server::rpc_method_attribute::RpcMethodDescriptor;
 use crate::rpc_server::rpc_server::{RpcHandler, RpcServer};
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use hex;
 use neo_core::ledger::{
     block::Block as LedgerBlock, block_header::BlockHeader as LedgerBlockHeader,
@@ -21,14 +18,6 @@ use neo_core::network::p2p::payloads::{
 use neo_core::persistence::seek_direction::SeekDirection;
 use neo_core::persistence::IReadOnlyStoreGeneric;
 use neo_core::smart_contract::contract_state::ContractState;
-#[cfg(not(feature = "rest-server"))]
-use neo_core::smart_contract::contract_state::{MethodToken, NefFile};
-#[cfg(not(feature = "rest-server"))]
-use neo_core::smart_contract::manifest::{
-    ContractAbi, ContractEventDescriptor, ContractGroup, ContractManifest,
-    ContractMethodDescriptor, ContractParameterDefinition, ContractPermission,
-    ContractPermissionDescriptor, WildCardContainer,
-};
 use neo_core::smart_contract::native::{
     contract_management::ContractManagement,
     helpers::NativeHelpers,
@@ -38,6 +27,7 @@ use neo_core::smart_contract::native::{
 use neo_core::smart_contract::storage_key::StorageKey;
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::{UInt160, UInt256, Witness as LedgerWitness};
+use neo_rpc_client::models::RpcContractState;
 use serde_json::{json, Map, Value};
 use std::str::FromStr;
 use std::sync::Arc;
@@ -70,10 +60,7 @@ impl RpcServerBlockchain {
         name: &'static str,
         func: fn(&RpcServer, &[Value]) -> Result<Value, RpcException>,
     ) -> RpcHandler {
-        RpcHandler::new(
-            RpcMethodDescriptor::new(name),
-            Arc::new(move |server, params| func(server, params)),
-        )
+        RpcHandler::new(RpcMethodDescriptor::new(name), Arc::new(func))
     }
 
     fn get_best_block_hash(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {
@@ -174,7 +161,7 @@ impl RpcServerBlockchain {
     }
 
     fn get_raw_mem_pool(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        let include_unverified = match params.get(0) {
+        let include_unverified = match params.first() {
             None => false,
             Some(Value::Bool(value)) => *value,
             Some(Value::Number(number)) => match number.as_u64() {
@@ -475,7 +462,7 @@ impl RpcServerBlockchain {
         params: &[Value],
         method: &str,
     ) -> Result<RpcBlockHashOrIndex, RpcException> {
-        let token = params.get(0).ok_or_else(|| {
+        let token = params.first().ok_or_else(|| {
             RpcException::new(
                 RpcError::invalid_params()
                     .with_data(format!("{method} requires at least one parameter")),
@@ -656,9 +643,9 @@ impl RpcServerBlockchain {
         converted.set_next_consensus(header.next_consensus);
         let witness = header
             .witnesses
-            .get(0)
+            .first()
             .map(Self::convert_witness)
-            .unwrap_or_else(PayloadWitness::new);
+            .unwrap_or_default();
         converted.witness = witness;
         converted
     }
@@ -713,7 +700,7 @@ impl RpcServerBlockchain {
         params: &[Value],
         method: &str,
     ) -> Result<ContractNameOrHashOrId, RpcException> {
-        let token = params.get(0).ok_or_else(|| {
+        let token = params.first().ok_or_else(|| {
             RpcException::new(
                 RpcError::invalid_params()
                     .with_data(format!("{method} requires at least one parameter")),
@@ -804,141 +791,14 @@ impl RpcServerBlockchain {
     }
 }
 
-#[cfg(feature = "rest-server")]
 fn contract_state_to_json(contract: &ContractState) -> Value {
-    RestServerUtility::contract_state_to_j_token(contract)
-}
-
-#[cfg(not(feature = "rest-server"))]
-fn contract_state_to_json(contract: &ContractState) -> Value {
-    json!({
-        "Id": contract.id,
-        "UpdateCounter": contract.update_counter,
-        "Name": contract.manifest.name,
-        "Hash": contract.hash.to_string(),
-        "Manifest": manifest_to_json(&contract.manifest),
-        "NefFile": nef_to_json(&contract.nef),
-    })
-}
-
-#[cfg(not(feature = "rest-server"))]
-fn manifest_to_json(manifest: &ContractManifest) -> Value {
-    let groups: Vec<Value> = manifest.groups.iter().map(group_to_json).collect();
-    let permissions: Vec<Value> = manifest
-        .permissions
-        .iter()
-        .map(permission_to_json)
-        .collect();
-    let trusts: Vec<Value> = match &manifest.trusts {
-        WildCardContainer::Wildcard => vec![Value::String("*".to_string())],
-        WildCardContainer::List(items) => items.iter().map(permission_descriptor_to_json).collect(),
+    let rpc_contract = RpcContractState {
+        contract_state: contract.clone(),
     };
 
-    json!({
-        "Name": manifest.name,
-        "Abi": abi_to_json(&manifest.abi),
-        "Groups": groups,
-        "Permissions": permissions,
-        "Trusts": trusts,
-        "SupportedStandards": manifest.supported_standards,
-        "Extra": manifest.extra.clone().unwrap_or(Value::Null),
-    })
-}
-
-#[cfg(not(feature = "rest-server"))]
-fn abi_to_json(abi: &ContractAbi) -> Value {
-    let methods: Vec<Value> = abi.methods.iter().map(method_to_json).collect();
-    let events: Vec<Value> = abi.events.iter().map(event_to_json).collect();
-    json!({
-        "Methods": methods,
-        "Events": events,
-    })
-}
-
-#[cfg(not(feature = "rest-server"))]
-fn method_to_json(method: &ContractMethodDescriptor) -> Value {
-    let parameters: Vec<Value> = method.parameters.iter().map(parameter_to_json).collect();
-    json!({
-        "Name": method.name,
-        "Safe": method.safe,
-        "Offset": method.offset,
-        "Parameters": parameters,
-        "ReturnType": method.return_type,
-    })
-}
-
-#[cfg(not(feature = "rest-server"))]
-fn parameter_to_json(parameter: &ContractParameterDefinition) -> Value {
-    json!({
-        "Type": parameter.param_type,
-        "Name": parameter.name,
-    })
-}
-
-#[cfg(not(feature = "rest-server"))]
-fn group_to_json(group: &ContractGroup) -> Value {
-    json!({
-        "PubKey": encode_with_0x(group.pub_key.as_bytes()),
-        "Signature": BASE64_STANDARD.encode(&group.signature),
-    })
-}
-
-#[cfg(not(feature = "rest-server"))]
-fn permission_to_json(permission: &ContractPermission) -> Value {
-    let methods = match &permission.methods {
-        WildCardContainer::Wildcard => Value::String("*".to_string()),
-        WildCardContainer::List(entries) => json!(entries),
-    };
-    json!({
-        "Contract": permission_descriptor_to_json(&permission.contract),
-        "Methods": methods,
-    })
-}
-
-#[cfg(not(feature = "rest-server"))]
-fn permission_descriptor_to_json(descriptor: &ContractPermissionDescriptor) -> Value {
-    match descriptor {
-        ContractPermissionDescriptor::Wildcard => Value::String("*".to_string()),
-        ContractPermissionDescriptor::Group(group) => {
-            json!({ "Group": encode_with_0x(group.as_bytes()) })
-        }
-        ContractPermissionDescriptor::Hash(hash) => json!({ "Hash": hash.to_string() }),
+    match rpc_contract.to_json() {
+        Ok(jobj) => serde_json::from_str(&jobj.to_string())
+            .unwrap_or_else(|err| json!({ "error": err.to_string() })),
+        Err(err) => json!({ "error": err }),
     }
-}
-
-#[cfg(not(feature = "rest-server"))]
-fn event_to_json(event: &ContractEventDescriptor) -> Value {
-    let parameters: Vec<Value> = event.parameters.iter().map(parameter_to_json).collect();
-    json!({
-        "Name": event.name,
-        "Parameters": parameters,
-    })
-}
-
-#[cfg(not(feature = "rest-server"))]
-fn nef_to_json(nef: &NefFile) -> Value {
-    let tokens: Vec<Value> = nef.tokens.iter().map(token_to_json).collect();
-    json!({
-        "Checksum": nef.checksum,
-        "Compiler": nef.compiler,
-        "Script": BASE64_STANDARD.encode(&nef.script),
-        "Source": nef.source,
-        "Tokens": tokens,
-    })
-}
-
-#[cfg(not(feature = "rest-server"))]
-fn token_to_json(token: &MethodToken) -> Value {
-    json!({
-        "Hash": token.hash.to_string(),
-        "Method": token.method,
-        "CallFlags": token.call_flags,
-        "ParametersCount": token.parameters_count,
-        "HasReturnValue": token.has_return_value,
-    })
-}
-
-#[cfg(not(feature = "rest-server"))]
-fn encode_with_0x(bytes: &[u8]) -> String {
-    format!("0x{}", hex::encode(bytes))
 }

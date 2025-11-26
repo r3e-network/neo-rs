@@ -2,7 +2,7 @@
 //!
 //! Tests for basic VM execution and error handling.
 
-use neo_vm::{ApplicationEngine, ExecutionEngine, Script, TriggerType, VMState};
+use neo_vm::{ApplicationEngine, ExecutionEngine, Script, TriggerType};
 use num_traits::cast::ToPrimitive;
 
 /// Test simple VM execution without full JSON test framework
@@ -153,9 +153,14 @@ fn test_vm_execution_with_malformed_pushdata1() {
 }
 
 /// Test basic opcode execution
+///
+/// Tests that PUSH1 + RET correctly pushes a value to the result stack.
+/// load_script parameters: (script, rvcount, initial_position)
+/// - rvcount=1 means RET should copy 1 value from evaluation stack to result stack
+/// - initial_position=0 means start executing from the beginning
 #[test]
 fn test_basic_opcode_execution() {
-    println!("🚀 Testing basic opcode execution/* implementation */;");
+    println!("🚀 Testing basic opcode execution");
 
     // Test PUSH1 opcode
     let script_bytes = vec![0x11, 0x40]; // PUSH1 + RET
@@ -164,7 +169,10 @@ fn test_basic_opcode_execution() {
         Ok(script) => {
             let mut engine = ExecutionEngine::new(None);
 
-            match engine.load_script(script, 0, 1) {
+            // load_script(script, rvcount, initial_position)
+            // rvcount=1: RET will copy 1 value to result stack
+            // initial_position=0: start from beginning
+            match engine.load_script(script, 1, 0) {
                 Ok(_) => {
                     let final_state = engine.execute();
 

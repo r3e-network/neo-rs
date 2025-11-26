@@ -1,13 +1,4 @@
-// Copyright (C) 2015-2025 The Neo Project.
-//
-// memory_snapshot.rs file belongs to the neo project and is free
-// software distributed under the MIT software license, see the
-// accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
-// modifications are permitted.
+//! In-memory snapshot implementation for persistence providers.
 
 use super::memory_store::MemoryStore;
 use crate::persistence::{
@@ -106,11 +97,14 @@ impl IStoreSnapshot for MemorySnapshot {
     }
 
     fn commit(&mut self) {
-        // Apply write batch to the store
-        let batch = self.write_batch.read().unwrap();
-        // If the underlying store is a MemoryStore, apply batch directly.
-        if let Some(mem) = self.store.as_any().downcast_ref::<MemoryStore>() {
-            mem.apply_batch(&batch);
+        {
+            // Apply write batch to the store
+            let batch = self.write_batch.read().unwrap();
+            // If the underlying store is a MemoryStore, apply batch directly.
+            if let Some(mem) = self.store.as_any().downcast_ref::<MemoryStore>() {
+                mem.apply_batch(&batch);
+            }
+            // drop read guard before acquiring write lock
         }
 
         // Clear the write batch

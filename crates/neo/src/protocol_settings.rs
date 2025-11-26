@@ -262,9 +262,15 @@ impl ProtocolSettings {
     /// Loads the ProtocolSettings at the specified path.
     /// Matches C# Load(string) method
     pub fn load(path: &str) -> Result<Self, String> {
-        let resolved_path =
-            Self::find_file(path, std::env::current_dir().unwrap().to_str().unwrap())
-                .unwrap_or_else(|| path.to_string());
+        let resolved_path = {
+            let base_dir = std::env::current_dir()
+                .ok()
+                .and_then(|dir| dir.to_str().map(|s| s.to_string()));
+            match base_dir {
+                Some(base) => Self::find_file(path, &base).unwrap_or_else(|| path.to_string()),
+                None => path.to_string(),
+            }
+        };
 
         if !Path::new(&resolved_path).exists() {
             return Ok(Self::default());

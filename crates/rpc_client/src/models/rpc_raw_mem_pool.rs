@@ -59,20 +59,22 @@ impl RpcRawMemPool {
     /// Creates from JSON
     /// Matches C# FromJson
     pub fn from_json(json: &JObject) -> Result<Self, String> {
-        let height_str = json
-            .get("height")
-            .and_then(|v| v.as_string())
-            .ok_or("Missing or invalid 'height' field")?;
-        let height = height_str
-            .parse::<u32>()
-            .map_err(|_| format!("Invalid height value: {}", height_str))?;
+        let height = if let Some(text) = json.get("height").and_then(|v| v.as_string()) {
+            text.parse::<u32>()
+                .map_err(|_| format!("Invalid height value: {}", text))?
+        } else {
+            json.get("height")
+                .and_then(|v| v.as_number())
+                .ok_or("Missing or invalid 'height' field")? as u32
+        };
 
         let verified = json
             .get("verified")
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
-                    .filter_map(|item| item.as_string())
+                    .filter_map(|item| item.as_ref())
+                    .filter_map(|token| token.as_string())
                     .filter_map(|s| UInt256::parse(&s).ok())
                     .collect()
             })
@@ -83,7 +85,8 @@ impl RpcRawMemPool {
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
-                    .filter_map(|item| item.as_string())
+                    .filter_map(|item| item.as_ref())
+                    .filter_map(|token| token.as_string())
                     .filter_map(|s| UInt256::parse(&s).ok())
                     .collect()
             })
@@ -94,5 +97,46 @@ impl RpcRawMemPool {
             verified,
             unverified,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn raw_mempool_roundtrip() {
+        let pool = RpcRawMemPool {
+            height: 10,
+            verified: vec![UInt256::zero()],
+            unverified: vec![UInt256::zero()],
+        };
+        let json = pool.to_json();
+        let parsed = RpcRawMemPool::from_json(&json).unwrap();
+        assert_eq!(parsed.height, pool.height);
+        assert_eq!(parsed.verified.len(), 1);
+        assert_eq!(parsed.unverified.len(), 1);
+    }
+
+    #[test]
+    fn raw_mempool_accepts_numeric_height() {
+        let mut json = JObject::new();
+        json.insert("height".to_string(), JToken::Number(5f64));
+        json.insert("verified".to_string(), JToken::Array(JArray::new()));
+        json.insert("unverified".to_string(), JToken::Array(JArray::new()));
+
+        let parsed = RpcRawMemPool::from_json(&json).unwrap();
+        assert_eq!(parsed.height, 5);
+    }
+
+    #[test]
+    fn raw_mempool_accepts_string_height() {
+        let mut json = JObject::new();
+        json.insert("height".to_string(), JToken::String("7".to_string()));
+        json.insert("verified".to_string(), JToken::Array(JArray::new()));
+        json.insert("unverified".to_string(), JToken::Array(JArray::new()));
+
+        let parsed = RpcRawMemPool::from_json(&json).unwrap();
+        assert_eq!(parsed.height, 7);
     }
 }

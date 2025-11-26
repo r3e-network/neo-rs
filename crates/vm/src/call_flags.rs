@@ -2,8 +2,6 @@
 //! These flags describe the permissions granted to a contract call.
 
 use bitflags::bitflags;
-
-#[cfg(feature = "serde")]
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 bitflags! {
@@ -34,7 +32,6 @@ impl CallFlags {
         .union(CallFlags::ALLOW_NOTIFY);
 }
 
-#[cfg(feature = "serde")]
 impl Serialize for CallFlags {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -44,7 +41,6 @@ impl Serialize for CallFlags {
     }
 }
 
-#[cfg(feature = "serde")]
 impl<'de> Deserialize<'de> for CallFlags {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where

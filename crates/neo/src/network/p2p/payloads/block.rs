@@ -110,19 +110,95 @@ impl Block {
     }
 
     /// Verifies the block using persisted state.
+    ///
+    /// Performs the following validations (matches C# Block.Verify):
+    /// 1. Header validation (timestamp, consensus, witness, etc.)
+    /// 2. Merkle root validation - ensures transactions haven't been tampered
+    /// 3. Transaction uniqueness - no duplicate transaction hashes
     pub fn verify(&self, settings: &ProtocolSettings, store_cache: &StoreCache) -> bool {
-        self.header.verify(settings, store_cache)
+        // Step 1: Verify header first
+        if !self.header.verify(settings, store_cache) {
+            return false;
+        }
+
+        // Step 2: Verify Merkle Root matches transactions
+        if !self.verify_merkle_root() {
+            return false;
+        }
+
+        // Step 3: Verify no duplicate transactions
+        if !self.verify_no_duplicate_transactions() {
+            return false;
+        }
+
+        true
+    }
+
+    /// Verifies that the merkle root in the header matches the computed merkle root of transactions.
+    /// This prevents transaction list tampering attacks.
+    ///
+    /// Performance: Uses cached transaction hashes via interior mutability (Mutex) to avoid
+    /// redundant hash computations. No cloning required.
+    fn verify_merkle_root(&self) -> bool {
+        // Empty transactions should have zero merkle root
+        if self.transactions.is_empty() {
+            return *self.header.merkle_root() == UInt256::default();
+        }
+
+        // Compute merkle root from transaction hashes.
+        // Transaction::hash() uses interior mutability (Mutex) to cache the hash,
+        // so we can call it on &self without cloning.
+        let tx_hashes: Vec<UInt256> = self.transactions.iter().map(|tx| tx.hash()).collect();
+
+        match crate::neo_cryptography::MerkleTree::compute_root(&tx_hashes) {
+            Some(computed_root) => computed_root == *self.header.merkle_root(),
+            None => false, // Should not happen with non-empty transactions
+        }
+    }
+
+    /// Verifies that there are no duplicate transaction hashes in the block.
+    ///
+    /// Performance: Uses cached transaction hashes via interior mutability (Mutex).
+    /// No cloning required.
+    fn verify_no_duplicate_transactions(&self) -> bool {
+        let mut seen = std::collections::HashSet::with_capacity(self.transactions.len());
+        for tx in &self.transactions {
+            // Transaction::hash() uses interior mutability to cache the hash.
+            if !seen.insert(tx.hash()) {
+                return false; // Duplicate transaction found
+            }
+        }
+        true
     }
 
     /// Verifies the block using persisted state and cached headers.
+    ///
+    /// Performs the same validations as `verify` but uses the header cache for efficiency.
     pub fn verify_with_cache(
         &self,
         settings: &ProtocolSettings,
         store_cache: &StoreCache,
         header_cache: &HeaderCache,
     ) -> bool {
-        self.header
+        // Step 1: Verify header with cache
+        if !self
+            .header
             .verify_with_cache(settings, store_cache, header_cache)
+        {
+            return false;
+        }
+
+        // Step 2: Verify Merkle Root matches transactions
+        if !self.verify_merkle_root() {
+            return false;
+        }
+
+        // Step 3: Verify no duplicate transactions
+        if !self.verify_no_duplicate_transactions() {
+            return false;
+        }
+
+        true
     }
 }
 
@@ -175,7 +251,10 @@ impl Serializable for Block {
     }
 
     fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
+        use crate::constants::MAX_BLOCK_SIZE;
+
         let header = <Header as Serializable>::deserialize(reader)?;
+        let header_size = header.size();
 
         // Read transaction count
         const MAX_TRANSACTIONS: u64 = u16::MAX as u64;
@@ -184,9 +263,24 @@ impl Serializable for Block {
             return Err(IoError::invalid_data("Too many transactions"));
         }
 
-        let mut transactions = Vec::with_capacity(tx_count);
+        // Track cumulative size to prevent DoS attacks
+        // MAX_BLOCK_SIZE is 2MB (2,097,152 bytes)
+        let mut cumulative_size = header_size + get_var_size(tx_count as u64);
+        if cumulative_size > MAX_BLOCK_SIZE {
+            return Err(IoError::invalid_data("Block size exceeds maximum"));
+        }
+
+        let mut transactions = Vec::with_capacity(tx_count.min(512)); // Cap initial capacity
         for _ in 0..tx_count {
-            transactions.push(<Transaction as Serializable>::deserialize(reader)?);
+            let tx = <Transaction as Serializable>::deserialize(reader)?;
+            cumulative_size += tx.size();
+
+            // Check cumulative size before accepting transaction
+            if cumulative_size > MAX_BLOCK_SIZE {
+                return Err(IoError::invalid_data("Block size exceeds maximum"));
+            }
+
+            transactions.push(tx);
         }
 
         Ok(Self {

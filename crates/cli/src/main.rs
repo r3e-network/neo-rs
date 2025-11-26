@@ -156,6 +156,7 @@ async fn main() -> Result<()> {
         .as_ref()
         .map(|path| path.to_string_lossy().to_string())
         .or_else(|| node_config.storage_path());
+    let backend_name = node_config.storage_backend().map(|name| name.to_string());
 
     let protocol_settings: ProtocolSettings = node_config.protocol_settings();
     if let Some(canonical) = node_config
@@ -183,6 +184,11 @@ async fn main() -> Result<()> {
         backend = backend_name.as_deref().unwrap_or("memory"),
         "using protocol settings"
     );
+    info!(
+        target: "neo",
+        build = %build_feature_summary(),
+        "build profile"
+    );
     let wallet_settings = Arc::new(protocol_settings.clone());
     if let Some(path) = node_config.write_rpc_server_plugin_config(&protocol_settings)? {
         info!(
@@ -192,10 +198,9 @@ async fn main() -> Result<()> {
         );
     }
 
-    let backend_name = node_config.storage_backend().map(|name| name.to_string());
     let store_provider = select_store_provider(backend_name.as_deref(), storage_config)?;
     if let (Some(_provider), Some(path)) = (&store_provider, &storage_path) {
-        check_storage_network(path, protocol_settings.network_magic)?;
+        check_storage_network(path, protocol_settings.network)?;
     }
 
     if store_provider.is_some() && storage_path.is_none() {
@@ -211,14 +216,15 @@ async fn main() -> Result<()> {
         store_provider.clone(),
         storage_path.clone(),
     )
-    .map_err(|err| anyhow::Error::new(err))?;
+    .map_err(anyhow::Error::new)?;
+    log_registered_plugins().await;
 
     let wallet_commands = Arc::new(WalletCommands::new(wallet_settings, Arc::clone(&system)));
     let wallet_provider: Arc<dyn IWalletProvider + Send + Sync> =
         Arc::clone(&wallet_commands) as Arc<dyn IWalletProvider + Send + Sync>;
     system
         .attach_wallet_provider(wallet_provider)
-        .map_err(|err| anyhow::Error::new(err))?;
+        .map_err(anyhow::Error::new)?;
     let plugin_commands = Arc::new(PluginCommands::new(&node_config.plugins));
     let block_commands = Arc::new(BlockCommands::new(Arc::clone(&system)));
     let blockchain_commands = Arc::new(BlockchainCommands::new(Arc::clone(&system)));
@@ -283,7 +289,7 @@ async fn main() -> Result<()> {
 
     system
         .start_node(node_config.channels_config())
-        .map_err(|err| anyhow::Error::new(err))?;
+        .map_err(anyhow::Error::new)?;
 
     info!(
         target: "neo",
@@ -312,7 +318,7 @@ async fn main() -> Result<()> {
         vote_commands,
     ));
 
-    let shell_handle = if stdin_is_tty {
+    let mut shell_handle = if stdin_is_tty {
         Some(task::spawn_blocking({
             let command_line = Arc::clone(&command_line);
             move || command_line.run_shell()
@@ -321,7 +327,7 @@ async fn main() -> Result<()> {
         None
     };
 
-    if let Some(shell_handle) = shell_handle {
+    if let Some(mut handle) = shell_handle.take() {
         tokio::select! {
             result = signal::ctrl_c() => {
                 if let Err(err) = result {
@@ -329,8 +335,12 @@ async fn main() -> Result<()> {
                 } else {
                     info!(target: "neo", "shutdown signal received (Ctrl+C)");
                 }
+                handle.abort();
+                if let Err(err) = handle.await {
+                    warn!(target: "neo", error = %err, "console task did not shut down cleanly");
+                }
             }
-            shell = shell_handle => {
+            shell = &mut handle => {
                 match shell {
                     Ok(Ok(())) => info!(target: "neo", "console session ended"),
                     Ok(Err(err)) => error!(target: "neo", error = %err, "console session failed"),
@@ -340,9 +350,13 @@ async fn main() -> Result<()> {
         }
     } else if let Err(err) = signal::ctrl_c().await {
         error!(target: "neo", error = %err, "failed to wait for shutdown signal");
+    } else {
+        info!(target: "neo", "shutdown signal received (Ctrl+C)");
     }
 
-    info!(target: "neo", "shutdown signal received, exiting");
+    info!(target: "neo", "stopping neo system");
+    system.shutdown().await.map_err(anyhow::Error::new)?;
+    info!(target: "neo", "shutdown complete");
     Ok(())
 }
 
@@ -467,9 +481,7 @@ impl Write for ConditionalConsoleWriter {
 
 fn create_file_writer(path: &str) -> Result<(non_blocking::NonBlocking, WorkerGuard)> {
     let provided = Path::new(path);
-    let file_path = if provided.exists() && provided.is_file() {
-        provided.to_path_buf()
-    } else if provided.extension().is_some() {
+    let file_path = if provided.is_file() || provided.extension().is_some() {
         provided.to_path_buf()
     } else {
         fs::create_dir_all(provided)
@@ -494,6 +506,29 @@ fn create_file_writer(path: &str) -> Result<(non_blocking::NonBlocking, WorkerGu
 
 fn default_log_name() -> String {
     format!("neo-cli-{}.log", Local::now().format("%Y-%m-%d"))
+}
+
+fn build_feature_summary() -> String {
+    "plugins: dbft,rpc-server,rocksdb-store,tokens-tracker,application-logs,sqlite-wallet"
+        .to_string()
+}
+
+async fn log_registered_plugins() {
+    let plugins = neo_extensions::plugin::global_plugin_infos().await;
+    if plugins.is_empty() {
+        info!(target: "neo", "no plugins registered");
+    } else {
+        let summary: Vec<String> = plugins
+            .iter()
+            .map(|p| format!("{} v{} ({:?})", p.name, p.version, p.category))
+            .collect();
+        info!(
+            target: "neo",
+            count = plugins.len(),
+            plugins = %summary.join(", "),
+            "plugins registered"
+        );
+    }
 }
 
 fn select_store_provider(
@@ -529,7 +564,7 @@ fn check_storage_network(path: &str, magic: u32) -> Result<()> {
             .with_context(|| format!("failed to read network marker {}", marker.display()))?;
         let parsed = contents.trim_start_matches("0x").trim().to_string();
         let stored_magic = u32::from_str_radix(&parsed, 16)
-            .or_else(|_| u32::from_str_radix(&parsed, 10))
+            .or_else(|_| parsed.parse::<u32>())
             .with_context(|| format!("invalid magic in {}: {}", marker.display(), contents))?;
         if stored_magic != magic {
             bail!(

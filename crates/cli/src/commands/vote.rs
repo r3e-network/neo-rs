@@ -303,7 +303,7 @@ impl VoteCommands {
         let stack = engine.result_stack();
         stack
             .peek(0)
-            .map(|item| item.clone())
+            .cloned()
             .map_err(|err| anyhow!(err.to_string()))
     }
 }

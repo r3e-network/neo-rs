@@ -1,13 +1,14 @@
 use super::CommandResult;
 use crate::{config::PluginsSection, console_service::ConsoleHelper};
 use anyhow::{anyhow, Context};
-use neo_extensions::plugin::plugins_directory;
+use neo_extensions::plugin::{plugins_directory, PluginInfo};
 use reqwest::blocking::Client;
 use serde::Deserialize;
 use serde_json::Value;
 use std::{
     collections::{BTreeSet, HashSet},
     env, fs,
+    future::Future,
     io::{Cursor, Read},
     path::{Path, PathBuf},
     thread,
@@ -50,6 +51,15 @@ impl PluginCommands {
             )
         })?;
         let installed = installed_plugins();
+        let mut active = HashSet::new();
+        match block_on(neo_extensions::plugin::global_plugin_infos()) {
+            Ok(infos) => {
+                for info in infos {
+                    active.insert(info.name.to_ascii_lowercase());
+                }
+            }
+            Err(err) => ConsoleHelper::warning(format!("failed to query active plugins: {err}")),
+        }
 
         let mut installed_set = HashSet::new();
         for name in &installed {
@@ -67,14 +77,42 @@ impl PluginCommands {
         let max_len = names.iter().map(|name| name.len()).max().unwrap_or(0);
         for name in names {
             let lower = name.to_ascii_lowercase();
-            if installed_set.contains(&lower) {
-                let padded = format!("{name:<width$}", width = max_len);
-                let line = format!("[Installed]\t {padded}");
-                print_line(&line);
+            let padded = format!("{name:<width$}", width = max_len);
+            let status = if active.contains(&lower) {
+                "[Active]"
+            } else if installed_set.contains(&lower) {
+                "[Installed]"
             } else {
-                let line = format!("[Not Installed]\t {name}");
-                print_line(&line);
-            }
+                "[Not Installed]"
+            };
+            print_line(&format!("{status}\t {padded}"));
+        }
+        Ok(())
+    }
+
+    pub fn list_loaded_plugins(&self) -> CommandResult {
+        let plugins: Vec<PluginInfo> = block_on(neo_extensions::plugin::global_plugin_infos())
+            .map_err(|err| anyhow!("failed to query loaded plugins: {}", err))?;
+
+        if plugins.is_empty() {
+            print_line("No plugins currently loaded");
+            return Ok(());
+        }
+
+        let mut lines: Vec<String> = plugins
+            .into_iter()
+            .map(|info| {
+                format!(
+                    "{} v{} ({})",
+                    info.name,
+                    info.version,
+                    category_label(&info.category)
+                )
+            })
+            .collect();
+        lines.sort();
+        for line in lines {
+            print_line(&line);
         }
         Ok(())
     }
@@ -366,6 +404,32 @@ fn installation_root() -> PathBuf {
 
 fn cli_name() -> &'static str {
     env!("CARGO_PKG_NAME")
+}
+
+fn block_on<T>(future: impl Future<Output = T>) -> Result<T, anyhow::Error> {
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        Ok(handle.block_on(future))
+    } else {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .context("failed to build tokio runtime")?;
+        Ok(rt.block_on(async { future.await }))
+    }
+}
+
+fn category_label(category: &neo_extensions::plugin::PluginCategory) -> &'static str {
+    use neo_extensions::plugin::PluginCategory::*;
+    match category {
+        Core => "core",
+        Network => "network",
+        Consensus => "consensus",
+        Rpc => "rpc",
+        Wallet => "wallet",
+        Storage => "storage",
+        Utility => "utility",
+        Custom(_) => "custom",
+    }
 }
 
 fn find_config_json(root: &Path) -> Option<PathBuf> {

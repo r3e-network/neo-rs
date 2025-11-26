@@ -4,9 +4,9 @@ use crate::network::p2p::payloads::{
     block::Block, extensible_payload::ExtensiblePayload, header::Header, transaction::Transaction,
 };
 use crate::UInt256;
+use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::RwLock;
 
 /// Centralised cache that tracks recently seen ledger data (blocks, headers,
 /// transactions, extensible payloads) for fast access by networking
@@ -31,21 +31,18 @@ impl LedgerContext {
     /// Inserts a transaction into the mempool cache and returns its hash.
     pub fn insert_transaction(&self, transaction: Transaction) -> UInt256 {
         let hash = transaction.hash();
-        self.transactions_by_hash
-            .write()
-            .unwrap()
-            .insert(hash, transaction);
+        self.transactions_by_hash.write().insert(hash, transaction);
         hash
     }
 
     /// Removes a transaction from the mempool cache if present.
     pub fn remove_transaction(&self, hash: &UInt256) -> Option<Transaction> {
-        self.transactions_by_hash.write().unwrap().remove(hash)
+        self.transactions_by_hash.write().remove(hash)
     }
 
     /// Attempts to fetch a transaction from the mempool cache.
     pub fn get_transaction(&self, hash: &UInt256) -> Option<Transaction> {
-        self.transactions_by_hash.read().unwrap().get(hash).cloned()
+        self.transactions_by_hash.read().get(hash).cloned()
     }
 
     /// Records a block and its header for quick access by hash or index.
@@ -54,10 +51,10 @@ impl LedgerContext {
         let index = header.index() as usize;
         let hash = block.hash();
 
-        self.blocks_by_hash.write().unwrap().insert(hash, block);
+        self.blocks_by_hash.write().insert(hash, block);
 
         {
-            let mut hashes = self.hashes_by_index.write().unwrap();
+            let mut hashes = self.hashes_by_index.write();
             if hashes.len() <= index {
                 hashes.resize(index + 1, UInt256::zero());
             }
@@ -65,7 +62,7 @@ impl LedgerContext {
         }
 
         {
-            let mut headers = self.headers_by_index.write().unwrap();
+            let mut headers = self.headers_by_index.write();
             if headers.len() <= index {
                 headers.resize(index + 1, None);
             }
@@ -79,12 +76,12 @@ impl LedgerContext {
 
     /// Retrieves a cached block by hash.
     pub fn get_block(&self, hash: &UInt256) -> Option<Block> {
-        self.blocks_by_hash.read().unwrap().get(hash).cloned()
+        self.blocks_by_hash.read().get(hash).cloned()
     }
 
     /// Returns the block hash at the specified index when available.
     pub fn block_hash_at(&self, index: u32) -> Option<UInt256> {
-        let hashes = self.hashes_by_index.read().unwrap();
+        let hashes = self.hashes_by_index.read();
         hashes
             .get(index as usize)
             .cloned()
@@ -94,16 +91,13 @@ impl LedgerContext {
     /// Stores an extensible payload in the cache.
     pub fn insert_extensible(&self, mut payload: ExtensiblePayload) -> UInt256 {
         let hash = payload.hash();
-        self.extensibles_by_hash
-            .write()
-            .unwrap()
-            .insert(hash, payload);
+        self.extensibles_by_hash.write().insert(hash, payload);
         hash
     }
 
     /// Tries to retrieve an extensible payload by hash.
     pub fn get_extensible(&self, hash: &UInt256) -> Option<ExtensiblePayload> {
-        self.extensibles_by_hash.read().unwrap().get(hash).cloned()
+        self.extensibles_by_hash.read().get(hash).cloned()
     }
 
     /// Returns block hashes following `hash_start`, limited by `count`.
@@ -112,7 +106,7 @@ impl LedgerContext {
             return Vec::new();
         }
 
-        let hashes = self.hashes_by_index.read().unwrap();
+        let hashes = self.hashes_by_index.read();
         let Some(start_pos) = hashes.iter().position(|hash| hash == hash_start) else {
             return Vec::new();
         };
@@ -142,7 +136,7 @@ impl LedgerContext {
             return Vec::new();
         }
 
-        let headers = self.headers_by_index.read().unwrap();
+        let headers = self.headers_by_index.read();
         let mut collected = Vec::new();
         let mut index = index_start as usize;
 
@@ -159,12 +153,7 @@ impl LedgerContext {
 
     /// Returns all transaction hashes currently tracked by the mempool cache.
     pub fn mempool_transaction_hashes(&self) -> Vec<UInt256> {
-        self.transactions_by_hash
-            .read()
-            .unwrap()
-            .keys()
-            .cloned()
-            .collect()
+        self.transactions_by_hash.read().keys().cloned().collect()
     }
 }
 
@@ -179,7 +168,7 @@ mod tests {
         assert!(!context.has_future_headers());
 
         {
-            let mut headers = context.headers_by_index.write().unwrap();
+            let mut headers = context.headers_by_index.write();
             headers.resize(3, None);
             let mut header = Header::new();
             header.set_index(2);

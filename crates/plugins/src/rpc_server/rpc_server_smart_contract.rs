@@ -58,6 +58,7 @@ impl RpcServerSmartContract {
         vec![
             Self::handler("invokefunction", Self::invoke_function),
             Self::handler("invokescript", Self::invoke_script),
+            Self::handler("invokecontractverify", Self::invoke_contract_verify),
             Self::handler("traverseiterator", Self::traverse_iterator),
             Self::handler("terminatesession", Self::terminate_session),
             Self::handler("getunclaimedgas", Self::get_unclaimed_gas),
@@ -68,10 +69,7 @@ impl RpcServerSmartContract {
         name: &'static str,
         func: fn(&RpcServer, &[Value]) -> Result<Value, RpcException>,
     ) -> RpcHandler {
-        RpcHandler::new(
-            RpcMethodDescriptor::new(name),
-            Arc::new(move |server, params| func(server, params)),
-        )
+        RpcHandler::new(RpcMethodDescriptor::new(name), Arc::new(func))
     }
 
     fn invoke_function(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
@@ -103,6 +101,21 @@ impl RpcServerSmartContract {
             .unwrap_or(false);
 
         Self::execute_script(server, script, signers, witnesses, use_diagnostic)
+    }
+
+    /// Invokes a contract's verify method.
+    /// Matches C# RpcServer.SmartContract.InvokeContractVerify exactly.
+    fn invoke_contract_verify(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
+        let script_hash = Self::expect_string_param(params, 0, "invokecontractverify")?;
+        let script_hash = UInt160::from_str(&script_hash)
+            .map_err(|err| Self::invalid_params(format!("invalid script hash: {}", err)))?;
+
+        let parameters = Self::parse_contract_parameters(params.get(1))?;
+        let (signers, witnesses) = Self::parse_signers_and_witnesses(server, params.get(2))?;
+
+        // Build script that calls the verify method
+        let script = Self::build_dynamic_call_script(script_hash, "verify", &parameters)?;
+        Self::execute_script(server, script, signers, witnesses, false)
     }
 
     fn traverse_iterator(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
@@ -161,8 +174,7 @@ impl RpcServerSmartContract {
         let script_hash = if let Ok(hash) = UInt160::from_str(&address_text) {
             hash
         } else {
-            WalletHelper::to_script_hash(&address_text, version)
-                .map_err(|err| Self::invalid_params(err))?
+            WalletHelper::to_script_hash(&address_text, version).map_err(Self::invalid_params)?
         };
 
         let store = server.system().store_cache();
@@ -202,7 +214,7 @@ impl RpcServerSmartContract {
             server.settings().max_gas_invoke,
             diagnostic,
         )
-        .map_err(|err| Self::internal_error(err))?;
+        .map_err(Self::internal_error)?;
         let engine_state = format!("{:?}", session.engine().state());
         let system_fee = session.engine().fee_consumed();
         let gas_consumed = system_fee.to_string();
@@ -346,8 +358,7 @@ impl RpcServerSmartContract {
             protocol_settings,
             Some(wallet.as_ref()),
             rpc_settings.max_gas_invoke,
-        )
-        .map_err(|err| err)?;
+        )?;
         tx.set_network_fee(network_fee);
 
         let required_fee = BigInt::from(tx.system_fee()) + BigInt::from(tx.network_fee());
@@ -469,14 +480,13 @@ impl RpcServerSmartContract {
             None | Some(Value::Null) => Ok(Vec::new()),
             Some(Value::Array(values)) => values
                 .iter()
-                .map(|value| {
-                    ContractParameter::from_json(value).map_err(|err| Self::invalid_params(err))
-                })
+                .map(|value| ContractParameter::from_json(value).map_err(Self::invalid_params))
                 .collect(),
             Some(_) => Err(Self::invalid_params("args must be an array")),
         }
     }
 
+    #[allow(clippy::type_complexity)]
     fn parse_signers_and_witnesses(
         server: &RpcServer,
         value: Option<&Value>,
@@ -564,6 +574,7 @@ impl RpcServerSmartContract {
                 Ok(StackItem::from_array(converted))
             }
             ContractParameterValue::Map(entries) => {
+                #[allow(clippy::mutable_key_type)]
                 let mut map = BTreeMap::new();
                 for (key, value) in entries {
                     let key_item = Self::contract_parameter_to_stack_item(key)?;
@@ -669,7 +680,7 @@ impl RpcServerSmartContract {
                     Value::String(iface.interface_type().to_string()),
                 );
                 obj.insert("value".to_string(), Value::Object(value_obj));
-                if let Some(session) = session.as_deref_mut() {
+                if let Some(session) = session.as_mut() {
                     if let Some(iterator_id) = session.register_iterator_interface(iface) {
                         obj.insert(
                             "interface".to_string(),

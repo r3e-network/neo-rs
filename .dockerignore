@@ -1,51 +1,13 @@
-# Ignore build artifacts
-target/
-Cargo.lock
-
-# Ignore local data
-data/
-backups/
-dist/
-
-# Ignore development files
-.git/
-.gitignore
-.github/
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# Ignore test and benchmark files
-**/*_test.rs
-**/*_bench.rs
-benches/
-
-# Ignore documentation
-docs/
-*.md
-
-# Ignore CI/CD files
-.gitlab-ci.yml
-.travis.yml
-azure-pipelines.yml
-
-# Ignore local environment files
-.env
-.env.local
-.env.*.local
-
-# Ignore OS files
-.DS_Store
-Thumbs.db
-
-# Ignore logs
+target
+dist
+data
+Logs
+backups
+tmp
+reports
+*.tar.gz
 *.log
-logs/
-
-# Ignore temporary files
-*.tmp
-*.temp
-tmp/
-temp/
+.git
+.github
+scripts/__pycache__
+.env

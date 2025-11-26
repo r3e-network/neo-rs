@@ -1,9 +1,4 @@
-// Copyright (C) 2015-2025 The Neo Project.
-//
-// messages.rs mirrors the behaviour of Neo.Network.P2P.Message from the
-// reference C# implementation. It pairs low-level message framing with the
-// strongly-typed payloads defined under `payloads` so higher layers can work
-// with idiomatic Rust enums instead of raw byte buffers.
+//! Message framing and serialization (mirrors `Neo.Network.P2P.Message`).
 
 use super::{
     message::PAYLOAD_MAX_SIZE,

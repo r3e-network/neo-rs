@@ -161,8 +161,8 @@ mod collections_tests {
         let existing_value = map.get_or_insert_default("key1".to_string());
         assert_eq!(*existing_value, 42);
 
-        let DEFAULT_VALUE = map.get_or_insert_default("key2".to_string());
-        assert_eq!(*DEFAULT_VALUE, 0); // Default for i32
+        let default_value = map.get_or_insert_default("key2".to_string());
+        assert_eq!(*default_value, 0); // Default for i32
 
         // Test with custom types that implement Default
         let mut string_map: HashMap<i32, String> = HashMap::new();
@@ -275,8 +275,9 @@ mod collections_tests {
         string_map.insert(4, "universe".to_string());
 
         let long_strings = string_map.filter_values(|s| s.len() > 4);
-        assert_eq!(long_strings.len(), 2);
+        assert_eq!(long_strings.len(), 3);
         assert_eq!(long_strings.get(&1), Some(&"hello".to_string()));
+        assert_eq!(long_strings.get(&2), Some(&"world".to_string()));
         assert_eq!(long_strings.get(&4), Some(&"universe".to_string()));
     }
 

@@ -576,7 +576,6 @@ mod tests {
     use crate::op_code::OpCode;
     use crate::stack_item::StackItem;
     use num_bigint::BigInt;
-    use std::sync::Mutex;
 
     #[derive(Default)]
     struct TestFlag {

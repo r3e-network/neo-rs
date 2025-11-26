@@ -607,6 +607,10 @@ impl ConsensusContext {
 
     /// Builds a block from the collected transactions and commit signatures.
     /// Returns `None` when required transactions or signatures are missing.
+    ///
+    /// IMPORTANT: Signatures must be emitted in the same order as the sorted public keys
+    /// in the multi-sig redeem script. `create_multi_sig_redeem_script` sorts the keys,
+    /// so we must collect signatures in that sorted order for verification to succeed.
     pub fn create_block(&mut self) -> Option<Block> {
         let hashes = self.transaction_hashes.clone()?;
         let transactions = self.transactions.as_ref()?;
@@ -619,12 +623,22 @@ impl ConsensusContext {
 
         self.ensure_header();
 
-        // Collect commit signatures in validator index order.
+        // Create a mapping from original validator index to sorted position.
+        // The multi-sig redeem script sorts keys, so signatures must match that order.
+        let mut sorted_validators: Vec<(usize, &ECPoint)> =
+            self.validators.iter().enumerate().collect();
+        sorted_validators.sort_by(|a, b| a.1.cmp(b.1));
+
+        // Build index mapping: sorted_position -> original_index
+        let sorted_to_original: Vec<usize> = sorted_validators.iter().map(|(i, _)| *i).collect();
+
+        // Collect commit signatures in sorted public key order.
         let commit_payloads = self.commit_payloads.clone();
         let mut script_builder = ScriptBuilder::new();
         let mut signature_count = 0usize;
-        for payload_opt in commit_payloads.iter() {
-            let Some(payload) = payload_opt else {
+
+        for &original_index in sorted_to_original.iter() {
+            let Some(payload) = commit_payloads.get(original_index).and_then(|p| p.as_ref()) else {
                 continue;
             };
 
@@ -639,7 +653,7 @@ impl ConsensusContext {
                 continue;
             }
 
-            // Signatures must align with the validator order; emit them sequentially.
+            // Emit signature in sorted order to match the multi-sig redeem script.
             let _ = script_builder.emit_push(commit.signature());
             signature_count += 1;
             if signature_count >= self.m() {

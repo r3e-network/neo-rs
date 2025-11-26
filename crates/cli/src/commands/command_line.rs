@@ -18,6 +18,7 @@ pub struct CommandLine {
 }
 
 impl CommandLine {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         wallet_commands: Arc<WalletCommands>,
         plugin_commands: Arc<PluginCommands>,
@@ -277,6 +278,14 @@ impl CommandLine {
             Vec::new(),
             ParseMode::Sequential,
             list_handler,
+        );
+
+        let active_handler = plugin_active_handler(Arc::clone(&plugins));
+        dispatcher.register_command(
+            ConsoleCommandAttribute::new("plugins active"),
+            Vec::new(),
+            ParseMode::Sequential,
+            active_handler,
         );
 
         let install_handler = plugin_install_handler(Arc::clone(&plugins));
@@ -875,7 +884,7 @@ fn wallet_send_handler(wallet: Arc<WalletCommands>) -> CommandHandler {
                     .filter(|entry| !entry.is_empty())
                     .collect::<Vec<_>>()
             })
-            .unwrap_or_else(Vec::new);
+            .unwrap_or_default();
 
         wallet.send(
             &asset,
@@ -1066,6 +1075,10 @@ fn contract_invoke_abi_handler(contracts: Arc<ContractCommands>) -> CommandHandl
 
 fn plugin_list_handler(plugins: Arc<PluginCommands>) -> CommandHandler {
     Arc::new(move |_args: Vec<ArgumentValue>| plugins.list_plugins())
+}
+
+fn plugin_active_handler(plugins: Arc<PluginCommands>) -> CommandHandler {
+    Arc::new(move |_args: Vec<ArgumentValue>| plugins.list_loaded_plugins())
 }
 
 fn plugin_install_handler(plugins: Arc<PluginCommands>) -> CommandHandler {
@@ -1365,7 +1378,7 @@ fn wallet_import_multisig_handler(wallet: Arc<WalletCommands>) -> CommandHandler
 
 fn wallet_export_key_handler(wallet: Arc<WalletCommands>) -> CommandHandler {
     Arc::new(move |args: Vec<ArgumentValue>| {
-        let path = args.get(0).and_then(|value| match value {
+        let path = args.first().and_then(|value| match value {
             ArgumentValue::String(text) if !text.trim().is_empty() => Some(text.clone()),
             _ => None,
         });
@@ -1418,7 +1431,7 @@ fn wallet_cancel_handler(wallet: Arc<WalletCommands>) -> CommandHandler {
                     .filter(|entry| !entry.is_empty())
                     .collect::<Vec<_>>()
             })
-            .unwrap_or_else(Vec::new);
+            .unwrap_or_default();
 
         wallet.cancel(&txid, sender.as_deref(), signer_accounts)
     })
@@ -1452,7 +1465,7 @@ fn nep17_transfer_handler(nep17: Arc<Nep17Commands>) -> CommandHandler {
                     .filter(|entry| !entry.is_empty())
                     .collect::<Vec<_>>()
             })
-            .unwrap_or_else(Vec::new);
+            .unwrap_or_default();
 
         nep17.transfer(
             &token,

@@ -9,7 +9,6 @@ use crate::instruction::Instruction;
 use crate::jump_table::JumpTable;
 use crate::op_code::OpCode;
 use crate::stack_item::StackItem;
-use crate::VMState;
 use num_bigint::BigInt;
 
 const HASH_SIZE: usize = 32;
@@ -207,48 +206,11 @@ fn push_null(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
 
 /// Implements the PUSHDATA1 operation.
 fn push_data1(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    let operand = instruction.operand();
-
-    if operand.is_empty() {
-        return Err(VmError::invalid_instruction_msg(
-            "PUSHDATA1 missing length byte".to_string(),
-        ));
-    }
-
-    // First byte is the length
-    let length = operand[0] as usize;
-
-    let (script_len, instruction_start) = {
-        let context = engine
-            .current_context()
-            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-        (context.script().len(), instruction.pointer())
-    };
-
-    let data_start = instruction_start + 2;
-    let data_end = data_start + length;
-
-    if data_end > script_len {
-        // This should FAULT exactly like C# Neo VM when insufficient data
-        engine.set_state(VMState::FAULT);
-        return Err(VmError::invalid_instruction_msg(format!(
-            "PUSHDATA1 insufficient data: needs {} bytes, script has {} bytes available",
-            length,
-            script_len - data_start
-        )));
-    }
-
     let context = engine
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    // Get the script bytes and extract data
-    let script_bytes = context.script().as_bytes();
-    let data = if length > 0 {
-        &script_bytes[data_start..data_end]
-    } else {
-        &[]
-    };
+    let data = instruction.operand();
 
     // Push the data onto the stack
     context.push(StackItem::from_byte_string(data.to_vec()))?;
@@ -258,46 +220,11 @@ fn push_data1(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResu
 
 /// Implements the PUSHDATA2 operation.
 fn push_data2(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    let operand = instruction.operand();
-    if operand.len() < 2 {
-        return Err(VmError::invalid_instruction_msg(
-            "PUSHDATA2 missing length bytes".to_string(),
-        ));
-    }
-
-    let length = u16::from_le_bytes([operand[0], operand[1]]) as usize;
-
-    let (script_len, instruction_start) = {
-        let context = engine
-            .current_context()
-            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-        (context.script().len(), instruction.pointer())
-    };
-
-    let data_start = instruction_start + 3;
-    let data_end = data_start + length;
-
-    if data_end > script_len {
-        // This should FAULT exactly like C# Neo VM when insufficient data
-        engine.set_state(VMState::FAULT);
-        return Err(VmError::invalid_instruction_msg(format!(
-            "PUSHDATA2 insufficient data: needs {} bytes, script has {} bytes available",
-            length,
-            script_len - data_start
-        )));
-    }
-
     let context = engine
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    // Get the script bytes and extract data
-    let script_bytes = context.script().as_bytes();
-    let data = if length > 0 {
-        &script_bytes[data_start..data_end]
-    } else {
-        &[]
-    };
+    let data = instruction.operand();
 
     // Push the data onto the stack
     context.push(StackItem::from_byte_string(data.to_vec()))?;
@@ -307,46 +234,11 @@ fn push_data2(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResu
 
 /// Implements the PUSHDATA4 operation.
 fn push_data4(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    let operand = instruction.operand();
-    if operand.len() < 4 {
-        return Err(VmError::invalid_instruction_msg(
-            "PUSHDATA4 missing length bytes".to_string(),
-        ));
-    }
-
-    let length = u32::from_le_bytes([operand[0], operand[1], operand[2], operand[3]]) as usize;
-
-    let (script_len, instruction_start) = {
-        let context = engine
-            .current_context()
-            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-        (context.script().len(), instruction.pointer())
-    };
-
-    let data_start = instruction_start + 5;
-    let data_end = data_start + length;
-
-    if data_end > script_len {
-        // This should FAULT exactly like C# Neo VM when insufficient data
-        engine.set_state(VMState::FAULT);
-        return Err(VmError::invalid_instruction_msg(format!(
-            "PUSHDATA4 insufficient data: needs {} bytes, script has {} bytes available",
-            length,
-            script_len - data_start
-        )));
-    }
-
     let context = engine
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    // Get the script bytes and extract data
-    let script_bytes = context.script().as_bytes();
-    let data = if length > 0 {
-        &script_bytes[data_start..data_end]
-    } else {
-        &[]
-    };
+    let data = instruction.operand();
 
     // Push the data onto the stack
     context.push(StackItem::from_byte_string(data.to_vec()))?;

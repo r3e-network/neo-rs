@@ -583,6 +583,7 @@ impl ContractCommands {
         Ok(())
     }
 
+    #[allow(clippy::only_used_in_recursion)]
     fn parameter_to_stack_item(
         &self,
         parameter: &ContractParameter,
@@ -605,6 +606,7 @@ impl ContractCommands {
                 StackItem::from_array(converted)
             }
             Map(entries) => {
+                #[allow(clippy::mutable_key_type)]
                 let mut map = BTreeMap::new();
                 for (key, value) in entries {
                     let key_item = self.parameter_to_stack_item(key)?;

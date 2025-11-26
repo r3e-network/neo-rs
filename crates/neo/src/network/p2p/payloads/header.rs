@@ -24,8 +24,8 @@ use crate::smart_contract::trigger_type::TriggerType;
 use crate::smart_contract::{ContractBasicMethod, ContractParameterType};
 use crate::{UInt160, UInt256};
 use serde::{Deserialize, Serialize};
-use tracing::debug;
 use std::sync::Arc;
+use tracing::debug;
 
 /// Represents the header of a block.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -163,8 +163,8 @@ impl Header {
         let mut writer = BinaryWriter::new();
         self.serialize_unsigned(&mut writer)
             .expect("header serialization should not fail");
-        // Neo block hashes use double SHA256 (Hash256) over the unsigned header payload.
-        let hash = UInt256::from(crate::neo_crypto::hash256(&writer.into_bytes()));
+        // Neo block hashes use single SHA256 over the unsigned header payload.
+        let hash = UInt256::from(crate::neo_crypto::sha256(&writer.into_bytes()));
         self._hash = Some(hash);
         hash
     }
@@ -223,13 +223,25 @@ impl Header {
         witness: &Witness,
         gas_limit: i64,
     ) -> bool {
+        debug!(
+            target: "neo",
+            %script_hash,
+            gas_limit,
+            "verifying witness against script hash"
+        );
         if gas_limit < 0 {
+            debug!(target: "neo", %script_hash, gas_limit, "gas limit below zero");
             return false;
         }
 
         let verification_gas = gas_limit.min(Helper::MAX_VERIFICATION_GAS);
 
         if neo_vm::Script::new(witness.invocation_script.clone(), true).is_err() {
+            debug!(
+                target: "neo",
+                %script_hash,
+                "invocation script is invalid"
+            );
             return false;
         }
 
@@ -246,17 +258,15 @@ impl Header {
             None,
         ) {
             Ok(engine) => engine,
-            Err(_) => return false,
+            Err(_) => {
+                debug!(
+                    target: "neo",
+                    %script_hash,
+                    "failed to create application engine"
+                );
+                return false;
+            }
         };
-
-        if engine
-            .load_script_with_state(witness.invocation_script.clone(), -1, 0, |state| {
-                state.call_flags = CallFlags::NONE;
-            })
-            .is_err()
-        {
-            return false;
-        }
 
         let verification_script = witness.verification_script.clone();
 
@@ -264,7 +274,14 @@ impl Header {
             let contract =
                 match ContractManagement::get_contract_from_snapshot(snapshot, script_hash) {
                     Ok(Some(contract)) => contract,
-                    _ => return false,
+                    _ => {
+                        debug!(
+                            target: "neo",
+                            %script_hash,
+                            "contract not found for verification"
+                        );
+                        return false;
+                    }
                 };
 
             let mut abi = contract.manifest.abi.clone();
@@ -273,10 +290,23 @@ impl Header {
                 ContractBasicMethod::VERIFY_P_COUNT,
             ) {
                 Some(descriptor) => descriptor.clone(),
-                None => return false,
+                None => {
+                    debug!(
+                        target: "neo",
+                        %script_hash,
+                        "verify method not found in contract ABI"
+                    );
+                    return false;
+                }
             };
 
             if method.return_type != ContractParameterType::Boolean {
+                debug!(
+                    target: "neo",
+                    %script_hash,
+                    return_type = ?method.return_type,
+                    "verify method return type is not boolean"
+                );
                 return false;
             }
 
@@ -284,14 +314,37 @@ impl Header {
                 .load_contract_method(contract, method, CallFlags::READ_ONLY)
                 .is_err()
             {
+                debug!(
+                    target: "neo",
+                    %script_hash,
+                    "failed to load contract verification method"
+                );
                 return false;
             }
         } else {
-            if witness.script_hash() != *script_hash {
+            let witness_script_hash = witness.script_hash();
+            debug!(
+                target: "neo",
+                %witness_script_hash,
+                %script_hash,
+                "comparing witness script hash with expected script hash"
+            );
+            if witness_script_hash != *script_hash {
+                debug!(
+                    target: "neo",
+                    %witness_script_hash,
+                    %script_hash,
+                    "witness script hash mismatch"
+                );
                 return false;
             }
 
             if neo_vm::Script::new(verification_script.clone(), true).is_err() {
+                debug!(
+                    target: "neo",
+                    %script_hash,
+                    "verification script is invalid"
+                );
                 return false;
             }
 
@@ -302,11 +355,31 @@ impl Header {
                 })
                 .is_err()
             {
+                debug!(
+                    target: "neo",
+                    %script_hash,
+                    "failed to load verification script with state"
+                );
                 return false;
             }
         }
 
+        if engine
+            .load_script_with_state(witness.invocation_script.clone(), -1, 0, |state| {
+                state.call_flags = CallFlags::NONE;
+            })
+            .is_err()
+        {
+            debug!(
+                target: "neo",
+                %script_hash,
+                "failed to load invocation script with state"
+            );
+            return false;
+        }
+
         if engine.execute().is_err() {
+            debug!(target: "neo", %script_hash, "engine execution failed");
             return false;
         }
 
@@ -325,8 +398,34 @@ impl Header {
         }
 
         match result_item {
-            Some(item) => matches!(item.get_boolean(), Ok(true)),
-            None => false,
+            Some(item) => match item.get_boolean() {
+                Ok(result) => {
+                    debug!(
+                        target: "neo",
+                        %script_hash,
+                        result,
+                        "witness verification result from stack"
+                    );
+                    result
+                }
+                Err(err) => {
+                    debug!(
+                        target: "neo",
+                        %script_hash,
+                        ?err,
+                        "failed to read boolean result from stack"
+                    );
+                    false
+                }
+            },
+            None => {
+                debug!(
+                    target: "neo",
+                    %script_hash,
+                    "result stack item missing"
+                );
+                false
+            }
         }
     }
 }
@@ -335,8 +434,27 @@ impl Header {
     /// Verifies the header using the provided store cache.
     pub fn verify(&self, settings: &ProtocolSettings, store_cache: &StoreCache) -> bool {
         let ledger = LedgerContract::new();
-        let Ok(Some(prev_trimmed)) = ledger.get_trimmed_block(store_cache, &self.prev_hash) else {
-            return false;
+        let prev_trimmed = match ledger.get_trimmed_block(store_cache, &self.prev_hash) {
+            Ok(Some(block)) => block,
+            Ok(None) => {
+                debug!(
+                    target: "neo",
+                    index = self.index,
+                    prev_hash = %self.prev_hash,
+                    "verify: get_trimmed_block returned None for prev_hash"
+                );
+                return false;
+            }
+            Err(err) => {
+                debug!(
+                    target: "neo",
+                    index = self.index,
+                    prev_hash = %self.prev_hash,
+                    error = %err,
+                    "verify: get_trimmed_block failed"
+                );
+                return false;
+            }
         };
 
         let prev_index = prev_trimmed.index();
@@ -395,6 +513,22 @@ impl Header {
             let prev_timestamp = prev_header.timestamp();
             let script_hash = *prev_header.next_consensus();
 
+            debug!(
+                target: "neo",
+                index = self.index,
+                prev_index,
+                %prev_hash,
+                "verifying header index {} against previous index {}",
+                self.index,
+                prev_index
+            );
+            debug!(
+                target: "neo",
+                index = self.index,
+                prev_index,
+                %prev_hash,
+                "attempting validate_against_previous"
+            );
             if let Err(reason) =
                 self.validate_against_previous(settings, prev_index, &prev_hash, prev_timestamp)
             {
@@ -410,6 +544,15 @@ impl Header {
             }
 
             let snapshot = store_cache.data_cache();
+            debug!(
+                target: "neo",
+                index = self.index,
+                prev_index,
+                %prev_hash,
+                %script_hash,
+                "verifying witness against script_hash: {}",
+                script_hash
+            );
             let verified = self.verify_witness_against_hash(
                 settings,
                 snapshot,
@@ -425,6 +568,7 @@ impl Header {
                     %script_hash,
                     prev_index,
                     %prev_hash,
+                    failed_check = "verify_witness_against_hash",
                     "header witness verification failed against cached previous"
                 );
             }
@@ -714,7 +858,11 @@ mod tests {
             &prev_trimmed.hash(),
             prev_trimmed.header.timestamp,
         );
-        assert!(validation.is_ok(), "validation failed: {:?}", validation.err());
+        assert!(
+            validation.is_ok(),
+            "validation failed: {:?}",
+            validation.err()
+        );
 
         let verified = header.verify_witness_against_hash(
             &settings,

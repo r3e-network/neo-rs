@@ -39,14 +39,14 @@ fn context_matches_reference_shape() {
 #[test]
 fn try_and_endtry_push_and_update_context() {
     let mut engine = ExecutionEngine::new(None);
-    let script = make_script(&[OpCode::TRY as u8, OpCode::NOP as u8, OpCode::ENDTRY as u8]);
+    let script = make_script(&[OpCode::NOP as u8]);
     engine.load_script(script, -1, 0).expect("context loads");
 
     let base_ip = engine
         .current_context()
         .expect("context available")
         .instruction_pointer();
-    let try_instruction = Instruction::new(OpCode::TRY, &[2i8 as u8, 3i8 as u8]);
+    let try_instruction = Instruction::new(OpCode::TRY, &[2u8, 0u8, 3u8, 0u8]); // little-endian i16 offsets
     vm_try::try_op(&mut engine, &try_instruction).expect("try executes");
 
     let context = engine.current_context().expect("context available");
@@ -62,16 +62,13 @@ fn try_and_endtry_push_and_update_context() {
     let stack = context.try_stack().expect("try stack populated");
     assert_eq!(stack.len(), 1);
     assert_eq!(stack[0].state(), ExceptionHandlingState::Finally);
-    assert_eq!(
-        stack[0].end_pointer(),
-        (context.instruction_pointer() as i32) + 4
-    );
+    assert_eq!(stack[0].end_pointer(), base_ip as i32 + 4);
 }
 
 #[test]
 fn throw_routes_to_catch_block() {
     let mut engine = ExecutionEngine::new(None);
-    let script = make_script(&[OpCode::TRY as u8, OpCode::THROW as u8, OpCode::NOP as u8]);
+    let script = make_script(&[OpCode::NOP as u8; 8]); // simple valid script
     engine.load_script(script, -1, 0).expect("context loads");
 
     // Install TRY handler manually (catch at +2, no finally)
@@ -79,7 +76,7 @@ fn throw_routes_to_catch_block() {
         .current_context()
         .expect("context available")
         .instruction_pointer();
-    let try_instruction = Instruction::new(OpCode::TRY, &[2i8 as u8, 0u8]);
+    let try_instruction = Instruction::new(OpCode::TRY, &[2u8, 0u8, 0u8, 0u8]);
     vm_try::try_op(&mut engine, &try_instruction).expect("try executes");
 
     // Push an exception onto the evaluation stack and execute THROW
@@ -109,7 +106,7 @@ fn throw_routes_to_catch_block() {
 #[test]
 fn throw_routes_to_finally_when_no_catch() {
     let mut engine = ExecutionEngine::new(None);
-    let script = make_script(&[OpCode::TRY as u8, OpCode::THROW as u8, OpCode::NOP as u8]);
+    let script = make_script(&[OpCode::NOP as u8; 8]); // simple valid script
     engine.load_script(script, -1, 0).expect("context loads");
 
     // TRY with no catch but with finally at +2
@@ -117,7 +114,7 @@ fn throw_routes_to_finally_when_no_catch() {
         .current_context()
         .expect("context available")
         .instruction_pointer();
-    let try_instruction = Instruction::new(OpCode::TRY, &[0u8, 2i8 as u8]);
+    let try_instruction = Instruction::new(OpCode::TRY, &[0u8, 0u8, 2u8, 0u8]);
     vm_try::try_op(&mut engine, &try_instruction).expect("try executes");
 
     engine

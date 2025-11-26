@@ -1,13 +1,4 @@
-// Copyright (C) 2015-2025 The Neo Project.
-//
-// data_cache.rs file belongs to the neo project and is free
-// software distributed under the MIT software license, see the
-// accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
-// modifications are permitted.
+//! Shared in-memory cache for persistence providers.
 
 use super::{
     i_read_only_store::{IReadOnlyStore, IReadOnlyStoreGeneric},
@@ -17,6 +8,8 @@ use super::{
 use crate::smart_contract::{StorageItem, StorageKey};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
+use thiserror::Error;
+use tracing::warn;
 
 /// Represents an entry in the cache.
 #[derive(Debug, Clone)]
@@ -52,6 +45,17 @@ pub struct DataCache {
     store_find: Option<Arc<StoreFindFn>>,
 }
 
+/// Errors returned by DataCache operations.
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum DataCacheError {
+    #[error("cache is read-only")]
+    ReadOnly,
+    #[error("unable to commit changes: {0}")]
+    CommitFailed(String),
+}
+
+pub type DataCacheResult<T = ()> = Result<T, DataCacheError>;
+
 impl Clone for DataCache {
     fn clone(&self) -> Self {
         Self {
@@ -69,6 +73,42 @@ impl DataCache {
     /// Creates a new DataCache.
     pub fn new(read_only: bool) -> Self {
         Self::new_with_store(read_only, None, None)
+    }
+
+    /// Attempt to add an item to the cache, returning an error when read-only.
+    pub fn try_add(&self, key: StorageKey, value: StorageItem) -> DataCacheResult {
+        if self.is_read_only() {
+            return Err(DataCacheError::ReadOnly);
+        }
+        self.add(key, value);
+        Ok(())
+    }
+
+    /// Attempt to update an item in the cache, returning an error when read-only.
+    pub fn try_update(&self, key: StorageKey, value: StorageItem) -> DataCacheResult {
+        if self.is_read_only() {
+            return Err(DataCacheError::ReadOnly);
+        }
+        self.update(key, value);
+        Ok(())
+    }
+
+    /// Attempt to delete an item in the cache, returning an error when read-only.
+    pub fn try_delete(&self, key: &StorageKey) -> DataCacheResult {
+        if self.is_read_only() {
+            return Err(DataCacheError::ReadOnly);
+        }
+        self.delete(key);
+        Ok(())
+    }
+
+    /// Attempts to commit, returning an error when read-only.
+    pub fn try_commit(&self) -> DataCacheResult {
+        if self.is_read_only() {
+            return Err(DataCacheError::ReadOnly);
+        }
+        self.commit();
+        Ok(())
     }
 
     /// Creates a new DataCache with an optional backing store.
@@ -178,20 +218,10 @@ impl DataCache {
     /// Adds an item to the cache.
     pub fn add(&self, key: StorageKey, value: StorageItem) {
         if self.is_read_only() {
-            panic!("Cannot add to read-only cache");
+            warn!("attempted to add to read-only DataCache");
+            return;
         }
-
-        let trackable = Trackable::new(value.clone(), TrackState::Added);
-        self.dictionary
-            .write()
-            .unwrap()
-            .insert(key.clone(), trackable);
-
-        if let Some(ref change_set) = self.change_set {
-            change_set.write().unwrap().insert(key.clone());
-        }
-
-        // Trigger update event
+        self.apply_add(&key, value.clone());
         let handlers = self.on_update.read().unwrap();
         for handler in handlers.iter() {
             handler(self, &key, &value);
@@ -201,11 +231,59 @@ impl DataCache {
     /// Updates an item in the cache.
     pub fn update(&self, key: StorageKey, value: StorageItem) {
         if self.is_read_only() {
-            panic!("Cannot update read-only cache");
+            warn!("attempted to update read-only DataCache");
+            return;
+        }
+        self.apply_update(&key, value.clone());
+
+        // Trigger update event
+        let handlers = self.on_update.read().unwrap();
+        for handler in handlers.iter() {
+            handler(self, &key, &value);
+        }
+    }
+
+    /// Deletes an item from the cache.
+    pub fn delete(&self, key: &StorageKey) {
+        if self.is_read_only() {
+            warn!("attempted to delete from read-only DataCache");
+            return;
+        }
+        self.apply_delete(key);
+    }
+
+    /// Commits changes to the underlying storage.
+    /// Note: Calling commit on a read-only cache is a no-op (common in verification paths).
+    pub fn commit(&self) {
+        if self.is_read_only() {
+            // Read-only caches are common during block verification; silently skip.
+            tracing::trace!("commit called on read-only DataCache (expected in verification)");
+            return;
         }
 
+        // In a real implementation, this would write to the underlying storage
+        // For now, we just clear the change set
+        if let Some(ref change_set) = self.change_set {
+            change_set.write().unwrap().clear();
+        }
+    }
+
+    fn apply_add(&self, key: &StorageKey, value: StorageItem) -> bool {
+        let trackable = Trackable::new(value, TrackState::Added);
+        self.dictionary
+            .write()
+            .unwrap()
+            .insert(key.clone(), trackable);
+
+        if let Some(ref change_set) = self.change_set {
+            change_set.write().unwrap().insert(key.clone());
+        }
+        true
+    }
+
+    fn apply_update(&self, key: &StorageKey, value: StorageItem) {
         let mut dict = self.dictionary.write().unwrap();
-        if let Some(trackable) = dict.get_mut(&key) {
+        if let Some(trackable) = dict.get_mut(key) {
             trackable.item = value.clone();
             if trackable.state == TrackState::None {
                 trackable.state = TrackState::Changed;
@@ -220,20 +298,9 @@ impl DataCache {
         if let Some(ref change_set) = self.change_set {
             change_set.write().unwrap().insert(key.clone());
         }
-
-        // Trigger update event
-        let handlers = self.on_update.read().unwrap();
-        for handler in handlers.iter() {
-            handler(self, &key, &value);
-        }
     }
 
-    /// Deletes an item from the cache.
-    pub fn delete(&self, key: &StorageKey) {
-        if self.is_read_only() {
-            panic!("Cannot delete from read-only cache");
-        }
-
+    fn apply_delete(&self, key: &StorageKey) {
         let mut dict = self.dictionary.write().unwrap();
         if let Some(trackable) = dict.get_mut(key) {
             trackable.state = TrackState::Deleted;
@@ -246,19 +313,6 @@ impl DataCache {
 
         if let Some(ref change_set) = self.change_set {
             change_set.write().unwrap().insert(key.clone());
-        }
-    }
-
-    /// Commits changes to the underlying storage.
-    pub fn commit(&self) {
-        if self.is_read_only() {
-            panic!("Cannot commit read-only cache");
-        }
-
-        // In a real implementation, this would write to the underlying storage
-        // For now, we just clear the change set
-        if let Some(ref change_set) = self.change_set {
-            change_set.write().unwrap().clear();
         }
     }
 
@@ -345,6 +399,26 @@ mod tests {
             vec![9],
             "merge should update existing items"
         );
+    }
+
+    #[test]
+    fn read_only_cache_rejects_mutations() {
+        let cache = DataCache::new(true);
+        let key = make_key(9, b"x");
+        let item = StorageItem::from_bytes(vec![1]);
+
+        assert_eq!(
+            cache.try_add(key.clone(), item.clone()),
+            Err(DataCacheError::ReadOnly)
+        );
+        assert_eq!(
+            cache.try_update(key.clone(), item.clone()),
+            Err(DataCacheError::ReadOnly)
+        );
+        assert_eq!(cache.try_delete(&key), Err(DataCacheError::ReadOnly));
+        assert_eq!(cache.try_commit(), Err(DataCacheError::ReadOnly));
+        assert!(cache.get(&key).is_none());
+        assert!(cache.tracked_items().is_empty());
     }
 }
 

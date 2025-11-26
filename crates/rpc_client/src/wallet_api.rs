@@ -10,8 +10,10 @@
 // modifications are permitted.
 
 use crate::{Nep17Api, RpcClient, Utility};
+use neo_core::smart_contract::native::{GasToken, NeoToken};
 use neo_core::{Contract, KeyPair, NativeContract, Transaction, UInt160};
 use num_bigint::BigInt;
+use num_traits::cast::ToPrimitive;
 use std::sync::Arc;
 
 /// Wallet Common APIs
@@ -49,23 +51,26 @@ impl WalletApi {
         &self,
         account: &UInt160,
     ) -> Result<f64, Box<dyn std::error::Error>> {
-        let script_hash = NativeContract::neo().hash();
+        let script_hash = neo_hash();
         let block_count = self.rpc_client.get_block_count().await?;
 
         let result = self
             .nep17_api
-            .contract_client
+            .contract_client()
             .test_invoke(
                 &script_hash,
                 "unclaimedGas",
-                vec![account.to_json(), serde_json::json!(block_count - 1)],
+                vec![
+                    serde_json::json!(account.to_string()),
+                    serde_json::json!(block_count - 1),
+                ],
             )
             .await?;
 
         let stack_item = result.stack.first().ok_or("No result returned")?;
 
         let balance = stack_item.get_integer()?;
-        let gas_factor = NativeContract::gas().factor();
+        let gas_factor = gas_factor();
 
         Ok(balance.to_f64().unwrap_or(0.0) / gas_factor as f64)
     }
@@ -74,7 +79,7 @@ impl WalletApi {
     /// Matches C# GetNeoBalanceAsync
     pub async fn get_neo_balance(&self, account: &str) -> Result<u32, Box<dyn std::error::Error>> {
         let balance = self
-            .get_token_balance(&NativeContract::neo().hash().to_string(), account)
+            .get_token_balance(&neo_hash().to_string(), account)
             .await?;
         Ok(balance.to_u32().ok_or("Invalid NEO balance")?)
     }
@@ -83,9 +88,9 @@ impl WalletApi {
     /// Matches C# GetGasBalanceAsync
     pub async fn get_gas_balance(&self, account: &str) -> Result<f64, Box<dyn std::error::Error>> {
         let balance = self
-            .get_token_balance(&NativeContract::gas().hash().to_string(), account)
+            .get_token_balance(&gas_hash().to_string(), account)
             .await?;
-        let gas_factor = NativeContract::gas().factor();
+        let gas_factor = gas_factor();
         Ok(balance.to_f64().unwrap_or(0.0) / gas_factor as f64)
     }
 
@@ -110,7 +115,8 @@ impl WalletApi {
         &self,
         key: &KeyPair,
     ) -> Result<Transaction, Box<dyn std::error::Error>> {
-        let sender = Contract::create_signature_redeem_script(&key.public_key()).to_script_hash();
+        let sender_script = Contract::create_signature_redeem_script(key.get_public_key_point()?);
+        let sender = UInt160::from_script(&sender_script);
 
         self.claim_gas_from_account(&sender, key).await
     }
@@ -122,10 +128,7 @@ impl WalletApi {
         account: &UInt160,
         key: &KeyPair,
     ) -> Result<Transaction, Box<dyn std::error::Error>> {
-        let neo_balance = self
-            .nep17_api
-            .balance_of(&NativeContract::neo().hash(), account)
-            .await?;
+        let neo_balance = self.nep17_api.balance_of(&neo_hash(), account).await?;
 
         if neo_balance == BigInt::from(0) {
             return Err("No NEO balance to claim GAS from".into());
@@ -133,14 +136,7 @@ impl WalletApi {
 
         // Transfer NEO to self to trigger GAS claim
         self.nep17_api
-            .create_transfer_tx_with_from(
-                &NativeContract::neo().hash(),
-                account,
-                key,
-                account,
-                neo_balance,
-                None,
-            )
+            .create_transfer_tx_with_from(&neo_hash(), account, key, account, neo_balance, None)
             .await
     }
 
@@ -216,24 +212,35 @@ impl WalletApi {
         // Get NEO and GAS balances
         let neo_balance = self
             .nep17_api
-            .balance_of(&NativeContract::neo().hash(), &account_hash)
+            .balance_of(&neo_hash(), &account_hash)
             .await?;
 
         let gas_balance = self
             .nep17_api
-            .balance_of(&NativeContract::gas().hash(), &account_hash)
+            .balance_of(&gas_hash(), &account_hash)
             .await?;
 
         let unclaimed_gas = self.get_unclaimed_gas_from_hash(&account_hash).await?;
 
         Ok(AccountState {
-            address: account_hash.to_address(self.rpc_client.protocol_settings.address_version),
+            address: account_hash.to_address(),
             neo_balance: neo_balance.to_u32().unwrap_or(0),
-            gas_balance: gas_balance.to_f64().unwrap_or(0.0)
-                / NativeContract::gas().factor() as f64,
+            gas_balance: gas_balance.to_f64().unwrap_or(0.0) / gas_factor() as f64,
             unclaimed_gas,
         })
     }
+}
+
+fn neo_hash() -> UInt160 {
+    NeoToken::new().hash()
+}
+
+fn gas_hash() -> UInt160 {
+    GasToken::new().hash()
+}
+
+fn gas_factor() -> u64 {
+    10u64.saturating_pow(GasToken::new().decimals() as u32)
 }
 
 /// Account state information

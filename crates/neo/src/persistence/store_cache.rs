@@ -1,23 +1,16 @@
-// Copyright (C) 2015-2025 The Neo Project.
-//
-// store_cache.rs file belongs to the neo project and is free
-// software distributed under the MIT software license, see the
-// accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
-// modifications are permitted.
+//! Cache facade that fronts an `IStore` or snapshot for smart-contract storage.
 
 use super::{
-    data_cache::DataCache,
+    data_cache::{DataCache, DataCacheError, DataCacheResult},
     i_read_only_store::{IReadOnlyStore, IReadOnlyStoreGeneric},
     i_store::IStore,
     i_store_snapshot::IStoreSnapshot,
     seek_direction::SeekDirection,
+    track_state::TrackState,
 };
 use crate::smart_contract::{StorageItem, StorageKey};
 use std::sync::Arc;
+use tracing::warn;
 
 /// Represents a cache for the snapshot or database of the NEO blockchain.
 type StoreGetFn = dyn Fn(&StorageKey) -> Option<StorageItem> + Send + Sync;
@@ -65,10 +58,41 @@ impl StoreCache {
 
     /// Commits all changes.
     pub fn commit(&mut self) {
-        self.data_cache.commit();
-        if self.snapshot.is_some() {
-            // Snapshot commit will be wired once mutability story is in place.
+        let _ = self.try_commit();
+    }
+
+    /// Commits all changes, returning an error if read-only.
+    pub fn try_commit(&mut self) -> DataCacheResult {
+        if self.data_cache.is_read_only() {
+            return Err(DataCacheError::ReadOnly);
         }
+
+        let tracked = self.data_cache.tracked_items();
+        if tracked.is_empty() {
+            self.data_cache.commit();
+            return Ok(());
+        }
+
+        let mut writer_snapshot = if let Some(snapshot_arc) = self.snapshot.as_ref() {
+            snapshot_arc.store().get_snapshot()
+        } else if let Some(store_arc) = self.store.as_ref() {
+            store_arc.get_snapshot()
+        } else {
+            let msg = "no backing store available for commit";
+            warn!(target: "neo", "{msg}");
+            return Err(DataCacheError::CommitFailed(msg.to_string()));
+        };
+
+        if let Some(snapshot) = Arc::get_mut(&mut writer_snapshot) {
+            apply_tracked(&tracked, snapshot);
+            snapshot.commit();
+            self.data_cache.commit();
+        } else {
+            let msg = "unable to obtain mutable snapshot for commit; changes not persisted";
+            warn!(target: "neo", "{msg}");
+            return Err(DataCacheError::CommitFailed(msg.to_string()));
+        }
+        Ok(())
     }
 
     /// Gets an item from the cache or underlying store.
@@ -96,28 +120,168 @@ impl StoreCache {
 
     /// Adds an item to the cache.
     pub fn add(&mut self, key: StorageKey, value: StorageItem) {
-        self.data_cache.add(key.clone(), value.clone());
+        let _ = self.try_add(key, value);
+    }
 
-        if self.snapshot.is_some() {
-            // Snapshot propagation pending implementation.
-        }
+    /// Adds an item to the cache, returning an error if the cache is read-only.
+    ///
+    /// Note: Changes are accumulated in the data cache and only propagated to the
+    /// underlying snapshot/store during `commit()`. This matches C# SnapshotCache behavior.
+    pub fn try_add(&mut self, key: StorageKey, value: StorageItem) -> DataCacheResult {
+        self.data_cache.try_add(key, value)
     }
 
     /// Updates an item in the cache.
     pub fn update(&mut self, key: StorageKey, value: StorageItem) {
-        self.data_cache.update(key.clone(), value.clone());
+        let _ = self.try_update(key, value);
+    }
 
-        if self.snapshot.is_some() {
-            // Snapshot propagation pending implementation.
-        }
+    /// Updates an item in the cache, returning an error if the cache is read-only.
+    ///
+    /// Note: Changes are accumulated in the data cache and only propagated to the
+    /// underlying snapshot/store during `commit()`. This matches C# SnapshotCache behavior.
+    pub fn try_update(&mut self, key: StorageKey, value: StorageItem) -> DataCacheResult {
+        self.data_cache.try_update(key, value)
     }
 
     /// Deletes an item from the cache.
     pub fn delete(&mut self, key: StorageKey) {
-        self.data_cache.delete(&key);
+        let _ = self.try_delete(key);
+    }
 
-        if self.snapshot.is_some() {
-            // Snapshot propagation pending implementation.
+    /// Deletes an item from the cache, returning an error if the cache is read-only.
+    ///
+    /// Note: Changes are accumulated in the data cache and only propagated to the
+    /// underlying snapshot/store during `commit()`. This matches C# SnapshotCache behavior.
+    pub fn try_delete(&mut self, key: StorageKey) -> DataCacheResult {
+        self.data_cache.try_delete(&key)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::persistence::providers::memory_store::MemoryStore;
+
+    #[test]
+    fn read_only_store_cache_rejects_commit() {
+        let store: Arc<dyn IStore> = Arc::new(MemoryStore::new());
+        let mut cache = StoreCache::new_from_store(store, true);
+        cache.add(
+            StorageKey::new(1, b"a".to_vec()),
+            StorageItem::from_bytes(vec![1]),
+        );
+        let result = cache.try_commit();
+        assert_eq!(result, Err(DataCacheError::ReadOnly));
+    }
+
+    #[test]
+    fn commit_without_backing_store_returns_error() {
+        // Construct a cache with neither store nor snapshot by bypassing constructors.
+        let mut cache = StoreCache {
+            data_cache: DataCache::new(false),
+            store: None,
+            snapshot: None,
+        };
+        cache.add(
+            StorageKey::new(9, b"missing".to_vec()),
+            StorageItem::from_bytes(vec![1]),
+        );
+        let result = cache.try_commit();
+        assert!(matches!(result, Err(DataCacheError::CommitFailed(_))));
+    }
+
+    #[test]
+    fn read_only_store_cache_rejects_mutations() {
+        let store: Arc<dyn IStore> = Arc::new(MemoryStore::new());
+        let mut cache = StoreCache::new_from_store(store, true);
+        let key = StorageKey::new(2, b"ro".to_vec());
+        let item = StorageItem::from_bytes(vec![9]);
+
+        assert_eq!(
+            cache.try_add(key.clone(), item.clone()),
+            Err(DataCacheError::ReadOnly)
+        );
+        assert_eq!(
+            cache.try_update(key.clone(), item.clone()),
+            Err(DataCacheError::ReadOnly)
+        );
+        assert_eq!(cache.try_delete(key.clone()), Err(DataCacheError::ReadOnly));
+    }
+
+    #[test]
+    fn find_merges_snapshot_and_cache_entries() {
+        let store: Arc<dyn IStore> = Arc::new(MemoryStore::new());
+        let mut cache = StoreCache::new_from_store(store.clone(), false);
+        let key = StorageKey::new(1, b"suffix".to_vec());
+        let cached_value = StorageItem::from_bytes(vec![1]);
+        cache.add(key.clone(), cached_value.clone());
+
+        // Persist a different key into the underlying store.
+        let mut snapshot = store.get_snapshot();
+        if let Some(snap) = Arc::get_mut(&mut snapshot) {
+            snap.put(StorageKey::new(1, b"other".to_vec()).to_array(), vec![2]);
+            snap.commit();
+        }
+
+        let mut entries: Vec<_> = cache
+            .find(None, SeekDirection::Forward)
+            .map(|(k, v)| (k.to_array(), v.get_value()))
+            .collect();
+        entries.sort();
+        entries.dedup();
+
+        let expected_a = (key.to_array(), cached_value.get_value());
+        let expected_b = (StorageKey::new(1, b"other".to_vec()).to_array(), vec![2]);
+        assert!(
+            entries.contains(&expected_a) && entries.contains(&expected_b),
+            "entries should contain both cache and store values: {:?}",
+            entries
+        );
+    }
+
+    #[test]
+    fn commit_applies_tracked_items_to_store() {
+        let store: Arc<dyn IStore> = Arc::new(MemoryStore::new());
+        let mut cache = StoreCache::new_from_store(store.clone(), false);
+        let key = StorageKey::new(3, b"commit".to_vec());
+        let value = StorageItem::from_bytes(vec![7, 7]);
+
+        cache.add(key.clone(), value.clone());
+        cache.commit();
+
+        let persisted = store.try_get(&key).expect("persisted value");
+        assert_eq!(persisted.get_value(), value.get_value());
+    }
+
+    #[test]
+    fn snapshot_commit_persists_to_underlying_store() {
+        let store: Arc<dyn IStore> = Arc::new(MemoryStore::new());
+        let snapshot = store.get_snapshot();
+        let mut cache = StoreCache::new_from_snapshot(snapshot);
+
+        let key = StorageKey::new(4, b"snap".to_vec());
+        let value = StorageItem::from_bytes(vec![3, 1, 4]);
+        cache.add(key.clone(), value.clone());
+
+        cache.commit();
+
+        let persisted = store.try_get(&key).expect("persisted via snapshot commit");
+        assert_eq!(persisted.get_value(), value.get_value());
+    }
+}
+
+fn apply_tracked<T>(tracked: &[(StorageKey, super::data_cache::Trackable)], writer: &mut T)
+where
+    T: super::i_write_store::IWriteStore<Vec<u8>, Vec<u8>> + ?Sized,
+{
+    for (key, trackable) in tracked {
+        match trackable.state {
+            TrackState::Added | TrackState::Changed => {
+                writer.put(key.to_array(), trackable.item.get_value());
+            }
+            TrackState::Deleted => writer.delete(key.to_array()),
+            TrackState::None | TrackState::NotFound => {}
         }
     }
 }

@@ -390,6 +390,20 @@ impl ECPoint {
     pub fn encode_compressed(&self) -> Result<Vec<u8>, String> {
         self.encode_point(true)
     }
+
+    /// Returns slices used for ordering comparisons that mirror the C# behavior:
+    /// 1. Compare X coordinate first.
+    /// 2. If X matches, compare Y (parity for compressed, full Y for uncompressed).
+    fn ordering_components(&self) -> (&[u8], &[u8]) {
+        match self.encoded.as_slice() {
+            // Compressed form: [0x02 | 0x03][X:32]
+            [0x02 | 0x03, rest @ ..] if rest.len() == 32 => (&rest[..], &self.encoded[0..1]),
+            // Uncompressed form: [0x04][X:32][Y:32]
+            [0x04, rest @ ..] if rest.len() == 64 => (&rest[..32], &rest[32..]),
+            // Fallback to full encoding for unexpected shapes to keep ordering stable
+            _ => (&self.encoded[..], &[]),
+        }
+    }
 }
 
 impl Serialize for ECPoint {
@@ -416,13 +430,19 @@ impl<'de> Deserialize<'de> for ECPoint {
 
 impl PartialOrd for ECPoint {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.encoded.cmp(&other.encoded))
+        Some(self.cmp(other))
     }
 }
 
 impl Ord for ECPoint {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.encoded.cmp(&other.encoded)
+        let (self_x, self_y_key) = self.ordering_components();
+        let (other_x, other_y_key) = other.ordering_components();
+
+        match self_x.cmp(other_x) {
+            Ordering::Equal => self_y_key.cmp(other_y_key),
+            ord => ord,
+        }
     }
 }
 
@@ -631,7 +651,15 @@ impl Crypto {
 }
 
 /// BLS12-381 operations using blst crate
+/// Neo uses the "minimal-signature-size" scheme:
+/// - Private key: scalar (32 bytes)
+/// - Public key: G2 point (96 bytes compressed)
+/// - Signature: G1 point (48 bytes compressed)
 pub struct Bls12381Crypto;
+
+/// Domain Separation Tag for Neo BLS12-381 signatures
+/// This must match the C# implementation exactly for cross-compatibility
+const NEO_BLS_DST: &[u8] = b"BLS_SIG_BLS12381G1_XMD:SHA-256_SSWU_RO_NUL_";
 
 impl Bls12381Crypto {
     /// Generates a new random private key
@@ -641,22 +669,209 @@ impl Bls12381Crypto {
         bytes
     }
 
+    /// Derives a public key from a private key
+    /// Returns a 96-byte compressed G2 point
+    pub fn derive_public_key(private_key: &[u8; 32]) -> Result<[u8; 96], String> {
+        use blst::{blst_p2, blst_scalar};
+
+        unsafe {
+            // Convert private key bytes to scalar
+            let mut sk_scalar = blst_scalar::default();
+            blst::blst_scalar_from_lendian(&mut sk_scalar, private_key.as_ptr());
+
+            // Derive public key: PK = sk * G2
+            let mut pk = blst_p2::default();
+            blst::blst_sk_to_pk_in_g2(&mut pk, &sk_scalar);
+
+            // Compress and serialize
+            let mut pk_bytes = [0u8; 96];
+            blst::blst_p2_compress(pk_bytes.as_mut_ptr(), &pk);
+
+            Ok(pk_bytes)
+        }
+    }
+
     /// Signs a message with BLS12-381
-    pub fn sign(_message: &[u8], _private_key: &[u8; 32]) -> Result<[u8; 96], String> {
-        // This is a simplified implementation
-        // In practice, you'd use the blst crate's BLS signature functionality
-        Err("BLS12-381 signing not implemented yet".to_string())
+    /// Returns a 48-byte compressed G1 signature
+    pub fn sign(message: &[u8], private_key: &[u8; 32]) -> Result<[u8; 48], String> {
+        use blst::{blst_p1, blst_scalar};
+
+        unsafe {
+            // Convert private key bytes to scalar
+            let mut sk_scalar = blst_scalar::default();
+            blst::blst_scalar_from_lendian(&mut sk_scalar, private_key.as_ptr());
+
+            // Hash message to G1 curve point
+            let mut msg_point = blst_p1::default();
+            blst::blst_hash_to_g1(
+                &mut msg_point,
+                message.as_ptr(),
+                message.len(),
+                NEO_BLS_DST.as_ptr(),
+                NEO_BLS_DST.len(),
+                std::ptr::null(), // No augmentation data
+                0,
+            );
+
+            // Sign: signature = sk * H(msg)
+            let mut signature = blst_p1::default();
+            blst::blst_p1_mult(&mut signature, &msg_point, sk_scalar.b.as_ptr(), 255);
+
+            // Compress and serialize signature
+            let mut sig_bytes = [0u8; 48];
+            blst::blst_p1_compress(sig_bytes.as_mut_ptr(), &signature);
+
+            Ok(sig_bytes)
+        }
     }
 
     /// Verifies a BLS12-381 signature
+    /// signature: 48-byte compressed G1 point
+    /// public_key: 96-byte compressed G2 point
     pub fn verify(
-        _message: &[u8],
-        _signature: &[u8; 96],
-        _public_key: &[u8; 48],
+        message: &[u8],
+        signature: &[u8; 48],
+        public_key: &[u8; 96],
     ) -> Result<bool, String> {
-        // This is a simplified implementation
-        // In practice, you'd use the blst crate's BLS verification functionality
-        Err("BLS12-381 verification not implemented yet".to_string())
+        use blst::{blst_p1, blst_p1_affine, blst_p2_affine, BLST_ERROR};
+
+        unsafe {
+            // Deserialize signature (G1 point)
+            let mut sig_affine = blst_p1_affine::default();
+            let result = blst::blst_p1_uncompress(&mut sig_affine, signature.as_ptr());
+            if result != BLST_ERROR::BLST_SUCCESS {
+                return Err("Invalid signature encoding".to_string());
+            }
+
+            // Check signature point is in G1 subgroup
+            if !blst::blst_p1_affine_in_g1(&sig_affine) {
+                return Err("Signature not in G1 subgroup".to_string());
+            }
+
+            // Deserialize public key (G2 point)
+            let mut pk_affine = blst_p2_affine::default();
+            let result = blst::blst_p2_uncompress(&mut pk_affine, public_key.as_ptr());
+            if result != BLST_ERROR::BLST_SUCCESS {
+                return Err("Invalid public key encoding".to_string());
+            }
+
+            // Check public key is in G2 subgroup
+            if !blst::blst_p2_affine_in_g2(&pk_affine) {
+                return Err("Public key not in G2 subgroup".to_string());
+            }
+
+            // Hash message to G1 curve point
+            let mut msg_point = blst_p1::default();
+            blst::blst_hash_to_g1(
+                &mut msg_point,
+                message.as_ptr(),
+                message.len(),
+                NEO_BLS_DST.as_ptr(),
+                NEO_BLS_DST.len(),
+                std::ptr::null(),
+                0,
+            );
+
+            // Convert hashed message to affine
+            let mut msg_affine = blst_p1_affine::default();
+            blst::blst_p1_to_affine(&mut msg_affine, &msg_point);
+
+            // Verify pairing: e(sig, G2_gen) == e(H(msg), PK)
+            let result = blst::blst_core_verify_pk_in_g2(
+                &pk_affine,
+                &sig_affine,
+                true, // Check points are in correct subgroups
+                message.as_ptr(),
+                message.len(),
+                NEO_BLS_DST.as_ptr(),
+                NEO_BLS_DST.len(),
+                std::ptr::null(),
+                0,
+            );
+
+            Ok(result == BLST_ERROR::BLST_SUCCESS)
+        }
+    }
+
+    /// Aggregates multiple BLS signatures into one
+    /// Used for dBFT consensus where multiple validators sign
+    pub fn aggregate_signatures(signatures: &[[u8; 48]]) -> Result<[u8; 48], String> {
+        use blst::{blst_p1, blst_p1_affine};
+
+        if signatures.is_empty() {
+            return Err("No signatures to aggregate".to_string());
+        }
+
+        if signatures.len() == 1 {
+            return Ok(signatures[0]);
+        }
+
+        unsafe {
+            // Initialize with first signature
+            let mut agg = blst_p1::default();
+            let mut first_affine = blst_p1_affine::default();
+            let result = blst::blst_p1_uncompress(&mut first_affine, signatures[0].as_ptr());
+            if result != blst::BLST_ERROR::BLST_SUCCESS {
+                return Err("Invalid first signature".to_string());
+            }
+            blst::blst_p1_from_affine(&mut agg, &first_affine);
+
+            // Add remaining signatures
+            for sig in &signatures[1..] {
+                let mut sig_affine = blst_p1_affine::default();
+                let result = blst::blst_p1_uncompress(&mut sig_affine, sig.as_ptr());
+                if result != blst::BLST_ERROR::BLST_SUCCESS {
+                    return Err("Invalid signature in aggregation".to_string());
+                }
+                blst::blst_p1_add_or_double_affine(&mut agg, &agg, &sig_affine);
+            }
+
+            // Compress aggregated signature
+            let mut out = [0u8; 48];
+            blst::blst_p1_compress(out.as_mut_ptr(), &agg);
+
+            Ok(out)
+        }
+    }
+
+    /// Verifies an aggregated signature against multiple public keys
+    pub fn verify_aggregated(
+        message: &[u8],
+        aggregated_signature: &[u8; 48],
+        public_keys: &[[u8; 96]],
+    ) -> Result<bool, String> {
+        use blst::{blst_p2, blst_p2_affine};
+
+        if public_keys.is_empty() {
+            return Err("No public keys provided".to_string());
+        }
+
+        // Aggregate public keys
+        unsafe {
+            let mut agg_pk = blst_p2::default();
+            let mut first_affine = blst_p2_affine::default();
+            let result = blst::blst_p2_uncompress(&mut first_affine, public_keys[0].as_ptr());
+            if result != blst::BLST_ERROR::BLST_SUCCESS {
+                return Err("Invalid first public key".to_string());
+            }
+            blst::blst_p2_from_affine(&mut agg_pk, &first_affine);
+
+            for pk in &public_keys[1..] {
+                let mut pk_affine = blst_p2_affine::default();
+                let result = blst::blst_p2_uncompress(&mut pk_affine, pk.as_ptr());
+                if result != blst::BLST_ERROR::BLST_SUCCESS {
+                    return Err("Invalid public key in aggregation".to_string());
+                }
+                blst::blst_p2_add_or_double_affine(&mut agg_pk, &agg_pk, &pk_affine);
+            }
+
+            // Compress aggregated public key
+            let mut agg_pk_bytes = [0u8; 96];
+            blst::blst_p2_compress(agg_pk_bytes.as_mut_ptr(), &agg_pk);
+
+            // Verify against aggregated public key
+            Self::verify(message, aggregated_signature, &agg_pk_bytes)
+        }
     }
 }
 

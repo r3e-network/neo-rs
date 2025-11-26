@@ -217,10 +217,12 @@ fn test_script_with_syscall() {
     let ins = script.get_instruction(0).unwrap();
     assert_eq!(ins.opcode(), OpCode::SYSCALL);
 
-    // Verify syscall has proper operand
+    // Verify syscall has proper 4-byte hash operand
     let operand = ins.operand();
-    assert!(operand.len() > 0);
-    assert_eq!(operand[0], "System.Runtime.Log".len() as u8);
+    let expected = ScriptBuilder::hash_syscall("System.Runtime.Log")
+        .unwrap()
+        .to_le_bytes();
+    assert_eq!(operand, expected);
 }
 
 #[test]

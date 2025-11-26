@@ -23,6 +23,10 @@ pub struct RpcPlugin {
 
     /// Interfaces implemented by the plugin
     pub interfaces: Vec<String>,
+
+    /// Optional category provided by newer nodes (e.g., "Consensus", "Rpc").
+    #[serde(default)]
+    pub category: Option<String>,
 }
 
 impl RpcPlugin {
@@ -42,6 +46,9 @@ impl RpcPlugin {
             "interfaces".to_string(),
             JToken::Array(JArray::from(interfaces_array)),
         );
+        if let Some(category) = &self.category {
+            json.insert("category".to_string(), JToken::String(category.clone()));
+        }
 
         json
     }
@@ -66,17 +73,59 @@ impl RpcPlugin {
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
-                    .filter_map(|item| item.as_ref())
-                    .filter_map(|token| token.as_string())
-                    .map(|s| s.to_string())
-                    .collect()
+                    .map(|item| {
+                        item.as_ref()
+                            .and_then(|token| token.as_string())
+                            .map(|s| s.to_string())
+                            .ok_or_else(|| "Interface entry must be a string".to_string())
+                    })
+                    .collect::<Result<Vec<_>, _>>()
             })
-            .unwrap_or_default();
+            .unwrap_or_else(|| Ok(Vec::new()))?;
+
+        let category = json
+            .get("category")
+            .and_then(|v| v.as_string())
+            .map(|s| s.to_string());
 
         Ok(Self {
             name,
             version,
             interfaces,
+            category,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rpc_plugin_roundtrip() {
+        let plugin = RpcPlugin {
+            name: "RpcServer".into(),
+            version: "1.0.0".into(),
+            interfaces: vec!["ISmartContract".into(), "IBlock".into()],
+            category: Some("Rpc".into()),
+        };
+
+        let json = plugin.to_json();
+        let parsed = RpcPlugin::from_json(&json).expect("plugin");
+        assert_eq!(parsed.name, plugin.name);
+        assert_eq!(parsed.version, plugin.version);
+        assert_eq!(parsed.interfaces, plugin.interfaces);
+        assert_eq!(parsed.category, plugin.category);
+    }
+
+    #[test]
+    fn rpc_plugin_defaults_to_empty_interfaces() {
+        let mut json = JObject::new();
+        json.insert("name".to_string(), JToken::String("Empty".into()));
+        json.insert("version".to_string(), JToken::String("0.0.1".into()));
+
+        let parsed = RpcPlugin::from_json(&json).expect("plugin");
+        assert!(parsed.interfaces.is_empty());
+        assert!(parsed.category.is_none());
     }
 }

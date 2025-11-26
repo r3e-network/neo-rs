@@ -15,8 +15,10 @@ use crate::dbft_plugin::messages::{
     ChangeView, Commit, ConsensusMessagePayload, PrepareRequest, PrepareResponse, RecoveryMessage,
     RecoveryRequest,
 };
+use neo_core::cryptography::crypto_utils::Crypto;
 use neo_core::ledger::TransactionVerificationContext;
 use neo_core::network::p2p::payloads::ExtensiblePayload;
+use neo_core::IVerifiable;
 use std::collections::VecDeque;
 use std::time::Instant;
 
@@ -291,10 +293,60 @@ impl ConsensusService {
                 return;
             }
 
+            // SECURITY FIX: Verify the commit signature before accepting
+            // The signature must be valid for the block being proposed
+            let signature = message.signature();
+            if signature.len() != 64 {
+                self.log(&format!(
+                    "OnCommitReceived: invalid signature length {} from validator {}",
+                    signature.len(),
+                    index
+                ));
+                return;
+            }
+
+            // Get the validator's public key
+            let validator_pubkey = match context.validators.get(index) {
+                Some(pk) => pk.clone(),
+                None => {
+                    self.log(&format!("OnCommitReceived: validator {} not found", index));
+                    return;
+                }
+            };
+
+            // Get the block header hash data for signature verification
+            // The commit signature is over the unsigned header data
+            let hash_data = context.block.header.get_hash_data();
+
+            // Verify signature using secp256r1 (Neo's default curve)
+            let pubkey_bytes = match validator_pubkey.encode_point(true) {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    self.log(&format!(
+                        "OnCommitReceived: failed to encode validator {} public key: {}",
+                        index, e
+                    ));
+                    return;
+                }
+            };
+            let mut sig_array = [0u8; 64];
+            sig_array.copy_from_slice(signature);
+
+            let is_valid =
+                Crypto::verify_signature_secp256r1(&hash_data, &sig_array, &pubkey_bytes);
+
+            if !is_valid {
+                self.log(&format!(
+                    "OnCommitReceived: INVALID signature from validator {} - rejecting commit",
+                    index
+                ));
+                return;
+            }
+
             let timer_state = TimerContextState::from_context(&mut context);
 
             self.log(&format!(
-                "OnCommitReceived: height={} view={} index={}",
+                "OnCommitReceived: height={} view={} index={} (signature verified)",
                 message.block_index(),
                 message.view_number(),
                 message.validator_index()

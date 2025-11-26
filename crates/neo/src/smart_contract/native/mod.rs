@@ -1,7 +1,7 @@
 //! Native contracts module.
 //!
 //! This module provides the built-in native contracts for the Neo blockchain,
-//! including NEO, GAS, Policy, and other system contracts.
+//! including NEO, GAS, Policy, Notary, and other system contracts.
 
 pub mod contract_management;
 pub mod crypto_lib;
@@ -13,6 +13,7 @@ pub mod helpers;
 pub mod ledger_contract;
 pub mod native_contract;
 pub mod neo_token;
+pub mod notary;
 pub mod oracle_contract;
 pub mod oracle_request;
 pub mod policy_contract;
@@ -29,6 +30,7 @@ pub use helpers::NativeHelpers;
 pub use ledger_contract::{LedgerContract, LedgerTransactionStates};
 pub use native_contract::{NativeContract, NativeContractsCache, NativeMethod};
 pub use neo_token::NeoToken;
+pub use notary::{Deposit as NotaryDeposit, Notary};
 pub use oracle_contract::OracleContract;
 pub use policy_contract::PolicyContract;
 pub use role_management::{Role, RoleManagement};
@@ -129,6 +131,9 @@ impl NativeRegistry {
 
         // Register Oracle contract
         self.register(Arc::new(OracleContract::new()));
+
+        // Register Notary contract (active after HF_Echidna)
+        self.register(Arc::new(Notary::new()));
     }
 }
 

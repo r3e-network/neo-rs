@@ -2,17 +2,16 @@
 //!
 //! This module implements connection management exactly matching C# Neo's Peer and Connection classes.
 
-use super::message::PAYLOAD_MAX_SIZE;
+use super::{
+    channels_config::ChannelsConfig,
+    framed::{FrameConfig, FramedSocket},
+};
 use crate::network::{
     error::{NetworkError, NetworkResult},
     p2p::messages::NetworkMessage,
 };
 use std::net::SocketAddr;
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::TcpStream,
-    sync::mpsc,
-};
+use tokio::{io::AsyncWriteExt, net::TcpStream, sync::mpsc};
 
 /// Connection state (matches C# Neo RemoteNode state exactly)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -86,6 +85,9 @@ pub struct PeerConnection {
     /// Connection state
     pub state: ConnectionState,
 
+    /// Framing and timeout configuration for this connection.
+    pub frame_config: FrameConfig,
+
     /// TCP stream
     pub stream: TcpStream,
 
@@ -113,12 +115,18 @@ pub struct PeerConnection {
 
 impl PeerConnection {
     /// Creates a new peer connection
-    pub fn new(stream: TcpStream, address: SocketAddr, inbound: bool) -> Self {
+    pub fn new(
+        stream: TcpStream,
+        address: SocketAddr,
+        inbound: bool,
+        frame_config: FrameConfig,
+    ) -> Self {
         let (message_tx, _) = mpsc::unbounded_channel();
         let now = std::time::Instant::now();
 
         Self {
             state: ConnectionState::Connected,
+            frame_config,
             stream,
             address,
             node_info_set: false,
@@ -128,6 +136,16 @@ impl PeerConnection {
             last_activity: now,
             connected_at: now,
         }
+    }
+
+    /// Convenience constructor that derives `FrameConfig` from a channel configuration.
+    pub fn from_channels_config(
+        stream: TcpStream,
+        address: SocketAddr,
+        inbound: bool,
+        config: &ChannelsConfig,
+    ) -> Self {
+        Self::new(stream, address, inbound, FrameConfig::from(config))
     }
 
     /// Updates the last activity timestamp
@@ -158,7 +176,7 @@ impl PeerConnection {
     }
 
     /// Sends a message to the peer (matches C# RemoteNode.SendMessage exactly)
-    pub async fn send_message(&mut self, message: NetworkMessage) -> NetworkResult<()> {
+    pub async fn send_message(&mut self, message: &NetworkMessage) -> NetworkResult<()> {
         if !self.state.is_active() {
             return Err(NetworkError::ConnectionError(
                 "Connection not active".to_string(),
@@ -167,6 +185,7 @@ impl PeerConnection {
 
         let command = message.command();
         let bytes = message.to_bytes(self.compression_allowed)?;
+        let timeout = self.frame_config.write_timeout;
 
         tracing::debug!(
             "Sending message to {}: {} bytes, command: {:?}",
@@ -177,9 +196,9 @@ impl PeerConnection {
         tracing::debug!("First bytes: {:02x?}", &bytes[..24.min(bytes.len())]);
 
         // Send bytes over TCP stream
-        self.stream
-            .write_all(&bytes)
+        tokio::time::timeout(timeout, self.stream.write_all(&bytes))
             .await
+            .map_err(|_| NetworkError::Timeout)?
             .map_err(|e| NetworkError::ConnectionError(format!("Failed to send message: {}", e)))?;
 
         // Update activity timestamp
@@ -189,31 +208,20 @@ impl PeerConnection {
     }
 
     /// Receives a message from the peer (matches C# RemoteNode.ReceiveMessage exactly)
-    pub async fn receive_message(&mut self) -> NetworkResult<NetworkMessage> {
+    pub async fn receive_message(
+        &mut self,
+        handshake_complete: bool,
+    ) -> NetworkResult<NetworkMessage> {
         if !self.state.is_active() {
             return Err(NetworkError::ConnectionError(
                 "Connection not active".to_string(),
             ));
         }
 
-        let mut message_bytes = Vec::new();
-
-        let flag_byte = self.read_exact_byte().await?;
-        message_bytes.push(flag_byte);
-
-        let command_byte = self.read_exact_byte().await?;
-        message_bytes.push(command_byte);
-
-        let (payload_length, mut length_bytes) = Self::read_var_int_async(&mut self.stream).await?;
-        message_bytes.append(&mut length_bytes);
-
-        let mut payload = vec![0u8; payload_length as usize];
-        if payload_length > 0 {
-            self.stream.read_exact(&mut payload).await.map_err(|e| {
-                NetworkError::ConnectionError(format!("Failed to read payload: {}", e))
-            })?;
-        }
-        message_bytes.extend_from_slice(&payload);
+        let mut framed = FramedSocket::new(&mut self.stream);
+        let message_bytes = framed
+            .read_frame(&self.frame_config, handshake_complete)
+            .await?;
 
         let message = NetworkMessage::from_bytes(&message_bytes)?;
 
@@ -233,67 +241,30 @@ impl PeerConnection {
         Ok(message)
     }
 
-    async fn read_exact_byte(&mut self) -> NetworkResult<u8> {
-        let mut buffer = [0u8; 1];
-        self.stream
-            .read_exact(&mut buffer)
-            .await
-            .map_err(|e| NetworkError::ConnectionError(format!("Failed to read byte: {}", e)))?;
-        Ok(buffer[0])
-    }
-
-    async fn read_var_int_async(stream: &mut TcpStream) -> NetworkResult<(u64, Vec<u8>)> {
-        let mut first = [0u8; 1];
-        stream.read_exact(&mut first).await.map_err(|e| {
-            NetworkError::ConnectionError(format!("Failed to read varint prefix: {}", e))
-        })?;
-
-        let mut bytes = vec![first[0]];
-        let value = match first[0] {
-            0xFD => {
-                let mut buffer = [0u8; 2];
-                stream.read_exact(&mut buffer).await.map_err(|e| {
-                    NetworkError::ConnectionError(format!("Failed to read varint (u16): {}", e))
-                })?;
-                bytes.extend_from_slice(&buffer);
-                u16::from_le_bytes(buffer) as u64
-            }
-            0xFE => {
-                let mut buffer = [0u8; 4];
-                stream.read_exact(&mut buffer).await.map_err(|e| {
-                    NetworkError::ConnectionError(format!("Failed to read varint (u32): {}", e))
-                })?;
-                bytes.extend_from_slice(&buffer);
-                u32::from_le_bytes(buffer) as u64
-            }
-            0xFF => {
-                let mut buffer = [0u8; 8];
-                stream.read_exact(&mut buffer).await.map_err(|e| {
-                    NetworkError::ConnectionError(format!("Failed to read varint (u64): {}", e))
-                })?;
-                bytes.extend_from_slice(&buffer);
-                u64::from_le_bytes(buffer)
-            }
-            value => value as u64,
-        };
-
-        if value > PAYLOAD_MAX_SIZE as u64 {
-            return Err(NetworkError::InvalidMessage(format!(
-                "Payload length {} exceeds maximum {}",
-                value, PAYLOAD_MAX_SIZE
-            )));
-        }
-
-        Ok((value, bytes))
-    }
-
     /// Closes the connection gracefully
     pub async fn close(&mut self) -> NetworkResult<()> {
         self.state = ConnectionState::Disconnecting;
 
         // Shutdown the TCP stream
-        if let Err(e) = self.stream.shutdown().await {
-            tracing::warn!("Failed to shutdown connection to {}: {}", self.address, e);
+        match tokio::time::timeout(self.frame_config.shutdown_timeout, self.stream.shutdown()).await
+        {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                tracing::warn!(
+                    target: "neo",
+                    error = %e,
+                    "failed to shutdown connection to {}",
+                    self.address
+                );
+            }
+            Err(err) => {
+                tracing::warn!(
+                    target: "neo",
+                    error = %err,
+                    "timed out shutting down connection to {}",
+                    self.address
+                );
+            }
         }
 
         self.state = ConnectionState::Disconnected;
@@ -362,4 +333,61 @@ impl ConnectionInfo {
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use super::*;
+    use crate::network::p2p::payloads::ping_payload::PingPayload;
+    use crate::network::p2p::ProtocolMessage;
+    use std::time::Duration;
+    use tokio::net::TcpListener;
+
+    async fn tcp_pair() -> (TcpStream, TcpStream) {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("listener addr");
+        let client = TcpStream::connect(addr);
+        let server = listener.accept();
+        let (client_stream, server_stream) = tokio::join!(client, server);
+        let client_stream = client_stream.expect("client stream");
+        let (server_stream, _) = server_stream.expect("server stream");
+        (client_stream, server_stream)
+    }
+
+    #[tokio::test]
+    async fn send_message_fails_when_connection_inactive() {
+        let (client_stream, _server_stream) = tcp_pair().await;
+        let mut connection = PeerConnection::from_channels_config(
+            client_stream,
+            "127.0.0.1:0".parse().unwrap(),
+            false,
+            &ChannelsConfig::default(),
+        );
+        connection.set_state(ConnectionState::Disconnected);
+
+        let ping = ProtocolMessage::Ping(PingPayload::create_with_nonce(0, 0));
+        let message = NetworkMessage::new(ping);
+        let result = connection.send_message(&message).await;
+
+        assert!(matches!(
+            result,
+            Err(NetworkError::ConnectionError(msg)) if msg.contains("Connection not active")
+        ));
+    }
+
+    #[tokio::test]
+    async fn from_channels_config_applies_frame_config() {
+        let (client_stream, _server_stream) = tcp_pair().await;
+        let config = ChannelsConfig {
+            write_timeout: Duration::from_millis(5),
+            ..ChannelsConfig::default()
+        };
+        let connection = PeerConnection::from_channels_config(
+            client_stream,
+            "127.0.0.1:0".parse().unwrap(),
+            false,
+            &config,
+        );
+
+        assert_eq!(connection.frame_config.write_timeout, config.write_timeout);
+    }
+}

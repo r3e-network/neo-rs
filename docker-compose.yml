@@ -19,21 +19,34 @@ services:
       - "10332:10332"
     volumes:
       - neo-data:/data
-      - ./config:/config:ro
     environment:
       - NEO_NETWORK=${NEO_NETWORK:-testnet}
-      - NEO_DATA_DIR=/data
+      - NEO_CONFIG=${NEO_CONFIG:-}
+      - NEO_STORAGE=${NEO_STORAGE:-}
+      - NEO_BACKEND=${NEO_BACKEND:-rocksdb}
+      - NEO_PLUGINS_DIR=${NEO_PLUGINS_DIR:-/data/Plugins}
+      - NEO_RPC_PORT=${NEO_RPC_PORT:-}
+      - NEO_LISTEN_PORT=${NEO_LISTEN_PORT:-}
       - RUST_LOG=${RUST_LOG:-info}
-      - NEO_RPC_ENABLED=true
-      - NEO_RPC_MAX_CONNECTIONS=100
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:20332/health"]
+      test:
+        [
+          "CMD",
+          "/bin/sh",
+          "-c",
+          "port_file=/tmp/neo_rpc_port; if [ -f \"$port_file\" ]; then port=$(cat \"$port_file\"); else port=${NEO_RPC_PORT:-}; fi; if [ -z \"$port\" ]; then port=20332; case \"${NEO_NETWORK:-testnet}\" in [Mm]ain*) port=10332 ;; esac; fi; curl -sf -X POST -H 'Content-Type: application/json' --data '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"getversion\",\"params\":[]}' http://127.0.0.1:${port}",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
     networks:
       - neo-network
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+      nproc: 8192
     logging:
       driver: "json-file"
       options:
@@ -45,6 +58,7 @@ services:
     image: grafana/grafana:latest
     container_name: neo-monitor
     restart: unless-stopped
+    profiles: ["monitoring"]
     ports:
       - "3000:3000"
     volumes:

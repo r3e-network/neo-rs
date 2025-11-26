@@ -12,6 +12,7 @@ use crate::smart_contract::storage_key::StorageKey;
 use crate::smart_contract::StorageItem;
 use crate::UInt160;
 use lazy_static::lazy_static;
+use neo_vm::StackItem;
 use num_bigint::BigInt;
 use num_traits::{Signed, Zero};
 use std::any::Any;
@@ -229,11 +230,23 @@ impl GasToken {
         to: Option<&UInt160>,
         amount: &BigInt,
     ) -> CoreResult<()> {
-        let from_bytes = from.map(|addr| addr.to_bytes()).unwrap_or_default();
-        let to_bytes = to.map(|addr| addr.to_bytes()).unwrap_or_default();
-        let amount_bytes = Self::encode_amount(amount);
-        engine.emit_event("Transfer", vec![from_bytes, to_bytes, amount_bytes])?;
-        Ok(())
+        // Use StackItem types matching C# FungibleToken.PostTransferAsync
+        let from_item = from
+            .map(|addr| StackItem::from_byte_string(addr.to_bytes()))
+            .unwrap_or_else(StackItem::null);
+        let to_item = to
+            .map(|addr| StackItem::from_byte_string(addr.to_bytes()))
+            .unwrap_or_else(StackItem::null);
+        let amount_item = StackItem::from_int(amount.clone());
+
+        // Use send_notification with explicit contract hash (like C# engine.SendNotification)
+        engine
+            .send_notification(
+                self.hash(),
+                "Transfer".to_string(),
+                vec![from_item, to_item, amount_item],
+            )
+            .map_err(|e| CoreError::native_contract(e))
     }
 
     /// Mints new GAS to the specified account.
@@ -374,5 +387,50 @@ impl NativeContract for GasToken {
 
     fn as_any(&self) -> &dyn Any {
         self
+    }
+
+    /// OnPersist: Burns system+network fees from senders, mints network fees to primary validator.
+    /// Matches C# GasToken.OnPersistAsync exactly.
+    fn on_persist(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
+        let block = engine.persisting_block().cloned().ok_or_else(|| {
+            CoreError::native_contract("No persisting block available".to_string())
+        })?;
+
+        let mut total_network_fee: i64 = 0;
+
+        // Burn system fee + network fee from each transaction sender
+        for tx in &block.transactions {
+            let sender = match tx.sender() {
+                Some(s) => s,
+                None => continue, // Skip transactions without a sender
+            };
+            let total_fee = tx.system_fee() + tx.network_fee();
+            let burn_amount = BigInt::from(total_fee);
+            self.burn(engine, &sender, &burn_amount)?;
+            total_network_fee += tx.network_fee();
+
+            // Notary fee deduction would go here when NotaryAssisted is implemented
+            // For now, skip notary fee handling as it requires the Notary native contract
+        }
+
+        // Mint total network fee to the primary consensus node
+        if total_network_fee > 0 {
+            let validators = NativeHelpers::get_next_block_validators(engine.protocol_settings());
+            if !validators.is_empty() {
+                let primary_index = block.header.primary_index as usize;
+                if primary_index < validators.len() {
+                    let primary_validator = &validators[primary_index];
+                    let primary_account =
+                        crate::smart_contract::Contract::create_signature_contract(
+                            primary_validator.clone(),
+                        )
+                        .script_hash();
+                    let mint_amount = BigInt::from(total_network_fee);
+                    self.mint(engine, &primary_account, &mint_amount, false)?;
+                }
+            }
+        }
+
+        Ok(())
     }
 }

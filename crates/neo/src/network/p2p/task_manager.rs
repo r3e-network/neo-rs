@@ -1,3 +1,4 @@
+//! Task manager actor: tracks inventory tasks and relays to peers.
 // Copyright (C) 2015-2025 The Neo Project.
 //
 // task_manager.rs file belongs to the neo project and is free

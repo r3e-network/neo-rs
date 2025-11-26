@@ -12,8 +12,10 @@
 use crate::models::{RpcNep17TokenInfo, RpcNep17Transfers};
 use crate::{ContractClient, RpcClient, TransactionManagerFactory};
 use neo_core::{Contract, KeyPair, Signer, Transaction, UInt160, WitnessScope};
-use neo_vm::ScriptBuilder;
+use neo_vm::op_code::OpCode;
+use neo_vm::{stack_item::StackItem, ScriptBuilder};
 use num_bigint::BigInt;
+use num_traits::cast::ToPrimitive;
 use std::sync::Arc;
 
 /// Call NEP17 methods with RPC API
@@ -35,6 +37,11 @@ impl Nep17Api {
         }
     }
 
+    /// Exposes the underlying contract client for advanced scenarios.
+    pub fn contract_client(&self) -> &ContractClient {
+        &self.contract_client
+    }
+
     /// Get balance of NEP17 token
     /// Matches C# BalanceOfAsync
     pub async fn balance_of(
@@ -44,7 +51,11 @@ impl Nep17Api {
     ) -> Result<BigInt, Box<dyn std::error::Error>> {
         let result = self
             .contract_client
-            .test_invoke(script_hash, "balanceOf", vec![account.to_json()])
+            .test_invoke(
+                script_hash,
+                "balanceOf",
+                vec![serde_json::json!(account.to_string())],
+            )
             .await?;
 
         // Get the single stack item and convert to integer
@@ -66,7 +77,7 @@ impl Nep17Api {
 
         let stack_item = result.stack.first().ok_or("No result returned")?;
 
-        Ok(stack_item.get_string()?)
+        Ok(stack_item_to_string(stack_item)?)
     }
 
     /// Get decimals of NEP17 token
@@ -105,27 +116,21 @@ impl Nep17Api {
         &self,
         script_hash: &UInt160,
     ) -> Result<RpcNep17TokenInfo, Box<dyn std::error::Error>> {
-        // Get contract state
-        let contract_state = self
-            .rpc_client
-            .get_contract_state(&script_hash.to_string())
-            .await?;
-
         // Build script to get all token info at once
         let mut script = Vec::new();
         script.extend(self.make_script(script_hash, "symbol", vec![])?);
         script.extend(self.make_script(script_hash, "decimals", vec![])?);
         script.extend(self.make_script(script_hash, "totalSupply", vec![])?);
 
-        let name = contract_state.manifest.name.clone();
+        let name = String::new();
         let result = self.rpc_client.invoke_script(&script).await?;
         let stack = &result.stack;
 
         Ok(RpcNep17TokenInfo {
             name,
             symbol: stack
-                .get(0)
-                .and_then(|s| s.get_string().ok())
+                .first()
+                .and_then(|s| stack_item_to_string(s).ok())
                 .unwrap_or_default(),
             decimals: stack
                 .get(1)
@@ -136,6 +141,8 @@ impl Nep17Api {
                 .get(2)
                 .and_then(|s| s.get_integer().ok())
                 .unwrap_or_else(|| BigInt::from(0)),
+            balance: None,
+            last_updated_block: None,
         })
     }
 
@@ -149,8 +156,7 @@ impl Nep17Api {
         let mut token_info = self.get_token_info(script_hash).await?;
 
         // Parse address to UInt160
-        let account =
-            UInt160::from_address(address, self.rpc_client.protocol_settings.address_version)?;
+        let account = UInt160::from_address(address)?;
 
         // Get balance for the address
         let balance = self.balance_of(script_hash, &account).await?;
@@ -169,7 +175,8 @@ impl Nep17Api {
         amount: BigInt,
         data: Option<serde_json::Value>,
     ) -> Result<Transaction, Box<dyn std::error::Error>> {
-        let from = Contract::create_signature_redeem_script(&key.public_key()).to_script_hash();
+        let from_script = Contract::create_signature_redeem_script(key.get_public_key_point()?);
+        let from = UInt160::from_script(&from_script);
 
         self.create_transfer_tx_with_from(script_hash, &from, key, to, amount, data)
             .await
@@ -193,14 +200,14 @@ impl Nep17Api {
         if let Some(d) = data {
             self.emit_argument(&mut sb, &d)?;
         } else {
-            sb.emit_push_null()?;
+            sb.emit_opcode(OpCode::PUSHNULL);
         }
-        sb.emit_push_int(amount.to_i64().ok_or("Amount too large")?)?;
-        sb.emit_push(&to.to_array())?;
-        sb.emit_push(&from.to_array())?;
-        sb.emit_push_int(4)?; // Number of arguments
-        sb.emit_push(b"transfer")?;
-        sb.emit_push(&script_hash.to_array())?;
+        sb.emit_push_int(amount.to_i64().ok_or("Amount too large")?);
+        sb.emit_push(&to.to_array());
+        sb.emit_push(&from.to_array());
+        sb.emit_push_int(4); // Number of arguments
+        sb.emit_push(b"transfer");
+        sb.emit_push(&script_hash.to_array());
         sb.emit_syscall("System.Contract.Call")?;
 
         let script = sb.to_array();
@@ -234,6 +241,7 @@ impl Nep17Api {
         self.rpc_client
             .get_nep17_transfers(address, start_time, end_time)
             .await
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
     }
 
     /// Get NEP17 token balances for an address
@@ -270,8 +278,8 @@ impl Nep17Api {
             self.emit_argument(&mut sb, arg)?;
         }
 
-        sb.emit_push(operation.as_bytes())?;
-        sb.emit_push(&script_hash.to_array())?;
+        sb.emit_push(operation.as_bytes());
+        sb.emit_push(&script_hash.to_array());
         sb.emit_syscall("System.Contract.Call")?;
 
         Ok(sb.to_array())
@@ -283,17 +291,37 @@ impl Nep17Api {
         arg: &serde_json::Value,
     ) -> Result<(), Box<dyn std::error::Error>> {
         match arg {
-            serde_json::Value::Null => sb.emit_push_null(),
-            serde_json::Value::Bool(b) => sb.emit_push(*b),
+            serde_json::Value::Null => {
+                sb.emit_opcode(OpCode::PUSHNULL);
+                Ok(())
+            }
+            serde_json::Value::Bool(b) => {
+                sb.emit_push_bool(*b);
+                Ok(())
+            }
             serde_json::Value::Number(n) => {
                 if let Some(i) = n.as_i64() {
-                    sb.emit_push_int(i)
+                    sb.emit_push_int(i);
+                    Ok(())
                 } else {
                     Err("Invalid number format".into())
                 }
             }
-            serde_json::Value::String(s) => sb.emit_push(s.as_bytes()),
+            serde_json::Value::String(s) => {
+                sb.emit_push(s.as_bytes());
+                Ok(())
+            }
             _ => Err("Unsupported argument type".into()),
         }
+    }
+}
+
+fn stack_item_to_string(item: &StackItem) -> Result<String, Box<dyn std::error::Error>> {
+    match item {
+        StackItem::ByteString(bytes) => Ok(String::from_utf8(bytes.clone())?),
+        StackItem::Buffer(buffer) => Ok(String::from_utf8(buffer.data().to_vec())?),
+        StackItem::Integer(int) => Ok(int.to_string()),
+        StackItem::Boolean(b) => Ok(b.to_string()),
+        _ => Err("Unsupported stack item for string conversion".into()),
     }
 }

@@ -146,9 +146,10 @@ fn test_script_get_jump_target() {
         OpCode::PUSH1 as u8, // PUSH1 (skipped)
         OpCode::PUSH2 as u8, // PUSH2
         OpCode::JMP_L as u8,
-        0xFC,
         0xFF,
-        0xFF,              // JMP -4
+        0xFF,
+        0xFF,
+        0xFF,              // JMP -1
         OpCode::RET as u8, // RET (skipped)
     ];
     let script = Script::new_relaxed(script_bytes);
@@ -161,7 +162,7 @@ fn test_script_get_jump_target() {
     assert_eq!(target, 2);
 
     // Get the JmpL instruction
-    let instruction = script.get_instruction(3).unwrap();
+    let instruction = script.get_instruction(4).unwrap();
 
     // Test backward jump
     let target = script.get_jump_target(&instruction).unwrap();
@@ -195,12 +196,13 @@ fn test_script_get_try_offsets() {
     let instruction = script.get_instruction(0).unwrap();
 
     // Test try-catch-finally offsets
-    let (catch_offset, finally_offset) = script.get_try_offsets(&instruction).unwrap();
+    let result = script.get_try_offsets(&instruction);
+    let (catch_offset, finally_offset) = result.unwrap();
     assert_eq!(catch_offset, 5);
     assert_eq!(finally_offset, 10);
 
     // Test non-TRY instruction
-    let instruction = script.get_instruction(1).unwrap();
+    let instruction = script.get_instruction(5).unwrap();
     let result = script.get_try_offsets(&instruction);
     assert!(result.is_err());
 }

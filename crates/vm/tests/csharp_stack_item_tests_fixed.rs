@@ -134,9 +134,75 @@ mod tests {
     }
 
     /// Test deep copy functionality (matches C# TestDeepCopy)
+    ///
+    /// In C# Neo, Buffer uses reference equality (ReferenceEquals), meaning:
+    /// - Primitive types (Boolean, Integer, ByteString): deep copies ARE equal
+    /// - Reference types (Buffer, Array, Struct, Map): deep copies are NOT equal
+    ///
+    /// This test verifies deep_clone creates independent copies with correct semantics.
     #[test]
     fn test_deep_copy() {
-        // Create a complex nested structure
+        // Test 1: Primitive types - deep copies should be equal (value semantics)
+        let bool_item = StackItem::Boolean(true);
+        let bool_copy = bool_item.deep_clone();
+        assert!(
+            bool_item.equals(&bool_copy).unwrap(),
+            "Boolean deep copy should be equal"
+        );
+
+        let int_item = StackItem::Integer(BigInt::from(42));
+        let int_copy = int_item.deep_clone();
+        assert!(
+            int_item.equals(&int_copy).unwrap(),
+            "Integer deep copy should be equal"
+        );
+
+        let bs_item = StackItem::from_byte_string(vec![1, 2, 3]);
+        let bs_copy = bs_item.deep_clone();
+        assert!(
+            bs_item.equals(&bs_copy).unwrap(),
+            "ByteString deep copy should be equal"
+        );
+
+        // Test 2: Buffer - deep copies should NOT be equal (reference semantics)
+        let buffer_item = StackItem::from_buffer(vec![1, 2, 3]);
+        let buffer_copy = buffer_item.deep_clone();
+        assert!(
+            !buffer_item.equals(&buffer_copy).unwrap(),
+            "Buffer deep copy should NOT be equal (reference semantics)"
+        );
+
+        // Verify buffer content is the same (data equality, not reference equality)
+        if let (StackItem::Buffer(a), StackItem::Buffer(b)) = (&buffer_item, &buffer_copy) {
+            assert_eq!(a.data(), b.data(), "Buffer content should be identical");
+        }
+
+        // Test 3: Array without Buffer - deep copies should be equal
+        let array_no_buffer = StackItem::from_array(vec![
+            StackItem::Boolean(true),
+            StackItem::Integer(BigInt::from(1)),
+            StackItem::from_byte_string(vec![1u8]),
+            StackItem::Null,
+        ]);
+        let array_no_buffer_copy = array_no_buffer.deep_clone();
+        assert!(
+            array_no_buffer.equals(&array_no_buffer_copy).unwrap(),
+            "Array without Buffer should be equal after deep copy"
+        );
+
+        // Test 4: Struct - deep copies should be equal (when containing only value types)
+        let struct_item = StackItem::from_struct(vec![
+            StackItem::Integer(BigInt::from(1)),
+            StackItem::Integer(BigInt::from(2)),
+            StackItem::Integer(BigInt::from(3)),
+        ]);
+        let struct_copy = struct_item.deep_clone();
+        assert!(
+            struct_item.equals(&struct_copy).unwrap(),
+            "Struct with value types should be equal after deep copy"
+        );
+
+        // Test 5: Map - deep copies should be equal (when containing only value types)
         let mut map = BTreeMap::new();
         map.insert(
             StackItem::Integer(BigInt::from(0)),
@@ -146,26 +212,29 @@ mod tests {
             StackItem::Integer(BigInt::from(2)),
             StackItem::Integer(BigInt::from(3)),
         );
+        let map_item = StackItem::from_map(map);
+        let map_copy = map_item.deep_clone();
+        assert!(
+            map_item.equals(&map_copy).unwrap(),
+            "Map with value types should be equal after deep copy"
+        );
 
-        let array = StackItem::from_array(vec![
-            StackItem::Boolean(true),
-            StackItem::Integer(BigInt::from(1)),
-            StackItem::from_byte_string(vec![1u8]),
-            StackItem::Null,
+        // Test 6: Complex nested structure with Buffer - NOT equal due to Buffer reference semantics
+        let mut map2 = BTreeMap::new();
+        map2.insert(
+            StackItem::Integer(BigInt::from(0)),
             StackItem::from_buffer(vec![1u8]),
-            StackItem::from_map(map),
-            StackItem::from_struct(vec![
-                StackItem::Integer(BigInt::from(1)),
-                StackItem::Integer(BigInt::from(2)),
-                StackItem::Integer(BigInt::from(3)),
-            ]),
+        );
+        let array_with_buffer = StackItem::from_array(vec![
+            StackItem::Boolean(true),
+            StackItem::from_buffer(vec![1u8]),
+            StackItem::from_map(map2),
         ]);
-
-        // Test deep copy
-        let array_copy = array.deep_clone();
-
-        // Verify it's a different object but with same content
-        assert_eq!(array, array_copy, "Deep copy should have same content");
+        let array_with_buffer_copy = array_with_buffer.deep_clone();
+        assert!(
+            !array_with_buffer.equals(&array_with_buffer_copy).unwrap(),
+            "Array containing Buffer should NOT be equal after deep copy (reference semantics)"
+        );
     }
 
     /// Test boolean conversion (matches C# TestBoolean)

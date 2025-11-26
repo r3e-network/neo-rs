@@ -1,3 +1,4 @@
+//! Local P2P node actor: peer management, listener, and routing glue.
 // Copyright (C) 2015-2025 The Neo Project.
 //
 // local_node.rs file belongs to the neo project and is free
@@ -12,7 +13,6 @@
 use super::{
     capabilities::NodeCapability,
     channels_config::ChannelsConfig,
-    connection::PeerConnection,
     peer::{PeerCommand, PeerState, PeerTimer, MAX_COUNT_FROM_SEED_LIST},
     remote_node::{RemoteNode, RemoteNodeCommand},
 };
@@ -41,6 +41,8 @@ use tokio::{
 use tracing::{debug, error, trace, warn};
 
 /// The protocol version supported by this node implementation (matches C# LocalNode.ProtocolVersion).
+/// Neo N3 uses protocol version 0 during handshake but validates network magic for compatibility.
+/// Note: This constant is used for Version message payload, not the Neo3 protocol version indicator.
 pub const PROTOCOL_VERSION: u32 = 0;
 
 /// Immutable snapshot of a remote peer used for API exposure (matches C# RemoteNodeModel source data).
@@ -305,9 +307,10 @@ impl LocalNode {
             .map(|g| g.clone())
             .unwrap_or_default();
 
-        let current_height = self
-            .system_context()
-            .map(|context| context.current_block_index())
+        let context = self.system_context();
+        let current_height = context
+            .as_ref()
+            .map(|ctx| ctx.current_block_index())
             .unwrap_or(0);
 
         let mut has_full_node = false;
@@ -321,9 +324,15 @@ impl LocalNode {
             capabilities.push(NodeCapability::full_node(current_height));
         }
 
-        if !capabilities
-            .iter()
-            .any(|cap| matches!(cap, NodeCapability::ArchivalNode))
+        let can_advertise_archival = context
+            .as_ref()
+            .map(|ctx| ctx.store_provider.name() != "Memory")
+            .unwrap_or(false);
+
+        if can_advertise_archival
+            && !capabilities
+                .iter()
+                .any(|cap| matches!(cap, NodeCapability::ArchivalNode))
         {
             capabilities.push(NodeCapability::archival_node());
         }
@@ -1048,12 +1057,12 @@ impl LocalNodeActor {
         is_trusted: bool,
         inbound: bool,
     ) -> ActorResult {
-        let connection = Arc::new(Mutex::new(PeerConnection::new(stream, remote, inbound)));
+        let config = self.peer.config().clone();
+        let connection = Arc::new(Mutex::new(config.build_connection(stream, remote, inbound)));
         let actor_name = format!("remote-{:016x}", rand::random::<u64>());
 
         let version_payload = self.state.version_payload();
         let settings = self.state.settings();
-        let config = self.peer.config().clone();
         let Some(system_context) = self.state.system_context() else {
             warn!(target: "neo", "system context missing when spawning remote node");
             return Ok(());
@@ -1178,9 +1187,9 @@ impl LocalNodeActor {
                 return;
             }
         };
-        std_listener
-            .set_nonblocking(true)
-            .unwrap_or_else(|err| warn!(target: "neo", error = %err, "failed to set listener non-blocking"));
+        std_listener.set_nonblocking(true).unwrap_or_else(
+            |err| warn!(target: "neo", error = %err, "failed to set listener non-blocking"),
+        );
 
         let listener = TcpListener::from_std(std_listener).expect("listener conversion");
         let actor_ref = ctx.self_ref();

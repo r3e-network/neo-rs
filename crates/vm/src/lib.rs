@@ -32,28 +32,31 @@
 //! ## Example
 //!
 //! ```rust,no_run
-//! use neo_vm::{ApplicationEngine, Script, StackItem};
+//! use neo_vm::{op_code::OpCode, ExecutionEngine, Script, VMState};
 //!
-//! # fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! # fn example() -> neo_vm::VmResult<()> {
 //! // Create a simple script that pushes numbers and adds them
-//! let script = Script::new(vec![
-//!     0x51, // PUSH1
-//!     0x52, // PUSH2
-//!     0x9F, // ADD
-//! ]);
+//! let script = Script::new(
+//!     vec![
+//!         OpCode::PUSH1 as u8,
+//!         OpCode::PUSH2 as u8,
+//!         OpCode::ADD as u8,
+//!         OpCode::RET as u8,
+//!     ],
+//!     false,
+//! )?;
 //!
 //! // Create and configure the VM engine
-//! let engine = ExecutionEngine::new(None);
-//! engine.load_script(&script, false)?;
+//! let mut engine = ExecutionEngine::new(None);
+//! engine.load_script(script, -1, 0)?;
 //!
 //! // Execute the script
-//! let result = engine.execute()?;
+//! let state = engine.execute();
+//! assert_eq!(state, VMState::HALT);
 //!
 //! // Get the result from the stack
-//! if let Some(result_item) = engine.result_stack().peek(0) {
-//!     if let StackItem::Integer(value) = result_item {
-//!         println!("Result: {}", value);
-//!     }
+//! if let Ok(result_item) = engine.result_stack().peek(0) {
+//!     println!("Result: {}", result_item.as_int().unwrap());
 //! }
 //! # Ok(())
 //! # }
@@ -64,16 +67,24 @@
 //! The VM supports interop services for accessing blockchain state:
 //!
 //! ```rust,no_run
-//! use neo_vm::{ApplicationEngine, InteropService};
+//! use neo_vm::{
+//!     call_flags::CallFlags,
+//!     interop_service::InteropDescriptor,
+//!     ExecutionEngine,
+//! };
 //!
-//! # fn example() -> Result<(), Box<dyn std::error::Error>> {
-//! let engine = ExecutionEngine::new(None);
+//! # fn example() -> neo_vm::VmResult<()> {
+//! let mut engine = ExecutionEngine::new(None);
 //!
 //! // Register custom interop service
-//! engine.register_interop_service("MyService.Method", |engine, args| {
-//!     // Custom interop implementation
-//!     Ok(neo_vm::StackItem::Boolean(true))
-//! });
+//! if let Some(service) = engine.interop_service_mut() {
+//!     service.register(InteropDescriptor {
+//!         name: "MyService.Method".to_string(),
+//!         handler: None,
+//!         price: 0,
+//!         required_call_flags: CallFlags::NONE,
+//!     })?;
+//! }
 //! # Ok(())
 //! # }
 //! ```
@@ -83,14 +94,14 @@
 //! The VM includes comprehensive debugging features:
 //!
 //! ```rust,no_run
-//! use neo_vm::{Debugger, ExecutionEngine};
+//! use neo_vm::{op_code::OpCode, Debugger, ExecutionEngine, Script};
 //!
-//! # fn example() -> Result<(), Box<dyn std::error::Error>> {
-//! let engine = ExecutionEngine::new(None);
+//! # fn example() -> neo_vm::VmResult<()> {
+//! let mut engine = ExecutionEngine::new(None);
+//! let script = Script::new(vec![OpCode::RET as u8], false)?;
+//! engine.load_script(script, -1, 0)?;
+//!
 //! let mut debugger = Debugger::new(engine);
-//!
-//! // Set breakpoint at instruction position
-//! // configure breakpoints as needed using `add_break_point`
 //!
 //! // Execute with debugging
 //! let _state = debugger.execute();

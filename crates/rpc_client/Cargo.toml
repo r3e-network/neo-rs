@@ -6,10 +6,6 @@ authors = ["Neo Core Developers"]
 description = "Neo RPC Client implementation"
 license = "MIT"
 
-[features]
-full = []
-default = []
-
 [dependencies]
 neo-core = { path = "../neo", package = "neo-core" }
 neo-io = { path = "../io" }
@@ -22,7 +18,7 @@ async-trait = "0.1"
 
 # HTTP client
 reqwest = { version = "0.11", features = ["json"] }
-hyper = "0.14"
+hyper = { version = "0.14", features = ["client", "http1", "tcp", "server"] }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }

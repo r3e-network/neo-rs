@@ -635,6 +635,31 @@ impl PolicyContract {
         }
     }
 
+    /// Gets the attribute fee for a specific attribute type from DataCache.
+    /// This is used by other native contracts like Notary.
+    pub fn get_attribute_fee_for_type<S>(&self, snapshot: &S, attribute_type: u8) -> Result<i64>
+    where
+        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+    {
+        // Build key for specific attribute type fee
+        let mut key_suffix = vec![Self::PREFIX_CONFIG];
+        key_suffix.extend_from_slice(Self::ATTRIBUTE_FEE_NAME);
+        key_suffix.push(attribute_type);
+        let key = StorageKey::new(Self::ID, key_suffix);
+
+        match snapshot.try_get(&key) {
+            Some(item) => Self::parse_i64_le(&item.get_value()),
+            None => {
+                // Try the default attribute fee key
+                let default_key = Self::config_storage_key(Self::ATTRIBUTE_FEE_NAME);
+                match snapshot.try_get(&default_key) {
+                    Some(item) => Self::parse_i64_le(&item.get_value()),
+                    None => Ok(Self::DEFAULT_ATTRIBUTE_FEE as i64),
+                }
+            }
+        }
+    }
+
     /// Reads the MaxValidUntilBlock increment from storage, defaulting to protocol setting.
     pub fn get_max_valid_until_block_increment_snapshot<S>(
         &self,

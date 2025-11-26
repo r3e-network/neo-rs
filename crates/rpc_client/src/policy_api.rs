@@ -10,7 +10,10 @@
 // modifications are permitted.
 
 use crate::{ContractClient, RpcClient};
-use neo_core::{NativeContract, UInt160};
+use neo_core::smart_contract::native::PolicyContract;
+use neo_core::NativeContract;
+use neo_core::UInt160;
+use num_traits::cast::ToPrimitive;
 use std::sync::Arc;
 
 /// Get Policy info by RPC API
@@ -28,7 +31,7 @@ impl PolicyApi {
     pub fn new(rpc_client: Arc<RpcClient>) -> Self {
         Self {
             contract_client: ContractClient::new(rpc_client),
-            script_hash: NativeContract::policy().hash(),
+            script_hash: PolicyContract::new().hash(),
         }
     }
 
@@ -79,7 +82,11 @@ impl PolicyApi {
     pub async fn is_blocked(&self, account: &UInt160) -> Result<bool, Box<dyn std::error::Error>> {
         let result = self
             .contract_client
-            .test_invoke(&self.script_hash, "isBlocked", vec![account.to_json()])
+            .test_invoke(
+                &self.script_hash,
+                "isBlocked",
+                vec![serde_json::json!(account.to_string())],
+            )
             .await?;
 
         let stack_item = result.stack.first().ok_or("No result returned")?;

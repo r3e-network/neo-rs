@@ -291,11 +291,13 @@ pub fn calla(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
 }
 
 /// CALLT - Call function with token
-pub fn callt(_engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    let token = instruction.token_u16();
-    Err(VmError::invalid_operation_msg(format!(
-        "Token not found: {token}"
-    )))
+///
+/// This opcode delegates to the InteropHost's `on_callt` method, which is expected
+/// to be implemented by ApplicationEngine to resolve method tokens and perform
+/// cross-contract calls.
+pub fn callt(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
+    let token_id = instruction.token_u16();
+    engine.invoke_callt(token_id)
 }
 
 /// ABORT - Abort execution
@@ -331,8 +333,13 @@ pub fn throw(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
 
 /// TRY - Begin try block
 pub fn r#try(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    let catch_offset = instruction.token_i8() as i32;
-    let finally_offset = instruction.token_i8_1() as i32;
+    let operand = instruction.operand();
+    let catch_offset = i16::from_le_bytes([
+        *operand.first().unwrap_or(&0),
+        *operand.get(1).unwrap_or(&0),
+    ]) as i32;
+    let finally_offset =
+        i16::from_le_bytes([*operand.get(2).unwrap_or(&0), *operand.get(3).unwrap_or(&0)]) as i32;
     engine.execute_try(catch_offset, finally_offset)
 }
 
@@ -396,9 +403,19 @@ pub fn ret(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
             }
         }
 
+        let return_to_result_stack = engine.invocation_stack().is_empty();
         items.reverse();
-        for item in items {
-            engine.result_stack_mut().push(item);
+        if return_to_result_stack {
+            for item in items {
+                engine.result_stack_mut().push(item);
+            }
+        } else {
+            let caller = engine
+                .current_context_mut()
+                .ok_or_else(|| VmError::invalid_operation_msg("No caller context"))?;
+            for item in items {
+                caller.evaluation_stack_mut().push(item);
+            }
         }
     }
 

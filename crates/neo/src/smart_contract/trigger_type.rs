@@ -1,6 +1,7 @@
 //! Re-export TriggerType from the VM crate so trigger semantics stay aligned.
 
 use bitflags::bitflags;
+use std::str::FromStr;
 
 bitflags! {
     /// Represents the triggers for running smart contracts (matches C# TriggerType)
@@ -32,4 +33,20 @@ impl TriggerType {
     pub const Application: TriggerType = TriggerType::APPLICATION;
     pub const System: TriggerType = TriggerType::SYSTEM;
     pub const All: TriggerType = TriggerType::ALL;
+}
+
+impl FromStr for TriggerType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            s if s.eq_ignore_ascii_case("OnPersist") => Ok(TriggerType::ON_PERSIST),
+            s if s.eq_ignore_ascii_case("PostPersist") => Ok(TriggerType::POST_PERSIST),
+            s if s.eq_ignore_ascii_case("Verification") => Ok(TriggerType::VERIFICATION),
+            s if s.eq_ignore_ascii_case("Application") => Ok(TriggerType::APPLICATION),
+            s if s.eq_ignore_ascii_case("System") => Ok(TriggerType::SYSTEM),
+            s if s.eq_ignore_ascii_case("All") => Ok(TriggerType::ALL),
+            _ => Err(format!("unknown trigger type: {s}")),
+        }
+    }
 }

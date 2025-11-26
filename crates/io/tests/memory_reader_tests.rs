@@ -3,8 +3,7 @@
 //! This module contains tests that ensure MemoryReader functionality
 //! matches the C# Neo.IO.MemoryReader exactly.
 
-use neo_io::{IoResult, MemoryReader};
-use std::io::Write;
+use neo_io::MemoryReader;
 
 /// Test ReadFixedString functionality (matches C# TestReadFixedString)
 #[test]

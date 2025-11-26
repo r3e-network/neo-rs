@@ -4,11 +4,10 @@
 //! error conditions, and stack operations.
 
 use neo_vm::{
-    application_engine::ApplicationEngine, evaluation_stack::EvaluationStack,
-    execution_context::ExecutionContext, reference_counter::ReferenceCounter,
-    stack_item::StackItem, ExecutionEngine, OpCode, Script, TriggerType, VMState,
+    application_engine::ApplicationEngine, execution_context::ExecutionContext,
+    reference_counter::ReferenceCounter, script_builder::ScriptBuilder, ExecutionEngine, OpCode,
+    Script, TriggerType, VMState,
 };
-use std::sync::Arc;
 
 /// Test basic arithmetic operations
 #[test]
@@ -30,7 +29,7 @@ fn test_vm_arithmetic_operations() {
     let mut engine = ExecutionEngine::new(None);
 
     engine.load_script(script, -1, 0).unwrap();
-    let result = engine.execute();
+    engine.execute();
 
     assert_eq!(engine.state(), VMState::HALT, "VM should halt");
 
@@ -64,7 +63,7 @@ fn test_vm_stack_operations() {
     let mut engine = ExecutionEngine::new(None);
 
     engine.load_script(script, -1, 0).unwrap();
-    let result = engine.execute();
+    engine.execute();
 
     assert_eq!(engine.state(), VMState::HALT, "VM should halt");
 
@@ -75,12 +74,10 @@ fn test_vm_stack_operations() {
 #[test]
 fn test_vm_comparison_operations() {
     let script_bytes = vec![
-        // Test EQUAL
-        OpCode::PUSH5 as u8, // Push 5
-        OpCode::EQUAL as u8, // Should push 1 (true)
-        // Test NOT
-        OpCode::NOT as u8, // Should push 0 (false)
-        // Test NUMEQUAL with different values
+        OpCode::PUSH5 as u8,    // Push 5
+        OpCode::PUSH5 as u8,    // Push 5 again for comparison
+        OpCode::EQUAL as u8,    // Should push 1 (true)
+        OpCode::NOT as u8,      // Should push 0 (false)
         OpCode::PUSH3 as u8,    // Push 3
         OpCode::PUSH7 as u8,    // Push 7
         OpCode::NUMEQUAL as u8, // Should push 0 (false)
@@ -94,7 +91,7 @@ fn test_vm_comparison_operations() {
     let mut engine = ExecutionEngine::new(None);
 
     engine.load_script(script, -1, 0).unwrap();
-    let result = engine.execute();
+    engine.execute();
 
     assert_eq!(engine.state(), VMState::HALT, "VM should halt");
 
@@ -120,7 +117,7 @@ fn test_vm_jump_operations() {
     let mut engine = ExecutionEngine::new(None);
 
     engine.load_script(script, -1, 0).unwrap();
-    let result = engine.execute();
+    engine.execute();
 
     assert_eq!(engine.state(), VMState::HALT, "VM should halt");
 
@@ -156,7 +153,7 @@ fn test_vm_conditional_jumps() {
     let mut engine = ExecutionEngine::new(None);
 
     engine.load_script(script, -1, 0).unwrap();
-    let result = engine.execute();
+    engine.execute();
 
     assert_eq!(engine.state(), VMState::HALT, "VM should halt");
 
@@ -177,15 +174,11 @@ fn test_vm_conditional_jumps() {
 #[test]
 fn test_vm_array_operations() {
     let script_bytes = vec![
-        OpCode::NEWARRAY0 as u8, // Create empty array
-        OpCode::DUP as u8,       // Duplicate array reference
-        OpCode::PUSH1 as u8,     // Push value 1
-        OpCode::APPEND as u8,    // Append 1 to array
-        OpCode::DUP as u8,       // Duplicate array reference
-        OpCode::PUSH2 as u8,     // Push value 2
-        OpCode::APPEND as u8,    // Append 2 to array
-        OpCode::DUP as u8,       // Duplicate array reference
-        OpCode::SIZE as u8,      // Get array size (should be 2)
+        OpCode::PUSH1 as u8, // Push value 1
+        OpCode::PUSH2 as u8, // Push value 2
+        OpCode::PUSH2 as u8, // Count for PACK
+        OpCode::PACK as u8,  // Create array [1,2]
+        OpCode::SIZE as u8,  // Get array size (should be 2)
         OpCode::RET as u8,
     ];
 
@@ -193,7 +186,7 @@ fn test_vm_array_operations() {
     let mut engine = ExecutionEngine::new(None);
 
     engine.load_script(script, -1, 0).unwrap();
-    let result = engine.execute();
+    engine.execute();
 
     assert_eq!(engine.state(), VMState::HALT, "VM should halt");
 
@@ -260,7 +253,7 @@ fn test_vm_state_and_error_handling() {
     let mut engine = ExecutionEngine::new(None);
 
     engine.load_script(script, -1, 0).unwrap();
-    let result = engine.execute();
+    let _ = engine.execute();
 
     // Depending on implementation, this might fault or handle gracefully
     // The important thing is that it doesn't crash
@@ -296,7 +289,7 @@ fn test_vm_complex_operations() {
     let mut engine = ExecutionEngine::new(None);
 
     engine.load_script(script, -1, 0).unwrap();
-    let result = engine.execute();
+    engine.execute();
 
     assert_eq!(engine.state(), VMState::HALT, "VM should halt");
 
@@ -376,22 +369,19 @@ fn test_vm_performance_scaling() {
 #[test]
 fn test_vm_instruction_handling() {
     // Test various instruction types
-    let script_bytes = vec![
-        OpCode::NOP as u8,   // No operation
-        OpCode::PUSH1 as u8, // Push constant
-        OpCode::PUSHDATA1 as u8,
-        2,
-        0x12,
-        0x34,               // Push data with length
-        OpCode::DROP as u8, // Drop the pushed data
-        OpCode::RET as u8,  // Return
-    ];
-
-    let script = Script::new_relaxed(script_bytes);
+    let script = {
+        let mut builder = ScriptBuilder::new();
+        builder.emit_opcode(OpCode::NOP);
+        builder.emit_push_int(1);
+        builder.emit_push_byte_array(&[0x12, 0x34]);
+        builder.emit_opcode(OpCode::DROP);
+        builder.emit_opcode(OpCode::RET);
+        builder.to_script()
+    };
     let mut engine = ExecutionEngine::new(None);
 
     engine.load_script(script, -1, 0).unwrap();
-    let result = engine.execute();
+    engine.execute();
 
     assert_eq!(engine.state(), VMState::HALT, "VM should halt");
 

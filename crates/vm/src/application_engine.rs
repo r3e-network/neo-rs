@@ -75,11 +75,13 @@ impl ApplicationEngine {
         app.register_default_syscalls()
             .expect("default syscalls must register");
 
-        let host_ptr: *mut ApplicationEngine = &mut app;
-        app.engine
-            .set_interop_host(host_ptr as *mut dyn InteropHost);
-
         app
+    }
+
+    fn attach_host(&mut self) {
+        let host_ptr: *mut ApplicationEngine = self;
+        self.engine
+            .set_interop_host(host_ptr as *mut dyn InteropHost);
     }
 
     fn interop_service_mut(&mut self) -> &mut InteropService {
@@ -152,6 +154,8 @@ impl ApplicationEngine {
 
     /// Executes the supplied script and returns the resulting VM state.
     pub fn execute(&mut self, script: Script) -> VMState {
+        self.attach_host();
+
         let script_cost = script.len() as u64;
         if self.engine.load_script(script.clone(), -1, 0).is_err() {
             let _ = self.consume_gas(script_cost);
@@ -300,7 +304,9 @@ impl InteropHost for ApplicationEngine {
                 let context = engine
                     .current_context_mut()
                     .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-                context.evaluation_stack_mut().push(StackItem::Null);
+                context
+                    .evaluation_stack_mut()
+                    .push(StackItem::from_byte_string(vec![0u8; 20]));
                 let _ = self.consume_gas(1);
                 Ok(())
             }

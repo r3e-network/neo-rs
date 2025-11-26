@@ -156,7 +156,7 @@ fn ecdsa_cache_evicts_oldest_entries() {
 #[derive(Clone, Debug)]
 struct MockInventory {
     hash: Vec<u8>,
-    payload: &'static str,
+    _payload: &'static str,
 }
 
 impl InventoryHash<Vec<u8>> for MockInventory {
@@ -170,11 +170,11 @@ fn relay_cache_keys_on_inventory_hash() {
     let cache: RelayCache<Vec<u8>, MockInventory> = RelayCache::new(2);
     cache.add(MockInventory {
         hash: vec![1],
-        payload: "first",
+        _payload: "first",
     });
     cache.add(MockInventory {
         hash: vec![2],
-        payload: "second",
+        _payload: "second",
     });
 
     assert!(cache.contains_key(&vec![1]));
@@ -182,7 +182,7 @@ fn relay_cache_keys_on_inventory_hash() {
 
     cache.add(MockInventory {
         hash: vec![3],
-        payload: "third",
+        _payload: "third",
     });
 
     assert!(!cache.contains_key(&vec![1]));
