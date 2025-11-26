@@ -8,7 +8,7 @@ use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 
 #[cfg(test)]
 #[allow(dead_code)]
-mod serialization_tests {
+mod tests {
     use super::*;
 
     /// Test structure that implements Serializable (matches C# ISerializable pattern exactly)

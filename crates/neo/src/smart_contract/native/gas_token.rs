@@ -246,7 +246,7 @@ impl GasToken {
                 "Transfer".to_string(),
                 vec![from_item, to_item, amount_item],
             )
-            .map_err(|e| CoreError::native_contract(e))
+            .map_err(CoreError::native_contract)
     }
 
     /// Mints new GAS to the specified account.

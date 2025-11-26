@@ -67,8 +67,8 @@ mod tests {
         let true_bool = Boolean::new(true);
         let false_bool = Boolean::new(false);
 
-        assert_eq!(true_bool.value(), true);
-        assert_eq!(false_bool.value(), false);
+        assert!(true_bool.value());
+        assert!(!false_bool.value());
         assert_eq!(true_bool.stack_item_type(), StackItemType::Boolean);
         assert_eq!(false_bool.stack_item_type(), StackItemType::Boolean);
     }
@@ -96,7 +96,7 @@ mod tests {
         let true_bool = Boolean::true_value();
         let false_bool = Boolean::false_value();
 
-        assert_eq!(true_bool.value(), true);
-        assert_eq!(false_bool.value(), false);
+        assert!(true_bool.value());
+        assert!(!false_bool.value());
     }
 }

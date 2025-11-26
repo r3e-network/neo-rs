@@ -1,3 +1,4 @@
+#![allow(clippy::bool_comparison)]
 //! Integration tests for the Neo VM application engine.
 //! Converted from C# Neo VM unit tests to ensure 100% compatibility.
 
@@ -254,19 +255,19 @@ fn test_script_builder_emit_push() {
     let script = builder.to_script();
 
     // Test that script was built correctly
-    assert!(script.len() > 0);
+    assert!(!script.is_empty());
 
     // Test push boolean
     let mut builder2 = ScriptBuilder::new();
     builder2.emit_push_bool(true);
     let script2 = builder2.to_script();
-    assert!(script2.len() > 0);
+    assert!(!script2.is_empty());
 
     // Test push byte array
     let mut builder3 = ScriptBuilder::new();
     builder3.emit_push(&[1, 2, 3, 4]);
     let script3 = builder3.to_script();
-    assert!(script3.len() > 0);
+    assert!(!script3.is_empty());
 }
 
 /// Test converted from C# UT_Debugger.TestStepInto
@@ -512,7 +513,7 @@ fn test_division_operation_directly() {
     println!("Gas consumed: {}", engine.gas_consumed());
     println!("Result stack length: {}", engine.result_stack().len());
 
-    if engine.result_stack().len() > 0 {
+    if !engine.result_stack().is_empty() {
         let result = engine.result_stack().peek(0).unwrap();
         println!("Division result: {:?}", result);
     }
@@ -613,13 +614,13 @@ fn test_simple_arithmetic() {
             "Evaluation stack length: {}",
             context.evaluation_stack().len()
         );
-        if context.evaluation_stack().len() > 0 {
+        if !context.evaluation_stack().is_empty() {
             let eval_result = context.evaluation_stack().peek(0).unwrap();
             println!("Evaluation stack top: {:?}", eval_result);
         }
     }
 
-    if engine.result_stack().len() > 0 {
+    if !engine.result_stack().is_empty() {
         let result = engine.result_stack().peek(0).unwrap();
         println!("Addition result: {:?}", result);
     }
@@ -627,7 +628,7 @@ fn test_simple_arithmetic() {
     assert_eq!(state, VMState::HALT);
     assert_eq!(engine.result_stack().len(), 1);
 
-    if engine.result_stack().len() > 0 {
+    if !engine.result_stack().is_empty() {
         let result = engine.result_stack().peek(0).unwrap();
         let result_int = result.as_int().unwrap();
         assert_eq!(result_int, num_bigint::BigInt::from(5)); // 3 + 2 = 5

@@ -414,7 +414,7 @@ fn block_on<T>(future: impl Future<Output = T>) -> Result<T, anyhow::Error> {
             .enable_all()
             .build()
             .context("failed to build tokio runtime")?;
-        Ok(rt.block_on(async { future.await }))
+        Ok(rt.block_on(future))
     }
 }
 

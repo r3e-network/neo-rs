@@ -90,6 +90,7 @@ fn pack_flags(flags: &[bool]) -> Vec<u8> {
     bytes
 }
 
+#[allow(clippy::items_after_test_module)]
 #[cfg(test)]
 mod tests {
     use super::pad_flags;

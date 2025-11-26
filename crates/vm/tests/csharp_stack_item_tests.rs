@@ -1,3 +1,4 @@
+#![allow(clippy::mutable_key_type)]
 //! Comprehensive StackItem tests that exactly match C# Neo.VM.Tests/UT_StackItem.cs
 //!
 //! This file contains unit tests that ensure the Rust StackItem implementation

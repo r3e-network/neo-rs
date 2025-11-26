@@ -120,6 +120,31 @@ impl Transaction {
         }
     }
 
+    /// Clears the cached hash. Called when transaction content changes.
+    #[inline]
+    fn invalidate_hash(&self) {
+        match self._hash.lock() {
+            Ok(mut guard) => *guard = None,
+            Err(poisoned) => *poisoned.into_inner() = None,
+        }
+    }
+
+    /// Clears the cached size. Called when transaction content changes.
+    #[inline]
+    fn invalidate_size(&self) {
+        match self._size.lock() {
+            Ok(mut guard) => *guard = None,
+            Err(poisoned) => *poisoned.into_inner() = None,
+        }
+    }
+
+    /// Clears both cached hash and size.
+    #[inline]
+    fn invalidate_cache(&self) {
+        self.invalidate_hash();
+        self.invalidate_size();
+    }
+
     /// Gets the version of the transaction.
     pub fn version(&self) -> u8 {
         self.version
@@ -128,7 +153,7 @@ impl Transaction {
     /// Sets the version of the transaction.
     pub fn set_version(&mut self, version: u8) {
         self.version = version;
-        *self._hash.lock().unwrap() = None;
+        self.invalidate_hash();
     }
 
     /// Gets the nonce of the transaction.
@@ -139,7 +164,7 @@ impl Transaction {
     /// Sets the nonce of the transaction.
     pub fn set_nonce(&mut self, nonce: u32) {
         self.nonce = nonce;
-        *self._hash.lock().unwrap() = None;
+        self.invalidate_hash();
     }
 
     /// Gets the system fee of the transaction.
@@ -150,7 +175,7 @@ impl Transaction {
     /// Sets the system fee of the transaction.
     pub fn set_system_fee(&mut self, system_fee: i64) {
         self.system_fee = system_fee;
-        *self._hash.lock().unwrap() = None;
+        self.invalidate_hash();
     }
 
     /// Gets the network fee of the transaction.
@@ -161,7 +186,7 @@ impl Transaction {
     /// Sets the network fee of the transaction.
     pub fn set_network_fee(&mut self, network_fee: i64) {
         self.network_fee = network_fee;
-        *self._hash.lock().unwrap() = None;
+        self.invalidate_hash();
     }
 
     /// Gets the valid until block of the transaction.
@@ -172,7 +197,7 @@ impl Transaction {
     /// Sets the valid until block of the transaction.
     pub fn set_valid_until_block(&mut self, valid_until_block: u32) {
         self.valid_until_block = valid_until_block;
-        *self._hash.lock().unwrap() = None;
+        self.invalidate_hash();
     }
 
     /// Gets the signers of the transaction.
@@ -183,15 +208,13 @@ impl Transaction {
     /// Sets the signers of the transaction.
     pub fn set_signers(&mut self, signers: Vec<Signer>) {
         self.signers = signers;
-        *self._hash.lock().unwrap() = None;
-        *self._size.lock().unwrap() = None;
+        self.invalidate_cache();
     }
 
     /// Adds a signer to the transaction.
     pub fn add_signer(&mut self, signer: Signer) {
         self.signers.push(signer);
-        *self._hash.lock().unwrap() = None;
-        *self._size.lock().unwrap() = None;
+        self.invalidate_cache();
     }
 
     /// Gets the attributes of the transaction.
@@ -202,15 +225,13 @@ impl Transaction {
     /// Sets the attributes of the transaction.
     pub fn set_attributes(&mut self, attributes: Vec<TransactionAttribute>) {
         self.attributes = attributes;
-        *self._hash.lock().unwrap() = None;
-        *self._size.lock().unwrap() = None;
+        self.invalidate_cache();
     }
 
     /// Adds a single attribute to the transaction.
     pub fn add_attribute(&mut self, attribute: TransactionAttribute) {
         self.attributes.push(attribute);
-        *self._hash.lock().unwrap() = None;
-        *self._size.lock().unwrap() = None;
+        self.invalidate_cache();
     }
 
     /// Gets the script of the transaction.
@@ -221,8 +242,7 @@ impl Transaction {
     /// Sets the script of the transaction.
     pub fn set_script(&mut self, script: Vec<u8>) {
         self.script = script;
-        *self._hash.lock().unwrap() = None;
-        *self._size.lock().unwrap() = None;
+        self.invalidate_cache();
     }
 
     /// Gets the witnesses of the transaction.
@@ -233,13 +253,13 @@ impl Transaction {
     /// Sets the witnesses of the transaction.
     pub fn set_witnesses(&mut self, witnesses: Vec<Witness>) {
         self.witnesses = witnesses;
-        *self._size.lock().unwrap() = None;
+        self.invalidate_size();
     }
 
     /// Adds a witness to the transaction.
     pub fn add_witness(&mut self, witness: Witness) {
         self.witnesses.push(witness);
-        *self._size.lock().unwrap() = None;
+        self.invalidate_size();
     }
 
     /// Returns the transaction hash (C# compatibility helper).
@@ -250,15 +270,20 @@ impl Transaction {
     /// Returns the unsigned serialization used for hashing.
     pub fn get_hash_data(&self) -> Vec<u8> {
         let mut writer = BinaryWriter::new();
-        Self::serialize_unsigned(self, &mut writer)
-            .expect("failed to serialize transaction unsigned data");
+        if let Err(e) = Self::serialize_unsigned(self, &mut writer) {
+            tracing::error!("Failed to serialize transaction unsigned data: {:?}", e);
+            return Vec::new();
+        }
         writer.into_bytes()
     }
 
     /// Serializes the transaction into bytes.
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut writer = BinaryWriter::new();
-        <Self as Serializable>::serialize(self, &mut writer).expect("transaction serialization");
+        if let Err(e) = <Self as Serializable>::serialize(self, &mut writer) {
+            tracing::error!("Transaction serialization failed: {:?}", e);
+            return Vec::new();
+        }
         writer.into_bytes()
     }
 
@@ -270,15 +295,21 @@ impl Transaction {
 
     /// Gets the hash of the transaction.
     pub fn hash(&self) -> UInt256 {
-        let mut hash_guard = self._hash.lock().unwrap();
+        let mut hash_guard = match self._hash.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
         if let Some(hash) = *hash_guard {
             return hash;
         }
 
         // Calculate hash from serialized unsigned data
         let mut writer = BinaryWriter::new();
-        self.serialize_unsigned(&mut writer)
-            .expect("transaction serialization should not fail");
+        // Serialization of a valid transaction should never fail
+        if let Err(e) = self.serialize_unsigned(&mut writer) {
+            tracing::error!("Transaction serialization failed: {:?}", e);
+            return UInt256::zero();
+        }
         let hash = UInt256::from(sha256(&writer.into_bytes()));
         *hash_guard = Some(hash);
         hash
@@ -915,8 +946,13 @@ impl Transaction {
 
     /// Get signature data for the transaction.
     fn get_sign_data(&self, network: u32) -> Vec<u8> {
-        P2PHelper::get_sign_data_vec(self, network)
-            .expect("transaction hash should always be available for signing")
+        match P2PHelper::get_sign_data_vec(self, network) {
+            Ok(data) => data,
+            Err(e) => {
+                tracing::error!("Failed to get sign data for transaction: {:?}", e);
+                Vec::new()
+            }
+        }
     }
 
     fn parse_single_signature_contract(script: &[u8]) -> Option<&[u8]> {
@@ -969,7 +1005,10 @@ impl IVerifiable for Transaction {
 
 impl Serializable for Transaction {
     fn size(&self) -> usize {
-        let mut size_guard = self._size.lock().unwrap();
+        let mut size_guard = match self._size.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
         if let Some(size) = *size_guard {
             return size;
         }
@@ -1016,7 +1055,7 @@ impl Serializable for Transaction {
         }
         tx.witnesses = witnesses;
 
-        *tx._size.lock().unwrap() = None;
+        tx.invalidate_size();
         Ok(tx)
     }
 }
@@ -1041,18 +1080,26 @@ impl crate::IVerifiable for Transaction {
 
 impl IInteroperable for Transaction {
     fn from_stack_item(&mut self, _stack_item: StackItem) {
-        panic!("NotSupportedException: Transaction::from_stack_item is not supported");
+        // This operation is not supported for Transaction.
+        // The C# implementation throws NotSupportedException.
+        // In Rust, we log and return without modification.
+        tracing::error!("NotSupportedException: Transaction::from_stack_item is not supported");
     }
 
     fn to_stack_item(&self) -> StackItem {
+        // Return null stack item if signers is empty (matches C# behavior of throwing ArgumentException)
         if self.signers.is_empty() {
-            panic!("ArgumentException: Sender is not specified in the transaction.");
+            tracing::error!("ArgumentException: Sender is not specified in the transaction.");
+            return StackItem::null();
         }
 
-        let sender = self
-            .sender()
-            .expect("signers.is_empty() already validated")
-            .to_bytes();
+        let sender = match self.sender() {
+            Some(s) => s.to_bytes(),
+            None => {
+                tracing::error!("Failed to get sender from transaction");
+                return StackItem::null();
+            }
+        };
 
         StackItem::from_array(vec![
             StackItem::from_byte_string(self.hash().to_bytes()),

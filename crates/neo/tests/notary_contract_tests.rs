@@ -4,7 +4,6 @@
 
 use neo_core::smart_contract::native::notary::{Deposit, Notary};
 use neo_core::smart_contract::native::NativeContract;
-use neo_core::UInt160;
 use num_bigint::BigInt;
 
 /// Tests that Notary has correct contract ID (-10)
@@ -176,8 +175,8 @@ fn test_notary_id_constant() {
 /// Tests Deposit with large amount
 #[test]
 fn test_deposit_large_amount() {
-    // Test with maximum GAS amount (100 million GAS = 100_000_000_00000000 datoshi)
-    let large_amount = BigInt::from(100_000_000_00000000i64);
+    // Test with maximum GAS amount (100 million GAS = 10_000_000_000_000_000 datoshi)
+    let large_amount = BigInt::from(10_000_000_000_000_000_i64);
     let till = u32::MAX;
 
     let deposit = Deposit::new(large_amount.clone(), till);

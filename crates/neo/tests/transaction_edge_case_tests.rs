@@ -259,7 +259,7 @@ mod tests {
         // Test with multiple attributes
         tx.add_attribute(TransactionAttribute::high_priority());
         tx.add_attribute(TransactionAttribute::high_priority());
-        assert!(tx.attributes().len() >= 1);
+        assert!(!tx.attributes().is_empty());
     }
 
     /// Test witness verification edge cases (matches C# UT_Transaction.CheckNoItems)
@@ -455,7 +455,7 @@ mod tests {
         }
 
         // Should have some attributes (exact behavior depends on implementation)
-        assert!(tx.attributes().len() > 0);
+        assert!(!tx.attributes().is_empty());
     }
 
     /// Test witness count validation
@@ -715,11 +715,11 @@ mod tests {
         tx.add_attribute(TransactionAttribute::high_priority());
 
         // Check attributes exist
-        assert!(tx.attributes().len() > 0);
+        assert!(!tx.attributes().is_empty());
 
         // Verify attribute type
         match &tx.attributes()[0] {
-            TransactionAttribute::HighPriority => assert!(true),
+            TransactionAttribute::HighPriority => {}
             _ => panic!("Expected HighPriority attribute"),
         }
     }

@@ -700,14 +700,8 @@ mod tests {
         let true_item = StackItem::from_bool(true);
         let false_item = StackItem::from_bool(false);
 
-        assert_eq!(
-            true_item.as_bool().expect("Failed to convert to bool"),
-            true
-        );
-        assert_eq!(
-            false_item.as_bool().expect("Failed to convert to bool"),
-            false
-        );
+        assert!(true_item.as_bool().expect("Failed to convert to bool"));
+        assert!(!false_item.as_bool().expect("Failed to convert to bool"));
         assert_eq!(true_item.stack_item_type(), StackItemType::Boolean);
     }
 
@@ -716,11 +710,11 @@ mod tests {
         let int_item = StackItem::from_int(42);
 
         assert_eq!(int_item.as_int().unwrap(), BigInt::from(42));
-        assert_eq!(int_item.as_bool().expect("Failed to convert"), true);
+        assert!(int_item.as_bool().expect("Failed to convert"));
         assert_eq!(int_item.stack_item_type(), StackItemType::Integer);
 
         let zero_item = StackItem::from_int(0);
-        assert_eq!(zero_item.as_bool().expect("Failed to convert"), false);
+        assert!(!zero_item.as_bool().expect("Failed to convert"));
     }
 
     #[test]
@@ -729,11 +723,11 @@ mod tests {
         let byte_string = StackItem::from_byte_string(bytes.clone());
 
         assert_eq!(byte_string.as_bytes().unwrap(), bytes);
-        assert_eq!(byte_string.as_bool().expect("Failed to convert"), true);
+        assert!(byte_string.as_bool().expect("Failed to convert"));
         assert_eq!(byte_string.stack_item_type(), StackItemType::ByteString);
 
         let empty_bytes = StackItem::from_byte_string(Vec::<u8>::new());
-        assert_eq!(empty_bytes.as_bool().expect("Failed to convert"), false);
+        assert!(!empty_bytes.as_bool().expect("Failed to convert"));
     }
 
     #[test]
@@ -751,11 +745,11 @@ mod tests {
                 .len(),
             3
         );
-        assert_eq!(array.as_bool().expect("Failed to convert"), true);
+        assert!(array.as_bool().expect("Failed to convert"));
         assert_eq!(array.stack_item_type(), StackItemType::Array);
 
         let empty_array = StackItem::from_array(Vec::<StackItem>::new());
-        assert_eq!(empty_array.as_bool().expect("Failed to convert"), false);
+        assert!(!empty_array.as_bool().expect("Failed to convert"));
     }
 
     #[test]
@@ -796,7 +790,7 @@ mod tests {
         // Convert to boolean
         let bool_item = int_item.convert_to(StackItemType::Boolean).unwrap();
         assert_eq!(bool_item.stack_item_type(), StackItemType::Boolean);
-        assert_eq!(bool_item.as_bool().expect("Failed to convert"), true);
+        assert!(bool_item.as_bool().expect("Failed to convert"));
 
         let byte_string = int_item.convert_to(StackItemType::ByteString).unwrap();
         assert_eq!(byte_string.stack_item_type(), StackItemType::ByteString);

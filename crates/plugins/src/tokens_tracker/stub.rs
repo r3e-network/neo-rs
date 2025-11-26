@@ -28,6 +28,12 @@ impl TokensTrackerPlugin {
     }
 }
 
+impl Default for TokensTrackerPlugin {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[async_trait::async_trait]
 impl Plugin for TokensTrackerPlugin {
     fn info(&self) -> &PluginInfo {

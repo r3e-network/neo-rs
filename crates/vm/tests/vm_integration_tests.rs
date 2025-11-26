@@ -96,7 +96,7 @@ fn test_vm_comparison_operations() {
     assert_eq!(engine.state(), VMState::HALT, "VM should halt");
 
     let result_stack = engine.result_stack();
-    assert!(result_stack.len() >= 1, "Should have results on stack");
+    assert!(!result_stack.is_empty(), "Should have results on stack");
 
     println!("✅ VM comparison operations test passed");
 }
@@ -191,7 +191,7 @@ fn test_vm_array_operations() {
     assert_eq!(engine.state(), VMState::HALT, "VM should halt");
 
     let result_stack = engine.result_stack();
-    assert!(result_stack.len() >= 1, "Should have results");
+    assert!(!result_stack.is_empty(), "Should have results");
 
     // Check that size is 2
     let size = result_stack.peek(0).unwrap();

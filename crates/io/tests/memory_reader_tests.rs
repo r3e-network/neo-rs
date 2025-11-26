@@ -247,8 +247,8 @@ fn test_ensure_position_error() {
 fn test_read_boolean() {
     let data = vec![0x00, 0x01, 0x02];
     let mut reader = MemoryReader::new(&data);
-    assert_eq!(false, reader.read_boolean().unwrap());
-    assert_eq!(true, reader.read_boolean().unwrap());
+    assert!(!reader.read_boolean().unwrap());
+    assert!(reader.read_boolean().unwrap());
     assert!(reader.read_boolean().is_err()); // Invalid boolean value
 }
 

@@ -284,7 +284,7 @@ impl Helper {
     ///
     /// # Returns
     /// `true` if all witnesses verify successfully, `false` otherwise
-    pub fn verify_witnesses<V: IVerifiable + ?Sized>(
+    pub fn verify_witnesses<V: IVerifiable>(
         verifiable: &V,
         settings: &ProtocolSettings,
         snapshot: &DataCache,
@@ -344,7 +344,7 @@ impl Helper {
     ///
     /// # Returns
     /// `Ok(fee)` with consumed gas if verification succeeds, `Err` otherwise
-    pub fn verify_witness<V: IVerifiable + ?Sized>(
+    pub fn verify_witness<V: IVerifiable>(
         _verifiable: &V,
         settings: &ProtocolSettings,
         snapshot: &DataCache,

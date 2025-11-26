@@ -127,10 +127,10 @@ fn test_uint160_try_parse() {
 /// Test converted from C# TestOperatorLarger
 #[test]
 fn test_uint160_operator_larger() {
-    assert!(!(UInt160::zero() > UInt160::zero()));
+    assert!(UInt160::zero() <= UInt160::zero());
 
     let from_string = UInt160::parse("0x0000000000000000000000000000000000000000").unwrap();
-    assert!(!(UInt160::zero() > from_string));
+    assert!(UInt160::zero() <= from_string);
 }
 
 /// Test converted from C# TestOperatorLargerAndEqual
@@ -145,10 +145,10 @@ fn test_uint160_operator_larger_and_equal() {
 /// Test converted from C# TestOperatorSmaller
 #[test]
 fn test_uint160_operator_smaller() {
-    assert!(!(UInt160::zero() < UInt160::zero()));
+    assert!(UInt160::zero() >= UInt160::zero());
 
     let from_string = UInt160::parse("0x0000000000000000000000000000000000000000").unwrap();
-    assert!(!(UInt160::zero() < from_string));
+    assert!(UInt160::zero() >= from_string);
 }
 
 /// Test converted from C# TestOperatorSmallerAndEqual
@@ -251,9 +251,9 @@ fn test_uint256_equals() {
 /// Test UInt256 operators
 #[test]
 fn test_uint256_operators() {
-    assert!(!(UInt256::zero() > UInt256::zero()));
+    assert!(UInt256::zero() <= UInt256::zero());
     assert!(UInt256::zero() >= UInt256::zero());
-    assert!(!(UInt256::zero() < UInt256::zero()));
+    assert!(UInt256::zero() >= UInt256::zero());
     assert!(UInt256::zero() <= UInt256::zero());
 }
 

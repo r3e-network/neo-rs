@@ -20,7 +20,7 @@ fn test_execution_engine_limits() {
     };
 
     // Create an execution engine with custom limits
-    let _engine = ExecutionEngine::new_with_limits(None, Default::default(), limits.clone());
+    let _engine = ExecutionEngine::new_with_limits(None, Default::default(), limits);
 
     // Check that the limits were set correctly
     // Note: We can't directly access the limits field, so we'll test the behavior instead

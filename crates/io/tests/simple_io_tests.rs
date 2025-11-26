@@ -135,8 +135,8 @@ fn test_boolean() {
     let result = writer.to_bytes();
 
     let mut reader = MemoryReader::new(&result);
-    assert_eq!(true, reader.read_boolean().unwrap());
-    assert_eq!(false, reader.read_boolean().unwrap());
+    assert!(reader.read_boolean().unwrap());
+    assert!(!reader.read_boolean().unwrap());
 }
 
 /// Test position tracking

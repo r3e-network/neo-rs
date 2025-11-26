@@ -36,6 +36,12 @@ impl RocksDBStore {
     }
 }
 
+impl Default for RocksDBStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[async_trait]
 impl Plugin for RocksDBStore {
     fn info(&self) -> &PluginInfo {

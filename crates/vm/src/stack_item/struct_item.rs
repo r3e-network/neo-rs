@@ -502,10 +502,10 @@ mod tests {
     #[test]
     fn test_struct_to_boolean() {
         let empty_struct = Struct::new(Vec::new(), None);
-        assert_eq!(empty_struct.to_boolean(), false);
+        assert!(!empty_struct.to_boolean());
 
         let items = vec![StackItem::from_int(1)];
         let non_empty_struct = Struct::new(items, None);
-        assert_eq!(non_empty_struct.to_boolean(), true);
+        assert!(non_empty_struct.to_boolean());
     }
 }

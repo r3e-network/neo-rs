@@ -71,7 +71,7 @@ impl ContractClient {
 
         // Convert args to ContractParameter format and emit
         for arg in args.iter().rev() {
-            self.emit_argument(&mut sb, arg)?;
+            Self::emit_argument(&mut sb, arg)?;
         }
 
         // Emit operation and script hash
@@ -84,7 +84,6 @@ impl ContractClient {
 
     /// Helper to emit argument based on type
     fn emit_argument(
-        &self,
         sb: &mut ScriptBuilder,
         arg: &serde_json::Value,
     ) -> Result<(), Box<dyn std::error::Error>> {
@@ -114,7 +113,7 @@ impl ContractClient {
             }
             serde_json::Value::Array(arr) => {
                 for item in arr {
-                    self.emit_argument(sb, item)?;
+                    Self::emit_argument(sb, item)?;
                 }
                 sb.emit_push_int(arr.len() as i64);
                 sb.emit_pack();

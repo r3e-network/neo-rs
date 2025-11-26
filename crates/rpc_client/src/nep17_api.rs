@@ -77,7 +77,7 @@ impl Nep17Api {
 
         let stack_item = result.stack.first().ok_or("No result returned")?;
 
-        Ok(stack_item_to_string(stack_item)?)
+        stack_item_to_string(stack_item)
     }
 
     /// Get decimals of NEP17 token

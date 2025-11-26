@@ -265,7 +265,7 @@ impl SQLiteWallet {
 
         let version = keys
             .get("Version")
-            .and_then(Self::read_version)
+            .and_then(|v| Self::read_version(v.as_slice()))
             .unwrap_or_default();
 
         Ok(Self {
@@ -364,7 +364,7 @@ impl SQLiteWallet {
         Ok(decrypted.to_vec())
     }
 
-    fn read_version(bytes: &Vec<u8>) -> Option<Version> {
+    fn read_version(bytes: &[u8]) -> Option<Version> {
         if bytes.len() < 16 {
             return None;
         }

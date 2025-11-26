@@ -167,13 +167,13 @@ mod tests {
     #[test]
     fn test_byte_string_to_boolean() {
         let empty_byte_string = ByteString::new(vec![]);
-        assert_eq!(empty_byte_string.to_boolean(), false);
+        assert!(!empty_byte_string.to_boolean());
 
         let zero_byte_string = ByteString::new(vec![0, 0, 0]);
-        assert_eq!(zero_byte_string.to_boolean(), false);
+        assert!(!zero_byte_string.to_boolean());
 
         let nonzero_byte_string = ByteString::new(vec![0, 1, 0]);
-        assert_eq!(nonzero_byte_string.to_boolean(), true);
+        assert!(nonzero_byte_string.to_boolean());
     }
 
     #[test]

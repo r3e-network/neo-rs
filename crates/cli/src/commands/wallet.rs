@@ -169,8 +169,8 @@ impl WalletCommands {
         }
 
         let mut manager = WalletManager::default();
-        manager.register_factory(Box::new(SQLiteWalletFactory::default()));
-        manager.register_factory(Box::new(Nep6WalletFactory::default()));
+        manager.register_factory(Box::new(SQLiteWalletFactory));
+        manager.register_factory(Box::new(Nep6WalletFactory));
         let migrated = Handle::current().block_on(manager.migrate_wallet(
             path,
             new_path.to_str().unwrap_or_default(),
@@ -223,8 +223,8 @@ impl WalletCommands {
         }
 
         let mut manager = WalletManager::default();
-        manager.register_factory(Box::new(SQLiteWalletFactory::default()));
-        manager.register_factory(Box::new(Nep6WalletFactory::default()));
+        manager.register_factory(Box::new(SQLiteWalletFactory));
+        manager.register_factory(Box::new(Nep6WalletFactory));
         let migrated = Handle::current().block_on(manager.migrate_wallet(
             source,
             destination,

@@ -203,8 +203,7 @@ impl TransactionManager {
         {
             item.key_pairs.push(key);
         } else {
-            let mut key_pairs = Vec::new();
-            key_pairs.push(key);
+            let key_pairs = vec![key];
             self.sign_store.push(SignItem {
                 contract: contract.clone(),
                 key_pairs,

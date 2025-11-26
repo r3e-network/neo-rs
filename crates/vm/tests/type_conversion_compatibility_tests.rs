@@ -1,3 +1,4 @@
+#![allow(clippy::mutable_key_type, clippy::format_collect)]
 //! Type conversion compatibility tests
 //!
 //! Tests to verify the Rust VM's type conversion behavior matches the C# implementation exactly.

@@ -1850,11 +1850,13 @@ mod tests {
 
         // Persist two blocks (genesis index 0 and block index 1).
         let mut persist_block = |index: u32, nonce: u64| {
-            let mut header = crate::ledger::block_header::BlockHeader::default();
-            header.index = index;
-            header.timestamp = index as u64;
-            header.nonce = nonce;
-            header.witnesses = vec![Witness::new()];
+            let header = crate::ledger::block_header::BlockHeader {
+                index,
+                timestamp: index as u64,
+                nonce,
+                witnesses: vec![Witness::new()],
+                ..Default::default()
+            };
             let block = Block {
                 header: header.clone(),
                 transactions: Vec::new(),
@@ -2193,6 +2195,7 @@ mod tests {
     }
 
     struct TestWalletProvider {
+        #[allow(clippy::type_complexity)]
         receiver: Mutex<Option<mpsc::Receiver<Option<Arc<dyn Wallet>>>>>,
     }
 
@@ -2230,9 +2233,11 @@ mod tests {
         settings.seed_list.clear();
         let system = NeoSystem::new(settings, None, None).expect("system to start");
 
-        let mut config = ChannelsConfig::default();
-        config.min_desired_connections = 0;
-        config.max_connections = 0;
+        let config = ChannelsConfig {
+            min_desired_connections: 0,
+            max_connections: 0,
+            ..Default::default()
+        };
 
         system.start_node(config).expect("start local node");
         sleep(Duration::from_millis(50)).await;

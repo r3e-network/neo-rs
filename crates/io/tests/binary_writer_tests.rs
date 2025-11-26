@@ -7,7 +7,7 @@ use neo_io::{BinaryWriter, MemoryReader};
 
 #[cfg(test)]
 #[allow(dead_code)]
-mod binary_writer_tests {
+mod tests {
     use super::*;
     /// Test writing basic integer types (matches C# BinaryWriter.Write(int) exactly)
     #[test]
@@ -203,7 +203,7 @@ mod binary_writer_tests {
 
         assert_eq!(int_val, 12345);
         assert_eq!(string_val, "Hello Neo");
-        assert_eq!(bool_val, true);
+        assert!(bool_val);
         // assert!((float_val - 3.14159).abs() < f64::EPSILON);
     }
 

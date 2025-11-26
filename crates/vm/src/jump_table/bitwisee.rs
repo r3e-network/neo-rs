@@ -264,7 +264,7 @@ mod tests {
             .evaluation_stack_mut()
             .pop()
             .expect("stack pop failed");
-        assert_eq!(result.as_bool().expect("Expected boolean"), false);
+        assert!(!result.as_bool().expect("Expected boolean"));
     }
 
     #[test]
@@ -314,7 +314,7 @@ mod tests {
             .evaluation_stack_mut()
             .pop()
             .expect("stack pop failed");
-        assert_eq!(result.as_bool().expect("Expected boolean"), false);
+        assert!(!result.as_bool().expect("Expected boolean"));
     }
 
     #[test]
@@ -364,7 +364,7 @@ mod tests {
             .evaluation_stack_mut()
             .pop()
             .expect("stack pop failed");
-        assert_eq!(result.as_bool().expect("Expected boolean"), true);
+        assert!(result.as_bool().expect("Expected boolean"));
     }
 
     #[test]
@@ -411,7 +411,7 @@ mod tests {
             .evaluation_stack_mut()
             .pop()
             .expect("stack pop failed");
-        assert_eq!(result.as_bool().expect("Expected boolean"), true);
+        assert!(result.as_bool().expect("Expected boolean"));
     }
 
     #[test]
@@ -438,7 +438,7 @@ mod tests {
             .evaluation_stack_mut()
             .pop()
             .expect("stack pop failed");
-        assert_eq!(result.as_bool().expect("Expected boolean"), true);
+        assert!(result.as_bool().expect("Expected boolean"));
 
         // Test unequal integers
         engine
@@ -458,7 +458,7 @@ mod tests {
             .evaluation_stack_mut()
             .pop()
             .expect("stack pop failed");
-        assert_eq!(result.as_bool().expect("Expected boolean"), false);
+        assert!(!result.as_bool().expect("Expected boolean"));
     }
 
     #[test]
@@ -485,7 +485,7 @@ mod tests {
             .evaluation_stack_mut()
             .pop()
             .expect("stack pop failed");
-        assert_eq!(result.as_bool().expect("Expected boolean"), false);
+        assert!(!result.as_bool().expect("Expected boolean"));
 
         // Test unequal integers
         engine
@@ -505,6 +505,6 @@ mod tests {
             .evaluation_stack_mut()
             .pop()
             .expect("stack pop failed");
-        assert_eq!(result.as_bool().expect("Expected boolean"), true);
+        assert!(result.as_bool().expect("Expected boolean"));
     }
 }

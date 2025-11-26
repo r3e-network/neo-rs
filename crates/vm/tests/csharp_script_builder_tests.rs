@@ -385,7 +385,7 @@ fn expected_jump_sequence(opcode: OpCode, offset_i8: i32, offset_i32: i32) -> Ve
         result.extend_from_slice(&offset_i32.to_le_bytes());
     } else {
         result.push(code);
-        result.extend_from_slice(&(offset_i8 as i32).to_le_bytes());
+        result.extend_from_slice(&offset_i8.to_le_bytes());
         result.push(code);
         result.extend_from_slice(&offset_i32.to_le_bytes());
     }

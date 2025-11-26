@@ -397,7 +397,7 @@ impl ECPoint {
     fn ordering_components(&self) -> (&[u8], &[u8]) {
         match self.encoded.as_slice() {
             // Compressed form: [0x02 | 0x03][X:32]
-            [0x02 | 0x03, rest @ ..] if rest.len() == 32 => (&rest[..], &self.encoded[0..1]),
+            [0x02 | 0x03, rest @ ..] if rest.len() == 32 => (rest, &self.encoded[0..1]),
             // Uncompressed form: [0x04][X:32][Y:32]
             [0x04, rest @ ..] if rest.len() == 64 => (&rest[..32], &rest[32..]),
             // Fallback to full encoding for unexpected shapes to keep ordering stable

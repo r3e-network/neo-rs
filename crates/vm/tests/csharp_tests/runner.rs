@@ -1,3 +1,4 @@
+#![allow(clippy::comparison_chain)]
 //! JSON Test Runner for C# Neo VM Tests
 //!
 //! This module contains the JsonTestRunner implementation that executes
@@ -327,8 +328,7 @@ impl JsonTestRunner {
         while i < script.len() {
             let opcode_str = &script[i];
 
-            if opcode_str.starts_with("0x") {
-                let hex_str = &opcode_str[2..];
+            if let Some(hex_str) = opcode_str.strip_prefix("0x") {
                 if hex_str.len() % 2 != 0 {
                     return Err(format!("Invalid hex string: {}", opcode_str).into());
                 }

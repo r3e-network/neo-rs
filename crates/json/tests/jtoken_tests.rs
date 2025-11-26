@@ -58,9 +58,9 @@ fn test_object_behaviour() {
 
     if let JToken::Object(obj) = token {
         assert_eq!(obj.len(), 3);
-        assert_eq!(obj.get(&"flag".to_string()), Some(&JToken::Boolean(true)));
-        assert_eq!(obj.get(&"missing".to_string()), None);
-        assert_eq!(obj.get(&"other".to_string()), None);
+        assert_eq!(obj.get("flag"), Some(&JToken::Boolean(true)));
+        assert_eq!(obj.get("missing"), None);
+        assert_eq!(obj.get("other"), None);
     } else {
         panic!("expected object");
     }

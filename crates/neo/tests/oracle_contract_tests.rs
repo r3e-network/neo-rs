@@ -52,9 +52,11 @@ fn setup_engine(snapshot: Arc<DataCache>, block: Block) -> ApplicationEngine {
 #[test]
 fn oracle_post_persist_mints_gas_for_designated_nodes() {
     let snapshot = Arc::new(DataCache::new(false));
-    let mut header = BlockHeader::default();
-    header.index = 7;
-    header.timestamp = 1_700_000_000;
+    let header = BlockHeader {
+        index: 7,
+        timestamp: 1_700_000_000,
+        ..Default::default()
+    };
 
     let mut tx = Transaction::new();
     tx.set_attributes(vec![TransactionAttribute::OracleResponse(OracleResponse {

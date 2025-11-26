@@ -7,7 +7,7 @@ use neo_extensions::encoding::*;
 
 #[cfg(test)]
 #[allow(dead_code)]
-mod encoding_tests {
+mod tests {
     use super::*;
 
     /// Test hex encoding compatibility

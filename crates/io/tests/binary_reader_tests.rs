@@ -7,7 +7,7 @@ use neo_io::MemoryReader;
 
 #[cfg(test)]
 #[allow(dead_code)]
-mod binary_reader_tests {
+mod tests {
     use super::*;
 
     /// Test reading basic integer types (matches C# BinaryReader.ReadInt32 exactly)

@@ -61,7 +61,7 @@ fn gas_token_mint_burn_and_transfer_update_balances() {
     let account_b = sample_account(0xBB);
     let amount = BigInt::from(1_000_000);
 
-    let mut engine = make_engine(context_engine_snapshot, account_a.clone());
+    let mut engine = make_engine(context_engine_snapshot, account_a);
     engine.set_current_script_hash(Some(gas.hash()));
 
     gas.mint(&mut engine, &account_a, &amount, false)

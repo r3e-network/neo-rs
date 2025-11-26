@@ -79,9 +79,9 @@ mod tests {
         let nonzero = Integer::new(42);
         let negative = Integer::new(-1);
 
-        assert_eq!(zero.to_boolean(), false);
-        assert_eq!(nonzero.to_boolean(), true);
-        assert_eq!(negative.to_boolean(), true);
+        assert!(!zero.to_boolean());
+        assert!(nonzero.to_boolean());
+        assert!(negative.to_boolean());
     }
 
     #[test]
@@ -101,7 +101,7 @@ mod tests {
         // Test negative number
         let negative = Integer::new(-1);
         let bytes = negative.to_bytes();
-        assert!(bytes.len() > 0);
+        assert!(!bytes.is_empty());
         assert_eq!(bytes[bytes.len() - 1] & 0x80, 0x80); // Check sign bit
     }
 

@@ -161,33 +161,6 @@ impl ContractState {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::smart_contract::manifest::ContractManifest;
-
-    #[test]
-    fn contract_state_roundtrip_matches_signed_id() {
-        let nef = NefFile::new("compiler".to_string(), vec![1, 2, 3]);
-        let manifest = ContractManifest::new("test".to_string());
-        let state = ContractState::new(-1, UInt160::zero(), nef.clone(), manifest.clone());
-
-        let mut writer = BinaryWriter::new();
-        state.serialize(&mut writer).expect("serialize");
-        let bytes = writer.into_bytes();
-
-        let mut reader = MemoryReader::new(&bytes);
-        let parsed = ContractState::deserialize(&mut reader).expect("deserialize");
-
-        assert_eq!(parsed.id, state.id);
-        assert_eq!(parsed.update_counter, state.update_counter);
-        assert_eq!(parsed.hash, state.hash);
-        assert_eq!(parsed.nef.script, nef.script);
-        assert_eq!(parsed.manifest.name, manifest.name);
-        assert_eq!(bytes.len(), state.size());
-    }
-}
-
 impl NefFile {
     /// Creates a new NEF file.
     pub fn new(compiler: String, script: Vec<u8>) -> Self {
@@ -391,5 +364,32 @@ impl Serializable for MethodToken {
             has_return_value,
             call_flags,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::smart_contract::manifest::ContractManifest;
+
+    #[test]
+    fn contract_state_roundtrip_matches_signed_id() {
+        let nef = NefFile::new("compiler".to_string(), vec![1, 2, 3]);
+        let manifest = ContractManifest::new("test".to_string());
+        let state = ContractState::new(-1, UInt160::zero(), nef.clone(), manifest.clone());
+
+        let mut writer = BinaryWriter::new();
+        state.serialize(&mut writer).expect("serialize");
+        let bytes = writer.into_bytes();
+
+        let mut reader = MemoryReader::new(&bytes);
+        let parsed = ContractState::deserialize(&mut reader).expect("deserialize");
+
+        assert_eq!(parsed.id, state.id);
+        assert_eq!(parsed.update_counter, state.update_counter);
+        assert_eq!(parsed.hash, state.hash);
+        assert_eq!(parsed.nef.script, nef.script);
+        assert_eq!(parsed.manifest.name, manifest.name);
+        assert_eq!(bytes.len(), state.size());
     }
 }

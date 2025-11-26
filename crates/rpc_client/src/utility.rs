@@ -342,7 +342,7 @@ mod tests {
         obj.insert("value".to_string(), JToken::Boolean(true));
 
         let item = Utility::stack_item_from_json(&obj).expect("stack item");
-        assert_eq!(item.as_bool().unwrap(), true);
+        assert!(item.as_bool().unwrap());
     }
 
     #[test]
@@ -606,6 +606,7 @@ mod tests {
         map_obj.insert("value".to_string(), JToken::Array(map_array));
 
         let item_map = Utility::stack_item_from_json(&map_obj).unwrap();
+        #[allow(clippy::mutable_key_type)]
         let map = item_map.as_map().unwrap();
         assert_eq!(map.len(), 1);
     }

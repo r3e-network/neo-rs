@@ -102,7 +102,7 @@ impl<'a> SnapshotIterator<'a> {
     }
 }
 
-impl<'a> Iterator for SnapshotIterator<'a> {
+impl Iterator for SnapshotIterator<'_> {
     type Item = (Vec<u8>, Vec<u8>);
 
     fn next(&mut self) -> Option<Self::Item> {

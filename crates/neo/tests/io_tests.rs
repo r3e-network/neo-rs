@@ -377,7 +377,7 @@ fn test_binary_reader_read_var_int() {
     assert_eq!(0xFFFF_FFFF, reader.read_var_int(0xFFFF_FFFF).unwrap());
 
     let mut writer = BinaryWriter::new();
-    writer.write_var_int(0xFFFF_FFFF_FF).unwrap();
+    writer.write_var_int(0x00FF_FFFF_FFFF).unwrap();
     let data = writer.to_bytes();
     let mut reader = Cursor::new(data);
     assert!(reader.read_var_int(0xFFFF_FFFF).is_err());

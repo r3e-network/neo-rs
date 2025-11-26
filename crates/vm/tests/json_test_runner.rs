@@ -65,6 +65,12 @@ pub struct JsonTestRunner {
     engine: ExecutionEngine,
 }
 
+impl Default for JsonTestRunner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl JsonTestRunner {
     /// Create a new JSON test runner
     pub fn new() -> Self {

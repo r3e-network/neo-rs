@@ -492,12 +492,12 @@ mod tests {
     fn test_map_to_boolean() {
         // Test empty map
         let empty_map = Map::new(BTreeMap::new(), None);
-        assert_eq!(empty_map.to_boolean(), false);
+        assert!(!empty_map.to_boolean());
 
         // Test non-empty map
         let mut items = BTreeMap::new();
         items.insert(StackItem::from_int(1), StackItem::from_int(10));
         let non_empty_map = Map::new(items, None);
-        assert_eq!(non_empty_map.to_boolean(), true);
+        assert!(non_empty_map.to_boolean());
     }
 }

@@ -137,13 +137,31 @@ impl DataCache {
     }
 
     /// Adds a handler for read events.
+    ///
+    /// # Panics
+    /// This function will log a warning and return early if the lock is poisoned.
     pub fn on_read(&self, handler: OnEntryDelegate) {
-        self.on_read.write().unwrap().push(handler);
+        match self.on_read.write() {
+            Ok(mut guard) => guard.push(handler),
+            Err(poisoned) => {
+                warn!("on_read lock poisoned, recovering");
+                poisoned.into_inner().push(handler);
+            }
+        }
     }
 
     /// Adds a handler for update events.
+    ///
+    /// # Panics
+    /// This function will log a warning and return early if the lock is poisoned.
     pub fn on_update(&self, handler: OnEntryDelegate) {
-        self.on_update.write().unwrap().push(handler);
+        match self.on_update.write() {
+            Ok(mut guard) => guard.push(handler),
+            Err(poisoned) => {
+                warn!("on_update lock poisoned, recovering");
+                poisoned.into_inner().push(handler);
+            }
+        }
     }
 
     /// Creates a deep copy of this cache, including tracked entries and change set state.
@@ -155,8 +173,20 @@ impl DataCache {
         );
 
         {
-            let source = self.dictionary.read().unwrap();
-            let mut target = clone.dictionary.write().unwrap();
+            let source = match self.dictionary.read() {
+                Ok(guard) => guard,
+                Err(poisoned) => {
+                    warn!("clone_cache: dictionary read lock poisoned, recovering");
+                    poisoned.into_inner()
+                }
+            };
+            let mut target = match clone.dictionary.write() {
+                Ok(guard) => guard,
+                Err(poisoned) => {
+                    warn!("clone_cache: dictionary write lock poisoned, recovering");
+                    poisoned.into_inner()
+                }
+            };
             for (key, trackable) in source.iter() {
                 target.insert(key.clone(), trackable.clone());
             }
@@ -164,8 +194,21 @@ impl DataCache {
 
         if !self.is_read_only() {
             if let (Some(source), Some(target)) = (&self.change_set, &clone.change_set) {
-                let mut target_guard = target.write().unwrap();
-                for key in source.read().unwrap().iter() {
+                let mut target_guard = match target.write() {
+                    Ok(guard) => guard,
+                    Err(poisoned) => {
+                        warn!("clone_cache: change_set write lock poisoned, recovering");
+                        poisoned.into_inner()
+                    }
+                };
+                let source_guard = match source.read() {
+                    Ok(guard) => guard,
+                    Err(poisoned) => {
+                        warn!("clone_cache: change_set read lock poisoned, recovering");
+                        poisoned.into_inner()
+                    }
+                };
+                for key in source_guard.iter() {
                     target_guard.insert(key.clone());
                 }
             }
@@ -188,22 +231,42 @@ impl DataCache {
 
     /// Gets an item from the cache.
     pub fn get(&self, key: &StorageKey) -> Option<StorageItem> {
-        if let Some(trackable) = self.dictionary.read().unwrap().get(key) {
+        let dict_guard = match self.dictionary.read() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                warn!("get: dictionary read lock poisoned, recovering");
+                poisoned.into_inner()
+            }
+        };
+        if let Some(trackable) = dict_guard.get(key) {
             if trackable.state != TrackState::Deleted && trackable.state != TrackState::NotFound {
                 return Some(trackable.item.clone());
             }
             return None;
         }
+        drop(dict_guard);
 
         if let Some(getter) = &self.store_get {
             if let Some(item) = getter(key) {
                 {
-                    let mut dict = self.dictionary.write().unwrap();
+                    let mut dict = match self.dictionary.write() {
+                        Ok(guard) => guard,
+                        Err(poisoned) => {
+                            warn!("get: dictionary write lock poisoned, recovering");
+                            poisoned.into_inner()
+                        }
+                    };
                     dict.entry(key.clone())
                         .or_insert_with(|| Trackable::new(item.clone(), TrackState::None));
                 }
 
-                let handlers = self.on_read.read().unwrap();
+                let handlers = match self.on_read.read() {
+                    Ok(guard) => guard,
+                    Err(poisoned) => {
+                        warn!("get: on_read lock poisoned, recovering");
+                        poisoned.into_inner()
+                    }
+                };
                 for handler in handlers.iter() {
                     handler(self, key, &item);
                 }
@@ -222,7 +285,13 @@ impl DataCache {
             return;
         }
         self.apply_add(&key, value.clone());
-        let handlers = self.on_update.read().unwrap();
+        let handlers = match self.on_update.read() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                warn!("add: on_update lock poisoned, recovering");
+                poisoned.into_inner()
+            }
+        };
         for handler in handlers.iter() {
             handler(self, &key, &value);
         }
@@ -237,7 +306,13 @@ impl DataCache {
         self.apply_update(&key, value.clone());
 
         // Trigger update event
-        let handlers = self.on_update.read().unwrap();
+        let handlers = match self.on_update.read() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                warn!("update: on_update lock poisoned, recovering");
+                poisoned.into_inner()
+            }
+        };
         for handler in handlers.iter() {
             handler(self, &key, &value);
         }
@@ -264,25 +339,46 @@ impl DataCache {
         // In a real implementation, this would write to the underlying storage
         // For now, we just clear the change set
         if let Some(ref change_set) = self.change_set {
-            change_set.write().unwrap().clear();
+            match change_set.write() {
+                Ok(mut guard) => guard.clear(),
+                Err(poisoned) => {
+                    warn!("commit: change_set lock poisoned, recovering");
+                    poisoned.into_inner().clear();
+                }
+            }
         }
     }
 
     fn apply_add(&self, key: &StorageKey, value: StorageItem) -> bool {
         let trackable = Trackable::new(value, TrackState::Added);
-        self.dictionary
-            .write()
-            .unwrap()
-            .insert(key.clone(), trackable);
+        match self.dictionary.write() {
+            Ok(mut guard) => guard.insert(key.clone(), trackable),
+            Err(poisoned) => {
+                warn!("apply_add: dictionary lock poisoned, recovering");
+                poisoned.into_inner().insert(key.clone(), trackable)
+            }
+        };
 
         if let Some(ref change_set) = self.change_set {
-            change_set.write().unwrap().insert(key.clone());
+            match change_set.write() {
+                Ok(mut guard) => guard.insert(key.clone()),
+                Err(poisoned) => {
+                    warn!("apply_add: change_set lock poisoned, recovering");
+                    poisoned.into_inner().insert(key.clone())
+                }
+            };
         }
         true
     }
 
     fn apply_update(&self, key: &StorageKey, value: StorageItem) {
-        let mut dict = self.dictionary.write().unwrap();
+        let mut dict = match self.dictionary.write() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                warn!("apply_update: dictionary lock poisoned, recovering");
+                poisoned.into_inner()
+            }
+        };
         if let Some(trackable) = dict.get_mut(key) {
             trackable.item = value.clone();
             if trackable.state == TrackState::None {
@@ -296,12 +392,24 @@ impl DataCache {
         }
 
         if let Some(ref change_set) = self.change_set {
-            change_set.write().unwrap().insert(key.clone());
+            match change_set.write() {
+                Ok(mut guard) => guard.insert(key.clone()),
+                Err(poisoned) => {
+                    warn!("apply_update: change_set lock poisoned, recovering");
+                    poisoned.into_inner().insert(key.clone())
+                }
+            };
         }
     }
 
     fn apply_delete(&self, key: &StorageKey) {
-        let mut dict = self.dictionary.write().unwrap();
+        let mut dict = match self.dictionary.write() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                warn!("apply_delete: dictionary lock poisoned, recovering");
+                poisoned.into_inner()
+            }
+        };
         if let Some(trackable) = dict.get_mut(key) {
             trackable.state = TrackState::Deleted;
         } else {
@@ -312,14 +420,26 @@ impl DataCache {
         }
 
         if let Some(ref change_set) = self.change_set {
-            change_set.write().unwrap().insert(key.clone());
+            match change_set.write() {
+                Ok(mut guard) => guard.insert(key.clone()),
+                Err(poisoned) => {
+                    warn!("apply_delete: change_set lock poisoned, recovering");
+                    poisoned.into_inner().insert(key.clone())
+                }
+            };
         }
     }
 
     /// Gets the change set.
     pub fn get_change_set(&self) -> Vec<StorageKey> {
         if let Some(ref change_set) = self.change_set {
-            change_set.read().unwrap().iter().cloned().collect()
+            match change_set.read() {
+                Ok(guard) => guard.iter().cloned().collect(),
+                Err(poisoned) => {
+                    warn!("get_change_set: change_set lock poisoned, recovering");
+                    poisoned.into_inner().iter().cloned().collect()
+                }
+            }
         } else {
             Vec::new()
         }
@@ -328,9 +448,21 @@ impl DataCache {
     /// Returns a snapshot of all tracked entries, typically used when
     /// propagating changes into an underlying store.
     pub fn tracked_items(&self) -> Vec<(StorageKey, Trackable)> {
-        let dict = self.dictionary.read().unwrap();
+        let dict = match self.dictionary.read() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                warn!("tracked_items: dictionary lock poisoned, recovering");
+                poisoned.into_inner()
+            }
+        };
         if let Some(change_set) = &self.change_set {
-            let keys: Vec<_> = change_set.read().unwrap().iter().cloned().collect();
+            let keys: Vec<_> = match change_set.read() {
+                Ok(guard) => guard.iter().cloned().collect(),
+                Err(poisoned) => {
+                    warn!("tracked_items: change_set lock poisoned, recovering");
+                    poisoned.into_inner().iter().cloned().collect()
+                }
+            };
             keys.into_iter()
                 .filter_map(|key| dict.get(&key).cloned().map(|track| (key, track)))
                 .collect()
@@ -344,6 +476,7 @@ impl DataCache {
 
 impl IReadOnlyStore for DataCache {}
 
+#[allow(clippy::items_after_test_module)]
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -434,7 +567,14 @@ impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for DataCache {
     ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
         let mut combined: HashMap<StorageKey, StorageItem> = HashMap::new();
 
-        for (key, trackable) in self.dictionary.read().unwrap().iter() {
+        let dict_guard = match self.dictionary.read() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                warn!("find: dictionary lock poisoned, recovering");
+                poisoned.into_inner()
+            }
+        };
+        for (key, trackable) in dict_guard.iter() {
             if trackable.state == TrackState::Deleted || trackable.state == TrackState::NotFound {
                 continue;
             }
@@ -449,6 +589,7 @@ impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for DataCache {
                 .entry(key.clone())
                 .or_insert_with(|| trackable.item.clone());
         }
+        drop(dict_guard);
 
         if let Some(finder) = &self.store_find {
             for (key, value) in finder(key_prefix, SeekDirection::Forward) {

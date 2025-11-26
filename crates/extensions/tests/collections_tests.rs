@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 
 #[cfg(test)]
 #[allow(dead_code)]
-mod collections_tests {
+mod tests {
     use super::*;
 
     /// Test Vec extensions compatibility (matches C# IEnumerable extensions exactly)
@@ -73,7 +73,7 @@ mod collections_tests {
         assert_eq!(vec.argmin(), Some(1)); // Index of first 1
 
         // Test with floats
-        let float_vec = vec![3.14, 2.71, 1.41, 4.47, 2.23];
+        let float_vec = vec![3.15, 2.71, 1.41, 4.47, 2.23];
         assert_eq!(float_vec.argmax(), Some(3)); // Index of 4.47
         assert_eq!(float_vec.argmin(), Some(2)); // Index of 1.41
 

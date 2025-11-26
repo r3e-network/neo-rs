@@ -1,3 +1,4 @@
+#![allow(clippy::upper_case_acronyms)]
 //! Common data structures and utilities for C# JSON tests
 //!
 //! This module contains the shared data structures used for deserializing

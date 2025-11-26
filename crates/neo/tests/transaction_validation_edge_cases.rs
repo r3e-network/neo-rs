@@ -23,6 +23,12 @@ pub struct MockTransactionVerificationContext {
     total_system_fees: HashMap<UInt160, i64>,
 }
 
+impl Default for MockTransactionVerificationContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MockTransactionVerificationContext {
     pub fn new() -> Self {
         Self {
@@ -296,7 +302,6 @@ mod tests {
             }
             Err(_) => {
                 // If rejected during deserialization, that's also correct
-                assert!(true);
             }
         }
     }
@@ -330,10 +335,10 @@ mod tests {
         let result = Transaction::from_bytes(&serialized);
 
         // Should either succeed or fail gracefully
-        match result {
-            Ok(deserialized) => assert_eq!(deserialized.signers().len(), 16),
-            Err(_) => assert!(true), // Acceptable if implementation rejects many signers
+        if let Ok(deserialized) = result {
+            assert_eq!(deserialized.signers().len(), 16);
         }
+        // Err is acceptable if implementation rejects many signers
     }
 
     /// Test witness scope validation (matches various C# scope tests)

@@ -154,11 +154,11 @@ fn test_debugger_step_over() {
         let context = engine.current_context_mut().unwrap();
 
         let operand_bytes = instruction.operand();
-        if let Some(offset) = operand_bytes.get(0) {
+        if let Some(offset) = operand_bytes.first() {
             let offset = *offset as i8 as isize;
             // Calculate the call target relative to the current instruction pointer
             if let Some(call_target) = context.instruction_pointer().checked_add_signed(offset) {
-                let new_context = context.clone_with_position(call_target as usize);
+                let new_context = context.clone_with_position(call_target);
                 engine.load_context(new_context)?;
                 engine.is_jumping = true;
             }
@@ -241,10 +241,10 @@ fn test_debugger_step_out() {
         let context = engine.current_context_mut().unwrap();
 
         let operand_bytes = instruction.operand();
-        if let Some(offset) = operand_bytes.get(0) {
+        if let Some(offset) = operand_bytes.first() {
             let offset = *offset as i8 as isize;
             if let Some(call_target) = context.instruction_pointer().checked_add_signed(offset) {
-                let new_context = context.clone_with_position(call_target as usize);
+                let new_context = context.clone_with_position(call_target);
                 engine.load_context(new_context)?;
                 engine.is_jumping = true;
             }

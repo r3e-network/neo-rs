@@ -131,7 +131,7 @@ pub fn execute_and_verify(script_bytes: Vec<u8>, expected: &ExpectedExecutionRes
         // Compare each stack item using peek instead of iter
         for (i, expected_item) in expected.result_stack.iter().enumerate() {
             if let Ok(actual_item) = result_stack.peek(i) {
-                if !expected_item.matches(&actual_item) {
+                if !expected_item.matches(actual_item) {
                     println!("Stack item mismatch at position {}", i);
                     return false;
                 }

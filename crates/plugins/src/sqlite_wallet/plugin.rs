@@ -31,6 +31,12 @@ impl SqliteWalletPlugin {
     }
 }
 
+impl Default for SqliteWalletPlugin {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[async_trait]
 impl Plugin for SqliteWalletPlugin {
     fn info(&self) -> &PluginInfo {

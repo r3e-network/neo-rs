@@ -114,7 +114,7 @@ impl<'a> StoreIterator<'a> {
     }
 }
 
-impl<'a> Iterator for StoreIterator<'a> {
+impl Iterator for StoreIterator<'_> {
     type Item = (Vec<u8>, Vec<u8>);
 
     fn next(&mut self) -> Option<Self::Item> {

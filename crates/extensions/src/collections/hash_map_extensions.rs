@@ -34,11 +34,11 @@ where
     where
         V: Default,
     {
-        self.entry(key).or_insert_with(Default::default)
+        self.entry(key).or_default()
     }
 
     fn merge(&mut self, other: HashMap<K, V>) {
-        self.extend(other.into_iter());
+        self.extend(other);
     }
 
     fn get_many<Q>(&self, keys: &[Q]) -> Vec<Option<&V>>

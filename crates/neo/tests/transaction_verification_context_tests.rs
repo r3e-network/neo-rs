@@ -79,7 +79,7 @@ fn conflicts_release_fee_budget() {
     context.add_transaction(&tx);
     assert!(!context.check_transaction(&tx, std::iter::empty::<&Transaction>(), &snapshot));
 
-    let conflicts = vec![conflict];
+    let conflicts = [conflict];
     let conflict_refs: Vec<&Transaction> = conflicts.iter().collect();
     assert!(context.check_transaction(&tx, conflict_refs, &snapshot));
 }

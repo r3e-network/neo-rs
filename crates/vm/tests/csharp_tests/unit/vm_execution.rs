@@ -46,7 +46,7 @@ fn test_simple_vm_execution() {
                     let result_stack = engine.result_stack();
                     println!("📊 Result stack size: {}", result_stack.len());
 
-                    if result_stack.len() > 0 {
+                    if !result_stack.is_empty() {
                         println!("✅ RET successfully copied items to result stack");
                         if let Ok(item) = result_stack.peek(0) {
                             println!("   Top result item: {:?}", item);

@@ -380,6 +380,29 @@ impl RpcServerNode {
     }
 }
 
+struct RelayResultResponder {
+    completion: Arc<Mutex<Option<oneshot::Sender<RelayResult>>>>,
+}
+
+#[async_trait]
+impl Actor for RelayResultResponder {
+    async fn handle(
+        &mut self,
+        message: Box<dyn Any + Send>,
+        ctx: &mut ActorContext,
+    ) -> ActorResult {
+        if let Ok(result) = message.downcast::<RelayResult>() {
+            if let Ok(mut guard) = self.completion.lock() {
+                if let Some(tx) = guard.take() {
+                    let _ = tx.send(*result);
+                }
+            }
+            let _ = ctx.stop_self();
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -453,28 +476,5 @@ mod tests {
 
         let result = (handler.callback())(&server, &[]).expect("get connection count");
         assert_eq!(result.as_u64().unwrap_or_default(), 0);
-    }
-}
-
-struct RelayResultResponder {
-    completion: Arc<Mutex<Option<oneshot::Sender<RelayResult>>>>,
-}
-
-#[async_trait]
-impl Actor for RelayResultResponder {
-    async fn handle(
-        &mut self,
-        message: Box<dyn Any + Send>,
-        ctx: &mut ActorContext,
-    ) -> ActorResult {
-        if let Ok(result) = message.downcast::<RelayResult>() {
-            if let Ok(mut guard) = self.completion.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(*result);
-                }
-            }
-            let _ = ctx.stop_self();
-        }
-        Ok(())
     }
 }

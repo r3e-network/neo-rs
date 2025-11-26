@@ -631,19 +631,14 @@ impl RelayInventory {
 
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut writer = BinaryWriter::new();
-        match self {
-            RelayInventory::Block(block) => {
-                Serializable::serialize(block, &mut writer)
-                    .expect("failed to serialize block inventory");
-            }
-            RelayInventory::Transaction(tx) => {
-                Serializable::serialize(tx, &mut writer)
-                    .expect("failed to serialize transaction inventory");
-            }
-            RelayInventory::Extensible(payload) => {
-                Serializable::serialize(payload, &mut writer)
-                    .expect("failed to serialize extensible inventory");
-            }
+        let result = match self {
+            RelayInventory::Block(block) => Serializable::serialize(block, &mut writer),
+            RelayInventory::Transaction(tx) => Serializable::serialize(tx, &mut writer),
+            RelayInventory::Extensible(payload) => Serializable::serialize(payload, &mut writer),
+        };
+        if let Err(e) = result {
+            tracing::error!("Failed to serialize inventory: {:?}", e);
+            return Vec::new();
         }
         writer.into_bytes()
     }
@@ -973,7 +968,7 @@ impl LocalNodeActor {
 
                 let local_endpoint = stream
                     .local_addr()
-                    .unwrap_or_else(|_| "0.0.0.0:0".parse().expect("valid socket address"));
+                    .unwrap_or_else(|_| SocketAddr::from(([0, 0, 0, 0], 0)));
 
                 self.spawn_remote(ctx, stream, endpoint, local_endpoint, is_trusted, false)
                     .await
@@ -1191,7 +1186,16 @@ impl LocalNodeActor {
             |err| warn!(target: "neo", error = %err, "failed to set listener non-blocking"),
         );
 
-        let listener = TcpListener::from_std(std_listener).expect("listener conversion");
+        let listener = match TcpListener::from_std(std_listener) {
+            Ok(l) => l,
+            Err(err) => {
+                error!(target: "neo", %err, "failed to convert std listener to tokio; local node will stop");
+                if let Err(e) = ctx.stop_self() {
+                    warn!(target: "neo", error = %e, "failed to stop local node after listener conversion error");
+                }
+                return;
+            }
+        };
         let actor_ref = ctx.self_ref();
         self.listener = Some(tokio::spawn(async move {
             loop {
@@ -1343,8 +1347,10 @@ mod tests {
             .all(|cap| !matches!(cap, NodeCapability::TcpServer { .. })));
 
         // Enabling a TCP endpoint should advertise the matching capability and port.
-        let mut config = ChannelsConfig::default();
-        config.tcp = Some("127.0.0.1:20333".parse().expect("endpoint"));
+        let config = ChannelsConfig {
+            tcp: Some("127.0.0.1:20333".parse().expect("endpoint")),
+            ..Default::default()
+        };
         node.apply_channels_config(&config);
         assert_eq!(node.port(), 20333);
 
@@ -1390,9 +1396,11 @@ mod tests {
         let settings = Arc::new(ProtocolSettings::default());
         let node = LocalNode::new(settings.clone(), 10333, "/agent".to_string());
 
-        let mut config = ChannelsConfig::default();
-        config.max_connections = 1;
-        config.max_connections_per_address = 1;
+        let config = ChannelsConfig {
+            max_connections: 1,
+            max_connections_per_address: 1,
+            ..Default::default()
+        };
         node.apply_channels_config(&config);
 
         let version = VersionPayload::create(settings.network, 1, "/peer".to_string(), Vec::new());

@@ -126,7 +126,7 @@ mod tests {
         let test_interface = TestInteropInterface::new("TestInterface", "test data");
         let interop = InteropInterfaceItem::new(test_interface);
 
-        assert_eq!(interop.to_boolean(), true);
+        assert!(interop.to_boolean());
     }
 
     #[test]

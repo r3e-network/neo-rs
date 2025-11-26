@@ -16,7 +16,7 @@ fn test_script_conversion() {
     assert_eq!(script.len(), raw_script.len());
 
     // Test that script was created successfully
-    assert!(script.len() > 0);
+    assert!(!script.is_empty());
 }
 
 #[test]
@@ -196,7 +196,7 @@ fn test_script_from_builder() {
     builder.emit_opcode(OpCode::RET);
 
     let script = builder.to_script();
-    assert!(script.len() > 0);
+    assert!(!script.is_empty());
 
     // Verify we can parse the instructions
     let ins = script.get_instruction(0).unwrap();

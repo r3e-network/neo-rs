@@ -840,7 +840,7 @@ mod tests {
             assert!(!flag.flag);
         }
 
-        let stack_state = context.get_state_with_factory::<Vec<i32>, _>(|| Vec::new());
+        let stack_state = context.get_state_with_factory::<Vec<i32>, _>(Vec::new);
         {
             let mut stack = stack_state.lock().map_err(|_| "poisoned")?;
             stack.push(100);

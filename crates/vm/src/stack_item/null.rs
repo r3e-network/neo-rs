@@ -57,7 +57,7 @@ mod tests {
     fn test_null_to_boolean() {
         let null = Null::new();
 
-        assert_eq!(null.to_boolean(), false);
+        assert!(!null.to_boolean());
     }
 
     #[test]

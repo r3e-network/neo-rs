@@ -1,3 +1,4 @@
+#![allow(clippy::useless_format)]
 // VM Helper Tests - Converted from C# Neo.UnitTests/VM/UT_Helper.cs
 // Tests the VM helper functionality including ScriptBuilder operations, JSON serialization, and parameter conversions
 
@@ -279,7 +280,7 @@ fn test_parameter_to_stack_item() {
     // Test Boolean parameter -> StackItem
     let item = StackItem::Boolean(true);
     match item {
-        StackItem::Boolean(val) => assert_eq!(val, true),
+        StackItem::Boolean(val) => assert!(val),
         _ => panic!("Expected Boolean StackItem"),
     }
 }
@@ -365,7 +366,7 @@ fn test_cyclic_reference_handling() {
 
     // Should complete without infinite loop
     let result = sb.to_array();
-    assert!(result.len() > 0);
+    assert!(!result.is_empty());
 }
 
 #[test]
@@ -428,7 +429,7 @@ fn test_char_as_uint16() {
     sb.emit_push_int(char_value as i64);
 
     let result = sb.to_array();
-    assert!(result.len() > 0);
+    assert!(!result.is_empty());
     // Should encode the character value properly
 }
 

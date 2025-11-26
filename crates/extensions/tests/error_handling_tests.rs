@@ -6,7 +6,7 @@ use neo_extensions::error::*;
 
 #[cfg(test)]
 #[allow(dead_code)]
-mod error_handling_tests {
+mod tests {
     use super::*;
 
     /// Test error handling (matches C# exception handling exactly)

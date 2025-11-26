@@ -101,10 +101,11 @@ fn merkle_block_payload_trims_and_packs_flags() {
     } else {
         1usize << (tree.depth() - 1)
     };
-    if padded_bits.len() < target_len {
-        padded_bits.resize(target_len, false);
-    } else if padded_bits.len() > target_len {
-        padded_bits.truncate(target_len);
+    use std::cmp::Ordering;
+    match padded_bits.len().cmp(&target_len) {
+        Ordering::Less => padded_bits.resize(target_len, false),
+        Ordering::Greater => padded_bits.truncate(target_len),
+        Ordering::Equal => {}
     }
     tree.trim(&padded_bits);
     let expected_hashes = tree.to_hash_array();

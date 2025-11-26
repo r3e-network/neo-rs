@@ -1,3 +1,4 @@
+#![allow(clippy::mutable_key_type)]
 //! Integration tests for the Neo VM stack items.
 
 use neo_vm::execution_engine_limits::ExecutionEngineLimits;
@@ -13,8 +14,8 @@ fn test_boolean_stack_item() {
     let true_item = StackItem::from_bool(true);
     let false_item = StackItem::from_bool(false);
 
-    assert_eq!(true_item.as_bool().unwrap(), true);
-    assert_eq!(false_item.as_bool().unwrap(), false);
+    assert!(true_item.as_bool().unwrap());
+    assert!(!false_item.as_bool().unwrap());
     assert_eq!(true_item.stack_item_type(), StackItemType::Boolean);
 
     // Test conversion to integer
@@ -44,9 +45,9 @@ fn test_integer_stack_item() {
     assert_eq!(int_item.stack_item_type(), StackItemType::Integer);
 
     // Test conversion to boolean
-    assert_eq!(int_item.as_bool().unwrap(), true);
-    assert_eq!(negative_item.as_bool().unwrap(), true);
-    assert_eq!(zero_item.as_bool().unwrap(), false);
+    assert!(int_item.as_bool().unwrap());
+    assert!(negative_item.as_bool().unwrap());
+    assert!(!zero_item.as_bool().unwrap());
 
     // Test conversion to bytes
     assert_eq!(int_item.as_bytes().unwrap(), vec![42]);
@@ -78,8 +79,8 @@ fn test_byte_string_stack_item() {
     assert_eq!(byte_string.stack_item_type(), StackItemType::ByteString);
 
     // Test conversion to boolean
-    assert_eq!(byte_string.as_bool().unwrap(), true);
-    assert_eq!(empty_bytes.as_bool().unwrap(), false);
+    assert!(byte_string.as_bool().unwrap());
+    assert!(!empty_bytes.as_bool().unwrap());
 
     // Test conversion to integer
     assert_eq!(byte_string.as_int().unwrap(), BigInt::from(0x030201));
@@ -102,8 +103,8 @@ fn test_buffer_stack_item() {
     assert_eq!(buffer.stack_item_type(), StackItemType::Buffer);
 
     // Test conversion to boolean
-    assert_eq!(buffer.as_bool().unwrap(), true);
-    assert_eq!(empty_buffer.as_bool().unwrap(), false);
+    assert!(buffer.as_bool().unwrap());
+    assert!(!empty_buffer.as_bool().unwrap());
 
     // Test conversion to integer
     assert_eq!(buffer.as_int().unwrap(), BigInt::from(0x030201));
@@ -133,8 +134,8 @@ fn test_array_stack_item() {
     assert_eq!(array.stack_item_type(), StackItemType::Array);
 
     // Test conversion to boolean
-    assert_eq!(array.as_bool().unwrap(), true);
-    assert_eq!(empty_array.as_bool().unwrap(), false);
+    assert!(array.as_bool().unwrap());
+    assert!(!empty_array.as_bool().unwrap());
 
     // Test equality
     assert!(array.equals(&array).unwrap());
@@ -171,8 +172,8 @@ fn test_struct_stack_item() {
     assert_eq!(struct_item.stack_item_type(), StackItemType::Struct);
 
     // Test conversion to boolean
-    assert_eq!(struct_item.as_bool().unwrap(), true);
-    assert_eq!(empty_struct.as_bool().unwrap(), false);
+    assert!(struct_item.as_bool().unwrap());
+    assert!(!empty_struct.as_bool().unwrap());
 
     // Test equality
     assert!(struct_item.equals(&struct_item).unwrap());
@@ -213,8 +214,8 @@ fn test_map_stack_item() {
     assert_eq!(map_item.stack_item_type(), StackItemType::Map);
 
     // Test conversion to boolean
-    assert_eq!(map_item.as_bool().unwrap(), true);
-    assert_eq!(empty_map.as_bool().unwrap(), false);
+    assert!(map_item.as_bool().unwrap());
+    assert!(!empty_map.as_bool().unwrap());
 
     // Test equality
     assert!(map_item.equals(&map_item).unwrap());
@@ -247,8 +248,8 @@ fn test_pointer_stack_item() {
     assert_eq!(pointer.stack_item_type(), StackItemType::Pointer);
 
     // Test conversion to boolean
-    assert_eq!(pointer.as_bool().unwrap(), true);
-    assert_eq!(zero_pointer.as_bool().unwrap(), true);
+    assert!(pointer.as_bool().unwrap());
+    assert!(zero_pointer.as_bool().unwrap());
 
     // Test equality
     assert!(pointer.equals(&pointer).unwrap());
@@ -262,7 +263,7 @@ fn test_null_stack_item() {
     assert_eq!(null.stack_item_type(), StackItemType::Any);
 
     // Test conversion to boolean
-    assert_eq!(null.as_bool().unwrap(), false);
+    assert!(!null.as_bool().unwrap());
 
     // Test equality
     assert!(null.equals(&null).unwrap());

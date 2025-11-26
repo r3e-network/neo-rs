@@ -329,7 +329,7 @@ mod tests {
             address_version: 53,
             max_transactions_per_block: 512,
             memory_pool_max_transactions: 50_000,
-            initial_gas_distribution: 52_000_000_00000000,
+            initial_gas_distribution: 5_200_000_000_000_000,
             hardforks,
             seed_list: vec!["seed1".into(), "seed2".into()],
             standby_committee: vec!["comm1".into(), "comm2".into()],
