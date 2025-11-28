@@ -5,7 +5,6 @@ use crate::error::{TeeError, TeeResult};
 use crate::wallet::TeeWallet;
 use std::path::Path;
 use std::sync::Arc;
-use tracing::info;
 
 /// Provider for TEE-protected wallets
 pub struct TeeWalletProvider {

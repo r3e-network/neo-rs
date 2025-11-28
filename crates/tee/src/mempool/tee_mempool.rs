@@ -16,7 +16,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 /// Configuration for TEE mempool
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -43,6 +43,7 @@ impl Default for TeeMempoolConfig {
 }
 
 /// A transaction in the TEE mempool
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 struct TeeMempoolEntry {
     /// Transaction hash
@@ -156,12 +157,8 @@ impl TeeMempool {
         let timing = TransactionTiming::new(sequence).with_batch(batch_id);
 
         // Compute ordering key based on policy
-        let ordering_key = compute_ordering_key(
-            self.config.ordering_policy,
-            &timing,
-            &tx_hash,
-            network_fee,
-        );
+        let ordering_key =
+            compute_ordering_key(self.config.ordering_policy, &timing, &tx_hash, network_fee);
 
         let entry = TeeMempoolEntry {
             hash: tx_hash,

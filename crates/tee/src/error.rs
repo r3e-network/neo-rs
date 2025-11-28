@@ -64,7 +64,7 @@ impl From<serde_json::Error> for TeeError {
 }
 
 impl From<hex::FromHexError> for TeeError {
-    fn from(e: hex::FromHexError) -> Self {
+    fn from(_e: hex::FromHexError) -> Self {
         TeeError::InvalidKeyFormat
     }
 }

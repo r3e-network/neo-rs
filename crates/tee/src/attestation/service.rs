@@ -1,15 +1,15 @@
 //! Attestation service for generating and verifying reports
 
+use crate::attestation::AttestationReport;
 use crate::enclave::TeeEnclave;
 use crate::error::{TeeError, TeeResult};
-use crate::attestation::{AttestationReport, report::ReportType};
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use tracing::{debug, info};
 
 /// Service for generating and verifying attestation reports
 pub struct AttestationService {
-    enclave: Arc<TeeEnclave>,
+    _enclave: Arc<TeeEnclave>,
 }
 
 impl AttestationService {
@@ -19,7 +19,7 @@ impl AttestationService {
             return Err(TeeError::EnclaveNotInitialized);
         }
 
-        Ok(Self { enclave })
+        Ok(Self { _enclave: enclave })
     }
 
     /// Generate an attestation report with custom report data
@@ -62,7 +62,11 @@ impl AttestationService {
     }
 
     /// Generate a report for mempool ordering proof
-    pub fn attest_ordering(&self, merkle_root: &[u8; 32], batch_id: u64) -> TeeResult<AttestationReport> {
+    pub fn attest_ordering(
+        &self,
+        merkle_root: &[u8; 32],
+        batch_id: u64,
+    ) -> TeeResult<AttestationReport> {
         let mut report_data = [0u8; 64];
         report_data[..32].copy_from_slice(merkle_root);
         report_data[32..40].copy_from_slice(&batch_id.to_le_bytes());
@@ -155,10 +159,22 @@ impl AttestationService {
             timestamp: std::time::SystemTime::now(),
             cpu_svn: report.cpusvn,
             attributes: super::report::EnclaveAttributes {
-                debug: report.attributes.flags.contains(sgx_isa::AttributesFlags::DEBUG),
-                mode64bit: report.attributes.flags.contains(sgx_isa::AttributesFlags::MODE64BIT),
-                provision_key: report.attributes.flags.contains(sgx_isa::AttributesFlags::PROVISIONKEY),
-                einit_token: report.attributes.flags.contains(sgx_isa::AttributesFlags::EINITTOKENKEY),
+                debug: report
+                    .attributes
+                    .flags
+                    .contains(sgx_isa::AttributesFlags::DEBUG),
+                mode64bit: report
+                    .attributes
+                    .flags
+                    .contains(sgx_isa::AttributesFlags::MODE64BIT),
+                provision_key: report
+                    .attributes
+                    .flags
+                    .contains(sgx_isa::AttributesFlags::PROVISIONKEY),
+                einit_token: report
+                    .attributes
+                    .flags
+                    .contains(sgx_isa::AttributesFlags::EINITTOKENKEY),
                 key_separation: false,
             },
             raw_report: report.as_ref().to_vec(),

@@ -4,7 +4,6 @@ use crate::enclave::{seal_data, unseal_data, SealedData, TeeEnclave};
 use crate::error::{TeeError, TeeResult};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use zeroize::Zeroize;
 
 /// A sealed private key stored in TEE-protected format
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -154,14 +153,8 @@ mod tests {
         let public_key = [0x02u8; 33];
         let script_hash = [0xABu8; 20];
 
-        let sealed = SealedKey::seal(
-            &enclave,
-            &private_key,
-            &public_key,
-            &script_hash,
-            None,
-        )
-        .unwrap();
+        let sealed =
+            SealedKey::seal(&enclave, &private_key, &public_key, &script_hash, None).unwrap();
 
         let key_path = temp.path().join("test_key.json");
         sealed.save_to_file(&key_path).unwrap();

@@ -59,7 +59,13 @@ pub fn seal_data(
 
     // Encrypt with AAD
     let ciphertext = cipher
-        .encrypt(nonce, aes_gcm::aead::Payload { msg: plaintext, aad })
+        .encrypt(
+            nonce,
+            aes_gcm::aead::Payload {
+                msg: plaintext,
+                aad,
+            },
+        )
         .map_err(|e| TeeError::SealingFailed(format!("Encryption failed: {}", e)))?;
 
     Ok(SealedData {
@@ -114,11 +120,13 @@ pub fn unseal_data(
 }
 
 /// Secure key container that zeros memory on drop
+#[allow(dead_code)]
 #[derive(Clone)]
 pub struct SecureKey {
     key: [u8; 32],
 }
 
+#[allow(dead_code)]
 impl SecureKey {
     pub fn new(key: [u8; 32]) -> Self {
         Self { key }

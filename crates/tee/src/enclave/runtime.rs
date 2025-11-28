@@ -4,8 +4,7 @@ use crate::error::{TeeError, TeeResult};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::sync::Arc;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 /// Enclave configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -83,7 +82,10 @@ impl TeeEnclave {
         }
 
         *state = EnclaveState::Initializing;
-        info!("Initializing TEE enclave (simulation={})", self.config.simulation);
+        info!(
+            "Initializing TEE enclave (simulation={})",
+            self.config.simulation
+        );
 
         // Create sealed data directory if it doesn't exist
         std::fs::create_dir_all(&self.config.sealed_data_path)?;
@@ -197,7 +199,7 @@ impl TeeEnclave {
             .map_err(|e| TeeError::CryptoError(format!("SGX EGETKEY failed: {:?}", e)))?;
 
         // Expand to 32 bytes using SHA-256
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(&key);
         let result = hasher.finalize();
@@ -210,7 +212,7 @@ impl TeeEnclave {
     /// Derive simulated sealing key for testing
     #[cfg(not(feature = "sgx-hw"))]
     fn derive_simulated_sealing_key(&self) -> TeeResult<[u8; 32]> {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
 
         // In simulation mode, derive key from a machine-specific identifier
         // In production, this would come from SGX EGETKEY
@@ -232,7 +234,7 @@ impl TeeEnclave {
     /// Get a machine-specific identifier for simulation mode
     #[cfg(not(feature = "sgx-hw"))]
     fn get_machine_identifier(&self) -> Vec<u8> {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
 
         let mut hasher = Sha256::new();
 

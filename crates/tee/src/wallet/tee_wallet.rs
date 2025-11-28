@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 /// TEE-protected wallet that stores keys in sealed format
 pub struct TeeWallet {
@@ -38,11 +38,7 @@ struct WalletMetadata {
 
 impl TeeWallet {
     /// Create a new TEE wallet
-    pub fn create(
-        enclave: Arc<TeeEnclave>,
-        name: &str,
-        path: &Path,
-    ) -> TeeResult<Self> {
+    pub fn create(enclave: Arc<TeeEnclave>, name: &str, path: &Path) -> TeeResult<Self> {
         if !enclave.is_ready() {
             return Err(TeeError::EnclaveNotInitialized);
         }
@@ -186,11 +182,7 @@ impl TeeWallet {
     }
 
     /// Import an existing private key
-    pub fn import_key(
-        &self,
-        private_key: &[u8],
-        label: Option<String>,
-    ) -> TeeResult<SealedKey> {
+    pub fn import_key(&self, private_key: &[u8], label: Option<String>) -> TeeResult<SealedKey> {
         if self.is_locked() {
             return Err(TeeError::Other("Wallet is locked".to_string()));
         }
@@ -207,13 +199,8 @@ impl TeeWallet {
             return Err(TeeError::Other("Key already exists in wallet".to_string()));
         }
 
-        let sealed_key = SealedKey::seal(
-            &self.enclave,
-            private_key,
-            &public_key,
-            &script_hash,
-            label,
-        )?;
+        let sealed_key =
+            SealedKey::seal(&self.enclave, private_key, &public_key, &script_hash, label)?;
 
         // Save key to file
         let key_filename = format!("key_{}.json", hex::encode(&script_hash[..8]));
@@ -418,13 +405,16 @@ mod tests {
         let wallet = TeeWallet::create(enclave, "test-wallet", &wallet_path).unwrap();
 
         let key1 = wallet.create_key(Some("key1".to_string())).unwrap();
-        let key2 = wallet.create_key(Some("key2".to_string())).unwrap();
+        let _key2 = wallet.create_key(Some("key2".to_string())).unwrap();
 
         let keys = wallet.list_keys();
         assert_eq!(keys.len(), 2);
 
         // First key should be default
-        assert_eq!(wallet.default_account().unwrap().script_hash, key1.script_hash);
+        assert_eq!(
+            wallet.default_account().unwrap().script_hash,
+            key1.script_hash
+        );
     }
 
     #[test]

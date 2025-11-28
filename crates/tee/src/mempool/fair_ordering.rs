@@ -3,7 +3,7 @@
 //! Implements various ordering strategies to prevent front-running and other MEV attacks.
 
 use serde::{Deserialize, Serialize};
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 
 /// Transaction ordering policy
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
