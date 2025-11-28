@@ -6,7 +6,6 @@ use crate::rpc_server::rpc_method_attribute::RpcMethodDescriptor;
 use crate::rpc_server::rpc_server::{RpcHandler, RpcServer};
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::Engine as _;
-use neo_core::neo_io::{BinaryWriter, MemoryReader};
 use neo_core::neo_system::STATE_STORE_SERVICE;
 use neo_core::smart_contract::native::contract_management::ContractManagement;
 use neo_core::smart_contract::storage_key::StorageKey;
@@ -175,22 +174,10 @@ impl RpcServerState {
         }
 
         let first_proof = results.first().and_then(|(key, _)| {
-            let storage_key = StorageKey::new(contract_id, key.clone());
-            state_store.get_proof(root_hash, &storage_key).map(|proof| {
-                BASE64_STANDARD.encode(StateStore::encode_proof_payload(
-                    &storage_key.to_array(),
-                    &proof,
-                ))
-            })
+            Self::encode_proof_base64(&state_store, root_hash, contract_id, key)
         });
         let last_proof = results.last().and_then(|(key, _)| {
-            let storage_key = StorageKey::new(contract_id, key.clone());
-            state_store.get_proof(root_hash, &storage_key).map(|proof| {
-                BASE64_STANDARD.encode(StateStore::encode_proof_payload(
-                    &storage_key.to_array(),
-                    &proof,
-                ))
-            })
+            Self::encode_proof_base64(&state_store, root_hash, contract_id, key)
         });
 
         let serialized_results: Vec<Value> = results
@@ -214,6 +201,21 @@ impl RpcServerState {
         }
 
         Ok(Value::Object(response))
+    }
+
+    fn encode_proof_base64(
+        state_store: &Arc<StateStore>,
+        root_hash: UInt256,
+        contract_id: i32,
+        key: &[u8],
+    ) -> Option<String> {
+        let storage_key = StorageKey::new(contract_id, key.to_vec());
+        state_store.get_proof(root_hash, &storage_key).map(|proof| {
+            BASE64_STANDARD.encode(StateStore::encode_proof_payload(
+                &storage_key.to_array(),
+                &proof,
+            ))
+        })
     }
 
     fn parse_uint256(params: &[Value], idx: usize, method: &str) -> Result<UInt256, RpcException> {
