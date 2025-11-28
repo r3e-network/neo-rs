@@ -2,6 +2,8 @@
 
 Rust implementation of the Neo N3 node stack, including the virtual machine, core protocol logic, and `neo-cli` command line interface.
 
+For a high-level tour of crate boundaries and service lifecycles, see `docs/ARCHITECTURE.md`.
+
 ## Compatibility
 
 | neo-rs Version | Neo N3 Version | C# Reference Commit |
@@ -50,6 +52,55 @@ Useful CLI commands:
 - `plugins`: list available/downloadable plugins from the release feed (checks installed dirs too)
 - `plugins active`: show plugins currently loaded in the running node (name/version/category)
 - `open wallet <path> <password>`: unlock a NEP-6 wallet for RPC/console actions
+
+Validate a node config without starting the daemon:
+
+```bash
+cargo run -p neo-node -- --config neo_mainnet_node.toml --check-config
+```
+
+Validate storage accessibility without starting the daemon:
+
+```bash
+cargo run -p neo-node -- --config neo_mainnet_node.toml --check-storage
+```
+
+Run both checks in one go:
+
+```bash
+cargo run -p neo-node -- --config neo_mainnet_node.toml --check-all
+```
+
+Preflight both bundled configs:
+
+```bash
+make preflight
+```
+
+Environment overrides:
+- `NEO_CONFIG` (path to TOML), `NEO_STORAGE` (data path), `NEO_BACKEND` (storage backend)
+- `NEO_STORAGE_READONLY` (open storage read-only; use with `--check-*` only)
+- `NEO_NETWORK_MAGIC`, `NEO_LISTEN_PORT`, `NEO_SEED_NODES`
+- `NEO_MAX_CONNECTIONS`, `NEO_MIN_CONNECTIONS`, `NEO_MAX_CONNECTIONS_PER_ADDRESS`, `NEO_BROADCAST_HISTORY_LIMIT`
+- `NEO_BLOCK_TIME`, `NEO_DISABLE_COMPRESSION`, `NEO_DAEMON`
+- `NEO_RPC_BIND`, `NEO_RPC_PORT`, `NEO_RPC_DISABLE_CORS`, `NEO_RPC_USER`, `NEO_RPC_PASS`, `NEO_RPC_TLS_CERT`, `NEO_RPC_TLS_PASS`
+- `NEO_RPC_ALLOW_ORIGINS`, `NEO_RPC_DISABLED_METHODS`
+- `NEO_LOG_PATH`, `NEO_LOG_LEVEL`, `NEO_LOG_FORMAT`
+- `NEO_HEALTH_PORT` to expose `/healthz` on localhost
+- `NEO_HEALTH_MAX_HEADER_LAG` to fail `/healthz` if header lag exceeds the threshold
+- `/metrics` is available when the health server is enabled; scrape it with Prometheus.
+- `/readyz` is available when the health server is enabled (same contract as `/healthz`).
+
+Hardened RPC preset:
+- Use `--rpc-hardened` (or set via CLI) to disable CORS, require auth, and disable `openwallet`/`getplugins` by default; combine with `NEO_RPC_USER/NEO_RPC_PASS`.
+
+Example hardened run:
+
+```bash
+NEO_RPC_USER=admin NEO_RPC_PASS="$(openssl rand -hex 16)" \
+NEO_RPC_BIND=127.0.0.1 NEO_RPC_PORT=10332 \
+cargo run -p neo-node -- --config neo_mainnet_node.toml --rpc-hardened --check-all
+```
 
 ## Docker
 
@@ -133,6 +184,8 @@ cargo clippy --workspace --all-targets -- -D warnings
 - `neo_mainnet_node.toml`: default mainnet settings.
 - `neo_production_node.toml`: production template you can adjust for your environment.
 - `NEO_PLUGINS_DIR`: set this env var to move plugin state/config (like `Plugins/RpcServer.json`) to a writable, persistent path.
+- Config files are strict: unknown keys/tables fail parsing. Supported sections are `[network]`, `[p2p]`, `[storage]`, `[blockchain]`, `[rpc]`, `[logging]`, `[unlock_wallet]`, `[contracts]`, `[plugins]`.
+- Validate configs without starting the node via `neo-node --check-config --config <path>`.
 - Logging defaults to `/data/Logs/neo-cli.log` in Docker and can be moved via the config `logging.path`.
 - If you use the bundled production TOML outside Docker, create the configured log directory (or override `logging.path`).
 - See `docs/RPC_HARDENING.md` for a hardened `RpcServer.json` example and reverse-proxy guidance.
@@ -144,6 +197,8 @@ Logs and data directories default to `Logs/` and `data/` in the repository root;
 ## Production notes
 
 - Build with `--release` and ensure `librocksdb` is available on the host.
+- Data directories carry `NETWORK_MAGIC` and `VERSION` markers; start a node only with matching binaries/configs for that path.
+- Read-only storage mode is available for offline checks (`NEO_STORAGE_READONLY=1` + `--check-storage/--check-all`); the node will refuse to start in read-only mode.
 - Point `--storage` and `--config` to durable volumes; back up RocksDB data regularly.
 - RPC security: CORS is disabled by default in the production TOML; expose RPC through a reverse proxy with TLS/auth and rate limits if publishing it beyond localhost.
 - Ensure the log directory exists and is writable for the configured path (default `/data/Logs` in the production TOML).
