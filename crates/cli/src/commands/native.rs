@@ -1,7 +1,7 @@
 //! Native contract commands
 
 use super::CommandResult;
-use crate::{NeoTokenCmd, GasTokenCmd};
+use crate::{GasTokenCmd, NeoTokenCmd};
 use neo_json::JToken;
 use neo_rpc_client::RpcClient;
 
@@ -11,11 +11,13 @@ const NEO_TOKEN: &str = "0xef4073a0f2b305a38ec4050e4d3d28bc40ea63f5";
 const GAS_TOKEN: &str = "0xd2a4cff31913016155e38e474a2c06d08be276cf";
 
 pub async fn list_contracts(client: &RpcClient) -> CommandResult {
-    let result = client.rpc_send_async("getnativecontracts", vec![]).await
+    let result = client
+        .rpc_send_async("getnativecontracts", vec![])
+        .await
         .map_err(|e| anyhow::anyhow!("RPC error: {}", e))?;
 
-    let output = serde_json::to_string_pretty(&result)
-        .map_err(|e| anyhow::anyhow!("JSON error: {}", e))?;
+    let output =
+        serde_json::to_string_pretty(&result).map_err(|e| anyhow::anyhow!("JSON error: {}", e))?;
 
     Ok(output)
 }
@@ -64,9 +66,14 @@ async fn token_command(client: &RpcClient, contract: &str, cmd: TokenCommand) ->
         TokenCommand::Symbol => ("symbol", vec![]),
         TokenCommand::BalanceOf(address) => {
             let param: neo_json::JObject = vec![
-                ("type".to_string(), Some(JToken::String("Hash160".to_string()))),
+                (
+                    "type".to_string(),
+                    Some(JToken::String("Hash160".to_string())),
+                ),
                 ("value".to_string(), Some(JToken::String(address))),
-            ].into_iter().collect();
+            ]
+            .into_iter()
+            .collect();
             ("balanceOf", vec![JToken::Object(param)])
         }
     };
@@ -77,11 +84,13 @@ async fn token_command(client: &RpcClient, contract: &str, cmd: TokenCommand) ->
         JToken::Array(params.into()),
     ];
 
-    let result = client.rpc_send_async("invokefunction", invoke_params).await
+    let result = client
+        .rpc_send_async("invokefunction", invoke_params)
+        .await
         .map_err(|e| anyhow::anyhow!("RPC error: {}", e))?;
 
-    let output = serde_json::to_string_pretty(&result)
-        .map_err(|e| anyhow::anyhow!("JSON error: {}", e))?;
+    let output =
+        serde_json::to_string_pretty(&result).map_err(|e| anyhow::anyhow!("JSON error: {}", e))?;
 
     Ok(output)
 }

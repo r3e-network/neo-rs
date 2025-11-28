@@ -10,10 +10,12 @@ use neo_core::{Transaction, UInt160, WitnessScope};
 /// Helper to convert bytes to hex string
 fn to_hex_string(bytes: &[u8]) -> String {
     use std::fmt::Write;
-    bytes.iter().fold(String::with_capacity(bytes.len() * 2), |mut s, b| {
-        let _ = write!(s, "{:02x}", b);
-        s
-    })
+    bytes
+        .iter()
+        .fold(String::with_capacity(bytes.len() * 2), |mut s, b| {
+            let _ = write!(s, "{:02x}", b);
+            s
+        })
 }
 
 /// Helper to convert hex string to bytes

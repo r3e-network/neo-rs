@@ -55,6 +55,7 @@ use crate::smart_contract::native::ledger_contract::{
 };
 use crate::smart_contract::notify_event_args::NotifyEventArgs;
 use crate::smart_contract::trigger_type::TriggerType;
+use crate::state_service::{state_store::StateServiceSettings, StateStore};
 use crate::uint160::UInt160;
 use crate::uint256::UInt256;
 use crate::wallets::{IWalletProvider, Wallet};
@@ -236,6 +237,30 @@ pub struct NeoSystem {
     self_ref: Mutex<Weak<NeoSystem>>,
 }
 
+/// Named service keys registered into the NeoSystem service registry.
+pub const STATE_STORE_SERVICE: &str = "StateStore";
+
+/// Snapshot of basic liveness/sync state for readiness checks.
+#[derive(Debug, Clone, Copy)]
+pub struct ReadinessStatus {
+    pub block_height: u32,
+    pub header_height: u32,
+    pub header_lag: u32,
+    pub healthy: bool,
+    pub rpc_ready: bool,
+    pub storage_ready: bool,
+}
+
+impl ReadinessStatus {
+    /// Annotates the readiness snapshot with service readiness and updates the overall health flag.
+    pub fn with_services(mut self, rpc_ready: bool, storage_ready: bool) -> Self {
+        self.rpc_ready = rpc_ready;
+        self.storage_ready = storage_ready;
+        self.healthy = self.healthy && rpc_ready && storage_ready;
+        self
+    }
+}
+
 /// Lightweight handle exposing shared system facilities to actors outside the core module.
 pub struct NeoSystemContext {
     /// Handle to the underlying Akka system for scheduling and event stream access.
@@ -321,9 +346,66 @@ impl NeoSystemContext {
         self.genesis_block.clone()
     }
 
+    /// Returns the RPC service name for the current network (if configured).
+    pub fn rpc_service_name(&self) -> String {
+        format!("RpcServer:{}", self.settings.network)
+    }
+
     /// Shared access to the ledger context.
     pub fn ledger(&self) -> Arc<LedgerContext> {
         self.ledger.clone()
+    }
+
+    /// Access the registered state store service if present.
+    pub fn state_store(&self) -> CoreResult<Option<Arc<StateStore>>> {
+        self.get_named_service::<StateStore>(STATE_STORE_SERVICE)
+    }
+
+    /// Snapshot of basic readiness (ledger sync) using the provided lag threshold.
+    pub fn readiness(&self, max_header_lag: Option<u32>) -> ReadinessStatus {
+        self.neo_system()
+            .map(|sys| sys.readiness(max_header_lag))
+            .unwrap_or(ReadinessStatus {
+                block_height: 0,
+                header_height: 0,
+                header_lag: u32::MAX,
+                healthy: false,
+                rpc_ready: false,
+                storage_ready: false,
+            })
+    }
+
+    /// Snapshot of readiness annotated with optional service checks (by name) and storage state.
+    pub fn readiness_with_services(
+        &self,
+        max_header_lag: Option<u32>,
+        rpc_service_name: Option<&str>,
+        storage_ready: Option<bool>,
+    ) -> ReadinessStatus {
+        let status = self.readiness(max_header_lag);
+        let rpc_ready = rpc_service_name
+            .map(|name| self.has_named_service(name))
+            .unwrap_or(true);
+        let storage_ready = storage_ready.unwrap_or(true);
+        status.with_services(rpc_ready, storage_ready)
+    }
+
+    /// Convenience wrapper that uses the configured RPC service name for this network.
+    pub fn readiness_with_defaults(
+        &self,
+        max_header_lag: Option<u32>,
+        storage_ready: Option<bool>,
+    ) -> ReadinessStatus {
+        self.readiness_with_services(
+            max_header_lag,
+            Some(&self.rpc_service_name()),
+            storage_ready,
+        )
+    }
+
+    /// Returns `true` when the node is considered ready (sync within the given lag).
+    pub fn is_ready(&self, max_header_lag: Option<u32>) -> bool {
+        self.readiness(max_header_lag).healthy
     }
 
     /// Provides access to the shared memory pool handle.
@@ -578,6 +660,14 @@ impl NeoSystemContext {
             Some(service) => Ok(downcast_service::<T>(service)),
             None => Ok(None),
         }
+    }
+
+    /// Returns `true` if a named service is registered.
+    pub fn has_named_service(&self, name: &str) -> bool {
+        self.services_by_name
+            .read()
+            .map(|guard| guard.contains_key(name))
+            .unwrap_or(false)
     }
 
     fn convert_payload_witness(witness: &PayloadWitness) -> crate::Witness {
@@ -1088,8 +1178,13 @@ impl NeoSystem {
             StoreFactory::get_store_provider("Memory")
                 .expect("default memory store provider must be registered")
         });
-        let store = store_provider.get_store(storage_path.as_deref().unwrap_or(""));
+        let store = store_provider.get_store(storage_path.as_deref().unwrap_or(""))?;
         let store_cache_for_hydration = StoreCache::new_from_store(store.clone(), true);
+        let state_store = Arc::new(StateStore::new_from_store(
+            store.clone(),
+            StateServiceSettings::default(),
+            settings_arc.clone(),
+        ));
 
         let user_agent = format!("/neo-rs:{}/", env!("CARGO_PKG_VERSION"));
         let local_node_state = Arc::new(LocalNode::new(settings_arc.clone(), 10333, user_agent));
@@ -1123,6 +1218,10 @@ impl NeoSystem {
             let mem_pool_any: Arc<dyn Any + Send + Sync> = memory_pool.clone();
             by_name_guard.insert("MemoryPool".to_string(), mem_pool_any.clone());
             list_guard.push(mem_pool_any);
+
+            let state_store_any: Arc<dyn Any + Send + Sync> = state_store.clone();
+            by_name_guard.insert(STATE_STORE_SERVICE.to_string(), state_store_any.clone());
+            list_guard.push(state_store_any);
         }
 
         let blockchain = actor_system
@@ -1655,6 +1754,11 @@ impl NeoSystem {
         Ok(())
     }
 
+    /// Returns the RPC service name for the current network (if configured).
+    pub fn rpc_service_name(&self) -> String {
+        format!("RpcServer:{}", self.settings.network)
+    }
+
     /// Retrieves the first registered service assignable to `T`.
     pub fn get_service<T>(&self) -> CoreResult<Option<Arc<T>>>
     where
@@ -1690,6 +1794,67 @@ impl NeoSystem {
         }
     }
 
+    /// Returns `true` if a named service is registered.
+    pub fn has_named_service(&self, name: &str) -> bool {
+        self.services_by_name
+            .read()
+            .map(|guard| guard.contains_key(name))
+            .unwrap_or(false)
+    }
+
+    /// Basic readiness snapshot (ledger sync only). Consumers can layer on service checks (RPC, storage, etc.).
+    pub fn readiness(&self, max_header_lag: Option<u32>) -> ReadinessStatus {
+        let ledger = self.ledger_context();
+        let block_height = ledger.current_height();
+        let header_height = ledger.highest_header_index();
+        let header_lag = header_height.saturating_sub(block_height);
+        let healthy = max_header_lag
+            .map(|threshold| header_lag <= threshold)
+            .unwrap_or(true);
+
+        ReadinessStatus {
+            block_height,
+            header_height,
+            header_lag,
+            healthy,
+            rpc_ready: true,
+            storage_ready: true,
+        }
+    }
+
+    /// Readiness snapshot annotated with optional service and storage readiness flags.
+    pub fn readiness_with_services(
+        &self,
+        max_header_lag: Option<u32>,
+        rpc_service_name: Option<&str>,
+        storage_ready: Option<bool>,
+    ) -> ReadinessStatus {
+        let status = self.readiness(max_header_lag);
+        let rpc_ready = rpc_service_name
+            .map(|name| self.has_named_service(name))
+            .unwrap_or(true);
+        let storage_ready = storage_ready.unwrap_or(true);
+        status.with_services(rpc_ready, storage_ready)
+    }
+
+    /// Convenience wrapper that uses the configured RPC service name for this network.
+    pub fn readiness_with_defaults(
+        &self,
+        max_header_lag: Option<u32>,
+        storage_ready: Option<bool>,
+    ) -> ReadinessStatus {
+        self.readiness_with_services(
+            max_header_lag,
+            Some(&self.rpc_service_name()),
+            storage_ready,
+        )
+    }
+
+    /// Returns `true` when the node is considered ready (sync within the given lag).
+    pub fn is_ready(&self, max_header_lag: Option<u32>) -> bool {
+        self.readiness(max_header_lag).healthy
+    }
+
     /// Access to the plugin manager for registering plugins.
     pub fn plugin_manager(&self) -> Arc<RwLock<PluginManager>> {
         self.plugin_manager.clone()
@@ -1703,6 +1868,11 @@ impl NeoSystem {
     /// Returns the primary store instance.
     pub fn store(&self) -> Arc<dyn IStore> {
         self.store.clone()
+    }
+
+    /// Returns the state store service when available (None if not registered).
+    pub fn state_store(&self) -> CoreResult<Option<Arc<StateStore>>> {
+        self.context.state_store()
     }
 
     /// Gracefully shuts down the actor hierarchy.

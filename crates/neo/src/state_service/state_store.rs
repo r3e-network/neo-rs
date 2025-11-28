@@ -685,7 +685,13 @@ mod tests {
 
     #[test]
     fn test_state_store_creation() {
-        let store = StateStore::new_in_memory();
+        let store = StateStore::new(
+            Arc::new(MemoryStateStoreBackend::new()),
+            StateServiceSettings {
+                full_state: true,
+                ..StateServiceSettings::default()
+            },
+        );
         assert!(store.local_root_index().is_none());
         assert!(store.validated_root_index().is_none());
     }
@@ -862,6 +868,38 @@ mod tests {
         snapshot.commit().unwrap();
 
         assert_eq!(store.current_local_root_hash(), Some(root_hash));
+    }
+
+    #[test]
+    fn produces_and_verifies_storage_proof() {
+        let store = StateStore::new(
+            Arc::new(MemoryStateStoreBackend::new()),
+            StateServiceSettings {
+                full_state: true,
+                ..StateServiceSettings::default()
+            },
+        );
+        let key = StorageKey::create(1, 0x01);
+        let mut item = StorageItem::default();
+        item.set_value(vec![0xAA, 0xBB]);
+
+        // Build a snapshot manually to keep the test focused on proof behaviour.
+        let mut snapshot = store.get_snapshot();
+        snapshot
+            .trie
+            .put(&key.to_array(), &item.get_value())
+            .expect("put value in trie");
+        let proof = snapshot
+            .trie
+            .try_get_proof(&key.to_array())
+            .expect("proof lookup")
+            .expect("proof present")
+            .into_iter()
+            .collect::<Vec<_>>();
+        let root_hash = snapshot.trie.root_hash().expect("root hash");
+        let value = StateStore::verify_proof(root_hash, &key.to_array(), &proof)
+            .expect("proof verifies");
+        assert_eq!(value, item.get_value());
     }
 
     #[test]

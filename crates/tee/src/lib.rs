@@ -37,14 +37,14 @@
 //! └─────────────────────────────────────────────────────────────┘
 //! ```
 
-pub mod enclave;
-pub mod wallet;
-pub mod mempool;
 pub mod attestation;
+pub mod enclave;
 pub mod error;
+pub mod mempool;
+pub mod wallet;
 
-pub use enclave::{TeeEnclave, EnclaveConfig};
-pub use wallet::{TeeWallet, TeeWalletProvider, SealedKey};
-pub use mempool::{TeeMempool, FairOrderingPolicy};
 pub use attestation::{AttestationReport, AttestationService};
+pub use enclave::{EnclaveConfig, TeeEnclave};
 pub use error::{TeeError, TeeResult};
+pub use mempool::{FairOrderingPolicy, TeeMempool};
+pub use wallet::{SealedKey, TeeWallet, TeeWalletProvider};

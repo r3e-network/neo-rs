@@ -1,5 +1,6 @@
 //! RocksDB-backed `IStore` implementation with snapshot support.
 use crate::{
+    error::{CoreError, CoreResult},
     persistence::{
         i_read_only_store::{IReadOnlyStore, IReadOnlyStoreGeneric},
         i_store::{IStore, OnNewSnapshotDelegate},
@@ -20,7 +21,7 @@ use std::{
     path::PathBuf,
     sync::{Arc, Mutex, RwLock},
 };
-use tracing::{error, warn};
+use tracing::warn;
 
 /// RocksDB-backed store provider compatible with Neo's `IStore`.
 #[derive(Debug, Clone)]
@@ -47,16 +48,63 @@ impl IStoreProvider for RocksDBStoreProvider {
         "RocksDBStore"
     }
 
-    fn get_store(&self, path: &str) -> Arc<dyn IStore> {
+    fn get_store(&self, path: &str) -> CoreResult<Arc<dyn IStore>> {
         let resolved = self.resolved_path(path);
         let mut config = self.base_config.clone();
         config.path = resolved;
-        match RocksDbStore::open(&config) {
-            Ok(store) => Arc::new(store),
+        let store = RocksDbStore::open(&config).map_err(|err| CoreError::Io {
+            message: format!(
+                "failed to open RocksDB store at {}: {err}",
+                config.path.display()
+            ),
+        })?;
+        Ok(Arc::new(store))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    #[test]
+    fn opens_store_and_creates_directory() {
+        let tmp = TempDir::new().expect("tempdir");
+        let db_path = tmp.path().join("rocksdb");
+        let mut cfg = StorageConfig::default();
+        cfg.path = db_path.clone();
+
+        let provider = RocksDBStoreProvider::new(cfg);
+        let store = provider
+            .get_store(db_path.to_str().unwrap())
+            .expect("rocksdb store");
+        assert!(db_path.exists(), "db path should be created");
+
+        // basic snapshot call to ensure the store is usable
+        let _snapshot = store.get_snapshot();
+    }
+
+    #[test]
+    fn returns_error_when_path_is_file() {
+        let tmp = TempDir::new().expect("tempdir");
+        let file_path = tmp.path().join("not-a-dir");
+        fs::write(&file_path, b"content").expect("write file");
+
+        let mut cfg = StorageConfig::default();
+        cfg.path = file_path.clone();
+        let provider = RocksDBStoreProvider::new(cfg);
+
+        let result = provider.get_store(file_path.to_str().unwrap());
+        match result {
+            Ok(_) => panic!("expected failure when path is a file"),
             Err(err) => {
-                error!(target: "neo", error = %err, "failed to open RocksDB store");
-                // Fall back to an in-memory store to keep the node running.
-                Arc::new(crate::persistence::providers::memory_store::MemoryStore::new())
+                assert!(
+                    err.to_string()
+                        .to_ascii_lowercase()
+                        .contains("failed to open rocksdb store"),
+                    "unexpected error: {err}"
+                );
             }
         }
     }
@@ -83,7 +131,11 @@ impl RocksDbStore {
         }
 
         let options = build_db_options(config);
-        let db = Arc::new(DB::open(&options, &config.path)?);
+        let db = if config.read_only {
+            Arc::new(DB::open_for_read_only(&options, &config.path, false)?)
+        } else {
+            Arc::new(DB::open(&options, &config.path)?)
+        };
 
         Ok(Self {
             db,

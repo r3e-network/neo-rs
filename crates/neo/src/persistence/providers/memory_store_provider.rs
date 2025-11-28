@@ -10,6 +10,7 @@
 // modifications are permitted.
 
 use super::memory_store::MemoryStore;
+use crate::error::CoreResult;
 use crate::persistence::{i_store::IStore, i_store_provider::IStoreProvider};
 use std::sync::Arc;
 
@@ -34,7 +35,7 @@ impl IStoreProvider for MemoryStoreProvider {
         "Memory"
     }
 
-    fn get_store(&self, _path: &str) -> Arc<dyn IStore> {
-        Arc::new(MemoryStore::new())
+    fn get_store(&self, _path: &str) -> CoreResult<Arc<dyn IStore>> {
+        Ok(Arc::new(MemoryStore::new()))
     }
 }

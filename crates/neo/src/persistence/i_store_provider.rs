@@ -10,6 +10,7 @@
 // modifications are permitted.
 
 use super::i_store::IStore;
+use crate::error::CoreResult;
 use std::any::Any;
 use std::sync::Arc;
 
@@ -19,5 +20,5 @@ pub trait IStoreProvider: Send + Sync + Any {
     fn name(&self) -> &str;
 
     /// Creates a new instance of the IStore interface.
-    fn get_store(&self, path: &str) -> Arc<dyn IStore>;
+    fn get_store(&self, path: &str) -> CoreResult<Arc<dyn IStore>>;
 }

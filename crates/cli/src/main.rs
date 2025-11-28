@@ -26,7 +26,12 @@ use commands::*;
 #[command(name = "neo-cli", version, about, long_about = None)]
 struct Cli {
     /// RPC server URL
-    #[arg(long, short = 'u', default_value = "http://localhost:10332", global = true)]
+    #[arg(
+        long,
+        short = 'u',
+        default_value = "http://localhost:10332",
+        global = true
+    )]
     rpc_url: String,
 
     /// RPC basic auth username
@@ -486,8 +491,8 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     // Create RPC client
-    let url = Url::parse(&cli.rpc_url)
-        .with_context(|| format!("Invalid RPC URL: {}", cli.rpc_url))?;
+    let url =
+        Url::parse(&cli.rpc_url).with_context(|| format!("Invalid RPC URL: {}", cli.rpc_url))?;
 
     let client = RpcClient::new(url, cli.rpc_user.clone(), cli.rpc_pass.clone(), None)
         .map_err(|e| anyhow::anyhow!("Failed to create RPC client: {}", e))?;
@@ -502,8 +507,12 @@ async fn main() -> Result<()> {
         Commands::Plugins => plugins::execute(&client).await,
 
         // Blockchain Queries
-        Commands::Block { index_or_hash, raw } => block::execute(&client, &index_or_hash, raw).await,
-        Commands::Header { index_or_hash, raw } => header::execute(&client, &index_or_hash, raw).await,
+        Commands::Block { index_or_hash, raw } => {
+            block::execute(&client, &index_or_hash, raw).await
+        }
+        Commands::Header { index_or_hash, raw } => {
+            header::execute(&client, &index_or_hash, raw).await
+        }
         Commands::Tx { hash, raw } => tx::execute(&client, &hash, raw).await,
         Commands::Contract { hash } => contract::execute(&client, &hash).await,
         Commands::BestBlockHash => best_block_hash::execute(&client).await,
@@ -512,25 +521,54 @@ async fn main() -> Result<()> {
 
         // Token Operations
         Commands::Balance { address } => balance::execute(&client, &address).await,
-        Commands::Transfers { address, from, to } => transfers::execute(&client, &address, from, to).await,
+        Commands::Transfers { address, from, to } => {
+            transfers::execute(&client, &address, from, to).await
+        }
         Commands::Gas { address } => gas::execute(&client, &address).await,
 
         // Contract Invocation
-        Commands::Invoke { hash, method, params } => invoke::execute(&client, &hash, &method, &params).await,
+        Commands::Invoke {
+            hash,
+            method,
+            params,
+        } => invoke::execute(&client, &hash, &method, &params).await,
         Commands::TestInvoke { script } => test_invoke::execute(&client, &script).await,
 
         // Wallet
         Commands::Wallet(cmd) => wallet::execute(&client, cmd).await,
 
         // Send/Transfer
-        Commands::Send { asset, to, amount, from } => send::execute(&client, &asset, &to, &amount, from.as_deref()).await,
-        Commands::Transfer { token, to, amount, from, data } => transfer::execute(&client, &token, &to, &amount, from.as_deref(), data.as_deref()).await,
+        Commands::Send {
+            asset,
+            to,
+            amount,
+            from,
+        } => send::execute(&client, &asset, &to, &amount, from.as_deref()).await,
+        Commands::Transfer {
+            token,
+            to,
+            amount,
+            from,
+            data,
+        } => {
+            transfer::execute(
+                &client,
+                &token,
+                &to,
+                &amount,
+                from.as_deref(),
+                data.as_deref(),
+            )
+            .await
+        }
 
         // Voting
         Commands::Vote { address, pubkey } => vote::execute(&client, &address, &pubkey).await,
         Commands::Unvote { address } => vote::unvote(&client, &address).await,
         Commands::RegisterCandidate { pubkey } => vote::register_candidate(&client, &pubkey).await,
-        Commands::UnregisterCandidate { pubkey } => vote::unregister_candidate(&client, &pubkey).await,
+        Commands::UnregisterCandidate { pubkey } => {
+            vote::unregister_candidate(&client, &pubkey).await
+        }
         Commands::Candidates => vote::get_candidates(&client).await,
         Commands::Committee => vote::get_committee(&client).await,
         Commands::Validators => vote::get_validators(&client).await,
@@ -551,7 +589,9 @@ async fn main() -> Result<()> {
         Commands::Broadcast(cmd) => broadcast::execute(&client, cmd).await,
 
         // Import/Export
-        Commands::ExportBlocks { path, start, count } => export::execute(&client, &path, start, count).await,
+        Commands::ExportBlocks { path, start, count } => {
+            export::execute(&client, &path, start, count).await
+        }
     };
 
     // Handle result

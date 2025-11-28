@@ -11,9 +11,13 @@ Recommendations and a sample `RpcServer.json` for running the RPC plugin securel
 - Set strong `rpc_user`/`rpc_pass` credentials if you cannot proxy-authenticate.
 - Set sensible limits: `max_concurrent_connections`, `max_request_body_size`, `max_gas_invoke`, `max_fee`, `max_iterator_result_items`, `max_stack_size`.
 - Keep `disabled_methods` populated for any RPC methods you do not need.
+- Prefer environment overrides for secrets and endpoints in containers: `NEO_RPC_USER`, `NEO_RPC_PASS`, `NEO_RPC_TLS_CERT`, `NEO_RPC_TLS_PASS`, `NEO_RPC_BIND`, `NEO_RPC_PORT`, `NEO_RPC_ALLOW_ORIGINS`, `NEO_RPC_DISABLED_METHODS`.
+- Use the CLI `--rpc-hardened` switch to force auth, disable CORS, and disable `openwallet`/`getplugins` at startup; this will also fail if credentials are missing.
 - Use TLS certificates (`ssl_cert`, `ssl_cert_password`) when terminating TLS at the plugin; otherwise terminate TLS at the proxy.
 - Expose only what you need: avoid `getplugins` and `openwallet` on untrusted networks; keep them disabled or restrict via proxy ACLs.
 - Default plugin set is limited to the stable plugins (dbft, rpc-server, rocksdb-store, tokens-tracker, application-logs, sqlite-wallet); experimental plugins are removed from the Rust build.
+- Keep `/healthz` bound to localhost by default (`--health-port`/`NEO_HEALTH_PORT`); if you proxy it, ensure it stays internal.
+- Consider setting `--health-max-header-lag` to fail health checks on large sync gaps.
 
 ## Sample `Plugins/RpcServer/RpcServer.json`
 This example is for TestNet (magic `894710606`, port `20332`). Adjust `network`, `port`, and credentials for MainNet or your network.

@@ -4,6 +4,7 @@ use bytes::Bytes;
 use neo_core::{neo_system::NeoSystem, wallets::Wallet};
 use once_cell::sync::Lazy;
 use parking_lot::{RwLock, RwLockReadGuard};
+use prometheus::{register_counter, Counter};
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use subtle::ConstantTimeEq;
@@ -57,6 +58,11 @@ impl RpcHandler {
         Arc::clone(&self.callback)
     }
 }
+
+pub static RPC_REQ_TOTAL: Lazy<Counter> =
+    Lazy::new(|| register_counter!("neo_rpc_requests_total", "Total RPC requests").unwrap());
+pub static RPC_ERR_TOTAL: Lazy<Counter> =
+    Lazy::new(|| register_counter!("neo_rpc_errors_total", "Total RPC errors").unwrap());
 
 pub struct RpcServer {
     system: Arc<NeoSystem>,
@@ -493,6 +499,7 @@ fn process_object(
     filters: &RpcFilters,
     auth_header: Option<&str>,
 ) -> RequestOutcome {
+    RPC_REQ_TOTAL.inc();
     let has_id = obj.contains_key("id");
     let id = obj.get("id").cloned();
 
@@ -504,28 +511,35 @@ fn process_object(
     let method = match method_value.and_then(|value| value.as_str().map(|s| s.to_string())) {
         Some(value) => value,
         None => {
-            return RequestOutcome::error(error_response(id, RpcError::invalid_request()), false)
+            RPC_ERR_TOTAL.inc();
+            return RequestOutcome::error(error_response(id, RpcError::invalid_request()), false);
         }
     };
 
     let params_value = obj.remove("params").unwrap_or(Value::Array(Vec::new()));
     let params = match params_value {
         Value::Array(values) => values,
-        _ => return RequestOutcome::error(error_response(id, RpcError::invalid_request()), false),
+        _ => {
+            RPC_ERR_TOTAL.inc();
+            return RequestOutcome::error(error_response(id, RpcError::invalid_request()), false);
+        }
     };
 
     if let Some(auth) = filters.auth.as_ref() {
         if !verify_basic_auth(auth_header, auth) {
+            RPC_ERR_TOTAL.inc();
             return RequestOutcome::error(error_response(id, RpcError::access_denied()), true);
         }
     }
 
     let method_key = method.to_ascii_lowercase();
     if filters.disabled.contains(&method_key) {
+        RPC_ERR_TOTAL.inc();
         return RequestOutcome::error(error_response(id, RpcError::access_denied()), false);
     }
 
     let Some(server_arc) = filters.server.upgrade() else {
+        RPC_ERR_TOTAL.inc();
         return RequestOutcome::error(error_response(id, RpcError::internal_server_error()), false);
     };
 
@@ -536,6 +550,7 @@ fn process_object(
     };
 
     let Some(handler) = handler else {
+        RPC_ERR_TOTAL.inc();
         return RequestOutcome::error(
             error_response(id, RpcError::method_not_found().with_data(method)),
             false,
@@ -544,7 +559,10 @@ fn process_object(
 
     match handler.callback()(&server_guard, params.as_slice()) {
         Ok(result) => RequestOutcome::response(success_response(id, result)),
-        Err(err) => RequestOutcome::error(error_response(id, err.error().clone()), false),
+        Err(err) => {
+            RPC_ERR_TOTAL.inc();
+            RequestOutcome::error(error_response(id, err.error().clone()), false)
+        }
     }
 }
 

@@ -1,7 +1,7 @@
 //! Attestation report structures
 
-use serde::{Deserialize, Serialize, Deserializer, Serializer};
 use serde::de::{self, Visitor};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
 use std::time::SystemTime;
 
@@ -35,7 +35,10 @@ mod bytes64 {
             {
                 let bytes = hex::decode(v).map_err(de::Error::custom)?;
                 if bytes.len() != 64 {
-                    return Err(de::Error::custom(format!("expected 64 bytes, got {}", bytes.len())));
+                    return Err(de::Error::custom(format!(
+                        "expected 64 bytes, got {}",
+                        bytes.len()
+                    )));
                 }
                 let mut arr = [0u8; 64];
                 arr.copy_from_slice(&bytes);
@@ -77,7 +80,10 @@ mod bytes16 {
             {
                 let bytes = hex::decode(v).map_err(de::Error::custom)?;
                 if bytes.len() != 16 {
-                    return Err(de::Error::custom(format!("expected 16 bytes, got {}", bytes.len())));
+                    return Err(de::Error::custom(format!(
+                        "expected 16 bytes, got {}",
+                        bytes.len()
+                    )));
                 }
                 let mut arr = [0u8; 16];
                 arr.copy_from_slice(&bytes);

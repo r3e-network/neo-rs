@@ -16,6 +16,7 @@ use neo_core::network::p2p::payloads::{Block, Header, Transaction};
 use neo_core::network::p2p::RelayInventory;
 use neo_core::smart_contract::native::LedgerContract;
 use neo_core::smart_contract::trigger_type::TriggerType;
+use neo_core::state_service::StateRoot;
 use neo_core::uint160::{UInt160, UINT160_SIZE};
 use neo_core::uint256::{UInt256, UINT256_SIZE};
 use neo_core::ContainsTransactionType;
@@ -283,6 +284,10 @@ async fn test_neo_system() {
     system
         .add_named_service::<String, _>("test", service.clone())
         .unwrap();
+    assert_eq!(
+        system.rpc_service_name(),
+        format!("RpcServer:{}", system.settings().network)
+    );
 
     let retrieved: Arc<String> = system
         .get_named_service("test")
@@ -318,6 +323,54 @@ async fn test_neo_system() {
     assert_eq!(history.len(), 2);
     assert!(matches!(history[0], BroadcastEvent::Relay(_)));
     assert!(matches!(history[1], BroadcastEvent::Direct(_)));
+
+    system.shutdown().await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_readiness_helpers() {
+    let settings = ProtocolSettings::default();
+    let system = NeoSystem::new(settings, None, None).expect("NeoSystem::new should succeed");
+
+    let status = system.readiness(Some(0));
+    assert_eq!(status.block_height, 0);
+    assert_eq!(status.header_height, 0);
+    assert_eq!(status.header_lag, 0);
+    assert!(status.healthy);
+    assert!(status.rpc_ready);
+    assert!(status.storage_ready);
+    assert!(system.is_ready(Some(0)));
+
+    let ctx = system.context();
+    assert!(ctx.is_ready(Some(0)));
+    let ctx_status = ctx.readiness(Some(0));
+    assert_eq!(ctx_status.block_height, 0);
+    assert_eq!(ctx_status.header_height, 0);
+    assert_eq!(ctx_status.header_lag, 0);
+    assert!(ctx_status.healthy);
+    assert!(ctx_status.rpc_ready);
+    assert!(ctx_status.storage_ready);
+
+    system.shutdown().await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_state_store_service_registered() {
+    let settings = ProtocolSettings::default();
+    let system = NeoSystem::new(settings, None, None).expect("NeoSystem::new should succeed");
+
+    let state_store = system
+        .state_store()
+        .expect("state store lookup")
+        .expect("state store registered");
+
+    let mut snapshot = state_store.get_snapshot();
+    let root_hash = UInt256::from_bytes(&[7u8; 32]).unwrap();
+    let state_root = StateRoot::new_current(1, root_hash);
+    snapshot.add_local_state_root(&state_root).unwrap();
+    snapshot.commit().unwrap();
+    assert_eq!(state_store.local_root_index(), Some(1));
+    assert_eq!(state_store.current_local_root_hash(), Some(root_hash));
 
     system.shutdown().await.unwrap();
 }

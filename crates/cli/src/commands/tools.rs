@@ -30,19 +30,25 @@ pub async fn parse(value: &str) -> CommandResult {
         }
     }
     // Check if it's a WIF private key
-    else if (value.starts_with('K') || value.starts_with('L') || value.starts_with('5')) && value.len() == 52 {
+    else if (value.starts_with('K') || value.starts_with('L') || value.starts_with('5'))
+        && value.len() == 52
+    {
         output.push_str("Type: WIF Private Key\n");
         output.push_str("Warning: Do not share private keys!\n");
     }
     // Check if it's base64
-    else if value.chars().all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=') {
-        if let Ok(decoded) = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, value) {
+    else if value
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=')
+    {
+        if let Ok(decoded) =
+            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, value)
+        {
             output.push_str("Type: Base64 encoded\n");
             output.push_str(&format!("Decoded length: {} bytes\n", decoded.len()));
             output.push_str(&format!("Hex: {}\n", hex::encode(&decoded)));
         }
-    }
-    else {
+    } else {
         output.push_str("Type: Unknown\n");
     }
 

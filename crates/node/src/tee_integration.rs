@@ -3,10 +3,10 @@
 //! This module provides TEE-protected wallet and mempool functionality.
 
 use neo_tee::{
+    attestation::AttestationService,
     enclave::{EnclaveConfig, TeeEnclave},
     mempool::{FairOrderingPolicy, TeeMempool, TeeMempoolConfig},
     wallet::TeeWalletProvider,
-    attestation::AttestationService,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -121,11 +121,7 @@ mod tests {
     #[test]
     fn test_tee_runtime_creation() {
         let temp = tempdir().unwrap();
-        let runtime = TeeRuntime::new(
-            temp.path().to_path_buf(),
-            "batched",
-            1000,
-        ).unwrap();
+        let runtime = TeeRuntime::new(temp.path().to_path_buf(), "batched", 1000).unwrap();
 
         assert!(runtime.enclave.is_ready());
     }

@@ -6,5 +6,5 @@
 mod runtime;
 mod sealing;
 
-pub use runtime::{TeeEnclave, EnclaveConfig, EnclaveState};
-pub use sealing::{SealedData, seal_data, unseal_data};
+pub use runtime::{EnclaveConfig, EnclaveState, TeeEnclave};
+pub use sealing::{seal_data, unseal_data, SealedData};

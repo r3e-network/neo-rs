@@ -41,6 +41,7 @@ pub struct StorageConfig {
     pub cache_size: Option<usize>,
     pub write_buffer_size: Option<usize>,
     pub enable_statistics: bool,
+    pub read_only: bool,
 }
 
 impl Default for StorageConfig {
@@ -53,6 +54,7 @@ impl Default for StorageConfig {
             cache_size: Some(64 * MAX_SCRIPT_SIZE * MAX_SCRIPT_SIZE),
             write_buffer_size: Some(16 * MAX_SCRIPT_SIZE * MAX_SCRIPT_SIZE),
             enable_statistics: false,
+            read_only: false,
         }
     }
 }

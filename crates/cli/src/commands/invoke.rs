@@ -26,11 +26,13 @@ pub async fn execute(
         JToken::Array(params.into()),
     ];
 
-    let result = client.rpc_send_async("invokefunction", invoke_params).await
+    let result = client
+        .rpc_send_async("invokefunction", invoke_params)
+        .await
         .map_err(|e| anyhow::anyhow!("RPC error: {}", e))?;
 
-    let output = serde_json::to_string_pretty(&result)
-        .map_err(|e| anyhow::anyhow!("JSON error: {}", e))?;
+    let output =
+        serde_json::to_string_pretty(&result).map_err(|e| anyhow::anyhow!("JSON error: {}", e))?;
 
     Ok(output)
 }

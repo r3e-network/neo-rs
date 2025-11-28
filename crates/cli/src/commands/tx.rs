@@ -12,7 +12,9 @@ pub async fn execute(client: &RpcClient, hash: &str, raw: bool) -> CommandResult
     };
 
     let params = vec![JToken::String(hash.to_string()), verbose];
-    let result = client.rpc_send_async("getrawtransaction", params).await
+    let result = client
+        .rpc_send_async("getrawtransaction", params)
+        .await
         .map_err(|e| anyhow::anyhow!("RPC error: {}", e))?;
 
     if raw {

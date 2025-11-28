@@ -33,10 +33,6 @@ seed_nodes = [
 ]
 
 [blockchain]
-# Data directory for blockchain storage (test path)
-data_dir = "./data/testnet"
-# Maximum block size in bytes
-max_block_size = 262144
 # Block time in seconds (Neo N3 standard)
 block_time = 15
 
@@ -60,10 +56,6 @@ enabled = false
 bind_address = "127.0.0.1"
 port = 20332
 
-[consensus]
-# Consensus participation disabled for sync test
-enabled = false
-
 [logging]
 # Enable CLI logging output for debugging
 active = true
@@ -84,23 +76,3 @@ prerelease = false
 is_active = false
 path = ""
 password = ""
-
-[monitoring]
-health_check_interval = 30
-metrics_enabled = false
-metrics_port = 9090
-performance_monitoring = false
-
-[security]
-rate_limiting_enabled = false
-max_requests_per_second = 100
-ddos_protection_enabled = false
-max_message_size = 16777216
-firewall_enabled = false
-tls_enabled = false
-
-[performance]
-worker_threads = 4
-mempool_size = 10000
-block_processor_threads = 2
-network_threads = 2

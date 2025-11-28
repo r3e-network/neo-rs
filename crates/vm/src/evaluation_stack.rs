@@ -166,12 +166,12 @@ impl EvaluationStack {
     }
 
     /// Iterates over the stack items from bottom to top.
-    pub fn iter(&self) -> std::slice::Iter<StackItem> {
+    pub fn iter(&self) -> std::slice::Iter<'_, StackItem> {
         self.stack.iter()
     }
 
     /// Mutable iterator over the stack items from bottom to top.
-    pub fn iter_mut(&mut self) -> std::slice::IterMut<StackItem> {
+    pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, StackItem> {
         self.stack.iter_mut()
     }
 

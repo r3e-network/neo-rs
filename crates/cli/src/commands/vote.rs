@@ -3,19 +3,14 @@
 use super::CommandResult;
 use neo_rpc_client::RpcClient;
 
-pub async fn execute(
-    _client: &RpcClient,
-    address: &str,
-    pubkey: &str,
-) -> CommandResult {
+pub async fn execute(_client: &RpcClient, address: &str, pubkey: &str) -> CommandResult {
     // Vote requires wallet access and transaction signing
     Ok(format!(
         "Vote command requires wallet integration.\n\
         Voter: {}\n\
         Candidate: {}\n\n\
         Note: Use neo-node with wallet configuration for transaction signing.",
-        address,
-        pubkey
+        address, pubkey
     ))
 }
 
@@ -47,31 +42,37 @@ pub async fn unregister_candidate(_client: &RpcClient, pubkey: &str) -> CommandR
 }
 
 pub async fn get_candidates(client: &RpcClient) -> CommandResult {
-    let result = client.rpc_send_async("getcandidates", vec![]).await
+    let result = client
+        .rpc_send_async("getcandidates", vec![])
+        .await
         .map_err(|e| anyhow::anyhow!("RPC error: {}", e))?;
 
-    let output = serde_json::to_string_pretty(&result)
-        .map_err(|e| anyhow::anyhow!("JSON error: {}", e))?;
+    let output =
+        serde_json::to_string_pretty(&result).map_err(|e| anyhow::anyhow!("JSON error: {}", e))?;
 
     Ok(output)
 }
 
 pub async fn get_committee(client: &RpcClient) -> CommandResult {
-    let result = client.rpc_send_async("getcommittee", vec![]).await
+    let result = client
+        .rpc_send_async("getcommittee", vec![])
+        .await
         .map_err(|e| anyhow::anyhow!("RPC error: {}", e))?;
 
-    let output = serde_json::to_string_pretty(&result)
-        .map_err(|e| anyhow::anyhow!("JSON error: {}", e))?;
+    let output =
+        serde_json::to_string_pretty(&result).map_err(|e| anyhow::anyhow!("JSON error: {}", e))?;
 
     Ok(output)
 }
 
 pub async fn get_validators(client: &RpcClient) -> CommandResult {
-    let result = client.rpc_send_async("getnextblockvalidators", vec![]).await
+    let result = client
+        .rpc_send_async("getnextblockvalidators", vec![])
+        .await
         .map_err(|e| anyhow::anyhow!("RPC error: {}", e))?;
 
-    let output = serde_json::to_string_pretty(&result)
-        .map_err(|e| anyhow::anyhow!("JSON error: {}", e))?;
+    let output =
+        serde_json::to_string_pretty(&result).map_err(|e| anyhow::anyhow!("JSON error: {}", e))?;
 
     Ok(output)
 }

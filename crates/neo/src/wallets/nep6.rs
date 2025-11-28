@@ -230,7 +230,10 @@ impl Wallet for Nep6Wallet {
         let mut updated_accounts = Vec::new();
 
         {
-            let accounts = match self.accounts.read() { Ok(g) => g, Err(p) => p.into_inner() };
+            let accounts = match self.accounts.read() {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
             for (hash, account_arc) in accounts.iter() {
                 let mut account = (**account_arc).clone();
                 if account.inner.nep2_key().is_some() {
@@ -255,7 +258,10 @@ impl Wallet for Nep6Wallet {
         }
 
         {
-            let mut accounts = match self.accounts.write() { Ok(g) => g, Err(p) => p.into_inner() };
+            let mut accounts = match self.accounts.write() {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
             accounts.clear();
             for (hash, account) in updated_accounts {
                 accounts.insert(hash, account);
@@ -267,7 +273,10 @@ impl Wallet for Nep6Wallet {
     }
 
     fn contains(&self, script_hash: &UInt160) -> bool {
-        let accounts = match self.accounts.read() { Ok(g) => g, Err(p) => p.into_inner() };
+        let accounts = match self.accounts.read() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
         accounts.contains_key(script_hash)
     }
 
@@ -318,7 +327,10 @@ impl Wallet for Nep6Wallet {
     }
 
     async fn delete_account(&self, script_hash: &UInt160) -> WalletResult<bool> {
-        let mut accounts = match self.accounts.write() { Ok(g) => g, Err(p) => p.into_inner() };
+        let mut accounts = match self.accounts.write() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
         Ok(accounts.remove(script_hash).is_some())
     }
 
@@ -399,7 +411,10 @@ impl Wallet for Nep6Wallet {
     }
 
     async fn sign(&self, data: &[u8], script_hash: &UInt160) -> WalletResult<Vec<u8>> {
-        let accounts = match self.accounts.read() { Ok(g) => g, Err(p) => p.into_inner() };
+        let accounts = match self.accounts.read() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
         let account = accounts
             .get(script_hash)
             .ok_or(WalletError::AccountNotFound(*script_hash))?
@@ -416,7 +431,10 @@ impl Wallet for Nep6Wallet {
     }
 
     async fn sign_transaction(&self, transaction: &mut Transaction) -> WalletResult<()> {
-        let accounts = match self.accounts.read() { Ok(g) => g, Err(p) => p.into_inner() };
+        let accounts = match self.accounts.read() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
         let signer_hashes: Vec<UInt160> = transaction
             .signers()
             .iter()
@@ -441,7 +459,10 @@ impl Wallet for Nep6Wallet {
         let mut updated_accounts = Vec::new();
 
         {
-            let accounts = match self.accounts.read() { Ok(g) => g, Err(p) => p.into_inner() };
+            let accounts = match self.accounts.read() {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
             for (hash, account_arc) in accounts.iter() {
                 let mut account = (**account_arc).clone();
                 if account.inner.nep2_key().is_some() {
@@ -462,7 +483,10 @@ impl Wallet for Nep6Wallet {
         }
 
         {
-            let mut accounts = match self.accounts.write() { Ok(g) => g, Err(p) => p.into_inner() };
+            let mut accounts = match self.accounts.write() {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
             accounts.clear();
             for (hash, account) in updated_accounts {
                 accounts.insert(hash, account);
@@ -476,7 +500,10 @@ impl Wallet for Nep6Wallet {
         let mut updated_accounts = Vec::new();
 
         {
-            let accounts = match self.accounts.read() { Ok(g) => g, Err(p) => p.into_inner() };
+            let accounts = match self.accounts.read() {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
             for (hash, account_arc) in accounts.iter() {
                 let mut account = (**account_arc).clone();
                 account.inner.lock();
@@ -484,7 +511,10 @@ impl Wallet for Nep6Wallet {
             }
         }
 
-        let mut accounts = match self.accounts.write() { Ok(g) => g, Err(p) => p.into_inner() };
+        let mut accounts = match self.accounts.write() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
         accounts.clear();
         for (hash, account) in updated_accounts {
             accounts.insert(hash, account);
@@ -492,7 +522,10 @@ impl Wallet for Nep6Wallet {
     }
 
     async fn verify_password(&self, password: &str) -> WalletResult<bool> {
-        let accounts = match self.accounts.read() { Ok(g) => g, Err(p) => p.into_inner() };
+        let accounts = match self.accounts.read() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
         for account in accounts.values() {
             if account.inner.nep2_key().is_some() && !account.inner.verify_password(password)? {
                 return Ok(false);
@@ -522,7 +555,10 @@ impl Wallet for Nep6Wallet {
         let mut found = false;
 
         {
-            let accounts = match self.accounts.read() { Ok(g) => g, Err(p) => p.into_inner() };
+            let accounts = match self.accounts.read() {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
             for (hash, account_arc) in accounts.iter() {
                 let mut account = (**account_arc).clone();
                 let is_target = hash == script_hash;
@@ -539,7 +575,10 @@ impl Wallet for Nep6Wallet {
         }
 
         {
-            let mut accounts = match self.accounts.write() { Ok(g) => g, Err(p) => p.into_inner() };
+            let mut accounts = match self.accounts.write() {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
             accounts.clear();
             for (hash, account) in updated_accounts {
                 accounts.insert(hash, account);

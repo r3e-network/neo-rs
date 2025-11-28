@@ -9,9 +9,11 @@ Guidance for observing a `neo-cli` deployment.
 - Mempool: size and acceptance rate.
 - Storage: RocksDB disk usage, disk latency/IOPS, free space.
 - Process: memory, CPU, file descriptors (`nofile`), threads, and container health.
+- Health/metrics: scrape `/healthz` or `/readyz` (or `/metrics`) when `--health-port` is enabled; set `--health-max-header-lag` to fail health on sync gaps.
 
 ## How to collect
 - RPC polling: scrape `getblockcount`/`getpeers` periodically; export to Prometheus/Influx via a lightweight sidecar or Telegraf HTTP input.
+- Health/metrics: enable `--health-port` to expose `/healthz`, `/readyz` (JSON) and `/metrics` (Prometheus text) on localhost; proxy/scrape as needed.
 - Host/container metrics: run `node_exporter`/`cAdvisor` or your preferred host agent; include filesystem metrics for the RocksDB volume and process FD counts.
 - Logs: ship `/data/Logs/neo-cli.log` (or your configured log path) to your log stack with alerts on errors/timeouts/restarts.
 

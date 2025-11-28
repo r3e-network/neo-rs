@@ -2,11 +2,20 @@
 //!
 //! Matches C# Neo.Plugins.StateService.Network.StateRoot exactly.
 
+use crate::cryptography::crypto_utils::Crypto;
 use crate::cryptography::NeoHash;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::network::p2p::payloads::Witness;
+use crate::persistence::DataCache;
+use crate::protocol_settings::ProtocolSettings;
+use crate::smart_contract::{
+    helper::Helper,
+    native::{role_management::RoleManagement, Role},
+    Contract,
+};
 use crate::UInt256;
 use serde::{Deserialize, Serialize};
+use tracing::{debug, warn};
 
 /// Current version of state root format.
 pub const CURRENT_VERSION: u8 = 0x00;
@@ -103,6 +112,98 @@ impl StateRoot {
                 None => serde_json::json!([]),
             }
         })
+    }
+
+    /// Verifies the witness attached to this state root against the designated state validators.
+    /// Mirrors C# `StateRoot.Verify` logic and enforces:
+    /// - witness is present
+    /// - verification script matches the expected BFT multi-sig contract
+    /// - signatures satisfy the required threshold and are valid over `network || hash`
+    pub fn verify(&self, settings: &ProtocolSettings, snapshot: &DataCache) -> bool {
+        let witness = match &self.witness {
+            Some(witness) => witness,
+            None => return false,
+        };
+
+        // Resolve the validator set at the given index (Role.StateValidator). Fallback to the
+        // configured standby committee when no designation is present yet.
+        let mut validators = match RoleManagement::new().get_designated_by_role_at(
+            snapshot,
+            Role::StateValidator,
+            self.index,
+        ) {
+            Ok(list) if !list.is_empty() => list,
+            Ok(_) => settings.standby_committee.clone(),
+            Err(error) => {
+                debug!(target: "neo", %error, index = self.index, "failed to load designated state validators");
+                settings.standby_committee.clone()
+            }
+        };
+
+        if validators.is_empty() {
+            warn!(target: "neo", index = self.index, "state root verification aborted: no validators available");
+            return false;
+        }
+
+        // BFT threshold: n - (n-1)/3
+        let required_signatures = validators.len() - (validators.len().saturating_sub(1)) / 3;
+        if required_signatures == 0 {
+            warn!(target: "neo", index = self.index, "state root verification aborted: invalid quorum");
+            return false;
+        }
+
+        // Build the canonical multi-sig script (keys are sorted internally).
+        let expected_script =
+            Contract::create_multi_sig_redeem_script(required_signatures, &validators);
+        if witness.verification_script != expected_script {
+            debug!(
+                target: "neo",
+                index = self.index,
+                "state root verification script mismatch"
+            );
+            return false;
+        }
+
+        let signatures = match Helper::parse_multi_sig_invocation(
+            &witness.invocation_script,
+            required_signatures,
+        ) {
+            Some(sigs) => sigs,
+            None => return false,
+        };
+
+        // Sort validators to match the redeem script order.
+        validators.sort();
+        let mut encoded_keys = Vec::with_capacity(validators.len());
+        for key in validators {
+            match key.encode_point(true) {
+                Ok(bytes) => encoded_keys.push(bytes),
+                Err(_) => return false,
+            }
+        }
+
+        // Sign data: network magic (LE) + state root hash
+        let mut sign_data = [0u8; 4 + UInt256::LENGTH];
+        sign_data[..4].copy_from_slice(&settings.network.to_le_bytes());
+        let mut hashable = self.clone();
+        sign_data[4..].copy_from_slice(&hashable.hash().to_array());
+
+        // Signatures must appear in the same order as the public keys in the redeem script.
+        let mut sig_iter = signatures.iter();
+        let mut matched = 0usize;
+        for key in encoded_keys {
+            if matched >= required_signatures {
+                break;
+            }
+            let Some(signature) = sig_iter.next() else {
+                break;
+            };
+            if Crypto::verify_signature_bytes(&sign_data, signature, &key) {
+                matched += 1;
+            }
+        }
+
+        matched == required_signatures && sig_iter.next().is_none()
     }
 }
 

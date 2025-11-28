@@ -33,10 +33,6 @@ seed_nodes = [
 ]
 
 [blockchain]
-# Data directory for blockchain storage
-data_dir = "/var/neo/testnet"
-# Maximum block size in bytes
-max_block_size = 262144
 # Block time in seconds
 block_time = 15
 
@@ -83,14 +79,6 @@ session_expiration_time = 60
 find_storage_page_size = 50
 # Disabled RPC methods (matches RpcServer default)
 disabled_methods = ["openwallet", "getplugins"]
-
-[consensus]
-# Consensus participation enabled
-enabled = true
-# Minimum validator committee size
-min_committee_size = 7
-# View change timeout in milliseconds
-view_change_timeout = 20000
 
 [logging]
 # Enable CLI logging output (matches C# Logger.Active)

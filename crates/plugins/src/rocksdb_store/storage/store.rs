@@ -1,5 +1,6 @@
 use super::options;
 use super::snapshot::Snapshot;
+use neo_core::error::CoreResult;
 use neo_core::persistence::i_read_only_store::{IReadOnlyStore, IReadOnlyStoreGeneric};
 use neo_core::persistence::i_store::{IStore, OnNewSnapshotDelegate};
 use neo_core::persistence::i_store_provider::IStoreProvider;
@@ -267,8 +268,8 @@ impl IStoreProvider for RocksDBStoreProvider {
         "RocksDBStore"
     }
 
-    fn get_store(&self, path: &str) -> Arc<dyn IStore> {
-        Arc::new(Store::open(path))
+    fn get_store(&self, path: &str) -> CoreResult<Arc<dyn IStore>> {
+        Ok(Arc::new(Store::open(path)))
     }
 }
 

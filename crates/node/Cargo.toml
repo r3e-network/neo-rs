@@ -25,13 +25,17 @@ neo-tee = { path = "../tee", optional = true }
 
 # CLI and configuration
 clap = { workspace = true, features = ["derive"] }
-serde.workspace = true
+serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 toml.workspace = true
+lazy_static = "1.4"
+prometheus = { workspace = true }
+parking_lot.workspace = true
 
 # Async runtime
 tokio.workspace = true
 async-trait.workspace = true
+hyper.workspace = true
 
 # Logging
 tracing.workspace = true

@@ -12,6 +12,7 @@ DATA_DIR = data
 CLI_BIN = neo-cli
 MAINNET_CONFIG ?= neo_mainnet_node.toml
 TESTNET_CONFIG ?= neo_production_node.toml
+CONFIG ?= $(MAINNET_CONFIG)
 BACKUP_DIR ?= backups
 ROCKSDB_PATH ?=
 
@@ -61,6 +62,10 @@ help:
 	@echo "  make clippy         - Run clippy linter"
 	@echo "  make check          - Check code without building"
 	@echo "  make doc            - Generate documentation"
+	@echo "  make check-config   - Validate a TOML config without starting the node (CONFIG=<path>)"
+	@echo "  make check-storage  - Validate storage backend connectivity for a config (CONFIG=<path>)"
+	@echo "  make check-all      - Run both config and storage checks (CONFIG=<path>)"
+	@echo "  make preflight      - Run check-all for bundled mainnet and testnet configs"
 	@echo ""
 	@echo "$(YELLOW)Database:$(NC)"
 	@echo "  make db-clean       - Clean blockchain database"
@@ -190,6 +195,27 @@ check:
 doc:
 	@echo "$(GREEN)Generating documentation...$(NC)"
 	$(CARGO) doc --workspace --no-deps --open
+
+.PHONY: check-config
+check-config:
+	@echo "$(GREEN)Validating node configuration (no startup)...$(NC)"
+	$(CARGO) run -p neo-node -- --config $(CONFIG) --check-config
+
+.PHONY: check-storage
+check-storage:
+	@echo "$(GREEN)Validating storage backend connectivity (no startup)...$(NC)"
+	$(CARGO) run -p neo-node -- --config $(CONFIG) --check-storage
+
+.PHONY: check-all
+check-all:
+	@echo "$(GREEN)Running config and storage checks (no startup)...$(NC)"
+	$(CARGO) run -p neo-node -- --config $(CONFIG) --check-all
+
+.PHONY: preflight
+preflight:
+	@echo "$(GREEN)Running preflight checks for bundled configs...$(NC)"
+	$(CARGO) run -p neo-node -- --config neo_mainnet_node.toml --check-all
+	$(CARGO) run -p neo-node -- --config neo_testnet_node.toml --check-all
 
 # Database targets
 .PHONY: db-clean

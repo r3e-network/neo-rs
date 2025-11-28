@@ -19,6 +19,17 @@ Practical checks and routines for running `neo-cli` in production.
 - Restore: stop the service, untar the backup into the configured storage path, fix permissions for the `neo` user, then start the service.
 - Disk space: keep at least 20% free where RocksDB resides; monitor inode usage.
 - Network markers: the CLI writes `NETWORK_MAGIC` into the data dir; ensure you use a matching directory per network.
+- Version markers: the node writes `VERSION` into the data dir; if it differs from the running binary, startup will fail—use a fresh path or migrate.
+- Fail-fast on RocksDB: the node now aborts if RocksDB cannot be opened instead of silently falling back to memory; check permissions and available disk if startup fails.
+- Before deploying changes, run `neo-node --check-config --config <path>` to catch schema/credential/storage issues without starting the daemon.
+- To verify the RocksDB backend is reachable/writable, run `neo-node --check-storage --config <path>`; it will open the configured backend and exit.
+- Shortcut: `neo-node --check-all --config <path>` runs both checks.
+- For bundled configs, `make preflight` runs `--check-all` against MainNet and TestNet samples.
+- When exposing RPC, prefer `--rpc-hardened` with `NEO_RPC_USER/NEO_RPC_PASS` to enforce auth, disable CORS, and keep risky methods disabled.
+- Use `--health-port` (or `NEO_HEALTH_PORT`) to expose a localhost `/healthz` endpoint for liveness.
+- Set `--health-max-header-lag` / `NEO_HEALTH_MAX_HEADER_LAG` so `/healthz` returns 503 if headers are far ahead of persisted blocks (sync lag).
+- For offline verification, you can open storage in read-only mode with `NEO_STORAGE_READONLY=1` and `--check-storage/--check-all`; the node will not start normally in read-only mode.
+- `/readyz` is available alongside `/healthz` when the health server is enabled (same checks).
 
 ## Configuration changes
 - Edit the TOML and restart the service to apply changes.

@@ -13,6 +13,7 @@ use super::{
     i_store::IStore, i_store_provider::IStoreProvider,
     providers::memory_store_provider::MemoryStoreProvider,
 };
+use crate::error::CoreResult;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -52,7 +53,7 @@ impl StoreFactory {
     ///   If this parameter is empty, a default in-memory storage engine will be used.
     /// * `path` - The path of the storage.
     ///   If storage_provider is the default in-memory storage engine, this parameter is ignored.
-    pub fn get_store(storage_provider: &str, path: &str) -> Arc<dyn IStore> {
+    pub fn get_store(storage_provider: &str, path: &str) -> CoreResult<Arc<dyn IStore>> {
         let providers = PROVIDERS.read().unwrap();
         let provider = providers
             .get(storage_provider)

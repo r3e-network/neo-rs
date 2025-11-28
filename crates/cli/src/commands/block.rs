@@ -5,11 +5,15 @@ use neo_rpc_client::RpcClient;
 
 pub async fn execute(client: &RpcClient, index_or_hash: &str, raw: bool) -> CommandResult {
     if raw {
-        let hex = client.get_block_hex(index_or_hash).await
+        let hex = client
+            .get_block_hex(index_or_hash)
+            .await
             .map_err(|e| anyhow::anyhow!("RPC error: {}", e))?;
         Ok(hex)
     } else {
-        let block = client.get_block(index_or_hash).await
+        let block = client
+            .get_block(index_or_hash)
+            .await
             .map_err(|e| anyhow::anyhow!("RPC error: {}", e))?;
 
         let output = serde_json::to_string_pretty(&block)

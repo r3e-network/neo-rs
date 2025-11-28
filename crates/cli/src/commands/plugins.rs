@@ -4,7 +4,9 @@ use super::CommandResult;
 use neo_rpc_client::RpcClient;
 
 pub async fn execute(client: &RpcClient) -> CommandResult {
-    let plugins = client.get_plugins().await
+    let plugins = client
+        .get_plugins()
+        .await
         .map_err(|e| anyhow::anyhow!("RPC error: {}", e))?;
 
     if plugins.is_empty() {

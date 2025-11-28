@@ -1,3 +1,4 @@
+use crate::error::CoreError;
 use crate::ledger::LedgerContext;
 use crate::neo_io::{MemoryReader, Serializable};
 use crate::neo_system::NeoSystemContext;
@@ -11,6 +12,7 @@ use crate::network::p2p::{
 };
 use crate::persistence::StoreCache;
 use crate::smart_contract::native::LedgerContract;
+use crate::state_service::{StateRoot, STATE_SERVICE_CATEGORY};
 use crate::{UInt160, UInt256};
 use akka::{Actor, ActorContext, ActorResult, Props};
 use async_trait::async_trait;
@@ -20,6 +22,7 @@ use std::any::Any;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tracing::warn;
 
 use super::VerifyResult;
 
@@ -577,6 +580,17 @@ impl Blockchain {
             return VerifyResult::Invalid;
         }
 
+        if payload.category == STATE_SERVICE_CATEGORY {
+            match self.process_state_service_payload(context, &payload) {
+                Ok(true) => {}
+                Ok(false) => return VerifyResult::Invalid,
+                Err(err) => {
+                    warn!(target: "neo", %err, "state service payload handling failed");
+                    return VerifyResult::Invalid;
+                }
+            }
+        }
+
         context.record_extensible(payload);
         VerifyResult::Succeed
     }
@@ -601,6 +615,31 @@ impl Blockchain {
         LedgerContract::new()
             .contains_conflict_hash(snapshot, &tx.hash(), &signers, max_traceable_blocks)
             .unwrap_or(false)
+    }
+
+    fn process_state_service_payload(
+        &self,
+        context: &Arc<NeoSystemContext>,
+        payload: &ExtensiblePayload,
+    ) -> Result<bool, CoreError> {
+        if payload.data.is_empty() {
+            return Ok(false);
+        }
+
+        // MessageType::StateRoot = 0
+        if payload.data[0] != 0 {
+            return Ok(false);
+        }
+
+        let mut reader = MemoryReader::new(&payload.data[1..]);
+        let state_root = <StateRoot as Serializable>::deserialize(&mut reader)
+            .map_err(|err| CoreError::invalid_data(err.to_string()))?;
+
+        let Some(state_store) = context.state_store()? else {
+            return Err(CoreError::system("state store service not registered"));
+        };
+
+        Ok(state_store.on_new_state_root(state_root))
     }
 
     async fn handle_idle(&self, ctx: &ActorContext) {

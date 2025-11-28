@@ -93,13 +93,13 @@ impl HeaderCache {
         removed
     }
 
-    fn read(&self) -> RwLockReadGuard<VecDeque<Header>> {
+    fn read(&self) -> RwLockReadGuard<'_, VecDeque<Header>> {
         self.headers
             .read()
             .expect("header cache read lock poisoned")
     }
 
-    fn write(&self) -> RwLockWriteGuard<VecDeque<Header>> {
+    fn write(&self) -> RwLockWriteGuard<'_, VecDeque<Header>> {
         self.headers
             .write()
             .expect("header cache write lock poisoned")

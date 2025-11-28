@@ -12,14 +12,16 @@ use neo_extensions::plugin::plugins_directory;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
-    fs,
+    env, fs,
+    fs::OpenOptions,
+    io::Write,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::{Path, PathBuf},
 };
 
 /// High-level node configuration derived from the Neo CLI TOML files.
 #[derive(Debug, Clone, Deserialize, Default)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct NodeConfig {
     pub network: NetworkSection,
     pub p2p: P2PSection,
@@ -33,7 +35,7 @@ pub struct NodeConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct NetworkSection {
     #[serde(alias = "NetworkType")]
     pub network_type: Option<String>,
@@ -42,7 +44,7 @@ pub struct NetworkSection {
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct P2PSection {
     #[serde(alias = "Port")]
     pub listen_port: Option<u16>,
@@ -63,7 +65,7 @@ pub struct P2PSection {
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct StorageSection {
     #[serde(alias = "Path")]
     pub path: Option<String>,
@@ -77,16 +79,18 @@ pub struct StorageSection {
     pub write_buffer_size: Option<u64>,
     #[serde(alias = "MaxOpenFiles")]
     pub max_open_files: Option<u32>,
+    #[serde(alias = "ReadOnly")]
+    pub read_only: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct BlockchainSection {
     pub block_time: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default, Serialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct RpcSection {
     #[serde(alias = "Enabled")]
     pub enabled: bool,
@@ -139,7 +143,7 @@ pub struct RpcSection {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct LoggingSection {
     #[serde(alias = "Active")]
     pub active: bool,
@@ -171,7 +175,7 @@ impl Default for LoggingSection {
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct UnlockWalletSection {
     #[serde(alias = "Path")]
     pub path: Option<String>,
@@ -182,14 +186,14 @@ pub struct UnlockWalletSection {
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct ContractsSection {
     #[serde(alias = "NeoNameService")]
     pub neo_name_service: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct PluginsSection {
     #[serde(alias = "DownloadUrl")]
     pub download_url: String,
@@ -320,6 +324,9 @@ impl NodeConfig {
                 config.compression_algorithm = algorithm;
             }
         }
+        if let Some(read_only) = self.storage.read_only {
+            config.read_only = read_only;
+        }
         config
     }
 
@@ -356,7 +363,23 @@ impl NodeConfig {
             }
         });
 
-        fs::write(&config_path, serde_json::to_string_pretty(&payload)?).with_context(|| {
+        let json = serde_json::to_string_pretty(&payload)?;
+        let mut options = OpenOptions::new();
+        options.create(true).write(true).truncate(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+
+        let mut file = options.open(&config_path).with_context(|| {
+            format!(
+                "failed to open RPC server configuration at {}",
+                config_path.display()
+            )
+        })?;
+
+        file.write_all(json.as_bytes()).with_context(|| {
             format!(
                 "failed to write RPC server configuration to {}",
                 config_path.display()
@@ -469,4 +492,93 @@ fn megabytes_to_bytes(value_mb: u64) -> usize {
     const MB: u64 = 1024 * 1024;
     let bytes = value_mb.saturating_mul(MB);
     usize::try_from(bytes).unwrap_or(usize::MAX)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn rejects_unknown_fields_in_known_table() {
+        let contents = r#"
+            [network]
+            network_type = "MainNet"
+            unexpected = 1
+        "#;
+        let err = toml::from_str::<NodeConfig>(contents).expect_err("should reject unknown field");
+        let msg = err.to_string().to_ascii_lowercase();
+        assert!(
+            msg.contains("unknown field") || msg.contains("unknown"),
+            "unexpected error message: {msg}"
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_tables() {
+        let contents = r#"
+            [network]
+            network_type = "MainNet"
+
+            [extra]
+            foo = "bar"
+        "#;
+        let err = toml::from_str::<NodeConfig>(contents).expect_err("should reject unknown table");
+        let msg = err.to_string().to_ascii_lowercase();
+        assert!(
+            msg.contains("unknown field") || msg.contains("extra"),
+            "unexpected error message: {msg}"
+        );
+    }
+
+    #[test]
+    fn writes_rpc_config_with_restricted_permissions() {
+        let tmp = TempDir::new().expect("temp dir");
+        env::set_var("NEO_PLUGINS_DIR", tmp.path());
+
+        let mut config = NodeConfig::default();
+        config.rpc.enabled = true;
+        config.rpc.port = Some(12345);
+
+        let settings = ProtocolSettings::mainnet();
+        let path = config
+            .write_rpc_server_plugin_config(&settings)
+            .expect("write rpc config")
+            .expect("path returned");
+
+        let metadata = fs::metadata(&path).expect("metadata");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            assert_eq!(metadata.mode() & 0o777, 0o600);
+        }
+
+        let contents = fs::read_to_string(&path).expect("contents");
+        assert!(
+            contents.contains("\"Servers\""),
+            "config should contain Servers array"
+        );
+
+        env::remove_var("NEO_PLUGINS_DIR");
+    }
+
+    #[test]
+    fn bundled_mainnet_config_parses() {
+        let cfg: NodeConfig = toml::from_str(include_str!("../../../neo_mainnet_node.toml"))
+            .expect("mainnet config should parse");
+        assert_eq!(cfg.network.network_type.as_deref(), Some("MainNet"));
+    }
+
+    #[test]
+    fn bundled_testnet_config_parses() {
+        let cfg: NodeConfig = toml::from_str(include_str!("../../../neo_testnet_node.toml"))
+            .expect("testnet config should parse");
+        assert_eq!(cfg.network.network_type.as_deref(), Some("TestNet"));
+    }
+
+    #[test]
+    fn bundled_production_config_parses() {
+        toml::from_str::<NodeConfig>(include_str!("../../../neo_production_node.toml"))
+            .expect("production template should parse");
+    }
 }

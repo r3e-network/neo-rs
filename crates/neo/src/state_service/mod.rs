@@ -7,6 +7,9 @@ pub mod keys;
 pub mod state_root;
 pub mod state_store;
 
+/// Extensible payload category for state service messages (matches C# StateService.StatePayloadCategory).
+pub const STATE_SERVICE_CATEGORY: &str = "StateService";
+
 pub use keys::Keys;
 pub use state_root::StateRoot;
 pub use state_store::StateStore;

@@ -3,14 +3,11 @@
 use super::CommandResult;
 use neo_rpc_client::RpcClient;
 
-pub async fn execute(
-    client: &RpcClient,
-    path: &str,
-    start: u32,
-    count: u32,
-) -> CommandResult {
+pub async fn execute(client: &RpcClient, path: &str, start: u32, count: u32) -> CommandResult {
     // Get current block height
-    let block_count = client.get_block_count().await
+    let block_count = client
+        .get_block_count()
+        .await
         .map_err(|e| anyhow::anyhow!("RPC error: {}", e))?;
 
     let end = if count == 0 {

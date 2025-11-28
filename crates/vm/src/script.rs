@@ -388,7 +388,7 @@ impl Script {
     /// # Returns
     ///
     /// An iterator over the instructions in the script
-    pub fn instructions(&self) -> InstructionIterator {
+    pub fn instructions(&self) -> InstructionIterator<'_> {
         InstructionIterator {
             script: self,
             position: 0,

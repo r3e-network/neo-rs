@@ -148,7 +148,7 @@ lru = "0.12"
 dashmap = "5.5"
 
 # === Storage ===
-rocksdb = { version = "0.21", features = ["snappy", "lz4"] }
+rocksdb = { version = "0.21", default-features = false, features = ["snappy", "lz4", "zlib"] }
 sled = "0.34"
 
 # === Network ===

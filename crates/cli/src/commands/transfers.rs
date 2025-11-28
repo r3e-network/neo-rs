@@ -9,7 +9,9 @@ pub async fn execute(
     from: Option<u64>,
     to: Option<u64>,
 ) -> CommandResult {
-    let transfers = client.get_nep17_transfers(address, from, to).await
+    let transfers = client
+        .get_nep17_transfers(address, from, to)
+        .await
         .map_err(|e| anyhow::anyhow!("RPC error: {}", e))?;
 
     let output = serde_json::to_string_pretty(&transfers)

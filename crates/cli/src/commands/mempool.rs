@@ -11,11 +11,13 @@ pub async fn execute(client: &RpcClient, verbose: bool) -> CommandResult {
         vec![]
     };
 
-    let result = client.rpc_send_async("getrawmempool", params).await
+    let result = client
+        .rpc_send_async("getrawmempool", params)
+        .await
         .map_err(|e| anyhow::anyhow!("RPC error: {}", e))?;
 
-    let output = serde_json::to_string_pretty(&result)
-        .map_err(|e| anyhow::anyhow!("JSON error: {}", e))?;
+    let output =
+        serde_json::to_string_pretty(&result).map_err(|e| anyhow::anyhow!("JSON error: {}", e))?;
 
     Ok(output)
 }
