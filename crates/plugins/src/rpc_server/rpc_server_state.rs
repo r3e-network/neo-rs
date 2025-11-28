@@ -321,6 +321,7 @@ impl RpcServerState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use neo_core::{NeoSystem, ProtocolSettings};
 
     #[test]
     fn proof_round_trips() {
@@ -331,5 +332,50 @@ mod tests {
             StateStore::decode_proof_payload(&encoded).expect("proof decode");
         assert_eq!(decoded_key, key);
         assert_eq!(decoded_nodes, nodes);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn state_height_and_root_handlers_work() {
+        let settings = ProtocolSettings::default();
+        let system = NeoSystem::new(settings, None, None).expect("NeoSystem::new should succeed");
+
+        // Seed a local state root at height 1 via snapshot helpers so current snapshot updates.
+        let state_store = system
+            .state_store()
+            .expect("state store lookup")
+            .expect("state store present");
+        state_store.update_local_state_root_snapshot(1, std::iter::empty());
+        state_store.update_local_state_root(1);
+        let root_hash = state_store.current_local_root_hash().unwrap_or_else(UInt256::zero);
+
+        // Build an RpcServer with state handlers without binding a socket.
+        let mut server = RpcServer::new(system.clone(), Default::default());
+        server.register_handlers(RpcServerState::register_handlers());
+        let server = Arc::new(parking_lot::RwLock::new(server));
+
+        // getstateheight
+        let height = RpcServerState::get_state_height(&server.read(), &[])
+            .expect("state height")
+            .as_object()
+            .cloned()
+            .expect("object");
+        assert_eq!(height.get("localrootindex").and_then(Value::as_u64), Some(1));
+
+        // getstateroot
+        let root_obj = RpcServerState::get_state_root(
+            &server.read(),
+            &[Value::Number(1u64.into())],
+        )
+        .expect("state root")
+        .as_object()
+        .cloned()
+        .expect("object");
+        assert_eq!(
+            root_obj
+                .get("roothash")
+                .and_then(Value::as_str)
+                .expect("roothash"),
+            root_hash.to_string()
+        );
     }
 }
