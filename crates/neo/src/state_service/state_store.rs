@@ -634,6 +634,35 @@ impl StateStore {
         let proof_set: std::collections::HashSet<Vec<u8>> = proof.iter().cloned().collect();
         Trie::<StateStoreSnapshot>::verify_proof(root, key, &proof_set).ok()
     }
+
+    /// Serializes a proof payload (key + nodes) for transport over RPC.
+    pub fn encode_proof_payload(key: &[u8], nodes: &[Vec<u8>]) -> Vec<u8> {
+        let mut writer = BinaryWriter::new();
+        writer
+            .write_var_bytes(key)
+            .expect("writing proof key should not fail");
+        writer
+            .write_var_int(nodes.len() as u64)
+            .expect("writing proof length should not fail");
+        for node in nodes {
+            writer
+                .write_var_bytes(node)
+                .expect("writing proof node should not fail");
+        }
+        writer.into_bytes()
+    }
+
+    /// Deserializes a proof payload produced by `encode_proof_payload`.
+    pub fn decode_proof_payload(bytes: &[u8]) -> Option<(Vec<u8>, Vec<Vec<u8>>)> {
+        let mut reader = MemoryReader::new(bytes);
+        let key = reader.read_var_bytes(usize::MAX).ok()?;
+        let count = reader.read_var_int(u64::MAX).ok()? as usize;
+        let mut nodes = Vec::with_capacity(count);
+        for _ in 0..count {
+            nodes.push(reader.read_var_bytes(usize::MAX).ok()?);
+        }
+        Some((key, nodes))
+    }
 }
 
 /// Verifies state roots using the designated validator set.
@@ -897,8 +926,8 @@ mod tests {
             .into_iter()
             .collect::<Vec<_>>();
         let root_hash = snapshot.trie.root_hash().expect("root hash");
-        let value = StateStore::verify_proof(root_hash, &key.to_array(), &proof)
-            .expect("proof verifies");
+        let value =
+            StateStore::verify_proof(root_hash, &key.to_array(), &proof).expect("proof verifies");
         assert_eq!(value, item.get_value());
     }
 

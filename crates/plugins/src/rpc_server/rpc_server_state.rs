@@ -78,17 +78,16 @@ impl RpcServerState {
             .get_proof(root_hash, &storage_key)
             .ok_or_else(|| RpcException::new(RpcError::unknown_storage_item()))?;
 
-        let proof_bytes = Self::serialize_proof(&storage_key.to_array(), &proof_nodes);
+        let proof_bytes = StateStore::encode_proof_payload(&storage_key.to_array(), &proof_nodes);
         Ok(Value::String(BASE64_STANDARD.encode(proof_bytes)))
     }
 
     fn verify_proof(_server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
         let root_hash = Self::parse_uint256(params, 0, "verifyproof")?;
         let proof_bytes = Self::parse_base64(params, 1, "verifyproof", "Base64 proof payload")?;
-        let (_key, proof_nodes) = Self::deserialize_proof(&proof_bytes)?;
-
-        // Verification uses the key embedded in the proof payload.
-        let (key, nodes) = (_key, proof_nodes);
+        let (key, nodes) = StateStore::decode_proof_payload(&proof_bytes).ok_or_else(|| {
+            RpcException::new(RpcError::invalid_params().with_data("invalid proof payload"))
+        })?;
         let value = StateStore::verify_proof(root_hash, &key, &nodes).ok_or_else(|| {
             RpcException::new(
                 RpcError::verification_failed()
@@ -178,13 +177,19 @@ impl RpcServerState {
         let first_proof = results.first().and_then(|(key, _)| {
             let storage_key = StorageKey::new(contract_id, key.clone());
             state_store.get_proof(root_hash, &storage_key).map(|proof| {
-                BASE64_STANDARD.encode(Self::serialize_proof(&storage_key.to_array(), &proof))
+                BASE64_STANDARD.encode(StateStore::encode_proof_payload(
+                    &storage_key.to_array(),
+                    &proof,
+                ))
             })
         });
         let last_proof = results.last().and_then(|(key, _)| {
             let storage_key = StorageKey::new(contract_id, key.clone());
             state_store.get_proof(root_hash, &storage_key).map(|proof| {
-                BASE64_STANDARD.encode(Self::serialize_proof(&storage_key.to_array(), &proof))
+                BASE64_STANDARD.encode(StateStore::encode_proof_payload(
+                    &storage_key.to_array(),
+                    &proof,
+                ))
             })
         });
 
@@ -280,40 +285,6 @@ impl RpcServerState {
         Ok(contract.id)
     }
 
-    fn serialize_proof(key: &[u8], nodes: &[Vec<u8>]) -> Vec<u8> {
-        let mut writer = BinaryWriter::new();
-        writer
-            .write_var_bytes(key)
-            .expect("writing proof key should not fail");
-        writer
-            .write_var_int(nodes.len() as u64)
-            .expect("writing proof length should not fail");
-        for node in nodes {
-            writer
-                .write_var_bytes(node)
-                .expect("writing proof node should not fail");
-        }
-        writer.into_bytes()
-    }
-
-    fn deserialize_proof(bytes: &[u8]) -> Result<(Vec<u8>, Vec<Vec<u8>>), RpcException> {
-        let mut reader = MemoryReader::new(bytes);
-        let key = reader.read_var_bytes(usize::MAX).map_err(|_| {
-            RpcException::new(RpcError::invalid_params().with_data("invalid proof payload"))
-        })?;
-        let count = reader.read_var_int(u64::MAX).map_err(|_| {
-            RpcException::new(RpcError::invalid_params().with_data("invalid proof payload"))
-        })? as usize;
-        let mut nodes = Vec::with_capacity(count);
-        for _ in 0..count {
-            let node = reader.read_var_bytes(usize::MAX).map_err(|_| {
-                RpcException::new(RpcError::invalid_params().with_data("invalid proof payload"))
-            })?;
-            nodes.push(node);
-        }
-        Ok((key, nodes))
-    }
-
     fn state_root_to_json(root: &StateRoot) -> Value {
         let mut obj = Map::new();
         obj.insert("version".to_string(), json!(root.version));
@@ -353,9 +324,9 @@ mod tests {
     fn proof_round_trips() {
         let key = vec![1, 2, 3, 4];
         let nodes = vec![vec![0xAA, 0xBB], vec![0xCC]];
-        let encoded = RpcServerState::serialize_proof(&key, &nodes);
+        let encoded = StateStore::encode_proof_payload(&key, &nodes);
         let (decoded_key, decoded_nodes) =
-            RpcServerState::deserialize_proof(&encoded).expect("proof decode");
+            StateStore::decode_proof_payload(&encoded).expect("proof decode");
         assert_eq!(decoded_key, key);
         assert_eq!(decoded_nodes, nodes);
     }
