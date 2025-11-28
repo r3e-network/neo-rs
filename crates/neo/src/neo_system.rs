@@ -1779,6 +1779,7 @@ impl NeoSystem {
     }
 
     /// Retrieves a previously registered service by name.
+    /// Prefer typed accessors in higher layers to avoid leaking registry details.
     pub fn get_named_service<T>(&self, name: &str) -> CoreResult<Option<Arc<T>>>
     where
         T: Any + Send + Sync + 'static,

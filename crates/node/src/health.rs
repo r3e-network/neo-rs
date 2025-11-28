@@ -1,5 +1,6 @@
 //! Minimal health endpoint for neo-node.
 use crate::{metrics, ProtocolSettings};
+use neo_core::CoreResult;
 use hyper::{
     service::{make_service_fn, service_fn},
     Body, Request, Response, Server, StatusCode,
@@ -167,9 +168,12 @@ fn check_rpc_ready(enabled: bool, system: &Arc<NeoSystem>) -> bool {
     if !enabled {
         return true;
     }
+    rpc_server_handle(system)
+        .map(|srv| srv.map_or(false, |s| s.read().is_started()))
+        .unwrap_or(false)
+}
+
+fn rpc_server_handle(system: &NeoSystem) -> CoreResult<Option<Arc<RwLock<RpcServer>>>> {
     let name = system.rpc_service_name();
-    match system.get_named_service::<RwLock<RpcServer>>(&name) {
-        Ok(Some(server)) => server.read().is_started(),
-        _ => false,
-    }
+    system.get_named_service::<RwLock<RpcServer>>(&name)
 }
