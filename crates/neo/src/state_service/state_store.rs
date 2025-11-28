@@ -6,10 +6,16 @@
 use super::keys::Keys;
 use super::state_root::StateRoot;
 use crate::cryptography::mpt_trie::{IStoreSnapshot, MptResult, Trie};
+use crate::error::CoreResult;
 use crate::neo_io::{BinaryWriter, MemoryReader, Serializable};
-use crate::persistence::TrackState;
+use crate::persistence::{
+    data_cache::DataCache, i_store::IStore, i_store_provider::IStoreProvider,
+    store_cache::StoreCache, TrackState,
+};
+use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::{StorageItem, StorageKey};
 use crate::UInt256;
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
@@ -141,6 +147,65 @@ impl StateStoreBackend for MemoryStateStoreBackend {
     }
 }
 
+/// Snapshot-backed backend that persists through the core `IStore`.
+pub struct SnapshotBackedStateStoreBackend {
+    store: Arc<dyn IStore>,
+    pending: Mutex<HashMap<Vec<u8>, Option<Vec<u8>>>>,
+}
+
+impl SnapshotBackedStateStoreBackend {
+    pub fn new(store: Arc<dyn IStore>) -> Self {
+        Self {
+            store,
+            pending: Mutex::new(HashMap::new()),
+        }
+    }
+}
+
+impl StateStoreBackend for SnapshotBackedStateStoreBackend {
+    fn try_get(&self, key: &[u8]) -> Option<Vec<u8>> {
+        // Pending writes take precedence
+        if let Some(value) = self.pending.lock().get(key).cloned() {
+            return value;
+        }
+
+        let snapshot = self.store.get_snapshot();
+        snapshot.try_get(&key.to_vec())
+    }
+
+    fn put(&self, key: Vec<u8>, value: Vec<u8>) {
+        self.pending.lock().insert(key, Some(value));
+    }
+
+    fn delete(&self, key: &[u8]) {
+        self.pending.lock().insert(key.to_vec(), None);
+    }
+
+    fn commit(&self) {
+        let mut pending = self.pending.lock();
+        if pending.is_empty() {
+            return;
+        }
+
+        let mut snapshot = self.store.get_snapshot();
+        let Some(snapshot_mut) = Arc::get_mut(&mut snapshot) else {
+            tracing::warn!(
+                target: "neo",
+                "state service commit aborted: snapshot has additional references"
+            );
+            return;
+        };
+
+        for (key, value) in pending.drain() {
+            match value {
+                Some(v) => snapshot_mut.put(key, v),
+                None => snapshot_mut.delete(key),
+            }
+        }
+        snapshot_mut.commit();
+    }
+}
+
 /// Snapshot of the state store for atomic operations.
 /// Matches C# StateSnapshot class.
 pub struct StateSnapshot {
@@ -251,7 +316,7 @@ impl StateSnapshot {
 
     /// Gets the current validated root hash.
     pub fn current_validated_root_hash(&self) -> Option<UInt256> {
-        let index = self.current_local_root_index()?;
+        let index = self.current_validated_root_index()?;
         let state_root = self.get_state_root(index)?;
         state_root.witness.as_ref()?;
         Some(state_root.root_hash)
@@ -259,7 +324,9 @@ impl StateSnapshot {
 
     /// Commits all pending changes.
     pub fn commit(&mut self) -> Result<(), String> {
-        self.trie.commit().map_err(|e| format!("Trie commit failed: {:?}", e))?;
+        self.trie
+            .commit()
+            .map_err(|e| format!("Trie commit failed: {:?}", e))?;
         self.store.commit();
         Ok(())
     }
@@ -273,11 +340,21 @@ pub struct StateStore {
     cache: RwLock<HashMap<u32, StateRoot>>,
     current_snapshot: RwLock<Option<StateSnapshot>>,
     state_snapshot: RwLock<Option<StateSnapshot>>,
+    verifier: Option<StateRootVerifier>,
 }
 
 impl StateStore {
     /// Creates a new state store.
     pub fn new(store: Arc<dyn StateStoreBackend>, settings: StateServiceSettings) -> Self {
+        Self::new_with_verifier(store, settings, None)
+    }
+
+    /// Creates a new state store with an optional verifier.
+    pub fn new_with_verifier(
+        store: Arc<dyn StateStoreBackend>,
+        settings: StateServiceSettings,
+        verifier: Option<StateRootVerifier>,
+    ) -> Self {
         let snapshot = StateSnapshot::new(Arc::clone(&store), settings.clone());
         Self {
             store,
@@ -285,6 +362,7 @@ impl StateStore {
             cache: RwLock::new(HashMap::new()),
             current_snapshot: RwLock::new(Some(snapshot)),
             state_snapshot: RwLock::new(None),
+            verifier,
         }
     }
 
@@ -292,6 +370,31 @@ impl StateStore {
     pub fn new_in_memory() -> Self {
         let backend = Arc::new(MemoryStateStoreBackend::new());
         Self::new(backend, StateServiceSettings::default())
+    }
+
+    /// Creates a state store backed by the provided blockchain store and protocol settings,
+    /// wiring a verifier that reads designated validators from the same store.
+    pub fn new_from_store(
+        store: Arc<dyn IStore>,
+        settings: StateServiceSettings,
+        protocol_settings: Arc<ProtocolSettings>,
+    ) -> Self {
+        let backend = Arc::new(SnapshotBackedStateStoreBackend::new(store.clone()));
+        let verifier = StateRootVerifier::from_store(store, protocol_settings);
+        Self::new_with_verifier(backend, settings, Some(verifier))
+    }
+
+    /// Opens a state store using the provided store provider and path, wiring a verifier that
+    /// reads validator designations from the same store. This mirrors the C# StateService
+    /// behaviour where the plugin uses the node's database for both state and validator lookups.
+    pub fn open_with_provider(
+        provider: Arc<dyn IStoreProvider>,
+        path: &str,
+        settings: StateServiceSettings,
+        protocol_settings: Arc<ProtocolSettings>,
+    ) -> CoreResult<Self> {
+        let store = provider.get_store(path)?;
+        Ok(Self::new_from_store(store, settings, protocol_settings))
     }
 
     /// Gets a new snapshot.
@@ -303,7 +406,10 @@ impl StateStore {
     pub fn current_local_root_hash(&self) -> Option<UInt256> {
         match self.current_snapshot.read() {
             Ok(guard) => guard.as_ref().and_then(|s| s.current_local_root_hash()),
-            Err(poisoned) => poisoned.into_inner().as_ref().and_then(|s| s.current_local_root_hash()),
+            Err(poisoned) => poisoned
+                .into_inner()
+                .as_ref()
+                .and_then(|s| s.current_local_root_hash()),
         }
     }
 
@@ -311,15 +417,34 @@ impl StateStore {
     pub fn local_root_index(&self) -> Option<u32> {
         match self.current_snapshot.read() {
             Ok(guard) => guard.as_ref().and_then(|s| s.current_local_root_index()),
-            Err(poisoned) => poisoned.into_inner().as_ref().and_then(|s| s.current_local_root_index()),
+            Err(poisoned) => poisoned
+                .into_inner()
+                .as_ref()
+                .and_then(|s| s.current_local_root_index()),
         }
     }
 
     /// Gets the current validated root index.
     pub fn validated_root_index(&self) -> Option<u32> {
         match self.current_snapshot.read() {
-            Ok(guard) => guard.as_ref().and_then(|s| s.current_validated_root_index()),
-            Err(poisoned) => poisoned.into_inner().as_ref().and_then(|s| s.current_validated_root_index()),
+            Ok(guard) => guard
+                .as_ref()
+                .and_then(|s| s.current_validated_root_index()),
+            Err(poisoned) => poisoned
+                .into_inner()
+                .as_ref()
+                .and_then(|s| s.current_validated_root_index()),
+        }
+    }
+
+    /// Gets the current validated root hash.
+    pub fn current_validated_root_hash(&self) -> Option<UInt256> {
+        match self.current_snapshot.read() {
+            Ok(guard) => guard.as_ref().and_then(|s| s.current_validated_root_hash()),
+            Err(poisoned) => poisoned
+                .into_inner()
+                .as_ref()
+                .and_then(|s| s.current_validated_root_hash()),
         }
     }
 
@@ -359,6 +484,19 @@ impl StateStore {
             None => return false,
         };
 
+        // Validate witness using the configured verifier (if available).
+        let Some(verifier) = &self.verifier else {
+            tracing::warn!(
+                target: "neo",
+                index = state_root.index,
+                "state root received without verifier configured; rejecting"
+            );
+            return false;
+        };
+        if !verifier.verify(&state_root) {
+            return false;
+        }
+
         // Already validated
         if local_root.witness.is_some() {
             return false;
@@ -368,9 +506,6 @@ impl StateStore {
         if local_root.root_hash != state_root.root_hash {
             return false;
         }
-
-        // TODO: Verify witness against protocol settings
-        // For now, trust the witness
 
         // Store validated root
         let mut snapshot = self.get_snapshot();
@@ -488,6 +623,12 @@ impl StateStore {
             .map(|set| set.into_iter().collect())
     }
 
+    /// Builds a trie anchored at the supplied root hash for querying state.
+    pub fn trie_for_root(&self, root: UInt256) -> Trie<StateStoreSnapshot> {
+        let snapshot = StateStoreSnapshot::new(Arc::clone(&self.store));
+        Trie::new(Arc::new(snapshot), Some(root), self.settings.full_state)
+    }
+
     /// Verifies a proof.
     pub fn verify_proof(root: UInt256, key: &[u8], proof: &[Vec<u8>]) -> Option<Vec<u8>> {
         let proof_set: std::collections::HashSet<Vec<u8>> = proof.iter().cloned().collect();
@@ -495,9 +636,52 @@ impl StateStore {
     }
 }
 
+/// Verifies state roots using the designated validator set.
+#[derive(Clone)]
+pub struct StateRootVerifier {
+    settings: Arc<ProtocolSettings>,
+    snapshot_provider: Arc<dyn Fn() -> DataCache + Send + Sync>,
+}
+
+impl StateRootVerifier {
+    pub fn new(
+        settings: Arc<ProtocolSettings>,
+        snapshot_provider: Arc<dyn Fn() -> DataCache + Send + Sync>,
+    ) -> Self {
+        Self {
+            settings,
+            snapshot_provider,
+        }
+    }
+
+    fn verify(&self, state_root: &StateRoot) -> bool {
+        let snapshot = (self.snapshot_provider)();
+        state_root.verify(&self.settings, &snapshot)
+    }
+
+    /// Builds a verifier that reads state from the provided store using a read-only cache.
+    pub fn from_store(store: Arc<dyn IStore>, settings: Arc<ProtocolSettings>) -> Self {
+        Self::new(
+            settings,
+            Arc::new(move || {
+                // Fresh read-only view for each verification to avoid mutability concerns.
+                let cache = StoreCache::new_from_store(store.clone(), true);
+                cache.data_cache().clone_cache()
+            }),
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::network::p2p::payloads::Witness;
+    use crate::persistence::providers::memory_store_provider::MemoryStoreProvider;
+    use crate::protocol_settings::ProtocolSettings;
+    use crate::smart_contract::Contract;
+    use crate::wallets::KeyPair;
+    use neo_vm::op_code::OpCode;
+    use std::sync::Arc;
 
     #[test]
     fn test_state_store_creation() {
@@ -564,5 +748,164 @@ mod tests {
         // Commit
         backend.commit();
         assert_eq!(backend.try_get(&[1, 2, 3]), None);
+    }
+
+    #[test]
+    fn validated_root_hash_prefers_validated_index() {
+        let store = StateStore::new_in_memory();
+
+        // Seed a local root at height 1
+        let mut snapshot = store.get_snapshot();
+        let local_hash = UInt256::from_bytes(&[1u8; 32]).unwrap();
+        let local_root = StateRoot::new_current(1, local_hash);
+        snapshot.add_local_state_root(&local_root).unwrap();
+        snapshot.commit().unwrap();
+
+        // Persist a validated root at a different height to ensure we read from CURRENT_VALIDATED_ROOT_INDEX
+        let mut validated_root =
+            StateRoot::new_current(2, UInt256::from_bytes(&[2u8; 32]).unwrap());
+        validated_root.witness = Some(Witness::new_with_scripts(vec![0x01], vec![0x02]));
+        let mut validated_snapshot = store.get_snapshot();
+        validated_snapshot
+            .add_validated_state_root(&validated_root)
+            .unwrap();
+        validated_snapshot.commit().unwrap();
+
+        assert_eq!(
+            store.current_validated_root_hash(),
+            Some(validated_root.root_hash)
+        );
+    }
+
+    #[test]
+    fn rejects_state_root_without_verifier() {
+        let store = StateStore::new_in_memory();
+
+        // Seed a local root at height 10
+        let mut snapshot = store.get_snapshot();
+        let root_hash = UInt256::from_bytes(&[3u8; 32]).unwrap();
+        let local_root = StateRoot::new_current(10, root_hash);
+        snapshot.add_local_state_root(&local_root).unwrap();
+        snapshot.commit().unwrap();
+
+        // Build a dummy witness to exercise the verifier path
+        let witness = Witness::new_with_scripts(vec![0x01], vec![0x02]);
+        let mut incoming = StateRoot::new_current(10, root_hash);
+        incoming.witness = Some(witness);
+
+        assert!(!store.on_new_state_root(incoming));
+        assert!(store.validated_root_index().is_none());
+    }
+
+    #[test]
+    fn rejects_state_root_with_invalid_signature() {
+        let mut settings = ProtocolSettings::default_settings();
+        let keypair = KeyPair::generate().expect("generate keypair");
+        let validator = keypair.get_public_key_point().expect("public key point");
+        settings.standby_committee = vec![validator.clone()];
+        settings.validators_count = 1;
+
+        let verifier = StateRootVerifier::new(
+            Arc::new(settings.clone()),
+            Arc::new(|| DataCache::new(true)),
+        );
+        let backend = Arc::new(MemoryStateStoreBackend::new());
+        let store =
+            StateStore::new_with_verifier(backend, StateServiceSettings::default(), Some(verifier));
+
+        // Seed local root
+        let mut local_snapshot = store.get_snapshot();
+        let root_hash = UInt256::from_bytes(&[8u8; 32]).unwrap();
+        let local_root = StateRoot::new_current(7, root_hash);
+        local_snapshot
+            .add_local_state_root(&local_root)
+            .expect("local state root");
+        local_snapshot.commit().expect("commit local root");
+
+        // Build signed state root but use an incorrect verification script (single-sig)
+        let mut signed_root = StateRoot::new_current(7, root_hash);
+        let hash = signed_root.hash();
+        let mut sign_data = Vec::with_capacity(4 + hash.to_bytes().len());
+        sign_data.extend_from_slice(&settings.network.to_le_bytes());
+        sign_data.extend_from_slice(&hash.to_array());
+        let signature = keypair.sign(&sign_data).expect("sign state root");
+
+        let mut invocation = Vec::with_capacity(signature.len() + 2);
+        invocation.push(OpCode::PUSHDATA1 as u8);
+        invocation.push(signature.len() as u8);
+        invocation.extend_from_slice(&signature);
+
+        // Use a single-sig script instead of multi-sig to force failure
+        let verification_script = Contract::create_signature_contract(validator).script;
+        signed_root.witness = Some(Witness::new_with_scripts(invocation, verification_script));
+
+        assert!(!store.on_new_state_root(signed_root));
+        assert!(store.validated_root_index().is_none());
+    }
+
+    #[test]
+    fn open_with_provider_uses_snapshot_backend() {
+        let provider = Arc::new(MemoryStoreProvider::new());
+        let protocol_settings = Arc::new(ProtocolSettings::default_settings());
+        let store = StateStore::open_with_provider(
+            provider,
+            "StateRoot",
+            StateServiceSettings::default(),
+            protocol_settings,
+        )
+        .expect("state store opens");
+
+        let mut snapshot = store.get_snapshot();
+        let root_hash = UInt256::from_bytes(&[4u8; 32]).unwrap();
+        let state_root = StateRoot::new_current(1, root_hash);
+        snapshot.add_local_state_root(&state_root).unwrap();
+        snapshot.commit().unwrap();
+
+        assert_eq!(store.current_local_root_hash(), Some(root_hash));
+    }
+
+    #[test]
+    fn verifies_state_root_witness_against_standby_committee() {
+        let mut settings = ProtocolSettings::default_settings();
+        let keypair = KeyPair::generate().expect("generate keypair");
+        let validator = keypair.get_public_key_point().expect("public key point");
+        settings.standby_committee = vec![validator.clone()];
+        settings.validators_count = 1;
+
+        let verifier = StateRootVerifier::new(
+            Arc::new(settings.clone()),
+            Arc::new(|| DataCache::new(true)),
+        );
+        let backend = Arc::new(MemoryStateStoreBackend::new());
+        let store =
+            StateStore::new_with_verifier(backend, StateServiceSettings::default(), Some(verifier));
+
+        // Seed local root without witness
+        let mut local_snapshot = store.get_snapshot();
+        let root_hash = UInt256::from_bytes(&[9u8; 32]).unwrap();
+        let local_root = StateRoot::new_current(5, root_hash);
+        local_snapshot
+            .add_local_state_root(&local_root)
+            .expect("local state root");
+        local_snapshot.commit().expect("commit local root");
+
+        // Build signed state root
+        let mut signed_root = StateRoot::new_current(5, root_hash);
+        let hash = signed_root.hash();
+        let mut sign_data = Vec::with_capacity(4 + hash.to_bytes().len());
+        sign_data.extend_from_slice(&settings.network.to_le_bytes());
+        sign_data.extend_from_slice(&hash.to_array());
+        let signature = keypair.sign(&sign_data).expect("sign state root");
+
+        let mut invocation = Vec::with_capacity(signature.len() + 2);
+        invocation.push(OpCode::PUSHDATA1 as u8);
+        invocation.push(signature.len() as u8);
+        invocation.extend_from_slice(&signature);
+
+        let verification_script = Contract::create_multi_sig_redeem_script(1, &[validator]);
+        signed_root.witness = Some(Witness::new_with_scripts(invocation, verification_script));
+
+        assert!(store.on_new_state_root(signed_root));
+        assert_eq!(store.validated_root_index(), Some(5));
     }
 }

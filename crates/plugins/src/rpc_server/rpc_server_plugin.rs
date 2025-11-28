@@ -21,6 +21,7 @@ use super::rpc_server::{
 use super::rpc_server_blockchain::RpcServerBlockchain;
 use super::rpc_server_node::RpcServerNode;
 use super::rpc_server_smart_contract::RpcServerSmartContract;
+use super::rpc_server_state::RpcServerState;
 use super::rpc_server_utilities::RpcServerUtilities;
 use super::rpc_server_wallet::RpcServerWallet;
 
@@ -82,9 +83,10 @@ impl RpcServerPlugin {
             return;
         }
 
-        let mut server = RpcServer::new(system, config.clone());
+        let mut server = RpcServer::new(system.clone(), config.clone());
         server.register_handlers(RpcServerBlockchain::register_handlers());
         server.register_handlers(RpcServerNode::register_handlers());
+        server.register_handlers(RpcServerState::register_handlers());
         server.register_handlers(RpcServerSmartContract::register_handlers());
         server.register_handlers(RpcServerWallet::register_handlers());
         server.register_handlers(RpcServerUtilities::register_handlers());
@@ -100,6 +102,13 @@ impl RpcServerPlugin {
             }
         }
         register_server(network, Arc::clone(&server_arc));
+
+        // Expose server for readiness/inspection via service registry.
+        let name = format!("RpcServer:{network}");
+        if let Err(err) = system.add_named_service::<RwLock<RpcServer>, _>(name, server_arc.clone())
+        {
+            warn!("RpcServer: failed to register server service: {}", err);
+        }
     }
 
     fn stop_server_for_network(&self, network: u32) {

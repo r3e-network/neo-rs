@@ -160,6 +160,7 @@ impl RpcClientBuilder {
 
 /// The RPC client to call NEO RPC methods
 /// Matches C# RpcClient
+#[derive(Clone)]
 pub struct RpcClient {
     base_address: Url,
     http_client: Client,

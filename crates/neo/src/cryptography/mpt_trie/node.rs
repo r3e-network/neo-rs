@@ -6,8 +6,8 @@ use crate::neo_io::serializable::helper::get_var_size;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::uint256::UINT256_SIZE;
 use crate::UInt256;
-use std::cell::RefCell;
 use std::mem;
+use std::sync::RwLock;
 
 /// Total number of children supported by a branch node (16 nibbles + value).
 pub const BRANCH_CHILD_COUNT: usize = 17;
@@ -26,7 +26,7 @@ pub const MAX_VALUE_LENGTH: usize = 3 + MAX_STORAGE_VALUE_SIZE + mem::size_of::<
 pub struct Node {
     pub node_type: NodeType,
     pub reference: u32,
-    hash: RefCell<Option<UInt256>>,
+    hash: RwLock<Option<UInt256>>,
     pub children: Vec<Node>,
     pub key: Vec<u8>,
     pub next: Option<Box<Node>>,
@@ -38,7 +38,7 @@ impl Default for Node {
         Self {
             node_type: NodeType::Empty,
             reference: 0,
-            hash: RefCell::new(None),
+            hash: RwLock::new(None),
             children: Vec::new(),
             key: Vec::new(),
             next: None,
@@ -49,11 +49,11 @@ impl Default for Node {
 
 impl Clone for Node {
     fn clone(&self) -> Self {
-        let cached_hash = *self.hash.borrow();
+        let cached_hash = *self.hash.read().expect("hash lock poisoned");
         let mut node = Self {
             node_type: self.node_type,
             reference: self.reference,
-            hash: RefCell::new(None),
+            hash: RwLock::new(None),
             children: Vec::new(),
             key: self.key.clone(),
             next: None,
@@ -72,7 +72,7 @@ impl Clone for Node {
             }
             NodeType::LeafNode | NodeType::Empty => {}
             NodeType::HashNode => {
-                *node.hash.borrow_mut() = cached_hash;
+                *node.hash.write().expect("hash lock poisoned") = cached_hash;
             }
         }
 
@@ -91,7 +91,7 @@ impl Node {
         Self {
             node_type: NodeType::BranchNode,
             reference: 1,
-            hash: RefCell::new(None),
+            hash: RwLock::new(None),
             children: (0..BRANCH_CHILD_COUNT).map(|_| Node::new()).collect(),
             key: Vec::new(),
             next: None,
@@ -108,7 +108,7 @@ impl Node {
         Ok(Self {
             node_type: NodeType::ExtensionNode,
             reference: 1,
-            hash: RefCell::new(None),
+            hash: RwLock::new(None),
             children: Vec::new(),
             key,
             next: Some(Box::new(next)),
@@ -121,7 +121,7 @@ impl Node {
         Self {
             node_type: NodeType::LeafNode,
             reference: 1,
-            hash: RefCell::new(None),
+            hash: RwLock::new(None),
             children: Vec::new(),
             key: Vec::new(),
             next: None,
@@ -134,7 +134,7 @@ impl Node {
         Self {
             node_type: NodeType::HashNode,
             reference: 0,
-            hash: RefCell::new(Some(hash)),
+            hash: RwLock::new(Some(hash)),
             children: Vec::new(),
             key: Vec::new(),
             next: None,
@@ -149,7 +149,7 @@ impl Node {
 
     /// Marks the node as dirty causing its cached hash to be recomputed next time.
     pub fn set_dirty(&mut self) {
-        *self.hash.borrow_mut() = None;
+        *self.hash.write().expect("hash lock poisoned") = None;
     }
 
     /// Computes the node hash (Hash256 of the serialized payload without the reference).
@@ -159,14 +159,14 @@ impl Node {
 
     /// Attempts to compute the node hash, returning an error if serialization fails.
     pub fn try_hash(&self) -> MptResult<UInt256> {
-        if let Some(hash) = *self.hash.borrow() {
+        if let Some(hash) = *self.hash.read().expect("hash lock poisoned") {
             return Ok(hash);
         }
 
         let data = self.to_array_without_reference()?;
         let hash_bytes = neo_crypto::hash256(&data);
         let hash = UInt256::from_bytes(&hash_bytes).map_err(MptError::from)?;
-        *self.hash.borrow_mut() = Some(hash);
+        *self.hash.write().expect("hash lock poisoned") = Some(hash);
         Ok(hash)
     }
 
@@ -296,7 +296,7 @@ impl Node {
     }
 
     fn serialize_hash(&self, writer: &mut BinaryWriter) -> IoResult<()> {
-        let Some(hash) = *self.hash.borrow() else {
+        let Some(hash) = *self.hash.read().expect("hash lock poisoned") else {
             return Err(IoError::invalid_data("hash node without cached hash"));
         };
         writer.write_bytes(&hash.to_bytes())
@@ -336,7 +336,7 @@ impl Serializable for Node {
                 Ok(Self {
                     node_type,
                     reference,
-                    hash: RefCell::new(None),
+                    hash: RwLock::new(None),
                     children,
                     key: Vec::new(),
                     next: None,
@@ -349,7 +349,7 @@ impl Serializable for Node {
                 Ok(Self {
                     node_type,
                     reference,
-                    hash: RefCell::new(None),
+                    hash: RwLock::new(None),
                     children: Vec::new(),
                     key,
                     next: Some(Box::new(next)),
@@ -362,7 +362,7 @@ impl Serializable for Node {
                 Ok(Self {
                     node_type,
                     reference,
-                    hash: RefCell::new(None),
+                    hash: RwLock::new(None),
                     children: Vec::new(),
                     key: Vec::new(),
                     next: None,
@@ -374,7 +374,7 @@ impl Serializable for Node {
                 Ok(Self {
                     node_type,
                     reference: 0,
-                    hash: RefCell::new(Some(hash)),
+                    hash: RwLock::new(Some(hash)),
                     children: Vec::new(),
                     key: Vec::new(),
                     next: None,
