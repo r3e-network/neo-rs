@@ -137,17 +137,28 @@ impl NeoHash {
 /// ECDSA operations for secp256k1 (Bitcoin's curve)
 pub struct Secp256k1Crypto;
 
+/// Maximum attempts for key generation to prevent infinite loops in case of RNG failure
+const MAX_KEY_GEN_ATTEMPTS: usize = 1000;
+
 impl Secp256k1Crypto {
     /// Generates a new random private key
+    ///
+    /// # Panics
+    /// Panics if a valid key cannot be generated after MAX_KEY_GEN_ATTEMPTS attempts,
+    /// which would indicate a serious RNG failure.
     pub fn generate_private_key() -> [u8; 32] {
         let mut rng = OsRng;
-        loop {
+        for _ in 0..MAX_KEY_GEN_ATTEMPTS {
             let mut candidate = [0u8; 32];
             rng.fill_bytes(&mut candidate);
             if let Ok(secret_key) = Secp256k1SecretKey::from_slice(&candidate) {
                 return secret_key.secret_bytes();
             }
         }
+        panic!(
+            "Failed to generate valid secp256k1 private key after {} attempts - RNG may be broken",
+            MAX_KEY_GEN_ATTEMPTS
+        );
     }
 
     /// Derives public key from private key

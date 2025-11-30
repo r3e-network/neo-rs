@@ -1,12 +1,13 @@
 //! Network error types for P2P operations.
 
-use std::fmt;
 use std::net::SocketAddr;
+use thiserror::Error;
 
 /// Network-related errors.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Error)]
 pub enum NetworkError {
     /// Protocol violation by a peer.
+    #[error("Protocol violation from {peer}: {violation}")]
     ProtocolViolation {
         /// The peer that violated the protocol.
         peer: SocketAddr,
@@ -15,33 +16,21 @@ pub enum NetworkError {
     },
 
     /// Invalid message format.
+    #[error("Invalid message: {0}")]
     InvalidMessage(String),
 
     /// Connection error.
+    #[error("Connection error: {0}")]
     ConnectionError(String),
 
     /// Timeout error.
+    #[error("Network timeout")]
     Timeout,
 
     /// Other network error.
+    #[error("Network error: {0}")]
     Other(String),
 }
-
-impl fmt::Display for NetworkError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::ProtocolViolation { peer, violation } => {
-                write!(f, "Protocol violation from {}: {}", peer, violation)
-            }
-            Self::InvalidMessage(msg) => write!(f, "Invalid message: {}", msg),
-            Self::ConnectionError(msg) => write!(f, "Connection error: {}", msg),
-            Self::Timeout => write!(f, "Network timeout"),
-            Self::Other(msg) => write!(f, "Network error: {}", msg),
-        }
-    }
-}
-
-impl std::error::Error for NetworkError {}
 
 /// Result type for network operations.
 pub type NetworkResult<T> = Result<T, NetworkError>;
