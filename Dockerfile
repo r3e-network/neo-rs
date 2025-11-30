@@ -29,10 +29,21 @@ ENV LIBCLANG_PATH=/usr/lib/llvm-14/lib
 # Create app directory
 WORKDIR /app
 
-# Copy manifests
+# Copy manifests and workspace crates
 COPY Cargo.toml Cargo.lock ./
-COPY crates/ crates/
-COPY src/ src/
+COPY neo-akka/ neo-akka/
+COPY neo-bls12-381/ neo-bls12-381/
+COPY neo-cli/ neo-cli/
+COPY neo-core/ neo-core/
+COPY neo-extensions/ neo-extensions/
+COPY neo-io/ neo-io/
+COPY neo-json/ neo-json/
+COPY neo-node/ neo-node/
+COPY neo-plugins/ neo-plugins/
+COPY neo-rpc-client/ neo-rpc-client/
+COPY neo-services/ neo-services/
+COPY neo-tee/ neo-tee/
+COPY neo-vm/ neo-vm/
 
 # Build release binaries (neo-cli and workspace crates)
 RUN cargo build --release --workspace --locked

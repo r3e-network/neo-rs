@@ -1,0 +1,38 @@
+[package]
+name = "neo-consensus"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "dBFT consensus for Neo blockchain"
+
+[dependencies]
+# Internal crates
+neo-primitives = { workspace = true }
+neo-crypto = { workspace = true }
+neo-io = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+[dev-dependencies]
+
+[features]
+default = []

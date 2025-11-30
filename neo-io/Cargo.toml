@@ -1,0 +1,33 @@
+[package]
+name = "neo-io"
+version = "0.6.0"
+edition = "2021"
+authors = ["R3E Network <jimmy@r3e.network>"]
+description = "IO operations and data structures for the Neo blockchain"
+repository = "https://github.com/r3e-network/neo-rs"
+license = "MIT"
+readme = "README.md"
+
+[dependencies]
+# External dependencies
+bytes = { workspace = true }
+thiserror = { workspace = true }
+derive_more = { workspace = true }
+lru = { workspace = true }
+hashbrown = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+parking_lot = { workspace = true }
+indexmap = "2.0"
+linked-hash-map = "0.5"
+
+# Internal dependencies
+# Temporarily commented out to break dependency cycle
+# Removed neo-cryptography - using external crypto crates directly
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full"] }
+tempfile = { workspace = true }

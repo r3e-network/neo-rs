@@ -1,0 +1,40 @@
+//! # Neo Primitives
+//!
+//! Fundamental types for the Neo blockchain implementation.
+//!
+//! This crate provides the core primitive types used throughout the Neo ecosystem:
+//! - `UInt160`: 160-bit unsigned integer (script hashes, addresses)
+//! - `UInt256`: 256-bit unsigned integer (transaction/block hashes)
+//! - `BigDecimal`: Arbitrary precision decimal for financial calculations
+//!
+//! ## Design Principles
+//!
+//! - **Zero dependencies on other neo-* crates** (except neo-io for serialization traits)
+//! - **C# Neo compatibility**: Matches the behavior of Neo C# implementation
+//! - **Efficient**: Optimized for blockchain operations
+//!
+//! ## Example
+//!
+//! ```rust
+//! use neo_primitives::{UInt160, UInt256};
+//!
+//! // Create from bytes
+//! let hash = UInt256::zero();
+//! assert!(hash.is_zero());
+//!
+//! // Parse from hex string
+//! let address_hash = UInt160::parse("0x0000000000000000000000000000000000000001").unwrap();
+//! ```
+
+pub mod constants;
+pub mod error;
+pub mod hardfork;
+pub mod uint160;
+pub mod uint256;
+
+// Re-exports
+pub use constants::*;
+pub use error::{PrimitiveError, PrimitiveResult};
+pub use hardfork::{Hardfork, HardforkParseError};
+pub use uint160::{UInt160, UINT160_SIZE};
+pub use uint256::{UInt256, UINT256_SIZE};

@@ -1,0 +1,41 @@
+[package]
+name = "neo-rpc-client"
+version = "0.6.0"
+edition = "2021"
+authors = ["R3E Network <jimmy@r3e.network>"]
+description = "Neo RPC Client implementation"
+license = "MIT"
+
+[dependencies]
+neo-core = { path = "../neo-core", package = "neo-core" }
+neo-io = { path = "../neo-io" }
+neo-json = { path = "../neo-json" }
+neo-vm = { path = "../neo-vm" }
+
+# Async runtime
+tokio = { version = "1.42", features = ["full"] }
+async-trait = "0.1"
+
+# HTTP client
+reqwest = { version = "0.11", features = ["json"] }
+hyper = { version = "0.14", features = ["client", "http1", "tcp", "server"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling
+thiserror = "2.0"
+anyhow = "1.0"
+
+# Utilities
+base64 = "0.22"
+hex = "0.4"
+num-bigint = "0.4"
+num-traits = "0.2"
+tracing = "0.1"
+regex = "1.10"
+rand = { workspace = true }
+
+[dev-dependencies]
+mockito = "1.0"

@@ -1,41 +1,65 @@
 [workspace]
 resolver = "2"
 members = [
-    # Core (matches C# Neo.csproj)
-    "crates/neo",
-    
-    # VM (matches C# Neo.VM)
-    "crates/vm",
-    
-    # RPC Client (matches C# RpcClient)
-    "crates/rpc_client",
-    
-    # IO (matches C# Neo.IO)
-    "crates/io",
-    
-    # Actor runtime (Akka-inspired)
-    "crates/akka",
-    
-    # Extensions (matches C# Neo.Extensions)
-    "crates/extensions",
-    
-    # JSON (matches C# Neo.Json)
-    "crates/json",
-    
-    # Cryptography BLS12-381 (matches C# Neo.Cryptography.BLS12_381)
-    "crates/bls12_381",
-    
-    # Plugins (matches C# Neo.Plugins)
-    "crates/plugins",
-    
-    # Node implementation
-    "crates/cli",
+    # === Foundation Layer (no neo-* dependencies) ===
+    # Primitive types (UInt160, UInt256, BigDecimal)
+    "neo-primitives",
 
-    # Node daemon (standalone RPC server)
-    "crates/node",
+    # Cryptography (hashing, ECC, signatures)
+    "neo-crypto",
+
+    # Storage traits and abstractions
+    "neo-storage",
+
+    # IO (matches C# Neo.IO)
+    "neo-io",
+
+    # JSON (matches C# Neo.Json)
+    "neo-json",
+
+    # === Core Layer ===
+    # Core (matches C# Neo.csproj)
+    "neo-core",
+
+    # VM (matches C# Neo.VM)
+    "neo-vm",
+
+    # Smart contract execution engine
+    "neo-contract",
+
+    # P2P networking
+    "neo-p2p",
+
+    # RPC server and client
+    "neo-rpc",
+
+    # dBFT consensus
+    "neo-consensus",
+
+    # Extensions (matches C# Neo.Extensions)
+
+    # === Infrastructure Layer ===
+    # Actor runtime (Akka-inspired)
+    "neo-akka",
+
+    # Service traits and abstractions
+    "neo-services",
+
+    # RPC Client (matches C# RpcClient)
+    "neo-rpc-client",
+
+    # Plugins (matches C# Neo.Plugins)
+    "neo-plugins",
 
     # TEE (Trusted Execution Environment) support
-    "crates/tee",
+    "neo-tee",
+
+    # === Application Layer ===
+    # CLI client
+    "neo-cli",
+
+    # Node daemon (standalone RPC server)
+    "neo-node",
 ]
 exclude = [
     "target",
@@ -43,10 +67,11 @@ exclude = [
     "docs",
     "examples",
     "tests",
+    "neo_csharp",
 ]
 
 [workspace.package]
-version = "0.5.0"
+version = "0.6.0"
 edition = "2021"
 rust-version = "1.75"
 authors = [
@@ -66,17 +91,31 @@ msrv = "1.70.0"
 
 [workspace.dependencies]
 # === Internal crates ===
-neo-core = { path = "crates/neo", version = "0.5.0" }
-neo-io = { path = "crates/io", version = "0.5.0" }
-neo-vm = { path = "crates/vm", version = "0.5.0" }
-neo-json = { path = "crates/json", version = "0.5.0" }
-# Removed crates that don't exist in C# structure
-neo-cli = { path = "crates/cli", version = "0.5.0" }
-neo-node = { path = "crates/node", version = "0.5.0" }
-neo-tee = { path = "crates/tee", version = "0.5.0" }
-neo-extensions = { path = "crates/extensions", version = "0.5.0" }
-# Removed neo-monitoring - not in C# structure
-neo-plugins = { path = "crates/plugins", version = "0.5.0" }
+# Foundation layer
+neo-primitives = { path = "neo-primitives", version = "0.6.0" }
+neo-crypto = { path = "neo-crypto", version = "0.6.0" }
+neo-storage = { path = "neo-storage", version = "0.6.0" }
+neo-io = { path = "neo-io", version = "0.6.0" }
+neo-json = { path = "neo-json", version = "0.6.0" }
+
+# Core layer
+neo-core = { path = "neo-core", version = "0.6.0" }
+neo-vm = { path = "neo-vm", version = "0.6.0" }
+neo-contract = { path = "neo-contract", version = "0.6.0" }
+neo-p2p = { path = "neo-p2p", version = "0.6.0" }
+neo-rpc = { path = "neo-rpc", version = "0.6.0" }
+neo-consensus = { path = "neo-consensus", version = "0.6.0" }
+
+# Infrastructure layer
+neo-akka = { path = "neo-akka", version = "0.6.0" }
+neo-services = { path = "neo-services", version = "0.6.0" }
+neo-rpc-client = { path = "neo-rpc-client", version = "0.6.0" }
+neo-plugins = { path = "neo-plugins", version = "0.6.0" }
+neo-tee = { path = "neo-tee", version = "0.6.0" }
+
+# Application layer
+neo-cli = { path = "neo-cli", version = "0.6.0" }
+neo-node = { path = "neo-node", version = "0.6.0" }
 
 # === Core dependencies ===
 # Async runtime
@@ -113,12 +152,12 @@ p256 = { version = "0.13", features = ["ecdsa", "sha256"] }
 
 # BLS12-381 cryptography
 blst = "0.3"
-# Alternative: ark-bls12-381 = { version = "0.4", features = ["std"] }
 
 # Hashing
 sha2 = "0.10"
 sha3 = "0.10"
 ripemd = "0.1"
+blake2 = "0.10"
 blake3 = "1.5"
 
 # Random number generation
@@ -177,104 +216,12 @@ mockall = "0.12"
 
 # Compression and metrics (always enabled)
 flate2 = "1.0"
-# zstd = "0.13" # Temporarily disabled due to C header issues
 lz4_flex = "0.11"
 prometheus = "0.13"
 sysinfo = "0.29"
 
 # Additional shared deps not previously centralized
 num_cpus = "1.16"
-
-[package]
-name = "neo-rs"
-version.workspace = true
-edition.workspace = true
-rust-version.workspace = true
-authors.workspace = true
-homepage.workspace = true
-repository.workspace = true
-documentation.workspace = true
-license.workspace = true
-keywords.workspace = true
-categories.workspace = true
-readme.workspace = true
-description = "High-performance Rust implementation of the Neo N3 blockchain protocol"
-
-[lib]
-name = "neo_rs"
-path = "src/lib.rs"
-
-[dependencies]
-# Core Neo crates
-neo-core.workspace = true
-# Removed neo-config - not in C# structure
-# neo-cli.workspace = true
-neo-vm.workspace = true
-
-# Runtime and async
-tokio.workspace = true
-tracing.workspace = true
-tracing-subscriber.workspace = true
-
-# Configuration and CLI
-clap.workspace = true
-serde.workspace = true
-toml.workspace = true
-url.workspace = true
-
-# Error handling
-thiserror.workspace = true
-anyhow.workspace = true
-
-[dependencies.neo-plugins]
-workspace = true
-
-[dependencies.prometheus]
-workspace = true
-
-[dependencies.sysinfo]
-workspace = true
-
-[dependencies.flate2]
-workspace = true
-
-# [dependencies.zstd]
-# workspace = true
-# Temporarily disabled due to C header issues
-
-[dependencies.tempfile]
-workspace = true
-
-# Development dependencies
-[dev-dependencies]
-tempfile.workspace = true
-criterion.workspace = true
-proptest.workspace = true
-mockall.workspace = true
-tokio-test = "0.4"
-log = "0.4"
-env_logger = "0.10"
-rand.workspace = true
-chrono.workspace = true
-sha2.workspace = true
-serde_json.workspace = true
-bs58.workspace = true
-futures.workspace = true
-
-# Benchmarks
-# [[bench]]
-# name = "node_performance"
-# harness = false
-
-# Examples (temporarily disabled due to API mismatches)
-# [[example]]
-# name = "live_network_test"
-# path = "examples/live_network_test.rs"
-
-# [[example]]
-# name = "network_test"
-# path = "examples/network_test.rs"
-# required-features = ["full"]
 
 # Profiles
 [profile.release]
@@ -308,13 +255,3 @@ debug = false
 strip = true
 panic = "abort"
 lto = "fat"
-
-# Documentation settings
-[package.metadata.docs.rs]
-rustdoc-args = ["--cfg", "docsrs"]
-
-# Integration tests (disabled after cleanup)
-# [[test]]
-# name = "integration_tests"
-# path = "tests/integration/mod.rs"
-# required-features = ["integration-tests"]

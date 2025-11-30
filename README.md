@@ -3,6 +3,7 @@
 Rust implementation of the Neo N3 node stack, including the virtual machine, core protocol logic, and `neo-cli` command line interface.
 
 For a high-level tour of crate boundaries and service lifecycles, see `docs/ARCHITECTURE.md`.
+For metrics and health payload fields, see `docs/METRICS.md`.
 
 ## Compatibility
 

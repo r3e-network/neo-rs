@@ -1,0 +1,36 @@
+[package]
+name = "neo-vm"
+version = "0.6.0"
+edition = "2021"
+authors = ["R3E Network <jimmy@r3e.network>"]
+description = "Virtual machine implementation for the Neo blockchain"
+repository = "https://github.com/r3e-network/neo-rs"
+license = "MIT"
+readme = "README.md"
+
+[dependencies]
+# External dependencies
+log = "0.4"
+num-bigint = "0.4"
+num-traits = "0.2"
+thiserror = "1.0"
+bitflags = "2.4"
+derive_more = "0.99"
+hashbrown = "0.14"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0" }
+paste = "1.0"
+lazy_static = "1.4"
+once_cell = "1.19"
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+parking_lot = { workspace = true }
+
+# Internal dependencies
+neo-io = { path = "../neo-io" }
+
+# Cryptography dependencies for script hash calculation
+sha2 = "0.10"
+ripemd = "0.1"
+murmur3 = "0.5"
+
+[dev-dependencies]
