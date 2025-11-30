@@ -71,7 +71,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "0.6.0"
+version = "0.7.0"
 edition = "2021"
 rust-version = "1.75"
 authors = [
@@ -92,30 +92,30 @@ msrv = "1.70.0"
 [workspace.dependencies]
 # === Internal crates ===
 # Foundation layer
-neo-primitives = { path = "neo-primitives", version = "0.6.0" }
-neo-crypto = { path = "neo-crypto", version = "0.6.0" }
-neo-storage = { path = "neo-storage", version = "0.6.0" }
-neo-io = { path = "neo-io", version = "0.6.0" }
-neo-json = { path = "neo-json", version = "0.6.0" }
+neo-primitives = { path = "neo-primitives", version = "0.7.0" }
+neo-crypto = { path = "neo-crypto", version = "0.7.0" }
+neo-storage = { path = "neo-storage", version = "0.7.0" }
+neo-io = { path = "neo-io", version = "0.7.0" }
+neo-json = { path = "neo-json", version = "0.7.0" }
 
 # Core layer
-neo-core = { path = "neo-core", version = "0.6.0" }
-neo-vm = { path = "neo-vm", version = "0.6.0" }
-neo-contract = { path = "neo-contract", version = "0.6.0" }
-neo-p2p = { path = "neo-p2p", version = "0.6.0" }
-neo-rpc = { path = "neo-rpc", version = "0.6.0" }
-neo-consensus = { path = "neo-consensus", version = "0.6.0" }
+neo-core = { path = "neo-core", version = "0.7.0" }
+neo-vm = { path = "neo-vm", version = "0.7.0" }
+neo-contract = { path = "neo-contract", version = "0.7.0" }
+neo-p2p = { path = "neo-p2p", version = "0.7.0" }
+neo-rpc = { path = "neo-rpc", version = "0.7.0" }
+neo-consensus = { path = "neo-consensus", version = "0.7.0" }
 
 # Infrastructure layer
-neo-akka = { path = "neo-akka", version = "0.6.0" }
-neo-services = { path = "neo-services", version = "0.6.0" }
-neo-rpc-client = { path = "neo-rpc-client", version = "0.6.0" }
-neo-plugins = { path = "neo-plugins", version = "0.6.0" }
-neo-tee = { path = "neo-tee", version = "0.6.0" }
+neo-akka = { path = "neo-akka", version = "0.7.0" }
+neo-services = { path = "neo-services", version = "0.7.0" }
+neo-rpc-client = { path = "neo-rpc-client", version = "0.7.0" }
+neo-plugins = { path = "neo-plugins", version = "0.7.0" }
+neo-tee = { path = "neo-tee", version = "0.7.0" }
 
 # Application layer
-neo-cli = { path = "neo-cli", version = "0.6.0" }
-neo-node = { path = "neo-node", version = "0.6.0" }
+neo-cli = { path = "neo-cli", version = "0.7.0" }
+neo-node = { path = "neo-node", version = "0.7.0" }
 
 # === Core dependencies ===
 # Async runtime

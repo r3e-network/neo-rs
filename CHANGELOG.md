@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.7.0] - 2025-11-30
+
+### Compatibility
+- Compatible with Neo N3 v3.8.2
+- Verified TestNet connectivity and block synchronization
+
+### Added
+- **TestNet Connectivity**: Successfully connected to Neo N3 TestNet and synchronized blocks
+- **P2P Protocol**: Full implementation of Neo P2P message handling (Version, Verack, Inv, GetData, GetHeaders, GetBlockByIndex, Ping/Pong, Mempool)
+- **Block Persistence**: Blocks persisted to RocksDB storage with plugin event broadcasting
+
+### Security
+- Bloom filter rate limiting to prevent DoS attacks (100 ops/minute)
+- CORS wildcard warning when authentication is enabled
+- TLS warning for non-localhost RPC with authentication
+- Private key memory zeroization using `Zeroizing<T>` wrapper
+- Constant-time authentication comparison
+
+### Changed
+- Workspace version bumped to 0.7.0
+- Migrated NetworkError to thiserror derive macro
+- Integer overflow protection in memory pool threshold calculation
+- Loop timeout protection in secp256k1 key generation
+
+## [0.6.0] - 2025-11-29
+
+### Architecture
+- Major crate restructuring with 18 specialized crates
+- Layered architecture: Foundation -> Core -> Infrastructure -> Application
+- New crates: neo-primitives, neo-crypto, neo-storage, neo-contract, neo-p2p, neo-rpc, neo-consensus, neo-services
+
+### Security
+- Comprehensive security audit and fixes
+- Memory zeroization for cryptographic keys
+- Rate limiting for network operations
+- Input validation improvements
+
 ## [0.5.0] - 2025-01-21
 
 ### Compatibility
