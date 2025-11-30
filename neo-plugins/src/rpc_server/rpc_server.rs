@@ -118,6 +118,21 @@ impl RpcServer {
             warn!("RPC client certificate validation is not supported yet");
         }
 
+        // Security warning for production deployments without TLS
+        let has_auth = !self.settings.rpc_user.trim().is_empty();
+        let is_localhost = self.settings.bind_address.is_loopback();
+        if has_auth && !is_localhost {
+            warn!(
+                "SECURITY WARNING: RPC server is binding to non-localhost address ({}) with \
+                authentication enabled but WITHOUT TLS encryption. Credentials will be \
+                transmitted in plaintext. For production use, either:\n\
+                  1. Place the RPC server behind a TLS-terminating reverse proxy (nginx, caddy)\n\
+                  2. Bind only to localhost (127.0.0.1) and use SSH tunneling\n\
+                  3. Use a VPN for network-level encryption",
+                self.settings.bind_address
+            );
+        }
+
         let disabled_methods: Arc<HashSet<String>> = Arc::new(
             self.settings
                 .disabled_methods
