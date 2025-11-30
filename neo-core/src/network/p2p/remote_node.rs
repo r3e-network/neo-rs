@@ -81,6 +81,9 @@ pub struct RemoteNode {
     last_sent: Instant,
     /// Indicates if the remote peer advertised FullNode capability.
     is_full_node: bool,
+    /// Rate limiting for bloom filter operations to prevent DoS attacks.
+    filter_ops_count: u32,
+    filter_ops_reset_time: Instant,
 }
 
 impl RemoteNode {
@@ -136,7 +139,42 @@ impl RemoteNode {
     /// Maximum number of hash functions for bloom filter (reasonable upper bound).
     const MAX_BLOOM_K: u8 = 50;
 
+    /// Maximum bloom filter operations per minute to prevent DoS attacks.
+    const MAX_FILTER_OPS_PER_MINUTE: u32 = 100;
+
+    /// Duration for filter rate limit window (60 seconds).
+    const FILTER_RATE_LIMIT_WINDOW: std::time::Duration = std::time::Duration::from_secs(60);
+
+    /// Checks and updates the filter operation rate limit.
+    /// Returns true if the operation is allowed, false if rate limited.
+    fn check_filter_rate_limit(&mut self) -> bool {
+        let now = Instant::now();
+        if now.duration_since(self.filter_ops_reset_time) >= Self::FILTER_RATE_LIMIT_WINDOW {
+            // Reset the counter for a new window
+            self.filter_ops_count = 0;
+            self.filter_ops_reset_time = now;
+        }
+
+        if self.filter_ops_count >= Self::MAX_FILTER_OPS_PER_MINUTE {
+            warn!(
+                target: "neo",
+                endpoint = %self.endpoint,
+                ops_count = self.filter_ops_count,
+                "bloom filter rate limit exceeded, rejecting operation"
+            );
+            return false;
+        }
+
+        self.filter_ops_count += 1;
+        true
+    }
+
     fn on_filter_load(&mut self, payload: &FilterLoadPayload) {
+        // Check rate limit before processing
+        if !self.check_filter_rate_limit() {
+            return;
+        }
+
         if payload.filter.is_empty() || payload.k == 0 {
             self.bloom_filter = None;
             return;
@@ -183,6 +221,11 @@ impl RemoteNode {
     }
 
     fn on_filter_add(&mut self, payload: &FilterAddPayload) {
+        // Check rate limit before processing to prevent DoS via filter updates
+        if !self.check_filter_rate_limit() {
+            return;
+        }
+
         if let Some(filter) = self.bloom_filter.as_mut() {
             filter.add(&payload.data);
         }
@@ -308,6 +351,8 @@ impl RemoteNode {
             ack_ready: true,
             last_sent: Instant::now(),
             is_full_node: false,
+            filter_ops_count: 0,
+            filter_ops_reset_time: Instant::now(),
         }
     }
 
