@@ -282,7 +282,7 @@ struct CorsConfig {
 }
 
 impl CorsConfig {
-    fn from_settings(settings: &RpcServerConfig) -> Option<Self> {
+    fn from_settings(settings: &RpcServerConfig, has_auth: bool) -> Option<Self> {
         if !settings.enable_cors {
             return None;
         }
@@ -293,10 +293,19 @@ impl CorsConfig {
             .filter_map(|origin| HeaderValue::from_str(origin).ok())
             .collect::<Vec<_>>();
 
-        Some(Self {
-            allow_any: settings.allow_origins.is_empty(),
-            origins,
-        })
+        let allow_any = settings.allow_origins.is_empty();
+
+        // Security warning: wildcard CORS with authentication is dangerous
+        if allow_any && has_auth {
+            warn!(
+                "SECURITY WARNING: CORS is configured to allow all origins ('*') while \
+                authentication is enabled. This combination is insecure and may expose \
+                your RPC server to CSRF attacks. Consider specifying explicit allowed \
+                origins in the 'allow_origins' configuration."
+            );
+        }
+
+        Some(Self { allow_any, origins })
     }
 
     fn origin_header(&self) -> Option<HeaderValue> {
@@ -336,12 +345,13 @@ fn build_rpc_routes(
     semaphore: Arc<Semaphore>,
     settings: RpcServerConfig,
 ) -> impl Filter<Extract = (HttpResponse,), Error = warp::Rejection> + Clone {
+    let has_auth = auth.is_some();
     let filters = RpcFilters {
         server: handle,
         disabled,
         auth,
         semaphore,
-        cors: CorsConfig::from_settings(&settings),
+        cors: CorsConfig::from_settings(&settings, has_auth),
     };
 
     let max_body = settings.max_request_body_size as u64;
