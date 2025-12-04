@@ -100,8 +100,9 @@ impl<'de> Deserialize<'de> for OracleResponseCode {
         D: Deserializer<'de>,
     {
         let byte = u8::deserialize(deserializer)?;
-        OracleResponseCode::from_byte(byte)
-            .ok_or_else(|| serde::de::Error::custom(format!("Invalid oracle response code byte: {byte}")))
+        OracleResponseCode::from_byte(byte).ok_or_else(|| {
+            serde::de::Error::custom(format!("Invalid oracle response code byte: {byte}"))
+        })
     }
 }
 
@@ -125,16 +126,46 @@ mod tests {
 
     #[test]
     fn test_oracle_response_code_from_byte() {
-        assert_eq!(OracleResponseCode::from_byte(0x00), Some(OracleResponseCode::Success));
-        assert_eq!(OracleResponseCode::from_byte(0x10), Some(OracleResponseCode::ProtocolNotSupported));
-        assert_eq!(OracleResponseCode::from_byte(0x12), Some(OracleResponseCode::ConsensusUnreachable));
-        assert_eq!(OracleResponseCode::from_byte(0x14), Some(OracleResponseCode::NotFound));
-        assert_eq!(OracleResponseCode::from_byte(0x16), Some(OracleResponseCode::Timeout));
-        assert_eq!(OracleResponseCode::from_byte(0x18), Some(OracleResponseCode::Forbidden));
-        assert_eq!(OracleResponseCode::from_byte(0x1a), Some(OracleResponseCode::ResponseTooLarge));
-        assert_eq!(OracleResponseCode::from_byte(0x1c), Some(OracleResponseCode::InsufficientFunds));
-        assert_eq!(OracleResponseCode::from_byte(0x1f), Some(OracleResponseCode::ContentTypeNotSupported));
-        assert_eq!(OracleResponseCode::from_byte(0xff), Some(OracleResponseCode::Error));
+        assert_eq!(
+            OracleResponseCode::from_byte(0x00),
+            Some(OracleResponseCode::Success)
+        );
+        assert_eq!(
+            OracleResponseCode::from_byte(0x10),
+            Some(OracleResponseCode::ProtocolNotSupported)
+        );
+        assert_eq!(
+            OracleResponseCode::from_byte(0x12),
+            Some(OracleResponseCode::ConsensusUnreachable)
+        );
+        assert_eq!(
+            OracleResponseCode::from_byte(0x14),
+            Some(OracleResponseCode::NotFound)
+        );
+        assert_eq!(
+            OracleResponseCode::from_byte(0x16),
+            Some(OracleResponseCode::Timeout)
+        );
+        assert_eq!(
+            OracleResponseCode::from_byte(0x18),
+            Some(OracleResponseCode::Forbidden)
+        );
+        assert_eq!(
+            OracleResponseCode::from_byte(0x1a),
+            Some(OracleResponseCode::ResponseTooLarge)
+        );
+        assert_eq!(
+            OracleResponseCode::from_byte(0x1c),
+            Some(OracleResponseCode::InsufficientFunds)
+        );
+        assert_eq!(
+            OracleResponseCode::from_byte(0x1f),
+            Some(OracleResponseCode::ContentTypeNotSupported)
+        );
+        assert_eq!(
+            OracleResponseCode::from_byte(0xff),
+            Some(OracleResponseCode::Error)
+        );
         assert_eq!(OracleResponseCode::from_byte(0x99), None);
     }
 

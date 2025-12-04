@@ -27,7 +27,7 @@ Practical checks and routines for running `neo-cli` in production.
 - For bundled configs, `make preflight` runs `--check-all` against MainNet and TestNet samples.
 - When exposing RPC, prefer `--rpc-hardened` with `NEO_RPC_USER/NEO_RPC_PASS` to enforce auth, disable CORS, and keep risky methods disabled.
 - Use `--health-port` (or `NEO_HEALTH_PORT`) to expose a localhost `/healthz` endpoint for liveness.
-- Set `--health-max-header-lag` / `NEO_HEALTH_MAX_HEADER_LAG` so `/healthz` returns 503 if headers are far ahead of persisted blocks (sync lag).
+- Set `--health-max-header-lag` / `NEO_HEALTH_MAX_HEADER_LAG` (default 20; set 0 to disable) so `/healthz` returns 503 if headers are far ahead of persisted blocks (sync lag).
 - For offline verification, you can open storage in read-only mode with `NEO_STORAGE_READONLY=1` and `--check-storage/--check-all`; the node will not start normally in read-only mode.
 - `/readyz` is available alongside `/healthz` when the health server is enabled (same checks).
 

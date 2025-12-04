@@ -1,6 +1,7 @@
 pub mod diagnostic;
 pub mod model;
 pub mod parameter_converter;
+pub mod routes;
 pub mod rpc_error;
 pub mod rpc_error_factory;
 pub mod rpc_exception;

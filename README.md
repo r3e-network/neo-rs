@@ -88,7 +88,7 @@ Environment overrides:
 - `NEO_RPC_ALLOW_ORIGINS`, `NEO_RPC_DISABLED_METHODS`
 - `NEO_LOG_PATH`, `NEO_LOG_LEVEL`, `NEO_LOG_FORMAT`
 - `NEO_HEALTH_PORT` to expose `/healthz` on localhost
-- `NEO_HEALTH_MAX_HEADER_LAG` to fail `/healthz` if header lag exceeds the threshold
+- `NEO_HEALTH_MAX_HEADER_LAG` to fail `/healthz` if header lag exceeds the threshold (defaults to 20; set to 0 to disable)
 - `/metrics` is available when the health server is enabled; scrape it with Prometheus.
 - `/readyz` is available when the health server is enabled (same contract as `/healthz`).
 

@@ -86,8 +86,9 @@ impl<'de> Deserialize<'de> for WitnessConditionType {
         D: Deserializer<'de>,
     {
         let byte = u8::deserialize(deserializer)?;
-        WitnessConditionType::from_byte(byte)
-            .ok_or_else(|| serde::de::Error::custom(format!("Invalid witness condition type byte: {byte}")))
+        WitnessConditionType::from_byte(byte).ok_or_else(|| {
+            serde::de::Error::custom(format!("Invalid witness condition type byte: {byte}"))
+        })
     }
 }
 
@@ -110,10 +111,22 @@ mod tests {
 
     #[test]
     fn test_witness_condition_type_from_byte() {
-        assert_eq!(WitnessConditionType::from_byte(0x00), Some(WitnessConditionType::Boolean));
-        assert_eq!(WitnessConditionType::from_byte(0x01), Some(WitnessConditionType::Not));
-        assert_eq!(WitnessConditionType::from_byte(0x18), Some(WitnessConditionType::ScriptHash));
-        assert_eq!(WitnessConditionType::from_byte(0x20), Some(WitnessConditionType::CalledByEntry));
+        assert_eq!(
+            WitnessConditionType::from_byte(0x00),
+            Some(WitnessConditionType::Boolean)
+        );
+        assert_eq!(
+            WitnessConditionType::from_byte(0x01),
+            Some(WitnessConditionType::Not)
+        );
+        assert_eq!(
+            WitnessConditionType::from_byte(0x18),
+            Some(WitnessConditionType::ScriptHash)
+        );
+        assert_eq!(
+            WitnessConditionType::from_byte(0x20),
+            Some(WitnessConditionType::CalledByEntry)
+        );
         assert_eq!(WitnessConditionType::from_byte(0xFF), None);
     }
 
@@ -140,6 +153,9 @@ mod tests {
     fn test_witness_condition_type_display() {
         assert_eq!(WitnessConditionType::Boolean.to_string(), "Boolean");
         assert_eq!(WitnessConditionType::ScriptHash.to_string(), "ScriptHash");
-        assert_eq!(WitnessConditionType::CalledByEntry.to_string(), "CalledByEntry");
+        assert_eq!(
+            WitnessConditionType::CalledByEntry.to_string(),
+            "CalledByEntry"
+        );
     }
 }

@@ -1,9 +1,9 @@
 //! StorageKey - matches C# Neo.SmartContract.StorageKey exactly
 
-use crate::{UInt160, UInt256};
 use crate::extensions::byte_extensions::{
     default_xx_hash3_seed, hash_code_combine_i32, ByteExtensions,
 };
+use crate::{UInt160, UInt256};
 use std::fmt;
 
 /// Represents the keys in contract storage (matches C# StorageKey)

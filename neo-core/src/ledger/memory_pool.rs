@@ -83,7 +83,9 @@ impl MemoryPool {
 
     /// private int RebroadcastMultiplierThreshold => Capacity / 10;
     fn rebroadcast_multiplier_threshold(&self) -> i32 {
-        i32::try_from(self.capacity).unwrap_or(i32::MAX).saturating_div(10)
+        i32::try_from(self.capacity)
+            .unwrap_or(i32::MAX)
+            .saturating_div(10)
     }
 
     /// Returns the highest-priority verified transactions, sorted in descending order by fee.

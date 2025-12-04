@@ -49,6 +49,65 @@ impl ReadinessStatus {
     }
 }
 
+// Readiness helpers for the main `NeoSystem`.
+impl super::core::NeoSystem {
+    /// Basic readiness snapshot (ledger sync only). Consumers can layer on service checks (RPC, storage, etc.).
+    pub fn readiness(&self, max_header_lag: Option<u32>) -> ReadinessStatus {
+        let (block_height, header_height) = if let Ok(Some(ledger)) = self.ledger_typed() {
+            (ledger.current_height(), ledger.current_header_height())
+        } else {
+            let ledger = self.ledger_context();
+            (ledger.current_height(), ledger.highest_header_index())
+        };
+        let header_lag = header_height.saturating_sub(block_height);
+        let healthy = max_header_lag
+            .map(|threshold| header_lag <= threshold)
+            .unwrap_or(true);
+
+        ReadinessStatus {
+            block_height,
+            header_height,
+            header_lag,
+            healthy,
+            rpc_ready: true,
+            storage_ready: true,
+        }
+    }
+
+    /// Readiness snapshot annotated with optional service and storage readiness flags.
+    pub fn readiness_with_services(
+        &self,
+        max_header_lag: Option<u32>,
+        rpc_service_name: Option<&str>,
+        storage_ready: Option<bool>,
+    ) -> ReadinessStatus {
+        let status = self.readiness(max_header_lag);
+        let rpc_ready = rpc_service_name
+            .map(|name| self.has_named_service(name))
+            .unwrap_or(true);
+        let storage_ready = storage_ready.unwrap_or(true);
+        status.with_services(rpc_ready, storage_ready)
+    }
+
+    /// Convenience wrapper that uses the configured RPC service name for this network.
+    pub fn readiness_with_defaults(
+        &self,
+        max_header_lag: Option<u32>,
+        storage_ready: Option<bool>,
+    ) -> ReadinessStatus {
+        self.readiness_with_services(
+            max_header_lag,
+            Some(&self.rpc_service_name()),
+            storage_ready,
+        )
+    }
+
+    /// Returns `true` when the node is considered ready (sync within the given lag).
+    pub fn is_ready(&self, max_header_lag: Option<u32>) -> bool {
+        self.readiness(max_header_lag).healthy
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

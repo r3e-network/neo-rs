@@ -96,9 +96,18 @@ mod tests {
 
     #[test]
     fn test_node_capability_type_from_byte() {
-        assert_eq!(NodeCapabilityType::from_byte(0x01), NodeCapabilityType::TcpServer);
-        assert_eq!(NodeCapabilityType::from_byte(0x10), NodeCapabilityType::FullNode);
-        assert_eq!(NodeCapabilityType::from_byte(0x99), NodeCapabilityType::Unknown(0x99));
+        assert_eq!(
+            NodeCapabilityType::from_byte(0x01),
+            NodeCapabilityType::TcpServer
+        );
+        assert_eq!(
+            NodeCapabilityType::from_byte(0x10),
+            NodeCapabilityType::FullNode
+        );
+        assert_eq!(
+            NodeCapabilityType::from_byte(0x99),
+            NodeCapabilityType::Unknown(0x99)
+        );
     }
 
     #[test]
@@ -128,6 +137,9 @@ mod tests {
     fn test_node_capability_type_display() {
         assert_eq!(NodeCapabilityType::TcpServer.to_string(), "TcpServer");
         assert_eq!(NodeCapabilityType::FullNode.to_string(), "FullNode");
-        assert_eq!(NodeCapabilityType::Unknown(0x99).to_string(), "Unknown(0x99)");
+        assert_eq!(
+            NodeCapabilityType::Unknown(0x99).to_string(),
+            "Unknown(0x99)"
+        );
     }
 }

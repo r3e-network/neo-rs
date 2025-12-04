@@ -77,8 +77,9 @@ impl<'de> Deserialize<'de> for WitnessRuleAction {
         D: Deserializer<'de>,
     {
         let byte = u8::deserialize(deserializer)?;
-        WitnessRuleAction::from_byte(byte)
-            .ok_or_else(|| serde::de::Error::custom(format!("Invalid witness rule action byte: {byte}")))
+        WitnessRuleAction::from_byte(byte).ok_or_else(|| {
+            serde::de::Error::custom(format!("Invalid witness rule action byte: {byte}"))
+        })
     }
 }
 
@@ -94,16 +95,31 @@ mod tests {
 
     #[test]
     fn test_witness_rule_action_from_byte() {
-        assert_eq!(WitnessRuleAction::from_byte(0), Some(WitnessRuleAction::Deny));
-        assert_eq!(WitnessRuleAction::from_byte(1), Some(WitnessRuleAction::Allow));
+        assert_eq!(
+            WitnessRuleAction::from_byte(0),
+            Some(WitnessRuleAction::Deny)
+        );
+        assert_eq!(
+            WitnessRuleAction::from_byte(1),
+            Some(WitnessRuleAction::Allow)
+        );
         assert_eq!(WitnessRuleAction::from_byte(2), None);
     }
 
     #[test]
     fn test_witness_rule_action_from_str() {
-        assert_eq!(WitnessRuleAction::from_str("Deny").unwrap(), WitnessRuleAction::Deny);
-        assert_eq!(WitnessRuleAction::from_str("Allow").unwrap(), WitnessRuleAction::Allow);
-        assert_eq!(WitnessRuleAction::from_str("allow").unwrap(), WitnessRuleAction::Allow);
+        assert_eq!(
+            WitnessRuleAction::from_str("Deny").unwrap(),
+            WitnessRuleAction::Deny
+        );
+        assert_eq!(
+            WitnessRuleAction::from_str("Allow").unwrap(),
+            WitnessRuleAction::Allow
+        );
+        assert_eq!(
+            WitnessRuleAction::from_str("allow").unwrap(),
+            WitnessRuleAction::Allow
+        );
         assert!(WitnessRuleAction::from_str("Invalid").is_err());
     }
 

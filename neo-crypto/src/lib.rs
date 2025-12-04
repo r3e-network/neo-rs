@@ -34,13 +34,13 @@
 //! let script_hash = Crypto::hash160(b"contract script");
 //! ```
 
+pub mod ecc;
 pub mod error;
 pub mod hash;
-pub mod ecc;
 pub mod named_curve_hash;
 
 // Re-exports
+pub use ecc::{ECCurve, ECPoint};
 pub use error::{CryptoError, CryptoResult};
 pub use hash::{Crypto, HashAlgorithm};
-pub use ecc::{ECPoint, ECCurve};
 pub use named_curve_hash::NamedCurveHash;

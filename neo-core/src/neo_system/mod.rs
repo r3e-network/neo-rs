@@ -18,8 +18,13 @@
 //! - `relay` - Relay cache types
 //! - `system` - Readiness status and constants
 //! - `builder` - Fluent builder for NeoSystem construction
+//! - `network` - P2P actor helpers and peer management
+//! - `services` - Service registration and handler wiring
+//! - `mempool` - Mempool callbacks and plugin notifications
+//! - `persistence` - Block execution and commit pipeline helpers
 
 // Core module containing NeoSystem and NeoSystemContext
+pub mod context;
 mod core;
 
 // Extracted submodules with clean implementations
@@ -28,11 +33,17 @@ pub mod builder;
 pub(crate) mod converters;
 pub(crate) mod genesis;
 pub(crate) mod helpers;
+pub(crate) mod mempool;
+pub(crate) mod network;
+pub(crate) mod persistence;
 pub mod registry;
 pub(crate) mod relay;
+pub(crate) mod services;
+pub(crate) mod storage;
 pub mod system;
 
 // Re-export everything from core for backward compatibility
+pub use context::NeoSystemContext;
 pub use core::*;
 
 // Re-export from extracted modules (these override legacy exports)

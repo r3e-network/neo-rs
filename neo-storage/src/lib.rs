@@ -37,5 +37,5 @@ pub mod types;
 // Re-exports
 pub use error::{StorageError, StorageResult};
 pub use key_builder::{KeyBuilder, KeyBuilderError};
-pub use traits::{IReadOnlyStore, IWriteStore, IStore, ISnapshot};
-pub use types::{StorageKey, StorageItem, SeekDirection, TrackState};
+pub use traits::{IReadOnlyStore, ISnapshot, IStore, IWriteStore};
+pub use types::{SeekDirection, StorageItem, StorageKey, TrackState};

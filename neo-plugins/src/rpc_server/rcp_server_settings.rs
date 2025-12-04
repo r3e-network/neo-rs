@@ -13,7 +13,7 @@ use std::net::{IpAddr, Ipv4Addr};
 use std::time::Duration;
 
 /// Represents a single RPC server configuration block (`RpcServersSettings`).
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct RpcServerConfig {
     #[serde(default = "RpcServerConfig::default_network")]
     pub network: u32,
@@ -201,6 +201,30 @@ impl RpcServerSettings {
             guard.exception_policy = exception_policy;
         } else {
             *guard = RpcServerSettings::default();
+        }
+
+        // Validate settings early to fail fast on unsupported or insecure combos.
+        for server in &guard.servers {
+            let has_tls = !server.ssl_cert.is_empty()
+                || !server.ssl_cert_password.is_empty()
+                || !server.trusted_authorities.is_empty();
+            if has_tls {
+                panic!(
+                    "RpcServer configuration for network {} sets TLS fields, but TLS is not \
+                     supported in neo-rs. Remove SslCert/SslCertPassword/TrustedAuthorities or \
+                     front with a TLS terminator.",
+                    server.network
+                );
+            }
+            let has_auth = !server.rpc_user.trim().is_empty();
+            let wildcard_cors = server.enable_cors && server.allow_origins.is_empty();
+            if has_auth && wildcard_cors {
+                panic!(
+                    "RpcServer configuration for network {} enables authentication with wildcard \
+                     CORS. Specify allow_origins or disable CORS.",
+                    server.network
+                );
+            }
         }
     }
 

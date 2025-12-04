@@ -157,11 +157,26 @@ mod tests {
 
     #[test]
     fn test_hardfork_from_str() {
-        assert_eq!("HF_ASPIDOCHELONE".parse::<Hardfork>().unwrap(), Hardfork::HfAspidochelone);
-        assert_eq!("aspidochelone".parse::<Hardfork>().unwrap(), Hardfork::HfAspidochelone);
-        assert_eq!("ASP".parse::<Hardfork>().unwrap(), Hardfork::HfAspidochelone);
-        assert_eq!("HF_BASILISK".parse::<Hardfork>().unwrap(), Hardfork::HfBasilisk);
-        assert_eq!("basilisk".parse::<Hardfork>().unwrap(), Hardfork::HfBasilisk);
+        assert_eq!(
+            "HF_ASPIDOCHELONE".parse::<Hardfork>().unwrap(),
+            Hardfork::HfAspidochelone
+        );
+        assert_eq!(
+            "aspidochelone".parse::<Hardfork>().unwrap(),
+            Hardfork::HfAspidochelone
+        );
+        assert_eq!(
+            "ASP".parse::<Hardfork>().unwrap(),
+            Hardfork::HfAspidochelone
+        );
+        assert_eq!(
+            "HF_BASILISK".parse::<Hardfork>().unwrap(),
+            Hardfork::HfBasilisk
+        );
+        assert_eq!(
+            "basilisk".parse::<Hardfork>().unwrap(),
+            Hardfork::HfBasilisk
+        );
     }
 
     #[test]

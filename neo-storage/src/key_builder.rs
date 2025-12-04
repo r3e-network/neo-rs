@@ -26,8 +26,15 @@ impl fmt::Display for KeyBuilderError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidMaxLength => write!(f, "max_length must be greater than zero"),
-            Self::DataTooLarge { current, adding, max } => {
-                write!(f, "Input data too large: current={current}, adding={adding}, max={max}")
+            Self::DataTooLarge {
+                current,
+                adding,
+                max,
+            } => {
+                write!(
+                    f,
+                    "Input data too large: current={current}, adding={adding}, max={max}"
+                )
             }
         }
     }

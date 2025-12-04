@@ -190,7 +190,9 @@ mod tests {
         let hash = Crypto::sha256(b"hello");
         assert_eq!(hash.len(), 32);
         // Known SHA-256 hash of "hello"
-        let expected = hex::decode("2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824").unwrap();
+        let expected =
+            hex::decode("2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824")
+                .unwrap();
         assert_eq!(hash.to_vec(), expected);
     }
 

@@ -51,6 +51,7 @@
 //! - **Extensible Whitelist**: Authorized senders for extensible payloads
 
 use crate::error::CoreError;
+use crate::extensions::plugin::PluginEvent;
 use crate::ledger::LedgerContext;
 use crate::neo_io::{MemoryReader, Serializable};
 use crate::neo_system::NeoSystemContext;
@@ -68,7 +69,6 @@ use crate::state_service::{StateRoot, STATE_SERVICE_CATEGORY};
 use crate::{UInt160, UInt256};
 use akka::{Actor, ActorContext, ActorResult, Props};
 use async_trait::async_trait;
-use crate::extensions::plugin::PluginEvent;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::collections::{HashMap, HashSet};

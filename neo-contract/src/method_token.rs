@@ -149,13 +149,7 @@ mod tests {
     #[test]
     fn test_method_token_new_valid() {
         let hash = UInt160::zero();
-        let token = MethodToken::new(
-            hash,
-            "transfer".to_string(),
-            3,
-            true,
-            CallFlags::ALL,
-        );
+        let token = MethodToken::new(hash, "transfer".to_string(), 3, true, CallFlags::ALL);
         assert!(token.is_ok());
         let token = token.unwrap();
         assert_eq!(token.method, "transfer");
@@ -166,30 +160,24 @@ mod tests {
     #[test]
     fn test_method_token_new_underscore_prefix() {
         let hash = UInt160::zero();
-        let token = MethodToken::new(
-            hash,
-            "_private".to_string(),
-            0,
-            false,
-            CallFlags::NONE,
-        );
+        let token = MethodToken::new(hash, "_private".to_string(), 0, false, CallFlags::NONE);
         assert!(token.is_err());
-        assert!(matches!(token.unwrap_err(), MethodTokenError::InvalidMethodName(_)));
+        assert!(matches!(
+            token.unwrap_err(),
+            MethodTokenError::InvalidMethodName(_)
+        ));
     }
 
     #[test]
     fn test_method_token_new_too_long() {
         let hash = UInt160::zero();
         let long_name = "a".repeat(33);
-        let token = MethodToken::new(
-            hash,
-            long_name,
-            0,
-            false,
-            CallFlags::NONE,
-        );
+        let token = MethodToken::new(hash, long_name, 0, false, CallFlags::NONE);
         assert!(token.is_err());
-        assert!(matches!(token.unwrap_err(), MethodTokenError::MethodNameTooLong(33)));
+        assert!(matches!(
+            token.unwrap_err(),
+            MethodTokenError::MethodNameTooLong(33)
+        ));
     }
 
     #[test]

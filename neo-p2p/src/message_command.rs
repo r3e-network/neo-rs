@@ -243,7 +243,10 @@ mod tests {
     fn test_message_command_from_byte() {
         assert_eq!(MessageCommand::from_byte(0x00), MessageCommand::Version);
         assert_eq!(MessageCommand::from_byte(0x2b), MessageCommand::Transaction);
-        assert_eq!(MessageCommand::from_byte(0x99), MessageCommand::Unknown(0x99));
+        assert_eq!(
+            MessageCommand::from_byte(0x99),
+            MessageCommand::Unknown(0x99)
+        );
     }
 
     #[test]

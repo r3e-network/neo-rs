@@ -294,7 +294,10 @@ mod tests {
     #[test]
     fn test_witness_scope_from_byte() {
         assert_eq!(WitnessScope::from_byte(0x00), Some(WitnessScope::NONE));
-        assert_eq!(WitnessScope::from_byte(0x01), Some(WitnessScope::CALLED_BY_ENTRY));
+        assert_eq!(
+            WitnessScope::from_byte(0x01),
+            Some(WitnessScope::CALLED_BY_ENTRY)
+        );
         assert_eq!(WitnessScope::from_byte(0x80), Some(WitnessScope::GLOBAL));
         assert_eq!(WitnessScope::from_byte(0xFF), Option::None);
     }
@@ -313,15 +316,24 @@ mod tests {
     #[test]
     fn test_witness_scope_display() {
         assert_eq!(format!("{}", WitnessScope::NONE), "None");
-        assert_eq!(format!("{}", WitnessScope::CALLED_BY_ENTRY), "CalledByEntry");
+        assert_eq!(
+            format!("{}", WitnessScope::CALLED_BY_ENTRY),
+            "CalledByEntry"
+        );
         assert_eq!(format!("{}", WitnessScope::GLOBAL), "Global");
     }
 
     #[test]
     fn test_witness_scope_from_str() {
         assert_eq!(WitnessScope::from_str("None").unwrap(), WitnessScope::NONE);
-        assert_eq!(WitnessScope::from_str("CalledByEntry").unwrap(), WitnessScope::CALLED_BY_ENTRY);
-        assert_eq!(WitnessScope::from_str("Global").unwrap(), WitnessScope::GLOBAL);
+        assert_eq!(
+            WitnessScope::from_str("CalledByEntry").unwrap(),
+            WitnessScope::CALLED_BY_ENTRY
+        );
+        assert_eq!(
+            WitnessScope::from_str("Global").unwrap(),
+            WitnessScope::GLOBAL
+        );
         assert!(WitnessScope::from_str("Invalid").is_err());
     }
 

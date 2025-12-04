@@ -91,8 +91,14 @@ mod tests {
 
     #[test]
     fn test_trigger_type_from_str() {
-        assert_eq!(TriggerType::from_str("OnPersist").unwrap(), TriggerType::ON_PERSIST);
-        assert_eq!(TriggerType::from_str("Application").unwrap(), TriggerType::APPLICATION);
+        assert_eq!(
+            TriggerType::from_str("OnPersist").unwrap(),
+            TriggerType::ON_PERSIST
+        );
+        assert_eq!(
+            TriggerType::from_str("Application").unwrap(),
+            TriggerType::APPLICATION
+        );
         assert!(TriggerType::from_str("Invalid").is_err());
     }
 

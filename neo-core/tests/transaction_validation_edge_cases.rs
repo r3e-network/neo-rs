@@ -6,8 +6,7 @@
 use neo_core::neo_io::Serializable;
 use neo_core::network::p2p::payloads::{signer::Signer, witness::Witness, InventoryType};
 use neo_core::{
-    ledger::VerifyResult, Transaction, TransactionAttribute, UInt160, WitnessScope, HEADER_SIZE,
-    MAX_TRANSACTION_SIZE,
+    Transaction, TransactionAttribute, UInt160, WitnessScope, HEADER_SIZE, MAX_TRANSACTION_SIZE,
 };
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;

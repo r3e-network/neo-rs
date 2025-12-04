@@ -5,7 +5,9 @@
 
 use async_trait::async_trait;
 use neo_core::extensions::error::ExtensionResult;
-use neo_core::extensions::plugin::{Plugin, PluginBase, PluginCategory, PluginContext, PluginEvent, PluginInfo};
+use neo_core::extensions::plugin::{
+    Plugin, PluginBase, PluginCategory, PluginContext, PluginEvent, PluginInfo,
+};
 
 pub struct SqliteWalletPlugin {
     base: PluginBase,

@@ -92,8 +92,9 @@ impl<'de> Deserialize<'de> for NamedCurveHash {
         D: Deserializer<'de>,
     {
         let byte = u8::deserialize(deserializer)?;
-        NamedCurveHash::from_byte(byte)
-            .ok_or_else(|| serde::de::Error::custom(format!("Invalid named curve hash byte: {byte}")))
+        NamedCurveHash::from_byte(byte).ok_or_else(|| {
+            serde::de::Error::custom(format!("Invalid named curve hash byte: {byte}"))
+        })
     }
 }
 
@@ -111,10 +112,22 @@ mod tests {
 
     #[test]
     fn test_named_curve_hash_from_byte() {
-        assert_eq!(NamedCurveHash::from_byte(0x16), Some(NamedCurveHash::Secp256k1SHA256));
-        assert_eq!(NamedCurveHash::from_byte(0x17), Some(NamedCurveHash::Secp256r1SHA256));
-        assert_eq!(NamedCurveHash::from_byte(0x18), Some(NamedCurveHash::Secp256k1Keccak256));
-        assert_eq!(NamedCurveHash::from_byte(0x19), Some(NamedCurveHash::Secp256r1Keccak256));
+        assert_eq!(
+            NamedCurveHash::from_byte(0x16),
+            Some(NamedCurveHash::Secp256k1SHA256)
+        );
+        assert_eq!(
+            NamedCurveHash::from_byte(0x17),
+            Some(NamedCurveHash::Secp256r1SHA256)
+        );
+        assert_eq!(
+            NamedCurveHash::from_byte(0x18),
+            Some(NamedCurveHash::Secp256k1Keccak256)
+        );
+        assert_eq!(
+            NamedCurveHash::from_byte(0x19),
+            Some(NamedCurveHash::Secp256r1Keccak256)
+        );
         assert_eq!(NamedCurveHash::from_byte(0x00), None);
     }
 
@@ -136,23 +149,53 @@ mod tests {
     fn test_named_curve_hash_curve() {
         assert_eq!(NamedCurveHash::Secp256k1SHA256.curve(), ECCurve::Secp256k1);
         assert_eq!(NamedCurveHash::Secp256r1SHA256.curve(), ECCurve::Secp256r1);
-        assert_eq!(NamedCurveHash::Secp256k1Keccak256.curve(), ECCurve::Secp256k1);
-        assert_eq!(NamedCurveHash::Secp256r1Keccak256.curve(), ECCurve::Secp256r1);
+        assert_eq!(
+            NamedCurveHash::Secp256k1Keccak256.curve(),
+            ECCurve::Secp256k1
+        );
+        assert_eq!(
+            NamedCurveHash::Secp256r1Keccak256.curve(),
+            ECCurve::Secp256r1
+        );
     }
 
     #[test]
     fn test_named_curve_hash_algorithm() {
-        assert_eq!(NamedCurveHash::Secp256k1SHA256.hash_algorithm(), HashAlgorithm::Sha256);
-        assert_eq!(NamedCurveHash::Secp256r1SHA256.hash_algorithm(), HashAlgorithm::Sha256);
-        assert_eq!(NamedCurveHash::Secp256k1Keccak256.hash_algorithm(), HashAlgorithm::Keccak256);
-        assert_eq!(NamedCurveHash::Secp256r1Keccak256.hash_algorithm(), HashAlgorithm::Keccak256);
+        assert_eq!(
+            NamedCurveHash::Secp256k1SHA256.hash_algorithm(),
+            HashAlgorithm::Sha256
+        );
+        assert_eq!(
+            NamedCurveHash::Secp256r1SHA256.hash_algorithm(),
+            HashAlgorithm::Sha256
+        );
+        assert_eq!(
+            NamedCurveHash::Secp256k1Keccak256.hash_algorithm(),
+            HashAlgorithm::Keccak256
+        );
+        assert_eq!(
+            NamedCurveHash::Secp256r1Keccak256.hash_algorithm(),
+            HashAlgorithm::Keccak256
+        );
     }
 
     #[test]
     fn test_named_curve_hash_display() {
-        assert_eq!(NamedCurveHash::Secp256k1SHA256.to_string(), "secp256k1SHA256");
-        assert_eq!(NamedCurveHash::Secp256r1SHA256.to_string(), "secp256r1SHA256");
-        assert_eq!(NamedCurveHash::Secp256k1Keccak256.to_string(), "secp256k1Keccak256");
-        assert_eq!(NamedCurveHash::Secp256r1Keccak256.to_string(), "secp256r1Keccak256");
+        assert_eq!(
+            NamedCurveHash::Secp256k1SHA256.to_string(),
+            "secp256k1SHA256"
+        );
+        assert_eq!(
+            NamedCurveHash::Secp256r1SHA256.to_string(),
+            "secp256r1SHA256"
+        );
+        assert_eq!(
+            NamedCurveHash::Secp256k1Keccak256.to_string(),
+            "secp256k1Keccak256"
+        );
+        assert_eq!(
+            NamedCurveHash::Secp256r1Keccak256.to_string(),
+            "secp256r1Keccak256"
+        );
     }
 }

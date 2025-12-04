@@ -108,7 +108,10 @@ mod tests {
     #[test]
     fn test_consensus_message_type_display() {
         assert_eq!(ConsensusMessageType::ChangeView.to_string(), "ChangeView");
-        assert_eq!(ConsensusMessageType::PrepareRequest.to_string(), "PrepareRequest");
+        assert_eq!(
+            ConsensusMessageType::PrepareRequest.to_string(),
+            "PrepareRequest"
+        );
         assert_eq!(ConsensusMessageType::Commit.to_string(), "Commit");
     }
 }

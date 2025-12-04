@@ -4,11 +4,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use neo_core::{i_event_handlers::IWalletChangedHandler, wallets::Wallet, NeoSystem};
 use neo_core::extensions::error::{ExtensionError, ExtensionResult};
 use neo_core::extensions::plugin::{
     Plugin, PluginBase, PluginCategory, PluginContext, PluginEvent, PluginInfo,
 };
+use neo_core::{i_event_handlers::IWalletChangedHandler, wallets::Wallet, NeoSystem};
 use parking_lot::RwLock;
 use serde_json::Value;
 use tracing::{info, warn};
@@ -76,7 +76,13 @@ impl RpcServerPlugin {
         let network = config.network;
         if let Some(server_arc) = get_server(network) {
             if let Some(mut server) = server_arc.try_write() {
+                let was_started = RpcService::is_started(&*server);
+                let old_settings = server.settings().clone();
+                let changed = old_settings != config;
                 server.update_settings(config);
+                if was_started && changed {
+                    server.stop_rpc_server();
+                }
                 if !RpcService::is_started(&*server) {
                     server.start_rpc_server(Arc::downgrade(&server_arc));
                 }

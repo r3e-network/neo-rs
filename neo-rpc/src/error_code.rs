@@ -220,8 +220,14 @@ mod tests {
 
     #[test]
     fn test_from_code() {
-        assert_eq!(RpcErrorCode::from_code(-32700), Some(RpcErrorCode::ParseError));
-        assert_eq!(RpcErrorCode::from_code(-100), Some(RpcErrorCode::UnknownBlock));
+        assert_eq!(
+            RpcErrorCode::from_code(-32700),
+            Some(RpcErrorCode::ParseError)
+        );
+        assert_eq!(
+            RpcErrorCode::from_code(-100),
+            Some(RpcErrorCode::UnknownBlock)
+        );
         assert_eq!(RpcErrorCode::from_code(-999), None);
     }
 

@@ -75,8 +75,9 @@ impl<'de> Deserialize<'de> for TransactionAttributeType {
         D: Deserializer<'de>,
     {
         let byte = u8::deserialize(deserializer)?;
-        TransactionAttributeType::from_byte(byte)
-            .ok_or_else(|| serde::de::Error::custom(format!("Invalid transaction attribute type byte: {byte}")))
+        TransactionAttributeType::from_byte(byte).ok_or_else(|| {
+            serde::de::Error::custom(format!("Invalid transaction attribute type byte: {byte}"))
+        })
     }
 }
 
@@ -95,11 +96,26 @@ mod tests {
 
     #[test]
     fn test_transaction_attribute_type_from_byte() {
-        assert_eq!(TransactionAttributeType::from_byte(0x01), Some(TransactionAttributeType::HighPriority));
-        assert_eq!(TransactionAttributeType::from_byte(0x11), Some(TransactionAttributeType::OracleResponse));
-        assert_eq!(TransactionAttributeType::from_byte(0x20), Some(TransactionAttributeType::NotValidBefore));
-        assert_eq!(TransactionAttributeType::from_byte(0x21), Some(TransactionAttributeType::Conflicts));
-        assert_eq!(TransactionAttributeType::from_byte(0x22), Some(TransactionAttributeType::NotaryAssisted));
+        assert_eq!(
+            TransactionAttributeType::from_byte(0x01),
+            Some(TransactionAttributeType::HighPriority)
+        );
+        assert_eq!(
+            TransactionAttributeType::from_byte(0x11),
+            Some(TransactionAttributeType::OracleResponse)
+        );
+        assert_eq!(
+            TransactionAttributeType::from_byte(0x20),
+            Some(TransactionAttributeType::NotValidBefore)
+        );
+        assert_eq!(
+            TransactionAttributeType::from_byte(0x21),
+            Some(TransactionAttributeType::Conflicts)
+        );
+        assert_eq!(
+            TransactionAttributeType::from_byte(0x22),
+            Some(TransactionAttributeType::NotaryAssisted)
+        );
         assert_eq!(TransactionAttributeType::from_byte(0xFF), None);
     }
 
@@ -120,11 +136,23 @@ mod tests {
 
     #[test]
     fn test_transaction_attribute_type_display() {
-        assert_eq!(TransactionAttributeType::HighPriority.to_string(), "HighPriority");
-        assert_eq!(TransactionAttributeType::OracleResponse.to_string(), "OracleResponse");
-        assert_eq!(TransactionAttributeType::NotValidBefore.to_string(), "NotValidBefore");
+        assert_eq!(
+            TransactionAttributeType::HighPriority.to_string(),
+            "HighPriority"
+        );
+        assert_eq!(
+            TransactionAttributeType::OracleResponse.to_string(),
+            "OracleResponse"
+        );
+        assert_eq!(
+            TransactionAttributeType::NotValidBefore.to_string(),
+            "NotValidBefore"
+        );
         assert_eq!(TransactionAttributeType::Conflicts.to_string(), "Conflicts");
-        assert_eq!(TransactionAttributeType::NotaryAssisted.to_string(), "NotaryAssisted");
+        assert_eq!(
+            TransactionAttributeType::NotaryAssisted.to_string(),
+            "NotaryAssisted"
+        );
     }
 
     #[test]

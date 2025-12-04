@@ -502,8 +502,6 @@ macro_rules! impl_default_via_new_batch {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_newtype_macro() {
         newtype! {

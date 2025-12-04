@@ -6,11 +6,11 @@ use crate::application_logs::rpc_handlers::{
 };
 use crate::application_logs::settings::ApplicationLogsSettings;
 use crate::rpc_server::rpc_server_plugin::RpcServerPlugin;
-use neo_core::NeoSystem;
 use neo_core::extensions::error::{ExtensionError, ExtensionResult};
 use neo_core::extensions::plugin::{
     Plugin, PluginBase, PluginCategory, PluginContext, PluginEvent, PluginInfo,
 };
+use neo_core::NeoSystem;
 use parking_lot::RwLock;
 use serde_json::Value as JsonValue;
 use std::collections::HashSet;

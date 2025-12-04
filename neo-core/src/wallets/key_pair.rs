@@ -228,7 +228,8 @@ impl KeyPair {
         let p = 8; // Parallelization
 
         // Generate address hash
-        let script_hash = UInt160::from_script(&Self::try_get_verification_script_for_key(private_key)?);
+        let script_hash =
+            UInt160::from_script(&Self::try_get_verification_script_for_key(private_key)?);
         let address = WalletHelper::to_address(&script_hash, address_version);
         let address_hash_full = crate::neo_cryptography::hash::hash256(address.as_bytes());
         let mut address_hash = [0u8; 4];
@@ -272,7 +273,10 @@ impl KeyPair {
         let mut buffer = Zeroizing::new(xor_key.to_vec());
         buffer.resize(HASH_SIZE, 0); // Ensure exactly HASH_SIZE bytes
         let encrypted = cipher
-            .encrypt_padded_mut::<cbc::cipher::block_padding::NoPadding>(buffer.as_mut_slice(), HASH_SIZE)
+            .encrypt_padded_mut::<cbc::cipher::block_padding::NoPadding>(
+                buffer.as_mut_slice(),
+                HASH_SIZE,
+            )
             .map_err(|e| Error::Aes {
                 message: e.to_string(),
             })?;
@@ -318,11 +322,15 @@ impl KeyPair {
             })?;
 
         let mut derived_key = Zeroizing::new([0u8; 64]);
-        scrypt::scrypt(password.as_bytes(), address_hash, &params, derived_key.as_mut()).map_err(
-            |e| Error::Scrypt {
-                message: e.to_string(),
-            },
-        )?;
+        scrypt::scrypt(
+            password.as_bytes(),
+            address_hash,
+            &params,
+            derived_key.as_mut(),
+        )
+        .map_err(|e| Error::Scrypt {
+            message: e.to_string(),
+        })?;
 
         let derived_half1 = &derived_key[0..HASH_SIZE];
         let derived_half2 = &derived_key[32..64];

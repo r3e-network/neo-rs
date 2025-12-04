@@ -246,11 +246,12 @@ impl UInt160 {
 
     /// Parses a Neo address string to a UInt160.
     pub fn from_address(address: &str) -> PrimitiveResult<Self> {
-        let decoded = bs58::decode(address)
-            .into_vec()
-            .map_err(|_| PrimitiveError::InvalidFormat {
-                message: "Invalid Base58 address".to_string(),
-            })?;
+        let decoded =
+            bs58::decode(address)
+                .into_vec()
+                .map_err(|_| PrimitiveError::InvalidFormat {
+                    message: "Invalid Base58 address".to_string(),
+                })?;
 
         if decoded.len() != 25 {
             return Err(PrimitiveError::InvalidFormat {

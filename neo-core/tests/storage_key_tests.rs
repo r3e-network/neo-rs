@@ -1,9 +1,9 @@
-use neo_core::smart_contract::key_builder::KeyBuilder;
-use neo_core::smart_contract::storage_key::StorageKey;
-use neo_core::{UInt160, UInt256};
 use neo_core::extensions::byte_extensions::{
     default_xx_hash3_seed, hash_code_combine_i32, ByteExtensions,
 };
+use neo_core::smart_contract::key_builder::KeyBuilder;
+use neo_core::smart_contract::storage_key::StorageKey;
+use neo_core::{UInt160, UInt256};
 
 fn sample_uint160() -> UInt160 {
     UInt160::from("2d3b96ae1bcc5a585e075e3b81920210dec16302")

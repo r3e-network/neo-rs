@@ -79,10 +79,19 @@ mod tests {
 
     #[test]
     fn test_inventory_type_from_byte() {
-        assert_eq!(InventoryType::from_byte(0x2b), Some(InventoryType::Transaction));
+        assert_eq!(
+            InventoryType::from_byte(0x2b),
+            Some(InventoryType::Transaction)
+        );
         assert_eq!(InventoryType::from_byte(0x2c), Some(InventoryType::Block));
-        assert_eq!(InventoryType::from_byte(0x2d), Some(InventoryType::Consensus));
-        assert_eq!(InventoryType::from_byte(0x2e), Some(InventoryType::Extensible));
+        assert_eq!(
+            InventoryType::from_byte(0x2d),
+            Some(InventoryType::Consensus)
+        );
+        assert_eq!(
+            InventoryType::from_byte(0x2e),
+            Some(InventoryType::Extensible)
+        );
         assert_eq!(InventoryType::from_byte(0x00), None);
     }
 
