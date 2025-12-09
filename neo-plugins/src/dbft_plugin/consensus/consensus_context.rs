@@ -16,10 +16,16 @@ use neo_core::smart_contract::Contract;
 use neo_core::UInt160;
 use neo_core::{NeoSystem, Transaction, UInt256};
 use neo_vm::ScriptBuilder;
+use lru::LruCache;
 use std::collections::HashMap;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::debug;
+
+/// SECURITY (M-1): Maximum number of cached consensus messages.
+/// This prevents unbounded memory growth from malicious or buggy peers.
+const MAX_CACHED_MESSAGES: usize = 1000;
 
 /// In-memory representation of the consensus state for the dBFT plugin.
 #[allow(clippy::struct_excessive_bools)]
@@ -37,7 +43,8 @@ pub struct ConsensusContext {
     pub last_change_view_payloads: Vec<Option<ExtensiblePayload>>,
     pub last_seen_message: HashMap<ECPoint, u32>,
     pub verification_context: TransactionVerificationContext,
-    cached_messages: HashMap<UInt256, ConsensusMessagePayload>,
+    /// SECURITY (M-1): LRU cache with bounded size to prevent memory exhaustion.
+    cached_messages: LruCache<UInt256, ConsensusMessagePayload>,
     pub neo_system: Arc<NeoSystem>,
     pub dbft_settings: DbftSettings,
     pub signer: Arc<dyn ISigner>,
@@ -73,7 +80,7 @@ impl ConsensusContext {
             last_change_view_payloads: Vec::new(),
             last_seen_message: HashMap::new(),
             verification_context: TransactionVerificationContext::new(),
-            cached_messages: HashMap::new(),
+            cached_messages: LruCache::new(NonZeroUsize::new(MAX_CACHED_MESSAGES).unwrap()),
             neo_system,
             dbft_settings: settings,
             signer,
@@ -500,13 +507,15 @@ impl ConsensusContext {
         }
     }
 
-    /// Provides mutable access to the cached message map for helper modules.
-    pub(crate) fn cached_messages_mut(&mut self) -> &mut HashMap<UInt256, ConsensusMessagePayload> {
+    /// Provides mutable access to the cached message LRU cache for helper modules.
+    /// SECURITY (M-1): Returns LruCache instead of HashMap to enforce bounded size.
+    pub(crate) fn cached_messages_mut(&mut self) -> &mut LruCache<UInt256, ConsensusMessagePayload> {
         &mut self.cached_messages
     }
 
-    /// Provides immutable access to the cached message map.
-    pub(crate) fn cached_messages(&self) -> &HashMap<UInt256, ConsensusMessagePayload> {
+    /// Provides immutable access to the cached message LRU cache.
+    /// SECURITY (M-1): Returns LruCache instead of HashMap to enforce bounded size.
+    pub(crate) fn cached_messages(&self) -> &LruCache<UInt256, ConsensusMessagePayload> {
         &self.cached_messages
     }
 

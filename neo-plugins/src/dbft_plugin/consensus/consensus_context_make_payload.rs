@@ -377,7 +377,7 @@ impl ConsensusContext {
 
         let mut hashable = payload.clone();
         let payload_hash = hashable.hash();
-        self.cached_messages_mut().insert(payload_hash, message);
+        self.cached_messages_mut().put(payload_hash, message);
 
         payload
     }

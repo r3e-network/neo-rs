@@ -48,6 +48,7 @@ rand = { workspace = true }
 aes = { version = "0.8" }
 cipher = { version = "0.4", features = ["block-padding"] }
 cbc = { version = "0.1" }
+lru = "0.12"  # SECURITY (M-1): LRU cache for consensus message cache limit
 scrypt = { version = "0.11" }
 
 # Web server for APIs

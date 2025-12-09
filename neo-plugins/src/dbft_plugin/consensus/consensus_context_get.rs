@@ -30,14 +30,15 @@ impl ConsensusContext {
         let mut payload_clone = payload.clone();
         let payload_hash = payload_clone.hash();
 
-        if let Some(existing) = self.cached_messages().get(&payload_hash) {
+        // SECURITY (M-1): LruCache.get() requires mutable access to update LRU order
+        if let Some(existing) = self.cached_messages_mut().get(&payload_hash) {
             return Some(existing.clone());
         }
 
         match ConsensusMessagePayload::deserialize_from(&payload_clone.data) {
             Ok(message) => {
                 self.cached_messages_mut()
-                    .insert(payload_hash, message.clone());
+                    .put(payload_hash, message.clone());
                 Some(message)
             }
             Err(error) => {
