@@ -12,6 +12,7 @@ use crate::{
     },
     smart_contract::{StorageItem, StorageKey},
 };
+use tracing::error;
 use rocksdb::{
     BlockBasedOptions, Cache, DBIteratorWithThreadMode, Direction, IteratorMode, Options,
     ReadOptions, Snapshot as DbSnapshot, WriteBatch, WriteOptions, DB,
@@ -391,19 +392,27 @@ impl IStoreSnapshot for RocksDbSnapshot {
         self.store.clone() as Arc<dyn IStore>
     }
 
-    fn commit(&mut self) {
-        let mut batch_guard = self.write_batch.lock().unwrap();
+    fn try_commit(&mut self) -> crate::persistence::i_store_snapshot::SnapshotCommitResult {
+        use crate::persistence::storage::StorageError;
+
+        let mut batch_guard = self.write_batch.lock().map_err(|e| {
+            StorageError::CommitFailed(format!("Failed to acquire lock: {}", e))
+        })?;
+
         if batch_guard.is_empty() {
-            return;
+            return Ok(());
         }
 
         let mut batch = WriteBatch::default();
         mem::swap(&mut *batch_guard, &mut batch);
         drop(batch_guard);
 
-        if let Err(err) = self.db.write(batch) {
-            warn!(target: "neo", error = %err, "rocksdb snapshot commit failed");
-        }
+        self.db.write(batch).map_err(|err| {
+            error!(target: "neo", error = %err, "rocksdb snapshot commit failed");
+            StorageError::CommitFailed(format!("RocksDB write failed: {}", err))
+        })?;
+
+        Ok(())
     }
 }
 

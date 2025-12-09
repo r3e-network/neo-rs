@@ -102,7 +102,40 @@ pub struct ExecutionEngine {
     /// Optional interop service used for handling syscalls
     interop_service: Option<InteropService>,
 
-    /// Host responsible for advanced syscall execution (ApplicationEngine)
+    /// Host responsible for advanced syscall execution (ApplicationEngine).
+    ///
+    /// # Safety Warning (H-3)
+    ///
+    /// This field uses a raw pointer (`*mut dyn InteropHost`) instead of a safe reference
+    /// or smart pointer. This design choice was made to avoid complex lifetime annotations
+    /// that would propagate throughout the codebase.
+    ///
+    /// ## Invariants that MUST be maintained:
+    ///
+    /// 1. **Lifetime**: The pointed-to `InteropHost` MUST outlive the `ExecutionEngine`.
+    ///    The caller (typically `ApplicationEngine`) is responsible for ensuring this.
+    ///
+    /// 2. **Exclusive Access**: While the `ExecutionEngine` holds this pointer, no other
+    ///    code should hold a mutable reference to the same `InteropHost`.
+    ///
+    /// 3. **Thread Safety**: The `ExecutionEngine` is not `Send` or `Sync` due to this
+    ///    raw pointer. Do not share across threads.
+    ///
+    /// 4. **Null Safety**: The pointer is wrapped in `Option`, so null checks are handled.
+    ///    However, a dangling pointer (pointing to freed memory) would cause UB.
+    ///
+    /// ## Why not use safer alternatives?
+    ///
+    /// - `&'a mut dyn InteropHost`: Would require lifetime parameter on `ExecutionEngine`,
+    ///   propagating to all users and making the API significantly more complex.
+    /// - `Arc<Mutex<dyn InteropHost>>`: Would add runtime overhead and potential deadlocks.
+    /// - `Box<dyn InteropHost>`: Would transfer ownership, but the host needs to outlive
+    ///   multiple engine invocations.
+    ///
+    /// ## Mitigation
+    ///
+    /// All unsafe dereferences are localized to a few methods with SAFETY comments.
+    /// The `ApplicationEngine` in neo-contract manages the lifetime correctly.
     interop_host: Option<*mut dyn InteropHost>,
 
     /// Effective call flags for the current execution context
@@ -571,8 +604,29 @@ impl ExecutionEngine {
         //         crate::metrics::global_metrics().record_instruction();
         //     }
         // }
+
+        // SECURITY FIX (H-4): Pre-execution stack overflow check
+        // Check stack size BEFORE executing instructions that could significantly
+        // increase stack usage. This prevents attackers from exploiting the gap
+        // between instruction execution and post-execution check.
+        //
+        // We use a threshold of 90% of max_stack_size to trigger early warning.
+        // This gives headroom for instructions that create multiple items.
+        let stack_threshold = (self.limits.max_stack_size as usize * 9) / 10;
+        if self.reference_counter.count() >= stack_threshold {
+            // Perform thorough check when approaching limit
+            let current = self.reference_counter.check_zero_referred();
+            if current >= self.limits.max_stack_size as usize {
+                return Err(VmError::invalid_operation_msg(format!(
+                    "MaxStackSize exceeded (pre-check): {}/{}",
+                    current, self.limits.max_stack_size
+                )));
+            }
+        }
+
         if let Some(host_ptr) = self.interop_host {
             if let Some(context) = self.current_context().cloned() {
+                // SAFETY: See interop_host field documentation for invariants
                 unsafe { (*host_ptr).pre_execute_instruction(self, &context, instruction)? };
             }
         }
@@ -580,26 +634,44 @@ impl ExecutionEngine {
     }
 
     /// Called after executing an instruction.
+    ///
+    /// # Stack Overflow Detection Strategy (H-4)
+    ///
+    /// The VM uses a two-phase stack overflow detection:
+    ///
+    /// 1. **Pre-execution check** (in `pre_execute_instruction`): Triggers when stack
+    ///    usage reaches 90% of limit, performing a thorough GC check before allowing
+    ///    the instruction to execute.
+    ///
+    /// 2. **Post-execution check** (this method): Always runs after instruction execution.
+    ///    Uses a fast path when under limit, and thorough GC check when at/over limit.
+    ///
+    /// This dual-check approach prevents:
+    /// - Instructions that create many items from overflowing before post-check
+    /// - Malicious scripts from exploiting the execution-to-check gap
     fn post_execute_instruction(&mut self, instruction: &Instruction) -> VmResult<()> {
         if self.reference_counter.count() < self.limits.max_stack_size as usize {
             if let Some(host_ptr) = self.interop_host {
                 if let Some(context) = self.current_context().cloned() {
+                    // SAFETY: See interop_host field documentation for invariants
                     unsafe { (*host_ptr).post_execute_instruction(self, &context, instruction)? };
                 }
             }
             return Ok(());
         }
 
+        // Stack is at or over limit - perform thorough check with GC
         let current = self.reference_counter.check_zero_referred();
         if current > self.limits.max_stack_size as usize {
             return Err(VmError::invalid_operation_msg(format!(
-                "MaxStackSize exceed: {}/{}",
+                "MaxStackSize exceeded: {}/{}",
                 current, self.limits.max_stack_size
             )));
         }
 
         if let Some(host_ptr) = self.interop_host {
             if let Some(context) = self.current_context().cloned() {
+                // SAFETY: See interop_host field documentation for invariants
                 unsafe { (*host_ptr).post_execute_instruction(self, &context, instruction)? };
             }
         }

@@ -12,6 +12,24 @@ use crate::stack_item::StackItem;
 use num_bigint::BigInt;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 
+/// Maximum size for BigInt results in bytes (256 bits = 32 bytes)
+/// This matches the C# Neo VM behavior to prevent memory exhaustion attacks.
+const MAX_BIGINT_SIZE: usize = 32;
+
+/// Checks if a BigInt value exceeds the maximum allowed size.
+/// Returns an error if the value is too large.
+#[inline]
+fn check_bigint_size(value: &BigInt) -> VmResult<()> {
+    let byte_len = value.to_signed_bytes_le().len();
+    if byte_len > MAX_BIGINT_SIZE {
+        return Err(VmError::invalid_operation_msg(format!(
+            "BigInt size {} bytes exceeds maximum {} bytes",
+            byte_len, MAX_BIGINT_SIZE
+        )));
+    }
+    Ok(())
+}
+
 /// Registers the numeric operation handlers.
 pub fn register_handlers(jump_table: &mut JumpTable) {
     jump_table.register(OpCode::INC, inc);
@@ -162,6 +180,7 @@ fn add(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
     let result = match (a, b) {
         (StackItem::Integer(a), StackItem::Integer(b)) => {
             let sum = &a + &b;
+            check_bigint_size(&sum)?;  // SECURITY: Check result size
             StackItem::from_int(sum)
         }
         (StackItem::ByteString(a), StackItem::ByteString(b)) => {
@@ -178,6 +197,7 @@ fn add(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
             let a_int = a.as_int()?;
             let b_int = b.as_int()?;
             let sum = &a_int + &b_int;
+            check_bigint_size(&sum)?;  // SECURITY: Check result size
             StackItem::from_int(sum)
         }
     };
@@ -219,6 +239,7 @@ fn mul(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
 
     // Multiply the values
     let result = a * b;
+    check_bigint_size(&result)?;  // SECURITY: Check result size
 
     context.push(StackItem::from_int(result))?;
 
@@ -291,8 +312,18 @@ fn pow(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
         .to_u32()
         .ok_or_else(|| VmError::invalid_operation_msg("Exponent too large"))?;
 
+    // SECURITY: Limit exponent to prevent memory exhaustion
+    // With base 2 and exponent 256, result is 2^256 which is 32 bytes
+    if exponent > 256 {
+        return Err(VmError::invalid_operation_msg(format!(
+            "Exponent {} exceeds maximum 256",
+            exponent
+        )));
+    }
+
     // Calculate the power
     let result = a.pow(exponent);
+    check_bigint_size(&result)?;  // SECURITY: Check result size
 
     context.push(StackItem::from_int(result))?;
 

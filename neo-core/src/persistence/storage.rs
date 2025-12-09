@@ -66,6 +66,8 @@ pub enum StorageError {
     NotFound,
     #[error("cache is read only")]
     ReadOnly,
+    #[error("commit failed: {0}")]
+    CommitFailed(String),
     #[error("{0}")]
     Other(String),
 }

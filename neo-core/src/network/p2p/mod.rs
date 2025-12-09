@@ -10,6 +10,39 @@
 // modifications are permitted.
 
 //! P2P networking module matching C# `Neo.Network.P2P`.
+//!
+//! # Security Warning (H-6)
+//!
+//! **IMPORTANT**: P2P communications in this module are **NOT ENCRYPTED**.
+//!
+//! All network traffic between Neo nodes is transmitted in plaintext, which means:
+//!
+//! - **Eavesdropping**: Network observers can see all P2P messages including transactions,
+//!   blocks, and consensus messages.
+//! - **Man-in-the-Middle**: Attackers on the network path could potentially intercept and
+//!   modify messages (though consensus signatures provide some protection).
+//! - **Traffic Analysis**: Network patterns can reveal node behavior and relationships.
+//!
+//! ## Mitigations
+//!
+//! For production deployments, consider:
+//!
+//! 1. **VPN/Tunnel**: Run P2P traffic over an encrypted tunnel (WireGuard, IPsec)
+//! 2. **Private Network**: Deploy nodes on isolated private networks
+//! 3. **Tor/I2P**: Use anonymizing networks for additional privacy
+//! 4. **Firewall Rules**: Restrict P2P connections to known trusted peers
+//!
+//! ## Why No Built-in Encryption?
+//!
+//! This matches the C# Neo reference implementation which also uses unencrypted TCP.
+//! The Neo protocol relies on cryptographic signatures for message authenticity rather
+//! than transport-layer encryption. Adding TLS would break compatibility with the
+//! existing Neo network.
+//!
+//! ## Future Considerations
+//!
+//! A future protocol upgrade could add optional encryption (e.g., Noise Protocol Framework)
+//! while maintaining backward compatibility through capability negotiation.
 
 pub mod capabilities;
 pub mod channels_config;

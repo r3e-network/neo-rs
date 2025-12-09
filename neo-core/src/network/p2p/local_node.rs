@@ -137,6 +137,9 @@ pub struct LocalNode {
     capabilities: Arc<RwLock<Vec<NodeCapability>>>,
     /// Connected peers keyed by their remote socket address.
     peers: Arc<RwLock<HashMap<SocketAddr, RemoteNodeSnapshot>>>,
+    /// SECURITY: Index of peer addresses by IP for O(1) connection-per-IP lookups.
+    /// This prevents DoS attacks where checking max_connections_per_address was O(n).
+    peers_by_ip: Arc<RwLock<HashMap<IpAddr, HashSet<SocketAddr>>>>,
     /// Remote node actors keyed by their path string.
     remote_nodes: Arc<RwLock<HashMap<String, RemoteActorEntry>>>,
     /// History of broadcast operations for diagnostics/testing.
@@ -181,6 +184,7 @@ impl LocalNode {
                 NodeCapability::full_node(0),
             ])),
             peers: Arc::new(RwLock::new(HashMap::new())),
+            peers_by_ip: Arc::new(RwLock::new(HashMap::new())),
             remote_nodes: Arc::new(RwLock::new(HashMap::new())),
             broadcasts: Arc::new(RwLock::new(Vec::new())),
             seed_list: Arc::new(RwLock::new(Vec::new())),
@@ -204,6 +208,7 @@ impl LocalNode {
     }
 
     /// Adds or updates a connected peer snapshot.
+    /// SECURITY: Also maintains the peers_by_ip index for O(1) connection-per-IP lookups.
     pub fn add_peer(
         &self,
         remote_address: SocketAddr,
@@ -214,7 +219,11 @@ impl LocalNode {
     ) {
         let timestamp = current_unix_timestamp();
         let listen_tcp_port = listener_tcp_port.unwrap_or_else(|| remote_address.port());
+        let remote_ip = Self::normalize_ip(remote_address);
+
         let mut peers = self.write_peers();
+        let is_new = !peers.contains_key(&remote_address);
+
         peers
             .entry(remote_address)
             .and_modify(|snapshot| snapshot.touch(last_block_index, timestamp))
@@ -227,6 +236,14 @@ impl LocalNode {
                 services,
                 timestamp,
             });
+
+        // SECURITY: Maintain IP index for O(1) lookups
+        if is_new {
+            drop(peers); // Release peers lock before acquiring peers_by_ip lock
+            if let Ok(mut by_ip) = self.peers_by_ip.write() {
+                by_ip.entry(remote_ip).or_default().insert(remote_address);
+            }
+        }
     }
 
     /// Updates the last known block height for the specified peer.
@@ -238,8 +255,24 @@ impl LocalNode {
     }
 
     /// Removes a peer from the local registry.
+    /// SECURITY: Also maintains the peers_by_ip index for O(1) connection-per-IP lookups.
     pub fn remove_peer(&self, address: &SocketAddr) -> bool {
-        self.write_peers().remove(address).is_some()
+        let removed = self.write_peers().remove(address).is_some();
+
+        // SECURITY: Maintain IP index for O(1) lookups
+        if removed {
+            let remote_ip = Self::normalize_ip(*address);
+            if let Ok(mut by_ip) = self.peers_by_ip.write() {
+                if let Some(addrs) = by_ip.get_mut(&remote_ip) {
+                    addrs.remove(address);
+                    if addrs.is_empty() {
+                        by_ip.remove(&remote_ip);
+                    }
+                }
+            }
+        }
+
+        removed
     }
 
     /// Returns the list of connected peer endpoints.
@@ -517,18 +550,24 @@ impl LocalNode {
             return false;
         }
 
+        // SECURITY FIX (H-5): Use O(1) lookup instead of O(n) scan to prevent DoS
+        // The previous implementation used filter().count() which was O(n) and could
+        // be exploited by attackers to slow down connection acceptance.
         if config.max_connections_per_address > 0 {
-            let per_address = peers
-                .values()
-                .filter(|entry| Self::normalize_ip(entry.remote_address) == remote_ip)
-                .count();
+            drop(peers); // Release peers lock before acquiring peers_by_ip lock
+            let per_address = self
+                .peers_by_ip
+                .read()
+                .ok()
+                .and_then(|by_ip| by_ip.get(&remote_ip).map(|addrs| addrs.len()))
+                .unwrap_or(0);
 
             if per_address >= config.max_connections_per_address {
                 return false;
             }
+        } else {
+            drop(peers);
         }
-
-        drop(peers);
         let nodes = self.read_remote_nodes();
         let duplicate = nodes.values().any(|entry| {
             let existing_ip = Self::normalize_ip(entry.snapshot.remote_address);

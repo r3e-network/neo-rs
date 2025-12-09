@@ -96,10 +96,14 @@ impl IStoreSnapshot for MemorySnapshot {
         self.store.clone()
     }
 
-    fn commit(&mut self) {
+    fn try_commit(&mut self) -> crate::persistence::i_store_snapshot::SnapshotCommitResult {
+        use crate::persistence::storage::StorageError;
+
         {
             // Apply write batch to the store
-            let batch = self.write_batch.read().unwrap();
+            let batch = self.write_batch.read().map_err(|e| {
+                StorageError::CommitFailed(format!("Failed to acquire read lock: {}", e))
+            })?;
             // If the underlying store is a MemoryStore, apply batch directly.
             if let Some(mem) = self.store.as_any().downcast_ref::<MemoryStore>() {
                 mem.apply_batch(&batch);
@@ -108,6 +112,10 @@ impl IStoreSnapshot for MemorySnapshot {
         }
 
         // Clear the write batch
-        self.write_batch.write().unwrap().clear();
+        self.write_batch.write().map_err(|e| {
+            StorageError::CommitFailed(format!("Failed to acquire write lock: {}", e))
+        })?.clear();
+
+        Ok(())
     }
 }

@@ -717,40 +717,40 @@ impl IWriteStore<Vec<u8>, Vec<u8>> for RocksDBSnapshotWrapper {
 
 impl IStoreSnapshot for RocksDBSnapshotWrapper {
     /// Gets the store this snapshot belongs to
-    fn store(&self) -> &dyn IStore {
-        // Return reference to the parent store
-        &self.store_reference
+    fn store(&self) -> Arc<dyn IStore> {
+        Arc::new(RocksDBStoreReference {
+            db: Arc::clone(&self.snapshot.db),
+            config: self.store_reference.config.clone(),
+        })
     }
 
-    /// Commits all changes in the snapshot to the database (matches C# RocksDBSnapshot.Commit exactly)
-    fn commit(&mut self) {
+    /// Commits all changes in the snapshot to the database, returning an error on failure.
+    /// SECURITY: This method properly propagates errors instead of silently ignoring them.
+    fn try_commit(&mut self) -> crate::persistence::i_store_snapshot::SnapshotCommitResult {
+        use crate::persistence::storage::StorageError;
+
         info!("Committing snapshot {} to database", self.snapshot.id);
 
         let batch = {
-            let mut pending = self.snapshot.pending_writes.lock().ok()?;
+            let mut pending = self.snapshot.pending_writes.lock().map_err(|e| {
+                StorageError::CommitFailed(format!("Failed to acquire lock: {}", e))
+            })?;
             std::mem::replace(&mut *pending, WriteBatch::default())
         };
 
-        match self.snapshot.db.write(batch) {
-            Ok(()) => {
-                info!("Snapshot {} committed successfully", self.snapshot.id);
-            }
-            Err(e) => {
-                error!(
-                    "CRITICAL: Failed to commit snapshot {}: {}",
-                    self.snapshot.id, e
-                );
-                // In production systems, database write failures are critical and should not be ignored
-                // However, we should handle this gracefully rather than crashing the entire node
-                warn!("Snapshot commit failed - this may indicate storage issues or corruption");
+        self.snapshot.db.write(batch).map_err(|e| {
+            error!(
+                "CRITICAL: Failed to commit snapshot {}: {}",
+                self.snapshot.id, e
+            );
+            StorageError::CommitFailed(format!(
+                "RocksDB write failed for snapshot {}: {}",
+                self.snapshot.id, e
+            ))
+        })?;
 
-                // 1. Retry the commit operation
-                // 2. Mark the snapshot as failed
-                // 3. Trigger database recovery procedures
-                // 4. Alert monitoring systems
-                // 5. Gracefully degrade service rather than crash
-            }
-        }
+        info!("Snapshot {} committed successfully", self.snapshot.id);
+        Ok(())
     }
 }
 

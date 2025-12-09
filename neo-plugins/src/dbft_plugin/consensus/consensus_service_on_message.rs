@@ -206,6 +206,28 @@ impl ConsensusService {
                 return;
             }
 
+            // SECURITY FIX: Verify the payload signature before accepting
+            // This prevents attackers from forging PrepareResponse messages
+            let validator_pubkey = match context.validators.get(index) {
+                Some(pk) => pk.clone(),
+                None => {
+                    self.log(&format!(
+                        "OnPrepareResponseReceived: validator {} not found - rejecting",
+                        index
+                    ));
+                    return;
+                }
+            };
+
+            // Verify the ExtensiblePayload witness signature
+            if !self.verify_payload_witness(&payload, &validator_pubkey) {
+                self.log(&format!(
+                    "OnPrepareResponseReceived: INVALID signature from validator {} - rejecting",
+                    index
+                ));
+                return;
+            }
+
             let primary_index = context.block().primary_index() as usize;
             let hash_matches = if let Some(Some(primary_payload)) =
                 context.preparation_payloads.get(primary_index).cloned()
@@ -224,7 +246,7 @@ impl ConsensusService {
             let timer_state = TimerContextState::from_context(&mut context);
 
             self.log(&format!(
-                "OnPrepareResponseReceived: height={} view={} index={}",
+                "OnPrepareResponseReceived: height={} view={} index={} (signature verified)",
                 message.block_index(),
                 message.view_number(),
                 message.validator_index()
@@ -255,18 +277,41 @@ impl ConsensusService {
                 return;
             }
 
+            let index = message.validator_index() as usize;
+            if index >= context.change_view_payloads.len() {
+                return;
+            }
+
+            // SECURITY FIX (H-7): Verify the payload signature before accepting
+            // This prevents attackers from forging ChangeView messages which could
+            // cause premature view changes and disrupt consensus.
+            let validator_pubkey = match context.validators.get(index) {
+                Some(pk) => pk.clone(),
+                None => {
+                    self.log(&format!(
+                        "OnChangeViewReceived: validator {} not found - rejecting",
+                        index
+                    ));
+                    return;
+                }
+            };
+
+            // Verify the ExtensiblePayload witness signature
+            if !self.verify_payload_witness(&payload, &validator_pubkey) {
+                self.log(&format!(
+                    "OnChangeViewReceived: INVALID signature from validator {} - rejecting",
+                    index
+                ));
+                return;
+            }
+
             self.log(&format!(
-                "OnChangeViewReceived: height={} view={} index={} nv={}",
+                "OnChangeViewReceived: height={} view={} index={} nv={} (signature verified)",
                 message.block_index(),
                 message.view_number(),
                 message.validator_index(),
                 message.new_view_number()
             ));
-
-            let index = message.validator_index() as usize;
-            if index >= context.change_view_payloads.len() {
-                return;
-            }
 
             context.change_view_payloads[index] = Some(payload.clone());
 

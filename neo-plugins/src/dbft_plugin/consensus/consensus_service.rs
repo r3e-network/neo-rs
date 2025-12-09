@@ -12,6 +12,7 @@
 use crate::dbft_plugin::consensus::consensus_context::ConsensusContext;
 use crate::dbft_plugin::dbft_settings::DbftSettings;
 use crate::dbft_plugin::types::change_view_reason::ChangeViewReason;
+use neo_core::cryptography::crypto_utils::Crypto;
 use neo_core::network::p2p::local_node::LocalNodeCommand;
 use neo_core::network::p2p::payloads::inv_payload::InvPayload;
 use neo_core::network::p2p::payloads::inventory_type::InventoryType;
@@ -518,6 +519,118 @@ impl ConsensusService {
 
     pub(crate) fn log(&self, message: &str) {
         info!(target: "dbft::consensus_service", "{}", message);
+    }
+
+    /// Verifies that an ExtensiblePayload's witness was signed by the expected validator.
+    ///
+    /// SECURITY: This method prevents attackers from forging consensus messages
+    /// by verifying that the payload's signature matches the claimed validator's public key.
+    ///
+    /// # Arguments
+    /// * `payload` - The ExtensiblePayload to verify
+    /// * `expected_pubkey` - The expected validator's public key (ECPoint)
+    ///
+    /// # Returns
+    /// `true` if the signature is valid and matches the expected public key, `false` otherwise
+    pub(crate) fn verify_payload_witness(
+        &self,
+        payload: &ExtensiblePayload,
+        expected_pubkey: &neo_core::cryptography::crypto_utils::ECPoint,
+    ) -> bool {
+        use neo_core::IVerifiable;
+
+        // 1. Get the hash data that was signed
+        let hash_data = payload.get_hash_data();
+
+        // 2. Extract the public key from the witness verification script
+        let witness_pubkey = match Self::extract_pubkey_from_witness(&payload.witness) {
+            Ok(pk) => pk,
+            Err(e) => {
+                self.log(&format!("verify_payload_witness: failed to extract pubkey: {}", e));
+                return false;
+            }
+        };
+
+        // 3. Get the expected public key in compressed form for comparison
+        let expected_pubkey_bytes = match expected_pubkey.encode_point(true) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                self.log(&format!("verify_payload_witness: failed to encode expected pubkey: {}", e));
+                return false;
+            }
+        };
+
+        // 4. Verify the public key matches the expected validator
+        if witness_pubkey != expected_pubkey_bytes {
+            self.log("verify_payload_witness: public key mismatch");
+            return false;
+        }
+
+        // 5. Extract signature from invocation script and verify
+        let signature = match Self::extract_signature_from_witness(&payload.witness) {
+            Ok(sig) => sig,
+            Err(e) => {
+                self.log(&format!("verify_payload_witness: failed to extract signature: {}", e));
+                return false;
+            }
+        };
+
+        // 6. Verify the signature using secp256r1 (Neo's default curve)
+        if signature.len() != 64 {
+            self.log(&format!(
+                "verify_payload_witness: invalid signature length {}",
+                signature.len()
+            ));
+            return false;
+        }
+
+        let mut sig_array = [0u8; 64];
+        sig_array.copy_from_slice(&signature);
+
+        Crypto::verify_signature_secp256r1(&hash_data, &sig_array, &expected_pubkey_bytes)
+    }
+
+    /// Extracts the public key from a witness's verification script.
+    /// Neo N3 signature verification scripts have format: PUSHDATA1 0x21 <33-byte-pubkey> CHECKSIG
+    fn extract_pubkey_from_witness(witness: &neo_core::witness::Witness) -> Result<Vec<u8>, String> {
+        let script = &witness.verification_script;
+
+        // Standard signature verification script is 35 bytes:
+        // 0x0C (PUSHDATA1) + 0x21 (33 bytes) + <33-byte compressed pubkey> + 0x41 (CHECKSIG)
+        if script.len() != 35 {
+            return Err(format!("Invalid verification script length: {}", script.len()));
+        }
+
+        if script[0] != 0x0C || script[1] != 0x21 || script[34] != 0x41 {
+            return Err("Invalid verification script format".to_string());
+        }
+
+        let pubkey = script[2..35].to_vec();
+
+        // Validate compressed public key format (must start with 0x02 or 0x03)
+        if pubkey.len() != 33 || (pubkey[0] != 0x02 && pubkey[0] != 0x03) {
+            return Err("Invalid compressed public key format".to_string());
+        }
+
+        Ok(pubkey)
+    }
+
+    /// Extracts the signature from a witness's invocation script.
+    /// Neo N3 signature invocation scripts have format: PUSHDATA1 0x40 <64-byte-signature>
+    fn extract_signature_from_witness(witness: &neo_core::witness::Witness) -> Result<Vec<u8>, String> {
+        let script = &witness.invocation_script;
+
+        // Standard signature invocation script is 66 bytes:
+        // 0x0C (PUSHDATA1) + 0x40 (64 bytes) + <64-byte signature>
+        if script.len() != 66 {
+            return Err(format!("Invalid invocation script length: {}", script.len()));
+        }
+
+        if script[0] != 0x0C || script[1] != 0x40 {
+            return Err("Invalid invocation script format".to_string());
+        }
+
+        Ok(script[2..66].to_vec())
     }
 }
 

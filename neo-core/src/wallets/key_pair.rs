@@ -15,6 +15,7 @@ use cbc::{
     cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit},
     Decryptor, Encryptor,
 };
+use rand::rngs::OsRng;
 use rand::RngCore;
 use scrypt::Params;
 use std::fmt;
@@ -32,10 +33,12 @@ pub struct KeyPair {
 
 impl KeyPair {
     /// Creates a new random key pair.
+    ///
+    /// Uses OsRng (cryptographically secure) for private key generation.
     pub fn generate() -> Result<Self> {
-        let mut private_key = [0u8; HASH_SIZE];
-        rand::thread_rng().fill_bytes(&mut private_key);
-        Self::from_private_key(&private_key)
+        let mut private_key = Zeroizing::new([0u8; HASH_SIZE]);
+        OsRng.fill_bytes(private_key.as_mut());
+        Self::from_private_key(private_key.as_ref())
     }
 
     /// Creates a key pair from a raw private key buffer.

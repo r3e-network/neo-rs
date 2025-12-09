@@ -252,9 +252,9 @@ impl Secp256r1Crypto {
 pub struct Ed25519Crypto;
 
 impl Ed25519Crypto {
-    /// Generates a new random private key
+    /// Generates a new random private key using cryptographically secure RNG
     pub fn generate_private_key() -> [u8; 32] {
-        let signing_key = Ed25519SigningKey::generate(&mut rand::thread_rng());
+        let signing_key = Ed25519SigningKey::generate(&mut OsRng);
         signing_key.to_bytes()
     }
 
@@ -707,10 +707,10 @@ pub struct Bls12381Crypto;
 const NEO_BLS_DST: &[u8] = b"BLS_SIG_BLS12381G1_XMD:SHA-256_SSWU_RO_NUL_";
 
 impl Bls12381Crypto {
-    /// Generates a new random private key
+    /// Generates a new random private key using cryptographically secure RNG
     pub fn generate_private_key() -> [u8; 32] {
         let mut bytes = [0u8; 32];
-        rand::thread_rng().fill_bytes(&mut bytes);
+        OsRng.fill_bytes(&mut bytes);
         bytes
     }
 

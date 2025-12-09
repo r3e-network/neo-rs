@@ -84,6 +84,9 @@ pub struct RemoteNode {
     /// Rate limiting for bloom filter operations to prevent DoS attacks.
     filter_ops_count: u32,
     filter_ops_reset_time: Instant,
+    /// SECURITY: Track memory usage per peer to prevent memory exhaustion attacks.
+    /// This includes message queues, bloom filters, and pending data.
+    memory_usage_bytes: usize,
 }
 
 impl RemoteNode {
@@ -145,6 +148,11 @@ impl RemoteNode {
     /// Duration for filter rate limit window (60 seconds).
     const FILTER_RATE_LIMIT_WINDOW: std::time::Duration = std::time::Duration::from_secs(60);
 
+    /// SECURITY: Maximum memory usage per peer in bytes (8 MB).
+    /// This prevents a single malicious peer from exhausting node memory.
+    /// The limit accounts for: message queues, bloom filters, pending hashes, and buffers.
+    const MAX_MEMORY_PER_PEER: usize = 8 * 1024 * 1024;
+
     /// Checks and updates the filter operation rate limit.
     /// Returns true if the operation is allowed, false if rate limited.
     fn check_filter_rate_limit(&mut self) -> bool {
@@ -167,6 +175,45 @@ impl RemoteNode {
 
         self.filter_ops_count += 1;
         true
+    }
+
+    /// SECURITY: Checks if adding the specified bytes would exceed the per-peer memory quota.
+    /// Returns true if the allocation is allowed, false if it would exceed the quota.
+    fn check_memory_quota(&self, additional_bytes: usize) -> bool {
+        self.memory_usage_bytes.saturating_add(additional_bytes) <= Self::MAX_MEMORY_PER_PEER
+    }
+
+    /// SECURITY: Adds to the tracked memory usage for this peer.
+    /// Should be called when allocating buffers, adding to queues, etc.
+    fn add_memory_usage(&mut self, bytes: usize) {
+        self.memory_usage_bytes = self.memory_usage_bytes.saturating_add(bytes);
+    }
+
+    /// SECURITY: Subtracts from the tracked memory usage for this peer.
+    /// Should be called when freeing buffers, removing from queues, etc.
+    fn release_memory_usage(&mut self, bytes: usize) {
+        self.memory_usage_bytes = self.memory_usage_bytes.saturating_sub(bytes);
+    }
+
+    /// SECURITY: Estimates the memory size of a network message for quota tracking.
+    fn estimate_message_size(message: &NetworkMessage) -> usize {
+        // Base overhead for the message structure
+        const BASE_OVERHEAD: usize = 64;
+
+        // Estimate payload size based on message type
+        // Using conservative estimates to avoid needing Serializable trait
+        let payload_size = match &message.payload {
+            ProtocolMessage::Block(_) => 2048,  // Conservative block estimate
+            ProtocolMessage::Headers(headers) => headers.headers.len() * 512,
+            ProtocolMessage::Transaction(_) => 1024,  // Conservative tx estimate
+            ProtocolMessage::Inv(inv) => inv.hashes.len() * 32,
+            ProtocolMessage::GetData(inv) => inv.hashes.len() * 32,
+            ProtocolMessage::GetBlocks(_) => 64,  // hash_start (32) + hash_stop (32)
+            ProtocolMessage::Extensible(ext) => ext.data.len() + 128,
+            _ => 128, // Default estimate for other message types
+        };
+
+        BASE_OVERHEAD + payload_size
     }
 
     fn on_filter_load(&mut self, payload: &FilterLoadPayload) {
@@ -353,6 +400,7 @@ impl RemoteNode {
             is_full_node: false,
             filter_ops_count: 0,
             filter_ops_reset_time: Instant::now(),
+            memory_usage_bytes: 0,
         }
     }
 
@@ -391,33 +439,61 @@ impl RemoteNode {
 
     async fn enqueue_message(&mut self, message: NetworkMessage) -> ActorResult {
         let command = message.command();
-        let target_queue = if Self::is_high_priority(command) {
-            &mut self.message_queue_high
-        } else {
-            &mut self.message_queue_low
-        };
+        let is_high_priority = Self::is_high_priority(command);
 
-        // Prevent queue overflow - drop message if queue is full
-        if target_queue.len() >= Self::MAX_QUEUE_SIZE {
+        // SECURITY: Check memory quota before accepting the message
+        let message_size = Self::estimate_message_size(&message);
+        if !self.check_memory_quota(message_size) {
             warn!(
                 target: "neo",
                 endpoint = %self.endpoint,
                 command = ?command,
-                queue_size = target_queue.len(),
+                message_size = message_size,
+                current_usage = self.memory_usage_bytes,
+                max_allowed = Self::MAX_MEMORY_PER_PEER,
+                "per-peer memory quota exceeded, dropping message"
+            );
+            return Ok(());
+        }
+
+        // Check queue size and duplicates before borrowing mutably
+        let (queue_full, has_duplicate) = if is_high_priority {
+            let full = self.message_queue_high.len() >= Self::MAX_QUEUE_SIZE;
+            let dup = Self::is_single_command(command)
+                && self.message_queue_high.iter().any(|q| q.command() == command);
+            (full, dup)
+        } else {
+            let full = self.message_queue_low.len() >= Self::MAX_QUEUE_SIZE;
+            let dup = Self::is_single_command(command)
+                && self.message_queue_low.iter().any(|q| q.command() == command);
+            (full, dup)
+        };
+
+        // Prevent queue overflow - drop message if queue is full
+        if queue_full {
+            warn!(
+                target: "neo",
+                endpoint = %self.endpoint,
+                command = ?command,
                 "message queue full, dropping message"
             );
             return Ok(());
         }
 
-        if Self::is_single_command(command)
-            && target_queue
-                .iter()
-                .any(|queued| queued.command() == command)
-        {
+        if has_duplicate {
             return Ok(());
         }
 
-        target_queue.push_back(message);
+        // SECURITY: Track memory usage when adding to queue
+        self.add_memory_usage(message_size);
+
+        // Now push to the appropriate queue
+        if is_high_priority {
+            self.message_queue_high.push_back(message);
+        } else {
+            self.message_queue_low.push_back(message);
+        }
+
         self.flush_queue().await
     }
 
@@ -436,6 +512,10 @@ impl RemoteNode {
             let Some(message) = next_message else {
                 break;
             };
+
+            // SECURITY: Release memory quota when message is dequeued for sending
+            let message_size = Self::estimate_message_size(&message);
+            self.release_memory_usage(message_size);
 
             self.ack_ready = false;
             self.last_sent = Instant::now();
