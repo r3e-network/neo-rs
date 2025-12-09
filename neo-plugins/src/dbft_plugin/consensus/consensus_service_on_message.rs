@@ -137,9 +137,6 @@ impl ConsensusService {
                 return;
             }
 
-            // SECURITY FIX: Verify the payload witness before accepting
-            // This prevents attackers from forging PrepareRequest messages
-            // claiming to be from the primary validator.
             let validator_index = message.validator_index() as usize;
             if validator_index >= context.validators.len() {
                 tracing::warn!(
@@ -149,7 +146,16 @@ impl ConsensusService {
                 return;
             }
 
-            // Verify the payload was signed by the claimed validator
+            // SECURITY: Verify the payload witness before accepting
+            if !self.verify_message_signature(
+                &payload,
+                &context.validators,
+                validator_index,
+                "PrepareRequest",
+            ) {
+                return;
+            }
+
             // Use IVerifiable::verify_witnesses for witness validation
             let store_cache = self.neo_system.store_cache();
             let snapshot = store_cache.data_cache();
@@ -235,25 +241,12 @@ impl ConsensusService {
                 return;
             }
 
-            // SECURITY FIX: Verify the payload signature before accepting
-            // This prevents attackers from forging PrepareResponse messages
-            let validator_pubkey = match context.validators.get(index) {
-                Some(pk) => pk.clone(),
-                None => {
-                    self.log(&format!(
-                        "OnPrepareResponseReceived: validator {} not found - rejecting",
-                        index
-                    ));
-                    return;
-                }
-            };
-
-            // Verify the ExtensiblePayload witness signature
-            if !self.verify_payload_witness(&payload, &validator_pubkey) {
-                self.log(&format!(
-                    "OnPrepareResponseReceived: INVALID signature from validator {} - rejecting",
-                    index
-                ));
+            if !self.verify_message_signature(
+                &payload,
+                &context.validators,
+                index,
+                "OnPrepareResponseReceived",
+            ) {
                 return;
             }
 
@@ -311,26 +304,12 @@ impl ConsensusService {
                 return;
             }
 
-            // SECURITY FIX (H-7): Verify the payload signature before accepting
-            // This prevents attackers from forging ChangeView messages which could
-            // cause premature view changes and disrupt consensus.
-            let validator_pubkey = match context.validators.get(index) {
-                Some(pk) => pk.clone(),
-                None => {
-                    self.log(&format!(
-                        "OnChangeViewReceived: validator {} not found - rejecting",
-                        index
-                    ));
-                    return;
-                }
-            };
-
-            // Verify the ExtensiblePayload witness signature
-            if !self.verify_payload_witness(&payload, &validator_pubkey) {
-                self.log(&format!(
-                    "OnChangeViewReceived: INVALID signature from validator {} - rejecting",
-                    index
-                ));
+            if !self.verify_message_signature(
+                &payload,
+                &context.validators,
+                index,
+                "OnChangeViewReceived",
+            ) {
                 return;
             }
 
@@ -364,6 +343,15 @@ impl ConsensusService {
             }
 
             if context.commit_payloads[index].is_some() {
+                return;
+            }
+
+            if !self.verify_message_signature(
+                &payload,
+                &context.validators,
+                index,
+                "OnCommitReceived",
+            ) {
                 return;
             }
 
@@ -609,5 +597,39 @@ impl ConsensusService {
         self.check_expected_view(expected_view).await;
 
         queued_payloads
+    }
+
+    /// SECURITY: Validates that the payload witness signature matches the expected validator.
+    fn verify_message_signature(
+        &self,
+        payload: &ExtensiblePayload,
+        validators: &[neo_core::cryptography::crypto_utils::ECPoint],
+        validator_index: usize,
+        message_name: &str,
+    ) -> bool {
+        let validator_pubkey = match validators.get(validator_index) {
+            Some(pk) => pk,
+            None => {
+                tracing::warn!(
+                    target: "neo::consensus",
+                    message = message_name,
+                    validator_index,
+                    "Rejecting consensus message: validator not found"
+                );
+                return false;
+            }
+        };
+
+        if !self.verify_payload_witness(payload, validator_pubkey) {
+            tracing::warn!(
+                target: "neo::consensus",
+                message = message_name,
+                validator_index,
+                "Rejecting consensus message: signature verification failed"
+            );
+            return false;
+        }
+
+        true
     }
 }

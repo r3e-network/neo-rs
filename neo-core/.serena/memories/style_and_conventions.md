@@ -1,0 +1,6 @@
+- Language/style: Idiomatic Rust 2021 with module-per-file structure; derive traits for serialization (serde) and custom types; prefer `tracing` macros for structured logs.
+- Formatting/lint: Rely on `cargo fmt` (rustfmt) and `cargo clippy` for linting; avoid non-ASCII unless required.
+- Error handling: Uses custom `VerifyResult` enums and bools for validation; `Result` aliases (CoreResult) for fallible ops; prefer early returns on failures.
+- Concurrency: Uses tokio async and parking_lot/Mutex for caching (e.g., transaction hash caches).
+- Comments/docstrings: Rust doc comments on public APIs; add concise inline comments only for non-obvious logic.
+- Data access: Ledger/persistence use `StoreCache`/`DataCache` snapshots; avoid mutating snapshots during verification unless intended.

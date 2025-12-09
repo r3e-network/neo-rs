@@ -1,0 +1,5 @@
+- Purpose: Rust implementation of Neo blockchain core (blocks, transactions, ledger, p2p, smart contracts). Crate name `neo-core` within larger workspace.
+- Tech stack: Rust 2021, async runtime via tokio, serde for serialization, tracing for logging, workspace deps (neo-vm, neo-io, neo-primitives, neo-crypto, etc.), RocksDB/lz4 for storage, Prometheus/sysinfo for metrics.
+- Structure highlights: `src/ledger` (blockchain, mempool, verification context), `src/network/p2p/payloads` (block/transaction wire types), `src/smart_contract` (native contracts, VM helpers), `src/persistence` (store/cache abstractions), plus monitoring, rpc, wallets, compression, protocol settings. Tests live in `tests/`.
+- Licensing/metadata: MIT license; package `neo-core` v0.6.0, repository github.com/r3e-network/neo-rs.
+- Platform: Linux; repo uses standard Cargo workspace layout with nearby crates referenced via relative paths.

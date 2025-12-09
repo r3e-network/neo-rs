@@ -1,6 +1,7 @@
 //! Script hash witness condition helper (mirrors `ScriptHashCondition.cs`).
 
-use crate::{uint160::UInt160, witness_rule::WitnessCondition};
+use crate::witness_rule::WitnessCondition;
+use neo_primitives::UInt160;
 
 /// Creates a script-hash witness condition.
 pub fn new(hash: UInt160) -> WitnessCondition {

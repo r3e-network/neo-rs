@@ -1,5 +1,5 @@
 use super::models::{ApplicationEngineLogModel, BlockchainEventModel, BlockchainExecutionModel};
-use crate::application_logs::store::log_storage_store::LogStorageStore;
+use crate::application_logs::store::log_storage_store::{LogStorageStore, SnapshotRef};
 use crate::application_logs::store::states::{
     BlockLogState, ContractLogState, EngineLogState, ExecutionLogState, NotifyLogState,
     TransactionEngineLogState, TransactionLogState,
@@ -12,6 +12,7 @@ use neo_core::smart_contract::notify_event_args::NotifyEventArgs;
 use neo_core::smart_contract::{LogEventArgs, TriggerType};
 use neo_core::{UInt160, UInt256};
 use neo_vm::StackItem;
+use parking_lot::Mutex;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -26,10 +27,16 @@ pub struct ContractLogEntry {
 
 pub struct NeoStore {
     store: Arc<dyn IStore>,
-    block_snapshot: Option<Arc<dyn IStoreSnapshot>>,
+    block_snapshot: Option<SnapshotRef>,
 }
 
 impl NeoStore {
+    fn wrap_snapshot(snapshot: Arc<dyn IStoreSnapshot>) -> SnapshotRef {
+        // Snapshots are created fresh from the store, so we expect to own the only Arc here.
+        // Wrapping it in a mutex lets multiple handles safely take mutable access.
+        Arc::new(Mutex::new(snapshot))
+    }
+
     pub fn new(store: Arc<dyn IStore>) -> Self {
         Self {
             store,
@@ -39,10 +46,10 @@ impl NeoStore {
 
     pub fn start_block_log_batch(&mut self) {
         if let Some(snapshot) = self.block_snapshot.take() {
-            let mut storage = LogStorageStore::new(snapshot);
+            let mut storage = LogStorageStore::new(Arc::clone(&snapshot));
             storage.commit();
         }
-        self.block_snapshot = Some(self.store.get_snapshot());
+        self.block_snapshot = Some(Self::wrap_snapshot(self.store.get_snapshot()));
     }
 
     pub fn commit_block_log(&mut self) {
@@ -167,7 +174,7 @@ impl NeoStore {
         page: u32,
         page_size: u32,
     ) -> IoResult<Vec<ContractLogEntry>> {
-        let mut storage = LogStorageStore::new(self.store.get_snapshot());
+        let mut storage = LogStorageStore::new(Self::wrap_snapshot(self.store.get_snapshot()));
         let records = match (trigger, event_name) {
             (Some(t), Some(event)) => storage.find_contract_state_with_trigger_and_event(
                 script_hash,
@@ -205,7 +212,7 @@ impl NeoStore {
         trigger: TriggerType,
         event_filter: Option<&str>,
     ) -> IoResult<Option<BlockchainExecutionModel>> {
-        let mut storage = LogStorageStore::new(self.store.get_snapshot());
+        let mut storage = LogStorageStore::new(Self::wrap_snapshot(self.store.get_snapshot()));
         let execution_id = match storage.try_get_execution_block_state(hash, trigger)? {
             Some(id) => id,
             None => return Ok(None),
@@ -247,7 +254,7 @@ impl NeoStore {
         hash: &UInt256,
         event_filter: Option<&str>,
     ) -> IoResult<Option<BlockchainExecutionModel>> {
-        let mut storage = LogStorageStore::new(self.store.get_snapshot());
+        let mut storage = LogStorageStore::new(Self::wrap_snapshot(self.store.get_snapshot()));
         let execution_id = match storage.try_get_execution_transaction_state(hash)? {
             Some(id) => id,
             None => return Ok(None),

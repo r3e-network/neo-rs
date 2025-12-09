@@ -4,8 +4,8 @@ use crate::constants::{MAX_STORAGE_KEY_SIZE, MAX_STORAGE_VALUE_SIZE};
 use crate::neo_crypto;
 use crate::neo_io::serializable::helper::get_var_size;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use crate::uint256::UINT256_SIZE;
 use crate::UInt256;
+use neo_primitives::UINT256_SIZE;
 use std::mem;
 use std::sync::RwLock;
 

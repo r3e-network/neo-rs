@@ -9,7 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use super::inventory_type::InventoryType;
+use super::InventoryType;
 use crate::IVerifiable;
 use crate::UInt256;
 

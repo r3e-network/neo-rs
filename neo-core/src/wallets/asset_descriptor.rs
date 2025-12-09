@@ -15,9 +15,9 @@ use crate::{
         application_engine::ApplicationEngine, call_flags::CallFlags, native::ContractManagement,
         trigger_type::TriggerType,
     },
-    uint160::UInt160,
 };
 use neo_vm::{op_code::OpCode, vm_state::VMState, ScriptBuilder};
+use neo_primitives::UInt160;
 use num_traits::ToPrimitive;
 use std::sync::Arc;
 

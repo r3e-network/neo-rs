@@ -15,7 +15,7 @@ use crate::dbft_plugin::types::change_view_reason::ChangeViewReason;
 use neo_core::cryptography::crypto_utils::Crypto;
 use neo_core::network::p2p::local_node::LocalNodeCommand;
 use neo_core::network::p2p::payloads::inv_payload::InvPayload;
-use neo_core::network::p2p::payloads::inventory_type::InventoryType;
+use neo_core::network::p2p::payloads::InventoryType;
 use neo_core::network::p2p::payloads::ExtensiblePayload;
 use neo_core::network::p2p::task_manager::TaskManagerCommand;
 use neo_core::network::p2p::RelayInventory;

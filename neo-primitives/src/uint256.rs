@@ -2,6 +2,7 @@
 
 use crate::constants::HASH_SIZE;
 use crate::error::{PrimitiveError, PrimitiveResult};
+use neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::fmt;
@@ -335,6 +336,33 @@ impl TryFrom<String> for UInt256 {
 impl From<Vec<u8>> for UInt256 {
     fn from(data: Vec<u8>) -> Self {
         Self::from_bytes(&data).unwrap_or_default()
+    }
+}
+
+impl Serializable for UInt256 {
+    fn size(&self) -> usize {
+        UINT256_SIZE
+    }
+
+    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
+        writer.write_u64(self.value1)?;
+        writer.write_u64(self.value2)?;
+        writer.write_u64(self.value3)?;
+        writer.write_u64(self.value4)?;
+        Ok(())
+    }
+
+    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
+        let value1 = reader.read_u64()?;
+        let value2 = reader.read_u64()?;
+        let value3 = reader.read_u64()?;
+        let value4 = reader.read_u64()?;
+        Ok(Self {
+            value1,
+            value2,
+            value3,
+            value4,
+        })
     }
 }
 

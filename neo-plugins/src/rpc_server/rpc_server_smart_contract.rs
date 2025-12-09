@@ -215,22 +215,38 @@ impl RpcServerSmartContract {
             diagnostic,
         )
         .map_err(Self::internal_error)?;
-        let engine_state = format!("{:?}", session.engine().state());
-        let system_fee = session.engine().fee_consumed();
+        let (
+            engine_state,
+            system_fee,
+            exception_value,
+            notifications_snapshot,
+            stack_snapshot,
+            diagnostics_snapshot,
+        ) = {
+            let engine = session.engine();
+            let engine_state = format!("{:?}", engine.state());
+            let system_fee = engine.fee_consumed();
+            let exception_value = engine
+                .fault_exception()
+                .map(|msg| Value::String(msg.to_string()))
+                .unwrap_or(Value::Null);
+            let notifications_snapshot = engine.notifications().to_vec();
+            let stack_snapshot: Vec<StackItem> = engine.result_stack().iter().cloned().collect();
+            let diagnostics_snapshot = session.diagnostic().map(|diag| {
+                let invocation = Self::diagnostic_invocation_to_json(&diag);
+                let storage = Self::diagnostic_storage_changes(&engine);
+                (invocation, storage)
+            });
+            (
+                engine_state,
+                system_fee,
+                exception_value,
+                notifications_snapshot,
+                stack_snapshot,
+                diagnostics_snapshot,
+            )
+        };
         let gas_consumed = system_fee.to_string();
-        let exception_value = session
-            .engine()
-            .fault_exception()
-            .map(|msg| Value::String(msg.to_string()))
-            .unwrap_or(Value::Null);
-        let notifications_snapshot = session.engine().notifications().to_vec();
-        let stack_snapshot: Vec<StackItem> =
-            session.engine().result_stack().iter().cloned().collect();
-        let diagnostics_snapshot = session.diagnostic().map(|diag| {
-            let invocation = Self::diagnostic_invocation_to_json(diag);
-            let storage = Self::diagnostic_storage_changes(session.engine());
-            (invocation, storage)
-        });
 
         let mut result = Map::new();
         result.insert(

@@ -10,7 +10,6 @@
 // modifications are permitted.
 
 use crate::network::p2p::payloads::signer::Signer;
-use crate::witness_scope::WitnessScope;
 use crate::IVerifiable as CoreIVerifiable;
 use crate::{
     network::p2p,
@@ -29,6 +28,7 @@ use crate::{
     wallets::{transfer_output::TransferOutput, wallet::Wallet, wallet::WalletError, KeyPair},
     Transaction, UInt160,
 };
+use neo_primitives::WitnessScope;
 use neo_vm::{op_code::OpCode, ScriptBuilder};
 use num_bigint::{BigInt, Sign};
 use rand::Rng;

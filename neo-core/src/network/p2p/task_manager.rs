@@ -63,7 +63,7 @@ use super::payloads::{
     get_block_by_index_payload::GetBlockByIndexPayload,
     header::Header,
     inv_payload::{InvPayload, MAX_HASHES_COUNT},
-    inventory_type::InventoryType,
+    InventoryType,
     VersionPayload,
 };
 use super::task_session::TaskSession;

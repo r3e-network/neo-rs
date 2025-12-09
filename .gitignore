@@ -55,3 +55,6 @@ testnet_data/
 
 # Generated documentation
 /docs/build/
+# CodeX build artifacts
+**/target_codex/
+target_codex/

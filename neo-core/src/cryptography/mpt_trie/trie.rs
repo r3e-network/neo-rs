@@ -4,8 +4,8 @@ use super::node::{Node, BRANCH_CHILD_COUNT, BRANCH_VALUE_INDEX, MAX_KEY_LENGTH, 
 use super::node_type::NodeType;
 use super::MptCache;
 use crate::neo_crypto;
-use crate::uint256::UINT256_SIZE;
 use crate::UInt256;
+use neo_primitives::UINT256_SIZE;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};

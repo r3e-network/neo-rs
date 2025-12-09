@@ -66,7 +66,7 @@ use super::{
 use crate::neo_io::{BinaryWriter, Serializable};
 use crate::network::p2p::payloads::{
     addr_payload::MAX_COUNT_TO_SEND, block::Block, extensible_payload::ExtensiblePayload,
-    inventory_type::InventoryType, network_address_with_time::NetworkAddressWithTime,
+    InventoryType, network_address_with_time::NetworkAddressWithTime,
     transaction::Transaction, VersionPayload,
 };
 use crate::network::p2p::{NetworkMessage, ProtocolMessage};

@@ -8,7 +8,7 @@ use crate::network::p2p::messages::{NetworkMessage, ProtocolMessage};
 use crate::network::p2p::payloads::get_block_by_index_payload::GetBlockByIndexPayload;
 use crate::network::p2p::payloads::get_blocks_payload::GetBlocksPayload;
 use crate::network::p2p::payloads::inv_payload::{InvPayload, MAX_HASHES_COUNT};
-use crate::network::p2p::payloads::inventory_type::InventoryType;
+use crate::network::p2p::payloads::InventoryType;
 use crate::network::p2p::payloads::merkle_block_payload::MerkleBlockPayload;
 use crate::network::p2p::payloads::transaction::{Transaction, MAX_TRANSACTION_SIZE};
 use crate::network::p2p::payloads::{block::Block, extensible_payload::ExtensiblePayload};

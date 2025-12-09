@@ -151,7 +151,7 @@ impl IInteroperable for ContractMethodDescriptor {
 
             if let Ok(integer) = items[2].as_int() {
                 if let Some(byte_val) = integer.to_u8() {
-                    self.return_type = ContractParameterType::from_byte(byte_val)
+                    self.return_type = ContractParameterType::try_from_u8(byte_val)
                         .unwrap_or(ContractParameterType::Void);
                 }
             }
@@ -185,46 +185,5 @@ impl IInteroperable for ContractMethodDescriptor {
 
     fn clone_box(&self) -> Box<dyn IInteroperable> {
         Box::new(self.clone())
-    }
-}
-
-// Helper extension for ContractParameterType
-impl ContractParameterType {
-    pub fn from_string(s: &str) -> Result<Self, String> {
-        match s {
-            "Any" => Ok(ContractParameterType::Any),
-            "Boolean" => Ok(ContractParameterType::Boolean),
-            "Integer" => Ok(ContractParameterType::Integer),
-            "ByteArray" => Ok(ContractParameterType::ByteArray),
-            "String" => Ok(ContractParameterType::String),
-            "Hash160" => Ok(ContractParameterType::Hash160),
-            "Hash256" => Ok(ContractParameterType::Hash256),
-            "PublicKey" => Ok(ContractParameterType::PublicKey),
-            "Signature" => Ok(ContractParameterType::Signature),
-            "Array" => Ok(ContractParameterType::Array),
-            "Map" => Ok(ContractParameterType::Map),
-            "InteropInterface" => Ok(ContractParameterType::InteropInterface),
-            "Void" => Ok(ContractParameterType::Void),
-            _ => Err(format!("Unknown parameter type: {}", s)),
-        }
-    }
-
-    pub fn from_byte(b: u8) -> Option<Self> {
-        match b {
-            0x00 => Some(ContractParameterType::Any),
-            0x10 => Some(ContractParameterType::Boolean),
-            0x11 => Some(ContractParameterType::Integer),
-            0x12 => Some(ContractParameterType::ByteArray),
-            0x13 => Some(ContractParameterType::String),
-            0x14 => Some(ContractParameterType::Hash160),
-            0x15 => Some(ContractParameterType::Hash256),
-            0x16 => Some(ContractParameterType::PublicKey),
-            0x17 => Some(ContractParameterType::Signature),
-            0x20 => Some(ContractParameterType::Array),
-            0x22 => Some(ContractParameterType::Map),
-            0x30 => Some(ContractParameterType::InteropInterface),
-            0xff => Some(ContractParameterType::Void),
-            _ => None,
-        }
     }
 }

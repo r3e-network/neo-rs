@@ -84,16 +84,10 @@ pub mod neo_system;
 // Transaction structures moved to ledger module
 // Transaction type definitions moved to ledger module
 // Transaction validation moved to ledger module
-/// 160-bit unsigned integer implementation
-pub mod uint160;
-/// 256-bit unsigned integer implementation
-pub mod uint256;
 /// Witness verification system
 pub mod witness;
 /// Witness rule evaluation
 pub mod witness_rule;
-/// Witness scope definitions
-pub mod witness_scope;
 
 // Monitoring (feature-gated)
 #[cfg(feature = "monitoring")]
@@ -142,23 +136,23 @@ pub use cryptography::crypto_utils::{ECCurve, ECPoint};
 pub use error::{CoreError, CoreResult, Result};
 pub use events::{EventHandler, EventManager};
 pub use hardfork::Hardfork;
+pub use neo_primitives::{
+    InvalidWitnessScopeError, UInt160, UInt256, WitnessScope, UINT160_SIZE, UINT256_SIZE,
+};
 pub use ledger::{Block, BlockHeader};
 pub use neo_system::NeoSystem;
 pub use network::p2p::payloads::{
-    Signer, Transaction, TransactionAttribute, TransactionAttributeType, HEADER_SIZE,
-    MAX_TRANSACTION_ATTRIBUTES, MAX_TRANSACTION_SIZE,
+    InventoryType, OracleResponseCode, Signer, Transaction, TransactionAttribute,
+    TransactionAttributeType, HEADER_SIZE, MAX_TRANSACTION_ATTRIBUTES, MAX_TRANSACTION_SIZE,
 };
 pub use protocol_settings::ProtocolSettings;
 pub use rpc::RpcException;
 pub use smart_contract::native::NativeContract;
-pub use smart_contract::{Contract, ContractManifest, ContractState};
+pub use smart_contract::{Contract, ContractManifest, ContractParameterType, ContractState};
 pub use time_provider::TimeProvider;
-pub use uint160::UInt160;
-pub use uint256::UInt256;
 pub use wallets::{KeyPair, Wallet};
 pub use witness::Witness;
 pub use witness_rule::{WitnessCondition, WitnessConditionType, WitnessRule, WitnessRuleAction};
-pub use witness_scope::WitnessScope;
 
 /// Compatibility re-export ensuring modules translated from C# continue to compile.
 pub mod system {

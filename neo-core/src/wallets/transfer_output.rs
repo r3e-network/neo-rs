@@ -8,7 +8,8 @@
 //
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
-use crate::{big_decimal::BigDecimal, uint160::UInt160};
+use crate::big_decimal::BigDecimal;
+use neo_primitives::UInt160;
 
 /// Represents an output of a transfer.
 /// Matches C# TransferOutput class exactly

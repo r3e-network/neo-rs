@@ -55,12 +55,10 @@ pub mod message_command;
 pub mod message_flags;
 pub mod node_capability_type;
 pub mod oracle_response_code;
-pub mod transaction_attribute_type;
 pub mod transaction_removal_reason;
 pub mod verify_result;
 pub mod witness_condition_type;
 pub mod witness_rule_action;
-pub mod witness_scope;
 
 // Re-exports
 pub use contains_transaction_type::ContainsTransactionType;
@@ -70,12 +68,11 @@ pub use message_command::MessageCommand;
 pub use message_flags::MessageFlags;
 pub use node_capability_type::NodeCapabilityType;
 pub use oracle_response_code::OracleResponseCode;
-pub use transaction_attribute_type::TransactionAttributeType;
 pub use transaction_removal_reason::TransactionRemovalReason;
 pub use verify_result::VerifyResult;
 pub use witness_condition_type::WitnessConditionType;
 pub use witness_rule_action::WitnessRuleAction;
-pub use witness_scope::WitnessScope;
+pub use neo_primitives::{InvalidWitnessScopeError, TransactionAttributeType, WitnessScope};
 
 // Placeholder for future modules
 // pub mod local_node;

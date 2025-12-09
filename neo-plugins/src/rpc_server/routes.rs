@@ -348,7 +348,7 @@ fn process_object(
             return RequestOutcome::error(error_response(id, RpcError::access_denied()), true);
         }
     } else if requires_auth {
-        // No auth configured but method requires it - reject
+        // No auth configured but method requires it - reject with 401
         RPC_ERR_TOTAL.inc();
         tracing::warn!(
             "Protected RPC method '{}' called without authentication configured. \
@@ -362,7 +362,7 @@ fn process_object(
                     "This method requires authentication. Configure rpc_user and rpc_pass."
                 ),
             ),
-            false,
+            true,
         );
     }
 

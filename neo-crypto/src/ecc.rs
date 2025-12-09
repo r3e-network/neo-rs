@@ -9,10 +9,25 @@
 //! - Sensitive data is zeroized on drop to prevent memory disclosure.
 
 use crate::error::{CryptoError, CryptoResult};
-use ed25519_dalek::VerifyingKey;
-use k256::elliptic_curve::sec1::FromEncodedPoint as K256FromEncodedPoint;
-#[allow(unused_imports)]
-use p256::elliptic_curve::sec1::FromEncodedPoint as P256FromEncodedPoint;
+use ed25519_dalek::{Signature as Ed25519Signature, SigningKey as Ed25519SigningKey, VerifyingKey};
+use k256::{
+    ecdsa::{
+        Signature as K256Signature, SigningKey as K256SigningKey, VerifyingKey as K256VerifyingKey,
+    },
+    elliptic_curve::group::prime::PrimeCurveAffine as K256PrimeCurveAffine,
+    elliptic_curve::sec1::{FromEncodedPoint as K256FromEncodedPoint, ToEncodedPoint as K256ToEncodedPoint},
+    AffinePoint as K256AffinePoint, EncodedPoint as K256EncodedPoint,
+};
+use p256::{
+    ecdsa::signature::Verifier,
+    ecdsa::{
+        Signature as P256Signature, SigningKey as P256SigningKey, VerifyingKey as P256VerifyingKey,
+    },
+    elliptic_curve::group::prime::PrimeCurveAffine,
+    elliptic_curve::rand_core::OsRng,
+    elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint},
+    AffinePoint as P256AffinePoint, EncodedPoint as P256EncodedPoint,
+};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::fmt;
@@ -113,96 +128,58 @@ impl Hash for ECPoint {
 }
 
 impl ECPoint {
-    /// Creates a new ECPoint from compressed bytes with full on-curve validation.
+    /// Creates a new ECPoint from bytes with full on-curve validation.
     ///
-    /// # Arguments
-    /// * `curve` - The elliptic curve
-    /// * `data` - Compressed point data
-    ///
-    /// # Returns
-    /// A new ECPoint or an error if the data is invalid or the point is not on the curve.
-    ///
-    /// # Security
-    /// This method validates that the point lies on the specified curve to prevent
-    /// invalid-curve attacks. Invalid or low-order points are rejected.
+    /// The input may be compressed (33 bytes for secp256r1/k1) or uncompressed (65 bytes).
+    /// Points are stored internally in compressed form for consistency.
     pub fn new(curve: ECCurve, data: Vec<u8>) -> CryptoResult<Self> {
-        let expected_size = curve.compressed_size();
-        if data.len() != expected_size {
-            return Err(CryptoError::invalid_point(format!(
-                "Invalid point size: expected {}, got {}",
-                expected_size,
-                data.len()
-            )));
-        }
-
-        // Validate prefix for secp256r1/k1
-        if matches!(curve, ECCurve::Secp256r1 | ECCurve::Secp256k1) {
-            if data[0] != 0x02 && data[0] != 0x03 {
-                return Err(CryptoError::invalid_point(
-                    "Invalid compressed point prefix (expected 0x02 or 0x03)".to_string(),
-                ));
-            }
-        }
-
-        // Validate that the point lies on the curve
-        Self::validate_on_curve(curve, &data)?;
-
-        Ok(Self { curve, data })
+        Self::from_bytes_with_curve(curve, &data)
     }
 
-    /// Validates that the given point data represents a valid point on the specified curve.
+    /// Parses a public key from bytes with explicit curve selection.
     ///
-    /// # Security
-    /// This is critical for preventing invalid-curve attacks where an attacker provides
-    /// a point that is not on the expected curve, potentially leaking private key bits.
-    fn validate_on_curve(curve: ECCurve, data: &[u8]) -> CryptoResult<()> {
+    /// Accepts compressed (33 bytes) or uncompressed (65 bytes) SEC1 encodings for
+    /// secp256r1/k1, and 32-byte encodings for Ed25519. Points are validated to be on
+    /// the specified curve and normalized to compressed form.
+    pub fn from_bytes_with_curve(curve: ECCurve, data: &[u8]) -> CryptoResult<Self> {
         match curve {
             ECCurve::Secp256r1 => {
-                // Use p256 crate to validate the point
-                let encoded_point = p256::EncodedPoint::from_bytes(data).map_err(|e| {
-                    CryptoError::invalid_point(format!("Invalid secp256r1 point encoding: {}", e))
-                })?;
-
-                // Try to decompress and validate the point is on the curve
-                let affine_point: Option<p256::AffinePoint> =
-                    p256::AffinePoint::from_encoded_point(&encoded_point).into();
-
-                if affine_point.is_none() {
-                    return Err(CryptoError::invalid_point(
-                        "Point is not on the secp256r1 curve".to_string(),
-                    ));
-                }
-                Ok(())
+                let affine = Self::parse_p256_point(data)?;
+                let compressed = affine.to_encoded_point(true);
+                Self::new_unchecked(curve, compressed.as_bytes().to_vec())
             }
             ECCurve::Secp256k1 => {
-                // Use k256 crate to validate the point
-                let encoded_point = k256::EncodedPoint::from_bytes(data).map_err(|e| {
-                    CryptoError::invalid_point(format!("Invalid secp256k1 point encoding: {}", e))
-                })?;
-
-                // Try to decompress and validate the point is on the curve
-                let affine_point: Option<k256::AffinePoint> =
-                    k256::AffinePoint::from_encoded_point(&encoded_point).into();
-
-                if affine_point.is_none() {
-                    return Err(CryptoError::invalid_point(
-                        "Point is not on the secp256k1 curve".to_string(),
-                    ));
-                }
-                Ok(())
+                let affine = Self::parse_k256_point(data)?;
+                let compressed = affine.to_encoded_point(true);
+                Self::new_unchecked(curve, compressed.as_bytes().to_vec())
             }
             ECCurve::Ed25519 => {
-                // Use ed25519-dalek to validate the point
-                let bytes: [u8; 32] = data.try_into().map_err(|_| {
-                    CryptoError::invalid_point("Invalid Ed25519 point length".to_string())
-                })?;
+                let bytes: [u8; 32] = data
+                    .try_into()
+                    .map_err(|_| CryptoError::invalid_point("Invalid Ed25519 point length"))?;
 
                 // VerifyingKey::from_bytes validates that the point is on the curve
                 VerifyingKey::from_bytes(&bytes).map_err(|e| {
                     CryptoError::invalid_point(format!("Invalid Ed25519 point: {}", e))
                 })?;
-                Ok(())
+                Self::new_unchecked(curve, bytes.to_vec())
             }
+        }
+    }
+
+    /// Parses a public key from bytes, inferring the curve where possible.
+    ///
+    /// - 32 bytes: Ed25519
+    /// - 33 or 65 bytes: tries secp256r1 first, then secp256k1
+    pub fn from_bytes(data: &[u8]) -> CryptoResult<Self> {
+        match data.len() {
+            32 => Self::from_bytes_with_curve(ECCurve::Ed25519, data),
+            33 | 65 => Self::from_bytes_with_curve(ECCurve::Secp256r1, data)
+                .or_else(|_| Self::from_bytes_with_curve(ECCurve::Secp256k1, data)),
+            _ => Err(CryptoError::invalid_point(format!(
+                "Invalid point length: {}",
+                data.len()
+            ))),
         }
     }
 
@@ -236,23 +213,12 @@ impl ECPoint {
         Ok(Self { curve, data })
     }
 
-    /// Creates an ECPoint from compressed bytes with explicit curve specification.
-    ///
-    /// # Arguments
-    /// * `curve` - The elliptic curve to use
-    /// * `data` - Compressed point data
-    ///
-    /// # Security
-    /// Always use this method with explicit curve specification to avoid curve confusion attacks.
+    /// Creates an ECPoint from bytes with explicit curve specification.
     pub fn decode_compressed_with_curve(curve: ECCurve, data: &[u8]) -> CryptoResult<Self> {
-        Self::new(curve, data.to_vec())
+        Self::from_bytes_with_curve(curve, data)
     }
 
-    /// Creates an ECPoint from compressed bytes, inferring the curve from data length.
-    ///
-    /// # Warning
-    /// This method assumes secp256r1 for 33-byte keys, which may not be correct for secp256k1.
-    /// For security-critical code, use `decode_compressed_with_curve` with explicit curve.
+    /// Creates an ECPoint from bytes, inferring the curve from data length.
     ///
     /// # Deprecated
     /// Use `decode_compressed_with_curve` for explicit curve specification.
@@ -261,33 +227,22 @@ impl ECPoint {
         note = "Use decode_compressed_with_curve() with explicit curve to avoid curve confusion"
     )]
     pub fn decode_compressed(data: &[u8]) -> CryptoResult<Self> {
-        if data.len() == 33 {
-            // Assume secp256r1 (Neo's default) - WARNING: may be incorrect for secp256k1
-            Self::new(ECCurve::Secp256r1, data.to_vec())
-        } else if data.len() == 32 {
-            // Assume Ed25519
-            Self::new(ECCurve::Ed25519, data.to_vec())
-        } else {
-            Err(CryptoError::invalid_point(format!(
-                "Invalid compressed point length: {}",
-                data.len()
-            )))
-        }
+        Self::from_bytes(data)
     }
 
-    /// Decodes a secp256r1 (P-256) compressed point.
+    /// Decodes a secp256r1 (P-256) point (compressed or uncompressed).
     pub fn decode_secp256r1(data: &[u8]) -> CryptoResult<Self> {
-        Self::new(ECCurve::Secp256r1, data.to_vec())
+        Self::from_bytes_with_curve(ECCurve::Secp256r1, data)
     }
 
-    /// Decodes a secp256k1 compressed point.
+    /// Decodes a secp256k1 point (compressed or uncompressed).
     pub fn decode_secp256k1(data: &[u8]) -> CryptoResult<Self> {
-        Self::new(ECCurve::Secp256k1, data.to_vec())
+        Self::from_bytes_with_curve(ECCurve::Secp256k1, data)
     }
 
     /// Decodes an Ed25519 public key.
     pub fn decode_ed25519(data: &[u8]) -> CryptoResult<Self> {
-        Self::new(ECCurve::Ed25519, data.to_vec())
+        Self::from_bytes_with_curve(ECCurve::Ed25519, data)
     }
 
     /// Returns the compressed representation of this point.
@@ -332,14 +287,123 @@ impl ECPoint {
         match self.curve {
             ECCurve::Secp256r1 | ECCurve::Secp256k1 => {
                 // SEC1 infinity is single 0x00 byte, or all zeros (legacy check)
-                self.data.len() == 1 && self.data[0] == 0x00
-                    || self.data.iter().all(|&b| b == 0)
+                self.data.len() == 1 && self.data[0] == 0x00 || self.data.iter().all(|&b| b == 0)
             }
             ECCurve::Ed25519 => {
                 // Ed25519 identity is all zeros
                 self.data.iter().all(|&b| b == 0)
             }
         }
+    }
+
+    /// Returns true if the point is on the declared curve.
+    pub fn is_on_curve(&self) -> bool {
+        Self::validate_on_curve(self.curve, &self.data).is_ok()
+    }
+
+    /// Verifies a signature using this public key.
+    ///
+    /// For secp256r1/secp256k1, the message should be the message bytes (it will be hashed
+    /// with SHA-256 by the underlying ECDSA implementation). For Ed25519, the message is
+    /// verified directly.
+    pub fn verify_signature(&self, message: &[u8], signature: &[u8]) -> CryptoResult<bool> {
+        verify_signature(self.curve, self.as_bytes(), message, signature)
+    }
+
+    /// Validates that the given point data represents a valid point on the specified curve.
+    ///
+    /// # Security
+    /// This is critical for preventing invalid-curve attacks where an attacker provides
+    /// a point that is not on the expected curve, potentially leaking private key bits.
+    fn validate_on_curve(curve: ECCurve, data: &[u8]) -> CryptoResult<()> {
+        match curve {
+            ECCurve::Secp256r1 => {
+                Self::parse_p256_point(data)?;
+                Ok(())
+            }
+            ECCurve::Secp256k1 => {
+                Self::parse_k256_point(data)?;
+                Ok(())
+            }
+            ECCurve::Ed25519 => {
+                let bytes: [u8; 32] = data.try_into().map_err(|_| {
+                    CryptoError::invalid_point("Invalid Ed25519 point length".to_string())
+                })?;
+
+                VerifyingKey::from_bytes(&bytes).map_err(|e| {
+                    CryptoError::invalid_point(format!("Invalid Ed25519 point: {}", e))
+                })?;
+                Ok(())
+            }
+        }
+    }
+
+    fn parse_p256_point(data: &[u8]) -> CryptoResult<P256AffinePoint> {
+        if data.len() != ECCurve::Secp256r1.compressed_size()
+            && data.len() != ECCurve::Secp256r1.uncompressed_size()
+        {
+            return Err(CryptoError::invalid_point(format!(
+                "Invalid secp256r1 point size: expected {} or {}, got {}",
+                ECCurve::Secp256r1.compressed_size(),
+                ECCurve::Secp256r1.uncompressed_size(),
+                data.len()
+            )));
+        }
+
+        let encoded_point = P256EncodedPoint::from_bytes(data).map_err(|e| {
+            CryptoError::invalid_point(format!("Invalid secp256r1 point encoding: {}", e))
+        })?;
+
+        let affine_point: Option<P256AffinePoint> =
+            P256AffinePoint::from_encoded_point(&encoded_point).into();
+
+        let Some(point) = affine_point else {
+            return Err(CryptoError::invalid_point(
+                "Point is not on the secp256r1 curve".to_string(),
+            ));
+        };
+
+        if bool::from(point.is_identity()) {
+            return Err(CryptoError::invalid_point(
+                "Point at infinity is not a valid secp256r1 public key".to_string(),
+            ));
+        }
+
+        Ok(point)
+    }
+
+    fn parse_k256_point(data: &[u8]) -> CryptoResult<K256AffinePoint> {
+        if data.len() != ECCurve::Secp256k1.compressed_size()
+            && data.len() != ECCurve::Secp256k1.uncompressed_size()
+        {
+            return Err(CryptoError::invalid_point(format!(
+                "Invalid secp256k1 point size: expected {} or {}, got {}",
+                ECCurve::Secp256k1.compressed_size(),
+                ECCurve::Secp256k1.uncompressed_size(),
+                data.len()
+            )));
+        }
+
+        let encoded_point = K256EncodedPoint::from_bytes(data).map_err(|e| {
+            CryptoError::invalid_point(format!("Invalid secp256k1 point encoding: {}", e))
+        })?;
+
+        let affine_point: Option<K256AffinePoint> =
+            K256AffinePoint::from_encoded_point(&encoded_point).into();
+
+        let Some(point) = affine_point else {
+            return Err(CryptoError::invalid_point(
+                "Point is not on the secp256k1 curve".to_string(),
+            ));
+        };
+
+        if bool::from(point.is_identity()) {
+            return Err(CryptoError::invalid_point(
+                "Point at infinity is not a valid secp256k1 public key".to_string(),
+            ));
+        }
+
+        Ok(point)
     }
 }
 
@@ -383,9 +447,127 @@ impl Ord for ECCurve {
     }
 }
 
+/// Verifies a signature for the specified curve.
+///
+/// For secp256r1/secp256k1 the message is hashed internally using SHA-256 by the
+/// ECDSA implementation. For Ed25519, the message is verified directly.
+pub fn verify_signature(
+    curve: ECCurve,
+    public_key: &[u8],
+    message: &[u8],
+    signature: &[u8],
+) -> CryptoResult<bool> {
+    match curve {
+        ECCurve::Secp256r1 => verify_signature_secp256r1(public_key, message, signature),
+        ECCurve::Secp256k1 => verify_signature_secp256k1(public_key, message, signature),
+        ECCurve::Ed25519 => verify_ed25519(public_key, message, signature),
+    }
+}
+
+/// Verifies a secp256r1 (P-256) signature.
+pub fn verify_signature_secp256r1(
+    public_key: &[u8],
+    message: &[u8],
+    signature: &[u8],
+) -> CryptoResult<bool> {
+    let verifying_key = P256VerifyingKey::from_sec1_bytes(public_key)
+        .map_err(|e| CryptoError::invalid_key(format!("Invalid secp256r1 public key: {}", e)))?;
+
+    let sig = P256Signature::from_der(signature)
+        .or_else(|_| P256Signature::from_slice(signature))
+        .map_err(|e| {
+            CryptoError::invalid_signature(format!("Invalid secp256r1 signature: {}", e))
+        })?;
+
+    Ok(verifying_key.verify(message, &sig).is_ok())
+}
+
+/// Verifies a secp256k1 signature.
+pub fn verify_signature_secp256k1(
+    public_key: &[u8],
+    message: &[u8],
+    signature: &[u8],
+) -> CryptoResult<bool> {
+    let verifying_key = K256VerifyingKey::from_sec1_bytes(public_key)
+        .map_err(|e| CryptoError::invalid_key(format!("Invalid secp256k1 public key: {}", e)))?;
+
+    let sig = K256Signature::from_der(signature)
+        .or_else(|_| K256Signature::from_slice(signature))
+        .map_err(|e| {
+            CryptoError::invalid_signature(format!("Invalid secp256k1 signature: {}", e))
+        })?;
+
+    Ok(verifying_key.verify(message, &sig).is_ok())
+}
+
+/// Verifies an Ed25519 signature.
+pub fn verify_ed25519(public_key: &[u8], message: &[u8], signature: &[u8]) -> CryptoResult<bool> {
+    let pk_bytes: [u8; 32] = public_key
+        .try_into()
+        .map_err(|_| CryptoError::invalid_key("Ed25519 public key must be 32 bytes"))?;
+    let sig = Ed25519Signature::try_from(signature)
+        .map_err(|e| CryptoError::invalid_signature(format!("Invalid Ed25519 signature: {}", e)))?;
+    let verifying_key = VerifyingKey::from_bytes(&pk_bytes)
+        .map_err(|e| CryptoError::invalid_key(format!("Invalid Ed25519 public key: {}", e)))?;
+
+    Ok(verifying_key.verify_strict(message, &sig).is_ok())
+}
+
+/// Generates a random keypair for the specified curve.
+pub fn generate_keypair(curve: ECCurve) -> CryptoResult<(Vec<u8>, ECPoint)> {
+    match curve {
+        ECCurve::Secp256r1 => {
+            let signing_key = P256SigningKey::random(&mut OsRng);
+            let verifying_key = signing_key.verifying_key();
+            let private_key = signing_key.to_bytes().to_vec();
+            let public_point = ECPoint::new_unchecked(
+                curve,
+                verifying_key.to_encoded_point(true).as_bytes().to_vec(),
+            )?;
+            Ok((private_key, public_point))
+        }
+        ECCurve::Secp256k1 => {
+            let signing_key = K256SigningKey::random(&mut OsRng);
+            let verifying_key = signing_key.verifying_key();
+            let private_key = signing_key.to_bytes().to_vec();
+            let public_point = ECPoint::new_unchecked(
+                curve,
+                verifying_key.to_encoded_point(true).as_bytes().to_vec(),
+            )?;
+            Ok((private_key, public_point))
+        }
+        ECCurve::Ed25519 => {
+            let signing_key = Ed25519SigningKey::generate(&mut OsRng);
+            let private_key = signing_key.to_bytes().to_vec();
+            let public_point =
+                ECPoint::new_unchecked(curve, signing_key.verifying_key().to_bytes().to_vec())?;
+            Ok((private_key, public_point))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ed25519_dalek::Signer as _;
+
+    fn scalar(value: u8) -> [u8; 32] {
+        let mut bytes = [0u8; 32];
+        bytes[31] = value;
+        bytes
+    }
+
+    fn p256_signing_key() -> P256SigningKey {
+        P256SigningKey::from_bytes(&p256::FieldBytes::from(scalar(1))).unwrap()
+    }
+
+    fn k256_signing_key() -> K256SigningKey {
+        K256SigningKey::from_bytes(&k256::FieldBytes::from(scalar(2))).unwrap()
+    }
+
+    fn ed25519_signing_key() -> Ed25519SigningKey {
+        Ed25519SigningKey::from_bytes(&[7u8; 32])
+    }
 
     #[test]
     fn test_ec_curve_sizes() {
@@ -400,12 +582,16 @@ mod tests {
 
     #[test]
     fn test_ec_point_creation() {
-        // Valid compressed point (prefix 0x02)
-        let mut data = vec![0x02];
-        data.extend_from_slice(&[0xAA; 32]);
-        let point = ECPoint::new(ECCurve::Secp256r1, data.clone()).unwrap();
+        let signing_key = p256_signing_key();
+        let pub_bytes = signing_key
+            .verifying_key()
+            .to_encoded_point(true)
+            .as_bytes()
+            .to_vec();
+        let point = ECPoint::new(ECCurve::Secp256r1, pub_bytes.clone()).unwrap();
         assert_eq!(point.curve(), ECCurve::Secp256r1);
-        assert_eq!(point.as_bytes(), &data[..]);
+        assert_eq!(point.as_bytes(), pub_bytes.as_slice());
+        assert!(point.is_on_curve());
     }
 
     #[test]
@@ -427,26 +613,143 @@ mod tests {
     fn test_ec_point_infinity() {
         let infinity = ECPoint::infinity(ECCurve::Secp256r1);
         assert!(infinity.is_infinity());
+        assert!(!infinity.is_on_curve());
     }
 
     #[test]
     fn test_ec_point_decode_compressed() {
-        let mut data = vec![0x03];
-        data.extend_from_slice(&[0xBB; 32]);
-        let point = ECPoint::decode_compressed(&data).unwrap();
+        let signing_key = p256_signing_key();
+        let compressed = signing_key
+            .verifying_key()
+            .to_encoded_point(true)
+            .as_bytes()
+            .to_vec();
+        let point = ECPoint::from_bytes(&compressed).unwrap();
         assert_eq!(point.curve(), ECCurve::Secp256r1);
+        assert!(point.is_on_curve());
+    }
+
+    #[test]
+    fn test_ec_point_from_uncompressed() {
+        let signing_key = p256_signing_key();
+        let uncompressed = signing_key
+            .verifying_key()
+            .to_encoded_point(false)
+            .as_bytes()
+            .to_vec();
+        let point = ECPoint::from_bytes_with_curve(ECCurve::Secp256r1, &uncompressed).unwrap();
+        assert_eq!(point.as_bytes().len(), ECCurve::Secp256r1.compressed_size());
+        assert!(point.is_on_curve());
     }
 
     #[test]
     fn test_ec_point_ordering() {
-        let mut data1 = vec![0x02];
-        data1.extend_from_slice(&[0x01; 32]);
-        let point1 = ECPoint::new(ECCurve::Secp256r1, data1).unwrap();
+        let first = p256_signing_key();
+        let second = P256SigningKey::from_bytes(&p256::FieldBytes::from(scalar(3))).unwrap();
 
-        let mut data2 = vec![0x02];
-        data2.extend_from_slice(&[0x02; 32]);
-        let point2 = ECPoint::new(ECCurve::Secp256r1, data2).unwrap();
+        let point1 = ECPoint::new(
+            ECCurve::Secp256r1,
+            first
+                .verifying_key()
+                .to_encoded_point(true)
+                .as_bytes()
+                .to_vec(),
+        )
+        .unwrap();
+        let point2 = ECPoint::new(
+            ECCurve::Secp256r1,
+            second
+                .verifying_key()
+                .to_encoded_point(true)
+                .as_bytes()
+                .to_vec(),
+        )
+        .unwrap();
 
-        assert!(point1 < point2);
+        assert_ne!(point1, point2);
+        assert_eq!(
+            point1.cmp(&point2),
+            point1.as_bytes().cmp(point2.as_bytes())
+        );
+    }
+
+    #[test]
+    fn test_verify_secp256r1_signature() {
+        let signing_key = p256_signing_key();
+        let pub_bytes = signing_key
+            .verifying_key()
+            .to_encoded_point(true)
+            .as_bytes()
+            .to_vec();
+        let message = b"neo-secp256r1";
+        let signature: P256Signature = signing_key.sign(message);
+        let signature_bytes = signature.to_bytes();
+
+        assert!(
+            verify_signature_secp256r1(&pub_bytes, message, signature_bytes.as_slice()).unwrap()
+        );
+
+        let mut bad_sig = signature_bytes;
+        bad_sig[0] ^= 0x01;
+        assert!(!verify_signature_secp256r1(&pub_bytes, message, &bad_sig).unwrap());
+    }
+
+    #[test]
+    fn test_verify_secp256k1_signature() {
+        let signing_key = k256_signing_key();
+        let pub_bytes = signing_key
+            .verifying_key()
+            .to_encoded_point(true)
+            .as_bytes()
+            .to_vec();
+        let message = b"neo-secp256k1";
+        let signature: K256Signature = signing_key.sign(message);
+        let signature_bytes = signature.to_bytes();
+
+        assert!(
+            verify_signature_secp256k1(&pub_bytes, message, signature_bytes.as_slice()).unwrap()
+        );
+
+        let mut bad_sig = signature_bytes;
+        bad_sig[0] ^= 0x01;
+        assert!(!verify_signature_secp256k1(&pub_bytes, message, &bad_sig).unwrap());
+    }
+
+    #[test]
+    fn test_verify_ed25519_signature() {
+        let signing_key = ed25519_signing_key();
+        let verifying_key = signing_key.verifying_key();
+        let message = b"neo-ed25519";
+        let signature = signing_key.sign(message);
+
+        assert!(verify_ed25519(&verifying_key.to_bytes(), message, &signature.to_bytes()).unwrap());
+
+        let mut bad_sig = signature.to_bytes();
+        bad_sig[0] ^= 0x01;
+        assert!(!verify_ed25519(&verifying_key.to_bytes(), message, &bad_sig).unwrap());
+    }
+
+    #[test]
+    fn test_generate_keypair_roundtrip() {
+        let (private_key, public_point) = generate_keypair(ECCurve::Secp256r1).unwrap();
+        assert_eq!(
+            public_point.as_bytes().len(),
+            ECCurve::Secp256r1.compressed_size()
+        );
+
+        let private_array: [u8; 32] = private_key.try_into().unwrap();
+        let signing_key =
+            P256SigningKey::from_bytes(&p256::FieldBytes::from(private_array)).unwrap();
+        let message = b"keygen-roundtrip";
+        let signature: P256Signature = signing_key.sign(message);
+        let signature_bytes = signature.to_bytes();
+
+        assert!(verify_signature(
+            ECCurve::Secp256r1,
+            public_point.as_bytes(),
+            message,
+            signature_bytes.as_slice()
+        )
+        .unwrap());
     }
 }

@@ -81,7 +81,7 @@ impl IInteroperable for ContractParameterDefinition {
 
             if let Ok(integer) = items[1].as_int() {
                 if let Some(value) = integer.to_u8() {
-                    self.param_type = ContractParameterType::from_byte(value)
+                    self.param_type = ContractParameterType::try_from_u8(value)
                         .unwrap_or(ContractParameterType::Any);
                 }
             }

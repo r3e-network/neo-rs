@@ -17,10 +17,9 @@ use neo_core::network::p2p::RelayInventory;
 use neo_core::smart_contract::native::LedgerContract;
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::state_service::StateRoot;
-use neo_core::uint160::{UInt160, UINT160_SIZE};
-use neo_core::uint256::{UInt256, UINT256_SIZE};
 use neo_core::ContainsTransactionType;
 use neo_core::WitnessScope;
+use neo_primitives::{UInt160, UInt256, UINT160_SIZE, UINT256_SIZE};
 use neo_vm::op_code::OpCode;
 
 use num_bigint::BigInt;

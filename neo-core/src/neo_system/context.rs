@@ -45,9 +45,8 @@ use crate::smart_contract::log_event_args::LogEventArgs;
 use crate::smart_contract::native::ledger_contract::{HashOrIndex, LedgerContract};
 use crate::smart_contract::notify_event_args::NotifyEventArgs;
 use crate::state_service::StateStore;
-use crate::uint160::UInt160;
-use crate::uint256::UInt256;
 use crate::wallets::{IWalletProvider, Wallet};
+use neo_primitives::{UInt160, UInt256};
 
 use super::core::NeoSystem;
 

@@ -36,6 +36,9 @@ thiserror = { workspace = true }
 # Logging
 tracing = { workspace = true }
 
+# IO traits
+neo-io = { path = "../neo-io" }
+
 [dev-dependencies]
 proptest = { workspace = true }
 

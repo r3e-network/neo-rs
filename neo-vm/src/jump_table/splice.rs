@@ -123,7 +123,14 @@ fn memcpy(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
 }
 
 /// Implements the CAT operation.
+///
+/// # Security Note
+/// This operation enforces MaxItemSize limits after concatenation to prevent
+/// memory exhaustion attacks via incremental ByteString building.
 fn cat(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    // SECURITY FIX (M-2): Get max_item_size limit before borrowing context mutably
+    let max_item_size = engine.limits().max_item_size as usize;
+
     // Get the current context
     let context = engine
         .current_context_mut()
@@ -133,22 +140,54 @@ fn cat(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
     let b = context.pop()?;
     let a = context.pop()?;
 
-    // Concatenate the values
+    // Concatenate the values and enforce MaxItemSize limit
     let result = match (a, b) {
         (StackItem::ByteString(mut a), StackItem::ByteString(b)) => {
             a.extend_from_slice(&b);
+            // SECURITY FIX (M-2): Enforce MaxItemSize after concatenation
+            if a.len() > max_item_size {
+                return Err(VmError::invalid_operation_msg(format!(
+                    "MaxItemSize exceed: {}/{}",
+                    a.len(),
+                    max_item_size
+                )));
+            }
             StackItem::from_byte_string(a)
         }
         (StackItem::Buffer(mut a), StackItem::Buffer(b)) => {
             a.extend_from_slice(b.data());
+            // SECURITY FIX (M-2): Enforce MaxItemSize after concatenation
+            if a.len() > max_item_size {
+                return Err(VmError::invalid_operation_msg(format!(
+                    "MaxItemSize exceed: {}/{}",
+                    a.len(),
+                    max_item_size
+                )));
+            }
             StackItem::Buffer(a)
         }
         (StackItem::ByteString(mut a), StackItem::Buffer(b)) => {
             a.extend_from_slice(b.data());
+            // SECURITY FIX (M-2): Enforce MaxItemSize after concatenation
+            if a.len() > max_item_size {
+                return Err(VmError::invalid_operation_msg(format!(
+                    "MaxItemSize exceed: {}/{}",
+                    a.len(),
+                    max_item_size
+                )));
+            }
             StackItem::from_byte_string(a)
         }
         (StackItem::Buffer(mut a), StackItem::ByteString(b)) => {
             a.extend_from_slice(&b);
+            // SECURITY FIX (M-2): Enforce MaxItemSize after concatenation
+            if a.len() > max_item_size {
+                return Err(VmError::invalid_operation_msg(format!(
+                    "MaxItemSize exceed: {}/{}",
+                    a.len(),
+                    max_item_size
+                )));
+            }
             StackItem::Buffer(a)
         }
         _ => {

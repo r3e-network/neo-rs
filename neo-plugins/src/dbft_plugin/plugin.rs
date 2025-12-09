@@ -19,7 +19,7 @@ use neo_core::extensions::plugin::{
 };
 use neo_core::i_event_handlers::ITransactionAddedHandler;
 use neo_core::ledger::{PersistCompleted, RelayResult, VerifyResult};
-use neo_core::network::p2p::payloads::inventory_type::InventoryType;
+use neo_core::network::p2p::payloads::InventoryType;
 use neo_core::network::p2p::payloads::Transaction;
 use neo_core::sign::{ISigner, SignerManager};
 use neo_core::NeoSystem;

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use tokio::runtime::{Handle, Runtime};
 use tokio::task::block_in_place;
 
-use neo_core::uint160::UInt160;
+use neo_core::UInt160;
 
 use super::rpc_error::RpcError;
 use super::rpc_exception::RpcException;

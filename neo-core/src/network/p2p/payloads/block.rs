@@ -10,10 +10,10 @@
 // modifications are permitted.
 
 use super::{
-    header::Header, i_inventory::IInventory, inventory_type::InventoryType,
+    header::Header, i_inventory::IInventory, InventoryType,
     transaction::Transaction, witness::Witness,
 };
-use crate::ledger::HeaderCache;
+use crate::ledger::{HeaderCache, TransactionVerificationContext, VerifyResult};
 use crate::neo_io::serializable::helper::get_var_size;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::persistence::{DataCache, StoreCache};
@@ -116,7 +116,7 @@ impl Block {
     /// 1. Header validation (timestamp, consensus, witness, etc.)
     /// 2. Merkle root validation - ensures transactions haven't been tampered
     /// 3. Transaction uniqueness - no duplicate transaction hashes
-    /// 4. Per-transaction state-independent validation (size, script, attributes, etc.)
+    /// 4. Per-transaction validation (structural + state-dependent) against ledger snapshot
     ///
     /// # Security Note
     /// This method now includes per-transaction validation to prevent blocks with
@@ -138,36 +138,25 @@ impl Block {
             return false;
         }
 
-        // Step 4: SECURITY FIX - Verify each transaction (state-independent checks)
-        // This prevents blocks with malformed transactions from being accepted.
-        // State-independent checks include: size limits, script validity, attribute
-        // validity, signer/witness count matching, and other structural checks.
-        if !self.verify_transactions_state_independent(settings) {
+        // Step 4: SECURITY FIX - Fully verify each transaction using persisted state
+        if !self.verify_transactions(settings, store_cache) {
             return false;
         }
 
         true
     }
 
-    /// Verifies all transactions in the block using state-independent checks.
-    ///
-    /// # Security Note
-    /// This method validates each transaction's structure without requiring
-    /// blockchain state. It catches malformed transactions that could otherwise
-    /// be included in blocks by malicious peers.
-    ///
-    /// # Checks Performed
-    /// - Transaction size limits
-    /// - Script validity
-    /// - Attribute validity
-    /// - Signer/witness count matching
-    /// - Fee validation
-    /// - Validity period checks
-    fn verify_transactions_state_independent(&self, settings: &ProtocolSettings) -> bool {
-        use crate::ledger::verify_result::VerifyResult;
-
+    /// Verifies all transactions in the block using full validation (state-independent
+    /// and state-dependent) against the current ledger snapshot.
+    fn verify_transactions(
+        &self,
+        settings: &ProtocolSettings,
+        store_cache: &StoreCache,
+    ) -> bool {
+        let snapshot = store_cache.data_cache();
+        let mut context = TransactionVerificationContext::new();
         for (index, tx) in self.transactions.iter().enumerate() {
-            let result = tx.verify_state_independent(settings);
+            let result = tx.verify(settings, snapshot, Some(&context), &[]);
             if result != VerifyResult::Succeed {
                 tracing::warn!(
                     target: "neo::block",
@@ -175,10 +164,11 @@ impl Block {
                     tx_index = index,
                     tx_hash = %tx.hash(),
                     result = ?result,
-                    "Transaction failed state-independent verification"
+                    "Transaction failed verification"
                 );
                 return false;
             }
+            context.add_transaction(tx);
         }
         true
     }
@@ -247,8 +237,8 @@ impl Block {
             return false;
         }
 
-        // Step 4: SECURITY FIX - Verify each transaction (state-independent checks)
-        if !self.verify_transactions_state_independent(settings) {
+        // Step 4: SECURITY FIX - Fully verify each transaction using persisted state
+        if !self.verify_transactions(settings, store_cache) {
             return false;
         }
 

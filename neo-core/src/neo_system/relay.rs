@@ -4,7 +4,7 @@
 //! during network relay operations.
 
 use crate::network::p2p::payloads::extensible_payload::ExtensiblePayload;
-use crate::uint256::UInt256;
+use neo_primitives::UInt256;
 use neo_io_crate::{InventoryHash, RelayCache};
 
 /// Default capacity for the relay extensible cache.

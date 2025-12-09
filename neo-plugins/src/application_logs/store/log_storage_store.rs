@@ -14,6 +14,8 @@ use parking_lot::Mutex;
 use std::sync::Arc;
 use uuid::Uuid;
 
+pub type SnapshotRef = Arc<Mutex<Arc<dyn IStoreSnapshot>>>;
+
 const PREFIX_SIZE: usize = std::mem::size_of::<i32>() + std::mem::size_of::<u8>();
 const PREFIX_BLOCK_TRIGGER_SIZE: usize = PREFIX_SIZE + UInt256::LENGTH;
 const PREFIX_EXECUTION_BLOCK_TRIGGER_SIZE: usize = PREFIX_SIZE + UInt256::LENGTH;
@@ -47,7 +49,7 @@ pub struct ContractLogRecord {
 }
 
 impl LogStorageStore {
-    pub fn new(snapshot: Arc<dyn IStoreSnapshot>) -> Self {
+    pub fn new(snapshot: SnapshotRef) -> Self {
         Self {
             snapshot: SnapshotHandle::new(snapshot),
         }
@@ -537,24 +539,15 @@ impl LogKeyBuilder {
 enum SnapshotHandle {
     /// Exclusively owned snapshot (when we have the only reference)
     Exclusive(Arc<dyn IStoreSnapshot>),
-    /// Shared snapshot with synchronization
-    Shared {
-        snapshot: Arc<dyn IStoreSnapshot>,
-        lock: Mutex<()>,
-    },
+    /// Shared snapshot guarded by a mutex so we can safely access the single inner Arc
+    Shared { snapshot: SnapshotRef },
 }
 
 impl SnapshotHandle {
-    fn new(snapshot: Arc<dyn IStoreSnapshot>) -> Self {
-        if Arc::strong_count(&snapshot) == 1 {
-            // We have exclusive ownership, but keep it as Arc for safety
-            // SECURITY FIX: Removed unsafe Arc→Box conversion which was UB
-            SnapshotHandle::Exclusive(snapshot)
-        } else {
-            SnapshotHandle::Shared {
-                snapshot,
-                lock: Mutex::new(()),
-            }
+    fn new(snapshot: SnapshotRef) -> Self {
+        match Arc::try_unwrap(snapshot) {
+            Ok(inner) => SnapshotHandle::Exclusive(inner.into_inner()),
+            Err(snapshot) => SnapshotHandle::Shared { snapshot },
         }
     }
 
@@ -562,7 +555,10 @@ impl SnapshotHandle {
     fn with<R>(&self, f: impl FnOnce(&dyn IStoreSnapshot) -> R) -> R {
         match self {
             SnapshotHandle::Exclusive(inner) => f(inner.as_ref()),
-            SnapshotHandle::Shared { snapshot, .. } => f(snapshot.as_ref()),
+            SnapshotHandle::Shared { snapshot } => {
+                let guard = snapshot.lock();
+                f(guard.as_ref())
+            }
         }
     }
 
@@ -575,17 +571,16 @@ impl SnapshotHandle {
     /// # Security Note
     /// Previous implementation used unsafe code to create mutable references
     /// from shared Arc, which was undefined behavior. This safe version
-    /// only allows mutation when we have exclusive ownership.
+    /// uses the mutex to guarantee exclusive access even when there are
+    /// multiple handles to the same snapshot.
     fn try_with_mut<R>(&mut self, f: impl FnOnce(&mut dyn IStoreSnapshot) -> R) -> Option<R> {
         match self {
             SnapshotHandle::Exclusive(inner) => {
-                // Only mutate if we truly have exclusive access
                 Arc::get_mut(inner).map(|snapshot| f(snapshot))
             }
-            SnapshotHandle::Shared { .. } => {
-                // SECURITY FIX: Cannot safely get mutable reference to shared data
-                // Previous implementation had UB by casting Arc pointer to mutable
-                None
+            SnapshotHandle::Shared { snapshot } => {
+                let mut guard = snapshot.lock();
+                Arc::get_mut(&mut *guard).map(|snapshot| f(snapshot))
             }
         }
     }
@@ -596,9 +591,9 @@ impl SnapshotHandle {
     fn with_locked<R>(&self, f: impl FnOnce(&dyn IStoreSnapshot) -> R) -> R {
         match self {
             SnapshotHandle::Exclusive(inner) => f(inner.as_ref()),
-            SnapshotHandle::Shared { snapshot, lock } => {
-                let _guard = lock.lock();
-                f(snapshot.as_ref())
+            SnapshotHandle::Shared { snapshot } => {
+                let guard = snapshot.lock();
+                f(guard.as_ref())
             }
         }
     }

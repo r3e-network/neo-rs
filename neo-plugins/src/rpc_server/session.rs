@@ -1,7 +1,7 @@
 //! RPC invocation sessions mirroring `Neo.Plugins.RpcServer.Session`.
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use neo_core::neo_system::NeoSystem;
@@ -57,11 +57,11 @@ impl Drop for IteratorEntry {
 /// Represents an invocation session that can retain iterators between RPC calls.
 pub struct Session {
     script: Vec<u8>,
-    engine: ApplicationEngine,
     snapshot: StoreCache,
-    diagnostic: Option<Diagnostic>,
-    iterators: HashMap<Uuid, IteratorEntry>,
-    start_time: Instant,
+    engine: Mutex<ApplicationEngine>,
+    diagnostic: Mutex<Option<Diagnostic>>,
+    iterators: Mutex<HashMap<Uuid, IteratorEntry>>,
+    start_time: Mutex<Instant>,
 }
 
 impl Session {
@@ -119,11 +119,11 @@ impl Session {
 
         Ok(Self {
             script,
-            engine,
             snapshot: store_cache,
-            diagnostic,
-            iterators: HashMap::new(),
-            start_time: Instant::now(),
+            engine: Mutex::new(engine),
+            diagnostic: Mutex::new(diagnostic),
+            iterators: Mutex::new(HashMap::new()),
+            start_time: Mutex::new(Instant::now()),
         })
     }
 
@@ -131,16 +131,21 @@ impl Session {
         &self.script
     }
 
-    pub fn engine(&self) -> &ApplicationEngine {
-        &self.engine
+    pub fn engine(&self) -> MutexGuard<'_, ApplicationEngine> {
+        self.engine
+            .lock()
+            .expect("session engine lock poisoned")
     }
 
-    pub fn engine_mut(&mut self) -> &mut ApplicationEngine {
-        &mut self.engine
+    pub fn engine_mut(&self) -> MutexGuard<'_, ApplicationEngine> {
+        self.engine()
     }
 
-    pub fn diagnostic(&self) -> Option<&Diagnostic> {
-        self.diagnostic.as_ref()
+    pub fn diagnostic(&self) -> Option<Diagnostic> {
+        self.diagnostic
+            .lock()
+            .expect("session diagnostic lock poisoned")
+            .clone()
     }
 
     pub fn snapshot(&self) -> &StoreCache {
@@ -148,11 +153,15 @@ impl Session {
     }
 
     pub fn has_iterators(&self) -> bool {
-        !self.iterators.is_empty()
+        !self
+            .iterators
+            .lock()
+            .expect("session iterators lock poisoned")
+            .is_empty()
     }
 
     pub fn register_iterator_interface(
-        &mut self,
+        &self,
         _interface: &Arc<dyn VmInteropInterface>,
     ) -> Option<Uuid> {
         // Iterator interop support not yet implemented in the VM. This method will
@@ -161,11 +170,15 @@ impl Session {
     }
 
     pub fn traverse_iterator(
-        &mut self,
+        &self,
         iterator_id: &Uuid,
         count: usize,
     ) -> Result<Vec<StackItem>, String> {
-        let Some(entry) = self.iterators.get_mut(iterator_id) else {
+        let mut iterators = self
+            .iterators
+            .lock()
+            .expect("session iterators lock poisoned");
+        let Some(entry) = iterators.get_mut(iterator_id) else {
             return Err("Unknown iterator".to_string());
         };
 
@@ -178,63 +191,29 @@ impl Session {
         Ok(values)
     }
 
-    pub fn reset_expiration(&mut self) {
-        self.start_time = Instant::now();
+    pub fn reset_expiration(&self) {
+        let mut start_time = self
+            .start_time
+            .lock()
+            .expect("session start time lock poisoned");
+        *start_time = Instant::now();
     }
 
     pub fn is_expired(&self, expiration: Duration) -> bool {
-        self.start_time.elapsed() >= expiration
+        self.start_time
+            .lock()
+            .expect("session start time lock poisoned")
+            .elapsed()
+            >= expiration
     }
 }
 
-// SAFETY DOCUMENTATION FOR THREAD MARKER TRAITS
+// THREAD SAFETY
 //
-// # Why these unsafe impls exist
-//
-// `Session` contains `ApplicationEngine` which contains `VmEngineHost` which wraps
-// `ExecutionEngine`. The `ExecutionEngine` in neo-vm contains a raw pointer
-// (`*mut dyn InteropHost`) that is explicitly documented as NOT thread-safe:
-//
-// > "Thread Safety: The ExecutionEngine is not Send or Sync due to this raw pointer.
-// >  Do not share across threads." (neo-vm/src/execution_engine.rs:121-122)
-//
-// These unsafe impls are required because `Session` is stored in
-// `Arc<RwLock<HashMap<Uuid, Session>>>` in `RpcServer`, which requires `Send + Sync`.
-//
-// # Invariants that MUST be maintained
-//
-// 1. **Exclusive Access**: Sessions MUST only be accessed with exclusive (write) locks.
-//    Using `RwLock::read()` to access sessions concurrently would cause data races.
-//    All session access in the RPC server MUST use `write()` locks.
-//
-// 2. **Single-Threaded Mutation**: A session's `ApplicationEngine` must never be
-//    mutated from multiple threads simultaneously. The `RwLock` write lock ensures this.
-//
-// 3. **No Concurrent Reads**: Even read-only access to `Session` is unsafe if done
-//    concurrently, because `ExecutionEngine` may have interior mutability through
-//    the raw pointer.
-//
-// # Known Risks
-//
-// - If code is added that uses `sessions.read()` instead of `sessions.write()`,
-//   it could cause undefined behavior through data races.
-// - The `ExecutionEngine`'s raw pointer could become dangling if lifetimes are
-//   not properly managed.
-//
-// # Recommended Future Fix
-//
-// Consider one of these safer alternatives:
-// 1. [IMPLEMENTED] Use `Arc<Mutex<HashMap<Uuid, Session>>>` instead of `RwLock`
-//    to prevent accidental concurrent reads. (Changed in security audit 2025-12-09)
-// 2. Use a channel-based approach where all session operations are serialized
-//    to a single worker thread.
-// 3. Refactor `ExecutionEngine` to use safe abstractions instead of raw pointers.
-//
-// # Security Audit Note (2025-12-09)
-//
-// This is a HIGH severity issue. The unsafe impls violate the documented thread
-// safety requirements of `ExecutionEngine`. While the current code appears to use
-// exclusive access patterns, this is not enforced by the type system and could
-// easily be broken by future changes.
+// `ApplicationEngine` (and the underlying `ExecutionEngine`) is not inherently
+// thread-safe. Session guards all mutable state with `std::sync::Mutex` to
+// serialize access. The `Send`/`Sync` markers remain necessary because
+// `ApplicationEngine` does not implement them; the mutexes enforce exclusive
+// access when sessions move across threads.
 unsafe impl Send for Session {}
 unsafe impl Sync for Session {}

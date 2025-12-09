@@ -1,9 +1,9 @@
 //! Inventory payload (mirrors `Neo.Network.P2P.Payloads.InvPayload`).
 
-use super::inventory_type::InventoryType;
+use super::InventoryType;
 use crate::neo_config::HASH_SIZE;
 use crate::neo_io::{helper, BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use crate::uint256::UInt256;
+use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};
 
 /// Maximum number of hashes allowed in a single payload.

@@ -10,9 +10,8 @@
 // modifications are permitted.
 
 use super::{
-    i_inventory::IInventory, inventory_type::InventoryType, signer::Signer,
-    transaction_attribute::TransactionAttribute,
-    transaction_attribute_type::TransactionAttributeType, witness::Witness,
+    i_inventory::IInventory, signer::Signer, InventoryType,
+    transaction_attribute::TransactionAttribute, TransactionAttributeType, witness::Witness,
 };
 use crate::cryptography::crypto_utils::Secp256r1Crypto;
 use crate::hardfork::{is_hardfork_enabled, Hardfork};
@@ -829,6 +828,30 @@ impl Transaction {
                 if sig_index != m {
                     return VerifyResult::InvalidSignature;
                 }
+            }
+        }
+
+        VerifyResult::Succeed
+    }
+
+    /// Performs structural witness verification by checking hashes and script presence.
+    pub fn verify_witnesses(&self, snapshot: &DataCache) -> VerifyResult {
+        let hashes = self.get_script_hashes_for_verifying(snapshot);
+
+        if hashes.len() != self.witnesses.len() {
+            return VerifyResult::Invalid;
+        }
+
+        for (i, hash) in hashes.iter().enumerate() {
+            let witness = &self.witnesses[i];
+
+            if witness.script_hash() != *hash {
+                return VerifyResult::Invalid;
+            }
+
+            // TODO: Execute verification script with invocation script using VM once available.
+            if witness.verification_script().is_empty() && witness.invocation_script().is_empty() {
+                return VerifyResult::Invalid;
             }
         }
 

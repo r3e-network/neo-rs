@@ -27,14 +27,24 @@
 //! ```
 
 pub mod constants;
+pub mod contract_parameter_type;
 pub mod error;
 pub mod hardfork;
+pub mod inventory_type;
+pub mod oracle_response_code;
+pub mod transaction_attribute_type;
 pub mod uint160;
 pub mod uint256;
+pub mod witness_scope;
 
 // Re-exports
 pub use constants::*;
+pub use contract_parameter_type::ContractParameterType;
 pub use error::{PrimitiveError, PrimitiveResult};
 pub use hardfork::{Hardfork, HardforkParseError};
+pub use inventory_type::InventoryType;
+pub use oracle_response_code::OracleResponseCode;
+pub use transaction_attribute_type::TransactionAttributeType;
 pub use uint160::{UInt160, UINT160_SIZE};
 pub use uint256::{UInt256, UINT256_SIZE};
+pub use witness_scope::{InvalidWitnessScopeError, WitnessScope};

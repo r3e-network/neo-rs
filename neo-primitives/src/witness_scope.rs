@@ -389,7 +389,8 @@ mod tests {
         let scope = WitnessScope::CALLED_BY_ENTRY;
         let byte_value: u8 = scope.into();
         assert_eq!(byte_value, 0x01);
-        let converted_scope: WitnessScope = byte_value.into();
+        // Use TryFrom instead of From for safe conversion (returns error for invalid values)
+        let converted_scope = WitnessScope::try_from(byte_value).unwrap();
         assert_eq!(converted_scope, scope);
     }
 

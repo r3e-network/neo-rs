@@ -9,13 +9,13 @@ use crate::neo_config::{
     ADDRESS_SIZE, HASH_SIZE, MAX_BLOCK_SIZE, MAX_SCRIPT_SIZE, MAX_TRANSACTIONS_PER_BLOCK,
     SECONDS_PER_BLOCK,
 };
-use crate::network::p2p::payloads::transaction_attribute_type::TransactionAttributeType;
 use crate::persistence::i_read_only_store::IReadOnlyStoreGeneric;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::native::{NativeContract, NativeMethod};
 use crate::smart_contract::{storage_key::StorageKey, StorageItem};
 use crate::UInt160;
+use neo_primitives::TransactionAttributeType;
 /// The Policy native contract.
 /// This matches the C# PolicyContract implementation exactly.
 pub struct PolicyContract {

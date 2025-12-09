@@ -5,9 +5,9 @@ use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::transaction::MAX_TRANSACTION_ATTRIBUTES;
 use neo_core::network::p2p::payloads::witness::Witness;
 use neo_core::smart_contract::contract_parameter::ContractParameter;
-use neo_core::uint160::UInt160;
 use neo_core::{WitnessRule, WitnessScope};
 use neo_json::{JArray, JObject, JToken};
+use neo_core::UInt160;
 use std::str::FromStr;
 use uuid::Uuid;
 

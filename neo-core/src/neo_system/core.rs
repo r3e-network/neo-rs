@@ -85,7 +85,7 @@ pub use crate::protocol_settings::ProtocolSettings;
 use crate::services::{LedgerService, MempoolService, PeerManagerService, StateStoreService};
 use crate::smart_contract::native::helpers::NativeHelpers;
 use crate::state_service::StateStore;
-use crate::uint256::UInt256;
+use neo_primitives::UInt256;
 #[cfg(test)]
 use once_cell::sync::Lazy;
 

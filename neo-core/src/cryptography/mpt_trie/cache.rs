@@ -3,6 +3,7 @@ use super::node::Node;
 use crate::neo_io::{MemoryReader, Serializable, SerializableExt};
 use crate::persistence::TrackState;
 use crate::UInt256;
+use neo_primitives::UINT256_SIZE;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -150,7 +151,7 @@ where
     }
 
     fn key(&self, hash: &UInt256) -> Vec<u8> {
-        let mut buffer = Vec::with_capacity(1 + crate::uint256::UINT256_SIZE);
+        let mut buffer = Vec::with_capacity(1 + UINT256_SIZE);
         buffer.push(self.prefix);
         buffer.extend_from_slice(&hash.to_bytes());
         buffer

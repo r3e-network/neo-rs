@@ -9,7 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use super::{i_inventory::IInventory, inventory_type::InventoryType, witness::Witness};
+use super::{i_inventory::IInventory, witness::Witness, InventoryType};
 use crate::macros::ValidateLength;
 use crate::neo_io::serializable::helper::get_var_size;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};

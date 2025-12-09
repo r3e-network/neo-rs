@@ -478,7 +478,7 @@ mod block_serialization_tests {
     #[test]
     fn test_block_inventory_type() {
         use neo_core::network::p2p::payloads::i_inventory::IInventory;
-        use neo_core::network::p2p::payloads::inventory_type::InventoryType;
+        use neo_core::network::p2p::payloads::InventoryType;
 
         let block = Block::new();
         assert_eq!(block.inventory_type(), InventoryType::Block);

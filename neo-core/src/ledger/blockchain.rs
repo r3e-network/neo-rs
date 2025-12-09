@@ -59,7 +59,7 @@ use crate::network::p2p::{
     local_node::RelayInventory,
     payloads::{
         block::Block, extensible_payload::ExtensiblePayload, header::Header,
-        inventory_type::InventoryType, Transaction,
+        InventoryType, Transaction,
     },
     LocalNodeCommand,
 };

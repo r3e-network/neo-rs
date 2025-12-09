@@ -2,9 +2,7 @@
 //! Converted from C# Neo.UnitTests.IO.UT_UInt160.cs and UT_UInt256.cs
 
 use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
-use neo_core::uint160::UINT160_SIZE;
-use neo_core::uint256::UINT256_SIZE;
-use neo_core::{UInt160, UInt256};
+use neo_primitives::{UInt160, UInt256, UINT160_SIZE, UINT256_SIZE};
 
 // ============================================================================
 // UInt160 Tests (from C# UT_UInt160.cs)

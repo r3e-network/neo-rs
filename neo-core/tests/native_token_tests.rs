@@ -3,6 +3,7 @@ use neo_core::persistence::DataCache;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::native::{GasToken, NativeContract, NeoToken};
 use neo_core::smart_contract::trigger_type::TriggerType;
+use neo_core::witness::Witness;
 use neo_core::{IVerifiable, UInt160, WitnessScope};
 use num_bigint::BigInt;
 use num_traits::Zero;
@@ -34,6 +35,8 @@ fn make_engine(snapshot: Arc<DataCache>, signer: UInt160) -> ApplicationEngine {
     const TEST_GAS_LIMIT: i64 = 400_000_000;
     let mut container = Transaction::new();
     container.set_signers(vec![Signer::new(signer, WitnessScope::GLOBAL)]);
+    // Add a witness for the signer to pass check_witness validation
+    container.add_witness(Witness::new());
     let script_container: Arc<dyn IVerifiable> = Arc::new(container);
     ApplicationEngine::new(
         TriggerType::Application,

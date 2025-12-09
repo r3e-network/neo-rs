@@ -3,6 +3,7 @@
 //! This module provides comprehensive error handling for core Neo operations,
 //! including type conversions, serialization, and system-level errors.
 
+use neo_primitives::PrimitiveError;
 use thiserror::Error;
 
 /// Core module errors
@@ -429,6 +430,23 @@ crate::impl_error_from! {
     std::io::Error => io,
     std::fmt::Error => serialization,
     crate::neo_io::IoError => serialization,
+}
+
+impl From<PrimitiveError> for CoreError {
+    fn from(error: PrimitiveError) -> Self {
+        match error {
+            PrimitiveError::InvalidFormat { message } => CoreError::invalid_format(message),
+            PrimitiveError::InvalidData { message } => CoreError::invalid_data(message),
+            PrimitiveError::BufferOverflow {
+                requested,
+                available,
+            } => CoreError::BufferOverflow {
+                requested,
+                available,
+            },
+            PrimitiveError::TypeConversion { from, to } => CoreError::type_conversion(from, to),
+        }
+    }
 }
 
 // Type conversion errors (require custom handling)

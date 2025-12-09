@@ -1,0 +1,7 @@
+- Build quick: `cargo check -p neo-core`
+- Format: `cargo fmt`
+- Lint: `cargo clippy -p neo-core -- -D warnings`
+- Tests: `cargo test -p neo-core` (add `-- --nocapture` to see output)
+- Bench (if needed): `cargo bench -p neo-core`
+- Run individual test file: `cargo test -p neo-core <test_name>`
+- Inspect workspace crates: `cargo metadata --format-version 1 | jq '.packages[].name'`

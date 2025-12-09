@@ -1,5 +1,6 @@
 use crate::error::CoreError;
 use crate::neo_io::IoError;
+use neo_primitives::PrimitiveError;
 use thiserror::Error;
 
 pub type MptResult<T> = Result<T, MptError>;
@@ -29,5 +30,11 @@ impl MptError {
 
     pub fn key(message: impl Into<String>) -> Self {
         Self::Key(message.into())
+    }
+}
+
+impl From<PrimitiveError> for MptError {
+    fn from(error: PrimitiveError) -> Self {
+        CoreError::from(error).into()
     }
 }

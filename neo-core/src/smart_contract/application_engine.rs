@@ -1481,22 +1481,42 @@ impl ApplicationEngine {
         None
     }
 
+    /// Validates that the provided hash has a matching witness in the current transaction.
+    ///
+    /// # Security
+    /// Ensures we only approve hashes that have a corresponding witness entry.
+    /// Signature verification will be added once ECC integration (C-4) is available.
+    pub fn check_witness(&self, hash: &UInt160) -> Result<bool> {
+        let tx = self
+            .script_container
+            .as_ref()
+            .and_then(|container| container.as_transaction())
+            .ok_or_else(|| Error::invalid_operation("No transaction context".to_string()))?;
+
+        if let Some((idx, _)) = tx
+            .signers()
+            .iter()
+            .enumerate()
+            .find(|(_, signer)| signer.account == *hash)
+        {
+            // TODO: Verify the witness signature using ECC once integrated
+            if tx.witnesses().get(idx).is_some() {
+                return Ok(true);
+            }
+
+            return Ok(false);
+        }
+
+        Ok(false)
+    }
+
     /// Checks whether the specified hash has witnessed the current execution.
     pub fn check_witness_hash(&self, hash: &UInt160) -> bool {
         if self.get_calling_script_hash() == Some(*hash) {
             return true;
         }
 
-        if let Some(container) = &self.script_container {
-            if let Some(transaction) = container.as_any().downcast_ref::<Transaction>() {
-                return transaction
-                    .signers()
-                    .iter()
-                    .any(|signer| signer.account == *hash);
-            }
-        }
-
-        false
+        self.check_witness(hash).unwrap_or(false)
     }
 
     /// Gets the current execution context.

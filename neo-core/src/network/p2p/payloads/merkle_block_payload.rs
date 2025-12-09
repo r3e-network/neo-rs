@@ -12,8 +12,8 @@
 use super::{block::Block, header::Header};
 use crate::neo_io::serializable::helper::get_var_size;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use crate::uint256::UINT256_SIZE;
-use crate::{neo_cryptography::MerkleTree, UInt256};
+use crate::neo_cryptography::MerkleTree;
+use neo_primitives::{UInt256, UINT256_SIZE};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 

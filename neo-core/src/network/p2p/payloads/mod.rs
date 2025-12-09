@@ -37,7 +37,7 @@ pub mod ping_payload;
 pub mod signer;
 pub mod transaction;
 pub mod transaction_attribute;
-pub mod transaction_attribute_type;
+// transaction_attribute_type consolidated to neo-primitives
 pub mod version_payload;
 pub mod witness;
 pub mod witness_scope;
@@ -71,7 +71,7 @@ pub use ping_payload::PingPayload;
 pub use signer::Signer;
 pub use transaction::{Transaction, HEADER_SIZE, MAX_TRANSACTION_ATTRIBUTES, MAX_TRANSACTION_SIZE};
 pub use transaction_attribute::TransactionAttribute;
-pub use transaction_attribute_type::TransactionAttributeType;
+pub use neo_primitives::TransactionAttributeType;
 pub use version_payload::VersionPayload;
 pub use witness::Witness;
-pub use witness_scope::WitnessScope;
+pub use witness_scope::{InvalidWitnessScopeError, WitnessScope};

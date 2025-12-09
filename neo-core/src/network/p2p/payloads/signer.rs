@@ -13,10 +13,9 @@ use crate::macros::{OptionExt, ValidateLength};
 use crate::neo_io::serializable::helper::get_var_size;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::witness_rule::{WitnessRule, WitnessRuleAction};
-use crate::{
-    neo_cryptography::ECPoint, uint160::UINT160_SIZE, UInt160, WitnessCondition, WitnessScope,
-};
+use crate::{neo_cryptography::ECPoint, WitnessCondition, WitnessScope};
 use hex::{decode as hex_decode, encode as hex_encode};
+use neo_primitives::{UInt160, UINT160_SIZE};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 // Hash and Hasher now provided by impl_hash_for_fields macro
