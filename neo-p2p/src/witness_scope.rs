@@ -254,9 +254,56 @@ impl Not for WitnessScope {
     }
 }
 
-impl From<u8> for WitnessScope {
-    fn from(value: u8) -> Self {
-        Self::from_byte(value).unwrap_or(WitnessScope::NONE)
+/// Error type for invalid WitnessScope conversion.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InvalidWitnessScopeError(pub u8);
+
+impl std::fmt::Display for InvalidWitnessScopeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Invalid witness scope byte: 0x{:02X}. Valid values are 0x00, 0x01, 0x10, 0x20, 0x40, 0x80, or valid combinations.",
+            self.0
+        )
+    }
+}
+
+impl std::error::Error for InvalidWitnessScopeError {}
+
+impl TryFrom<u8> for WitnessScope {
+    type Error = InvalidWitnessScopeError;
+
+    /// Converts a byte to WitnessScope, returning an error for invalid values.
+    ///
+    /// # Security Note
+    /// This method properly rejects invalid scope bytes instead of silently
+    /// falling back to NONE, which could bypass witness restrictions.
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        Self::from_byte(value).ok_or(InvalidWitnessScopeError(value))
+    }
+}
+
+impl WitnessScope {
+    /// Converts a byte to WitnessScope, falling back to NONE for invalid values.
+    ///
+    /// # Security Warning
+    /// This method silently converts invalid values to NONE, which could bypass
+    /// witness restrictions. Use `TryFrom<u8>` or `from_byte()` for proper error handling.
+    ///
+    /// # Deprecated
+    /// This method is deprecated. Use `WitnessScope::try_from(value)` instead.
+    #[deprecated(
+        since = "0.7.1",
+        note = "Use TryFrom<u8> or from_byte() instead. This method silently converts invalid values to NONE, which is a security risk."
+    )]
+    pub fn from_u8_lossy(value: u8) -> Self {
+        Self::from_byte(value).unwrap_or_else(|| {
+            tracing::warn!(
+                "Invalid WitnessScope byte 0x{:02X} silently converted to NONE. Use TryFrom<u8> instead.",
+                value
+            );
+            WitnessScope::NONE
+        })
     }
 }
 

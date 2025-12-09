@@ -216,11 +216,12 @@ impl MemoryPool {
         }
     }
 
-    /// Attempts to add a transaction to the mempool, performing minimal validation.
+    /// Attempts to add a transaction to the mempool, performing full validation.
     ///
-    /// This mirrors the high-level C# behaviour while intentionally omitting the
-    /// conflict tracking and re-verification nuances, which will be ported in a
-    /// follow-up pass.
+    /// # Security
+    /// This method performs both state-independent and state-dependent validation
+    /// before adding the transaction to the mempool. State-independent validation
+    /// includes checks like transaction size, script validity, and attribute validity.
     pub fn try_add(
         &mut self,
         tx: Transaction,
@@ -235,6 +236,14 @@ impl MemoryPool {
             return VerifyResult::AlreadyInPool;
         }
 
+        // SECURITY FIX: Perform state-independent validation first
+        // This validates transaction structure, size limits, script validity,
+        // attribute validity, and other checks that don't require blockchain state.
+        let state_independent_result = tx.verify_state_independent(settings);
+        if state_independent_result != VerifyResult::Succeed {
+            return state_independent_result;
+        }
+
         let conflicts_to_remove = match self.check_conflicts(&tx) {
             Ok(list) => list,
             Err(result) => return result,
@@ -245,6 +254,7 @@ impl MemoryPool {
             .map(|item| item.transaction.clone())
             .collect();
 
+        // State-dependent validation (requires blockchain state)
         let result = tx.verify_state_dependent(
             settings,
             snapshot,

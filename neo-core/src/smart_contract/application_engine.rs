@@ -1048,23 +1048,31 @@ impl ApplicationEngine {
     }
 
     /// Check if committee witness is present
+    ///
+    /// # Security
+    /// This method verifies that the current execution context has a valid
+    /// witness from the committee multi-signature address. This is required
+    /// for administrative operations like setting gas per block, register price,
+    /// minimum deployment fee, etc.
+    ///
+    /// The committee address is computed from the current committee members
+    /// (or standby committee if not yet initialized) using a multi-signature
+    /// script requiring majority approval.
     pub fn check_committee_witness(&self) -> Result<bool> {
-        // Check if the current transaction has a witness from the committee
-        // This verifies that the transaction was signed by the committee members
+        // SECURITY FIX: Previously this just called container.verify() which
+        // always returned true. Now we properly verify against the committee
+        // multi-signature address.
 
-        // The committee script hash is calculated from the committee members
-        // stored in the NEO native contract. For administrative operations,
-        // a multi-signature from the committee is required.
+        // Get the committee multi-signature address
+        // This computes the script hash from committee public keys with M-of-N threshold
+        let committee_address = crate::smart_contract::native::NativeHelpers::committee_address(
+            self.protocol_settings(),
+            Some(self.snapshot_cache.as_ref()),
+        );
 
-        // Verify the container has proper committee authorization
-        if let Some(container) = &self.script_container {
-            // Use the IVerifiable trait to verify the container
-            // The verification includes checking all witnesses
-            return Ok(container.verify());
-        }
-
-        // No container to verify
-        Ok(false)
+        // Verify that the committee address has witnessed this execution
+        // This checks if the transaction signers include the committee multi-sig
+        Ok(self.check_witness_hash(&committee_address))
     }
 
     /// Clear all storage for a contract

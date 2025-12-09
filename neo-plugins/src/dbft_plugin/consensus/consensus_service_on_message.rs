@@ -137,6 +137,35 @@ impl ConsensusService {
                 return;
             }
 
+            // SECURITY FIX: Verify the payload witness before accepting
+            // This prevents attackers from forging PrepareRequest messages
+            // claiming to be from the primary validator.
+            let validator_index = message.validator_index() as usize;
+            if validator_index >= context.validators.len() {
+                tracing::warn!(
+                    "PrepareRequest rejected: invalid validator index {}",
+                    validator_index
+                );
+                return;
+            }
+
+            // Verify the payload was signed by the claimed validator
+            // Use IVerifiable::verify_witnesses for witness validation
+            let store_cache = self.neo_system.store_cache();
+            let snapshot = store_cache.data_cache();
+            if !neo_core::IVerifiable::verify_witnesses(
+                &payload,
+                self.neo_system.settings(),
+                snapshot,
+                6_000_000, // 0.06 GAS max for witness verification
+            ) {
+                tracing::warn!(
+                    "PrepareRequest rejected: witness verification failed for validator {}",
+                    validator_index
+                );
+                return;
+            }
+
             if message.transaction_hashes().len()
                 > self.neo_system.settings().max_transactions_per_block as usize
             {

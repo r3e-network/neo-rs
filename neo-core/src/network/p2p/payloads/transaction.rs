@@ -1047,7 +1047,50 @@ impl Serializable for Transaction {
 }
 
 impl crate::IVerifiable for Transaction {
+    /// Performs basic structural validation of the transaction.
+    ///
+    /// # Security Note
+    /// This method performs basic structural checks only. For full cryptographic
+    /// verification including witness validation, use `verify()` or `verify_state_independent()`
+    /// methods on the Transaction struct directly.
+    ///
+    /// # Checks Performed
+    /// - Transaction has at least one signer
+    /// - Number of witnesses matches number of signers
+    /// - Script is not empty
+    /// - Valid fee and validity period
     fn verify(&self) -> bool {
+        // Basic structural validation
+        // 1. Must have at least one signer
+        if self.signers.is_empty() {
+            return false;
+        }
+
+        // 2. Number of witnesses must match number of signers
+        if self.witnesses.len() != self.signers.len() {
+            return false;
+        }
+
+        // 3. Script must not be empty
+        if self.script.is_empty() {
+            return false;
+        }
+
+        // 4. System fee must be non-negative
+        if self.system_fee < 0 {
+            return false;
+        }
+
+        // 5. Network fee must be non-negative
+        if self.network_fee < 0 {
+            return false;
+        }
+
+        // 6. Valid until block must be reasonable (not zero)
+        if self.valid_until_block == 0 {
+            return false;
+        }
+
         true
     }
 

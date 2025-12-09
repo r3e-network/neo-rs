@@ -383,7 +383,9 @@ impl LogStorageStore {
     }
 
     pub fn commit(&mut self) {
-        self.snapshot.with_mut(|snapshot| snapshot.commit());
+        if self.snapshot.try_with_mut(|snapshot| snapshot.commit()).is_none() {
+            tracing::warn!("Cannot commit shared snapshot - mutation requires exclusive ownership");
+        }
     }
 
     fn find_contract_state_internal(
@@ -454,8 +456,14 @@ impl LogStorageStore {
     }
 
     fn write_raw(&mut self, key: Vec<u8>, value: Vec<u8>) -> IoResult<()> {
-        self.snapshot.with_mut(|snapshot| snapshot.put(key, value));
-        Ok(())
+        if let Some(()) = self.snapshot.try_with_mut(|snapshot| snapshot.put(key, value)) {
+            Ok(())
+        } else {
+            Err(IoError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Cannot write to shared snapshot",
+            )))
+        }
     }
 
     fn read_serializable<T: Serializable>(&self, key: &[u8]) -> IoResult<Option<T>> {
@@ -520,8 +528,16 @@ impl LogKeyBuilder {
     }
 }
 
+/// Handle for snapshot storage that safely manages ownership.
+///
+/// # Safety Note
+/// Previous implementation had undefined behavior by converting Arc to Box
+/// and creating mutable references from shared Arc. This has been fixed to
+/// use safe Rust patterns only.
 enum SnapshotHandle {
-    Owned(Box<dyn IStoreSnapshot>),
+    /// Exclusively owned snapshot (when we have the only reference)
+    Exclusive(Arc<dyn IStoreSnapshot>),
+    /// Shared snapshot with synchronization
     Shared {
         snapshot: Arc<dyn IStoreSnapshot>,
         lock: Mutex<()>,
@@ -531,9 +547,9 @@ enum SnapshotHandle {
 impl SnapshotHandle {
     fn new(snapshot: Arc<dyn IStoreSnapshot>) -> Self {
         if Arc::strong_count(&snapshot) == 1 {
-            let raw = Arc::into_raw(snapshot);
-            let boxed = unsafe { Box::from_raw(raw as *mut dyn IStoreSnapshot) };
-            SnapshotHandle::Owned(boxed)
+            // We have exclusive ownership, but keep it as Arc for safety
+            // SECURITY FIX: Removed unsafe Arc→Box conversion which was UB
+            SnapshotHandle::Exclusive(snapshot)
         } else {
             SnapshotHandle::Shared {
                 snapshot,
@@ -542,21 +558,48 @@ impl SnapshotHandle {
         }
     }
 
-    fn with_mut<R>(&mut self, f: impl FnOnce(&mut dyn IStoreSnapshot) -> R) -> R {
+    /// Access the snapshot immutably.
+    fn with<R>(&self, f: impl FnOnce(&dyn IStoreSnapshot) -> R) -> R {
         match self {
-            SnapshotHandle::Owned(inner) => f(inner.as_mut()),
-            SnapshotHandle::Shared { snapshot, lock } => {
-                let _guard = lock.lock();
-                let raw = Arc::as_ptr(snapshot) as *mut dyn IStoreSnapshot;
-                unsafe { f(&mut *raw) }
+            SnapshotHandle::Exclusive(inner) => f(inner.as_ref()),
+            SnapshotHandle::Shared { snapshot, .. } => f(snapshot.as_ref()),
+        }
+    }
+
+    /// Try to get mutable access to the snapshot.
+    ///
+    /// # Returns
+    /// - `Some(result)` if we have exclusive ownership and can safely mutate
+    /// - `None` if the snapshot is shared and cannot be safely mutated
+    ///
+    /// # Security Note
+    /// Previous implementation used unsafe code to create mutable references
+    /// from shared Arc, which was undefined behavior. This safe version
+    /// only allows mutation when we have exclusive ownership.
+    fn try_with_mut<R>(&mut self, f: impl FnOnce(&mut dyn IStoreSnapshot) -> R) -> Option<R> {
+        match self {
+            SnapshotHandle::Exclusive(inner) => {
+                // Only mutate if we truly have exclusive access
+                Arc::get_mut(inner).map(|snapshot| f(snapshot))
+            }
+            SnapshotHandle::Shared { .. } => {
+                // SECURITY FIX: Cannot safely get mutable reference to shared data
+                // Previous implementation had UB by casting Arc pointer to mutable
+                None
             }
         }
     }
 
-    fn with<R>(&self, f: impl FnOnce(&dyn IStoreSnapshot) -> R) -> R {
+    /// Access the snapshot, with synchronization for shared snapshots.
+    /// For operations that only need immutable access but want to ensure
+    /// no concurrent access.
+    fn with_locked<R>(&self, f: impl FnOnce(&dyn IStoreSnapshot) -> R) -> R {
         match self {
-            SnapshotHandle::Owned(inner) => f(inner.as_ref()),
-            SnapshotHandle::Shared { snapshot, .. } => f(snapshot.as_ref()),
+            SnapshotHandle::Exclusive(inner) => f(inner.as_ref()),
+            SnapshotHandle::Shared { snapshot, lock } => {
+                let _guard = lock.lock();
+                f(snapshot.as_ref())
+            }
         }
     }
 }

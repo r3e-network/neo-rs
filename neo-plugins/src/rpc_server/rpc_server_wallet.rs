@@ -45,28 +45,36 @@ use crate::rpc_server::rpc_server::{RpcHandler, RpcServer};
 pub struct RpcServerWallet;
 
 impl RpcServerWallet {
+    /// Registers all wallet RPC handlers.
+    ///
+    /// # Security
+    /// All wallet methods are marked as protected and require authentication.
+    /// If no authentication is configured on the RPC server, these methods will
+    /// be rejected with an access denied error.
     pub fn register_handlers() -> Vec<RpcHandler> {
         vec![
-            Self::handler("closewallet", Self::close_wallet),
-            Self::handler("dumpprivkey", Self::dump_priv_key),
-            Self::handler("getnewaddress", Self::get_new_address),
-            Self::handler("getwalletbalance", Self::get_wallet_balance),
-            Self::handler("getwalletunclaimedgas", Self::get_wallet_unclaimed_gas),
-            Self::handler("importprivkey", Self::import_priv_key),
-            Self::handler("listaddress", Self::list_address),
-            Self::handler("openwallet", Self::open_wallet),
-            Self::handler("calculatenetworkfee", Self::calculate_network_fee),
-            Self::handler("sendfrom", Self::send_from),
-            Self::handler("sendtoaddress", Self::send_to_address),
-            Self::handler("sendmany", Self::send_many),
+            // All wallet methods require authentication for security
+            Self::protected_handler("closewallet", Self::close_wallet),
+            Self::protected_handler("dumpprivkey", Self::dump_priv_key),
+            Self::protected_handler("getnewaddress", Self::get_new_address),
+            Self::protected_handler("getwalletbalance", Self::get_wallet_balance),
+            Self::protected_handler("getwalletunclaimedgas", Self::get_wallet_unclaimed_gas),
+            Self::protected_handler("importprivkey", Self::import_priv_key),
+            Self::protected_handler("listaddress", Self::list_address),
+            Self::protected_handler("openwallet", Self::open_wallet),
+            Self::protected_handler("calculatenetworkfee", Self::calculate_network_fee),
+            Self::protected_handler("sendfrom", Self::send_from),
+            Self::protected_handler("sendtoaddress", Self::send_to_address),
+            Self::protected_handler("sendmany", Self::send_many),
         ]
     }
 
-    fn handler(
+    /// Creates a protected handler that requires authentication.
+    fn protected_handler(
         name: &'static str,
         func: fn(&RpcServer, &[Value]) -> Result<Value, RpcException>,
     ) -> RpcHandler {
-        RpcHandler::new(RpcMethodDescriptor::new(name), Arc::new(func))
+        RpcHandler::new(RpcMethodDescriptor::new_protected(name), Arc::new(func))
     }
 
     fn close_wallet(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {

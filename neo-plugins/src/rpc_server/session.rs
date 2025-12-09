@@ -187,5 +187,54 @@ impl Session {
     }
 }
 
+// SAFETY DOCUMENTATION FOR THREAD MARKER TRAITS
+//
+// # Why these unsafe impls exist
+//
+// `Session` contains `ApplicationEngine` which contains `VmEngineHost` which wraps
+// `ExecutionEngine`. The `ExecutionEngine` in neo-vm contains a raw pointer
+// (`*mut dyn InteropHost`) that is explicitly documented as NOT thread-safe:
+//
+// > "Thread Safety: The ExecutionEngine is not Send or Sync due to this raw pointer.
+// >  Do not share across threads." (neo-vm/src/execution_engine.rs:121-122)
+//
+// These unsafe impls are required because `Session` is stored in
+// `Arc<RwLock<HashMap<Uuid, Session>>>` in `RpcServer`, which requires `Send + Sync`.
+//
+// # Invariants that MUST be maintained
+//
+// 1. **Exclusive Access**: Sessions MUST only be accessed with exclusive (write) locks.
+//    Using `RwLock::read()` to access sessions concurrently would cause data races.
+//    All session access in the RPC server MUST use `write()` locks.
+//
+// 2. **Single-Threaded Mutation**: A session's `ApplicationEngine` must never be
+//    mutated from multiple threads simultaneously. The `RwLock` write lock ensures this.
+//
+// 3. **No Concurrent Reads**: Even read-only access to `Session` is unsafe if done
+//    concurrently, because `ExecutionEngine` may have interior mutability through
+//    the raw pointer.
+//
+// # Known Risks
+//
+// - If code is added that uses `sessions.read()` instead of `sessions.write()`,
+//   it could cause undefined behavior through data races.
+// - The `ExecutionEngine`'s raw pointer could become dangling if lifetimes are
+//   not properly managed.
+//
+// # Recommended Future Fix
+//
+// Consider one of these safer alternatives:
+// 1. [IMPLEMENTED] Use `Arc<Mutex<HashMap<Uuid, Session>>>` instead of `RwLock`
+//    to prevent accidental concurrent reads. (Changed in security audit 2025-12-09)
+// 2. Use a channel-based approach where all session operations are serialized
+//    to a single worker thread.
+// 3. Refactor `ExecutionEngine` to use safe abstractions instead of raw pointers.
+//
+// # Security Audit Note (2025-12-09)
+//
+// This is a HIGH severity issue. The unsafe impls violate the documented thread
+// safety requirements of `ExecutionEngine`. While the current code appears to use
+// exclusive access patterns, this is not enforced by the type system and could
+// easily be broken by future changes.
 unsafe impl Send for Session {}
 unsafe impl Sync for Session {}

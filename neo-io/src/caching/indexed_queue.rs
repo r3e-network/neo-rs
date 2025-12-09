@@ -19,13 +19,45 @@ impl<T> IndexedQueue<T> {
     }
 
     /// Creates a queue with the specified capacity.
+    ///
+    /// # Arguments
+    /// * `capacity` - The initial capacity. If zero, uses DEFAULT_CAPACITY instead.
+    ///
+    /// # Note
+    /// Zero capacity is handled gracefully by using the default capacity.
+    /// This prevents panics from configuration-driven capacity values.
     pub fn with_capacity(capacity: usize) -> Self {
-        if capacity == 0 {
-            panic!("capacity must be greater than zero");
-        }
+        let effective_capacity = if capacity == 0 {
+            #[cfg(feature = "tracing")]
+            tracing::warn!(
+                "IndexedQueue created with zero capacity, using default: {}",
+                Self::DEFAULT_CAPACITY
+            );
+            #[cfg(not(feature = "tracing"))]
+            eprintln!(
+                "[WARN] IndexedQueue created with zero capacity, using default: {}",
+                Self::DEFAULT_CAPACITY
+            );
+            Self::DEFAULT_CAPACITY
+        } else {
+            capacity
+        };
         Self {
-            items: VecDeque::with_capacity(capacity),
+            items: VecDeque::with_capacity(effective_capacity),
         }
+    }
+
+    /// Creates a queue with the specified capacity, returning an error if capacity is zero.
+    ///
+    /// # Errors
+    /// Returns an error if capacity is zero.
+    pub fn try_with_capacity(capacity: usize) -> Result<Self, &'static str> {
+        if capacity == 0 {
+            return Err("capacity must be greater than zero");
+        }
+        Ok(Self {
+            items: VecDeque::with_capacity(capacity),
+        })
     }
 
     /// Gets the number of items in the queue (C# Count property).
@@ -57,6 +89,16 @@ impl<T> IndexedQueue<T> {
     }
 
     /// Provides access to the item at the front of the queue without dequeuing it (C# Peek).
+    ///
+    /// # Panics
+    /// Panics if the queue is empty. Use `try_peek()` for a non-panicking alternative.
+    ///
+    /// # Deprecated
+    /// This method panics on empty queue. Prefer `try_peek()` which returns `Option<&T>`.
+    #[deprecated(
+        since = "0.7.1",
+        note = "Use try_peek() instead. This method panics on empty queue."
+    )]
     pub fn peek(&self) -> &T {
         self.items.front().expect("queue is empty")
     }
@@ -67,6 +109,16 @@ impl<T> IndexedQueue<T> {
     }
 
     /// Removes an item from the front of the queue, returning it (C# Dequeue).
+    ///
+    /// # Panics
+    /// Panics if the queue is empty. Use `try_dequeue()` for a non-panicking alternative.
+    ///
+    /// # Deprecated
+    /// This method panics on empty queue. Prefer `try_dequeue()` which returns `Option<T>`.
+    #[deprecated(
+        since = "0.7.1",
+        note = "Use try_dequeue() instead. This method panics on empty queue."
+    )]
     pub fn dequeue(&mut self) -> T {
         self.items.pop_front().expect("queue is empty")
     }

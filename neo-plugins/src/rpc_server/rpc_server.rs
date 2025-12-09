@@ -1,6 +1,6 @@
 use neo_core::{neo_system::NeoSystem, services::RpcService, wallets::Wallet};
 use once_cell::sync::Lazy;
-use parking_lot::{RwLock, RwLockReadGuard};
+use parking_lot::{Mutex, RwLock, RwLockReadGuard};
 use prometheus::{register_counter, Counter};
 use serde_json::Value;
 use tokio::{
@@ -58,7 +58,13 @@ pub struct RpcServer {
     handler_lookup: Arc<RwLock<HashMap<String, Arc<RpcHandler>>>>,
     started: bool,
     wallet: Arc<RwLock<Option<Arc<dyn Wallet>>>>,
-    sessions: Arc<RwLock<HashMap<Uuid, Session>>>,
+    /// Session storage using Mutex instead of RwLock to enforce exclusive access.
+    ///
+    /// # Security Note
+    /// Sessions contain `ApplicationEngine` which wraps `ExecutionEngine` with a raw pointer
+    /// that is NOT thread-safe. Using `Mutex` instead of `RwLock` prevents accidental
+    /// concurrent reads that would cause undefined behavior. See session.rs for details.
+    sessions: Arc<Mutex<HashMap<Uuid, Session>>>,
     server_task: Option<JoinHandle<()>>,
     shutdown_signal: Option<oneshot::Sender<()>>,
     session_purge_task: Option<JoinHandle<()>>,
@@ -74,7 +80,7 @@ impl RpcServer {
             handler_lookup: Arc::new(RwLock::new(HashMap::new())),
             started: false,
             wallet: Arc::new(RwLock::new(None)),
-            sessions: Arc::new(RwLock::new(HashMap::new())),
+            sessions: Arc::new(Mutex::new(HashMap::new())),
             server_task: None,
             shutdown_signal: None,
             session_purge_task: None,
@@ -230,7 +236,7 @@ impl RpcServer {
         }
 
         // Drop any lingering sessions to avoid carrying over state across restarts.
-        self.sessions.write().clear();
+        self.sessions.lock().clear();
         self.set_wallet(None);
 
         info!("Stopping RPC server for network {}", self.settings.network);
@@ -256,7 +262,7 @@ impl RpcServer {
         self.stop_rpc_server();
         self.handler_lookup.write().clear();
         self.set_wallet(None);
-        self.sessions.write().clear();
+        self.sessions.lock().clear();
     }
 
     pub fn set_wallet(&self, wallet: Option<Arc<dyn Wallet>>) {
@@ -280,13 +286,13 @@ impl RpcServer {
             return;
         }
         let expiration = self.session_expiration();
-        let mut guard = self.sessions.write();
+        let mut guard = self.sessions.lock();
         guard.retain(|_, session| !session.is_expired(expiration));
     }
 
     pub fn store_session(&self, session: Session) -> Uuid {
         let id = Uuid::new_v4();
-        self.sessions.write().insert(id, session);
+        self.sessions.lock().insert(id, session);
         id
     }
 
@@ -294,12 +300,12 @@ impl RpcServer {
     where
         F: FnOnce(&mut Session) -> R,
     {
-        let mut guard = self.sessions.write();
+        let mut guard = self.sessions.lock();
         guard.get_mut(id).map(func)
     }
 
     pub fn terminate_session(&self, id: &Uuid) -> bool {
-        self.sessions.write().remove(id).is_some()
+        self.sessions.lock().remove(id).is_some()
     }
 
     pub(crate) fn handlers_guard(&self) -> RwLockReadGuard<'_, HashMap<String, Arc<RpcHandler>>> {

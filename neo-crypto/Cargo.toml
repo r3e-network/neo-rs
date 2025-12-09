@@ -23,6 +23,11 @@ sha3 = { workspace = true }
 ripemd = { workspace = true }
 blake2 = { workspace = true }
 
+# Elliptic curve cryptography
+p256 = { workspace = true }
+k256 = { workspace = true }
+ed25519-dalek = { workspace = true }
+
 # Encoding
 hex = { workspace = true }
 
@@ -31,6 +36,10 @@ serde = { workspace = true }
 
 # Error handling
 thiserror = { workspace = true }
+
+# Constant-time operations and secure memory handling
+subtle = "2.5"
+zeroize = { version = "1.7", features = ["zeroize_derive"] }
 
 [dev-dependencies]
 

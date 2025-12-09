@@ -116,6 +116,12 @@ impl Block {
     /// 1. Header validation (timestamp, consensus, witness, etc.)
     /// 2. Merkle root validation - ensures transactions haven't been tampered
     /// 3. Transaction uniqueness - no duplicate transaction hashes
+    /// 4. Per-transaction state-independent validation (size, script, attributes, etc.)
+    ///
+    /// # Security Note
+    /// This method now includes per-transaction validation to prevent blocks with
+    /// invalid transactions from being accepted. Previously, only header/merkle/duplicate
+    /// checks were performed, allowing malformed transactions to pass verification.
     pub fn verify(&self, settings: &ProtocolSettings, store_cache: &StoreCache) -> bool {
         // Step 1: Verify header first
         if !self.header.verify(settings, store_cache) {
@@ -132,6 +138,48 @@ impl Block {
             return false;
         }
 
+        // Step 4: SECURITY FIX - Verify each transaction (state-independent checks)
+        // This prevents blocks with malformed transactions from being accepted.
+        // State-independent checks include: size limits, script validity, attribute
+        // validity, signer/witness count matching, and other structural checks.
+        if !self.verify_transactions_state_independent(settings) {
+            return false;
+        }
+
+        true
+    }
+
+    /// Verifies all transactions in the block using state-independent checks.
+    ///
+    /// # Security Note
+    /// This method validates each transaction's structure without requiring
+    /// blockchain state. It catches malformed transactions that could otherwise
+    /// be included in blocks by malicious peers.
+    ///
+    /// # Checks Performed
+    /// - Transaction size limits
+    /// - Script validity
+    /// - Attribute validity
+    /// - Signer/witness count matching
+    /// - Fee validation
+    /// - Validity period checks
+    fn verify_transactions_state_independent(&self, settings: &ProtocolSettings) -> bool {
+        use crate::ledger::verify_result::VerifyResult;
+
+        for (index, tx) in self.transactions.iter().enumerate() {
+            let result = tx.verify_state_independent(settings);
+            if result != VerifyResult::Succeed {
+                tracing::warn!(
+                    target: "neo::block",
+                    block_index = self.header.index(),
+                    tx_index = index,
+                    tx_hash = %tx.hash(),
+                    result = ?result,
+                    "Transaction failed state-independent verification"
+                );
+                return false;
+            }
+        }
         true
     }
 
@@ -199,6 +247,11 @@ impl Block {
             return false;
         }
 
+        // Step 4: SECURITY FIX - Verify each transaction (state-independent checks)
+        if !self.verify_transactions_state_independent(settings) {
+            return false;
+        }
+
         true
     }
 }
@@ -226,7 +279,38 @@ impl crate::IVerifiable for Block {
         self.header.get_witnesses_mut()
     }
 
+    /// Performs basic structural validation of the block.
+    ///
+    /// # Security Note
+    /// This method performs basic structural checks only. For full cryptographic
+    /// verification including witness validation and consensus checks, use the
+    /// `verify()` method on the Block struct directly.
+    ///
+    /// # Checks Performed
+    /// - Block has a valid header
+    /// - Merkle root matches transactions
+    /// - No duplicate transactions
     fn verify(&self) -> bool {
+        // Basic structural validation (state-independent checks only)
+        // Note: Full header verification requires ProtocolSettings and StoreCache,
+        // which is done via Header::verify() separately.
+
+        // 1. Basic header structural checks
+        if self.header.version() > 0 {
+            // Currently only version 0 is supported
+            return false;
+        }
+
+        // 2. Verify merkle root matches transactions
+        if !self.verify_merkle_root() {
+            return false;
+        }
+
+        // 3. Verify no duplicate transactions
+        if !self.verify_no_duplicate_transactions() {
+            return false;
+        }
+
         true
     }
 

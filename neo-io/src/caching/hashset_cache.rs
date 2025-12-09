@@ -16,17 +16,54 @@ impl<T> HashSetCache<T>
 where
     T: Eq + Hash + Clone,
 {
+    const DEFAULT_CAPACITY: usize = 1024;
+
     /// Initializes a new instance with the given maximum capacity.
+    ///
+    /// # Arguments
+    /// * `capacity` - The maximum capacity. If zero, uses DEFAULT_CAPACITY instead.
+    ///
+    /// # Note
+    /// Zero capacity is handled gracefully by using the default capacity.
+    /// This prevents panics from configuration-driven capacity values.
     pub fn new(capacity: usize) -> Self {
+        let effective_capacity = if capacity == 0 {
+            #[cfg(feature = "tracing")]
+            tracing::warn!(
+                "HashSetCache created with zero capacity, using default: {}",
+                Self::DEFAULT_CAPACITY
+            );
+            #[cfg(not(feature = "tracing"))]
+            eprintln!(
+                "[WARN] HashSetCache created with zero capacity, using default: {}",
+                Self::DEFAULT_CAPACITY
+            );
+            Self::DEFAULT_CAPACITY
+        } else {
+            capacity
+        };
+
+        let initial_capacity = effective_capacity.min(4096);
+        Self {
+            capacity: effective_capacity,
+            items: KeyedCollectionSlim::with_selector(initial_capacity, |item: &T| item.clone()),
+        }
+    }
+
+    /// Initializes a new instance with the given maximum capacity, returning an error if zero.
+    ///
+    /// # Errors
+    /// Returns an error if capacity is zero.
+    pub fn try_new(capacity: usize) -> Result<Self, &'static str> {
         if capacity == 0 {
-            panic!("capacity must be greater than zero");
+            return Err("capacity must be greater than zero");
         }
 
         let initial_capacity = capacity.min(4096);
-        Self {
+        Ok(Self {
             capacity,
             items: KeyedCollectionSlim::with_selector(initial_capacity, |item: &T| item.clone()),
-        }
+        })
     }
 
     /// Number of items currently in the cache (C# `Count`).

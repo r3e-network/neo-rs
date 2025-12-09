@@ -108,35 +108,40 @@ impl UInt256 {
         Ok(result)
     }
 
+    /// Creates a new UInt256 from a byte span with proper error handling.
+    ///
+    /// # Errors
+    /// Returns `PrimitiveError::InvalidFormat` if the input length is not exactly 32 bytes.
+    ///
+    /// # Example
+    /// ```
+    /// use neo_primitives::UInt256;
+    /// let bytes = [0u8; 32];
+    /// let result = UInt256::try_from_span(&bytes);
+    /// assert!(result.is_ok());
+    /// ```
+    pub fn try_from_span(value: &[u8]) -> PrimitiveResult<Self> {
+        Self::from_bytes(value)
+    }
+
     /// Creates a new UInt256 from a byte span (returns zero on invalid input).
+    ///
+    /// # Deprecated
+    /// This method silently returns zero on invalid input, which can mask errors
+    /// and lead to security vulnerabilities (e.g., treating invalid block hashes as zero).
+    /// Use `try_from_span()` or `from_bytes()` instead for proper error handling.
+    #[deprecated(
+        since = "0.7.1",
+        note = "Use try_from_span() or from_bytes() instead - this method silently returns zero on invalid input which can mask errors"
+    )]
     pub fn from_span(value: &[u8]) -> Self {
-        if value.len() != UINT256_SIZE {
-            error!(
-                "Invalid UInt256 length: {} (expected {})",
-                value.len(),
-                UINT256_SIZE
-            );
-            return Self::zero();
+        match Self::from_bytes(value) {
+            Ok(result) => result,
+            Err(e) => {
+                error!("Invalid UInt256 input: {}", e);
+                Self::zero()
+            }
         }
-
-        let mut result = Self::new();
-
-        let mut value1_bytes = [0u8; 8];
-        let mut value2_bytes = [0u8; 8];
-        let mut value3_bytes = [0u8; 8];
-        let mut value4_bytes = [0u8; 8];
-
-        value1_bytes.copy_from_slice(&value[0..8]);
-        value2_bytes.copy_from_slice(&value[8..16]);
-        value3_bytes.copy_from_slice(&value[16..24]);
-        value4_bytes.copy_from_slice(&value[24..HASH_SIZE]);
-
-        result.value1 = u64::from_le_bytes(value1_bytes);
-        result.value2 = u64::from_le_bytes(value2_bytes);
-        result.value3 = u64::from_le_bytes(value3_bytes);
-        result.value4 = u64::from_le_bytes(value4_bytes);
-
-        result
     }
 
     /// Gets a byte array representation of the UInt256.
@@ -227,8 +232,20 @@ impl UInt256 {
     }
 
     /// Gets a hash code for the current UInt256 instance.
+    ///
+    /// # Implementation Note
+    /// This method properly combines all 256 bits by XORing the high and low
+    /// 32-bit parts of each u64 field. This prevents hash collisions that would
+    /// occur from only using the lowest 32 bits of value1.
     pub fn get_hash_code(&self) -> i32 {
-        self.value1 as i32
+        // XOR high and low 32-bit parts of each u64 to preserve all bits
+        let v1_hash = (self.value1 as i32) ^ ((self.value1 >> 32) as i32);
+        let v2_hash = (self.value2 as i32) ^ ((self.value2 >> 32) as i32);
+        let v3_hash = (self.value3 as i32) ^ ((self.value3 >> 32) as i32);
+        let v4_hash = (self.value4 as i32) ^ ((self.value4 >> 32) as i32);
+
+        // XOR all parts together for final hash
+        v1_hash ^ v2_hash ^ v3_hash ^ v4_hash
     }
 }
 
@@ -293,12 +310,28 @@ impl TryFrom<&[u8]> for UInt256 {
     }
 }
 
+/// **DEPRECATED**: Use `FromStr` trait (via `str::parse()`) instead for proper error handling.
+///
+/// This implementation silently returns zero on parse failure, which can mask errors.
+/// Prefer using `str::parse::<UInt256>()` or `UInt256::parse()` instead.
 impl From<&str> for UInt256 {
     fn from(s: &str) -> Self {
         Self::parse(s).unwrap_or_default()
     }
 }
 
+impl TryFrom<String> for UInt256 {
+    type Error = PrimitiveError;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        Self::parse(&s)
+    }
+}
+
+/// **DEPRECATED**: Use `TryFrom<&[u8]>` or `from_bytes()` instead for proper error handling.
+///
+/// This implementation silently returns zero on invalid input, which can mask errors.
+/// Prefer using `UInt256::from_bytes()` or `TryFrom<&[u8]>` instead.
 impl From<Vec<u8>> for UInt256 {
     fn from(data: Vec<u8>) -> Self {
         Self::from_bytes(&data).unwrap_or_default()

@@ -311,13 +311,6 @@ fn process_object(
         }
     };
 
-    if let Some(auth) = filters.auth.as_ref() {
-        if !verify_basic_auth(auth_header, auth) {
-            RPC_ERR_TOTAL.inc();
-            return RequestOutcome::error(error_response(id, RpcError::access_denied()), true);
-        }
-    }
-
     let method_key = method.to_ascii_lowercase();
     if filters.disabled.contains(&method_key) {
         RPC_ERR_TOTAL.inc();
@@ -342,6 +335,36 @@ fn process_object(
             false,
         );
     };
+
+    // SECURITY FIX: Check authentication requirements
+    // Protected methods (like wallet operations) require authentication even if
+    // global auth is not configured. This prevents sensitive operations from
+    // being exposed without authentication.
+    let requires_auth = handler.descriptor().requires_auth();
+    if let Some(auth) = filters.auth.as_ref() {
+        // Auth is configured - verify credentials
+        if !verify_basic_auth(auth_header, auth) {
+            RPC_ERR_TOTAL.inc();
+            return RequestOutcome::error(error_response(id, RpcError::access_denied()), true);
+        }
+    } else if requires_auth {
+        // No auth configured but method requires it - reject
+        RPC_ERR_TOTAL.inc();
+        tracing::warn!(
+            "Protected RPC method '{}' called without authentication configured. \
+            Configure rpc_user and rpc_pass to enable wallet operations.",
+            method_key
+        );
+        return RequestOutcome::error(
+            error_response(
+                id,
+                RpcError::access_denied().with_data(
+                    "This method requires authentication. Configure rpc_user and rpc_pass."
+                ),
+            ),
+            false,
+        );
+    }
 
     match handler.callback()(&server_guard, params.as_slice()) {
         Ok(result) => RequestOutcome::response(success_response(id, result)),
