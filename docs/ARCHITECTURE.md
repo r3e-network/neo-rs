@@ -9,27 +9,28 @@ The codebase follows a strict layered architecture with clear dependency rules:
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                    APPLICATION LAYER                             │
-│  neo-cli (CLI client)    neo-node (daemon)                      │
+│  neo-cli (CLI client)    neo-node (daemon runtime)              │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                   INFRASTRUCTURE LAYER                           │
-│  neo-akka (actors)   neo-plugins   neo-tee (TEE support)        │
+│                     SERVICE LAYER                                │
+│  neo-chain (chain state)   neo-mempool   neo-telemetry          │
+│  neo-config (settings)     neo-tee (TEE support)                │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                       CORE LAYER                                 │
 │  neo-core      neo-vm       neo-p2p      neo-consensus          │
-│  neo-rpc (server + client)                                       │
+│  neo-rpc (server + client) neo-state (world state)              │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                    FOUNDATION LAYER                              │
 │  neo-primitives (UInt160, UInt256, BigDecimal)                  │
-│  neo-crypto (hashing, ECC, signatures)                          │
+│  neo-crypto (hashing, ECC, signatures, MPT)                     │
 │  neo-storage (storage traits and abstractions)                  │
 │  neo-io (serialization, caching)                                │
 │  neo-json (JSON handling)                                       │
@@ -65,22 +66,31 @@ should not blur boundaries by directly reaching into internal node state when an
 - **neo-p2p**: P2P networking layer (message types, peer management, connection handling). Matches C# `Neo.Network.P2P`.
 - **neo-rpc**: Unified RPC server and client. JSON-RPC 2.0 implementation for Neo node communication. Use the `client` feature flag to enable RPC client functionality.
 - **neo-consensus**: dBFT (Delegated Byzantine Fault Tolerance) consensus implementation. Matches C# consensus plugin.
+- **neo-state**: World state abstraction layer providing account state, contract storage, snapshots, and rollback semantics. Storage-agnostic design allows pluggable backends.
 
 > **Note**: BLS12-381 cryptographic operations use the `blst` crate directly (via neo-core) instead of a separate wrapper crate.
 > **Note**: Extension utilities (formerly neo-extensions) are now integrated into `neo-core::extensions`.
 > **Note**: Smart contract types (formerly neo-contract) are now integrated into `neo-core::smart_contract`.
 > **Note**: Service traits (formerly neo-services) are now integrated into `neo-core::services`.
 
-### Infrastructure Layer
+### Service Layer
 
-- **neo-akka**: Actor runtime (Akka-inspired) for concurrent message passing.
-- **neo-plugins**: Node-side extensions (RocksDB storage, RPC server, TokensTracker, etc.).
+- **neo-chain**: Chain state controller with block index management, fork choice rules, and chain reorganization handling. Uses pure tokio channels for inter-component communication.
+- **neo-mempool**: Transaction mempool with priority-based ordering, fee validation, and capacity management.
+- **neo-config**: Configuration management for network settings, protocol parameters, and genesis block definitions.
+- **neo-telemetry**: Logging, metrics (Prometheus-compatible), and health check infrastructure.
 - **neo-tee**: Enclave-facing utilities and optional mempool/wallet. Feature-gated; avoid leaking into core.
+
+> **Note**: The actor framework (formerly neo-akka) has been replaced with pure tokio channels for better performance and simpler debugging. Plugin functionality (formerly neo-plugins) has been consolidated into neo-core and neo-node.
 
 ### Application Layer
 
 - **neo-cli**: Thin command wrappers over `neo-rpc` (with `client` feature), no business logic.
-- **neo-node**: Daemon composition (config, wiring actors, plugin loading). Owns service registration and lifecycle; avoids protocol logic.
+- **neo-node**: Node runtime daemon integrating P2P networking, RPC server, consensus service, and chain state management. Uses tokio channels for component communication. Supports:
+    - Block synchronization from network peers
+    - State root calculation and validation
+    - Health checks and Prometheus metrics
+    - Configurable via TOML files or environment variables
 
 ## Service Access
 
