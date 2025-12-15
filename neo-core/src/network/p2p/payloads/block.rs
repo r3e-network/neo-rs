@@ -10,8 +10,8 @@
 // modifications are permitted.
 
 use super::{
-    header::Header, i_inventory::IInventory, InventoryType,
-    transaction::Transaction, witness::Witness,
+    header::Header, i_inventory::IInventory, transaction::Transaction, witness::Witness,
+    InventoryType,
 };
 use crate::ledger::{HeaderCache, TransactionVerificationContext, VerifyResult};
 use crate::neo_io::serializable::helper::get_var_size;
@@ -148,11 +148,7 @@ impl Block {
 
     /// Verifies all transactions in the block using full validation (state-independent
     /// and state-dependent) against the current ledger snapshot.
-    fn verify_transactions(
-        &self,
-        settings: &ProtocolSettings,
-        store_cache: &StoreCache,
-    ) -> bool {
+    fn verify_transactions(&self, settings: &ProtocolSettings, store_cache: &StoreCache) -> bool {
         let snapshot = store_cache.data_cache();
         let mut context = TransactionVerificationContext::new();
         for (index, tx) in self.transactions.iter().enumerate() {

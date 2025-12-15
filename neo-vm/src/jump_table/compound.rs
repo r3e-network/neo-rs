@@ -59,7 +59,7 @@ fn new_array0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRes
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     let rc = context.reference_counter().clone();
-    let array = Array::new(Vec::new(), Some(rc));
+    let array = Array::new(Vec::new(), Some(rc))?;
     context.push(StackItem::Array(array))?;
 
     Ok(())
@@ -84,7 +84,7 @@ fn new_array(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
         items.push(StackItem::Null);
     }
 
-    let array = Array::new(items, Some(context.reference_counter().clone()));
+    let array = Array::new(items, Some(context.reference_counter().clone()))?;
     context.push(StackItem::Array(array))?;
 
     Ok(())
@@ -115,33 +115,31 @@ fn new_array_t(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
     for _ in 0..count {
         // Create a default value based on the type
         let default_value = match type_byte {
-            0x00 => StackItem::Boolean(false),
-            0x01 => StackItem::Integer(BigInt::from(0)),
-            0x02 => StackItem::from_byte_string(Vec::<u8>::new()),
-            0x03 => StackItem::from_buffer(Vec::<u8>::new()),
-            0x04 => StackItem::Array(Array::new(
+            0x00 => Ok(StackItem::Boolean(false)),
+            0x01 => Ok(StackItem::Integer(BigInt::from(0))),
+            0x02 => Ok(StackItem::from_byte_string(Vec::<u8>::new())),
+            0x03 => Ok(StackItem::from_buffer(Vec::<u8>::new())),
+            0x04 => Ok(StackItem::Array(Array::new(
                 Vec::<StackItem>::new(),
                 Some(context.reference_counter().clone()),
-            )),
-            0x05 => StackItem::Struct(Struct::new(
+            )?)),
+            0x05 => Ok(StackItem::Struct(Struct::new(
                 Vec::<StackItem>::new(),
                 Some(context.reference_counter().clone()),
-            )),
-            0x06 => StackItem::Map(Map::new(
+            )?)),
+            0x06 => Ok(StackItem::Map(Map::new(
                 BTreeMap::new(),
                 Some(context.reference_counter().clone()),
-            )),
-            _ => {
-                return Err(VmError::invalid_instruction_msg(format!(
-                    "Invalid type: {type_byte}"
-                )));
-            }
-        };
+            )?)),
+            _ => Err(VmError::invalid_instruction_msg(format!(
+                "Invalid type: {type_byte}"
+            ))),
+        }?;
 
         items.push(default_value);
     }
 
-    let array = Array::new(items, Some(context.reference_counter().clone()));
+    let array = Array::new(items, Some(context.reference_counter().clone()))?;
     context.push(StackItem::Array(array))?;
 
     Ok(())
@@ -154,7 +152,7 @@ fn new_struct0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRe
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    let structure = Struct::new(Vec::new(), Some(context.reference_counter().clone()));
+    let structure = Struct::new(Vec::new(), Some(context.reference_counter().clone()))?;
     context.push(StackItem::Struct(structure))?;
 
     Ok(())
@@ -179,7 +177,7 @@ fn new_struct(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRes
         items.push(StackItem::Null);
     }
 
-    let structure = Struct::new(items, Some(context.reference_counter().clone()));
+    let structure = Struct::new(items, Some(context.reference_counter().clone()))?;
     context.push(StackItem::Struct(structure))?;
 
     Ok(())
@@ -192,7 +190,7 @@ fn new_map(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    let map = Map::new(BTreeMap::new(), Some(context.reference_counter().clone()));
+    let map = Map::new(BTreeMap::new(), Some(context.reference_counter().clone()))?;
     context.push(StackItem::Map(map))?;
 
     Ok(())
@@ -417,7 +415,7 @@ fn keys(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
     match map {
         StackItem::Map(map) => {
             let keys: Vec<StackItem> = map.iter().map(|(k, _)| k.clone()).collect();
-            let array = Array::new(keys, Some(context.reference_counter().clone()));
+            let array = Array::new(keys, Some(context.reference_counter().clone()))?;
             context.push(StackItem::Array(array))?;
         }
         _ => return Err(VmError::invalid_type_simple("Expected Map")),
@@ -440,7 +438,7 @@ fn values(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
     match map {
         StackItem::Map(map) => {
             let values: Vec<StackItem> = map.iter().map(|(_, v)| v.clone()).collect();
-            let array = Array::new(values, Some(context.reference_counter().clone()));
+            let array = Array::new(values, Some(context.reference_counter().clone()))?;
             context.push(StackItem::Array(array))?;
         }
         _ => return Err(VmError::invalid_type_simple("Expected Map")),
@@ -463,7 +461,7 @@ fn pack_map(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResul
         .to_usize()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid map size"))?;
 
-    let mut map_item = Map::new(BTreeMap::new(), Some(context.reference_counter().clone()));
+    let mut map_item = Map::new(BTreeMap::new(), Some(context.reference_counter().clone()))?;
 
     for _ in 0..count {
         let value = context.pop()?;
@@ -497,7 +495,7 @@ fn pack_struct(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRe
 
     items.reverse();
 
-    let structure = Struct::new(items, Some(context.reference_counter().clone()));
+    let structure = Struct::new(items, Some(context.reference_counter().clone()))?;
     context.push(StackItem::Struct(structure))?;
 
     Ok(())
@@ -525,7 +523,7 @@ fn pack(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
 
     items.reverse();
 
-    let array = Array::new(items, Some(context.reference_counter().clone()));
+    let array = Array::new(items, Some(context.reference_counter().clone()))?;
     context.push(StackItem::Array(array))?;
 
     Ok(())

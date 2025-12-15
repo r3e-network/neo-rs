@@ -23,7 +23,15 @@ serde = { workspace = true }
 # Error handling
 thiserror = { workspace = true }
 
+# Concurrency
+parking_lot = { workspace = true }
+
+# Hash functions
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+rand = { workspace = true }
+
 [dev-dependencies]
+serde_json = { workspace = true }
 
 [features]
 default = []

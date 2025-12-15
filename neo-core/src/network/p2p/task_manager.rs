@@ -63,8 +63,7 @@ use super::payloads::{
     get_block_by_index_payload::GetBlockByIndexPayload,
     header::Header,
     inv_payload::{InvPayload, MAX_HASHES_COUNT},
-    InventoryType,
-    VersionPayload,
+    InventoryType, VersionPayload,
 };
 use super::task_session::TaskSession;
 use crate::ledger::{PersistCompleted, RelayResult, VerifyResult};
@@ -72,7 +71,7 @@ use crate::neo_system::NeoSystemContext;
 use crate::network::p2p::{NetworkMessage, ProtocolMessage, RemoteNodeCommand};
 use crate::smart_contract::native::LedgerContract;
 use crate::UInt256;
-use akka::{
+use crate::akka::{
     Actor, ActorContext, ActorRef, ActorResult, Cancelable, EventStreamHandle, Props, Terminated,
 };
 use async_trait::async_trait;
@@ -136,10 +135,8 @@ impl TaskManager {
 
     fn attach_system(&mut self, context: Arc<NeoSystemContext>, ctx: &ActorContext) {
         trace!(target: "neo", "task manager attached to system context");
-        if let Ok(pool) = context.memory_pool().lock() {
-            let capacity = pool.capacity.max(100);
-            self.known_hash_capacity = capacity;
-        }
+        let capacity = context.memory_pool().lock().capacity.max(100);
+        self.known_hash_capacity = capacity;
         let stream = context.event_stream();
         stream.subscribe::<PersistCompleted>(ctx.self_ref());
         stream.subscribe::<RelayResult>(ctx.self_ref());

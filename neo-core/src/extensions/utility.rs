@@ -11,7 +11,7 @@
 
 use super::log_level::LogLevel;
 use lazy_static::lazy_static;
-use std::sync::Mutex;
+use parking_lot::Mutex;
 
 /// Log event handler delegate
 /// Matches C# LogEventHandler delegate
@@ -29,21 +29,17 @@ pub struct ExtensionsUtility;
 impl ExtensionsUtility {
     /// Gets the current log level.
     pub fn log_level() -> LogLevel {
-        *LOG_LEVEL.lock().unwrap()
+        *LOG_LEVEL.lock()
     }
 
     /// Sets the global log level (matches C# setter semantics).
     pub fn set_log_level(level: LogLevel) {
-        if let Ok(mut guard) = LOG_LEVEL.lock() {
-            *guard = level;
-        }
+        *LOG_LEVEL.lock() = level;
     }
 
     /// Registers a logging handler.
     pub fn set_logging(handler: Option<LogEventHandler>) {
-        let mut guard = LOGGING
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut guard = LOGGING.lock();
         *guard = handler;
     }
 
@@ -55,9 +51,7 @@ impl ExtensionsUtility {
             return;
         }
 
-        let handler_guard = LOGGING
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let handler_guard = LOGGING.lock();
         if let Some(handler) = handler_guard.as_ref() {
             handler(source.to_string(), level, message.to_string());
         }

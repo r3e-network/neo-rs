@@ -4,7 +4,7 @@
 //! extensions.
 
 use crate::network::p2p::payloads::{Signer, Transaction, Witness};
-use crate::{cryptography::crypto_utils::ECPoint, UInt160, WitnessScope};
+use crate::{cryptography::ECPoint, UInt160, WitnessScope};
 
 /// Convenience builder for constructing transactions in tests.
 #[derive(Default)]

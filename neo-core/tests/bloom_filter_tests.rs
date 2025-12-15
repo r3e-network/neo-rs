@@ -1,5 +1,5 @@
 use neo_core::cryptography::bloom_filter::BloomFilter;
-use neo_core::error::CoreError;
+use neo_core::cryptography::CryptoError;
 
 fn sample_data(id: u8) -> Vec<u8> {
     vec![id, id.wrapping_mul(3), id.wrapping_add(5)]
@@ -42,9 +42,9 @@ fn bloom_filter_with_bits_rehydrates_state() {
     assert_eq!(restored.tweak(), original.tweak());
 }
 
-fn matches_invalid_argument(err: CoreError) {
+fn matches_invalid_argument(err: CryptoError) {
     match err {
-        CoreError::InvalidData { .. } => {}
+        CryptoError::InvalidArgument { .. } => {}
         other => panic!("expected invalid argument error, got {other:?}"),
     }
 }

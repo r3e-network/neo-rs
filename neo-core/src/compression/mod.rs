@@ -30,11 +30,13 @@ pub fn decompress_lz4(data: &[u8], max_size: usize) -> CompressionResult<Vec<u8>
         ));
     }
 
-    let declared_size = u32::from_le_bytes(
-        data[0..4]
-            .try_into()
-            .expect("length prefix must be 4 bytes"),
-    ) as usize;
+    let declared_size = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
+
+    // IMPORTANT: check the declared output size before attempting decompression to avoid
+    // allocating attacker-controlled buffers (compression bomb / OOM).
+    if declared_size > max_size {
+        return Err(CompressionError::TooLarge { max: max_size });
+    }
 
     let decompressed = lz4_flex::block::decompress_size_prepended(data)
         .map_err(|e| CompressionError::Decompression(e.to_string()))?;
@@ -51,4 +53,23 @@ pub fn decompress_lz4(data: &[u8], max_size: usize) -> CompressionResult<Vec<u8>
         return Err(CompressionError::TooLarge { max: max_size });
     }
     Ok(decompressed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decompress_rejects_declared_size_over_limit_before_decode() {
+        // declared_size = 1024, but max_size = 16; payload is intentionally invalid. We should
+        // return TooLarge without attempting decompression.
+        let mut compressed = Vec::new();
+        compressed.extend_from_slice(&1024u32.to_le_bytes());
+        compressed.extend_from_slice(&[0u8; 8]);
+
+        match decompress_lz4(&compressed, 16) {
+            Err(CompressionError::TooLarge { max }) => assert_eq!(max, 16),
+            other => panic!("expected TooLarge error, got {other:?}"),
+        }
+    }
 }

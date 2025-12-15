@@ -1,0 +1,45 @@
+[package]
+name = "neo-telemetry"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "Telemetry, metrics, and observability for Neo N3 blockchain node"
+
+[dependencies]
+# Tracing
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tracing-appender = { workspace = true }
+
+# Metrics
+prometheus = { workspace = true }
+
+# System info
+sysinfo = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+
+# Async
+tokio = { workspace = true }
+
+# Serialization
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+
+# Configuration
+neo-config = { path = "../neo-config" }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[features]
+default = []

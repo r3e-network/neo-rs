@@ -604,7 +604,8 @@ fn test_concurrent_uint160_creation() {
 
 #[test]
 fn test_concurrent_hashmap_operations() {
-    use std::sync::{Arc, Mutex};
+    use parking_lot::Mutex;
+    use std::sync::Arc;
     use std::thread;
 
     let iterations_per_thread = 100;
@@ -627,16 +628,10 @@ fn test_concurrent_hashmap_operations() {
                     let value = (thread_id * iterations_per_thread + i) as u64;
 
                     // Insert
-                    {
-                        let mut map = map.lock().unwrap();
-                        map.insert(key, value);
-                    }
+                    map.lock().insert(key, value);
 
                     // Lookup
-                    {
-                        let map = map.lock().unwrap();
-                        let _result = map.get(&key);
-                    }
+                    let _result = map.lock().get(&key).copied();
                 }
             })
         })
@@ -657,7 +652,7 @@ fn test_concurrent_hashmap_operations() {
         per_operation
     );
 
-    let final_size = map.lock().unwrap().len();
+    let final_size = map.lock().len();
     assert_eq!(final_size, thread_count * iterations_per_thread);
 
     println!(

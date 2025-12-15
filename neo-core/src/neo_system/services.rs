@@ -6,13 +6,10 @@
 use std::any::Any;
 use std::sync::Arc;
 
-use tracing::warn;
-
 use super::context::NeoSystemContext;
-use super::helpers::block_on_extension;
 use super::NeoSystem;
 use crate::error::CoreResult;
-use crate::extensions::plugin::{broadcast_global_event, PluginEvent};
+use crate::events::{broadcast_plugin_event, PluginEvent};
 use crate::i_event_handlers::{
     ICommittedHandler, ICommittingHandler, ILogHandler, ILoggingHandler, INotifyHandler,
     IServiceAddedHandler, ITransactionAddedHandler, ITransactionRemovedHandler,
@@ -128,25 +125,17 @@ impl NeoSystem {
 
     fn notify_service_added(&self, service: Arc<dyn Any + Send + Sync>, name: Option<String>) {
         let sender: &dyn Any = self;
-        if let Ok(handlers) = self.context().service_added_handlers.read() {
-            for handler in handlers.iter() {
-                handler.neo_system_service_added_handler(sender, service.as_ref());
-            }
+        let handlers = { self.context().service_added_handlers.read().clone() };
+        for handler in handlers {
+            handler.neo_system_service_added_handler(sender, service.as_ref());
         }
 
-        if let Ok(guard) = self.self_ref.lock() {
-            if let Some(system) = guard.clone().upgrade() {
-                // Note: Cannot use Arc::clone() here because we need to coerce Arc<NeoSystem> to Arc<dyn Any>
-                let system_any: Arc<dyn Any + Send + Sync> = system.clone();
-                let event = PluginEvent::ServiceAdded {
-                    system: system_any,
-                    name,
-                    service,
-                };
-                if let Err(err) = block_on_extension(broadcast_global_event(&event)) {
-                    warn!("failed to broadcast ServiceAdded event: {}", err);
-                }
-            }
+        let system = { self.self_ref.lock().clone().upgrade() };
+        if system.is_some() {
+            let event = PluginEvent::ServiceAdded {
+                service_name: name.unwrap_or_else(|| "unnamed".to_string()),
+            };
+            broadcast_plugin_event(&event);
         }
     }
 
@@ -156,11 +145,7 @@ impl NeoSystem {
         handler: Arc<dyn IServiceAddedHandler + Send + Sync>,
     ) -> CoreResult<()> {
         let context = self.context();
-        let mut guard = context
-            .service_added_handlers
-            .write()
-            .map_err(|_| crate::error::CoreError::system("service handler registry poisoned"))?;
-        guard.push(handler);
+        context.service_added_handlers.write().push(handler);
         Ok(())
     }
 

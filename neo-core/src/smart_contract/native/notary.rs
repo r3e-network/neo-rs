@@ -5,9 +5,11 @@
 //! GAS deposits for notary service fees.
 
 use crate::error::{CoreError as Error, CoreResult as Result};
+use crate::hardfork::Hardfork;
 use crate::network::p2p::payloads::{Transaction, TransactionAttributeType};
 use crate::persistence::i_read_only_store::IReadOnlyStoreGeneric;
 use crate::persistence::DataCache;
+use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::call_flags::CallFlags;
@@ -19,6 +21,7 @@ use crate::smart_contract::native::{
     NativeContract, NativeMethod,
 };
 use crate::smart_contract::storage_key::StorageKey;
+use crate::smart_contract::ContractParameterType;
 use crate::smart_contract::StorageItem;
 use crate::UInt160;
 use neo_vm::{ExecutionEngineLimits, StackItem};
@@ -149,14 +152,63 @@ impl Notary {
 
         let methods = vec![
             // Query methods
-            NativeMethod::safe("balanceOf".to_string(), 1 << 15),
-            NativeMethod::safe("expirationOf".to_string(), 1 << 15),
-            NativeMethod::safe("getMaxNotValidBeforeDelta".to_string(), 1 << 15),
+            NativeMethod::safe(
+                "balanceOf".to_string(),
+                1 << 15,
+                vec![ContractParameterType::Hash160],
+                ContractParameterType::Integer,
+            ),
+            NativeMethod::safe(
+                "expirationOf".to_string(),
+                1 << 15,
+                vec![ContractParameterType::Hash160],
+                ContractParameterType::Integer,
+            ),
+            NativeMethod::safe(
+                "getMaxNotValidBeforeDelta".to_string(),
+                1 << 15,
+                Vec::new(),
+                ContractParameterType::Integer,
+            ),
             // Deposit management methods (write operations)
-            NativeMethod::unsafe_method("onNEP17Payment".to_string(), 1 << 15, 0x00),
-            NativeMethod::unsafe_method("lockDepositUntil".to_string(), 1 << 15, 0x00),
-            NativeMethod::unsafe_method("withdraw".to_string(), 1 << 15, 0x00),
-            NativeMethod::unsafe_method("setMaxNotValidBeforeDelta".to_string(), 1 << 15, 0x00),
+            NativeMethod::unsafe_method(
+                "onNEP17Payment".to_string(),
+                1 << 15,
+                0x00,
+                vec![
+                    ContractParameterType::Hash160,
+                    ContractParameterType::Integer,
+                    ContractParameterType::Any,
+                ],
+                ContractParameterType::Void,
+            ),
+            NativeMethod::unsafe_method(
+                "lockDepositUntil".to_string(),
+                1 << 15,
+                0x00,
+                vec![
+                    ContractParameterType::Hash160,
+                    ContractParameterType::Integer,
+                ],
+                ContractParameterType::Boolean,
+            ),
+            NativeMethod::unsafe_method(
+                "withdraw".to_string(),
+                1 << 15,
+                0x00,
+                vec![
+                    ContractParameterType::Hash160,
+                    ContractParameterType::Hash160,
+                ],
+                ContractParameterType::Boolean,
+            ),
+            NativeMethod::unsafe_method(
+                "setMaxNotValidBeforeDelta".to_string(),
+                1 << 15,
+                0x00,
+                vec![ContractParameterType::Integer],
+                ContractParameterType::Void,
+            ),
         ];
 
         Self {
@@ -413,7 +465,7 @@ impl Notary {
             .script_container()
             .and_then(|container| container.as_transaction())
             .and_then(Transaction::sender);
-        let allowed_change_till = tx_sender.map_or(false, |sender| sender == deposit_owner);
+        let allowed_change_till = tx_sender == Some(deposit_owner);
 
         let key = Self::deposit_key(&deposit_owner);
         let (mut deposit, has_existing_deposit) = match snapshot.as_ref().try_get(&key) {
@@ -423,12 +475,10 @@ impl Notary {
         let previous_till = deposit.till;
 
         let mut effective_till = requested_till
-            .or_else(|| {
-                if previous_till > 0 {
-                    Some(previous_till)
-                } else {
-                    None
-                }
+            .or(if previous_till > 0 {
+                Some(previous_till)
+            } else {
+                None
             })
             .unwrap_or_else(|| current_height.saturating_add(max_delta));
 
@@ -509,7 +559,7 @@ impl Notary {
         let till = u32::from_le_bytes([args[1][0], args[1][1], args[1][2], args[1][3]]);
 
         // Verify witness for account
-        if !engine.check_witness_hash(&account) {
+        if !engine.check_witness_hash(&account)? {
             return Err(Error::native_contract("No witness for account".to_string()));
         }
 
@@ -573,7 +623,7 @@ impl Notary {
         };
 
         // Verify witness for from account
-        if !engine.check_witness_hash(&from) {
+        if !engine.check_witness_hash(&from)? {
             return Err(Error::native_contract(
                 "No witness for from account".to_string(),
             ));
@@ -612,6 +662,8 @@ impl Notary {
             amount_bytes.push(0);
         }
         transfer_args.push(amount_bytes);
+        // NEP-17 transfer requires a data argument; pass null.
+        transfer_args.push(Vec::new());
 
         // Temporarily mark the current native caller so GAS transfer authorizes Notary
         let state_arc = engine.current_execution_state().map_err(|err| {
@@ -621,9 +673,7 @@ impl Notary {
             ))
         })?;
         let (prev_native_caller, prev_flags) = {
-            let mut state = state_arc
-                .lock()
-                .map_err(|_| Error::native_contract("Execution state lock poisoned".to_string()))?;
+            let mut state = state_arc.lock();
             let previous_caller = state.native_calling_script_hash;
             let previous_flags = state.call_flags;
             state.native_calling_script_hash = Some(contract_hash);
@@ -635,9 +685,7 @@ impl Notary {
             engine.call_native_contract(GasToken::new().hash(), "transfer", &transfer_args);
 
         {
-            let mut state = state_arc
-                .lock()
-                .map_err(|_| Error::native_contract("Execution state lock poisoned".to_string()))?;
+            let mut state = state_arc.lock();
             state.native_calling_script_hash = prev_native_caller;
             state.call_flags = prev_flags;
         }
@@ -658,9 +706,11 @@ impl Notary {
         engine: &mut ApplicationEngine,
         args: &[Vec<u8>],
     ) -> Result<Vec<u8>> {
-        // Verify committee witness
-        let committee_address = NativeHelpers::committee_address(engine.protocol_settings(), None);
-        if !engine.check_witness_hash(&committee_address) {
+        // Verify committee witness against current committee address.
+        let snapshot = engine.snapshot_cache();
+        let committee_address =
+            NativeHelpers::committee_address(engine.protocol_settings(), Some(snapshot.as_ref()));
+        if !engine.check_witness_hash(&committee_address)? {
             return Err(Error::native_contract(
                 "setMaxNotValidBeforeDelta requires committee witness".to_string(),
             ));
@@ -724,6 +774,14 @@ impl NativeContract for Notary {
 
     fn methods(&self) -> &[NativeMethod] {
         &self.methods
+    }
+
+    fn is_active(&self, settings: &ProtocolSettings, block_height: u32) -> bool {
+        settings.is_hardfork_enabled(Hardfork::HfEchidna, block_height)
+    }
+
+    fn supported_standards(&self, _settings: &ProtocolSettings, _block_height: u32) -> Vec<String> {
+        vec!["NEP-27".to_string()]
     }
 
     fn invoke(

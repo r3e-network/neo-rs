@@ -25,7 +25,11 @@ pub struct VmInteropDescriptor {
     /// Optional handler executed directly by the VM. When `None`, the call is delegated
     /// to the configured [`InteropHost`].
     pub handler: Option<InteropCallback>,
-    /// Fixed price charged by the syscall (in datoshi).
+    /// Fixed price charged by the syscall (in execution units).
+    ///
+    /// In the Neo N3 reference implementation, the host (`ApplicationEngine`) applies
+    /// scaling (e.g. `ExecFeeFactor`) and enforces gas limits. The VM stores the value
+    /// for lookup/introspection but does not charge it directly.
     pub price: i64,
     /// Required call flags to run the syscall.
     pub required_call_flags: CallFlags,
@@ -46,6 +50,12 @@ impl RegisteredDescriptor {
 
 /// Host interface used for forwarding interop calls that require external context
 /// (for example `ApplicationEngine`).
+///
+/// # Security note
+/// The VM does not perform semantic authorization of syscalls beyond checking
+/// registration, fixed gas price charging, and required call flags. As in the C#
+/// implementation, syscall security (permissions, container checks, policy rules)
+/// is enforced by the host (`ApplicationEngine` / native contract layer).
 pub trait InteropHost {
     fn invoke_syscall(&mut self, engine: &mut ExecutionEngine, hash: u32) -> VmResult<()>;
 
@@ -170,22 +180,17 @@ impl InteropService {
 
     /// Invokes a syscall by its 32-bit hash identifier.
     pub fn invoke_by_hash(&mut self, engine: &mut ExecutionEngine, hash: u32) -> VmResult<()> {
-        let (handler, price, required_call_flags, name) = {
+        let (handler, required_call_flags, name) = {
             let entry = self.descriptors.get(&hash).ok_or_else(|| {
                 VmError::invalid_operation_msg(format!("Syscall 0x{hash:08x} not registered"))
             })?;
 
             (
                 entry.descriptor.handler,
-                entry.descriptor.price,
                 entry.descriptor.required_call_flags,
                 entry.descriptor.name.clone(),
             )
         };
-
-        if price > 0 {
-            engine.add_gas_consumed(price)?;
-        }
 
         if !engine.has_call_flags(required_call_flags) {
             return Err(VmError::invalid_operation_msg(format!(

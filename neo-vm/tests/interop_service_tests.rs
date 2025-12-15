@@ -11,7 +11,7 @@ fn push_constant_handler(engine: &mut ExecutionEngine) -> VmResult<()> {
     let context = engine
         .current_context_mut()
         .expect("script context must exist for handler");
-    context.evaluation_stack_mut().push(StackItem::from_int(42));
+    context.push(StackItem::from_int(42))?;
     Ok(())
 }
 

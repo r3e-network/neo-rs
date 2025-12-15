@@ -8,7 +8,7 @@ use std::sync::Arc;
 use super::converters::convert_payload_block;
 use super::NeoSystem;
 use crate::error::{CoreError, CoreResult};
-use crate::extensions::plugin::PluginEvent;
+use crate::events::PluginEvent;
 use crate::ledger::block::Block as LedgerBlock;
 use crate::ledger::blockchain_application_executed::ApplicationExecuted;
 use crate::network::p2p::payloads::block::Block;
@@ -152,18 +152,16 @@ impl NeoSystem {
         snapshot: &DataCache,
         application_executed: &[ApplicationExecuted],
     ) {
-        if let Ok(handlers) = self.context().committing_handlers().read() {
-            for handler in handlers.iter() {
-                handler.blockchain_committing_handler(self, block, snapshot, application_executed);
-            }
+        let handlers = { self.context().committing_handlers().read().clone() };
+        for handler in handlers {
+            handler.blockchain_committing_handler(self, block, snapshot, application_executed);
         }
     }
 
     fn invoke_committed(&self, block: &LedgerBlock) {
-        if let Ok(handlers) = self.context().committed_handlers().read() {
-            for handler in handlers.iter() {
-                handler.blockchain_committed_handler(self, block);
-            }
+        let handlers = { self.context().committed_handlers().read().clone() };
+        for handler in handlers {
+            handler.blockchain_committed_handler(self, block);
         }
     }
 }

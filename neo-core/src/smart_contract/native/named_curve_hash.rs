@@ -1,6 +1,6 @@
 //! NamedCurveHash - matches C# Neo.SmartContract.Native.NamedCurveHash exactly
 
-use crate::cryptography::crypto_utils::HashAlgorithm;
+use crate::cryptography::HashAlgorithm;
 
 /// Named curve and hash algorithm combination (matches C# NamedCurveHash)
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

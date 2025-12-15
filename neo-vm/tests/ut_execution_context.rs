@@ -45,33 +45,33 @@ fn test_execution_context_state() {
 
     let state_handle = context.get_state_with_factory::<TestState, _>(|| TestState::new(true));
     {
-        let mut state = state_handle.lock().expect("state mutex poisoned");
+        let mut state = state_handle.lock();
         assert!(state.flag());
         state.set_flag(false);
     }
 
     let state_again = context.get_state::<TestState>();
     {
-        let state = state_again.lock().expect("state mutex poisoned");
+        let state = state_again.lock();
         assert!(!state.flag());
     }
 
     let clone = context.clone();
     {
         let cloned_state = clone.get_state::<TestState>();
-        let mut state = cloned_state.lock().expect("clone state mutex poisoned");
+        let mut state = cloned_state.lock();
         state.set_flag(true);
     }
 
     let shared_state = context.get_state::<TestState>();
     {
-        let state = shared_state.lock().expect("state mutex poisoned");
+        let state = shared_state.lock();
         assert!(state.flag());
     }
 
     let counter = context.get_state::<CounterState>();
     {
-        let counter = counter.lock().expect("counter mutex poisoned");
+        let counter = counter.lock();
         assert_eq!(counter.value(), 0);
     }
 }

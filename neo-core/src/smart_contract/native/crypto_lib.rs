@@ -3,12 +3,13 @@
 //! Provides cryptographic functions for the Neo blockchain.
 //! Matches the C# Neo.SmartContract.Native.CryptoLib contract.
 
-use crate::cryptography::crypto_utils::ECCurve;
+use crate::cryptography::ECCurve;
 use crate::cryptography::{Crypto, HashAlgorithm};
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::native::{NativeContract, NativeMethod};
+use crate::smart_contract::ContractParameterType;
 use crate::UInt160;
 use std::any::Any;
 
@@ -34,23 +35,130 @@ impl CryptoLib {
 
         let methods = vec![
             // Hash functions
-            NativeMethod::safe("sha256".to_string(), 1 << 15),
-            NativeMethod::safe("ripemd160".to_string(), 1 << 15),
+            NativeMethod::safe(
+                "sha256".to_string(),
+                1 << 15,
+                vec![ContractParameterType::ByteArray],
+                ContractParameterType::ByteArray,
+            ),
+            NativeMethod::safe(
+                "ripemd160".to_string(),
+                1 << 15,
+                vec![ContractParameterType::ByteArray],
+                ContractParameterType::ByteArray,
+            ),
             // ECDSA functions
-            NativeMethod::safe("verifyWithECDsa".to_string(), 1 << 15),
-            NativeMethod::safe("verifyWithECDsaSecp256k1".to_string(), 1 << 15),
-            NativeMethod::safe("verifyWithECDsaSecp256r1".to_string(), 1 << 15),
+            NativeMethod::safe(
+                "verifyWithECDsa".to_string(),
+                1 << 15,
+                vec![
+                    ContractParameterType::ByteArray,
+                    ContractParameterType::ByteArray,
+                    ContractParameterType::ByteArray,
+                ],
+                ContractParameterType::Boolean,
+            ),
+            NativeMethod::safe(
+                "verifyWithECDsaSecp256k1".to_string(),
+                1 << 15,
+                vec![
+                    ContractParameterType::ByteArray,
+                    ContractParameterType::ByteArray,
+                    ContractParameterType::ByteArray,
+                ],
+                ContractParameterType::Boolean,
+            ),
+            NativeMethod::safe(
+                "verifyWithECDsaSecp256r1".to_string(),
+                1 << 15,
+                vec![
+                    ContractParameterType::ByteArray,
+                    ContractParameterType::ByteArray,
+                    ContractParameterType::ByteArray,
+                ],
+                ContractParameterType::Boolean,
+            ),
             // Multi-signature verification
-            NativeMethod::safe("checkMultisig".to_string(), 1 << 16),
-            NativeMethod::safe("checkMultisigWithECDsaSecp256k1".to_string(), 1 << 16),
-            NativeMethod::safe("checkMultisigWithECDsaSecp256r1".to_string(), 1 << 16),
+            NativeMethod::safe(
+                "checkMultisig".to_string(),
+                1 << 16,
+                vec![
+                    ContractParameterType::ByteArray,
+                    ContractParameterType::Any,
+                    ContractParameterType::Any,
+                ],
+                ContractParameterType::Boolean,
+            ),
+            NativeMethod::safe(
+                "checkMultisigWithECDsaSecp256k1".to_string(),
+                1 << 16,
+                vec![
+                    ContractParameterType::ByteArray,
+                    ContractParameterType::Any,
+                    ContractParameterType::Any,
+                ],
+                ContractParameterType::Boolean,
+            ),
+            NativeMethod::safe(
+                "checkMultisigWithECDsaSecp256r1".to_string(),
+                1 << 16,
+                vec![
+                    ContractParameterType::ByteArray,
+                    ContractParameterType::Any,
+                    ContractParameterType::Any,
+                ],
+                ContractParameterType::Boolean,
+            ),
             // BLS12-381 functions
-            NativeMethod::safe("bls12381Add".to_string(), 1 << 19),
-            NativeMethod::safe("bls12381Equal".to_string(), 1 << 5),
-            NativeMethod::safe("bls12381Mul".to_string(), 1 << 19),
-            NativeMethod::safe("bls12381Pairing".to_string(), 1 << 20),
-            NativeMethod::safe("bls12381Serialize".to_string(), 1 << 16),
-            NativeMethod::safe("bls12381Deserialize".to_string(), 1 << 16),
+            NativeMethod::safe(
+                "bls12381Add".to_string(),
+                1 << 19,
+                vec![
+                    ContractParameterType::ByteArray,
+                    ContractParameterType::ByteArray,
+                ],
+                ContractParameterType::ByteArray,
+            ),
+            NativeMethod::safe(
+                "bls12381Equal".to_string(),
+                1 << 5,
+                vec![
+                    ContractParameterType::ByteArray,
+                    ContractParameterType::ByteArray,
+                ],
+                ContractParameterType::Boolean,
+            ),
+            NativeMethod::safe(
+                "bls12381Mul".to_string(),
+                1 << 19,
+                vec![
+                    ContractParameterType::ByteArray,
+                    ContractParameterType::ByteArray,
+                    ContractParameterType::Boolean,
+                ],
+                ContractParameterType::ByteArray,
+            ),
+            NativeMethod::safe(
+                "bls12381Pairing".to_string(),
+                1 << 20,
+                vec![
+                    ContractParameterType::ByteArray,
+                    ContractParameterType::ByteArray,
+                ],
+                ContractParameterType::ByteArray,
+            ),
+            NativeMethod::safe(
+                "bls12381Serialize".to_string(),
+                1 << 16,
+                vec![ContractParameterType::ByteArray],
+                ContractParameterType::ByteArray,
+            ),
+            NativeMethod::safe(
+                "bls12381Deserialize".to_string(),
+                1 << 16,
+                vec![ContractParameterType::ByteArray],
+                ContractParameterType::ByteArray,
+            ),
         ];
 
         Self {
@@ -373,6 +481,11 @@ impl CryptoLib {
             if result != BLST_ERROR::BLST_SUCCESS {
                 return Err(Error::native_contract("Invalid G1 point".to_string()));
             }
+            if blst::blst_p1_affine_is_inf(&point) || !blst::blst_p1_affine_in_g1(&point) {
+                return Err(Error::native_contract(
+                    "G1 point not in correct subgroup".to_string(),
+                ));
+            }
         }
         Ok(point)
     }
@@ -386,6 +499,11 @@ impl CryptoLib {
             let result = blst::blst_p2_uncompress(&mut point, data.as_ptr());
             if result != BLST_ERROR::BLST_SUCCESS {
                 return Err(Error::native_contract("Invalid G2 point".to_string()));
+            }
+            if blst::blst_p2_affine_is_inf(&point) || !blst::blst_p2_affine_in_g2(&point) {
+                return Err(Error::native_contract(
+                    "G2 point not in correct subgroup".to_string(),
+                ));
             }
         }
         Ok(point)

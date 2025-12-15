@@ -1,15 +1,22 @@
 //! Typed service interfaces for core Neo subsystems.
 //!
-//! This module re-exports the canonical service traits from the `neo-services`
-//! crate and provides implementations for the concrete types that live inside
-//! the core crate (`LedgerContext`, `StateStore`, `MemoryPool`, etc.).
+//! This module defines canonical service traits and provides implementations
+//! for the concrete types that live inside the core crate (`LedgerContext`,
+//! `StateStore`, `MemoryPool`, etc.).
+//!
+//! Note: Service traits were migrated from the `neo-services` crate and are
+//! now defined locally in the `traits` module.
+
+pub mod traits;
 
 use crate::ledger::{ledger_context::LedgerContext, MemoryPool};
 use crate::state_service::state_store::StateStore;
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 
-pub use neo_services::{
+pub use traits::{
     LedgerService, MempoolService, PeerManagerService, RpcService, StateStoreService,
+    SystemContext,
 };
 
 impl LedgerService for LedgerContext {
@@ -49,6 +56,13 @@ pub struct LockedMempoolService {
 }
 
 impl LockedMempoolService {
+    /// Creates a new locked mempool service wrapping a mutex-protected memory pool.
+    ///
+    /// This wrapper enables thread-safe access to mempool statistics through
+    /// the [`MempoolService`] trait interface.
+    ///
+    /// # Arguments
+    /// * `inner` - Arc-wrapped mutex protecting the underlying [`MemoryPool`]
     pub fn new(inner: Arc<Mutex<MemoryPool>>) -> Self {
         Self { inner }
     }
@@ -56,6 +70,6 @@ impl LockedMempoolService {
 
 impl MempoolService for LockedMempoolService {
     fn count(&self) -> usize {
-        self.inner.lock().map(|mp| mp.count()).unwrap_or(0)
+        self.inner.lock().count()
     }
 }

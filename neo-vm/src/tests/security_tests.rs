@@ -23,7 +23,9 @@ fn test_bigint_mul_overflow_protection() {
     script_bytes.push(OpCode::MUL as u8);
 
     let script = Script::new_relaxed(script_bytes);
-    engine.load_script(script, -1, 0).expect("Failed to load script");
+    engine
+        .load_script(script, -1, 0)
+        .expect("Failed to load script");
 
     let result = engine.execute();
 
@@ -38,19 +40,26 @@ fn test_pow_exponent_limit() {
 
     // Create a script: 2 ^ 1000 (exponent > 256 limit)
     let script_bytes = vec![
-        OpCode::PUSH2 as u8,      // Push 2
-        OpCode::PUSHINT16 as u8,  // Push 1000
-        0xE8, 0x03,               // 1000 in little-endian
+        OpCode::PUSH2 as u8,     // Push 2
+        OpCode::PUSHINT16 as u8, // Push 1000
+        0xE8,
+        0x03, // 1000 in little-endian
         OpCode::POW as u8,
     ];
 
     let script = Script::new_relaxed(script_bytes);
-    engine.load_script(script, -1, 0).expect("Failed to load script");
+    engine
+        .load_script(script, -1, 0)
+        .expect("Failed to load script");
 
     let result = engine.execute();
 
     // Should FAULT due to exponent limit
-    assert_eq!(result, VMState::FAULT, "POW with large exponent should FAULT");
+    assert_eq!(
+        result,
+        VMState::FAULT,
+        "POW with large exponent should FAULT"
+    );
 }
 
 /// Test that ADD operation checks result size
@@ -66,7 +75,9 @@ fn test_bigint_add_overflow_protection() {
     script_bytes.push(OpCode::ADD as u8);
 
     let script = Script::new_relaxed(script_bytes);
-    engine.load_script(script, -1, 0).expect("Failed to load script");
+    engine
+        .load_script(script, -1, 0)
+        .expect("Failed to load script");
 
     let result = engine.execute();
 
@@ -93,7 +104,9 @@ fn test_normal_arithmetic_works() {
     ];
 
     let script = Script::new_relaxed(script_bytes);
-    engine.load_script(script, -1, 0).expect("Failed to load script");
+    engine
+        .load_script(script, -1, 0)
+        .expect("Failed to load script");
 
     let result = engine.execute();
     assert_eq!(result, VMState::HALT, "Normal arithmetic should succeed");
@@ -112,14 +125,12 @@ fn test_pow_small_exponent_works() {
     let mut engine = ExecutionEngine::new(None);
 
     // 2 ^ 8 = 256
-    let script_bytes = vec![
-        OpCode::PUSH2 as u8,
-        OpCode::PUSH8 as u8,
-        OpCode::POW as u8,
-    ];
+    let script_bytes = vec![OpCode::PUSH2 as u8, OpCode::PUSH8 as u8, OpCode::POW as u8];
 
     let script = Script::new_relaxed(script_bytes);
-    engine.load_script(script, -1, 0).expect("Failed to load script");
+    engine
+        .load_script(script, -1, 0)
+        .expect("Failed to load script");
 
     let result = engine.execute();
     assert_eq!(result, VMState::HALT, "Small POW should succeed");

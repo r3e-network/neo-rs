@@ -68,7 +68,12 @@ impl StorageItem {
             return self.value.clone();
         }
 
-        match self.cache.as_ref().expect("cache checked above") {
+        let cache = match self.cache.as_ref() {
+            Some(cache) => cache,
+            None => return self.value.clone(),
+        };
+
+        match cache {
             StorageCache::BigInteger(value) => {
                 let (_, bytes) = value.to_bytes_le();
                 bytes

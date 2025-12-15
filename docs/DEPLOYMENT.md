@@ -67,7 +67,7 @@ sudo systemctl enable --now neo-cli
 - Persist plugin configs: set `NEO_PLUGINS_DIR` to a host-mounted directory (defaults to `/data/Plugins` inside the container).
 - Custom RPC port: the entrypoint will read the port from the TOML `[rpc]` section when possible; set `NEO_RPC_PORT` to force a value for the health check.
 - RPC exposure: the production TOML disables CORS; if exposing RPC beyond localhost, front it with a reverse proxy (TLS/auth/rate limits) instead of opening it directly.
-- Plugin visibility: `getplugins` is available but disabled by default in production configs; only enable remotely behind auth/proxy if you need plugin inventory. Locally, `neo-cli plugins active` shows loaded plugins. The Rust build ships only the stable plugins (dbft, rpc-server, rocksdb-store, tokens-tracker, application-logs, sqlite-wallet); experimental plugins (sign-client, storage-dumper, oracle, state-service, leveldb-store) are removed.
+- Plugin visibility: `listplugins` is available but disabled by default in production configs; only enable remotely behind auth/proxy if you need plugin inventory. Locally, `neo-cli plugins active` shows loaded plugins. The Rust build ships only the stable plugins (dbft, rpc-server, rocksdb-store, application-logs, sqlite-wallet). `tokens-tracker` is present as a no-op stub pending a full port. Experimental plugins (sign-client, storage-dumper, oracle, state-service, leveldb-store) are removed.
 - Custom storage backend: set `NEO_BACKEND` (e.g., `rocksdb`) to pass through to `neo-cli --backend`.
 - Override P2P listen port: set `NEO_LISTEN_PORT` to pass `--listen-port` without changing the TOML.
 - Containers run as the unprivileged `neo` user (`/home/neo`); ensure mounted volumes are writable by this UID.

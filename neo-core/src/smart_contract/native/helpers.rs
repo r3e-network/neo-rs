@@ -3,17 +3,19 @@
 // helpers.rs mirrors the naming and call sites used by the C# native contracts
 // for dBFT consensus wiring, providing a consistent facade for the Rust port.
 
-use crate::cryptography::crypto_utils::ECPoint;
-use crate::neo_system::NeoSystemContext;
+use crate::cryptography::ECPoint;
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
+use crate::services::SystemContext;
 use crate::smart_contract::native::NeoToken;
 use crate::smart_contract::Contract;
 use crate::{UInt160, UInt256};
 use once_cell::sync::Lazy;
-use std::sync::{Arc, RwLock, Weak};
+use parking_lot::RwLock;
+use std::sync::Arc;
 
-static SYSTEM_CONTEXT: Lazy<RwLock<Option<Weak<NeoSystemContext>>>> =
+// System context is now stored as a trait object to decouple from concrete runtime
+static SYSTEM_CONTEXT: Lazy<RwLock<Option<Arc<dyn SystemContext>>>> =
     Lazy::new(|| RwLock::new(None));
 
 /// Facade exposing helper methods with the same names/semantics used by the C# port
@@ -21,29 +23,22 @@ static SYSTEM_CONTEXT: Lazy<RwLock<Option<Weak<NeoSystemContext>>>> =
 pub struct NativeHelpers;
 
 impl NativeHelpers {
-    /// Attaches the running `NeoSystemContext` so helper methods can source live
+    /// Attaches the running system context so helper methods can source live
     /// blockchain data when available.
-    pub fn attach_system_context(context: Arc<NeoSystemContext>) {
-        let mut guard = SYSTEM_CONTEXT
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        *guard = Some(Arc::downgrade(&context));
+    ///
+    /// Note: The context is now a trait object to decouple from the concrete
+    /// NeoSystemContext type which is in neo-node.
+    pub fn attach_system_context(context: Arc<dyn SystemContext>) {
+        *SYSTEM_CONTEXT.write() = Some(context);
     }
 
     #[cfg(test)]
     pub fn clear_system_context() {
-        let mut guard = SYSTEM_CONTEXT
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        *guard = None;
+        *SYSTEM_CONTEXT.write() = None;
     }
 
-    pub fn context() -> Option<Arc<NeoSystemContext>> {
-        let weak = SYSTEM_CONTEXT
-            .read()
-            .ok()
-            .and_then(|guard| guard.as_ref().cloned());
-        weak.and_then(|ctx| ctx.upgrade())
+    pub fn context() -> Option<Arc<dyn SystemContext>> {
+        SYSTEM_CONTEXT.read().clone()
     }
 
     /// Returns the next block validators from the protocol/native NEO contract.

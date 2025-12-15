@@ -30,7 +30,7 @@ Release build for production:
 cargo build --workspace --release
 ```
 
-The `neo-cli` crate always ships with the full stable plugin set (dBFT, RocksDB storage, RPC server, application logs, token tracker, SQLite wallet). Plugin toggles are runtime-only; Cargo features are no longer used to select plugins.
+The `neo-cli` crate ships with the stable plugin set (dBFT, RocksDB storage, RPC server, application logs, SQLite wallet, TokensTracker). TokensTracker provides NEP-11/NEP-17 balance and transfer history RPC endpoints when enabled. Plugin toggles are runtime-only; Cargo features are no longer used to select plugins.
 
 ## Run the node
 
@@ -87,13 +87,16 @@ Environment overrides:
 - `NEO_RPC_BIND`, `NEO_RPC_PORT`, `NEO_RPC_DISABLE_CORS`, `NEO_RPC_USER`, `NEO_RPC_PASS`, `NEO_RPC_TLS_CERT`, `NEO_RPC_TLS_PASS`
 - `NEO_RPC_ALLOW_ORIGINS`, `NEO_RPC_DISABLED_METHODS`
 - `NEO_LOG_PATH`, `NEO_LOG_LEVEL`, `NEO_LOG_FORMAT`
+- `NEO_STATE_ROOT` to enable state root calculation/validation (`--state-root`/`--stateroot`)
+- `NEO_STATE_ROOT_PATH` to choose the StateRoot DB path (defaults to `<storage>/StateRoot`)
+- `NEO_STATE_ROOT_FULL_STATE` to keep full historical state (enables old-root proofs; larger DB)
 - `NEO_HEALTH_PORT` to expose `/healthz` on localhost
 - `NEO_HEALTH_MAX_HEADER_LAG` to fail `/healthz` if header lag exceeds the threshold (defaults to 20; set to 0 to disable)
 - `/metrics` is available when the health server is enabled; scrape it with Prometheus.
 - `/readyz` is available when the health server is enabled (same contract as `/healthz`).
 
 Hardened RPC preset:
-- Use `--rpc-hardened` (or set via CLI) to disable CORS, require auth, and disable `openwallet`/`getplugins` by default; combine with `NEO_RPC_USER/NEO_RPC_PASS`.
+- Use `--rpc-hardened` (or set via CLI) to disable CORS, require auth, and disable `openwallet`/`listplugins` by default; combine with `NEO_RPC_USER/NEO_RPC_PASS`.
 
 Example hardened run:
 

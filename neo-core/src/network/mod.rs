@@ -4,9 +4,11 @@
 
 pub mod error;
 pub mod p2p;
-pub mod u_pn_p;
+pub mod upnp;
 
 // Re-export commonly used types
 pub use error::{NetworkError, NetworkResult};
 pub use p2p::*;
-pub use u_pn_p::UPnP;
+pub use upnp::UPnP;
+// Backwards-compatible alias for the old module name.
+pub use upnp as u_pn_p;

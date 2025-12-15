@@ -26,15 +26,19 @@
 //! let address_hash = UInt160::parse("0x0000000000000000000000000000000000000001").unwrap();
 //! ```
 
+pub mod blockchain;
 pub mod constants;
 pub mod contract_parameter_type;
 pub mod error;
 pub mod hardfork;
 pub mod inventory_type;
 pub mod oracle_response_code;
+pub mod storage;
 pub mod transaction_attribute_type;
 pub mod uint160;
 pub mod uint256;
+pub mod verification;
+pub mod verify_result;
 pub mod witness_scope;
 
 // Re-exports
@@ -47,4 +51,15 @@ pub use oracle_response_code::OracleResponseCode;
 pub use transaction_attribute_type::TransactionAttributeType;
 pub use uint160::{UInt160, UINT160_SIZE};
 pub use uint256::{UInt256, UINT256_SIZE};
+pub use verify_result::VerifyResult;
 pub use witness_scope::{InvalidWitnessScopeError, WitnessScope};
+
+// New trait re-exports for crate refactoring (Phase 1)
+pub use blockchain::{
+    BlockchainProvider, IBlock, IHeader, IMessage, ITransaction, PeerId, PeerInfo, PeerRegistry,
+    RelayError, RelayResult, SendError, SendResult,
+};
+pub use storage::{IStorageValue, StorageValueError, StorageValueResult};
+pub use verification::{
+    IBlockchainSnapshot, IVerificationContext, IWitness, VerificationError, VerificationResult,
+};

@@ -15,11 +15,12 @@ use crate::wallets::wallet::{Wallet, WalletError, WalletResult};
 use crate::wallets::wallet_account::{StandardWalletAccount, WalletAccount};
 use crate::{UInt160, UInt256};
 use async_trait::async_trait;
+use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 /// NEP-6 wallet representation matching C# `NEP6Wallet`.
 #[derive(Debug, Clone)]
@@ -154,23 +155,14 @@ impl Nep6Wallet {
             account_map.insert(account.script_hash(), Arc::new(account));
         }
 
-        {
-            let mut guard = match wallet.accounts.write() {
-                Ok(g) => g,
-                Err(poisoned) => poisoned.into_inner(),
-            };
-            *guard = account_map;
-        }
+        *wallet.accounts.write() = account_map;
         Ok(wallet)
     }
 
     fn to_file(&self) -> WalletResult<Nep6WalletFile> {
-        let accounts = match self.accounts.read() {
-            Ok(g) => g,
-            Err(poisoned) => poisoned.into_inner(),
-        };
+        let accounts: Vec<_> = self.accounts.read().values().cloned().collect();
         let account_files = accounts
-            .values()
+            .iter()
             .map(|account| account.to_file())
             .collect::<WalletResult<Vec<_>>>()?;
 
@@ -200,11 +192,9 @@ impl Nep6Wallet {
     }
 
     fn add_account(&self, account: Nep6Account) {
-        let mut accounts = match self.accounts.write() {
-            Ok(g) => g,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        accounts.insert(account.script_hash(), Arc::new(account));
+        self.accounts
+            .write()
+            .insert(account.script_hash(), Arc::new(account));
     }
 }
 
@@ -229,55 +219,43 @@ impl Wallet for Nep6Wallet {
 
         let mut updated_accounts = Vec::new();
 
-        {
-            let accounts = match self.accounts.read() {
-                Ok(g) => g,
-                Err(p) => p.into_inner(),
-            };
-            for (hash, account_arc) in accounts.iter() {
-                let mut account = (**account_arc).clone();
-                if account.inner.nep2_key().is_some() {
-                    if !account
-                        .unlock(old_password)
-                        .map_err(|e| WalletError::Other(e.to_string()))?
-                    {
-                        return Err(WalletError::InvalidPassword);
-                    }
+        let accounts: Vec<_> = self
+            .accounts
+            .read()
+            .iter()
+            .map(|(hash, account)| (*hash, Arc::clone(account)))
+            .collect();
 
-                    let key = account.inner.get_key().ok_or(WalletError::AccountLocked)?;
-                    let version = self.protocol_settings.address_version;
-                    let new_nep2 = key
-                        .to_nep2(new_password, version)
-                        .map_err(|e| WalletError::Other(e.to_string()))?;
-                    account.inner.set_nep2_key(Some(new_nep2));
-                    account.inner.lock();
+        for (hash, account_arc) in accounts {
+            let mut account = (*account_arc).clone();
+            if account.inner.nep2_key().is_some() {
+                if !account
+                    .unlock(old_password)
+                    .map_err(|e| WalletError::Other(e.to_string()))?
+                {
+                    return Err(WalletError::InvalidPassword);
                 }
 
-                updated_accounts.push((*hash, Arc::new(account)));
+                let key = account.inner.get_key().ok_or(WalletError::AccountLocked)?;
+                let version = self.protocol_settings.address_version;
+                let new_nep2 = key
+                    .to_nep2(new_password, version)
+                    .map_err(|e| WalletError::Other(e.to_string()))?;
+                account.inner.set_nep2_key(Some(new_nep2));
+                account.inner.lock();
             }
+
+            updated_accounts.push((hash, Arc::new(account)));
         }
 
-        {
-            let mut accounts = match self.accounts.write() {
-                Ok(g) => g,
-                Err(p) => p.into_inner(),
-            };
-            accounts.clear();
-            for (hash, account) in updated_accounts {
-                accounts.insert(hash, account);
-            }
-        }
+        *self.accounts.write() = updated_accounts.into_iter().collect();
 
         self.persist()?;
         Ok(true)
     }
 
     fn contains(&self, script_hash: &UInt160) -> bool {
-        let accounts = match self.accounts.read() {
-            Ok(g) => g,
-            Err(p) => p.into_inner(),
-        };
-        accounts.contains_key(script_hash)
+        self.accounts.read().contains_key(script_hash)
     }
 
     async fn create_account(
@@ -327,11 +305,7 @@ impl Wallet for Nep6Wallet {
     }
 
     async fn delete_account(&self, script_hash: &UInt160) -> WalletResult<bool> {
-        let mut accounts = match self.accounts.write() {
-            Ok(g) => g,
-            Err(p) => p.into_inner(),
-        };
-        Ok(accounts.remove(script_hash).is_some())
+        Ok(self.accounts.write().remove(script_hash).is_some())
     }
 
     async fn export(&self, path: &str, _password: &str) -> WalletResult<()> {
@@ -348,7 +322,6 @@ impl Wallet for Nep6Wallet {
     ) -> Option<Arc<dyn crate::wallets::wallet_account::WalletAccount>> {
         self.accounts
             .read()
-            .unwrap()
             .get(script_hash)
             .cloned()
             .map(|account| account as Arc<dyn crate::wallets::wallet_account::WalletAccount>)
@@ -357,7 +330,6 @@ impl Wallet for Nep6Wallet {
     fn get_accounts(&self) -> Vec<Arc<dyn crate::wallets::wallet_account::WalletAccount>> {
         self.accounts
             .read()
-            .unwrap()
             .values()
             .cloned()
             .map(|account| account as Arc<dyn crate::wallets::wallet_account::WalletAccount>)
@@ -411,14 +383,13 @@ impl Wallet for Nep6Wallet {
     }
 
     async fn sign(&self, data: &[u8], script_hash: &UInt160) -> WalletResult<Vec<u8>> {
-        let accounts = match self.accounts.read() {
-            Ok(g) => g,
-            Err(p) => p.into_inner(),
+        let account = {
+            let accounts = self.accounts.read();
+            accounts
+                .get(script_hash)
+                .cloned()
+                .ok_or(WalletError::AccountNotFound(*script_hash))?
         };
-        let account = accounts
-            .get(script_hash)
-            .ok_or(WalletError::AccountNotFound(*script_hash))?
-            .clone();
 
         if account.inner.is_locked() {
             return Err(WalletError::AccountLocked);
@@ -431,18 +402,26 @@ impl Wallet for Nep6Wallet {
     }
 
     async fn sign_transaction(&self, transaction: &mut Transaction) -> WalletResult<()> {
-        let accounts = match self.accounts.read() {
-            Ok(g) => g,
-            Err(p) => p.into_inner(),
-        };
         let signer_hashes: Vec<UInt160> = transaction
             .signers()
             .iter()
             .map(|signer| signer.account)
             .collect();
 
+        let relevant_accounts: HashMap<UInt160, Arc<Nep6Account>> = {
+            let accounts = self.accounts.read();
+            signer_hashes
+                .iter()
+                .filter_map(|hash| {
+                    accounts
+                        .get(hash)
+                        .map(|account| (*hash, Arc::clone(account)))
+                })
+                .collect()
+        };
+
         for hash in signer_hashes {
-            if let Some(account) = accounts.get(&hash) {
+            if let Some(account) = relevant_accounts.get(&hash) {
                 if account.inner.is_locked() {
                     return Err(WalletError::AccountLocked);
                 }
@@ -458,40 +437,32 @@ impl Wallet for Nep6Wallet {
     async fn unlock(&self, password: &str) -> WalletResult<bool> {
         let mut updated_accounts = Vec::new();
 
-        {
-            let accounts = match self.accounts.read() {
-                Ok(g) => g,
-                Err(p) => p.into_inner(),
-            };
-            for (hash, account_arc) in accounts.iter() {
-                let mut account = (**account_arc).clone();
-                if account.inner.nep2_key().is_some() {
-                    if !account.inner.verify_password(password)? {
+        let accounts: Vec<_> = self
+            .accounts
+            .read()
+            .iter()
+            .map(|(hash, account)| (*hash, Arc::clone(account)))
+            .collect();
+
+        for (hash, account_arc) in accounts {
+            let mut account = (*account_arc).clone();
+            if account.inner.nep2_key().is_some() {
+                if !account.inner.verify_password(password)? {
+                    return Err(WalletError::InvalidPassword);
+                }
+                if account.inner.is_locked() {
+                    let unlocked = account
+                        .unlock(password)
+                        .map_err(|e| WalletError::Other(e.to_string()))?;
+                    if !unlocked {
                         return Err(WalletError::InvalidPassword);
                     }
-                    if account.inner.is_locked() {
-                        let unlocked = account
-                            .unlock(password)
-                            .map_err(|e| WalletError::Other(e.to_string()))?;
-                        if !unlocked {
-                            return Err(WalletError::InvalidPassword);
-                        }
-                    }
                 }
-                updated_accounts.push((*hash, Arc::new(account)));
             }
+            updated_accounts.push((hash, Arc::new(account)));
         }
 
-        {
-            let mut accounts = match self.accounts.write() {
-                Ok(g) => g,
-                Err(p) => p.into_inner(),
-            };
-            accounts.clear();
-            for (hash, account) in updated_accounts {
-                accounts.insert(hash, account);
-            }
-        }
+        *self.accounts.write() = updated_accounts.into_iter().collect();
 
         Ok(true)
     }
@@ -499,34 +470,25 @@ impl Wallet for Nep6Wallet {
     fn lock(&self) {
         let mut updated_accounts = Vec::new();
 
-        {
-            let accounts = match self.accounts.read() {
-                Ok(g) => g,
-                Err(p) => p.into_inner(),
-            };
-            for (hash, account_arc) in accounts.iter() {
-                let mut account = (**account_arc).clone();
-                account.inner.lock();
-                updated_accounts.push((*hash, Arc::new(account)));
-            }
+        let accounts: Vec<_> = self
+            .accounts
+            .read()
+            .iter()
+            .map(|(hash, account)| (*hash, Arc::clone(account)))
+            .collect();
+
+        for (hash, account_arc) in accounts {
+            let mut account = (*account_arc).clone();
+            account.inner.lock();
+            updated_accounts.push((hash, Arc::new(account)));
         }
 
-        let mut accounts = match self.accounts.write() {
-            Ok(g) => g,
-            Err(p) => p.into_inner(),
-        };
-        accounts.clear();
-        for (hash, account) in updated_accounts {
-            accounts.insert(hash, account);
-        }
+        *self.accounts.write() = updated_accounts.into_iter().collect();
     }
 
     async fn verify_password(&self, password: &str) -> WalletResult<bool> {
-        let accounts = match self.accounts.read() {
-            Ok(g) => g,
-            Err(p) => p.into_inner(),
-        };
-        for account in accounts.values() {
+        let accounts: Vec<_> = self.accounts.read().values().cloned().collect();
+        for account in accounts {
             if account.inner.nep2_key().is_some() && !account.inner.verify_password(password)? {
                 return Ok(false);
             }
@@ -543,7 +505,6 @@ impl Wallet for Nep6Wallet {
     ) -> Option<Arc<dyn crate::wallets::wallet_account::WalletAccount>> {
         self.accounts
             .read()
-            .unwrap()
             .values()
             .find(|account| account.is_default)
             .cloned()
@@ -554,36 +515,28 @@ impl Wallet for Nep6Wallet {
         let mut updated_accounts = Vec::new();
         let mut found = false;
 
-        {
-            let accounts = match self.accounts.read() {
-                Ok(g) => g,
-                Err(p) => p.into_inner(),
-            };
-            for (hash, account_arc) in accounts.iter() {
-                let mut account = (**account_arc).clone();
-                let is_target = hash == script_hash;
-                account.is_default = is_target;
-                if is_target {
-                    found = true;
-                }
-                updated_accounts.push((*hash, Arc::new(account)));
+        let accounts: Vec<_> = self
+            .accounts
+            .read()
+            .iter()
+            .map(|(hash, account)| (*hash, Arc::clone(account)))
+            .collect();
+
+        for (hash, account_arc) in accounts {
+            let mut account = (*account_arc).clone();
+            let is_target = &hash == script_hash;
+            account.is_default = is_target;
+            if is_target {
+                found = true;
             }
+            updated_accounts.push((hash, Arc::new(account)));
         }
 
         if !found {
             return Err(WalletError::AccountNotFound(*script_hash));
         }
 
-        {
-            let mut accounts = match self.accounts.write() {
-                Ok(g) => g,
-                Err(p) => p.into_inner(),
-            };
-            accounts.clear();
-            for (hash, account) in updated_accounts {
-                accounts.insert(hash, account);
-            }
-        }
+        *self.accounts.write() = updated_accounts.into_iter().collect();
 
         self.persist()?;
         Ok(())

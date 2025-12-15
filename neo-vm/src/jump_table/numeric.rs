@@ -81,6 +81,7 @@ fn inc(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
 
     // Increment the value
     let result = value + BigInt::one();
+    check_bigint_size(&result)?; // SECURITY: Check result size
 
     context.push(StackItem::from_int(result))?;
 
@@ -99,6 +100,7 @@ fn dec(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
 
     // Decrement the value
     let result = value - BigInt::one();
+    check_bigint_size(&result)?; // SECURITY: Check result size
 
     context.push(StackItem::from_int(result))?;
 
@@ -141,6 +143,7 @@ fn negate(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
 
     // Negate the value
     let result = -value;
+    check_bigint_size(&result)?; // SECURITY: Check result size
 
     context.push(StackItem::from_int(result))?;
 
@@ -159,6 +162,7 @@ fn abs(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
 
     // Get the absolute value
     let result = value.abs();
+    check_bigint_size(&result)?; // SECURITY: Check result size
 
     context.push(StackItem::from_int(result))?;
 
@@ -180,7 +184,7 @@ fn add(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
     let result = match (a, b) {
         (StackItem::Integer(a), StackItem::Integer(b)) => {
             let sum = &a + &b;
-            check_bigint_size(&sum)?;  // SECURITY: Check result size
+            check_bigint_size(&sum)?; // SECURITY: Check result size
             StackItem::from_int(sum)
         }
         (StackItem::ByteString(a), StackItem::ByteString(b)) => {
@@ -197,7 +201,7 @@ fn add(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
             let a_int = a.as_int()?;
             let b_int = b.as_int()?;
             let sum = &a_int + &b_int;
-            check_bigint_size(&sum)?;  // SECURITY: Check result size
+            check_bigint_size(&sum)?; // SECURITY: Check result size
             StackItem::from_int(sum)
         }
     };
@@ -220,6 +224,7 @@ fn sub(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
 
     // Subtract the values
     let result = a - b;
+    check_bigint_size(&result)?; // SECURITY: Check result size
 
     context.push(StackItem::from_int(result))?;
 
@@ -239,7 +244,7 @@ fn mul(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
 
     // Multiply the values
     let result = a * b;
-    check_bigint_size(&result)?;  // SECURITY: Check result size
+    check_bigint_size(&result)?; // SECURITY: Check result size
 
     context.push(StackItem::from_int(result))?;
 
@@ -294,6 +299,7 @@ fn modulo(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
 
 /// Implements the POW operation.
 fn pow(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let limits = *engine.limits();
     // Get the current context
     let context = engine
         .current_context_mut()
@@ -303,27 +309,16 @@ fn pow(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
     let b = context.pop()?.as_int()?;
     let a = context.pop()?.as_int()?;
 
-    if b.is_negative() {
-        return Err(VmError::invalid_operation_msg("Negative exponent"));
-    }
-
-    // Convert the exponent to a u32
-    let exponent = b
-        .to_u32()
+    // Convert exponent to i32 and enforce MaxShift (matches C# AssertShift).
+    let exponent_i32 = b
+        .to_i32()
         .ok_or_else(|| VmError::invalid_operation_msg("Exponent too large"))?;
-
-    // SECURITY: Limit exponent to prevent memory exhaustion
-    // With base 2 and exponent 256, result is 2^256 which is 32 bytes
-    if exponent > 256 {
-        return Err(VmError::invalid_operation_msg(format!(
-            "Exponent {} exceeds maximum 256",
-            exponent
-        )));
-    }
+    limits.assert_shift(exponent_i32)?;
+    let exponent = exponent_i32 as u32;
 
     // Calculate the power
     let result = a.pow(exponent);
-    check_bigint_size(&result)?;  // SECURITY: Check result size
+    check_bigint_size(&result)?; // SECURITY: Check result size
 
     context.push(StackItem::from_int(result))?;
 
@@ -380,6 +375,7 @@ fn integer_sqrt(value: &BigInt) -> BigInt {
 
 /// Implements the SHL operation.
 fn shl(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let limits = *engine.limits();
     // Get the current context
     let context = engine
         .current_context_mut()
@@ -388,18 +384,19 @@ fn shl(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
     // Pop the values from the stack
     let b = context.pop()?.as_int()?;
     let a = context.pop()?.as_int()?;
+    let shift_i32 = b
+        .to_i32()
+        .ok_or_else(|| VmError::invalid_operation_msg("Shift amount too large"))?;
+    limits.assert_shift(shift_i32)?;
 
-    if b.is_negative() {
-        return Err(VmError::invalid_operation_msg("Negative shift amount"));
+    if shift_i32 == 0 {
+        context.push(StackItem::from_int(a))?;
+        return Ok(());
     }
 
-    // Convert the shift amount to a u32
-    let shift = b
-        .to_u32()
-        .ok_or_else(|| VmError::invalid_operation_msg("Shift amount too large"))?;
-
     // Perform the left shift
-    let result = a << shift;
+    let result = a << (shift_i32 as u32);
+    check_bigint_size(&result)?; // SECURITY: Check result size
 
     context.push(StackItem::from_int(result))?;
 
@@ -408,6 +405,7 @@ fn shl(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
 
 /// Implements the SHR operation.
 fn shr(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let limits = *engine.limits();
     // Get the current context
     let context = engine
         .current_context_mut()
@@ -416,18 +414,19 @@ fn shr(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
     // Pop the values from the stack
     let b = context.pop()?.as_int()?;
     let a = context.pop()?.as_int()?;
+    let shift_i32 = b
+        .to_i32()
+        .ok_or_else(|| VmError::invalid_operation_msg("Shift amount too large"))?;
+    limits.assert_shift(shift_i32)?;
 
-    if b.is_negative() {
-        return Err(VmError::invalid_operation_msg("Negative shift amount"));
+    if shift_i32 == 0 {
+        context.push(StackItem::from_int(a))?;
+        return Ok(());
     }
 
-    // Convert the shift amount to a u32
-    let shift = b
-        .to_u32()
-        .ok_or_else(|| VmError::invalid_operation_msg("Shift amount too large"))?;
-
     // Perform the right shift
-    let result = a >> shift;
+    let result = a >> (shift_i32 as u32);
+    check_bigint_size(&result)?; // SECURITY: Check result size
 
     context.push(StackItem::from_int(result))?;
 
@@ -804,10 +803,55 @@ fn modmul(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
     }
 
     let result = (a * b) % modulus;
+    check_bigint_size(&result)?; // SECURITY: Check result size
 
     context.push(StackItem::from_int(result))?;
 
     Ok(())
+}
+
+/// Computes the modular inverse of `value` modulo `modulus`.
+/// Mirrors Neo.Extensions.BigIntegerExtensions.ModInverse exactly.
+fn mod_inverse(value: &BigInt, modulus: &BigInt) -> VmResult<BigInt> {
+    if value <= &BigInt::zero() {
+        return Err(VmError::invalid_operation_msg(
+            "Modular inverse requires positive value",
+        ));
+    }
+    if modulus < &BigInt::from(2u8) {
+        return Err(VmError::invalid_operation_msg(
+            "Modular inverse requires modulus >= 2",
+        ));
+    }
+
+    let mut r = value.clone();
+    let mut old_r = modulus.clone();
+    let mut s = BigInt::one();
+    let mut old_s = BigInt::zero();
+
+    while r > BigInt::zero() {
+        let q = &old_r / &r;
+        let new_r = &old_r % &r;
+        old_r = r;
+        r = new_r;
+
+        let new_s = &old_s - &q * &s;
+        old_s = s;
+        s = new_s;
+    }
+
+    let mut result = old_s % modulus;
+    if result.is_negative() {
+        result += modulus;
+    }
+
+    if (value * &result) % modulus != BigInt::one() {
+        return Err(VmError::invalid_operation_msg(
+            "No modular inverse exists for the given inputs",
+        ));
+    }
+
+    Ok(result)
 }
 
 /// Implements the MODPOW operation.
@@ -822,6 +866,20 @@ fn modpow(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
     let exponent = context.pop()?.as_int()?;
     let base = context.pop()?.as_int()?;
 
+    // Exponent == -1 triggers modular inverse (matches C# ModPow semantics).
+    if exponent == -BigInt::one() {
+        let result = mod_inverse(&base, &modulus)?;
+        check_bigint_size(&result)?; // SECURITY: Check result size
+        context.push(StackItem::from_int(result))?;
+        return Ok(());
+    }
+
+    if exponent < -BigInt::one() {
+        return Err(VmError::invalid_operation_msg(
+            "Exponent less than -1 not supported",
+        ));
+    }
+
     if modulus.is_zero() {
         return Err(VmError::division_by_zero_msg("division"));
     }
@@ -834,6 +892,7 @@ fn modpow(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
 
     // Perform modular exponentiation: base^exponent % modulus
     let result = base.modpow(&exponent, &modulus);
+    check_bigint_size(&result)?; // SECURITY: Check result size
 
     context.push(StackItem::from_int(result))?;
 

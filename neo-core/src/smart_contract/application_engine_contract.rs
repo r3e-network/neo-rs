@@ -1,13 +1,15 @@
 //! ApplicationEngine.Contract - ports Neo.SmartContract.ApplicationEngine.Contract.cs
 
 use crate::smart_contract::application_engine::ApplicationEngine;
+use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::contract_parameter_type::ContractParameterType;
 use crate::smart_contract::execution_context_state::ExecutionContextState;
+use crate::smart_contract::iterators::IteratorInterop;
 use crate::UInt160;
-use neo_vm::{ExecutionEngine, StackItem, VmError, VmResult};
+use neo_vm::{ExecutionEngine, ExecutionEngineLimits, StackItem, VmError, VmResult};
 use num_bigint::BigInt;
-use num_traits::Zero;
+use num_traits::{ToPrimitive, Zero};
 
 const SYSTEM_CONTRACT_CALL_PRICE: i64 = 1 << 15;
 
@@ -205,9 +207,7 @@ fn contract_call_native_handler(
         let state_arc =
             context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
         let (script_hash, method_name, arg_count, return_type) = {
-            let state = state_arc
-                .lock()
-                .map_err(|_| "Execution context state lock poisoned".to_string())?;
+            let state = state_arc.lock();
             let script_hash = state
                 .script_hash
                 .ok_or_else(|| "Native contract context missing script hash".to_string())?;
@@ -234,16 +234,13 @@ fn contract_call_native_handler(
             let bytes = ApplicationEngine::stack_item_to_bytes(item)?;
             args.push(bytes);
         }
-        args.reverse();
 
         let result_bytes = app
             .call_native_contract(script_hash, &method_name, &args)
             .map_err(|e| e.to_string())?;
 
         {
-            let mut state = state_arc
-                .lock()
-                .map_err(|_| "Execution context state lock poisoned".to_string())?;
+            let mut state = state_arc.lock();
             state.argument_count = 0;
             state.method_name = None;
             state.return_type = None;
@@ -252,6 +249,10 @@ fn contract_call_native_handler(
         if let Some(ret_type) = return_type {
             push_native_result(engine, ret_type, result_bytes)?;
         }
+
+        // Load any queued calls requested by the native method (e.g. NEP-17 callbacks).
+        app.process_pending_native_calls()
+            .map_err(|e| e.to_string())?;
 
         Ok(())
     })();
@@ -284,6 +285,23 @@ fn push_native_result(
                 .into_bytes();
             engine
                 .push(StackItem::from_byte_string(string_bytes))
+                .map_err(|e| e.to_string())
+        }
+        ContractParameterType::Array | ContractParameterType::Map => {
+            match BinarySerializer::deserialize(&result, &ExecutionEngineLimits::default(), None) {
+                Ok(item) => engine.push(item).map_err(|e| e.to_string()),
+                Err(_) => engine
+                    .push(StackItem::from_byte_string(result))
+                    .map_err(|e| e.to_string()),
+            }
+        }
+        ContractParameterType::InteropInterface => {
+            let id = BigInt::from_signed_bytes_le(&result);
+            let iterator_id = id
+                .to_u32()
+                .ok_or_else(|| "Iterator identifier out of range".to_string())?;
+            engine
+                .push(StackItem::from_interface(IteratorInterop::new(iterator_id)))
                 .map_err(|e| e.to_string())
         }
         _ => engine

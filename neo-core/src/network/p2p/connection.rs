@@ -340,22 +340,26 @@ mod tests {
     use std::time::Duration;
     use tokio::net::TcpListener;
 
-    async fn tcp_pair() -> (TcpStream, TcpStream) {
-        let listener = TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("bind listener");
+    async fn tcp_pair() -> Option<(TcpStream, TcpStream)> {
+        let listener = match TcpListener::bind("127.0.0.1:0").await {
+            Ok(listener) => listener,
+            Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => return None,
+            Err(err) => panic!("bind listener: {}", err),
+        };
         let addr = listener.local_addr().expect("listener addr");
         let client = TcpStream::connect(addr);
         let server = listener.accept();
         let (client_stream, server_stream) = tokio::join!(client, server);
         let client_stream = client_stream.expect("client stream");
         let (server_stream, _) = server_stream.expect("server stream");
-        (client_stream, server_stream)
+        Some((client_stream, server_stream))
     }
 
     #[tokio::test]
     async fn send_message_fails_when_connection_inactive() {
-        let (client_stream, _server_stream) = tcp_pair().await;
+        let Some((client_stream, _server_stream)) = tcp_pair().await else {
+            return;
+        };
         let mut connection = PeerConnection::from_channels_config(
             client_stream,
             "127.0.0.1:0".parse().unwrap(),
@@ -376,7 +380,9 @@ mod tests {
 
     #[tokio::test]
     async fn from_channels_config_applies_frame_config() {
-        let (client_stream, _server_stream) = tcp_pair().await;
+        let Some((client_stream, _server_stream)) = tcp_pair().await else {
+            return;
+        };
         let config = ChannelsConfig {
             write_timeout: Duration::from_millis(5),
             ..ChannelsConfig::default()

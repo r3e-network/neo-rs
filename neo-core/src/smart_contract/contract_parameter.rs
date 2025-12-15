@@ -1,6 +1,6 @@
 //! ContractParameter - matches C# Neo.SmartContract.ContractParameter exactly
 
-use crate::cryptography::crypto_utils::ECPoint;
+use crate::cryptography::ECPoint;
 use crate::smart_contract::ContractParameterType;
 use crate::{UInt160, UInt256};
 use base64::{engine::general_purpose, Engine as _};
@@ -104,7 +104,8 @@ impl ContractParameter {
                 if bytes.len() != 33 && bytes.len() != 65 {
                     return Err("Invalid public key length".to_string());
                 }
-                ContractParameterValue::PublicKey(ECPoint::new(bytes))
+                let point = ECPoint::from_bytes(&bytes).map_err(|e| e.to_string())?;
+                ContractParameterValue::PublicKey(point)
             }
             ContractParameterType::String => ContractParameterValue::String(text.to_string()),
             _ => {

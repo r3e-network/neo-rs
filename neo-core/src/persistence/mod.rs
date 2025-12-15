@@ -11,6 +11,22 @@
 
 //! Persistence module for Neo blockchain
 //!
+//! **IMPORTANT**: This module provides **concrete storage implementations** for neo-core.
+//! For abstract storage traits only (without neo-core dependency), use [`neo_storage`] crate.
+//!
+//! ## When to use this module
+//!
+//! - **Production nodes**: RocksDB-backed storage with full feature support
+//! - **DataCache**: C# parity caching layer with track states and commit logic
+//! - **Smart contract storage**: Integration with `StorageKey`/`StorageItem` types
+//! - **Store providers**: `IStoreProvider` implementations with snapshot support
+//!
+//! ## When to use neo-storage
+//!
+//! - **Trait bounds**: When you need to accept any storage backend generically
+//! - **No neo-core dependency**: For standalone tools that only need storage interfaces
+//! - **Testing**: Mock implementations using the simple `IReadOnlyStore`/`IWriteStore` traits
+//!
 //! This module provides persistence functionality matching the C# Neo.Persistence namespace.
 
 pub mod cache;

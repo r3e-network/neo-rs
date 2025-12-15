@@ -1,16 +1,19 @@
+use super::contract_management::ContractManagement;
 use super::fungible_token::{PREFIX_ACCOUNT as ACCOUNT_PREFIX, PREFIX_TOTAL_SUPPLY};
 use super::helpers::NativeHelpers;
 use super::native_contract::{NativeContract, NativeMethod};
+use super::neo_token::NeoToken;
 use super::policy_contract::PolicyContract;
 use crate::error::{CoreError, CoreResult};
-use crate::neo_config::SECONDS_PER_BLOCK;
 use crate::network::p2p::payloads::{Transaction, TransactionAttribute, TransactionAttributeType};
 use crate::persistence::i_read_only_store::IReadOnlyStoreGeneric;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::helper::Helper;
+use crate::smart_contract::manifest::{ContractEventDescriptor, ContractParameterDefinition};
 use crate::smart_contract::storage_context::StorageContext;
 use crate::smart_contract::storage_key::StorageKey;
+use crate::smart_contract::ContractParameterType;
 use crate::smart_contract::StorageItem;
 use crate::UInt160;
 use lazy_static::lazy_static;
@@ -42,15 +45,52 @@ impl GasToken {
 
     pub fn new() -> Self {
         let methods = vec![
-            NativeMethod::safe("symbol".to_string(), 1),
-            NativeMethod::safe("decimals".to_string(), 1),
-            NativeMethod::safe("totalSupply".to_string(), 1 << 4),
-            NativeMethod::safe("balanceOf".to_string(), 1 << 4),
+            NativeMethod::safe(
+                "symbol".to_string(),
+                0,
+                Vec::new(),
+                ContractParameterType::String,
+            ),
+            NativeMethod::safe(
+                "decimals".to_string(),
+                0,
+                Vec::new(),
+                ContractParameterType::Integer,
+            ),
+            NativeMethod::safe(
+                "totalSupply".to_string(),
+                1 << 15,
+                Vec::new(),
+                ContractParameterType::Integer,
+            )
+            .with_required_call_flags(crate::smart_contract::call_flags::CallFlags::READ_STATES),
+            NativeMethod::safe(
+                "balanceOf".to_string(),
+                1 << 15,
+                vec![ContractParameterType::Hash160],
+                ContractParameterType::Integer,
+            )
+            .with_required_call_flags(crate::smart_contract::call_flags::CallFlags::READ_STATES)
+            .with_parameter_names(vec!["account".to_string()]),
             NativeMethod::unsafe_method(
                 "transfer".to_string(),
-                1 << SECONDS_PER_BLOCK,
+                1 << 17,
                 crate::smart_contract::call_flags::CallFlags::ALL.bits(),
-            ),
+                vec![
+                    ContractParameterType::Hash160,
+                    ContractParameterType::Hash160,
+                    ContractParameterType::Integer,
+                    ContractParameterType::Any,
+                ],
+                ContractParameterType::Boolean,
+            )
+            .with_storage_fee(50)
+            .with_parameter_names(vec![
+                "from".to_string(),
+                "to".to_string(),
+                "amount".to_string(),
+                "data".to_string(),
+            ]),
         ];
 
         Self { methods }
@@ -106,14 +146,20 @@ impl GasToken {
     }
 
     fn transfer(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
-        if args.len() != 3 {
+        if args.len() != 4 {
             return Err(CoreError::native_contract(
-                "transfer expects from, to, amount".to_string(),
+                "transfer expects from, to, amount, data".to_string(),
             ));
         }
         let from = self.read_account(&args[0])?;
         let to = self.read_account(&args[1])?;
         let amount = Self::decode_amount(&args[2]);
+        let data_bytes = args[3].clone();
+        let data_item = if data_bytes.is_empty() {
+            StackItem::null()
+        } else {
+            StackItem::from_byte_string(data_bytes)
+        };
         if amount.is_negative() {
             return Err(CoreError::native_contract(
                 "Amount cannot be negative".to_string(),
@@ -121,12 +167,28 @@ impl GasToken {
         }
 
         let caller = engine.calling_script_hash();
-        if from != caller && !engine.check_witness_hash(&from) {
+        if from != caller && !engine.check_witness_hash(&from)? {
             return Ok(vec![0]);
         }
 
         if amount.is_zero() {
             self.emit_transfer_event(engine, Some(&from), Some(&to), &amount)?;
+            let snapshot = engine.snapshot_cache();
+            if ContractManagement::get_contract_from_snapshot(snapshot.as_ref(), &to)
+                .map_err(|e| CoreError::native_contract(e.to_string()))?
+                .is_some()
+            {
+                engine.queue_contract_call_from_native(
+                    self.hash(),
+                    to,
+                    "onNEP17Payment",
+                    vec![
+                        StackItem::from_byte_string(from.to_bytes()),
+                        StackItem::from_int(amount.clone()),
+                        data_item,
+                    ],
+                );
+            }
             return Ok(vec![1]);
         }
 
@@ -144,6 +206,21 @@ impl GasToken {
         self.write_account_balance(&context, engine, &from, &from_balance)?;
         self.write_account_balance(&context, engine, &to, &to_balance)?;
         self.emit_transfer_event(engine, Some(&from), Some(&to), &amount)?;
+        if ContractManagement::get_contract_from_snapshot(snapshot_ref, &to)
+            .map_err(|e| CoreError::native_contract(e.to_string()))?
+            .is_some()
+        {
+            engine.queue_contract_call_from_native(
+                self.hash(),
+                to,
+                "onNEP17Payment",
+                vec![
+                    StackItem::from_byte_string(from.to_bytes()),
+                    StackItem::from_int(amount.clone()),
+                    data_item,
+                ],
+            );
+        }
         Ok(vec![1])
     }
 
@@ -275,7 +352,7 @@ impl GasToken {
         engine: &mut ApplicationEngine,
         account: &UInt160,
         amount: &BigInt,
-        _call_on_payment: bool,
+        call_on_payment: bool,
     ) -> CoreResult<()> {
         if amount.is_zero() {
             return Ok(());
@@ -294,6 +371,24 @@ impl GasToken {
         self.write_account_balance(&context, engine, account, &balance)?;
         self.adjust_total_supply(&context, engine, amount)?;
         self.emit_transfer_event(engine, None, Some(account), amount)?;
+        if call_on_payment {
+            let snapshot = engine.snapshot_cache();
+            if ContractManagement::get_contract_from_snapshot(snapshot.as_ref(), account)
+                .map_err(|e| CoreError::native_contract(e.to_string()))?
+                .is_some()
+            {
+                engine.queue_contract_call_from_native(
+                    self.hash(),
+                    *account,
+                    "onNEP17Payment",
+                    vec![
+                        StackItem::null(),
+                        StackItem::from_int(amount.clone()),
+                        StackItem::null(),
+                    ],
+                );
+            }
+        }
         Ok(())
     }
 
@@ -377,6 +472,35 @@ impl NativeContract for GasToken {
         true
     }
 
+    fn supported_standards(&self, _settings: &ProtocolSettings, _block_height: u32) -> Vec<String> {
+        vec!["NEP-17".to_string()]
+    }
+
+    fn events(
+        &self,
+        _settings: &ProtocolSettings,
+        _block_height: u32,
+    ) -> Vec<ContractEventDescriptor> {
+        vec![ContractEventDescriptor::new(
+            "Transfer".to_string(),
+            vec![
+                ContractParameterDefinition::new(
+                    "from".to_string(),
+                    ContractParameterType::Hash160,
+                )
+                .expect("Transfer.from"),
+                ContractParameterDefinition::new("to".to_string(), ContractParameterType::Hash160)
+                    .expect("Transfer.to"),
+                ContractParameterDefinition::new(
+                    "amount".to_string(),
+                    ContractParameterType::Integer,
+                )
+                .expect("Transfer.amount"),
+            ],
+        )
+        .expect("Transfer event descriptor")]
+    }
+
     fn initialize(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
         let snapshot = engine.snapshot_cache();
         if snapshot
@@ -437,7 +561,15 @@ impl NativeContract for GasToken {
 
         // Mint total network fee to the primary consensus node
         if total_network_fee > 0 {
-            let validators = NativeHelpers::get_next_block_validators(engine.protocol_settings());
+            let neo_token = NeoToken::new();
+            let validators = neo_token
+                .get_next_block_validators_snapshot(
+                    snapshot_ref,
+                    engine.protocol_settings().validators_count as usize,
+                    engine.protocol_settings(),
+                )
+                .unwrap_or_else(|_| engine.protocol_settings().standby_validators());
+
             if !validators.is_empty() {
                 let primary_index = block.header.primary_index as usize;
                 if primary_index < validators.len() {

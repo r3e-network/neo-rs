@@ -50,8 +50,9 @@
 //! 4. `relay_cache` (extensible payloads)
 //! 5. Event handler locks (any order among themselves)
 
+use parking_lot::{Mutex, RwLock};
 use std::any::Any;
-use std::sync::{Arc, Mutex, RwLock, Weak};
+use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 // Use extracted modules
@@ -63,12 +64,11 @@ use super::registry::ServiceRegistry;
 use super::relay::{RelayExtensibleCache, RELAY_CACHE_CAPACITY};
 use super::system::STATE_STORE_SERVICE;
 
-use akka::{ActorRef, ActorSystem, EventStreamHandle};
-use tracing::warn;
+use crate::akka::{ActorRef, ActorSystem, EventStreamHandle};
 
 use crate::error::{CoreError, CoreResult};
 use crate::extensions::log_level::LogLevel;
-use crate::extensions::plugin::{broadcast_global_event, shutdown_global_runtime, PluginEvent};
+use crate::events::{broadcast_plugin_event, PluginEvent};
 use crate::extensions::utility::ExtensionsUtility;
 #[cfg(test)]
 use crate::extensions::LogLevel as ExternalLogLevel;
@@ -89,7 +89,7 @@ use neo_primitives::UInt256;
 #[cfg(test)]
 use once_cell::sync::Lazy;
 
-// block_on_extension and initialise_plugins have been extracted to super::helpers module
+// initialise_plugins and to_core_error have been extracted to super::helpers module
 #[cfg(test)]
 static TEST_SYSTEM_MUTEX: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
@@ -161,13 +161,31 @@ impl NeoSystem {
     ///
     /// Mirrors the C# constructor overload that accepts protocol settings,
     /// an optional store provider name and a storage path.
+    ///
+    /// # Arguments
+    /// * `settings` - Protocol settings for the network
+    /// * `storage_provider` - Optional storage provider (defaults to memory)
+    /// * `storage_path` - Optional path for persistent storage
+    /// * `state_service_settings` - Optional state service settings for state root calculation
     pub fn new(
         settings: ProtocolSettings,
         storage_provider: Option<Arc<dyn IStoreProvider>>,
         storage_path: Option<String>,
     ) -> CoreResult<Arc<Self>> {
+        Self::new_with_state_service(settings, storage_provider, storage_path, None)
+    }
+
+    /// Creates a new NeoSystem with custom state service settings.
+    ///
+    /// Use this method when you need to enable state root calculation and validation.
+    pub fn new_with_state_service(
+        settings: ProtocolSettings,
+        storage_provider: Option<Arc<dyn IStoreProvider>>,
+        storage_path: Option<String>,
+        state_service_settings: Option<crate::state_service::state_store::StateServiceSettings>,
+    ) -> CoreResult<Arc<Self>> {
         #[cfg(test)]
-        let _test_guard = TEST_SYSTEM_MUTEX.lock().unwrap();
+        let _test_guard = TEST_SYSTEM_MUTEX.lock();
 
         let actor_system = ActorSystem::new("neo").map_err(to_core_error)?;
         let settings_arc = Arc::new(settings.clone());
@@ -178,12 +196,20 @@ impl NeoSystem {
             Arc::new(RwLock::new(Vec::new()));
         let wallet_changed_handlers = Arc::new(RwLock::new(Vec::new()));
 
-        let store_provider = storage_provider.unwrap_or_else(|| {
-            StoreFactory::get_store_provider("Memory")
-                .expect("default memory store provider must be registered")
-        });
-        let (store, store_cache_for_hydration, state_store) =
-            super::storage::init_store(store_provider.clone(), storage_path, settings_arc.clone())?;
+        let state_service_enabled = state_service_settings.is_some();
+
+        let store_provider = match storage_provider {
+            Some(provider) => provider,
+            None => StoreFactory::get_store_provider("Memory").ok_or_else(|| {
+                CoreError::invalid_operation("default memory store provider is not registered")
+            })?,
+        };
+        let (store, store_cache_for_hydration, state_store) = super::storage::init_store(
+            store_provider.clone(),
+            storage_path,
+            settings_arc.clone(),
+            state_service_settings,
+        )?;
 
         let user_agent = format!("/neo-rs:{}/", env!("CARGO_PKG_VERSION"));
         let local_node_state = Arc::new(LocalNode::new(settings_arc.clone(), 10333, user_agent));
@@ -223,6 +249,7 @@ impl NeoSystem {
             store: store.clone(),
             genesis_block: genesis_block.clone(),
             ledger: ledger.clone(),
+            state_service_enabled,
             state_store: state_store.clone(),
             memory_pool: memory_pool.clone(),
             header_cache: header_cache.clone(),
@@ -238,6 +265,14 @@ impl NeoSystem {
             logging_handlers: Arc::new(RwLock::new(Vec::new())),
             notify_handlers: Arc::new(RwLock::new(Vec::new())),
         });
+
+        if state_service_enabled {
+            let handlers = Arc::new(crate::state_service::commit_handlers::StateServiceCommitHandlers::new(
+                state_store.clone(),
+            ));
+            context.register_committing_handler(handlers.clone())?;
+            context.register_committed_handler(handlers)?;
+        }
 
         NativeHelpers::attach_system_context(context.clone());
         configure_logging_hook(&context);
@@ -274,10 +309,7 @@ impl NeoSystem {
         system.context.set_system(Arc::downgrade(&system));
 
         {
-            let mut weak_guard = system
-                .self_ref
-                .lock()
-                .map_err(|_| CoreError::system("failed to initialise self reference"))?;
+            let mut weak_guard = system.self_ref.lock();
             *weak_guard = Arc::downgrade(&system);
         }
 
@@ -383,13 +415,7 @@ impl NeoSystem {
 
     /// Gracefully shuts down the actor hierarchy.
     pub async fn shutdown(self: Arc<Self>) -> CoreResult<()> {
-        let event = PluginEvent::NodeStopping;
-        if let Err(err) = broadcast_global_event(&event).await {
-            warn!("failed to broadcast NodeStopping event: {}", err);
-        }
-        if let Err(err) = shutdown_global_runtime().await {
-            warn!("failed to shutdown plugin runtime: {}", err);
-        }
+        broadcast_plugin_event(&PluginEvent::NodeStopping);
         // Drop the global logging hook to avoid leaking callbacks across system lifetimes.
         ExtensionsUtility::set_logging(None);
         timeouts::log_stats();

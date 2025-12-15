@@ -7,6 +7,7 @@ pub mod keys;
 pub mod metrics;
 pub mod state_root;
 pub mod state_store;
+pub(crate) mod commit_handlers;
 
 /// Extensible payload category for state service messages (matches C# StateService.StatePayloadCategory).
 pub const STATE_SERVICE_CATEGORY: &str = "StateService";

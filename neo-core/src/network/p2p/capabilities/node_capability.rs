@@ -55,26 +55,28 @@ impl NodeCapability {
     }
 
     /// Creates an unknown capability from a raw identifier byte.
-    pub fn unknown_from_byte(raw_type: u8, data: Vec<u8>) -> Self {
+    pub fn unknown_from_byte(raw_type: u8, data: Vec<u8>) -> IoResult<Self> {
         Self::unknown(NodeCapabilityType::from_byte(raw_type), data)
     }
 
     /// Creates an unknown capability from a capability type.
-    pub fn unknown(ty: NodeCapabilityType, data: Vec<u8>) -> Self {
+    pub fn unknown(ty: NodeCapabilityType, data: Vec<u8>) -> IoResult<Self> {
         match ty {
             NodeCapabilityType::TcpServer
             | NodeCapabilityType::WsServer
             | NodeCapabilityType::DisableCompression
             | NodeCapabilityType::FullNode
-            | NodeCapabilityType::ArchivalNode => panic!(
-                "known capability {:?} should not be constructed via unknown()",
-                ty
-            ),
+            | NodeCapabilityType::ArchivalNode => Err(IoError::invalid_data(format!(
+                "known capability {ty:?} should not be constructed via unknown()",
+            ))),
             NodeCapabilityType::Extension0 | NodeCapabilityType::Unknown(_) => {
                 if data.len() > MAX_UNKNOWN_CAPABILITY_DATA {
-                    panic!("unknown capability data too large: {} bytes", data.len());
+                    return Err(IoError::invalid_data(format!(
+                        "unknown capability data too large: {} bytes",
+                        data.len()
+                    )));
                 }
-                Self::Unknown { ty, data }
+                Ok(Self::Unknown { ty, data })
             }
         }
     }

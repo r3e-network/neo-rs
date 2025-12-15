@@ -15,22 +15,31 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use neo_rpc::client::RpcClient;
+//! use neo_rpc::server::{RpcServer, RpcServerConfig};
 //!
-//! let client = RpcClient::new("http://localhost:10332");
-//! let block_count = client.get_block_count().await?;
+//! let config = RpcServerConfig::default();
+//! let server = RpcServer::new(system, config);
+//! server.start_rpc_server();
 //! ```
 
 pub mod error;
 pub mod error_code;
 
+#[cfg(feature = "server")]
+pub mod server;
+
+#[cfg(feature = "client")]
+pub mod client;
+
 // Re-exports
 pub use error::{RpcError, RpcResult};
 pub use error_code::RpcErrorCode;
 
-// Placeholder for future modules
-// #[cfg(feature = "server")]
-// pub mod server;
-// #[cfg(feature = "client")]
-// pub mod client;
-// pub mod models;
+#[cfg(feature = "server")]
+pub use server::{RpcServer, RpcServerConfig, RpcServerSettings};
+
+#[cfg(feature = "client")]
+pub use client::{
+    ClientRpcError, ContractClient, Nep17Api, PolicyApi, RpcClient, RpcClientBuilder, RpcClientHooks,
+    RpcRequestOutcome, RpcUtility, StateApi, TransactionManager, TransactionManagerFactory, WalletApi,
+};

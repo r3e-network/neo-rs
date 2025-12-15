@@ -3,10 +3,11 @@
 use serde::{Deserialize, Serialize};
 
 /// Change view reason enum matching C# ChangeViewReason exactly
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[repr(u8)]
 pub enum ChangeViewReason {
     /// Timeout occurred - no consensus reached within the time limit
+    #[default]
     Timeout = 0x0,
     /// Change agreement - validators agreed to change view
     ChangeAgreement = 0x1,
@@ -49,12 +50,6 @@ impl ChangeViewReason {
             Self::TxInvalid => "TxInvalid",
             Self::BlockRejectedByPolicy => "BlockRejectedByPolicy",
         }
-    }
-}
-
-impl Default for ChangeViewReason {
-    fn default() -> Self {
-        Self::Timeout
     }
 }
 

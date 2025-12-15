@@ -23,6 +23,7 @@ use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::native::{
     policy_contract::PolicyContract, trimmed_block::TrimmedBlock, NativeContract, NativeMethod,
 };
+use crate::smart_contract::ContractParameterType;
 use crate::smart_contract::{StorageItem, StorageKey};
 use crate::{UInt160, UInt256};
 use neo_vm::vm_state::VMState;
@@ -48,7 +49,7 @@ pub struct LedgerContract {
 }
 
 impl LedgerContract {
-    const ID: i32 = -4;
+    pub const ID: i32 = -4;
 
     /// Creates a new LedgerContract instance
     pub fn new() -> Self {
@@ -60,16 +61,89 @@ impl LedgerContract {
         .expect("Valid LedgerContract hash");
 
         let methods = vec![
-            NativeMethod::new("currentHash".to_string(), 1 << 15, true, 0x01),
-            NativeMethod::new("currentIndex".to_string(), 1 << 15, true, 0x01),
-            NativeMethod::new("getBlock".to_string(), 1 << 15, true, 0x01),
-            NativeMethod::new("getTransaction".to_string(), 1 << 15, true, 0x01),
-            NativeMethod::new("getTransactionFromBlock".to_string(), 1 << 15, true, 0x01),
-            NativeMethod::new("getTransactionHeight".to_string(), 1 << 15, true, 0x01),
-            NativeMethod::new("getTransactionSigners".to_string(), 1 << 15, true, 0x01),
-            NativeMethod::new("getTransactionVMState".to_string(), 1 << 15, true, 0x01),
-            NativeMethod::new("containsBlock".to_string(), 1 << 15, true, 0x01),
-            NativeMethod::new("containsTransaction".to_string(), 1 << 15, true, 0x01),
+            NativeMethod::new(
+                "currentHash".to_string(),
+                1 << 15,
+                true,
+                0x01,
+                Vec::new(),
+                ContractParameterType::Hash256,
+            ),
+            NativeMethod::new(
+                "currentIndex".to_string(),
+                1 << 15,
+                true,
+                0x01,
+                Vec::new(),
+                ContractParameterType::Integer,
+            ),
+            NativeMethod::new(
+                "getBlock".to_string(),
+                1 << 15,
+                true,
+                0x01,
+                vec![ContractParameterType::Any],
+                ContractParameterType::ByteArray,
+            ),
+            NativeMethod::new(
+                "getTransaction".to_string(),
+                1 << 15,
+                true,
+                0x01,
+                vec![ContractParameterType::Hash256],
+                ContractParameterType::ByteArray,
+            ),
+            NativeMethod::new(
+                "getTransactionFromBlock".to_string(),
+                1 << 15,
+                true,
+                0x01,
+                vec![
+                    ContractParameterType::Hash256,
+                    ContractParameterType::Integer,
+                ],
+                ContractParameterType::ByteArray,
+            ),
+            NativeMethod::new(
+                "getTransactionHeight".to_string(),
+                1 << 15,
+                true,
+                0x01,
+                vec![ContractParameterType::Hash256],
+                ContractParameterType::Integer,
+            ),
+            NativeMethod::new(
+                "getTransactionSigners".to_string(),
+                1 << 15,
+                true,
+                0x01,
+                vec![ContractParameterType::Hash256],
+                ContractParameterType::ByteArray,
+            ),
+            NativeMethod::new(
+                "getTransactionVMState".to_string(),
+                1 << 15,
+                true,
+                0x01,
+                vec![ContractParameterType::Hash256],
+                ContractParameterType::Integer,
+            ),
+            NativeMethod::new(
+                "containsBlock".to_string(),
+                1 << 15,
+                true,
+                0x01,
+                vec![ContractParameterType::Hash256],
+                ContractParameterType::Boolean,
+            ),
+            NativeMethod::new(
+                "containsTransaction".to_string(),
+                1 << 15,
+                true,
+                0x01,
+                vec![ContractParameterType::Hash256],
+                ContractParameterType::Boolean,
+            ),
         ];
 
         Self {

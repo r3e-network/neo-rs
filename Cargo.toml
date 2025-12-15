@@ -24,9 +24,6 @@ members = [
     # VM (matches C# Neo.VM)
     "neo-vm",
 
-    # Smart contract execution engine
-    "neo-contract",
-
     # P2P networking
     "neo-p2p",
 
@@ -39,20 +36,35 @@ members = [
     # Extensions (matches C# Neo.Extensions)
 
     # === Infrastructure Layer ===
-    # Actor runtime (Akka-inspired)
-    "neo-akka",
-
-    # Service traits and abstractions
-    "neo-services",
-
-    # RPC Client (matches C# RpcClient)
-    "neo-rpc-client",
+    # Actor runtime merged into neo-core/src/akka/
+    # "neo-akka",
 
     # Plugins (matches C# Neo.Plugins)
-    "neo-plugins",
+    # TEMPORARILY EXCLUDED: Being refactored - functionality to be inlined to target modules
+    # "neo-plugins",
 
     # TEE (Trusted Execution Environment) support
-    "neo-tee",
+    # TEMPORARILY EXCLUDED: Optional feature, not part of core refactoring
+    # "neo-tee",
+
+    # === Configuration ===
+    # Configuration management
+    "neo-config",
+
+    # === Telemetry ===
+    # Observability stack
+    "neo-telemetry",
+
+    # === State Layer ===
+    # World state abstraction
+    "neo-state",
+
+    # === Chain Management ===
+    # Transaction mempool
+    "neo-mempool",
+
+    # Blockchain state and chain management
+    "neo-chain",
 
     # === Application Layer ===
     # CLI client
@@ -101,17 +113,24 @@ neo-json = { path = "neo-json", version = "0.7.0" }
 # Core layer
 neo-core = { path = "neo-core", version = "0.7.0" }
 neo-vm = { path = "neo-vm", version = "0.7.0" }
-neo-contract = { path = "neo-contract", version = "0.7.0" }
 neo-p2p = { path = "neo-p2p", version = "0.7.0" }
 neo-rpc = { path = "neo-rpc", version = "0.7.0" }
 neo-consensus = { path = "neo-consensus", version = "0.7.0" }
 
 # Infrastructure layer
-neo-akka = { path = "neo-akka", version = "0.7.0" }
-neo-services = { path = "neo-services", version = "0.7.0" }
-neo-rpc-client = { path = "neo-rpc-client", version = "0.7.0" }
-neo-plugins = { path = "neo-plugins", version = "0.7.0" }
+# neo-akka merged into neo-core/src/akka/
+# neo-akka = { path = "neo-akka", version = "0.7.0" }
 neo-tee = { path = "neo-tee", version = "0.7.0" }
+
+# Configuration
+neo-config = { path = "neo-config", version = "0.7.0" }
+
+# Telemetry
+neo-telemetry = { path = "neo-telemetry", version = "0.7.0" }
+
+# Chain management
+neo-mempool = { path = "neo-mempool", version = "0.7.0" }
+neo-chain = { path = "neo-chain", version = "0.7.0" }
 
 # Application layer
 neo-cli = { path = "neo-cli", version = "0.7.0" }
@@ -188,7 +207,6 @@ dashmap = "5.5"
 
 # === Storage ===
 rocksdb = { version = "0.21", default-features = false, features = ["snappy", "lz4", "zlib"] }
-sled = "0.34"
 
 # === Network ===
 # HTTP and JSON-RPC
@@ -200,6 +218,9 @@ zip = { version = "0.6", default-features = false, features = ["deflate"] }
 # Low-level networking
 socket2 = "0.5"
 trust-dns-resolver = "0.23"
+
+# === Actor Framework ===
+ractor = "0.12"
 
 # === Utilities ===
 uuid = { version = "1.6", features = ["v4", "serde"] }

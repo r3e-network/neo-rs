@@ -9,6 +9,7 @@ use crate::smart_contract::application_engine::{
 use crate::smart_contract::contract_parameter_type::ContractParameterType;
 use crate::smart_contract::log_event_args::LogEventArgs;
 use crate::smart_contract::ContractParameterDefinition;
+use crate::smart_contract::IInteroperable;
 use crate::UInt160;
 use neo_vm::call_flags::CallFlags;
 use neo_vm::{ExecutionEngine, StackItem, StackItemType, VmError, VmResult};
@@ -56,6 +57,36 @@ impl ApplicationEngine {
         self.push_interop_container(container)
     }
 
+    /// Loads a script at runtime (matches C# RuntimeLoadScript).
+    pub fn runtime_load_script(
+        &mut self,
+        script: Vec<u8>,
+        call_flags: CallFlags,
+        args: Vec<StackItem>,
+    ) -> Result<(), String> {
+        let calling_context = self
+            .current_context()
+            .cloned()
+            .ok_or_else(|| "No current execution context".to_string())?;
+
+        let state_call_flags = self.get_current_call_flags().map_err(|e| e.to_string())?;
+
+        let effective_flags = call_flags & state_call_flags & CallFlags::READ_ONLY;
+
+        self.load_script_with_state(script, -1, 0, move |state| {
+            state.calling_context = Some(calling_context);
+            state.call_flags = effective_flags;
+            state.is_dynamic_call = true;
+        })
+        .map_err(|e| e.to_string())?;
+
+        for item in args.into_iter().rev() {
+            self.push(item)?;
+        }
+
+        Ok(())
+    }
+
     /// Gets the executing script hash
     pub fn runtime_get_executing_script_hash(&mut self) -> Result<(), String> {
         let hash = self.current_script_hash().ok_or("No executing script")?;
@@ -82,12 +113,12 @@ impl ApplicationEngine {
         let result = match hash_or_pubkey.len() {
             20 => {
                 let hash = UInt160::from_bytes(&hash_or_pubkey).map_err(|e| e.to_string())?;
-                self.check_witness_hash(&hash)
+                self.check_witness_hash(&hash).map_err(|e| e.to_string())?
             }
             33 => {
                 // Convert public key to hash
                 let hash = self.pubkey_to_hash(&hash_or_pubkey);
-                self.check_witness_hash(&hash)
+                self.check_witness_hash(&hash).map_err(|e| e.to_string())?
             }
             _ => false,
         };
@@ -118,8 +149,8 @@ impl ApplicationEngine {
             bytes
         };
 
-        let price: u64 = if aspid_enabled { 1 << 13 } else { 1 << 4 };
-        self.add_runtime_fee(price).map_err(|e| e.to_string())?;
+        let price: i64 = if aspid_enabled { 1 << 13 } else { 1 << 4 };
+        self.add_cpu_fee(price).map_err(|e| e.to_string())?;
 
         let bigint = BigInt::from_bytes_le(Sign::Plus, &buffer);
         self.push(StackItem::from_int(bigint))
@@ -189,9 +220,7 @@ impl ApplicationEngine {
 
         {
             let state_arc = self.current_execution_state().map_err(|e| e.to_string())?;
-            let state_guard = state_arc
-                .lock()
-                .map_err(|_| "Execution context state lock poisoned".to_string())?;
+            let state_guard = state_arc.lock();
             if state_guard.contract.is_none() {
                 return Err("Notifications are not allowed in dynamic scripts.".to_string());
             }
@@ -217,9 +246,7 @@ impl ApplicationEngine {
 
         let parameters = {
             let state_arc = self.current_execution_state().map_err(|e| e.to_string())?;
-            let guard = state_arc
-                .lock()
-                .map_err(|_| "Execution context state lock poisoned".to_string())?;
+            let guard = state_arc.lock();
             let contract = guard
                 .contract
                 .clone()
@@ -279,6 +306,25 @@ impl ApplicationEngine {
             .map_err(|e| e.to_string())?;
         Ok(())
     }
+
+    /// Gets the signers of the current transaction (matches C# GetCurrentSigners).
+    pub fn runtime_current_signers(&mut self) -> Result<(), String> {
+        let Some(container) = self.get_script_container() else {
+            return self.push_null();
+        };
+
+        let Some(tx) = container.as_ref().as_transaction() else {
+            return self.push_null();
+        };
+
+        let items = tx
+            .signers()
+            .iter()
+            .map(IInteroperable::to_stack_item)
+            .collect::<Vec<_>>();
+
+        self.push_array(items)
+    }
 }
 fn map_runtime_result(service: &str, result: Result<(), String>) -> VmResult<()> {
     result.map_err(|error| VmError::InteropService {
@@ -333,6 +379,41 @@ fn runtime_get_script_container_handler(
         "System.Runtime.GetScriptContainer",
         app.runtime_get_script_container(),
     )
+}
+
+fn runtime_load_script_handler(
+    app: &mut ApplicationEngine,
+    _engine: &mut ExecutionEngine,
+) -> VmResult<()> {
+    let args = app.pop_array().map_err(|e| VmError::InteropService {
+        service: "System.Runtime.LoadScript".to_string(),
+        error: e,
+    })?;
+
+    let call_flags_value = app.pop_integer().map_err(|e| VmError::InteropService {
+        service: "System.Runtime.LoadScript".to_string(),
+        error: e,
+    })?;
+
+    let script = app.pop_bytes().map_err(|e| VmError::InteropService {
+        service: "System.Runtime.LoadScript".to_string(),
+        error: e,
+    })?;
+
+    let result = (|| {
+        if call_flags_value < 0 || call_flags_value > u8::MAX as i64 {
+            return Err("Invalid call flags value".to_string());
+        }
+
+        let raw = call_flags_value as u8;
+        let Some(call_flags) = CallFlags::from_bits(raw) else {
+            return Err(format!("Invalid call flags: {call_flags_value}"));
+        };
+
+        app.runtime_load_script(script, call_flags, args)
+    })();
+
+    map_runtime_result("System.Runtime.LoadScript", result)
 }
 
 fn runtime_get_executing_script_hash_handler(
@@ -432,6 +513,16 @@ fn runtime_burn_gas_handler(
     map_runtime_result("System.Runtime.BurnGas", app.runtime_burn_gas(amount))
 }
 
+fn runtime_current_signers_handler(
+    app: &mut ApplicationEngine,
+    _engine: &mut ExecutionEngine,
+) -> VmResult<()> {
+    map_runtime_result(
+        "System.Runtime.CurrentSigners",
+        app.runtime_current_signers(),
+    )
+}
+
 pub(crate) fn register_runtime_interops(engine: &mut ApplicationEngine) -> VmResult<()> {
     engine.register_host_service(
         "System.Runtime.Platform",
@@ -468,6 +559,12 @@ pub(crate) fn register_runtime_interops(engine: &mut ApplicationEngine) -> VmRes
         1 << 3,
         CallFlags::NONE,
         runtime_get_script_container_handler,
+    )?;
+    engine.register_host_service(
+        "System.Runtime.LoadScript",
+        1 << 15,
+        CallFlags::ALLOW_CALL,
+        runtime_load_script_handler,
     )?;
     engine.register_host_service(
         "System.Runtime.GetExecutingScriptHash",
@@ -534,6 +631,12 @@ pub(crate) fn register_runtime_interops(engine: &mut ApplicationEngine) -> VmRes
         1 << 4,
         CallFlags::NONE,
         runtime_burn_gas_handler,
+    )?;
+    engine.register_host_service(
+        "System.Runtime.CurrentSigners",
+        1 << 4,
+        CallFlags::NONE,
+        runtime_current_signers_handler,
     )?;
     Ok(())
 }

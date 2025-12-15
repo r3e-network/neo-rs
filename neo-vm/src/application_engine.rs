@@ -258,9 +258,7 @@ impl InteropHost for VmApplicationEngine {
                 let context = engine
                     .current_context_mut()
                     .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-                context
-                    .evaluation_stack_mut()
-                    .push(StackItem::from_byte_string(b"NEO".to_vec()));
+                context.push(StackItem::from_byte_string(b"NEO".to_vec()))?;
                 let _ = self.consume_gas(1);
                 Ok(())
             }
@@ -270,9 +268,7 @@ impl InteropHost for VmApplicationEngine {
                 let context = engine
                     .current_context_mut()
                     .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-                context
-                    .evaluation_stack_mut()
-                    .push(StackItem::from_int(BigInt::from(self.trigger as u8)));
+                context.push(StackItem::from_int(BigInt::from(self.trigger as u8)))?;
                 let _ = self.consume_gas(1);
                 Ok(())
             }
@@ -282,9 +278,7 @@ impl InteropHost for VmApplicationEngine {
                 let context = engine
                     .current_context_mut()
                     .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-                context
-                    .evaluation_stack_mut()
-                    .push(StackItem::from_int(BigInt::from(0)));
+                context.push(StackItem::from_int(BigInt::from(0)))?;
                 let _ = self.consume_gas(1);
                 Ok(())
             }
@@ -304,9 +298,7 @@ impl InteropHost for VmApplicationEngine {
                 let context = engine
                     .current_context_mut()
                     .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-                context
-                    .evaluation_stack_mut()
-                    .push(StackItem::from_byte_string(vec![0u8; 20]));
+                context.push(StackItem::from_byte_string(vec![0u8; 20]))?;
                 let _ = self.consume_gas(1);
                 Ok(())
             }
@@ -337,11 +329,9 @@ impl InteropHost for VmApplicationEngine {
                 let key_bytes = key.as_bytes()?.to_vec();
 
                 if let Some(value) = self.storage.get(&key_bytes) {
-                    context
-                        .evaluation_stack_mut()
-                        .push(StackItem::from_byte_string(value.clone()));
+                    context.push(StackItem::from_byte_string(value.clone()))?;
                 } else {
-                    context.evaluation_stack_mut().push(StackItem::Null);
+                    context.push(StackItem::Null)?;
                 }
                 let _ = self.consume_gas(1);
                 Ok(())

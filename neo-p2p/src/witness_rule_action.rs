@@ -5,10 +5,11 @@ use std::fmt;
 use std::str::FromStr;
 
 /// The action to be taken if the current context meets with the rule.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[repr(u8)]
 pub enum WitnessRuleAction {
     /// Deny the witness if the condition is met.
+    #[default]
     Deny = 0,
     /// Allow the witness if the condition is met.
     Allow = 1,
@@ -35,12 +36,6 @@ impl WitnessRuleAction {
             Self::Deny => "Deny",
             Self::Allow => "Allow",
         }
-    }
-}
-
-impl Default for WitnessRuleAction {
-    fn default() -> Self {
-        Self::Deny
     }
 }
 

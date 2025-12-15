@@ -23,12 +23,29 @@ use zeroize::{Zeroize, Zeroizing};
 
 /// A cryptographic key pair for Neo accounts.
 /// This matches the C# KeyPair class functionality.
-#[derive(Debug, Clone, Zeroize)]
+///
+/// # Security Note
+/// The `Debug` implementation intentionally hides the private key to prevent
+/// accidental exposure in logs. Use [`KeyPair::private_key()`] for explicit access.
+#[derive(Clone, Zeroize)]
 #[zeroize(drop)]
 pub struct KeyPair {
     private_key: [u8; HASH_SIZE],
     public_key: Vec<u8>,
     compressed_public_key: Vec<u8>,
+}
+
+impl fmt::Debug for KeyPair {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("KeyPair")
+            .field("private_key", &"[REDACTED]")
+            .field("public_key", &hex::encode(&self.public_key))
+            .field(
+                "compressed_public_key",
+                &hex::encode(&self.compressed_public_key),
+            )
+            .finish()
+    }
 }
 
 impl KeyPair {
@@ -104,8 +121,8 @@ impl KeyPair {
     }
 
     /// Gets the private key.
-    pub fn private_key(&self) -> [u8; HASH_SIZE] {
-        self.private_key
+    pub fn private_key(&self) -> &[u8; HASH_SIZE] {
+        &self.private_key
     }
 
     /// Gets the public key (uncompressed).
@@ -120,11 +137,13 @@ impl KeyPair {
 
     /// Gets the public key as an ECPoint.
     pub fn get_public_key_point(&self) -> Result<crate::neo_cryptography::ECPoint> {
-        crate::neo_cryptography::ECPoint::decode_compressed(&self.compressed_public_key).map_err(
-            |e| Error::Other {
-                message: format!("Failed to create ECPoint: {}", e),
-            },
+        crate::neo_cryptography::ECPoint::decode_compressed_with_curve(
+            crate::neo_cryptography::ECCurve::secp256r1(),
+            &self.compressed_public_key,
         )
+        .map_err(|e| Error::Other {
+            message: format!("Failed to create ECPoint: {}", e),
+        })
     }
 
     /// Gets the script hash for this key pair.

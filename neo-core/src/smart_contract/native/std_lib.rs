@@ -8,6 +8,7 @@ use crate::error::CoreResult as Result;
 use crate::neo_config::SECONDS_PER_BLOCK;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::native::{NativeContract, NativeMethod};
+use crate::smart_contract::ContractParameterType;
 use crate::UInt160;
 use base64::{engine::general_purpose, Engine as _};
 use serde_json::Value as JsonValue;
@@ -33,18 +34,74 @@ impl StdLib {
         .expect("Operation failed");
 
         let methods = vec![
-            NativeMethod::safe("atoi".to_string(), 1 << 12),
-            NativeMethod::safe("itoa".to_string(), 1 << 12),
-            NativeMethod::safe("base64Encode".to_string(), 1 << 12),
-            NativeMethod::safe("base64Decode".to_string(), 1 << 12),
+            NativeMethod::safe(
+                "atoi".to_string(),
+                1 << 12,
+                vec![ContractParameterType::String],
+                ContractParameterType::Integer,
+            ),
+            NativeMethod::safe(
+                "itoa".to_string(),
+                1 << 12,
+                vec![ContractParameterType::Integer],
+                ContractParameterType::String,
+            ),
+            NativeMethod::safe(
+                "base64Encode".to_string(),
+                1 << 12,
+                vec![ContractParameterType::ByteArray],
+                ContractParameterType::String,
+            ),
+            NativeMethod::safe(
+                "base64Decode".to_string(),
+                1 << 12,
+                vec![ContractParameterType::String],
+                ContractParameterType::ByteArray,
+            ),
             // JSON operations
-            NativeMethod::safe("jsonSerialize".to_string(), 1 << 12),
-            NativeMethod::safe("jsonDeserialize".to_string(), 1 << 12),
+            NativeMethod::safe(
+                "jsonSerialize".to_string(),
+                1 << 12,
+                vec![ContractParameterType::Any],
+                ContractParameterType::String,
+            ),
+            NativeMethod::safe(
+                "jsonDeserialize".to_string(),
+                1 << 12,
+                vec![ContractParameterType::String],
+                ContractParameterType::Any,
+            ),
             // Memory operations
-            NativeMethod::safe("memoryCompare".to_string(), 1 << 5),
-            NativeMethod::safe("memorySearch".to_string(), 1 << SECONDS_PER_BLOCK),
-            NativeMethod::safe("stringSplit".to_string(), 1 << 13),
-            NativeMethod::safe("stringLen".to_string(), 1 << 4),
+            NativeMethod::safe(
+                "memoryCompare".to_string(),
+                1 << 5,
+                vec![
+                    ContractParameterType::ByteArray,
+                    ContractParameterType::ByteArray,
+                ],
+                ContractParameterType::Integer,
+            ),
+            NativeMethod::safe(
+                "memorySearch".to_string(),
+                1 << SECONDS_PER_BLOCK,
+                vec![
+                    ContractParameterType::ByteArray,
+                    ContractParameterType::ByteArray,
+                ],
+                ContractParameterType::Integer,
+            ),
+            NativeMethod::safe(
+                "stringSplit".to_string(),
+                1 << 13,
+                vec![ContractParameterType::String, ContractParameterType::String],
+                ContractParameterType::ByteArray,
+            ),
+            NativeMethod::safe(
+                "stringLen".to_string(),
+                1 << 4,
+                vec![ContractParameterType::String],
+                ContractParameterType::Integer,
+            ),
         ];
 
         Self {

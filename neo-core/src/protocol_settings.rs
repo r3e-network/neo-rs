@@ -10,7 +10,7 @@
 // modifications are permitted.
 use crate::{
     constants,
-    cryptography::crypto_utils::ECPoint,
+    cryptography::ECPoint,
     hardfork::{Hardfork, HardforkManager},
 };
 use serde::Deserialize;
@@ -434,7 +434,7 @@ fn parse_committee(entries: Vec<String>) -> Result<Vec<ECPoint>, String> {
         }
         let bytes = hex::decode(trimmed)
             .map_err(|err| format!("Invalid ECPoint hex '{}': {}", entry, err))?;
-        let point = ECPoint::from_bytes(&bytes)?;
+        let point = ECPoint::from_bytes(&bytes).map_err(|e| e.to_string())?;
         committee.push(point);
     }
     Ok(committee)

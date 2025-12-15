@@ -1,7 +1,7 @@
 //! ContractPermissionDescriptor - matches C# Neo.SmartContract.Manifest.ContractPermissionDescriptor exactly
 
 use super::contract_group::ContractGroup;
-use crate::cryptography::crypto_utils::ECPoint;
+use crate::cryptography::ECPoint;
 use crate::UInt160;
 use neo_vm::StackItem;
 use serde::{Deserialize, Serialize};
@@ -71,7 +71,8 @@ impl ContractPermissionDescriptor {
             }
             // Try to parse as public key
             if let Ok(bytes) = hex::decode(s) {
-                return Ok(ContractPermissionDescriptor::Group(ECPoint::new(bytes)));
+                let key = ECPoint::from_bytes(&bytes).map_err(|e| e.to_string())?;
+                return Ok(ContractPermissionDescriptor::Group(key));
             }
         }
         Err("Invalid permission descriptor".to_string())

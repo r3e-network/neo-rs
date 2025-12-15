@@ -1,5 +1,6 @@
 //! IndexedQueue - matches C# Neo.IO.Caching.IndexedQueue exactly
 
+use crate::{IoError, IoResult};
 use std::collections::VecDeque;
 
 /// Represents a queue with indexed access to the items (matches C# IndexedQueue<T>).
@@ -149,23 +150,25 @@ impl<T> IndexedQueue<T> {
     }
 
     /// Copy the queue's items to a destination slice (C# CopyTo).
-    pub fn copy_to(&self, destination: &mut [T], array_index: usize)
+    pub fn copy_to(&self, destination: &mut [T], array_index: usize) -> IoResult<()>
     where
         T: Clone,
     {
         if array_index > destination.len() {
-            panic!("array_index out of range");
+            return Err(IoError::invalid_data("array_index out of range"));
         }
         if destination.len() - array_index < self.items.len() {
-            panic!(
+            return Err(IoError::invalid_data(format!(
                 "destination slice does not have sufficient space: {} remaining, {} required",
                 destination.len() - array_index,
                 self.items.len()
-            );
+            )));
         }
         for (offset, item) in self.items.iter().cloned().enumerate() {
             destination[array_index + offset] = item;
         }
+
+        Ok(())
     }
 
     /// Returns an array of the items in the queue (C# ToArray).

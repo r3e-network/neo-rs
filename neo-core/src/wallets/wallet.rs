@@ -230,7 +230,7 @@ impl WalletManager {
                         .create_account_with_contract(contract.clone(), Some(key_pair))
                         .await?;
                 } else {
-                    new_wallet.create_account(&key_pair.private_key()).await?;
+                    new_wallet.create_account(key_pair.private_key()).await?;
                 }
             } else {
                 // Watch-only account

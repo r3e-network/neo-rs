@@ -30,7 +30,7 @@ use crate::network::error::NetworkError;
 use crate::network::p2p::messages::{NetworkMessage, ProtocolMessage};
 use crate::network::MessageCommand;
 use crate::{neo_system::NeoSystemContext, protocol_settings::ProtocolSettings, UInt256};
-use akka::{Actor, ActorContext, ActorResult, Cancelable, Props};
+use crate::akka::{Actor, ActorContext, ActorResult, Cancelable, Props};
 use async_trait::async_trait;
 use neo_io_crate::HashSetCache;
 use std::any::type_name_of_val;
@@ -132,7 +132,6 @@ impl RemoteNode {
             }
             true
         })
-        .unwrap_or(true)
     }
 
     /// Maximum bloom filter size in bytes (matches C# MAX_FILTER_SIZE = 36000).
@@ -203,12 +202,12 @@ impl RemoteNode {
         // Estimate payload size based on message type
         // Using conservative estimates to avoid needing Serializable trait
         let payload_size = match &message.payload {
-            ProtocolMessage::Block(_) => 2048,  // Conservative block estimate
+            ProtocolMessage::Block(_) => 2048, // Conservative block estimate
             ProtocolMessage::Headers(headers) => headers.headers.len() * 512,
-            ProtocolMessage::Transaction(_) => 1024,  // Conservative tx estimate
+            ProtocolMessage::Transaction(_) => 1024, // Conservative tx estimate
             ProtocolMessage::Inv(inv) => inv.hashes.len() * 32,
             ProtocolMessage::GetData(inv) => inv.hashes.len() * 32,
-            ProtocolMessage::GetBlocks(_) => 64,  // hash_start (32) + hash_stop (32)
+            ProtocolMessage::GetBlocks(_) => 64, // hash_start (32) + hash_stop (32)
             ProtocolMessage::Extensible(ext) => ext.data.len() + 128,
             _ => 128, // Default estimate for other message types
         };
@@ -460,12 +459,18 @@ impl RemoteNode {
         let (queue_full, has_duplicate) = if is_high_priority {
             let full = self.message_queue_high.len() >= Self::MAX_QUEUE_SIZE;
             let dup = Self::is_single_command(command)
-                && self.message_queue_high.iter().any(|q| q.command() == command);
+                && self
+                    .message_queue_high
+                    .iter()
+                    .any(|q| q.command() == command);
             (full, dup)
         } else {
             let full = self.message_queue_low.len() >= Self::MAX_QUEUE_SIZE;
             let dup = Self::is_single_command(command)
-                && self.message_queue_low.iter().any(|q| q.command() == command);
+                && self
+                    .message_queue_low
+                    .iter()
+                    .any(|q| q.command() == command);
             (full, dup)
         };
 
@@ -1014,11 +1019,11 @@ mod tests {
 
         let handler = Arc::new(TestHandler::default());
         let subscription = register_message_received_handler(handler.clone());
-        let count = message_handlers::with_handlers(|handlers| handlers.len()).unwrap();
+        let count = message_handlers::with_handlers(|handlers| handlers.len());
         assert_eq!(count, 1);
 
         drop(subscription);
-        let count = message_handlers::with_handlers(|handlers| handlers.len()).unwrap();
+        let count = message_handlers::with_handlers(|handlers| handlers.len());
         assert_eq!(count, 0);
     }
 

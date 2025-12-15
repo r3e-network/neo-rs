@@ -39,8 +39,12 @@ Thumbs.db
 .hive-mind/
 
 # Compiled binaries
-neo-node
-neo-cli
+/neo-node
+/neo-node.exe
+!/neo-node/
+/neo-cli
+/neo-cli.exe
+!/neo-cli/
 *.exe
 
 # Development artifacts

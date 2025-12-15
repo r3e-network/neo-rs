@@ -1,7 +1,7 @@
 use crate::network::p2p::payloads::Header;
+use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::collections::VecDeque;
 use std::iter::FromIterator;
-use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 /// Maximum number of headers retained in the cache. Matches the C# constant.
 pub const MAX_HEADERS: usize = 10_000;
@@ -94,15 +94,11 @@ impl HeaderCache {
     }
 
     fn read(&self) -> RwLockReadGuard<'_, VecDeque<Header>> {
-        self.headers
-            .read()
-            .expect("header cache read lock poisoned")
+        self.headers.read()
     }
 
     fn write(&self) -> RwLockWriteGuard<'_, VecDeque<Header>> {
-        self.headers
-            .write()
-            .expect("header cache write lock poisoned")
+        self.headers.write()
     }
 }
 

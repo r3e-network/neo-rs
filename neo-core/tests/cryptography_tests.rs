@@ -1,7 +1,7 @@
 //! Comprehensive cryptography tests converted from C# Neo unit tests.
 //! These tests ensure 100% compatibility with the C# Neo cryptography implementation.
 
-use neo_core::cryptography::crypto_utils::{Crypto, Secp256k1Crypto};
+use neo_core::cryptography::{Crypto, Secp256k1Crypto};
 // use std::str::FromStr;
 
 // ============================================================================
@@ -411,7 +411,7 @@ fn test_compress_public_key_helper() {
 
 mod helper {
     use super::Secp256k1Crypto;
-    use neo_core::cryptography::crypto_utils::ECPoint;
+    use neo_core::cryptography::ECPoint;
     use neo_core::smart_contract::contract::Contract;
     use neo_core::UInt160;
     use secp256k1::{
@@ -421,7 +421,7 @@ mod helper {
     use std::convert::TryInto;
 
     pub fn generate_private_key() -> [u8; 32] {
-        Secp256k1Crypto::generate_private_key()
+        Secp256k1Crypto::generate_private_key().expect("private key generation")
     }
 
     pub fn private_key_to_public_key(private_key: &[u8]) -> Result<Vec<u8>, String> {

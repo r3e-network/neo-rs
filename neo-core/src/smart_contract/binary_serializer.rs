@@ -157,7 +157,10 @@ impl BinarySerializer {
                                         "Invalid serialized array data".to_string()
                                     })?);
                                 }
-                                StackItem::Array(ArrayItem::new(elements, rc.clone()))
+                                StackItem::Array(
+                                    ArrayItem::new(elements, rc.clone())
+                                        .map_err(|err| err.to_string())?,
+                                )
                             }
                             StackItemType::Struct => {
                                 let mut elements = Vec::with_capacity(placeholder.element_count);
@@ -166,7 +169,10 @@ impl BinarySerializer {
                                         "Invalid serialized struct data".to_string()
                                     })?);
                                 }
-                                StackItem::Struct(StructItem::new(elements, rc.clone()))
+                                StackItem::Struct(
+                                    StructItem::new(elements, rc.clone())
+                                        .map_err(|err| err.to_string())?,
+                                )
                             }
                             StackItemType::Map => {
                                 let mut entries = BTreeMap::new();
@@ -179,7 +185,10 @@ impl BinarySerializer {
                                     })?;
                                     entries.insert(key, value);
                                 }
-                                StackItem::Map(MapItem::new(entries, rc.clone()))
+                                StackItem::Map(
+                                    MapItem::new(entries, rc.clone())
+                                        .map_err(|err| err.to_string())?,
+                                )
                             }
                             _ => return Err("Invalid container placeholder".to_string()),
                         };

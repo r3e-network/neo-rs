@@ -1,11 +1,17 @@
 [package]
 name = "neo-core"
-version = "0.6.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
 description = "Core functionality for Neo blockchain"
-authors = ["R3E Network <jimmy@r3e.network>"]
-repository = "https://github.com/r3e-network/neo-rs"
-license = "MIT"
 
 [dependencies]
 # External dependencies
@@ -21,7 +27,9 @@ lazy_static = "1.4"
 byteorder = "1.4"
 bytes = "1.4"
 log = "0.4"
-tokio = { version = "1.28", features = ["full"] }
+# tokio kept for monitoring and persistence/backup modules
+# Consider moving these to neo-node in future refactoring
+tokio = { version = "1.28", features = ["sync", "time", "fs", "io-util", "rt"] }
 async-trait = "0.1"
 rand = "0.8"
 sha2 = "0.10"
@@ -55,22 +63,24 @@ cbc = "0.1"
 cipher = "0.4"
 zeroize = { version = "1.7", features = ["zeroize_derive"] }
 
+# Actor framework removed (Phase 2 refactoring)
+# ractor.workspace = true - moved to neo-node
+
 # Internal dependencies
 chrono.workspace = true
 futures.workspace = true
 neo-vm = { path = "../neo-vm" }
-akka = { path = "../neo-akka", package = "neo-akka" }
+# neo-akka merged into neo-core/src/akka/ - no longer an external dependency
 neo_io_crate = { path = "../neo-io", package = "neo-io" }
 inventory = "0.3"
-neo-services = { path = "../neo-services" }
 
 # New foundation crates (re-exported for backward compatibility)
+# Foundation layer dependencies only (Layer 0)
+# NOTE: neo-p2p and neo-consensus removed to fix layering violation
+# neo-core is Layer 1, should not depend on Layer 2 protocol crates
 neo-primitives = { path = "../neo-primitives" }
 neo-crypto = { path = "../neo-crypto" }
 neo-storage = { path = "../neo-storage" }
-neo-contract = { path = "../neo-contract" }
-neo-p2p = { path = "../neo-p2p" }
-neo-consensus = { path = "../neo-consensus" }
 xxhash-rust = { version = "0.8.15", features = ["xxh3"] }
 
 [dev-dependencies]

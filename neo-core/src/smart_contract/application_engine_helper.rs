@@ -196,9 +196,7 @@ impl ApplicationEngine {
     /// Reserves a notification slot, enforcing hardfork limits.
     pub fn reserve_notification_slot(&mut self) -> Result<(), String> {
         let state_arc = self.current_execution_state().map_err(|e| e.to_string())?;
-        let mut state = state_arc
-            .lock()
-            .map_err(|_| "Execution context state lock poisoned".to_string())?;
+        let mut state = state_arc.lock();
 
         if self.is_hardfork_enabled(Hardfork::HfEchidna)
             && self.trigger_type() == TriggerType::Application

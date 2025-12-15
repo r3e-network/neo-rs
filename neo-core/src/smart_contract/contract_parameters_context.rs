@@ -1,6 +1,6 @@
 //! ContractParametersContext - matches C# Neo.SmartContract.ContractParametersContext exactly
 
-use crate::cryptography::crypto_utils::{ECPoint, NeoHash};
+use crate::cryptography::{ECPoint, NeoHash};
 use crate::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use crate::network::p2p::payloads::{transaction::Transaction, witness::Witness};
 use crate::persistence::DataCache;
@@ -68,7 +68,8 @@ impl ContextItem {
             .map(|sigs| {
                 sigs.iter()
                     .filter_map(|(key, value)| {
-                        let pub_key = hex::decode(key).ok().map(ECPoint::new)?;
+                        let key_bytes = hex::decode(key).ok()?;
+                        let pub_key = ECPoint::from_bytes(&key_bytes).ok()?;
                         let sig = value
                             .as_str()
                             .and_then(|s| general_purpose::STANDARD.decode(s).ok())?;
@@ -137,7 +138,7 @@ impl ContractParametersContext {
     /// Creates a new context
     pub fn new(
         snapshot_cache: Arc<DataCache>,
-        verifiable: impl IVerifiable + Serializable + Send + Sync + 'static,
+        verifiable: impl IVerifiable + Serializable + 'static,
         network: u32,
     ) -> Self {
         Self::new_with_type(snapshot_cache, verifiable, network, None)
@@ -146,7 +147,7 @@ impl ContractParametersContext {
     /// Creates a new context with an explicit type name (for parity with C# ToJson()).
     pub fn new_with_type(
         snapshot_cache: Arc<DataCache>,
-        verifiable: impl IVerifiable + Serializable + Send + Sync + 'static,
+        verifiable: impl IVerifiable + Serializable + 'static,
         network: u32,
         verifiable_type: Option<String>,
     ) -> Self {
@@ -370,7 +371,7 @@ impl ContractParametersContext {
     /// Creates from JSON
     pub fn from_json(
         json: &serde_json::Value,
-        verifiable: impl IVerifiable + Serializable + Send + Sync + 'static,
+        verifiable: impl IVerifiable + Serializable + 'static,
         snapshot: Arc<DataCache>,
     ) -> Result<Self, String> {
         let obj = json.as_object().ok_or("Expected object")?;

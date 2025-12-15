@@ -1,10 +1,18 @@
+use neo_core::neo_io::MemoryReader;
 use neo_core::network::p2p::payloads::{signer::Signer, transaction::Transaction};
 use neo_core::persistence::DataCache;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
-use neo_core::smart_contract::native::{GasToken, NativeContract, NeoToken};
+use neo_core::smart_contract::call_flags::CallFlags;
+use neo_core::smart_contract::contract_parameter_type::ContractParameterType;
+use neo_core::smart_contract::contract_state::{ContractState, NefFile};
+use neo_core::smart_contract::manifest::{
+    ContractAbi, ContractManifest, ContractMethodDescriptor, ContractParameterDefinition,
+};
+use neo_core::smart_contract::native::{ContractManagement, GasToken, NativeContract, NeoToken};
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::witness::Witness;
 use neo_core::{IVerifiable, UInt160, WitnessScope};
+use neo_vm::{OpCode, ScriptBuilder};
 use num_bigint::BigInt;
 use num_traits::Zero;
 use std::sync::Arc;
@@ -29,6 +37,55 @@ fn gas_token_hash_matches_reference() {
     );
     assert_eq!(gas.symbol(), "GAS");
     assert_eq!(gas.decimals(), 8);
+}
+
+#[test]
+fn system_contract_call_can_invoke_native_gas_symbol() {
+    let snapshot = Arc::new(DataCache::new(false));
+    let signer = sample_account(0xAA);
+    let mut engine = make_engine(Arc::clone(&snapshot), signer);
+
+    let gas = GasToken::new();
+    let state = gas
+        .contract_state(engine.protocol_settings(), 0)
+        .expect("native contract state");
+    let symbol_descriptor = state
+        .manifest
+        .abi
+        .methods
+        .iter()
+        .find(|m| m.name == "symbol")
+        .expect("symbol method descriptor");
+    assert_eq!(
+        state.nef.script[symbol_descriptor.offset as usize],
+        OpCode::PUSH0 as u8
+    );
+    let mut sb = ScriptBuilder::new();
+
+    // Push arguments for System.Contract.Call in reverse order:
+    // hash, method, callFlags, args[]
+    sb.emit_push_byte_array(&gas.hash().to_bytes());
+    sb.emit_push_string("symbol");
+    sb.emit_push_int(CallFlags::ALL.bits() as i64);
+    sb.emit_push_int(0);
+    sb.emit_pack();
+    sb.emit_syscall("System.Contract.Call")
+        .expect("System.Contract.Call syscall");
+    sb.emit_opcode(OpCode::RET);
+
+    engine
+        .load_script(sb.to_array(), CallFlags::ALL, None)
+        .expect("load script");
+    engine.execute().expect("execute");
+
+    assert_eq!(engine.result_stack().len(), 1);
+    let symbol_bytes = engine
+        .result_stack()
+        .peek(0)
+        .expect("result")
+        .as_bytes()
+        .expect("bytes");
+    assert_eq!(symbol_bytes, b"GAS");
 }
 
 fn make_engine(snapshot: Arc<DataCache>, signer: UInt160) -> ApplicationEngine {
@@ -79,7 +136,7 @@ fn gas_token_mint_burn_and_transfer_update_balances() {
     let transfer_bytes = amount.clone().to_signed_bytes_le();
     let from_bytes = account_a.to_bytes();
     let to_bytes = account_b.to_bytes();
-    let transfer_args = vec![from_bytes, to_bytes, transfer_bytes.clone()];
+    let transfer_args = vec![from_bytes, to_bytes, transfer_bytes.clone(), Vec::new()];
     let transfer_result = gas
         .invoke(&mut engine, "transfer", &transfer_args)
         .expect("transfer call");
@@ -95,4 +152,108 @@ fn gas_token_mint_burn_and_transfer_update_balances() {
     assert!(gas
         .balance_of_snapshot(snapshot.as_ref(), &account_a)
         .is_zero());
+}
+
+#[test]
+fn gas_transfer_triggers_on_nep17_payment_with_native_caller() {
+    let snapshot = Arc::new(DataCache::new(false));
+    let sender = sample_account(0xAA);
+    // Use a large gas limit since ContractManagement.deploy charges storage fees.
+    let mut container = Transaction::new();
+    container.set_signers(vec![Signer::new(sender, WitnessScope::GLOBAL)]);
+    container.add_witness(Witness::new());
+    let script_container: Arc<dyn IVerifiable> = Arc::new(container);
+    let mut engine = ApplicationEngine::new(
+        TriggerType::Application,
+        Some(script_container),
+        Arc::clone(&snapshot),
+        None,
+        Default::default(),
+        50_000_000_000,
+        None,
+    )
+    .expect("engine");
+
+    // Build a simple contract script that emits a Notify("Payment", [callingHash]).
+    let mut sb = ScriptBuilder::new();
+    sb.emit_push_string("Payment");
+    sb.emit_syscall("System.Runtime.GetCallingScriptHash")
+        .expect("syscall hash");
+    sb.emit_push_int(1);
+    sb.emit_pack();
+    sb.emit_syscall("System.Runtime.Notify")
+        .expect("notify syscall");
+    let script = sb.to_array();
+
+    // Create NEF and manifest with onNEP17Payment entry.
+    let nef = NefFile::new("test".to_string(), script);
+    let on_payment = ContractMethodDescriptor::new(
+        "onNEP17Payment".to_string(),
+        vec![
+            ContractParameterDefinition::new("from".to_string(), ContractParameterType::Hash160)
+                .unwrap(),
+            ContractParameterDefinition::new("amount".to_string(), ContractParameterType::Integer)
+                .unwrap(),
+            ContractParameterDefinition::new("data".to_string(), ContractParameterType::Any)
+                .unwrap(),
+        ],
+        ContractParameterType::Void,
+        0,
+        false,
+    )
+    .unwrap();
+
+    let mut manifest = ContractManifest::new("PaymentReceiver".to_string());
+    manifest.abi = ContractAbi::new(vec![on_payment], vec![]);
+
+    let manifest_json = manifest.to_json().expect("manifest json");
+    let manifest_bytes = serde_json::to_vec(&manifest_json).expect("serialize manifest");
+
+    // Deploy through native ContractManagement so the engine can fetch it.
+    let cm_hash = ContractManagement::new().hash();
+    let deploy_args = vec![nef.to_bytes(), manifest_bytes, Vec::new()];
+    let contract_bytes = engine
+        .call_native_contract(cm_hash, "deploy", &deploy_args)
+        .expect("deploy succeeds");
+    let mut reader = MemoryReader::new(&contract_bytes);
+    let receiver = ContractState::deserialize(&mut reader).expect("contract state");
+    let receiver_hash = receiver.hash;
+
+    // Fund sender with GAS and transfer to receiver contract.
+    let gas = GasToken::new();
+    engine.set_current_script_hash(Some(gas.hash()));
+    let amount = BigInt::from(1_000_000);
+    gas.mint(&mut engine, &sender, &amount, false)
+        .expect("mint succeeds");
+
+    let transfer_args = vec![
+        sender.to_bytes(),
+        receiver_hash.to_bytes(),
+        amount.to_signed_bytes_le(),
+        Vec::new(), // data = null
+    ];
+    let transfer_result = gas
+        .invoke(&mut engine, "transfer", &transfer_args)
+        .expect("transfer call");
+    assert_eq!(transfer_result, vec![1]);
+
+    // Load a dummy context so we can execute queued callbacks.
+    engine
+        .load_script(vec![OpCode::RET as u8], CallFlags::ALL, None)
+        .expect("load dummy");
+    engine
+        .process_pending_native_calls()
+        .expect("queue processing");
+    engine.execute().expect("execute callbacks");
+
+    let payment_events: Vec<_> = engine
+        .notifications()
+        .iter()
+        .filter(|n| n.event_name == "Payment")
+        .collect();
+    assert_eq!(payment_events.len(), 1, "expected one Payment event");
+    let calling_hash_bytes = payment_events[0].state[0]
+        .as_bytes()
+        .expect("calling hash bytes");
+    assert_eq!(calling_hash_bytes, gas.hash().to_bytes());
 }

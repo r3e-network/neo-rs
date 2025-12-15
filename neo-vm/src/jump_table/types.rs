@@ -58,22 +58,22 @@ fn convert(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
         (StackItem::Struct(items), StackItemType::Array) => StackItem::Array(Array::new(
             items.into(),
             Some(context.reference_counter().clone()),
-        )),
+        )?),
 
         (StackItem::Array(items), StackItemType::Struct) => StackItem::Struct(Struct::new(
             items.into(),
             Some(context.reference_counter().clone()),
-        )),
+        )?),
         (StackItem::Struct(items), StackItemType::Struct) => StackItem::Struct(Struct::new(
             items.into(),
             Some(context.reference_counter().clone()),
-        )),
+        )?),
 
         // Convert to Map
         (StackItem::Map(entries), StackItemType::Map) => StackItem::Map(Map::new(
             entries.into(),
             Some(context.reference_counter().clone()),
-        )),
+        )?),
 
         // Convert to Pointer
         (StackItem::Pointer(pointer), StackItemType::Pointer) => StackItem::Pointer(pointer),

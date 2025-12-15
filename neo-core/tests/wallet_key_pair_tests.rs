@@ -15,7 +15,7 @@ const SAMPLE_ADDRESS: &str = "AQqzr4WX3hUJrJp9aiFp3CstjcgbHSmDCA";
 #[test]
 fn script_hash_matches_reference() {
     let key = KeyPair::from_wif(SAMPLE_WIF).expect("failed to parse sample WIF");
-    assert_eq!(key.private_key(), SAMPLE_PRIVATE_KEY);
+    assert_eq!(key.private_key(), &SAMPLE_PRIVATE_KEY);
     let script_hash = key.get_script_hash();
     assert_eq!(hex::encode(script_hash.to_array()), SAMPLE_ADDRESS_HASH);
 }

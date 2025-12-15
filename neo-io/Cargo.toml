@@ -1,12 +1,17 @@
 [package]
 name = "neo-io"
-version = "0.7.0"
-edition = "2021"
-authors = ["R3E Network <jimmy@r3e.network>"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
 description = "IO operations and data structures for the Neo blockchain"
-repository = "https://github.com/r3e-network/neo-rs"
-license = "MIT"
-readme = "README.md"
 
 [dependencies]
 # External dependencies
@@ -23,10 +28,15 @@ futures = { workspace = true }
 parking_lot = { workspace = true }
 indexmap = "2.0"
 linked-hash-map = "0.5"
+tracing = { workspace = true, optional = true }
 
 # Internal dependencies
 # Temporarily commented out to break dependency cycle
 # Removed neo-cryptography - using external crypto crates directly
+
+[features]
+default = []
+tracing = ["dep:tracing"]
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full"] }

@@ -9,6 +9,8 @@
         "ssl_cert_password": "",
         "trusted_authorities": [],
         "max_concurrent_connections": 40,
+        "max_requests_per_second": 0,
+        "rate_limit_burst": 0,
         "max_request_body_size": 5242880,
         "rpc_user": "change-me",
         "rpc_pass": "change-me-strongly",
@@ -22,7 +24,7 @@
         "max_stack_size": 65535,
         "disabled_methods": [
           "openwallet",
-          "getplugins"
+          "listplugins"
         ],
         "session_enabled": false,
         "session_expiration_time": 60,

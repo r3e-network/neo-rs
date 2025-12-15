@@ -8,7 +8,8 @@
 use std::net::SocketAddr;
 use std::time::Duration;
 
-use super::framed::FrameConfig;
+// FrameConfig and PeerConnection moved to neo-node (Phase 2 refactoring)
+// Runtime-dependent methods have been removed from this configuration struct.
 
 /// Configuration used to bootstrap the local P2P node.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -66,59 +67,6 @@ impl ChannelsConfig {
             ..Self::default()
         }
     }
-
-    /// Build a framed I/O configuration from the channel settings.
-    pub fn frame_config(&self) -> FrameConfig {
-        FrameConfig::from(self)
-    }
-
-    /// Convenience helper to build a `PeerConnection` using this configuration.
-    pub fn build_connection(
-        &self,
-        stream: tokio::net::TcpStream,
-        address: SocketAddr,
-        inbound: bool,
-    ) -> crate::network::p2p::connection::PeerConnection {
-        crate::network::p2p::connection::PeerConnection::from_channels_config(
-            stream, address, inbound, self,
-        )
-    }
-}
-
-#[allow(clippy::items_after_test_module)]
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tokio::net::TcpListener;
-
-    #[tokio::test]
-    async fn build_connection_applies_frame_timeouts() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
-        let addr = listener.local_addr().expect("addr");
-
-        let client = tokio::net::TcpStream::connect(addr);
-        let server = listener.accept();
-        let (client_stream, server_stream) = tokio::join!(client, server);
-        let client_stream = client_stream.expect("client stream");
-        let (server_stream, _remote) = server_stream.expect("server stream");
-        let remote_addr = server_stream.peer_addr().expect("peer addr");
-
-        let config = ChannelsConfig {
-            handshake_timeout: Duration::from_millis(7),
-            read_timeout_active: Duration::from_millis(11),
-            write_timeout: Duration::from_millis(13),
-            shutdown_timeout: Duration::from_millis(17),
-            ..ChannelsConfig::default()
-        };
-
-        let expected_frame = config.frame_config();
-        let connection = config.build_connection(client_stream, remote_addr, true);
-
-        assert_eq!(connection.frame_config, expected_frame);
-
-        drop(connection);
-        drop(server_stream);
-    }
 }
 
 impl Default for ChannelsConfig {
@@ -136,5 +84,25 @@ impl Default for ChannelsConfig {
             write_timeout: Self::DEFAULT_WRITE_TIMEOUT,
             shutdown_timeout: Self::DEFAULT_SHUTDOWN_TIMEOUT,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_config_has_expected_values() {
+        let config = ChannelsConfig::default();
+        assert!(config.enable_compression);
+        assert_eq!(config.min_desired_connections, 10);
+        assert_eq!(config.max_connections, 40);
+    }
+
+    #[test]
+    fn new_config_with_tcp() {
+        let addr: SocketAddr = "127.0.0.1:10333".parse().unwrap();
+        let config = ChannelsConfig::new(Some(addr));
+        assert_eq!(config.tcp, Some(addr));
     }
 }

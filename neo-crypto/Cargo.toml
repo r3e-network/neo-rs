@@ -16,20 +16,26 @@ description = "Cryptographic utilities for Neo blockchain (hashing, ECC, signatu
 [dependencies]
 # Internal crates
 neo-primitives = { workspace = true }
+neo-io = { workspace = true }
 
 # Hashing
 sha2 = { workspace = true }
 sha3 = { workspace = true }
 ripemd = { workspace = true }
 blake2 = { workspace = true }
+blst = { workspace = true }
+murmur3 = "0.5"
 
 # Elliptic curve cryptography
 p256 = { workspace = true }
 k256 = { workspace = true }
 ed25519-dalek = { workspace = true }
+secp256k1 = { workspace = true }
+rand = { workspace = true }
 
 # Encoding
 hex = { workspace = true }
+bs58 = { workspace = true }
 
 # Serialization
 serde = { workspace = true }
@@ -40,6 +46,8 @@ thiserror = { workspace = true }
 # Constant-time operations and secure memory handling
 subtle = "2.5"
 zeroize = { version = "1.7", features = ["zeroize_derive"] }
+parking_lot = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
 

@@ -3,7 +3,7 @@
 //! The Oracle contract manages external data requests and responses,
 //! enabling smart contracts to access off-chain data sources.
 
-use crate::cryptography::crypto_utils::NeoHash;
+use crate::cryptography::NeoHash;
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::neo_config::{
     HASH_SIZE, MAX_SCRIPT_SIZE, MAX_TRANSACTIONS_PER_BLOCK, SECONDS_PER_BLOCK,
@@ -22,6 +22,7 @@ use crate::smart_contract::native::{
     oracle_request::OracleRequest, GasToken, NativeContract, NativeMethod, Role, RoleManagement,
 };
 use crate::smart_contract::storage_key::StorageKey;
+use crate::smart_contract::ContractParameterType;
 use crate::smart_contract::StorageItem;
 use crate::{UInt160, UInt256};
 use bincode;
@@ -219,11 +220,45 @@ impl OracleContract {
         .expect("Operation failed");
 
         let methods = vec![
-            NativeMethod::unsafe_method("request".to_string(), 1 << SECONDS_PER_BLOCK, 0x0f),
-            NativeMethod::safe("getPrice".to_string(), 1 << 4),
-            NativeMethod::unsafe_method("setPrice".to_string(), 1 << SECONDS_PER_BLOCK, 0x01),
-            NativeMethod::unsafe_method("finish".to_string(), 1 << SECONDS_PER_BLOCK, 0x0f),
-            NativeMethod::safe("verify".to_string(), 1 << SECONDS_PER_BLOCK),
+            NativeMethod::unsafe_method(
+                "request".to_string(),
+                1 << SECONDS_PER_BLOCK,
+                0x0f,
+                vec![
+                    ContractParameterType::String,
+                    ContractParameterType::String,
+                    ContractParameterType::String,
+                    ContractParameterType::Any,
+                    ContractParameterType::Integer,
+                ],
+                ContractParameterType::Integer,
+            ),
+            NativeMethod::safe(
+                "getPrice".to_string(),
+                1 << 4,
+                Vec::new(),
+                ContractParameterType::Integer,
+            ),
+            NativeMethod::unsafe_method(
+                "setPrice".to_string(),
+                1 << SECONDS_PER_BLOCK,
+                0x01,
+                vec![ContractParameterType::Integer],
+                ContractParameterType::Void,
+            ),
+            NativeMethod::unsafe_method(
+                "finish".to_string(),
+                1 << SECONDS_PER_BLOCK,
+                0x0f,
+                Vec::new(),
+                ContractParameterType::Void,
+            ),
+            NativeMethod::safe(
+                "verify".to_string(),
+                1 << SECONDS_PER_BLOCK,
+                Vec::new(),
+                ContractParameterType::Boolean,
+            ),
         ];
 
         Self {
@@ -761,9 +796,10 @@ impl OracleContract {
             }
             let mut compressed = [0u8; 33];
             compressed.copy_from_slice(&bytes[offset..offset + 33]);
-            if let Ok(point) =
-                crate::cryptography::crypto_utils::ECPoint::decode_compressed(&compressed)
-            {
+            if let Ok(point) = crate::cryptography::ECPoint::decode_compressed_with_curve(
+                crate::cryptography::ECCurve::secp256r1(),
+                &compressed,
+            ) {
                 let script = Contract::create_signature_redeem_script(point);
                 if let Ok(hash) = UInt160::from_bytes(&NeoHash::hash160(&script)) {
                     accounts.push(hash);

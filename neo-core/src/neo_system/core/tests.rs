@@ -34,10 +34,11 @@ use crate::{IVerifiable, UInt160, UInt256};
 use async_trait::async_trait;
 use lazy_static::lazy_static;
 use neo_vm::StackItem;
+use parking_lot::Mutex;
 use std::any::Any;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{mpsc, Arc};
 use tokio::time::{sleep, timeout, Duration};
 
 lazy_static! {
@@ -516,7 +517,6 @@ impl IWalletProvider for TestWalletProvider {
     fn wallet_changed(&self) -> mpsc::Receiver<Option<Arc<dyn Wallet>>> {
         self.receiver
             .lock()
-            .unwrap()
             .take()
             .expect("wallet changed receiver already taken")
     }
@@ -600,7 +600,7 @@ async fn transaction_event_handlers_receive_callbacks() {
     };
 
     {
-        let guard = pool.lock().expect("lock mempool");
+        let guard = pool.lock();
         if let Some(callback) = &guard.transaction_added {
             callback(&guard, &tx);
         }
@@ -615,7 +615,7 @@ async fn transaction_event_handlers_receive_callbacks() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn log_and_logging_handlers_fire() {
-    let _log_guard = LOG_TEST_MUTEX.lock().unwrap();
+    let _log_guard = LOG_TEST_MUTEX.lock();
 
     let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
     let handler = Arc::new(EventProbe::default());

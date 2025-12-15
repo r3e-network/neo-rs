@@ -1,10 +1,10 @@
 //! Message handler registry for remote node inbound notifications.
 use crate::i_event_handlers::IMessageReceivedHandler;
+use parking_lot::RwLock;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
-    Arc, OnceLock, RwLock,
+    Arc, OnceLock,
 };
-use tracing::warn;
 
 pub(crate) struct MessageHandlerEntry {
     pub(crate) id: usize,
@@ -42,9 +42,8 @@ impl Drop for MessageHandlerSubscription {
 }
 
 fn remove_handler(id: usize) {
-    if let Ok(mut handlers) = handler_registry().write() {
-        handlers.retain(|entry| entry.id != id);
-    }
+    let mut handlers = handler_registry().write();
+    handlers.retain(|entry| entry.id != id);
 }
 
 /// Registers a new message-received handler (parity with C# `RemoteNode.MessageReceived`).
@@ -53,14 +52,7 @@ pub fn register_message_received_handler(
 ) -> MessageHandlerSubscription {
     let id = NEXT_HANDLER_ID.fetch_add(1, Ordering::Relaxed);
     let entry = MessageHandlerEntry { id, handler };
-    if let Ok(mut handlers) = handler_registry().write() {
-        handlers.push(entry);
-    } else {
-        warn!(
-            target: "neo",
-            "message handler registry poisoned; handler will not be retained"
-        );
-    }
+    handler_registry().write().push(entry);
     MessageHandlerSubscription { id: Some(id) }
 }
 
@@ -69,15 +61,11 @@ pub fn unregister_message_received_handler(subscription: MessageHandlerSubscript
     subscription.unregister();
 }
 
-pub(crate) fn with_handlers<T>(mut f: impl FnMut(&[MessageHandlerEntry]) -> T) -> Option<T> {
-    let registry = handler_registry();
-    let guard = registry.read().ok()?;
-    Some(f(&guard))
+pub(crate) fn with_handlers<T>(mut f: impl FnMut(&[MessageHandlerEntry]) -> T) -> T {
+    f(&handler_registry().read())
 }
 
 #[cfg(test)]
 pub(crate) fn reset() {
-    if let Ok(mut handlers) = handler_registry().write() {
-        handlers.clear();
-    }
+    handler_registry().write().clear();
 }

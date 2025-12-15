@@ -1,7 +1,24 @@
 //! Telemetry module for Neo node metrics and observability.
 //!
-//! This module provides a unified telemetry interface built on top of the `tracing`
-//! ecosystem. It supports:
+//! **IMPORTANT**: This module provides **internal metrics collection** for neo-core.
+//! For production deployment with Prometheus endpoints and system monitoring,
+//! use the [`neo_telemetry`] crate instead.
+//!
+//! ## When to use this module
+//!
+//! - **Internal metrics**: Recording blockchain metrics within neo-core components
+//! - **No external dependencies**: When you need lightweight metric collection
+//! - **Snapshot export**: Getting point-in-time metric snapshots in JSON or Prometheus text
+//! - **Timer utilities**: Measuring operation durations
+//!
+//! ## When to use neo-telemetry
+//!
+//! - **Production deployment**: HTTP metrics endpoint for Prometheus scraping
+//! - **System monitoring**: CPU, memory, disk usage metrics
+//! - **Health checks**: Liveness and readiness probes for Kubernetes
+//! - **Logging configuration**: Structured logging setup
+//!
+//! This module supports:
 //! - Metrics collection (counters, gauges, histograms)
 //! - Structured event logging
 //! - Performance profiling

@@ -2,8 +2,8 @@
 //!
 //! Matches C# Neo.Plugins.StateService.Network.StateRoot exactly.
 
-use crate::cryptography::crypto_utils::Crypto;
 use crate::cryptography::NeoHash;
+use crate::cryptography::Crypto;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::network::p2p::payloads::Witness;
 use crate::persistence::DataCache;
@@ -62,7 +62,7 @@ impl StateRoot {
         }
 
         let unsigned_data = self.get_unsigned_data();
-        let hash = UInt256::from_bytes(&NeoHash::hash256(&unsigned_data)).expect("Valid hash");
+        let hash = UInt256::from(NeoHash::hash256(&unsigned_data));
         self.cached_hash = Some(hash);
         hash
     }
@@ -70,8 +70,10 @@ impl StateRoot {
     /// Gets the unsigned serialized data (for hashing).
     pub fn get_unsigned_data(&self) -> Vec<u8> {
         let mut writer = BinaryWriter::new();
-        self.serialize_unsigned(&mut writer)
-            .expect("Serialization should succeed");
+        if let Err(err) = self.serialize_unsigned(&mut writer) {
+            warn!("StateRoot unsigned serialization failed: {err}");
+            return Vec::new();
+        }
         writer.into_bytes()
     }
 
@@ -125,25 +127,34 @@ impl StateRoot {
             None => return false,
         };
 
-        // Resolve the validator set at the given index (Role.StateValidator). Fallback to the
-        // configured standby committee when no designation is present yet.
+        // Resolve the validator set at the given index (Role.StateValidator).
+        //
+        // Parity with Neo.Plugins.StateService: if no state validators are designated, state root
+        // verification must fail.
         let mut validators = match RoleManagement::new().get_designated_by_role_at(
             snapshot,
             Role::StateValidator,
             self.index,
         ) {
             Ok(list) if !list.is_empty() => list,
-            Ok(_) => settings.standby_committee.clone(),
+            Ok(_) => {
+                debug!(
+                    target: "neo",
+                    index = self.index,
+                    "state root verification aborted: no designated state validators"
+                );
+                return false;
+            }
             Err(error) => {
-                debug!(target: "neo", %error, index = self.index, "failed to load designated state validators");
-                settings.standby_committee.clone()
+                debug!(
+                    target: "neo",
+                    %error,
+                    index = self.index,
+                    "state root verification aborted: failed to load designated state validators"
+                );
+                return false;
             }
         };
-
-        if validators.is_empty() {
-            warn!(target: "neo", index = self.index, "state root verification aborted: no validators available");
-            return false;
-        }
 
         // BFT threshold: n - (n-1)/3
         let required_signatures = validators.len() - (validators.len().saturating_sub(1)) / 3;
@@ -188,22 +199,20 @@ impl StateRoot {
         let mut hashable = self.clone();
         sign_data[4..].copy_from_slice(&hashable.hash().to_array());
 
-        // Signatures must appear in the same order as the public keys in the redeem script.
-        let mut sig_iter = signatures.iter();
-        let mut matched = 0usize;
-        for key in encoded_keys {
-            if matched >= required_signatures {
-                break;
+        // Verify multi-signature set using Neo's CheckMultisig semantics:
+        // signatures must be in the same order as the corresponding public keys, but
+        // public keys may be skipped (i.e. signatures are a subsequence of keys).
+        let mut sig_index = 0usize;
+        let mut key_index = 0usize;
+        while sig_index < required_signatures && key_index < encoded_keys.len() {
+            if Crypto::verify_signature_bytes(&sign_data, &signatures[sig_index], &encoded_keys[key_index])
+            {
+                sig_index += 1;
             }
-            let Some(signature) = sig_iter.next() else {
-                break;
-            };
-            if Crypto::verify_signature_bytes(&sign_data, signature, &key) {
-                matched += 1;
-            }
+            key_index += 1;
         }
 
-        matched == required_signatures && sig_iter.next().is_none()
+        sig_index == required_signatures
     }
 }
 
@@ -254,6 +263,76 @@ impl Serializable for StateRoot {
 impl Default for StateRoot {
     fn default() -> Self {
         Self::new(CURRENT_VERSION, 0, UInt256::zero())
+    }
+}
+
+#[cfg(test)]
+mod multisig_verify_tests {
+    use super::*;
+    use crate::persistence::data_cache::DataCache;
+    use crate::smart_contract::Contract;
+    use crate::smart_contract::native::{role_management::RoleManagement, NativeContract, Role};
+    use crate::smart_contract::{StorageItem, StorageKey};
+    use crate::wallets::KeyPair;
+    use neo_vm::op_code::OpCode;
+
+    #[test]
+    fn verify_accepts_signatures_as_subsequence_of_sorted_keys() {
+        let mut settings = ProtocolSettings::default_settings();
+        settings.network = 0x0A0B0C0D;
+
+        // Build 4 standby validators; required signatures for BFT quorum is 3.
+        let mut pairs = (0..4)
+            .map(|_| {
+                let keypair = KeyPair::generate().expect("generate keypair");
+                let pubkey = keypair
+                    .get_public_key_point()
+                    .expect("public key point from keypair");
+                (pubkey, keypair)
+            })
+            .collect::<Vec<_>>();
+        pairs.sort_by(|a, b| a.0.cmp(&b.0));
+        let validators = pairs.iter().map(|(pk, _)| pk.clone()).collect::<Vec<_>>();
+        settings.standby_committee = validators.clone();
+        settings.validators_count = validators.len() as i32;
+
+        let required = validators.len() - (validators.len().saturating_sub(1)) / 3;
+        assert_eq!(required, 3);
+
+        let mut root = StateRoot::new_current(123, UInt256::from_bytes(&[7u8; 32]).unwrap());
+        let hash = root.hash();
+
+        let mut sign_data = Vec::with_capacity(4 + hash.to_bytes().len());
+        sign_data.extend_from_slice(&settings.network.to_le_bytes());
+        sign_data.extend_from_slice(&hash.to_array());
+
+        // Sign with the last 3 keys (skip the first key in the sorted order).
+        let mut invocation = Vec::new();
+        for (_pubkey, keypair) in pairs.iter().skip(1).take(required) {
+            let signature = keypair.sign(&sign_data).expect("sign state root");
+            invocation.push(OpCode::PUSHDATA1 as u8);
+            invocation.push(signature.len() as u8);
+            invocation.extend_from_slice(&signature);
+        }
+
+        let verification_script = Contract::create_multi_sig_redeem_script(required, &validators);
+        root.witness = Some(Witness::new_with_scripts(invocation, verification_script));
+
+        // Seed a RoleManagement designation so verification uses state validators.
+        let snapshot = DataCache::new(false);
+        let mut suffix = vec![Role::StateValidator as u8];
+        suffix.extend_from_slice(&root.index.to_be_bytes());
+        let key = StorageKey::new(RoleManagement::new().id(), suffix);
+        let mut value = Vec::with_capacity(4 + 33 * validators.len());
+        value.extend_from_slice(&(validators.len() as u32).to_le_bytes());
+        for validator in &validators {
+            let encoded = validator
+                .encode_compressed()
+                .expect("validator key must encode");
+            value.extend_from_slice(&encoded);
+        }
+        snapshot.add(key, StorageItem::from_bytes(value));
+        assert!(root.verify(&settings, &snapshot));
     }
 }
 

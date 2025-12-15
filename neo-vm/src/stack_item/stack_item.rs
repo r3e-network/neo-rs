@@ -7,6 +7,7 @@
 use crate::error::VmError;
 use crate::error::VmResult;
 use crate::execution_engine_limits::ExecutionEngineLimits;
+use crate::reference_counter::ReferenceCounter;
 use crate::script::Script;
 use crate::stack_item::array::Array as ArrayItem;
 use crate::stack_item::buffer::Buffer as BufferItem;
@@ -101,17 +102,17 @@ impl StackItem {
 
     /// Creates an array stack item.
     pub fn from_array<T: Into<Vec<StackItem>>>(value: T) -> Self {
-        StackItem::Array(ArrayItem::new(value.into(), None))
+        StackItem::Array(ArrayItem::new_untracked(value.into()))
     }
 
     /// Creates a struct stack item.
     pub fn from_struct<T: Into<Vec<StackItem>>>(value: T) -> Self {
-        StackItem::Struct(StructItem::new(value.into(), None))
+        StackItem::Struct(StructItem::new_untracked(value.into()))
     }
 
     /// Creates a map stack item.
     pub fn from_map<T: Into<BTreeMap<StackItem, StackItem>>>(value: T) -> Self {
-        StackItem::Map(MapItem::new(value.into(), None))
+        StackItem::Map(MapItem::new_untracked(value.into()))
     }
 
     /// Creates a pointer stack item.
@@ -122,6 +123,20 @@ impl StackItem {
     /// Creates an interop interface stack item.
     pub fn from_interface<T: InteropInterface + 'static>(value: T) -> Self {
         StackItem::InteropInterface(Arc::new(value))
+    }
+
+    /// Ensures any compound stack items share the provided reference counter.
+    ///
+    /// This is required for C# parity: all compound VM objects are expected to
+    /// belong to the engine's `ReferenceCounter`. Host-provided stack items may
+    /// be constructed without a counter and are attached when they enter the VM.
+    pub fn attach_reference_counter(&mut self, rc: &ReferenceCounter) -> VmResult<()> {
+        match self {
+            StackItem::Array(array) => array.attach_reference_counter(rc),
+            StackItem::Struct(structure) => structure.attach_reference_counter(rc),
+            StackItem::Map(map) => map.attach_reference_counter(rc),
+            _ => Ok(()),
+        }
     }
 
     /// Returns the type of the stack item.
@@ -305,11 +320,11 @@ impl StackItem {
                 Ok(StackItem::Struct(cloned))
             }
             StackItem::Array(array) => {
-                let copy = array.deep_copy(array.reference_counter().cloned());
+                let copy = array.deep_copy(array.reference_counter().cloned())?;
                 Ok(StackItem::Array(copy))
             }
             StackItem::Map(map) => {
-                let copy = map.deep_copy(map.reference_counter().cloned());
+                let copy = map.deep_copy(map.reference_counter().cloned())?;
                 Ok(StackItem::Map(copy))
             }
             _ => Ok(self.deep_clone()),

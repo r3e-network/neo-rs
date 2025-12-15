@@ -1,4 +1,4 @@
-use neo_core::cryptography::crypto_utils::{ECPoint, NeoHash};
+use neo_core::cryptography::{ECCurve, ECPoint, NeoHash, Secp256r1Crypto};
 use neo_core::ledger::{block::Block, block_header::BlockHeader};
 use neo_core::network::p2p::payloads::{
     oracle_response::OracleResponse, oracle_response_code::OracleResponseCode,
@@ -19,10 +19,14 @@ use num_bigint::BigInt;
 use std::sync::Arc;
 
 fn sample_point(byte: u8) -> ECPoint {
-    let mut encoded = [0u8; 33];
-    encoded[0] = 0x02;
-    encoded[1..].fill(byte);
-    ECPoint::decode_compressed(&encoded).expect("static test key")
+    let private_key = {
+        let mut bytes = [0u8; 32];
+        bytes[31] = byte.max(1);
+        bytes
+    };
+    let public_key = Secp256r1Crypto::derive_public_key(&private_key).expect("derive test key");
+    ECPoint::decode_compressed_with_curve(ECCurve::secp256r1(), &public_key)
+        .expect("static test key")
 }
 
 fn serialize_nodes(nodes: &[ECPoint]) -> Vec<u8> {

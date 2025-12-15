@@ -2,7 +2,7 @@
 //!
 //! Tests for Neo.SmartContract.Native.CryptoLib functionality.
 
-use neo_core::cryptography::crypto_utils::{Bls12381Crypto, NeoHash};
+use neo_core::cryptography::{Bls12381Crypto, NeoHash};
 use neo_core::smart_contract::native::crypto_lib::CryptoLib;
 use neo_core::smart_contract::native::NativeContract;
 

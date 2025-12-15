@@ -13,7 +13,9 @@ use crate::macros::ValidateLength;
 use crate::neo_io::serializable::helper::get_var_size;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::network::p2p::capabilities::NodeCapability;
-use crate::network::p2p::local_node::LocalNode;
+
+/// Protocol version constant (moved from LocalNode for decoupling)
+pub const PROTOCOL_VERSION: u32 = 0;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -59,11 +61,12 @@ impl VersionPayload {
 
         Self {
             network,
-            version: LocalNode::PROTOCOL_VERSION,
+            version: PROTOCOL_VERSION,
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs() as u32,
+                .map(|d| d.as_secs())
+                .unwrap_or(0)
+                .min(u32::MAX as u64) as u32,
             nonce,
             user_agent,
             allow_compression,

@@ -12,10 +12,15 @@
 use crate::macros::{OptionExt, ValidateLength};
 use crate::neo_io::serializable::helper::get_var_size;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use crate::smart_contract::IInteroperable;
 use crate::witness_rule::{WitnessRule, WitnessRuleAction};
-use crate::{neo_cryptography::ECPoint, WitnessCondition, WitnessScope};
+use crate::{
+    cryptography::{ECCurve, ECPoint},
+    WitnessCondition, WitnessScope,
+};
 use hex::{decode as hex_decode, encode as hex_encode};
 use neo_primitives::{UInt160, UINT160_SIZE};
+use neo_vm::StackItem;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 // Hash and Hasher now provided by impl_hash_for_fields macro
@@ -376,7 +381,8 @@ impl Serializable for Signer {
                 if encoded.len() != ECPOINT_COMPRESSED_SIZE {
                     return Err(IoError::invalid_data("Invalid ECPoint length"));
                 }
-                let point = ECPoint::decode_compressed(&encoded).map_err(IoError::invalid_data)?;
+                let point = ECPoint::decode_compressed_with_curve(ECCurve::secp256r1(), &encoded)
+                    .map_err(|e| IoError::invalid_data(e.to_string()))?;
                 allowed_groups.push(point);
             }
 
@@ -408,6 +414,62 @@ impl Serializable for Signer {
             allowed_groups,
             rules,
         })
+    }
+}
+
+impl IInteroperable for Signer {
+    fn from_stack_item(&mut self, _stack_item: StackItem) {
+        // This operation is not supported for Signer.
+        // The C# implementation throws NotSupportedException.
+        tracing::error!("NotSupportedException: Signer::from_stack_item is not supported");
+    }
+
+    fn to_stack_item(&self) -> StackItem {
+        let allowed_contracts = if self.scopes.contains(WitnessScope::CUSTOM_CONTRACTS) {
+            StackItem::from_array(
+                self.allowed_contracts
+                    .iter()
+                    .copied()
+                    .map(|hash| StackItem::from_byte_string(hash.to_bytes()))
+                    .collect::<Vec<_>>(),
+            )
+        } else {
+            StackItem::from_array(Vec::new())
+        };
+
+        let allowed_groups = if self.scopes.contains(WitnessScope::CUSTOM_GROUPS) {
+            StackItem::from_array(
+                self.allowed_groups
+                    .iter()
+                    .map(|group| StackItem::from_byte_string(group.to_bytes()))
+                    .collect::<Vec<_>>(),
+            )
+        } else {
+            StackItem::from_array(Vec::new())
+        };
+
+        let rules = if self.scopes.contains(WitnessScope::WITNESS_RULES) {
+            StackItem::from_array(
+                self.rules
+                    .iter()
+                    .map(WitnessRule::to_stack_item)
+                    .collect::<Vec<_>>(),
+            )
+        } else {
+            StackItem::from_array(Vec::new())
+        };
+
+        StackItem::from_array(vec![
+            StackItem::from_byte_string(self.account.to_bytes()),
+            StackItem::from_int(i64::from(self.scopes.bits())),
+            allowed_contracts,
+            allowed_groups,
+            rules,
+        ])
+    }
+
+    fn clone_box(&self) -> Box<dyn IInteroperable> {
+        Box::new(self.clone())
     }
 }
 

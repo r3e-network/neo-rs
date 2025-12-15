@@ -5,8 +5,9 @@ use crate::persistence::{
     i_read_only_store::IReadOnlyStoreGeneric, i_store::IStore, i_store_snapshot::IStoreSnapshot,
     i_write_store::IWriteStore, seek_direction::SeekDirection,
 };
+use parking_lot::RwLock;
 use std::collections::BTreeMap;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 /// On-chain write operations on a snapshot cannot be concurrent.
 type WriteBatch = Arc<RwLock<BTreeMap<Vec<u8>, Option<Vec<u8>>>>>;
@@ -23,7 +24,7 @@ impl MemorySnapshot {
         store: Arc<dyn IStore>,
         inner_data: Arc<RwLock<BTreeMap<Vec<u8>, Vec<u8>>>>,
     ) -> Self {
-        let immutable_data = inner_data.read().unwrap().clone();
+        let immutable_data = inner_data.read().clone();
         Self {
             store,
             immutable_data,
@@ -33,14 +34,14 @@ impl MemorySnapshot {
 
     /// Gets the number of items in the write batch.
     pub fn write_batch_length(&self) -> usize {
-        self.write_batch.read().unwrap().len()
+        self.write_batch.read().len()
     }
 }
 
 impl IReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MemorySnapshot {
     fn try_get(&self, key: &Vec<u8>) -> Option<Vec<u8>> {
         // Check write batch first
-        if let Some(batch_value) = self.write_batch.read().unwrap().get(key) {
+        if let Some(batch_value) = self.write_batch.read().get(key) {
             return batch_value.clone();
         }
         // Then check immutable data
@@ -56,7 +57,7 @@ impl IReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MemorySnapshot {
         let mut merged = self.immutable_data.clone();
 
         // Apply write batch changes
-        for (key, value) in self.write_batch.read().unwrap().iter() {
+        for (key, value) in self.write_batch.read().iter() {
             if let Some(v) = value {
                 merged.insert(key.clone(), v.clone());
             } else {
@@ -83,11 +84,11 @@ impl IReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MemorySnapshot {
 
 impl IWriteStore<Vec<u8>, Vec<u8>> for MemorySnapshot {
     fn delete(&mut self, key: Vec<u8>) {
-        self.write_batch.write().unwrap().insert(key, None);
+        self.write_batch.write().insert(key, None);
     }
 
     fn put(&mut self, key: Vec<u8>, value: Vec<u8>) {
-        self.write_batch.write().unwrap().insert(key, Some(value));
+        self.write_batch.write().insert(key, Some(value));
     }
 }
 
@@ -97,13 +98,9 @@ impl IStoreSnapshot for MemorySnapshot {
     }
 
     fn try_commit(&mut self) -> crate::persistence::i_store_snapshot::SnapshotCommitResult {
-        use crate::persistence::storage::StorageError;
-
         {
             // Apply write batch to the store
-            let batch = self.write_batch.read().map_err(|e| {
-                StorageError::CommitFailed(format!("Failed to acquire read lock: {}", e))
-            })?;
+            let batch = self.write_batch.read();
             // If the underlying store is a MemoryStore, apply batch directly.
             if let Some(mem) = self.store.as_any().downcast_ref::<MemoryStore>() {
                 mem.apply_batch(&batch);
@@ -112,9 +109,7 @@ impl IStoreSnapshot for MemorySnapshot {
         }
 
         // Clear the write batch
-        self.write_batch.write().map_err(|e| {
-            StorageError::CommitFailed(format!("Failed to acquire write lock: {}", e))
-        })?.clear();
+        self.write_batch.write().clear();
 
         Ok(())
     }

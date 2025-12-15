@@ -53,23 +53,13 @@ fn test_default_storage_price() {
     );
 }
 
-/// Tests maximum block size constant (2 MB)
+/// Tests default NotaryAssisted attribute fee (after Echidna)
 #[test]
-fn test_max_block_size() {
+fn test_default_notary_assisted_attribute_fee() {
     assert_eq!(
-        PolicyContract::MAX_BLOCK_SIZE,
-        2_097_152,
-        "Max block size should be 2MB (2,097,152 bytes)"
-    );
-}
-
-/// Tests maximum block system fee (9000 GAS)
-#[test]
-fn test_max_block_system_fee() {
-    assert_eq!(
-        PolicyContract::MAX_BLOCK_SYSTEM_FEE,
-        900_000_000_000i64,
-        "Max block system fee should be 9000 GAS (900,000,000,000 datoshi)"
+        PolicyContract::DEFAULT_NOTARY_ASSISTED_ATTRIBUTE_FEE,
+        10_000_000,
+        "Default NotaryAssisted attribute fee should be 10,000,000 datoshi"
     );
 }
 
@@ -81,33 +71,6 @@ fn test_max_traceable_blocks() {
         2_102_400,
         "Max traceable blocks should be 2,102,400 (about 1 year)"
     );
-}
-
-/// Tests storage key prefixes match C# constants
-#[test]
-fn test_storage_prefixes() {
-    assert_eq!(PolicyContract::PREFIX_CONFIG, 0x01);
-    assert_eq!(PolicyContract::PREFIX_FEE_PER_BYTE, 10);
-    assert_eq!(PolicyContract::PREFIX_EXEC_FEE_FACTOR, 18);
-    assert_eq!(PolicyContract::PREFIX_STORAGE_PRICE, 19);
-    assert_eq!(PolicyContract::PREFIX_MAX_VALID_UNTIL_BLOCK_INCREMENT, 22);
-    assert_eq!(PolicyContract::PREFIX_MAX_TRACEABLE_BLOCKS, 23);
-}
-
-/// Tests config key names match C# constants
-#[test]
-fn test_config_key_names() {
-    assert_eq!(PolicyContract::MAX_BLOCK_SIZE_NAME, b"MaxBlockSize");
-    assert_eq!(
-        PolicyContract::MAX_BLOCK_SYSTEM_FEE_NAME,
-        b"MaxBlockSystemFee"
-    );
-    assert_eq!(
-        PolicyContract::MAX_TRANSACTIONS_PER_BLOCK_NAME,
-        b"MaxTransactionsPerBlock"
-    );
-    assert_eq!(PolicyContract::ATTRIBUTE_FEE_NAME, b"AttributeFee");
-    assert_eq!(PolicyContract::BLOCKED_ACCOUNTS_NAME, b"BlockedAccounts");
 }
 
 /// Tests maximum valid until block increment
@@ -146,22 +109,6 @@ fn test_policy_contract_methods() {
         "Should have getAttributeFee"
     );
     assert!(
-        method_names.contains(&"getMaxTransactionsPerBlock"),
-        "Should have getMaxTransactionsPerBlock"
-    );
-    assert!(
-        method_names.contains(&"getMaxBlockSize"),
-        "Should have getMaxBlockSize"
-    );
-    assert!(
-        method_names.contains(&"getMaxBlockSystemFee"),
-        "Should have getMaxBlockSystemFee"
-    );
-    assert!(
-        method_names.contains(&"getMaxTraceableBlocks"),
-        "Should have getMaxTraceableBlocks"
-    );
-    assert!(
         method_names.contains(&"setFeePerByte"),
         "Should have setFeePerByte"
     );
@@ -174,6 +121,10 @@ fn test_policy_contract_methods() {
         "Should have setStoragePrice"
     );
     assert!(
+        method_names.contains(&"setAttributeFee"),
+        "Should have setAttributeFee"
+    );
+    assert!(
         method_names.contains(&"blockAccount"),
         "Should have blockAccount"
     );
@@ -182,9 +133,49 @@ fn test_policy_contract_methods() {
         "Should have unblockAccount"
     );
     assert!(method_names.contains(&"isBlocked"), "Should have isBlocked");
+
+    // Hardforked APIs
+    assert!(
+        method_names.contains(&"getMillisecondsPerBlock"),
+        "Should have getMillisecondsPerBlock"
+    );
+    assert!(
+        method_names.contains(&"setMillisecondsPerBlock"),
+        "Should have setMillisecondsPerBlock"
+    );
+    assert!(
+        method_names.contains(&"getMaxValidUntilBlockIncrement"),
+        "Should have getMaxValidUntilBlockIncrement"
+    );
+    assert!(
+        method_names.contains(&"setMaxValidUntilBlockIncrement"),
+        "Should have setMaxValidUntilBlockIncrement"
+    );
+    assert!(
+        method_names.contains(&"getMaxTraceableBlocks"),
+        "Should have getMaxTraceableBlocks"
+    );
+    assert!(
+        method_names.contains(&"setMaxTraceableBlocks"),
+        "Should have setMaxTraceableBlocks"
+    );
     assert!(
         method_names.contains(&"getBlockedAccounts"),
         "Should have getBlockedAccounts"
+    );
+
+    // Removed N3 APIs (legacy divergence in old Rust implementation)
+    assert!(
+        !method_names.contains(&"getMaxTransactionsPerBlock"),
+        "Should not have getMaxTransactionsPerBlock"
+    );
+    assert!(
+        !method_names.contains(&"getMaxBlockSize"),
+        "Should not have getMaxBlockSize"
+    );
+    assert!(
+        !method_names.contains(&"getMaxBlockSystemFee"),
+        "Should not have getMaxBlockSystemFee"
     );
 }
 

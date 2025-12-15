@@ -1,7 +1,7 @@
 //! Metric types for the telemetry system.
 
+use parking_lot::RwLock;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::RwLock;
 
 /// A counter metric that can only increase.
 #[derive(Debug, Default)]
@@ -173,11 +173,10 @@ impl Histogram {
         }
 
         // Update buckets
-        if let Ok(mut buckets) = self.buckets.write() {
-            for (bound, count) in buckets.iter_mut() {
-                if value <= *bound {
-                    *count += 1;
-                }
+        let mut buckets = self.buckets.write();
+        for (bound, count) in buckets.iter_mut() {
+            if value <= *bound {
+                *count += 1;
             }
         }
     }

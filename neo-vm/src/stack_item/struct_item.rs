@@ -26,7 +26,10 @@ pub struct Struct {
 
 impl Struct {
     /// Creates a new struct with the specified items and reference counter.
-    pub fn new(items: Vec<StackItem>, reference_counter: Option<ReferenceCounter>) -> Self {
+    pub fn new(
+        items: Vec<StackItem>,
+        reference_counter: Option<ReferenceCounter>,
+    ) -> VmResult<Self> {
         let structure = Self {
             items,
             id: next_stack_item_id(),
@@ -35,10 +38,20 @@ impl Struct {
         };
 
         if let Some(rc) = &structure.reference_counter {
-            structure.add_reference_for_items(rc);
+            structure.add_reference_for_items(rc)?;
         }
 
-        structure
+        Ok(structure)
+    }
+
+    /// Creates a struct without a reference counter.
+    pub fn new_untracked(items: Vec<StackItem>) -> Self {
+        Self {
+            items,
+            id: next_stack_item_id(),
+            reference_counter: None,
+            is_read_only: false,
+        }
     }
 
     /// Returns the unique identifier for this struct (used for reference equality).
@@ -153,13 +166,13 @@ impl Struct {
     }
 
     /// Creates a deep copy of the struct.
-    pub fn deep_copy(&self, reference_counter: Option<ReferenceCounter>) -> Self {
+    pub fn deep_copy(&self, reference_counter: Option<ReferenceCounter>) -> VmResult<Self> {
         let mut copy = Self::new(
             self.items.iter().map(|item| item.deep_clone()).collect(),
             reference_counter,
-        );
+        )?;
         copy.set_read_only(true);
-        copy
+        Ok(copy)
     }
 
     /// Clones the struct respecting execution limits (mirrors C# Struct.Clone).
@@ -183,7 +196,7 @@ impl Struct {
             ));
         }
 
-        let mut clone = Struct::new(Vec::new(), self.reference_counter.clone());
+        let mut clone = Struct::new(Vec::new(), self.reference_counter.clone())?;
 
         for item in &self.items {
             *remaining -= 1;
@@ -260,14 +273,13 @@ impl Struct {
         }
     }
 
-    fn add_reference_for_items(&self, rc: &ReferenceCounter) {
+    fn add_reference_for_items(&self, rc: &ReferenceCounter) -> VmResult<()> {
         let parent = CompoundParent::Struct(self.id);
         for item in &self.items {
-            if let Err(err) = self.validate_compound_reference(rc, item) {
-                panic!("{err}");
-            }
+            self.validate_compound_reference(rc, item)?;
             rc.add_compound_reference(item, parent);
         }
+        Ok(())
     }
 
     fn validate_compound_reference(&self, rc: &ReferenceCounter, item: &StackItem) -> VmResult<()> {
@@ -302,6 +314,26 @@ impl Struct {
             _ => Ok(()),
         }
     }
+
+    /// Ensures the struct and its children share the provided reference counter.
+    pub(crate) fn attach_reference_counter(&mut self, rc: &ReferenceCounter) -> VmResult<()> {
+        if let Some(existing) = &self.reference_counter {
+            if existing.ptr_eq(rc) {
+                return Ok(());
+            }
+            return Err(VmError::invalid_operation_msg(
+                "Struct has mismatched reference counter.",
+            ));
+        }
+
+        for item in &mut self.items {
+            item.attach_reference_counter(rc)?;
+        }
+
+        self.reference_counter = Some(rc.clone());
+        self.add_reference_for_items(rc)?;
+        Ok(())
+    }
 }
 
 impl Index<usize> for Struct {
@@ -328,7 +360,7 @@ impl Clone for Struct {
         };
 
         if let Some(rc) = &clone.reference_counter {
-            clone.add_reference_for_items(rc);
+            let _ = clone.add_reference_for_items(rc);
         }
 
         clone
@@ -382,7 +414,7 @@ mod tests {
             StackItem::from_int(3),
         ];
 
-        let struct_item = Struct::new(items.clone(), None);
+        let struct_item = Struct::new(items.clone(), None).expect("struct");
 
         assert_eq!(struct_item.len(), 3);
         assert_eq!(struct_item.items(), &items);
@@ -397,7 +429,7 @@ mod tests {
             StackItem::from_int(3),
         ];
 
-        let struct_item = Struct::new(items, None);
+        let struct_item = Struct::new(items, None)?;
 
         assert_eq!(struct_item.get(0)?.as_int().unwrap().to_i32().unwrap(), 1);
         assert_eq!(struct_item.get(1)?.as_int().unwrap().to_i32().unwrap(), 2);
@@ -414,7 +446,7 @@ mod tests {
             StackItem::from_int(3),
         ];
 
-        let mut struct_item = Struct::new(items, None);
+        let mut struct_item = Struct::new(items, None)?;
 
         struct_item.set(1, StackItem::from_int(42))?;
 
@@ -429,7 +461,7 @@ mod tests {
     fn test_struct_push_pop() -> Result<(), Box<dyn std::error::Error>> {
         let items = vec![StackItem::from_int(1), StackItem::from_int(2)];
 
-        let mut struct_item = Struct::new(items, None);
+        let mut struct_item = Struct::new(items, None)?;
 
         struct_item.push(StackItem::from_int(3))?;
 
@@ -458,7 +490,7 @@ mod tests {
             StackItem::from_int(3),
         ];
 
-        let mut struct_item = Struct::new(items, None);
+        let mut struct_item = Struct::new(items, None).expect("struct");
 
         struct_item.clear().unwrap();
 
@@ -474,8 +506,8 @@ mod tests {
             StackItem::from_array(vec![StackItem::from_int(3), StackItem::from_int(4)]),
         ];
 
-        let struct_item = Struct::new(items, None);
-        let copied = struct_item.deep_copy(None);
+        let struct_item = Struct::new(items, None)?;
+        let copied = struct_item.deep_copy(None)?;
 
         assert_eq!(copied.len(), struct_item.len());
         assert_eq!(
@@ -501,11 +533,11 @@ mod tests {
 
     #[test]
     fn test_struct_to_boolean() {
-        let empty_struct = Struct::new(Vec::new(), None);
+        let empty_struct = Struct::new(Vec::new(), None).expect("struct");
         assert!(!empty_struct.to_boolean());
 
         let items = vec![StackItem::from_int(1)];
-        let non_empty_struct = Struct::new(items, None);
+        let non_empty_struct = Struct::new(items, None).expect("struct");
         assert!(non_empty_struct.to_boolean());
     }
 }

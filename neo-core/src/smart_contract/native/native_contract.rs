@@ -2,9 +2,15 @@
 
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
+use crate::hardfork::Hardfork;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::application_engine::ApplicationEngine;
+use crate::smart_contract::manifest::{
+    ContractAbi, ContractEventDescriptor, ContractMethodDescriptor, ContractParameterDefinition,
+};
+use crate::smart_contract::{ContractManifest, ContractParameterType, ContractState, NefFile};
 use crate::UInt160;
+use neo_vm::{OpCode, ScriptBuilder};
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::collections::HashMap;
@@ -31,10 +37,27 @@ pub trait NativeContract: Any + Send + Sync {
     /// Returns the contract state metadata if available.
     fn contract_state(
         &self,
+        settings: &ProtocolSettings,
+        block_height: u32,
+    ) -> Option<ContractState> {
+        if !self.is_active(settings, block_height) {
+            return None;
+        }
+        Some(build_native_contract_state(self, settings, block_height))
+    }
+
+    /// Returns supported standards for the contract manifest.
+    fn supported_standards(&self, _settings: &ProtocolSettings, _block_height: u32) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// Returns event descriptors for the contract manifest ABI.
+    fn events(
+        &self,
         _settings: &ProtocolSettings,
         _block_height: u32,
-    ) -> Option<crate::smart_contract::ContractState> {
-        None
+    ) -> Vec<ContractEventDescriptor> {
+        Vec::new()
     }
 
     /// Invokes a method on the native contract.
@@ -70,35 +93,140 @@ pub struct NativeMethod {
     /// The name of the method.
     pub name: String,
 
-    /// The gas cost of the method.
-    pub gas_cost: i64,
+    /// The CPU fee for the method (in execution units, multiplied by `ExecFeeFactor`).
+    #[serde(alias = "gas_cost")]
+    pub cpu_fee: i64,
+
+    /// The storage fee for the method (in storage units, multiplied by `StoragePrice`).
+    #[serde(default)]
+    pub storage_fee: i64,
 
     /// Whether the method is safe (read-only).
     pub safe: bool,
 
     /// The required call flags for this method.
     pub required_call_flags: u8,
+
+    /// Parameter types for the method (used for native manifest ABI).
+    pub parameters: Vec<ContractParameterType>,
+
+    /// Parameter names for the method (used for native manifest ABI).
+    ///
+    /// When omitted or when the length does not match `parameters`, the ABI
+    /// builder falls back to `arg{index}` names.
+    #[serde(default)]
+    pub parameter_names: Vec<String>,
+
+    /// Hardfork that activates this method (matches C# `ContractMethodAttribute.ActiveIn`).
+    #[serde(default)]
+    pub active_in: Option<Hardfork>,
+
+    /// Hardfork that deprecates this method (matches C# `ContractMethodAttribute.DeprecatedIn`).
+    #[serde(default)]
+    pub deprecated_in: Option<Hardfork>,
+
+    /// Return type for the method (used for native manifest ABI).
+    pub return_type: ContractParameterType,
 }
 
 impl NativeMethod {
     /// Creates a new native method.
-    pub fn new(name: String, gas_cost: i64, safe: bool, required_call_flags: u8) -> Self {
+    pub fn new(
+        name: String,
+        cpu_fee: i64,
+        safe: bool,
+        required_call_flags: u8,
+        parameters: Vec<ContractParameterType>,
+        return_type: ContractParameterType,
+    ) -> Self {
         Self {
             name,
-            gas_cost,
+            cpu_fee,
+            storage_fee: 0,
             safe,
             required_call_flags,
+            parameters,
+            parameter_names: Vec::new(),
+            active_in: None,
+            deprecated_in: None,
+            return_type,
+        }
+    }
+
+    /// Marks the method as active starting from the given hardfork (inclusive).
+    pub fn with_active_in(mut self, hardfork: Hardfork) -> Self {
+        self.active_in = Some(hardfork);
+        self
+    }
+
+    /// Marks the method as deprecated starting from the given hardfork (inclusive).
+    pub fn with_deprecated_in(mut self, hardfork: Hardfork) -> Self {
+        self.deprecated_in = Some(hardfork);
+        self
+    }
+
+    /// Overrides the required call flags for this method.
+    pub fn with_required_call_flags(
+        mut self,
+        flags: crate::smart_contract::call_flags::CallFlags,
+    ) -> Self {
+        self.required_call_flags = flags.bits();
+        self
+    }
+
+    /// Sets parameter names used in the generated native manifest ABI.
+    pub fn with_parameter_names(mut self, parameter_names: Vec<String>) -> Self {
+        self.parameter_names = parameter_names;
+        self
+    }
+
+    /// Sets the storage fee for this method (multiplied by `StoragePrice`).
+    pub fn with_storage_fee(mut self, storage_fee: i64) -> Self {
+        self.storage_fee = storage_fee;
+        self
+    }
+
+    /// Returns true if this method is active at the given height.
+    pub fn is_active(&self, settings: &ProtocolSettings, block_height: u32) -> bool {
+        match (self.active_in, self.deprecated_in) {
+            (None, None) => true,
+            (Some(active_in), None) => settings.is_hardfork_enabled(active_in, block_height),
+            (None, Some(deprecated_in)) => {
+                !settings.is_hardfork_enabled(deprecated_in, block_height)
+            }
+            (Some(active_in), Some(deprecated_in)) => {
+                settings.is_hardfork_enabled(active_in, block_height)
+                    && !settings.is_hardfork_enabled(deprecated_in, block_height)
+            }
         }
     }
 
     /// Creates a new safe (read-only) method.
-    pub fn safe(name: String, gas_cost: i64) -> Self {
-        Self::new(name, gas_cost, true, 0)
+    pub fn safe(
+        name: String,
+        gas_cost: i64,
+        parameters: Vec<ContractParameterType>,
+        return_type: ContractParameterType,
+    ) -> Self {
+        Self::new(name, gas_cost, true, 0, parameters, return_type)
     }
 
     /// Creates a new unsafe (state-changing) method.
-    pub fn unsafe_method(name: String, gas_cost: i64, required_call_flags: u8) -> Self {
-        Self::new(name, gas_cost, false, required_call_flags)
+    pub fn unsafe_method(
+        name: String,
+        gas_cost: i64,
+        required_call_flags: u8,
+        parameters: Vec<ContractParameterType>,
+        return_type: ContractParameterType,
+    ) -> Self {
+        Self::new(
+            name,
+            gas_cost,
+            false,
+            required_call_flags,
+            parameters,
+            return_type,
+        )
     }
 }
 
@@ -190,22 +318,113 @@ impl NativeContractsCache {
 
 /// Cached metadata for a single native contract.
 pub struct NativeContractsCacheEntry {
-    methods_by_name: HashMap<String, NativeMethod>,
+    methods_by_name: HashMap<String, Vec<NativeMethod>>,
 }
 
 impl NativeContractsCacheEntry {
     fn from_contract(contract: &dyn NativeContract) -> Self {
-        let methods_by_name = contract
-            .methods()
-            .iter()
-            .map(|method| (method.name.clone(), method.clone()))
-            .collect();
+        let mut methods_by_name: HashMap<String, Vec<NativeMethod>> = HashMap::new();
+        for method in contract.methods() {
+            methods_by_name
+                .entry(method.name.clone())
+                .or_default()
+                .push(method.clone());
+        }
 
         Self { methods_by_name }
     }
 
-    /// Gets a method metadata entry by name.
-    pub fn get_method(&self, name: &str) -> Option<&NativeMethod> {
-        self.methods_by_name.get(name)
+    /// Gets the method metadata entry matching `name`, `parameter_count`, and activation state.
+    pub fn get_method(
+        &self,
+        name: &str,
+        parameter_count: usize,
+        settings: &ProtocolSettings,
+        block_height: u32,
+    ) -> Result<Option<&NativeMethod>> {
+        let Some(candidates) = self.methods_by_name.get(name) else {
+            return Ok(None);
+        };
+
+        let mut active = candidates.iter().filter(|method| {
+            method.parameters.len() == parameter_count && method.is_active(settings, block_height)
+        });
+
+        let Some(selected) = active.next() else {
+            return Ok(None);
+        };
+
+        if active.next().is_some() {
+            return Err(Error::invalid_operation(format!(
+                "Ambiguous native method '{}({})' at height {}",
+                name, parameter_count, block_height
+            )));
+        }
+
+        Ok(Some(selected))
     }
+}
+
+fn build_native_contract_state<T: NativeContract + ?Sized>(
+    contract: &T,
+    settings: &ProtocolSettings,
+    block_height: u32,
+) -> ContractState {
+    let syscall_hash = ScriptBuilder::hash_syscall("System.Contract.CallNative")
+        .expect("System.Contract.CallNative syscall hash must be computable");
+
+    let mut methods: Vec<&NativeMethod> = contract
+        .methods()
+        .iter()
+        .filter(|method| method.is_active(settings, block_height))
+        .collect();
+    methods.sort_by(|a, b| {
+        a.name
+            .cmp(&b.name)
+            .then(a.parameters.len().cmp(&b.parameters.len()))
+    });
+
+    let mut builder = ScriptBuilder::new();
+    let mut abi_methods = Vec::with_capacity(methods.len());
+
+    for method in methods {
+        let offset = builder.len() as i32;
+        builder.emit_push_int(0);
+        builder.emit_syscall_hash(syscall_hash);
+        builder.emit_opcode(OpCode::RET);
+
+        let has_names = method.parameter_names.len() == method.parameters.len();
+        let parameters = method
+            .parameters
+            .iter()
+            .enumerate()
+            .map(|(index, param_type)| {
+                let name = if has_names {
+                    method.parameter_names[index].clone()
+                } else {
+                    format!("arg{index}")
+                };
+                ContractParameterDefinition::new(name, *param_type)
+                    .expect("native parameter definition")
+            })
+            .collect();
+
+        let descriptor = ContractMethodDescriptor::new(
+            method.name.clone(),
+            parameters,
+            method.return_type,
+            offset,
+            method.safe,
+        )
+        .expect("native method descriptor");
+        abi_methods.push(descriptor);
+    }
+
+    let nef = NefFile::new("neo-core-v3.0".to_string(), builder.to_array());
+
+    let mut manifest = ContractManifest::new_native(contract.name().to_string());
+    manifest.supported_standards = contract.supported_standards(settings, block_height);
+    manifest.abi = ContractAbi::new(abi_methods, contract.events(settings, block_height));
+
+    ContractState::new(contract.id(), contract.hash(), nef, manifest)
 }

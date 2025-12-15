@@ -8,12 +8,18 @@
 //
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
-use crate::{neo_system::NeoSystem, network::message::Message};
+
+use crate::network::message::Message;
+use std::any::Any;
 
 /// Message received handler interface matching C# IMessageReceivedHandler exactly
+///
+/// Note: The `system` parameter uses `dyn Any` to decouple from the concrete
+/// NeoSystem type which is now in neo-node. Implementations can downcast
+/// to the concrete type if needed.
 pub trait IMessageReceivedHandler {
     /// The handler of MessageReceived event from RemoteNode
     /// Triggered when a new message is received from a peer RemoteNode
     /// Matches C# RemoteNode_MessageReceived_Handler method
-    fn remote_node_message_received_handler(&self, system: &NeoSystem, message: &Message) -> bool;
+    fn remote_node_message_received_handler(&self, system: &dyn Any, message: &Message) -> bool;
 }

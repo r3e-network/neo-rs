@@ -3,7 +3,7 @@ use super::RemoteNode;
 use crate::network::p2p::messages::{NetworkMessage, ProtocolMessage};
 use crate::network::p2p::payloads::addr_payload::{AddrPayload, MAX_COUNT_TO_SEND};
 use crate::network::MessageCommand;
-use akka::{ActorContext, ActorResult};
+use crate::akka::{ActorContext, ActorResult};
 use rand::{seq::IteratorRandom, thread_rng};
 use tracing::trace;
 impl RemoteNode {
@@ -103,7 +103,7 @@ impl RemoteNode {
                 error = %err,
                 "failed to send message to peer"
             );
-            return Err(akka::AkkaError::system(err.to_string()));
+            return Err(crate::akka::AkkaError::system(err.to_string()));
         }
         self.last_sent = std::time::Instant::now();
         let index = message.command().to_byte() as usize;

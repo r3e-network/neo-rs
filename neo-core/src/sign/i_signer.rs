@@ -9,7 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use crate::cryptography::crypto_utils::ECPoint;
+use crate::cryptography::ECPoint;
 use crate::network::p2p::payloads::{Block, ExtensiblePayload, Witness};
 use crate::persistence::DataCache;
 

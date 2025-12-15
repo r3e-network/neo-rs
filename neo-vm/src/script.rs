@@ -7,11 +7,12 @@ use crate::error::VmResult;
 use crate::instruction::Instruction;
 use crate::op_code::OpCode;
 use neo_io::MemoryReader;
+use parking_lot::Mutex;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::ptr;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 /// Represents a script in the Neo VM.
 #[derive(Debug, Clone)]
@@ -130,10 +131,7 @@ impl Script {
             position += instruction.size();
         }
 
-        *self
-            .instructions
-            .lock()
-            .map_err(|_| VmError::invalid_operation_msg("Lock poisoned"))? = instructions;
+        *self.instructions.lock() = instructions;
         Ok(())
     }
 
@@ -159,10 +157,7 @@ impl Script {
 
     /// Validates the script in strict mode.
     pub fn validate_strict(&self) -> VmResult<()> {
-        let instructions = self
-            .instructions
-            .lock()
-            .map_err(|_| VmError::invalid_operation_msg("Lock poisoned"))?;
+        let instructions = self.instructions.lock();
 
         // Validate jump targets
         for (&ip, instruction) in instructions.iter() {
@@ -302,10 +297,7 @@ impl Script {
         }
 
         {
-            let instructions = self
-                .instructions
-                .lock()
-                .map_err(|_| VmError::invalid_operation_msg("Lock poisoned"))?;
+            let instructions = self.instructions.lock();
             if let Some(instruction) = instructions.get(&position) {
                 return Ok(instruction.clone());
             }
@@ -324,10 +316,7 @@ impl Script {
 
         // Cache the instruction
         {
-            let mut instructions = self
-                .instructions
-                .lock()
-                .map_err(|_| VmError::invalid_operation_msg("Lock poisoned"))?;
+            let mut instructions = self.instructions.lock();
             instructions.insert(position, instruction.clone());
         }
 
@@ -422,7 +411,7 @@ impl Script {
     /// The hash of the script as a byte array
     pub fn hash(&self) -> Vec<u8> {
         {
-            let hash_code = self.hash_code.lock().expect("Lock poisoned");
+            let hash_code = self.hash_code.lock();
             if let Some(hash) = *hash_code {
                 return hash.to_le_bytes().to_vec();
             }
@@ -435,7 +424,7 @@ impl Script {
 
         // Cache the hash
         {
-            let mut hash_code = self.hash_code.lock().expect("Lock poisoned");
+            let mut hash_code = self.hash_code.lock();
             *hash_code = Some(hash);
         }
 
@@ -446,7 +435,7 @@ impl Script {
     /// Gets the hash code of the script.
     pub fn hash_code(&self) -> u64 {
         {
-            let hash_code = self.hash_code.lock().expect("Lock poisoned");
+            let hash_code = self.hash_code.lock();
             if let Some(hash) = *hash_code {
                 return hash;
             }
@@ -459,7 +448,7 @@ impl Script {
 
         // Cache the hash
         {
-            let mut hash_code = self.hash_code.lock().expect("Lock poisoned");
+            let mut hash_code = self.hash_code.lock();
             *hash_code = Some(hash);
         }
 

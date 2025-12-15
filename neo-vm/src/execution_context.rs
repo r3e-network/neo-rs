@@ -9,9 +9,10 @@ use crate::exception_handling_context::ExceptionHandlingContext;
 use crate::instruction::Instruction;
 use crate::reference_counter::ReferenceCounter;
 use crate::script::Script;
+use parking_lot::{Mutex, RwLock};
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::Arc;
 
 /// Maximum exception handler stack size
 /// A slot for storing variables or arguments in a context.
@@ -102,14 +103,20 @@ impl SharedStates {
     ) -> Arc<Mutex<T>> {
         let type_id = TypeId::of::<T>();
 
-        if let Some(existing) = self.states.read().expect("Lock poisoned").get(&type_id) {
+        if let Some(existing) = self.states.read().get(&type_id) {
+            if let Some(arc) = existing.downcast_ref::<Arc<Mutex<T>>>() {
+                return Arc::clone(arc);
+            }
+        }
+
+        let mut states = self.states.write();
+        if let Some(existing) = states.get(&type_id) {
             if let Some(arc) = existing.downcast_ref::<Arc<Mutex<T>>>() {
                 return Arc::clone(arc);
             }
         }
 
         let new_state = Arc::new(Mutex::new(factory()));
-        let mut states = self.states.write().expect("Lock poisoned");
         states.insert(type_id, Box::new(Arc::clone(&new_state)));
         new_state
     }
@@ -120,7 +127,7 @@ impl SharedStates {
         let type_id = TypeId::of::<T>();
         let state = Arc::new(Mutex::new(value));
 
-        let mut states = self.states.write().expect("Lock poisoned");
+        let mut states = self.states.write();
         states.insert(type_id, Box::new(state));
     }
 }
@@ -392,9 +399,9 @@ impl ExecutionContext {
     }
 
     /// Push an item onto the evaluation stack
-    pub fn push(&mut self, item: crate::stack_item::StackItem) -> VmResult<()> {
-        self.shared_states.evaluation_stack_mut().push(item);
-        Ok(())
+    pub fn push(&mut self, mut item: crate::stack_item::StackItem) -> VmResult<()> {
+        item.attach_reference_counter(self.reference_counter())?;
+        self.shared_states.evaluation_stack_mut().push(item)
     }
 
     /// Pop an item from the evaluation stack
@@ -408,28 +415,30 @@ impl ExecutionContext {
     }
 
     /// Clones the context with a new reference counter.
-    pub fn clone_for_reference_counter(&self, reference_counter: &ReferenceCounter) -> Self {
+    pub fn clone_for_reference_counter(
+        &self,
+        reference_counter: &ReferenceCounter,
+    ) -> VmResult<Self> {
         // Create a new shared states with the new reference counter
         let mut shared_states = SharedStates::new(self.script().clone(), reference_counter.clone());
 
         // Copy the evaluation stack
         self.evaluation_stack()
-            .copy_to(shared_states.evaluation_stack_mut(), None)
-            .expect("evaluation stack copy should succeed");
+            .copy_to(shared_states.evaluation_stack_mut(), None)?;
 
         // Create the new context
 
         // Note: Not cloning static_fields, local_variables, or arguments
         // as they would need separate reference counter handling
 
-        Self {
+        Ok(Self {
             shared_states,
             instruction_pointer: self.instruction_pointer,
             rvcount: self.rvcount,
             local_variables: None,
             arguments: None,
             try_stack: self.try_stack.clone(),
-        }
+        })
     }
 
     /// Clones the context so that they share the same script, stack, and static fields.
@@ -789,7 +798,9 @@ mod tests {
         let mut context = ExecutionContext::new(script, -1, &reference_counter);
 
         // Push a value onto the stack
-        context.evaluation_stack_mut().push(StackItem::from_int(42));
+        context
+            .push(StackItem::from_int(42))
+            .expect("push should succeed");
 
         // Clone the context
         let clone = context.clone();
@@ -829,34 +840,34 @@ mod tests {
 
         let flag_state = context.get_state_with_factory::<TestFlag, _>(|| TestFlag { flag: true });
         {
-            let mut flag = flag_state.lock().map_err(|_| "poisoned")?;
+            let mut flag = flag_state.lock();
             assert!(flag.flag);
             flag.flag = false;
         }
 
         let flag_state_again = context.get_state::<TestFlag>();
         {
-            let flag = flag_state_again.lock().map_err(|_| "poisoned")?;
+            let flag = flag_state_again.lock();
             assert!(!flag.flag);
         }
 
         let stack_state = context.get_state_with_factory::<Vec<i32>, _>(Vec::new);
         {
-            let mut stack = stack_state.lock().map_err(|_| "poisoned")?;
+            let mut stack = stack_state.lock();
             stack.push(100);
         }
 
         let clone = context.clone();
         let cloned_stack_state = clone.get_state::<Vec<i32>>();
         {
-            let mut stack = cloned_stack_state.lock().map_err(|_| "poisoned")?;
+            let mut stack = cloned_stack_state.lock();
             assert_eq!(stack.pop(), Some(100));
             stack.push(200);
         }
 
         let original_stack_state = context.get_state::<Vec<i32>>();
         {
-            let mut stack = original_stack_state.lock().map_err(|_| "poisoned")?;
+            let mut stack = original_stack_state.lock();
             assert_eq!(stack.pop(), Some(200));
         }
         Ok(())
@@ -872,33 +883,33 @@ mod tests {
 
         let shared_vec = context.get_shared_state::<Vec<i32>>();
         {
-            let mut vec = shared_vec.lock().map_err(|_| "poisoned")?;
+            let mut vec = shared_vec.lock();
             vec.push(100);
         }
 
         let shared_vec_again = context.get_shared_state::<Vec<i32>>();
         {
-            let vec = shared_vec_again.lock().map_err(|_| "poisoned")?;
+            let vec = shared_vec_again.lock();
             assert_eq!(*vec, vec![100]);
         }
 
         let shared_with_factory =
             context.get_shared_state_with_factory::<Vec<i32>, _>(|| vec![200]);
         {
-            let vec = shared_with_factory.lock().map_err(|_| "poisoned")?;
+            let vec = shared_with_factory.lock();
             assert_eq!(*vec, vec![100]);
         }
 
         let clone = context.clone();
         let clone_shared_vec = clone.get_shared_state::<Vec<i32>>();
         {
-            let mut vec = clone_shared_vec.lock().map_err(|_| "poisoned")?;
+            let mut vec = clone_shared_vec.lock();
             vec.push(300);
         }
 
         let context_shared_vec = context.get_shared_state::<Vec<i32>>();
         {
-            let vec = context_shared_vec.lock().map_err(|_| "poisoned")?;
+            let vec = context_shared_vec.lock();
             assert_eq!(*vec, vec![100, 300]);
         }
 
@@ -906,7 +917,7 @@ mod tests {
         let context_shared_vec_after = context.get_shared_state::<Vec<i32>>();
 
         {
-            let vec = context_shared_vec_after.lock().map_err(|_| "poisoned")?;
+            let vec = context_shared_vec_after.lock();
             assert_eq!(*vec, vec![1, 2, 3]);
         }
 

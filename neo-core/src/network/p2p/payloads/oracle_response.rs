@@ -21,6 +21,7 @@ use crate::WitnessScope;
 use lazy_static::lazy_static;
 use neo_vm::{op_code::OpCode, ScriptBuilder};
 use serde::{Deserialize, Serialize};
+use tracing::error;
 
 /// Indicates the maximum size of the Result field.
 pub const MAX_RESULT_SIZE: usize = u16::MAX as usize;
@@ -54,9 +55,10 @@ impl OracleResponse {
                 builder.emit_push_int(CallFlags::ALL.bits() as i64);
                 builder.emit_push("finish".as_bytes());
                 builder.emit_push(&oracle_hash.to_array());
-                builder
-                    .emit_syscall("System.Contract.Call")
-                    .expect("emit_syscall should succeed");
+                if let Err(err) = builder.emit_syscall("System.Contract.Call") {
+                    error!(?err, "Failed to build OracleContract finish syscall script");
+                    return Vec::new();
+                }
                 builder.to_array()
             };
         }

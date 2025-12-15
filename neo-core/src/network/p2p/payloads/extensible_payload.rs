@@ -93,8 +93,12 @@ impl ExtensiblePayload {
         }
 
         let mut writer = BinaryWriter::new();
-        self.serialize_unsigned(&mut writer)
-            .expect("extensible payload serialization should not fail");
+        if let Err(err) = self.serialize_unsigned(&mut writer) {
+            tracing::error!("ExtensiblePayload unsigned serialization failed: {err}");
+            let hash = UInt256::zero();
+            self._hash = Some(hash);
+            return hash;
+        }
         let hash = UInt256::from(crate::neo_crypto::sha256(&writer.into_bytes()));
         self._hash = Some(hash);
         hash
@@ -182,8 +186,10 @@ impl crate::IVerifiable for ExtensiblePayload {
 
     fn get_hash_data(&self) -> Vec<u8> {
         let mut writer = BinaryWriter::new();
-        self.serialize_unsigned(&mut writer)
-            .expect("extensible payload unsigned serialization should succeed");
+        if let Err(err) = self.serialize_unsigned(&mut writer) {
+            tracing::error!("Failed to serialize extensible payload unsigned data: {err}");
+            return Vec::new();
+        }
         writer.into_bytes()
     }
 

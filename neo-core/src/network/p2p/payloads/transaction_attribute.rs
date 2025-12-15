@@ -12,8 +12,8 @@
 use super::{
     conflicts::Conflicts, high_priority_attribute::HighPriorityAttribute,
     not_valid_before::NotValidBefore, notary_assisted::NotaryAssisted,
-    oracle_response::OracleResponse, oracle_response_code::OracleResponseCode, transaction::Transaction,
-    TransactionAttributeType,
+    oracle_response::OracleResponse, oracle_response_code::OracleResponseCode,
+    transaction::Transaction, TransactionAttributeType,
 };
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::persistence::DataCache;

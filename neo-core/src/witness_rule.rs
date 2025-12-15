@@ -9,6 +9,7 @@ use crate::neo_io::serializable::helper::get_var_size;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::UInt160;
 use hex::{decode as hex_decode, encode as hex_encode};
+use neo_vm::StackItem;
 use serde::de::Error as SerdeDeError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{json, Value};
@@ -378,6 +379,38 @@ impl WitnessCondition {
             other => Err(format!("Unsupported witness condition type: {other}")),
         }
     }
+
+    /// Converts the witness condition to a VM stack item (matches C# `WitnessCondition.ToStackItem`).
+    pub fn to_stack_item(&self) -> StackItem {
+        let mut items = vec![StackItem::from_int(i64::from(
+            self.condition_type().to_byte(),
+        ))];
+
+        match self {
+            WitnessCondition::Boolean { value } => {
+                items.push(StackItem::from_bool(*value));
+            }
+            WitnessCondition::Not { condition } => {
+                items.push(condition.to_stack_item());
+            }
+            WitnessCondition::And { conditions } | WitnessCondition::Or { conditions } => {
+                let expressions = conditions
+                    .iter()
+                    .map(WitnessCondition::to_stack_item)
+                    .collect::<Vec<_>>();
+                items.push(StackItem::from_array(expressions));
+            }
+            WitnessCondition::ScriptHash { hash } | WitnessCondition::CalledByContract { hash } => {
+                items.push(StackItem::from_byte_string(hash.to_bytes()));
+            }
+            WitnessCondition::Group { group } | WitnessCondition::CalledByGroup { group } => {
+                items.push(StackItem::from_byte_string(group.clone()));
+            }
+            WitnessCondition::CalledByEntry => {}
+        }
+
+        StackItem::from_array(items)
+    }
 }
 
 impl WitnessRule {
@@ -413,6 +446,14 @@ impl WitnessRule {
             .ok_or_else(|| "WitnessRule missing condition".to_string())?;
         let condition = WitnessCondition::from_json(condition_value)?;
         Ok(Self { action, condition })
+    }
+
+    /// Converts the witness rule to a VM stack item (matches C# `WitnessRule.ToStackItem`).
+    pub fn to_stack_item(&self) -> StackItem {
+        StackItem::from_array(vec![
+            StackItem::from_int(i64::from(self.action.to_byte())),
+            self.condition.to_stack_item(),
+        ])
     }
 }
 

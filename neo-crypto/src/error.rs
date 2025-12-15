@@ -5,6 +5,13 @@ use thiserror::Error;
 /// Errors that can occur during cryptographic operations.
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum CryptoError {
+    /// Invalid argument provided to a cryptographic utility.
+    #[error("Invalid argument: {message}")]
+    InvalidArgument {
+        /// Error message describing the argument issue.
+        message: String,
+    },
+
     /// Invalid key format or length.
     #[error("Invalid key: {message}")]
     InvalidKey {
@@ -42,6 +49,13 @@ pub enum CryptoError {
 }
 
 impl CryptoError {
+    /// Create a new invalid argument error.
+    pub fn invalid_argument<S: Into<String>>(message: S) -> Self {
+        Self::InvalidArgument {
+            message: message.into(),
+        }
+    }
+
     /// Create a new invalid key error.
     pub fn invalid_key<S: Into<String>>(message: S) -> Self {
         Self::InvalidKey {

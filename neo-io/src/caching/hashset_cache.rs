@@ -1,6 +1,7 @@
 //! HashSetCache - faithful port of Neo.IO.Caching.HashSetCache
 
 use super::keyed_collection_slim::KeyedCollectionSlim;
+use crate::{IoError, IoResult};
 use std::hash::Hash;
 
 /// A cache that uses a hash set to store items (matches C# `HashSetCache<T>`).
@@ -118,24 +119,28 @@ where
     }
 
     /// Copies the elements into the destination slice starting at `start_index` (C# `CopyTo`).
-    pub fn copy_to(&self, destination: &mut [T], start_index: usize) {
+    pub fn copy_to(&self, destination: &mut [T], start_index: usize) -> IoResult<()> {
         if start_index > destination.len() {
-            panic!("start_index exceeds destination length");
+            return Err(IoError::invalid_data(
+                "start_index exceeds destination length",
+            ));
         }
 
         let count = self.count();
         if start_index + count > destination.len() {
-            panic!(
+            return Err(IoError::invalid_data(format!(
                 "start_index ({}) + count ({}) > destination length ({})",
                 start_index,
                 count,
                 destination.len()
-            );
+            )));
         }
 
         for (offset, value) in self.items.iter().cloned().enumerate() {
             destination[start_index + offset] = value;
         }
+
+        Ok(())
     }
 
     /// Returns an iterator over the cached values (C# `GetEnumerator`).

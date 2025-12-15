@@ -52,7 +52,7 @@ Practical checks and routines for running `neo-cli` in production.
 - If out of sync: restart, then check peers/ports and compare network magic/seed list. If the DB is corrupt, restore from the latest good backup and resync.
 - If RPC is overloaded: raise `rpc.max_connections` / `NEO_RPC_PORT` and place a reverse proxy with rate limits; consider moving RPC to a dedicated instance.
 - If disk is full: expand the volume, prune old backups/logs, and keep RocksDB on fast, durable storage.
-- If plugin state looks off: use `neo-cli plugins active` (local) to see loaded plugins. The `getplugins` RPC is disabled by default in production; only enable it behind auth/proxy if you need remote visibility.
+- If plugin state looks off: use `neo-cli plugins active` (local) to see loaded plugins. The `listplugins` RPC is disabled by default in production; only enable it behind auth/proxy if you need remote visibility.
 
 ## Upgrades
 - Backup data and configs.

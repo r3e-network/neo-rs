@@ -4,7 +4,7 @@ use crate::hardfork::Hardfork;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::find_options::FindOptions;
-use crate::smart_contract::iterators::StorageIterator;
+use crate::smart_contract::iterators::{IteratorInterop, StorageIterator};
 use crate::smart_contract::storage_context::StorageContext;
 use neo_vm::error::VmError;
 use neo_vm::{ExecutionEngine, StackItem, VmResult};
@@ -392,7 +392,7 @@ fn storage_find_local_handler(
     let iterator_id = app
         .store_storage_iterator(iterator)
         .map_err(|e| map_storage_error("System.Storage.Local.Find", e))?;
-    app.push_bytes(iterator_id.to_le_bytes().to_vec())
+    app.push(StackItem::from_interface(IteratorInterop::new(iterator_id)))
         .map_err(|e| map_storage_error("System.Storage.Local.Find", e))?;
     Ok(())
 }
@@ -428,7 +428,7 @@ fn storage_find_handler(
     let iterator_id = app
         .store_storage_iterator(iterator)
         .map_err(|e| map_storage_error("System.Storage.Find", e))?;
-    app.push_bytes(iterator_id.to_le_bytes().to_vec())
+    app.push(StackItem::from_interface(IteratorInterop::new(iterator_id)))
         .map_err(|e| map_storage_error("System.Storage.Find", e))?;
     Ok(())
 }

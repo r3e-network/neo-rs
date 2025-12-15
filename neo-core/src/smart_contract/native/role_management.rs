@@ -10,7 +10,8 @@ use crate::persistence::{DataCache, IReadOnlyStoreGeneric, SeekDirection};
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::native::{LedgerContract, NativeContract, NativeMethod, Role};
 use crate::smart_contract::storage_key::StorageKey;
-use crate::{ECPoint, UInt160};
+use crate::smart_contract::ContractParameterType;
+use crate::{ECCurve, ECPoint, UInt160};
 use std::convert::TryInto;
 
 /// The RoleManagement native contract.
@@ -34,11 +35,24 @@ impl RoleManagement {
         .expect("Operation failed");
 
         let methods = vec![
-            NativeMethod::safe("getDesignatedByRole".to_string(), 1 << SECONDS_PER_BLOCK),
+            NativeMethod::safe(
+                "getDesignatedByRole".to_string(),
+                1 << SECONDS_PER_BLOCK,
+                vec![
+                    ContractParameterType::Integer,
+                    ContractParameterType::Integer,
+                ],
+                ContractParameterType::ByteArray,
+            ),
             NativeMethod::unsafe_method(
                 "designateAsRole".to_string(),
                 1 << SECONDS_PER_BLOCK,
                 0x01,
+                vec![
+                    ContractParameterType::Integer,
+                    ContractParameterType::ByteArray,
+                ],
+                ContractParameterType::Boolean,
             ),
         ];
 
@@ -297,8 +311,8 @@ impl RoleManagement {
                     "Invalid public key prefix".to_string(),
                 ));
             }
-            let pubkey = ECPoint::decode_compressed(&key_bytes)
-                .map_err(|_| Error::native_contract("Invalid public key encoding".to_string()))?;
+            let pubkey = ECPoint::decode_compressed_with_curve(ECCurve::secp256r1(), &key_bytes)
+                .map_err(|e| Error::native_contract(format!("Invalid public key encoding: {}", e)))?;
             keys.push(pubkey);
             offset += 33;
         }
@@ -352,14 +366,19 @@ impl Default for RoleManagement {
 mod tests {
     use super::*;
     use crate::smart_contract::StorageItem;
+    use crate::cryptography::Secp256r1Crypto;
 
     fn sample_point(tag: u8) -> ECPoint {
-        let mut bytes = [0u8; 33];
-        bytes[0] = 0x02;
-        for b in bytes.iter_mut().skip(1) {
-            *b = tag;
-        }
-        ECPoint::decode_compressed(&bytes).expect("valid test key")
+        let private_key = {
+            let mut bytes = [0u8; 32];
+            bytes[31] = tag.max(1);
+            bytes
+        };
+
+        let public_key = Secp256r1Crypto::derive_public_key(&private_key)
+            .expect("derive public key for test");
+        ECPoint::decode_compressed_with_curve(ECCurve::secp256r1(), &public_key)
+            .expect("valid test key")
     }
 
     #[test]

@@ -16,8 +16,8 @@ use crate::{
         trigger_type::TriggerType,
     },
 };
-use neo_vm::{op_code::OpCode, vm_state::VMState, ScriptBuilder};
 use neo_primitives::UInt160;
+use neo_vm::{op_code::OpCode, vm_state::VMState, ScriptBuilder};
 use num_traits::ToPrimitive;
 use std::sync::Arc;
 

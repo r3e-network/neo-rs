@@ -187,15 +187,68 @@ impl Witness {
     /// Verifies a multi-signature witness against the provided message.
     pub fn verify_multi_signature(
         &self,
-        _message: &[u8],
-        _account: &UInt160,
-        _required_signatures: usize,
-        _public_keys: &[Vec<u8>],
-        _signatures: &[Vec<u8>],
+        message: &[u8],
+        account: &UInt160,
+        required_signatures: usize,
+        public_keys: &[Vec<u8>],
+        signatures: &[Vec<u8>],
     ) -> CoreResult<bool> {
-        Err(CoreError::invalid_operation(
-            "Multi-signature verification is not implemented for this witness type".to_string(),
-        ))
+        use crate::cryptography::Secp256r1Crypto;
+        use crate::smart_contract::helper::Helper;
+
+        if required_signatures == 0
+            || public_keys.is_empty()
+            || required_signatures > public_keys.len()
+            || signatures.len() != required_signatures
+        {
+            return Ok(false);
+        }
+
+        let script = match Helper::try_multi_sig_redeem_script(required_signatures, public_keys) {
+            Ok(script) => script,
+            Err(_) => return Ok(false),
+        };
+
+        if UInt160::from_script(&script) != *account {
+            return Ok(false);
+        }
+
+        let mut sorted_keys = public_keys.to_vec();
+        sorted_keys.sort();
+
+        let total_keys = sorted_keys.len();
+        let mut sig_index = 0usize;
+        let mut key_index = 0usize;
+
+        while sig_index < required_signatures && key_index < total_keys {
+            let signature = &signatures[sig_index];
+            if signature.len() != 64 {
+                return Ok(false);
+            }
+
+            let signature_bytes: [u8; 64] = signature
+                .as_slice()
+                .try_into()
+                .map_err(|_| CoreError::invalid_data("Invalid signature length"))?;
+
+            let verified =
+                Secp256r1Crypto::verify(message, &signature_bytes, &sorted_keys[key_index])
+                    .map_err(|e| CoreError::Cryptographic {
+                        message: format!("ECDSA verification failed: {e}"),
+                    })?;
+
+            if verified {
+                sig_index += 1;
+            }
+
+            key_index += 1;
+
+            if required_signatures - sig_index > total_keys - key_index {
+                return Ok(false);
+            }
+        }
+
+        Ok(sig_index == required_signatures)
     }
 
     /// Extracts public key from verification script (matches C# verification script parsing exactly).
@@ -267,7 +320,7 @@ impl Witness {
     ) -> CoreResult<bool> {
         // Real C# Neo N3 implementation: ECDsa.VerifyData
 
-        use crate::cryptography::crypto_utils::Secp256r1Crypto;
+        use crate::cryptography::Secp256r1Crypto;
 
         let signature_bytes: [u8; 64] = signature
             .try_into()
@@ -284,7 +337,7 @@ impl Witness {
     fn compute_script_hash_from_public_key(&self, public_key: &[u8]) -> CoreResult<UInt160> {
         // Implements C# Contract.CreateSignatureContract functionality
 
-        use crate::cryptography::crypto_utils::NeoHash;
+        use crate::cryptography::NeoHash;
 
         let verification_script = self.create_verification_script_from_public_key(public_key)?;
 
@@ -378,6 +431,7 @@ impl fmt::Display for Witness {
 mod tests {
     use super::*;
     use crate::neo_io::Serializable;
+    use crate::{cryptography::Secp256r1Crypto, smart_contract::helper::Helper};
 
     #[test]
     fn test_witness_new() {
@@ -426,5 +480,43 @@ mod tests {
             witness.verification_script,
             deserialized.verification_script
         );
+    }
+
+    #[test]
+    fn test_witness_verify_multi_signature() {
+        let message = b"neo-multisig-test";
+
+        let priv1 = Secp256r1Crypto::generate_private_key();
+        let priv2 = Secp256r1Crypto::generate_private_key();
+        let priv3 = Secp256r1Crypto::generate_private_key();
+
+        let pub1 = Secp256r1Crypto::derive_public_key(&priv1).unwrap();
+        let pub2 = Secp256r1Crypto::derive_public_key(&priv2).unwrap();
+        let pub3 = Secp256r1Crypto::derive_public_key(&priv3).unwrap();
+
+        let m = 2usize;
+        let mut pairs = [(pub1, priv1), (pub2, priv2), (pub3, priv3)];
+        pairs.sort_by(|(a, _), (b, _)| a.cmp(b));
+
+        let public_keys: Vec<Vec<u8>> = pairs.iter().map(|(p, _)| p.clone()).collect();
+        let verification_script = Helper::multi_sig_redeem_script(m, &public_keys);
+        let account = UInt160::from_script(&verification_script);
+
+        let signatures: Vec<Vec<u8>> = pairs
+            .iter()
+            .take(m)
+            .map(|(_, pk)| Secp256r1Crypto::sign(message, pk).unwrap().to_vec())
+            .collect();
+
+        let witness = Witness::new();
+        let ok = witness
+            .verify_multi_signature(message, &account, m, &public_keys, &signatures)
+            .unwrap();
+        assert!(ok);
+
+        let bad = witness
+            .verify_multi_signature(message, &account, m, &public_keys, &signatures[..1])
+            .unwrap();
+        assert!(!bad);
     }
 }

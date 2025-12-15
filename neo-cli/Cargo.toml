@@ -1,0 +1,43 @@
+[package]
+name = "neo-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "Command-line client for Neo N3 blockchain nodes"
+
+[[bin]]
+name = "neo-cli"
+path = "src/main.rs"
+
+[dependencies]
+# RPC client for communicating with neo-node
+neo-rpc = { path = "../neo-rpc", features = ["client"] }
+neo-primitives = { path = "../neo-primitives" }
+neo-json = { path = "../neo-json" }
+
+# CLI framework
+clap = { workspace = true, features = ["derive"] }
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Async runtime
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+
+# Error handling
+anyhow.workspace = true
+thiserror.workspace = true
+
+# Utilities
+hex.workspace = true
+base64.workspace = true
+url.workspace = true

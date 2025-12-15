@@ -9,8 +9,8 @@ use crate::network::p2p::payloads::{
 };
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::native::helpers::NativeHelpers;
-use neo_vm::OpCode;
 use neo_primitives::{UInt160, UInt256};
+use neo_vm::OpCode;
 
 /// Creates the genesis block for the given protocol settings.
 ///

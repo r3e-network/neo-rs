@@ -13,10 +13,11 @@ use super::{
     i_store::IStore, i_store_provider::IStoreProvider,
     providers::memory_store_provider::MemoryStoreProvider,
 };
-use crate::error::CoreResult;
+use crate::error::{CoreError, CoreResult};
 use once_cell::sync::Lazy;
+use parking_lot::RwLock;
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 /// Global registry of store providers.
 static PROVIDERS: Lazy<RwLock<HashMap<String, Arc<dyn IStoreProvider>>>> = Lazy::new(|| {
@@ -36,13 +37,13 @@ pub struct StoreFactory;
 impl StoreFactory {
     /// Register a store provider.
     pub fn register_provider(provider: Arc<dyn IStoreProvider>) {
-        let mut providers = PROVIDERS.write().unwrap();
+        let mut providers = PROVIDERS.write();
         providers.insert(provider.name().to_string(), provider);
     }
 
     /// Get store provider by name.
     pub fn get_store_provider(name: &str) -> Option<Arc<dyn IStoreProvider>> {
-        let providers = PROVIDERS.read().unwrap();
+        let providers = PROVIDERS.read();
         providers.get(name).cloned()
     }
 
@@ -54,11 +55,12 @@ impl StoreFactory {
     /// * `path` - The path of the storage.
     ///   If storage_provider is the default in-memory storage engine, this parameter is ignored.
     pub fn get_store(storage_provider: &str, path: &str) -> CoreResult<Arc<dyn IStore>> {
-        let providers = PROVIDERS.read().unwrap();
+        let providers = PROVIDERS.read();
         let provider = providers
             .get(storage_provider)
             .or_else(|| providers.get(""))
-            .expect("Store provider not found");
+            .cloned()
+            .ok_or_else(|| CoreError::invalid_operation("Store provider not found"))?;
         provider.get_store(path)
     }
 }

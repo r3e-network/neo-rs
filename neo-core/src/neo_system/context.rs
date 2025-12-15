@@ -5,23 +5,23 @@
 //! registration, and data retrieval helpers while keeping the heavy orchestration
 //! logic in `core.rs`.
 
+use parking_lot::{Mutex, RwLock};
 use std::any::Any;
 use std::fmt;
-use std::sync::{Arc, Mutex, RwLock, Weak};
+use std::sync::{Arc, Weak};
 use std::thread;
 
-use akka::{ActorRef, ActorSystemHandle, EventStreamHandle};
-use tracing::{debug, trace, warn};
+use crate::akka::{ActorRef, ActorSystemHandle, EventStreamHandle};
+use tracing::{trace, warn};
 
 use super::converters::{convert_ledger_block, convert_ledger_header};
-use super::helpers::block_on_extension;
 use super::registry::ServiceRegistry;
 use super::relay::{RelayExtensibleCache, RelayExtensibleEntry, LEDGER_HYDRATION_WINDOW};
 use super::system::{ReadinessStatus, STATE_STORE_SERVICE};
 use crate::contains_transaction_type::ContainsTransactionType;
 use crate::error::{CoreError, CoreResult};
 use crate::extensions::log_level::LogLevel;
-use crate::extensions::plugin::{broadcast_global_event, PluginEvent};
+use crate::events::{broadcast_plugin_event, PluginEvent};
 use crate::i_event_handlers::{
     ICommittedHandler, ICommittingHandler, ILogHandler, ILoggingHandler, INotifyHandler,
     IServiceAddedHandler, ITransactionAddedHandler, ITransactionRemovedHandler,
@@ -75,6 +75,7 @@ pub struct NeoSystemContext {
     /// Cached genesis block shared with the blockchain actor.
     pub(crate) genesis_block: Arc<Block>,
     pub(crate) ledger: Arc<LedgerContext>,
+    pub(crate) state_service_enabled: bool,
     pub(crate) state_store: Arc<StateStore>,
     pub(crate) memory_pool: Arc<Mutex<MemoryPool>>,
     pub(crate) header_cache: Arc<HeaderCache>,
@@ -105,14 +106,7 @@ impl fmt::Debug for NeoSystemContext {
             .field("store_provider", &"StoreProvider")
             .field("store", &"Store")
             .field("ledger_height", &self.ledger.current_height())
-            .field(
-                "memory_pool_size",
-                &self
-                    .memory_pool
-                    .lock()
-                    .map(|pool| pool.count())
-                    .unwrap_or(0usize),
-            )
+            .field("memory_pool_size", &self.memory_pool.lock().count())
             .field("cached_headers", &self.header_cache.count())
             .finish()
     }
@@ -164,6 +158,9 @@ impl NeoSystemContext {
 
     /// Access the registered state store service if present.
     pub fn state_store(&self) -> CoreResult<Option<Arc<StateStore>>> {
+        if !self.state_service_enabled {
+            return Ok(None);
+        }
         if let Some(service) = self.typed_service::<StateStore>(STATE_STORE_SERVICE)? {
             return Ok(Some(service));
         }
@@ -288,26 +285,19 @@ impl NeoSystemContext {
 
     /// Sets a weak reference to the owning NeoSystem.
     pub fn set_system(&self, system: Weak<NeoSystem>) {
-        if let Ok(mut guard) = self.system.write() {
-            *guard = Some(system);
-        }
+        *self.system.write() = Some(system);
     }
 
     /// Attempts to upgrade to a strong reference to the NeoSystem.
     ///
     /// Returns `None` if:
-    /// - The system lock is poisoned
     /// - The weak reference was never set
     /// - The NeoSystem has been dropped (shutdown in progress)
     ///
     /// Callers should handle `None` gracefully, typically by aborting the
     /// current operation or returning early.
     pub fn neo_system(&self) -> Option<Arc<NeoSystem>> {
-        let result = self
-            .system
-            .read()
-            .ok()
-            .and_then(|guard| guard.as_ref().and_then(|weak| weak.upgrade()));
+        let result = self.system.read().as_ref().and_then(|weak| weak.upgrade());
 
         if result.is_none() {
             // Log at trace level to avoid spam during normal shutdown
@@ -326,26 +316,20 @@ impl NeoSystemContext {
     pub fn is_system_alive(&self) -> bool {
         self.system
             .read()
-            .ok()
-            .and_then(|guard| guard.as_ref().map(|weak| weak.strong_count() > 0))
+            .as_ref()
+            .map(|weak| weak.strong_count() > 0)
             .unwrap_or(false)
     }
 
     pub fn broadcast_plugin_event(&self, event: PluginEvent) {
-        if let Err(err) = block_on_extension(broadcast_global_event(&event)) {
-            debug!(target: "neo", %err, "failed to broadcast plugin event");
-        }
+        broadcast_plugin_event(&event);
     }
 
     pub fn register_committing_handler(
         &self,
         handler: Arc<dyn ICommittingHandler + Send + Sync>,
     ) -> CoreResult<()> {
-        let mut guard = self
-            .committing_handlers
-            .write()
-            .map_err(|_| CoreError::system("committing handler registry poisoned"))?;
-        guard.push(handler);
+        self.committing_handlers.write().push(handler);
         Ok(())
     }
 
@@ -353,11 +337,7 @@ impl NeoSystemContext {
         &self,
         handler: Arc<dyn ICommittedHandler + Send + Sync>,
     ) -> CoreResult<()> {
-        let mut guard = self
-            .committed_handlers
-            .write()
-            .map_err(|_| CoreError::system("committed handler registry poisoned"))?;
-        guard.push(handler);
+        self.committed_handlers.write().push(handler);
         Ok(())
     }
 
@@ -365,11 +345,7 @@ impl NeoSystemContext {
         &self,
         handler: Arc<dyn ITransactionAddedHandler + Send + Sync>,
     ) -> CoreResult<()> {
-        let mut guard = self
-            .transaction_added_handlers
-            .write()
-            .map_err(|_| CoreError::system("transaction added handler registry poisoned"))?;
-        guard.push(handler);
+        self.transaction_added_handlers.write().push(handler);
         Ok(())
     }
 
@@ -377,11 +353,7 @@ impl NeoSystemContext {
         &self,
         handler: Arc<dyn ITransactionRemovedHandler + Send + Sync>,
     ) -> CoreResult<()> {
-        let mut guard = self
-            .transaction_removed_handlers
-            .write()
-            .map_err(|_| CoreError::system("transaction removed handler registry poisoned"))?;
-        guard.push(handler);
+        self.transaction_removed_handlers.write().push(handler);
         Ok(())
     }
 
@@ -389,11 +361,7 @@ impl NeoSystemContext {
         &self,
         handler: Arc<dyn ILogHandler + Send + Sync>,
     ) -> CoreResult<()> {
-        let mut guard = self
-            .log_handlers
-            .write()
-            .map_err(|_| CoreError::system("log handler registry poisoned"))?;
-        guard.push(handler);
+        self.log_handlers.write().push(handler);
         Ok(())
     }
 
@@ -401,11 +369,7 @@ impl NeoSystemContext {
         &self,
         handler: Arc<dyn ILoggingHandler + Send + Sync>,
     ) -> CoreResult<()> {
-        let mut guard = self
-            .logging_handlers
-            .write()
-            .map_err(|_| CoreError::system("logging handler registry poisoned"))?;
-        guard.push(handler);
+        self.logging_handlers.write().push(handler);
         Ok(())
     }
 
@@ -413,10 +377,7 @@ impl NeoSystemContext {
         &self,
         handler: Arc<dyn INotifyHandler + Send + Sync>,
     ) -> CoreResult<()> {
-        self.notify_handlers
-            .write()
-            .map_err(|_| CoreError::system("notify handler registry poisoned"))?
-            .push(handler);
+        self.notify_handlers.write().push(handler);
         Ok(())
     }
 
@@ -425,51 +386,38 @@ impl NeoSystemContext {
         handler: Arc<dyn IWalletChangedHandler + Send + Sync>,
     ) -> CoreResult<()> {
         let handler_clone = handler.clone();
-        self.wallet_changed_handlers
-            .write()
-            .map_err(|_| CoreError::system("wallet changed handler registry poisoned"))?
-            .push(handler);
-        let current = self
-            .current_wallet
-            .read()
-            .map_err(|_| CoreError::system("current wallet lock poisoned"))?
-            .clone();
+        self.wallet_changed_handlers.write().push(handler);
+        let current = self.current_wallet.read().clone();
         handler_clone.i_wallet_provider_wallet_changed_handler(self, current);
         Ok(())
     }
 
     pub fn notify_application_log(&self, engine: &ApplicationEngine, args: &LogEventArgs) {
-        if let Ok(handlers) = self.log_handlers.read() {
-            for handler in handlers.iter() {
-                handler.application_engine_log_handler(engine, args);
-            }
+        let handlers = { self.log_handlers.read().clone() };
+        for handler in handlers {
+            handler.application_engine_log_handler(engine, args);
         }
     }
 
     pub fn notify_logging_handlers(&self, source: &str, level: LogLevel, message: &str) {
-        if let Ok(handlers) = self.logging_handlers.read() {
-            for handler in handlers.iter() {
-                handler.utility_logging_handler(source, level, message);
-            }
+        let handlers = { self.logging_handlers.read().clone() };
+        for handler in handlers {
+            handler.utility_logging_handler(source, level, message);
         }
     }
 
     pub fn notify_application_notify(&self, engine: &ApplicationEngine, args: &NotifyEventArgs) {
-        if let Ok(handlers) = self.notify_handlers.read() {
-            for handler in handlers.iter() {
-                handler.application_engine_notify_handler(engine, args);
-            }
+        let handlers = { self.notify_handlers.read().clone() };
+        for handler in handlers {
+            handler.application_engine_notify_handler(engine, args);
         }
     }
 
     pub fn notify_wallet_changed(&self, sender: &dyn Any, wallet: Option<Arc<dyn Wallet>>) {
-        if let Ok(mut current) = self.current_wallet.write() {
-            *current = wallet.clone();
-        }
-        if let Ok(handlers) = self.wallet_changed_handlers.read() {
-            for handler in handlers.iter() {
-                handler.i_wallet_provider_wallet_changed_handler(sender, wallet.clone());
-            }
+        *self.current_wallet.write() = wallet.clone();
+        let handlers = { self.wallet_changed_handlers.read().clone() };
+        for handler in handlers {
+            handler.i_wallet_provider_wallet_changed_handler(sender, wallet.clone());
         }
         let wallet_name = wallet
             .as_ref()
@@ -661,16 +609,13 @@ impl NeoSystemContext {
 
     /// Attempts to retrieve a transaction from the in-memory pool without touching persistence.
     pub fn try_get_transaction_from_mempool(&self, hash: &UInt256) -> Option<Transaction> {
-        let guard = self.memory_pool.lock().ok()?;
-        guard.try_get(hash)
+        self.memory_pool.lock().try_get(hash)
     }
 
     /// Determines whether a transaction exists in the mempool or persisted store.
     pub fn contains_transaction(&self, hash: &UInt256) -> ContainsTransactionType {
-        if let Ok(pool) = self.memory_pool.lock() {
-            if pool.contains_key(hash) {
-                return ContainsTransactionType::ExistsInPool;
-            }
+        if self.memory_pool.lock().contains_key(hash) {
+            return ContainsTransactionType::ExistsInPool;
         }
 
         let ledger_contract = LedgerContract::new();

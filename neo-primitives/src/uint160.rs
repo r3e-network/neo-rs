@@ -245,7 +245,7 @@ impl UInt160 {
 
     /// Converts this UInt160 to a Neo address string.
     pub fn to_address(&self) -> String {
-        let version_byte = 0x35u8; // Neo N3 address version
+        let version_byte = crate::constants::ADDRESS_VERSION;
         let mut data = Vec::with_capacity(21);
         data.push(version_byte);
         data.extend_from_slice(&self.to_array());
@@ -279,7 +279,7 @@ impl UInt160 {
             });
         }
 
-        if decoded[0] != 0x35 {
+        if decoded[0] != crate::constants::ADDRESS_VERSION {
             return Err(PrimitiveError::InvalidFormat {
                 message: "Invalid address version".to_string(),
             });
@@ -350,7 +350,19 @@ impl Ord for UInt160 {
 
 impl From<[u8; UINT160_SIZE]> for UInt160 {
     fn from(data: [u8; UINT160_SIZE]) -> Self {
-        Self::from_bytes(&data).expect("Fixed-size array should always be valid")
+        let mut value1_bytes = [0u8; 8];
+        let mut value2_bytes = [0u8; 8];
+        let mut value3_bytes = [0u8; 4];
+
+        value1_bytes.copy_from_slice(&data[0..8]);
+        value2_bytes.copy_from_slice(&data[8..16]);
+        value3_bytes.copy_from_slice(&data[16..UINT160_SIZE]);
+
+        Self {
+            value1: u64::from_le_bytes(value1_bytes),
+            value2: u64::from_le_bytes(value2_bytes),
+            value3: u32::from_le_bytes(value3_bytes),
+        }
     }
 }
 

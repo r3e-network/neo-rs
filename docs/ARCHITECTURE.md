@@ -15,15 +15,14 @@ The codebase follows a strict layered architecture with clear dependency rules:
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                   INFRASTRUCTURE LAYER                           │
-│  neo-akka (actors)   neo-services   neo-rpc-client   neo-plugins│
-│                      neo-tee (TEE support)                       │
+│  neo-akka (actors)   neo-plugins   neo-tee (TEE support)        │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                       CORE LAYER                                 │
-│  neo-core      neo-vm       neo-contract    neo-p2p             │
-│  neo-rpc       neo-consensus    neo-extensions                  │
+│  neo-core      neo-vm       neo-p2p      neo-consensus          │
+│  neo-rpc (server + client)                                       │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -39,11 +38,21 @@ The codebase follows a strict layered architecture with clear dependency rules:
 
 **Dependency Rule**: Each layer may only depend on layers below it. Never depend upward.
 
+## Application Layer (binaries)
+
+The application layer is where user-facing binaries live. These binaries orchestrate lower-level crates but
+should not blur boundaries by directly reaching into internal node state when an RPC boundary exists.
+
+- **neo-node**: The node daemon. Runs P2P sync, consensus/services, and (optionally) the JSON-RPC server.
+  It is designed to be deployed and managed like a service.
+- **neo-cli**: The RPC client. A user-facing command line tool that connects to a running `neo-node`
+  (or any compatible Neo JSON-RPC endpoint) to query state and submit transactions. It does not run a node.
+
 ## Crates and Responsibilities
 
-### Foundation Layer (no neo-* dependencies except within layer)
+### Foundation Layer (no neo-\* dependencies except within layer)
 
-- **neo-primitives**: Core primitive types (`UInt160`, `UInt256`, `BigDecimal`), constants, and basic error types. Zero external neo-* dependencies.
+- **neo-primitives**: Core primitive types (`UInt160`, `UInt256`, `BigDecimal`), constants, and basic error types. Zero external neo-\* dependencies.
 - **neo-crypto**: Cryptographic primitives (SHA256, RIPEMD160, Keccak256, Blake2, Hash160, Hash256), elliptic curve types (`ECCurve`, `ECPoint`). Depends only on `neo-primitives`.
 - **neo-storage**: Storage trait abstractions (`IReadOnlyStore`, `IWriteStore`, `IStore`, `ISnapshot`), `StorageKey`, `StorageItem`, `SeekDirection`. Breaks circular dependencies between persistence and smart contracts.
 - **neo-io**: Binary serialization (`BinaryReader`, `BinaryWriter`, `MemoryReader`), caching utilities. Matches C# `Neo.IO`.
@@ -51,27 +60,26 @@ The codebase follows a strict layered architecture with clear dependency rules:
 
 ### Core Layer
 
-- **neo-core**: Consensus-neutral protocol logic (ledger, state service, VM host integration, persistence adapters). Keep public APIs small; prefer `pub(crate)` where possible.
+- **neo-core**: Consensus-neutral protocol logic (ledger, state service, VM host integration, persistence adapters, smart contract execution engine, native contracts, service traits). Keep public APIs small; prefer `pub(crate)` where possible.
 - **neo-vm**: NeoVM execution engine (stack machine, opcodes, script execution). Matches C# `Neo.VM`.
-- **neo-contract**: Smart contract execution engine, native contracts (NEO, GAS, Policy, Oracle, etc.), contract manifest, NEF files. Depends on `neo-vm`.
 - **neo-p2p**: P2P networking layer (message types, peer management, connection handling). Matches C# `Neo.Network.P2P`.
-- **neo-rpc**: Unified RPC server and client. JSON-RPC 2.0 implementation for Neo node communication.
+- **neo-rpc**: Unified RPC server and client. JSON-RPC 2.0 implementation for Neo node communication. Use the `client` feature flag to enable RPC client functionality.
 - **neo-consensus**: dBFT (Delegated Byzantine Fault Tolerance) consensus implementation. Matches C# consensus plugin.
 
 > **Note**: BLS12-381 cryptographic operations use the `blst` crate directly (via neo-core) instead of a separate wrapper crate.
 > **Note**: Extension utilities (formerly neo-extensions) are now integrated into `neo-core::extensions`.
+> **Note**: Smart contract types (formerly neo-contract) are now integrated into `neo-core::smart_contract`.
+> **Note**: Service traits (formerly neo-services) are now integrated into `neo-core::services`.
 
 ### Infrastructure Layer
 
 - **neo-akka**: Actor runtime (Akka-inspired) for concurrent message passing.
-- **neo-services**: Service traits and abstractions for dependency injection.
-- **neo-rpc-client**: Client-side RPC bindings with typed models and helpers. Keep it UI-agnostic so both CLI and external callers can reuse it.
-- **neo-plugins**: Node-side extensions (RocksDB storage, token trackers). Interact with core through typed handles.
+- **neo-plugins**: Node-side extensions (RocksDB storage, RPC server, TokensTracker, etc.).
 - **neo-tee**: Enclave-facing utilities and optional mempool/wallet. Feature-gated; avoid leaking into core.
 
 ### Application Layer
 
-- **neo-cli**: Thin command wrappers over `neo-rpc-client`, no business logic.
+- **neo-cli**: Thin command wrappers over `neo-rpc` (with `client` feature), no business logic.
 - **neo-node**: Daemon composition (config, wiring actors, plugin loading). Owns service registration and lifecycle; avoids protocol logic.
 
 ## Service Access
@@ -85,9 +93,9 @@ The codebase follows a strict layered architecture with clear dependency rules:
 ## Services and Context
 
 - Core service access is via `NeoSystemContext`; use typed accessors (e.g., `state_store()`, `ledger_service()`, `rpc_service()`) instead of `Any` downcasts. When introducing a new service, provide:
-  - A trait for the required behaviour.
-  - A typed accessor on `NeoSystemContext`/`NeoSystem` that also falls back to the canonical in-memory handle so callers aren't forced to know about registry names.
-  - A readiness/health hook if it has external dependencies.
+    - A trait for the required behaviour.
+    - A typed accessor on `NeoSystemContext`/`NeoSystem` that also falls back to the canonical in-memory handle so callers aren't forced to know about registry names.
+    - A readiness/health hook if it has external dependencies.
 - Plugins should go through `neo_plugins::service_access` helpers to avoid duplicating registry lookup logic.
 - State flow: blocks persist via `LedgerContext` → `StateStore` updates local root → network state-root extensible payloads verify/persist via the shared `StateStore` (with `StateRootVerifier` backed by `StoreCache`).
 - Ledger hydration on startup is bounded (last ~2000 headers/blocks) to avoid loading the full chain into memory; older data stays accessible through the store accessors.
@@ -110,6 +118,7 @@ The codebase follows a strict layered architecture with clear dependency rules:
 To prevent deadlocks, acquire locks in this order:
 
 **NeoSystem locks:**
+
 1. `service_registry.services_by_name` (RwLock)
 2. `service_registry.typed_services` (RwLock)
 3. `service_registry.services` (RwLock)
@@ -118,6 +127,7 @@ To prevent deadlocks, acquire locks in this order:
 6. `self_ref` (Mutex)
 
 **NeoSystemContext locks:**
+
 1. `system` (RwLock)
 2. `current_wallet` (RwLock)
 3. `wallet_changed_handlers` (RwLock)
@@ -153,51 +163,66 @@ To prevent deadlocks, acquire locks in this order:
 
 The crate structure mirrors the C# Neo implementation:
 
-| Rust Crate | C# Project |
-|------------|------------|
-| neo-primitives | Neo (partial) |
-| neo-crypto | Neo.Cryptography |
-| neo-io | Neo.IO |
-| neo-json | Neo.Json |
-| neo-vm | Neo.VM |
-| neo-core | Neo |
-| neo-contract | Neo.SmartContract |
-| neo-p2p | Neo.Network.P2P |
-| neo-rpc | Neo.Plugins.RpcServer + RpcClient |
-| neo-consensus | Neo.Plugins.DBFTPlugin |
-| neo-core::extensions | Neo.Extensions |
-| (blst crate) | Neo.Cryptography.BLS12_381 |
+| Rust Crate               | C# Project                        |
+| ------------------------ | --------------------------------- |
+| neo-primitives           | Neo (partial)                     |
+| neo-crypto               | Neo.Cryptography                  |
+| neo-io                   | Neo.IO                            |
+| neo-json                 | Neo.Json                          |
+| neo-vm                   | Neo.VM                            |
+| neo-core                 | Neo                               |
+| neo-core::smart_contract | Neo.SmartContract                 |
+| neo-core::services       | (Service abstractions)            |
+| neo-p2p                  | Neo.Network.P2P                   |
+| neo-rpc                  | Neo.Plugins.RpcServer + RpcClient |
+| neo-consensus            | Neo.Plugins.DBFTPlugin            |
+| neo-core::extensions     | Neo.Extensions                    |
+| (blst crate)             | Neo.Cryptography.BLS12_381        |
+
+## Merged Crates (v0.7.0)
+
+The following crates were merged to simplify the architecture:
+
+| Removed Crate  | Merged Into              | Notes                                       |
+| -------------- | ------------------------ | ------------------------------------------- |
+| neo-contract   | neo-core::smart_contract | Smart contract types, native contracts, NEF |
+| neo-services   | neo-core::services       | Service trait definitions                   |
+| neo-rpc-client | neo-rpc (client feature) | RPC client with `features = ["client"]`     |
 
 ## New Crates Test Coverage
 
 The following new crates were created during the architecture refactoring:
 
-| Crate | Description | Unit Tests |
-|-------|-------------|------------|
-| neo-primitives | UInt160, UInt256, Hardfork, constants | 34 |
-| neo-crypto | Hash functions, ECC types, NamedCurveHash | 22 |
-| neo-storage | Storage traits, KeyBuilder, StorageKey, StorageItem | 21 |
-| neo-contract | TriggerType, ContractParameterType, FindOptions, MethodToken, Role, StorageContext, ContractBasicMethod | 40 |
-| neo-p2p | MessageCommand, InventoryType, WitnessScope, VerifyResult, etc. | 71 |
-| neo-consensus | ConsensusMessageType, ChangeViewReason | 9 |
-| neo-rpc | RpcErrorCode (JSON-RPC and Neo-specific error codes) | 6 |
-| **Total** | | **203** |
+| Crate          | Description                                                     | Unit Tests |
+| -------------- | --------------------------------------------------------------- | ---------- |
+| neo-primitives | UInt160, UInt256, Hardfork, constants                           | 34         |
+| neo-crypto     | Hash functions, ECC types, NamedCurveHash                       | 22         |
+| neo-storage    | Storage traits, KeyBuilder, StorageKey, StorageItem             | 21         |
+| neo-p2p        | MessageCommand, InventoryType, WitnessScope, VerifyResult, etc. | 71         |
+| neo-consensus  | ConsensusMessageType, ChangeViewReason                          | 9          |
+| neo-rpc        | RpcErrorCode, RPC client (with `client` feature)                | 6+         |
+| **Total**      |                                                                 | **163+**   |
+
+> **Note**: neo-contract tests (40) are now part of neo-core::smart_contract module tests.
 
 ### Key Types by Crate
 
 **neo-primitives:**
+
 - `UInt160` - 160-bit unsigned integer (script hashes, addresses)
 - `UInt256` - 256-bit unsigned integer (block/transaction hashes)
 - `Hardfork` - Neo blockchain hardfork enumeration (Aspidochelone, Basilisk, etc.)
 - Protocol constants (network magic, ports, sizes, fees, etc.)
 
 **neo-crypto:**
+
 - `Crypto` - Hash functions (SHA256, SHA512, RIPEMD160, Keccak256, Blake2b/s, Hash160, Hash256)
 - `ECCurve` - Elliptic curve identifiers (Secp256r1, Secp256k1, Ed25519)
 - `ECPoint` - Elliptic curve point representation
 - `NamedCurveHash` - Curve and hash algorithm combinations for signatures
 
 **neo-storage:**
+
 - `IReadOnlyStore` - Read-only storage trait
 - `IWriteStore` - Write storage trait
 - `IStore` - Combined read/write storage trait
@@ -205,7 +230,8 @@ The following new crates were created during the architecture refactoring:
 - `SeekDirection`, `TrackState` - Storage utilities
 - `KeyBuilder` - Builder for constructing storage keys
 
-**neo-contract:**
+**neo-core::smart_contract:**
+
 - `TriggerType` - Contract trigger types (Application, Verification, etc.)
 - `ContractParameterType` - Parameter types for contract methods
 - `FindOptions` - Storage iteration options
@@ -215,7 +241,16 @@ The following new crates were created during the architecture refactoring:
 - `ContractBasicMethod` - Standard contract method names and parameter counts
 - `CallFlags` - Re-exported from neo-vm
 
+**neo-core::services:**
+
+- `LedgerService` - Ledger access trait
+- `StateStoreService` - State store access trait
+- `MempoolService` - Mempool access trait
+- `PeerManagerService` - Peer manager access trait
+- `RpcService` - RPC service access trait
+
 **neo-p2p:**
+
 - `MessageCommand` - P2P message command identifiers
 - `InventoryType` - Inventory types (Transaction, Block, etc.)
 - `MessageFlags` - Message header flags
@@ -230,8 +265,13 @@ The following new crates were created during the architecture refactoring:
 - `ContainsTransactionType` - Transaction containment status
 
 **neo-consensus:**
+
 - `ConsensusMessageType` - dBFT message types (PrepareRequest, Commit, etc.)
 - `ChangeViewReason` - Reasons for view change requests
 
 **neo-rpc:**
+
 - `RpcErrorCode` - JSON-RPC 2.0 standard and Neo-specific error codes
+- `RpcClient` - JSON-RPC client (with `client` feature)
+- `RpcClientBuilder` - Builder for configuring RPC client
+- `RpcException` - RPC error type

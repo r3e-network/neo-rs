@@ -136,8 +136,7 @@ fn test_execution_engine_result_stack() {
         engine
             .current_context_mut()
             .unwrap()
-            .evaluation_stack_mut()
-            .push(StackItem::from_int(1));
+            .push(StackItem::from_int(1))?;
         Ok(())
     });
 
@@ -146,7 +145,7 @@ fn test_execution_engine_result_stack() {
             if let Some(context) = engine.current_context_mut() {
                 if !context.evaluation_stack().is_empty() {
                     let item = context.evaluation_stack_mut().pop()?;
-                    engine.result_stack_mut().push(item);
+                    engine.result_stack_mut().push(item)?;
                 }
             }
 
@@ -190,8 +189,7 @@ fn test_execution_engine_multiple_contexts() {
         engine
             .current_context_mut()
             .unwrap()
-            .evaluation_stack_mut()
-            .push(StackItem::from_int(1));
+            .push(StackItem::from_int(1))?;
         Ok(())
     });
 
@@ -200,8 +198,7 @@ fn test_execution_engine_multiple_contexts() {
         engine
             .current_context_mut()
             .unwrap()
-            .evaluation_stack_mut()
-            .push(StackItem::from_int(2));
+            .push(StackItem::from_int(2))?;
         Ok(())
     });
 

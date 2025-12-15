@@ -24,7 +24,10 @@ pub struct Array {
 
 impl Array {
     /// Creates a new array with the specified items.
-    pub fn new(items: Vec<StackItem>, reference_counter: Option<ReferenceCounter>) -> Self {
+    pub fn new(
+        items: Vec<StackItem>,
+        reference_counter: Option<ReferenceCounter>,
+    ) -> VmResult<Self> {
         let mut array = Self {
             items,
             reference_counter,
@@ -33,11 +36,21 @@ impl Array {
         };
 
         if let Some(rc) = array.reference_counter.clone() {
-            array.add_reference_for_items(&rc);
+            array.add_reference_for_items(&rc)?;
             array.reference_counter = Some(rc);
         }
 
-        array
+        Ok(array)
+    }
+
+    /// Creates a new array without a reference counter.
+    pub fn new_untracked(items: Vec<StackItem>) -> Self {
+        Self {
+            items,
+            reference_counter: None,
+            id: next_stack_item_id(),
+            is_read_only: false,
+        }
     }
 
     /// Returns the reference counter associated with this array, if any.
@@ -153,11 +166,11 @@ impl Array {
     }
 
     /// Creates a deep copy of the array.
-    pub fn deep_copy(&self, reference_counter: Option<ReferenceCounter>) -> Self {
+    pub fn deep_copy(&self, reference_counter: Option<ReferenceCounter>) -> VmResult<Self> {
         let items = self.items.iter().map(|item| item.deep_clone()).collect();
-        let mut copy = Self::new(items, reference_counter);
+        let mut copy = Self::new(items, reference_counter)?;
         copy.set_read_only(true);
-        copy
+        Ok(copy)
     }
 
     /// Gets the type of the stack item.
@@ -222,14 +235,13 @@ impl Array {
         }
     }
 
-    fn add_reference_for_items(&mut self, rc: &ReferenceCounter) {
+    fn add_reference_for_items(&mut self, rc: &ReferenceCounter) -> VmResult<()> {
         let parent = CompoundParent::Array(self.id);
         for item in &self.items {
-            if let Err(err) = self.validate_compound_reference(rc, item) {
-                panic!("{err}");
-            }
+            self.validate_compound_reference(rc, item)?;
             rc.add_compound_reference(item, parent);
         }
+        Ok(())
     }
 
     fn validate_compound_reference(&self, rc: &ReferenceCounter, item: &StackItem) -> VmResult<()> {
@@ -255,6 +267,26 @@ impl Array {
             _ => Ok(()),
         }
     }
+
+    /// Ensures the array and its children share the provided reference counter.
+    pub(crate) fn attach_reference_counter(&mut self, rc: &ReferenceCounter) -> VmResult<()> {
+        if let Some(existing) = &self.reference_counter {
+            if existing.ptr_eq(rc) {
+                return Ok(());
+            }
+            return Err(VmError::invalid_operation_msg(
+                "Array has mismatched reference counter.",
+            ));
+        }
+
+        for item in &mut self.items {
+            item.attach_reference_counter(rc)?;
+        }
+
+        self.reference_counter = Some(rc.clone());
+        self.add_reference_for_items(rc)?;
+        Ok(())
+    }
 }
 
 impl Clone for Array {
@@ -267,8 +299,11 @@ impl Clone for Array {
         };
 
         if let Some(rc) = clone.reference_counter.clone() {
-            clone.add_reference_for_items(&rc);
-            clone.reference_counter = Some(rc);
+            if clone.add_reference_for_items(&rc).is_err() {
+                clone.reference_counter = None;
+            } else {
+                clone.reference_counter = Some(rc);
+            }
         }
 
         clone

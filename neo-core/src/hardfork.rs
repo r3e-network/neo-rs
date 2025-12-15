@@ -3,31 +3,16 @@
 // modifications are permitted.
 
 //! Hardfork configuration and detection for Neo blockchain.
+//!
+//! The `Hardfork` enum is defined in [`neo_primitives`] and re-exported here.
+//! This module provides the `HardforkManager` for managing hardfork activation heights.
 
 use lazy_static::lazy_static;
+use parking_lot::RwLock;
 use std::collections::HashMap;
-use std::str::FromStr;
-use std::sync::RwLock;
 
-/// Represents a hardfork in the Neo blockchain (matches C# Hardfork enum exactly).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-#[repr(u8)]
-pub enum Hardfork {
-    /// Aspidochelone hardfork
-    HfAspidochelone = 0,
-    /// Basilisk hardfork
-    HfBasilisk = 1,
-    /// Cockatrice hardfork
-    HfCockatrice = 2,
-    /// Domovoi hardfork
-    HfDomovoi = 3,
-    /// Echidna hardfork
-    HfEchidna = 4,
-    /// Faun hardfork
-    HfFaun = 5,
-    /// Gorgon hardfork
-    HfGorgon = 6,
-}
+// Re-export Hardfork from neo-primitives (single source of truth)
+pub use neo_primitives::{Hardfork, HardforkParseError};
 
 /// Hardfork manager for Neo blockchain (matches C# ProtocolSettings.Hardforks exactly).
 #[derive(Debug)]
@@ -144,24 +129,6 @@ impl Default for HardforkManager {
     }
 }
 
-impl FromStr for Hardfork {
-    type Err = String;
-
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        let normalized = value.trim().to_ascii_uppercase();
-        match normalized.as_str() {
-            "HF_ASPIDOCHELONE" | "ASP" => Ok(Hardfork::HfAspidochelone),
-            "HF_BASILISK" => Ok(Hardfork::HfBasilisk),
-            "HF_COCKATRICE" => Ok(Hardfork::HfCockatrice),
-            "HF_DOMOVOI" => Ok(Hardfork::HfDomovoi),
-            "HF_ECHIDNA" => Ok(Hardfork::HfEchidna),
-            "HF_FAUN" => Ok(Hardfork::HfFaun),
-            "HF_GORGON" => Ok(Hardfork::HfGorgon),
-            other => Err(format!("Unknown hardfork '{}'", other)),
-        }
-    }
-}
-
 /// Checks if a hardfork is active at the specified block height (matches C# ProtocolSettings.IsHardforkEnabled exactly).
 ///
 /// # Arguments
@@ -173,11 +140,8 @@ impl FromStr for Hardfork {
 ///
 /// A boolean indicating whether the hardfork is active.
 pub fn is_hardfork_enabled(hardfork: Hardfork, block_height: u32) -> bool {
-    if let Ok(manager) = HardforkManager::instance().read() {
-        manager.is_enabled(hardfork, block_height)
-    } else {
-        false
-    }
+    let manager = HardforkManager::instance().read();
+    manager.is_enabled(hardfork, block_height)
 }
 
 #[cfg(test)]
@@ -222,7 +186,8 @@ mod tests {
     #[test]
     fn test_global_hardfork_manager() {
         // This test modifies the global instance, so it should be run in isolation
-        if let Ok(mut manager) = HardforkManager::instance().write() {
+        {
+            let mut manager = HardforkManager::instance().write();
             // Register a hardfork
             manager.register(Hardfork::HfAspidochelone, 300);
         }

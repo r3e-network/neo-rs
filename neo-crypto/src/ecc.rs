@@ -8,14 +8,18 @@
 //! - Key material uses constant-time comparisons to prevent timing side-channels.
 //! - Sensitive data is zeroized on drop to prevent memory disclosure.
 
+#![allow(unused_assignments)]
+
 use crate::error::{CryptoError, CryptoResult};
 use ed25519_dalek::{Signature as Ed25519Signature, SigningKey as Ed25519SigningKey, VerifyingKey};
 use k256::{
     ecdsa::{
         Signature as K256Signature, SigningKey as K256SigningKey, VerifyingKey as K256VerifyingKey,
     },
-    elliptic_curve::group::prime::PrimeCurveAffine as K256PrimeCurveAffine,
-    elliptic_curve::sec1::{FromEncodedPoint as K256FromEncodedPoint, ToEncodedPoint as K256ToEncodedPoint},
+    elliptic_curve::group::prime::PrimeCurveAffine,
+    elliptic_curve::sec1::{
+        FromEncodedPoint as K256FromEncodedPoint, ToEncodedPoint as K256ToEncodedPoint,
+    },
     AffinePoint as K256AffinePoint, EncodedPoint as K256EncodedPoint,
 };
 use p256::{
@@ -23,9 +27,7 @@ use p256::{
     ecdsa::{
         Signature as P256Signature, SigningKey as P256SigningKey, VerifyingKey as P256VerifyingKey,
     },
-    elliptic_curve::group::prime::PrimeCurveAffine,
     elliptic_curve::rand_core::OsRng,
-    elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint},
     AffinePoint as P256AffinePoint, EncodedPoint as P256EncodedPoint,
 };
 use serde::{Deserialize, Serialize};
@@ -86,10 +88,12 @@ impl ECCurve {
 /// # Security
 /// - Uses constant-time comparison to prevent timing side-channel attacks.
 /// - Key material is automatically zeroized when the point is dropped.
+#[allow(unused_assignments)]
 #[derive(Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct ECPoint {
     /// The curve this point belongs to.
     #[zeroize(skip)]
+    #[allow(unused_assignments)]
     curve: ECCurve,
     /// Compressed representation of the point (33 bytes for secp256r1/k1, 32 for Ed25519).
     /// This field is zeroized on drop to prevent memory disclosure.
@@ -119,6 +123,10 @@ impl PartialEq for ECPoint {
 
 impl Eq for ECPoint {}
 
+// Hash/ordering are defined over the public compressed point bytes to mirror the
+// C# implementation (which uses bytewise comparisons). These operations are
+// variable-time but only ever apply to public key material, so they do not leak
+// secrets. Equality checks for sensitive contexts must use `ct_eq` / `PartialEq`.
 impl Hash for ECPoint {
     fn hash<H: Hasher>(&self, state: &mut H) {
         // Hash is not timing-sensitive, use normal operations
@@ -202,12 +210,13 @@ impl ECPoint {
         }
 
         // Validate prefix for secp256r1/k1
-        if matches!(curve, ECCurve::Secp256r1 | ECCurve::Secp256k1) {
-            if data[0] != 0x02 && data[0] != 0x03 {
-                return Err(CryptoError::invalid_point(
-                    "Invalid compressed point prefix (expected 0x02 or 0x03)".to_string(),
-                ));
-            }
+        if matches!(curve, ECCurve::Secp256r1 | ECCurve::Secp256k1)
+            && data[0] != 0x02
+            && data[0] != 0x03
+        {
+            return Err(CryptoError::invalid_point(
+                "Invalid compressed point prefix (expected 0x02 or 0x03)".to_string(),
+            ));
         }
 
         Ok(Self { curve, data })
@@ -258,6 +267,65 @@ impl ECPoint {
     /// Returns the raw bytes of this point.
     pub fn as_bytes(&self) -> &[u8] {
         &self.data
+    }
+
+    /// Backward-compatible alias returning the compressed bytes as an owned `Vec<u8>`.
+    ///
+    /// Neo's Rust codebase historically used an `ECPoint` wrapper that exposed `to_bytes()`.
+    /// The canonical representation in this crate is always compressed (except the internal
+    /// infinity representation), so this returns the stored bytes.
+    pub fn to_bytes(&self) -> Vec<u8> {
+        self.as_bytes().to_vec()
+    }
+
+    /// Backward-compatible alias returning the encoded bytes as an owned `Vec<u8>`.
+    pub fn encoded(&self) -> Vec<u8> {
+        self.as_bytes().to_vec()
+    }
+
+    /// Backward-compatible helper mirroring the legacy `is_compressed()` API.
+    ///
+    /// Note: this crate stores points in compressed form for secp256r1/k1 and as raw 32-byte
+    /// keys for Ed25519.
+    pub fn is_compressed(&self) -> bool {
+        match self.curve {
+            ECCurve::Secp256r1 | ECCurve::Secp256k1 => {
+                self.data.len() == 33 && matches!(self.data.first(), Some(0x02) | Some(0x03))
+            }
+            ECCurve::Ed25519 => self.data.len() == 32,
+        }
+    }
+
+    /// Backward-compatible helper mirroring the legacy `is_valid()` API.
+    pub fn is_valid(&self) -> bool {
+        self.is_on_curve()
+    }
+
+    /// Backward-compatible decoding helper mirroring `ECPoint::decode(data, curve)`.
+    pub fn decode(data: &[u8], curve: ECCurve) -> Result<Self, String> {
+        Self::from_bytes_with_curve(curve, data).map_err(|e| e.to_string())
+    }
+
+    /// Backward-compatible encoding helper mirroring `ECPoint::encode_point(compressed)`.
+    ///
+    /// - For secp256r1/k1, returns SEC1 compressed (33 bytes) or uncompressed (65 bytes).
+    /// - For Ed25519, returns the 32-byte public key regardless of `compressed`.
+    pub fn encode_point(&self, compressed: bool) -> Result<Vec<u8>, String> {
+        if compressed {
+            return self.encode_compressed().map_err(|e| e.to_string());
+        }
+
+        match self.curve {
+            ECCurve::Secp256r1 => {
+                let affine = Self::parse_p256_point(&self.data).map_err(|e| e.to_string())?;
+                Ok(affine.to_encoded_point(false).as_bytes().to_vec())
+            }
+            ECCurve::Secp256k1 => {
+                let affine = Self::parse_k256_point(&self.data).map_err(|e| e.to_string())?;
+                Ok(affine.to_encoded_point(false).as_bytes().to_vec())
+            }
+            ECCurve::Ed25519 => Ok(self.data.clone()),
+        }
     }
 
     /// Returns the infinity point (identity element) for the given curve.
@@ -425,6 +493,9 @@ impl PartialOrd for ECPoint {
     }
 }
 
+// Ordering is lexicographic over (curve, compressed_bytes) for deterministic
+// sorting and compatibility with the C# node. This is not constant-time, but the
+// compared values are public.
 impl Ord for ECPoint {
     fn cmp(&self, other: &Self) -> Ordering {
         // Compare by curve first, then by data

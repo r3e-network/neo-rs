@@ -71,8 +71,10 @@ fn zero_referred_records_are_cleared() {
 #[test]
 fn array_compound_references_track_children() {
     let counter = ReferenceCounter::new();
-    let child_struct = StackItem::Struct(Struct::new(Vec::new(), Some(counter.clone())));
-    let mut array = Array::new(Vec::new(), Some(counter.clone()));
+    let child_struct = StackItem::Struct(
+        Struct::new(Vec::new(), Some(counter.clone())).expect("failed to create struct"),
+    );
+    let mut array = Array::new(Vec::new(), Some(counter.clone())).expect("failed to create array");
 
     assert_eq!(counter.count(), 0);
 
@@ -88,10 +90,12 @@ fn array_compound_references_track_children() {
 #[test]
 fn map_references_keys_and_values() {
     let counter = ReferenceCounter::new();
-    let mut map = Map::new(BTreeMap::new(), Some(counter.clone()));
+    let mut map = Map::new(BTreeMap::new(), Some(counter.clone())).expect("failed to create map");
 
     let key = StackItem::from_int(7);
-    let value = StackItem::Struct(Struct::new(Vec::new(), Some(counter.clone())));
+    let value = StackItem::Struct(
+        Struct::new(Vec::new(), Some(counter.clone())).expect("failed to create struct"),
+    );
 
     map.set(key.clone(), value.clone()).unwrap();
     assert_eq!(counter.count(), 2);
@@ -106,8 +110,8 @@ fn map_references_keys_and_values() {
 fn cyclic_compound_items_are_collected() {
     let counter = ReferenceCounter::new();
 
-    let array_a = Array::new(Vec::new(), Some(counter.clone()));
-    let array_b = Array::new(Vec::new(), Some(counter.clone()));
+    let array_a = Array::new(Vec::new(), Some(counter.clone())).expect("failed to create array");
+    let array_b = Array::new(Vec::new(), Some(counter.clone())).expect("failed to create array");
 
     let id_a = array_a.id();
     let id_b = array_b.id();

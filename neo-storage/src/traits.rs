@@ -175,4 +175,180 @@ mod tests {
 
         use_store(&mut store, key, value);
     }
+
+    #[test]
+    fn test_get_returns_error_on_missing_key() {
+        let store = MemoryStore::new();
+        let key = StorageKey::new(-1, vec![0x01]);
+        let result = IReadOnlyStore::get(&store, &key);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_get_returns_ok_on_existing_key() {
+        let mut store = MemoryStore::new();
+        let key = StorageKey::new(-1, vec![0x01]);
+        let value = StorageItem::new(vec![0xAA]);
+        store.put(key.clone(), value.clone());
+
+        let result = IReadOnlyStore::get(&store, &key);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().value(), value.value());
+    }
+
+    #[test]
+    fn test_multiple_keys() {
+        let mut store = MemoryStore::new();
+        let key1 = StorageKey::new(-1, vec![0x01]);
+        let key2 = StorageKey::new(-1, vec![0x02]);
+        let key3 = StorageKey::new(-2, vec![0x01]);
+
+        let value1 = StorageItem::new(vec![0xAA]);
+        let value2 = StorageItem::new(vec![0xBB]);
+        let value3 = StorageItem::new(vec![0xCC]);
+
+        store.put(key1.clone(), value1.clone());
+        store.put(key2.clone(), value2.clone());
+        store.put(key3.clone(), value3.clone());
+
+        assert_eq!(IReadOnlyStore::try_get(&store, &key1).unwrap().value(), value1.value());
+        assert_eq!(IReadOnlyStore::try_get(&store, &key2).unwrap().value(), value2.value());
+        assert_eq!(IReadOnlyStore::try_get(&store, &key3).unwrap().value(), value3.value());
+    }
+
+    #[test]
+    fn test_overwrite_existing_key() {
+        let mut store = MemoryStore::new();
+        let key = StorageKey::new(-1, vec![0x01]);
+        let value1 = StorageItem::new(vec![0xAA]);
+        let value2 = StorageItem::new(vec![0xBB]);
+
+        store.put(key.clone(), value1);
+        store.put(key.clone(), value2.clone());
+
+        let retrieved = IReadOnlyStore::try_get(&store, &key).unwrap();
+        assert_eq!(retrieved.value(), value2.value());
+    }
+
+    #[test]
+    fn test_delete_nonexistent_key() {
+        let mut store = MemoryStore::new();
+        let key = StorageKey::new(-1, vec![0x01]);
+        // Should not panic
+        store.delete(&key);
+        assert!(!IReadOnlyStore::contains(&store, &key));
+    }
+
+    #[test]
+    fn test_delete_then_reinsert() {
+        let mut store = MemoryStore::new();
+        let key = StorageKey::new(-1, vec![0x01]);
+        let value1 = StorageItem::new(vec![0xAA]);
+        let value2 = StorageItem::new(vec![0xBB]);
+
+        store.put(key.clone(), value1);
+        store.delete(&key);
+        assert!(!IReadOnlyStore::contains(&store, &key));
+
+        store.put(key.clone(), value2.clone());
+        assert!(IReadOnlyStore::contains(&store, &key));
+        assert_eq!(IReadOnlyStore::try_get(&store, &key).unwrap().value(), value2.value());
+    }
+
+    #[test]
+    fn test_empty_value() {
+        let mut store = MemoryStore::new();
+        let key = StorageKey::new(-1, vec![0x01]);
+        let value = StorageItem::new(vec![]);
+
+        store.put(key.clone(), value.clone());
+        assert!(IReadOnlyStore::contains(&store, &key));
+        let empty: &[u8] = &[];
+        assert_eq!(IReadOnlyStore::try_get(&store, &key).unwrap().value(), empty);
+    }
+
+    #[test]
+    fn test_large_value() {
+        let mut store = MemoryStore::new();
+        let key = StorageKey::new(-1, vec![0x01]);
+        let large_data = vec![0xAA; 10000];
+        let value = StorageItem::new(large_data.clone());
+
+        store.put(key.clone(), value);
+        let retrieved = IReadOnlyStore::try_get(&store, &key).unwrap();
+        assert_eq!(retrieved.value(), &large_data[..]);
+    }
+
+    #[test]
+    fn test_generic_trait_implementation() {
+        let mut store = MemoryStore::new();
+        let key = StorageKey::new(-1, vec![0x01]);
+        let value = StorageItem::new(vec![0xAA]);
+
+        store.put(key.clone(), value.clone());
+
+        // Test generic trait
+        assert!(IReadOnlyStoreGeneric::contains(&store, &key));
+        assert_eq!(
+            IReadOnlyStoreGeneric::try_get(&store, &key).unwrap().value(),
+            value.value()
+        );
+    }
+
+    #[test]
+    fn test_constant_storage_item() {
+        let mut store = MemoryStore::new();
+        let key = StorageKey::new(-1, vec![0x01]);
+        let value = StorageItem::constant(vec![0xAA]);
+
+        store.put(key.clone(), value.clone());
+        let retrieved = IReadOnlyStore::try_get(&store, &key).unwrap();
+        assert!(retrieved.is_constant());
+    }
+
+    #[test]
+    fn test_negative_contract_ids() {
+        let mut store = MemoryStore::new();
+        // Native contracts use negative IDs
+        let key1 = StorageKey::new(-1, vec![0x01]); // NeoToken
+        let key2 = StorageKey::new(-4, vec![0x01]); // GasToken
+        let key3 = StorageKey::new(-6, vec![0x01]); // PolicyContract
+
+        let value = StorageItem::new(vec![0xAA]);
+
+        store.put(key1.clone(), value.clone());
+        store.put(key2.clone(), value.clone());
+        store.put(key3.clone(), value.clone());
+
+        assert!(IReadOnlyStore::contains(&store, &key1));
+        assert!(IReadOnlyStore::contains(&store, &key2));
+        assert!(IReadOnlyStore::contains(&store, &key3));
+    }
+
+    #[test]
+    fn test_storage_key_with_empty_suffix() {
+        let mut store = MemoryStore::new();
+        let key = StorageKey::new(-1, vec![]);
+        let value = StorageItem::new(vec![0xAA]);
+
+        store.put(key.clone(), value.clone());
+        assert!(IReadOnlyStore::contains(&store, &key));
+    }
+
+    #[test]
+    fn test_try_get_returns_none() {
+        let store = MemoryStore::new();
+        let key = StorageKey::new(-1, vec![0x01]);
+        assert!(IReadOnlyStore::try_get(&store, &key).is_none());
+    }
+
+    #[test]
+    fn test_try_get_returns_some() {
+        let mut store = MemoryStore::new();
+        let key = StorageKey::new(-1, vec![0x01]);
+        let value = StorageItem::new(vec![0xAA]);
+
+        store.put(key.clone(), value);
+        assert!(IReadOnlyStore::try_get(&store, &key).is_some());
+    }
 }

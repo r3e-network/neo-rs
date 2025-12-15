@@ -34,13 +34,22 @@
 //! let script_hash = Crypto::hash160(b"contract script");
 //! ```
 
+pub mod bloom_filter;
+pub mod crypto_utils;
 pub mod ecc;
 pub mod error;
 pub mod hash;
+pub mod mpt_trie;
 pub mod named_curve_hash;
 
 // Re-exports
+pub use bloom_filter::BloomFilter;
+pub use crypto_utils::{
+    Base58, Bls12381Crypto, ECC, ECDsa, Ed25519Crypto, Hex, NeoHash, Secp256k1Crypto,
+    Secp256r1Crypto,
+};
 pub use ecc::{ECCurve, ECPoint};
 pub use error::{CryptoError, CryptoResult};
 pub use hash::{Crypto, HashAlgorithm};
+pub use mpt_trie::{Cache, MptCache, MptError, MptResult, MptStoreSnapshot, Node, NodeType, Trie, TrieEntry};
 pub use named_curve_hash::NamedCurveHash;

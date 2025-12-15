@@ -10,7 +10,7 @@ fn push_one(engine: &mut ExecutionEngine) -> VmResult<()> {
     let context = engine
         .current_context_mut()
         .expect("script context should be available");
-    context.evaluation_stack_mut().push(StackItem::from_int(1));
+    context.push(StackItem::from_int(1))?;
     Ok(())
 }
 

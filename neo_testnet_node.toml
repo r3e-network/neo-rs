@@ -37,18 +37,8 @@ seed_nodes = [
 block_time = 15
 
 [storage]
-# Storage backend: rocksdb for persistence test
-backend = "rocksdb"
-# Storage path (test)
-path = "./data/testnet/blockchain"
-# Cache size in MB (reduced for testing)
-cache_size = 256
-# Compression algorithm
-compression = "lz4"
-# Write buffer size in MB
-write_buffer_size = 32
-# Max open files
-max_open_files = 100
+# Storage backend: memory for quick P2P testing
+backend = "memory"
 
 [rpc]
 # RPC server disabled for connectivity test

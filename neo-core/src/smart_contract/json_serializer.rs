@@ -180,7 +180,7 @@ impl JsonSerializer {
                     let value_item = Self::deserialize_internal(element, depth + 1, max_depth)?;
                     map.insert(key_item, value_item);
                 }
-                Ok(StackItem::Map(MapItem::new(map, None)))
+                Ok(StackItem::Map(MapItem::new_untracked(map)))
             }
         }
     }

@@ -47,9 +47,11 @@ impl EvaluationStack {
 
     /// Pushes an item onto the top of the stack.
     #[inline]
-    pub fn push(&mut self, item: StackItem) {
+    pub fn push(&mut self, mut item: StackItem) -> VmResult<()> {
+        item.attach_reference_counter(&self.reference_counter)?;
         self.reference_counter.add_stack_reference(&item, 1);
         self.stack.push(item);
+        Ok(())
     }
 
     /// Removes and returns the item at the top of the stack.
@@ -76,11 +78,12 @@ impl EvaluationStack {
     /// Inserts an item at the specified index counting from the top of the
     /// stack (0-based). Passing `0` is equivalent to `push`, while passing
     /// `len()` inserts the item at the bottom of the stack.
-    pub fn insert(&mut self, index_from_top: usize, item: StackItem) -> VmResult<()> {
+    pub fn insert(&mut self, index_from_top: usize, mut item: StackItem) -> VmResult<()> {
         if index_from_top > self.stack.len() {
             return Err(VmError::invalid_operation_msg("Insert index out of range"));
         }
 
+        item.attach_reference_counter(&self.reference_counter)?;
         self.reference_counter.add_stack_reference(&item, 1);
         let insert_pos = self.stack.len().saturating_sub(index_from_top);
         self.stack.insert(insert_pos, item);
@@ -135,9 +138,10 @@ impl EvaluationStack {
 
         let start = self.stack.len() - count;
         for item in &self.stack[start..] {
-            let cloned = item.clone();
-            target.reference_counter.add_stack_reference(&cloned, 1);
-            target.stack.push(cloned);
+            ensure_reference_counter_compatible(item, target.reference_counter())?;
+        }
+        for item in &self.stack[start..] {
+            target.push(item.clone())?;
         }
         Ok(())
     }
@@ -154,14 +158,18 @@ impl EvaluationStack {
         }
 
         let start = self.stack.len() - count;
+        for item in &self.stack[start..] {
+            ensure_reference_counter_compatible(item, target.reference_counter())?;
+        }
 
         // Transfer ownership of the tail slice to the target stack.
         let mut moved = self.stack.split_off(start);
         for item in &moved {
             self.reference_counter.remove_stack_reference(item);
-            target.reference_counter.add_stack_reference(item, 1);
         }
-        target.stack.append(&mut moved);
+        for item in moved.drain(..) {
+            target.push(item)?;
+        }
         Ok(())
     }
 
@@ -203,6 +211,49 @@ impl EvaluationStack {
     }
 }
 
+fn ensure_reference_counter_compatible(item: &StackItem, rc: &ReferenceCounter) -> VmResult<()> {
+    match item {
+        StackItem::Array(array) => match array.reference_counter() {
+            Some(existing) if existing.ptr_eq(rc) => Ok(()),
+            Some(_) => Err(VmError::invalid_operation_msg(
+                "Array has mismatched reference counter.",
+            )),
+            None => {
+                for child in array.items() {
+                    ensure_reference_counter_compatible(child, rc)?;
+                }
+                Ok(())
+            }
+        },
+        StackItem::Struct(structure) => match structure.reference_counter() {
+            Some(existing) if existing.ptr_eq(rc) => Ok(()),
+            Some(_) => Err(VmError::invalid_operation_msg(
+                "Struct has mismatched reference counter.",
+            )),
+            None => {
+                for child in structure.items() {
+                    ensure_reference_counter_compatible(child, rc)?;
+                }
+                Ok(())
+            }
+        },
+        StackItem::Map(map) => match map.reference_counter() {
+            Some(existing) if existing.ptr_eq(rc) => Ok(()),
+            Some(_) => Err(VmError::invalid_operation_msg(
+                "Map has mismatched reference counter.",
+            )),
+            None => {
+                for (key, value) in map.items() {
+                    ensure_reference_counter_compatible(key, rc)?;
+                    ensure_reference_counter_compatible(value, rc)?;
+                }
+                Ok(())
+            }
+        },
+        _ => Ok(()),
+    }
+}
+
 impl Drop for EvaluationStack {
     fn drop(&mut self) {
         self.clear();
@@ -220,9 +271,15 @@ mod tests {
         let mut stack = EvaluationStack::new(reference_counter);
 
         // Push some items
-        stack.push(StackItem::from_int(1));
-        stack.push(StackItem::from_int(2));
-        stack.push(StackItem::from_int(3));
+        stack
+            .push(StackItem::from_int(1))
+            .expect("push should succeed");
+        stack
+            .push(StackItem::from_int(2))
+            .expect("push should succeed");
+        stack
+            .push(StackItem::from_int(3))
+            .expect("push should succeed");
 
         // Check stack size
         assert_eq!(stack.len(), 3);
@@ -244,9 +301,15 @@ mod tests {
         let mut stack = EvaluationStack::new(reference_counter);
 
         // Push some items
-        stack.push(StackItem::from_int(1));
-        stack.push(StackItem::from_int(2));
-        stack.push(StackItem::from_int(3));
+        stack
+            .push(StackItem::from_int(1))
+            .expect("push should succeed");
+        stack
+            .push(StackItem::from_int(2))
+            .expect("push should succeed");
+        stack
+            .push(StackItem::from_int(3))
+            .expect("push should succeed");
 
         // Peek at items
         let item0 = stack.peek(0).expect("peek should succeed");
@@ -275,8 +338,12 @@ mod tests {
         let mut stack = EvaluationStack::new(reference_counter);
 
         // Push some items
-        stack.push(StackItem::from_int(1));
-        stack.push(StackItem::from_int(3));
+        stack
+            .push(StackItem::from_int(1))
+            .expect("push should succeed");
+        stack
+            .push(StackItem::from_int(3))
+            .expect("push should succeed");
 
         // Insert an item
         stack
@@ -337,9 +404,15 @@ mod tests {
         let mut stack = EvaluationStack::new(reference_counter);
 
         // Push some items
-        stack.push(StackItem::from_int(1));
-        stack.push(StackItem::from_int(2));
-        stack.push(StackItem::from_int(3));
+        stack
+            .push(StackItem::from_int(1))
+            .expect("push should succeed");
+        stack
+            .push(StackItem::from_int(2))
+            .expect("push should succeed");
+        stack
+            .push(StackItem::from_int(3))
+            .expect("push should succeed");
 
         // Swap items
         stack.swap(0, 2).expect("swap should succeed");
@@ -377,11 +450,21 @@ mod tests {
         let mut stack = EvaluationStack::new(reference_counter);
 
         // Push some items
-        stack.push(StackItem::from_int(1));
-        stack.push(StackItem::from_int(2));
-        stack.push(StackItem::from_int(3));
-        stack.push(StackItem::from_int(4));
-        stack.push(StackItem::from_int(5));
+        stack
+            .push(StackItem::from_int(1))
+            .expect("push should succeed");
+        stack
+            .push(StackItem::from_int(2))
+            .expect("push should succeed");
+        stack
+            .push(StackItem::from_int(3))
+            .expect("push should succeed");
+        stack
+            .push(StackItem::from_int(4))
+            .expect("push should succeed");
+        stack
+            .push(StackItem::from_int(5))
+            .expect("push should succeed");
 
         // Reverse the top 3 items
         stack.reverse(3).expect("reverse should succeed");
@@ -469,9 +552,15 @@ mod tests {
         let mut stack = EvaluationStack::new(reference_counter);
 
         // Push some items
-        stack.push(StackItem::from_int(1));
-        stack.push(StackItem::from_int(2));
-        stack.push(StackItem::from_int(3));
+        stack
+            .push(StackItem::from_int(1))
+            .expect("push should succeed");
+        stack
+            .push(StackItem::from_int(2))
+            .expect("push should succeed");
+        stack
+            .push(StackItem::from_int(3))
+            .expect("push should succeed");
 
         // Clear the stack
         stack.clear();
@@ -489,9 +578,15 @@ mod tests {
         let mut stack2 = EvaluationStack::new(reference_counter2);
 
         // Push some items
-        stack1.push(StackItem::from_int(1));
-        stack1.push(StackItem::from_int(2));
-        stack1.push(StackItem::from_int(3));
+        stack1
+            .push(StackItem::from_int(1))
+            .expect("push should succeed");
+        stack1
+            .push(StackItem::from_int(2))
+            .expect("push should succeed");
+        stack1
+            .push(StackItem::from_int(3))
+            .expect("push should succeed");
 
         // Copy to another stack
         stack1

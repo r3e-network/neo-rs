@@ -50,13 +50,13 @@ This audit identified **17 security issues** across the neo-rs codebase:
 
 ### C-3: Transaction Witness Verification Stub (FIXED ✅)
 
-**Location**: `neo-core/src/network/p2p/payloads/transaction.rs:1049-1073`
+**Former Location**: `neo-core/src/network/p2p/payloads/transaction.rs`
 
-**Description**: `Transaction::verify_witnesses()` is a stub that always returns success without actually verifying signatures.
+**Description**: An unused `Transaction::verify_witnesses()` helper performed only structural checks and could be mistaken for full witness verification.
 
-**Impact**: Transactions with invalid or missing signatures are accepted as valid.
+**Impact**: Callers could bypass real witness verification if they used the stub directly.
 
-**Fix Applied**: Implemented proper witness verification in `verify_state_independent()` that validates witness count matches signers, checks verification script hashes, and validates witness script structure. The fix is called during mempool insertion and block validation.
+**Fix Applied**: Removed the stub method and rely exclusively on `verify_state_independent()` / `verify_state_dependent()` and `Helper::verify_witnesses`, which execute witness scripts via `ApplicationEngine` and enforce C# parity.
 
 ---
 

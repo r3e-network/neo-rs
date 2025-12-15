@@ -15,8 +15,11 @@ pub const CHECK_MULTISIG_PRICE: i64 = 1 << 15;
 impl ApplicationEngine {
     /// Verifies a signature using secp256r1 (NIST P-256)
     pub fn crypto_check_sig(&mut self) -> Result<bool, String> {
-        let signature = self.pop_bytes()?;
+        // Neo VM calling convention: the first parameter is on top of the stack.
+        // For standard signature witnesses, the invocation script pushes the signature and
+        // the verification script pushes the public key, leaving `pubkey` on top.
         let public_key = self.pop_bytes()?;
+        let signature = self.pop_bytes()?;
 
         let message_bytes = self.get_sign_data()?;
 

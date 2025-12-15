@@ -12,16 +12,13 @@ use crate::{
     },
     smart_contract::{StorageItem, StorageKey},
 };
-use tracing::error;
+use parking_lot::{Mutex, RwLock};
 use rocksdb::{
     BlockBasedOptions, Cache, DBIteratorWithThreadMode, Direction, IteratorMode, Options,
     ReadOptions, Snapshot as DbSnapshot, WriteBatch, WriteOptions, DB,
 };
-use std::{
-    fs, mem,
-    path::PathBuf,
-    sync::{Arc, Mutex, RwLock},
-};
+use std::{fs, mem, path::PathBuf, sync::Arc};
+use tracing::error;
 use tracing::warn;
 
 /// RocksDB-backed store provider compatible with Neo's `IStore`.
@@ -51,8 +48,10 @@ impl IStoreProvider for RocksDBStoreProvider {
 
     fn get_store(&self, path: &str) -> CoreResult<Arc<dyn IStore>> {
         let resolved = self.resolved_path(path);
-        let mut config = self.base_config.clone();
-        config.path = resolved;
+        let config = StorageConfig {
+            path: resolved,
+            ..self.base_config.clone()
+        };
         let store = RocksDbStore::open(&config).map_err(|err| CoreError::Io {
             message: format!(
                 "failed to open RocksDB store at {}: {err}",
@@ -60,54 +59,6 @@ impl IStoreProvider for RocksDBStoreProvider {
             ),
         })?;
         Ok(Arc::new(store))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-    use tempfile::TempDir;
-
-    #[test]
-    fn opens_store_and_creates_directory() {
-        let tmp = TempDir::new().expect("tempdir");
-        let db_path = tmp.path().join("rocksdb");
-        let mut cfg = StorageConfig::default();
-        cfg.path = db_path.clone();
-
-        let provider = RocksDBStoreProvider::new(cfg);
-        let store = provider
-            .get_store(db_path.to_str().unwrap())
-            .expect("rocksdb store");
-        assert!(db_path.exists(), "db path should be created");
-
-        // basic snapshot call to ensure the store is usable
-        let _snapshot = store.get_snapshot();
-    }
-
-    #[test]
-    fn returns_error_when_path_is_file() {
-        let tmp = TempDir::new().expect("tempdir");
-        let file_path = tmp.path().join("not-a-dir");
-        fs::write(&file_path, b"content").expect("write file");
-
-        let mut cfg = StorageConfig::default();
-        cfg.path = file_path.clone();
-        let provider = RocksDBStoreProvider::new(cfg);
-
-        let result = provider.get_store(file_path.to_str().unwrap());
-        match result {
-            Ok(_) => panic!("expected failure when path is a file"),
-            Err(err) => {
-                assert!(
-                    err.to_string()
-                        .to_ascii_lowercase()
-                        .contains("failed to open rocksdb store"),
-                    "unexpected error: {err}"
-                );
-            }
-        }
     }
 }
 
@@ -240,7 +191,7 @@ impl IStore for RocksDbStore {
         let store_arc = Arc::new(self.clone());
         let snapshot = Arc::new(RocksDbSnapshot::new(self.db.clone(), store_arc));
 
-        let handlers = self.on_new_snapshot.read().unwrap();
+        let handlers = self.on_new_snapshot.read();
         for handler in handlers.iter() {
             handler(self, snapshot.clone());
         }
@@ -249,7 +200,7 @@ impl IStore for RocksDbStore {
     }
 
     fn on_new_snapshot(&self, handler: OnNewSnapshotDelegate) {
-        self.on_new_snapshot.write().unwrap().push(handler);
+        self.on_new_snapshot.write().push(handler);
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -379,11 +330,11 @@ impl IReadOnlyStore for RocksDbSnapshot {}
 
 impl IWriteStore<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
     fn delete(&mut self, key: Vec<u8>) {
-        self.write_batch.lock().unwrap().delete(key);
+        self.write_batch.lock().delete(key);
     }
 
     fn put(&mut self, key: Vec<u8>, value: Vec<u8>) {
-        self.write_batch.lock().unwrap().put(key, value);
+        self.write_batch.lock().put(key, value);
     }
 }
 
@@ -395,9 +346,7 @@ impl IStoreSnapshot for RocksDbSnapshot {
     fn try_commit(&mut self) -> crate::persistence::i_store_snapshot::SnapshotCommitResult {
         use crate::persistence::storage::StorageError;
 
-        let mut batch_guard = self.write_batch.lock().map_err(|e| {
-            StorageError::CommitFailed(format!("Failed to acquire lock: {}", e))
-        })?;
+        let mut batch_guard = self.write_batch.lock();
 
         if batch_guard.is_empty() {
             return Ok(());
@@ -485,4 +434,56 @@ fn build_db_options(config: &StorageConfig) -> Options {
     }
 
     options
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    #[test]
+    fn opens_store_and_creates_directory() {
+        let tmp = TempDir::new().expect("tempdir");
+        let db_path = tmp.path().join("rocksdb");
+        let cfg = StorageConfig {
+            path: db_path.clone(),
+            ..Default::default()
+        };
+
+        let provider = RocksDBStoreProvider::new(cfg);
+        let store = provider
+            .get_store(db_path.to_str().unwrap())
+            .expect("rocksdb store");
+        assert!(db_path.exists(), "db path should be created");
+
+        // basic snapshot call to ensure the store is usable
+        let _snapshot = store.get_snapshot();
+    }
+
+    #[test]
+    fn returns_error_when_path_is_file() {
+        let tmp = TempDir::new().expect("tempdir");
+        let file_path = tmp.path().join("not-a-dir");
+        fs::write(&file_path, b"content").expect("write file");
+
+        let cfg = StorageConfig {
+            path: file_path.clone(),
+            ..Default::default()
+        };
+        let provider = RocksDBStoreProvider::new(cfg);
+
+        let result = provider.get_store(file_path.to_str().unwrap());
+        match result {
+            Ok(_) => panic!("expected failure when path is a file"),
+            Err(err) => {
+                assert!(
+                    err.to_string()
+                        .to_ascii_lowercase()
+                        .contains("failed to open rocksdb store"),
+                    "unexpected error: {err}"
+                );
+            }
+        }
+    }
 }

@@ -1,0 +1,16 @@
+{
+  "PluginConfiguration": {
+    "Servers": [
+      {
+        "Network": 860833102,
+        "BindAddress": "127.0.0.1",
+        "Port": 12345,
+        "EnableCors": true,
+        "MaxConcurrentConnections": 40,
+        "KeepAliveTimeout": 60,
+        "RequestHeadersTimeout": 15
+      }
+    ],
+    "UnhandledExceptionPolicy": "Ignore"
+  }
+}

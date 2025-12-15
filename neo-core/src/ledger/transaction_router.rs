@@ -2,12 +2,6 @@
 //!
 //! This module provides the TransactionRouter functionality exactly matching C# Neo TransactionRouter.
 
-// Matches C# using directives exactly:
-// using Akka.Actor;
-// using Akka.Routing;
-// using Neo.Network.P2P.Payloads;
-// using System;
-
 use super::VerifyResult;
 use crate::network::p2p::payloads::Transaction;
 use crate::protocol_settings::ProtocolSettings;
@@ -35,12 +29,9 @@ pub struct TransactionRouter {
 }
 
 impl TransactionRouter {
-    /// Constructor (primary constructor in C#)
-    #[allow(dead_code)]
-    pub(crate) fn new(system: &crate::system::NeoSystem) -> Self {
-        Self {
-            settings: system.settings().clone(),
-        }
+    /// Constructor from protocol settings
+    pub fn new(settings: ProtocolSettings) -> Self {
+        Self { settings }
     }
 
     /// protected override void OnReceive(object message)
@@ -54,14 +45,5 @@ impl TransactionRouter {
             relay: message.relay,
             result,
         }
-
-        // _system.Blockchain.Tell(send, Sender);
-        // Note: In Rust, the actor system communication would be handled differently
     }
-
-    // internal static Props Props(NeoSystem system)
-    // {
-    //     return Akka.Actor.Props.Create(() => new TransactionRouter(system)).WithRouter(new SmallestMailboxPool(Environment.ProcessorCount));
-    // }
-    // Note: Actor Props would be handled differently in Rust actor systems
 }

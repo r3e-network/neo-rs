@@ -8,20 +8,25 @@
 //
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
+
 use crate::{
     ledger::{block::Block, blockchain_application_executed::ApplicationExecuted},
-    neo_system::NeoSystem,
     persistence::data_cache::DataCache,
 };
+use std::any::Any;
 
 /// Committing handler interface matching C# ICommittingHandler exactly
+///
+/// Note: The `system` parameter uses `dyn Any` to decouple from the concrete
+/// NeoSystem type which is now in neo-node. Implementations can downcast
+/// to the concrete type if needed.
 pub trait ICommittingHandler {
     /// This is the handler of Committing event from Blockchain
     /// Triggered when a new block is committing, and the state is still in the cache.
     /// Matches C# Blockchain_Committing_Handler method
     fn blockchain_committing_handler(
         &self,
-        system: &NeoSystem,
+        system: &dyn Any,
         block: &Block,
         snapshot: &DataCache,
         application_executed_list: &[ApplicationExecuted],

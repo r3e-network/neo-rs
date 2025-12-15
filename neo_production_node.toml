@@ -78,7 +78,7 @@ session_expiration_time = 60
 # FindStorage page size
 find_storage_page_size = 50
 # Disabled RPC methods (matches RpcServer default)
-disabled_methods = ["openwallet", "getplugins"]
+disabled_methods = ["openwallet", "listplugins"]
 
 [logging]
 # Enable CLI logging output (matches C# Logger.Active)

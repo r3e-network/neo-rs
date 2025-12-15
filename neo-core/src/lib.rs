@@ -78,8 +78,10 @@ pub mod prelude;
 pub mod protocol_settings;
 // System metrics moved to neo-monitoring crate
 // Monitoring moved to neo-monitoring crate
-/// Neo system management
-pub mod neo_system;
+// Neo system management moved to neo-node crate (Phase 2 refactoring)
+// The neo_system module contains runtime orchestration code that depends on actors.
+// It will be available in neo-node which provides the full runtime.
+// pub mod neo_system;
 // Transaction signer moved to sign module
 // Transaction structures moved to ledger module
 // Transaction type definitions moved to ledger module
@@ -117,8 +119,6 @@ pub mod extensions;
 pub mod events;
 // IO module (matches C# Neo.IO)
 pub mod io;
-// Plugins module (matches C# Neo.Plugins)
-pub mod plugins;
 /// Shared RPC models and helpers.
 pub mod rpc;
 // Time provider module (matches C# Neo.TimeProvider)
@@ -128,19 +128,32 @@ pub mod state_service;
 // Typed service interfaces for shared subsystems
 pub mod services;
 
+// Actor runtime moved to neo-node crate (Phase 2 refactoring)
+// The actors module and ractor dependency have been removed from neo-core
+// to keep this crate as a pure protocol layer without async runtime dependencies.
+//
+// If you need actor functionality, use neo-node which provides the runtime.
+// pub mod actors;
+// pub use actors as akka;
+
+// Tokens tracker module moved to neo-node (Phase 2 refactoring)
+// It depends on NeoSystem runtime which is now in neo-node
+// pub mod tokens_tracker;
+
 // Re-exports for convenient access
 pub use big_decimal::BigDecimal;
 pub use builders::{SignerBuilder, TransactionBuilder, WitnessBuilder};
 pub use contains_transaction_type::ContainsTransactionType;
-pub use cryptography::crypto_utils::{ECCurve, ECPoint};
+pub use cryptography::{ECCurve, ECPoint};
 pub use error::{CoreError, CoreResult, Result};
 pub use events::{EventHandler, EventManager};
 pub use hardfork::Hardfork;
+pub use ledger::{Block, BlockHeader};
 pub use neo_primitives::{
     InvalidWitnessScopeError, UInt160, UInt256, WitnessScope, UINT160_SIZE, UINT256_SIZE,
 };
-pub use ledger::{Block, BlockHeader};
-pub use neo_system::NeoSystem;
+// NeoSystem moved to neo-node crate
+// pub use neo_system::NeoSystem;
 pub use network::p2p::payloads::{
     InventoryType, OracleResponseCode, Signer, Transaction, TransactionAttribute,
     TransactionAttributeType, HEADER_SIZE, MAX_TRANSACTION_ATTRIBUTES, MAX_TRANSACTION_SIZE,
@@ -154,10 +167,10 @@ pub use wallets::{KeyPair, Wallet};
 pub use witness::Witness;
 pub use witness_rule::{WitnessCondition, WitnessConditionType, WitnessRule, WitnessRuleAction};
 
-/// Compatibility re-export ensuring modules translated from C# continue to compile.
-pub mod system {
-    pub use crate::neo_system::*;
-}
+// Compatibility re-export moved to neo-node crate
+// pub mod system {
+//     pub use crate::neo_system::*;
+// }
 
 // NOTE: Global blockchain and store singletons will be implemented
 // when the proper types are available in their respective modules.
@@ -276,7 +289,7 @@ pub mod neo_io {
 }
 
 pub mod neo_crypto {
-    use crate::cryptography::crypto_utils::NeoHash;
+    use crate::cryptography::NeoHash;
 
     /// Computes SHA-256 hash (matches C# Neo.Cryptography.Crypto.Sha256).
     pub fn sha256(data: &[u8]) -> [u8; 32] {
@@ -295,7 +308,7 @@ pub mod neo_crypto {
 }
 
 pub mod neo_cryptography {
-    use crate::cryptography::crypto_utils::NeoHash;
+    use crate::cryptography::NeoHash;
     use crate::UInt256;
 
     /// Generic cryptography error type (matches C# Neo.Cryptography.CryptographyException semantics).
@@ -323,7 +336,7 @@ pub mod neo_cryptography {
     }
 
     pub mod hash {
-        use crate::cryptography::crypto_utils::NeoHash;
+        use crate::cryptography::NeoHash;
 
         pub fn sha256(data: &[u8]) -> [u8; 32] {
             NeoHash::sha256(data)
@@ -359,15 +372,15 @@ pub mod neo_cryptography {
         }
 
         pub fn decode_point(data: &[u8], curve: ECCurve) -> Result<ECPoint, ECCError> {
-            ECPoint::decode(data, curve).map_err(ECCError::from)
+            ECPoint::from_bytes_with_curve(curve, data).map_err(|e| ECCError(e.to_string()))
         }
 
         pub fn decode_compressed_point(data: &[u8]) -> Result<ECPoint, ECCError> {
-            ECPoint::decode_compressed(data).map_err(ECCError::from)
+            ECPoint::from_bytes(data).map_err(|e| ECCError(e.to_string()))
         }
     }
 
-    pub use crate::cryptography::crypto_utils::{ECCurve, ECPoint};
+    pub use crate::cryptography::{ECCurve, ECPoint};
 
     #[derive(Clone)]
     struct MerkleTreeNode {
@@ -435,7 +448,7 @@ pub mod neo_cryptography {
             }
 
             Self {
-                root: Some(Box::new(nodes.pop().expect("merkle root exists"))),
+                root: nodes.pop().map(Box::new),
                 depth,
             }
         }
@@ -588,7 +601,9 @@ pub mod neo_vm {
 
 pub mod neo_ledger {
     pub use crate::ledger::{
-        block::Block, block_header::BlockHeader, blockchain::Blockchain,
+        block::Block, block_header::BlockHeader,
+        // Blockchain moved to neo-node (Phase 2 refactoring)
+        // blockchain::Blockchain,
         blockchain_application_executed::ApplicationExecuted, header_cache::HeaderCache,
         memory_pool::MemoryPool, verify_result::VerifyResult,
     };
@@ -615,20 +630,15 @@ pub mod storage {
     pub use neo_storage::*;
 }
 
-/// Re-exports from neo-contract crate.
+/// Re-exports smart contract types for backward compatibility.
 /// Contains smart contract types and execution engine components.
+/// Note: neo-contract crate has been merged - types now live in smart_contract module.
 pub mod contract {
-    pub use neo_contract::*;
+    pub use crate::smart_contract::*;
 }
 
-/// Re-exports from neo-p2p crate.
-/// Contains P2P networking types and message definitions.
-pub mod p2p {
-    pub use neo_p2p::*;
-}
-
-/// Re-exports from neo-consensus crate.
-/// Contains dBFT consensus types and message definitions.
-pub mod consensus {
-    pub use neo_consensus::*;
-}
+// NOTE: neo-p2p and neo-consensus are NOT re-exported here.
+// This is intentional to maintain proper layering:
+// - neo-core is Layer 1 (Core)
+// - neo-p2p and neo-consensus are Layer 2 (Protocol)
+// Import directly from neo-p2p and neo-consensus crates instead.

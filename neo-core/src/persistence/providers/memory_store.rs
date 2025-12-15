@@ -18,8 +18,9 @@ use crate::persistence::{
     seek_direction::SeekDirection,
 };
 use crate::smart_contract::{storage_key::StorageKey, StorageItem};
+use parking_lot::RwLock;
 use std::collections::BTreeMap;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 /// An in-memory IStore implementation that uses BTreeMap as the underlying storage.
 pub struct MemoryStore {
@@ -38,7 +39,7 @@ impl MemoryStore {
 
     /// Resets the store, clearing all data.
     pub fn reset(&self) {
-        self.inner_data.write().unwrap().clear();
+        self.inner_data.write().clear();
     }
 }
 
@@ -50,7 +51,7 @@ impl Default for MemoryStore {
 
 impl IReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MemoryStore {
     fn try_get(&self, key: &Vec<u8>) -> Option<Vec<u8>> {
-        self.inner_data.read().unwrap().get(key).cloned()
+        self.inner_data.read().get(key).cloned()
     }
 
     fn find(
@@ -58,7 +59,7 @@ impl IReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MemoryStore {
         key_prefix: Option<&Vec<u8>>,
         direction: SeekDirection,
     ) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)> + '_> {
-        let data = self.inner_data.read().unwrap();
+        let data = self.inner_data.read();
         let iter: Vec<_> = if let Some(prefix) = key_prefix {
             data.iter()
                 .filter(|(k, _)| k.starts_with(prefix))
@@ -81,7 +82,6 @@ impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for MemoryStore {
         let raw_key = key.to_array();
         self.inner_data
             .read()
-            .unwrap()
             .get(&raw_key)
             .cloned()
             .map(StorageItem::from_bytes)
@@ -92,7 +92,7 @@ impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for MemoryStore {
         key_prefix: Option<&StorageKey>,
         direction: SeekDirection,
     ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
-        let data = self.inner_data.read().unwrap();
+        let data = self.inner_data.read();
         let prefix_bytes = key_prefix.map(|k| k.to_array());
 
         let mut entries: Vec<_> = data
@@ -122,11 +122,11 @@ impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for MemoryStore {
 
 impl IWriteStore<Vec<u8>, Vec<u8>> for MemoryStore {
     fn delete(&mut self, key: Vec<u8>) {
-        self.inner_data.write().unwrap().remove(&key);
+        self.inner_data.write().remove(&key);
     }
 
     fn put(&mut self, key: Vec<u8>, value: Vec<u8>) {
-        self.inner_data.write().unwrap().insert(key, value);
+        self.inner_data.write().insert(key, value);
     }
 }
 
@@ -140,7 +140,7 @@ impl IStore for MemoryStore {
         ));
 
         // Trigger event
-        let handlers = self.on_new_snapshot.read().unwrap();
+        let handlers = self.on_new_snapshot.read();
         for handler in handlers.iter() {
             handler(self, snapshot.clone());
         }
@@ -149,7 +149,7 @@ impl IStore for MemoryStore {
     }
 
     fn on_new_snapshot(&self, handler: OnNewSnapshotDelegate) {
-        self.on_new_snapshot.write().unwrap().push(handler);
+        self.on_new_snapshot.write().push(handler);
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -169,7 +169,7 @@ impl Clone for MemoryStore {
 impl MemoryStore {
     /// Applies a batch of write operations to the underlying store.
     pub fn apply_batch(&self, batch: &std::collections::BTreeMap<Vec<u8>, Option<Vec<u8>>>) {
-        let mut guard = self.inner_data.write().unwrap();
+        let mut guard = self.inner_data.write();
         for (key, value) in batch.iter() {
             match value {
                 Some(v) => {

@@ -28,9 +28,11 @@
 use std::any::Any;
 use std::any::TypeId;
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
-use crate::error::{CoreError, CoreResult};
+use parking_lot::RwLock;
+
+use crate::error::CoreResult;
 
 /// Attempts to downcast a service Arc to a concrete type.
 fn downcast_service<T>(service: &Arc<dyn Any + Send + Sync>) -> Option<Arc<T>>
@@ -75,26 +77,17 @@ impl ServiceRegistry {
         name: Option<String>,
     ) -> CoreResult<()> {
         {
-            let mut typed = self
-                .typed_services
-                .write()
-                .map_err(|_| CoreError::system("service registry poisoned"))?;
+            let mut typed = self.typed_services.write();
             typed.insert((*service).type_id(), service.clone());
         }
 
         {
-            let mut list = self
-                .services
-                .write()
-                .map_err(|_| CoreError::system("service registry poisoned"))?;
+            let mut list = self.services.write();
             list.push(service.clone());
         }
 
         if let Some(ref name_ref) = name {
-            let mut map = self
-                .services_by_name
-                .write()
-                .map_err(|_| CoreError::system("service registry poisoned"))?;
+            let mut map = self.services_by_name.write();
             map.insert(name_ref.clone(), service.clone());
         }
 
@@ -119,10 +112,7 @@ impl ServiceRegistry {
         if let Some(service) = self.get_typed::<T>()? {
             return Ok(Some(service));
         }
-        let guard = self
-            .services
-            .read()
-            .map_err(|_| CoreError::system("service registry poisoned"))?;
+        let guard = self.services.read();
         Ok(guard.iter().find_map(downcast_service::<T>))
     }
 
@@ -131,10 +121,7 @@ impl ServiceRegistry {
     where
         T: Any + Send + Sync + 'static,
     {
-        let guard = self
-            .typed_services
-            .read()
-            .map_err(|_| CoreError::system("service registry poisoned"))?;
+        let guard = self.typed_services.read();
         if let Some(service) = guard.get(&TypeId::of::<T>()) {
             return Ok(downcast_service::<T>(service));
         }
@@ -146,19 +133,13 @@ impl ServiceRegistry {
     where
         T: Any + Send + Sync + 'static,
     {
-        let guard = self
-            .services_by_name
-            .read()
-            .map_err(|_| CoreError::system("service registry poisoned"))?;
+        let guard = self.services_by_name.read();
         Ok(guard.get(name).and_then(downcast_service::<T>))
     }
 
     /// Returns `true` if a service with the given name is registered.
     pub fn has_named_service(&self, name: &str) -> bool {
-        self.services_by_name
-            .read()
-            .map(|guard| guard.contains_key(name))
-            .unwrap_or(false)
+        self.services_by_name.read().contains_key(name)
     }
 }
 

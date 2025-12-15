@@ -4,7 +4,7 @@ use crate::network::error::NetworkError;
 use crate::network::p2p::connection::ConnectionState;
 use crate::network::p2p::messages::{NetworkMessage, ProtocolMessage};
 use crate::network::p2p::timeouts;
-use akka::{ActorContext, ActorResult};
+use crate::akka::{ActorContext, ActorResult};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tokio::task::yield_now;

@@ -11,8 +11,9 @@
 
 use super::i_signer::ISigner;
 use once_cell::sync::Lazy;
+use parking_lot::RwLock;
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 /// Global registry of signers
 static SIGNERS: Lazy<RwLock<HashMap<String, Arc<dyn ISigner>>>> =
@@ -30,7 +31,7 @@ impl SignerManager {
     /// # Returns
     /// The signer; `None` if not found or no signer or multiple signers are registered.
     pub fn get_signer_or_default(name: &str) -> Option<Arc<dyn ISigner>> {
-        let signers = SIGNERS.read().unwrap();
+        let signers = SIGNERS.read();
 
         if !name.is_empty() {
             if let Some(signer) = signers.get(name) {
@@ -58,7 +59,7 @@ impl SignerManager {
             return Err("Name cannot be null or empty".to_string());
         }
 
-        let mut signers = SIGNERS.write().unwrap();
+        let mut signers = SIGNERS.write();
 
         if signers.contains_key(&name) {
             return Err(format!("Signer {} already exists", name));
@@ -80,7 +81,7 @@ impl SignerManager {
             return false;
         }
 
-        let mut signers = SIGNERS.write().unwrap();
+        let mut signers = SIGNERS.write();
         signers.remove(name).is_some()
     }
 }

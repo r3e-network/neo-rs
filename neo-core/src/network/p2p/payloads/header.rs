@@ -160,8 +160,12 @@ impl Header {
 
         // Calculate hash from serialized data
         let mut writer = BinaryWriter::new();
-        self.serialize_unsigned(&mut writer)
-            .expect("header serialization should not fail");
+        if let Err(err) = self.serialize_unsigned(&mut writer) {
+            tracing::error!("Header unsigned serialization failed: {err}");
+            let hash = UInt256::zero();
+            self._hash = Some(hash);
+            return hash;
+        }
         // Neo block hashes use single SHA256 over the unsigned header payload.
         let hash = UInt256::from(crate::neo_crypto::sha256(&writer.into_bytes()));
         self._hash = Some(hash);
@@ -646,10 +650,25 @@ impl crate::IVerifiable for Header {
         }
 
         let ledger = LedgerContract::new();
-        let prev = ledger
-            .get_trimmed_block(snapshot, &self.prev_hash)
-            .expect("ledger access should not fail when fetching previous header")
-            .expect("previous header must be present for verification");
+        let prev = match ledger.get_trimmed_block(snapshot, &self.prev_hash) {
+            Ok(Some(prev)) => prev,
+            Ok(None) => {
+                tracing::warn!(
+                    prev_hash = %self.prev_hash,
+                    "previous header not found when verifying header"
+                );
+                return Vec::new();
+            }
+            Err(err) => {
+                tracing::warn!(
+                    prev_hash = %self.prev_hash,
+                    error = %err,
+                    "failed to fetch previous header when verifying header"
+                );
+                return Vec::new();
+            }
+        };
+
         vec![prev.header.next_consensus]
     }
 
@@ -672,8 +691,10 @@ impl crate::IVerifiable for Header {
 
     fn get_hash_data(&self) -> Vec<u8> {
         let mut writer = BinaryWriter::new();
-        self.serialize_unsigned(&mut writer)
-            .expect("header unsigned serialization should succeed");
+        if let Err(err) = self.serialize_unsigned(&mut writer) {
+            tracing::error!("Failed to serialize header unsigned data: {err}");
+            return Vec::new();
+        }
         writer.into_bytes()
     }
 

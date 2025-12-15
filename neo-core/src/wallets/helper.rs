@@ -31,7 +31,8 @@ use crate::{
 use neo_primitives::WitnessScope;
 use neo_vm::{op_code::OpCode, ScriptBuilder};
 use num_bigint::{BigInt, Sign};
-use rand::Rng;
+use rand::rngs::OsRng;
+use rand::RngCore;
 use std::sync::Arc;
 
 /// A helper class related to wallets.
@@ -272,7 +273,7 @@ impl Helper {
         });
 
         let mut tx = Transaction::new();
-        tx.set_nonce(rand::thread_rng().gen::<u32>());
+        tx.set_nonce(OsRng.next_u32());
         tx.set_script(script_builder.to_array());
 
         let ledger = LedgerContract::new();

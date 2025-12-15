@@ -51,10 +51,12 @@ mod tests {
     use crate::network::error::NetworkError;
     use tokio::net::{TcpListener, TcpStream};
 
-    async fn silent_pair() -> (TcpStream, TcpStream) {
-        let listener = TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("bind listener");
+    async fn silent_pair() -> Option<(TcpStream, TcpStream)> {
+        let listener = match TcpListener::bind("127.0.0.1:0").await {
+            Ok(listener) => listener,
+            Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => return None,
+            Err(err) => panic!("bind listener: {}", err),
+        };
         let addr = listener.local_addr().expect("listener addr");
 
         let client = TcpStream::connect(addr);
@@ -62,12 +64,14 @@ mod tests {
         let (client_stream, server_stream) = tokio::join!(client, server);
         let client_stream = client_stream.expect("client connect succeeded");
         let (server_stream, _) = server_stream.expect("server accept succeeded");
-        (client_stream, server_stream)
+        Some((client_stream, server_stream))
     }
 
     #[tokio::test]
     async fn read_frame_times_out_when_peer_silent() {
-        let (mut client_stream, _server_stream) = silent_pair().await;
+        let Some((mut client_stream, _server_stream)) = silent_pair().await else {
+            return;
+        };
 
         let mut framed = FramedSocket::new(&mut client_stream);
         let cfg = FrameConfig {
@@ -87,7 +91,9 @@ mod tests {
 
     #[tokio::test]
     async fn read_frame_times_out_in_active_session_when_peer_silent() {
-        let (mut client_stream, _server_stream) = silent_pair().await;
+        let Some((mut client_stream, _server_stream)) = silent_pair().await else {
+            return;
+        };
         let mut framed = FramedSocket::new(&mut client_stream);
         let cfg = FrameConfig {
             read_timeout_handshake: Duration::from_secs(5),

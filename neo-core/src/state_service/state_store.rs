@@ -60,11 +60,12 @@ use crate::persistence::{
     store_cache::StoreCache, TrackState,
 };
 use crate::protocol_settings::ProtocolSettings;
+use crate::smart_contract::native::LedgerContract;
 use crate::smart_contract::{StorageItem, StorageKey};
 use crate::UInt256;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 /// Maximum number of state roots to cache before persistence.
 pub const MAX_CACHE_COUNT: usize = 100;
@@ -182,45 +183,24 @@ impl MemoryStateStoreBackend {
 impl StateStoreBackend for MemoryStateStoreBackend {
     fn try_get(&self, key: &[u8]) -> Option<Vec<u8>> {
         // Check pending first
-        let pending_guard = match self.pending.read() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        if let Some(pending_value) = pending_guard.get(key) {
-            return pending_value.clone();
+        if let Some(pending_value) = self.pending.read().get(key).cloned() {
+            return pending_value;
         }
-        drop(pending_guard);
         // Then check committed data
-        let data_guard = match self.data.read() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        data_guard.get(key).cloned()
+        self.data.read().get(key).cloned()
     }
 
     fn put(&self, key: Vec<u8>, value: Vec<u8>) {
-        match self.pending.write() {
-            Ok(mut guard) => guard.insert(key, Some(value)),
-            Err(poisoned) => poisoned.into_inner().insert(key, Some(value)),
-        };
+        self.pending.write().insert(key, Some(value));
     }
 
     fn delete(&self, key: &[u8]) {
-        match self.pending.write() {
-            Ok(mut guard) => guard.insert(key.to_vec(), None),
-            Err(poisoned) => poisoned.into_inner().insert(key.to_vec(), None),
-        };
+        self.pending.write().insert(key.to_vec(), None);
     }
 
     fn commit(&self) {
-        let mut data = match self.data.write() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        let mut pending = match self.pending.write() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
+        let mut data = self.data.write();
+        let mut pending = self.pending.write();
         for (key, value) in pending.drain() {
             match value {
                 Some(v) => {
@@ -340,20 +320,18 @@ impl StateSnapshot {
 
     /// Adds a local state root (without witness).
     pub fn add_local_state_root(&self, state_root: &StateRoot) -> Result<(), String> {
-        let mut tx = StateStoreTransaction::new(self.store.clone());
         let key = Keys::state_root(state_root.index);
         let mut writer = BinaryWriter::new();
         state_root
             .serialize(&mut writer)
             .map_err(|e| format!("Serialization failed: {:?}", e))?;
-        tx.put(key, writer.into_bytes());
+        self.store.put(key, writer.into_bytes());
 
         // Update current local root index
-        tx.put(
+        self.store.put(
             Keys::CURRENT_LOCAL_ROOT_INDEX.to_vec(),
             state_root.index.to_le_bytes().to_vec(),
         );
-        tx.commit();
         Ok(())
     }
 
@@ -363,21 +341,18 @@ impl StateSnapshot {
             return Err("Missing witness in validated state root".to_string());
         }
 
-        let mut tx = StateStoreTransaction::new(self.store.clone());
-
         let key = Keys::state_root(state_root.index);
         let mut writer = BinaryWriter::new();
         state_root
             .serialize(&mut writer)
             .map_err(|e| format!("Serialization failed: {:?}", e))?;
-        tx.put(key, writer.into_bytes());
+        self.store.put(key, writer.into_bytes());
 
         // Update current validated root index
-        tx.put(
+        self.store.put(
             Keys::CURRENT_VALIDATED_ROOT_INDEX.to_vec(),
             state_root.index.to_le_bytes().to_vec(),
         );
-        tx.commit();
         Ok(())
     }
 
@@ -420,26 +395,8 @@ impl StateSnapshot {
             .commit()
             .map_err(|e| format!("Trie commit failed: {:?}", e))?;
 
-        // Apply pending store changes via a transaction to keep writes scoped and explicit.
-        let mut tx = StateStoreTransaction::new(self.store.clone());
-
-        // Persist current local/validated indices if present.
-        if let Some(local_index) = self.current_local_root_index() {
-            tx.put(
-                Keys::CURRENT_LOCAL_ROOT_INDEX.to_vec(),
-                local_index.to_le_bytes().to_vec(),
-            );
-        }
-        if let Some(validated_index) = self.current_validated_root_index() {
-            tx.put(
-                Keys::CURRENT_VALIDATED_ROOT_INDEX.to_vec(),
-                validated_index.to_le_bytes().to_vec(),
-            );
-        }
-
-        // Merge any pending writes captured by the backend.
-        // NOTE: Current backends track pending internally; use the transaction as a commit wrapper.
-        tx.commit();
+        // Flush pending trie updates and any staged root/index updates.
+        self.store.commit();
         Ok(())
     }
 }
@@ -484,6 +441,14 @@ impl StateStore {
         Self::new(backend, StateServiceSettings::default())
     }
 
+    /// Returns whether the state store keeps full historical state.
+    ///
+    /// When `false`, the store prunes historical trie nodes and only the current local root
+    /// can be queried for proofs/state (mirrors the C# StateService `FullState` setting).
+    pub fn full_state(&self) -> bool {
+        self.settings.full_state
+    }
+
     /// Creates a state store backed by the provided blockchain store and protocol settings,
     /// wiring a verifier that reads designated validators from the same store.
     pub fn new_from_store(
@@ -521,48 +486,34 @@ impl StateStore {
 
     /// Gets the current local root hash.
     pub fn current_local_root_hash(&self) -> Option<UInt256> {
-        match self.current_snapshot.read() {
-            Ok(guard) => guard.as_ref().and_then(|s| s.current_local_root_hash()),
-            Err(poisoned) => poisoned
-                .into_inner()
-                .as_ref()
-                .and_then(|s| s.current_local_root_hash()),
-        }
+        self.current_snapshot
+            .read()
+            .as_ref()
+            .and_then(|s| s.current_local_root_hash())
     }
 
     /// Gets the current local root index.
     pub fn local_root_index(&self) -> Option<u32> {
-        match self.current_snapshot.read() {
-            Ok(guard) => guard.as_ref().and_then(|s| s.current_local_root_index()),
-            Err(poisoned) => poisoned
-                .into_inner()
-                .as_ref()
-                .and_then(|s| s.current_local_root_index()),
-        }
+        self.current_snapshot
+            .read()
+            .as_ref()
+            .and_then(|s| s.current_local_root_index())
     }
 
     /// Gets the current validated root index.
     pub fn validated_root_index(&self) -> Option<u32> {
-        match self.current_snapshot.read() {
-            Ok(guard) => guard
-                .as_ref()
-                .and_then(|s| s.current_validated_root_index()),
-            Err(poisoned) => poisoned
-                .into_inner()
-                .as_ref()
-                .and_then(|s| s.current_validated_root_index()),
-        }
+        self.current_snapshot
+            .read()
+            .as_ref()
+            .and_then(|s| s.current_validated_root_index())
     }
 
     /// Gets the current validated root hash.
     pub fn current_validated_root_hash(&self) -> Option<UInt256> {
-        match self.current_snapshot.read() {
-            Ok(guard) => guard.as_ref().and_then(|s| s.current_validated_root_hash()),
-            Err(poisoned) => poisoned
-                .into_inner()
-                .as_ref()
-                .and_then(|s| s.current_validated_root_hash()),
-        }
+        self.current_snapshot
+            .read()
+            .as_ref()
+            .and_then(|s| s.current_validated_root_hash())
     }
 
     /// Processes a new state root from the network.
@@ -592,10 +543,7 @@ impl StateStore {
         // Cache future state roots
         if local_index < state_root.index && state_root.index < local_index + MAX_CACHE_COUNT as u32
         {
-            match self.cache.write() {
-                Ok(mut guard) => guard.insert(state_root.index, state_root),
-                Err(poisoned) => poisoned.into_inner().insert(state_root.index, state_root),
-            };
+            self.cache.write().insert(state_root.index, state_root);
             return true;
         }
 
@@ -662,22 +610,16 @@ impl StateStore {
         height: u32,
         change_set: impl Iterator<Item = (StorageKey, StorageItem, TrackState)>,
     ) {
-        // Dispose old snapshot
-        {
-            let mut state_snap = match self.state_snapshot.write() {
-                Ok(guard) => guard,
-                Err(poisoned) => poisoned.into_inner(),
-            };
-            *state_snap = Some(self.get_snapshot());
-        }
-
-        let mut state_snap = match self.state_snapshot.write() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
+        let mut state_snap = self.state_snapshot.write();
+        *state_snap = Some(self.get_snapshot());
         if let Some(ref mut snapshot) = *state_snap {
             // Apply changes to trie
             for (key, item, state) in change_set {
+                // Match Neo.Plugins.StateService behaviour: exclude ledger contract storage
+                // from trie updates to keep state root consensus-compatible.
+                if key.id == LedgerContract::ID {
+                    continue;
+                }
                 let key_bytes = key.to_array();
                 match state {
                     TrackState::Added | TrackState::Changed => {
@@ -704,10 +646,7 @@ impl StateStore {
     pub fn update_local_state_root(&self, height: u32) {
         // Commit and dispose snapshot
         {
-            let mut state_snap = match self.state_snapshot.write() {
-                Ok(guard) => guard,
-                Err(poisoned) => poisoned.into_inner(),
-            };
+            let mut state_snap = self.state_snapshot.write();
             if let Some(ref mut snapshot) = *state_snap {
                 let _ = snapshot.commit();
             }
@@ -720,12 +659,7 @@ impl StateStore {
 
     /// Checks if we have a cached validated state root for this height.
     fn check_validated_state_root(&self, index: u32) {
-        let state_root = {
-            match self.cache.write() {
-                Ok(mut guard) => guard.remove(&index),
-                Err(poisoned) => poisoned.into_inner().remove(&index),
-            }
-        };
+        let state_root = self.cache.write().remove(&index);
 
         if let Some(root) = state_root {
             self.on_new_state_root(root);
@@ -735,11 +669,7 @@ impl StateStore {
     /// Updates the current snapshot reference.
     fn update_current_snapshot(&self) {
         let new_snapshot = self.get_snapshot();
-        let mut current = match self.current_snapshot.write() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        *current = Some(new_snapshot);
+        *self.current_snapshot.write() = Some(new_snapshot);
     }
 
     /// Gets a state root by index.
@@ -773,16 +703,19 @@ impl StateStore {
     /// Serializes a proof payload (key + nodes) for transport over RPC.
     pub fn encode_proof_payload(key: &[u8], nodes: &[Vec<u8>]) -> Vec<u8> {
         let mut writer = BinaryWriter::new();
-        writer
-            .write_var_bytes(key)
-            .expect("writing proof key should not fail");
-        writer
-            .write_var_int(nodes.len() as u64)
-            .expect("writing proof length should not fail");
+        if let Err(err) = writer.write_var_bytes(key) {
+            tracing::error!("failed to serialize proof key: {err}");
+            return Vec::new();
+        }
+        if let Err(err) = writer.write_var_int(nodes.len() as u64) {
+            tracing::error!("failed to serialize proof length: {err}");
+            return Vec::new();
+        }
         for node in nodes {
-            writer
-                .write_var_bytes(node)
-                .expect("writing proof node should not fail");
+            if let Err(err) = writer.write_var_bytes(node) {
+                tracing::error!("failed to serialize proof node: {err}");
+                return Vec::new();
+            }
         }
         writer.into_bytes()
     }
@@ -840,12 +773,34 @@ impl StateRootVerifier {
 mod tests {
     use super::*;
     use crate::network::p2p::payloads::Witness;
+    use crate::persistence::TrackState;
     use crate::persistence::providers::memory_store_provider::MemoryStoreProvider;
     use crate::protocol_settings::ProtocolSettings;
     use crate::smart_contract::Contract;
+    use crate::smart_contract::native::LedgerContract;
+    use crate::smart_contract::native::{role_management::RoleManagement, NativeContract, Role};
     use crate::wallets::KeyPair;
     use neo_vm::op_code::OpCode;
     use std::sync::Arc;
+
+    fn cache_with_designated_state_validators(index: u32, validators: &[crate::ECPoint]) -> DataCache {
+        let cache = DataCache::new(false);
+        let mut suffix = vec![Role::StateValidator as u8];
+        suffix.extend_from_slice(&index.to_be_bytes());
+        let key = StorageKey::new(RoleManagement::new().id(), suffix);
+
+        let mut value = Vec::with_capacity(4 + 33 * validators.len());
+        value.extend_from_slice(&(validators.len() as u32).to_le_bytes());
+        for validator in validators {
+            let encoded = validator
+                .encode_compressed()
+                .expect("validator key must encode");
+            value.extend_from_slice(&encoded);
+        }
+
+        cache.add(key, StorageItem::from_bytes(value));
+        cache
+    }
 
     #[test]
     fn test_state_store_creation() {
@@ -897,6 +852,46 @@ mod tests {
 
         // Commit
         let _ = snapshot.commit();
+    }
+
+    #[test]
+    fn ledger_storage_is_excluded_from_state_trie() {
+        let store = StateStore::new_in_memory();
+        let height = 0;
+
+        let ledger_key = StorageKey::new(LedgerContract::ID, vec![0x01]);
+        let ledger_value = vec![0xAA, 0xBB, 0xCC];
+        let other_key = StorageKey::new(123, vec![0x02]);
+        let other_value = vec![0x10, 0x11];
+
+        let changes = vec![
+            (
+                ledger_key.clone(),
+                StorageItem::from_bytes(ledger_value),
+                TrackState::Added,
+            ),
+            (
+                other_key.clone(),
+                StorageItem::from_bytes(other_value.clone()),
+                TrackState::Added,
+            ),
+        ];
+
+        store.update_local_state_root_snapshot(height, changes.into_iter());
+        store.update_local_state_root(height);
+
+        let root = store
+            .get_state_root(height)
+            .expect("state root should be stored");
+        let mut trie = store.trie_for_root(root.root_hash);
+        assert_eq!(
+            trie.get(&other_key.to_array()).expect("trie get"),
+            Some(other_value)
+        );
+        assert_eq!(
+            trie.get(&ledger_key.to_array()).expect("trie get"),
+            None
+        );
     }
 
     #[test]
@@ -985,15 +980,14 @@ mod tests {
 
     #[test]
     fn rejects_state_root_with_invalid_signature() {
-        let mut settings = ProtocolSettings::default_settings();
+        let settings = ProtocolSettings::default_settings();
         let keypair = KeyPair::generate().expect("generate keypair");
         let validator = keypair.get_public_key_point().expect("public key point");
-        settings.standby_committee = vec![validator.clone()];
-        settings.validators_count = 1;
+        let validators = vec![validator.clone()];
 
         let verifier = StateRootVerifier::new(
             Arc::new(settings.clone()),
-            Arc::new(|| DataCache::new(true)),
+            Arc::new(move || cache_with_designated_state_validators(7, &validators)),
         );
         let backend = Arc::new(MemoryStateStoreBackend::new());
         let store =
@@ -1083,16 +1077,15 @@ mod tests {
     }
 
     #[test]
-    fn verifies_state_root_witness_against_standby_committee() {
-        let mut settings = ProtocolSettings::default_settings();
+    fn verifies_state_root_witness_against_designated_state_validators() {
+        let settings = ProtocolSettings::default_settings();
         let keypair = KeyPair::generate().expect("generate keypair");
         let validator = keypair.get_public_key_point().expect("public key point");
-        settings.standby_committee = vec![validator.clone()];
-        settings.validators_count = 1;
+        let validators = vec![validator.clone()];
 
         let verifier = StateRootVerifier::new(
             Arc::new(settings.clone()),
-            Arc::new(|| DataCache::new(true)),
+            Arc::new(move || cache_with_designated_state_validators(5, &validators)),
         );
         let backend = Arc::new(MemoryStateStoreBackend::new());
         let store =

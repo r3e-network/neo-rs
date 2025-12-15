@@ -8,6 +8,7 @@
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
 use crate::neo_config::{MAX_SCRIPT_LENGTH, MAX_SCRIPT_SIZE};
+use crate::neo_io::serializable::helper::{get_var_size, get_var_size_str};
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::smart_contract::i_interoperable::IInteroperable;
 use crate::smart_contract::manifest::{
@@ -91,41 +92,54 @@ impl ContractManifest {
 
     /// Gets the size of the manifest in bytes.
     pub fn size(&self) -> usize {
-        let groups_size: usize = self.groups.iter().map(ContractGroup::size).sum();
+        // NOTE: The binary manifest format embeds several fields as JSON strings (matching the C#
+        // node). Size calculations must mirror `serialize_io` exactly.
+        let mut size = 0usize;
+
+        size += get_var_size_str(&self.name);
+
+        size += get_var_size(self.groups.len() as u64);
+        for group in &self.groups {
+            let group_json = serde_json::to_string(group).unwrap_or_default();
+            size += get_var_size_str(&group_json);
+        }
+
         let features_json = serde_json::to_string(&self.features).unwrap_or_default();
-        let supported_standards_size: usize =
-            self.supported_standards.iter().map(|s| s.len()).sum();
-        let permissions_size: usize = self.permissions.iter().map(ContractPermission::size).sum();
-        let trusts_size: usize = match &self.trusts {
-            WildCardContainer::Wildcard => 0,
+        size += get_var_size_str(&features_json);
+
+        size += get_var_size(self.supported_standards.len() as u64);
+        for standard in &self.supported_standards {
+            size += get_var_size_str(standard);
+        }
+
+        let abi_json = serde_json::to_string(&self.abi).unwrap_or_default();
+        size += get_var_size_str(&abi_json);
+
+        size += get_var_size(self.permissions.len() as u64);
+        for permission in &self.permissions {
+            let permission_json = serde_json::to_string(permission).unwrap_or_default();
+            size += get_var_size_str(&permission_json);
+        }
+
+        match &self.trusts {
+            WildCardContainer::Wildcard => size += get_var_size(0),
             WildCardContainer::List(trusts) => {
-                trusts.iter().map(ContractPermissionDescriptor::size).sum()
+                size += get_var_size(trusts.len() as u64);
+                for trust in trusts {
+                    let trust_json = serde_json::to_string(trust).unwrap_or_default();
+                    size += get_var_size_str(&trust_json);
+                }
             }
-        };
+        }
+
         let extra_json = self
             .extra
             .as_ref()
-            .map(|value| serde_json::to_string(value).unwrap_or_default())
+            .and_then(|value| serde_json::to_string(value).ok())
             .unwrap_or_default();
+        size += get_var_size_str(&extra_json);
 
-        self.name.len()
-            + 1
-            + groups_size
-            + 1
-            + features_json.len()
-            + 1
-            + supported_standards_size
-            + 1
-            + self.abi.size()
-            + permissions_size
-            + 1
-            + trusts_size
-            + 1
-            + if self.extra.is_some() {
-                extra_json.len() + 1
-            } else {
-                1
-            }
+        size
     }
 
     /// Converts the manifest to JSON.

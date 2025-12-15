@@ -4,13 +4,15 @@
 //! of a deployed smart contract in the Neo blockchain.
 
 use crate::cryptography::Crypto;
-use crate::neo_config::{ADDRESS_SIZE, MAX_SCRIPT_SIZE};
+use crate::neo_config::ADDRESS_SIZE;
+use crate::neo_io::serializable::helper::{
+    get_var_size_bytes, get_var_size_serializable_slice, get_var_size_str,
+};
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::smart_contract::{
     helper::Helper, manifest::ContractManifest, method_token::MethodToken, CallFlags,
 };
 use crate::UInt160;
-use std::convert::TryInto;
 
 /// Represents the state of a deployed smart contract.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -82,10 +84,11 @@ impl ContractState {
 
     /// Gets the size of the contract state in bytes.
     pub fn size(&self) -> usize {
-        let mut writer = BinaryWriter::new();
-        self.serialize(&mut writer)
-            .expect("ContractState serialization should succeed for size calculation");
-        writer.len()
+        4 + // Id (i32)
+        2 + // UpdateCounter (u16)
+        UInt160::LENGTH + // Hash (UInt160)
+        self.nef.size() + // NefFile
+        self.manifest.size() // ContractManifest
     }
 
     /// Calculates the hash of the contract from its NEF and manifest.
@@ -133,42 +136,75 @@ impl ContractState {
 }
 
 impl NefFile {
+    const MAGIC: u32 = 0x3346_454E;
+    const COMPILER_LENGTH: usize = 64;
+    const MAX_SOURCE_LENGTH: usize = 256;
+    const MAX_TOKENS: usize = 128;
+
     /// Creates a new NEF file.
     pub fn new(compiler: String, script: Vec<u8>) -> Self {
-        let checksum = Self::calculate_checksum(&script);
-
-        Self {
+        let mut nef = Self {
             compiler,
             source: String::new(),
             tokens: Vec::new(),
             script,
-            checksum,
-        }
+            checksum: 0,
+        };
+        nef.checksum = Self::compute_checksum(&nef);
+        nef
     }
 
     /// Gets the size of the NEF file in bytes.
     pub fn size(&self) -> usize {
-        let mut writer = BinaryWriter::new();
-        self.serialize(&mut writer)
-            .expect("NefFile serialization should succeed for size calculation");
-        writer.len()
+        4 + // Magic (u32)
+        Self::COMPILER_LENGTH + // Compiler fixed string (64 bytes)
+        get_var_size_str(&self.source) + // Source var string
+        1 + // Reserved byte
+        get_var_size_serializable_slice(&self.tokens) + // Tokens array (var length + items)
+        2 + // Reserved bytes (u16)
+        get_var_size_bytes(&self.script) + // Script var bytes
+        4 // Checksum (u32)
     }
 
-    /// Calculates the checksum of the script.
-    fn calculate_checksum(script: &[u8]) -> u32 {
-        let hash = Crypto::sha256(script);
-        u32::from_le_bytes(
-            hash[..4]
-                .try_into()
-                .expect("sha256 output shorter than 4 bytes"),
-        )
+    /// Computes the NEF checksum using the C# algorithm:
+    /// `Hash256(nef_bytes_without_checksum)[..4]` interpreted as little-endian u32.
+    fn compute_checksum(nef: &Self) -> u32 {
+        let mut writer = BinaryWriter::new();
+
+        // Serialize all fields except checksum in NEF3 format.
+        writer.write_u32(Self::MAGIC).expect("writer");
+
+        let compiler_bytes = nef.compiler.as_bytes();
+        let mut fixed = [0u8; Self::COMPILER_LENGTH];
+        let len = compiler_bytes.len().min(Self::COMPILER_LENGTH);
+        fixed[..len].copy_from_slice(&compiler_bytes[..len]);
+        writer.write_bytes(&fixed).expect("writer");
+
+        writer.write_var_string(&nef.source).expect("writer");
+
+        writer.write_u8(0).expect("writer"); // reserved
+        writer.write_serializable_vec(&nef.tokens).expect("writer");
+        writer.write_u16(0).expect("writer"); // reserved
+        writer.write_var_bytes(&nef.script).expect("writer");
+
+        let bytes = writer.into_bytes();
+        let hash = Crypto::hash256(&bytes);
+        u32::from_le_bytes([hash[0], hash[1], hash[2], hash[3]])
+    }
+
+    /// Recomputes and updates the checksum in-place.
+    pub fn update_checksum(&mut self) {
+        self.checksum = Self::compute_checksum(self);
     }
 
     /// Converts the NEF file to bytes.
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut writer = BinaryWriter::new();
-        Serializable::serialize(self, &mut writer).expect("Operation failed");
-        writer.to_bytes()
+        if let Err(err) = Serializable::serialize(self, &mut writer) {
+            tracing::error!("NEF serialization failed: {err}");
+            return Vec::new();
+        }
+        writer.into_bytes()
     }
 
     /// Parses a NEF file from bytes.
@@ -181,11 +217,7 @@ impl NefFile {
 
 impl Serializable for ContractState {
     fn size(&self) -> usize {
-        let mut writer = BinaryWriter::new();
-        // Serialization cannot fail for in-memory values; panic on unexpected errors.
-        self.serialize(&mut writer)
-            .expect("ContractState serialization should succeed for size calculation");
-        writer.len()
+        self.size()
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
@@ -225,68 +257,156 @@ impl Serializable for ContractState {
 
 impl Serializable for NefFile {
     fn size(&self) -> usize {
-        let mut writer = BinaryWriter::new();
-        self.serialize(&mut writer)
-            .expect("NefFile serialization should succeed for size calculation");
-        writer.len()
+        self.size()
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
-        writer.write_u32(0x3346454E)?; // NEF magic
-        writer.write_var_string(&self.compiler)?;
+        use neo_vm::ExecutionEngineLimits;
+
+        writer.write_u32(Self::MAGIC)?;
+
+        // Compiler fixed string (64 bytes)
+        let compiler_bytes = self.compiler.as_bytes();
+        if compiler_bytes.len() > Self::COMPILER_LENGTH {
+            return Err(IoError::invalid_data(format!(
+                "Compiler length {} exceeds {} bytes",
+                compiler_bytes.len(),
+                Self::COMPILER_LENGTH
+            )));
+        }
+        writer.write_bytes(compiler_bytes)?;
+        if compiler_bytes.len() < Self::COMPILER_LENGTH {
+            let padding = vec![0u8; Self::COMPILER_LENGTH - compiler_bytes.len()];
+            writer.write_bytes(&padding)?;
+        }
+
+        // Source var string (max 256 bytes)
+        if self.source.len() > Self::MAX_SOURCE_LENGTH {
+            return Err(IoError::invalid_data(format!(
+                "Source length exceeds {} bytes",
+                Self::MAX_SOURCE_LENGTH
+            )));
+        }
         writer.write_var_string(&self.source)?;
-        writer.write_var_int(self.tokens.len() as u64)?;
-        for token in &self.tokens {
-            Serializable::serialize(token, writer)?;
+
+        writer.write_u8(0)?; // reserved
+
+        if self.tokens.len() > Self::MAX_TOKENS {
+            return Err(IoError::invalid_data(format!(
+                "Token count {} exceeds maximum {}",
+                self.tokens.len(),
+                Self::MAX_TOKENS
+            )));
+        }
+        writer.write_serializable_vec(&self.tokens)?;
+
+        writer.write_u16(0)?; // reserved
+
+        if self.script.is_empty() {
+            return Err(IoError::invalid_data("Script cannot be empty".to_string()));
+        }
+        let max_item_size = ExecutionEngineLimits::default().max_item_size as usize;
+        if self.script.len() > max_item_size {
+            return Err(IoError::invalid_data(format!(
+                "Script size {} exceeds MaxItemSize {}",
+                self.script.len(),
+                max_item_size
+            )));
         }
         writer.write_var_bytes(&self.script)?;
+
         writer.write_u32(self.checksum)?;
         Ok(())
     }
 
     fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
+        use neo_vm::ExecutionEngineLimits;
+
+        let start_position = reader.position();
+
         let magic = reader.read_u32()?;
-        if magic != 0x3346454E {
+        if magic != Self::MAGIC {
             return Err(IoError::invalid_data(format!(
                 "NEF deserialization magic mismatch: 0x{:08X}",
                 magic
             )));
         }
 
-        let compiler = reader.read_var_string(MAX_SCRIPT_SIZE)?; // Max MAX_SCRIPT_SIZE chars for compiler
-        let source = reader.read_var_string(MAX_SCRIPT_SIZE)?; // Max MAX_SCRIPT_SIZE chars for source
-        let token_count = reader.read_var_int(MAX_SCRIPT_SIZE as u64)? as usize; // Max MAX_SCRIPT_SIZE tokens
+        let compiler = reader.read_fixed_string(Self::COMPILER_LENGTH)?;
+        let source = reader.read_var_string(Self::MAX_SOURCE_LENGTH)?;
+
+        let reserved = reader.read_byte()?;
+        if reserved != 0 {
+            return Err(IoError::invalid_data("Reserved byte must be 0".to_string()));
+        }
+
+        let token_count = reader.read_var_int(Self::MAX_TOKENS as u64)? as usize;
         let mut tokens = Vec::with_capacity(token_count);
         for _ in 0..token_count {
             tokens.push(<MethodToken as Serializable>::deserialize(reader)?);
         }
-        let script = reader.read_var_bytes(MAX_SCRIPT_SIZE * MAX_SCRIPT_SIZE)?; // Max 1MB script
+
+        let reserved2 = reader.read_uint16()?;
+        if reserved2 != 0 {
+            return Err(IoError::invalid_data(
+                "Reserved bytes must be 0".to_string(),
+            ));
+        }
+
+        let max_item_size = ExecutionEngineLimits::default().max_item_size as usize;
+        let script = reader.read_var_bytes(max_item_size)?;
+        if script.is_empty() {
+            return Err(IoError::invalid_data("Script cannot be empty".to_string()));
+        }
+
         let checksum = reader.read_u32()?;
 
-        Ok(NefFile {
+        let nef = NefFile {
             compiler,
             source,
             tokens,
             script,
             checksum,
-        })
+        };
+
+        let calculated = Self::compute_checksum(&nef);
+        if calculated != checksum {
+            return Err(IoError::invalid_data("CRC verification fail".to_string()));
+        }
+
+        let size = reader.position().saturating_sub(start_position);
+        if size > max_item_size {
+            return Err(IoError::invalid_data("Max vm item size exceed".to_string()));
+        }
+
+        Ok(nef)
     }
 }
 
 impl Serializable for MethodToken {
     fn size(&self) -> usize {
-        let mut writer = BinaryWriter::new();
-        <Self as Serializable>::serialize(self, &mut writer)
-            .expect("MethodToken serialization should succeed for size calculation");
-        writer.len()
+        UInt160::LENGTH
+            + get_var_size_str(&self.method)
+            + 2  // ParametersCount (u16)
+            + 1  // HasReturnValue (bool)
+            + 1 // CallFlags (u8)
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
+        if self.method.starts_with('_') {
+            return Err(IoError::invalid_data(
+                "Method name cannot start with '_'".to_string(),
+            ));
+        }
+        if self.method.len() > 32 {
+            return Err(IoError::invalid_data("Method name too long".to_string()));
+        }
+
         writer.write_bytes(&self.hash.as_bytes())?;
         writer.write_var_string(&self.method)?;
         writer.write_u16(self.parameters_count)?;
         writer.write_bool(self.has_return_value)?;
-        writer.write_u32(u32::from(self.call_flags.bits()))?;
+        writer.write_u8(self.call_flags.bits())?;
         Ok(())
     }
 
@@ -294,11 +414,17 @@ impl Serializable for MethodToken {
         let hash_bytes = reader.read_bytes(ADDRESS_SIZE)?;
         let hash =
             UInt160::from_bytes(&hash_bytes).map_err(|e| IoError::invalid_data(e.to_string()))?;
-        let method = reader.read_var_string(256)?; // Max 256 chars for method name
+        let method = reader.read_var_string(32)?; // Max 32 chars for method name
+        if method.starts_with('_') {
+            return Err(IoError::invalid_data(
+                "Method name cannot start with '_'".to_string(),
+            ));
+        }
         let parameters_count = reader.read_uint16()?;
         let has_return_value = reader.read_boolean()?;
-        let call_flags_bits = reader.read_u32()?;
-        let call_flags = CallFlags::from_bits_truncate(call_flags_bits as u8);
+        let call_flags_bits = reader.read_byte()?;
+        let call_flags = CallFlags::from_bits(call_flags_bits)
+            .ok_or_else(|| IoError::invalid_data("CallFlags is not valid".to_string()))?;
 
         Ok(MethodToken {
             hash,

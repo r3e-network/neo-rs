@@ -12,10 +12,11 @@ use crate::smart_contract::native::contract_management::ContractManagement;
 use crate::smart_contract::native::NativeRegistry;
 use crate::smart_contract::trigger_type::TriggerType;
 use crate::smart_contract::ContractParameterType;
-use crate::{IVerifiable, UInt160};
+use crate::{IVerifiable, UInt160, UInt256};
 use neo_vm::VMState;
 use neo_vm::{op_code::OpCode, ScriptBuilder};
 use sha2::{Digest, Sha256};
+use std::any::Any;
 use std::sync::Arc;
 
 /// Helper functions for smart contracts (matches C# Helper)
@@ -363,7 +364,7 @@ impl Helper {
     /// # Returns
     /// `Ok(fee)` with consumed gas if verification succeeds, `Err` otherwise
     pub fn verify_witness<V: IVerifiable>(
-        _verifiable: &V,
+        verifiable: &V,
         settings: &ProtocolSettings,
         snapshot: &DataCache,
         hash: &UInt160,
@@ -379,9 +380,14 @@ impl Helper {
 
         // Create verification engine
         let cloned_snapshot = Arc::new(snapshot.clone_cache());
+        let container_hash = verifiable.hash()?;
+        let container = Arc::new(VerifiableHashContainer {
+            hash: container_hash,
+            hash_data: verifiable.get_hash_data(),
+        });
         let mut engine = ApplicationEngine::new(
             TriggerType::Verification,
-            None, // No container for verification context
+            Some(container),
             cloned_snapshot,
             None,
             settings.clone(),
@@ -503,5 +509,45 @@ impl Helper {
         // Full validation would require parsing all opcodes
         // For now, just check it's not too short for any meaningful operation
         true
+    }
+}
+
+/// Minimal script container wrapper used during witness verification.
+///
+/// This enables crypto syscalls like `System.Crypto.CheckSig` to resolve the
+/// signable message (`network || container_hash`) without requiring the caller
+/// to clone arbitrary `IVerifiable` implementations into an `Arc`.
+struct VerifiableHashContainer {
+    hash: UInt256,
+    hash_data: Vec<u8>,
+}
+
+impl IVerifiable for VerifiableHashContainer {
+    fn verify(&self) -> bool {
+        true
+    }
+
+    fn hash(&self) -> CoreResult<UInt256> {
+        Ok(self.hash)
+    }
+
+    fn get_hash_data(&self) -> Vec<u8> {
+        self.hash_data.clone()
+    }
+
+    fn get_script_hashes_for_verifying(&self, _snapshot: &DataCache) -> Vec<UInt160> {
+        Vec::new()
+    }
+
+    fn get_witnesses(&self) -> Vec<&Witness> {
+        Vec::new()
+    }
+
+    fn get_witnesses_mut(&mut self) -> Vec<&mut Witness> {
+        Vec::new()
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }

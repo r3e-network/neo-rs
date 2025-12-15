@@ -1,6 +1,6 @@
 //! Contract - matches C# Neo.SmartContract.Contract exactly
 
-use crate::cryptography::crypto_utils::{ECPoint, NeoHash};
+use crate::cryptography::{ECPoint, NeoHash};
 use crate::error::CoreError;
 use crate::smart_contract::ContractParameterType;
 use crate::UInt160;
@@ -16,6 +16,8 @@ pub enum MultiSigError {
     EmptyPublicKeys,
     /// Too many public keys (max 1024).
     TooManyPublicKeys { n: usize },
+    /// Failed to build the syscall portion of the script.
+    ScriptBuilder(String),
 }
 
 impl std::fmt::Display for MultiSigError {
@@ -26,6 +28,7 @@ impl std::fmt::Display for MultiSigError {
             Self::TooManyPublicKeys { n } => {
                 write!(f, "Too many public keys: {} (max 1024)", n)
             }
+            Self::ScriptBuilder(err) => write!(f, "Failed to build contract script: {err}"),
         }
     }
 }
@@ -78,9 +81,9 @@ impl Contract {
 
     /// Gets the hash of the contract
     pub fn script_hash(&self) -> UInt160 {
-        *self.script_hash_cache.get_or_init(|| {
-            UInt160::from_bytes(&NeoHash::hash160(&self.script)).expect("hash160 produces 20 bytes")
-        })
+        *self
+            .script_hash_cache
+            .get_or_init(|| UInt160::from(NeoHash::hash160(&self.script)))
     }
 
     /// Creates a multi-sig contract
@@ -127,7 +130,7 @@ impl Contract {
         builder.emit_push_int(n as i64);
         builder
             .emit_syscall("System.Crypto.CheckMultisig")
-            .expect("emit_syscall failed");
+            .map_err(|err| MultiSigError::ScriptBuilder(err.to_string()))?;
 
         Ok(builder.to_array())
     }
@@ -156,9 +159,10 @@ impl Contract {
             .encode_point(true)
             .unwrap_or_else(|_| public_key.to_bytes());
         builder.emit_push(&encoded);
-        builder
-            .emit_syscall("System.Crypto.CheckSig")
-            .expect("emit_syscall failed");
+        if let Err(err) = builder.emit_syscall("System.Crypto.CheckSig") {
+            tracing::error!("failed to emit System.Crypto.CheckSig syscall: {err}");
+            return Vec::new();
+        }
         builder.to_array()
     }
 

@@ -3,33 +3,44 @@
 use super::node_capability::NodeCapability;
 use super::node_capability_type::NodeCapabilityType;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use serde::{Deserialize, Serialize};
 
 /// Indicates that the node exposes a server endpoint.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ServerCapability {
-    pub kind: NodeCapabilityType,
-    pub port: u16,
+    kind: NodeCapabilityType,
+    port: u16,
 }
 
 impl ServerCapability {
-    pub fn new(kind: NodeCapabilityType, port: u16) -> Self {
+    pub fn new(kind: NodeCapabilityType, port: u16) -> IoResult<Self> {
         match kind {
-            NodeCapabilityType::TcpServer | NodeCapabilityType::WsServer => Self { kind, port },
-            _ => panic!("ServerCapability can only be TcpServer or WsServer"),
+            NodeCapabilityType::TcpServer | NodeCapabilityType::WsServer => Ok(Self { kind, port }),
+            _ => Err(IoError::invalid_data(
+                "ServerCapability can only be TcpServer or WsServer",
+            )),
         }
     }
 
     pub fn tcp(port: u16) -> Self {
-        Self::new(NodeCapabilityType::TcpServer, port)
+        Self {
+            kind: NodeCapabilityType::TcpServer,
+            port,
+        }
     }
 
     pub fn ws(port: u16) -> Self {
-        Self::new(NodeCapabilityType::WsServer, port)
+        Self {
+            kind: NodeCapabilityType::WsServer,
+            port,
+        }
     }
 
     pub fn capability_type(&self) -> NodeCapabilityType {
         self.kind
+    }
+
+    pub fn port(&self) -> u16 {
+        self.port
     }
 }
 
@@ -38,7 +49,10 @@ impl From<ServerCapability> for NodeCapability {
         match value.kind {
             NodeCapabilityType::TcpServer => NodeCapability::TcpServer { port: value.port },
             NodeCapabilityType::WsServer => NodeCapability::WsServer { port: value.port },
-            _ => panic!("Invalid capability kind for ServerCapability"),
+            other => NodeCapability::Unknown {
+                ty: other,
+                data: Vec::new(),
+            },
         }
     }
 }

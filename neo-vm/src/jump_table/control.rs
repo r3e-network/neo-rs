@@ -407,14 +407,14 @@ pub fn ret(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
         items.reverse();
         if return_to_result_stack {
             for item in items {
-                engine.result_stack_mut().push(item);
+                engine.result_stack_mut().push(item)?;
             }
         } else {
             let caller = engine
                 .current_context_mut()
                 .ok_or_else(|| VmError::invalid_operation_msg("No caller context"))?;
             for item in items {
-                caller.evaluation_stack_mut().push(item);
+                caller.push(item)?;
             }
         }
     }

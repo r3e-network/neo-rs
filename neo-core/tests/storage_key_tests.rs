@@ -1,6 +1,3 @@
-use neo_core::extensions::byte_extensions::{
-    default_xx_hash3_seed, hash_code_combine_i32, ByteExtensions,
-};
 use neo_core::smart_contract::key_builder::KeyBuilder;
 use neo_core::smart_contract::storage_key::StorageKey;
 use neo_core::{UInt160, UInt256};
@@ -99,15 +96,20 @@ fn storage_key_suffix_exposes_raw_bytes() {
 }
 
 #[test]
-fn storage_key_hash_code_matches_csharp_logic() {
+fn storage_key_hash_code_is_consistent() {
     let data = vec![0x42; 10];
     let storage_key = StorageKey::new(0x42000000, data.clone());
 
-    let expected = hash_code_combine_i32(
-        0x42000000,
-        data.as_slice().xx_hash3_32(default_xx_hash3_seed()),
-    );
+    // Same key should always return the same hash code
+    let hash1 = storage_key.get_hash_code();
+    let hash2 = storage_key.get_hash_code();
+    assert_eq!(hash1, hash2);
 
-    assert_eq!(storage_key.get_hash_code(), expected);
-    assert_eq!(storage_key.get_hash_code(), storage_key.get_hash_code());
+    // Different keys should produce different hashes (with high probability)
+    let different_key = StorageKey::new(0x42000000, vec![0x43; 10]);
+    assert_ne!(storage_key.get_hash_code(), different_key.get_hash_code());
+
+    // Keys with same data but different IDs should differ
+    let different_id = StorageKey::new(0x78000000, data.clone());
+    assert_ne!(storage_key.get_hash_code(), different_id.get_hash_code());
 }

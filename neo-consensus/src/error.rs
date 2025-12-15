@@ -1,5 +1,6 @@
 //! Error types for consensus operations.
 
+use neo_primitives::UInt256;
 use thiserror::Error;
 
 /// Errors that can occur during consensus operations.
@@ -12,6 +13,15 @@ pub enum ConsensusError {
         expected: u32,
         /// Actual view number.
         actual: u32,
+    },
+
+    /// Invalid view number for change view.
+    #[error("Invalid view number: current {current}, requested {requested}")]
+    InvalidViewNumber {
+        /// Current view number.
+        current: u8,
+        /// Requested view number.
+        requested: u8,
     },
 
     /// Invalid block proposal.
@@ -27,6 +37,41 @@ pub enum ConsensusError {
         /// Error message.
         message: String,
     },
+
+    /// Invalid signature length.
+    #[error("Invalid signature length: expected {expected}, got {got}")]
+    InvalidSignatureLength {
+        /// Expected length.
+        expected: usize,
+        /// Actual length.
+        got: usize,
+    },
+
+    /// Hash mismatch.
+    #[error("Hash mismatch: expected {expected}, got {got}")]
+    HashMismatch {
+        /// Expected hash.
+        expected: UInt256,
+        /// Actual hash.
+        got: UInt256,
+    },
+
+    /// Invalid primary.
+    #[error("Invalid primary: expected {expected}, got {got}")]
+    InvalidPrimary {
+        /// Expected primary index.
+        expected: u8,
+        /// Actual primary index.
+        got: u8,
+    },
+
+    /// Invalid validator index.
+    #[error("Invalid validator index: {0}")]
+    InvalidValidatorIndex(u8),
+
+    /// Duplicate validator.
+    #[error("Duplicate validator: {0}")]
+    DuplicateValidator(u8),
 
     /// Not a validator.
     #[error("Not a validator")]
@@ -45,6 +90,32 @@ pub enum ConsensusError {
         /// Error message.
         message: String,
     },
+
+    /// Message from wrong block.
+    #[error("Message from wrong block: expected {expected}, got {got}")]
+    WrongBlock {
+        /// Expected block index.
+        expected: u32,
+        /// Actual block index.
+        got: u32,
+    },
+
+    /// Message from wrong view.
+    #[error("Message from wrong view: expected {expected}, got {got}")]
+    WrongView {
+        /// Expected view number.
+        expected: u8,
+        /// Actual view number.
+        got: u8,
+    },
+
+    /// Already received message.
+    #[error("Already received message from validator {0}")]
+    AlreadyReceived(u8),
+
+    /// Channel send error.
+    #[error("Channel send error: {0}")]
+    ChannelError(String),
 }
 
 impl ConsensusError {

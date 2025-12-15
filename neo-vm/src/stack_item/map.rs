@@ -32,7 +32,7 @@ impl Map {
     pub fn new(
         items: BTreeMap<StackItem, StackItem>,
         reference_counter: Option<ReferenceCounter>,
-    ) -> Self {
+    ) -> VmResult<Self> {
         let map = Self {
             items,
             id: next_stack_item_id(),
@@ -41,10 +41,20 @@ impl Map {
         };
 
         if let Some(rc) = &map.reference_counter {
-            map.add_reference_for_entries(rc);
+            map.add_reference_for_entries(rc)?;
         }
 
-        map
+        Ok(map)
+    }
+
+    /// Creates a map without a reference counter.
+    pub fn new_untracked(items: BTreeMap<StackItem, StackItem>) -> Self {
+        Self {
+            items,
+            id: next_stack_item_id(),
+            reference_counter: None,
+            is_read_only: false,
+        }
     }
 
     /// Returns the reference counter assigned by the reference counter, if any.
@@ -171,14 +181,14 @@ impl Map {
     }
 
     /// Creates a deep copy of the map.
-    pub fn deep_copy(&self, reference_counter: Option<ReferenceCounter>) -> Self {
+    pub fn deep_copy(&self, reference_counter: Option<ReferenceCounter>) -> VmResult<Self> {
         let mut items = BTreeMap::new();
         for (k, v) in &self.items {
             items.insert(k.deep_clone(), v.deep_clone());
         }
-        let mut copy = Self::new(items, reference_counter);
+        let mut copy = Self::new(items, reference_counter)?;
         copy.set_read_only(true);
-        copy
+        Ok(copy)
     }
 
     /// Gets the type of the stack item.
@@ -201,18 +211,15 @@ impl Map {
         }
     }
 
-    fn add_reference_for_entries(&self, rc: &ReferenceCounter) {
+    fn add_reference_for_entries(&self, rc: &ReferenceCounter) -> VmResult<()> {
         let parent = CompoundParent::Map(self.id);
         for (key, value) in &self.items {
-            if let Err(err) = self.validate_key(key) {
-                panic!("{err}");
-            }
-            if let Err(err) = self.validate_compound_reference(rc, value) {
-                panic!("{err}");
-            }
+            self.validate_key(key)?;
+            self.validate_compound_reference(rc, value)?;
             rc.add_compound_reference(key, parent);
             rc.add_compound_reference(value, parent);
         }
+        Ok(())
     }
 
     fn validate_key(&self, key: &StackItem) -> VmResult<()> {
@@ -287,6 +294,26 @@ impl Map {
             _ => Ok(()),
         }
     }
+
+    /// Ensures the map and its children share the provided reference counter.
+    pub(crate) fn attach_reference_counter(&mut self, rc: &ReferenceCounter) -> VmResult<()> {
+        if let Some(existing) = &self.reference_counter {
+            if existing.ptr_eq(rc) {
+                return Ok(());
+            }
+            return Err(VmError::invalid_operation_msg(
+                "Map has mismatched reference counter.",
+            ));
+        }
+
+        for value in self.items.values_mut() {
+            value.attach_reference_counter(rc)?;
+        }
+
+        self.reference_counter = Some(rc.clone());
+        self.add_reference_for_entries(rc)?;
+        Ok(())
+    }
 }
 
 impl Clone for Map {
@@ -299,7 +326,7 @@ impl Clone for Map {
         };
 
         if let Some(rc) = &clone.reference_counter {
-            clone.add_reference_for_entries(rc);
+            let _ = clone.add_reference_for_entries(rc);
         }
 
         clone
@@ -352,7 +379,7 @@ mod tests {
         items.insert(StackItem::from_int(1), StackItem::from_int(10));
         items.insert(StackItem::from_int(2), StackItem::from_int(20));
 
-        let map = Map::new(items.clone(), None);
+        let map = Map::new(items.clone(), None).expect("map");
 
         assert_eq!(map.len(), 2);
         assert_eq!(map.items(), &items);
@@ -365,7 +392,7 @@ mod tests {
         items.insert(StackItem::from_int(1), StackItem::from_int(10));
         items.insert(StackItem::from_int(2), StackItem::from_int(20));
 
-        let map = Map::new(items, None);
+        let map = Map::new(items, None)?;
 
         assert_eq!(
             map.get(&StackItem::from_int(1))?
@@ -392,7 +419,7 @@ mod tests {
         let mut items = BTreeMap::new();
         items.insert(StackItem::from_int(1), StackItem::from_int(10));
 
-        let mut map = Map::new(items, None);
+        let mut map = Map::new(items, None)?;
 
         // Update existing key
         map.set(StackItem::from_int(1), StackItem::from_int(100))?;
@@ -426,7 +453,7 @@ mod tests {
         items.insert(StackItem::from_int(1), StackItem::from_int(10));
         items.insert(StackItem::from_int(2), StackItem::from_int(20));
 
-        let mut map = Map::new(items, None);
+        let mut map = Map::new(items, None)?;
 
         let removed = map.remove(&StackItem::from_int(1))?;
         assert_eq!(
@@ -450,7 +477,7 @@ mod tests {
         items.insert(StackItem::from_int(1), StackItem::from_int(10));
         items.insert(StackItem::from_int(2), StackItem::from_int(20));
 
-        let mut map = Map::new(items, None);
+        let mut map = Map::new(items, None).expect("map");
 
         map.clear().unwrap();
 
@@ -467,8 +494,8 @@ mod tests {
             StackItem::from_array(vec![StackItem::from_int(20), StackItem::from_int(30)]),
         );
 
-        let map = Map::new(items, None);
-        let copied = map.deep_copy(None);
+        let map = Map::new(items, None)?;
+        let copied = map.deep_copy(None)?;
 
         assert_eq!(copied.len(), map.len());
 
@@ -491,13 +518,13 @@ mod tests {
     #[test]
     fn test_map_to_boolean() {
         // Test empty map
-        let empty_map = Map::new(BTreeMap::new(), None);
+        let empty_map = Map::new(BTreeMap::new(), None).expect("map");
         assert!(!empty_map.to_boolean());
 
         // Test non-empty map
         let mut items = BTreeMap::new();
         items.insert(StackItem::from_int(1), StackItem::from_int(10));
-        let non_empty_map = Map::new(items, None);
+        let non_empty_map = Map::new(items, None).expect("map");
         assert!(non_empty_map.to_boolean());
     }
 }

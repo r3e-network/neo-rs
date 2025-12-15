@@ -289,7 +289,7 @@ impl FramedSocket {
 
 ### C-5: Private Key Not Zeroized
 
-**File**: `neo-core/src/cryptography/crypto_utils.rs:149-162`
+**File**: `neo-core/src/cryptography/crypto_utils.rs`
 
 **Problem**: Failed key generation attempts leave private key material in memory.
 
@@ -312,17 +312,20 @@ pub fn generate_private_key() -> [u8; 32] {
 ```rust
 use zeroize::Zeroizing;
 
-pub fn generate_private_key() -> [u8; 32] {
+pub fn generate_private_key() -> Result<[u8; 32], String> {
     let mut rng = OsRng;
     for _ in 0..MAX_KEY_GEN_ATTEMPTS {
         let mut candidate = Zeroizing::new([0u8; 32]);  // Auto-zeroize on drop
         rng.fill_bytes(candidate.as_mut());
-        if let Ok(secret_key) = Secp256k1SecretKey::from_slice(&candidate) {
-            return secret_key.secret_bytes();
+        if let Ok(secret_key) = Secp256k1SecretKey::from_slice(candidate.as_ref()) {
+            return Ok(secret_key.secret_bytes());
         }
         // candidate is automatically zeroized here when dropped
     }
-    panic!("Failed to generate valid secp256k1 private key...");
+    Err(format!(
+        "Failed to generate valid secp256k1 private key after {} attempts - RNG may be broken",
+        MAX_KEY_GEN_ATTEMPTS
+    ))
 }
 ```
 
@@ -403,28 +406,30 @@ impl RateLimiter {
 
 ### H-2: Storage Commit Error Handling
 
-**File**: `neo-core/src/persistence/rocksdb_store.rs:726-754`
+**File**: `neo-core/src/persistence/providers/rocksdb_store_provider.rs`
 
-**Current Code**:
+**Fixed Code** (RocksDbSnapshot now propagates commit failures):
 ```rust
-fn commit(&mut self) {
-    match self.snapshot.db.write(batch) {
-        Ok(()) => { /* success */ }
-        Err(e) => {
-            error!("CRITICAL: Failed to commit snapshot: {}", e);
-            // SILENT FAILURE - data lost
-        }
+fn try_commit(&mut self) -> SnapshotCommitResult {
+    use crate::persistence::storage::StorageError;
+
+    let mut batch_guard = self.write_batch.lock().map_err(|e| {
+        StorageError::CommitFailed(format!("Failed to acquire lock: {}", e))
+    })?;
+
+    if batch_guard.is_empty() {
+        return Ok(());
     }
-}
-```
 
-**Fixed Code**:
-```rust
-fn commit(&mut self) -> Result<(), StorageError> {
-    self.snapshot.db.write(batch)
-        .map_err(|e| StorageError::CommitFailed {
-            message: format!("RocksDB write failed: {}", e),
-        })?;
+    let mut batch = WriteBatch::default();
+    mem::swap(&mut *batch_guard, &mut batch);
+    drop(batch_guard);
+
+    self.db.write(batch).map_err(|err| {
+        error!(target: "neo", error = %err, "rocksdb snapshot commit failed");
+        StorageError::CommitFailed(format!("RocksDB write failed: {}", err))
+    })?;
+
     Ok(())
 }
 ```

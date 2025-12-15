@@ -1,0 +1,154 @@
+//! Blockchain actor for block processing and chain management.
+//!
+//! This module implements the blockchain actor that handles block validation,
+//! persistence, and chain synchronization, mirroring the C# `Neo.Ledger.Blockchain`.
+//!
+//! # Architecture
+//!
+//! ```text
+//! ┌─────────────────────────────────────────────────────────────┐
+//! │                    Blockchain Actor                          │
+//! │  ┌─────────────────────────────────────────────────────────┐│
+//! │  │                   Message Handlers                       ││
+//! │  │  ┌──────────┐  ┌──────────┐  ┌──────────────────────┐  ││
+//! │  │  │ Import   │  │ FillMem  │  │ Reverify             │  ││
+//! │  │  │ (blocks) │  │ Pool     │  │ (transactions)       │  ││
+//! │  │  └──────────┘  └──────────┘  └──────────────────────┘  ││
+//! │  └─────────────────────────────────────────────────────────┘│
+//! │  ┌─────────────────────────────────────────────────────────┐│
+//! │  │                   Block Processing                       ││
+//! │  │  ┌──────────┐  ┌──────────┐  ┌──────────────────────┐  ││
+//! │  │  │ Verify   │  │ Persist  │  │ Relay                │  ││
+//! │  │  │ Block    │  │ Block    │  │ (to peers)           │  ││
+//! │  │  └──────────┘  └──────────┘  └──────────────────────┘  ││
+//! │  └─────────────────────────────────────────────────────────┘│
+//! │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │
+//! │  │ Block Cache  │  │ Unverified   │  │ Extensible       │  │
+//! │  │ (verified)   │  │ Blocks       │  │ Whitelist        │  │
+//! │  └──────────────┘  └──────────────┘  └──────────────────┘  │
+//! └─────────────────────────────────────────────────────────────┘
+//! ```
+//!
+//! # Key Components
+//!
+//! - [`Blockchain`]: Actor managing block import and chain state
+//! - [`BlockchainCommand`]: Messages for block import, mempool fill, reverification
+//! - [`LedgerContext`]: Shared ledger state (headers, blocks, transactions)
+//!
+//! # Block Processing Flow
+//!
+//! 1. Receive block via `Import` command
+//! 2. Validate block header and transactions
+//! 3. Execute transactions via ApplicationEngine
+//! 4. Persist block and update chain state
+//! 5. Relay block to connected peers
+//! 6. Emit plugin events (OnPersist, OnCommit)
+//!
+//! # Caching Strategy
+//!
+//! - **Block Cache**: Verified blocks awaiting persistence
+//! - **Unverified Cache**: Blocks received out of order, pending verification
+//! - **Extensible Whitelist**: Authorized senders for extensible payloads
+
+use crate::error::CoreError;
+use crate::events::PluginEvent;
+use crate::ledger::LedgerContext;
+use crate::neo_io::{MemoryReader, Serializable};
+use crate::neo_system::NeoSystemContext;
+use crate::network::p2p::{
+    local_node::RelayInventory,
+    payloads::{
+        block::Block, extensible_payload::ExtensiblePayload, header::Header, InventoryType,
+        Transaction,
+    },
+    LocalNodeCommand,
+};
+use crate::persistence::DataCache;
+use crate::persistence::StoreCache;
+use crate::protocol_settings::ProtocolSettings;
+use crate::smart_contract::native::LedgerContract;
+use crate::state_service::{StateRoot, STATE_SERVICE_CATEGORY};
+use crate::{UInt160, UInt256};
+use crate::akka::{Actor, ActorContext, ActorResult, Props};
+use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
+use std::any::Any;
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+use tokio::sync::RwLock;
+use tracing::{debug, warn};
+
+use super::VerifyResult;
+use types::{classify_import_block, should_schedule_reverify_idle, ImportDisposition, UnverifiedBlocksList};
+
+const MAX_TX_TO_REVERIFY_PER_IDLE: usize = 10;
+
+/// Rust analogue of `Neo.Ledger.Blockchain` (actor based on Akka).
+pub struct Blockchain {
+    ledger: Arc<LedgerContext>,
+    system_context: Option<Arc<NeoSystemContext>>,
+    _block_cache: Arc<RwLock<HashMap<UInt256, Block>>>,
+    _block_cache_unverified: Arc<RwLock<HashMap<u32, UnverifiedBlocksList>>>,
+    _extensible_witness_white_list: Arc<RwLock<HashSet<UInt160>>>,
+}
+
+impl Blockchain {
+    pub fn new(ledger: Arc<LedgerContext>) -> Self {
+        Self {
+            ledger,
+            system_context: None,
+            _block_cache: Arc::new(RwLock::new(HashMap::new())),
+            _block_cache_unverified: Arc::new(RwLock::new(HashMap::new())),
+            _extensible_witness_white_list: Arc::new(RwLock::new(HashSet::new())),
+        }
+    }
+
+    pub fn props(ledger: Arc<LedgerContext>) -> Props {
+        Props::new(move || Self::new(ledger.clone()))
+    }
+
+    fn persist_block_via_system(&self, block: &Block) {
+        let Some(context) = &self.system_context else {
+            return;
+        };
+
+        let Some(system) = context.neo_system() else {
+            return;
+        };
+
+        let mut block_for_hash = block.clone();
+        let hash = block_for_hash.hash();
+
+        if let Err(error) = system.persist_block(block.clone()) {
+            tracing::warn!(
+                target: "neo",
+                %error,
+                index = block.index(),
+                hash = %hash,
+                "failed to persist block via NeoSystem"
+            );
+        }
+    }
+
+    fn deserialize_inventory<T>(payload: &[u8]) -> Option<T>
+    where
+        T: Serializable,
+    {
+        let mut reader = MemoryReader::new(payload);
+        T::deserialize(&mut reader).ok()
+    }
+}
+
+mod handlers;
+mod block_processing;
+mod transaction;
+mod actor;
+mod types;
+
+pub use types::{
+    BlockchainCommand, FillCompleted, FillMemoryPool, Import, ImportCompleted, PersistCompleted,
+    PreverifyCompleted, RelayResult, Reverify, ReverifyItem,
+};
+
+#[cfg(test)]
+mod tests;

@@ -8,9 +8,9 @@ use crate::network::p2p::messages::{NetworkMessage, ProtocolMessage};
 use crate::network::p2p::payloads::get_block_by_index_payload::GetBlockByIndexPayload;
 use crate::network::p2p::payloads::get_blocks_payload::GetBlocksPayload;
 use crate::network::p2p::payloads::inv_payload::{InvPayload, MAX_HASHES_COUNT};
-use crate::network::p2p::payloads::InventoryType;
 use crate::network::p2p::payloads::merkle_block_payload::MerkleBlockPayload;
 use crate::network::p2p::payloads::transaction::{Transaction, MAX_TRANSACTION_SIZE};
+use crate::network::p2p::payloads::InventoryType;
 use crate::network::p2p::payloads::{block::Block, extensible_payload::ExtensiblePayload};
 use crate::network::p2p::task_manager::TaskManagerCommand;
 use crate::smart_contract::native::ledger_contract::LedgerContract;
@@ -19,7 +19,7 @@ use crate::UInt256;
 use tracing::{trace, warn};
 
 impl RemoteNode {
-    pub(super) fn on_inv(&mut self, payload: &InvPayload, ctx: &mut akka::ActorContext) {
+    pub(super) fn on_inv(&mut self, payload: &InvPayload, ctx: &mut crate::akka::ActorContext) {
         if payload.is_empty() {
             return;
         }
@@ -107,7 +107,7 @@ impl RemoteNode {
         hash: UInt256,
         block: Option<Block>,
         block_index: Option<u32>,
-        ctx: &akka::ActorContext,
+        ctx: &crate::akka::ActorContext,
     ) {
         if let Err(err) = self.system.task_manager.tell_from(
             TaskManagerCommand::InventoryCompleted {
@@ -128,8 +128,8 @@ impl RemoteNode {
     pub(super) async fn on_transaction(
         &mut self,
         transaction: Transaction,
-        ctx: &mut akka::ActorContext,
-    ) -> akka::ActorResult {
+        ctx: &mut crate::akka::ActorContext,
+    ) -> crate::akka::ActorResult {
         // Validate transaction size before processing (matches C# MAX_TRANSACTION_SIZE)
         let tx_size = transaction.size();
         if tx_size > MAX_TRANSACTION_SIZE {
@@ -191,8 +191,8 @@ impl RemoteNode {
     pub(super) async fn on_block(
         &mut self,
         mut block: Block,
-        ctx: &mut akka::ActorContext,
-    ) -> akka::ActorResult {
+        ctx: &mut crate::akka::ActorContext,
+    ) -> crate::akka::ActorResult {
         let hash = block.hash();
         if !self.known_hashes.try_add(hash) {
             return Ok(());
@@ -229,8 +229,8 @@ impl RemoteNode {
     pub(super) async fn on_extensible(
         &mut self,
         mut payload: ExtensiblePayload,
-        ctx: &mut akka::ActorContext,
-    ) -> akka::ActorResult {
+        ctx: &mut crate::akka::ActorContext,
+    ) -> crate::akka::ActorResult {
         let hash = payload.hash();
         if !self.known_hashes.try_add(hash) {
             return Ok(());
@@ -255,7 +255,7 @@ impl RemoteNode {
         Ok(())
     }
 
-    pub(super) async fn on_mempool(&mut self) -> akka::ActorResult {
+    pub(super) async fn on_mempool(&mut self) -> crate::akka::ActorResult {
         let hashes = self.system.mempool_transaction_hashes();
         if hashes.is_empty() {
             return Ok(());
@@ -269,7 +269,7 @@ impl RemoteNode {
         Ok(())
     }
 
-    pub(super) async fn on_get_data(&mut self, payload: &InvPayload) -> akka::ActorResult {
+    pub(super) async fn on_get_data(&mut self, payload: &InvPayload) -> crate::akka::ActorResult {
         if payload.is_empty() {
             return Ok(());
         }
@@ -345,7 +345,7 @@ impl RemoteNode {
         Ok(())
     }
 
-    pub(super) async fn on_get_blocks(&mut self, payload: GetBlocksPayload) -> akka::ActorResult {
+    pub(super) async fn on_get_blocks(&mut self, payload: GetBlocksPayload) -> crate::akka::ActorResult {
         // Validate that the start hash exists in the ledger (matches C# behavior)
         if self.system.try_get_block(&payload.hash_start).is_none() {
             return Ok(());
@@ -369,7 +369,7 @@ impl RemoteNode {
     pub(super) async fn on_get_block_by_index(
         &mut self,
         payload: GetBlockByIndexPayload,
-    ) -> akka::ActorResult {
+    ) -> crate::akka::ActorResult {
         let count = Self::normalize_request(payload.count, MAX_HASHES_COUNT);
         if count == 0 {
             return Ok(());
@@ -399,7 +399,7 @@ impl RemoteNode {
         Ok(())
     }
 
-    pub(super) fn on_not_found(&mut self, payload: InvPayload, ctx: &akka::ActorContext) {
+    pub(super) fn on_not_found(&mut self, payload: InvPayload, ctx: &crate::akka::ActorContext) {
         for hash in &payload.hashes {
             self.pending_known_hashes.remove(hash);
         }
