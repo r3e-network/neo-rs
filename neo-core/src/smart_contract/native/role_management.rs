@@ -312,7 +312,9 @@ impl RoleManagement {
                 ));
             }
             let pubkey = ECPoint::decode_compressed_with_curve(ECCurve::secp256r1(), &key_bytes)
-                .map_err(|e| Error::native_contract(format!("Invalid public key encoding: {}", e)))?;
+                .map_err(|e| {
+                    Error::native_contract(format!("Invalid public key encoding: {}", e))
+                })?;
             keys.push(pubkey);
             offset += 33;
         }
@@ -365,8 +367,8 @@ impl Default for RoleManagement {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::smart_contract::StorageItem;
     use crate::cryptography::Secp256r1Crypto;
+    use crate::smart_contract::StorageItem;
 
     fn sample_point(tag: u8) -> ECPoint {
         let private_key = {
@@ -375,8 +377,8 @@ mod tests {
             bytes
         };
 
-        let public_key = Secp256r1Crypto::derive_public_key(&private_key)
-            .expect("derive public key for test");
+        let public_key =
+            Secp256r1Crypto::derive_public_key(&private_key).expect("derive public key for test");
         ECPoint::decode_compressed_with_curve(ECCurve::secp256r1(), &public_key)
             .expect("valid test key")
     }

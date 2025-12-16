@@ -31,8 +31,8 @@ pub use genesis::{GenesisConfig, GenesisValidator};
 pub use network::{NetworkConfig, NetworkType};
 pub use protocol::ProtocolSettings;
 pub use settings::{
-    ConsensusSettings, LoggingSettings, NodeSettings, RpcSettings, Settings,
-    StorageSettings, TelemetrySettings,
+    ConsensusSettings, LoggingSettings, NodeSettings, RpcSettings, Settings, StorageSettings,
+    TelemetrySettings,
 };
 
 /// Current configuration version for migration support

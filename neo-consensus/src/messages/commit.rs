@@ -19,12 +19,7 @@ pub struct CommitMessage {
 
 impl CommitMessage {
     /// Creates a new Commit message
-    pub fn new(
-        block_index: u32,
-        view_number: u8,
-        validator_index: u8,
-        signature: Vec<u8>,
-    ) -> Self {
+    pub fn new(block_index: u32, view_number: u8, validator_index: u8, signature: Vec<u8>) -> Self {
         Self {
             block_index,
             view_number,

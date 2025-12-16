@@ -718,8 +718,9 @@ impl RpcServerWallet {
                                 Helper::sign(&tx, &key, server.system().settings().network)
                                     .map_err(Self::internal_error)?;
                             // Neo N3 uses secp256r1 (NIST P-256) curve
-                            let pub_key = ECPoint::new(ECCurve::Secp256r1, key.compressed_public_key())
-                                .map_err(|e| Self::internal_error(e.to_string()))?;
+                            let pub_key =
+                                ECPoint::new(ECCurve::Secp256r1, key.compressed_public_key())
+                                    .map_err(|e| Self::internal_error(e.to_string()))?;
                             let _ = context.add_signature(contract.clone(), pub_key, signature);
                         }
                     }
@@ -830,8 +831,8 @@ impl RpcServerWallet {
     where
         F: FnOnce(neo_core::akka::ActorRef) -> Result<(), RpcException>,
     {
-        use neo_core::akka::{Actor, ActorContext, ActorResult, Props};
         use async_trait::async_trait;
+        use neo_core::akka::{Actor, ActorContext, ActorResult, Props};
         use neo_core::ledger::RelayResult;
         use parking_lot::Mutex;
 

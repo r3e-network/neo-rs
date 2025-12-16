@@ -105,6 +105,6 @@ impl NativeHelpers {
         if committee_members_count == 0 {
             return false;
         }
-        next_height.is_multiple_of(committee_members_count as u32)
+        next_height % committee_members_count as u32 == 0
     }
 }

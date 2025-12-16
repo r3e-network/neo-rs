@@ -13,12 +13,17 @@ use crate::ledger::{block::Block, blockchain_application_executed::ApplicationEx
 use crate::persistence::data_cache::DataCache;
 use crate::state_service::StateStore;
 
+/// Handlers for wiring state root calculation into block persistence.
+/// Currently unused but reserved for neo-node integration.
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct StateServiceCommitHandlers {
     state_store: Arc<StateStore>,
 }
 
 impl StateServiceCommitHandlers {
+    /// Creates a new handler with the given state store.
+    #[allow(dead_code)]
     pub fn new(state_store: Arc<StateStore>) -> Self {
         Self { state_store }
     }

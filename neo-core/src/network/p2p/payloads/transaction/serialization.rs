@@ -88,7 +88,10 @@ impl Transaction {
         })
     }
 
-    pub(super) fn deserialize_signers(reader: &mut MemoryReader, max_count: usize) -> IoResult<Vec<Signer>> {
+    pub(super) fn deserialize_signers(
+        reader: &mut MemoryReader,
+        max_count: usize,
+    ) -> IoResult<Vec<Signer>> {
         let count = reader.read_var_int(max_count as u64)? as usize;
         if count == 0 {
             return Err(IoError::invalid_data("Signer count cannot be zero"));

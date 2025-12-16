@@ -116,7 +116,9 @@ impl PartialOrd for TransactionEntry {
 impl Ord for TransactionEntry {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         // Higher priority first
-        other.priority.cmp(&self.priority)
+        other
+            .priority
+            .cmp(&self.priority)
             // Then by fee per byte
             .then_with(|| other.fee_per_byte().cmp(&self.fee_per_byte()))
             // Then by age (older first)

@@ -12,8 +12,8 @@
 use super::vm_state_utils::vm_state_from_str;
 use std::str::FromStr;
 
-use neo_core::smart_contract::TriggerType;
 use neo_config::ProtocolSettings;
+use neo_core::smart_contract::TriggerType;
 use neo_json::JObject;
 use neo_primitives::{UInt160, UInt256};
 use neo_vm::{StackItem, VMState};

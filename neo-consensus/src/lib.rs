@@ -95,4 +95,4 @@ pub use messages::{
 };
 
 // Re-exports - Service
-pub use service::{ConsensusCommand, ConsensusEvent, ConsensusService};
+pub use service::{BlockData, ConsensusCommand, ConsensusEvent, ConsensusService};

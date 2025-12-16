@@ -84,7 +84,12 @@ pub trait Broadcaster: Send + Sync {
     fn broadcast_inventory(&self, inv_type: InventoryType, hashes: Vec<UInt256>) -> P2PResult<()>;
 
     /// Sends a message to a specific peer.
-    fn send_to_peer(&self, address: SocketAddr, command: MessageCommand, payload: Vec<u8>) -> P2PResult<()>;
+    fn send_to_peer(
+        &self,
+        address: SocketAddr,
+        command: MessageCommand,
+        payload: Vec<u8>,
+    ) -> P2PResult<()>;
 }
 
 /// Trait for requesting data from peers.
@@ -133,15 +138,9 @@ pub enum P2PEvent {
         from: SocketAddr,
     },
     /// Received a consensus message.
-    ConsensusReceived {
-        data: Vec<u8>,
-        from: SocketAddr,
-    },
+    ConsensusReceived { data: Vec<u8>, from: SocketAddr },
     /// Received a state root message.
-    StateRootReceived {
-        data: Vec<u8>,
-        from: SocketAddr,
-    },
+    StateRootReceived { data: Vec<u8>, from: SocketAddr },
 }
 
 /// Trait for subscribing to P2P events.

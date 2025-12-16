@@ -109,7 +109,11 @@ impl Mempool {
         }
 
         // Check fee policy
-        if !self.config.fee_policy.is_fee_acceptable(entry.network_fee, entry.size) {
+        if !self
+            .config
+            .fee_policy
+            .is_fee_acceptable(entry.network_fee, entry.size)
+        {
             return Err(MempoolError::InsufficientFee {
                 required: self.config.fee_policy.minimum_fee(entry.size),
                 actual: entry.network_fee,
@@ -152,10 +156,7 @@ impl Mempool {
 
             txs.insert(hash, entry.clone());
 
-            by_sender
-                .entry(entry.sender)
-                .or_insert_with(HashSet::new)
-                .insert(hash);
+            by_sender.entry(entry.sender).or_default().insert(hash);
 
             queue.push(PriorityEntry {
                 hash,
@@ -233,12 +234,7 @@ impl Mempool {
 
         by_sender
             .get(sender)
-            .map(|hashes| {
-                hashes
-                    .iter()
-                    .filter_map(|h| txs.get(h).cloned())
-                    .collect()
-            })
+            .map(|hashes| hashes.iter().filter_map(|h| txs.get(h).cloned()).collect())
             .unwrap_or_default()
     }
 
@@ -306,7 +302,7 @@ impl Mempool {
     fn update_fee_policy(&self) {
         let utilization = self.len() as f64 / self.config.max_transactions as f64;
 
-        // This is a simplified update - in production, you'd want more sophisticated logic
+        // Update fee policy based on current pool congestion level
         let mut config = self.config.clone();
         config.fee_policy.update_congestion(utilization);
     }

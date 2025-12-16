@@ -54,12 +54,18 @@ impl Metrics {
         let block_height = IntGauge::new("neo_block_height", "Current block height")
             .expect("metric creation failed");
 
-        let blocks_processed = IntCounter::new("neo_blocks_processed_total", "Total blocks processed")
-            .expect("metric creation failed");
+        let blocks_processed =
+            IntCounter::new("neo_blocks_processed_total", "Total blocks processed")
+                .expect("metric creation failed");
 
         let block_processing_time = Histogram::with_opts(
-            HistogramOpts::new("neo_block_processing_seconds", "Block processing time in seconds")
-                .buckets(vec![0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5]),
+            HistogramOpts::new(
+                "neo_block_processing_seconds",
+                "Block processing time in seconds",
+            )
+            .buckets(vec![
+                0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5,
+            ]),
         )
         .expect("metric creation failed");
 
@@ -145,22 +151,32 @@ impl Metrics {
         // Register all metrics
         registry.register(Box::new(block_height.clone())).ok();
         registry.register(Box::new(blocks_processed.clone())).ok();
-        registry.register(Box::new(block_processing_time.clone())).ok();
-        registry.register(Box::new(transactions_processed.clone())).ok();
+        registry
+            .register(Box::new(block_processing_time.clone()))
+            .ok();
+        registry
+            .register(Box::new(transactions_processed.clone()))
+            .ok();
         registry.register(Box::new(mempool_size.clone())).ok();
-        registry.register(Box::new(transaction_processing_time.clone())).ok();
+        registry
+            .register(Box::new(transaction_processing_time.clone()))
+            .ok();
         registry.register(Box::new(connected_peers.clone())).ok();
         registry.register(Box::new(messages_received.clone())).ok();
         registry.register(Box::new(messages_sent.clone())).ok();
         registry.register(Box::new(bytes_received.clone())).ok();
         registry.register(Box::new(bytes_sent.clone())).ok();
         registry.register(Box::new(consensus_view.clone())).ok();
-        registry.register(Box::new(consensus_round_time.clone())).ok();
+        registry
+            .register(Box::new(consensus_round_time.clone()))
+            .ok();
         registry.register(Box::new(memory_usage_bytes.clone())).ok();
         registry.register(Box::new(cpu_usage_percent.clone())).ok();
         registry.register(Box::new(disk_usage_bytes.clone())).ok();
         registry.register(Box::new(rpc_requests.clone())).ok();
-        registry.register(Box::new(rpc_request_duration.clone())).ok();
+        registry
+            .register(Box::new(rpc_request_duration.clone()))
+            .ok();
         registry.register(Box::new(rpc_errors.clone())).ok();
 
         Self {
@@ -229,7 +245,7 @@ impl MetricsServer {
             self.metrics.registry().gather().len()
         );
         // In a full implementation, this would start an HTTP server
-        // For now, we just log that it would start
+        // Log metrics server startup (actual server runs in separate task)
         Ok(())
     }
 }

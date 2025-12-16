@@ -231,9 +231,7 @@ impl BlockValidator {
 
         // Genesis must have zero prev_hash
         if block.prev_hash != UInt256::zero() {
-            return ValidationResult::Invalid(
-                "Genesis block must have zero prev_hash".to_string(),
-            );
+            return ValidationResult::Invalid("Genesis block must have zero prev_hash".to_string());
         }
 
         // Basic validation
@@ -317,7 +315,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_millis() as u64
-            + 3600_000;
+            + 3_600_000;
 
         let result = validator.validate_basic(&block);
         assert!(!result.is_valid());

@@ -67,14 +67,21 @@ impl SystemMonitor {
 
         let cpu_count = self.system.cpus().len();
         let cpu_usage_percent = if cpu_count > 0 {
-            self.system.cpus().iter().map(|cpu| cpu.cpu_usage() as f64).sum::<f64>() / cpu_count as f64
+            self.system
+                .cpus()
+                .iter()
+                .map(|cpu| cpu.cpu_usage() as f64)
+                .sum::<f64>()
+                / cpu_count as f64
         } else {
             0.0
         };
 
         // Get process memory (current process)
         let pid = std::process::id();
-        let process_memory = self.system.process(Pid::from_u32(pid))
+        let process_memory = self
+            .system
+            .process(Pid::from_u32(pid))
             .map(|p| p.memory())
             .unwrap_or(0);
 

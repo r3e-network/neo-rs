@@ -94,9 +94,9 @@ mod tests {
 
     #[test]
     fn test_xx_hash3_32_empty() {
-        let hash = xx_hash3_32(&[], DEFAULT_XX_HASH3_SEED);
-        // Just verify it doesn't panic and returns a value
-        assert!(hash != 0 || hash == 0); // Always true, but verifies computation
+        let hash1 = xx_hash3_32(&[], DEFAULT_XX_HASH3_SEED);
+        let hash2 = xx_hash3_32(&[], DEFAULT_XX_HASH3_SEED);
+        assert_eq!(hash1, hash2);
     }
 
     #[test]

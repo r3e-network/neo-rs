@@ -106,7 +106,7 @@ impl Clone for Transaction {
 
 // Include implementation files
 mod core;
-mod serialization;
 mod json;
-mod verification;
+mod serialization;
 mod traits;
+mod verification;

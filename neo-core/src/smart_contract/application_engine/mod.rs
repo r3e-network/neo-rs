@@ -73,12 +73,12 @@ use crate::error::{CoreError as Error, Result};
 use crate::hardfork::Hardfork;
 use crate::ledger::Block;
 use crate::neo_config::HASH_SIZE;
-use crate::services::SystemContext;
 use crate::network::p2p::payloads::{Transaction, TransactionAttribute};
 use crate::persistence::data_cache::DataCache;
 use crate::persistence::i_read_only_store::IReadOnlyStoreGeneric;
 use crate::persistence::seek_direction::SeekDirection;
 use crate::protocol_settings::ProtocolSettings;
+use crate::services::SystemContext;
 use crate::smart_contract::application_engine_contract::register_contract_interops;
 use crate::smart_contract::application_engine_crypto::register_crypto_interops;
 use crate::smart_contract::application_engine_iterator::register_iterator_interops;
@@ -249,11 +249,11 @@ pub struct ApplicationEngine {
     runtime_context: Option<Arc<dyn SystemContext>>,
 }
 
+mod contracts;
+mod drop;
+mod fees_events_native;
+mod interop_host;
+mod load_execute_storage;
 mod state;
 mod storage_low_level;
-mod contracts;
-mod load_execute_storage;
-mod fees_events_native;
 mod witness_and_misc;
-mod drop;
-mod interop_host;

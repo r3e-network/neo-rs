@@ -33,13 +33,13 @@
 //! priority and removed when they expire or are included in a block.
 
 mod error;
-mod pool;
 mod policy;
+mod pool;
 mod transaction_entry;
 
 pub use error::{MempoolError, MempoolResult};
-pub use pool::{Mempool, MempoolConfig};
 pub use policy::FeePolicy;
+pub use pool::{Mempool, MempoolConfig};
 pub use transaction_entry::TransactionEntry;
 
 /// Default maximum mempool capacity

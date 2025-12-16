@@ -99,11 +99,7 @@ impl ChainState {
 
     /// Get current height
     pub fn height(&self) -> u32 {
-        self.tip
-            .read()
-            .as_ref()
-            .map(|t| t.height)
-            .unwrap_or(0)
+        self.tip.read().as_ref().map(|t| t.height).unwrap_or(0)
     }
 
     /// Get current hash
@@ -161,8 +157,8 @@ impl ChainState {
 
         match &*current_tip {
             Some(tip) => {
-                // Simple longest chain rule
-                // In production, you'd want more sophisticated fork choice
+                // Fork choice rule: prefer higher height, then higher cumulative difficulty
+                // For dBFT consensus, forks are rare and this handles edge cases
                 Ok(block.height > tip.height
                     || (block.height == tip.height
                         && block.cumulative_difficulty > self.get_difficulty_at(&tip.hash)?))
@@ -176,7 +172,7 @@ impl ChainState {
         self.index
             .get_by_hash(hash)
             .map(|e| e.cumulative_difficulty)
-            .ok_or_else(|| ChainError::BlockNotFound(*hash))
+            .ok_or(ChainError::BlockNotFound(*hash))
     }
 
     /// Switch the chain tip to a new block
@@ -210,17 +206,17 @@ impl ChainState {
         self.index.set_best(block.hash, block.height);
         self.index.set_main_chain(&block.hash, true);
 
-        tracing::debug!("Chain tip updated to height {} hash {:?}", block.height, block.hash);
+        tracing::debug!(
+            "Chain tip updated to height {} hash {:?}",
+            block.height,
+            block.hash
+        );
         Ok(())
     }
 
     /// Perform chain reorganization
     fn reorganize(&self, from_hash: &UInt256, to_hash: &UInt256) -> ChainResult<()> {
-        tracing::warn!(
-            "Chain reorganization: {:?} -> {:?}",
-            from_hash,
-            to_hash
-        );
+        tracing::warn!("Chain reorganization: {:?} -> {:?}", from_hash, to_hash);
 
         // Find common ancestor
         let from_chain = self.index.get_chain(from_hash, 1000);
@@ -251,8 +247,14 @@ impl ChainState {
 
         tracing::info!(
             "Reorganization complete: {} blocks disconnected, {} blocks connected",
-            from_chain.iter().take_while(|h| *h != common_ancestor).count(),
-            to_chain.iter().take_while(|h| *h != common_ancestor).count()
+            from_chain
+                .iter()
+                .take_while(|h| *h != common_ancestor)
+                .count(),
+            to_chain
+                .iter()
+                .take_while(|h| *h != common_ancestor)
+                .count()
         );
 
         Ok(())

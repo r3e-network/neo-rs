@@ -1,15 +1,13 @@
 use base64::{engine::general_purpose, Engine as _};
-use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_config::ProtocolSettings;
+use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::{Block, BlockHeader, Signer, Transaction};
 use neo_io::serializable::Serializable;
 use neo_json::{JArray, JObject, JToken};
 
 use super::attributes::attribute_from_json;
 use super::parsing::{oracle_response_code_to_str, parse_i64_token, parse_u32_token};
-use super::witness::{
-    payload_witness_from_json, payload_witness_to_json, witness_to_json,
-};
+use super::witness::{payload_witness_from_json, payload_witness_to_json, witness_to_json};
 
 /// Converts a block to JSON representation.
 pub fn block_to_json(block: &Block, protocol_settings: &ProtocolSettings) -> JObject {

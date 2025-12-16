@@ -2,7 +2,6 @@
 
 use crate::constants::ADDRESS_SIZE;
 use crate::error::{PrimitiveError, PrimitiveResult};
-use neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
 use ripemd::Ripemd160;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -402,29 +401,8 @@ impl From<Vec<u8>> for UInt160 {
     }
 }
 
-impl Serializable for UInt160 {
-    fn size(&self) -> usize {
-        UINT160_SIZE
-    }
-
-    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
-        writer.write_u64(self.value1)?;
-        writer.write_u64(self.value2)?;
-        writer.write_u32(self.value3)?;
-        Ok(())
-    }
-
-    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
-        let value1 = reader.read_u64()?;
-        let value2 = reader.read_u64()?;
-        let value3 = reader.read_u32()?;
-        Ok(UInt160 {
-            value1,
-            value2,
-            value3,
-        })
-    }
-}
+// NOTE: Serializable implementation moved to neo-io::serializable::primitives
+// to keep neo-primitives as a Layer 0 crate with no neo-* dependencies
 
 #[cfg(test)]
 mod tests {

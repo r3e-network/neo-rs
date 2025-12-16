@@ -361,7 +361,7 @@ impl JsonTestRunner {
                         // Next element should be the data
                         if i < script.len() && script[i].starts_with("0x") {
                             let data_hex = &script[i][2..];
-                            if !data_hex.len().is_multiple_of(2) {
+                            if data_hex.len() % 2 != 0 {
                                 return Err(
                                     format!("Invalid data hex string: {}", script[i]).into()
                                 );
@@ -398,7 +398,7 @@ impl JsonTestRunner {
                 // Collect following hex values as operand data
                 while i < script.len() && script[i].starts_with("0x") {
                     let hex_str = &script[i][2..];
-                    if !hex_str.len().is_multiple_of(2) {
+                    if hex_str.len() % 2 != 0 {
                         return Err(format!("Invalid hex string: {}", script[i]).into());
                     }
 
@@ -422,7 +422,7 @@ impl JsonTestRunner {
                 // Collect following hex values as operand data
                 while i < script.len() && script[i].starts_with("0x") {
                     let hex_str = &script[i][2..];
-                    if !hex_str.len().is_multiple_of(2) {
+                    if hex_str.len() % 2 != 0 {
                         return Err(format!("Invalid hex string: {}", script[i]).into());
                     }
 

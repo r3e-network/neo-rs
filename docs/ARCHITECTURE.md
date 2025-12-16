@@ -96,7 +96,7 @@ should not blur boundaries by directly reaching into internal node state when an
 
 - Use the typed service traits in `neo_core::services` (e.g., `LedgerService`, `StateStoreService`, `MempoolService`, `PeerManagerService`, `RpcService`) instead of `Any` downcasts or string keys.
 - `NeoSystemContext` registers core services in the internal registry by `TypeId` so callers should prefer the typed accessors (`ledger_service()`, `state_store()`, `mempool_service()`, `local_node_service()`) before falling back to names.
-- Plugins should continue to use helpers under `neo_plugins::service_access`, which now resolve through the typed registry first; prefer the typed helpers (`rpc_server_typed`, `ledger_typed`, `mempool_typed`, `peer_manager_typed`) for readiness/metrics.
+- Code that used to live in “plugin” crates has been consolidated into first-class crates (notably `neo-rpc` and `neo-consensus`). Avoid duplicating registry lookup logic; prefer typed accessors on `NeoSystemContext` and crate-local helpers where available.
 - Block import treats store commit failures as fatal (no plugin notifications or cache updates happen after a failed commit), preventing RAM/disk divergence.
 - Use `StoreTransaction` when persisting a batch of changes; avoid calling `StoreCache::commit` directly so commit failures propagate and stay observable. For state-service batching, use `StateStoreTransaction`.
 
@@ -106,7 +106,6 @@ should not blur boundaries by directly reaching into internal node state when an
     - A trait for the required behaviour.
     - A typed accessor on `NeoSystemContext`/`NeoSystem` that also falls back to the canonical in-memory handle so callers aren't forced to know about registry names.
     - A readiness/health hook if it has external dependencies.
-- Plugins should go through `neo_plugins::service_access` helpers to avoid duplicating registry lookup logic.
 - State flow: blocks persist via `LedgerContext` → `StateStore` updates local root → network state-root extensible payloads verify/persist via the shared `StateStore` (with `StateRootVerifier` backed by `StoreCache`).
 - Ledger hydration on startup is bounded (last ~2000 headers/blocks) to avoid loading the full chain into memory; older data stays accessible through the store accessors.
 - Use `StoreTransaction` when persisting a batch of changes; avoid calling `StoreCache::commit` directly so commit failures propagate and stay observable.

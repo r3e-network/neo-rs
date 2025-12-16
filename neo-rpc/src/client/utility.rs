@@ -27,11 +27,9 @@ pub use witness::{
     payload_witness_from_json, payload_witness_to_json, scripts_to_witness_json, witness_to_json,
 };
 
-use neo_core::wallets::helper::Helper as WalletHelper;
-use neo_core::{
-    Block, BlockHeader, Contract, ECCurve, ECPoint, KeyPair, Transaction, Witness,
-};
 use neo_config::ProtocolSettings;
+use neo_core::wallets::helper::Helper as WalletHelper;
+use neo_core::{Block, BlockHeader, Contract, ECCurve, ECPoint, KeyPair, Transaction, Witness};
 use neo_json::{JObject, JToken};
 use neo_primitives::{UInt160, UInt256};
 use neo_vm::StackItem;
@@ -119,8 +117,8 @@ impl RpcUtility {
                 // Public key - Neo N3 uses secp256r1 (NIST P-256) curve
                 let key_bytes =
                     hex::decode(account).map_err(|err| format!("Invalid public key hex: {err}"))?;
-                let point =
-                    ECPoint::decode_compressed_with_curve(ECCurve::Secp256r1, &key_bytes).map_err(|err| err.to_string())?;
+                let point = ECPoint::decode_compressed_with_curve(ECCurve::Secp256r1, &key_bytes)
+                    .map_err(|err| err.to_string())?;
                 let script = Contract::create_signature_redeem_script(point);
                 Ok(UInt160::from_script(&script))
             }
@@ -308,8 +306,11 @@ mod tests {
     fn get_script_hash_accepts_public_key_hex() {
         let keypair = KeyPair::generate().expect("keypair");
         let pubkey_hex = hex::encode(keypair.compressed_public_key());
-        let expected_point =
-            ECPoint::decode_compressed(&hex::decode(&pubkey_hex).unwrap()).unwrap();
+        let expected_point = ECPoint::decode_compressed_with_curve(
+            ECCurve::Secp256r1,
+            &hex::decode(&pubkey_hex).unwrap(),
+        )
+        .unwrap();
         let expected_script = Contract::create_signature_redeem_script(expected_point);
         let expected_hash = UInt160::from_script(&expected_script);
 

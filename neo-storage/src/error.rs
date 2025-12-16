@@ -138,14 +138,12 @@ mod tests {
     #[test]
     fn test_storage_result_ok() {
         let result: StorageResult<i32> = Ok(42);
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 42);
+        assert_eq!(result, Ok(42));
     }
 
     #[test]
     fn test_storage_result_err() {
         let result: StorageResult<i32> = Err(StorageError::ReadOnly);
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), StorageError::ReadOnly);
+        assert_eq!(result, Err(StorageError::ReadOnly));
     }
 }

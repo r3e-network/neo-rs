@@ -269,7 +269,7 @@ impl ApplicationEngine {
         let limits = self.execution_limits();
         let mut result = Vec::new();
         for notification in self.notifications() {
-            if hash.is_none_or(|expected| notification.script_hash == expected) {
+            if hash.map_or(true, |expected| notification.script_hash == expected) {
                 result.push(notification.to_stack_item());
                 if result.len() > limits.max_stack_size as usize {
                     return Err("Too many notifications".to_string());

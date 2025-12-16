@@ -7,7 +7,7 @@
 //! - `TrackState`: Cache tracking states for storage entries
 
 use crate::hash_utils::{default_xx_hash3_seed, hash_code_combine_i32, xx_hash3_32};
-use neo_primitives::{IStorageValue, StorageValueError, StorageValueResult, UInt160, UInt256};
+use neo_primitives::{IStorageValue, StorageValueResult, UInt160, UInt256};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -64,7 +64,11 @@ impl StorageKey {
 
     /// Creates a new storage key.
     pub fn new(id: i32, key: Vec<u8>) -> Self {
-        Self { id, key, cache: None }
+        Self {
+            id,
+            key,
+            cache: None,
+        }
     }
 
     /// Helper to construct key bytes with prefix.
@@ -190,7 +194,11 @@ impl StorageKey {
     /// Creates a storage key from raw bytes.
     pub fn from_bytes(cache: &[u8]) -> Self {
         if cache.len() < 4 {
-            return Self { id: 0, key: cache.to_vec(), cache: Some(cache.to_vec()) };
+            return Self {
+                id: 0,
+                key: cache.to_vec(),
+                cache: Some(cache.to_vec()),
+            };
         }
         let id = i32::from_le_bytes([cache[0], cache[1], cache[2], cache[3]]);
         let key = cache[4..].to_vec();
@@ -352,11 +360,6 @@ impl IStorageValue for StorageItem {
     fn from_storage_bytes(data: &[u8]) -> StorageValueResult<Self> {
         if data.is_empty() {
             return Ok(Self::default());
-        }
-        if data.len() < 1 {
-            return Err(StorageValueError::invalid_format(
-                "StorageItem requires at least 1 byte for is_constant flag",
-            ));
         }
         let is_constant = data[0] != 0;
         let value = data[1..].to_vec();
@@ -699,7 +702,7 @@ mod tests {
 
     #[test]
     fn test_track_state_variants() {
-        let states = vec![
+        let states = [
             TrackState::None,
             TrackState::Added,
             TrackState::Changed,

@@ -48,12 +48,16 @@ pub enum StorageValueError {
 impl StorageValueError {
     /// Create a deserialization error.
     pub fn deserialization<S: Into<String>>(message: S) -> Self {
-        Self::DeserializationFailed { message: message.into() }
+        Self::DeserializationFailed {
+            message: message.into(),
+        }
     }
 
     /// Create an invalid format error.
     pub fn invalid_format<S: Into<String>>(message: S) -> Self {
-        Self::InvalidFormat { message: message.into() }
+        Self::InvalidFormat {
+            message: message.into(),
+        }
     }
 
     /// Create a data too large error.
@@ -326,7 +330,9 @@ mod tests {
 
         fn from_storage_bytes(data: &[u8]) -> StorageValueResult<Self> {
             if data.len() < 4 {
-                return Err(StorageValueError::invalid_format("data too short for MockStorageValue"));
+                return Err(StorageValueError::invalid_format(
+                    "data too short for MockStorageValue",
+                ));
             }
             let id = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
             let payload = data[4..].to_vec();
@@ -402,14 +408,24 @@ mod tests {
     #[test]
     fn test_storage_value_error_all_variants_eq() {
         // Test PartialEq for all variants
-        let err1 = StorageValueError::DeserializationFailed { message: "test".to_string() };
-        let err2 = StorageValueError::DeserializationFailed { message: "test".to_string() };
-        let err3 = StorageValueError::DeserializationFailed { message: "other".to_string() };
+        let err1 = StorageValueError::DeserializationFailed {
+            message: "test".to_string(),
+        };
+        let err2 = StorageValueError::DeserializationFailed {
+            message: "test".to_string(),
+        };
+        let err3 = StorageValueError::DeserializationFailed {
+            message: "other".to_string(),
+        };
         assert_eq!(err1, err2);
         assert_ne!(err1, err3);
 
-        let err4 = StorageValueError::InvalidFormat { message: "fmt".to_string() };
-        let err5 = StorageValueError::InvalidFormat { message: "fmt".to_string() };
+        let err4 = StorageValueError::InvalidFormat {
+            message: "fmt".to_string(),
+        };
+        let err5 = StorageValueError::InvalidFormat {
+            message: "fmt".to_string(),
+        };
         assert_eq!(err4, err5);
         assert_ne!(err1, err4);
 
@@ -440,19 +456,31 @@ mod tests {
     fn test_fixed_array_size_mismatch_errors() {
         // Test size mismatch error paths
         let result4_from_5 = <[u8; 4]>::from_storage_bytes(&[1, 2, 3, 4, 5]);
-        assert!(matches!(result4_from_5, Err(StorageValueError::InvalidFormat { .. })));
+        assert!(matches!(
+            result4_from_5,
+            Err(StorageValueError::InvalidFormat { .. })
+        ));
 
         let result8_from_4 = <[u8; 8]>::from_storage_bytes(&[1, 2, 3, 4]);
-        assert!(matches!(result8_from_4, Err(StorageValueError::InvalidFormat { .. })));
+        assert!(matches!(
+            result8_from_4,
+            Err(StorageValueError::InvalidFormat { .. })
+        ));
 
         let result32_from_0 = <[u8; 32]>::from_storage_bytes(&[]);
-        assert!(matches!(result32_from_0, Err(StorageValueError::InvalidFormat { .. })));
+        assert!(matches!(
+            result32_from_0,
+            Err(StorageValueError::InvalidFormat { .. })
+        ));
     }
 
     #[test]
     fn test_default_storage_size_impl() {
         // Test that default storage_size matches to_storage_bytes().len()
-        let value = MockStorageValue { id: 999, data: vec![1, 2, 3, 4, 5] };
+        let value = MockStorageValue {
+            id: 999,
+            data: vec![1, 2, 3, 4, 5],
+        };
         assert_eq!(value.storage_size(), value.to_storage_bytes().len());
     }
 }

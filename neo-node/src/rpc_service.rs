@@ -41,6 +41,7 @@ pub enum RpcServiceState {
 
 /// Node status for RPC responses
 #[derive(Debug, Clone, Serialize)]
+#[allow(dead_code)] // Will be used when full RPC status endpoint is implemented
 pub struct NodeStatus {
     pub height: u32,
     pub peer_count: usize,
@@ -50,10 +51,12 @@ pub struct NodeStatus {
 }
 
 /// Shared state for RPC handlers
+#[allow(dead_code)] // Fields will be used when full RPC endpoints are implemented
 pub struct RpcState {
     pub height: u32,
     pub peer_count: usize,
     pub mempool_size: usize,
+    pub mempool_hashes: Vec<String>,
     pub version: String,
     pub network_magic: u32,
 }
@@ -64,6 +67,7 @@ impl Default for RpcState {
             height: 0,
             peer_count: 0,
             mempool_size: 0,
+            mempool_hashes: Vec::new(),
             version: env!("CARGO_PKG_VERSION").to_string(),
             network_magic: 0x4F454E,
         }
@@ -72,6 +76,7 @@ impl Default for RpcState {
 
 /// JSON-RPC request
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)] // Fields used during JSON deserialization
 struct JsonRpcRequest {
     jsonrpc: String,
     method: String,
@@ -127,6 +132,20 @@ impl RpcService {
         state.height = height;
         state.peer_count = peer_count;
         state.mempool_size = mempool_size;
+    }
+
+    /// Updates the RPC state with mempool transaction hashes
+    pub async fn update_state_with_mempool(
+        &self,
+        height: u32,
+        peer_count: usize,
+        mempool_hashes: Vec<String>,
+    ) {
+        let mut state = self.rpc_state.write().await;
+        state.height = height;
+        state.peer_count = peer_count;
+        state.mempool_size = mempool_hashes.len();
+        state.mempool_hashes = mempool_hashes;
     }
 
     /// Sets the network magic
@@ -275,14 +294,12 @@ async fn handle_rpc_request(
         }
         "getblockcount" => Ok(serde_json::json!(state.height + 1)),
         "getconnectioncount" => Ok(serde_json::json!(state.peer_count)),
-        "getrawmempool" => Ok(serde_json::json!([])), // Simplified
-        "getpeers" => {
-            Ok(serde_json::json!({
-                "unconnected": [],
-                "bad": [],
-                "connected": []
-            }))
-        }
+        "getrawmempool" => Ok(serde_json::json!(state.mempool_hashes)),
+        "getpeers" => Ok(serde_json::json!({
+            "unconnected": [],
+            "bad": [],
+            "connected": []
+        })),
         "validateaddress" => {
             if let Some(params) = &req.params {
                 if let Some(address) = params.get(0).and_then(|v| v.as_str()) {

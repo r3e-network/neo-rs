@@ -5,7 +5,11 @@
 use super::*;
 
 impl PolicyContract {
-    pub(super) fn is_blocked(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
+    pub(super) fn is_blocked(
+        &self,
+        engine: &mut ApplicationEngine,
+        args: &[Vec<u8>],
+    ) -> Result<Vec<u8>> {
         if args.len() != 1 {
             return Err(Error::native_contract(
                 "isBlocked requires account argument".to_string(),
@@ -25,7 +29,11 @@ impl PolicyContract {
         Ok(vec![if blocked { 1 } else { 0 }])
     }
 
-    pub(super) fn block_account(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
+    pub(super) fn block_account(
+        &self,
+        engine: &mut ApplicationEngine,
+        args: &[Vec<u8>],
+    ) -> Result<Vec<u8>> {
         if args.len() != 1 {
             return Err(Error::native_contract(
                 "blockAccount requires account argument".to_string(),
@@ -46,7 +54,11 @@ impl PolicyContract {
         Ok(vec![if blocked { 1 } else { 0 }])
     }
 
-    pub(super) fn unblock_account(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
+    pub(super) fn unblock_account(
+        &self,
+        engine: &mut ApplicationEngine,
+        args: &[Vec<u8>],
+    ) -> Result<Vec<u8>> {
         if args.len() != 1 {
             return Err(Error::native_contract(
                 "unblockAccount requires account argument".to_string(),

@@ -101,6 +101,7 @@ pub fn telemetry() -> &'static Arc<Telemetry> {
 /// This function updates both the internal telemetry system and the Prometheus
 /// gauges for backward compatibility with existing monitoring infrastructure.
 #[allow(clippy::too_many_arguments)]
+#[allow(dead_code)] // Will be used when full metrics integration is implemented
 pub fn update_metrics(
     block_height: u32,
     header_height: u32,
@@ -216,6 +217,7 @@ pub fn gather_telemetry(format: &str) -> String {
 }
 
 /// Returns disk usage (free, total) for the given path.
+#[allow(dead_code)] // Will be used when full disk metrics are implemented
 fn disk_usage_for(path: &str) -> Option<(u64, u64)> {
     let mut system = System::new();
     system.refresh_disks_list();

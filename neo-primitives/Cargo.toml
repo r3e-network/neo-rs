@@ -36,8 +36,8 @@ thiserror = { workspace = true }
 # Logging
 tracing = { workspace = true }
 
-# IO traits
-neo-io = { path = "../neo-io" }
+# NOTE: neo-primitives is a Layer 0 crate with NO neo-* dependencies
+# Serializable implementations for UInt160/UInt256 are in neo-io::serializable::primitives
 
 [dev-dependencies]
 proptest = { workspace = true }

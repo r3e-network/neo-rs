@@ -279,7 +279,7 @@ impl ScriptBuilder {
             )));
         }
 
-        let is_short = opcode_value.is_multiple_of(2);
+        let is_short = opcode_value % 2 == 0;
         if is_short {
             if offset < i8::MIN as i32 || offset > i8::MAX as i32 {
                 opcode = OpCode::try_from(opcode_value + 1)

@@ -773,17 +773,20 @@ impl StateRootVerifier {
 mod tests {
     use super::*;
     use crate::network::p2p::payloads::Witness;
-    use crate::persistence::TrackState;
     use crate::persistence::providers::memory_store_provider::MemoryStoreProvider;
+    use crate::persistence::TrackState;
     use crate::protocol_settings::ProtocolSettings;
-    use crate::smart_contract::Contract;
     use crate::smart_contract::native::LedgerContract;
     use crate::smart_contract::native::{role_management::RoleManagement, NativeContract, Role};
+    use crate::smart_contract::Contract;
     use crate::wallets::KeyPair;
     use neo_vm::op_code::OpCode;
     use std::sync::Arc;
 
-    fn cache_with_designated_state_validators(index: u32, validators: &[crate::ECPoint]) -> DataCache {
+    fn cache_with_designated_state_validators(
+        index: u32,
+        validators: &[crate::ECPoint],
+    ) -> DataCache {
         let cache = DataCache::new(false);
         let mut suffix = vec![Role::StateValidator as u8];
         suffix.extend_from_slice(&index.to_be_bytes());
@@ -888,10 +891,7 @@ mod tests {
             trie.get(&other_key.to_array()).expect("trie get"),
             Some(other_value)
         );
-        assert_eq!(
-            trie.get(&ledger_key.to_array()).expect("trie get"),
-            None
-        );
+        assert_eq!(trie.get(&ledger_key.to_array()).expect("trie get"), None);
     }
 
     #[test]

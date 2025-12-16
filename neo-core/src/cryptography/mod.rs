@@ -6,9 +6,9 @@
 // This module exists for backward compatibility and only re-exports items.
 
 pub use neo_crypto::{
-    Base58, BloomFilter, Bls12381Crypto, Crypto, CryptoError, CryptoResult, ECC, ECDsa, ECCurve,
+    Base58, BloomFilter, Bls12381Crypto, Crypto, CryptoError, CryptoResult, ECCurve, ECDsa,
     ECPoint, Ed25519Crypto, HashAlgorithm, Hex, NamedCurveHash, NeoHash, Secp256k1Crypto,
-    Secp256r1Crypto,
+    Secp256r1Crypto, ECC,
 };
 
 pub mod bloom_filter {

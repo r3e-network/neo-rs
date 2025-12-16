@@ -31,8 +31,8 @@ linked-hash-map = "0.5"
 tracing = { workspace = true, optional = true }
 
 # Internal dependencies
-# Temporarily commented out to break dependency cycle
-# Removed neo-cryptography - using external crypto crates directly
+# neo-primitives is a Layer 0 crate with no neo-* dependencies
+neo-primitives = { path = "../neo-primitives" }
 
 [features]
 default = []

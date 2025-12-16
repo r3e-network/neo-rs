@@ -165,7 +165,9 @@ impl WorldState for MemoryWorldState {
 
     fn snapshot(&self) -> StateResult<Box<dyn StateView>> {
         let accounts = self.accounts.read().clone();
-        let storage_cache: HashMap<StorageKey, StorageItem> = self.storage.read()
+        let storage_cache: HashMap<StorageKey, StorageItem> = self
+            .storage
+            .read()
             .iter_contract(&UInt160::default())
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
@@ -206,7 +208,7 @@ impl WorldState for MemoryWorldState {
     }
 
     fn state_root(&self) -> StateResult<[u8; 32]> {
-        // Simplified: return zero hash for in-memory state
+        // In-memory state does not maintain MPT - use StateTrieManager for state root calculation
         Ok([0u8; 32])
     }
 
@@ -376,11 +378,15 @@ mod tests {
     #[test]
     fn test_state_changes_merge() {
         let mut changes1 = StateChanges::new();
-        changes1.accounts.insert(UInt160::default(), Some(AccountState::default()));
+        changes1
+            .accounts
+            .insert(UInt160::default(), Some(AccountState::default()));
 
         let mut changes2 = StateChanges::new();
         let key = StorageKey::new(UInt160::default(), vec![1]);
-        changes2.storage.insert(key, Some(StorageItem::new(vec![1])));
+        changes2
+            .storage
+            .insert(key, Some(StorageItem::new(vec![1])));
 
         changes1.merge(changes2);
 
@@ -405,7 +411,10 @@ mod tests {
 
         // Modify state
         let mut changes = StateChanges::new();
-        changes.accounts.insert(hash, Some(AccountState::with_balances(hash, 200, 100_000_000)));
+        changes.accounts.insert(
+            hash,
+            Some(AccountState::with_balances(hash, 200, 100_000_000)),
+        );
         state.commit(changes).unwrap();
 
         // Snapshot should still see old value

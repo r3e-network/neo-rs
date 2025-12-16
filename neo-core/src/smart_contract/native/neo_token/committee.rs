@@ -12,7 +12,7 @@ impl NeoToken {
         if committee_members_count == 0 {
             return false;
         }
-        height.is_multiple_of(committee_members_count as u32)
+        height % committee_members_count as u32 == 0
     }
 
     /// Attempts to read the current committee from the snapshot-backed storage used by the
@@ -115,7 +115,9 @@ impl NeoToken {
         self.compute_committee_members(snapshot, settings)
     }
 
-    pub(super) fn decode_committee_with_votes(item: StackItem) -> Result<Vec<(ECPoint, BigInt)>, String> {
+    pub(super) fn decode_committee_with_votes(
+        item: StackItem,
+    ) -> Result<Vec<(ECPoint, BigInt)>, String> {
         fn stack_item_to_bytes(item: &StackItem) -> Option<Vec<u8>> {
             match item {
                 StackItem::ByteString(bytes) => Some(bytes.clone()),
@@ -169,7 +171,9 @@ impl NeoToken {
         }
     }
 
-    pub(super) fn encode_committee_with_votes(committee: &[(ECPoint, BigInt)]) -> CoreResult<Vec<u8>> {
+    pub(super) fn encode_committee_with_votes(
+        committee: &[(ECPoint, BigInt)],
+    ) -> CoreResult<Vec<u8>> {
         let items: Vec<StackItem> = committee
             .iter()
             .map(|(pk, votes)| {

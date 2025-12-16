@@ -601,11 +601,14 @@ pub mod neo_vm {
 
 pub mod neo_ledger {
     pub use crate::ledger::{
-        block::Block, block_header::BlockHeader,
+        block::Block,
+        block_header::BlockHeader,
         // Blockchain moved to neo-node (Phase 2 refactoring)
         // blockchain::Blockchain,
-        blockchain_application_executed::ApplicationExecuted, header_cache::HeaderCache,
-        memory_pool::MemoryPool, verify_result::VerifyResult,
+        blockchain_application_executed::ApplicationExecuted,
+        header_cache::HeaderCache,
+        memory_pool::MemoryPool,
+        verify_result::VerifyResult,
     };
 }
 

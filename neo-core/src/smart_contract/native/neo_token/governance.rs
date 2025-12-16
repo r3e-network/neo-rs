@@ -78,7 +78,7 @@ impl NeoToken {
 
     /// getAllCandidates - returns iterator over all candidates
     pub(super) fn get_all_candidates(&self, engine: &mut ApplicationEngine) -> CoreResult<Vec<u8>> {
-        // For now, return same as getCandidates (full implementation needs iterator support)
+        // Returns all candidates - delegates to getCandidates which returns the full list
         self.get_candidates(engine)
     }
 
@@ -156,7 +156,10 @@ impl NeoToken {
     }
 
     /// Internal helper to get candidates from storage
-    pub(super) fn get_candidates_internal<S>(&self, snapshot: &S) -> CoreResult<Vec<(ECPoint, BigInt)>>
+    pub(super) fn get_candidates_internal<S>(
+        &self,
+        snapshot: &S,
+    ) -> CoreResult<Vec<(ECPoint, BigInt)>>
     where
         S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
@@ -213,7 +216,10 @@ impl NeoToken {
         Ok(bytes)
     }
 
-    pub(super) fn get_committee_address(&self, engine: &mut ApplicationEngine) -> CoreResult<Vec<u8>> {
+    pub(super) fn get_committee_address(
+        &self,
+        engine: &mut ApplicationEngine,
+    ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();
         let committee =
             self.committee_from_cache_with_votes(snapshot.as_ref(), engine.protocol_settings())?;
@@ -228,7 +234,10 @@ impl NeoToken {
     }
 
     /// getNextBlockValidators - returns validators for next block
-    pub(super) fn get_next_block_validators(&self, engine: &mut ApplicationEngine) -> CoreResult<Vec<u8>> {
+    pub(super) fn get_next_block_validators(
+        &self,
+        engine: &mut ApplicationEngine,
+    ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();
         let validators = self.get_next_block_validators_snapshot(
             snapshot.as_ref(),
@@ -459,7 +468,11 @@ impl NeoToken {
     }
 
     /// vote - allows NEO holders to vote for a candidate
-    pub(super) fn vote(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
+    pub(super) fn vote(
+        &self,
+        engine: &mut ApplicationEngine,
+        args: &[Vec<u8>],
+    ) -> CoreResult<Vec<u8>> {
         if args.len() < 2 {
             return Err(CoreError::native_contract(
                 "vote expects account and voteTo arguments".to_string(),

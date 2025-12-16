@@ -16,12 +16,12 @@ mod rpc_method_attribute;
 mod rpc_server;
 mod rpc_server_blockchain;
 mod rpc_server_node;
-pub mod smart_contract;
 mod rpc_server_state;
 mod rpc_server_utilities;
 mod rpc_server_wallet;
 mod service_access;
 mod session;
+pub mod smart_contract;
 mod tree;
 mod tree_node;
 

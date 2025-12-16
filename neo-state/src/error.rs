@@ -48,10 +48,7 @@ pub enum StateError {
 
     /// State root mismatch.
     #[error("state root mismatch: expected {expected}, got {actual}")]
-    StateRootMismatch {
-        expected: String,
-        actual: String,
-    },
+    StateRootMismatch { expected: String, actual: String },
 
     /// Invalid state transition.
     #[error("invalid state transition: {0}")]
@@ -64,6 +61,10 @@ pub enum StateError {
     /// Maximum depth exceeded.
     #[error("maximum snapshot depth exceeded: {0}")]
     MaxDepthExceeded(usize),
+
+    /// Trie error during state root calculation.
+    #[error("trie error: {0}")]
+    TrieError(String),
 }
 
 impl From<neo_storage::StorageError> for StateError {

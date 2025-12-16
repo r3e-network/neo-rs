@@ -149,7 +149,7 @@ fn default_memory_pool_max_transactions() -> u32 {
 }
 
 fn default_initial_gas_distribution() -> i64 {
-    52_000_000_00000000 // 52 million GAS in datoshi
+    5_200_000_000_000_000 // 52 million GAS in datoshi
 }
 
 impl Default for ProtocolSettings {
@@ -179,7 +179,7 @@ impl ProtocolSettings {
             validators_count: 7,
             max_transactions_per_block: 512,
             memory_pool_max_transactions: 50000,
-            initial_gas_distribution: 52_000_000_00000000,
+            initial_gas_distribution: 5_200_000_000_000_000,
             standby_validators: vec![
                 "03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c".to_string(),
                 "02df48f60e8f3e01c48ff40b9b7f1310d7a8b2a193188befe1c2e3df740e895093".to_string(),
@@ -217,7 +217,7 @@ impl ProtocolSettings {
             validators_count: 7,
             max_transactions_per_block: 512,
             memory_pool_max_transactions: 50000,
-            initial_gas_distribution: 52_000_000_00000000,
+            initial_gas_distribution: 5_200_000_000_000_000,
             standby_validators: vec![
                 "023e9b32ea89b94d066e649b124fd50e396ee91369e8e2a6ae1b11c170d022256d".to_string(),
                 "03009b7540e10f2562e5fd8fac9eaec25166a58b26e412348ff5a86927bfac22a2".to_string(),
@@ -255,7 +255,7 @@ impl ProtocolSettings {
             validators_count: 1,
             max_transactions_per_block: 512,
             memory_pool_max_transactions: 50000,
-            initial_gas_distribution: 52_000_000_00000000,
+            initial_gas_distribution: 5_200_000_000_000_000,
             standby_validators: vec![],
             seed_list: vec![],
             native_activation_heights: NativeActivationHeights::default(),
@@ -267,20 +267,14 @@ impl ProtocolSettings {
     pub fn is_hardfork_enabled(&self, hardfork: &str, height: u32) -> bool {
         match hardfork.to_lowercase().as_str() {
             "aspidochelone" | "hf_aspidochelone" => {
-                self.hardforks.hf_aspidochelone.map_or(false, |h| height >= h)
+                self.hardforks.hf_aspidochelone.is_some_and(|h| height >= h)
             }
-            "basilisk" | "hf_basilisk" => {
-                self.hardforks.hf_basilisk.map_or(false, |h| height >= h)
-            }
+            "basilisk" | "hf_basilisk" => self.hardforks.hf_basilisk.is_some_and(|h| height >= h),
             "cockatrice" | "hf_cockatrice" => {
-                self.hardforks.hf_cockatrice.map_or(false, |h| height >= h)
+                self.hardforks.hf_cockatrice.is_some_and(|h| height >= h)
             }
-            "domovoi" | "hf_domovoi" => {
-                self.hardforks.hf_domovoi.map_or(false, |h| height >= h)
-            }
-            "echidna" | "hf_echidna" => {
-                self.hardforks.hf_echidna.map_or(false, |h| height >= h)
-            }
+            "domovoi" | "hf_domovoi" => self.hardforks.hf_domovoi.is_some_and(|h| height >= h),
+            "echidna" | "hf_echidna" => self.hardforks.hf_echidna.is_some_and(|h| height >= h),
             _ => false,
         }
     }

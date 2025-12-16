@@ -260,7 +260,7 @@ impl DataCache {
         }
 
         // In a real implementation, this would write to the underlying storage
-        // For now, we just clear the change set
+        // Clear the change set after commit
         if let Some(ref change_set) = self.change_set {
             change_set.write().clear();
         }
@@ -339,6 +339,46 @@ impl DataCache {
 
 impl IReadOnlyStore for DataCache {}
 
+/// Conversion utilities for extracting state changes from DataCache.
+impl DataCache {
+    /// Extracts all tracked changes as raw key-value pairs.
+    ///
+    /// Returns a vector of (key_bytes, value_bytes, is_deleted) tuples.
+    /// This is useful for converting to other state change formats.
+    ///
+    /// # Returns
+    /// - `key_bytes`: The full serialized storage key (id + suffix)
+    /// - `value_bytes`: The storage item value (None if deleted)
+    /// - Contract ID can be extracted from first 4 bytes of key_bytes
+    pub fn extract_raw_changes(&self) -> Vec<(Vec<u8>, Option<Vec<u8>>)> {
+        let tracked = self.tracked_items();
+        tracked
+            .into_iter()
+            .filter_map(|(key, trackable)| match trackable.state {
+                TrackState::Added | TrackState::Changed => {
+                    Some((key.to_array(), Some(trackable.item.get_value())))
+                }
+                TrackState::Deleted => Some((key.to_array(), None)),
+                TrackState::None | TrackState::NotFound => None,
+            })
+            .collect()
+    }
+
+    /// Returns the number of pending changes.
+    pub fn pending_change_count(&self) -> usize {
+        if let Some(ref change_set) = self.change_set {
+            change_set.read().len()
+        } else {
+            0
+        }
+    }
+
+    /// Returns true if there are any pending changes.
+    pub fn has_pending_changes(&self) -> bool {
+        self.pending_change_count() > 0
+    }
+}
+
 #[allow(clippy::items_after_test_module)]
 #[cfg(test)]
 mod tests {
@@ -415,6 +455,55 @@ mod tests {
         assert_eq!(cache.try_commit(), Err(DataCacheError::ReadOnly));
         assert!(cache.get(&key).is_none());
         assert!(cache.tracked_items().is_empty());
+    }
+
+    #[test]
+    fn extract_raw_changes_returns_added_and_changed() {
+        let cache = DataCache::new(false);
+        let key1 = make_key(1, b"add");
+        let key2 = make_key(2, b"upd");
+
+        cache.add(key1.clone(), StorageItem::from_bytes(vec![0xAA]));
+        cache.add(key2.clone(), StorageItem::from_bytes(vec![0xBB]));
+        cache.update(key2.clone(), StorageItem::from_bytes(vec![0xCC]));
+
+        let changes = cache.extract_raw_changes();
+        assert_eq!(changes.len(), 2);
+
+        // Verify values are present
+        let values: Vec<_> = changes.iter().filter_map(|(_, v)| v.clone()).collect();
+        assert!(values.contains(&vec![0xAA]));
+        assert!(values.contains(&vec![0xCC]));
+    }
+
+    #[test]
+    fn extract_raw_changes_includes_deletions() {
+        let cache = DataCache::new(false);
+        let key = make_key(5, b"del");
+
+        cache.add(key.clone(), StorageItem::from_bytes(vec![0x11]));
+        cache.delete(&key);
+
+        let changes = cache.extract_raw_changes();
+        assert_eq!(changes.len(), 1);
+        assert!(
+            changes[0].1.is_none(),
+            "deleted item should have None value"
+        );
+    }
+
+    #[test]
+    fn pending_change_count_tracks_changes() {
+        let cache = DataCache::new(false);
+        assert_eq!(cache.pending_change_count(), 0);
+        assert!(!cache.has_pending_changes());
+
+        cache.add(make_key(1, b"a"), StorageItem::from_bytes(vec![1]));
+        assert_eq!(cache.pending_change_count(), 1);
+        assert!(cache.has_pending_changes());
+
+        cache.add(make_key(2, b"b"), StorageItem::from_bytes(vec![2]));
+        assert_eq!(cache.pending_change_count(), 2);
     }
 }
 

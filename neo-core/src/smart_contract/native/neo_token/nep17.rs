@@ -41,7 +41,11 @@ impl NeoToken {
     }
 
     /// balanceOf implementation - returns NEO balance of an account
-    pub(super) fn balance_of(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
+    pub(super) fn balance_of(
+        &self,
+        engine: &mut ApplicationEngine,
+        args: &[Vec<u8>],
+    ) -> CoreResult<Vec<u8>> {
         if args.len() != 1 {
             return Err(CoreError::native_contract(
                 "balanceOf expects exactly one argument".to_string(),
@@ -54,7 +58,11 @@ impl NeoToken {
     }
 
     /// transfer implementation - transfers NEO between accounts
-    pub(super) fn transfer(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
+    pub(super) fn transfer(
+        &self,
+        engine: &mut ApplicationEngine,
+        args: &[Vec<u8>],
+    ) -> CoreResult<Vec<u8>> {
         if args.len() != 4 {
             return Err(CoreError::native_contract(
                 "transfer expects from, to, amount, data arguments".to_string(),

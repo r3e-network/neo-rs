@@ -266,6 +266,7 @@ impl NodeConfig {
     }
 
     /// Builds the `ChannelsConfig` used to start the P2P subsystem.
+    #[allow(dead_code)] // Will be used when P2P subsystem is fully integrated
     pub fn channels_config(&self) -> ChannelsConfig {
         let mut config = ChannelsConfig::default();
 

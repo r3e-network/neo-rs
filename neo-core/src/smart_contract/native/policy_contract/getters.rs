@@ -32,7 +32,10 @@ impl PolicyContract {
         Ok(Self::encode_u32(value))
     }
 
-    pub(super) fn get_milliseconds_per_block(&self, engine: &mut ApplicationEngine) -> Result<Vec<u8>> {
+    pub(super) fn get_milliseconds_per_block(
+        &self,
+        engine: &mut ApplicationEngine,
+    ) -> Result<Vec<u8>> {
         let default = engine.protocol_settings().milliseconds_per_block;
         let value =
             self.read_u32_setting(engine, Self::milliseconds_per_block_key().suffix(), default)?;
@@ -52,7 +55,10 @@ impl PolicyContract {
         Ok(Self::encode_u32(value))
     }
 
-    pub(super) fn get_max_traceable_blocks(&self, engine: &mut ApplicationEngine) -> Result<Vec<u8>> {
+    pub(super) fn get_max_traceable_blocks(
+        &self,
+        engine: &mut ApplicationEngine,
+    ) -> Result<Vec<u8>> {
         let default = engine.protocol_settings().max_traceable_blocks;
         let value =
             self.read_u32_setting(engine, Self::max_traceable_blocks_key().suffix(), default)?;

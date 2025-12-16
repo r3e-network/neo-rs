@@ -240,9 +240,9 @@ impl ContractManagement {
 }
 
 // Include implementation files
-mod validation;
 mod deploy;
-mod update;
 mod destroy;
-mod query;
 mod native_impl;
+mod query;
+mod update;
+mod validation;

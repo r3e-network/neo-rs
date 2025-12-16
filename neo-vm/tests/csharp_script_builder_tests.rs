@@ -378,7 +378,7 @@ fn matches_jump_opcode(opcode: OpCode) -> bool {
 fn expected_jump_sequence(opcode: OpCode, offset_i8: i32, offset_i32: i32) -> Vec<u8> {
     let mut result = Vec::new();
     let code = opcode as u8;
-    if code.is_multiple_of(2) {
+    if code % 2 == 0 {
         result.push(code);
         result.push((offset_i8 as i8) as u8);
         result.push(code + 1);

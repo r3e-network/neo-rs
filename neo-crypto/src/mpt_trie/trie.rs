@@ -813,7 +813,7 @@ where
     }
 
     fn from_nibbles(path: &[u8]) -> MptResult<Vec<u8>> {
-        if !path.len().is_multiple_of(2) {
+        if path.len() % 2 != 0 {
             return Err(MptError::invalid("nibble path must have even length"));
         }
         let mut key = Vec::with_capacity(path.len() / 2);

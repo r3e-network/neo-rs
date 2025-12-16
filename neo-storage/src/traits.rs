@@ -211,9 +211,18 @@ mod tests {
         store.put(key2.clone(), value2.clone());
         store.put(key3.clone(), value3.clone());
 
-        assert_eq!(IReadOnlyStore::try_get(&store, &key1).unwrap().value(), value1.value());
-        assert_eq!(IReadOnlyStore::try_get(&store, &key2).unwrap().value(), value2.value());
-        assert_eq!(IReadOnlyStore::try_get(&store, &key3).unwrap().value(), value3.value());
+        assert_eq!(
+            IReadOnlyStore::try_get(&store, &key1).unwrap().value(),
+            value1.value()
+        );
+        assert_eq!(
+            IReadOnlyStore::try_get(&store, &key2).unwrap().value(),
+            value2.value()
+        );
+        assert_eq!(
+            IReadOnlyStore::try_get(&store, &key3).unwrap().value(),
+            value3.value()
+        );
     }
 
     #[test]
@@ -252,7 +261,10 @@ mod tests {
 
         store.put(key.clone(), value2.clone());
         assert!(IReadOnlyStore::contains(&store, &key));
-        assert_eq!(IReadOnlyStore::try_get(&store, &key).unwrap().value(), value2.value());
+        assert_eq!(
+            IReadOnlyStore::try_get(&store, &key).unwrap().value(),
+            value2.value()
+        );
     }
 
     #[test]
@@ -264,7 +276,10 @@ mod tests {
         store.put(key.clone(), value.clone());
         assert!(IReadOnlyStore::contains(&store, &key));
         let empty: &[u8] = &[];
-        assert_eq!(IReadOnlyStore::try_get(&store, &key).unwrap().value(), empty);
+        assert_eq!(
+            IReadOnlyStore::try_get(&store, &key).unwrap().value(),
+            empty
+        );
     }
 
     #[test]
@@ -290,7 +305,9 @@ mod tests {
         // Test generic trait
         assert!(IReadOnlyStoreGeneric::contains(&store, &key));
         assert_eq!(
-            IReadOnlyStoreGeneric::try_get(&store, &key).unwrap().value(),
+            IReadOnlyStoreGeneric::try_get(&store, &key)
+                .unwrap()
+                .value(),
             value.value()
         );
     }

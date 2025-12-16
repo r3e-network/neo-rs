@@ -148,15 +148,15 @@ pub struct ExecutionEngine {
     pub(crate) uncaught_exception: Option<StackItem>,
 }
 
-mod core;
-mod interop;
-mod execution;
 mod context;
-mod stack;
 mod control_flow;
-mod exception;
-mod stubs;
+mod core;
 mod drop;
+mod exception;
+mod execution;
+mod interop;
+mod stack;
+mod stubs;
 
 #[cfg(test)]
 mod tests;

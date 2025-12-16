@@ -41,6 +41,7 @@ pub struct SyncStats {
 
 /// Pending block request
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // Fields will be used when full sync service is implemented
 struct PendingRequest {
     /// Height (if known)
     height: Option<u32>,
@@ -75,10 +76,7 @@ pub struct SyncService {
 
 impl SyncService {
     /// Creates a new sync service
-    pub fn new(
-        chain: Arc<RwLock<ChainState>>,
-        chain_tx: broadcast::Sender<ChainEvent>,
-    ) -> Self {
+    pub fn new(chain: Arc<RwLock<ChainState>>, chain_tx: broadcast::Sender<ChainEvent>) -> Self {
         let (shutdown_tx, _) = broadcast::channel(8);
 
         Self {
@@ -143,7 +141,10 @@ impl SyncService {
         self.pending_requests.write().await.remove(&hash);
 
         // Add to block queue
-        self.block_queue.write().await.push_back((height, hash, data));
+        self.block_queue
+            .write()
+            .await
+            .push_back((height, hash, data));
 
         // Update stats
         self.stats.write().await.blocks_downloaded += 1;

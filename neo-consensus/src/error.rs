@@ -116,6 +116,27 @@ pub enum ConsensusError {
     /// Channel send error.
     #[error("Channel send error: {0}")]
     ChannelError(String),
+
+    /// Persistence error.
+    #[error("Persistence error: {0}")]
+    PersistenceError(String),
+
+    /// IO error.
+    #[error("IO error: {0}")]
+    IoError(#[from] std::io::Error),
+
+    /// Serialization error.
+    #[error("Serialization error: {0}")]
+    SerializationError(String),
+
+    /// Insufficient signatures for block assembly.
+    #[error("Insufficient signatures: required {required}, got {got}")]
+    InsufficientSignatures {
+        /// Required number of signatures.
+        required: usize,
+        /// Actual number of signatures.
+        got: usize,
+    },
 }
 
 impl ConsensusError {

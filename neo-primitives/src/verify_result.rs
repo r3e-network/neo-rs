@@ -8,7 +8,7 @@ use std::fmt;
 
 /// Represents a verifying result of IInventory.
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum VerifyResult {
     /// Indicates that the verification was successful.
     Succeed = 0,
@@ -39,6 +39,7 @@ pub enum VerifyResult {
     /// Indicates that the Transaction failed to verify because it conflicts with on-chain or mempooled transactions.
     HasConflicts = 13,
     /// Indicates that the IInventory failed to verify due to other reasons.
+    #[default]
     Unknown = 14,
 }
 
@@ -102,12 +103,6 @@ impl VerifyResult {
     #[inline]
     pub fn is_failure(self) -> bool {
         !self.is_success()
-    }
-}
-
-impl Default for VerifyResult {
-    fn default() -> Self {
-        Self::Unknown
     }
 }
 

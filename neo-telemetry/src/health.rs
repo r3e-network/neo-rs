@@ -211,9 +211,7 @@ mod tests {
     fn test_health_check() {
         let mut health = HealthCheck::new();
 
-        health.register(FnHealthCheck::new("test", || {
-            (HealthStatus::Healthy, None)
-        }));
+        health.register(FnHealthCheck::new("test", || (HealthStatus::Healthy, None)));
 
         let result = health.check_all();
         assert_eq!(result.status, HealthStatus::Healthy);

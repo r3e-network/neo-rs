@@ -39,8 +39,8 @@ block_time = 15
 [storage]
 # Storage backend: rocksdb
 backend = "rocksdb"
-# Storage path
-path = "/var/neo/testnet/blockchain"
+# Storage path (local development path)
+path = "/home/neo/git/neo-rs/data/testnet/blockchain"
 # Cache size in MB
 cache_size = 512
 # Compression algorithm: lz4, snappy, zstd

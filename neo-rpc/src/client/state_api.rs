@@ -12,8 +12,8 @@
 use super::models::{RpcFoundStates, RpcStateRoot};
 use crate::RpcClient;
 use base64::{engine::general_purpose, Engine as _};
-use neo_primitives::{UInt160, UInt256};
 use neo_json::JToken;
+use neo_primitives::{UInt160, UInt256};
 use std::sync::Arc;
 
 /// State service API

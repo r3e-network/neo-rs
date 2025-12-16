@@ -74,7 +74,9 @@ pub enum VerificationError {
 impl VerificationError {
     /// Create a verification failed error.
     pub fn verification_failed<S: Into<String>>(message: S) -> Self {
-        Self::VerificationFailed { message: message.into() }
+        Self::VerificationFailed {
+            message: message.into(),
+        }
     }
 
     /// Create a gas limit exceeded error.
@@ -84,17 +86,23 @@ impl VerificationError {
 
     /// Create an invalid script error.
     pub fn invalid_script<S: Into<String>>(message: S) -> Self {
-        Self::InvalidScript { message: message.into() }
+        Self::InvalidScript {
+            message: message.into(),
+        }
     }
 
     /// Create an invalid signature error.
     pub fn invalid_signature<S: Into<String>>(message: S) -> Self {
-        Self::InvalidSignature { message: message.into() }
+        Self::InvalidSignature {
+            message: message.into(),
+        }
     }
 
     /// Create a missing witness error.
     pub fn missing_witness(hash: &UInt160) -> Self {
-        Self::MissingWitness { hash: format!("{:?}", hash) }
+        Self::MissingWitness {
+            hash: format!("{:?}", hash),
+        }
     }
 }
 
@@ -146,11 +154,7 @@ pub trait IVerificationContext: Send + Sync {
     /// - `Ok(true)` if verification succeeds
     /// - `Ok(false)` if signature is invalid
     /// - `Err(VerificationError)` if verification cannot complete
-    fn verify_witness(
-        &self,
-        hash: &UInt160,
-        witness: &dyn IWitness,
-    ) -> VerificationResult<bool>;
+    fn verify_witness(&self, hash: &UInt160, witness: &dyn IWitness) -> VerificationResult<bool>;
 
     /// Returns the total gas consumed during verification so far.
     fn get_gas_consumed(&self) -> i64;
@@ -251,7 +255,10 @@ mod tests {
 
     impl MockWitness {
         fn new(invocation: Vec<u8>, verification: Vec<u8>) -> Self {
-            Self { invocation, verification }
+            Self {
+                invocation,
+                verification,
+            }
         }
     }
 
@@ -274,7 +281,11 @@ mod tests {
 
     impl MockVerifier {
         fn new(max_gas: i64, should_pass: bool) -> Self {
-            Self { max_gas, consumed: 0, should_pass }
+            Self {
+                max_gas,
+                consumed: 0,
+                should_pass,
+            }
         }
 
         fn with_consumed(mut self, consumed: i64) -> Self {
@@ -488,8 +499,7 @@ mod tests {
 
     #[test]
     fn test_mock_snapshot_storage() {
-        let snapshot = MockSnapshot::new(100)
-            .with_storage(vec![0x01, 0x02], vec![0xAA, 0xBB]);
+        let snapshot = MockSnapshot::new(100).with_storage(vec![0x01, 0x02], vec![0xAA, 0xBB]);
 
         assert_eq!(snapshot.get_storage(&[0x01, 0x02]), Some(vec![0xAA, 0xBB]));
         assert_eq!(snapshot.get_storage(&[0x03, 0x04]), None);
@@ -568,27 +578,51 @@ mod tests {
     #[test]
     fn test_verification_error_all_variants_eq() {
         // Test PartialEq for all error variants
-        let err1 = VerificationError::VerificationFailed { message: "test".to_string() };
-        let err2 = VerificationError::VerificationFailed { message: "test".to_string() };
-        let err3 = VerificationError::VerificationFailed { message: "other".to_string() };
+        let err1 = VerificationError::VerificationFailed {
+            message: "test".to_string(),
+        };
+        let err2 = VerificationError::VerificationFailed {
+            message: "test".to_string(),
+        };
+        let err3 = VerificationError::VerificationFailed {
+            message: "other".to_string(),
+        };
         assert_eq!(err1, err2);
         assert_ne!(err1, err3);
 
-        let err4 = VerificationError::GasLimitExceeded { consumed: 100, max: 50 };
-        let err5 = VerificationError::GasLimitExceeded { consumed: 100, max: 50 };
+        let err4 = VerificationError::GasLimitExceeded {
+            consumed: 100,
+            max: 50,
+        };
+        let err5 = VerificationError::GasLimitExceeded {
+            consumed: 100,
+            max: 50,
+        };
         assert_eq!(err4, err5);
         assert_ne!(err1, err4);
 
-        let err6 = VerificationError::InvalidScript { message: "bad".to_string() };
-        let err7 = VerificationError::InvalidScript { message: "bad".to_string() };
+        let err6 = VerificationError::InvalidScript {
+            message: "bad".to_string(),
+        };
+        let err7 = VerificationError::InvalidScript {
+            message: "bad".to_string(),
+        };
         assert_eq!(err6, err7);
 
-        let err8 = VerificationError::InvalidSignature { message: "wrong".to_string() };
-        let err9 = VerificationError::InvalidSignature { message: "wrong".to_string() };
+        let err8 = VerificationError::InvalidSignature {
+            message: "wrong".to_string(),
+        };
+        let err9 = VerificationError::InvalidSignature {
+            message: "wrong".to_string(),
+        };
         assert_eq!(err8, err9);
 
-        let err10 = VerificationError::MissingWitness { hash: "0x123".to_string() };
-        let err11 = VerificationError::MissingWitness { hash: "0x123".to_string() };
+        let err10 = VerificationError::MissingWitness {
+            hash: "0x123".to_string(),
+        };
+        let err11 = VerificationError::MissingWitness {
+            hash: "0x123".to_string(),
+        };
         assert_eq!(err10, err11);
     }
 
@@ -615,11 +649,19 @@ mod tests {
         // Test verification that returns an error
         struct FailingVerifier;
         impl IVerificationContext for FailingVerifier {
-            fn verify_witness(&self, _hash: &UInt160, _witness: &dyn IWitness) -> VerificationResult<bool> {
+            fn verify_witness(
+                &self,
+                _hash: &UInt160,
+                _witness: &dyn IWitness,
+            ) -> VerificationResult<bool> {
                 Err(VerificationError::gas_limit_exceeded(500, 100))
             }
-            fn get_gas_consumed(&self) -> i64 { 500 }
-            fn get_max_gas(&self) -> i64 { 100 }
+            fn get_gas_consumed(&self) -> i64 {
+                500
+            }
+            fn get_max_gas(&self) -> i64 {
+                100
+            }
         }
 
         let verifier = FailingVerifier;
@@ -627,7 +669,10 @@ mod tests {
         let witness = MockWitness::new(vec![], vec![]);
         let result = verifier.verify_witness(&hash, &witness);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), VerificationError::GasLimitExceeded { .. }));
+        assert!(matches!(
+            result.unwrap_err(),
+            VerificationError::GasLimitExceeded { .. }
+        ));
     }
 
     #[test]

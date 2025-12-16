@@ -102,7 +102,11 @@ impl StateSnapshot {
     }
 
     /// Records an account change.
-    pub fn record_account_change(&mut self, hash: UInt160, account: Option<AccountState>) -> StateResult<()> {
+    pub fn record_account_change(
+        &mut self,
+        hash: UInt160,
+        account: Option<AccountState>,
+    ) -> StateResult<()> {
         if !self.is_active() {
             return Err(StateError::InvalidSnapshotState(
                 "snapshot is not active".to_string(),
@@ -113,7 +117,11 @@ impl StateSnapshot {
     }
 
     /// Records a storage change.
-    pub fn record_storage_change(&mut self, key: StorageKey, change: StorageChange) -> StateResult<()> {
+    pub fn record_storage_change(
+        &mut self,
+        key: StorageKey,
+        change: StorageChange,
+    ) -> StateResult<()> {
         if !self.is_active() {
             return Err(StateError::InvalidSnapshotState(
                 "snapshot is not active".to_string(),
@@ -190,7 +198,8 @@ impl SnapshotManager {
         self.next_id += 1;
 
         let snapshot = if let Some(parent_id) = self.current_id {
-            let parent_depth = self.snapshots
+            let parent_depth = self
+                .snapshots
                 .get(&parent_id)
                 .map(|s| s.depth())
                 .unwrap_or(0);
@@ -231,10 +240,12 @@ impl SnapshotManager {
 
     /// Commits the current snapshot.
     pub fn commit(&mut self) -> StateResult<StateSnapshot> {
-        let current_id = self.current_id
+        let current_id = self
+            .current_id
             .ok_or_else(|| StateError::InvalidSnapshotState("no active snapshot".to_string()))?;
 
-        let mut snapshot = self.snapshots
+        let mut snapshot = self
+            .snapshots
             .remove(&current_id)
             .ok_or_else(|| StateError::InvalidSnapshotState("snapshot not found".to_string()))?;
 
@@ -246,10 +257,12 @@ impl SnapshotManager {
 
     /// Rolls back the current snapshot.
     pub fn rollback(&mut self) -> StateResult<StateSnapshot> {
-        let current_id = self.current_id
+        let current_id = self
+            .current_id
             .ok_or_else(|| StateError::InvalidSnapshotState("no active snapshot".to_string()))?;
 
-        let mut snapshot = self.snapshots
+        let mut snapshot = self
+            .snapshots
             .remove(&current_id)
             .ok_or_else(|| StateError::InvalidSnapshotState("snapshot not found".to_string()))?;
 
@@ -316,7 +329,9 @@ mod tests {
         let mut snapshot = StateSnapshot::new(1);
 
         let account = AccountState::new(UInt160::default());
-        snapshot.record_account_change(UInt160::default(), Some(account)).unwrap();
+        snapshot
+            .record_account_change(UInt160::default(), Some(account))
+            .unwrap();
 
         assert!(snapshot.has_changes());
         assert_eq!(snapshot.account_changes().len(), 1);

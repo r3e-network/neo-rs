@@ -1,5 +1,6 @@
 //! Blockchain RPC endpoints (`RpcServer.Blockchain.cs`).
 
+use crate::client::models::RpcContractState;
 use crate::server::model::block_hash_or_index::BlockHashOrIndex as RpcBlockHashOrIndex;
 use crate::server::model::contract_name_or_hash_or_id::ContractNameOrHashOrId;
 use crate::server::rpc_error::RpcError;
@@ -27,7 +28,6 @@ use neo_core::smart_contract::native::{
 use neo_core::smart_contract::storage_key::StorageKey;
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::{UInt160, UInt256, Witness as LedgerWitness};
-use crate::client::models::RpcContractState;
 use serde_json::{json, Map, Value};
 use std::str::FromStr;
 use std::sync::Arc;

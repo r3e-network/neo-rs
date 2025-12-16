@@ -39,7 +39,8 @@ impl RpcTransaction {
     /// Converts to JSON
     /// Matches C# ToJson
     pub fn to_json(&self, protocol_settings: &ProtocolSettings) -> JObject {
-        let mut json = super::super::utility::transaction_to_json(&self.transaction, protocol_settings);
+        let mut json =
+            super::super::utility::transaction_to_json(&self.transaction, protocol_settings);
 
         if let Some(confirmations) = self.confirmations {
             if let Some(ref block_hash) = self.block_hash {

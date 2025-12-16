@@ -2,8 +2,8 @@
 //!
 //! Matches C# Neo.Plugins.StateService.Network.StateRoot exactly.
 
-use crate::cryptography::NeoHash;
 use crate::cryptography::Crypto;
+use crate::cryptography::NeoHash;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::network::p2p::payloads::Witness;
 use crate::persistence::DataCache;
@@ -205,8 +205,11 @@ impl StateRoot {
         let mut sig_index = 0usize;
         let mut key_index = 0usize;
         while sig_index < required_signatures && key_index < encoded_keys.len() {
-            if Crypto::verify_signature_bytes(&sign_data, &signatures[sig_index], &encoded_keys[key_index])
-            {
+            if Crypto::verify_signature_bytes(
+                &sign_data,
+                &signatures[sig_index],
+                &encoded_keys[key_index],
+            ) {
                 sig_index += 1;
             }
             key_index += 1;
@@ -270,8 +273,8 @@ impl Default for StateRoot {
 mod multisig_verify_tests {
     use super::*;
     use crate::persistence::data_cache::DataCache;
-    use crate::smart_contract::Contract;
     use crate::smart_contract::native::{role_management::RoleManagement, NativeContract, Role};
+    use crate::smart_contract::Contract;
     use crate::smart_contract::{StorageItem, StorageKey};
     use crate::wallets::KeyPair;
     use neo_vm::op_code::OpCode;

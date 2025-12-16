@@ -162,7 +162,10 @@ impl ContractStorage {
 
     /// Returns true if the key exists in storage.
     pub fn contains(&self, key: &StorageKey) -> bool {
-        self.cache.get(key).map(|opt| opt.is_some()).unwrap_or(false)
+        self.cache
+            .get(key)
+            .map(|opt| opt.is_some())
+            .unwrap_or(false)
     }
 
     /// Returns all changes since last commit.
@@ -186,7 +189,10 @@ impl ContractStorage {
     }
 
     /// Iterates over all storage items for a contract.
-    pub fn iter_contract<'a>(&'a self, contract_hash: &'a UInt160) -> impl Iterator<Item = (&'a StorageKey, &'a StorageItem)> + 'a {
+    pub fn iter_contract<'a>(
+        &'a self,
+        contract_hash: &'a UInt160,
+    ) -> impl Iterator<Item = (&'a StorageKey, &'a StorageItem)> + 'a {
         self.cache
             .iter()
             .filter(move |(k, v)| k.contract_hash == *contract_hash && v.is_some())
@@ -202,9 +208,7 @@ impl ContractStorage {
         self.cache
             .iter()
             .filter(move |(k, v)| {
-                k.contract_hash == *contract_hash
-                    && k.key.starts_with(prefix)
-                    && v.is_some()
+                k.contract_hash == *contract_hash && k.key.starts_with(prefix) && v.is_some()
             })
             .map(|(k, v)| (k, v.as_ref().unwrap()))
     }
@@ -305,14 +309,23 @@ mod tests {
         let key1 = StorageKey::new(test_contract_hash(), vec![1]);
         let key2 = StorageKey::new(test_contract_hash(), vec![2]);
 
-        storage.put(key1.clone(), StorageItem::new(vec![1])).unwrap();
-        storage.put(key2.clone(), StorageItem::new(vec![2])).unwrap();
-        storage.put(key1.clone(), StorageItem::new(vec![3])).unwrap(); // Modify
+        storage
+            .put(key1.clone(), StorageItem::new(vec![1]))
+            .unwrap();
+        storage
+            .put(key2.clone(), StorageItem::new(vec![2]))
+            .unwrap();
+        storage
+            .put(key1.clone(), StorageItem::new(vec![3]))
+            .unwrap(); // Modify
         storage.delete(&key2).unwrap();
 
         let changes = storage.changes();
         assert_eq!(changes.len(), 2);
-        assert!(matches!(changes.get(&key1), Some(StorageChange::Modified(_))));
+        assert!(matches!(
+            changes.get(&key1),
+            Some(StorageChange::Modified(_))
+        ));
         assert!(matches!(changes.get(&key2), Some(StorageChange::Deleted)));
     }
 
@@ -321,9 +334,24 @@ mod tests {
         let mut storage = ContractStorage::new();
         let hash = test_contract_hash();
 
-        storage.put(StorageKey::new(hash, vec![1, 0, 0]), StorageItem::new(vec![1])).unwrap();
-        storage.put(StorageKey::new(hash, vec![1, 0, 1]), StorageItem::new(vec![2])).unwrap();
-        storage.put(StorageKey::new(hash, vec![2, 0, 0]), StorageItem::new(vec![3])).unwrap();
+        storage
+            .put(
+                StorageKey::new(hash, vec![1, 0, 0]),
+                StorageItem::new(vec![1]),
+            )
+            .unwrap();
+        storage
+            .put(
+                StorageKey::new(hash, vec![1, 0, 1]),
+                StorageItem::new(vec![2]),
+            )
+            .unwrap();
+        storage
+            .put(
+                StorageKey::new(hash, vec![2, 0, 0]),
+                StorageItem::new(vec![3]),
+            )
+            .unwrap();
 
         let results: Vec<_> = storage.find_by_prefix(&hash, &[1, 0]).collect();
         assert_eq!(results.len(), 2);

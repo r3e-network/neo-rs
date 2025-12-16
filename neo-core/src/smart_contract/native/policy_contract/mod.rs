@@ -273,9 +273,9 @@ impl PolicyContract {
 }
 
 // Include implementation files
-mod helpers;
-mod getters;
-mod setters;
 mod account;
-mod snapshot;
+mod getters;
+mod helpers;
 mod native_impl;
+mod setters;
+mod snapshot;

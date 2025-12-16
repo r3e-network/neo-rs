@@ -97,10 +97,7 @@ impl RpcClient {
 
     /// Processes an RPC response
     /// Matches C# AsRpcResponse
-    fn as_rpc_response(
-        content: &str,
-        throw_on_error: bool,
-    ) -> Result<RpcResponse, ClientRpcError> {
+    fn as_rpc_response(content: &str, throw_on_error: bool) -> Result<RpcResponse, ClientRpcError> {
         let json = JToken::parse(content, MAX_JSON_NESTING)
             .map_err(|e| ClientRpcError::new(-32700, format!("Parse error: {}", e)))?;
         let response_obj = match json {
@@ -484,10 +481,7 @@ impl RpcClient {
     }
 
     /// Gets contract state by hash.
-    pub async fn get_contract_state(
-        &self,
-        hash: &str,
-    ) -> Result<RpcContractState, ClientRpcError> {
+    pub async fn get_contract_state(&self, hash: &str) -> Result<RpcContractState, ClientRpcError> {
         let result = self
             .rpc_send_async("getcontractstate", vec![JToken::String(hash.to_string())])
             .await?;

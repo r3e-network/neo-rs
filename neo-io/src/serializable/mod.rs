@@ -3,6 +3,7 @@
 use crate::{binary_writer::BinaryWriter, IoResult, MemoryReader};
 
 pub mod helper;
+pub mod primitives;
 
 /// Trait implemented by Neo types that can be serialized and deserialized.
 ///

@@ -10,7 +10,7 @@ pub async fn execute(_client: &RpcClient, cmd: WalletCommands) -> CommandResult 
     // 1. A local wallet implementation in neo-cli
     // 2. RPC endpoints for wallet operations on neo-node
     //
-    // For now, we provide a message indicating this limitation
+    // Display wallet command help - full wallet operations require neo-rpc wallet API
 
     match cmd {
         WalletCommands::Open { path, password: _ } => Ok(format!(

@@ -86,7 +86,7 @@ pub use traits::{
     PeerManager,
 };
 
-// Placeholder for future modules
+// Additional P2P modules can be added here as needed
 // pub mod local_node;
 // pub mod remote_node;
 // pub mod message;

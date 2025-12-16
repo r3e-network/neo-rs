@@ -30,29 +30,27 @@ Release build for production:
 cargo build --workspace --release
 ```
 
-The `neo-cli` crate ships with the stable plugin set (dBFT, RocksDB storage, RPC server, application logs, SQLite wallet, TokensTracker). TokensTracker provides NEP-11/NEP-17 balance and transfer history RPC endpoints when enabled. Plugin toggles are runtime-only; Cargo features are no longer used to select plugins.
-
 ## Run the node
 
-`neo-cli` is the entry point:
+`neo-node` is the daemon (P2P sync + optional JSON-RPC server). `neo-cli` is a JSON-RPC client.
 
 ```bash
-# Uses neo_mainnet_node.toml by default
-cargo run -p neo-cli --release -- --config neo_mainnet_node.toml
+cargo run -p neo-node --release -- --config neo_mainnet_node.toml
 ```
 
 Common overrides:
 
 - `--storage <path>`: custom RocksDB path
 - `--backend <memory|rocksdb>`: storage backend
-- `--network-magic <u32>` / `--port <u16>`: network parameters
+- `--network-magic <u32>` / `--listen-port <u16>`: network parameters
 
-Use `cargo run -p neo-cli -- --help` for the full command list.
+Use `cargo run -p neo-node -- --help` for the full daemon flag list.
 
-Useful CLI commands:
-- `plugins`: list available/downloadable plugins from the release feed (checks installed dirs too)
-- `plugins active`: show plugins currently loaded in the running node (name/version/category)
-- `open wallet <path> <password>`: unlock a NEP-6 wallet for RPC/console actions
+Query a running node:
+
+```bash
+cargo run -p neo-cli --release -- --rpc-url http://localhost:10332 state
+```
 
 Validate a node config without starting the daemon:
 

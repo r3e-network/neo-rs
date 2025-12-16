@@ -4,11 +4,23 @@
       {
         "Network": 894710606,
         "BindAddress": "127.0.0.1",
-        "Port": 10340,
-        "EnableCors": true,
+        "Port": 20332,
+        "EnableCors": false,
         "MaxConcurrentConnections": 40,
+        "MaxRequestBodySize": 5242880,
+        "MaxGasInvoke": 20.0,
+        "MaxFee": 0.1,
+        "MaxIteratorResultItems": 100,
+        "MaxStackSize": 65535,
         "KeepAliveTimeout": 60,
-        "RequestHeadersTimeout": 15
+        "RequestHeadersTimeout": 15,
+        "SessionEnabled": false,
+        "SessionExpirationTime": 60,
+        "FindStoragePageSize": 50,
+        "DisabledMethods": [
+          "openwallet",
+          "listplugins"
+        ]
       }
     ],
     "UnhandledExceptionPolicy": "Ignore"

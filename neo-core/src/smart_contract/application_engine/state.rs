@@ -325,6 +325,11 @@ impl ApplicationEngine {
         &self.notifications
     }
 
+    /// Returns all log events emitted during execution.
+    pub fn logs(&self) -> &[LogEventArgs] {
+        &self.logs
+    }
+
     /// Sets the runtime context used for logging/notify callbacks.
     pub fn set_runtime_context(&mut self, context: Option<Arc<dyn SystemContext>>) {
         self.runtime_context = context;
@@ -361,4 +366,36 @@ impl ApplicationEngine {
         self.contracts.get(hash)
     }
 
+    /// Extracts all storage changes from the execution as raw key-value pairs.
+    ///
+    /// This method returns the state changes accumulated during contract execution,
+    /// which can be used for state root calculation via MPT trie.
+    ///
+    /// # Returns
+    /// A vector of tuples where:
+    /// - First element: serialized storage key bytes (contract_id + key_suffix)
+    /// - Second element: `Some(value_bytes)` for additions/updates, `None` for deletions
+    ///
+    /// # Example
+    /// ```ignore
+    /// let engine = ApplicationEngine::new(...)?;
+    /// engine.execute();
+    /// let changes = engine.extract_storage_changes();
+    /// for (key_bytes, value_opt) in changes {
+    ///     // Process state changes for state root calculation
+    /// }
+    /// ```
+    pub fn extract_storage_changes(&self) -> Vec<(Vec<u8>, Option<Vec<u8>>)> {
+        self.snapshot_cache.extract_raw_changes()
+    }
+
+    /// Returns the number of pending storage changes.
+    pub fn pending_storage_change_count(&self) -> usize {
+        self.snapshot_cache.pending_change_count()
+    }
+
+    /// Returns true if there are any pending storage changes.
+    pub fn has_pending_storage_changes(&self) -> bool {
+        self.snapshot_cache.has_pending_changes()
+    }
 }

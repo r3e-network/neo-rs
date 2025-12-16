@@ -17,15 +17,18 @@
 //! - Run until Ctrl+C is received
 
 mod config;
+mod executor;
+mod genesis;
 mod health;
 mod metrics;
 mod p2p_service;
 mod rpc_service;
 mod runtime;
+mod state_validator;
 mod sync_service;
-mod validator_service;
 #[cfg(feature = "tee")]
 mod tee_integration;
+mod validator_service;
 
 pub use p2p_service::{P2PService, P2PServiceState};
 pub use rpc_service::{RpcService, RpcServiceConfig, RpcServiceState};
@@ -42,7 +45,7 @@ use config::{infer_magic_from_type, NodeConfig};
 // - neo_state::WorldState for state management
 // - neo_p2p::P2PService traits for networking
 // - neo_consensus::ConsensusService for dBFT
-// For now, we provide a stub implementation that validates config only.
+// Validates configuration and initializes the node runtime.
 use neo_core::{
     persistence::{providers::RocksDBStoreProvider, storage::StorageConfig, IStoreProvider},
     protocol_settings::ProtocolSettings,
@@ -246,6 +249,17 @@ struct NodeCli {
     /// Enable full state history tracking (keeps all historical state, increases storage usage).
     #[arg(long, env = "NEO_STATE_ROOT_FULL_STATE")]
     state_root_full_state: bool,
+
+    /// Path to NEP-6 wallet file for validator mode.
+    /// When provided with --wallet-password, the node will attempt to run as a validator
+    /// if the wallet's default account is in the standby committee.
+    #[arg(long, value_name = "PATH", env = "NEO_WALLET")]
+    wallet: Option<PathBuf>,
+
+    /// Password for the NEP-6 wallet file.
+    /// Required when --wallet is specified.
+    #[arg(long, value_name = "PASSWORD", env = "NEO_WALLET_PASSWORD")]
+    wallet_password: Option<String>,
 }
 
 #[tokio::main]
@@ -359,7 +373,6 @@ async fn main() -> Result<()> {
 
     let protocol_settings: ProtocolSettings = node_config.protocol_settings();
     let read_only_storage = node_config.storage.read_only.unwrap_or(false);
-    let rpc_enabled = node_config.rpc.enabled;
 
     validate_node_config(
         &node_config,
@@ -465,20 +478,88 @@ async fn main() -> Result<()> {
         None
     };
 
+    // Build validators list from protocol settings standby_committee
+    let validators: Vec<neo_consensus::ValidatorInfo> = protocol_settings
+        .standby_committee
+        .iter()
+        .take(protocol_settings.validators_count as usize)
+        .enumerate()
+        .map(|(index, public_key)| {
+            let script_hash = neo_core::smart_contract::Contract::create_signature_contract(
+                public_key.clone(),
+            )
+            .script_hash();
+            neo_consensus::ValidatorInfo {
+                index: index as u8,
+                public_key: public_key.clone(),
+                script_hash,
+            }
+        })
+        .collect();
+
+    info!(
+        target: "neo",
+        validator_count = validators.len(),
+        "loaded validators from protocol settings"
+    );
+
+    // Load validator configuration from wallet if provided
+    let (validator_index, private_key) = if let (Some(wallet_path), Some(password)) =
+        (&cli.wallet, &cli.wallet_password)
+    {
+        info!(
+            target: "neo",
+            wallet = %wallet_path.display(),
+            "loading validator wallet"
+        );
+
+        match validator_service::load_validator_from_wallet(
+            wallet_path.to_str().unwrap_or(""),
+            password,
+            std::sync::Arc::new(protocol_settings.clone()),
+        ) {
+            Ok(Some(config)) => {
+                info!(
+                    target: "neo",
+                    validator_index = config.validator_index,
+                    script_hash = %config.script_hash,
+                    "validator mode enabled"
+                );
+                (Some(config.validator_index), config.private_key)
+            }
+            Ok(None) => {
+                warn!(
+                    target: "neo",
+                    "wallet account is not in standby committee - running in non-validator mode"
+                );
+                (None, Vec::new())
+            }
+            Err(e) => {
+                warn!(
+                    target: "neo",
+                    error = %e,
+                    "failed to load validator wallet - running in non-validator mode"
+                );
+                (None, Vec::new())
+            }
+        }
+    } else if cli.wallet.is_some() {
+        bail!("--wallet-password is required when --wallet is specified");
+    } else {
+        (None, Vec::new())
+    };
+
     // Build RuntimeConfig from NodeConfig
     let runtime_config = RuntimeConfig {
         network_magic: protocol_settings.network,
         protocol_version: 0,
-        validator_index: None, // TODO: Load from wallet/config if validator
-        validators: Vec::new(), // TODO: Load from protocol settings
-        private_key: Vec::new(),
+        validator_index,
+        validators,
+        private_key,
         p2p: neo_p2p::P2PConfig {
-            listen_address: format!(
-                "0.0.0.0:{}",
-                node_config.p2p.listen_port.unwrap_or(10333)
-            )
-            .parse()
-            .unwrap_or_else(|_| "0.0.0.0:10333".parse().unwrap()),
+            listen_address: format!("0.0.0.0:{}", node_config.p2p.listen_port.unwrap_or(10333))
+                .parse()
+                .unwrap_or_else(|_| "0.0.0.0:10333".parse().unwrap()),
             max_inbound: node_config.p2p.max_connections.unwrap_or(10),
             max_outbound: node_config.p2p.min_desired_connections.unwrap_or(10),
             seed_nodes: resolve_seed_nodes(&node_config.p2p.seed_nodes).await,
@@ -487,6 +568,7 @@ async fn main() -> Result<()> {
         },
         mempool: neo_mempool::MempoolConfig::default(),
         state_service: state_service_settings,
+        protocol_settings: protocol_settings.clone(),
     };
 
     info!(
@@ -504,7 +586,10 @@ async fn main() -> Result<()> {
     info!(target: "neo", "starting neo-node runtime...");
 
     // Start the runtime
-    node_runtime.start().await.context("failed to start node runtime")?;
+    node_runtime
+        .start()
+        .await
+        .context("failed to start node runtime")?;
 
     info!(
         target: "neo",
@@ -528,7 +613,11 @@ async fn main() -> Result<()> {
 
     // Optionally start RPC service
     let rpc_service = if node_config.rpc.enabled {
-        let rpc_bind = node_config.rpc.bind_address.as_deref().unwrap_or("127.0.0.1");
+        let rpc_bind = node_config
+            .rpc
+            .bind_address
+            .as_deref()
+            .unwrap_or("127.0.0.1");
         let rpc_port = node_config.rpc.port.unwrap_or(10332);
         let rpc_addr = format!("{}:{}", rpc_bind, rpc_port)
             .parse()
@@ -556,7 +645,9 @@ async fn main() -> Result<()> {
 
     // Optionally start health endpoint
     if let Some(health_port) = cli.health_port {
-        let max_lag = cli.health_max_header_lag.unwrap_or(health::DEFAULT_MAX_HEADER_LAG);
+        let max_lag = cli
+            .health_max_header_lag
+            .unwrap_or(health::DEFAULT_MAX_HEADER_LAG);
         let storage_for_health = storage_path.clone();
         let rpc_enabled_for_health = node_config.rpc.enabled;
 
@@ -595,7 +686,10 @@ async fn main() -> Result<()> {
         }
     }
 
-    node_runtime.stop().await.context("failed to stop node runtime")?;
+    node_runtime
+        .stop()
+        .await
+        .context("failed to stop node runtime")?;
 
     info!(target: "neo", "shutdown complete");
     Ok(())
@@ -744,11 +838,6 @@ fn build_feature_summary() -> String {
     features.push("tee-sgx: hardware");
 
     features.join("; ")
-}
-
-async fn log_registered_plugins() {
-    // Plugin system has been removed - functionality is now built directly into the node
-    info!(target: "neo", "plugin system disabled (functionality integrated into node)");
 }
 
 fn select_store_provider(

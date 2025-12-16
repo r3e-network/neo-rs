@@ -116,7 +116,9 @@ mod tests {
         original.add(key1.clone(), StorageItem::new(vec![0xAA]));
 
         let mut cloned = ClonedCache::new(&original);
-        cloned.cache().add(key2.clone(), StorageItem::new(vec![0xBB]));
+        cloned
+            .cache()
+            .add(key2.clone(), StorageItem::new(vec![0xBB]));
 
         // Original has only key1
         assert!(original.contains(&key1));
@@ -134,19 +136,15 @@ mod tests {
         original.add(key.clone(), StorageItem::new(vec![0xAA]));
 
         let mut cloned = ClonedCache::new(&original);
-        cloned.cache().update(key.clone(), StorageItem::new(vec![0xBB]));
+        cloned
+            .cache()
+            .update(key.clone(), StorageItem::new(vec![0xBB]));
 
         // Original has original value
-        assert_eq!(
-            original.try_get(&key).unwrap().value(),
-            &[0xAA]
-        );
+        assert_eq!(original.try_get(&key).unwrap().value(), &[0xAA]);
 
         // Clone has updated value
-        assert_eq!(
-            cloned.cache_ref().try_get(&key).unwrap().value(),
-            &[0xBB]
-        );
+        assert_eq!(cloned.cache_ref().try_get(&key).unwrap().value(), &[0xBB]);
     }
 
     #[test]
@@ -220,9 +218,13 @@ mod tests {
         // Delete one
         cloned.cache().delete(&key1);
         // Update one
-        cloned.cache().update(key2.clone(), StorageItem::new(vec![0xBB]));
+        cloned
+            .cache()
+            .update(key2.clone(), StorageItem::new(vec![0xBB]));
         // Add one
-        cloned.cache().add(key3.clone(), StorageItem::new(vec![0x33]));
+        cloned
+            .cache()
+            .add(key3.clone(), StorageItem::new(vec![0x33]));
 
         // Verify clone state
         assert!(!cloned.cache_ref().contains(&key1));

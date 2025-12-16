@@ -297,8 +297,8 @@ impl RemoteNode {
         );
 
         // Track rejections for potential peer penalties
-        // In production, this would increment a penalty counter and
-        // potentially trigger disconnection after repeated rejections
+        // Future enhancement: increment penalty counter and trigger
+        // disconnection after repeated rejections
     }
 
     /// Handles alert messages from peers.

@@ -5,7 +5,6 @@
 
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
-use crate::neo_config::SECONDS_PER_BLOCK;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::native::{NativeContract, NativeMethod};
 use crate::smart_contract::ContractParameterType;
@@ -13,6 +12,7 @@ use crate::UInt160;
 use base64::{engine::general_purpose, Engine as _};
 use serde_json::Value as JsonValue;
 use std::str::FromStr;
+use unicode_segmentation::UnicodeSegmentation;
 
 /// The StdLib native contract.
 pub struct StdLib {
@@ -81,24 +81,60 @@ impl StdLib {
                 ],
                 ContractParameterType::Integer,
             ),
+            // memorySearch overloads (2 params)
             NativeMethod::safe(
                 "memorySearch".to_string(),
-                1 << SECONDS_PER_BLOCK,
+                1 << 6,
                 vec![
                     ContractParameterType::ByteArray,
                     ContractParameterType::ByteArray,
                 ],
                 ContractParameterType::Integer,
             ),
+            // memorySearch overloads (3 params)
+            NativeMethod::safe(
+                "memorySearch".to_string(),
+                1 << 6,
+                vec![
+                    ContractParameterType::ByteArray,
+                    ContractParameterType::ByteArray,
+                    ContractParameterType::Integer,
+                ],
+                ContractParameterType::Integer,
+            ),
+            // memorySearch overloads (4 params)
+            NativeMethod::safe(
+                "memorySearch".to_string(),
+                1 << 6,
+                vec![
+                    ContractParameterType::ByteArray,
+                    ContractParameterType::ByteArray,
+                    ContractParameterType::Integer,
+                    ContractParameterType::Boolean,
+                ],
+                ContractParameterType::Integer,
+            ),
+            // stringSplit overloads (2 params)
             NativeMethod::safe(
                 "stringSplit".to_string(),
-                1 << 13,
+                1 << 8,
                 vec![ContractParameterType::String, ContractParameterType::String],
-                ContractParameterType::ByteArray,
+                ContractParameterType::Array,
+            ),
+            // stringSplit overloads (3 params)
+            NativeMethod::safe(
+                "stringSplit".to_string(),
+                1 << 8,
+                vec![
+                    ContractParameterType::String,
+                    ContractParameterType::String,
+                    ContractParameterType::Boolean,
+                ],
+                ContractParameterType::Array,
             ),
             NativeMethod::safe(
-                "stringLen".to_string(),
-                1 << 4,
+                "strLen".to_string(),
+                1 << 8,
                 vec![ContractParameterType::String],
                 ContractParameterType::Integer,
             ),
@@ -128,7 +164,9 @@ impl StdLib {
             "memoryCompare" => self.memory_compare(args),
             "memorySearch" => self.memory_search(args),
             "stringSplit" => self.string_split(args),
-            "stringLen" => self.string_len(args),
+            "strLen" => self.str_len(args),
+            // Legacy alias for backward compatibility
+            "stringLen" => self.str_len(args),
             _ => Err(Error::native_contract(format!(
                 "Unknown method: {}",
                 method
@@ -265,48 +303,131 @@ impl StdLib {
     }
 
     /// Searches for a pattern in memory.
+    /// Supports 3 overloads:
+    /// - memorySearch(mem, value) -> searches from start, forward
+    /// - memorySearch(mem, value, start) -> searches from start index, forward
+    /// - memorySearch(mem, value, start, backward) -> searches with direction control
     fn memory_search(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.len() < 2 {
             return Err(Error::native_contract(
-                "memorySearch requires data and pattern arguments".to_string(),
+                "memorySearch requires at least 2 arguments (mem, value)".to_string(),
             ));
         }
 
-        let data = &args[0];
-        let pattern = &args[1];
+        let mem = &args[0];
+        let value = &args[1];
 
-        if pattern.is_empty() {
-            return Ok(0i32.to_le_bytes().to_vec());
-        }
-
-        // Find the first occurrence of pattern in data
-        for i in 0..=data.len().saturating_sub(pattern.len()) {
-            if data[i..i + pattern.len()] == *pattern {
-                return Ok((i as i32).to_le_bytes().to_vec());
+        // Parse optional start parameter (default: 0)
+        let start = if args.len() >= 3 {
+            if args[2].len() != 4 {
+                return Err(Error::native_contract(
+                    "start parameter must be a 4-byte integer".to_string(),
+                ));
             }
+            i32::from_le_bytes([args[2][0], args[2][1], args[2][2], args[2][3]])
+        } else {
+            0
+        };
+
+        // Parse optional backward parameter (default: false)
+        let backward = if args.len() >= 4 {
+            if args[3].is_empty() {
+                false
+            } else {
+                args[3][0] != 0
+            }
+        } else {
+            false
+        };
+
+        // Validate start index
+        if start < 0 || start as usize > mem.len() {
+            return Err(Error::native_contract(format!(
+                "start index {} out of range [0, {}]",
+                start,
+                mem.len()
+            )));
         }
 
-        // Not found
-        Ok((-1i32).to_le_bytes().to_vec())
+        let start_usize = start as usize;
+
+        // Handle empty pattern
+        if value.is_empty() {
+            return Ok(start.to_le_bytes().to_vec());
+        }
+
+        let result = if backward {
+            // Backward search: search in mem[0..start] from end to beginning
+            if start_usize < value.len() {
+                -1
+            } else {
+                let search_range = &mem[0..start_usize];
+                match search_range
+                    .windows(value.len())
+                    .rposition(|window| window == value)
+                {
+                    Some(pos) => pos as i32,
+                    None => -1,
+                }
+            }
+        } else {
+            // Forward search: search in mem[start..] from beginning to end
+            if start_usize + value.len() > mem.len() {
+                -1
+            } else {
+                let search_range = &mem[start_usize..];
+                match search_range
+                    .windows(value.len())
+                    .position(|window| window == value)
+                {
+                    Some(pos) => (start_usize + pos) as i32,
+                    None => -1,
+                }
+            }
+        };
+
+        Ok(result.to_le_bytes().to_vec())
     }
 
     /// Splits a string by a delimiter.
+    /// Supports 2 overloads:
+    /// - stringSplit(str, separator) -> splits string, keeps empty entries
+    /// - stringSplit(str, separator, removeEmptyEntries) -> splits with option to remove empty entries
     fn string_split(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.len() < 2 {
             return Err(Error::native_contract(
-                "stringSplit requires string and delimiter arguments".to_string(),
+                "stringSplit requires at least 2 arguments (str, separator)".to_string(),
             ));
         }
 
         let string_data = String::from_utf8(args[0].clone())
             .map_err(|_| Error::native_contract("Invalid UTF-8 string".to_string()))?;
 
-        let delimiter = String::from_utf8(args[1].clone())
-            .map_err(|_| Error::native_contract("Invalid UTF-8 delimiter".to_string()))?;
+        let separator = String::from_utf8(args[1].clone())
+            .map_err(|_| Error::native_contract("Invalid UTF-8 separator".to_string()))?;
 
-        let parts: Vec<&str> = string_data.split(&delimiter).collect();
+        // Parse optional removeEmptyEntries parameter (default: false)
+        let remove_empty_entries = if args.len() >= 3 {
+            if args[2].is_empty() {
+                false
+            } else {
+                args[2][0] != 0
+            }
+        } else {
+            false
+        };
 
-        // Serialize as a simple array format: [count][length1][data1][length2][data2]/* implementation */;
+        // Split the string
+        let parts: Vec<&str> = if remove_empty_entries {
+            string_data
+                .split(&separator)
+                .filter(|s| !s.is_empty())
+                .collect()
+        } else {
+            string_data.split(&separator).collect()
+        };
+
+        // Serialize as a simple array format: [count][length1][data1][length2][data2]...
         let mut result = Vec::new();
         result.extend_from_slice(&(parts.len() as u32).to_le_bytes());
 
@@ -319,18 +440,22 @@ impl StdLib {
         Ok(result)
     }
 
-    /// Gets the length of a string.
-    fn string_len(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
+    /// Gets the length of a string in grapheme clusters (text elements).
+    /// This matches C#'s TextElementEnumerator behavior, correctly counting
+    /// complex Unicode characters like emojis as single elements.
+    /// For example: "🦆" = 1, "ã" = 1
+    fn str_len(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.is_empty() {
             return Err(Error::native_contract(
-                "stringLen requires string argument".to_string(),
+                "strLen requires string argument".to_string(),
             ));
         }
 
         let string_data = String::from_utf8(args[0].clone())
             .map_err(|_| Error::native_contract("Invalid UTF-8 string".to_string()))?;
 
-        let length = string_data.chars().count() as u32;
+        // Count grapheme clusters (extended grapheme clusters) to match C# TextElementEnumerator
+        let length = string_data.graphemes(true).count() as i32;
         Ok(length.to_le_bytes().to_vec())
     }
 }
@@ -369,5 +494,253 @@ impl NativeContract for StdLib {
 impl Default for StdLib {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_stdlib() -> StdLib {
+        StdLib::new()
+    }
+
+    #[test]
+    fn test_memory_compare() {
+        let stdlib = create_stdlib();
+
+        // Equal arrays
+        let result = stdlib.memory_compare(&[vec![1, 2, 3], vec![1, 2, 3]]).unwrap();
+        assert_eq!(i32::from_le_bytes([result[0], result[1], result[2], result[3]]), 0);
+
+        // First less than second
+        let result = stdlib.memory_compare(&[vec![1, 2, 3], vec![1, 2, 4]]).unwrap();
+        assert_eq!(i32::from_le_bytes([result[0], result[1], result[2], result[3]]), -1);
+
+        // First greater than second
+        let result = stdlib.memory_compare(&[vec![1, 2, 4], vec![1, 2, 3]]).unwrap();
+        assert_eq!(i32::from_le_bytes([result[0], result[1], result[2], result[3]]), 1);
+
+        // Different lengths
+        let result = stdlib.memory_compare(&[vec![1, 2], vec![1, 2, 3]]).unwrap();
+        assert_eq!(i32::from_le_bytes([result[0], result[1], result[2], result[3]]), -1);
+    }
+
+    #[test]
+    fn test_memory_search_basic() {
+        let stdlib = create_stdlib();
+
+        // Basic forward search
+        let mem = vec![1, 2, 3, 4, 5, 6, 7, 8];
+        let pattern = vec![4, 5, 6];
+        let result = stdlib.memory_search(&[mem.clone(), pattern]).unwrap();
+        assert_eq!(i32::from_le_bytes([result[0], result[1], result[2], result[3]]), 3);
+
+        // Pattern not found
+        let pattern = vec![9, 10];
+        let result = stdlib.memory_search(&[mem.clone(), pattern]).unwrap();
+        assert_eq!(i32::from_le_bytes([result[0], result[1], result[2], result[3]]), -1);
+
+        // Empty pattern
+        let pattern = vec![];
+        let result = stdlib.memory_search(&[mem.clone(), pattern]).unwrap();
+        assert_eq!(i32::from_le_bytes([result[0], result[1], result[2], result[3]]), 0);
+    }
+
+    #[test]
+    fn test_memory_search_with_start() {
+        let stdlib = create_stdlib();
+
+        let mem = vec![1, 2, 3, 4, 5, 4, 5, 6];
+        let pattern = vec![4, 5];
+
+        // Search from start=0
+        let start = 0i32.to_le_bytes().to_vec();
+        let result = stdlib.memory_search(&[mem.clone(), pattern.clone(), start]).unwrap();
+        assert_eq!(i32::from_le_bytes([result[0], result[1], result[2], result[3]]), 3);
+
+        // Search from start=4 (should find second occurrence)
+        let start = 4i32.to_le_bytes().to_vec();
+        let result = stdlib.memory_search(&[mem.clone(), pattern.clone(), start]).unwrap();
+        assert_eq!(i32::from_le_bytes([result[0], result[1], result[2], result[3]]), 5);
+
+        // Search from start=6 (should not find)
+        let start = 6i32.to_le_bytes().to_vec();
+        let result = stdlib.memory_search(&[mem.clone(), pattern.clone(), start]).unwrap();
+        assert_eq!(i32::from_le_bytes([result[0], result[1], result[2], result[3]]), -1);
+    }
+
+    #[test]
+    fn test_memory_search_backward() {
+        let stdlib = create_stdlib();
+
+        let mem = vec![1, 2, 3, 4, 5, 4, 5, 6];
+        let pattern = vec![4, 5];
+
+        // Backward search from start=8 (search in [0..8])
+        let start = 8i32.to_le_bytes().to_vec();
+        let backward = vec![1u8]; // true
+        let result = stdlib.memory_search(&[mem.clone(), pattern.clone(), start, backward]).unwrap();
+        assert_eq!(i32::from_le_bytes([result[0], result[1], result[2], result[3]]), 5);
+
+        // Backward search from start=5 (search in [0..5], should find first occurrence)
+        let start = 5i32.to_le_bytes().to_vec();
+        let backward = vec![1u8];
+        let result = stdlib.memory_search(&[mem.clone(), pattern.clone(), start, backward]).unwrap();
+        assert_eq!(i32::from_le_bytes([result[0], result[1], result[2], result[3]]), 3);
+
+        // Backward search from start=3 (search in [0..3], should not find)
+        let start = 3i32.to_le_bytes().to_vec();
+        let backward = vec![1u8];
+        let result = stdlib.memory_search(&[mem.clone(), pattern.clone(), start, backward]).unwrap();
+        assert_eq!(i32::from_le_bytes([result[0], result[1], result[2], result[3]]), -1);
+    }
+
+    #[test]
+    fn test_string_split_basic() {
+        let stdlib = create_stdlib();
+
+        let string = "hello,world,test".as_bytes().to_vec();
+        let separator = ",".as_bytes().to_vec();
+        let result = stdlib.string_split(&[string, separator]).unwrap();
+
+        // Parse result: [count][len1][data1][len2][data2][len3][data3]
+        let count = u32::from_le_bytes([result[0], result[1], result[2], result[3]]);
+        assert_eq!(count, 3);
+
+        let mut offset = 4;
+        let len1 = u32::from_le_bytes([result[offset], result[offset+1], result[offset+2], result[offset+3]]) as usize;
+        offset += 4;
+        let part1 = String::from_utf8(result[offset..offset+len1].to_vec()).unwrap();
+        assert_eq!(part1, "hello");
+        offset += len1;
+
+        let len2 = u32::from_le_bytes([result[offset], result[offset+1], result[offset+2], result[offset+3]]) as usize;
+        offset += 4;
+        let part2 = String::from_utf8(result[offset..offset+len2].to_vec()).unwrap();
+        assert_eq!(part2, "world");
+        offset += len2;
+
+        let len3 = u32::from_le_bytes([result[offset], result[offset+1], result[offset+2], result[offset+3]]) as usize;
+        offset += 4;
+        let part3 = String::from_utf8(result[offset..offset+len3].to_vec()).unwrap();
+        assert_eq!(part3, "test");
+    }
+
+    #[test]
+    fn test_string_split_with_empty_entries() {
+        let stdlib = create_stdlib();
+
+        let string = "hello,,world,,test".as_bytes().to_vec();
+        let separator = ",".as_bytes().to_vec();
+
+        // Without removeEmptyEntries (default: false)
+        let result = stdlib.string_split(&[string.clone(), separator.clone()]).unwrap();
+        let count = u32::from_le_bytes([result[0], result[1], result[2], result[3]]);
+        assert_eq!(count, 5); // hello, "", world, "", test
+
+        // With removeEmptyEntries = true
+        let remove_empty = vec![1u8];
+        let result = stdlib.string_split(&[string.clone(), separator.clone(), remove_empty]).unwrap();
+        let count = u32::from_le_bytes([result[0], result[1], result[2], result[3]]);
+        assert_eq!(count, 3); // hello, world, test
+    }
+
+    #[test]
+    fn test_str_len_basic() {
+        let stdlib = create_stdlib();
+
+        // ASCII string
+        let string = "hello".as_bytes().to_vec();
+        let result = stdlib.str_len(&[string]).unwrap();
+        assert_eq!(i32::from_le_bytes([result[0], result[1], result[2], result[3]]), 5);
+
+        // Empty string
+        let string = "".as_bytes().to_vec();
+        let result = stdlib.str_len(&[string]).unwrap();
+        assert_eq!(i32::from_le_bytes([result[0], result[1], result[2], result[3]]), 0);
+    }
+
+    #[test]
+    fn test_str_len_unicode() {
+        let stdlib = create_stdlib();
+
+        // Emoji (should count as 1 grapheme cluster)
+        let string = "🦆".as_bytes().to_vec();
+        let result = stdlib.str_len(&[string]).unwrap();
+        assert_eq!(i32::from_le_bytes([result[0], result[1], result[2], result[3]]), 1);
+
+        // Combining character (should count as 1 grapheme cluster)
+        let string = "ã".as_bytes().to_vec(); // a + combining tilde
+        let result = stdlib.str_len(&[string]).unwrap();
+        assert_eq!(i32::from_le_bytes([result[0], result[1], result[2], result[3]]), 1);
+
+        // Mixed ASCII and emoji
+        let string = "hello🦆world".as_bytes().to_vec();
+        let result = stdlib.str_len(&[string]).unwrap();
+        assert_eq!(i32::from_le_bytes([result[0], result[1], result[2], result[3]]), 11);
+
+        // Multiple emojis
+        let string = "🦆🦆🦆".as_bytes().to_vec();
+        let result = stdlib.str_len(&[string]).unwrap();
+        assert_eq!(i32::from_le_bytes([result[0], result[1], result[2], result[3]]), 3);
+    }
+
+    #[test]
+    fn test_atoi_itoa() {
+        let stdlib = create_stdlib();
+
+        // Test itoa
+        let number = 12345i64.to_le_bytes().to_vec();
+        let result = stdlib.itoa(&[number]).unwrap();
+        let string = String::from_utf8(result).unwrap();
+        assert_eq!(string, "12345");
+
+        // Test atoi
+        let string = "12345".as_bytes().to_vec();
+        let result = stdlib.atoi(&[string]).unwrap();
+        let number = i64::from_le_bytes([
+            result[0], result[1], result[2], result[3],
+            result[4], result[5], result[6], result[7],
+        ]);
+        assert_eq!(number, 12345);
+
+        // Test negative number
+        let number = (-12345i64).to_le_bytes().to_vec();
+        let result = stdlib.itoa(&[number]).unwrap();
+        let string = String::from_utf8(result).unwrap();
+        assert_eq!(string, "-12345");
+    }
+
+    #[test]
+    fn test_base64_encode_decode() {
+        let stdlib = create_stdlib();
+
+        let data = b"Hello, World!".to_vec();
+
+        // Encode
+        let encoded = stdlib.base64_encode(&[data.clone()]).unwrap();
+        let encoded_str = String::from_utf8(encoded.clone()).unwrap();
+        assert_eq!(encoded_str, "SGVsbG8sIFdvcmxkIQ==");
+
+        // Decode
+        let decoded = stdlib.base64_decode(&[encoded]).unwrap();
+        assert_eq!(decoded, data);
+    }
+
+    #[test]
+    fn test_json_serialize_deserialize() {
+        let stdlib = create_stdlib();
+
+        let data = "test string".as_bytes().to_vec();
+
+        // Serialize
+        let serialized = stdlib.json_serialize(&[data.clone()]).unwrap();
+        let json_str = String::from_utf8(serialized.clone()).unwrap();
+        assert!(json_str.contains("test string"));
+
+        // Deserialize
+        let deserialized = stdlib.json_deserialize(&[serialized]).unwrap();
+        assert_eq!(deserialized, data);
     }
 }

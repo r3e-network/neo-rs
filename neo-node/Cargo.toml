@@ -25,12 +25,15 @@ tee = ["neo-tee"]
 tee-sgx = ["tee", "neo-tee/sgx-hw"]
 
 [dependencies]
-neo-core = { path = "../neo-core" }
+# Enable full neo-core features for production node (rocksdb, upnp, monitoring)
+neo-core = { path = "../neo-core", features = ["full"] }
 neo-state = { path = "../neo-state" }
 neo-chain = { path = "../neo-chain" }
 neo-mempool = { path = "../neo-mempool" }
 neo-consensus = { path = "../neo-consensus" }
 neo-p2p = { path = "../neo-p2p" }
+neo-crypto = { path = "../neo-crypto" }
+neo-vm = { path = "../neo-vm" }
 
 # TEMPORARILY DISABLED: neo-plugins being refactored
 # neo-plugins = { path = "../neo-plugins" }

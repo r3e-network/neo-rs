@@ -13,9 +13,9 @@ use crate::smart_contract::native::NativeRegistry;
 use crate::smart_contract::trigger_type::TriggerType;
 use crate::smart_contract::ContractParameterType;
 use crate::{IVerifiable, UInt160, UInt256};
+use neo_crypto::Crypto;
 use neo_vm::VMState;
 use neo_vm::{op_code::OpCode, ScriptBuilder};
-use sha2::{Digest, Sha256};
 use std::any::Any;
 use std::sync::Arc;
 
@@ -175,9 +175,7 @@ impl Helper {
 
     /// Computes syscall hash
     fn syscall_hash(name: &str) -> [u8; 4] {
-        let mut hasher = Sha256::new();
-        hasher.update(name.as_bytes());
-        let result = hasher.finalize();
+        let result = Crypto::sha256(name.as_bytes());
         [result[0], result[1], result[2], result[3]]
     }
 
@@ -507,7 +505,7 @@ impl Helper {
 
         // Script must be readable (basic sanity check)
         // Full validation would require parsing all opcodes
-        // For now, just check it's not too short for any meaningful operation
+        // Validate minimum script length for meaningful operations
         true
     }
 }

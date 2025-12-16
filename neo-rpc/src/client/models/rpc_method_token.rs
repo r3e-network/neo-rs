@@ -9,9 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use neo_core::{
-    smart_contract::{method_token::MethodToken, CallFlags},
-};
+use neo_core::smart_contract::{method_token::MethodToken, CallFlags};
 use neo_json::JObject;
 use neo_primitives::UInt160;
 /// RPC method token helper matching C# RpcMethodToken

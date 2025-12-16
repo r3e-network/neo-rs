@@ -33,24 +33,22 @@ tokio = { version = "1.28", features = ["sync", "time", "fs", "io-util", "rt"] }
 async-trait = "0.1"
 rand = "0.8"
 sha2 = "0.10"
-sha3 = "0.10"
+# sha3, blake2 removed - use neo-crypto instead
 ripemd = "0.1"
-blake2 = "0.10"
 bs58 = "0.5"
-secp256k1 = { version = "0.28", features = ["recovery", "global-context"] }
+# secp256k1, ed25519-dalek removed - use neo-crypto instead
 p256 = { version = "0.13", features = ["ecdsa", "sha256"] }
-ed25519-dalek = { version = "2.0", features = ["rand_core"] }
 blst = "0.3"
 once_cell = "1.19"
 tracing = "0.1"
-prometheus = "0.13"
-sysinfo = "0.29"
-reqwest = { version = "0.11", features = ["json", "blocking"] }
-quick-xml = { version = "0.31", features = ["serialize"] }
+prometheus = { version = "0.13", optional = true }
+sysinfo = { version = "0.29", optional = true }
+reqwest = { version = "0.11", features = ["json", "blocking"], optional = true }
+quick-xml = { version = "0.31", features = ["serialize"], optional = true }
 uuid = { version = "1.0", features = ["v4"] }
 base64 = "0.21"
 murmur3 = "0.5"
-rocksdb.workspace = true
+rocksdb = { workspace = true, optional = true }
 url = "2.4"
 bincode = "1.3"
 scrypt = "0.11"
@@ -82,11 +80,22 @@ neo-primitives = { path = "../neo-primitives" }
 neo-crypto = { path = "../neo-crypto" }
 neo-storage = { path = "../neo-storage" }
 xxhash-rust = { version = "0.8.15", features = ["xxh3"] }
+unicode-segmentation = "1.10"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
 tempfile = "3.5"
+# For cryptography tests that need direct secp256k1 access
+secp256k1 = { version = "0.28", features = ["recovery"] }
 
 [features]
-monitoring = []
+default = []
+# RocksDB storage provider - enable for production use
+rocksdb = ["dep:rocksdb"]
+# UPnP network discovery - requires reqwest
+upnp = ["dep:reqwest", "dep:quick-xml"]
+# Monitoring subsystem - requires prometheus, sysinfo, reqwest
+monitoring = ["dep:prometheus", "dep:sysinfo", "dep:reqwest"]
+# All optional features for full functionality
+full = ["rocksdb", "upnp", "monitoring"]
 performance-tests = []

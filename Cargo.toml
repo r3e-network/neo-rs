@@ -44,8 +44,8 @@ members = [
     # "neo-plugins",
 
     # TEE (Trusted Execution Environment) support
-    # TEMPORARILY EXCLUDED: Optional feature, not part of core refactoring
-    # "neo-tee",
+    # Optional feature-gated integration via neo-node (`--features tee`)
+    "neo-tee",
 
     # === Configuration ===
     # Configuration management
@@ -72,13 +72,15 @@ members = [
 
     # Node daemon (standalone RPC server)
     "neo-node",
+
+    # === Integration Tests ===
+    "tests",
 ]
 exclude = [
     "target",
     "data",
     "docs",
     "examples",
-    "tests",
     "neo_csharp",
 ]
 

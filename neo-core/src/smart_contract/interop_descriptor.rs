@@ -3,7 +3,7 @@
 use crate::hardfork::Hardfork;
 use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::interop_parameter_descriptor::InteropParameterDescriptor;
-use sha2::{Digest, Sha256};
+use neo_crypto::Crypto;
 use std::sync::OnceLock;
 
 /// Represents a descriptor of an interoperable service (matches C# InteropDescriptor)
@@ -75,9 +75,7 @@ impl InteropDescriptor {
     pub fn hash(&self) -> u32 {
         *self.hash_cache.get_or_init(|| {
             // Compute SHA256 of ASCII bytes and take first 4 bytes as little-endian u32
-            let mut hasher = Sha256::new();
-            hasher.update(self.name.as_bytes());
-            let result = hasher.finalize();
+            let result = Crypto::sha256(self.name.as_bytes());
             u32::from_le_bytes([result[0], result[1], result[2], result[3]])
         })
     }

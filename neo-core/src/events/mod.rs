@@ -21,13 +21,19 @@ pub enum PluginEvent {
     /// Node is stopping
     NodeStopping,
     /// A block was received
-    BlockReceived { block_hash: String, block_height: u32 },
+    BlockReceived {
+        block_hash: String,
+        block_height: u32,
+    },
     /// A transaction was received
     TransactionReceived { tx_hash: String },
     /// Transaction added to mempool
     MempoolTransactionAdded { tx_hash: String },
     /// Transactions removed from mempool
-    MempoolTransactionRemoved { tx_hashes: Vec<String>, reason: String },
+    MempoolTransactionRemoved {
+        tx_hashes: Vec<String>,
+        reason: String,
+    },
     /// A service was added
     ServiceAdded { service_name: String },
     /// Wallet changed
@@ -39,38 +45,35 @@ impl std::fmt::Debug for PluginEvent {
         match self {
             PluginEvent::NodeStarted { .. } => write!(f, "NodeStarted {{ system: ... }}"),
             PluginEvent::NodeStopping => write!(f, "NodeStopping"),
-            PluginEvent::BlockReceived { block_hash, block_height } => {
-                f.debug_struct("BlockReceived")
-                    .field("block_hash", block_hash)
-                    .field("block_height", block_height)
-                    .finish()
-            }
-            PluginEvent::TransactionReceived { tx_hash } => {
-                f.debug_struct("TransactionReceived")
-                    .field("tx_hash", tx_hash)
-                    .finish()
-            }
-            PluginEvent::MempoolTransactionAdded { tx_hash } => {
-                f.debug_struct("MempoolTransactionAdded")
-                    .field("tx_hash", tx_hash)
-                    .finish()
-            }
-            PluginEvent::MempoolTransactionRemoved { tx_hashes, reason } => {
-                f.debug_struct("MempoolTransactionRemoved")
-                    .field("tx_hashes", tx_hashes)
-                    .field("reason", reason)
-                    .finish()
-            }
-            PluginEvent::ServiceAdded { service_name } => {
-                f.debug_struct("ServiceAdded")
-                    .field("service_name", service_name)
-                    .finish()
-            }
-            PluginEvent::WalletChanged { wallet_name } => {
-                f.debug_struct("WalletChanged")
-                    .field("wallet_name", wallet_name)
-                    .finish()
-            }
+            PluginEvent::BlockReceived {
+                block_hash,
+                block_height,
+            } => f
+                .debug_struct("BlockReceived")
+                .field("block_hash", block_hash)
+                .field("block_height", block_height)
+                .finish(),
+            PluginEvent::TransactionReceived { tx_hash } => f
+                .debug_struct("TransactionReceived")
+                .field("tx_hash", tx_hash)
+                .finish(),
+            PluginEvent::MempoolTransactionAdded { tx_hash } => f
+                .debug_struct("MempoolTransactionAdded")
+                .field("tx_hash", tx_hash)
+                .finish(),
+            PluginEvent::MempoolTransactionRemoved { tx_hashes, reason } => f
+                .debug_struct("MempoolTransactionRemoved")
+                .field("tx_hashes", tx_hashes)
+                .field("reason", reason)
+                .finish(),
+            PluginEvent::ServiceAdded { service_name } => f
+                .debug_struct("ServiceAdded")
+                .field("service_name", service_name)
+                .finish(),
+            PluginEvent::WalletChanged { wallet_name } => f
+                .debug_struct("WalletChanged")
+                .field("wallet_name", wallet_name)
+                .finish(),
         }
     }
 }
@@ -80,7 +83,10 @@ impl std::fmt::Display for PluginEvent {
         match self {
             PluginEvent::NodeStarted { .. } => write!(f, "NodeStarted"),
             PluginEvent::NodeStopping => write!(f, "NodeStopping"),
-            PluginEvent::BlockReceived { block_hash, block_height } => {
+            PluginEvent::BlockReceived {
+                block_hash,
+                block_height,
+            } => {
                 write!(f, "BlockReceived({}, height={})", block_hash, block_height)
             }
             PluginEvent::TransactionReceived { tx_hash } => {

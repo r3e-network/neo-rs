@@ -78,17 +78,23 @@ pub enum RelayError {
 impl RelayError {
     /// Create a validation failed error.
     pub fn validation_failed<S: Into<String>>(message: S) -> Self {
-        Self::ValidationFailed { message: message.into() }
+        Self::ValidationFailed {
+            message: message.into(),
+        }
     }
 
     /// Create an already exists error.
     pub fn already_exists(hash: &UInt256) -> Self {
-        Self::AlreadyExists { hash: format!("{:?}", hash) }
+        Self::AlreadyExists {
+            hash: format!("{:?}", hash),
+        }
     }
 
     /// Create a transaction invalid error.
     pub fn transaction_invalid<S: Into<String>>(message: S) -> Self {
-        Self::TransactionInvalid { message: message.into() }
+        Self::TransactionInvalid {
+            message: message.into(),
+        }
     }
 
     /// Create a mempool full error.
@@ -152,7 +158,9 @@ impl SendError {
 
     /// Create a serialization failed error.
     pub fn serialization_failed<S: Into<String>>(message: S) -> Self {
-        Self::SerializationFailed { message: message.into() }
+        Self::SerializationFailed {
+            message: message.into(),
+        }
     }
 }
 
@@ -213,7 +221,14 @@ impl PeerInfo {
         start_height: u32,
         user_agent: String,
     ) -> Self {
-        Self { id, address, version, connected_at, start_height, user_agent }
+        Self {
+            id,
+            address,
+            version,
+            connected_at,
+            start_height,
+            user_agent,
+        }
     }
 }
 
@@ -413,7 +428,10 @@ mod tests {
 
     impl MockMessage {
         fn new(command: &str, payload: Vec<u8>) -> Self {
-            Self { command: command.to_string(), payload }
+            Self {
+                command: command.to_string(),
+                payload,
+            }
         }
     }
 
@@ -438,11 +456,21 @@ mod tests {
     }
 
     impl ITransaction for MockTransaction {
-        fn hash(&self) -> UInt256 { self.hash }
-        fn sender(&self) -> Option<UInt160> { self.sender }
-        fn system_fee(&self) -> i64 { self.system_fee }
-        fn network_fee(&self) -> i64 { self.network_fee }
-        fn valid_until_block(&self) -> u32 { self.valid_until }
+        fn hash(&self) -> UInt256 {
+            self.hash
+        }
+        fn sender(&self) -> Option<UInt160> {
+            self.sender
+        }
+        fn system_fee(&self) -> i64 {
+            self.system_fee
+        }
+        fn network_fee(&self) -> i64 {
+            self.network_fee
+        }
+        fn valid_until_block(&self) -> u32 {
+            self.valid_until
+        }
     }
 
     /// Mock block for testing.
@@ -474,12 +502,24 @@ mod tests {
     impl IBlock for MockBlock {
         type Transaction = MockTransaction;
 
-        fn hash(&self) -> UInt256 { self.hash }
-        fn index(&self) -> u32 { self.index }
-        fn timestamp(&self) -> u64 { self.timestamp }
-        fn prev_hash(&self) -> UInt256 { self.prev_hash }
-        fn merkle_root(&self) -> UInt256 { self.merkle_root }
-        fn transaction_count(&self) -> usize { self.tx_count }
+        fn hash(&self) -> UInt256 {
+            self.hash
+        }
+        fn index(&self) -> u32 {
+            self.index
+        }
+        fn timestamp(&self) -> u64 {
+            self.timestamp
+        }
+        fn prev_hash(&self) -> UInt256 {
+            self.prev_hash
+        }
+        fn merkle_root(&self) -> UInt256 {
+            self.merkle_root
+        }
+        fn transaction_count(&self) -> usize {
+            self.tx_count
+        }
     }
 
     /// Mock header for testing.
@@ -493,11 +533,21 @@ mod tests {
     }
 
     impl IHeader for MockHeader {
-        fn hash(&self) -> UInt256 { self.hash }
-        fn index(&self) -> u32 { self.index }
-        fn timestamp(&self) -> u64 { self.timestamp }
-        fn prev_hash(&self) -> UInt256 { self.prev_hash }
-        fn merkle_root(&self) -> UInt256 { self.merkle_root }
+        fn hash(&self) -> UInt256 {
+            self.hash
+        }
+        fn index(&self) -> u32 {
+            self.index
+        }
+        fn timestamp(&self) -> u64 {
+            self.timestamp
+        }
+        fn prev_hash(&self) -> UInt256 {
+            self.prev_hash
+        }
+        fn merkle_root(&self) -> UInt256 {
+            self.merkle_root
+        }
     }
 
     /// Mock blockchain provider for testing.
@@ -521,18 +571,20 @@ mod tests {
         type Header = MockHeader;
         type Transaction = MockTransaction;
 
-        fn height(&self) -> u32 { self.height }
+        fn height(&self) -> u32 {
+            self.height
+        }
 
         fn get_block(&self, height: u32) -> Option<Self::Block> {
             self.blocks.get(&height).cloned()
         }
 
         fn get_block_by_hash(&self, _hash: &UInt256) -> Option<Self::Block> {
-            None // Simplified
+            None // Mock implementation - hash lookup not needed for tests
         }
 
         fn get_header(&self, _hash: &UInt256) -> Option<Self::Header> {
-            None // Simplified
+            None // Mock implementation - hash lookup not needed for tests
         }
 
         fn get_header_by_height(&self, height: u32) -> Option<Self::Header> {
@@ -553,10 +605,18 @@ mod tests {
             Ok(())
         }
 
-        fn contains_block(&self, _hash: &UInt256) -> bool { false }
-        fn contains_transaction(&self, _hash: &UInt256) -> bool { false }
-        fn current_header_hash(&self) -> UInt256 { UInt256::zero() }
-        fn get_block_hash(&self, _height: u32) -> Option<UInt256> { None }
+        fn contains_block(&self, _hash: &UInt256) -> bool {
+            false
+        }
+        fn contains_transaction(&self, _hash: &UInt256) -> bool {
+            false
+        }
+        fn current_header_hash(&self) -> UInt256 {
+            UInt256::zero()
+        }
+        fn get_block_hash(&self, _height: u32) -> Option<UInt256> {
+            None
+        }
     }
 
     /// Mock peer registry for testing.
@@ -578,7 +638,8 @@ mod tests {
         }
 
         fn broadcast_call_count(&self) -> usize {
-            self.broadcast_count.load(std::sync::atomic::Ordering::SeqCst)
+            self.broadcast_count
+                .load(std::sync::atomic::Ordering::SeqCst)
         }
     }
 
@@ -588,11 +649,13 @@ mod tests {
         }
 
         fn broadcast(&self, _message: &dyn IMessage) {
-            self.broadcast_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.broadcast_count
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         }
 
         fn broadcast_except(&self, _message: &dyn IMessage, _except: &[PeerId]) {
-            self.broadcast_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.broadcast_count
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         }
 
         fn send_to(&self, peer_id: PeerId, _message: &dyn IMessage) -> SendResult<()> {
@@ -608,7 +671,9 @@ mod tests {
         }
 
         fn get_peer(&self, peer_id: PeerId) -> Option<PeerInfo> {
-            self.peers.lock().unwrap()
+            self.peers
+                .lock()
+                .unwrap()
                 .iter()
                 .find(|p| p.id == peer_id)
                 .cloned()
@@ -907,27 +972,53 @@ mod tests {
 
     #[test]
     fn test_relay_error_all_variants_eq() {
-        let err1 = RelayError::ValidationFailed { message: "test".to_string() };
-        let err2 = RelayError::ValidationFailed { message: "test".to_string() };
-        let err3 = RelayError::ValidationFailed { message: "other".to_string() };
+        let err1 = RelayError::ValidationFailed {
+            message: "test".to_string(),
+        };
+        let err2 = RelayError::ValidationFailed {
+            message: "test".to_string(),
+        };
+        let err3 = RelayError::ValidationFailed {
+            message: "other".to_string(),
+        };
         assert_eq!(err1, err2);
         assert_ne!(err1, err3);
 
-        let err4 = RelayError::AlreadyExists { hash: "0x123".to_string() };
-        let err5 = RelayError::AlreadyExists { hash: "0x123".to_string() };
+        let err4 = RelayError::AlreadyExists {
+            hash: "0x123".to_string(),
+        };
+        let err5 = RelayError::AlreadyExists {
+            hash: "0x123".to_string(),
+        };
         assert_eq!(err4, err5);
         assert_ne!(err1, err4);
 
-        let err6 = RelayError::TransactionInvalid { message: "bad tx".to_string() };
-        let err7 = RelayError::TransactionInvalid { message: "bad tx".to_string() };
+        let err6 = RelayError::TransactionInvalid {
+            message: "bad tx".to_string(),
+        };
+        let err7 = RelayError::TransactionInvalid {
+            message: "bad tx".to_string(),
+        };
         assert_eq!(err6, err7);
 
-        let err8 = RelayError::MempoolFull { current: 1000, max: 1000 };
-        let err9 = RelayError::MempoolFull { current: 1000, max: 1000 };
+        let err8 = RelayError::MempoolFull {
+            current: 1000,
+            max: 1000,
+        };
+        let err9 = RelayError::MempoolFull {
+            current: 1000,
+            max: 1000,
+        };
         assert_eq!(err8, err9);
 
-        let err10 = RelayError::InvalidHeight { expected: 100, got: 50 };
-        let err11 = RelayError::InvalidHeight { expected: 100, got: 50 };
+        let err10 = RelayError::InvalidHeight {
+            expected: 100,
+            got: 50,
+        };
+        let err11 = RelayError::InvalidHeight {
+            expected: 100,
+            got: 50,
+        };
         assert_eq!(err10, err11);
     }
 
@@ -948,8 +1039,12 @@ mod tests {
         let err7 = SendError::QueueFull { id: 10 };
         assert_eq!(err6, err7);
 
-        let err8 = SendError::SerializationFailed { message: "bad".to_string() };
-        let err9 = SendError::SerializationFailed { message: "bad".to_string() };
+        let err8 = SendError::SerializationFailed {
+            message: "bad".to_string(),
+        };
+        let err9 = SendError::SerializationFailed {
+            message: "bad".to_string(),
+        };
         assert_eq!(err8, err9);
     }
 
@@ -1138,7 +1233,7 @@ mod tests {
     fn test_peer_id_copy_clone() {
         let id1 = PeerId::new(42);
         let id2 = id1; // Copy
-        let id3 = id1.clone(); // Clone
+        let id3 = id1;
         assert_eq!(id1, id2);
         assert_eq!(id1, id3);
     }

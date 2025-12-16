@@ -80,12 +80,12 @@ impl NeoToken {
 }
 
 // Include implementation files
-mod methods;
-mod committee;
 mod bonus;
-mod nep17;
+mod committee;
 mod governance;
+mod methods;
 mod native_impl;
+mod nep17;
 mod types;
 
 // Re-export types for sibling modules

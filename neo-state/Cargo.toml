@@ -30,6 +30,7 @@ tracing = { workspace = true }
 # Internal dependencies (foundation layer only)
 neo-primitives = { path = "../neo-primitives" }
 neo-storage = { path = "../neo-storage" }
+neo-crypto = { path = "../neo-crypto" }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros"] }

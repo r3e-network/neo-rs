@@ -214,10 +214,7 @@ impl TransactionManager {
         self.context.add_contract(contract);
     }
 
-    fn get_contract(
-        &self,
-        script_hash: &UInt160,
-    ) -> Result<Contract, Box<dyn std::error::Error>> {
+    fn get_contract(&self, script_hash: &UInt160) -> Result<Contract, Box<dyn std::error::Error>> {
         // Minimal placeholder to keep signing flows from failing outright when a contract
         // lookup is not available in this lightweight RPC client.
         Ok(Contract::create_with_hash(*script_hash, Vec::new()))

@@ -24,9 +24,9 @@ pub struct FeePolicy {
 impl Default for FeePolicy {
     fn default() -> Self {
         Self {
-            min_fee_per_byte: 1000,         // 0.00001 GAS per byte
-            max_fee_per_byte: 10_000_000,   // 0.1 GAS per byte
-            low_priority_threshold: 100_000, // 0.001 GAS
+            min_fee_per_byte: 1000,              // 0.00001 GAS per byte
+            max_fee_per_byte: 10_000_000,        // 0.1 GAS per byte
+            low_priority_threshold: 100_000,     // 0.001 GAS
             high_priority_threshold: 10_000_000, // 0.1 GAS
             congestion_factor: 1.0,
         }
@@ -51,7 +51,7 @@ impl FeePolicy {
             1000
         } else {
             let range = self.max_fee_per_byte - self.min_fee_per_byte;
-            ((fee_per_byte - self.min_fee_per_byte) * 1000 / range) as i64
+            (fee_per_byte - self.min_fee_per_byte) * 1000 / range
         };
 
         // Apply congestion factor

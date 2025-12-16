@@ -14,6 +14,9 @@ pub struct ApplicationExecuted {
 }
 
 impl ApplicationExecuted {
+    /// Creates from an ApplicationEngine after execution.
+    /// Reserved for block execution pipeline integration.
+    #[allow(dead_code)]
     pub(crate) fn new(engine: &mut ApplicationEngine) -> Self {
         let transaction = engine
             .script_container()

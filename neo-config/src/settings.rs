@@ -1,6 +1,8 @@
 //! Main settings for Neo node configuration
 
-use crate::{ConfigError, ConfigResult, GenesisConfig, NetworkConfig, NetworkType, ProtocolSettings};
+use crate::{
+    ConfigError, ConfigResult, GenesisConfig, NetworkConfig, NetworkType, ProtocolSettings,
+};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -404,10 +406,8 @@ impl Settings {
     }
 
     /// Load settings from a TOML string
-    pub fn from_str(content: &str) -> ConfigResult<Self> {
-        let settings: Self = toml::from_str(content)?;
-        settings.validate()?;
-        Ok(settings)
+    pub fn from_toml_str(content: &str) -> ConfigResult<Self> {
+        content.parse()
     }
 
     /// Save settings to a TOML file
@@ -426,12 +426,16 @@ impl Settings {
     pub fn validate(&self) -> ConfigResult<()> {
         // Validate node settings
         if self.node.p2p_port == 0 {
-            return Err(ConfigError::InvalidValue("P2P port cannot be 0".to_string()));
+            return Err(ConfigError::InvalidValue(
+                "P2P port cannot be 0".to_string(),
+            ));
         }
 
         // Validate RPC settings
         if self.rpc.enabled && self.rpc.port == 0 {
-            return Err(ConfigError::InvalidValue("RPC port cannot be 0".to_string()));
+            return Err(ConfigError::InvalidValue(
+                "RPC port cannot be 0".to_string(),
+            ));
         }
 
         // Validate consensus settings
@@ -472,6 +476,16 @@ impl Settings {
     }
 }
 
+impl std::str::FromStr for Settings {
+    type Err = ConfigError;
+
+    fn from_str(content: &str) -> Result<Self, Self::Err> {
+        let settings: Self = toml::from_str(content)?;
+        settings.validate()?;
+        Ok(settings)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -494,7 +508,7 @@ mod tests {
     fn test_toml_roundtrip() {
         let settings = Settings::default();
         let toml = settings.to_toml().unwrap();
-        let parsed = Settings::from_str(&toml).unwrap();
+        let parsed = Settings::from_toml_str(&toml).unwrap();
         assert_eq!(settings.node.p2p_port, parsed.node.p2p_port);
     }
 

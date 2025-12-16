@@ -216,22 +216,25 @@ impl RpcServerState {
         Ok(Value::Object(response))
     }
 
-    fn check_root_hash(state_store: &Arc<StateStore>, root_hash: UInt256) -> Result<(), RpcException> {
+    fn check_root_hash(
+        state_store: &Arc<StateStore>,
+        root_hash: UInt256,
+    ) -> Result<(), RpcException> {
         if state_store.full_state() {
             return Ok(());
         }
 
         let current = state_store.current_local_root_hash();
         if current != Some(root_hash) {
-            return Err(RpcException::from(
-                RpcError::unsupported_state().with_data(format!(
+            return Err(RpcException::from(RpcError::unsupported_state().with_data(
+                format!(
                     "fullState:false,current:{},rootHash:{}",
                     current
                         .map(|h| h.to_string())
                         .unwrap_or_else(|| "<none>".to_string()),
                     root_hash
-                )),
-            ));
+                ),
+            )));
         }
         Ok(())
     }
@@ -354,8 +357,8 @@ impl RpcServerState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_core::state_service::state_store::StateServiceSettings;
     use neo_core::state_service::state_store::MemoryStateStoreBackend;
+    use neo_core::state_service::state_store::StateServiceSettings;
     use neo_core::{NeoSystem, ProtocolSettings};
 
     #[test]

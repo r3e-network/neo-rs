@@ -40,6 +40,7 @@ pub use server::{RpcServer, RpcServerConfig, RpcServerSettings};
 
 #[cfg(feature = "client")]
 pub use client::{
-    ClientRpcError, ContractClient, Nep17Api, PolicyApi, RpcClient, RpcClientBuilder, RpcClientHooks,
-    RpcRequestOutcome, RpcUtility, StateApi, TransactionManager, TransactionManagerFactory, WalletApi,
+    ClientRpcError, ContractClient, Nep17Api, PolicyApi, RpcClient, RpcClientBuilder,
+    RpcClientHooks, RpcRequestOutcome, RpcUtility, StateApi, TransactionManager,
+    TransactionManagerFactory, WalletApi,
 };

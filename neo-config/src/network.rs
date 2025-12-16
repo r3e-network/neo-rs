@@ -54,14 +54,17 @@ impl NetworkType {
             NetworkType::Private => vec![],
         }
     }
+}
 
-    /// Parse from string
-    pub fn from_str(s: &str) -> Option<Self> {
+impl std::str::FromStr for NetworkType {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "mainnet" | "main" => Some(NetworkType::MainNet),
-            "testnet" | "test" => Some(NetworkType::TestNet),
-            "private" | "local" => Some(NetworkType::Private),
-            _ => None,
+            "mainnet" | "main" => Ok(NetworkType::MainNet),
+            "testnet" | "test" => Ok(NetworkType::TestNet),
+            "private" | "local" => Ok(NetworkType::Private),
+            _ => Err(()),
         }
     }
 }
@@ -143,7 +146,8 @@ impl NetworkConfig {
 
     /// Get the effective address version
     pub fn effective_address_version(&self) -> u8 {
-        self.address_version.unwrap_or_else(|| self.network_type.address_version())
+        self.address_version
+            .unwrap_or_else(|| self.network_type.address_version())
     }
 }
 
@@ -159,10 +163,19 @@ mod tests {
 
     #[test]
     fn test_network_from_str() {
-        assert_eq!(NetworkType::from_str("mainnet"), Some(NetworkType::MainNet));
-        assert_eq!(NetworkType::from_str("TESTNET"), Some(NetworkType::TestNet));
-        assert_eq!(NetworkType::from_str("private"), Some(NetworkType::Private));
-        assert_eq!(NetworkType::from_str("unknown"), None);
+        assert_eq!(
+            "mainnet".parse::<NetworkType>().ok(),
+            Some(NetworkType::MainNet)
+        );
+        assert_eq!(
+            "TESTNET".parse::<NetworkType>().ok(),
+            Some(NetworkType::TestNet)
+        );
+        assert_eq!(
+            "private".parse::<NetworkType>().ok(),
+            Some(NetworkType::Private)
+        );
+        assert!("unknown".parse::<NetworkType>().is_err());
     }
 
     #[test]

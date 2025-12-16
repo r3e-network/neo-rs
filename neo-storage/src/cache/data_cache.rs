@@ -72,7 +72,10 @@ impl Clone for DataCache {
     fn clone(&self) -> Self {
         Self {
             dictionary: Arc::new(RwLock::new(self.dictionary.read().clone())),
-            change_set: self.change_set.as_ref().map(|cs| Arc::new(RwLock::new(cs.read().clone()))),
+            change_set: self
+                .change_set
+                .as_ref()
+                .map(|cs| Arc::new(RwLock::new(cs.read().clone()))),
             read_only: self.read_only,
             store_get: self.store_get.clone(),
             store_find: self.store_find.clone(),
@@ -302,7 +305,11 @@ impl DataCache {
 
     /// Returns the number of modified items.
     pub fn modified_count(&self) -> usize {
-        self.dictionary.read().values().filter(|t| t.is_modified()).count()
+        self.dictionary
+            .read()
+            .values()
+            .filter(|t| t.is_modified())
+            .count()
     }
 
     /// Finds items matching a prefix in the cache and backing store.
@@ -354,7 +361,10 @@ impl std::fmt::Debug for DataCache {
         f.debug_struct("DataCache")
             .field("read_only", &self.read_only)
             .field("entries", &dict.len())
-            .field("modified", &dict.values().filter(|t| t.is_modified()).count())
+            .field(
+                "modified",
+                &dict.values().filter(|t| t.is_modified()).count(),
+            )
             .finish()
     }
 }
@@ -603,7 +613,10 @@ mod tests {
         assert!(cache.is_empty());
         assert_eq!(cache.len(), 0);
 
-        cache.add(StorageKey::new(-1, vec![0x01]), StorageItem::new(vec![0xAA]));
+        cache.add(
+            StorageKey::new(-1, vec![0x01]),
+            StorageItem::new(vec![0xAA]),
+        );
         assert!(!cache.is_empty());
         assert_eq!(cache.len(), 1);
     }
@@ -611,8 +624,14 @@ mod tests {
     #[test]
     fn test_clear() {
         let cache = DataCache::new(false);
-        cache.add(StorageKey::new(-1, vec![0x01]), StorageItem::new(vec![0xAA]));
-        cache.add(StorageKey::new(-1, vec![0x02]), StorageItem::new(vec![0xBB]));
+        cache.add(
+            StorageKey::new(-1, vec![0x01]),
+            StorageItem::new(vec![0xAA]),
+        );
+        cache.add(
+            StorageKey::new(-1, vec![0x02]),
+            StorageItem::new(vec![0xBB]),
+        );
 
         cache.clear();
         assert!(cache.is_empty());
@@ -636,7 +655,10 @@ mod tests {
     #[test]
     fn test_debug() {
         let cache = DataCache::new(false);
-        cache.add(StorageKey::new(-1, vec![0x01]), StorageItem::new(vec![0xAA]));
+        cache.add(
+            StorageKey::new(-1, vec![0x01]),
+            StorageItem::new(vec![0xAA]),
+        );
 
         let debug = format!("{:?}", cache);
         assert!(debug.contains("DataCache"));
@@ -648,9 +670,18 @@ mod tests {
     #[test]
     fn test_find_in_cache() {
         let cache = DataCache::new(false);
-        cache.add(StorageKey::new(-1, vec![0x01, 0xAA]), StorageItem::new(vec![0x11]));
-        cache.add(StorageKey::new(-1, vec![0x01, 0xBB]), StorageItem::new(vec![0x22]));
-        cache.add(StorageKey::new(-1, vec![0x02, 0xAA]), StorageItem::new(vec![0x33]));
+        cache.add(
+            StorageKey::new(-1, vec![0x01, 0xAA]),
+            StorageItem::new(vec![0x11]),
+        );
+        cache.add(
+            StorageKey::new(-1, vec![0x01, 0xBB]),
+            StorageItem::new(vec![0x22]),
+        );
+        cache.add(
+            StorageKey::new(-1, vec![0x02, 0xAA]),
+            StorageItem::new(vec![0x33]),
+        );
 
         let results = cache.find(None, SeekDirection::Forward);
         assert_eq!(results.len(), 3);

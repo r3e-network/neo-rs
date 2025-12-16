@@ -3,7 +3,10 @@
 use crate::{ChangeViewReason, ConsensusError, ConsensusResult};
 use neo_crypto::ECPoint;
 use neo_primitives::{UInt160, UInt256};
-use std::collections::HashMap;
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
+use std::fs;
+use std::path::Path;
 
 /// Block time in milliseconds (15 seconds for Neo N3)
 pub const BLOCK_TIME_MS: u64 = 15_000;
@@ -36,6 +39,32 @@ pub struct ValidatorInfo {
     pub public_key: ECPoint,
     /// Script hash (account)
     pub script_hash: UInt160,
+}
+
+/// Persisted consensus state for crash recovery
+/// Contains only the essential state needed to resume consensus after a restart
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PersistedConsensusState {
+    /// Current block index being proposed
+    block_index: u32,
+    /// Current view number (increments on view change)
+    view_number: u8,
+    /// Proposed block hash (from PrepareRequest)
+    proposed_block_hash: Option<UInt256>,
+    /// Proposed block timestamp
+    proposed_timestamp: u64,
+    /// Proposed transaction hashes
+    proposed_tx_hashes: Vec<UInt256>,
+    /// Nonce for the block
+    nonce: u64,
+    /// PrepareRequest received from primary
+    prepare_request_received: bool,
+    /// PrepareResponse signatures (validator_index -> signature)
+    prepare_responses: HashMap<u8, Vec<u8>>,
+    /// Commit signatures (validator_index -> signature)
+    commits: HashMap<u8, Vec<u8>>,
+    /// ChangeView requests (validator_index -> (new_view, reason))
+    change_views: HashMap<u8, (u8, ChangeViewReason)>,
 }
 
 /// Consensus context holding all state for the current consensus round
@@ -79,6 +108,12 @@ pub struct ConsensusContext {
     // Recovery
     /// Last change view timestamp per validator
     pub last_change_view_timestamps: HashMap<u8, u64>,
+    /// Last seen message block index per validator (for tracking failed nodes)
+    pub last_seen_messages: HashMap<u8, u32>,
+
+    // Message deduplication (replay attack prevention)
+    /// Cache of seen message hashes to prevent duplicate processing
+    seen_message_hashes: HashSet<UInt256>,
 }
 
 impl ConsensusContext {
@@ -101,6 +136,8 @@ impl ConsensusContext {
             commits: HashMap::new(),
             change_views: HashMap::new(),
             last_change_view_timestamps: HashMap::new(),
+            last_seen_messages: HashMap::new(),
+            seen_message_hashes: HashSet::new(),
         }
     }
 
@@ -141,7 +178,8 @@ impl ConsensusContext {
     /// Returns true if we have enough prepare responses (M signatures)
     pub fn has_enough_prepare_responses(&self) -> bool {
         // Count: primary's implicit response + explicit responses
-        let count = if self.prepare_request_received { 1 } else { 0 } + self.prepare_responses.len();
+        let count =
+            if self.prepare_request_received { 1 } else { 0 } + self.prepare_responses.len();
         count >= self.m()
     }
 
@@ -204,10 +242,18 @@ impl ConsensusContext {
         self.commits.clear();
         self.change_views.clear();
         self.last_change_view_timestamps.clear();
+        self.last_seen_messages.clear();
+
+        // Clear message hash cache to prevent memory growth
+        self.seen_message_hashes.clear();
     }
 
     /// Adds a prepare response signature
-    pub fn add_prepare_response(&mut self, validator_index: u8, signature: Vec<u8>) -> ConsensusResult<()> {
+    pub fn add_prepare_response(
+        &mut self,
+        validator_index: u8,
+        signature: Vec<u8>,
+    ) -> ConsensusResult<()> {
         if validator_index as usize >= self.validator_count() {
             return Err(ConsensusError::InvalidValidatorIndex(validator_index));
         }
@@ -235,8 +281,10 @@ impl ConsensusContext {
         if validator_index as usize >= self.validator_count() {
             return Err(ConsensusError::InvalidValidatorIndex(validator_index));
         }
-        self.change_views.insert(validator_index, (new_view, reason));
-        self.last_change_view_timestamps.insert(validator_index, timestamp);
+        self.change_views
+            .insert(validator_index, (new_view, reason));
+        self.last_change_view_timestamps
+            .insert(validator_index, timestamp);
         Ok(())
     }
 
@@ -257,6 +305,198 @@ impl ConsensusContext {
             .iter()
             .map(|(idx, sig)| (*idx, sig.clone()))
             .collect()
+    }
+
+    /// Updates the last seen message for a validator
+    pub fn update_last_seen_message(&mut self, validator_index: u8, block_index: u32) {
+        self.last_seen_messages.insert(validator_index, block_index);
+    }
+
+    /// Checks if a message hash has been seen before (replay attack prevention)
+    ///
+    /// This method is critical for preventing replay attacks where an attacker
+    /// could retransmit valid consensus messages to disrupt the protocol.
+    ///
+    /// # Arguments
+    /// * `hash` - The message hash to check
+    ///
+    /// # Returns
+    /// * `true` if the message has been seen before
+    /// * `false` if this is a new message
+    pub fn has_seen_message(&self, hash: &UInt256) -> bool {
+        self.seen_message_hashes.contains(hash)
+    }
+
+    /// Marks a message hash as seen (replay attack prevention)
+    ///
+    /// This method adds the message hash to the cache to prevent duplicate processing.
+    /// The cache is automatically cleared when starting a new block via `reset_for_new_block()`.
+    ///
+    /// # Arguments
+    /// * `hash` - The message hash to mark as seen
+    pub fn mark_message_seen(&mut self, hash: &UInt256) {
+        self.seen_message_hashes.insert(*hash);
+    }
+
+    /// Returns the number of validators that have committed (sent Commit messages)
+    pub fn count_committed(&self) -> usize {
+        self.commits.len()
+    }
+
+    /// Returns the number of validators that have failed or are lost
+    ///
+    /// A validator is considered failed if:
+    /// - We have no record of messages from them (not in last_seen_messages), OR
+    /// - Their last seen message was for an old block (< current block_index - 1)
+    ///
+    /// This matches C# DBFTPlugin's CountFailed logic:
+    /// ```csharp
+    /// Validators.Count(p => !LastSeenMessage.TryGetValue(p, out var value) || value < (Block.Index - 1))
+    /// ```
+    pub fn count_failed(&self) -> usize {
+        if self.last_seen_messages.is_empty() {
+            return 0;
+        }
+
+        let threshold = self.block_index.saturating_sub(1);
+        self.validators
+            .iter()
+            .filter(|v| {
+                match self.last_seen_messages.get(&v.index) {
+                    None => true, // No message seen from this validator
+                    Some(&last_block) => last_block < threshold, // Last message was too old
+                }
+            })
+            .count()
+    }
+
+    /// Returns true if more than F nodes have committed or are lost
+    ///
+    /// This is a critical check for deciding between recovery and view change.
+    /// When (CountCommitted + CountFailed) > F, it means:
+    /// - Either enough nodes have already committed, OR
+    /// - Enough nodes have failed that we need recovery to sync state
+    ///
+    /// In this case, we should request recovery instead of change view to avoid
+    /// splitting the network across different views.
+    ///
+    /// Matches C# DBFTPlugin's MoreThanFNodesCommittedOrLost:
+    /// ```csharp
+    /// public bool MoreThanFNodesCommittedOrLost => (CountCommitted + CountFailed) > F;
+    /// ```
+    pub fn more_than_f_nodes_committed_or_lost(&self) -> bool {
+        (self.count_committed() + self.count_failed()) > self.f()
+    }
+
+    /// Saves the consensus state to disk for crash recovery
+    ///
+    /// Uses atomic write (write to temp file + rename) to prevent corruption.
+    /// Only saves the essential state needed to resume consensus after a restart.
+    ///
+    /// # Arguments
+    /// * `path` - Path to save the state file
+    ///
+    /// # Returns
+    /// * `Ok(())` on success
+    /// * `Err(ConsensusError)` on IO or serialization failure
+    pub fn save(&self, path: &Path) -> ConsensusResult<()> {
+        // Create the persisted state from current context
+        let state = PersistedConsensusState {
+            block_index: self.block_index,
+            view_number: self.view_number,
+            proposed_block_hash: self.proposed_block_hash,
+            proposed_timestamp: self.proposed_timestamp,
+            proposed_tx_hashes: self.proposed_tx_hashes.clone(),
+            nonce: self.nonce,
+            prepare_request_received: self.prepare_request_received,
+            prepare_responses: self.prepare_responses.clone(),
+            commits: self.commits.clone(),
+            change_views: self.change_views.clone(),
+        };
+
+        // Serialize to binary using bincode
+        let encoded = bincode::serialize(&state)
+            .map_err(|e| ConsensusError::SerializationError(e.to_string()))?;
+
+        // Atomic write: write to temp file first
+        let temp_path = path.with_extension("tmp");
+        fs::write(&temp_path, &encoded)?;
+
+        // Rename to final path (atomic on POSIX systems)
+        fs::rename(&temp_path, path)?;
+
+        tracing::debug!(
+            "Saved consensus state: block={}, view={}, size={} bytes",
+            self.block_index,
+            self.view_number,
+            encoded.len()
+        );
+
+        Ok(())
+    }
+
+    /// Loads the consensus state from disk for crash recovery
+    ///
+    /// This method loads only the persisted state. The caller must provide:
+    /// - `validators`: Current validator list (from chain state)
+    /// - `my_index`: This node's validator index (from config)
+    ///
+    /// The loaded context will have:
+    /// - `state`: Set to `Initial` (caller should update based on role)
+    /// - `view_start_time`: Set to 0 (caller should update to current time)
+    /// - `expected_block_time`: Set to 0 (caller should update)
+    /// - `last_change_view_timestamps`: Empty (not persisted)
+    ///
+    /// # Arguments
+    /// * `path` - Path to load the state file from
+    /// * `validators` - Current validator list
+    /// * `my_index` - This node's validator index
+    ///
+    /// # Returns
+    /// * `Ok(ConsensusContext)` on success
+    /// * `Err(ConsensusError)` on IO or deserialization failure
+    pub fn load(
+        path: &Path,
+        validators: Vec<ValidatorInfo>,
+        my_index: Option<u8>,
+    ) -> ConsensusResult<Self> {
+        // Read the file
+        let encoded = fs::read(path)?;
+
+        // Deserialize from binary
+        let state: PersistedConsensusState = bincode::deserialize(&encoded)
+            .map_err(|e| ConsensusError::SerializationError(e.to_string()))?;
+
+        tracing::info!(
+            "Loaded consensus state: block={}, view={}, prepare_responses={}, commits={}, change_views={}",
+            state.block_index,
+            state.view_number,
+            state.prepare_responses.len(),
+            state.commits.len(),
+            state.change_views.len()
+        );
+
+        // Reconstruct the full context
+        Ok(Self {
+            block_index: state.block_index,
+            view_number: state.view_number,
+            validators,
+            my_index,
+            state: ConsensusState::Initial, // Caller should update based on role
+            view_start_time: 0,              // Caller should update to current time
+            expected_block_time: 0,          // Caller should update
+            proposed_block_hash: state.proposed_block_hash,
+            proposed_timestamp: state.proposed_timestamp,
+            proposed_tx_hashes: state.proposed_tx_hashes,
+            nonce: state.nonce,
+            prepare_request_received: state.prepare_request_received,
+            prepare_responses: state.prepare_responses,
+            commits: state.commits,
+            change_views: state.change_views,
+            last_change_view_timestamps: HashMap::new(), // Not persisted
+            last_seen_messages: HashMap::new(),          // Not persisted
+            seen_message_hashes: HashSet::new(),         // Not persisted (cleared on restart)
+        })
     }
 }
 
@@ -381,5 +621,419 @@ mod tests {
         // View 4+: capped at 240s
         ctx.view_number = 10;
         assert_eq!(ctx.get_timeout(), BLOCK_TIME_MS * 16);
+    }
+
+    #[test]
+    fn test_save_and_load_roundtrip() {
+        use std::env;
+
+        // Create a test context with some state
+        let validators = create_test_validators(7);
+        let mut ctx = ConsensusContext::new(100, validators.clone(), Some(0));
+
+        // Set up some consensus state
+        ctx.view_number = 2;
+        ctx.proposed_block_hash = Some(UInt256::from_bytes(&[1u8; 32]).unwrap());
+        ctx.proposed_timestamp = 1234567890;
+        ctx.proposed_tx_hashes = vec![
+            UInt256::from_bytes(&[2u8; 32]).unwrap(),
+            UInt256::from_bytes(&[3u8; 32]).unwrap(),
+        ];
+        ctx.nonce = 42;
+        ctx.prepare_request_received = true;
+        ctx.prepare_responses.insert(1, vec![0xaa, 0xbb, 0xcc]);
+        ctx.prepare_responses.insert(2, vec![0xdd, 0xee, 0xff]);
+        ctx.commits.insert(0, vec![0x11, 0x22, 0x33]);
+        ctx.commits.insert(1, vec![0x44, 0x55, 0x66]);
+        ctx.change_views
+            .insert(3, (3, ChangeViewReason::Timeout));
+        ctx.change_views
+            .insert(4, (3, ChangeViewReason::TxNotFound));
+
+        // Save to a temporary file
+        let temp_dir = env::temp_dir();
+        let temp_path = temp_dir.join("test_consensus_state.bin");
+
+        ctx.save(&temp_path).expect("Failed to save context");
+
+        // Load it back
+        let loaded_ctx = ConsensusContext::load(&temp_path, validators, Some(0))
+            .expect("Failed to load context");
+
+        // Verify all persisted fields match
+        assert_eq!(loaded_ctx.block_index, 100);
+        assert_eq!(loaded_ctx.view_number, 2);
+        assert_eq!(
+            loaded_ctx.proposed_block_hash,
+            Some(UInt256::from_bytes(&[1u8; 32]).unwrap())
+        );
+        assert_eq!(loaded_ctx.proposed_timestamp, 1234567890);
+        assert_eq!(loaded_ctx.proposed_tx_hashes.len(), 2);
+        assert_eq!(
+            loaded_ctx.proposed_tx_hashes[0],
+            UInt256::from_bytes(&[2u8; 32]).unwrap()
+        );
+        assert_eq!(
+            loaded_ctx.proposed_tx_hashes[1],
+            UInt256::from_bytes(&[3u8; 32]).unwrap()
+        );
+        assert_eq!(loaded_ctx.nonce, 42);
+        assert!(loaded_ctx.prepare_request_received);
+        assert_eq!(loaded_ctx.prepare_responses.len(), 2);
+        assert_eq!(
+            loaded_ctx.prepare_responses.get(&1),
+            Some(&vec![0xaa, 0xbb, 0xcc])
+        );
+        assert_eq!(
+            loaded_ctx.prepare_responses.get(&2),
+            Some(&vec![0xdd, 0xee, 0xff])
+        );
+        assert_eq!(loaded_ctx.commits.len(), 2);
+        assert_eq!(loaded_ctx.commits.get(&0), Some(&vec![0x11, 0x22, 0x33]));
+        assert_eq!(loaded_ctx.commits.get(&1), Some(&vec![0x44, 0x55, 0x66]));
+        assert_eq!(loaded_ctx.change_views.len(), 2);
+        assert_eq!(
+            loaded_ctx.change_views.get(&3),
+            Some(&(3, ChangeViewReason::Timeout))
+        );
+        assert_eq!(
+            loaded_ctx.change_views.get(&4),
+            Some(&(3, ChangeViewReason::TxNotFound))
+        );
+
+        // Verify non-persisted fields are reset
+        assert_eq!(loaded_ctx.state, ConsensusState::Initial);
+        assert_eq!(loaded_ctx.view_start_time, 0);
+        assert_eq!(loaded_ctx.expected_block_time, 0);
+        assert!(loaded_ctx.last_change_view_timestamps.is_empty());
+
+        // Clean up
+        let _ = std::fs::remove_file(&temp_path);
+    }
+
+    #[test]
+    fn test_save_empty_state() {
+        use std::env;
+
+        // Create a minimal context
+        let validators = create_test_validators(4);
+        let ctx = ConsensusContext::new(0, validators.clone(), None);
+
+        // Save to a temporary file
+        let temp_dir = env::temp_dir();
+        let temp_path = temp_dir.join("test_consensus_empty.bin");
+
+        ctx.save(&temp_path).expect("Failed to save empty context");
+
+        // Load it back
+        let loaded_ctx = ConsensusContext::load(&temp_path, validators, None)
+            .expect("Failed to load empty context");
+
+        // Verify basic fields
+        assert_eq!(loaded_ctx.block_index, 0);
+        assert_eq!(loaded_ctx.view_number, 0);
+        assert_eq!(loaded_ctx.proposed_block_hash, None);
+        assert!(!loaded_ctx.prepare_request_received);
+        assert!(loaded_ctx.prepare_responses.is_empty());
+        assert!(loaded_ctx.commits.is_empty());
+        assert!(loaded_ctx.change_views.is_empty());
+
+        // Clean up
+        let _ = std::fs::remove_file(&temp_path);
+    }
+
+    #[test]
+    fn test_save_atomic_write() {
+        use std::env;
+
+        let validators = create_test_validators(4);
+        let ctx = ConsensusContext::new(42, validators, Some(1));
+
+        let temp_dir = env::temp_dir();
+        let temp_path = temp_dir.join("test_consensus_atomic.bin");
+
+        // Save should succeed
+        ctx.save(&temp_path).expect("Failed to save");
+
+        // Verify the temp file is cleaned up
+        let temp_tmp_path = temp_path.with_extension("tmp");
+        assert!(!temp_tmp_path.exists(), "Temp file should be cleaned up");
+
+        // Verify the final file exists
+        assert!(temp_path.exists(), "Final file should exist");
+
+        // Clean up
+        let _ = std::fs::remove_file(&temp_path);
+    }
+
+    #[test]
+    fn test_load_nonexistent_file() {
+        use std::env;
+
+        let validators = create_test_validators(4);
+        let temp_dir = env::temp_dir();
+        let nonexistent_path = temp_dir.join("nonexistent_consensus_state.bin");
+
+        // Should return an IO error
+        let result = ConsensusContext::load(&nonexistent_path, validators, None);
+        assert!(result.is_err());
+        match result {
+            Err(ConsensusError::IoError(_)) => {} // Expected
+            _ => panic!("Expected IoError"),
+        }
+    }
+
+    #[test]
+    fn test_load_corrupted_file() {
+        use std::env;
+
+        let validators = create_test_validators(4);
+        let temp_dir = env::temp_dir();
+        let corrupted_path = temp_dir.join("test_consensus_corrupted.bin");
+
+        // Write garbage data
+        std::fs::write(&corrupted_path, b"this is not valid bincode data")
+            .expect("Failed to write corrupted file");
+
+        // Should return a serialization error
+        let result = ConsensusContext::load(&corrupted_path, validators, None);
+        assert!(result.is_err());
+        match result {
+            Err(ConsensusError::SerializationError(_)) => {} // Expected
+            _ => panic!("Expected SerializationError"),
+        }
+
+        // Clean up
+        let _ = std::fs::remove_file(&corrupted_path);
+    }
+
+    #[test]
+    fn test_count_committed() {
+        let validators = create_test_validators(7);
+        let mut ctx = ConsensusContext::new(100, validators, Some(0));
+
+        // Initially no commits
+        assert_eq!(ctx.count_committed(), 0);
+
+        // Add some commits
+        ctx.commits.insert(0, vec![0x11]);
+        assert_eq!(ctx.count_committed(), 1);
+
+        ctx.commits.insert(1, vec![0x22]);
+        ctx.commits.insert(2, vec![0x33]);
+        assert_eq!(ctx.count_committed(), 3);
+    }
+
+    #[test]
+    fn test_count_failed_empty() {
+        let validators = create_test_validators(7);
+        let ctx = ConsensusContext::new(100, validators, Some(0));
+
+        // No last_seen_messages tracked yet
+        assert_eq!(ctx.count_failed(), 0);
+    }
+
+    #[test]
+    fn test_count_failed_with_old_messages() {
+        let validators = create_test_validators(7);
+        let mut ctx = ConsensusContext::new(100, validators, Some(0));
+
+        // Simulate messages from validators at different block heights
+        ctx.last_seen_messages.insert(0, 100); // Current block - not failed
+        ctx.last_seen_messages.insert(1, 99);  // Previous block - not failed
+        ctx.last_seen_messages.insert(2, 98);  // Old block (< 99) - FAILED
+        ctx.last_seen_messages.insert(3, 95);  // Very old block - FAILED
+        // Validators 4, 5, 6 have no messages - FAILED
+
+        // Failed: validators 2, 3, 4, 5, 6 = 5 validators
+        assert_eq!(ctx.count_failed(), 5);
+    }
+
+    #[test]
+    fn test_count_failed_threshold() {
+        let validators = create_test_validators(4);
+        let mut ctx = ConsensusContext::new(10, validators, Some(0));
+
+        // Block 10, threshold is 9 (block_index - 1)
+        // Messages at block 9 or higher are OK
+        // Messages at block 8 or lower are failed
+
+        ctx.last_seen_messages.insert(0, 10); // OK
+        ctx.last_seen_messages.insert(1, 9);  // OK (exactly at threshold)
+        ctx.last_seen_messages.insert(2, 8);  // FAILED (< threshold)
+        // Validator 3 has no message - FAILED
+
+        assert_eq!(ctx.count_failed(), 2); // Validators 2 and 3
+    }
+
+    #[test]
+    fn test_more_than_f_nodes_committed_or_lost() {
+        // 7 validators: f = 2, M = 5
+        let validators = create_test_validators(7);
+        let mut ctx = ConsensusContext::new(100, validators, Some(0));
+
+        // Initially: committed=0, failed=0, total=0, f=2
+        // 0 > 2? No
+        assert!(!ctx.more_than_f_nodes_committed_or_lost());
+
+        // Add 2 commits: committed=2, failed=0, total=2, f=2
+        // 2 > 2? No
+        ctx.commits.insert(0, vec![0x11]);
+        ctx.commits.insert(1, vec![0x22]);
+        assert!(!ctx.more_than_f_nodes_committed_or_lost());
+
+        // Add 1 more commit: committed=3, failed=0, total=3, f=2
+        // 3 > 2? Yes - SHOULD REQUEST RECOVERY
+        ctx.commits.insert(2, vec![0x33]);
+        assert!(ctx.more_than_f_nodes_committed_or_lost());
+    }
+
+    #[test]
+    fn test_more_than_f_nodes_with_failed() {
+        // 7 validators: f = 2, M = 5
+        let validators = create_test_validators(7);
+        let mut ctx = ConsensusContext::new(100, validators, Some(0));
+
+        // Simulate 2 commits and 1 failed node
+        ctx.commits.insert(0, vec![0x11]);
+        ctx.commits.insert(1, vec![0x22]);
+
+        ctx.last_seen_messages.insert(0, 100);
+        ctx.last_seen_messages.insert(1, 100);
+        ctx.last_seen_messages.insert(2, 100);
+        ctx.last_seen_messages.insert(3, 100);
+        ctx.last_seen_messages.insert(4, 100);
+        ctx.last_seen_messages.insert(5, 100);
+        ctx.last_seen_messages.insert(6, 95); // Old message - FAILED
+
+        // committed=2, failed=1, total=3, f=2
+        // 3 > 2? Yes - SHOULD REQUEST RECOVERY
+        assert_eq!(ctx.count_committed(), 2);
+        assert_eq!(ctx.count_failed(), 1);
+        assert!(ctx.more_than_f_nodes_committed_or_lost());
+    }
+
+    #[test]
+    fn test_more_than_f_nodes_edge_case() {
+        // 4 validators: f = 1, M = 3
+        let validators = create_test_validators(4);
+        let mut ctx = ConsensusContext::new(50, validators, Some(0));
+
+        // committed=1, failed=0, total=1, f=1
+        // 1 > 1? No
+        ctx.commits.insert(0, vec![0x11]);
+        assert!(!ctx.more_than_f_nodes_committed_or_lost());
+
+        // committed=1, failed=1, total=2, f=1
+        // 2 > 1? Yes - SHOULD REQUEST RECOVERY
+        ctx.last_seen_messages.insert(0, 50);
+        ctx.last_seen_messages.insert(1, 50);
+        ctx.last_seen_messages.insert(2, 50);
+        ctx.last_seen_messages.insert(3, 45); // Old - FAILED
+
+        assert_eq!(ctx.count_failed(), 1);
+        assert!(ctx.more_than_f_nodes_committed_or_lost());
+    }
+
+    #[test]
+    fn test_update_last_seen_message() {
+        let validators = create_test_validators(4);
+        let mut ctx = ConsensusContext::new(100, validators, Some(0));
+
+        assert!(ctx.last_seen_messages.is_empty());
+
+        ctx.update_last_seen_message(0, 100);
+        assert_eq!(ctx.last_seen_messages.get(&0), Some(&100));
+
+        ctx.update_last_seen_message(1, 101);
+        assert_eq!(ctx.last_seen_messages.get(&1), Some(&101));
+
+        // Update existing entry
+        ctx.update_last_seen_message(0, 102);
+        assert_eq!(ctx.last_seen_messages.get(&0), Some(&102));
+    }
+
+    #[test]
+    fn test_message_hash_caching() {
+        let validators = create_test_validators(4);
+        let mut ctx = ConsensusContext::new(100, validators, Some(0));
+
+        // Create test message hashes
+        let hash1 = UInt256::from_bytes(&[1u8; 32]).unwrap();
+        let hash2 = UInt256::from_bytes(&[2u8; 32]).unwrap();
+
+        // Initially, no messages have been seen
+        assert!(!ctx.has_seen_message(&hash1));
+        assert!(!ctx.has_seen_message(&hash2));
+
+        // Mark hash1 as seen
+        ctx.mark_message_seen(&hash1);
+        assert!(ctx.has_seen_message(&hash1));
+        assert!(!ctx.has_seen_message(&hash2));
+
+        // Mark hash2 as seen
+        ctx.mark_message_seen(&hash2);
+        assert!(ctx.has_seen_message(&hash1));
+        assert!(ctx.has_seen_message(&hash2));
+
+        // Marking the same hash again should be idempotent
+        ctx.mark_message_seen(&hash1);
+        assert!(ctx.has_seen_message(&hash1));
+    }
+
+    #[test]
+    fn test_message_cache_cleared_on_new_block() {
+        let validators = create_test_validators(4);
+        let mut ctx = ConsensusContext::new(100, validators, Some(0));
+
+        // Add some message hashes
+        let hash1 = UInt256::from_bytes(&[1u8; 32]).unwrap();
+        let hash2 = UInt256::from_bytes(&[2u8; 32]).unwrap();
+        ctx.mark_message_seen(&hash1);
+        ctx.mark_message_seen(&hash2);
+
+        assert!(ctx.has_seen_message(&hash1));
+        assert!(ctx.has_seen_message(&hash2));
+
+        // Reset for new block should clear the cache
+        ctx.reset_for_new_block(101, 2000);
+
+        assert!(!ctx.has_seen_message(&hash1));
+        assert!(!ctx.has_seen_message(&hash2));
+        assert_eq!(ctx.block_index, 101);
+    }
+
+    #[test]
+    fn test_message_cache_not_cleared_on_view_change() {
+        let validators = create_test_validators(4);
+        let mut ctx = ConsensusContext::new(100, validators, Some(0));
+
+        // Add some message hashes
+        let hash1 = UInt256::from_bytes(&[1u8; 32]).unwrap();
+        ctx.mark_message_seen(&hash1);
+        assert!(ctx.has_seen_message(&hash1));
+
+        // Reset for new view should NOT clear the message cache
+        // (messages are still valid within the same block)
+        ctx.reset_for_new_view(1, 1000);
+
+        assert!(ctx.has_seen_message(&hash1));
+        assert_eq!(ctx.view_number, 1);
+    }
+
+    #[test]
+    fn test_message_cache_prevents_replay() {
+        let validators = create_test_validators(7);
+        let mut ctx = ConsensusContext::new(100, validators, Some(0));
+
+        // Simulate receiving the same message twice
+        let msg_hash = UInt256::from_bytes(&[0xaa; 32]).unwrap();
+
+        // First time: message is new
+        assert!(!ctx.has_seen_message(&msg_hash));
+        ctx.mark_message_seen(&msg_hash);
+
+        // Second time: message is duplicate (replay attack)
+        assert!(ctx.has_seen_message(&msg_hash));
     }
 }
