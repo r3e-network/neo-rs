@@ -62,7 +62,8 @@ impl StateRoot {
         }
 
         let unsigned_data = self.get_unsigned_data();
-        let hash = UInt256::from(NeoHash::hash256(&unsigned_data));
+        // Matches C# `IVerifiable.CalculateHash`: single SHA-256 of unsigned serialization.
+        let hash = UInt256::from(NeoHash::sha256(&unsigned_data));
         self.cached_hash = Some(hash);
         hash
     }

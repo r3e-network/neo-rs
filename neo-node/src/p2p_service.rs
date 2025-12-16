@@ -14,7 +14,11 @@
 use neo_core::neo_io::SerializableExt;
 use neo_core::network::p2p::{
     capabilities::NodeCapability,
-    payloads::{GetBlockByIndexPayload, InvPayload, InventoryType, PingPayload, VersionPayload},
+    payloads::{
+        header::Header,
+        headers_payload::{HeadersPayload, MAX_HEADERS_COUNT},
+        GetBlockByIndexPayload, InvPayload, InventoryType, PingPayload, VersionPayload,
+    },
     ChannelsConfig, NetworkMessage, PeerConnection, ProtocolMessage,
 };
 use neo_core::UInt256;
@@ -79,13 +83,12 @@ pub struct ConnectedPeer {
 /// Message to broadcast to all peers
 #[derive(Debug, Clone)]
 pub struct BroadcastMessage {
-    /// The protocol message to broadcast
-    pub message: Vec<u8>,
-    /// Message category (e.g., "dBFT" for consensus)
-    pub category: String,
+    /// The protocol message to broadcast.
+    pub message: ProtocolMessage,
 }
 
 /// P2P Service managing peer connections
+#[derive(Clone)]
 pub struct P2PService {
     /// Configuration
     config: P2PConfig,
@@ -109,6 +112,8 @@ pub struct P2PService {
     broadcast_tx: broadcast::Sender<BroadcastMessage>,
     /// Chain state for responding to GetHeaders requests
     chain: Option<Arc<RwLock<neo_chain::ChainState>>>,
+    /// In-memory header cache for serving GetHeaders responses.
+    headers_by_height: Arc<RwLock<HashMap<u32, Header>>>,
 }
 
 impl P2PService {
@@ -129,6 +134,7 @@ impl P2PService {
             best_peer_height: Arc::new(RwLock::new(0)),
             broadcast_tx,
             chain: None,
+            headers_by_height: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -140,6 +146,11 @@ impl P2PService {
     /// Sets the chain state for responding to GetHeaders requests
     pub fn set_chain(&mut self, chain: Arc<RwLock<neo_chain::ChainState>>) {
         self.chain = Some(chain);
+    }
+
+    /// Inserts a header into the in-memory cache.
+    pub async fn insert_header(&self, header: Header) {
+        self.headers_by_height.write().await.insert(header.index(), header);
     }
 
     /// Returns the current service state
@@ -189,6 +200,8 @@ impl P2PService {
         let listener_last_header = self.last_header_index.clone();
         let listener_best_height = self.best_peer_height.clone();
         let listener_chain = self.chain.clone();
+        let listener_headers = self.headers_by_height.clone();
+        let listener_broadcast = self.broadcast_tx.clone();
         let mut listener_shutdown = self.shutdown_tx.subscribe();
 
         tokio::spawn(async move {
@@ -201,6 +214,8 @@ impl P2PService {
                 listener_last_header,
                 listener_best_height,
                 listener_chain,
+                listener_headers,
+                listener_broadcast,
                 &mut listener_shutdown,
             )
             .await;
@@ -215,6 +230,8 @@ impl P2PService {
         let connector_last_header = self.last_header_index.clone();
         let connector_best_height = self.best_peer_height.clone();
         let connector_chain = self.chain.clone();
+        let connector_headers = self.headers_by_height.clone();
+        let connector_broadcast = self.broadcast_tx.clone();
         let mut connector_shutdown = self.shutdown_tx.subscribe();
 
         tokio::spawn(async move {
@@ -227,6 +244,8 @@ impl P2PService {
                 connector_last_header,
                 connector_best_height,
                 connector_chain,
+                connector_headers,
+                connector_broadcast,
                 &mut connector_shutdown,
             )
             .await;
@@ -272,6 +291,8 @@ impl P2PService {
         last_header_index: Arc<RwLock<u32>>,
         best_peer_height: Arc<RwLock<u32>>,
         chain: Option<Arc<RwLock<neo_chain::ChainState>>>,
+        headers_by_height: Arc<RwLock<HashMap<u32, Header>>>,
+        broadcast_tx: broadcast::Sender<BroadcastMessage>,
         shutdown_rx: &mut broadcast::Receiver<()>,
     ) {
         let listener = match TcpListener::bind(config.listen_address).await {
@@ -330,6 +351,8 @@ impl P2PService {
                             let handler_last_header = last_header_index.clone();
                             let handler_best_height = best_peer_height.clone();
                             let handler_chain = chain.clone();
+                            let handler_headers = headers_by_height.clone();
+                            let handler_broadcast_rx = broadcast_tx.subscribe();
                             let network_magic = config.network_magic;
                             tokio::spawn(async move {
                                 Self::handle_connection(
@@ -343,6 +366,8 @@ impl P2PService {
                                     handler_last_header,
                                     handler_best_height,
                                     handler_chain,
+                                    handler_headers,
+                                    handler_broadcast_rx,
                                     true, // is_inbound
                                 ).await;
                             });
@@ -370,6 +395,8 @@ impl P2PService {
         last_header_index: Arc<RwLock<u32>>,
         best_peer_height: Arc<RwLock<u32>>,
         chain: Option<Arc<RwLock<neo_chain::ChainState>>>,
+        headers_by_height: Arc<RwLock<HashMap<u32, Header>>>,
+        broadcast_tx: broadcast::Sender<BroadcastMessage>,
         shutdown_rx: &mut broadcast::Receiver<()>,
     ) {
         // Initial delay before connecting
@@ -423,6 +450,8 @@ impl P2PService {
                     let handler_last_header = last_header_index.clone();
                     let handler_best_height = best_peer_height.clone();
                     let handler_chain = chain.clone();
+                    let handler_headers = headers_by_height.clone();
+                    let handler_broadcast_rx = broadcast_tx.subscribe();
                     let network_magic = config.network_magic;
                     let addr = *seed;
                     tokio::spawn(async move {
@@ -437,6 +466,8 @@ impl P2PService {
                             handler_last_header,
                             handler_best_height,
                             handler_chain,
+                            handler_headers,
+                            handler_broadcast_rx,
                             false, // is_inbound
                         )
                         .await;
@@ -466,6 +497,8 @@ impl P2PService {
         last_header_index: Arc<RwLock<u32>>,
         best_peer_height: Arc<RwLock<u32>>,
         chain: Option<Arc<RwLock<neo_chain::ChainState>>>,
+        headers_by_height: Arc<RwLock<HashMap<u32, Header>>>,
+        mut broadcast_rx: broadcast::Receiver<BroadcastMessage>,
         is_inbound: bool,
     ) {
         debug!(target: "neo::p2p", addr = %addr, inbound = is_inbound, "starting protocol handler");
@@ -509,17 +542,38 @@ impl P2PService {
 
         // Message loop
         loop {
-            // Receive message with handshake timeout
             let handshake_complete = version_received && verack_received;
-            let message = match connection.receive_message(handshake_complete).await {
-                Ok(msg) => msg,
-                Err(e) => {
-                    if !handshake_complete {
-                        warn!(target: "neo::p2p", addr = %addr, error = %e, "handshake failed");
-                    } else {
-                        debug!(target: "neo::p2p", addr = %addr, error = %e, "connection closed");
+            let message = tokio::select! {
+                msg = connection.receive_message(handshake_complete) => {
+                    match msg {
+                        Ok(msg) => msg,
+                        Err(e) => {
+                            if !handshake_complete {
+                                warn!(target: "neo::p2p", addr = %addr, error = %e, "handshake failed");
+                            } else {
+                                debug!(target: "neo::p2p", addr = %addr, error = %e, "connection closed");
+                            }
+                            break;
+                        }
                     }
-                    break;
+                }
+                broadcast = broadcast_rx.recv(), if handshake_complete => {
+                    match broadcast {
+                        Ok(broadcast_msg) => {
+                            let msg = NetworkMessage::new(broadcast_msg.message);
+                            if let Err(e) = connection.send_message(&msg).await {
+                                debug!(target: "neo::p2p", addr = %addr, error = %e, "failed to broadcast to peer");
+                            }
+                        }
+                        Err(broadcast::error::RecvError::Lagged(n)) => {
+                            debug!(target: "neo::p2p", addr = %addr, lagged = n, "broadcast receiver lagged");
+                        }
+                        Err(broadcast::error::RecvError::Closed) => {
+                            debug!(target: "neo::p2p", addr = %addr, "broadcast channel closed");
+                            break;
+                        }
+                    }
+                    continue;
                 }
             };
 
@@ -691,7 +745,11 @@ impl P2PService {
                 }
 
                 ProtocolMessage::GetHeaders(payload) => {
-                    let local_h = *local_height.read().await;
+                    let local_h = if let Some(ref chain_state) = chain {
+                        chain_state.read().await.height()
+                    } else {
+                        *local_height.read().await
+                    };
                     debug!(
                         target: "neo::p2p",
                         addr = %addr,
@@ -701,46 +759,37 @@ impl P2PService {
                         "received getheaders request"
                     );
 
-                    // Respond with headers if we have chain state access
-                    if let Some(ref chain_state) = chain {
-                        let chain_guard = chain_state.read().await;
+                    // Respond with headers if we have chain state access and cached headers.
+                    if chain.is_some() {
                         let start = payload.index_start;
-                        // Neo protocol: count=-1 means "as many as possible" (max 2000)
-                        let max_headers = if payload.count < 0 { 2000i16 } else { payload.count.min(2000) };
-                        let end = (start as i64 + max_headers as i64).min(local_h as i64 + 1) as u32;
+                        if start > local_h {
+                            debug!(target: "neo::p2p", addr = %addr, start, local_h, "peer requesting headers beyond our chain height");
+                            continue;
+                        }
 
-                        if start <= local_h {
-                            // Collect block hashes from chain state for the requested range
-                            let mut header_hashes = Vec::new();
-                            for height in start..end {
-                                if let Some(entry) = chain_guard.get_block_at_height(height) {
-                                    header_hashes.push(entry.hash);
-                                }
-                            }
+                        let headers = {
+                            let cache = headers_by_height.read().await;
+                            collect_headers_for_getheaders(start, payload.count, local_h, &cache)
+                        };
 
-                            if !header_hashes.is_empty() {
-                                info!(
-                                    target: "neo::p2p",
-                                    addr = %addr,
-                                    start,
-                                    count = header_hashes.len(),
-                                    "responding with block hashes for getheaders"
-                                );
-                                // Note: Full header response would require storing full headers
-                                // in ChainState. Currently we only have BlockIndexEntry with hash.
-                                // Send inventory of block hashes for header sync
-                                let inv = InvPayload::create(InventoryType::Block, &header_hashes);
-                                let inv_msg = NetworkMessage::new(ProtocolMessage::Inv(inv));
-                                if let Err(e) = connection.send_message(&inv_msg).await {
-                                    warn!(target: "neo::p2p", addr = %addr, error = %e, "failed to send inv response");
-                                }
-                            }
-                        } else {
-                            debug!(
-                                target: "neo::p2p",
-                                addr = %addr,
-                                "peer requesting headers beyond our chain height"
-                            );
+                        if headers.is_empty() {
+                            debug!(target: "neo::p2p", addr = %addr, start, "no cached headers available for getheaders response");
+                            continue;
+                        }
+
+                        info!(
+                            target: "neo::p2p",
+                            addr = %addr,
+                            start,
+                            count = headers.len(),
+                            "responding with headers for getheaders"
+                        );
+
+                        let headers_payload = HeadersPayload::create(headers);
+                        let headers_msg =
+                            NetworkMessage::new(ProtocolMessage::Headers(headers_payload));
+                        if let Err(e) = connection.send_message(&headers_msg).await {
+                            warn!(target: "neo::p2p", addr = %addr, error = %e, "failed to send headers response");
                         }
                     } else {
                         debug!(
@@ -755,6 +804,14 @@ impl P2PService {
                     let count = headers.headers.len();
                     info!(target: "neo::p2p", addr = %addr, count, "received headers");
 
+                    // Cache received headers for serving peers.
+                    if !headers.headers.is_empty() {
+                        let mut cache = headers_by_height.write().await;
+                        for header in &headers.headers {
+                            cache.insert(header.index(), header.clone());
+                        }
+                    }
+
                     // Extract block hashes and indices from headers for sync
                     let mut max_index = 0u32;
                     let block_hashes: Vec<neo_core::UInt256> = headers
@@ -767,8 +824,11 @@ impl P2PService {
                         .collect();
 
                     // Convert headers to raw bytes for the event
-                    let header_bytes: Vec<Vec<u8>> =
-                        block_hashes.iter().map(|h| h.to_bytes().to_vec()).collect();
+                    let header_bytes: Vec<Vec<u8>> = headers
+                        .headers
+                        .iter()
+                        .filter_map(|h| h.to_array().ok())
+                        .collect();
                     let _ = event_tx
                         .send(P2PEvent::HeadersReceived {
                             headers: header_bytes,
@@ -874,6 +934,12 @@ impl P2PService {
                     let tx_count = block.transactions.len();
                     info!(target: "neo::p2p", addr = %addr, height, hash = %hash, tx_count, "received block");
 
+                    // Cache the header for serving GetHeaders requests.
+                    headers_by_height
+                        .write()
+                        .await
+                        .insert(block.header.index(), block.header.clone());
+
                     // Serialize block for event
                     let data = block.to_array().unwrap_or_default();
                     let _ = event_tx
@@ -939,18 +1005,21 @@ impl P2PService {
                     debug!(target: "neo::p2p", addr = %addr, category = %payload.category, "received extensible");
                     match payload.category.as_str() {
                         "dBFT" => {
+                            let bytes = payload.to_array().unwrap_or_default();
                             let _ = event_tx
                                 .send(P2PEvent::ConsensusReceived {
-                                    data: payload.data.clone(),
+                                    data: bytes,
                                     from: addr,
                                 })
                                 .await;
                         }
-                        "StateRoot" => {
-                            info!(target: "neo::p2p", addr = %addr, "received state root message");
+                        // Neo N3 StateService plugin uses category "StateService".
+                        "StateService" | "StateRoot" => {
+                            info!(target: "neo::p2p", addr = %addr, category = %payload.category, "received state service message");
+                            let bytes = payload.to_array().unwrap_or_default();
                             let _ = event_tx
                                 .send(P2PEvent::StateRootReceived {
-                                    data: payload.data.clone(),
+                                    data: bytes,
                                     from: addr,
                                 })
                                 .await;
@@ -983,9 +1052,41 @@ fn current_timestamp() -> u64 {
         .as_secs()
 }
 
+fn collect_headers_for_getheaders(
+    start: u32,
+    count: i16,
+    local_height: u32,
+    cache: &HashMap<u32, Header>,
+) -> Vec<Header> {
+    let requested = if count < 0 {
+        MAX_HEADERS_COUNT as u32
+    } else {
+        (count as u32).min(MAX_HEADERS_COUNT as u32)
+    };
+
+    if requested == 0 {
+        return Vec::new();
+    }
+
+    let available_end_exclusive = local_height.saturating_add(1);
+    let requested_end_exclusive = start.saturating_add(requested);
+    let end_exclusive = available_end_exclusive.min(requested_end_exclusive);
+
+    let mut headers = Vec::new();
+    for height in start..end_exclusive {
+        match cache.get(&height) {
+            Some(header) => headers.push(header.clone()),
+            None => break,
+        }
+    }
+
+    headers
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use neo_core::{UInt160, UInt256};
 
     #[tokio::test]
     async fn test_p2p_service_creation() {
@@ -1011,5 +1112,58 @@ mod tests {
 
         service.stop().await.unwrap();
         assert_eq!(service.state().await, P2PServiceState::Stopped);
+    }
+
+    fn header_at(index: u32) -> Header {
+        let mut header = Header::new();
+        header.set_version(0);
+        header.set_prev_hash(UInt256::zero());
+        header.set_merkle_root(UInt256::zero());
+        header.set_timestamp(0);
+        header.set_nonce(0);
+        header.set_index(index);
+        header.set_primary_index(0);
+        header.set_next_consensus(UInt160::zero());
+        header
+    }
+
+    #[test]
+    fn getheaders_collects_sequential_headers_up_to_limit() {
+        let mut cache = HashMap::new();
+        for i in 0..10 {
+            cache.insert(i, header_at(i));
+        }
+
+        let headers = collect_headers_for_getheaders(0, -1, 9, &cache);
+        assert_eq!(headers.len(), 10);
+        assert_eq!(headers[0].index(), 0);
+        assert_eq!(headers[9].index(), 9);
+    }
+
+    #[test]
+    fn getheaders_respects_count() {
+        let mut cache = HashMap::new();
+        for i in 0..10 {
+            cache.insert(i, header_at(i));
+        }
+
+        let headers = collect_headers_for_getheaders(3, 2, 9, &cache);
+        assert_eq!(headers.len(), 2);
+        assert_eq!(headers[0].index(), 3);
+        assert_eq!(headers[1].index(), 4);
+    }
+
+    #[test]
+    fn getheaders_stops_at_first_gap() {
+        let mut cache = HashMap::new();
+        cache.insert(0, header_at(0));
+        cache.insert(1, header_at(1));
+        // gap at 2
+        cache.insert(3, header_at(3));
+
+        let headers = collect_headers_for_getheaders(0, -1, 3, &cache);
+        assert_eq!(headers.len(), 2);
+        assert_eq!(headers[0].index(), 0);
+        assert_eq!(headers[1].index(), 1);
     }
 }

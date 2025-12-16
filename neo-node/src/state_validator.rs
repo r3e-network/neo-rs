@@ -18,6 +18,9 @@ use neo_core::persistence::providers::RocksDBStoreProvider;
 use neo_core::persistence::storage::StorageConfig;
 use neo_core::persistence::IStoreProvider;
 use neo_core::protocol_settings::ProtocolSettings;
+use neo_core::smart_contract::native::{role_management::RoleManagement, Role};
+use neo_core::smart_contract::native::NativeContract;
+use neo_core::smart_contract::{StorageItem, StorageKey};
 use neo_core::state_service::state_store::{
     MemoryStateStoreBackend, SnapshotBackedStateStoreBackend, StateRootVerifier,
     StateServiceSettings,
@@ -124,10 +127,13 @@ impl StateRootValidator {
         protocol_settings: Arc<ProtocolSettings>,
         state_service_settings: StateServiceSettings,
     ) -> Self {
-        // Create verifier that reads validators from a fresh DataCache
+        // Create verifier that can resolve designated state validators from RoleManagement.
+        // Until full chain persistence is wired, seed RoleManagement state from ProtocolSettings
+        // (standby committee + validators_count) so StateRoot witness verification works.
+        let settings_for_snapshot = protocol_settings.clone();
         let verifier = StateRootVerifier::new(
             protocol_settings.clone(),
-            Arc::new(move || DataCache::new(false)),
+            Arc::new(move |index| snapshot_with_designated_state_validators(&settings_for_snapshot, index)),
         );
 
         // Try to create persistent backend if path is provided
@@ -469,6 +475,31 @@ impl StateRootValidator {
     pub fn validated_root_hash(&self) -> Option<UInt256> {
         self.state_store.current_validated_root_hash()
     }
+}
+
+fn snapshot_with_designated_state_validators(settings: &ProtocolSettings, index: u32) -> DataCache {
+    let cache = DataCache::new(false);
+
+    let validators_count = settings.validators_count.max(0) as usize;
+    let mut suffix = vec![Role::StateValidator as u8];
+    suffix.extend_from_slice(&index.to_be_bytes());
+    let key = StorageKey::new(RoleManagement::new().id(), suffix);
+
+    let validators = settings
+        .standby_committee
+        .iter()
+        .take(validators_count)
+        .collect::<Vec<_>>();
+
+    let mut value = Vec::with_capacity(4 + 33 * validators.len());
+    value.extend_from_slice(&(validators.len() as u32).to_le_bytes());
+    for validator in validators {
+        let encoded = validator.encode_compressed().unwrap_or_default();
+        value.extend_from_slice(&encoded);
+    }
+
+    cache.add(key, StorageItem::from_bytes(value));
+    cache
 }
 
 #[cfg(test)]

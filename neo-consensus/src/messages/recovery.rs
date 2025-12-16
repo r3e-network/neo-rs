@@ -1,5 +1,6 @@
 //! Recovery messages - for consensus state recovery.
 
+use crate::messages::{parse_consensus_message_header, serialize_consensus_message_header};
 use crate::{ConsensusMessageType, ConsensusResult};
 use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};
@@ -35,7 +36,37 @@ impl RecoveryRequestMessage {
 
     /// Serializes the message to bytes
     pub fn serialize(&self) -> Vec<u8> {
-        self.timestamp.to_le_bytes().to_vec()
+        let mut out = serialize_consensus_message_header(
+            ConsensusMessageType::RecoveryRequest,
+            self.block_index,
+            self.validator_index,
+            self.view_number,
+        );
+        out.extend_from_slice(&self.timestamp.to_le_bytes());
+        out
+    }
+
+    /// Deserializes a RecoveryRequest message from bytes.
+    pub fn deserialize(data: &[u8]) -> ConsensusResult<Self> {
+        let (msg_type, block_index, validator_index, view_number, body) =
+            parse_consensus_message_header(data)?;
+        if msg_type != ConsensusMessageType::RecoveryRequest {
+            return Err(crate::ConsensusError::invalid_proposal(
+                "invalid RecoveryRequest message type",
+            ));
+        }
+        if body.len() < 8 {
+            return Err(crate::ConsensusError::invalid_proposal(
+                "RecoveryRequest message body too short",
+            ));
+        }
+        let timestamp = u64::from_le_bytes(body[0..8].try_into().unwrap_or([0u8; 8]));
+        Ok(Self {
+            block_index,
+            view_number,
+            validator_index,
+            timestamp,
+        })
     }
 }
 
@@ -64,10 +95,14 @@ pub struct PreparationCompact {
 /// Compact representation of a Commit for recovery
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommitCompact {
+    /// View number
+    pub view_number: u8,
     /// Validator index
     pub validator_index: u8,
     /// Signature
     pub signature: Vec<u8>,
+    /// Invocation script (extensible payload witness)
+    pub invocation_script: Vec<u8>,
 }
 
 /// RecoveryMessage sent in response to a RecoveryRequest.
@@ -82,24 +117,13 @@ pub struct RecoveryMessage {
     /// Change view payloads
     pub change_view_payloads: Vec<ChangeViewCompact>,
     /// Prepare request message (if received)
-    pub prepare_request_message: Option<PrepareRequestCompact>,
+    pub prepare_request_message: Option<crate::messages::PrepareRequestMessage>,
+    /// PreparationHash if PrepareRequest isn't included
+    pub preparation_hash: Option<UInt256>,
     /// Preparation payloads (PrepareResponses)
     pub preparation_payloads: Vec<PreparationCompact>,
     /// Commit payloads
     pub commit_payloads: Vec<CommitCompact>,
-}
-
-/// Compact PrepareRequest for recovery
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PrepareRequestCompact {
-    /// Timestamp
-    pub timestamp: u64,
-    /// Nonce
-    pub nonce: u64,
-    /// Transaction hashes
-    pub transaction_hashes: Vec<UInt256>,
-    /// Invocation script
-    pub invocation_script: Vec<u8>,
 }
 
 impl RecoveryMessage {
@@ -111,6 +135,7 @@ impl RecoveryMessage {
             validator_index,
             change_view_payloads: Vec::new(),
             prepare_request_message: None,
+            preparation_hash: None,
             preparation_payloads: Vec::new(),
             commit_payloads: Vec::new(),
         }
@@ -123,45 +148,50 @@ impl RecoveryMessage {
 
     /// Serializes the message to bytes
     pub fn serialize(&self) -> Vec<u8> {
-        // Binary serialization format for recovery message
-        let mut data = Vec::new();
+        let mut out = serialize_consensus_message_header(
+            ConsensusMessageType::RecoveryMessage,
+            self.block_index,
+            self.validator_index,
+            self.view_number,
+        );
 
-        // Change views count
-        data.push(self.change_view_payloads.len() as u8);
+        let mut writer = neo_io::BinaryWriter::new();
+
+        let _ = writer.write_var_int(self.change_view_payloads.len() as u64);
         for cv in &self.change_view_payloads {
-            data.push(cv.validator_index);
-            data.push(cv.original_view_number);
-            data.extend_from_slice(&cv.timestamp.to_le_bytes());
+            let _ = writer.write_u8(cv.validator_index);
+            let _ = writer.write_u8(cv.original_view_number);
+            let _ = writer.write_u64(cv.timestamp);
+            let _ = writer.write_var_bytes(&cv.invocation_script);
         }
 
-        // Has prepare request flag and data
-        if let Some(ref prep_req) = self.prepare_request_message {
-            data.push(1);
-            // Serialize PrepareRequestCompact: timestamp (8) + nonce (8) + tx_count (1) + tx_hashes (32 each)
-            data.extend_from_slice(&prep_req.timestamp.to_le_bytes());
-            data.extend_from_slice(&prep_req.nonce.to_le_bytes());
-            data.push(prep_req.transaction_hashes.len() as u8);
-            for tx_hash in &prep_req.transaction_hashes {
-                data.extend_from_slice(&tx_hash.to_bytes());
-            }
+        let has_prepare_request = self.prepare_request_message.is_some();
+        let _ = writer.write_bool(has_prepare_request);
+        if let Some(ref pr) = self.prepare_request_message {
+            let bytes = pr.serialize();
+            let _ = writer.write_bytes(&bytes);
+        } else if let Some(hash) = self.preparation_hash {
+            let _ = writer.write_var_bytes(&hash.to_array());
         } else {
-            data.push(0);
+            let _ = writer.write_var_int(0);
         }
 
-        // Preparations count
-        data.push(self.preparation_payloads.len() as u8);
+        let _ = writer.write_var_int(self.preparation_payloads.len() as u64);
         for prep in &self.preparation_payloads {
-            data.push(prep.validator_index);
+            let _ = writer.write_u8(prep.validator_index);
+            let _ = writer.write_var_bytes(&prep.invocation_script);
         }
 
-        // Commits count
-        data.push(self.commit_payloads.len() as u8);
+        let _ = writer.write_var_int(self.commit_payloads.len() as u64);
         for commit in &self.commit_payloads {
-            data.push(commit.validator_index);
-            data.extend_from_slice(&commit.signature);
+            let _ = writer.write_u8(commit.view_number);
+            let _ = writer.write_u8(commit.validator_index);
+            let _ = writer.write_bytes(&commit.signature);
+            let _ = writer.write_var_bytes(&commit.invocation_script);
         }
 
-        data
+        out.extend_from_slice(&writer.into_bytes());
+        out
     }
 
     /// Validates the recovery message
@@ -179,126 +209,113 @@ impl RecoveryMessage {
     }
 
     /// Deserializes a RecoveryMessage from bytes
-    pub fn deserialize(data: &[u8], block_index: u32, view_number: u8, validator_index: u8) -> ConsensusResult<Self> {
-        if data.is_empty() {
+    pub fn deserialize(data: &[u8]) -> ConsensusResult<Self> {
+        let (msg_type, block_index, validator_index, view_number, body) =
+            parse_consensus_message_header(data)?;
+        if msg_type != ConsensusMessageType::RecoveryMessage {
             return Err(crate::ConsensusError::invalid_proposal(
-                "Empty recovery message data",
+                "invalid RecoveryMessage message type",
             ));
         }
 
-        let mut offset = 0;
+        let mut reader = neo_io::MemoryReader::new(body);
 
-        // Parse change views count
-        let change_view_count = data.get(offset).copied().unwrap_or(0) as usize;
-        offset += 1;
-
+        let change_view_count = reader
+            .read_var_int(u8::MAX as u64)
+            .map_err(|_| crate::ConsensusError::invalid_proposal("invalid change view count"))?
+            as usize;
         let mut change_view_payloads = Vec::with_capacity(change_view_count);
         for _ in 0..change_view_count {
-            if offset + 10 > data.len() {
-                break;
-            }
-            let cv_validator = data[offset];
-            let cv_view = data[offset + 1];
-            let cv_timestamp = u64::from_le_bytes(
-                data[offset + 2..offset + 10].try_into().unwrap_or([0u8; 8])
-            );
-            offset += 10;
-
+            let v = reader
+                .read_byte()
+                .map_err(|_| crate::ConsensusError::invalid_proposal("change view validator missing"))?;
+            let ov = reader
+                .read_byte()
+                .map_err(|_| crate::ConsensusError::invalid_proposal("change view original view missing"))?;
+            let ts = reader
+                .read_u64()
+                .map_err(|_| crate::ConsensusError::invalid_proposal("change view timestamp missing"))?;
+            let inv = reader
+                .read_var_bytes(1024)
+                .map_err(|_| crate::ConsensusError::invalid_proposal("change view invocation missing"))?;
             change_view_payloads.push(ChangeViewCompact {
-                validator_index: cv_validator,
-                original_view_number: cv_view,
-                timestamp: cv_timestamp,
-                invocation_script: Vec::new(),
+                validator_index: v,
+                original_view_number: ov,
+                timestamp: ts,
+                invocation_script: inv,
             });
         }
 
-        // Parse has prepare request flag and data
-        let has_prepare_request = data.get(offset).copied().unwrap_or(0) == 1;
-        offset += 1;
+        let has_prepare_request = reader
+            .read_bool()
+            .map_err(|_| crate::ConsensusError::invalid_proposal("invalid prepare request flag"))?;
 
-        let prepare_request_message = if has_prepare_request {
-            // Parse PrepareRequestCompact: timestamp (8) + nonce (8) + tx_count (1) + tx_hashes (32 each)
-            if offset + 17 > data.len() {
-                // Not enough data for timestamp + nonce + tx_count
-                None
-            } else {
-                let timestamp = u64::from_le_bytes(
-                    data[offset..offset + 8].try_into().unwrap_or([0u8; 8])
-                );
-                offset += 8;
-
-                let nonce = u64::from_le_bytes(
-                    data[offset..offset + 8].try_into().unwrap_or([0u8; 8])
-                );
-                offset += 8;
-
-                let tx_count = data[offset] as usize;
-                offset += 1;
-
-                let mut transaction_hashes = Vec::with_capacity(tx_count);
-                for _ in 0..tx_count {
-                    if offset + 32 > data.len() {
-                        break;
-                    }
-                    if let Ok(hash) = UInt256::from_bytes(&data[offset..offset + 32]) {
-                        transaction_hashes.push(hash);
-                    }
-                    offset += 32;
-                }
-
-                Some(PrepareRequestCompact {
-                    timestamp,
-                    nonce,
-                    transaction_hashes,
-                    invocation_script: Vec::new(),
-                })
-            }
+        let (prepare_request_message, preparation_hash) = if has_prepare_request {
+            let pr = crate::messages::PrepareRequestMessage::deserialize_from_reader(&mut reader)?;
+            (Some(pr), None)
         } else {
-            None
+            let len = reader
+                .read_var_int(32)
+                .map_err(|_| crate::ConsensusError::invalid_proposal("invalid preparation hash length"))?
+                as usize;
+            if len == 0 {
+                (None, None)
+            } else if len == 32 {
+                let bytes = reader
+                    .read_memory(32)
+                    .map_err(|_| crate::ConsensusError::invalid_proposal("preparation hash missing"))?;
+                let hash = UInt256::from_bytes(bytes)
+                    .map_err(|_| crate::ConsensusError::invalid_proposal("invalid preparation hash"))?;
+                (None, Some(hash))
+            } else {
+                return Err(crate::ConsensusError::invalid_proposal(
+                    "invalid preparation hash length",
+                ));
+            }
         };
 
-        // Parse preparations count
-        let prep_count = data.get(offset).copied().unwrap_or(0) as usize;
-        offset += 1;
-
+        let prep_count = reader
+            .read_var_int(u8::MAX as u64)
+            .map_err(|_| crate::ConsensusError::invalid_proposal("invalid preparation count"))?
+            as usize;
         let mut preparation_payloads = Vec::with_capacity(prep_count);
         for _ in 0..prep_count {
-            if offset >= data.len() {
-                break;
-            }
-            let prep_validator = data[offset];
-            offset += 1;
-
+            let v = reader
+                .read_byte()
+                .map_err(|_| crate::ConsensusError::invalid_proposal("preparation validator missing"))?;
+            let inv = reader
+                .read_var_bytes(1024)
+                .map_err(|_| crate::ConsensusError::invalid_proposal("preparation invocation missing"))?;
             preparation_payloads.push(PreparationCompact {
-                validator_index: prep_validator,
-                invocation_script: Vec::new(),
+                validator_index: v,
+                invocation_script: inv,
             });
         }
 
-        // Parse commits count
-        let commit_count = data.get(offset).copied().unwrap_or(0) as usize;
-        offset += 1;
-
+        let commit_count = reader
+            .read_var_int(u8::MAX as u64)
+            .map_err(|_| crate::ConsensusError::invalid_proposal("invalid commit count"))?
+            as usize;
         let mut commit_payloads = Vec::with_capacity(commit_count);
         for _ in 0..commit_count {
-            if offset >= data.len() {
-                break;
-            }
-            let commit_validator = data[offset];
-            offset += 1;
-
-            // Read 64-byte secp256r1 ECDSA signature
-            let sig_len = 64.min(data.len().saturating_sub(offset));
-            let signature = if sig_len > 0 {
-                data[offset..offset + sig_len].to_vec()
-            } else {
-                Vec::new()
-            };
-            offset += sig_len;
-
+            let cv = reader
+                .read_byte()
+                .map_err(|_| crate::ConsensusError::invalid_proposal("commit view missing"))?;
+            let vi = reader
+                .read_byte()
+                .map_err(|_| crate::ConsensusError::invalid_proposal("commit validator missing"))?;
+            let sig = reader
+                .read_memory(64)
+                .map_err(|_| crate::ConsensusError::invalid_proposal("commit signature missing"))?
+                .to_vec();
+            let inv = reader
+                .read_var_bytes(1024)
+                .map_err(|_| crate::ConsensusError::invalid_proposal("commit invocation missing"))?;
             commit_payloads.push(CommitCompact {
-                validator_index: commit_validator,
-                signature,
+                view_number: cv,
+                validator_index: vi,
+                signature: sig,
+                invocation_script: inv,
             });
         }
 
@@ -308,6 +325,7 @@ impl RecoveryMessage {
             validator_index,
             change_view_payloads,
             prepare_request_message,
+            preparation_hash,
             preparation_payloads,
             commit_payloads,
         })
@@ -335,6 +353,7 @@ mod tests {
         assert_eq!(msg.block_index, 100);
         assert!(msg.change_view_payloads.is_empty());
         assert!(msg.prepare_request_message.is_none());
+        assert!(msg.preparation_hash.is_none());
         assert!(msg.preparation_payloads.is_empty());
         assert!(msg.commit_payloads.is_empty());
     }
@@ -375,15 +394,19 @@ mod tests {
         });
 
         // Add prepare request
-        msg.prepare_request_message = Some(PrepareRequestCompact {
-            timestamp: 1000000,
-            nonce: 0xDEADBEEF,
-            transaction_hashes: vec![
+        msg.prepare_request_message = Some(crate::messages::PrepareRequestMessage::new(
+            100,
+            0,
+            1,
+            0,
+            UInt256::zero(),
+            1000000,
+            0xDEADBEEF,
+            vec![
                 UInt256::from_bytes(&[1u8; 32]).unwrap(),
                 UInt256::from_bytes(&[2u8; 32]).unwrap(),
             ],
-            invocation_script: vec![],
-        });
+        ));
 
         // Add preparation payloads
         msg.preparation_payloads.push(PreparationCompact {
@@ -397,15 +420,17 @@ mod tests {
 
         // Add commit payloads
         msg.commit_payloads.push(CommitCompact {
+            view_number: 0,
             validator_index: 0,
             signature: vec![0xAAu8; 64],
+            invocation_script: vec![],
         });
 
         // Serialize
         let data = msg.serialize();
 
         // Deserialize
-        let parsed = RecoveryMessage::deserialize(&data, 100, 0, 1).unwrap();
+        let parsed = RecoveryMessage::deserialize(&data).unwrap();
 
         // Verify change views
         assert_eq!(parsed.change_view_payloads.len(), 1);
@@ -442,7 +467,7 @@ mod tests {
         });
 
         let data = msg.serialize();
-        let parsed = RecoveryMessage::deserialize(&data, 50, 1, 3).unwrap();
+        let parsed = RecoveryMessage::deserialize(&data).unwrap();
 
         assert!(parsed.prepare_request_message.is_none());
         assert_eq!(parsed.preparation_payloads.len(), 1);

@@ -1,5 +1,6 @@
 //! PrepareResponse message - sent by validators to acknowledge a proposal.
 
+use crate::messages::{parse_consensus_message_header, serialize_consensus_message_header};
 use crate::{ConsensusMessageType, ConsensusResult};
 use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};
@@ -40,7 +41,40 @@ impl PrepareResponseMessage {
 
     /// Serializes the message to bytes
     pub fn serialize(&self) -> Vec<u8> {
-        self.preparation_hash.as_bytes().to_vec()
+        let mut out = serialize_consensus_message_header(
+            ConsensusMessageType::PrepareResponse,
+            self.block_index,
+            self.validator_index,
+            self.view_number,
+        );
+        out.extend_from_slice(&self.preparation_hash.as_bytes());
+        out
+    }
+
+    /// Deserializes a PrepareResponse message from bytes.
+    pub fn deserialize(data: &[u8]) -> ConsensusResult<Self> {
+        let (msg_type, block_index, validator_index, view_number, body) =
+            parse_consensus_message_header(data)?;
+        if msg_type != ConsensusMessageType::PrepareResponse {
+            return Err(crate::ConsensusError::invalid_proposal(
+                "invalid PrepareResponse message type",
+            ));
+        }
+        if body.len() < 32 {
+            return Err(crate::ConsensusError::invalid_proposal(
+                "PrepareResponse message body too short",
+            ));
+        }
+        let preparation_hash =
+            UInt256::from_bytes(&body[0..32]).map_err(|_| {
+                crate::ConsensusError::invalid_proposal("invalid PrepareResponse hash")
+            })?;
+        Ok(Self {
+            block_index,
+            view_number,
+            validator_index,
+            preparation_hash,
+        })
     }
 
     /// Validates the message
@@ -75,7 +109,7 @@ mod tests {
         let msg = PrepareResponseMessage::new(100, 0, 1, UInt256::zero());
         let data = msg.serialize();
 
-        assert_eq!(data.len(), 32); // UInt256 is 32 bytes
+        assert_eq!(data.len(), 39); // 7 byte header + UInt256 (32)
     }
 
     #[test]

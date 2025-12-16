@@ -6,7 +6,7 @@ use crate::messages::{
     PrepareResponseMessage, RecoveryMessage,
 };
 use crate::{ChangeViewReason, ConsensusError, ConsensusMessageType, ConsensusResult};
-use neo_primitives::UInt256;
+use neo_primitives::{UInt160, UInt256};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
@@ -58,7 +58,12 @@ pub enum ConsensusEvent {
 #[derive(Debug)]
 pub enum ConsensusCommand {
     /// Start consensus for a new block
-    Start { block_index: u32, timestamp: u64 },
+    Start {
+        block_index: u32,
+        block_version: u32,
+        prev_hash: UInt256,
+        timestamp: u64,
+    },
     /// Process a received consensus message
     ProcessMessage(ConsensusPayload),
     /// Timer tick (for timeout handling)
@@ -103,13 +108,20 @@ impl ConsensusService {
     }
 
     /// Starts consensus for a new block
-    pub fn start(&mut self, block_index: u32, timestamp: u64) -> ConsensusResult<()> {
+    pub fn start(
+        &mut self,
+        block_index: u32,
+        block_version: u32,
+        prev_hash: UInt256,
+        timestamp: u64,
+    ) -> ConsensusResult<()> {
         if self.context.my_index.is_none() {
             return Err(ConsensusError::NotValidator);
         }
 
         info!(block_index, "Starting consensus");
-        self.context.reset_for_new_block(block_index, timestamp);
+        self.context
+            .reset_for_new_block(block_index, block_version, prev_hash, timestamp);
         self.running = true;
 
         // If we're the primary, initiate block proposal
@@ -121,18 +133,43 @@ impl ConsensusService {
     }
 
     /// Processes a consensus message
-    pub fn process_message(&mut self, payload: ConsensusPayload) -> ConsensusResult<()> {
+    pub fn process_message(&mut self, mut payload: ConsensusPayload) -> ConsensusResult<()> {
         if !self.running {
             return Ok(());
         }
 
-        // Compute message hash for deduplication (replay attack prevention)
-        // This matches C# DBFTPlugin's message caching mechanism
-        use neo_crypto::Crypto;
-        let sign_data = payload.get_sign_data();
-        let msg_hash_bytes = Crypto::hash256(&sign_data);
-        let msg_hash = UInt256::from_bytes(&msg_hash_bytes)
-            .map_err(|e| ConsensusError::state_error(format!("Failed to compute message hash: {}", e)))?;
+        // Ensure the embedded consensus message header matches the payload fields.
+        if let Ok((mt, bi, vi, vn, _)) = crate::messages::parse_consensus_message_header(&payload.data)
+        {
+            if mt != payload.message_type
+                || bi != payload.block_index
+                || vi != payload.validator_index
+                || vn != payload.view_number
+            {
+                return Err(ConsensusError::invalid_proposal(
+                    "consensus message header mismatch",
+                ));
+            }
+        }
+
+        // Basic payload invariants (match C# DBFTPlugin conventions for consensus extensible payloads).
+        if payload.category != "dBFT" {
+            return Err(ConsensusError::state_error("invalid consensus payload category"));
+        }
+        if payload.valid_block_start != 0 || payload.valid_block_end != payload.block_index {
+            return Err(ConsensusError::state_error("invalid consensus payload validity window"));
+        }
+
+        // Ensure sender matches the announced validator index.
+        if let Some(v) = self.context.validators.get(payload.validator_index as usize) {
+            if payload.sender != v.script_hash {
+                return Err(ConsensusError::state_error("consensus payload sender mismatch"));
+            }
+        }
+
+        // Compute message hash for deduplication (replay attack prevention).
+        // In the C# implementation, this is keyed by the extensible payload hash.
+        let msg_hash = payload.hash();
 
         // Check if we've already seen this message (replay attack prevention)
         if self.context.has_seen_message(&msg_hash) {
@@ -253,12 +290,15 @@ impl ConsensusService {
             self.context.block_index,
             self.context.view_number,
             self.context.my_index.unwrap(),
+            self.context.block_version,
+            self.context.prev_hash,
             timestamp,
             nonce,
             tx_hashes,
         );
 
-        let payload = self.create_payload(ConsensusMessageType::PrepareRequest, msg.serialize());
+        let mut payload = self.create_payload(ConsensusMessageType::PrepareRequest, msg.serialize());
+        self.context.preparation_hash = Some(payload.hash());
         self.broadcast(payload)?;
 
         // Mark that we've sent the prepare request
@@ -302,9 +342,21 @@ impl ConsensusService {
             "Received PrepareRequest"
         );
 
-        // Parse the message
-        // Mark prepare request as received
+        let request = PrepareRequestMessage::deserialize(&payload.data)?;
+        // Validate linkage to the expected previous block.
+        if request.version != self.context.block_version || request.prev_hash != self.context.prev_hash {
+            return Err(ConsensusError::invalid_proposal(
+                "PrepareRequest header linkage mismatch",
+            ));
+        }
+
+        // Mark prepare request as received and store proposal data.
         self.context.prepare_request_received = true;
+        self.context.proposed_timestamp = request.timestamp;
+        self.context.nonce = request.nonce;
+        self.context.proposed_tx_hashes = request.transaction_hashes.clone();
+        let mut payload_clone = payload.clone();
+        self.context.preparation_hash = Some(payload_clone.hash());
 
         // Calculate block hash from proposal data
         let block_hash = compute_block_hash(
@@ -315,11 +367,12 @@ impl ConsensusService {
         self.context.proposed_block_hash = Some(block_hash);
 
         // Send PrepareResponse
+        let prep_hash = self.context.preparation_hash.unwrap_or_default();
         let response = PrepareResponseMessage::new(
             self.context.block_index,
             self.context.view_number,
             self.context.my_index.unwrap(),
-            block_hash,
+            prep_hash,
         );
 
         let response_payload =
@@ -364,7 +417,12 @@ impl ConsensusService {
             return Err(ConsensusError::signature_failed("PrepareResponse signature invalid"));
         }
 
-        // Add the response
+        let response = PrepareResponseMessage::deserialize(&payload.data)?;
+        if let Some(expected) = self.context.preparation_hash {
+            response.validate(&expected)?;
+        }
+
+        // Add the response (use payload witness signature bytes for counting)
         self.context
             .add_prepare_response(payload.validator_index, payload.witness.clone())?;
 
@@ -425,24 +483,20 @@ impl ConsensusService {
             "Received Commit"
         );
 
-        // Verify the commit signature against the proposed block hash
-        // The commit data contains the validator's signature of the block hash
+        // Verify the commit signature against the proposed block hash sign data.
+        let commit = CommitMessage::deserialize(&payload.data)?;
         if let Some(block_hash) = self.context.proposed_block_hash {
-            let block_hash_bytes = block_hash.as_bytes();
-            if !payload.data.is_empty()
-                && !self.verify_signature(&block_hash_bytes, &payload.data, payload.validator_index)
+            let sign_data = self.get_block_sign_data(&block_hash);
+            if !commit.signature.is_empty()
+                && !self.verify_signature(&sign_data, &commit.signature, payload.validator_index)
             {
-                warn!(
-                    validator = payload.validator_index,
-                    "Commit signature verification failed"
-                );
+                warn!(validator = payload.validator_index, "Commit signature verification failed");
                 return Err(ConsensusError::signature_failed("Commit signature invalid"));
             }
         }
 
-        // Add the commit (signature is in the payload data)
         self.context
-            .add_commit(payload.validator_index, payload.data.clone())?;
+            .add_commit(payload.validator_index, commit.signature.clone())?;
 
         self.check_commits()?;
 
@@ -559,17 +613,12 @@ impl ConsensusService {
         }
 
         // Parse the ChangeView message from payload data
-        let change_view_msg = ChangeViewMessage::deserialize(
-            &payload.data,
-            payload.block_index,
-            payload.view_number,
-            payload.validator_index,
-        )?;
+        let change_view_msg = ChangeViewMessage::deserialize(&payload.data)?;
 
         // Validate the parsed message
         change_view_msg.validate()?;
 
-        let new_view = change_view_msg.new_view_number;
+        let new_view = change_view_msg.new_view_number();
         let timestamp = change_view_msg.timestamp;
         let reason = change_view_msg.reason;
 
@@ -647,7 +696,6 @@ impl ConsensusService {
             self.context.block_index,
             self.context.view_number,
             self.context.my_index.unwrap(),
-            new_view,
             timestamp,
             reason,
         );
@@ -773,12 +821,7 @@ impl ConsensusService {
         }
 
         // Parse the recovery message
-        let recovery = RecoveryMessage::deserialize(
-            &payload.data,
-            payload.block_index,
-            payload.view_number,
-            payload.validator_index,
-        )?;
+        let recovery = RecoveryMessage::deserialize(&payload.data)?;
 
         // Validate the recovery message
         recovery.validate()?;
@@ -889,6 +932,13 @@ impl ConsensusService {
 
     /// Creates a consensus payload
     fn create_payload(&self, msg_type: ConsensusMessageType, data: Vec<u8>) -> ConsensusPayload {
+        let sender = self
+            .context
+            .validators
+            .get(self.context.my_index.unwrap() as usize)
+            .map(|v| v.script_hash)
+            .unwrap_or_else(UInt160::zero);
+
         let mut payload = ConsensusPayload::new(
             self.network,
             self.context.block_index,
@@ -896,6 +946,7 @@ impl ConsensusService {
             self.context.view_number,
             msg_type,
             data,
+            sender,
         );
 
         // Sign the payload
@@ -920,46 +971,47 @@ impl ConsensusService {
 
     /// Signs data with the private key using secp256r1 ECDSA
     fn sign(&self, data: &[u8]) -> Vec<u8> {
-        use neo_crypto::{Crypto, Secp256r1Crypto};
-
-        // Hash the data first (Neo uses SHA-256 for message hashing)
-        let hash = Crypto::sha256(data);
+        use neo_crypto::Secp256r1Crypto;
 
         // Sign with secp256r1 if we have a valid private key
         if self.private_key.len() == 32 {
             let mut key_bytes = [0u8; 32];
             key_bytes.copy_from_slice(&self.private_key);
 
-            match Secp256r1Crypto::sign(&hash, &key_bytes) {
+            match Secp256r1Crypto::sign(data, &key_bytes) {
                 Ok(sig) => sig.to_vec(),
                 Err(e) => {
-                    warn!(error = %e, "ECDSA signing failed, using hash as fallback");
-                    hash.to_vec()
+                    warn!(error = %e, "ECDSA signing failed");
+                    Vec::new()
                 }
             }
         } else {
-            // Fallback for testing without valid key
-            hash.to_vec()
+            // Tests may run without a private key (unsigned payloads are accepted but won't verify).
+            Vec::new()
         }
     }
 
     /// Signs a block hash
     fn sign_block_hash(&self, hash: &UInt256) -> Vec<u8> {
-        self.sign(&hash.as_bytes())
+        self.sign(&self.get_block_sign_data(hash))
+    }
+
+    fn get_block_sign_data(&self, hash: &UInt256) -> Vec<u8> {
+        let mut data = Vec::with_capacity(4 + 32);
+        data.extend_from_slice(&self.network.to_le_bytes());
+        data.extend_from_slice(&hash.as_bytes());
+        data
     }
 
     /// Verifies a signature against a public key
     fn verify_signature(&self, data: &[u8], signature: &[u8], validator_index: u8) -> bool {
-        use neo_crypto::{Crypto, Secp256r1Crypto};
+        use neo_crypto::Secp256r1Crypto;
 
         // Get the validator's public key
         let validator = match self.context.validators.get(validator_index as usize) {
             Some(v) => v,
             None => return false,
         };
-
-        // Hash the data
-        let hash = Crypto::sha256(data);
 
         // Verify signature length (64 bytes for secp256r1)
         if signature.len() != 64 {
@@ -977,7 +1029,7 @@ impl ConsensusService {
         // Get public key bytes
         let pub_key_bytes = validator.public_key.encoded();
 
-        match Secp256r1Crypto::verify(&hash, &sig_bytes, &pub_key_bytes) {
+        match Secp256r1Crypto::verify(data, &sig_bytes, &pub_key_bytes) {
             Ok(valid) => valid,
             Err(e) => {
                 debug!(error = %e, "Signature verification failed");
@@ -1031,6 +1083,34 @@ mod tests {
             .collect()
     }
 
+    fn make_prepare_request_bytes(
+        block_index: u32,
+        view_number: u8,
+        validator_index: u8,
+        prev_hash: UInt256,
+    ) -> Vec<u8> {
+        PrepareRequestMessage::new(
+            block_index,
+            view_number,
+            validator_index,
+            0,
+            prev_hash,
+            1234,
+            42,
+            Vec::new(),
+        )
+        .serialize()
+    }
+
+    fn make_change_view_bytes(
+        block_index: u32,
+        view_number: u8,
+        validator_index: u8,
+    ) -> Vec<u8> {
+        ChangeViewMessage::new(block_index, view_number, validator_index, 9999, ChangeViewReason::Timeout)
+            .serialize()
+    }
+
     #[tokio::test]
     async fn test_consensus_service_new() {
         let (tx, _rx) = mpsc::channel(100);
@@ -1047,7 +1127,7 @@ mod tests {
         let validators = create_test_validators(7);
         let mut service = ConsensusService::new(0x4E454F, validators, Some(0), vec![], tx);
 
-        service.start(100, 1000).unwrap();
+        service.start(100, 0, UInt256::zero(), 1000).unwrap();
 
         assert!(service.is_running());
         assert_eq!(service.context().block_index, 100);
@@ -1059,7 +1139,7 @@ mod tests {
         let validators = create_test_validators(7);
         let mut service = ConsensusService::new(0x4E454F, validators, None, vec![], tx);
 
-        let result = service.start(100, 1000);
+        let result = service.start(100, 0, UInt256::zero(), 1000);
         assert!(matches!(result, Err(ConsensusError::NotValidator)));
     }
 
@@ -1069,10 +1149,10 @@ mod tests {
         let validators = create_test_validators(7);
         let mut service = ConsensusService::new(0x4E454F, validators, Some(0), vec![], tx);
 
-        service.start(0, 1000).unwrap();
+        service.start(0, 0, UInt256::zero(), 1000).unwrap();
         assert!(service.context().is_primary()); // Block 0, view 0, validator 0 is primary
 
-        service.start(1, 1000).unwrap();
+        service.start(1, 0, UInt256::zero(), 1000).unwrap();
         assert!(!service.context().is_primary()); // Block 1, view 0, validator 1 is primary
     }
 
@@ -1082,17 +1162,19 @@ mod tests {
         let validators = create_test_validators(7);
         let mut service = ConsensusService::new(0x4E454F, validators, Some(0), vec![], tx);
 
-        service.start(100, 1000).unwrap();
+        service.start(100, 0, UInt256::zero(), 1000).unwrap();
 
         // Create a test consensus payload
         // Note: For block 100, view 0, the primary is validator (100 % 7) = 2
+        let data = make_prepare_request_bytes(100, 0, 2, UInt256::zero());
         let payload = ConsensusPayload::new(
             0x4E454F,
             100,
             2, // From validator 2 (primary for block 100, view 0)
             0,
             ConsensusMessageType::PrepareRequest,
-            vec![1, 2, 3, 4],
+            data,
+            UInt160::zero(),
         );
 
         // First time: message should be processed
@@ -1123,23 +1205,25 @@ mod tests {
         let validators = create_test_validators(7);
         let mut service = ConsensusService::new(0x4E454F, validators, Some(0), vec![], tx);
 
-        service.start(100, 1000).unwrap();
+        service.start(100, 0, UInt256::zero(), 1000).unwrap();
 
         // Create a test payload
+        let data = make_prepare_request_bytes(100, 0, 2, UInt256::zero());
         let payload = ConsensusPayload::new(
             0x4E454F,
             100,
-            1,
+            2,
             0,
             ConsensusMessageType::PrepareRequest,
-            vec![1, 2, 3, 4],
+            data,
+            UInt160::zero(),
         );
 
         // Process the message
         let _ = service.process_message(payload.clone());
 
         // Start a new block - this should clear the message cache
-        service.start(101, 2000).unwrap();
+        service.start(101, 0, UInt256::zero(), 2000).unwrap();
 
         // The same message should now be processed again (different block context)
         // Note: It will fail validation because block_index doesn't match,
@@ -1151,28 +1235,26 @@ mod tests {
 
     #[tokio::test]
     async fn test_replay_attack_prevention() {
-        use neo_crypto::Crypto;
-
         let (tx, _rx) = mpsc::channel(100);
         let validators = create_test_validators(7);
         let mut service = ConsensusService::new(0x4E454F, validators, Some(0), vec![], tx);
 
-        service.start(100, 1000).unwrap();
+        service.start(100, 0, UInt256::zero(), 1000).unwrap();
 
         // Create a malicious payload (simulating replay attack)
+        let data = make_change_view_bytes(100, 0, 1);
         let payload = ConsensusPayload::new(
             0x4E454F,
             100,
             1,
             0,
             ConsensusMessageType::ChangeView,
-            vec![5, 6, 7, 8],
+            data,
+            UInt160::zero(),
         );
 
-        // Compute the message hash
-        let sign_data = payload.get_sign_data();
-        let msg_hash_bytes = Crypto::hash256(&sign_data);
-        let msg_hash = UInt256::from_bytes(&msg_hash_bytes).unwrap();
+        let mut payload_for_hash = payload.clone();
+        let msg_hash = payload_for_hash.hash();
 
         // Initially, message should not be seen
         assert!(!service.context().has_seen_message(&msg_hash));

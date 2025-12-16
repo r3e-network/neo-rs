@@ -387,11 +387,18 @@ async fn run_node(
     node_config: &NodeConfig,
     cli: &NodeCli,
 ) -> Result<()> {
-    // Create and start the node runtime
+    // Create the node runtime
     let mut node_runtime = NodeRuntime::new(runtime_config.clone());
 
     info!(target: "neo", "starting neo-node runtime...");
 
+    // Start P2P service (wired into the runtime before runtime start so consensus bridging works).
+    let mut p2p_service = P2PService::new(runtime_config.p2p.clone(), node_runtime.p2p_event_sender());
+    p2p_service.set_chain(node_runtime.chain_handle());
+    p2p_service
+        .insert_header(crate::genesis::create_genesis_block(&runtime_config.protocol_settings).header)
+        .await;
+    node_runtime.set_p2p_broadcast_sender(p2p_service.broadcast_sender());
     node_runtime
         .start()
         .await
@@ -404,8 +411,7 @@ async fn run_node(
         "neo-node runtime started"
     );
 
-    // Start P2P service
-    let p2p_service = P2PService::new(runtime_config.p2p.clone(), node_runtime.p2p_event_sender());
+    p2p_service.set_local_height(node_runtime.height().await).await;
     if let Err(e) = p2p_service.start().await {
         error!(target: "neo", error = %e, "failed to start P2P service");
     } else {
@@ -419,6 +425,45 @@ async fn run_node(
 
     // Optionally start RPC service
     let rpc_service = start_rpc_service_if_enabled(node_config, &runtime_config).await;
+
+    // Keep the RPC state fresh (so `neo-cli` sees accurate height/peers/mempool).
+    if let Some(rpc) = rpc_service.clone() {
+        let chain = node_runtime.chain_handle();
+        let mempool = node_runtime.mempool_handle();
+        let p2p = p2p_service.clone();
+
+        tokio::spawn(async move {
+            loop {
+                if rpc.state().await != RpcServiceState::Running {
+                    break;
+                }
+
+                let chain_guard = chain.read().await;
+                let height = chain_guard.height();
+                let mut block_hashes = std::collections::HashMap::new();
+                if let Some(entry) = chain_guard.get_block_at_height(0) {
+                    block_hashes.insert(0, entry.hash.to_string());
+                }
+                if let Some(entry) = chain_guard.get_block_at_height(height) {
+                    block_hashes.insert(height, entry.hash.to_string());
+                }
+                let best_hash = chain_guard
+                    .current_hash()
+                    .map(|h| h.to_string())
+                    .unwrap_or_default();
+                drop(chain_guard);
+                let peer_count = p2p.peer_count().await;
+                let mempool_hashes = mempool.read().await.hashes();
+                let mempool_hashes = mempool_hashes.into_iter().map(|h| h.to_string()).collect();
+
+                rpc.update_state_with_mempool(height, peer_count, mempool_hashes)
+                    .await;
+                rpc.update_chain_hashes(best_hash, block_hashes).await;
+
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            }
+        });
+    }
 
     // Optionally start health endpoint
     start_health_endpoint_if_enabled(cli, node_config).await;
@@ -479,9 +524,18 @@ async fn start_rpc_service_if_enabled(
 
     let service = RpcService::new(rpc_config);
     service.set_network_magic(runtime_config.network_magic).await;
+    service
+        .set_protocol_metadata(
+            runtime_config.p2p.listen_address.port(),
+            runtime_config.p2p.listen_address.port().saturating_add(1),
+            runtime_config.protocol_settings.validators_count,
+            runtime_config.protocol_settings.milliseconds_per_block as u64,
+        )
+        .await;
 
     if let Err(e) = service.start().await {
         error!(target: "neo", error = %e, "failed to start RPC service");
+        return None;
     } else {
         info!(target: "neo", address = %rpc_addr, "RPC service started");
     }

@@ -192,6 +192,16 @@ impl NodeRuntime {
         self.mempool.read().await.len()
     }
 
+    /// Returns a handle to the in-memory mempool.
+    pub fn mempool_handle(&self) -> Arc<RwLock<Mempool>> {
+        self.mempool.clone()
+    }
+
+    /// Returns a handle to the in-memory chain state.
+    pub fn chain_handle(&self) -> Arc<RwLock<ChainState>> {
+        self.chain.clone()
+    }
+
     /// Returns true if state root calculation is enabled
     pub fn state_root_enabled(&self) -> bool {
         self.state_store.is_some()
@@ -355,13 +365,21 @@ impl NodeRuntime {
         // Store genesis state root if state service is enabled
         if let Some(ref store) = self.state_store {
             let state_root = StateRoot::new_current(height, calculated_root);
-            let snapshot = store.get_snapshot();
+            let mut snapshot = store.get_snapshot();
             if let Err(e) = snapshot.add_local_state_root(&state_root) {
                 warn!(
                     target: "neo::runtime",
                     error = %e,
                     "failed to store genesis state root"
                 );
+            } else if let Err(e) = snapshot.commit() {
+                warn!(
+                    target: "neo::runtime",
+                    error = %e,
+                    "failed to commit genesis state root snapshot"
+                );
+            } else {
+                store.update_local_state_root(height);
             }
         }
 
@@ -432,6 +450,7 @@ impl NodeRuntime {
             let mempool = self.mempool.clone();
             let consensus = self.consensus.clone();
             let p2p_broadcast_tx = self.p2p_broadcast_tx.clone();
+            let validators = self.config.validators.clone();
             let mut shutdown_rx = self.shutdown_tx.subscribe();
 
             tokio::spawn(async move {
@@ -440,10 +459,22 @@ impl NodeRuntime {
                     event_tx,
                     mempool,
                     consensus,
+                    validators,
                     p2p_broadcast_tx,
                     &mut shutdown_rx,
                 )
                 .await;
+            });
+        }
+
+        // Spawn consensus scheduler (validator mode only).
+        if self.config.validator_index.is_some() {
+            let consensus = self.consensus.clone();
+            let chain = self.chain.clone();
+            let shutdown_rx = self.shutdown_tx.subscribe();
+
+            tokio::spawn(async move {
+                handlers::run_consensus_scheduler(consensus, chain, shutdown_rx).await;
             });
         }
 
@@ -456,6 +487,28 @@ impl NodeRuntime {
             let state_store = self.state_store.clone();
             let state_trie = self.state_trie.clone();
             let state_validator = self.state_validator.clone();
+            let consensus = self.consensus.clone();
+            let network_magic = self.config.network_magic;
+            let p2p_broadcast_tx = self.p2p_broadcast_tx.clone();
+            let state_service_config = self.config.state_service.as_ref().map(|_| {
+                let verifiers = self
+                    .config
+                    .validators
+                    .iter()
+                    .map(|v| v.public_key.clone())
+                    .collect::<Vec<_>>();
+                let signer = handlers::state_service::build_state_service_signer(
+                    self.config.validator_index,
+                    &self.config.private_key,
+                    &verifiers,
+                );
+                handlers::state_service::StateServiceReactorConfig {
+                    network_magic,
+                    verifiers,
+                    signer,
+                    p2p_broadcast_tx: p2p_broadcast_tx.clone(),
+                }
+            });
             let block_executor = self.block_executor.clone();
             let mut shutdown_rx = self.shutdown_tx.subscribe();
 
@@ -469,6 +522,10 @@ impl NodeRuntime {
                     state_store,
                     state_trie,
                     state_validator,
+                    consensus,
+                    network_magic,
+                    p2p_broadcast_tx,
+                    state_service_config,
                     block_executor,
                     &mut shutdown_rx,
                 )
