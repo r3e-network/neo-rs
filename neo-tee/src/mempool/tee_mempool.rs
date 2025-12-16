@@ -10,6 +10,7 @@ use crate::error::{TeeError, TeeResult};
 use crate::mempool::fair_ordering::{
     compute_ordering_key, FairOrderingPolicy, OrderingKey, TransactionTiming,
 };
+use neo_crypto::{Crypto, Secp256r1Crypto};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -93,7 +94,9 @@ pub struct OrderingProof {
     pub enclave_counter: u64,
     /// Hash of ordering policy parameters
     pub policy_hash: [u8; 32],
-    /// Signature from enclave (in production, would be SGX report)
+    /// Compressed secp256r1 public key used to sign this proof.
+    pub public_key: Vec<u8>,
+    /// Signature over (merkle_root || counter || policy_hash).
     pub signature: Vec<u8>,
 }
 
@@ -238,13 +241,15 @@ impl TeeMempool {
         // Hash the policy parameters
         let policy_hash = self.hash_policy();
 
-        // Create proof (in production, this would include SGX report)
+        let (public_key, signature) = self.sign_proof(&merkle_root, enclave_counter, &policy_hash)?;
+
         let proof = OrderingProof {
             merkle_root,
             timestamp: SystemTime::now(),
             enclave_counter,
             policy_hash,
-            signature: self.sign_proof(&merkle_root, enclave_counter)?,
+            public_key,
+            signature,
         };
 
         *self.ordering_proof.write() = Some(proof.clone());
@@ -353,18 +358,54 @@ impl TeeMempool {
         result
     }
 
-    /// Sign the ordering proof (simplified - in production use SGX report)
-    fn sign_proof(&self, merkle_root: &[u8; 32], counter: u64) -> TeeResult<Vec<u8>> {
+    /// Sign the ordering proof.
+    ///
+    /// In `simulation` mode the signing key is deterministically derived from the enclave sealing
+    /// key so callers can verify ordering proofs without SGX hardware.
+    fn sign_proof(
+        &self,
+        merkle_root: &[u8; 32],
+        counter: u64,
+        policy_hash: &[u8; 32],
+    ) -> TeeResult<(Vec<u8>, Vec<u8>)> {
         let sealing_key = self.enclave.sealing_key()?;
+        let private_key = derive_secp256r1_key_from_sealing_key(&sealing_key)?;
+        let public_key = Secp256r1Crypto::derive_public_key(&private_key)
+            .map_err(|e| TeeError::Other(format!("Failed to derive proof public key: {e}")))?;
 
-        let mut hasher = Sha256::new();
-        hasher.update(sealing_key);
-        hasher.update(merkle_root);
-        hasher.update(counter.to_le_bytes());
-        let signature = hasher.finalize();
+        let mut message = Vec::with_capacity(32 + 8 + 32);
+        message.extend_from_slice(merkle_root);
+        message.extend_from_slice(&counter.to_le_bytes());
+        message.extend_from_slice(policy_hash);
 
-        Ok(signature.to_vec())
+        let signature = Secp256r1Crypto::sign(&message, &private_key)
+            .map_err(|e| TeeError::Other(format!("Failed to sign proof: {e}")))?;
+        Ok((public_key, signature.to_vec()))
     }
+}
+
+fn derive_secp256r1_key_from_sealing_key(sealing_key: &[u8; 32]) -> TeeResult<[u8; 32]> {
+    // Derive a stable signing key from the sealing key.
+    // The `p256` backend rejects invalid scalar values, so probe a few domain-separated hashes.
+    for counter in 0u8..16u8 {
+        let mut hasher = Sha256::new();
+        hasher.update(b"neo-tee-ordering-proof-key-v1");
+        hasher.update(sealing_key);
+        hasher.update([counter]);
+        let candidate = hasher.finalize();
+
+        let mut key = [0u8; 32];
+        key.copy_from_slice(&candidate[..32]);
+        if Secp256r1Crypto::derive_public_key(&key).is_ok() {
+            return Ok(key);
+        }
+    }
+
+    // Fallback: a final hash with a different domain separator.
+    let fallback = Crypto::sha256(b"neo-tee-ordering-proof-key-v1-fallback");
+    let mut key = [0u8; 32];
+    key.copy_from_slice(&fallback[..32]);
+    Ok(key)
 }
 
 #[cfg(test)]

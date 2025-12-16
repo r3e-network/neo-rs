@@ -171,13 +171,22 @@ impl TransactionManager {
     }
 
     /// Add witness with script hash
-    /// Matches C# AddWitness with UInt160
+    /// Matches C# AddWitness with UInt160.
+    ///
+    /// Note: Contract lookup requires an RPC call; use [`Self::add_witness_with_hash_async`].
     pub fn add_witness_with_hash(
+        &mut self,
+        _script_hash: &UInt160,
+    ) -> Result<&mut Self, Box<dyn std::error::Error>> {
+        Err("Contract lookup requires RPC; use add_witness_with_hash_async()".into())
+    }
+
+    /// Adds a witness by resolving the contract over RPC (required for contract accounts).
+    pub async fn add_witness_with_hash_async(
         &mut self,
         script_hash: &UInt160,
     ) -> Result<&mut Self, Box<dyn std::error::Error>> {
-        // Get contract from blockchain
-        let contract = self.get_contract(script_hash)?;
+        let contract = self.get_contract_async(script_hash).await?;
         self.add_witness(contract)
     }
 
@@ -214,9 +223,25 @@ impl TransactionManager {
         self.context.add_contract(contract);
     }
 
-    fn get_contract(&self, script_hash: &UInt160) -> Result<Contract, Box<dyn std::error::Error>> {
-        // Minimal placeholder to keep signing flows from failing outright when a contract
-        // lookup is not available in this lightweight RPC client.
-        Ok(Contract::create_with_hash(*script_hash, Vec::new()))
+    async fn get_contract_async(
+        &self,
+        script_hash: &UInt160,
+    ) -> Result<Contract, Box<dyn std::error::Error>> {
+        let state = self
+            ._rpc_client
+            .get_contract_state(&script_hash.to_string())
+            .await?;
+
+        let parameter_list = state
+            .contract_state
+            .manifest
+            .abi
+            .methods
+            .iter()
+            .find(|m| m.name.eq_ignore_ascii_case("verify"))
+            .map(|method| method.parameters.iter().map(|p| p.param_type).collect())
+            .unwrap_or_default();
+
+        Ok(Contract::create_with_hash(*script_hash, parameter_list))
     }
 }

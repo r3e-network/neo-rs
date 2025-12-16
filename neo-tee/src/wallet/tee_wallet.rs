@@ -3,12 +3,14 @@
 use crate::enclave::TeeEnclave;
 use crate::error::{TeeError, TeeResult};
 use crate::wallet::SealedKey;
+use neo_crypto::{Crypto, Secp256r1Crypto};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tracing::{info, warn};
+use zeroize::Zeroizing;
 
 /// TEE-protected wallet that stores keys in sealed format
 pub struct TeeWallet {
@@ -147,10 +149,8 @@ impl TeeWallet {
             return Err(TeeError::Other("Wallet is locked".to_string()));
         }
 
-        // Generate new key pair
-        let private_key: [u8; 32] = rand::random();
-
-        // Derive public key (simplified - in production use secp256r1)
+        // Generate a new secp256r1 keypair (Neo N3 primary curve).
+        let private_key = Secp256r1Crypto::generate_private_key();
         let public_key = self.derive_public_key(&private_key)?;
         let script_hash = self.compute_script_hash(&public_key)?;
 
@@ -187,11 +187,8 @@ impl TeeWallet {
             return Err(TeeError::Other("Wallet is locked".to_string()));
         }
 
-        if private_key.len() != 32 {
-            return Err(TeeError::InvalidKeyFormat);
-        }
-
-        let public_key = self.derive_public_key(private_key)?;
+        let key: &[u8; 32] = private_key.try_into().map_err(|_| TeeError::InvalidKeyFormat)?;
+        let public_key = self.derive_public_key(key)?;
         let script_hash = self.compute_script_hash(&public_key)?;
 
         // Check if key already exists
@@ -257,12 +254,10 @@ impl TeeWallet {
             .ok_or_else(|| TeeError::KeyNotFound(hex::encode(script_hash)))?;
 
         // Unseal the private key inside TEE
-        let private_key = sealed_key.unseal(&self.enclave)?;
+        let private_key = Zeroizing::new(sealed_key.unseal(&self.enclave)?);
 
-        // Sign the data (simplified - in production use proper ECDSA)
         let signature = self.sign_with_key(&private_key, data)?;
 
-        // Private key is automatically zeroed when dropped
         Ok(signature)
     }
 
@@ -319,53 +314,38 @@ impl TeeWallet {
         Ok(())
     }
 
-    /// Derive public key from private key (simplified)
-    fn derive_public_key(&self, _private_key: &[u8]) -> TeeResult<Vec<u8>> {
-        // In production, use secp256r1 (P-256) curve
-        // For now, return a placeholder compressed public key
-        use sha2::{Digest, Sha256};
-        let mut hasher = Sha256::new();
-        hasher.update(_private_key);
-        let hash = hasher.finalize();
-
-        let mut public_key = vec![0x02u8]; // Compressed prefix
-        public_key.extend_from_slice(&hash);
-        Ok(public_key)
+    /// Derive compressed secp256r1 public key from a 32-byte private key.
+    fn derive_public_key(&self, private_key: &[u8; 32]) -> TeeResult<Vec<u8>> {
+        Secp256r1Crypto::derive_public_key(private_key)
+            .map_err(|e| TeeError::Other(format!("Failed to derive public key: {e}")))
     }
 
-    /// Compute script hash from public key (simplified)
+    /// Compute Neo N3 script hash for a signature contract from compressed public key.
     fn compute_script_hash(&self, public_key: &[u8]) -> TeeResult<[u8; 20]> {
-        use sha2::{Digest, Sha256};
-
         // Script: PUSHDATA(public_key) + SYSCALL(CheckSig)
         let mut script = Vec::new();
         script.push(0x0c); // PUSHDATA1
         script.push(public_key.len() as u8);
         script.extend_from_slice(public_key);
-        script.extend_from_slice(&[0x41, 0x56, 0xe7, 0xb3, 0x27]); // SYSCALL CheckSig
+        script.push(0x41); // SYSCALL
+        let syscall_hash = Crypto::sha256(b"System.Crypto.CheckSig");
+        script.extend_from_slice(&syscall_hash[..4]);
 
-        // SHA256 then RIPEMD160 (simplified to just SHA256 truncated)
-        let mut hasher = Sha256::new();
-        hasher.update(&script);
-        let hash = hasher.finalize();
-
-        let mut script_hash = [0u8; 20];
-        script_hash.copy_from_slice(&hash[..20]);
-        Ok(script_hash)
+        Ok(Crypto::hash160(&script))
     }
 
-    /// Sign data with private key (simplified)
+    /// Sign data with a secp256r1 private key (returns 64-byte signature).
     fn sign_with_key(&self, private_key: &[u8], data: &[u8]) -> TeeResult<Vec<u8>> {
-        // In production, use proper ECDSA signing
-        // For now, return HMAC-SHA256 as placeholder
-        use sha2::{Digest, Sha256};
+        let key: &[u8; 32] = private_key.try_into().map_err(|_| {
+            TeeError::Other(format!(
+                "Invalid private key length: expected 32, got {}",
+                private_key.len()
+            ))
+        })?;
 
-        let mut hasher = Sha256::new();
-        hasher.update(private_key);
-        hasher.update(data);
-        let signature = hasher.finalize();
-
-        Ok(signature.to_vec())
+        Secp256r1Crypto::sign(data, key)
+            .map(|sig| sig.to_vec())
+            .map_err(|e| TeeError::Other(format!("Failed to sign: {e}")))
     }
 }
 

@@ -40,6 +40,9 @@ async-trait = "0.1"
 tokio = { version = "1", features = ["sync"] }
 tracing = "0.1"
 
+# Workspace crypto primitives (secp256r1 + hash160)
+neo-crypto = { workspace = true }
+
 # SGX dependencies (optional)
 sgx-isa = { version = "0.4", optional = true }
 
