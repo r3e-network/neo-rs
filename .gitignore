@@ -37,6 +37,7 @@ Thumbs.db
 # Claude and AI artifacts
 .claude-flow/
 .hive-mind/
+.cargo-ai/
 
 # Compiled binaries
 /neo-node
@@ -45,6 +46,7 @@ Thumbs.db
 /neo-cli
 /neo-cli.exe
 !/neo-cli/
+/rust_out
 *.exe
 
 # Development artifacts

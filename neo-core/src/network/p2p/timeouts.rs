@@ -49,9 +49,5 @@ pub fn log_stats() {
     );
 }
 
-#[cfg(test)]
-pub(crate) fn reset() {
-    HANDSHAKE_TIMEOUTS.store(0, Ordering::Relaxed);
-    READ_TIMEOUTS.store(0, Ordering::Relaxed);
-    WRITE_TIMEOUTS.store(0, Ordering::Relaxed);
-}
+// Note: no test-only reset helper is kept here to avoid unused dead code in the crate;
+// tests can snapshot counters via `stats()` if they need to assert behavior.

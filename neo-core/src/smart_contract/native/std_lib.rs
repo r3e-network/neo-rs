@@ -812,7 +812,7 @@ mod tests {
         let data = b"Hello, World!".to_vec();
 
         // Encode
-        let encoded = stdlib.base64_encode(&[data.clone()]).unwrap();
+        let encoded = stdlib.base64_encode(std::slice::from_ref(&data)).unwrap();
         let encoded_str = String::from_utf8(encoded.clone()).unwrap();
         assert_eq!(encoded_str, "SGVsbG8sIFdvcmxkIQ==");
 
@@ -828,7 +828,7 @@ mod tests {
         let data = "test string".as_bytes().to_vec();
 
         // Serialize
-        let serialized = stdlib.json_serialize(&[data.clone()]).unwrap();
+        let serialized = stdlib.json_serialize(std::slice::from_ref(&data)).unwrap();
         let json_str = String::from_utf8(serialized.clone()).unwrap();
         assert!(json_str.contains("test string"));
 
