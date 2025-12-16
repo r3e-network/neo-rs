@@ -103,13 +103,21 @@ impl ConsensusService {
     }
 
     /// Starts consensus for a new block
-    pub fn start(&mut self, block_index: u32, timestamp: u64) -> ConsensusResult<()> {
+    pub fn start(
+        &mut self,
+        block_index: u32,
+        timestamp: u64,
+        prev_hash: UInt256,
+        version: u32,
+    ) -> ConsensusResult<()> {
         if self.context.my_index.is_none() {
             return Err(ConsensusError::NotValidator);
         }
 
         info!(block_index, "Starting consensus");
         self.context.reset_for_new_block(block_index, timestamp);
+        self.context.prev_hash = prev_hash;
+        self.context.version = version;
         self.running = true;
 
         // If we're the primary, initiate block proposal
@@ -237,7 +245,7 @@ impl ConsensusService {
         }
 
         let timestamp = current_timestamp();
-        let nonce = timestamp ^ (self.context.block_index as u64); // Simple nonce generation
+        let nonce = timestamp ^ (self.context.block_index as u64); // TODO: use cryptographic RNG like C#
 
         // Store proposal data
         self.context.proposed_timestamp = timestamp;
@@ -249,12 +257,34 @@ impl ConsensusService {
             self.context.block_index,
             self.context.view_number,
             self.context.my_index.unwrap(),
+            self.context.version,
+            self.context.prev_hash,
             timestamp,
             nonce,
             tx_hashes,
         );
 
         let payload = self.create_payload(ConsensusMessageType::PrepareRequest, msg.serialize());
+
+        // Cache the primary PrepareRequest payload hash (ExtensiblePayload.Hash).
+        if let Ok(hash) = self.dbft_payload_hash(&payload) {
+            self.context.preparation_hash = Some(hash);
+        }
+
+        // Compute block header hash for commit signatures.
+        let merkle_root = compute_merkle_root(&self.context.proposed_tx_hashes);
+        let next_consensus = compute_next_consensus_address(&self.context.validators);
+        self.context.proposed_block_hash = Some(compute_header_hash(
+            self.context.version,
+            self.context.prev_hash,
+            merkle_root,
+            timestamp,
+            nonce,
+            self.context.block_index,
+            self.context.primary_index(),
+            next_consensus,
+        ));
+
         self.broadcast(payload)?;
 
         // Mark that we've sent the prepare request
@@ -298,33 +328,58 @@ impl ConsensusService {
             "Received PrepareRequest"
         );
 
-        // Parse the message
-        // Mark prepare request as received
-        self.context.prepare_request_received = true;
-
-        // Calculate block hash from proposal data
-        let block_hash = compute_block_hash(
-            self.context.block_index,
-            self.context.view_number,
+        let expected_primary = self.context.primary_index();
+        let prepare_request = PrepareRequestMessage::deserialize_body(
             &payload.data,
+            payload.block_index,
+            payload.view_number,
+            payload.validator_index,
+        )?;
+        prepare_request.validate(expected_primary)?;
+
+        // Mark prepare request as received and store proposal fields.
+        self.context.prepare_request_received = true;
+        self.context.version = prepare_request.version;
+        self.context.prev_hash = prepare_request.prev_hash;
+        self.context.proposed_timestamp = prepare_request.timestamp;
+        self.context.nonce = prepare_request.nonce;
+        self.context.proposed_tx_hashes = prepare_request.transaction_hashes.clone();
+
+        // Cache PrepareRequest payload hash (ExtensiblePayload.Hash) for PrepareResponse.
+        self.context.preparation_hash = Some(self.dbft_payload_hash(payload)?);
+
+        // Calculate block header hash from proposal data (for commit signatures).
+        let merkle_root = compute_merkle_root(&self.context.proposed_tx_hashes);
+        let next_consensus = compute_next_consensus_address(&self.context.validators);
+        let block_hash = compute_header_hash(
+            self.context.version,
+            self.context.prev_hash,
+            merkle_root,
+            self.context.proposed_timestamp,
+            self.context.nonce,
+            self.context.block_index,
+            self.context.primary_index(),
+            next_consensus,
         );
         self.context.proposed_block_hash = Some(block_hash);
 
         // Send PrepareResponse
+        let preparation_hash = self.context.preparation_hash.unwrap_or_default();
         let response = PrepareResponseMessage::new(
             self.context.block_index,
             self.context.view_number,
             self.context.my_index.unwrap(),
-            block_hash,
+            preparation_hash,
         );
 
         let response_payload =
             self.create_payload(ConsensusMessageType::PrepareResponse, response.serialize());
+        let my_witness = response_payload.witness.clone();
         self.broadcast(response_payload)?;
 
         // Add our own response
         self.context
-            .add_prepare_response(self.context.my_index.unwrap(), vec![])?;
+            .add_prepare_response(self.context.my_index.unwrap(), my_witness)?;
 
         self.check_prepare_responses()?;
 
@@ -358,6 +413,17 @@ impl ConsensusService {
                 "PrepareResponse signature verification failed"
             );
             return Err(ConsensusError::signature_failed("PrepareResponse signature invalid"));
+        }
+
+        // Verify PreparationHash matches the primary PrepareRequest payload hash (C# behavior).
+        if let Some(expected) = self.context.preparation_hash {
+            let msg = PrepareResponseMessage::deserialize_body(
+                &payload.data,
+                payload.block_index,
+                payload.view_number,
+                payload.validator_index,
+            )?;
+            msg.validate(&expected)?;
         }
 
         // Add the response
@@ -582,7 +648,7 @@ impl ConsensusService {
         // Validate the parsed message
         change_view_msg.validate()?;
 
-        let new_view = change_view_msg.new_view_number;
+        let new_view = change_view_msg.new_view_number()?;
         let timestamp = change_view_msg.timestamp;
         let reason = change_view_msg.reason;
 
@@ -660,7 +726,6 @@ impl ConsensusService {
             self.context.block_index,
             self.context.view_number,
             self.context.my_index.unwrap(),
-            new_view,
             timestamp,
             reason,
         );
@@ -799,14 +864,15 @@ impl ConsensusService {
         info!(
             block_index = payload.block_index,
             view_number = payload.view_number,
-            change_views = recovery.change_view_payloads.len(),
-            preparations = recovery.preparation_payloads.len(),
-            commits = recovery.commit_payloads.len(),
+            change_views = recovery.change_view_messages.len(),
+            preparations = recovery.preparation_messages.len(),
+            commits = recovery.commit_messages.len(),
+            has_prepare_request = recovery.prepare_request_message.is_some(),
             "Applying recovery message state"
         );
 
         // Apply change view payloads
-        for cv in &recovery.change_view_payloads {
+        for cv in &recovery.change_view_messages {
             if cv.validator_index as usize >= self.context.validator_count() {
                 continue;
             }
@@ -821,19 +887,20 @@ impl ConsensusService {
         }
 
         // Apply preparation payloads (PrepareResponses)
-        for prep in &recovery.preparation_payloads {
+        for prep in &recovery.preparation_messages {
             if prep.validator_index as usize >= self.context.validator_count() {
                 continue;
             }
             // Only apply if we don't already have this prepare response
             use std::collections::hash_map::Entry;
             if let Entry::Vacant(e) = self.context.prepare_responses.entry(prep.validator_index) {
+                // Store witness signature bytes if possible; otherwise keep raw invocation script.
                 e.insert(prep.invocation_script.clone());
             }
         }
 
         // Apply commit payloads
-        for commit in &recovery.commit_payloads {
+        for commit in &recovery.commit_messages {
             if commit.validator_index as usize >= self.context.validator_count() {
                 continue;
             }
@@ -848,9 +915,38 @@ impl ConsensusService {
         if let Some(ref prep_req) = recovery.prepare_request_message {
             if !self.context.prepare_request_received {
                 self.context.prepare_request_received = true;
+                self.context.version = prep_req.version;
+                self.context.prev_hash = prep_req.prev_hash;
                 self.context.proposed_timestamp = prep_req.timestamp;
                 self.context.nonce = prep_req.nonce;
                 self.context.proposed_tx_hashes = prep_req.transaction_hashes.clone();
+
+                // Compute preparation hash from the embedded PrepareRequest message.
+                let tmp = ConsensusPayload::new(
+                    self.network,
+                    prep_req.block_index,
+                    prep_req.validator_index,
+                    prep_req.view_number,
+                    ConsensusMessageType::PrepareRequest,
+                    prep_req.serialize(),
+                );
+                if let Ok(h) = self.dbft_payload_hash(&tmp) {
+                    self.context.preparation_hash = Some(h);
+                }
+
+                // Compute block header hash for commit verification.
+                let merkle_root = compute_merkle_root(&self.context.proposed_tx_hashes);
+                let next_consensus = compute_next_consensus_address(&self.context.validators);
+                self.context.proposed_block_hash = Some(compute_header_hash(
+                    self.context.version,
+                    self.context.prev_hash,
+                    merkle_root,
+                    self.context.proposed_timestamp,
+                    self.context.nonce,
+                    self.context.block_index,
+                    self.context.primary_index(),
+                    next_consensus,
+                ));
                 debug!(
                     tx_count = prep_req.transaction_hashes.len(),
                     "Applied PrepareRequest from recovery"
@@ -1072,15 +1168,82 @@ fn current_timestamp() -> u64 {
         .as_millis() as u64
 }
 
-/// Computes a block hash from consensus proposal data using SHA-256
-fn compute_block_hash(block_index: u32, view: u8, data: &[u8]) -> UInt256 {
+fn compute_merkle_root(hashes: &[UInt256]) -> UInt256 {
     use neo_crypto::Crypto;
-    let mut input = Vec::new();
-    input.extend_from_slice(&block_index.to_le_bytes());
-    input.push(view);
-    input.extend_from_slice(data);
-    let hash = Crypto::sha256(&input);
-    UInt256::from_bytes(&hash).unwrap_or_default()
+
+    match hashes.len() {
+        0 => UInt256::zero(),
+        1 => hashes[0],
+        _ => {
+            let mut level: Vec<UInt256> = hashes.to_vec();
+            while level.len() > 1 {
+                if level.len() % 2 == 1 {
+                    level.push(*level.last().unwrap());
+                }
+                let mut next = Vec::with_capacity(level.len() / 2);
+                for pair in level.chunks(2) {
+                    let mut buf = Vec::with_capacity(64);
+                    buf.extend_from_slice(&pair[0].to_bytes());
+                    buf.extend_from_slice(&pair[1].to_bytes());
+                    let h = Crypto::hash256(&buf);
+                    next.push(UInt256::from(h));
+                }
+                level = next;
+            }
+            level[0]
+        }
+    }
+}
+
+fn compute_next_consensus_address(validators: &[ValidatorInfo]) -> UInt160 {
+    use neo_crypto::ECPoint;
+    use neo_vm::script_builder::ScriptBuilder;
+
+    if validators.is_empty() {
+        return UInt160::zero();
+    }
+
+    let n = validators.len();
+    let f = (n - 1) / 3;
+    let m = n - f;
+
+    let mut keys: Vec<ECPoint> = validators.iter().map(|v| v.public_key.clone()).collect();
+    keys.sort();
+
+    let mut builder = ScriptBuilder::new();
+    builder.emit_push_int(m as i64);
+    for key in &keys {
+        builder.emit_push(key.as_bytes());
+    }
+    builder.emit_push_int(n as i64);
+    let _ = builder.emit_syscall("System.Crypto.CheckMultisig");
+    UInt160::from_script(&builder.to_array())
+}
+
+fn compute_header_hash(
+    version: u32,
+    prev_hash: UInt256,
+    merkle_root: UInt256,
+    timestamp: u64,
+    nonce: u64,
+    index: u32,
+    primary_index: u8,
+    next_consensus: UInt160,
+) -> UInt256 {
+    use neo_io::BinaryWriter;
+
+    let mut writer = BinaryWriter::new();
+    let _ = writer.write_u32(version);
+    let _ = writer.write_serializable(&prev_hash);
+    let _ = writer.write_serializable(&merkle_root);
+    let _ = writer.write_u64(timestamp);
+    let _ = writer.write_u64(nonce);
+    let _ = writer.write_u32(index);
+    let _ = writer.write_u8(primary_index);
+    let _ = writer.write_serializable(&next_consensus);
+
+    // Matches C# `IVerifiable.CalculateHash()` (single SHA-256 over unsigned bytes).
+    UInt256::from(neo_crypto::Crypto::sha256(&writer.into_bytes()))
 }
 
 #[cfg(test)]
@@ -1114,7 +1277,9 @@ mod tests {
         let validators = create_test_validators(7);
         let mut service = ConsensusService::new(0x4E454F, validators, Some(0), vec![], tx);
 
-        service.start(100, 1000).unwrap();
+        service
+            .start(100, 1000, UInt256::zero(), 0)
+            .unwrap();
 
         assert!(service.is_running());
         assert_eq!(service.context().block_index, 100);
@@ -1126,7 +1291,7 @@ mod tests {
         let validators = create_test_validators(7);
         let mut service = ConsensusService::new(0x4E454F, validators, None, vec![], tx);
 
-        let result = service.start(100, 1000);
+        let result = service.start(100, 1000, UInt256::zero(), 0);
         assert!(matches!(result, Err(ConsensusError::NotValidator)));
     }
 
@@ -1136,10 +1301,10 @@ mod tests {
         let validators = create_test_validators(7);
         let mut service = ConsensusService::new(0x4E454F, validators, Some(0), vec![], tx);
 
-        service.start(0, 1000).unwrap();
+        service.start(0, 1000, UInt256::zero(), 0).unwrap();
         assert!(service.context().is_primary()); // Block 0, view 0, validator 0 is primary
 
-        service.start(1, 1000).unwrap();
+        service.start(1, 1000, UInt256::zero(), 0).unwrap();
         assert!(!service.context().is_primary()); // Block 1, view 0, validator 1 is primary
     }
 
@@ -1149,17 +1314,29 @@ mod tests {
         let validators = create_test_validators(7);
         let mut service = ConsensusService::new(0x4E454F, validators, Some(0), vec![], tx);
 
-        service.start(100, 1000).unwrap();
+        service
+            .start(100, 1000, UInt256::zero(), 0)
+            .unwrap();
 
         // Create a test consensus payload
         // Note: For block 100, view 0, the primary is validator (100 % 7) = 2
+        let msg = PrepareRequestMessage::new(
+            100,
+            0,
+            2,
+            0,
+            UInt256::zero(),
+            1234,
+            5678,
+            vec![],
+        );
         let payload = ConsensusPayload::new(
             0x4E454F,
             100,
             2, // From validator 2 (primary for block 100, view 0)
             0,
             ConsensusMessageType::PrepareRequest,
-            vec![1, 2, 3, 4],
+            msg.serialize(),
         );
 
         // First time: message should be processed
@@ -1190,7 +1367,9 @@ mod tests {
         let validators = create_test_validators(7);
         let mut service = ConsensusService::new(0x4E454F, validators, Some(0), vec![], tx);
 
-        service.start(100, 1000).unwrap();
+        service
+            .start(100, 1000, UInt256::zero(), 0)
+            .unwrap();
 
         // Create a test payload
         let payload = ConsensusPayload::new(
@@ -1206,7 +1385,9 @@ mod tests {
         let _ = service.process_message(payload.clone());
 
         // Start a new block - this should clear the message cache
-        service.start(101, 2000).unwrap();
+        service
+            .start(101, 2000, UInt256::zero(), 0)
+            .unwrap();
 
         // The same message should now be processed again (different block context)
         // Note: It will fail validation because block_index doesn't match,
@@ -1222,7 +1403,9 @@ mod tests {
         let validators = create_test_validators(7);
         let mut service = ConsensusService::new(0x4E454F, validators, Some(0), vec![], tx);
 
-        service.start(100, 1000).unwrap();
+        service
+            .start(100, 1000, UInt256::zero(), 0)
+            .unwrap();
 
         // Create a malicious payload (simulating replay attack)
         let payload = ConsensusPayload::new(

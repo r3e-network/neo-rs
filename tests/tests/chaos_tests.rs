@@ -91,7 +91,7 @@ async fn test_consensus_timeout_triggers_view_change() {
         tx,
     );
 
-    service.start(0, 1000).unwrap();
+    service.start(0, 1000, UInt256::zero(), 0).unwrap();
 
     // Simulate network partition by triggering timeout
     let timeout_time = 1000 + 60_000; // 60 seconds later
@@ -105,10 +105,7 @@ async fn test_consensus_timeout_triggers_view_change() {
 
     match event {
         ConsensusEvent::BroadcastMessage(payload) => {
-            assert_eq!(
-                payload.message_type,
-                neo_consensus::ConsensusMessageType::ChangeView
-            );
+            assert_eq!(payload.message_type, neo_consensus::ConsensusMessageType::ChangeView);
         }
         _ => panic!("Expected ChangeView broadcast"),
     }
@@ -127,7 +124,7 @@ async fn test_multiple_timeouts_increment_view() {
         tx,
     );
 
-    service.start(0, 1000).unwrap();
+    service.start(0, 1000, UInt256::zero(), 0).unwrap();
 
     // First timeout
     service.on_timer_tick(1000 + 60_000).unwrap();

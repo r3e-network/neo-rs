@@ -132,7 +132,9 @@ impl ValidatorService {
             "starting consensus"
         );
 
-        consensus.start(block_index, timestamp)?;
+        // TODO: Provide real `prev_hash` from the chain tip when validator-mode
+        // wiring is completed. Version must be 0 for Neo N3.
+        consensus.start(block_index, timestamp, neo_core::UInt256::zero(), 0)?;
         *self.state.write().await = ValidatorState::Active;
 
         Ok(())

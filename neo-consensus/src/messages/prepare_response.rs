@@ -43,6 +43,29 @@ impl PrepareResponseMessage {
         self.preparation_hash.as_bytes().to_vec()
     }
 
+    /// Deserializes the message body (excluding the common header) from bytes.
+    pub fn deserialize_body(
+        data: &[u8],
+        block_index: u32,
+        view_number: u8,
+        validator_index: u8,
+    ) -> ConsensusResult<Self> {
+        if data.len() != 32 {
+            return Err(crate::ConsensusError::invalid_proposal(
+                "PrepareResponse invalid hash length",
+            ));
+        }
+        let preparation_hash = UInt256::from_bytes(data).map_err(|_| {
+            crate::ConsensusError::invalid_proposal("PrepareResponse invalid hash bytes")
+        })?;
+        Ok(Self {
+            block_index,
+            view_number,
+            validator_index,
+            preparation_hash,
+        })
+    }
+
     /// Validates the message
     pub fn validate(&self, expected_hash: &UInt256) -> ConsensusResult<()> {
         if &self.preparation_hash != expected_hash {

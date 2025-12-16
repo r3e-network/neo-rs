@@ -90,8 +90,16 @@ pub struct ConsensusContext {
     pub expected_block_time: u64,
 
     // Proposal data
+    /// Block version (must be 0 for Neo N3)
+    pub version: u32,
+    /// Previous block hash for the proposed block.
+    pub prev_hash: UInt256,
     /// Proposed block hash (from PrepareRequest)
     pub proposed_block_hash: Option<UInt256>,
+    /// Hash of the primary's PrepareRequest extensible payload (ExtensiblePayload.Hash).
+    ///
+    /// In Neo N3 DBFTPlugin this is used as `PrepareResponse.PreparationHash`.
+    pub preparation_hash: Option<UInt256>,
     /// Proposed block timestamp
     pub proposed_timestamp: u64,
     /// Proposed transaction hashes
@@ -131,7 +139,10 @@ impl ConsensusContext {
             state: ConsensusState::Initial,
             view_start_time: 0,
             expected_block_time: 0,
+            version: 0,
+            prev_hash: UInt256::zero(),
             proposed_block_hash: None,
+            preparation_hash: None,
             proposed_timestamp: 0,
             proposed_tx_hashes: Vec::new(),
             nonce: 0,
@@ -162,7 +173,13 @@ impl ConsensusContext {
 
     /// Returns the primary (speaker) index for the current view
     pub fn primary_index(&self) -> u8 {
-        let p = (self.block_index as usize + self.view_number as usize) % self.validator_count();
+        // Matches C# DBFTPlugin:
+        // `p = ((Block.Index - viewNumber) % Validators.Length + Validators.Length) % Validators.Length`.
+        let n = self.validator_count() as i64;
+        if n == 0 {
+            return 0;
+        }
+        let p = (self.block_index as i64 - self.view_number as i64).rem_euclid(n);
         p as u8
     }
 
@@ -214,6 +231,7 @@ impl ConsensusContext {
 
         // Clear proposal data
         self.proposed_block_hash = None;
+        self.preparation_hash = None;
         self.proposed_timestamp = 0;
         self.proposed_tx_hashes.clear();
         self.nonce = 0;
@@ -237,7 +255,10 @@ impl ConsensusContext {
         };
 
         // Clear all data
+        self.version = 0;
+        self.prev_hash = UInt256::zero();
         self.proposed_block_hash = None;
+        self.preparation_hash = None;
         self.proposed_timestamp = 0;
         self.proposed_tx_hashes.clear();
         self.nonce = 0;
@@ -501,7 +522,10 @@ impl ConsensusContext {
             state: ConsensusState::Initial, // Caller should update based on role
             view_start_time: 0,              // Caller should update to current time
             expected_block_time: 0,          // Caller should update
+            version: 0,
+            prev_hash: UInt256::zero(),
             proposed_block_hash: state.proposed_block_hash,
+            preparation_hash: None,
             proposed_timestamp: state.proposed_timestamp,
             proposed_tx_hashes: state.proposed_tx_hashes,
             nonce: state.nonce,
@@ -571,9 +595,9 @@ mod tests {
         assert_eq!(ctx.primary_index(), 0);
         assert!(ctx.is_primary());
 
-        // Block 0, view 1: primary = 1
+        // Block 0, view 1: primary = (0 - 1) mod 7 = 6 (matches C# DBFTPlugin)
         ctx.view_number = 1;
-        assert_eq!(ctx.primary_index(), 1);
+        assert_eq!(ctx.primary_index(), 6);
         assert!(!ctx.is_primary());
 
         // Block 7, view 0: primary = 0 (7 % 7 = 0)

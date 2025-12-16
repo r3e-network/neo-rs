@@ -778,20 +778,15 @@ impl P2PService {
                     let count = headers.headers.len();
                     info!(target: "neo::p2p", addr = %addr, count, "received headers");
 
-                    // Extract block hashes and indices from headers for sync
+                    // Extract block hashes and indices from headers for sync.
                     let mut max_index = 0u32;
-                    let block_hashes: Vec<neo_core::UInt256> = headers
-                        .headers
-                        .iter_mut()
-                        .map(|h| {
-                            max_index = max_index.max(h.index());
-                            h.hash()
-                        })
-                        .collect();
-
-                    // Convert headers to raw bytes for the event
-                    let header_bytes: Vec<Vec<u8>> =
-                        block_hashes.iter().map(|h| h.to_bytes().to_vec()).collect();
+                    let mut block_hashes = Vec::with_capacity(headers.headers.len());
+                    let mut header_bytes = Vec::with_capacity(headers.headers.len());
+                    for h in headers.headers.iter_mut() {
+                        max_index = max_index.max(h.index());
+                        block_hashes.push(h.hash());
+                        header_bytes.push(h.to_array().unwrap_or_default());
+                    }
                     let _ = event_tx
                         .send(P2PEvent::HeadersReceived {
                             headers: header_bytes,

@@ -1,8 +1,13 @@
 //! Recovery messages - for consensus state recovery.
 
 use crate::{ConsensusMessageType, ConsensusResult};
+use neo_io::serializable::helper::{deserialize_array, get_var_size_bytes, serialize_array};
+use neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};
+
+/// Maximum invocation script size accepted by DBFTPlugin compact payloads (bytes).
+const MAX_INVOCATION_SCRIPT: usize = 1024;
 
 /// RecoveryRequest message sent when a validator needs to recover consensus state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -18,7 +23,7 @@ pub struct RecoveryRequestMessage {
 }
 
 impl RecoveryRequestMessage {
-    /// Creates a new RecoveryRequest message
+    /// Creates a new RecoveryRequest message.
     pub fn new(block_index: u32, view_number: u8, validator_index: u8, timestamp: u64) -> Self {
         Self {
             block_index,
@@ -28,289 +33,271 @@ impl RecoveryRequestMessage {
         }
     }
 
-    /// Returns the message type
+    /// Returns the message type.
     pub fn message_type(&self) -> ConsensusMessageType {
         ConsensusMessageType::RecoveryRequest
     }
 
-    /// Serializes the message to bytes
+    /// Serializes the message body to bytes (excluding the common header).
+    ///
+    /// Neo N3 DBFTPlugin format: `timestamp (8)`.
     pub fn serialize(&self) -> Vec<u8> {
         self.timestamp.to_le_bytes().to_vec()
     }
 }
 
-/// Compact representation of a ChangeView for recovery
+/// Compact representation of a ChangeView payload (RecoveryMessage).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChangeViewCompact {
-    /// Validator index
+pub struct ChangeViewPayloadCompact {
     pub validator_index: u8,
-    /// Original view number
     pub original_view_number: u8,
-    /// Timestamp
     pub timestamp: u64,
-    /// Invocation script (signature)
     pub invocation_script: Vec<u8>,
 }
 
-/// Compact representation of a PrepareResponse for recovery
+impl Serializable for ChangeViewPayloadCompact {
+    fn deserialize(reader: &mut MemoryReader) -> neo_io::IoResult<Self> {
+        let validator_index = reader.read_u8()?;
+        let original_view_number = reader.read_u8()?;
+        let timestamp = reader.read_u64()?;
+        let invocation_script = reader.read_var_bytes(MAX_INVOCATION_SCRIPT)?;
+        Ok(Self {
+            validator_index,
+            original_view_number,
+            timestamp,
+            invocation_script,
+        })
+    }
+
+    fn serialize(&self, writer: &mut BinaryWriter) -> neo_io::IoResult<()> {
+        writer.write_u8(self.validator_index)?;
+        writer.write_u8(self.original_view_number)?;
+        writer.write_u64(self.timestamp)?;
+        writer.write_var_bytes(&self.invocation_script)?;
+        Ok(())
+    }
+
+    fn size(&self) -> usize {
+        1 + 1 + 8 + get_var_size_bytes(&self.invocation_script)
+    }
+}
+
+/// Compact representation of a PrepareResponse payload (RecoveryMessage).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PreparationCompact {
-    /// Validator index
+pub struct PreparationPayloadCompact {
     pub validator_index: u8,
-    /// Invocation script (signature)
     pub invocation_script: Vec<u8>,
 }
 
-/// Compact representation of a Commit for recovery
+impl Serializable for PreparationPayloadCompact {
+    fn deserialize(reader: &mut MemoryReader) -> neo_io::IoResult<Self> {
+        let validator_index = reader.read_u8()?;
+        let invocation_script = reader.read_var_bytes(MAX_INVOCATION_SCRIPT)?;
+        Ok(Self {
+            validator_index,
+            invocation_script,
+        })
+    }
+
+    fn serialize(&self, writer: &mut BinaryWriter) -> neo_io::IoResult<()> {
+        writer.write_u8(self.validator_index)?;
+        writer.write_var_bytes(&self.invocation_script)?;
+        Ok(())
+    }
+
+    fn size(&self) -> usize {
+        1 + get_var_size_bytes(&self.invocation_script)
+    }
+}
+
+/// Compact representation of a Commit payload (RecoveryMessage).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CommitCompact {
-    /// Validator index
+pub struct CommitPayloadCompact {
+    pub view_number: u8,
     pub validator_index: u8,
-    /// Signature
     pub signature: Vec<u8>,
+    pub invocation_script: Vec<u8>,
+}
+
+impl Serializable for CommitPayloadCompact {
+    fn deserialize(reader: &mut MemoryReader) -> neo_io::IoResult<Self> {
+        let view_number = reader.read_u8()?;
+        let validator_index = reader.read_u8()?;
+        let signature = reader.read_bytes(64)?;
+        let invocation_script = reader.read_var_bytes(MAX_INVOCATION_SCRIPT)?;
+        Ok(Self {
+            view_number,
+            validator_index,
+            signature,
+            invocation_script,
+        })
+    }
+
+    fn serialize(&self, writer: &mut BinaryWriter) -> neo_io::IoResult<()> {
+        writer.write_u8(self.view_number)?;
+        writer.write_u8(self.validator_index)?;
+        // Commit.Signature is fixed 64 bytes (secp256r1 r||s).
+        if self.signature.len() != 64 {
+            return Err(neo_io::IoError::invalid_data(
+                "CommitPayloadCompact signature must be 64 bytes",
+            ));
+        }
+        writer.write_bytes(&self.signature)?;
+        writer.write_var_bytes(&self.invocation_script)?;
+        Ok(())
+    }
+
+    fn size(&self) -> usize {
+        1 + 1 + 64 + get_var_size_bytes(&self.invocation_script)
+    }
 }
 
 /// RecoveryMessage sent in response to a RecoveryRequest.
+///
+/// This struct models the Neo N3 DBFTPlugin on-wire format (message body only).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecoveryMessage {
-    /// Block index
     pub block_index: u32,
-    /// View number
     pub view_number: u8,
-    /// Validator index
     pub validator_index: u8,
-    /// Change view payloads
-    pub change_view_payloads: Vec<ChangeViewCompact>,
-    /// Prepare request message (if received)
-    pub prepare_request_message: Option<PrepareRequestCompact>,
-    /// Preparation payloads (PrepareResponses)
-    pub preparation_payloads: Vec<PreparationCompact>,
-    /// Commit payloads
-    pub commit_payloads: Vec<CommitCompact>,
-}
 
-/// Compact PrepareRequest for recovery
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PrepareRequestCompact {
-    /// Timestamp
-    pub timestamp: u64,
-    /// Nonce
-    pub nonce: u64,
-    /// Transaction hashes
-    pub transaction_hashes: Vec<UInt256>,
-    /// Invocation script
-    pub invocation_script: Vec<u8>,
+    pub change_view_messages: Vec<ChangeViewPayloadCompact>,
+
+    /// Embedded PrepareRequest message (including its common header) when available.
+    pub prepare_request_message: Option<super::PrepareRequestMessage>,
+
+    /// PreparationHash (ExtensiblePayload.Hash of the primary PrepareRequest) when PrepareRequest is missing.
+    pub preparation_hash: Option<UInt256>,
+
+    pub preparation_messages: Vec<PreparationPayloadCompact>,
+    pub commit_messages: Vec<CommitPayloadCompact>,
 }
 
 impl RecoveryMessage {
-    /// Creates a new empty RecoveryMessage
+    /// Creates a new empty RecoveryMessage.
     pub fn new(block_index: u32, view_number: u8, validator_index: u8) -> Self {
         Self {
             block_index,
             view_number,
             validator_index,
-            change_view_payloads: Vec::new(),
+            change_view_messages: Vec::new(),
             prepare_request_message: None,
-            preparation_payloads: Vec::new(),
-            commit_payloads: Vec::new(),
+            preparation_hash: None,
+            preparation_messages: Vec::new(),
+            commit_messages: Vec::new(),
         }
     }
 
-    /// Returns the message type
+    /// Returns the message type.
     pub fn message_type(&self) -> ConsensusMessageType {
         ConsensusMessageType::RecoveryMessage
     }
 
-    /// Serializes the message to bytes
+    /// Serializes the message body to bytes (excluding the common header).
     pub fn serialize(&self) -> Vec<u8> {
-        // Binary serialization format for recovery message
-        let mut data = Vec::new();
+        let mut writer = BinaryWriter::new();
 
-        // Change views count
-        data.push(self.change_view_payloads.len() as u8);
-        for cv in &self.change_view_payloads {
-            data.push(cv.validator_index);
-            data.push(cv.original_view_number);
-            data.extend_from_slice(&cv.timestamp.to_le_bytes());
-        }
+        // ChangeViewMessages (serializable array)
+        let mut cvs = self.change_view_messages.clone();
+        cvs.sort_by_key(|p| p.validator_index);
+        let _ = serialize_array(&cvs, &mut writer);
 
-        // Has prepare request flag and data
-        if let Some(ref prep_req) = self.prepare_request_message {
-            data.push(1);
-            // Serialize PrepareRequestCompact: timestamp (8) + nonce (8) + tx_count (1) + tx_hashes (32 each)
-            data.extend_from_slice(&prep_req.timestamp.to_le_bytes());
-            data.extend_from_slice(&prep_req.nonce.to_le_bytes());
-            data.push(prep_req.transaction_hashes.len() as u8);
-            for tx_hash in &prep_req.transaction_hashes {
-                data.extend_from_slice(&tx_hash.to_bytes());
-            }
+        // PrepareRequestMessage presence flag + value OR PreparationHash var-bytes.
+        let has_prepare_request = self.prepare_request_message.is_some();
+        let _ = writer.write_bool(has_prepare_request);
+        if let Some(ref req) = self.prepare_request_message {
+            // Embedded message includes its own common header.
+            let bytes = super::consensus_message_bytes(
+                ConsensusMessageType::PrepareRequest,
+                req.block_index,
+                req.validator_index,
+                req.view_number,
+                &req.serialize(),
+            );
+            let _ = writer.write_bytes(&bytes);
+        } else if let Some(hash) = self.preparation_hash {
+            let _ = writer.write_var_bytes(&hash.to_bytes());
         } else {
-            data.push(0);
+            let _ = writer.write_var_int(0);
         }
 
-        // Preparations count
-        data.push(self.preparation_payloads.len() as u8);
-        for prep in &self.preparation_payloads {
-            data.push(prep.validator_index);
-        }
+        // PreparationMessages (serializable array)
+        let mut preps = self.preparation_messages.clone();
+        preps.sort_by_key(|p| p.validator_index);
+        let _ = serialize_array(&preps, &mut writer);
 
-        // Commits count
-        data.push(self.commit_payloads.len() as u8);
-        for commit in &self.commit_payloads {
-            data.push(commit.validator_index);
-            data.extend_from_slice(&commit.signature);
-        }
+        // CommitMessages (serializable array)
+        let mut commits = self.commit_messages.clone();
+        commits.sort_by_key(|p| p.validator_index);
+        let _ = serialize_array(&commits, &mut writer);
 
-        data
+        writer.into_bytes()
     }
 
-    /// Validates the recovery message
-    pub fn validate(&self) -> ConsensusResult<()> {
-        // Basic validation - ensure no duplicate validator indices
-        let mut seen_validators = std::collections::HashSet::new();
-        for prep in &self.preparation_payloads {
-            if !seen_validators.insert(prep.validator_index) {
-                return Err(crate::ConsensusError::DuplicateValidator(
-                    prep.validator_index,
+    /// Deserializes a RecoveryMessage from bytes (body only, excluding the common header).
+    pub fn deserialize(
+        data: &[u8],
+        block_index: u32,
+        view_number: u8,
+        validator_index: u8,
+    ) -> ConsensusResult<Self> {
+        let mut reader = MemoryReader::new(data);
+
+        let change_view_messages = deserialize_array::<ChangeViewPayloadCompact>(&mut reader, u8::MAX as usize)
+            .map_err(|_| crate::ConsensusError::invalid_proposal("RecoveryMessage change views"))?;
+
+        let has_prepare_request = reader
+            .read_bool()
+            .map_err(|_| crate::ConsensusError::invalid_proposal("RecoveryMessage flag"))?;
+
+        let (prepare_request_message, preparation_hash) = if has_prepare_request {
+            let req = super::PrepareRequestMessage::deserialize_from_reader(&mut reader)?;
+            (Some(req), None)
+        } else {
+            let len = reader
+                .read_var_int(UInt256::LENGTH as u64)
+                .map_err(|_| crate::ConsensusError::invalid_proposal("RecoveryMessage PreparationHash length"))? as usize;
+            if len == 0 {
+                (None, None)
+            } else if len == UInt256::LENGTH {
+                let hash = <UInt256 as Serializable>::deserialize(&mut reader).map_err(|_| {
+                    crate::ConsensusError::invalid_proposal("RecoveryMessage PreparationHash")
+                })?;
+                (None, Some(hash))
+            } else {
+                return Err(crate::ConsensusError::invalid_proposal(
+                    "RecoveryMessage PreparationHash length invalid",
                 ));
             }
-        }
-        Ok(())
-    }
-
-    /// Deserializes a RecoveryMessage from bytes
-    pub fn deserialize(data: &[u8], block_index: u32, view_number: u8, validator_index: u8) -> ConsensusResult<Self> {
-        if data.is_empty() {
-            return Err(crate::ConsensusError::invalid_proposal(
-                "Empty recovery message data",
-            ));
-        }
-
-        let mut offset = 0;
-
-        // Parse change views count
-        let change_view_count = data.get(offset).copied().unwrap_or(0) as usize;
-        offset += 1;
-
-        let mut change_view_payloads = Vec::with_capacity(change_view_count);
-        for _ in 0..change_view_count {
-            if offset + 10 > data.len() {
-                break;
-            }
-            let cv_validator = data[offset];
-            let cv_view = data[offset + 1];
-            let cv_timestamp = u64::from_le_bytes(
-                data[offset + 2..offset + 10].try_into().unwrap_or([0u8; 8])
-            );
-            offset += 10;
-
-            change_view_payloads.push(ChangeViewCompact {
-                validator_index: cv_validator,
-                original_view_number: cv_view,
-                timestamp: cv_timestamp,
-                invocation_script: Vec::new(),
-            });
-        }
-
-        // Parse has prepare request flag and data
-        let has_prepare_request = data.get(offset).copied().unwrap_or(0) == 1;
-        offset += 1;
-
-        let prepare_request_message = if has_prepare_request {
-            // Parse PrepareRequestCompact: timestamp (8) + nonce (8) + tx_count (1) + tx_hashes (32 each)
-            if offset + 17 > data.len() {
-                // Not enough data for timestamp + nonce + tx_count
-                None
-            } else {
-                let timestamp = u64::from_le_bytes(
-                    data[offset..offset + 8].try_into().unwrap_or([0u8; 8])
-                );
-                offset += 8;
-
-                let nonce = u64::from_le_bytes(
-                    data[offset..offset + 8].try_into().unwrap_or([0u8; 8])
-                );
-                offset += 8;
-
-                let tx_count = data[offset] as usize;
-                offset += 1;
-
-                let mut transaction_hashes = Vec::with_capacity(tx_count);
-                for _ in 0..tx_count {
-                    if offset + 32 > data.len() {
-                        break;
-                    }
-                    if let Ok(hash) = UInt256::from_bytes(&data[offset..offset + 32]) {
-                        transaction_hashes.push(hash);
-                    }
-                    offset += 32;
-                }
-
-                Some(PrepareRequestCompact {
-                    timestamp,
-                    nonce,
-                    transaction_hashes,
-                    invocation_script: Vec::new(),
-                })
-            }
-        } else {
-            None
         };
 
-        // Parse preparations count
-        let prep_count = data.get(offset).copied().unwrap_or(0) as usize;
-        offset += 1;
-
-        let mut preparation_payloads = Vec::with_capacity(prep_count);
-        for _ in 0..prep_count {
-            if offset >= data.len() {
-                break;
-            }
-            let prep_validator = data[offset];
-            offset += 1;
-
-            preparation_payloads.push(PreparationCompact {
-                validator_index: prep_validator,
-                invocation_script: Vec::new(),
-            });
-        }
-
-        // Parse commits count
-        let commit_count = data.get(offset).copied().unwrap_or(0) as usize;
-        offset += 1;
-
-        let mut commit_payloads = Vec::with_capacity(commit_count);
-        for _ in 0..commit_count {
-            if offset >= data.len() {
-                break;
-            }
-            let commit_validator = data[offset];
-            offset += 1;
-
-            // Read 64-byte secp256r1 ECDSA signature
-            let sig_len = 64.min(data.len().saturating_sub(offset));
-            let signature = if sig_len > 0 {
-                data[offset..offset + sig_len].to_vec()
-            } else {
-                Vec::new()
-            };
-            offset += sig_len;
-
-            commit_payloads.push(CommitCompact {
-                validator_index: commit_validator,
-                signature,
-            });
-        }
+        let preparation_messages =
+            deserialize_array::<PreparationPayloadCompact>(&mut reader, u8::MAX as usize)
+                .map_err(|_| crate::ConsensusError::invalid_proposal("RecoveryMessage preparations"))?;
+        let commit_messages = deserialize_array::<CommitPayloadCompact>(&mut reader, u8::MAX as usize)
+            .map_err(|_| crate::ConsensusError::invalid_proposal("RecoveryMessage commits"))?;
 
         Ok(Self {
             block_index,
             view_number,
             validator_index,
-            change_view_payloads,
+            change_view_messages,
             prepare_request_message,
-            preparation_payloads,
-            commit_payloads,
+            preparation_hash,
+            preparation_messages,
+            commit_messages,
         })
+    }
+
+    /// Basic validation: ensures no duplicate validator indices in preparation messages.
+    pub fn validate(&self) -> ConsensusResult<()> {
+        let mut seen = std::collections::HashSet::new();
+        for p in &self.preparation_messages {
+            if !seen.insert(p.validator_index) {
+                return Err(crate::ConsensusError::DuplicateValidator(p.validator_index));
+            }
+        }
+        Ok(())
     }
 }
 
@@ -319,132 +306,93 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_recovery_request_new() {
-        let msg = RecoveryRequestMessage::new(100, 0, 1, 1000);
-
-        assert_eq!(msg.block_index, 100);
-        assert_eq!(msg.view_number, 0);
-        assert_eq!(msg.validator_index, 1);
-        assert_eq!(msg.timestamp, 1000);
+    fn recovery_request_serializes_timestamp_only() {
+        let msg = RecoveryRequestMessage::new(1, 0, 0, 1234);
+        let bytes = msg.serialize();
+        assert_eq!(bytes.len(), 8);
+        assert_eq!(u64::from_le_bytes(bytes.try_into().unwrap()), 1234);
     }
 
     #[test]
-    fn test_recovery_message_new() {
-        let msg = RecoveryMessage::new(100, 0, 1);
-
-        assert_eq!(msg.block_index, 100);
-        assert!(msg.change_view_payloads.is_empty());
-        assert!(msg.prepare_request_message.is_none());
-        assert!(msg.preparation_payloads.is_empty());
-        assert!(msg.commit_payloads.is_empty());
-    }
-
-    #[test]
-    fn test_recovery_message_validate() {
+    fn recovery_message_roundtrip_minimal_without_prepare_request() {
         let mut msg = RecoveryMessage::new(100, 0, 1);
-
-        // Valid - no duplicates
-        msg.preparation_payloads.push(PreparationCompact {
+        msg.preparation_hash = Some(UInt256::from([0xAB; 32]));
+        msg.preparation_messages.push(PreparationPayloadCompact {
             validator_index: 0,
-            invocation_script: vec![],
+            invocation_script: vec![0x0C, 0x40, 0xAA],
         });
-        msg.preparation_payloads.push(PreparationCompact {
-            validator_index: 1,
-            invocation_script: vec![],
-        });
-        assert!(msg.validate().is_ok());
-
-        // Invalid - duplicate
-        msg.preparation_payloads.push(PreparationCompact {
+        msg.commit_messages.push(CommitPayloadCompact {
+            view_number: 0,
             validator_index: 0,
-            invocation_script: vec![],
-        });
-        assert!(msg.validate().is_err());
-    }
-
-    #[test]
-    fn test_recovery_message_serialize_deserialize_roundtrip() {
-        let mut msg = RecoveryMessage::new(100, 0, 1);
-
-        // Add change view payloads
-        msg.change_view_payloads.push(ChangeViewCompact {
-            validator_index: 2,
-            original_view_number: 0,
-            timestamp: 12345678,
-            invocation_script: vec![],
+            signature: vec![0x11; 64],
+            invocation_script: vec![0x0C, 0x40, 0xBB],
         });
 
-        // Add prepare request
-        msg.prepare_request_message = Some(PrepareRequestCompact {
-            timestamp: 1000000,
-            nonce: 0xDEADBEEF,
-            transaction_hashes: vec![
-                UInt256::from_bytes(&[1u8; 32]).unwrap(),
-                UInt256::from_bytes(&[2u8; 32]).unwrap(),
-            ],
-            invocation_script: vec![],
-        });
-
-        // Add preparation payloads
-        msg.preparation_payloads.push(PreparationCompact {
-            validator_index: 0,
-            invocation_script: vec![],
-        });
-        msg.preparation_payloads.push(PreparationCompact {
-            validator_index: 1,
-            invocation_script: vec![],
-        });
-
-        // Add commit payloads
-        msg.commit_payloads.push(CommitCompact {
-            validator_index: 0,
-            signature: vec![0xAAu8; 64],
-        });
-
-        // Serialize
-        let data = msg.serialize();
-
-        // Deserialize
-        let parsed = RecoveryMessage::deserialize(&data, 100, 0, 1).unwrap();
-
-        // Verify change views
-        assert_eq!(parsed.change_view_payloads.len(), 1);
-        assert_eq!(parsed.change_view_payloads[0].validator_index, 2);
-        assert_eq!(parsed.change_view_payloads[0].original_view_number, 0);
-        assert_eq!(parsed.change_view_payloads[0].timestamp, 12345678);
-
-        // Verify prepare request
-        assert!(parsed.prepare_request_message.is_some());
-        let prep_req = parsed.prepare_request_message.unwrap();
-        assert_eq!(prep_req.timestamp, 1000000);
-        assert_eq!(prep_req.nonce, 0xDEADBEEF);
-        assert_eq!(prep_req.transaction_hashes.len(), 2);
-
-        // Verify preparations
-        assert_eq!(parsed.preparation_payloads.len(), 2);
-        assert_eq!(parsed.preparation_payloads[0].validator_index, 0);
-        assert_eq!(parsed.preparation_payloads[1].validator_index, 1);
-
-        // Verify commits
-        assert_eq!(parsed.commit_payloads.len(), 1);
-        assert_eq!(parsed.commit_payloads[0].validator_index, 0);
-        assert_eq!(parsed.commit_payloads[0].signature.len(), 64);
-    }
-
-    #[test]
-    fn test_recovery_message_without_prepare_request() {
-        let mut msg = RecoveryMessage::new(50, 1, 3);
-
-        // No prepare request
-        msg.preparation_payloads.push(PreparationCompact {
-            validator_index: 0,
-            invocation_script: vec![],
-        });
-
-        let data = msg.serialize();
-        let parsed = RecoveryMessage::deserialize(&data, 50, 1, 3).unwrap();
-
+        let bytes = msg.serialize();
+        let parsed = RecoveryMessage::deserialize(&bytes, 100, 0, 1).unwrap();
         assert!(parsed.prepare_request_message.is_none());
-        assert_eq!(parsed.preparation_payloads.len(), 1);
+        assert_eq!(parsed.preparation_hash, msg.preparation_hash);
+        assert_eq!(parsed.preparation_messages.len(), 1);
+        assert_eq!(parsed.commit_messages.len(), 1);
+    }
+
+    #[test]
+    fn recovery_message_wire_format_bytes_without_prepare_request() {
+        let mut msg = RecoveryMessage::new(100, 0, 1);
+        msg.change_view_messages.push(ChangeViewPayloadCompact {
+            validator_index: 2,
+            original_view_number: 1,
+            timestamp: 0x0102_0304_0506_0708u64,
+            invocation_script: vec![0xAA, 0xBB],
+        });
+        let prep_hash = UInt256::from([0xCC; 32]);
+        msg.preparation_hash = Some(prep_hash);
+        msg.preparation_messages.push(PreparationPayloadCompact {
+            validator_index: 3,
+            invocation_script: vec![0xDD],
+        });
+        msg.commit_messages.push(CommitPayloadCompact {
+            view_number: 0,
+            validator_index: 4,
+            signature: vec![0xEE; 64],
+            invocation_script: vec![0xFF, 0x00],
+        });
+
+        let bytes = msg.serialize();
+
+        // Build expected bytes by following the C# RecoveryMessage serialization layout.
+        let mut expected = Vec::new();
+        let prep_hash_bytes = prep_hash.to_array();
+
+        // ChangeViewMessages array (count=1)
+        expected.push(0x01);
+        expected.push(2); // validator_index
+        expected.push(1); // original_view_number
+        expected.extend_from_slice(&0x0102_0304_0506_0708u64.to_le_bytes());
+        expected.push(0x02); // varbytes len
+        expected.extend_from_slice(&[0xAA, 0xBB]);
+
+        // hasPrepareRequestMessage = false
+        expected.push(0x00);
+
+        // PreparationHash as varbytes (len=32)
+        expected.push(0x20);
+        expected.extend_from_slice(&prep_hash_bytes);
+
+        // PreparationMessages array (count=1)
+        expected.push(0x01);
+        expected.push(3); // validator_index
+        expected.push(0x01); // invocation_script len
+        expected.push(0xDD);
+
+        // CommitMessages array (count=1)
+        expected.push(0x01);
+        expected.push(0x00); // view_number
+        expected.push(4); // validator_index
+        expected.extend(std::iter::repeat(0xEE).take(64));
+        expected.push(0x02); // invocation_script len
+        expected.extend_from_slice(&[0xFF, 0x00]);
+
+        assert_eq!(bytes, expected);
     }
 }

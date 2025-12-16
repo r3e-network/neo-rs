@@ -138,3 +138,47 @@ impl ConsensusPayload {
         self.witness = witness;
     }
 }
+
+/// Builds DBFTPlugin consensus message bytes:
+/// `[type:1][block_index:4][validator_index:1][view_number:1][body...]`.
+pub(crate) fn consensus_message_bytes(
+    message_type: crate::ConsensusMessageType,
+    block_index: u32,
+    validator_index: u8,
+    view_number: u8,
+    body: &[u8],
+) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(1 + 4 + 1 + 1 + body.len());
+    bytes.push(message_type.to_byte());
+    bytes.extend_from_slice(&block_index.to_le_bytes());
+    bytes.push(validator_index);
+    bytes.push(view_number);
+    bytes.extend_from_slice(body);
+    bytes
+}
+
+#[cfg(test)]
+mod wire_format_tests {
+    use super::*;
+    use neo_primitives::UInt256;
+
+    #[test]
+    fn consensus_payload_to_message_bytes_layout() {
+        let hash = UInt256::from([0xAB; 32]);
+        let payload = ConsensusPayload::new(
+            0x4E454F,
+            42,
+            9,
+            1,
+            ConsensusMessageType::PrepareResponse,
+            hash.to_array().to_vec(),
+        );
+
+        let bytes = payload.to_message_bytes();
+        assert_eq!(bytes[0], ConsensusMessageType::PrepareResponse.to_byte());
+        assert_eq!(&bytes[1..5], &42u32.to_le_bytes());
+        assert_eq!(bytes[5], 9);
+        assert_eq!(bytes[6], 1);
+        assert_eq!(&bytes[7..], &hash.to_array());
+    }
+}

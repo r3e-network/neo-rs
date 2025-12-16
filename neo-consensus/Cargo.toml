@@ -18,6 +18,7 @@ description = "dBFT consensus for Neo blockchain"
 neo-primitives = { workspace = true }
 neo-crypto = { workspace = true }
 neo-io = { workspace = true }
+neo-vm = { workspace = true }
 
 # Async runtime
 tokio = { workspace = true }
