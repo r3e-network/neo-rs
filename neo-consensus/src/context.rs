@@ -400,7 +400,7 @@ impl ConsensusContext {
             .iter()
             .filter(|v| {
                 match self.last_seen_messages.get(&v.index) {
-                    None => true, // No message seen from this validator
+                    None => true,                                // No message seen from this validator
                     Some(&last_block) => last_block < threshold, // Last message was too old
                 }
             })
@@ -520,8 +520,8 @@ impl ConsensusContext {
             validators,
             my_index,
             state: ConsensusState::Initial, // Caller should update based on role
-            view_start_time: 0,              // Caller should update to current time
-            expected_block_time: 0,          // Caller should update
+            view_start_time: 0,             // Caller should update to current time
+            expected_block_time: 0,         // Caller should update
             version: 0,
             prev_hash: UInt256::zero(),
             proposed_block_hash: state.proposed_block_hash,
@@ -685,8 +685,7 @@ mod tests {
         ctx.prepare_responses.insert(2, vec![0xdd, 0xee, 0xff]);
         ctx.commits.insert(0, vec![0x11, 0x22, 0x33]);
         ctx.commits.insert(1, vec![0x44, 0x55, 0x66]);
-        ctx.change_views
-            .insert(3, (3, ChangeViewReason::Timeout));
+        ctx.change_views.insert(3, (3, ChangeViewReason::Timeout));
         ctx.change_views
             .insert(4, (3, ChangeViewReason::TxNotFound));
 
@@ -880,10 +879,10 @@ mod tests {
 
         // Simulate messages from validators at different block heights
         ctx.last_seen_messages.insert(0, 100); // Current block - not failed
-        ctx.last_seen_messages.insert(1, 99);  // Previous block - not failed
-        ctx.last_seen_messages.insert(2, 98);  // Old block (< 99) - FAILED
-        ctx.last_seen_messages.insert(3, 95);  // Very old block - FAILED
-        // Validators 4, 5, 6 have no messages - FAILED
+        ctx.last_seen_messages.insert(1, 99); // Previous block - not failed
+        ctx.last_seen_messages.insert(2, 98); // Old block (< 99) - FAILED
+        ctx.last_seen_messages.insert(3, 95); // Very old block - FAILED
+                                              // Validators 4, 5, 6 have no messages - FAILED
 
         // Failed: validators 2, 3, 4, 5, 6 = 5 validators
         assert_eq!(ctx.count_failed(), 5);
@@ -899,9 +898,9 @@ mod tests {
         // Messages at block 8 or lower are failed
 
         ctx.last_seen_messages.insert(0, 10); // OK
-        ctx.last_seen_messages.insert(1, 9);  // OK (exactly at threshold)
-        ctx.last_seen_messages.insert(2, 8);  // FAILED (< threshold)
-        // Validator 3 has no message - FAILED
+        ctx.last_seen_messages.insert(1, 9); // OK (exactly at threshold)
+        ctx.last_seen_messages.insert(2, 8); // FAILED (< threshold)
+                                             // Validator 3 has no message - FAILED
 
         assert_eq!(ctx.count_failed(), 2); // Validators 2 and 3
     }

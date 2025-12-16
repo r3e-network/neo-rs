@@ -350,10 +350,7 @@ impl ValidatorService {
     /// # Returns
     /// * `Ok(Vec<u8>)` - Invocation script bytes
     /// * `Err(_)` - If signature format is invalid
-    fn build_invocation_script(
-        &self,
-        signatures: &[(u8, Vec<u8>)],
-    ) -> anyhow::Result<Vec<u8>> {
+    fn build_invocation_script(&self, signatures: &[(u8, Vec<u8>)]) -> anyhow::Result<Vec<u8>> {
         use neo_vm::op_code::OpCode;
 
         if signatures.is_empty() {
@@ -592,7 +589,9 @@ mod tests {
         for _ in 0..4 {
             let private_key = Secp256r1Crypto::generate_private_key();
             let public_key_bytes = Secp256r1Crypto::derive_public_key(&private_key).unwrap();
-            let public_key = ECPoint::decode_compressed_with_curve(ECCurve::Secp256r1, &public_key_bytes).unwrap();
+            let public_key =
+                ECPoint::decode_compressed_with_curve(ECCurve::Secp256r1, &public_key_bytes)
+                    .unwrap();
             validator_pubkeys.push(public_key);
         }
 
@@ -627,21 +626,41 @@ mod tests {
 
         // Verify witness structure
         let witness = block.witness();
-        assert!(!witness.invocation_script.is_empty(), "Invocation script should not be empty");
-        assert!(!witness.verification_script.is_empty(), "Verification script should not be empty");
+        assert!(
+            !witness.invocation_script.is_empty(),
+            "Invocation script should not be empty"
+        );
+        assert!(
+            !witness.verification_script.is_empty(),
+            "Verification script should not be empty"
+        );
 
         // Verify invocation script format: 3 signatures * (PUSHDATA1 + len + 64 bytes) = 3 * 66 = 198 bytes
-        assert_eq!(witness.invocation_script.len(), 198, "Invocation script should be 198 bytes");
+        assert_eq!(
+            witness.invocation_script.len(),
+            198,
+            "Invocation script should be 198 bytes"
+        );
 
         // Verify each signature is properly encoded with PUSHDATA1
         for i in 0..3 {
             let offset = i * 66;
-            assert_eq!(witness.invocation_script[offset], 0x0C, "Should be PUSHDATA1 opcode");
-            assert_eq!(witness.invocation_script[offset + 1], 64, "Should be 64 bytes length");
+            assert_eq!(
+                witness.invocation_script[offset], 0x0C,
+                "Should be PUSHDATA1 opcode"
+            );
+            assert_eq!(
+                witness.invocation_script[offset + 1],
+                64,
+                "Should be 64 bytes length"
+            );
         }
 
         // Verify verification script starts with PUSH3 (0x53 = 0x50 + 3)
-        assert_eq!(witness.verification_script[0], 0x53, "Should start with PUSH3 for M=3");
+        assert_eq!(
+            witness.verification_script[0], 0x53,
+            "Should start with PUSH3 for M=3"
+        );
     }
 
     #[tokio::test]
@@ -679,7 +698,10 @@ mod tests {
 
         let result = service.build_invocation_script(&signatures);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Invalid signature length"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid signature length"));
     }
 
     #[tokio::test]
@@ -693,7 +715,9 @@ mod tests {
         for _ in 0..4 {
             let private_key = Secp256r1Crypto::generate_private_key();
             let public_key_bytes = Secp256r1Crypto::derive_public_key(&private_key).unwrap();
-            let public_key = ECPoint::decode_compressed_with_curve(ECCurve::Secp256r1, &public_key_bytes).unwrap();
+            let public_key =
+                ECPoint::decode_compressed_with_curve(ECCurve::Secp256r1, &public_key_bytes)
+                    .unwrap();
             public_keys.push(public_key);
         }
 
@@ -717,7 +741,9 @@ mod tests {
         for _ in 0..4 {
             let private_key = Secp256r1Crypto::generate_private_key();
             let public_key_bytes = Secp256r1Crypto::derive_public_key(&private_key).unwrap();
-            let public_key = ECPoint::decode_compressed_with_curve(ECCurve::Secp256r1, &public_key_bytes).unwrap();
+            let public_key =
+                ECPoint::decode_compressed_with_curve(ECCurve::Secp256r1, &public_key_bytes)
+                    .unwrap();
             public_keys.push(public_key);
         }
 

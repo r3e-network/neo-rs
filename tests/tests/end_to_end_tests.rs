@@ -10,7 +10,9 @@
 use neo_chain::{BlockIndexEntry, ChainState};
 use neo_crypto::Crypto;
 use neo_primitives::{UInt160, UInt256};
-use neo_state::{MemoryWorldState, StateChanges, StateTrieManager, StorageItem, StorageKey, WorldState};
+use neo_state::{
+    MemoryWorldState, StateChanges, StateTrieManager, StorageItem, StorageKey, WorldState,
+};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -82,7 +84,9 @@ fn test_block_execution_state_flow() {
     // Simulate NEO token balance update
     let balance_key = StorageKey::new(neo_token, vec![0x14, 0x01]); // Prefix + account
     let balance_value = StorageItem::new(100_000_000i64.to_le_bytes().to_vec());
-    block1_changes.storage.insert(balance_key, Some(balance_value));
+    block1_changes
+        .storage
+        .insert(balance_key, Some(balance_value));
 
     // Apply state changes
     let block1_root = trie.apply_changes(1, &block1_changes).unwrap();
@@ -139,13 +143,21 @@ fn test_state_root_order_independence() {
     let mut changes1 = StateChanges::new();
     let key_a = StorageKey::new(UInt160::default(), vec![0x01]);
     let key_b = StorageKey::new(UInt160::default(), vec![0x02]);
-    changes1.storage.insert(key_a.clone(), Some(StorageItem::new(vec![0x0A])));
-    changes1.storage.insert(key_b.clone(), Some(StorageItem::new(vec![0x0B])));
+    changes1
+        .storage
+        .insert(key_a.clone(), Some(StorageItem::new(vec![0x0A])));
+    changes1
+        .storage
+        .insert(key_b.clone(), Some(StorageItem::new(vec![0x0B])));
 
     // Changes in order B, A (HashMap doesn't guarantee order anyway)
     let mut changes2 = StateChanges::new();
-    changes2.storage.insert(key_b, Some(StorageItem::new(vec![0x0B])));
-    changes2.storage.insert(key_a, Some(StorageItem::new(vec![0x0A])));
+    changes2
+        .storage
+        .insert(key_b, Some(StorageItem::new(vec![0x0B])));
+    changes2
+        .storage
+        .insert(key_a, Some(StorageItem::new(vec![0x0A])));
 
     let root1 = trie1.apply_changes(1, &changes1).unwrap();
     let root2 = trie2.apply_changes(1, &changes2).unwrap();
@@ -161,15 +173,22 @@ fn test_state_root_different_values() {
     let key = StorageKey::new(UInt160::default(), vec![0x01]);
 
     let mut changes1 = StateChanges::new();
-    changes1.storage.insert(key.clone(), Some(StorageItem::new(vec![0x0A])));
+    changes1
+        .storage
+        .insert(key.clone(), Some(StorageItem::new(vec![0x0A])));
 
     let mut changes2 = StateChanges::new();
-    changes2.storage.insert(key, Some(StorageItem::new(vec![0x0B])));
+    changes2
+        .storage
+        .insert(key, Some(StorageItem::new(vec![0x0B])));
 
     let root1 = trie1.apply_changes(1, &changes1).unwrap();
     let root2 = trie2.apply_changes(1, &changes2).unwrap();
 
-    assert_ne!(root1, root2, "Different values should produce different roots");
+    assert_ne!(
+        root1, root2,
+        "Different values should produce different roots"
+    );
 }
 
 // ============================================================================
@@ -201,7 +220,9 @@ fn test_chain_reorganization_state_rollback() {
     // Block 1 on main chain
     let mut block1_changes = StateChanges::new();
     let key1 = StorageKey::new(UInt160::default(), vec![0x01]);
-    block1_changes.storage.insert(key1, Some(StorageItem::new(vec![0x11])));
+    block1_changes
+        .storage
+        .insert(key1, Some(StorageItem::new(vec![0x11])));
     let block1_root = trie.apply_changes(1, &block1_changes).unwrap();
 
     let block1 = BlockIndexEntry {
@@ -220,7 +241,9 @@ fn test_chain_reorganization_state_rollback() {
     // Block 2 on main chain
     let mut block2_changes = StateChanges::new();
     let key2 = StorageKey::new(UInt160::default(), vec![0x02]);
-    block2_changes.storage.insert(key2, Some(StorageItem::new(vec![0x22])));
+    block2_changes
+        .storage
+        .insert(key2, Some(StorageItem::new(vec![0x22])));
     let _block2_root = trie.apply_changes(2, &block2_changes).unwrap();
 
     assert_eq!(trie.current_index(), 2);
@@ -403,7 +426,11 @@ fn test_state_trie_performance_1000_keys() {
 
     let elapsed = start.elapsed();
     // Should complete in reasonable time (< 1 second)
-    assert!(elapsed.as_secs() < 1, "1000 keys took too long: {:?}", elapsed);
+    assert!(
+        elapsed.as_secs() < 1,
+        "1000 keys took too long: {:?}",
+        elapsed
+    );
 }
 
 #[test]
@@ -448,6 +475,10 @@ fn test_chain_state_performance_100_blocks() {
     }
 
     let elapsed = start.elapsed();
-    assert!(elapsed.as_millis() < 500, "100 blocks took too long: {:?}", elapsed);
+    assert!(
+        elapsed.as_millis() < 500,
+        "100 blocks took too long: {:?}",
+        elapsed
+    );
     assert_eq!(chain.height(), 100);
 }

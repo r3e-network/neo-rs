@@ -188,6 +188,16 @@ impl NodeRuntime {
         self.chain.read().await.height()
     }
 
+    /// Returns a clone of the chain state handle (for wiring services like P2P/RPC).
+    pub fn chain_handle(&self) -> Arc<RwLock<ChainState>> {
+        self.chain.clone()
+    }
+
+    /// Returns a clone of the mempool handle (for wiring services like RPC).
+    pub fn mempool_handle(&self) -> Arc<RwLock<Mempool>> {
+        self.mempool.clone()
+    }
+
     /// Returns the number of transactions in the mempool
     pub async fn mempool_size(&self) -> usize {
         self.mempool.read().await.len()
@@ -368,9 +378,9 @@ impl NodeRuntime {
         }
 
         // Emit genesis initialized event
-        let _ = self.chain_tx.send(ChainEvent::GenesisInitialized {
-            hash: genesis_hash,
-        });
+        let _ = self
+            .chain_tx
+            .send(ChainEvent::GenesisInitialized { hash: genesis_hash });
 
         info!(
             target: "neo::runtime",

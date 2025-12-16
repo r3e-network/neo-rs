@@ -71,11 +71,8 @@ impl ChangeViewMessage {
             ));
         }
 
-        let timestamp = u64::from_le_bytes(
-            data[0..8].try_into().unwrap_or([0u8; 8])
-        );
-        let reason = ChangeViewReason::from_byte(data[8])
-            .unwrap_or(ChangeViewReason::Timeout);
+        let timestamp = u64::from_le_bytes(data[0..8].try_into().unwrap_or([0u8; 8]));
+        let reason = ChangeViewReason::from_byte(data[8]).unwrap_or(ChangeViewReason::Timeout);
 
         Ok(Self {
             block_index,

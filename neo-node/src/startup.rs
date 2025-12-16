@@ -11,11 +11,7 @@ use neo_core::{
     persistence::{providers::RocksDBStoreProvider, storage::StorageConfig, IStoreProvider},
     protocol_settings::ProtocolSettings,
 };
-use std::{
-    fs,
-    path::Path,
-    sync::Arc,
-};
+use std::{fs, path::Path, sync::Arc};
 use tracing::{info, warn};
 
 pub(crate) const STORAGE_VERSION: &str = env!("CARGO_PKG_VERSION");

@@ -96,26 +96,44 @@ impl ScriptBuilder {
             return self;
         }
 
-        let mut bytes = Vec::new();
-        let mut v = value;
+        // Match C# Neo.VM.ScriptBuilder.EmitPush(BigInteger) for integer encoding:
+        // use PUSHINT8/16/32/64 with right-padding for sign extension.
+        let negative = value < 0;
+        let buf = value.to_le_bytes();
 
-        // Convert to little-endian byte representation
-        while v != 0 && v != -1 {
-            bytes.push((v & 0xFF) as u8);
-            v >>= 8;
+        let mut bytes_written = buf.len();
+        while bytes_written > 1 {
+            let last = buf[bytes_written - 1];
+            let next = buf[bytes_written - 2];
+            if !negative {
+                if last == 0x00 && (next & 0x80) == 0 {
+                    bytes_written -= 1;
+                    continue;
+                }
+            } else if last == 0xFF && (next & 0x80) != 0 {
+                bytes_written -= 1;
+                continue;
+            }
+            break;
         }
 
-        // Handle sign bit
-        if v == -1 && (bytes.last().unwrap_or(&0) & 0x80) == 0 {
-            bytes.push(0xFF);
-        } else if v == 0
-            && !bytes.is_empty()
-            && (bytes.last().expect("collection should not be empty") & 0x80) != 0
-        {
-            bytes.push(0x00);
+        let (opcode, target_len) = match bytes_written {
+            1 => (OpCode::PUSHINT8, 1usize),
+            2 => (OpCode::PUSHINT16, 2usize),
+            3 | 4 => (OpCode::PUSHINT32, 4usize),
+            5..=8 => (OpCode::PUSHINT64, 8usize),
+            _ => (OpCode::PUSHINT64, 8usize),
+        };
+
+        let mut operand = Vec::with_capacity(target_len);
+        operand.extend_from_slice(&buf[..bytes_written]);
+        let fill = if negative { 0xFF } else { 0x00 };
+        while operand.len() < target_len {
+            operand.push(fill);
         }
 
-        self.emit_push(&bytes)
+        self.emit_instruction(opcode, &operand);
+        self
     }
 
     /// Emits a push operation for a boolean.
@@ -150,7 +168,12 @@ impl ScriptBuilder {
     pub fn emit_push_bigint(&mut self, value: BigInt) -> VmResult<&mut Self> {
         if value >= BigInt::from(-1) && value <= BigInt::from(16) {
             if let Some(v) = value.to_i64() {
-                return Ok(self.emit_push_int(v));
+                if v == -1 {
+                    self.emit_opcode(OpCode::PUSHM1);
+                } else {
+                    self.emit((OpCode::PUSH0 as u8).wrapping_add(v as u8));
+                }
+                return Ok(self);
             }
         }
 
@@ -409,25 +432,34 @@ mod tests {
 
     #[test]
     fn test_emit_push_int() {
-        let mut builder = ScriptBuilder::new();
+        fn assert_push(value: i64, expected: &[u8]) {
+            let mut builder = ScriptBuilder::new();
+            builder.emit_push_int(value);
+            assert_eq!(builder.to_array(), expected);
+        }
 
-        // Special cases
-        builder.emit_push_int(-1);
-        builder.emit_push_int(0);
-        builder.emit_push_int(10);
+        // Special cases (-1..=16)
+        assert_push(-1, &[OpCode::PUSHM1 as u8]);
+        assert_push(0, &[OpCode::PUSH0 as u8]);
+        assert_push(10, &[OpCode::PUSH10 as u8]);
+        assert_push(16, &[OpCode::PUSH16 as u8]);
 
-        // Larger integers
-        builder.emit_push_int(100);
-        builder.emit_push_int(-100);
+        // PUSHINT8
+        assert_push(100, &[OpCode::PUSHINT8 as u8, 0x64]);
+        assert_push(-100, &[OpCode::PUSHINT8 as u8, 0x9C]);
+        assert_push(127, &[OpCode::PUSHINT8 as u8, 0x7F]);
+        assert_push(-128, &[OpCode::PUSHINT8 as u8, 0x80]);
 
-        let script = builder.to_array();
+        // Boundary cases that require sign-extension padding
+        assert_push(128, &[OpCode::PUSHINT16 as u8, 0x80, 0x00]);
+        assert_push(255, &[OpCode::PUSHINT16 as u8, 0xFF, 0x00]);
+        assert_push(256, &[OpCode::PUSHINT16 as u8, 0x00, 0x01]);
+        assert_push(300, &[OpCode::PUSHINT16 as u8, 0x2C, 0x01]);
+        assert_push(-300, &[OpCode::PUSHINT16 as u8, 0xD4, 0xFE]);
+        assert_push(-129, &[OpCode::PUSHINT16 as u8, 0x7F, 0xFF]);
 
-        // Check special cases
-        assert_eq!(script[0], OpCode::PUSHM1 as u8);
-        assert_eq!(script[1], OpCode::PUSH0 as u8);
-        assert_eq!(script[2], OpCode::PUSH10 as u8);
-
-        assert!(script.len() > 5);
+        // PUSHINT32 (values that require 3 bytes)
+        assert_push(32768, &[OpCode::PUSHINT32 as u8, 0x00, 0x80, 0x00, 0x00]);
     }
 
     #[test]

@@ -243,8 +243,10 @@ impl RecoveryMessage {
     ) -> ConsensusResult<Self> {
         let mut reader = MemoryReader::new(data);
 
-        let change_view_messages = deserialize_array::<ChangeViewPayloadCompact>(&mut reader, u8::MAX as usize)
-            .map_err(|_| crate::ConsensusError::invalid_proposal("RecoveryMessage change views"))?;
+        let change_view_messages =
+            deserialize_array::<ChangeViewPayloadCompact>(&mut reader, u8::MAX as usize).map_err(
+                |_| crate::ConsensusError::invalid_proposal("RecoveryMessage change views"),
+            )?;
 
         let has_prepare_request = reader
             .read_bool()
@@ -254,9 +256,9 @@ impl RecoveryMessage {
             let req = super::PrepareRequestMessage::deserialize_from_reader(&mut reader)?;
             (Some(req), None)
         } else {
-            let len = reader
-                .read_var_int(UInt256::LENGTH as u64)
-                .map_err(|_| crate::ConsensusError::invalid_proposal("RecoveryMessage PreparationHash length"))? as usize;
+            let len = reader.read_var_int(UInt256::LENGTH as u64).map_err(|_| {
+                crate::ConsensusError::invalid_proposal("RecoveryMessage PreparationHash length")
+            })? as usize;
             if len == 0 {
                 (None, None)
             } else if len == UInt256::LENGTH {
@@ -272,10 +274,12 @@ impl RecoveryMessage {
         };
 
         let preparation_messages =
-            deserialize_array::<PreparationPayloadCompact>(&mut reader, u8::MAX as usize)
-                .map_err(|_| crate::ConsensusError::invalid_proposal("RecoveryMessage preparations"))?;
-        let commit_messages = deserialize_array::<CommitPayloadCompact>(&mut reader, u8::MAX as usize)
-            .map_err(|_| crate::ConsensusError::invalid_proposal("RecoveryMessage commits"))?;
+            deserialize_array::<PreparationPayloadCompact>(&mut reader, u8::MAX as usize).map_err(
+                |_| crate::ConsensusError::invalid_proposal("RecoveryMessage preparations"),
+            )?;
+        let commit_messages =
+            deserialize_array::<CommitPayloadCompact>(&mut reader, u8::MAX as usize)
+                .map_err(|_| crate::ConsensusError::invalid_proposal("RecoveryMessage commits"))?;
 
         Ok(Self {
             block_index,

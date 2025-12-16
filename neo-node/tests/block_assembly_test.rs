@@ -8,7 +8,7 @@ use neo_crypto::{ecc::generate_keypair, ECCurve};
 async fn test_complete_block_assembly_workflow() {
     // Generate 4 validator key pairs
     let mut validator_pubkeys = Vec::new();
-    
+
     for _ in 0..4 {
         let (_private_key, public_key) = generate_keypair(ECCurve::Secp256r1).unwrap();
         validator_pubkeys.push(public_key);
@@ -56,8 +56,14 @@ async fn test_complete_block_assembly_workflow() {
 
     println!("✓ Block assembly test passed");
     println!("  Block index: {}", block.index());
-    println!("  Invocation script size: {} bytes", witness.invocation_script.len());
-    println!("  Verification script size: {} bytes", witness.verification_script.len());
+    println!(
+        "  Invocation script size: {} bytes",
+        witness.invocation_script.len()
+    );
+    println!(
+        "  Verification script size: {} bytes",
+        witness.verification_script.len()
+    );
 }
 
 // Helper function to simulate block assembly
@@ -84,10 +90,8 @@ async fn assemble_test_block(block_data: BlockData) -> anyhow::Result<Block> {
         .map(|pk| pk.encoded().to_vec())
         .collect();
 
-    let verification = Helper::try_multi_sig_redeem_script(
-        block_data.required_signatures,
-        &pubkey_bytes,
-    )?;
+    let verification =
+        Helper::try_multi_sig_redeem_script(block_data.required_signatures, &pubkey_bytes)?;
 
     // Create witness
     let witness = Witness::new_with_scripts(invocation, verification);

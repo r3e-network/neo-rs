@@ -187,7 +187,9 @@ impl TeeWallet {
             return Err(TeeError::Other("Wallet is locked".to_string()));
         }
 
-        let key: &[u8; 32] = private_key.try_into().map_err(|_| TeeError::InvalidKeyFormat)?;
+        let key: &[u8; 32] = private_key
+            .try_into()
+            .map_err(|_| TeeError::InvalidKeyFormat)?;
         let public_key = self.derive_public_key(key)?;
         let script_hash = self.compute_script_hash(&public_key)?;
 

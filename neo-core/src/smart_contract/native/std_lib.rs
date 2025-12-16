@@ -510,20 +510,38 @@ mod tests {
         let stdlib = create_stdlib();
 
         // Equal arrays
-        let result = stdlib.memory_compare(&[vec![1, 2, 3], vec![1, 2, 3]]).unwrap();
-        assert_eq!(i32::from_le_bytes([result[0], result[1], result[2], result[3]]), 0);
+        let result = stdlib
+            .memory_compare(&[vec![1, 2, 3], vec![1, 2, 3]])
+            .unwrap();
+        assert_eq!(
+            i32::from_le_bytes([result[0], result[1], result[2], result[3]]),
+            0
+        );
 
         // First less than second
-        let result = stdlib.memory_compare(&[vec![1, 2, 3], vec![1, 2, 4]]).unwrap();
-        assert_eq!(i32::from_le_bytes([result[0], result[1], result[2], result[3]]), -1);
+        let result = stdlib
+            .memory_compare(&[vec![1, 2, 3], vec![1, 2, 4]])
+            .unwrap();
+        assert_eq!(
+            i32::from_le_bytes([result[0], result[1], result[2], result[3]]),
+            -1
+        );
 
         // First greater than second
-        let result = stdlib.memory_compare(&[vec![1, 2, 4], vec![1, 2, 3]]).unwrap();
-        assert_eq!(i32::from_le_bytes([result[0], result[1], result[2], result[3]]), 1);
+        let result = stdlib
+            .memory_compare(&[vec![1, 2, 4], vec![1, 2, 3]])
+            .unwrap();
+        assert_eq!(
+            i32::from_le_bytes([result[0], result[1], result[2], result[3]]),
+            1
+        );
 
         // Different lengths
         let result = stdlib.memory_compare(&[vec![1, 2], vec![1, 2, 3]]).unwrap();
-        assert_eq!(i32::from_le_bytes([result[0], result[1], result[2], result[3]]), -1);
+        assert_eq!(
+            i32::from_le_bytes([result[0], result[1], result[2], result[3]]),
+            -1
+        );
     }
 
     #[test]
@@ -534,17 +552,26 @@ mod tests {
         let mem = vec![1, 2, 3, 4, 5, 6, 7, 8];
         let pattern = vec![4, 5, 6];
         let result = stdlib.memory_search(&[mem.clone(), pattern]).unwrap();
-        assert_eq!(i32::from_le_bytes([result[0], result[1], result[2], result[3]]), 3);
+        assert_eq!(
+            i32::from_le_bytes([result[0], result[1], result[2], result[3]]),
+            3
+        );
 
         // Pattern not found
         let pattern = vec![9, 10];
         let result = stdlib.memory_search(&[mem.clone(), pattern]).unwrap();
-        assert_eq!(i32::from_le_bytes([result[0], result[1], result[2], result[3]]), -1);
+        assert_eq!(
+            i32::from_le_bytes([result[0], result[1], result[2], result[3]]),
+            -1
+        );
 
         // Empty pattern
         let pattern = vec![];
         let result = stdlib.memory_search(&[mem.clone(), pattern]).unwrap();
-        assert_eq!(i32::from_le_bytes([result[0], result[1], result[2], result[3]]), 0);
+        assert_eq!(
+            i32::from_le_bytes([result[0], result[1], result[2], result[3]]),
+            0
+        );
     }
 
     #[test]
@@ -556,18 +583,33 @@ mod tests {
 
         // Search from start=0
         let start = 0i32.to_le_bytes().to_vec();
-        let result = stdlib.memory_search(&[mem.clone(), pattern.clone(), start]).unwrap();
-        assert_eq!(i32::from_le_bytes([result[0], result[1], result[2], result[3]]), 3);
+        let result = stdlib
+            .memory_search(&[mem.clone(), pattern.clone(), start])
+            .unwrap();
+        assert_eq!(
+            i32::from_le_bytes([result[0], result[1], result[2], result[3]]),
+            3
+        );
 
         // Search from start=4 (should find second occurrence)
         let start = 4i32.to_le_bytes().to_vec();
-        let result = stdlib.memory_search(&[mem.clone(), pattern.clone(), start]).unwrap();
-        assert_eq!(i32::from_le_bytes([result[0], result[1], result[2], result[3]]), 5);
+        let result = stdlib
+            .memory_search(&[mem.clone(), pattern.clone(), start])
+            .unwrap();
+        assert_eq!(
+            i32::from_le_bytes([result[0], result[1], result[2], result[3]]),
+            5
+        );
 
         // Search from start=6 (should not find)
         let start = 6i32.to_le_bytes().to_vec();
-        let result = stdlib.memory_search(&[mem.clone(), pattern.clone(), start]).unwrap();
-        assert_eq!(i32::from_le_bytes([result[0], result[1], result[2], result[3]]), -1);
+        let result = stdlib
+            .memory_search(&[mem.clone(), pattern.clone(), start])
+            .unwrap();
+        assert_eq!(
+            i32::from_le_bytes([result[0], result[1], result[2], result[3]]),
+            -1
+        );
     }
 
     #[test]
@@ -580,20 +622,35 @@ mod tests {
         // Backward search from start=8 (search in [0..8])
         let start = 8i32.to_le_bytes().to_vec();
         let backward = vec![1u8]; // true
-        let result = stdlib.memory_search(&[mem.clone(), pattern.clone(), start, backward]).unwrap();
-        assert_eq!(i32::from_le_bytes([result[0], result[1], result[2], result[3]]), 5);
+        let result = stdlib
+            .memory_search(&[mem.clone(), pattern.clone(), start, backward])
+            .unwrap();
+        assert_eq!(
+            i32::from_le_bytes([result[0], result[1], result[2], result[3]]),
+            5
+        );
 
         // Backward search from start=5 (search in [0..5], should find first occurrence)
         let start = 5i32.to_le_bytes().to_vec();
         let backward = vec![1u8];
-        let result = stdlib.memory_search(&[mem.clone(), pattern.clone(), start, backward]).unwrap();
-        assert_eq!(i32::from_le_bytes([result[0], result[1], result[2], result[3]]), 3);
+        let result = stdlib
+            .memory_search(&[mem.clone(), pattern.clone(), start, backward])
+            .unwrap();
+        assert_eq!(
+            i32::from_le_bytes([result[0], result[1], result[2], result[3]]),
+            3
+        );
 
         // Backward search from start=3 (search in [0..3], should not find)
         let start = 3i32.to_le_bytes().to_vec();
         let backward = vec![1u8];
-        let result = stdlib.memory_search(&[mem.clone(), pattern.clone(), start, backward]).unwrap();
-        assert_eq!(i32::from_le_bytes([result[0], result[1], result[2], result[3]]), -1);
+        let result = stdlib
+            .memory_search(&[mem.clone(), pattern.clone(), start, backward])
+            .unwrap();
+        assert_eq!(
+            i32::from_le_bytes([result[0], result[1], result[2], result[3]]),
+            -1
+        );
     }
 
     #[test]
@@ -609,21 +666,36 @@ mod tests {
         assert_eq!(count, 3);
 
         let mut offset = 4;
-        let len1 = u32::from_le_bytes([result[offset], result[offset+1], result[offset+2], result[offset+3]]) as usize;
+        let len1 = u32::from_le_bytes([
+            result[offset],
+            result[offset + 1],
+            result[offset + 2],
+            result[offset + 3],
+        ]) as usize;
         offset += 4;
-        let part1 = String::from_utf8(result[offset..offset+len1].to_vec()).unwrap();
+        let part1 = String::from_utf8(result[offset..offset + len1].to_vec()).unwrap();
         assert_eq!(part1, "hello");
         offset += len1;
 
-        let len2 = u32::from_le_bytes([result[offset], result[offset+1], result[offset+2], result[offset+3]]) as usize;
+        let len2 = u32::from_le_bytes([
+            result[offset],
+            result[offset + 1],
+            result[offset + 2],
+            result[offset + 3],
+        ]) as usize;
         offset += 4;
-        let part2 = String::from_utf8(result[offset..offset+len2].to_vec()).unwrap();
+        let part2 = String::from_utf8(result[offset..offset + len2].to_vec()).unwrap();
         assert_eq!(part2, "world");
         offset += len2;
 
-        let len3 = u32::from_le_bytes([result[offset], result[offset+1], result[offset+2], result[offset+3]]) as usize;
+        let len3 = u32::from_le_bytes([
+            result[offset],
+            result[offset + 1],
+            result[offset + 2],
+            result[offset + 3],
+        ]) as usize;
         offset += 4;
-        let part3 = String::from_utf8(result[offset..offset+len3].to_vec()).unwrap();
+        let part3 = String::from_utf8(result[offset..offset + len3].to_vec()).unwrap();
         assert_eq!(part3, "test");
     }
 
@@ -635,13 +707,17 @@ mod tests {
         let separator = ",".as_bytes().to_vec();
 
         // Without removeEmptyEntries (default: false)
-        let result = stdlib.string_split(&[string.clone(), separator.clone()]).unwrap();
+        let result = stdlib
+            .string_split(&[string.clone(), separator.clone()])
+            .unwrap();
         let count = u32::from_le_bytes([result[0], result[1], result[2], result[3]]);
         assert_eq!(count, 5); // hello, "", world, "", test
 
         // With removeEmptyEntries = true
         let remove_empty = vec![1u8];
-        let result = stdlib.string_split(&[string.clone(), separator.clone(), remove_empty]).unwrap();
+        let result = stdlib
+            .string_split(&[string.clone(), separator.clone(), remove_empty])
+            .unwrap();
         let count = u32::from_le_bytes([result[0], result[1], result[2], result[3]]);
         assert_eq!(count, 3); // hello, world, test
     }
@@ -653,12 +729,18 @@ mod tests {
         // ASCII string
         let string = "hello".as_bytes().to_vec();
         let result = stdlib.str_len(&[string]).unwrap();
-        assert_eq!(i32::from_le_bytes([result[0], result[1], result[2], result[3]]), 5);
+        assert_eq!(
+            i32::from_le_bytes([result[0], result[1], result[2], result[3]]),
+            5
+        );
 
         // Empty string
         let string = "".as_bytes().to_vec();
         let result = stdlib.str_len(&[string]).unwrap();
-        assert_eq!(i32::from_le_bytes([result[0], result[1], result[2], result[3]]), 0);
+        assert_eq!(
+            i32::from_le_bytes([result[0], result[1], result[2], result[3]]),
+            0
+        );
     }
 
     #[test]
@@ -668,22 +750,34 @@ mod tests {
         // Emoji (should count as 1 grapheme cluster)
         let string = "🦆".as_bytes().to_vec();
         let result = stdlib.str_len(&[string]).unwrap();
-        assert_eq!(i32::from_le_bytes([result[0], result[1], result[2], result[3]]), 1);
+        assert_eq!(
+            i32::from_le_bytes([result[0], result[1], result[2], result[3]]),
+            1
+        );
 
         // Combining character (should count as 1 grapheme cluster)
         let string = "ã".as_bytes().to_vec(); // a + combining tilde
         let result = stdlib.str_len(&[string]).unwrap();
-        assert_eq!(i32::from_le_bytes([result[0], result[1], result[2], result[3]]), 1);
+        assert_eq!(
+            i32::from_le_bytes([result[0], result[1], result[2], result[3]]),
+            1
+        );
 
         // Mixed ASCII and emoji
         let string = "hello🦆world".as_bytes().to_vec();
         let result = stdlib.str_len(&[string]).unwrap();
-        assert_eq!(i32::from_le_bytes([result[0], result[1], result[2], result[3]]), 11);
+        assert_eq!(
+            i32::from_le_bytes([result[0], result[1], result[2], result[3]]),
+            11
+        );
 
         // Multiple emojis
         let string = "🦆🦆🦆".as_bytes().to_vec();
         let result = stdlib.str_len(&[string]).unwrap();
-        assert_eq!(i32::from_le_bytes([result[0], result[1], result[2], result[3]]), 3);
+        assert_eq!(
+            i32::from_le_bytes([result[0], result[1], result[2], result[3]]),
+            3
+        );
     }
 
     #[test]
@@ -700,8 +794,7 @@ mod tests {
         let string = "12345".as_bytes().to_vec();
         let result = stdlib.atoi(&[string]).unwrap();
         let number = i64::from_le_bytes([
-            result[0], result[1], result[2], result[3],
-            result[4], result[5], result[6], result[7],
+            result[0], result[1], result[2], result[3], result[4], result[5], result[6], result[7],
         ]);
         assert_eq!(number, 12345);
 

@@ -313,7 +313,9 @@ impl ConsensusService {
                 validator = payload.validator_index,
                 "PrepareRequest signature verification failed"
             );
-            return Err(ConsensusError::signature_failed("PrepareRequest signature invalid"));
+            return Err(ConsensusError::signature_failed(
+                "PrepareRequest signature invalid",
+            ));
         }
 
         // Check if we already received a prepare request
@@ -412,7 +414,9 @@ impl ConsensusService {
                 validator = payload.validator_index,
                 "PrepareResponse signature verification failed"
             );
-            return Err(ConsensusError::signature_failed("PrepareResponse signature invalid"));
+            return Err(ConsensusError::signature_failed(
+                "PrepareResponse signature invalid",
+            ));
         }
 
         // Verify PreparationHash matches the primary PrepareRequest payload hash (C# behavior).
@@ -505,7 +509,9 @@ impl ConsensusService {
                     validator = payload.validator_index,
                     "Commit witness signature verification failed"
                 );
-                return Err(ConsensusError::signature_failed("Commit witness signature invalid"));
+                return Err(ConsensusError::signature_failed(
+                    "Commit witness signature invalid",
+                ));
             }
 
             if !payload.data.is_empty()
@@ -634,7 +640,9 @@ impl ConsensusService {
                 validator = payload.validator_index,
                 "ChangeView signature verification failed"
             );
-            return Err(ConsensusError::signature_failed("ChangeView signature invalid"));
+            return Err(ConsensusError::signature_failed(
+                "ChangeView signature invalid",
+            ));
         }
 
         // Parse the ChangeView message from payload data
@@ -660,12 +668,8 @@ impl ConsensusService {
             "Received ChangeView"
         );
 
-        self.context.add_change_view(
-            payload.validator_index,
-            new_view,
-            reason,
-            timestamp,
-        )?;
+        self.context
+            .add_change_view(payload.validator_index, new_view, reason, timestamp)?;
 
         // Check if we have enough change view requests
         if self.context.has_enough_change_views(new_view) {
@@ -831,7 +835,9 @@ impl ConsensusService {
                 validator = payload.validator_index,
                 "RecoveryMessage signature verification failed"
             );
-            return Err(ConsensusError::signature_failed("RecoveryMessage signature invalid"));
+            return Err(ConsensusError::signature_failed(
+                "RecoveryMessage signature invalid",
+            ));
         }
 
         debug!(
@@ -965,7 +971,10 @@ impl ConsensusService {
         }
         // Check if we can now send commit after applying recovery state
         else if self.context.has_enough_prepare_responses()
-            && !self.context.commits.contains_key(&self.context.my_index.unwrap_or(255))
+            && !self
+                .context
+                .commits
+                .contains_key(&self.context.my_index.unwrap_or(255))
         {
             if let Some(my_idx) = self.context.my_index {
                 info!(
@@ -983,8 +992,7 @@ impl ConsensusService {
                     signature.clone(),
                 );
 
-                let payload =
-                    self.create_payload(ConsensusMessageType::Commit, commit.serialize());
+                let payload = self.create_payload(ConsensusMessageType::Commit, commit.serialize());
                 self.broadcast(payload)?;
 
                 // Add our own commit
@@ -1102,7 +1110,10 @@ impl ConsensusService {
             .ok_or(ConsensusError::InvalidValidatorIndex(validator_index))
     }
 
-    fn dbft_unsigned_extensible_bytes(&self, payload: &ConsensusPayload) -> ConsensusResult<Vec<u8>> {
+    fn dbft_unsigned_extensible_bytes(
+        &self,
+        payload: &ConsensusPayload,
+    ) -> ConsensusResult<Vec<u8>> {
         use neo_io::BinaryWriter;
 
         let sender = self.dbft_sender(payload.validator_index)?;
@@ -1285,9 +1296,7 @@ mod tests {
         let validators = create_test_validators(7);
         let mut service = ConsensusService::new(0x4E454F, validators, Some(0), vec![], tx);
 
-        service
-            .start(100, 1000, UInt256::zero(), 0)
-            .unwrap();
+        service.start(100, 1000, UInt256::zero(), 0).unwrap();
 
         assert!(service.is_running());
         assert_eq!(service.context().block_index, 100);
@@ -1322,22 +1331,11 @@ mod tests {
         let validators = create_test_validators(7);
         let mut service = ConsensusService::new(0x4E454F, validators, Some(0), vec![], tx);
 
-        service
-            .start(100, 1000, UInt256::zero(), 0)
-            .unwrap();
+        service.start(100, 1000, UInt256::zero(), 0).unwrap();
 
         // Create a test consensus payload
         // Note: For block 100, view 0, the primary is validator (100 % 7) = 2
-        let msg = PrepareRequestMessage::new(
-            100,
-            0,
-            2,
-            0,
-            UInt256::zero(),
-            1234,
-            5678,
-            vec![],
-        );
+        let msg = PrepareRequestMessage::new(100, 0, 2, 0, UInt256::zero(), 1234, 5678, vec![]);
         let payload = ConsensusPayload::new(
             0x4E454F,
             100,
@@ -1375,9 +1373,7 @@ mod tests {
         let validators = create_test_validators(7);
         let mut service = ConsensusService::new(0x4E454F, validators, Some(0), vec![], tx);
 
-        service
-            .start(100, 1000, UInt256::zero(), 0)
-            .unwrap();
+        service.start(100, 1000, UInt256::zero(), 0).unwrap();
 
         // Create a test payload
         let payload = ConsensusPayload::new(
@@ -1393,9 +1389,7 @@ mod tests {
         let _ = service.process_message(payload.clone());
 
         // Start a new block - this should clear the message cache
-        service
-            .start(101, 2000, UInt256::zero(), 0)
-            .unwrap();
+        service.start(101, 2000, UInt256::zero(), 0).unwrap();
 
         // The same message should now be processed again (different block context)
         // Note: It will fail validation because block_index doesn't match,
@@ -1411,9 +1405,7 @@ mod tests {
         let validators = create_test_validators(7);
         let mut service = ConsensusService::new(0x4E454F, validators, Some(0), vec![], tx);
 
-        service
-            .start(100, 1000, UInt256::zero(), 0)
-            .unwrap();
+        service.start(100, 1000, UInt256::zero(), 0).unwrap();
 
         // Create a malicious payload (simulating replay attack)
         let payload = ConsensusPayload::new(

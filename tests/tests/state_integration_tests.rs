@@ -10,7 +10,9 @@
 use neo_chain::{BlockIndexEntry, ChainState};
 use neo_mempool::{Mempool, MempoolConfig};
 use neo_primitives::{UInt160, UInt256};
-use neo_state::{MemoryWorldState, StateChanges, StateTrieManager, StorageItem, StorageKey, WorldState};
+use neo_state::{
+    MemoryWorldState, StateChanges, StateTrieManager, StorageItem, StorageKey, WorldState,
+};
 
 // ============================================================================
 // WorldState Tests
@@ -30,7 +32,9 @@ fn test_world_state_commit() {
     let mut changes = StateChanges::new();
     let storage_key = StorageKey::new(UInt160::default(), vec![0x01, 0x02]);
     let storage_item = StorageItem::new(vec![0x03, 0x04, 0x05]);
-    changes.storage.insert(storage_key.clone(), Some(storage_item.clone()));
+    changes
+        .storage
+        .insert(storage_key.clone(), Some(storage_item.clone()));
 
     // Commit changes
     state.commit(changes).unwrap();
@@ -43,13 +47,17 @@ fn test_world_state_multiple_commits() {
     // First commit
     let mut changes1 = StateChanges::new();
     let key1 = StorageKey::new(UInt160::from([0x01u8; 20]), vec![0x01]);
-    changes1.storage.insert(key1, Some(StorageItem::new(vec![0x11])));
+    changes1
+        .storage
+        .insert(key1, Some(StorageItem::new(vec![0x11])));
     state.commit(changes1).unwrap();
 
     // Second commit
     let mut changes2 = StateChanges::new();
     let key2 = StorageKey::new(UInt160::from([0x02u8; 20]), vec![0x02]);
-    changes2.storage.insert(key2, Some(StorageItem::new(vec![0x22])));
+    changes2
+        .storage
+        .insert(key2, Some(StorageItem::new(vec![0x22])));
     state.commit(changes2).unwrap();
 }
 
@@ -104,7 +112,12 @@ fn test_state_trie_incremental_blocks() {
 
     // Each block should produce a different root
     for i in 1..roots.len() {
-        assert_ne!(roots[i], roots[i - 1], "Block {} should have different root", i + 1);
+        assert_ne!(
+            roots[i],
+            roots[i - 1],
+            "Block {} should have different root",
+            i + 1
+        );
     }
 
     assert_eq!(trie.current_index(), 5);
@@ -410,7 +423,9 @@ fn test_state_changes_deletion() {
     // Add value via StateChanges
     let mut add_changes = StateChanges::new();
     let storage_key = StorageKey::new(contract, vec![0x01]);
-    add_changes.storage.insert(storage_key.clone(), Some(StorageItem::new(vec![0x02])));
+    add_changes
+        .storage
+        .insert(storage_key.clone(), Some(StorageItem::new(vec![0x02])));
     state.commit(add_changes).unwrap();
 
     // Delete via StateChanges
@@ -457,7 +472,11 @@ fn test_state_trie_performance_1000_keys() {
 
     let elapsed = start.elapsed();
     // Should complete in reasonable time (< 1 second)
-    assert!(elapsed.as_secs() < 1, "1000 keys took too long: {:?}", elapsed);
+    assert!(
+        elapsed.as_secs() < 1,
+        "1000 keys took too long: {:?}",
+        elapsed
+    );
 }
 
 #[test]
@@ -502,6 +521,10 @@ fn test_chain_state_performance_100_blocks() {
     }
 
     let elapsed = start.elapsed();
-    assert!(elapsed.as_millis() < 500, "100 blocks took too long: {:?}", elapsed);
+    assert!(
+        elapsed.as_millis() < 500,
+        "100 blocks took too long: {:?}",
+        elapsed
+    );
     assert_eq!(chain.height(), 100);
 }

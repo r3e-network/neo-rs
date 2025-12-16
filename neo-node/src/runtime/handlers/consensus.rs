@@ -44,16 +44,27 @@ async fn handle_consensus_event(
     p2p_broadcast_tx: &Option<broadcast::Sender<BroadcastMessage>>,
 ) {
     match event {
-        ConsensusEvent::ViewChanged { block_index, old_view, new_view } => {
+        ConsensusEvent::ViewChanged {
+            block_index,
+            old_view,
+            new_view,
+        } => {
             handle_view_changed(event_tx, block_index, old_view, new_view);
         }
-        ConsensusEvent::BlockCommitted { block_index, block_hash, block_data } => {
+        ConsensusEvent::BlockCommitted {
+            block_index,
+            block_hash,
+            block_data,
+        } => {
             handle_block_committed(block_index, block_hash, &block_data);
         }
         ConsensusEvent::BroadcastMessage(payload) => {
             handle_broadcast_message(payload, p2p_broadcast_tx, consensus).await;
         }
-        ConsensusEvent::RequestTransactions { block_index, max_count } => {
+        ConsensusEvent::RequestTransactions {
+            block_index,
+            max_count,
+        } => {
             handle_request_transactions(block_index, max_count, mempool, consensus).await;
         }
     }
@@ -136,13 +147,13 @@ async fn handle_broadcast_message(
                     .map(|v| (v.script_hash, v.public_key.encoded().to_vec()))
             })
             .unwrap_or_else(|| {
-            warn!(
-                target: "neo::runtime",
-                validator_index = payload.validator_index,
-                "missing consensus context for broadcast"
-            );
-            (neo_core::UInt160::zero(), Vec::new())
-        });
+                warn!(
+                    target: "neo::runtime",
+                    validator_index = payload.validator_index,
+                    "missing consensus context for broadcast"
+                );
+                (neo_core::UInt160::zero(), Vec::new())
+            });
 
         if pubkey_bytes.is_empty() {
             return;
@@ -203,10 +214,7 @@ async fn handle_request_transactions(
     let top_txs = mempool_guard.get_top(max_count);
     drop(mempool_guard);
 
-    let tx_hashes: Vec<neo_core::UInt256> = top_txs
-        .iter()
-        .map(|entry| entry.hash)
-        .collect();
+    let tx_hashes: Vec<neo_core::UInt256> = top_txs.iter().map(|entry| entry.hash).collect();
     let tx_count = tx_hashes.len();
 
     if tx_count > 0 {

@@ -4,6 +4,7 @@ use crate::executor::BlockExecutorImpl;
 use crate::runtime::events::RuntimeEvent;
 use crate::state_validator::{StateRootValidator, ValidationResult};
 use neo_chain::{BlockIndexEntry, ChainEvent, ChainState};
+use neo_consensus::ConsensusService;
 use neo_core::neo_io::{MemoryReader, Serializable, SerializableExt};
 use neo_core::network::p2p::payloads::Block;
 use neo_core::network::p2p::payloads::ExtensiblePayload;
@@ -12,7 +13,6 @@ use neo_core::state_service::{StateRoot, StateStore};
 use neo_core::IVerifiable;
 use neo_p2p::P2PEvent;
 use neo_state::{MemoryWorldState, StateTrieManager, WorldState};
-use neo_consensus::ConsensusService;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, RwLock};
 use tracing::{debug, error, info, warn};
@@ -520,9 +520,23 @@ async fn handle_state_root_received(
             let local_index = state_trie.read().await.current_index();
 
             if let Some(ref validator) = state_validator {
-                validate_with_validator(validator, state_root.clone(), local_root, local_index, from).await;
+                validate_with_validator(
+                    validator,
+                    state_root.clone(),
+                    local_root,
+                    local_index,
+                    from,
+                )
+                .await;
             } else {
-                validate_without_validator(state_root, local_root, local_index, index, network_root, state_store);
+                validate_without_validator(
+                    state_root,
+                    local_root,
+                    local_index,
+                    index,
+                    network_root,
+                    state_store,
+                );
             }
         }
         Err(e) => {
@@ -709,7 +723,8 @@ fn verify_extensible_witness(network_magic: u32, payload: &ExtensiblePayload) ->
     use neo_core::smart_contract::helper::Helper;
     use neo_crypto::Secp256r1Crypto;
 
-    if payload.witness.invocation_script.is_empty() || payload.witness.verification_script.is_empty()
+    if payload.witness.invocation_script.is_empty()
+        || payload.witness.verification_script.is_empty()
     {
         return false;
     }

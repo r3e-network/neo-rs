@@ -11,6 +11,9 @@ use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
 use tracing::{error, info};
 
+use neo_core::protocol_settings::ProtocolSettings;
+use neo_core::wallets::helper::Helper as WalletHelper;
+
 /// RPC service configuration
 #[derive(Debug, Clone)]
 pub struct RpcServiceConfig {
@@ -57,8 +60,15 @@ pub struct RpcState {
     pub peer_count: usize,
     pub mempool_size: usize,
     pub mempool_hashes: Vec<String>,
+    pub peers_connected: Vec<(String, u16)>,
     pub version: String,
     pub network_magic: u32,
+    pub tcp_port: u16,
+    pub nonce: u32,
+    pub user_agent: String,
+    pub protocol_settings: Option<ProtocolSettings>,
+    pub rpc_max_iterator_result_items: usize,
+    pub rpc_session_enabled: bool,
 }
 
 impl Default for RpcState {
@@ -68,8 +78,15 @@ impl Default for RpcState {
             peer_count: 0,
             mempool_size: 0,
             mempool_hashes: Vec::new(),
+            peers_connected: Vec::new(),
             version: env!("CARGO_PKG_VERSION").to_string(),
-            network_magic: 0x4F454E,
+            network_magic: 0,
+            tcp_port: 0,
+            nonce: 0,
+            user_agent: "/neo-rs/".to_string(),
+            protocol_settings: None,
+            rpc_max_iterator_result_items: 100,
+            rpc_session_enabled: false,
         }
     }
 }
@@ -101,6 +118,7 @@ struct JsonRpcError {
 }
 
 /// RPC Service
+#[derive(Clone)]
 pub struct RpcService {
     config: RpcServiceConfig,
     state: Arc<RwLock<RpcServiceState>>,
@@ -151,6 +169,32 @@ impl RpcService {
     /// Sets the network magic
     pub async fn set_network_magic(&self, magic: u32) {
         self.rpc_state.write().await.network_magic = magic;
+    }
+
+    /// Sets the local node metadata (tcp port, node nonce, user agent).
+    pub async fn set_node_info(&self, tcp_port: u16, nonce: u32, user_agent: String) {
+        let mut state = self.rpc_state.write().await;
+        state.tcp_port = tcp_port;
+        state.nonce = nonce;
+        state.user_agent = user_agent;
+    }
+
+    /// Sets the protocol + RPC settings used by `getversion`.
+    pub async fn set_version_settings(
+        &self,
+        protocol_settings: ProtocolSettings,
+        rpc_max_iterator_result_items: usize,
+        rpc_session_enabled: bool,
+    ) {
+        let mut state = self.rpc_state.write().await;
+        state.protocol_settings = Some(protocol_settings);
+        state.rpc_max_iterator_result_items = rpc_max_iterator_result_items;
+        state.rpc_session_enabled = rpc_session_enabled;
+    }
+
+    /// Updates the peer endpoints returned by `getpeers`.
+    pub async fn update_peers_connected(&self, peers: Vec<(String, u16)>) {
+        self.rpc_state.write().await.peers_connected = peers;
     }
 
     /// Starts the RPC service
@@ -236,22 +280,79 @@ async fn handle_request(
 
     // Parse request body
     let body_bytes = hyper::body::to_bytes(req.into_body()).await?;
-    let body_str = String::from_utf8_lossy(&body_bytes);
-
-    let response = match serde_json::from_str::<JsonRpcRequest>(&body_str) {
-        Ok(rpc_req) => handle_rpc_request(rpc_req, rpc_state).await,
-        Err(e) => JsonRpcResponse {
-            jsonrpc: "2.0".to_string(),
-            result: None,
-            error: Some(JsonRpcError {
-                code: -32700,
-                message: format!("Parse error: {}", e),
-            }),
-            id: serde_json::Value::Null,
-        },
+    let parsed: serde_json::Value = match serde_json::from_slice(&body_bytes) {
+        Ok(v) => v,
+        Err(e) => {
+            let response = JsonRpcResponse {
+                jsonrpc: "2.0".to_string(),
+                result: None,
+                error: Some(JsonRpcError {
+                    code: -32700,
+                    message: format!("Parse error: {}", e),
+                }),
+                id: serde_json::Value::Null,
+            };
+            let json = serde_json::to_string(&response).unwrap_or_else(|_| "{}".to_string());
+            let mut resp = Response::new(Body::from(json));
+            resp.headers_mut()
+                .insert("Content-Type", "application/json".parse().unwrap());
+            if cors_enabled {
+                resp.headers_mut()
+                    .insert("Access-Control-Allow-Origin", "*".parse().unwrap());
+            }
+            return Ok(resp);
+        }
     };
 
-    let json = serde_json::to_string(&response).unwrap_or_else(|_| "{}".to_string());
+    let json = match parsed {
+        serde_json::Value::Array(items) => {
+            if items.is_empty() {
+                serde_json::to_string(&JsonRpcResponse {
+                    jsonrpc: "2.0".to_string(),
+                    result: None,
+                    error: Some(JsonRpcError {
+                        code: -32600,
+                        message: "Invalid Request".to_string(),
+                    }),
+                    id: serde_json::Value::Null,
+                })
+                .unwrap_or_else(|_| "{}".to_string())
+            } else {
+                let mut responses = Vec::with_capacity(items.len());
+                for item in items {
+                    match serde_json::from_value::<JsonRpcRequest>(item) {
+                        Ok(rpc_req) => {
+                            responses.push(handle_rpc_request(rpc_req, rpc_state.clone()).await)
+                        }
+                        Err(_) => responses.push(JsonRpcResponse {
+                            jsonrpc: "2.0".to_string(),
+                            result: None,
+                            error: Some(JsonRpcError {
+                                code: -32600,
+                                message: "Invalid Request".to_string(),
+                            }),
+                            id: serde_json::Value::Null,
+                        }),
+                    }
+                }
+                serde_json::to_string(&responses).unwrap_or_else(|_| "[]".to_string())
+            }
+        }
+        other => match serde_json::from_value::<JsonRpcRequest>(other) {
+            Ok(rpc_req) => serde_json::to_string(&handle_rpc_request(rpc_req, rpc_state).await)
+                .unwrap_or_else(|_| "{}".to_string()),
+            Err(_) => serde_json::to_string(&JsonRpcResponse {
+                jsonrpc: "2.0".to_string(),
+                result: None,
+                error: Some(JsonRpcError {
+                    code: -32600,
+                    message: "Invalid Request".to_string(),
+                }),
+                id: serde_json::Value::Null,
+            })
+            .unwrap_or_else(|_| "{}".to_string()),
+        },
+    };
 
     let mut resp = Response::new(Body::from(json));
     resp.headers_mut()
@@ -274,22 +375,51 @@ async fn handle_rpc_request(
 
     let result = match req.method.as_str() {
         "getversion" => {
+            let Some(settings) = state.protocol_settings.as_ref() else {
+                return JsonRpcResponse {
+                    jsonrpc: "2.0".to_string(),
+                    result: None,
+                    error: Some(JsonRpcError {
+                        code: -32603,
+                        message: "Protocol settings not initialised".to_string(),
+                    }),
+                    id: req.id,
+                };
+            };
+
+            let mut hardforks: Vec<_> = settings.hardforks.iter().collect();
+            hardforks.sort_by_key(|(hf, _height)| hf.index());
+
             let version_info = serde_json::json!({
-                "tcpport": 10333,
-                "wsport": 10334,
-                "nonce": 0,
-                "useragent": format!("/neo-rs:{}/", state.version),
+                "tcpport": state.tcp_port,
+                "nonce": state.nonce,
+                "useragent": state.user_agent,
+                "rpc": {
+                    "maxiteratorresultitems": state.rpc_max_iterator_result_items,
+                    "sessionenabled": state.rpc_session_enabled
+                },
                 "protocol": {
-                    "network": state.network_magic,
-                    "validatorscount": 7,
-                    "msperblock": 15000,
-                    "maxtraceableblocks": 2102400,
-                    "maxvaliduntilblockincrement": 5760,
-                    "maxtransactionsperblock": 512,
-                    "memorypoolmaxtransactions": 50000,
-                    "initialgasdistribution": 5200000000000000i64
+                    "addressversion": settings.address_version,
+                    "network": settings.network,
+                    "validatorscount": settings.validators_count,
+                    "msperblock": settings.milliseconds_per_block,
+                    "maxtraceableblocks": settings.max_traceable_blocks,
+                    "maxvaliduntilblockincrement": settings.max_valid_until_block_increment,
+                    "maxtransactionsperblock": settings.max_transactions_per_block,
+                    "memorypoolmaxtransactions": settings.memory_pool_max_transactions,
+                    "initialgasdistribution": settings.initial_gas_distribution,
+                    "hardforks": hardforks.iter().map(|(hf, height)| {
+                        let name = hf.to_string();
+                        serde_json::json!({
+                            "name": name.trim_start_matches("HF_").to_string(),
+                            "blockheight": *height
+                        })
+                    }).collect::<Vec<_>>(),
+                    "standbycommittee": settings.standby_committee.iter().map(|k| k.to_string()).collect::<Vec<_>>(),
+                    "seedlist": settings.seed_list.clone()
                 }
             });
+
             Ok(version_info)
         }
         "getblockcount" => Ok(serde_json::json!(state.height + 1)),
@@ -298,13 +428,17 @@ async fn handle_rpc_request(
         "getpeers" => Ok(serde_json::json!({
             "unconnected": [],
             "bad": [],
-            "connected": []
+            "connected": state.peers_connected.iter().map(|(addr, port)| serde_json::json!({
+                "address": addr,
+                "port": *port
+            })).collect::<Vec<_>>()
         })),
         "validateaddress" => {
             if let Some(params) = &req.params {
                 if let Some(address) = params.get(0).and_then(|v| v.as_str()) {
-                    // Simple validation - check if it starts with 'N'
-                    let is_valid = address.starts_with('N') && address.len() == 34;
+                    let settings = state.protocol_settings.as_ref();
+                    let version = settings.map(|s| s.address_version).unwrap_or(0x35);
+                    let is_valid = WalletHelper::to_script_hash(address, version).is_ok();
                     Ok(serde_json::json!({
                         "address": address,
                         "isvalid": is_valid

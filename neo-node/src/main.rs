@@ -31,8 +31,7 @@ use clap::Parser;
 use cli::NodeCli;
 use config::NodeConfig;
 use neo_core::{
-    protocol_settings::ProtocolSettings,
-    state_service::state_store::StateServiceSettings,
+    protocol_settings::ProtocolSettings, state_service::state_store::StateServiceSettings,
 };
 use std::{path::PathBuf, sync::Arc};
 use tokio::signal;
@@ -281,7 +280,10 @@ fn apply_cli_overrides(cli: &NodeCli, node_config: &mut NodeConfig) {
 }
 
 /// Builds state service settings if state root is enabled.
-fn build_state_service_settings(cli: &NodeCli, storage_path: Option<&str>) -> Option<StateServiceSettings> {
+fn build_state_service_settings(
+    cli: &NodeCli,
+    storage_path: Option<&str>,
+) -> Option<StateServiceSettings> {
     if !cli.state_root {
         return None;
     }
@@ -312,17 +314,18 @@ fn build_state_service_settings(cli: &NodeCli, storage_path: Option<&str>) -> Op
 }
 
 /// Builds the validators list from protocol settings.
-fn build_validators_list(protocol_settings: &ProtocolSettings) -> Vec<neo_consensus::ValidatorInfo> {
+fn build_validators_list(
+    protocol_settings: &ProtocolSettings,
+) -> Vec<neo_consensus::ValidatorInfo> {
     protocol_settings
         .standby_committee
         .iter()
         .take(protocol_settings.validators_count as usize)
         .enumerate()
         .map(|(index, public_key)| {
-            let script_hash = neo_core::smart_contract::Contract::create_signature_contract(
-                public_key.clone(),
-            )
-            .script_hash();
+            let script_hash =
+                neo_core::smart_contract::Contract::create_signature_contract(public_key.clone())
+                    .script_hash();
             neo_consensus::ValidatorInfo {
                 index: index as u8,
                 public_key: public_key.clone(),
@@ -394,8 +397,14 @@ async fn run_node(
 
     // Create P2P service early so the runtime can broadcast consensus/extensible payloads
     // via the same broadcast channel that each peer connection subscribes to.
-    let p2p_service = P2PService::new(runtime_config.p2p.clone(), node_runtime.p2p_event_sender());
+    let compression_enabled = node_config.p2p.enable_compression.unwrap_or(true);
+    let mut p2p_service = P2PService::new(
+        runtime_config.p2p.clone(),
+        node_runtime.p2p_event_sender(),
+        compression_enabled,
+    );
     node_runtime.set_p2p_broadcast_sender(p2p_service.broadcast_sender());
+    p2p_service.set_chain(node_runtime.chain_handle());
 
     node_runtime
         .start()
@@ -408,6 +417,11 @@ async fn run_node(
         mempool_size = node_runtime.mempool_size().await,
         "neo-node runtime started"
     );
+
+    // Ensure P2P starts with an accurate local height for VersionPayload capabilities.
+    p2p_service
+        .set_local_height(node_runtime.height().await)
+        .await;
 
     // Start P2P service
     if let Err(e) = p2p_service.start().await {
@@ -422,7 +436,57 @@ async fn run_node(
     }
 
     // Optionally start RPC service
-    let rpc_service = start_rpc_service_if_enabled(node_config, &runtime_config).await;
+    let rpc_service =
+        start_rpc_service_if_enabled(node_config, &runtime_config, &p2p_service).await;
+
+    // Keep P2P/RPC state in sync with the runtime (height, peers, mempool).
+    let chain_handle = node_runtime.chain_handle();
+    let mempool_handle = node_runtime.mempool_handle();
+    let p2p_for_pump = p2p_service.clone();
+    let rpc_for_pump = rpc_service.clone();
+    let (pump_shutdown_tx, mut pump_shutdown_rx) = tokio::sync::watch::channel(false);
+    let pump_handle = tokio::spawn(async move {
+        let tick = std::time::Duration::from_secs(1);
+        loop {
+            tokio::select! {
+                _ = tokio::time::sleep(tick) => {}
+                _ = pump_shutdown_rx.changed() => {
+                    if *pump_shutdown_rx.borrow() {
+                        break;
+                    }
+                    continue;
+                }
+            }
+
+            let height = chain_handle.read().await.height();
+            p2p_for_pump.set_local_height(height).await;
+
+            let peers = p2p_for_pump.peers().await;
+            let connected: Vec<_> = peers
+                .iter()
+                .filter(|p| p.state == crate::p2p_service::ConnectionState::Ready)
+                .map(|p| {
+                    let port = p.listener_port.unwrap_or(p.address.port());
+                    (p.address.ip().to_string(), port)
+                })
+                .collect();
+            let peer_count = connected.len();
+
+            let mempool_hashes: Vec<String> = mempool_handle
+                .read()
+                .await
+                .hashes()
+                .into_iter()
+                .map(|h| h.to_string())
+                .collect();
+
+            if let Some(rpc) = &rpc_for_pump {
+                rpc.update_state_with_mempool(height, peer_count, mempool_hashes)
+                    .await;
+                rpc.update_peers_connected(connected).await;
+            }
+        }
+    });
 
     // Optionally start health endpoint
     start_health_endpoint_if_enabled(cli, node_config).await;
@@ -437,6 +501,9 @@ async fn run_node(
     }
 
     // Graceful shutdown
+    let _ = pump_shutdown_tx.send(true);
+    let _ = pump_handle.await;
+
     if let Err(e) = p2p_service.stop().await {
         error!(target: "neo", error = %e, "failed to stop P2P service");
     }
@@ -460,6 +527,7 @@ async fn run_node(
 async fn start_rpc_service_if_enabled(
     node_config: &NodeConfig,
     runtime_config: &RuntimeConfig,
+    p2p_service: &P2PService,
 ) -> Option<RpcService> {
     if !node_config.rpc.enabled {
         return None;
@@ -482,7 +550,23 @@ async fn start_rpc_service_if_enabled(
     };
 
     let service = RpcService::new(rpc_config);
-    service.set_network_magic(runtime_config.network_magic).await;
+    service
+        .set_network_magic(runtime_config.network_magic)
+        .await;
+    service
+        .set_node_info(
+            runtime_config.p2p.listen_address.port(),
+            p2p_service.nonce(),
+            runtime_config.p2p.user_agent.clone(),
+        )
+        .await;
+    service
+        .set_version_settings(
+            runtime_config.protocol_settings.clone(),
+            node_config.rpc.max_iterator_result_items.unwrap_or(100),
+            node_config.rpc.session_enabled.unwrap_or(false),
+        )
+        .await;
 
     if let Err(e) = service.start().await {
         error!(target: "neo", error = %e, "failed to start RPC service");

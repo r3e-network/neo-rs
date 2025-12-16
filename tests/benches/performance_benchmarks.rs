@@ -6,7 +6,7 @@
 //! - Block/transaction serialization
 //! - Chain state operations
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use neo_crypto::Crypto;
 use neo_primitives::{UInt160, UInt256};
 use neo_state::{StateChanges, StateTrieManager, StorageItem, StorageKey};
@@ -69,9 +69,7 @@ fn bench_state_trie_single_insert(c: &mut Criterion) {
                 changes.storage.insert(key, Some(item));
                 (trie, changes)
             },
-            |(mut trie, changes)| {
-                black_box(trie.apply_changes(1, &changes).unwrap())
-            },
+            |(mut trie, changes)| black_box(trie.apply_changes(1, &changes).unwrap()),
         )
     });
 }
@@ -87,18 +85,14 @@ fn bench_state_trie_batch_insert(c: &mut Criterion) {
                     let trie = StateTrieManager::new(false);
                     let mut changes = StateChanges::new();
                     for i in 0..size {
-                        let key = StorageKey::new(
-                            UInt160::default(),
-                            (i as u32).to_le_bytes().to_vec(),
-                        );
+                        let key =
+                            StorageKey::new(UInt160::default(), (i as u32).to_le_bytes().to_vec());
                         let item = StorageItem::new(vec![0xFFu8; 32]);
                         changes.storage.insert(key, Some(item));
                     }
                     (trie, changes)
                 },
-                |(mut trie, changes)| {
-                    black_box(trie.apply_changes(1, &changes).unwrap())
-                },
+                |(mut trie, changes)| black_box(trie.apply_changes(1, &changes).unwrap()),
             )
         });
     }
@@ -113,10 +107,7 @@ fn bench_state_trie_incremental_blocks(c: &mut Criterion) {
                 for block in 1u32..=10 {
                     let mut changes = StateChanges::new();
                     for i in 0..10 {
-                        let key = StorageKey::new(
-                            UInt160::default(),
-                            vec![block as u8, i as u8],
-                        );
+                        let key = StorageKey::new(UInt160::default(), vec![block as u8, i as u8]);
                         let item = StorageItem::new(vec![0xFFu8; 32]);
                         changes.storage.insert(key, Some(item));
                     }
@@ -187,12 +178,7 @@ fn bench_storage_key_hash(c: &mut Criterion) {
 // Criterion Groups
 // ============================================================================
 
-criterion_group!(
-    crypto_benches,
-    bench_sha256,
-    bench_hash256,
-    bench_hash160,
-);
+criterion_group!(crypto_benches, bench_sha256, bench_hash256, bench_hash160,);
 
 criterion_group!(
     state_trie_benches,

@@ -11,7 +11,9 @@ use neo_chain::{BlockIndexEntry, ChainState};
 use neo_consensus::{ConsensusEvent, ConsensusService, ValidatorInfo};
 use neo_crypto::{ECCurve, ECPoint};
 use neo_primitives::{UInt160, UInt256};
-use neo_state::{MemoryWorldState, StateChanges, StateTrieManager, StorageItem, StorageKey, WorldState};
+use neo_state::{
+    MemoryWorldState, StateChanges, StateTrieManager, StorageItem, StorageKey, WorldState,
+};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, RwLock};
@@ -105,7 +107,10 @@ async fn test_consensus_timeout_triggers_view_change() {
 
     match event {
         ConsensusEvent::BroadcastMessage(payload) => {
-            assert_eq!(payload.message_type, neo_consensus::ConsensusMessageType::ChangeView);
+            assert_eq!(
+                payload.message_type,
+                neo_consensus::ConsensusMessageType::ChangeView
+            );
         }
         _ => panic!("Expected ChangeView broadcast"),
     }
@@ -116,13 +121,7 @@ async fn test_multiple_timeouts_increment_view() {
     let (tx, mut rx) = mpsc::channel(100);
     let validators = create_test_validators(7);
 
-    let mut service = ConsensusService::new(
-        0x4E454F,
-        validators,
-        Some(1),
-        vec![0u8; 32],
-        tx,
-    );
+    let mut service = ConsensusService::new(0x4E454F, validators, Some(1), vec![0u8; 32], tx);
 
     service.start(0, 1000, UInt256::zero(), 0).unwrap();
 
@@ -196,7 +195,9 @@ fn test_state_root_mismatch_detection() {
     // Apply same changes to both
     let mut changes = StateChanges::new();
     let key = StorageKey::new(UInt160::default(), vec![0x01]);
-    changes.storage.insert(key.clone(), Some(StorageItem::new(vec![0x02])));
+    changes
+        .storage
+        .insert(key.clone(), Some(StorageItem::new(vec![0x02])));
 
     let root1 = trie1.apply_changes(1, &changes.clone()).unwrap();
     let root2 = trie2.apply_changes(1, &changes).unwrap();
@@ -205,7 +206,9 @@ fn test_state_root_mismatch_detection() {
 
     // Apply different changes to trie2
     let mut different_changes = StateChanges::new();
-    different_changes.storage.insert(key, Some(StorageItem::new(vec![0x03])));
+    different_changes
+        .storage
+        .insert(key, Some(StorageItem::new(vec![0x03])));
     let root2_modified = trie2.apply_changes(2, &different_changes).unwrap();
 
     // Roots should now differ
@@ -239,7 +242,10 @@ fn test_detect_missing_state_changes() {
     let root1 = trie1.apply_changes(1, &changes1).unwrap();
     let root2 = trie2.apply_changes(1, &changes2).unwrap();
 
-    assert_ne!(root1, root2, "Missing changes should produce different root");
+    assert_ne!(
+        root1, root2,
+        "Missing changes should produce different root"
+    );
 }
 
 // ============================================================================
@@ -429,10 +435,7 @@ async fn test_concurrent_state_modifications() {
         let handle = tokio::spawn(async move {
             for i in 0u8..20 {
                 let mut changes = StateChanges::new();
-                let key = StorageKey::new(
-                    UInt160::from([task_id; 20]),
-                    vec![i],
-                );
+                let key = StorageKey::new(UInt160::from([task_id; 20]), vec![i]);
                 let item = StorageItem::new(vec![task_id, i]);
                 changes.storage.insert(key, Some(item));
 

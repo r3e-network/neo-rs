@@ -66,7 +66,14 @@ pub async fn serve_health_with_state(
                 let storage_path_req = storage_path_inner.clone();
                 let health_state_req = health_state_inner.clone();
                 async move {
-                    handle_request(req, storage_path_req, rpc_enabled, max_header_lag, health_state_req).await
+                    handle_request(
+                        req,
+                        storage_path_req,
+                        rpc_enabled,
+                        max_header_lag,
+                        health_state_req,
+                    )
+                    .await
                 }
             }))
         }

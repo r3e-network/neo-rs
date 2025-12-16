@@ -116,8 +116,7 @@ impl ConsensusPayload {
         let message_type = ConsensusMessageType::from_byte(message_bytes[0]).ok_or_else(|| {
             crate::ConsensusError::invalid_proposal("Invalid consensus message type")
         })?;
-        let block_index =
-            u32::from_le_bytes(message_bytes[1..5].try_into().unwrap_or([0u8; 4]));
+        let block_index = u32::from_le_bytes(message_bytes[1..5].try_into().unwrap_or([0u8; 4]));
         let validator_index = message_bytes[5];
         let view_number = message_bytes[6];
         let data = message_bytes[7..].to_vec();

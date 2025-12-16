@@ -22,6 +22,8 @@ use neo_core::network::p2p::{
 };
 use neo_core::UInt256;
 use neo_p2p::{P2PConfig, P2PEvent, PeerInfo};
+use rand::rngs::OsRng;
+use rand::RngCore;
 use std::collections::{HashMap, VecDeque};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -67,12 +69,16 @@ pub enum ConnectionState {
 pub struct ConnectedPeer {
     /// Peer address
     pub address: SocketAddr,
+    /// The TCP server port the peer advertises (if any)
+    pub listener_port: Option<u16>,
     /// Connection state
     pub state: ConnectionState,
     /// Peer's block height
     pub height: u32,
     /// User agent
     pub user_agent: String,
+    /// Peer nonce from VersionPayload (used to detect self/duplicate connections)
+    pub nonce: Option<u32>,
     /// Is inbound connection
     pub is_inbound: bool,
     /// Last activity timestamp
@@ -87,9 +93,14 @@ pub struct BroadcastMessage {
 }
 
 /// P2P Service managing peer connections
+#[derive(Clone)]
 pub struct P2PService {
     /// Configuration
     config: P2PConfig,
+    /// Local node nonce (stable for the lifetime of the process)
+    node_nonce: u32,
+    /// Whether this node allows P2P compression (advertised via capabilities)
+    compression_enabled: bool,
     /// Service state
     state: Arc<RwLock<P2PServiceState>>,
     /// Connected peers
@@ -114,12 +125,22 @@ pub struct P2PService {
 
 impl P2PService {
     /// Creates a new P2P service
-    pub fn new(config: P2PConfig, event_tx: mpsc::Sender<P2PEvent>) -> Self {
+    pub fn new(
+        config: P2PConfig,
+        event_tx: mpsc::Sender<P2PEvent>,
+        compression_enabled: bool,
+    ) -> Self {
         let (shutdown_tx, _) = broadcast::channel(8);
         let (broadcast_tx, _) = broadcast::channel(256);
 
+        let mut nonce_bytes = [0u8; 4];
+        OsRng.fill_bytes(&mut nonce_bytes);
+        let node_nonce = u32::from_le_bytes(nonce_bytes);
+
         Self {
             config,
+            node_nonce,
+            compression_enabled,
             state: Arc::new(RwLock::new(P2PServiceState::Stopped)),
             peers: Arc::new(RwLock::new(HashMap::new())),
             event_tx,
@@ -131,6 +152,11 @@ impl P2PService {
             broadcast_tx,
             chain: None,
         }
+    }
+
+    /// Returns the local node nonce (stable for this process lifetime).
+    pub fn nonce(&self) -> u32 {
+        self.node_nonce
     }
 
     /// Returns a sender for broadcasting messages to all peers
@@ -185,6 +211,8 @@ impl P2PService {
         let listener_config = self.config.clone();
         let listener_peers = self.peers.clone();
         let listener_event_tx = self.event_tx.clone();
+        let listener_nonce = self.node_nonce;
+        let listener_compression_enabled = self.compression_enabled;
         let listener_local_height = self.local_height.clone();
         let listener_pending_blocks = self.pending_block_hashes.clone();
         let listener_last_header = self.last_header_index.clone();
@@ -198,6 +226,8 @@ impl P2PService {
                 listener_config,
                 listener_peers,
                 listener_event_tx,
+                listener_nonce,
+                listener_compression_enabled,
                 listener_local_height,
                 listener_pending_blocks,
                 listener_last_header,
@@ -213,6 +243,8 @@ impl P2PService {
         let connector_config = self.config.clone();
         let connector_peers = self.peers.clone();
         let connector_event_tx = self.event_tx.clone();
+        let connector_nonce = self.node_nonce;
+        let connector_compression_enabled = self.compression_enabled;
         let connector_local_height = self.local_height.clone();
         let connector_pending_blocks = self.pending_block_hashes.clone();
         let connector_last_header = self.last_header_index.clone();
@@ -226,6 +258,8 @@ impl P2PService {
                 connector_config,
                 connector_peers,
                 connector_event_tx,
+                connector_nonce,
+                connector_compression_enabled,
                 connector_local_height,
                 connector_pending_blocks,
                 connector_last_header,
@@ -272,6 +306,8 @@ impl P2PService {
         config: P2PConfig,
         peers: Arc<RwLock<HashMap<SocketAddr, ConnectedPeer>>>,
         event_tx: mpsc::Sender<P2PEvent>,
+        local_nonce: u32,
+        compression_enabled: bool,
         local_height: Arc<RwLock<u32>>,
         pending_block_hashes: Arc<RwLock<VecDeque<UInt256>>>,
         last_header_index: Arc<RwLock<u32>>,
@@ -319,9 +355,11 @@ impl P2PService {
                             // Add peer
                             let peer = ConnectedPeer {
                                 address: addr,
+                                listener_port: None,
                                 state: ConnectionState::Connected,
                                 height: 0,
                                 user_agent: String::new(),
+                                nonce: None,
                                 is_inbound: true,
                                 last_activity: current_timestamp(),
                             };
@@ -338,6 +376,8 @@ impl P2PService {
                             let handler_chain = chain.clone();
                             let handler_broadcast_tx = broadcast_tx.clone();
                             let network_magic = config.network_magic;
+                            let user_agent = config.user_agent.clone();
+                            let listen_port = config.listen_address.port();
                             tokio::spawn(async move {
                                 Self::handle_connection(
                                     stream,
@@ -345,6 +385,10 @@ impl P2PService {
                                     handler_peers,
                                     handler_event_tx,
                                     network_magic,
+                                    local_nonce,
+                                    user_agent,
+                                    compression_enabled,
+                                    listen_port,
                                     handler_local_height,
                                     handler_pending_blocks,
                                     handler_last_header,
@@ -373,6 +417,8 @@ impl P2PService {
         config: P2PConfig,
         peers: Arc<RwLock<HashMap<SocketAddr, ConnectedPeer>>>,
         event_tx: mpsc::Sender<P2PEvent>,
+        local_nonce: u32,
+        compression_enabled: bool,
         local_height: Arc<RwLock<u32>>,
         pending_block_hashes: Arc<RwLock<VecDeque<UInt256>>>,
         last_header_index: Arc<RwLock<u32>>,
@@ -415,9 +461,11 @@ impl P2PService {
 
                     let peer = ConnectedPeer {
                         address: *seed,
+                        listener_port: None,
                         state: ConnectionState::Connected,
                         height: 0,
                         user_agent: String::new(),
+                        nonce: None,
                         is_inbound: false,
                         last_activity: current_timestamp(),
                     };
@@ -434,6 +482,8 @@ impl P2PService {
                     let handler_chain = chain.clone();
                     let handler_broadcast_tx = broadcast_tx.clone();
                     let network_magic = config.network_magic;
+                    let user_agent = config.user_agent.clone();
+                    let listen_port = config.listen_address.port();
                     let addr = *seed;
                     tokio::spawn(async move {
                         Self::handle_connection(
@@ -442,6 +492,10 @@ impl P2PService {
                             handler_peers,
                             handler_event_tx,
                             network_magic,
+                            local_nonce,
+                            user_agent,
+                            compression_enabled,
+                            listen_port,
                             handler_local_height,
                             handler_pending_blocks,
                             handler_last_header,
@@ -472,6 +526,10 @@ impl P2PService {
         peers: Arc<RwLock<HashMap<SocketAddr, ConnectedPeer>>>,
         event_tx: mpsc::Sender<P2PEvent>,
         network_magic: u32,
+        local_nonce: u32,
+        user_agent: String,
+        compression_enabled: bool,
+        listen_port: u16,
         local_height: Arc<RwLock<u32>>,
         pending_block_hashes: Arc<RwLock<VecDeque<UInt256>>>,
         last_header_index: Arc<RwLock<u32>>,
@@ -487,20 +545,19 @@ impl P2PService {
         let mut connection =
             PeerConnection::from_channels_config(stream, addr, is_inbound, &channels_config);
 
-        // Generate random nonce for this connection
-        let nonce: u32 = rand::random();
         let height = *local_height.read().await;
 
-        // Create capabilities (FullNode with current height)
-        let capabilities = vec![NodeCapability::full_node(height)];
+        // Create capabilities matching Neo N3: TcpServer + FullNode (+ optional DisableCompression)
+        let mut capabilities = vec![
+            NodeCapability::tcp_server(listen_port),
+            NodeCapability::full_node(height),
+        ];
+        if !compression_enabled {
+            capabilities.push(NodeCapability::disable_compression());
+        }
 
         // Create version payload
-        let version = VersionPayload::create(
-            network_magic,
-            nonce,
-            "/neo-rs:0.7.0/".to_string(),
-            capabilities,
-        );
+        let version = VersionPayload::create(network_magic, local_nonce, user_agent, capabilities);
 
         // For outbound connections, we initiate the handshake
         if !is_inbound {
@@ -560,6 +617,17 @@ impl P2PService {
                         break;
                     }
 
+                    // Reject self-connections (nonce collision is extremely unlikely).
+                    if remote_version.nonce == local_nonce {
+                        warn!(
+                            target: "neo::p2p",
+                            addr = %addr,
+                            nonce = remote_version.nonce,
+                            "rejecting connection: peer nonce matches local nonce"
+                        );
+                        break;
+                    }
+
                     info!(
                         target: "neo::p2p",
                         addr = %addr,
@@ -570,11 +638,34 @@ impl P2PService {
 
                     // Update peer info
                     {
+                        // Filter duplicate connections (same IP + same peer nonce) similar to C# LocalNode.AllowNewConnection().
+                        let remote_nonce = remote_version.nonce;
+                        let remote_ip = addr.ip();
+                        let existing_duplicate = peers
+                            .read()
+                            .await
+                            .values()
+                            .any(|p| p.address.ip() == remote_ip && p.nonce == Some(remote_nonce) && p.address != addr);
+                        if existing_duplicate {
+                            warn!(
+                                target: "neo::p2p",
+                                addr = %addr,
+                                nonce = remote_nonce,
+                                "rejecting duplicate connection for peer nonce"
+                            );
+                            break;
+                        }
+
                         let mut peers_guard = peers.write().await;
                         if let Some(peer) = peers_guard.get_mut(&addr) {
                             peer.user_agent = remote_version.user_agent.clone();
+                            peer.nonce = Some(remote_nonce);
                             // Extract height from capabilities
+                            peer.listener_port = None;
                             for cap in &remote_version.capabilities {
+                                if let NodeCapability::TcpServer { port } = cap {
+                                    peer.listener_port = Some(*port);
+                                }
                                 if let NodeCapability::FullNode { start_height } = cap {
                                     peer.height = *start_height;
                                 }
@@ -584,7 +675,7 @@ impl P2PService {
                     }
 
                     // Enable compression if both sides support it
-                    connection.compression_allowed = remote_version.allow_compression;
+                    connection.compression_allowed = compression_enabled && remote_version.allow_compression;
                     peer_version = Some(remote_version);
                     version_received = true;
 
@@ -628,7 +719,11 @@ impl P2PService {
                         // Emit peer connected event with full info
                         if let Some(ref pv) = peer_version {
                             let mut peer_height = 0u32;
+                            let mut listen_port = Some(addr.port());
                             for cap in &pv.capabilities {
+                                if let NodeCapability::TcpServer { port } = cap {
+                                    listen_port = Some(*port);
+                                }
                                 if let NodeCapability::FullNode { start_height } = cap {
                                     peer_height = *start_height;
                                 }
@@ -636,7 +731,7 @@ impl P2PService {
                             let _ = event_tx
                                 .send(P2PEvent::PeerConnected(PeerInfo {
                                     address: addr,
-                                    listen_port: Some(addr.port()),
+                                    listen_port,
                                     version: pv.version,
                                     user_agent: pv.user_agent.clone(),
                                     height: peer_height,
@@ -1030,7 +1125,7 @@ mod tests {
     async fn test_p2p_service_creation() {
         let (tx, _rx) = mpsc::channel(100);
         let config = P2PConfig::default();
-        let service = P2PService::new(config, tx);
+        let service = P2PService::new(config, tx, true);
 
         assert_eq!(service.state().await, P2PServiceState::Stopped);
         assert_eq!(service.peer_count().await, 0);
@@ -1043,7 +1138,7 @@ mod tests {
             listen_address: "127.0.0.1:0".parse().unwrap(),
             ..Default::default()
         };
-        let service = P2PService::new(config, tx);
+        let service = P2PService::new(config, tx, true);
 
         service.start().await.unwrap();
         assert_eq!(service.state().await, P2PServiceState::Running);

@@ -241,7 +241,8 @@ impl TeeMempool {
         // Hash the policy parameters
         let policy_hash = self.hash_policy();
 
-        let (public_key, signature) = self.sign_proof(&merkle_root, enclave_counter, &policy_hash)?;
+        let (public_key, signature) =
+            self.sign_proof(&merkle_root, enclave_counter, &policy_hash)?;
 
         let proof = OrderingProof {
             merkle_root,
