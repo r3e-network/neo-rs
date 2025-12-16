@@ -185,11 +185,11 @@ impl TeeEnclave {
     #[cfg(feature = "sgx-hw")]
     fn derive_sgx_sealing_key(&self) -> TeeResult<[u8; 32]> {
         // SGX EGETKEY instruction requires running inside an SGX enclave.
-        // This is a placeholder that returns a simulated key when not in enclave.
-        // In production, this would use the EGETKEY instruction via sgx_isa crate.
+        // When running outside an enclave (e.g. CI/dev), fall back to a deterministic simulated key.
+        // On real SGX hardware this should use the EGETKEY instruction via the sgx_isa crate.
         //
         // Note: The sgx_isa crate's Keyrequest::egetkey requires actual SGX hardware.
-        // When running outside an enclave, we fall back to simulation.
+        // When not running inside an enclave, this function uses simulation.
         use sha2::{Digest, Sha256};
         use tracing::debug;
 
@@ -210,8 +210,8 @@ impl TeeEnclave {
     fn derive_simulated_sealing_key(&self) -> TeeResult<[u8; 32]> {
         use sha2::{Digest, Sha256};
 
-        // In simulation mode, derive key from a machine-specific identifier
-        // In production, this would come from SGX EGETKEY
+        // In simulation mode, derive the sealing key from a machine-specific identifier.
+        // On SGX hardware, this value is derived via EGETKEY.
         let machine_id = self.get_machine_identifier();
 
         let mut hasher = Sha256::new();

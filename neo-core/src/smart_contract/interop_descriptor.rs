@@ -15,7 +15,7 @@ pub struct InteropDescriptor {
     /// Cached hash value
     hash_cache: OnceLock<u32>,
 
-    /// Handler function pointer (simplified from C# MethodInfo)
+    /// Handler function pointer (Rust equivalent of the C# MethodInfo delegate target).
     pub handler: fn(&mut crate::smart_contract::ApplicationEngine) -> Result<(), String>,
 
     /// The parameters of the interoperable service

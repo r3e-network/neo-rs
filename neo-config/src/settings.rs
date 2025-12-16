@@ -128,7 +128,7 @@ pub struct ConsensusSettings {
     /// Path to wallet file for consensus
     pub wallet_path: Option<PathBuf>,
 
-    /// Wallet password (should be loaded from secure source in production)
+    /// Wallet password (should be loaded from a secure source, e.g. env/secret manager)
     #[serde(skip_serializing)]
     pub wallet_password: Option<String>,
 

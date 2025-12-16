@@ -49,8 +49,8 @@ pub use transaction_router::TransactionRouter;
 pub use transaction_verification_context::TransactionVerificationContext;
 pub use verify_result::VerifyResult;
 
-// Stub types for backward compatibility (actual implementations in neo-node)
-/// Relay result stub - actual implementation in neo-node
+// Compatibility types for callers that referenced the old `neo-core::ledger` surface.
+/// Relay result (runtime implementation lives in `neo-node`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RelayResult {
     /// Successfully relayed
@@ -69,7 +69,7 @@ pub enum RelayResult {
     Unknown,
 }
 
-/// Persist completed event stub
+/// Persist completed event (runtime implementation lives in `neo-node`).
 #[derive(Debug, Clone)]
 pub struct PersistCompleted {
     /// Block index that was persisted

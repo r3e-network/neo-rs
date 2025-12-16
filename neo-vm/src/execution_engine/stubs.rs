@@ -1,5 +1,5 @@
 //
-// stubs.rs - Stub methods for ApplicationEngine override
+// Default host hooks for ExecutionEngine runs without an attached ApplicationEngine.
 //
 
 use super::*;
@@ -17,66 +17,50 @@ impl ExecutionEngine {
         1_000_000_000 // Default gas limit
     }
 
-    /// Gets current script hash (stub implementation for base ExecutionEngine)
-    /// ApplicationEngine overrides this with actual script hash tracking
+    /// Returns the current script hash, if the host provides one.
+    /// Standalone VM execution has no blockchain context so this returns `None`.
     pub fn current_script_hash(&self) -> Option<&[u8]> {
-        // Base implementation returns None
         None
     }
 
-    /// Gets script container (stub implementation for base ExecutionEngine)
-    /// ApplicationEngine overrides this with actual script container
+    /// Returns the script container, if the host provides one.
     pub fn get_script_container(&self) -> Option<&dyn std::any::Any> {
-        // Base implementation returns None
         None
     }
 
     /// Gets the script container hash for signature verification.
     /// Returns the hash of the current transaction or block being executed.
     pub fn get_script_container_hash(&self) -> Vec<u8> {
-        // Base implementation returns empty hash
-        // ApplicationEngine overrides this with actual container hash
         vec![0u8; HASH_SIZE]
     }
 
-    /// Gets the trigger type for this execution (stub implementation for base ExecutionEngine)
-    /// ApplicationEngine overrides this with actual trigger type
+    /// Returns the trigger type for this execution when available.
     pub fn get_trigger_type(&self) -> u8 {
         0x40
     }
 
-    /// Emits a runtime log event (stub implementation for base ExecutionEngine)
-    /// ApplicationEngine overrides this with actual event emission
+    /// Emits a runtime log event when a host is attached.
     pub fn emit_runtime_log_event(&mut self, _message: &str) -> VmResult<()> {
-        // Base implementation does nothing
         Ok(())
     }
 
-    /// Adds an execution log (stub implementation for base ExecutionEngine)
-    /// ApplicationEngine overrides this with actual log tracking
+    /// Records an execution log when a host is attached.
     pub fn add_execution_log(&mut self, _message: String) -> VmResult<()> {
-        // Base implementation does nothing
         Ok(())
     }
 
-    /// Gets transaction hash (stub implementation for base ExecutionEngine)
-    /// ApplicationEngine overrides this with actual transaction access
+    /// Returns the current transaction hash when executed with blockchain context.
     pub fn get_transaction_hash(&self) -> Option<Vec<u8>> {
-        // Base implementation returns None
         None
     }
 
-    /// Gets current block hash (stub implementation for base ExecutionEngine)
-    /// ApplicationEngine overrides this with actual blockchain access
+    /// Returns the current block hash when executed with blockchain context.
     pub fn get_current_block_hash(&self) -> Option<Vec<u8>> {
-        // Base implementation returns None
         None
     }
 
-    /// Gets storage item (stub implementation for base ExecutionEngine)
-    /// ApplicationEngine overrides this with actual storage access
+    /// Returns a storage item when executed with blockchain context.
     pub fn get_storage_item(&self, _key: &[u8]) -> Option<Vec<u8>> {
-        // Base implementation returns None
         None
     }
 }

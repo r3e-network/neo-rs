@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 /// Represents the state of an account in the Neo blockchain.
 ///
-/// This is a simplified account model that tracks:
+/// This is a minimal account model used by the `neo-state` in-memory world state that tracks:
 /// - Script hash (address)
 /// - NEO balance
 /// - GAS balance

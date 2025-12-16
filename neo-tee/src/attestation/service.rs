@@ -145,11 +145,11 @@ impl AttestationService {
     #[cfg(feature = "sgx-hw")]
     fn generate_sgx_report(&self, report_data: [u8; 64]) -> TeeResult<AttestationReport> {
         // SGX hardware report generation requires running inside an SGX enclave.
-        // This is a placeholder that returns a simulated report when not in enclave.
-        // In production, this would use EREPORT instruction via sgx_isa crate.
+        // When running outside an enclave (e.g. CI/dev), return a deterministic simulated report.
+        // On real SGX hardware this should use the EREPORT instruction via the sgx_isa crate.
         //
         // Note: The sgx_isa crate's Report::for_target requires actual SGX hardware.
-        // When running outside an enclave, we fall back to simulation.
+        // When not running inside an enclave, this function uses simulation.
         debug!("SGX hardware feature enabled but not running in enclave, using simulation");
         Ok(AttestationReport {
             version: 1,

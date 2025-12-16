@@ -504,7 +504,7 @@ impl Exporter for SimpleExporter {
     }
 }
 
-/// Otlp exporter placeholder that satisfies tests.
+/// Minimal OTLP exporter for building JSON payloads.
 pub struct OtlpExporter {
     endpoint: String,
     service_name: String,

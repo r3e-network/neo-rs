@@ -132,7 +132,7 @@ impl Node {
         }
     }
 
-    /// Creates a new hash placeholder node.
+    /// Creates a new hash-only node.
     pub fn new_hash(hash: UInt256) -> Self {
         Self {
             node_type: NodeType::HashNode,

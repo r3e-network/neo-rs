@@ -310,9 +310,9 @@ impl ValidatorService {
         // Step 3: Create Witness from invocation + verification scripts
         let witness = Witness::new_with_scripts(invocation_script, verification_script);
 
-        // Step 4: Assemble Block header with witness
-        // Note: We need to fetch transactions from mempool/storage based on transaction_hashes
-        // For now, create header structure (transactions will be added by upper layer)
+        // Step 4: Assemble Block header with witness.
+        // Note: Transactions are attached by the caller (e.g. from the mempool) using
+        // `block_data.transaction_hashes`.
         let mut header = Header::new();
         header.set_version(0);
         header.set_index(block_data.block_index);

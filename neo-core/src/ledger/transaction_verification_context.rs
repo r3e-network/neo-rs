@@ -19,7 +19,7 @@ pub struct TransactionVerificationContext {
 }
 
 impl TransactionVerificationContext {
-    /// Creates a new context using the default balance provider (infinite balance placeholder).
+    /// Creates a new context using the default balance provider (GAS balance from the snapshot).
     pub fn new() -> Self {
         Self::with_balance_provider(default_balance_provider())
     }

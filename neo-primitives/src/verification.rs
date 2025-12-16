@@ -364,7 +364,10 @@ mod tests {
 
         fn get_block_hash(&self, height: u32) -> Option<UInt256> {
             if height <= self.height {
-                Some(UInt256::zero()) // Simplified for testing
+                Some(UInt256 {
+                    value1: height as u64,
+                    ..UInt256::zero()
+                })
             } else {
                 None
             }

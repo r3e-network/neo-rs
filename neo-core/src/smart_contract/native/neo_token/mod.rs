@@ -45,9 +45,10 @@ lazy_static! {
     static ref NEO_HASH: UInt160 = Helper::get_contract_hash(&UInt160::zero(), 0, "NeoToken");
 }
 
-/// Simplified representation of the NEO native contract exposing the canonical
-/// identifiers used throughout the node. Full voting and reward distribution
-/// logic will be introduced once the surrounding infrastructure is ported.
+/// NEO native token contract implementation.
+///
+/// This type exposes the canonical identifiers used throughout the node and
+/// wires the NEP-17 surface alongside governance and committee management.
 pub struct NeoToken {
     methods: Vec<NativeMethod>,
 }

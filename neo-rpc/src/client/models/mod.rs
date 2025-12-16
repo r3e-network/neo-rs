@@ -71,7 +71,7 @@ pub mod rpc_unclaimed_gas;
 pub mod rpc_validate_address_result;
 pub mod rpc_validator;
 
-// Stub modules (to be implemented if needed)
+// Optional/legacy modules (kept for compatibility)
 pub mod rpc_get_peers;
 pub mod rpc_mempool_accepted;
 pub mod rpc_mempool_unverified;

@@ -13,7 +13,7 @@ pub struct TransactionState {
     /// The block index containing the transaction.
     pub block_index: u32,
 
-    /// The transaction itself; None when only a conflict stub is available.
+    /// The transaction itself; `None` when only conflict metadata is available.
     pub transaction: Option<Transaction>,
 
     /// The execution state (mirrors the neo-vm [`VMState`] enum).
@@ -65,7 +65,7 @@ impl IInteroperable for TransactionState {
                 }
             }
 
-            // Conflict stubs only encode the block index.
+            // Conflict-only representations encode only the block index.
             if items.len() == 1 {
                 self.transaction = None;
                 self.state = VMState::NONE;
@@ -99,7 +99,7 @@ impl IInteroperable for TransactionState {
             warn!(
                 target: "neo",
                 block_index = self.block_index,
-                "failed to serialize transaction for TransactionState stack item; emitting stub"
+                "failed to serialize transaction for TransactionState stack item; emitting conflict-only representation"
             );
         }
 

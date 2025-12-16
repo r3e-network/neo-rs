@@ -12,7 +12,7 @@ pub enum NodeType {
     ExtensionNode = 0x01,
     /// Leaf node containing a value
     LeafNode = 0x02,
-    /// Hash node (placeholder for not-yet-loaded node)
+    /// Hash-only node representing a not-yet-loaded child.
     HashNode = 0x03,
     /// Empty node
     Empty = 0x04,

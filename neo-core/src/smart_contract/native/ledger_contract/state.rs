@@ -191,7 +191,7 @@ pub fn deserialize_transaction_record(bytes: &[u8]) -> Result<TransactionStateRe
         RECORD_KIND_CONFLICT_STUB => {
             let block_index = reader
                 .read_u32()
-                .map_err(|e| Error::invalid_data(format!("invalid stub block index: {e}")))?;
+                .map_err(|e| Error::invalid_data(format!("invalid conflict block index: {e}")))?;
             Ok(TransactionStateRecord::ConflictStub { block_index })
         }
         _ => Err(Error::invalid_data("unknown transaction state record kind")),
