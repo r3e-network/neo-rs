@@ -798,11 +798,9 @@ impl ConsensusService {
                 continue;
             }
             // Only apply if we don't already have this change view
-            if !self.context.change_views.contains_key(&cv.validator_index) {
-                self.context.change_views.insert(
-                    cv.validator_index,
-                    (cv.original_view_number + 1, ChangeViewReason::Timeout),
-                );
+            use std::collections::hash_map::Entry;
+            if let Entry::Vacant(e) = self.context.change_views.entry(cv.validator_index) {
+                e.insert((cv.original_view_number + 1, ChangeViewReason::Timeout));
                 self.context
                     .last_change_view_timestamps
                     .insert(cv.validator_index, cv.timestamp);
@@ -815,14 +813,9 @@ impl ConsensusService {
                 continue;
             }
             // Only apply if we don't already have this prepare response
-            if !self
-                .context
-                .prepare_responses
-                .contains_key(&prep.validator_index)
-            {
-                self.context
-                    .prepare_responses
-                    .insert(prep.validator_index, prep.invocation_script.clone());
+            use std::collections::hash_map::Entry;
+            if let Entry::Vacant(e) = self.context.prepare_responses.entry(prep.validator_index) {
+                e.insert(prep.invocation_script.clone());
             }
         }
 
@@ -832,10 +825,9 @@ impl ConsensusService {
                 continue;
             }
             // Only apply if we don't already have this commit
-            if !self.context.commits.contains_key(&commit.validator_index) {
-                self.context
-                    .commits
-                    .insert(commit.validator_index, commit.signature.clone());
+            use std::collections::hash_map::Entry;
+            if let Entry::Vacant(e) = self.context.commits.entry(commit.validator_index) {
+                e.insert(commit.signature.clone());
             }
         }
 
