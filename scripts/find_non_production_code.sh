@@ -3,7 +3,7 @@
 #
 # Usage:
 #   ./scripts/find_non_production_code.sh              # scan Rust production code (default)
-#   ./scripts/find_non_production_code.sh --all        # include tests + docs
+#   ./scripts/find_non_production_code.sh --all        # include tests + docs + configs
 #   ./scripts/find_non_production_code.sh --fail       # non-zero exit if findings
 #
 # Notes:
@@ -35,7 +35,7 @@ EXCLUDE_GLOBS=(
 )
 
 if [[ "$INCLUDE_ALL" -eq 0 ]]; then
-  EXCLUDE_GLOBS+=( --glob '!tests/**' --glob '!**/*test*/**' --glob '!**/*_test.rs' )
+  EXCLUDE_GLOBS+=( --glob '!tests/**' --glob '!docs/**' --glob '!**/*test*/**' --glob '!**/*_test.rs' )
 fi
 
 HARD_REGEX='\\b(TODO|FIXME|HACK|XXX)\\b'
@@ -45,26 +45,40 @@ SOFT_IN_COMMENTS_REGEX="(^|\\s)(//|///|//!|/\\*|\\*)\\s*.*${SOFT_REGEX}"
 echo "Searching for non-production markers..."
 echo ""
 
-hard_count=$(rg -n -S --type rust --hidden "${EXCLUDE_GLOBS[@]}" "$HARD_REGEX" . | wc -l | tr -d ' ')
-soft_count=$(rg -n -S --type rust --hidden "${EXCLUDE_GLOBS[@]}" -i "$SOFT_IN_COMMENTS_REGEX" . | wc -l | tr -d ' ')
+hard_count=$(rg -n -S --hidden "${EXCLUDE_GLOBS[@]}" "$HARD_REGEX" . | wc -l | tr -d ' ')
+soft_rust_count=$(rg -n -S --hidden "${EXCLUDE_GLOBS[@]}" --type rust -i "$SOFT_IN_COMMENTS_REGEX" . | wc -l | tr -d ' ')
+soft_text_count=0
+if [[ "$INCLUDE_ALL" -eq 1 ]]; then
+  CFG_GLOBS=( -g '*.toml' -g '*.json' -g '*.yaml' -g '*.yml' -g '*.ini' -g '*.conf' -g '*.txt' -g '*.md' )
+  soft_text_count=$(rg -n -S --hidden "${EXCLUDE_GLOBS[@]}" "${CFG_GLOBS[@]}" -i "$SOFT_REGEX" . | wc -l | tr -d ' ')
+fi
 
 echo "=== Summary ==="
 printf "%-22s: %d occurrences\n" "Hard markers" "$hard_count"
-printf "%-22s: %d occurrences\n" "Soft markers (comments)" "$soft_count"
+printf "%-22s: %d occurrences\n" "Soft markers (Rust comments)" "$soft_rust_count"
+if [[ "$INCLUDE_ALL" -eq 1 ]]; then
+  printf "%-22s: %d occurrences\n" "Soft markers (docs/config)" "$soft_text_count"
+fi
 
 echo ""
 echo "=== Detailed Findings ==="
 echo ""
 
-rg -n -S --type rust --hidden "${EXCLUDE_GLOBS[@]}" "$HARD_REGEX" . || true
+rg -n -S --hidden "${EXCLUDE_GLOBS[@]}" "$HARD_REGEX" . || true
 
 echo ""
-echo "=== Soft Markers (comments/docstrings only) ==="
+echo "=== Soft Markers (Rust comments/docstrings only) ==="
 rg -n -S --type rust --hidden "${EXCLUDE_GLOBS[@]}" -i "$SOFT_IN_COMMENTS_REGEX" . || true
+
+if [[ "$INCLUDE_ALL" -eq 1 ]]; then
+  echo ""
+  echo "=== Soft Markers (docs/config) ==="
+  rg -n -S --hidden "${EXCLUDE_GLOBS[@]}" "${CFG_GLOBS[@]}" -i "$SOFT_REGEX" . || true
+fi
 
 echo ""
 echo "Done."
 
-if [[ "$FAIL" -eq 1 && ( "$hard_count" -ne 0 || "$soft_count" -ne 0 ) ]]; then
+if [[ "$FAIL" -eq 1 && ( "$hard_count" -ne 0 || "$soft_rust_count" -ne 0 || "$soft_text_count" -ne 0 ) ]]; then
   exit 1
 fi

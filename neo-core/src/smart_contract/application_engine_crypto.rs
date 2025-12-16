@@ -9,8 +9,9 @@ use sha2::{Digest, Sha256};
 /// The price of CheckSig in GAS (1 << 15 = 32768 * 30 = 983040)
 pub const CHECK_SIG_PRICE: i64 = 1 << 15;
 
-/// The price of CheckMultisig in GAS (base price per signature)
-pub const CHECK_MULTISIG_PRICE: i64 = 1 << 15;
+/// The base price of CheckMultisig is zero (matches C# InteropDescriptor).
+/// The syscall charges `CHECK_SIG_PRICE * n` where `n` is the number of public keys.
+pub const CHECK_MULTISIG_PRICE: i64 = 0;
 
 impl ApplicationEngine {
     /// Verifies a signature using secp256r1 (NIST P-256)
@@ -36,6 +37,10 @@ impl ApplicationEngine {
         if n == 0 || n > 1024 {
             return Err("Invalid public key count".to_string());
         }
+
+        // Matches C# ApplicationEngine.CheckMultisig: AddFee(CheckSigPrice * n * ExecFeeFactor)
+        self.add_cpu_fee(CHECK_SIG_PRICE.saturating_mul(n as i64))
+            .map_err(|e| e.to_string())?;
 
         // Pop signatures second
         let signatures = self.pop_sig_elements()?;

@@ -392,6 +392,11 @@ async fn run_node(
 
     info!(target: "neo", "starting neo-node runtime...");
 
+    // Create P2P service early so the runtime can broadcast consensus/extensible payloads
+    // via the same broadcast channel that each peer connection subscribes to.
+    let p2p_service = P2PService::new(runtime_config.p2p.clone(), node_runtime.p2p_event_sender());
+    node_runtime.set_p2p_broadcast_sender(p2p_service.broadcast_sender());
+
     node_runtime
         .start()
         .await
@@ -405,7 +410,6 @@ async fn run_node(
     );
 
     // Start P2P service
-    let p2p_service = P2PService::new(runtime_config.p2p.clone(), node_runtime.p2p_event_sender());
     if let Err(e) = p2p_service.start().await {
         error!(target: "neo", error = %e, "failed to start P2P service");
     } else {

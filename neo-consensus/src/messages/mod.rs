@@ -87,6 +87,52 @@ impl ConsensusPayload {
         data
     }
 
+    /// Serializes this consensus message using the Neo N3 DBFTPlugin on-wire format:
+    /// `[type:1][block_index:4][validator_index:1][view_number:1][body...]`.
+    ///
+    /// This is the byte array stored in `ExtensiblePayload.Data` for category `"dBFT"`.
+    pub fn to_message_bytes(&self) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(1 + 4 + 1 + 1 + self.data.len());
+        bytes.push(self.message_type.to_byte());
+        bytes.extend_from_slice(&self.block_index.to_le_bytes());
+        bytes.push(self.validator_index);
+        bytes.push(self.view_number);
+        bytes.extend_from_slice(&self.data);
+        bytes
+    }
+
+    /// Parses a consensus message from DBFTPlugin on-wire bytes.
+    pub fn from_message_bytes(
+        network: u32,
+        message_bytes: &[u8],
+        witness: Vec<u8>,
+    ) -> ConsensusResult<Self> {
+        if message_bytes.len() < 1 + 4 + 1 + 1 {
+            return Err(crate::ConsensusError::invalid_proposal(
+                "Consensus message too short",
+            ));
+        }
+
+        let message_type = ConsensusMessageType::from_byte(message_bytes[0]).ok_or_else(|| {
+            crate::ConsensusError::invalid_proposal("Invalid consensus message type")
+        })?;
+        let block_index =
+            u32::from_le_bytes(message_bytes[1..5].try_into().unwrap_or([0u8; 4]));
+        let validator_index = message_bytes[5];
+        let view_number = message_bytes[6];
+        let data = message_bytes[7..].to_vec();
+
+        Ok(Self {
+            network,
+            block_index,
+            validator_index,
+            view_number,
+            message_type,
+            data,
+            witness,
+        })
+    }
+
     /// Sets the witness (signature)
     pub fn set_witness(&mut self, witness: Vec<u8>) {
         self.witness = witness;

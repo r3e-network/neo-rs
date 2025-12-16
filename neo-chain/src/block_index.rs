@@ -16,6 +16,12 @@ pub struct BlockIndexEntry {
     /// Previous block hash
     pub prev_hash: UInt256,
 
+    /// Serialized header bytes for this block (Neo N3 `Header` payload).
+    ///
+    /// This is stored as raw bytes to keep `neo-chain` independent from `neo-core` types,
+    /// while still allowing peers to serve `headers` responses correctly.
+    pub header: Vec<u8>,
+
     /// Block timestamp (milliseconds since Unix epoch)
     pub timestamp: u64,
 
@@ -199,6 +205,7 @@ mod tests {
             hash: UInt256::from(hash),
             height,
             prev_hash: UInt256::from(prev),
+            header: Vec::new(),
             timestamp: 1000000 + height as u64 * 15000,
             tx_count: 1,
             size: 100,

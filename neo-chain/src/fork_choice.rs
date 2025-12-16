@@ -161,6 +161,7 @@ mod tests {
             hash: UInt256::from(hash),
             height,
             prev_hash: UInt256::zero(),
+            header: Vec::new(),
             timestamp: 1000000 + height as u64 * 15000,
             tx_count: 1,
             size: 100,

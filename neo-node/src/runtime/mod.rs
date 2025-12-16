@@ -26,6 +26,7 @@ use crate::genesis::create_genesis_block;
 use crate::state_validator::{StateRootValidator, StateValidatorConfig};
 use neo_chain::{BlockIndexEntry, ChainEvent, ChainState};
 use neo_consensus::{ConsensusEvent, ConsensusService};
+use neo_core::neo_io::SerializableExt;
 use neo_core::network::p2p::payloads::Block;
 use neo_core::persistence::data_cache::DataCache;
 use neo_core::state_service::{StateRoot, StateStore};
@@ -338,6 +339,7 @@ impl NodeRuntime {
             hash: genesis_hash,
             height,
             prev_hash: *genesis_block.header.prev_hash(),
+            header: genesis_block.header.to_array().unwrap_or_default(),
             timestamp: genesis_block.header.timestamp(),
             tx_count: genesis_block.transactions.len(),
             size: 0, // Genesis block size not critical
@@ -457,12 +459,15 @@ impl NodeRuntime {
             let state_trie = self.state_trie.clone();
             let state_validator = self.state_validator.clone();
             let block_executor = self.block_executor.clone();
+            let consensus = self.consensus.clone();
+            let network_magic = self.config.network_magic;
             let mut shutdown_rx = self.shutdown_tx.subscribe();
 
             tokio::spawn(async move {
                 handlers::process_p2p_events(
                     rx,
                     event_tx,
+                    network_magic,
                     chain_tx,
                     chain,
                     state,
@@ -470,6 +475,7 @@ impl NodeRuntime {
                     state_trie,
                     state_validator,
                     block_executor,
+                    consensus,
                     &mut shutdown_rx,
                 )
                 .await;

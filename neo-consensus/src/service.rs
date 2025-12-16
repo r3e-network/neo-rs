@@ -6,7 +6,7 @@ use crate::messages::{
     PrepareResponseMessage, RecoveryMessage,
 };
 use crate::{ChangeViewReason, ConsensusError, ConsensusMessageType, ConsensusResult};
-use neo_primitives::UInt256;
+use neo_primitives::{UInt160, UInt256};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
@@ -126,13 +126,9 @@ impl ConsensusService {
             return Ok(());
         }
 
-        // Compute message hash for deduplication (replay attack prevention)
-        // This matches C# DBFTPlugin's message caching mechanism
-        use neo_crypto::Crypto;
-        let sign_data = payload.get_sign_data();
-        let msg_hash_bytes = Crypto::hash256(&sign_data);
-        let msg_hash = UInt256::from_bytes(&msg_hash_bytes)
-            .map_err(|e| ConsensusError::state_error(format!("Failed to compute message hash: {}", e)))?;
+        // Compute ExtensiblePayload.Hash for deduplication (replay attack prevention).
+        // C# DBFTPlugin caches messages by ExtensiblePayload.Hash (SHA256 of unsigned payload).
+        let msg_hash = self.dbft_payload_hash(&payload)?;
 
         // Check if we've already seen this message (replay attack prevention)
         if self.context.has_seen_message(&msg_hash) {
@@ -279,7 +275,7 @@ impl ConsensusService {
         }
 
         // Verify the primary's signature (security fix: matches C# DBFTPlugin)
-        let sign_data = payload.get_sign_data();
+        let sign_data = self.dbft_sign_data(payload)?;
         if !payload.witness.is_empty()
             && !self.verify_signature(&sign_data, &payload.witness, payload.validator_index)
         {
@@ -353,7 +349,7 @@ impl ConsensusService {
         );
 
         // Verify the payload signature
-        let sign_data = payload.get_sign_data();
+        let sign_data = self.dbft_sign_data(payload)?;
         if !payload.witness.is_empty()
             && !self.verify_signature(&sign_data, &payload.witness, payload.validator_index)
         {
@@ -428,9 +424,26 @@ impl ConsensusService {
         // Verify the commit signature against the proposed block hash
         // The commit data contains the validator's signature of the block hash
         if let Some(block_hash) = self.context.proposed_block_hash {
-            let block_hash_bytes = block_hash.as_bytes();
+            // dBFT commit signature is a signature over block.GetSignData(network),
+            // which is `[network:4][block_hash:32]`.
+            let mut block_sign_data = Vec::with_capacity(4 + 32);
+            block_sign_data.extend_from_slice(&self.network.to_le_bytes());
+            block_sign_data.extend_from_slice(&block_hash.as_bytes());
+
+            // Verify ExtensiblePayload witness signature (authenticity).
+            let sign_data = self.dbft_sign_data(payload)?;
+            if !payload.witness.is_empty()
+                && !self.verify_signature(&sign_data, &payload.witness, payload.validator_index)
+            {
+                warn!(
+                    validator = payload.validator_index,
+                    "Commit witness signature verification failed"
+                );
+                return Err(ConsensusError::signature_failed("Commit witness signature invalid"));
+            }
+
             if !payload.data.is_empty()
-                && !self.verify_signature(&block_hash_bytes, &payload.data, payload.validator_index)
+                && !self.verify_signature(&block_sign_data, &payload.data, payload.validator_index)
             {
                 warn!(
                     validator = payload.validator_index,
@@ -547,7 +560,7 @@ impl ConsensusService {
     /// Handles ChangeView message
     fn on_change_view(&mut self, payload: &ConsensusPayload) -> ConsensusResult<()> {
         // Verify the payload signature (security fix: matches C# DBFTPlugin)
-        let sign_data = payload.get_sign_data();
+        let sign_data = self.dbft_sign_data(payload)?;
         if !payload.witness.is_empty()
             && !self.verify_signature(&sign_data, &payload.witness, payload.validator_index)
         {
@@ -745,7 +758,7 @@ impl ConsensusService {
     /// Handles RecoveryMessage
     fn on_recovery_message(&mut self, payload: &ConsensusPayload) -> ConsensusResult<()> {
         // Verify the payload signature (security fix: matches C# DBFTPlugin)
-        let sign_data = payload.get_sign_data();
+        let sign_data = self.dbft_sign_data(payload)?;
         if !payload.witness.is_empty()
             && !self.verify_signature(&sign_data, &payload.witness, payload.validator_index)
         {
@@ -898,10 +911,12 @@ impl ConsensusService {
             data,
         );
 
-        // Sign the payload
-        let sign_data = payload.get_sign_data();
-        let signature = self.sign(&sign_data);
-        payload.set_witness(signature);
+        // Sign the payload as an ExtensiblePayload ("dBFT") IVerifiable:
+        // signature is over `[network:4][payload_hash:32]`.
+        if let Ok(sign_data) = self.dbft_sign_data(&payload) {
+            let signature = self.sign(&sign_data);
+            payload.set_witness(signature);
+        }
 
         payload
     }
@@ -920,46 +935,43 @@ impl ConsensusService {
 
     /// Signs data with the private key using secp256r1 ECDSA
     fn sign(&self, data: &[u8]) -> Vec<u8> {
-        use neo_crypto::{Crypto, Secp256r1Crypto};
-
-        // Hash the data first (Neo uses SHA-256 for message hashing)
-        let hash = Crypto::sha256(data);
+        use neo_crypto::Secp256r1Crypto;
 
         // Sign with secp256r1 if we have a valid private key
         if self.private_key.len() == 32 {
             let mut key_bytes = [0u8; 32];
             key_bytes.copy_from_slice(&self.private_key);
 
-            match Secp256r1Crypto::sign(&hash, &key_bytes) {
+            match Secp256r1Crypto::sign(data, &key_bytes) {
                 Ok(sig) => sig.to_vec(),
                 Err(e) => {
-                    warn!(error = %e, "ECDSA signing failed, using hash as fallback");
-                    hash.to_vec()
+                    warn!(error = %e, "ECDSA signing failed");
+                    Vec::new()
                 }
             }
         } else {
             // Fallback for testing without valid key
-            hash.to_vec()
+            Vec::new()
         }
     }
 
     /// Signs a block hash
     fn sign_block_hash(&self, hash: &UInt256) -> Vec<u8> {
-        self.sign(&hash.as_bytes())
+        let mut sign_data = Vec::with_capacity(4 + 32);
+        sign_data.extend_from_slice(&self.network.to_le_bytes());
+        sign_data.extend_from_slice(&hash.as_bytes());
+        self.sign(&sign_data)
     }
 
     /// Verifies a signature against a public key
     fn verify_signature(&self, data: &[u8], signature: &[u8], validator_index: u8) -> bool {
-        use neo_crypto::{Crypto, Secp256r1Crypto};
+        use neo_crypto::Secp256r1Crypto;
 
         // Get the validator's public key
         let validator = match self.context.validators.get(validator_index as usize) {
             Some(v) => v,
             None => return false,
         };
-
-        // Hash the data
-        let hash = Crypto::sha256(data);
 
         // Verify signature length (64 bytes for secp256r1)
         if signature.len() != 64 {
@@ -977,7 +989,7 @@ impl ConsensusService {
         // Get public key bytes
         let pub_key_bytes = validator.public_key.encoded();
 
-        match Secp256r1Crypto::verify(&hash, &sig_bytes, &pub_key_bytes) {
+        match Secp256r1Crypto::verify(data, &sig_bytes, &pub_key_bytes) {
             Ok(valid) => valid,
             Err(e) => {
                 debug!(error = %e, "Signature verification failed");
@@ -986,9 +998,64 @@ impl ConsensusService {
         }
     }
 
+    fn dbft_sender(&self, validator_index: u8) -> ConsensusResult<UInt160> {
+        self.context
+            .validators
+            .get(validator_index as usize)
+            .map(|v| v.script_hash)
+            .ok_or(ConsensusError::InvalidValidatorIndex(validator_index))
+    }
+
+    fn dbft_unsigned_extensible_bytes(&self, payload: &ConsensusPayload) -> ConsensusResult<Vec<u8>> {
+        use neo_io::BinaryWriter;
+
+        let sender = self.dbft_sender(payload.validator_index)?;
+        let message_bytes = payload.to_message_bytes();
+
+        let mut writer = BinaryWriter::new();
+        writer
+            .write_var_string("dBFT")
+            .map_err(|e| ConsensusError::state_error(e.to_string()))?;
+        writer
+            .write_u32(0)
+            .map_err(|e| ConsensusError::state_error(e.to_string()))?;
+        writer
+            .write_u32(payload.block_index)
+            .map_err(|e| ConsensusError::state_error(e.to_string()))?;
+        writer
+            .write_bytes(&sender.to_bytes())
+            .map_err(|e| ConsensusError::state_error(e.to_string()))?;
+        writer
+            .write_var_bytes(&message_bytes)
+            .map_err(|e| ConsensusError::state_error(e.to_string()))?;
+
+        Ok(writer.into_bytes())
+    }
+
+    fn dbft_payload_hash(&self, payload: &ConsensusPayload) -> ConsensusResult<UInt256> {
+        let unsigned = self.dbft_unsigned_extensible_bytes(payload)?;
+        let hash_bytes = neo_crypto::Crypto::sha256(&unsigned);
+        UInt256::from_bytes(&hash_bytes).map_err(|e| {
+            ConsensusError::state_error(format!("Failed to compute dBFT payload hash: {e}"))
+        })
+    }
+
+    fn dbft_sign_data(&self, payload: &ConsensusPayload) -> ConsensusResult<Vec<u8>> {
+        let hash = self.dbft_payload_hash(payload)?;
+        let mut data = Vec::with_capacity(4 + 32);
+        data.extend_from_slice(&self.network.to_le_bytes());
+        data.extend_from_slice(&hash.as_bytes());
+        Ok(data)
+    }
+
     /// Returns the current context (for testing/debugging)
     pub fn context(&self) -> &ConsensusContext {
         &self.context
+    }
+
+    /// Returns the network magic number this service is configured for.
+    pub fn network(&self) -> u32 {
+        self.network
     }
 
     /// Returns whether the service is running
@@ -1151,8 +1218,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_replay_attack_prevention() {
-        use neo_crypto::Crypto;
-
         let (tx, _rx) = mpsc::channel(100);
         let validators = create_test_validators(7);
         let mut service = ConsensusService::new(0x4E454F, validators, Some(0), vec![], tx);
@@ -1170,9 +1235,7 @@ mod tests {
         );
 
         // Compute the message hash
-        let sign_data = payload.get_sign_data();
-        let msg_hash_bytes = Crypto::hash256(&sign_data);
-        let msg_hash = UInt256::from_bytes(&msg_hash_bytes).unwrap();
+        let msg_hash = service.dbft_payload_hash(&payload).unwrap();
 
         // Initially, message should not be seen
         assert!(!service.context().has_seen_message(&msg_hash));

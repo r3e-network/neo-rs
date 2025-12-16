@@ -7,6 +7,7 @@
 use crate::error::{CoreError, CoreResult};
 use crate::neo_config::ADDRESS_SIZE;
 use crate::neo_io::Serializable;
+use crate::smart_contract::helper::Helper;
 use crate::UInt160;
 use base64::{engine::general_purpose, Engine as _};
 use once_cell::sync::OnceCell;
@@ -253,25 +254,13 @@ impl Witness {
 
     /// Extracts public key from verification script (matches C# verification script parsing exactly).
     fn extract_public_key_from_verification_script(&self) -> Result<Vec<u8>, CoreError> {
-        // Real C# Neo N3 implementation: Contract signature script parsing
-        // In C#: Contract.CreateSignatureRedeemScript creates scripts in specific format
-
-        if self.verification_script.len() != 35 {
+        if !Helper::is_signature_contract(&self.verification_script) {
             return Err(CoreError::InvalidData {
-                message: "Invalid verification script length".to_string(),
+                message: "Unsupported verification script format".to_string(),
             });
         }
 
-        if self.verification_script[0] != 0x0C ||  // OpCode.PUSHDATA1
-           self.verification_script[1] != 0x21 ||  // 33 bytes
-           self.verification_script[34] != 0x41
-        {
-            return Err(CoreError::InvalidData {
-                message: "Invalid verification script format".to_string(),
-            });
-        }
-
-        let public_key = self.verification_script[2..34].to_vec();
+        let public_key = self.verification_script[2..35].to_vec();
 
         if public_key.len() != 33 || (public_key[0] != 0x02 && public_key[0] != 0x03) {
             return Err(CoreError::InvalidData {
@@ -335,17 +324,8 @@ impl Witness {
 
     /// Computes script hash from public key (matches C# Contract.CreateSignatureContract exactly).
     fn compute_script_hash_from_public_key(&self, public_key: &[u8]) -> CoreResult<UInt160> {
-        // Implements C# Contract.CreateSignatureContract functionality
-
-        use crate::cryptography::NeoHash;
-
         let verification_script = self.create_verification_script_from_public_key(public_key)?;
-
-        let script_hash = NeoHash::hash160(&verification_script);
-
-        UInt160::from_bytes(&script_hash).map_err(|e| CoreError::InvalidData {
-            message: format!("Invalid script hash: {e}"),
-        })
+        Ok(UInt160::from_script(&verification_script))
     }
 
     /// Creates verification script from public key (matches C# Contract.CreateSignatureRedeemScript exactly).
@@ -353,8 +333,6 @@ impl Witness {
         &self,
         public_key: &[u8],
     ) -> Result<Vec<u8>, CoreError> {
-        // Implements C# Contract.CreateSignatureRedeemScript functionality
-
         if public_key.len() != 33 {
             return Err(CoreError::InvalidData {
                 message: "Public key must be 33 bytes (compressed)".to_string(),
@@ -367,14 +345,7 @@ impl Witness {
             });
         }
 
-        // Create verification script exactly like C# Contract.CreateSignatureRedeemScript
-        let mut script = Vec::with_capacity(35);
-        script.push(0x0C); // OpCode.PUSHDATA1
-        script.push(0x21); // 33 bytes (0x21)
-        script.extend_from_slice(public_key); // ECPoint.EncodePoint(true) - compressed public key
-        script.push(0x41); // OpCode.CHECKSIG
-
-        Ok(script)
+        Ok(Helper::signature_redeem_script(public_key))
     }
 }
 

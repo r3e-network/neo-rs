@@ -242,8 +242,8 @@ impl Blockchain {
             return Ok(false);
         }
 
-        // MessageType::StateRoot = 0
-        if payload.data[0] != 0 {
+        // Neo.Plugins.StateService.Network.MessageType: Vote = 0, StateRoot = 1.
+        if payload.data[0] != 1 {
             return Ok(false);
         }
 

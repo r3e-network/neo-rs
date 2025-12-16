@@ -419,16 +419,11 @@ impl Transaction {
     }
 
     pub(super) fn parse_single_signature_contract(script: &[u8]) -> Option<&[u8]> {
-        if script.len() != 35 {
+        if !Helper::is_signature_contract(script) {
             return None;
         }
-        if script[0] != OpCode::PUSHDATA1 as u8 || script[1] != 0x21 {
-            return None;
-        }
-        if script[34] != OpCode::SYSCALL as u8 {
-            return None;
-        }
-        Some(&script[2..34])
+        // Signature contract pattern: PUSHDATA1(33) <33-byte pubkey> SYSCALL <CheckSig hash>
+        Some(&script[2..35])
     }
 
     pub(super) fn parse_single_signature_invocation(invocation: &[u8]) -> Option<&[u8]> {

@@ -329,6 +329,7 @@ mod tests {
             hash: UInt256::from([1u8; 32]),
             height: 0,
             prev_hash: UInt256::zero(),
+            header: Vec::new(),
             timestamp: 1616245200000,
             tx_count: 1,
             size: 100,
@@ -345,6 +346,7 @@ mod tests {
             hash: UInt256::from(hash),
             height,
             prev_hash: prev.hash,
+            header: Vec::new(),
             timestamp: prev.timestamp + 15000,
             tx_count: 5,
             size: 500,
@@ -394,6 +396,7 @@ mod tests {
             hash: UInt256::from([99u8; 32]),
             height: 5,
             prev_hash: UInt256::from([88u8; 32]), // Non-existent parent
+            header: Vec::new(),
             timestamp: 1616245200000 + 75000,
             tx_count: 1,
             size: 100,

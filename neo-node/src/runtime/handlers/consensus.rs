@@ -51,7 +51,7 @@ async fn handle_consensus_event(
             handle_block_committed(block_index, block_hash, &block_data);
         }
         ConsensusEvent::BroadcastMessage(payload) => {
-            handle_broadcast_message(payload, p2p_broadcast_tx);
+            handle_broadcast_message(payload, p2p_broadcast_tx, consensus).await;
         }
         ConsensusEvent::RequestTransactions { block_index, max_count } => {
             handle_request_transactions(block_index, max_count, mempool, consensus).await;
@@ -96,9 +96,10 @@ fn handle_block_committed(
     // Block assembly handled by ValidatorService.handle_consensus_event()
 }
 
-fn handle_broadcast_message(
+async fn handle_broadcast_message(
     payload: neo_consensus::ConsensusPayload,
     p2p_broadcast_tx: &Option<broadcast::Sender<BroadcastMessage>>,
+    consensus: &Arc<RwLock<Option<ConsensusService>>>,
 ) {
     info!(
         target: "neo::runtime",
@@ -111,10 +112,60 @@ fn handle_broadcast_message(
     );
 
     if let Some(ref tx) = p2p_broadcast_tx {
+        use neo_core::network::p2p::payloads::{ExtensiblePayload, Witness};
+        use neo_core::smart_contract::helper::Helper;
+        use neo_vm::script_builder::ScriptBuilder;
+
+        if payload.witness.is_empty() {
+            warn!(
+                target: "neo::runtime",
+                "refusing to broadcast unsigned consensus payload"
+            );
+            return;
+        }
+
+        let (sender, pubkey_bytes) = consensus
+            .read()
+            .await
+            .as_ref()
+            .and_then(|service| {
+                service
+                    .context()
+                    .validators
+                    .get(payload.validator_index as usize)
+                    .map(|v| (v.script_hash, v.public_key.encoded().to_vec()))
+            })
+            .unwrap_or_else(|| {
+            warn!(
+                target: "neo::runtime",
+                validator_index = payload.validator_index,
+                "missing consensus context for broadcast"
+            );
+            (neo_core::UInt160::zero(), Vec::new())
+        });
+
+        if pubkey_bytes.is_empty() {
+            return;
+        }
+
+        let mut inv_builder = ScriptBuilder::new();
+        inv_builder.emit_push(&payload.witness);
+        let invocation_script = inv_builder.to_array();
+        let verification_script = Helper::signature_redeem_script(&pubkey_bytes);
+        let witness = Witness::new_with_scripts(invocation_script, verification_script);
+
+        let mut extensible = ExtensiblePayload::new();
+        extensible.category = "dBFT".to_string();
+        extensible.valid_block_start = 0;
+        extensible.valid_block_end = payload.block_index;
+        extensible.sender = sender;
+        extensible.data = payload.to_message_bytes();
+        extensible.witness = witness;
+
         let broadcast_msg = BroadcastMessage {
-            message: payload.data.clone(),
-            category: "dBFT".to_string(),
+            message: neo_core::network::p2p::ProtocolMessage::Extensible(extensible),
         };
+
         if let Err(e) = tx.send(broadcast_msg) {
             warn!(
                 target: "neo::runtime",
