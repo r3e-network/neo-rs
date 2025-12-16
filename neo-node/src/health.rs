@@ -150,6 +150,6 @@ fn verify_storage_markers(path: &str, _expected_magic: u32) -> bool {
     // Verify storage version marker exists and matches expected version
     fs::read_to_string(&version_marker)
         .ok()
-        .map(|contents| contents.trim() == crate::STORAGE_VERSION)
+        .map(|contents| contents.trim() == crate::startup::STORAGE_VERSION)
         .unwrap_or(true) // Allow missing marker for new installations
 }

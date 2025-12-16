@@ -46,11 +46,44 @@ impl ChangeViewMessage {
     }
 
     /// Serializes the message to bytes
+    /// Format: new_view_number (1) + timestamp (8) + reason (1)
     pub fn serialize(&self) -> Vec<u8> {
         let mut data = Vec::new();
+        data.push(self.new_view_number);
         data.extend_from_slice(&self.timestamp.to_le_bytes());
         data.push(self.reason.to_byte());
         data
+    }
+
+    /// Deserializes a ChangeView message from bytes
+    /// Format: new_view_number (1) + timestamp (8) + reason (1)
+    pub fn deserialize(
+        data: &[u8],
+        block_index: u32,
+        view_number: u8,
+        validator_index: u8,
+    ) -> ConsensusResult<Self> {
+        if data.len() < 10 {
+            return Err(crate::ConsensusError::invalid_proposal(
+                "ChangeView message too short",
+            ));
+        }
+
+        let new_view_number = data[0];
+        let timestamp = u64::from_le_bytes(
+            data[1..9].try_into().unwrap_or([0u8; 8])
+        );
+        let reason = ChangeViewReason::from_byte(data[9])
+            .unwrap_or(ChangeViewReason::Timeout);
+
+        Ok(Self {
+            block_index,
+            view_number,
+            validator_index,
+            new_view_number,
+            timestamp,
+            reason,
+        })
     }
 
     /// Validates the message
@@ -86,8 +119,9 @@ mod tests {
         let msg = ChangeViewMessage::new(100, 0, 1, 1, 1000, ChangeViewReason::Timeout);
         let data = msg.serialize();
 
-        // 8 bytes timestamp + 1 byte reason
-        assert_eq!(data.len(), 9);
+        // 1 byte new_view_number + 8 bytes timestamp + 1 byte reason
+        assert_eq!(data.len(), 10);
+        assert_eq!(data[0], 1); // new_view_number
     }
 
     #[test]
@@ -100,5 +134,27 @@ mod tests {
 
         let invalid2 = ChangeViewMessage::new(100, 2, 1, 1, 1000, ChangeViewReason::Timeout);
         assert!(invalid2.validate().is_err());
+    }
+
+    #[test]
+    fn test_change_view_serialize_deserialize_roundtrip() {
+        let msg = ChangeViewMessage::new(100, 0, 1, 2, 12345678, ChangeViewReason::TxNotFound);
+        let data = msg.serialize();
+
+        let parsed = ChangeViewMessage::deserialize(&data, 100, 0, 1).unwrap();
+
+        assert_eq!(parsed.block_index, 100);
+        assert_eq!(parsed.view_number, 0);
+        assert_eq!(parsed.validator_index, 1);
+        assert_eq!(parsed.new_view_number, 2);
+        assert_eq!(parsed.timestamp, 12345678);
+        assert_eq!(parsed.reason, ChangeViewReason::TxNotFound);
+    }
+
+    #[test]
+    fn test_change_view_deserialize_too_short() {
+        let data = vec![0u8; 5]; // Too short
+        let result = ChangeViewMessage::deserialize(&data, 100, 0, 1);
+        assert!(result.is_err());
     }
 }

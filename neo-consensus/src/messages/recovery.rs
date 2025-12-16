@@ -134,12 +134,19 @@ impl RecoveryMessage {
             data.extend_from_slice(&cv.timestamp.to_le_bytes());
         }
 
-        // Has prepare request
-        data.push(if self.prepare_request_message.is_some() {
-            1
+        // Has prepare request flag and data
+        if let Some(ref prep_req) = self.prepare_request_message {
+            data.push(1);
+            // Serialize PrepareRequestCompact: timestamp (8) + nonce (8) + tx_count (1) + tx_hashes (32 each)
+            data.extend_from_slice(&prep_req.timestamp.to_le_bytes());
+            data.extend_from_slice(&prep_req.nonce.to_le_bytes());
+            data.push(prep_req.transaction_hashes.len() as u8);
+            for tx_hash in &prep_req.transaction_hashes {
+                data.extend_from_slice(&tx_hash.to_bytes());
+            }
         } else {
-            0
-        });
+            data.push(0);
+        }
 
         // Preparations count
         data.push(self.preparation_payloads.len() as u8);
@@ -205,13 +212,47 @@ impl RecoveryMessage {
             });
         }
 
-        // Parse has prepare request flag
+        // Parse has prepare request flag and data
         let has_prepare_request = data.get(offset).copied().unwrap_or(0) == 1;
         offset += 1;
 
         let prepare_request_message = if has_prepare_request {
-            // In full implementation, would parse PrepareRequestCompact here
-            None
+            // Parse PrepareRequestCompact: timestamp (8) + nonce (8) + tx_count (1) + tx_hashes (32 each)
+            if offset + 17 > data.len() {
+                // Not enough data for timestamp + nonce + tx_count
+                None
+            } else {
+                let timestamp = u64::from_le_bytes(
+                    data[offset..offset + 8].try_into().unwrap_or([0u8; 8])
+                );
+                offset += 8;
+
+                let nonce = u64::from_le_bytes(
+                    data[offset..offset + 8].try_into().unwrap_or([0u8; 8])
+                );
+                offset += 8;
+
+                let tx_count = data[offset] as usize;
+                offset += 1;
+
+                let mut transaction_hashes = Vec::with_capacity(tx_count);
+                for _ in 0..tx_count {
+                    if offset + 32 > data.len() {
+                        break;
+                    }
+                    if let Ok(hash) = UInt256::from_bytes(&data[offset..offset + 32]) {
+                        transaction_hashes.push(hash);
+                    }
+                    offset += 32;
+                }
+
+                Some(PrepareRequestCompact {
+                    timestamp,
+                    nonce,
+                    transaction_hashes,
+                    invocation_script: Vec::new(),
+                })
+            }
         } else {
             None
         };
@@ -319,5 +360,91 @@ mod tests {
             invocation_script: vec![],
         });
         assert!(msg.validate().is_err());
+    }
+
+    #[test]
+    fn test_recovery_message_serialize_deserialize_roundtrip() {
+        let mut msg = RecoveryMessage::new(100, 0, 1);
+
+        // Add change view payloads
+        msg.change_view_payloads.push(ChangeViewCompact {
+            validator_index: 2,
+            original_view_number: 0,
+            timestamp: 12345678,
+            invocation_script: vec![],
+        });
+
+        // Add prepare request
+        msg.prepare_request_message = Some(PrepareRequestCompact {
+            timestamp: 1000000,
+            nonce: 0xDEADBEEF,
+            transaction_hashes: vec![
+                UInt256::from_bytes(&[1u8; 32]).unwrap(),
+                UInt256::from_bytes(&[2u8; 32]).unwrap(),
+            ],
+            invocation_script: vec![],
+        });
+
+        // Add preparation payloads
+        msg.preparation_payloads.push(PreparationCompact {
+            validator_index: 0,
+            invocation_script: vec![],
+        });
+        msg.preparation_payloads.push(PreparationCompact {
+            validator_index: 1,
+            invocation_script: vec![],
+        });
+
+        // Add commit payloads
+        msg.commit_payloads.push(CommitCompact {
+            validator_index: 0,
+            signature: vec![0xAAu8; 64],
+        });
+
+        // Serialize
+        let data = msg.serialize();
+
+        // Deserialize
+        let parsed = RecoveryMessage::deserialize(&data, 100, 0, 1).unwrap();
+
+        // Verify change views
+        assert_eq!(parsed.change_view_payloads.len(), 1);
+        assert_eq!(parsed.change_view_payloads[0].validator_index, 2);
+        assert_eq!(parsed.change_view_payloads[0].original_view_number, 0);
+        assert_eq!(parsed.change_view_payloads[0].timestamp, 12345678);
+
+        // Verify prepare request
+        assert!(parsed.prepare_request_message.is_some());
+        let prep_req = parsed.prepare_request_message.unwrap();
+        assert_eq!(prep_req.timestamp, 1000000);
+        assert_eq!(prep_req.nonce, 0xDEADBEEF);
+        assert_eq!(prep_req.transaction_hashes.len(), 2);
+
+        // Verify preparations
+        assert_eq!(parsed.preparation_payloads.len(), 2);
+        assert_eq!(parsed.preparation_payloads[0].validator_index, 0);
+        assert_eq!(parsed.preparation_payloads[1].validator_index, 1);
+
+        // Verify commits
+        assert_eq!(parsed.commit_payloads.len(), 1);
+        assert_eq!(parsed.commit_payloads[0].validator_index, 0);
+        assert_eq!(parsed.commit_payloads[0].signature.len(), 64);
+    }
+
+    #[test]
+    fn test_recovery_message_without_prepare_request() {
+        let mut msg = RecoveryMessage::new(50, 1, 3);
+
+        // No prepare request
+        msg.preparation_payloads.push(PreparationCompact {
+            validator_index: 0,
+            invocation_script: vec![],
+        });
+
+        let data = msg.serialize();
+        let parsed = RecoveryMessage::deserialize(&data, 50, 1, 3).unwrap();
+
+        assert!(parsed.prepare_request_message.is_none());
+        assert_eq!(parsed.preparation_payloads.len(), 1);
     }
 }

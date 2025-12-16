@@ -278,6 +278,18 @@ impl ConsensusService {
             });
         }
 
+        // Verify the primary's signature (security fix: matches C# DBFTPlugin)
+        let sign_data = payload.get_sign_data();
+        if !payload.witness.is_empty()
+            && !self.verify_signature(&sign_data, &payload.witness, payload.validator_index)
+        {
+            warn!(
+                validator = payload.validator_index,
+                "PrepareRequest signature verification failed"
+            );
+            return Err(ConsensusError::signature_failed("PrepareRequest signature invalid"));
+        }
+
         // Check if we already received a prepare request
         if self.context.prepare_request_received {
             return Err(ConsensusError::AlreadyReceived(payload.validator_index));
@@ -534,22 +546,45 @@ impl ConsensusService {
 
     /// Handles ChangeView message
     fn on_change_view(&mut self, payload: &ConsensusPayload) -> ConsensusResult<()> {
-        // Parse the new view from the message
-        // Extract target view from ChangeView message
-        let new_view = payload.view_number + 1;
-        let timestamp = current_timestamp();
+        // Verify the payload signature (security fix: matches C# DBFTPlugin)
+        let sign_data = payload.get_sign_data();
+        if !payload.witness.is_empty()
+            && !self.verify_signature(&sign_data, &payload.witness, payload.validator_index)
+        {
+            warn!(
+                validator = payload.validator_index,
+                "ChangeView signature verification failed"
+            );
+            return Err(ConsensusError::signature_failed("ChangeView signature invalid"));
+        }
+
+        // Parse the ChangeView message from payload data
+        let change_view_msg = ChangeViewMessage::deserialize(
+            &payload.data,
+            payload.block_index,
+            payload.view_number,
+            payload.validator_index,
+        )?;
+
+        // Validate the parsed message
+        change_view_msg.validate()?;
+
+        let new_view = change_view_msg.new_view_number;
+        let timestamp = change_view_msg.timestamp;
+        let reason = change_view_msg.reason;
 
         debug!(
             block_index = self.context.block_index,
             validator = payload.validator_index,
             new_view,
+            ?reason,
             "Received ChangeView"
         );
 
         self.context.add_change_view(
             payload.validator_index,
             new_view,
-            ChangeViewReason::Timeout,
+            reason,
             timestamp,
         )?;
 
@@ -709,6 +744,18 @@ impl ConsensusService {
 
     /// Handles RecoveryMessage
     fn on_recovery_message(&mut self, payload: &ConsensusPayload) -> ConsensusResult<()> {
+        // Verify the payload signature (security fix: matches C# DBFTPlugin)
+        let sign_data = payload.get_sign_data();
+        if !payload.witness.is_empty()
+            && !self.verify_signature(&sign_data, &payload.witness, payload.validator_index)
+        {
+            warn!(
+                validator = payload.validator_index,
+                "RecoveryMessage signature verification failed"
+            );
+            return Err(ConsensusError::signature_failed("RecoveryMessage signature invalid"));
+        }
+
         debug!(
             block_index = self.context.block_index,
             validator = payload.validator_index,

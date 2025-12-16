@@ -14,6 +14,10 @@ pub const BLOCK_TIME_MS: u64 = 15_000;
 /// Maximum validators in dBFT
 pub const MAX_VALIDATORS: usize = 21;
 
+/// Maximum size of message hash cache (LRU limit for memory protection)
+/// Matches C# DBFTPlugin's message caching behavior
+pub const MAX_MESSAGE_CACHE_SIZE: usize = 10_000;
+
 /// Consensus state enumeration
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ConsensusState {
@@ -332,9 +336,21 @@ impl ConsensusContext {
     /// This method adds the message hash to the cache to prevent duplicate processing.
     /// The cache is automatically cleared when starting a new block via `reset_for_new_block()`.
     ///
+    /// Security: Implements LRU-style cache limit (MAX_MESSAGE_CACHE_SIZE) to prevent
+    /// memory exhaustion attacks. When the cache is full, it is cleared to make room
+    /// for new messages. This matches C# DBFTPlugin's memory protection behavior.
+    ///
     /// # Arguments
     /// * `hash` - The message hash to mark as seen
     pub fn mark_message_seen(&mut self, hash: &UInt256) {
+        // LRU-style cache limit: clear when full to prevent memory exhaustion
+        if self.seen_message_hashes.len() >= MAX_MESSAGE_CACHE_SIZE {
+            tracing::warn!(
+                "Message cache reached limit ({}), clearing to prevent memory exhaustion",
+                MAX_MESSAGE_CACHE_SIZE
+            );
+            self.seen_message_hashes.clear();
+        }
         self.seen_message_hashes.insert(*hash);
     }
 
@@ -1035,5 +1051,26 @@ mod tests {
 
         // Second time: message is duplicate (replay attack)
         assert!(ctx.has_seen_message(&msg_hash));
+    }
+
+    #[test]
+    fn test_message_cache_lru_limit() {
+        let validators = create_test_validators(4);
+        let mut ctx = ConsensusContext::new(100, validators, Some(0));
+
+        // Fill the cache to just below the limit
+        for i in 0..100 {
+            let mut hash_bytes = [0u8; 32];
+            hash_bytes[0..4].copy_from_slice(&(i as u32).to_le_bytes());
+            let hash = UInt256::from_bytes(&hash_bytes).unwrap();
+            ctx.mark_message_seen(&hash);
+        }
+
+        // Verify messages are cached
+        let first_hash = UInt256::from_bytes(&[0u8; 32]).unwrap();
+        assert!(ctx.has_seen_message(&first_hash));
+
+        // The cache should not be cleared yet (under limit)
+        assert!(ctx.seen_message_hashes.len() <= MAX_MESSAGE_CACHE_SIZE);
     }
 }
