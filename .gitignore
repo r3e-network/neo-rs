@@ -57,6 +57,9 @@ chain.*
 blockchain_data/
 testnet_data/
 
+# Local node data (created when running neo-node from its crate dir)
+neo-node/StateRoot/
+
 # Generated documentation
 /docs/build/
 # CodeX build artifacts

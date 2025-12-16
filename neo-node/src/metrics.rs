@@ -6,8 +6,6 @@
 use lazy_static::lazy_static;
 use neo_core::network::p2p::timeouts::TimeoutStats;
 use neo_core::telemetry::Telemetry;
-// NOTE: RPC metrics temporarily stubbed during refactoring
-// use neo_plugins::rpc_server::rpc_server::{RPC_ERR_TOTAL, RPC_REQ_TOTAL};
 use prometheus::{Counter, Encoder, Gauge, TextEncoder};
 use std::sync::Arc;
 use sysinfo::{DiskExt, System, SystemExt};
@@ -29,10 +27,6 @@ fn register_counter_best_effort(name: &str, help: &str) -> Counter {
 lazy_static! {
     /// Global telemetry instance for the node.
     pub static ref TELEMETRY: Arc<Telemetry> = Arc::new(Telemetry::new("neo-node", env!("CARGO_PKG_VERSION")));
-
-    // RPC metrics (stubbed until neo-rpc is fully refactored)
-    pub static ref RPC_REQ_TOTAL: Counter = register_counter_best_effort("neo_rpc_requests_total", "Total RPC requests");
-    pub static ref RPC_ERR_TOTAL: Counter = register_counter_best_effort("neo_rpc_errors_total", "Total RPC errors");
 
     // Prometheus gauges for backward compatibility
     static ref HEADER_HEIGHT: Gauge =
@@ -194,8 +188,6 @@ pub fn gather() -> Vec<u8> {
     let _ = &*STATE_ROOT_INGEST_REJECTED;
     let _ = &*STATE_ROOT_INGEST_ACCEPTED_COUNTER;
     let _ = &*STATE_ROOT_INGEST_REJECTED_COUNTER;
-    let _ = &*RPC_REQ_TOTAL;
-    let _ = &*RPC_ERR_TOTAL;
 
     let encoder = TextEncoder::new();
     let metric_families = prometheus::gather();
