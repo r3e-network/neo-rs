@@ -245,7 +245,7 @@ impl ConsensusService {
         }
 
         let timestamp = current_timestamp();
-        let nonce = timestamp ^ (self.context.block_index as u64); // TODO: use cryptographic RNG like C#
+        let nonce = generate_nonce();
 
         // Store proposal data
         self.context.proposed_timestamp = timestamp;
@@ -1166,6 +1166,14 @@ fn current_timestamp() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_millis() as u64
+}
+
+fn generate_nonce() -> u64 {
+    use rand::RngCore;
+
+    let mut bytes = [0u8; 8];
+    rand::rngs::OsRng.fill_bytes(&mut bytes);
+    u64::from_le_bytes(bytes)
 }
 
 fn compute_merkle_root(hashes: &[UInt256]) -> UInt256 {

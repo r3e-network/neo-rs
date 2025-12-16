@@ -115,6 +115,8 @@ impl ValidatorService {
         &mut self,
         block_index: u32,
         timestamp: u64,
+        prev_hash: neo_core::UInt256,
+        version: u32,
     ) -> anyhow::Result<()> {
         if !self.is_validator() {
             anyhow::bail!("Not a validator");
@@ -132,9 +134,7 @@ impl ValidatorService {
             "starting consensus"
         );
 
-        // TODO: Provide real `prev_hash` from the chain tip when validator-mode
-        // wiring is completed. Version must be 0 for Neo N3.
-        consensus.start(block_index, timestamp, neo_core::UInt256::zero(), 0)?;
+        consensus.start(block_index, timestamp, prev_hash, version)?;
         *self.state.write().await = ValidatorState::Active;
 
         Ok(())
