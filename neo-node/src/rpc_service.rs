@@ -6,6 +6,7 @@
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Method, Request, Response, Server, StatusCode};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
@@ -57,8 +58,14 @@ pub struct RpcState {
     pub peer_count: usize,
     pub mempool_size: usize,
     pub mempool_hashes: Vec<String>,
+    pub best_block_hash: String,
+    pub block_hashes: HashMap<u32, String>,
     pub version: String,
     pub network_magic: u32,
+    pub tcp_port: u16,
+    pub ws_port: u16,
+    pub validators_count: i32,
+    pub ms_per_block: u64,
 }
 
 impl Default for RpcState {
@@ -68,8 +75,14 @@ impl Default for RpcState {
             peer_count: 0,
             mempool_size: 0,
             mempool_hashes: Vec::new(),
+            best_block_hash: String::new(),
+            block_hashes: HashMap::new(),
             version: env!("CARGO_PKG_VERSION").to_string(),
             network_magic: 0x4F454E,
+            tcp_port: 10333,
+            ws_port: 10334,
+            validators_count: 7,
+            ms_per_block: 15_000,
         }
     }
 }
@@ -101,6 +114,7 @@ struct JsonRpcError {
 }
 
 /// RPC Service
+#[derive(Clone)]
 pub struct RpcService {
     config: RpcServiceConfig,
     state: Arc<RwLock<RpcServiceState>>,
@@ -148,9 +162,35 @@ impl RpcService {
         state.mempool_hashes = mempool_hashes;
     }
 
+    /// Updates the best hash and a small height->hash map for `getbestblockhash` / `getblockhash`.
+    pub async fn update_chain_hashes(
+        &self,
+        best_block_hash: String,
+        block_hashes: HashMap<u32, String>,
+    ) {
+        let mut state = self.rpc_state.write().await;
+        state.best_block_hash = best_block_hash;
+        state.block_hashes = block_hashes;
+    }
+
     /// Sets the network magic
     pub async fn set_network_magic(&self, magic: u32) {
         self.rpc_state.write().await.network_magic = magic;
+    }
+
+    /// Sets protocol metadata reported by `getversion`.
+    pub async fn set_protocol_metadata(
+        &self,
+        tcp_port: u16,
+        ws_port: u16,
+        validators_count: i32,
+        ms_per_block: u64,
+    ) {
+        let mut state = self.rpc_state.write().await;
+        state.tcp_port = tcp_port;
+        state.ws_port = ws_port;
+        state.validators_count = validators_count;
+        state.ms_per_block = ms_per_block;
     }
 
     /// Starts the RPC service
@@ -275,14 +315,14 @@ async fn handle_rpc_request(
     let result = match req.method.as_str() {
         "getversion" => {
             let version_info = serde_json::json!({
-                "tcpport": 10333,
-                "wsport": 10334,
+                "tcpport": state.tcp_port,
+                "wsport": state.ws_port,
                 "nonce": 0,
                 "useragent": format!("/neo-rs:{}/", state.version),
                 "protocol": {
                     "network": state.network_magic,
-                    "validatorscount": 7,
-                    "msperblock": 15000,
+                    "validatorscount": state.validators_count,
+                    "msperblock": state.ms_per_block,
                     "maxtraceableblocks": 2102400,
                     "maxvaliduntilblockincrement": 5760,
                     "maxtransactionsperblock": 512,
@@ -293,6 +333,23 @@ async fn handle_rpc_request(
             Ok(version_info)
         }
         "getblockcount" => Ok(serde_json::json!(state.height + 1)),
+        "getbestblockhash" => Ok(serde_json::json!(state.best_block_hash)),
+        "getblockhash" => {
+            if let Some(params) = &req.params {
+                if let Some(height) = params.get(0).and_then(|v| v.as_u64()) {
+                    let height = height as u32;
+                    if let Some(hash) = state.block_hashes.get(&height) {
+                        Ok(serde_json::json!(hash))
+                    } else {
+                        Err((-100, "Unknown block"))
+                    }
+                } else {
+                    Err((-32602, "Invalid params"))
+                }
+            } else {
+                Err((-32602, "Missing params"))
+            }
+        }
         "getconnectioncount" => Ok(serde_json::json!(state.peer_count)),
         "getrawmempool" => Ok(serde_json::json!(state.mempool_hashes)),
         "getpeers" => Ok(serde_json::json!({

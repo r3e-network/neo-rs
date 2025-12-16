@@ -62,3 +62,5 @@ testnet_data/
 # CodeX build artifacts
 **/target_codex/
 target_codex/
+# Local StateService / state-root RocksDB (runtime-generated)
+StateRoot/

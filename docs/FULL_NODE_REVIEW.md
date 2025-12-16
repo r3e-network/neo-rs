@@ -35,14 +35,17 @@ At the moment, `neo-node` is **not yet a complete, interoperable Neo JSON-RPC fu
 
 2. **State/persistence wiring is not production-complete**
    - `neo-node` uses `neo-chain` (in-memory chain state) + `neo-state` (world state + trie), but block execution currently uses an in-memory `neo_core::persistence::DataCache` snapshot with **no backing store**.
-   - Genesis execution is not performed in the new runtime path, so native contract state initialization is not represented.
+   - Genesis execution runs via the block executor and its state changes are applied to the in-memory world state + trie, but those changes are **not persisted** to a backing store yet.
 
 3. **Consensus/validator mode is not complete**
    - Validator wallet loading is still stubbed (`neo-node/src/validator_service.rs`).
-   - Consensus event bridging (broadcasting dBFT payloads to P2P and servicing transaction requests from mempool) is marked TODO in both `neo-node/src/runtime.rs` and `neo-node/src/validator_service.rs`.
+   - Consensus event bridging is now partially implemented in the refactored runtime:
+     - Outbound `dBFT` broadcasts are relayed to peers as `ExtensiblePayload` via `neo-node/src/runtime/handlers/consensus.rs`.
+     - Transaction requests from consensus are serviced from `neo-mempool`.
+     - **Inbound** `dBFT` extensible payloads are still not routed into the consensus state machine (they are currently surfaced as P2P events only).
 
 4. **P2P serving behavior is incomplete**
-   - `GetHeaders` handling is TODO in `neo-node/src/p2p_service.rs` (node does not serve headers to peers yet).
+   - `GetHeaders` responses are now implemented in `neo-node/src/p2p_service.rs` and reply with a proper `headers` message (not `inv`), but the header store is currently **in-memory and partial** (genesis + headers learned during sync). A full node still needs a persistent header/block store to serve arbitrary historical ranges.
 
 These gaps do not necessarily mean the *protocol code* is incorrect; they mean the “node daemon”
 composition is still mid-refactor and does not yet present a full-node contract end-to-end.
@@ -158,10 +161,9 @@ composition is still mid-refactor and does not yet present a full-node contract 
    - Bridge `ConsensusEvent::RequestTransactions` → mempool transaction selection.
 
 5. **Complete P2P request/response baseline**
-   - Implement responses for `GetHeaders` at minimum to behave as a cooperative peer.
+   - Persist and serve headers/blocks reliably (the current `GetHeaders` response is best-effort and depends on the in-memory cache).
 
 ## Documentation Notes
 
 - `README.md` references `docs/METRICS.md`; that file now exists and documents the health/metrics endpoints.
 - Several older docs refer to a removed `neo-plugins` crate; treat them as historical or update them as the refactor stabilizes.
-

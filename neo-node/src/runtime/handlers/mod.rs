@@ -7,8 +7,11 @@
 
 pub mod chain;
 pub mod consensus;
+pub mod consensus_scheduler;
 pub mod p2p;
+pub(crate) mod state_service;
 
 pub use chain::process_chain_events;
 pub use consensus::process_consensus_events;
+pub use consensus_scheduler::run_consensus_scheduler;
 pub use p2p::process_p2p_events;

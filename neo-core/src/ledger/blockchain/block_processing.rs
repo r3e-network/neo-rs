@@ -242,9 +242,16 @@ impl Blockchain {
             return Ok(false);
         }
 
-        // MessageType::StateRoot = 0
-        if payload.data[0] != 0 {
-            return Ok(false);
+        // Neo N3 StateService multiplexes messages by a 1-byte MessageType prefix:
+        // 0 = Vote, 1 = StateRoot (Neo.Plugins.StateService.Network.MessageType).
+        match payload.data[0] {
+            0 => {
+                // Votes are only relevant to state validators (they aggregate signatures).
+                // Non-validator nodes should still accept the payload after witness verification.
+                return Ok(true);
+            }
+            1 => {}
+            _ => return Ok(false),
         }
 
         let mut reader = MemoryReader::new(&payload.data[1..]);

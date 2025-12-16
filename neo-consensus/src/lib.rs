@@ -54,7 +54,7 @@
 //! );
 //!
 //! // Start consensus for block 100
-//! service.start(100, timestamp)?;
+//! service.start(100, 0, prev_hash, timestamp)?;
 //!
 //! // Process incoming messages
 //! service.process_message(payload)?;

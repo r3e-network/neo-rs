@@ -66,7 +66,7 @@ async fn test_consensus_service_creation() {
 async fn test_consensus_service_start() {
     let (mut service, _rx) = create_consensus_service(Some(0), 7);
 
-    let result = service.start(100, 1000);
+    let result = service.start(100, 0, UInt256::zero(), 1000);
     assert!(result.is_ok());
     assert!(service.is_running());
     assert_eq!(service.context().block_index, 100);
@@ -76,7 +76,7 @@ async fn test_consensus_service_start() {
 async fn test_consensus_not_validator_cannot_start() {
     let (mut service, _rx) = create_consensus_service(None, 7);
 
-    let result = service.start(100, 1000);
+    let result = service.start(100, 0, UInt256::zero(), 1000);
     assert!(result.is_err());
     assert!(!service.is_running());
 }
@@ -86,11 +86,11 @@ async fn test_consensus_primary_calculation() {
     let (mut service, _rx) = create_consensus_service(Some(0), 7);
 
     // Block 0, view 0 -> validator 0 is primary
-    service.start(0, 1000).unwrap();
+    service.start(0, 0, UInt256::zero(), 1000).unwrap();
     assert!(service.context().is_primary());
 
     // Block 1, view 0 -> validator 1 is primary
-    service.start(1, 1000).unwrap();
+    service.start(1, 0, UInt256::zero(), 1000).unwrap();
     assert!(!service.context().is_primary());
 }
 
@@ -116,7 +116,7 @@ async fn test_consensus_validator_count() {
 #[tokio::test]
 async fn test_consensus_wrong_block_index_rejected() {
     let (mut service, _rx) = create_consensus_service(Some(1), 7);
-    service.start(100, 1000).unwrap();
+    service.start(100, 0, UInt256::zero(), 1000).unwrap();
 
     // Create payload for wrong block
     let payload = ConsensusPayload::new(
@@ -126,6 +126,7 @@ async fn test_consensus_wrong_block_index_rejected() {
         0,
         ConsensusMessageType::PrepareRequest,
         vec![],
+        UInt160::zero(),
     );
 
     let result = service.process_message(payload);
@@ -135,7 +136,7 @@ async fn test_consensus_wrong_block_index_rejected() {
 #[tokio::test]
 async fn test_consensus_wrong_view_rejected() {
     let (mut service, _rx) = create_consensus_service(Some(1), 7);
-    service.start(100, 1000).unwrap();
+    service.start(100, 0, UInt256::zero(), 1000).unwrap();
 
     // Create payload for wrong view
     let payload = ConsensusPayload::new(
@@ -145,6 +146,7 @@ async fn test_consensus_wrong_view_rejected() {
         5, // Wrong view number
         ConsensusMessageType::PrepareResponse,
         vec![],
+        UInt160::zero(),
     );
 
     let result = service.process_message(payload);
@@ -154,7 +156,7 @@ async fn test_consensus_wrong_view_rejected() {
 #[tokio::test]
 async fn test_consensus_prepare_request_from_non_primary_rejected() {
     let (mut service, _rx) = create_consensus_service(Some(1), 7);
-    service.start(100, 1000).unwrap();
+    service.start(100, 0, UInt256::zero(), 1000).unwrap();
 
     // Block 100, view 0 -> primary is validator (100 % 7) = 2
     // Sending PrepareRequest from validator 5 (not primary) should fail
@@ -165,6 +167,7 @@ async fn test_consensus_prepare_request_from_non_primary_rejected() {
         0,
         ConsensusMessageType::PrepareRequest,
         vec![],
+        UInt160::zero(),
     );
 
     let result = service.process_message(payload);
@@ -180,7 +183,7 @@ async fn test_primary_requests_transactions_on_start() {
     let (mut service, mut rx) = create_consensus_service(Some(0), 7);
 
     // Start consensus for block 0 where validator 0 is primary
-    service.start(0, 1000).unwrap();
+    service.start(0, 0, UInt256::zero(), 1000).unwrap();
 
     // Primary should request transactions
     let event = tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv())
@@ -203,7 +206,7 @@ async fn test_primary_requests_transactions_on_start() {
 #[tokio::test]
 async fn test_transactions_received_triggers_prepare_request() {
     let (mut service, mut rx) = create_consensus_service(Some(0), 7);
-    service.start(0, 1000).unwrap();
+    service.start(0, 0, UInt256::zero(), 1000).unwrap();
 
     // Drain the RequestTransactions event
     let _ = rx.recv().await;
@@ -236,7 +239,7 @@ async fn test_transactions_received_triggers_prepare_request() {
 #[tokio::test]
 async fn test_timeout_triggers_view_change() {
     let (mut service, mut rx) = create_consensus_service(Some(1), 7);
-    service.start(100, 1000).unwrap();
+    service.start(100, 0, UInt256::zero(), 1000).unwrap();
 
     // Simulate timeout by calling on_timer_tick with future timestamp
     let future_time = 1000 + 60_000; // 60 seconds later
@@ -282,7 +285,7 @@ async fn test_recovery_message_serialization() {
     assert!(!data.is_empty());
 
     // Deserialize
-    let restored = RecoveryMessage::deserialize(&data, 100, 0, 1).unwrap();
+    let restored = RecoveryMessage::deserialize(&data).unwrap();
 
     assert_eq!(restored.block_index, 100);
     assert_eq!(restored.view_number, 0);
@@ -301,6 +304,7 @@ async fn test_consensus_payload_creation() {
         0,
         ConsensusMessageType::PrepareRequest,
         vec![0x01, 0x02, 0x03],
+        UInt160::zero(),
     );
 
     assert_eq!(payload.network, 0x4E454F);
@@ -320,6 +324,7 @@ async fn test_consensus_payload_sign_data() {
         0,
         ConsensusMessageType::PrepareRequest,
         vec![0x01, 0x02, 0x03],
+        UInt160::zero(),
     );
 
     let sign_data = payload.get_sign_data();
@@ -337,7 +342,7 @@ async fn test_consensus_payload_sign_data() {
 #[tokio::test]
 async fn test_multi_validator_prepare_response_collection() {
     let (mut service, _rx) = create_consensus_service(Some(0), 7);
-    service.start(0, 1000).unwrap();
+    service.start(0, 0, UInt256::zero(), 1000).unwrap();
 
     // Simulate receiving PrepareResponses from other validators
     // For 7 validators, we need m=5 responses to proceed to commit
@@ -354,7 +359,7 @@ async fn test_multi_validator_prepare_response_collection() {
 #[tokio::test]
 async fn test_consensus_handles_empty_transaction_list() {
     let (mut service, mut rx) = create_consensus_service(Some(0), 7);
-    service.start(0, 1000).unwrap();
+    service.start(0, 0, UInt256::zero(), 1000).unwrap();
 
     // Drain RequestTransactions
     let _ = rx.recv().await;
@@ -367,7 +372,7 @@ async fn test_consensus_handles_empty_transaction_list() {
 #[tokio::test]
 async fn test_consensus_single_validator_network() {
     let (mut service, mut rx) = create_consensus_service(Some(0), 1);
-    service.start(0, 1000).unwrap();
+    service.start(0, 0, UInt256::zero(), 1000).unwrap();
 
     // Single validator is always primary
     assert!(service.context().is_primary());

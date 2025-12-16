@@ -89,6 +89,14 @@ pub struct ConsensusContext {
     /// Expected block time
     pub expected_block_time: u64,
 
+    // Block header linkage (from chain layer)
+    /// Block version (must be 0 on Neo N3)
+    pub block_version: u32,
+    /// Previous block hash
+    pub prev_hash: UInt256,
+    /// Hash of the received PrepareRequest extensible payload (used for PrepareResponse validation).
+    pub preparation_hash: Option<UInt256>,
+
     // Proposal data
     /// Proposed block hash (from PrepareRequest)
     pub proposed_block_hash: Option<UInt256>,
@@ -131,6 +139,9 @@ impl ConsensusContext {
             state: ConsensusState::Initial,
             view_start_time: 0,
             expected_block_time: 0,
+            block_version: 0,
+            prev_hash: UInt256::zero(),
+            preparation_hash: None,
             proposed_block_hash: None,
             proposed_timestamp: 0,
             proposed_tx_hashes: Vec::new(),
@@ -226,7 +237,13 @@ impl ConsensusContext {
     }
 
     /// Resets the context for a new block
-    pub fn reset_for_new_block(&mut self, block_index: u32, timestamp: u64) {
+    pub fn reset_for_new_block(
+        &mut self,
+        block_index: u32,
+        block_version: u32,
+        prev_hash: UInt256,
+        timestamp: u64,
+    ) {
         self.block_index = block_index;
         self.view_number = 0;
         self.view_start_time = timestamp;
@@ -235,6 +252,10 @@ impl ConsensusContext {
         } else {
             ConsensusState::Backup
         };
+
+        self.block_version = block_version;
+        self.prev_hash = prev_hash;
+        self.preparation_hash = None;
 
         // Clear all data
         self.proposed_block_hash = None;
@@ -501,6 +522,9 @@ impl ConsensusContext {
             state: ConsensusState::Initial, // Caller should update based on role
             view_start_time: 0,              // Caller should update to current time
             expected_block_time: 0,          // Caller should update
+            block_version: 0,
+            prev_hash: UInt256::zero(),
+            preparation_hash: None,
             proposed_block_hash: state.proposed_block_hash,
             proposed_timestamp: state.proposed_timestamp,
             proposed_tx_hashes: state.proposed_tx_hashes,
@@ -1012,7 +1036,7 @@ mod tests {
         assert!(ctx.has_seen_message(&hash2));
 
         // Reset for new block should clear the cache
-        ctx.reset_for_new_block(101, 2000);
+        ctx.reset_for_new_block(101, 0, UInt256::zero(), 2000);
 
         assert!(!ctx.has_seen_message(&hash1));
         assert!(!ctx.has_seen_message(&hash2));

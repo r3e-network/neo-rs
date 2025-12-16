@@ -737,13 +737,13 @@ impl StateStore {
 #[derive(Clone)]
 pub struct StateRootVerifier {
     settings: Arc<ProtocolSettings>,
-    snapshot_provider: Arc<dyn Fn() -> DataCache + Send + Sync>,
+    snapshot_provider: Arc<dyn Fn(u32) -> DataCache + Send + Sync>,
 }
 
 impl StateRootVerifier {
     pub fn new(
         settings: Arc<ProtocolSettings>,
-        snapshot_provider: Arc<dyn Fn() -> DataCache + Send + Sync>,
+        snapshot_provider: Arc<dyn Fn(u32) -> DataCache + Send + Sync>,
     ) -> Self {
         Self {
             settings,
@@ -752,7 +752,7 @@ impl StateRootVerifier {
     }
 
     fn verify(&self, state_root: &StateRoot) -> bool {
-        let snapshot = (self.snapshot_provider)();
+        let snapshot = (self.snapshot_provider)(state_root.index);
         state_root.verify(&self.settings, &snapshot)
     }
 
@@ -760,7 +760,7 @@ impl StateRootVerifier {
     pub fn from_store(store: Arc<dyn IStore>, settings: Arc<ProtocolSettings>) -> Self {
         Self::new(
             settings,
-            Arc::new(move || {
+            Arc::new(move |_index| {
                 // Fresh read-only view for each verification to avoid mutability concerns.
                 let cache = StoreCache::new_from_store(store.clone(), true);
                 cache.data_cache().clone_cache()
@@ -987,7 +987,7 @@ mod tests {
 
         let verifier = StateRootVerifier::new(
             Arc::new(settings.clone()),
-            Arc::new(move || cache_with_designated_state_validators(7, &validators)),
+            Arc::new(move |index| cache_with_designated_state_validators(index, &validators)),
         );
         let backend = Arc::new(MemoryStateStoreBackend::new());
         let store =
@@ -1085,7 +1085,7 @@ mod tests {
 
         let verifier = StateRootVerifier::new(
             Arc::new(settings.clone()),
-            Arc::new(move || cache_with_designated_state_validators(5, &validators)),
+            Arc::new(move |index| cache_with_designated_state_validators(index, &validators)),
         );
         let backend = Arc::new(MemoryStateStoreBackend::new());
         let store =

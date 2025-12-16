@@ -2,8 +2,12 @@
 
 use crate::p2p_service::BroadcastMessage;
 use crate::runtime::events::RuntimeEvent;
+use neo_core::network::p2p::payloads::{witness::Witness, ExtensiblePayload};
+use neo_core::network::p2p::ProtocolMessage;
+use neo_core::smart_contract::Contract;
 use neo_consensus::{ConsensusEvent, ConsensusService};
 use neo_mempool::Mempool;
+use neo_vm::op_code::OpCode;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, RwLock};
 use tracing::{debug, info, warn};
@@ -14,6 +18,7 @@ pub async fn process_consensus_events(
     event_tx: broadcast::Sender<RuntimeEvent>,
     mempool: Arc<RwLock<Mempool>>,
     consensus: Arc<RwLock<Option<ConsensusService>>>,
+    validators: Vec<neo_consensus::ValidatorInfo>,
     p2p_broadcast_tx: Option<broadcast::Sender<BroadcastMessage>>,
     shutdown_rx: &mut broadcast::Receiver<()>,
 ) {
@@ -25,6 +30,7 @@ pub async fn process_consensus_events(
                     &event_tx,
                     &mempool,
                     &consensus,
+                    &validators,
                     &p2p_broadcast_tx,
                 ).await;
             }
@@ -41,6 +47,7 @@ async fn handle_consensus_event(
     event_tx: &broadcast::Sender<RuntimeEvent>,
     mempool: &Arc<RwLock<Mempool>>,
     consensus: &Arc<RwLock<Option<ConsensusService>>>,
+    validators: &[neo_consensus::ValidatorInfo],
     p2p_broadcast_tx: &Option<broadcast::Sender<BroadcastMessage>>,
 ) {
     match event {
@@ -51,7 +58,7 @@ async fn handle_consensus_event(
             handle_block_committed(block_index, block_hash, &block_data);
         }
         ConsensusEvent::BroadcastMessage(payload) => {
-            handle_broadcast_message(payload, p2p_broadcast_tx);
+            handle_broadcast_message(payload, validators, p2p_broadcast_tx);
         }
         ConsensusEvent::RequestTransactions { block_index, max_count } => {
             handle_request_transactions(block_index, max_count, mempool, consensus).await;
@@ -98,6 +105,7 @@ fn handle_block_committed(
 
 fn handle_broadcast_message(
     payload: neo_consensus::ConsensusPayload,
+    validators: &[neo_consensus::ValidatorInfo],
     p2p_broadcast_tx: &Option<broadcast::Sender<BroadcastMessage>>,
 ) {
     info!(
@@ -111,9 +119,13 @@ fn handle_broadcast_message(
     );
 
     if let Some(ref tx) = p2p_broadcast_tx {
+        let Some(extensible) = consensus_payload_to_extensible(&payload, validators) else {
+            debug!(target: "neo::runtime", "dropping consensus payload: cannot build ExtensiblePayload witness");
+            return;
+        };
+
         let broadcast_msg = BroadcastMessage {
-            message: payload.data.clone(),
-            category: "dBFT".to_string(),
+            message: ProtocolMessage::Extensible(extensible),
         };
         if let Err(e) = tx.send(broadcast_msg) {
             warn!(
@@ -133,6 +145,38 @@ fn handle_broadcast_message(
             "P2P broadcast channel not configured"
         );
     }
+}
+
+fn consensus_payload_to_extensible(
+    payload: &neo_consensus::ConsensusPayload,
+    validators: &[neo_consensus::ValidatorInfo],
+) -> Option<ExtensiblePayload> {
+    let validator = validators.get(payload.validator_index as usize)?;
+    if validator.script_hash != payload.sender {
+        return None;
+    }
+
+    if payload.witness.len() != 64 {
+        return None;
+    }
+
+    // Neo N3 VM uses `PUSHDATA1 len data` for byte pushes (ScriptBuilder.EmitPush).
+    let mut invocation = Vec::with_capacity(payload.witness.len() + 2);
+    invocation.push(OpCode::PUSHDATA1 as u8);
+    invocation.push(payload.witness.len() as u8);
+    invocation.extend_from_slice(&payload.witness);
+
+    let verification = Contract::create_signature_redeem_script(validator.public_key.clone());
+    let witness = Witness::new_with_scripts(invocation, verification);
+
+    let mut extensible = ExtensiblePayload::new();
+    extensible.category = payload.category.clone();
+    extensible.valid_block_start = payload.valid_block_start;
+    extensible.valid_block_end = payload.valid_block_end;
+    extensible.sender = payload.sender;
+    extensible.data = payload.data.clone();
+    extensible.witness = witness;
+    Some(extensible)
 }
 
 async fn handle_request_transactions(

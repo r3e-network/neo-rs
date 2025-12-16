@@ -1,19 +1,26 @@
 //! P2P event handler for the runtime.
 
 use crate::executor::BlockExecutorImpl;
+use crate::p2p_service::BroadcastMessage;
 use crate::runtime::events::RuntimeEvent;
 use crate::state_validator::{StateRootValidator, ValidationResult};
 use neo_chain::{BlockIndexEntry, ChainEvent, ChainState};
 use neo_core::neo_io::{MemoryReader, Serializable};
 use neo_core::network::p2p::payloads::Block;
+use neo_core::network::p2p::payloads::ExtensiblePayload;
+use neo_core::network::p2p::ProtocolMessage;
 use neo_core::persistence::data_cache::DataCache;
 use neo_core::state_service::{StateRoot, StateStore};
+use neo_core::state_service::STATE_SERVICE_CATEGORY;
 use neo_core::IVerifiable;
+use neo_consensus::ConsensusService;
 use neo_p2p::P2PEvent;
 use neo_state::{MemoryWorldState, StateTrieManager, WorldState};
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, RwLock};
 use tracing::{debug, error, info, warn};
+
+use super::state_service::{StateServiceReactor, StateServiceReactorConfig};
 
 /// Processes P2P events from the network layer.
 #[allow(clippy::too_many_arguments)]
@@ -26,9 +33,15 @@ pub async fn process_p2p_events(
     state_store: Option<Arc<StateStore>>,
     state_trie: Arc<RwLock<StateTrieManager>>,
     state_validator: Option<Arc<StateRootValidator>>,
+    consensus: Arc<RwLock<Option<ConsensusService>>>,
+    network_magic: u32,
+    p2p_broadcast_tx: Option<broadcast::Sender<BroadcastMessage>>,
+    state_service_config: Option<StateServiceReactorConfig>,
     block_executor: Arc<BlockExecutorImpl>,
     shutdown_rx: &mut broadcast::Receiver<()>,
 ) {
+    let mut state_service = state_service_config.map(StateServiceReactor::new);
+
     loop {
         tokio::select! {
             Some(event) = rx.recv() => {
@@ -41,6 +54,10 @@ pub async fn process_p2p_events(
                     &state_store,
                     &state_trie,
                     &state_validator,
+                    &consensus,
+                    network_magic,
+                    &p2p_broadcast_tx,
+                    &mut state_service,
                     &block_executor,
                 ).await;
             }
@@ -62,6 +79,10 @@ async fn handle_p2p_event(
     state_store: &Option<Arc<StateStore>>,
     state_trie: &Arc<RwLock<StateTrieManager>>,
     state_validator: &Option<Arc<StateRootValidator>>,
+    consensus: &Arc<RwLock<Option<ConsensusService>>>,
+    network_magic: u32,
+    p2p_broadcast_tx: &Option<broadcast::Sender<BroadcastMessage>>,
+    state_service: &mut Option<StateServiceReactor>,
     block_executor: &Arc<BlockExecutorImpl>,
 ) {
     match event {
@@ -82,6 +103,7 @@ async fn handle_p2p_event(
                 state,
                 state_store,
                 state_trie,
+                state_service,
                 block_executor,
             )
             .await;
@@ -115,17 +137,85 @@ async fn handle_p2p_event(
                 "inventory received from peer"
             );
         }
-        P2PEvent::ConsensusReceived { from, .. } => {
-            info!(
-                target: "neo::runtime",
-                from = %from,
-                "consensus message received from peer"
-            );
+        P2PEvent::ConsensusReceived { data, from } => {
+            handle_consensus_received(consensus, network_magic, p2p_broadcast_tx, &data, &from.to_string()).await;
         }
         P2PEvent::StateRootReceived { data, from } => {
-            handle_state_root_received(&data, &from.to_string(), state_trie, state_validator, state_store).await;
+            handle_state_root_received(
+                &data,
+                &from.to_string(),
+                state_trie,
+                state_validator,
+                state_store,
+                state_service,
+            )
+            .await;
         }
     }
+}
+
+async fn handle_consensus_received(
+    consensus: &Arc<RwLock<Option<ConsensusService>>>,
+    network_magic: u32,
+    p2p_broadcast_tx: &Option<broadcast::Sender<BroadcastMessage>>,
+    data: &[u8],
+    from: &str,
+) {
+    let mut reader = MemoryReader::new(data);
+    let payload = match ExtensiblePayload::deserialize(&mut reader) {
+        Ok(p) => p,
+        Err(e) => {
+            warn!(target: "neo::runtime", from, error = %e, "failed to deserialize consensus extensible payload");
+            return;
+        }
+    };
+
+    if payload.category != "dBFT" {
+        debug!(target: "neo::runtime", from, category = %payload.category, "ignoring non-dBFT extensible payload in ConsensusReceived");
+        return;
+    }
+
+    let witness_sig = extract_signature_from_invocation_script(payload.witness.invocation_script());
+    let consensus_payload = match neo_consensus::ConsensusPayload::from_extensible_parts(
+        network_magic,
+        payload.category.clone(),
+        payload.valid_block_start,
+        payload.valid_block_end,
+        payload.sender,
+        payload.data.clone(),
+        witness_sig.unwrap_or_default(),
+    ) {
+        Ok(p) => p,
+        Err(e) => {
+            warn!(target: "neo::runtime", from, error = %e, "failed to convert consensus extensible payload");
+            return;
+        }
+    };
+
+    // Relay to other peers (best-effort), matching neo-cli's behaviour of gossiping extensible payloads.
+    if let Some(tx) = p2p_broadcast_tx {
+        let _ = tx.send(BroadcastMessage {
+            message: ProtocolMessage::Extensible(payload.clone()),
+        });
+    }
+
+    let mut guard = consensus.write().await;
+    let Some(ref mut service) = *guard else {
+        debug!(target: "neo::runtime", from, "consensus service not enabled; ignoring dBFT message");
+        return;
+    };
+
+    if let Err(e) = service.process_message(consensus_payload) {
+        debug!(target: "neo::runtime", from, error = %e, "consensus message rejected");
+    }
+}
+
+fn extract_signature_from_invocation_script(script: &[u8]) -> Option<Vec<u8>> {
+    // Neo N3 byte pushes use `PUSHDATA1 len data` (ScriptBuilder.EmitPush).
+    if script.len() == 66 && script[0] == 0x0c && script[1] == 64 {
+        return Some(script[2..66].to_vec());
+    }
+    None
 }
 
 fn handle_peer_connected(event_tx: &broadcast::Sender<RuntimeEvent>, address: &str) {
@@ -161,6 +251,7 @@ async fn handle_block_received(
     state: &Arc<RwLock<MemoryWorldState>>,
     state_store: &Option<Arc<StateStore>>,
     state_trie: &Arc<RwLock<StateTrieManager>>,
+    state_service: &mut Option<StateServiceReactor>,
     block_executor: &Arc<BlockExecutorImpl>,
 ) {
     if data.is_empty() {
@@ -248,6 +339,7 @@ async fn handle_block_received(
                             state,
                             state_store,
                             state_trie,
+                            state_service,
                             block_executor,
                         )
                         .await;
@@ -286,6 +378,7 @@ async fn process_new_tip(
     state: &Arc<RwLock<MemoryWorldState>>,
     state_store: &Option<Arc<StateStore>>,
     state_trie: &Arc<RwLock<StateTrieManager>>,
+    state_service: &mut Option<StateServiceReactor>,
     block_executor: &Arc<BlockExecutorImpl>,
 ) {
     info!(
@@ -385,7 +478,7 @@ async fn process_new_tip(
     // Update state store if enabled
     if let Some(ref store) = state_store {
         let state_root = StateRoot::new_current(height, calculated_root);
-        let snapshot = store.get_snapshot();
+        let mut snapshot = store.get_snapshot();
 
         match snapshot.add_local_state_root(&state_root) {
             Ok(()) => {
@@ -395,6 +488,16 @@ async fn process_new_tip(
                     root_hash = %calculated_root,
                     "local state root added to store"
                 );
+                if let Err(e) = snapshot.commit() {
+                    warn!(
+                        target: "neo::runtime",
+                        height,
+                        error = %e,
+                        "failed to commit local state root snapshot"
+                    );
+                } else {
+                    store.update_local_state_root(height);
+                }
             }
             Err(e) => {
                 warn!(
@@ -406,6 +509,10 @@ async fn process_new_tip(
             }
         }
     }
+
+    if let Some(ref mut service) = state_service {
+        service.on_local_state_root(height, calculated_root);
+    }
 }
 
 async fn handle_state_root_received(
@@ -414,10 +521,55 @@ async fn handle_state_root_received(
     state_trie: &Arc<RwLock<StateTrieManager>>,
     state_validator: &Option<Arc<StateRootValidator>>,
     state_store: &Option<Arc<StateStore>>,
+    state_service: &mut Option<StateServiceReactor>,
 ) {
-    let mut reader = MemoryReader::new(data);
-    match StateRoot::deserialize(&mut reader) {
-        Ok(state_root) => {
+    // New behaviour: P2P layer forwards the full ExtensiblePayload bytes.
+    // For backward-compatibility, fall back to interpreting `data` as a raw StateRoot.
+    let maybe_payload = {
+        let mut reader = MemoryReader::new(data);
+        ExtensiblePayload::deserialize(&mut reader).ok()
+    };
+
+    let current_height = state_trie.read().await.current_index();
+
+    let parsed = if let Some(payload) = maybe_payload {
+        if let Some(service) = state_service {
+            service
+                .handle_incoming_payload(payload, current_height, from)
+        } else {
+            // Best-effort parsing without envelope verification when state service is disabled.
+            if payload.category != STATE_SERVICE_CATEGORY && payload.category != "StateRoot" {
+                return;
+            }
+            let bytes = payload.data;
+            let mut reader = MemoryReader::new(&bytes);
+            StateRoot::deserialize(&mut reader).or_else(|_| {
+                if bytes.first().copied() == Some(1) && bytes.len() > 1 {
+                    let mut reader = MemoryReader::new(&bytes[1..]);
+                    StateRoot::deserialize(&mut reader)
+                } else {
+                    Err(neo_core::neo_io::IoError::Format)
+                }
+            }).ok()
+        }
+    } else {
+        // Legacy fallback: treat the received bytes as a raw StateRoot or a prefixed StateRoot.
+        let bytes = data.to_vec();
+        let mut reader = MemoryReader::new(&bytes);
+        StateRoot::deserialize(&mut reader)
+            .or_else(|_| {
+                if bytes.first().copied() == Some(1) && bytes.len() > 1 {
+                    let mut reader = MemoryReader::new(&bytes[1..]);
+                    StateRoot::deserialize(&mut reader)
+                } else {
+                    Err(neo_core::neo_io::IoError::Format)
+                }
+            })
+            .ok()
+    };
+
+    match parsed {
+        Some(state_root) => {
             let index = state_root.index;
             let network_root = state_root.root_hash;
 
@@ -430,7 +582,7 @@ async fn handle_state_root_received(
             );
 
             let local_root = state_trie.read().await.root_hash();
-            let local_index = state_trie.read().await.current_index();
+            let local_index = current_height;
 
             if let Some(ref validator) = state_validator {
                 validate_with_validator(validator, state_root.clone(), local_root, local_index, from).await;
@@ -438,11 +590,10 @@ async fn handle_state_root_received(
                 validate_without_validator(state_root, local_root, local_index, index, network_root, state_store);
             }
         }
-        Err(e) => {
+        None => {
             warn!(
                 target: "neo::runtime",
                 from,
-                error = %e,
                 "failed to deserialize state root"
             );
         }

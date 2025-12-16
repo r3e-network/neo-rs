@@ -10,6 +10,7 @@ use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::wallets::nep6::Nep6Wallet;
 use neo_core::wallets::wallet::Wallet;
 use neo_core::UInt160;
+use neo_core::UInt256;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, RwLock};
 use tracing::{info, warn};
@@ -132,7 +133,7 @@ impl ValidatorService {
             "starting consensus"
         );
 
-        consensus.start(block_index, timestamp)?;
+        consensus.start(block_index, 0, UInt256::zero(), timestamp)?;
         *self.state.write().await = ValidatorState::Active;
 
         Ok(())

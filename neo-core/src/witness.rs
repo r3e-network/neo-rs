@@ -251,27 +251,23 @@ impl Witness {
         Ok(sig_index == required_signatures)
     }
 
-    /// Extracts public key from verification script (matches C# verification script parsing exactly).
+    /// Extracts public key from verification script.
     fn extract_public_key_from_verification_script(&self) -> Result<Vec<u8>, CoreError> {
-        // Real C# Neo N3 implementation: Contract signature script parsing
-        // In C#: Contract.CreateSignatureRedeemScript creates scripts in specific format
-
-        if self.verification_script.len() != 35 {
-            return Err(CoreError::InvalidData {
-                message: "Invalid verification script length".to_string(),
-            });
-        }
-
-        if self.verification_script[0] != 0x0C ||  // OpCode.PUSHDATA1
-           self.verification_script[1] != 0x21 ||  // 33 bytes
-           self.verification_script[34] != 0x41
+        // Neo N3 signature redeem script is produced by ScriptBuilder.EmitPush(pubkey) + SYSCALL(CheckSig):
+        // - PUSHDATA1 (0x0C)
+        // - length 33 (0x21)
+        // - 33-byte compressed pubkey
+        // - SYSCALL (0x41) + 4-byte syscall id
+        if self.verification_script.len() != 40
+            || self.verification_script[0] != 0x0C
+            || self.verification_script[1] != 0x21
+            || self.verification_script[35] != 0x41
         {
             return Err(CoreError::InvalidData {
                 message: "Invalid verification script format".to_string(),
             });
         }
-
-        let public_key = self.verification_script[2..34].to_vec();
+        let public_key = self.verification_script[2..35].to_vec();
 
         if public_key.len() != 33 || (public_key[0] != 0x02 && public_key[0] != 0x03) {
             return Err(CoreError::InvalidData {
@@ -282,24 +278,17 @@ impl Witness {
         Ok(public_key)
     }
 
-    /// Extracts signature from invocation script (matches C# signature extraction exactly).
+    /// Extracts signature from invocation script.
     fn extract_signature_from_invocation_script(&self) -> Result<Vec<u8>, CoreError> {
-        // Real C# Neo N3 implementation: Invocation script signature extraction
-
-        if self.invocation_script.len() != 66 {
-            return Err(CoreError::InvalidData {
-                message: "Invalid invocation script length".to_string(),
-            });
-        }
-
-        if self.invocation_script[0] != 0x0C ||  // OpCode.PUSHDATA1
-           self.invocation_script[1] != 0x40
+        // Neo N3 witnesses push a 64-byte signature using `PUSHDATA1 0x40 <sig>`.
+        if self.invocation_script.len() != 66
+            || self.invocation_script[0] != 0x0C
+            || self.invocation_script[1] != 0x40
         {
             return Err(CoreError::InvalidData {
                 message: "Invalid invocation script format".to_string(),
             });
         }
-
         let signature = self.invocation_script[2..66].to_vec();
 
         if signature.len() != 64 {
