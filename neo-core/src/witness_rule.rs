@@ -7,6 +7,7 @@
 use crate::neo_config::ADDRESS_SIZE;
 use crate::neo_io::serializable::helper::get_var_size;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use crate::{ECCurve, ECPoint};
 use crate::UInt160;
 use hex::{decode as hex_decode, encode as hex_encode};
 use neo_vm::StackItem;
@@ -16,7 +17,8 @@ use serde_json::{json, Value};
 use std::fmt;
 use std::str::FromStr;
 
-const ECPOINT_MAX_BYTES: usize = 64;
+const ECPOINT_COMPRESSED_SIZE: usize = 33;
+const ECPOINT_UNCOMPRESSED_SIZE: usize = 65;
 
 fn strip_0x(value: &str) -> &str {
     value.strip_prefix("0x").unwrap_or(value)
@@ -28,6 +30,31 @@ fn encode_hex(bytes: &[u8]) -> String {
 
 fn decode_hex(value: &str) -> Result<Vec<u8>, String> {
     hex_decode(strip_0x(value)).map_err(|e| format!("Invalid hex string: {e}"))
+}
+
+fn parse_group_bytes(value: &str) -> Result<Vec<u8>, String> {
+    let bytes = decode_hex(value)?;
+    let point = ECPoint::decode(&bytes, ECCurve::secp256r1())
+        .map_err(|e| format!("Invalid ECPoint: {e}"))?;
+    point
+        .encode_point(true)
+        .map_err(|e| format!("Failed to encode ECPoint: {e}"))
+}
+
+fn read_group_bytes(reader: &mut MemoryReader) -> IoResult<Vec<u8>> {
+    let prefix = reader.peek()?;
+    let encoded_len = match prefix {
+        0x02 | 0x03 => ECPOINT_COMPRESSED_SIZE,
+        0x04 => ECPOINT_UNCOMPRESSED_SIZE,
+        _ => {
+            return Err(IoError::invalid_data(
+                "Invalid ECPoint encoding prefix for witness group",
+            ));
+        }
+    };
+    let bytes = reader.read_bytes(encoded_len)?;
+    let point = ECPoint::decode(&bytes, ECCurve::secp256r1()).map_err(IoError::invalid_data)?;
+    point.encode_point(true).map_err(IoError::invalid_data)
 }
 
 /// The action to be taken if the current context meets with the rule (matches C# WitnessRuleAction exactly).
@@ -237,9 +264,7 @@ impl WitnessCondition {
                     + conditions.iter().map(|c| c.size()).sum::<usize>()
             }
             WitnessCondition::ScriptHash { .. } => ADDRESS_SIZE,
-            WitnessCondition::Group { group } | WitnessCondition::CalledByGroup { group } => {
-                get_var_size(group.len() as u64) + group.len()
-            }
+            WitnessCondition::Group { group } | WitnessCondition::CalledByGroup { group } => group.len(),
             WitnessCondition::CalledByEntry => 0,
             WitnessCondition::CalledByContract { .. } => ADDRESS_SIZE,
         };
@@ -297,6 +322,14 @@ impl WitnessCondition {
     }
 
     pub fn from_json(json: &Value) -> Result<Self, String> {
+        Self::from_json_with_depth(json, Self::MAX_NESTING_DEPTH)
+    }
+
+    pub fn from_json_with_depth(json: &Value, max_depth: usize) -> Result<Self, String> {
+        if max_depth == 0 {
+            return Err("Max nesting depth exceeded".to_string());
+        }
+
         let condition_type = json
             .get("type")
             .and_then(Value::as_str)
@@ -314,7 +347,7 @@ impl WitnessCondition {
                 let expression = json
                     .get("expression")
                     .ok_or_else(|| "Not condition missing expression".to_string())?;
-                let inner = WitnessCondition::from_json(expression)?;
+                let inner = WitnessCondition::from_json_with_depth(expression, max_depth - 1)?;
                 Ok(WitnessCondition::Not {
                     condition: Box::new(inner),
                 })
@@ -324,9 +357,17 @@ impl WitnessCondition {
                     .get("expressions")
                     .and_then(Value::as_array)
                     .ok_or_else(|| "And condition missing expressions".to_string())?;
+                if expressions.is_empty() {
+                    return Err(
+                        "Composite witness condition requires at least one expression".to_string(),
+                    );
+                }
+                if expressions.len() > Self::MAX_SUBITEMS {
+                    return Err("Composite witness condition exceeds max subitems".to_string());
+                }
                 let mut conditions = Vec::with_capacity(expressions.len());
                 for expr in expressions {
-                    conditions.push(WitnessCondition::from_json(expr)?);
+                    conditions.push(WitnessCondition::from_json_with_depth(expr, max_depth - 1)?);
                 }
                 Ok(WitnessCondition::And { conditions })
             }
@@ -335,9 +376,17 @@ impl WitnessCondition {
                     .get("expressions")
                     .and_then(Value::as_array)
                     .ok_or_else(|| "Or condition missing expressions".to_string())?;
+                if expressions.is_empty() {
+                    return Err(
+                        "Composite witness condition requires at least one expression".to_string(),
+                    );
+                }
+                if expressions.len() > Self::MAX_SUBITEMS {
+                    return Err("Composite witness condition exceeds max subitems".to_string());
+                }
                 let mut conditions = Vec::with_capacity(expressions.len());
                 for expr in expressions {
-                    conditions.push(WitnessCondition::from_json(expr)?);
+                    conditions.push(WitnessCondition::from_json_with_depth(expr, max_depth - 1)?);
                 }
                 Ok(WitnessCondition::Or { conditions })
             }
@@ -355,7 +404,7 @@ impl WitnessCondition {
                     .get("group")
                     .and_then(Value::as_str)
                     .ok_or_else(|| "Group condition missing group".to_string())?;
-                let group = decode_hex(group_str)?;
+                let group = parse_group_bytes(group_str)?;
                 Ok(WitnessCondition::Group { group })
             }
             "CalledByEntry" => Ok(WitnessCondition::CalledByEntry),
@@ -373,7 +422,7 @@ impl WitnessCondition {
                     .get("group")
                     .and_then(Value::as_str)
                     .ok_or_else(|| "CalledByGroup missing group".to_string())?;
-                let group = decode_hex(group_str)?;
+                let group = parse_group_bytes(group_str)?;
                 Ok(WitnessCondition::CalledByGroup { group })
             }
             other => Err(format!("Unsupported witness condition type: {other}")),
@@ -436,6 +485,10 @@ impl WitnessRule {
     }
 
     pub fn from_json(value: &Value) -> Result<Self, String> {
+        Self::from_json_with_depth(value, WitnessCondition::MAX_NESTING_DEPTH)
+    }
+
+    pub fn from_json_with_depth(value: &Value, max_depth: usize) -> Result<Self, String> {
         let action_str = value
             .get("action")
             .and_then(Value::as_str)
@@ -444,7 +497,7 @@ impl WitnessRule {
         let condition_value = value
             .get("condition")
             .ok_or_else(|| "WitnessRule missing condition".to_string())?;
-        let condition = WitnessCondition::from_json(condition_value)?;
+        let condition = WitnessCondition::from_json_with_depth(condition_value, max_depth)?;
         Ok(Self { action, condition })
     }
 
@@ -558,15 +611,12 @@ impl Serializable for WitnessCondition {
             }
             WitnessCondition::ScriptHash { hash } => Serializable::serialize(hash, writer)?,
             WitnessCondition::Group { group } | WitnessCondition::CalledByGroup { group } => {
-                if group.is_empty() {
-                    return Err(IoError::invalid_data("Group condition requires bytes"));
-                }
-                if group.len() > ECPOINT_MAX_BYTES {
+                if group.len() != ECPOINT_COMPRESSED_SIZE {
                     return Err(IoError::invalid_data(
-                        "Group condition exceeds maximum encoded size",
+                        "Group condition requires a 33-byte compressed ECPoint",
                     ));
                 }
-                writer.write_var_bytes(group)?;
+                writer.write_bytes(group)?;
             }
             WitnessCondition::CalledByEntry => {}
             WitnessCondition::CalledByContract { hash } => {
@@ -577,6 +627,16 @@ impl Serializable for WitnessCondition {
     }
 
     fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
+        WitnessCondition::deserialize_with_depth(reader, WitnessCondition::MAX_NESTING_DEPTH)
+    }
+}
+
+impl WitnessCondition {
+    pub fn deserialize_with_depth(reader: &mut MemoryReader, max_depth: usize) -> IoResult<Self> {
+        if max_depth == 0 {
+            return Err(IoError::invalid_data("Max nesting depth exceeded"));
+        }
+
         let type_byte = reader.read_u8()?;
         let condition_type = WitnessConditionType::from_byte(type_byte)
             .ok_or_else(|| IoError::invalid_data("Invalid witness condition type"))?;
@@ -587,7 +647,7 @@ impl Serializable for WitnessCondition {
                 Ok(WitnessCondition::Boolean { value })
             }
             WitnessConditionType::Not => {
-                let inner = <WitnessCondition as Serializable>::deserialize(reader)?;
+                let inner = WitnessCondition::deserialize_with_depth(reader, max_depth - 1)?;
                 Ok(WitnessCondition::Not {
                     condition: Box::new(inner),
                 })
@@ -601,7 +661,10 @@ impl Serializable for WitnessCondition {
                 }
                 let mut conditions = Vec::with_capacity(count);
                 for _ in 0..count {
-                    conditions.push(<WitnessCondition as Serializable>::deserialize(reader)?);
+                    conditions.push(WitnessCondition::deserialize_with_depth(
+                        reader,
+                        max_depth - 1,
+                    )?);
                 }
                 Ok(WitnessCondition::And { conditions })
             }
@@ -612,7 +675,10 @@ impl Serializable for WitnessCondition {
                 }
                 let mut conditions = Vec::with_capacity(count);
                 for _ in 0..count {
-                    conditions.push(<WitnessCondition as Serializable>::deserialize(reader)?);
+                    conditions.push(WitnessCondition::deserialize_with_depth(
+                        reader,
+                        max_depth - 1,
+                    )?);
                 }
                 Ok(WitnessCondition::Or { conditions })
             }
@@ -621,11 +687,9 @@ impl Serializable for WitnessCondition {
                 Ok(WitnessCondition::ScriptHash { hash })
             }
             WitnessConditionType::Group => {
-                let bytes = reader.read_var_bytes(ECPOINT_MAX_BYTES)?;
-                if bytes.is_empty() {
-                    return Err(IoError::invalid_data(
-                        "Group witness condition missing bytes",
-                    ));
+                let bytes = read_group_bytes(reader)?;
+                if bytes.len() != ECPOINT_COMPRESSED_SIZE {
+                    return Err(IoError::invalid_data("Invalid ECPoint length"));
                 }
                 Ok(WitnessCondition::Group { group: bytes })
             }
@@ -635,11 +699,9 @@ impl Serializable for WitnessCondition {
                 Ok(WitnessCondition::CalledByContract { hash })
             }
             WitnessConditionType::CalledByGroup => {
-                let bytes = reader.read_var_bytes(ECPOINT_MAX_BYTES)?;
-                if bytes.is_empty() {
-                    return Err(IoError::invalid_data(
-                        "CalledByGroup witness condition missing bytes",
-                    ));
+                let bytes = read_group_bytes(reader)?;
+                if bytes.len() != ECPOINT_COMPRESSED_SIZE {
+                    return Err(IoError::invalid_data("Invalid ECPoint length"));
                 }
                 Ok(WitnessCondition::CalledByGroup { group: bytes })
             }
@@ -767,11 +829,10 @@ mod tests {
 
     #[test]
     fn group_condition_json_roundtrip_without_prefix() {
-        let bytes = vec![
-            0x02, 0x7b, 0xcd, 0x7c, 0xee, 0xab, 0x4e, 0x13, 0x44, 0xb4, 0xe5, 0x5c, 0x99, 0x95,
-            0x08, 0x71, 0xcc, 0xb8, 0xaa, 0xde, 0x64, 0xd5, 0x00, 0x93, 0xbe, 0xd8, 0x77, 0x26,
-            0x5b, 0x3f, 0x6f, 0x7a, 0x6b,
-        ];
+        let bytes = parse_group_bytes(
+            "03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c",
+        )
+        .unwrap();
         let condition = WitnessCondition::Group {
             group: bytes.clone(),
         };
