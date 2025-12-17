@@ -214,8 +214,10 @@ impl Metrics {
         let encoder = prometheus::TextEncoder::new();
         let metric_families = self.registry.gather();
         let mut buffer = Vec::new();
-        encoder.encode(&metric_families, &mut buffer).unwrap();
-        String::from_utf8(buffer).unwrap()
+        if encoder.encode(&metric_families, &mut buffer).is_err() {
+            return String::from("# Error encoding metrics");
+        }
+        String::from_utf8(buffer).unwrap_or_else(|_| String::from("# Invalid UTF-8 in metrics"))
     }
 }
 
