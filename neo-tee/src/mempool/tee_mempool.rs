@@ -350,7 +350,9 @@ impl TeeMempool {
 
     /// Hash the current ordering policy
     fn hash_policy(&self) -> [u8; 32] {
-        let policy_json = serde_json::to_string(&self.config.ordering_policy).unwrap_or_default();
+        // Use a deterministic fallback if serialization fails
+        let policy_json = serde_json::to_string(&self.config.ordering_policy)
+            .unwrap_or_else(|_| format!("{:?}", self.config.ordering_policy));
         let mut hasher = Sha256::new();
         hasher.update(policy_json.as_bytes());
         let hash = hasher.finalize();

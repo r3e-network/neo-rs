@@ -312,7 +312,22 @@ impl TeeWallet {
 
         let metadata_path = self.path.join("wallet.json");
         let json = serde_json::to_string_pretty(&metadata)?;
-        std::fs::write(&metadata_path, json)?;
+        // Write with restrictive permissions (owner read/write only)
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            std::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(&metadata_path)
+                .and_then(|mut f| std::io::Write::write_all(&mut f, json.as_bytes()))?;
+        }
+        #[cfg(not(unix))]
+        {
+            std::fs::write(&metadata_path, json)?;
+        }
         Ok(())
     }
 

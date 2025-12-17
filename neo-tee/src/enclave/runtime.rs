@@ -248,7 +248,22 @@ impl TeeEnclave {
             std::fs::read(&id_file).unwrap_or_else(|_| vec![0u8; 32])
         } else {
             let id: [u8; 32] = rand::random();
-            let _ = std::fs::write(&id_file, id);
+            // Write with restrictive permissions (owner read/write only)
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                let _ = std::fs::OpenOptions::new()
+                    .write(true)
+                    .create(true)
+                    .truncate(true)
+                    .mode(0o600)
+                    .open(&id_file)
+                    .and_then(|mut f| std::io::Write::write_all(&mut f, &id));
+            }
+            #[cfg(not(unix))]
+            {
+                let _ = std::fs::write(&id_file, id);
+            }
             id.to_vec()
         };
 
@@ -275,7 +290,22 @@ impl TeeEnclave {
 
     fn save_monotonic_counter(&self, value: u64) -> TeeResult<()> {
         let path = self.counter_file_path();
-        std::fs::write(&path, value.to_le_bytes())?;
+        // Write with restrictive permissions (owner read/write only)
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            std::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(&path)
+                .and_then(|mut f| std::io::Write::write_all(&mut f, &value.to_le_bytes()))?;
+        }
+        #[cfg(not(unix))]
+        {
+            std::fs::write(&path, value.to_le_bytes())?;
+        }
         Ok(())
     }
 }
