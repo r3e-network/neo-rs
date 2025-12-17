@@ -150,6 +150,36 @@ pub struct NodeCli {
     #[arg(long, value_name = "POLICY", default_value = "batched")]
     pub tee_ordering_policy: String,
 
+    /// Enable HSM (Hardware Security Module) mode for wallet signing.
+    #[cfg(feature = "hsm")]
+    #[arg(long)]
+    pub hsm: bool,
+
+    /// HSM device type (ledger, pkcs11, simulation).
+    #[cfg(feature = "hsm")]
+    #[arg(long, value_name = "DEVICE", default_value = "ledger")]
+    pub hsm_device: String,
+
+    /// PKCS#11 library path (required for pkcs11 device type).
+    #[cfg(feature = "hsm")]
+    #[arg(long, value_name = "PATH")]
+    pub hsm_pkcs11_lib: Option<PathBuf>,
+
+    /// HSM slot ID for PKCS#11 or Ledger device index.
+    #[cfg(feature = "hsm")]
+    #[arg(long, value_name = "SLOT", default_value = "0")]
+    pub hsm_slot: u64,
+
+    /// HSM key ID or derivation path (e.g., m/44'/888'/0'/0/0 for Ledger).
+    #[cfg(feature = "hsm")]
+    #[arg(long, value_name = "KEY_ID")]
+    pub hsm_key_id: Option<String>,
+
+    /// Skip interactive PIN prompt (for testing only, not recommended).
+    #[cfg(feature = "hsm")]
+    #[arg(long)]
+    pub hsm_no_pin: bool,
+
     /// Validate configuration and exit without starting the node.
     #[arg(long)]
     pub check_config: bool,

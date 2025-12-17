@@ -1,0 +1,55 @@
+[package]
+name = "neo-hsm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "HSM (Hardware Security Module) support for Neo N3 blockchain"
+
+[features]
+default = ["simulation"]
+# Simulation mode for testing without hardware
+simulation = []
+# Ledger hardware wallet support
+ledger = ["dep:hidapi", "dep:byteorder"]
+# PKCS#11 generic HSM interface
+pkcs11 = ["dep:cryptoki"]
+
+[dependencies]
+# Core dependencies
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+hex = { workspace = true }
+bs58 = { workspace = true }
+zeroize = { version = "1.8", features = ["derive"] }
+parking_lot = { workspace = true }
+async-trait = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+rpassword = "7.3"
+
+# Workspace crypto primitives
+neo-crypto = { workspace = true }
+
+# Random number generation
+rand = { workspace = true }
+
+# Ledger dependencies (optional)
+hidapi = { version = "2.6", optional = true }
+byteorder = { version = "1.5", optional = true }
+
+# PKCS#11 dependencies (optional)
+cryptoki = { version = "0.6", optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+tempfile = { workspace = true }

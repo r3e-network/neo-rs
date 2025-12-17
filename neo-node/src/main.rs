@@ -11,6 +11,8 @@ mod metrics;
 mod startup;
 #[cfg(feature = "tee")]
 mod tee_integration;
+#[cfg(feature = "hsm")]
+mod hsm_integration;
 
 use anyhow::{bail, Context, Result};
 use clap::Parser;

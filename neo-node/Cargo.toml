@@ -23,6 +23,12 @@ default = []
 tee = ["neo-tee"]
 # Enable TEE with SGX hardware
 tee-sgx = ["tee", "neo-tee/sgx-hw"]
+# Enable HSM (Hardware Security Module) support
+hsm = ["dep:neo-hsm", "dep:rpassword"]
+# Enable HSM with Ledger hardware wallet
+hsm-ledger = ["hsm", "neo-hsm/ledger"]
+# Enable HSM with PKCS#11 interface
+hsm-pkcs11 = ["hsm", "neo-hsm/pkcs11"]
 
 [dependencies]
 # Enable full neo-core features for production node (rocksdb, upnp, monitoring)
@@ -39,6 +45,10 @@ neo-rpc = { path = "../neo-rpc", features = ["server"] }
 # TEMPORARILY DISABLED: neo-plugins being refactored
 # neo-plugins = { path = "../neo-plugins" }
 neo-tee = { path = "../neo-tee", optional = true }
+neo-hsm = { path = "../neo-hsm", optional = true }
+
+# PIN input for HSM
+rpassword = { version = "7.3", optional = true }
 
 # Async channels
 futures = { workspace = true }
