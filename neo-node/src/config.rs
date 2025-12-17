@@ -414,78 +414,80 @@ impl NodeConfig {
 
     fn build_rpc_server_entry(&self, settings: &ProtocolSettings) -> Value {
         let mut server = serde_json::Map::new();
-        server.insert("Network".into(), json!(settings.network));
+        server.insert("network".into(), json!(settings.network));
         server.insert(
-            "BindAddress".into(),
+            "bind_address".into(),
             json!(self.rpc.bind_address.as_deref().unwrap_or("127.0.0.1")),
         );
-        server.insert("Port".into(), json!(self.rpc.port.unwrap_or(10332)));
+        server.insert("port".into(), json!(self.rpc.port.unwrap_or(10332)));
         server.insert(
-            "EnableCors".into(),
+            "enable_cors".into(),
             json!(self.rpc.cors_enabled.unwrap_or(true)),
         );
         if !self.rpc.allow_origins.is_empty() {
-            server.insert("AllowOrigins".into(), json!(self.rpc.allow_origins));
+            server.insert("allow_origins".into(), json!(self.rpc.allow_origins));
         }
         server.insert(
-            "MaxConcurrentConnections".into(),
+            "max_concurrent_connections".into(),
             json!(self.rpc.max_connections.unwrap_or(40)),
         );
         if let Some(body_size) = self.rpc.max_request_body_size {
-            server.insert("MaxRequestBodySize".into(), json!(body_size));
+            server.insert("max_request_body_size".into(), json!(body_size));
         }
         if let Some(max_gas) = self.rpc.max_gas_invoke {
-            server.insert("MaxGasInvoke".into(), json!(max_gas));
+            let rounded = max_gas.round().max(0.0) as i64;
+            server.insert("max_gas_invoke".into(), json!(rounded));
         }
         if let Some(max_fee) = self.rpc.max_fee {
-            server.insert("MaxFee".into(), json!(max_fee));
+            let rounded = max_fee.round().max(0.0) as i64;
+            server.insert("max_fee".into(), json!(rounded));
         }
         if let Some(max_iter) = self.rpc.max_iterator_result_items {
-            server.insert("MaxIteratorResultItems".into(), json!(max_iter));
+            server.insert("max_iterator_result_items".into(), json!(max_iter));
         }
         if let Some(max_stack) = self.rpc.max_stack_size {
-            server.insert("MaxStackSize".into(), json!(max_stack));
+            server.insert("max_stack_size".into(), json!(max_stack));
         }
         server.insert(
-            "KeepAliveTimeout".into(),
+            "keep_alive_timeout".into(),
             json!(self.rpc.keep_alive_timeout.unwrap_or(60)),
         );
         server.insert(
-            "RequestHeadersTimeout".into(),
+            "request_headers_timeout".into(),
             json!(self.rpc.request_headers_timeout.unwrap_or(15)),
         );
         if let Some(session_enabled) = self.rpc.session_enabled {
-            server.insert("SessionEnabled".into(), json!(session_enabled));
+            server.insert("session_enabled".into(), json!(session_enabled));
         }
         if let Some(expiration) = self.rpc.session_expiration_time {
-            server.insert("SessionExpirationTime".into(), json!(expiration));
+            server.insert("session_expiration_time".into(), json!(expiration));
         }
         if let Some(page_size) = self.rpc.find_storage_page_size {
-            server.insert("FindStoragePageSize".into(), json!(page_size));
+            server.insert("find_storage_page_size".into(), json!(page_size));
         }
         if self.rpc.auth_enabled {
             if let Some(user) = &self.rpc.rpc_user {
-                server.insert("RpcUser".into(), json!(user));
+                server.insert("rpc_user".into(), json!(user));
             }
             if let Some(pass) = &self.rpc.rpc_pass {
-                server.insert("RpcPass".into(), json!(pass));
+                server.insert("rpc_pass".into(), json!(pass));
             }
         }
         if let Some(cert) = &self.rpc.tls_cert_file {
-            server.insert("SslCert".into(), json!(cert));
+            server.insert("ssl_cert".into(), json!(cert));
         }
         if let Some(cert_password) = &self.rpc.tls_cert_password {
-            server.insert("SslCertPassword".into(), json!(cert_password));
+            server.insert("ssl_cert_password".into(), json!(cert_password));
         }
         if !self.rpc.trusted_authorities.is_empty() {
             server.insert(
-                "TrustedAuthorities".into(),
+                "trusted_authorities".into(),
                 json!(self.rpc.trusted_authorities),
             );
         }
         if !self.rpc.disabled_methods.is_empty() {
             server.insert(
-                "DisabledMethods".into(),
+                "disabled_methods".into(),
                 json!(self.rpc.disabled_methods.clone()),
             );
         }

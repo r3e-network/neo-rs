@@ -62,7 +62,7 @@ cipher = "0.4"
 zeroize = { version = "1.7", features = ["zeroize_derive"] }
 
 # Actor framework removed (Phase 2 refactoring)
-# ractor.workspace = true - moved to neo-node
+ractor = { workspace = true, optional = true }
 
 # Internal dependencies
 chrono.workspace = true
@@ -85,6 +85,7 @@ unicode-segmentation = "1.10"
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
 tempfile = "3.5"
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
 # For cryptography tests that need direct secp256k1 access
 secp256k1 = { version = "0.28", features = ["recovery"] }
 
@@ -98,4 +99,5 @@ upnp = ["dep:reqwest", "dep:quick-xml"]
 monitoring = ["dep:prometheus", "dep:sysinfo", "dep:reqwest"]
 # All optional features for full functionality
 full = ["rocksdb", "upnp", "monitoring"]
+runtime = ["dep:ractor"]
 performance-tests = []

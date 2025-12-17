@@ -377,7 +377,11 @@ impl Blockchain {
         }
     }
 
-    pub(super) async fn handle_preverify_completed(&self, task: PreverifyCompleted, ctx: &ActorContext) {
+    pub(super) async fn handle_preverify_completed(
+        &self,
+        task: PreverifyCompleted,
+        ctx: &ActorContext,
+    ) {
         let Some(context) = &self.system_context else {
             tracing::debug!(
                 target: "neo",

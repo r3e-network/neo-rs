@@ -24,16 +24,15 @@ use super::{
     peer::PeerCommand,
     task_manager::TaskManagerCommand,
 };
+use crate::akka::{Actor, ActorContext, ActorResult, Cancelable, Props};
 use crate::cryptography::BloomFilter;
 use crate::ledger::blockchain::BlockchainCommand;
 use crate::network::error::NetworkError;
 use crate::network::p2p::messages::{NetworkMessage, ProtocolMessage};
 use crate::network::MessageCommand;
 use crate::{neo_system::NeoSystemContext, protocol_settings::ProtocolSettings, UInt256};
-use crate::akka::{Actor, ActorContext, ActorResult, Cancelable, Props};
 use async_trait::async_trait;
 use neo_io_crate::HashSetCache;
-use std::any::type_name_of_val;
 use std::collections::{HashSet, VecDeque};
 use std::net::SocketAddr;
 use std::sync::{
@@ -893,7 +892,11 @@ impl Actor for RemoteNode {
             },
             Err(other) => {
                 // Drop unknown message types quietly to avoid log spam and mismatched routing.
-                trace!(target: "neo", message_type = %type_name_of_val(other.as_ref()), "unknown message routed to remote node actor");
+                trace!(
+                    target: "neo",
+                    message_type_id = ?other.as_ref().type_id(),
+                    "unknown message routed to remote node actor"
+                );
                 Ok(())
             }
         }
@@ -1005,7 +1008,7 @@ mod tests {
     impl IMessageReceivedHandler for TestHandler {
         fn remote_node_message_received_handler(
             &self,
-            _system: &crate::neo_system::NeoSystem,
+            _system: &dyn std::any::Any,
             _message: &Message,
         ) -> bool {
             self.invocations.fetch_add(1, Ordering::Relaxed);

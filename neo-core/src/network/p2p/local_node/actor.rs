@@ -2,9 +2,9 @@
 // actor.rs - LocalNodeActor implementation
 //
 
-use super::*;
 use super::helpers::parse_seed_entry;
 use super::state::LocalNode;
+use super::*;
 
 /// Actor responsible for orchestrating peer management, mirroring C# `LocalNode` behaviour.
 pub struct LocalNodeActor {
@@ -261,7 +261,11 @@ impl LocalNodeActor {
         Ok(())
     }
 
-    pub(super) async fn handle_terminated(&mut self, actor: ActorRef, ctx: &mut ActorContext) -> ActorResult {
+    pub(super) async fn handle_terminated(
+        &mut self,
+        actor: ActorRef,
+        ctx: &mut ActorContext,
+    ) -> ActorResult {
         if let Err(error) = ctx.unwatch(&actor) {
             trace!(target: "neo", error = %error, "failed to unwatch remote node");
         }
@@ -378,7 +382,11 @@ impl LocalNodeActor {
         inbound: bool,
     ) -> ActorResult {
         let config = self.peer.config().clone();
-        let connection = Arc::new(Mutex::new(config.build_connection(stream, remote, inbound)));
+        let connection = Arc::new(Mutex::new(
+            crate::network::p2p::PeerConnection::from_channels_config(
+                stream, remote, inbound, &config,
+            ),
+        ));
         let actor_name = format!("remote-{:016x}", rand::random::<u64>());
 
         let version_payload = self.state.version_payload();

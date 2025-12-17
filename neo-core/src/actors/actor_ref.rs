@@ -71,56 +71,44 @@ impl ActorRef {
     {
         let envelope = Envelope::new(message, sender);
         match &self.channel {
-            ActorChannel::Legacy(mailbox) => {
-                mailbox
-                    .send(MailboxCommand::Message(MailboxMessage::User(envelope)))
-                    .map_err(|e| AkkaError::send(format!("{}", e)))
-            }
-            ActorChannel::Ractor(ractor_ref) => {
-                ractor_ref
-                    .cast(BridgeMessage::Mailbox(MailboxMessage::User(envelope)))
-                    .map_err(|e| AkkaError::send(format!("{}", e)))
-            }
+            ActorChannel::Legacy(mailbox) => mailbox
+                .send(MailboxCommand::Message(MailboxMessage::User(envelope)))
+                .map_err(|e| AkkaError::send(format!("{}", e))),
+            ActorChannel::Ractor(ractor_ref) => ractor_ref
+                .cast(BridgeMessage::Mailbox(MailboxMessage::User(envelope)))
+                .map_err(|e| AkkaError::send(format!("{}", e))),
         }
     }
 
     /// Registers `watcher` to receive a [`Terminated`](super::Terminated) message when this actor stops.
     pub fn watch(&self, watcher: ActorRef) -> AkkaResult<()> {
         match &self.channel {
-            ActorChannel::Legacy(mailbox) => {
-                mailbox
-                    .send(MailboxCommand::Message(MailboxMessage::System(
-                        SystemMessage::Watch(watcher),
-                    )))
-                    .map_err(|e| AkkaError::send(format!("{}", e)))
-            }
-            ActorChannel::Ractor(ractor_ref) => {
-                ractor_ref
-                    .cast(BridgeMessage::Mailbox(MailboxMessage::System(
-                        SystemMessage::Watch(watcher),
-                    )))
-                    .map_err(|e| AkkaError::send(format!("{}", e)))
-            }
+            ActorChannel::Legacy(mailbox) => mailbox
+                .send(MailboxCommand::Message(MailboxMessage::System(
+                    SystemMessage::Watch(watcher),
+                )))
+                .map_err(|e| AkkaError::send(format!("{}", e))),
+            ActorChannel::Ractor(ractor_ref) => ractor_ref
+                .cast(BridgeMessage::Mailbox(MailboxMessage::System(
+                    SystemMessage::Watch(watcher),
+                )))
+                .map_err(|e| AkkaError::send(format!("{}", e))),
         }
     }
 
     /// Removes `watcher` from the current actor's watch list.
     pub fn unwatch(&self, watcher: ActorRef) -> AkkaResult<()> {
         match &self.channel {
-            ActorChannel::Legacy(mailbox) => {
-                mailbox
-                    .send(MailboxCommand::Message(MailboxMessage::System(
-                        SystemMessage::Unwatch(watcher),
-                    )))
-                    .map_err(|e| AkkaError::send(format!("{}", e)))
-            }
-            ActorChannel::Ractor(ractor_ref) => {
-                ractor_ref
-                    .cast(BridgeMessage::Mailbox(MailboxMessage::System(
-                        SystemMessage::Unwatch(watcher),
-                    )))
-                    .map_err(|e| AkkaError::send(format!("{}", e)))
-            }
+            ActorChannel::Legacy(mailbox) => mailbox
+                .send(MailboxCommand::Message(MailboxMessage::System(
+                    SystemMessage::Unwatch(watcher),
+                )))
+                .map_err(|e| AkkaError::send(format!("{}", e))),
+            ActorChannel::Ractor(ractor_ref) => ractor_ref
+                .cast(BridgeMessage::Mailbox(MailboxMessage::System(
+                    SystemMessage::Unwatch(watcher),
+                )))
+                .map_err(|e| AkkaError::send(format!("{}", e))),
         }
     }
 
@@ -164,20 +152,16 @@ impl ActorRef {
     /// Commands the actor to stop. This is asynchronous and returns immediately.
     pub fn stop(&self) -> AkkaResult<()> {
         match &self.channel {
-            ActorChannel::Legacy(mailbox) => {
-                mailbox
-                    .send(MailboxCommand::Message(MailboxMessage::System(
-                        SystemMessage::Stop,
-                    )))
-                    .map_err(|e| AkkaError::send(format!("{}", e)))
-            }
-            ActorChannel::Ractor(ractor_ref) => {
-                ractor_ref
-                    .cast(BridgeMessage::Mailbox(MailboxMessage::System(
-                        SystemMessage::Stop,
-                    )))
-                    .map_err(|e| AkkaError::send(format!("{}", e)))
-            }
+            ActorChannel::Legacy(mailbox) => mailbox
+                .send(MailboxCommand::Message(MailboxMessage::System(
+                    SystemMessage::Stop,
+                )))
+                .map_err(|e| AkkaError::send(format!("{}", e))),
+            ActorChannel::Ractor(ractor_ref) => ractor_ref
+                .cast(BridgeMessage::Mailbox(MailboxMessage::System(
+                    SystemMessage::Stop,
+                )))
+                .map_err(|e| AkkaError::send(format!("{}", e))),
         }
     }
 

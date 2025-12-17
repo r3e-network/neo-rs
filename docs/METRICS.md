@@ -10,11 +10,8 @@ Enable it with `--health-port <port>` (or `NEO_HEALTH_PORT=<port>`).
 
 ## Current Status (v0.7.x)
 
-The health payload is intentionally **simplified during refactoring**:
-
-- `block_height`, `header_height`, `peer_count`, `mempool_size` are currently placeholders.
-- `/metrics` is implemented, but some gauges will remain at `0` until the runtime wires
-  periodic calls to `neo_node::metrics::update_metrics`.
+`neo-node` periodically updates health and Prometheus gauges from the live `NeoSystem`
+(block/header height, peers, mempool size, state root ingest stats, and timeout counters).
 
 Code references:
 
@@ -54,11 +51,6 @@ All metrics are registered via the `prometheus` crate and exposed at `GET /metri
 - `neo_state_roots_accepted`: Counter of accepted state roots since process start.
 - `neo_state_roots_rejected`: Counter of rejected state roots since process start.
 
-### RPC (Refactor Stub)
-
-- `neo_rpc_requests_total`: Total RPC requests (currently a placeholder counter).
-- `neo_rpc_errors_total`: Total RPC errors (currently a placeholder counter).
-
 ## Quick Checks
 
 ```bash
@@ -69,4 +61,3 @@ curl -s http://127.0.0.1:3030/readyz  | jq .
 # prometheus scrape
 curl -s http://127.0.0.1:3030/metrics | head
 ```
-

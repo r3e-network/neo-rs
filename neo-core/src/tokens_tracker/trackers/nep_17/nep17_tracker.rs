@@ -2,11 +2,11 @@
 //!
 //! Tracks NEP-17 (fungible token) balances and transfer history.
 
-use super::nep17_balance_key::Nep17BalanceKey;
-use super::nep17_transfer_key::Nep17TransferKey;
 use super::super::token_balance::TokenBalance;
 use super::super::token_transfer::TokenTransfer;
 use super::super::tracker_base::{Tracker, TrackerBase, TransferRecord};
+use super::nep17_balance_key::Nep17BalanceKey;
+use super::nep17_transfer_key::Nep17TransferKey;
 use crate::extensions::log_level::LogLevel;
 use crate::neo_ledger::{ApplicationExecuted, Block};
 use crate::neo_vm::{CallFlags, OpCode, ScriptBuilder, VMState};

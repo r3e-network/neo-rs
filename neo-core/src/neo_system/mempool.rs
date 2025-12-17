@@ -28,11 +28,9 @@ pub(crate) fn attach_mempool_callbacks(
         for handler in handlers {
             handler.memory_pool_transaction_added_handler(sender, tx);
         }
-        context_added.broadcast_plugin_event(
-            crate::events::PluginEvent::MempoolTransactionAdded {
-                tx_hash: tx.hash().to_string(),
-            },
-        );
+        context_added.broadcast_plugin_event(crate::events::PluginEvent::MempoolTransactionAdded {
+            tx_hash: tx.hash().to_string(),
+        });
     }));
 
     let context_removed = context.clone();

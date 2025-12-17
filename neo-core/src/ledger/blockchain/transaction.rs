@@ -5,7 +5,11 @@
 use super::*;
 
 impl Blockchain {
-    pub(super) fn transaction_exists_on_chain(&self, tx: &Transaction, snapshot: &StoreCache) -> bool {
+    pub(super) fn transaction_exists_on_chain(
+        &self,
+        tx: &Transaction,
+        snapshot: &StoreCache,
+    ) -> bool {
         LedgerContract::new()
             .contains_transaction(snapshot, &tx.hash())
             .unwrap_or(false)

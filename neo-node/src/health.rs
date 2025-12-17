@@ -26,26 +26,6 @@ pub struct HealthState {
     pub is_syncing: bool,
 }
 
-/// Serves the health endpoint with real-time node state.
-///
-/// Provides health checks including block height, peer count, mempool size,
-/// and storage status for monitoring and orchestration systems.
-pub async fn serve_health(
-    port: u16,
-    max_header_lag: u32,
-    storage_path: Option<String>,
-    rpc_enabled: bool,
-) -> anyhow::Result<()> {
-    serve_health_with_state(
-        port,
-        max_header_lag,
-        storage_path,
-        rpc_enabled,
-        Arc::new(RwLock::new(HealthState::default())),
-    )
-    .await
-}
-
 /// Serves the health endpoint with shared state from the runtime.
 pub async fn serve_health_with_state(
     port: u16,

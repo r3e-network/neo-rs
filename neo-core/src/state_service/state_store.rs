@@ -520,6 +520,11 @@ impl StateStore {
     pub fn on_new_state_root(&self, state_root: StateRoot) -> bool {
         // Must have witness
         if state_root.witness.is_none() {
+            tracing::debug!(
+                target: "state",
+                index = state_root.index,
+                "rejecting state root: missing witness"
+            );
             metrics::record_ingest_result(false);
             return false;
         }
@@ -527,6 +532,12 @@ impl StateStore {
         // Check if already validated
         if let Some(validated_index) = self.validated_root_index() {
             if state_root.index <= validated_index {
+                tracing::debug!(
+                    target: "state",
+                    index = state_root.index,
+                    validated_index,
+                    "rejecting state root: index not ahead of validated root"
+                );
                 metrics::record_ingest_result(false);
                 return false;
             }
@@ -535,6 +546,11 @@ impl StateStore {
         let local_index = match self.local_root_index() {
             Some(idx) => idx,
             None => {
+                tracing::debug!(
+                    target: "state",
+                    index = state_root.index,
+                    "rejecting state root: missing local root index"
+                );
                 metrics::record_ingest_result(false);
                 return false;
             }
@@ -543,6 +559,12 @@ impl StateStore {
         // Cache future state roots
         if local_index < state_root.index && state_root.index < local_index + MAX_CACHE_COUNT as u32
         {
+            tracing::debug!(
+                target: "state",
+                index = state_root.index,
+                local_index,
+                "caching future state root"
+            );
             self.cache.write().insert(state_root.index, state_root);
             return true;
         }
@@ -551,6 +573,12 @@ impl StateStore {
         let snapshot = self.get_snapshot();
         let local_root = match snapshot.get_state_root(state_root.index) {
             None => {
+                tracing::debug!(
+                    target: "state",
+                    index = state_root.index,
+                    local_index,
+                    "rejecting state root: local root not found"
+                );
                 metrics::record_ingest_result(false);
                 return false;
             }
@@ -568,18 +596,35 @@ impl StateStore {
             return false;
         };
         if !verifier.verify(&state_root) {
+            tracing::debug!(
+                target: "state",
+                index = state_root.index,
+                "rejecting state root: witness verification failed"
+            );
             metrics::record_ingest_result(false);
             return false;
         }
 
         // Already validated
         if local_root.witness.is_some() {
+            tracing::debug!(
+                target: "state",
+                index = state_root.index,
+                "rejecting state root: local root already has witness"
+            );
             metrics::record_ingest_result(false);
             return false;
         }
 
         // Root hash must match
         if local_root.root_hash != state_root.root_hash {
+            tracing::debug!(
+                target: "state",
+                index = state_root.index,
+                local_root_hash = %local_root.root_hash,
+                payload_root_hash = %state_root.root_hash,
+                "rejecting state root: root hash mismatch"
+            );
             metrics::record_ingest_result(false);
             return false;
         }
@@ -588,6 +633,11 @@ impl StateStore {
         let mut tx = self.begin_transaction();
         let mut writer = BinaryWriter::new();
         if state_root.serialize(&mut writer).is_err() {
+            tracing::debug!(
+                target: "state",
+                index = state_root.index,
+                "rejecting state root: serialization failed"
+            );
             metrics::record_ingest_result(false);
             return false;
         }

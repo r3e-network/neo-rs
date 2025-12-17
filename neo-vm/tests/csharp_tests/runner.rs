@@ -4,8 +4,11 @@
 //! This module contains the JsonTestRunner implementation that executes
 //! C# Neo VM JSON test files and verifies the results match expected behavior.
 
+use neo_vm::stack_item::StackItem;
 use neo_vm::{ExecutionEngine, Script};
+use num_bigint::BigInt;
 use serde_json;
+use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
 
@@ -520,9 +523,55 @@ impl JsonTestRunner {
     /// Verify invocation stack matches expected state (matches C# verification)
     fn verify_invocation_stack(
         &self,
-        _expected: &[VMUTExecutionContextState],
+        expected: &[VMUTExecutionContextState],
     ) -> Result<(), Box<dyn std::error::Error>> {
-        println!("    ✅ Invocation stack verification passed (placeholder)");
+        let actual = self.engine.invocation_stack();
+        if actual.len() != expected.len() {
+            return Err(format!(
+                "Invocation stack length mismatch: expected {}, got {}",
+                expected.len(),
+                actual.len()
+            )
+            .into());
+        }
+
+        for (depth, expected_ctx) in expected.iter().enumerate() {
+            let actual_ctx = &actual[actual.len().saturating_sub(depth + 1)];
+
+            if let Some(expected_ip) = expected_ctx.instruction_pointer {
+                let actual_ip: u32 = actual_ctx
+                    .instruction_pointer()
+                    .try_into()
+                    .unwrap_or(u32::MAX);
+                if actual_ip != expected_ip {
+                    return Err(format!(
+                        "Invocation stack[{}] instruction pointer mismatch: expected {}, got {}",
+                        depth, expected_ip, actual_ip
+                    )
+                    .into());
+                }
+            }
+
+            if let Some(expected_next) = &expected_ctx.next_instruction {
+                let actual_next = match actual_ctx.current_instruction() {
+                    Ok(instr) => format!("{:?}", instr.opcode()),
+                    Err(_) => "<INVALID>".to_string(),
+                };
+                if actual_next != *expected_next {
+                    return Err(format!(
+                        "Invocation stack[{}] next instruction mismatch: expected {}, got {}",
+                        depth, expected_next, actual_next
+                    )
+                    .into());
+                }
+            }
+
+            if let Some(expected_stack) = &expected_ctx.evaluation_stack {
+                verify_stack_against_evaluation(expected_stack, actual_ctx.evaluation_stack())
+                    .map_err(|e| format!("Invocation stack[{}] evaluation stack: {}", depth, e))?;
+            }
+        }
+
         Ok(())
     }
 
@@ -531,10 +580,289 @@ impl JsonTestRunner {
         &self,
         expected: &[VMUTStackItem],
     ) -> Result<(), Box<dyn std::error::Error>> {
-        println!(
-            "    ✅ Result stack verification passed (placeholder - {} expected items)",
-            expected.len()
-        );
+        verify_stack_against_evaluation(expected, self.engine.result_stack())
+            .map_err(|e| format!("Result stack: {}", e))?;
         Ok(())
     }
 }
+
+fn verify_stack_against_evaluation(
+    expected: &[VMUTStackItem],
+    actual: &neo_vm::evaluation_stack::EvaluationStack,
+) -> Result<(), String> {
+    if actual.len() != expected.len() {
+        return Err(format!(
+            "length mismatch: expected {}, got {}",
+            expected.len(),
+            actual.len()
+        ));
+    }
+
+    for (idx, expected_item) in expected.iter().enumerate() {
+        let actual_item = actual
+            .peek(idx)
+            .map_err(|e| format!("peek({idx}) failed: {e}"))?;
+        verify_stack_item(expected_item, actual_item)
+            .map_err(|e| format!("item[{idx}] mismatch: {e}"))?;
+    }
+    Ok(())
+}
+
+fn verify_stack_item(expected: &VMUTStackItem, actual: &StackItem) -> Result<(), String> {
+    let expected_type = expected.item_type.to_ascii_lowercase();
+    match expected_type.as_str() {
+        "null" => match actual {
+            StackItem::Null => Ok(()),
+            _ => Err(format!("expected null, got {:?}", actual.stack_item_type())),
+        },
+        "boolean" => match actual {
+            StackItem::Boolean(actual_bool) => {
+                let expected_bool = expected
+                    .value
+                    .as_ref()
+                    .and_then(|v| v.as_bool())
+                    .ok_or_else(|| "expected boolean value".to_string())?;
+                if *actual_bool == expected_bool {
+                    Ok(())
+                } else {
+                    Err(format!("expected {}, got {}", expected_bool, actual_bool))
+                }
+            }
+            _ => Err(format!(
+                "expected boolean, got {:?}",
+                actual.stack_item_type()
+            )),
+        },
+        "integer" => match actual {
+            StackItem::Integer(actual_int) => {
+                let expected_int = parse_bigint(expected.value.as_ref())
+                    .ok_or_else(|| "expected integer value".to_string())?;
+                if *actual_int == expected_int {
+                    Ok(())
+                } else {
+                    Err(format!("expected {}, got {}", expected_int, actual_int))
+                }
+            }
+            _ => Err(format!(
+                "expected integer, got {:?}",
+                actual.stack_item_type()
+            )),
+        },
+        "bytestring" => match actual {
+            StackItem::ByteString(bytes) => {
+                let expected_hex = expected
+                    .value
+                    .as_ref()
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "expected bytestring hex value".to_string())?;
+                let actual_hex = bytes_to_hex_prefixed(bytes);
+                if hex_eq(expected_hex, &actual_hex) {
+                    Ok(())
+                } else {
+                    Err(format!("expected {}, got {}", expected_hex, actual_hex))
+                }
+            }
+            _ => Err(format!(
+                "expected ByteString, got {:?}",
+                actual.stack_item_type()
+            )),
+        },
+        "buffer" => match actual {
+            StackItem::Buffer(buffer) => {
+                let expected_hex = expected
+                    .value
+                    .as_ref()
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "expected buffer hex value".to_string())?;
+                let actual_hex = bytes_to_hex_prefixed(buffer.data());
+                if hex_eq(expected_hex, &actual_hex) {
+                    Ok(())
+                } else {
+                    Err(format!("expected {}, got {}", expected_hex, actual_hex))
+                }
+            }
+            _ => Err(format!(
+                "expected Buffer, got {:?}",
+                actual.stack_item_type()
+            )),
+        },
+        "pointer" => match actual {
+            StackItem::Pointer(pointer) => {
+                let expected_ptr = parse_bigint(expected.value.as_ref())
+                    .ok_or_else(|| "expected pointer value".to_string())?;
+                let actual_ptr = BigInt::from(pointer.position());
+                if actual_ptr == expected_ptr {
+                    Ok(())
+                } else {
+                    Err(format!("expected {}, got {}", expected_ptr, actual_ptr))
+                }
+            }
+            _ => Err(format!(
+                "expected Pointer, got {:?}",
+                actual.stack_item_type()
+            )),
+        },
+        "array" => match actual {
+            StackItem::Array(array) => {
+                let expected_items = expected
+                    .value
+                    .as_ref()
+                    .and_then(|v| v.as_array())
+                    .ok_or_else(|| "expected array value".to_string())?;
+                if array.len() != expected_items.len() {
+                    return Err(format!(
+                        "array length mismatch: expected {}, got {}",
+                        expected_items.len(),
+                        array.len()
+                    ));
+                }
+                for (idx, expected_child) in expected_items.iter().enumerate() {
+                    let expected_child: VMUTStackItem =
+                        serde_json::from_value(expected_child.clone())
+                            .map_err(|e| format!("invalid array element[{idx}] json: {e}"))?;
+                    let actual_child = array
+                        .get(idx)
+                        .ok_or_else(|| format!("missing array element[{idx}]"))?;
+                    verify_stack_item(&expected_child, actual_child)
+                        .map_err(|e| format!("array element[{idx}]: {e}"))?;
+                }
+                Ok(())
+            }
+            _ => Err(format!(
+                "expected Array, got {:?}",
+                actual.stack_item_type()
+            )),
+        },
+        "struct" => match actual {
+            StackItem::Struct(structure) => {
+                let expected_items = expected
+                    .value
+                    .as_ref()
+                    .and_then(|v| v.as_array())
+                    .ok_or_else(|| "expected struct value".to_string())?;
+                if structure.len() != expected_items.len() {
+                    return Err(format!(
+                        "struct length mismatch: expected {}, got {}",
+                        expected_items.len(),
+                        structure.len()
+                    ));
+                }
+                for (idx, expected_child) in expected_items.iter().enumerate() {
+                    let expected_child: VMUTStackItem =
+                        serde_json::from_value(expected_child.clone())
+                            .map_err(|e| format!("invalid struct element[{idx}] json: {e}"))?;
+                    let actual_child = structure
+                        .get(idx)
+                        .map_err(|e| format!("missing struct element[{idx}]: {e}"))?;
+                    verify_stack_item(&expected_child, actual_child)
+                        .map_err(|e| format!("struct element[{idx}]: {e}"))?;
+                }
+                Ok(())
+            }
+            _ => Err(format!(
+                "expected Struct, got {:?}",
+                actual.stack_item_type()
+            )),
+        },
+        "map" => match actual {
+            StackItem::Map(map) => {
+                let expected_obj = expected
+                    .value
+                    .as_ref()
+                    .and_then(|v| v.as_object())
+                    .ok_or_else(|| "expected map value".to_string())?;
+
+                if map.items().len() != expected_obj.len() {
+                    return Err(format!(
+                        "map size mismatch: expected {}, got {}",
+                        expected_obj.len(),
+                        map.items().len()
+                    ));
+                }
+
+                let mut actual_by_key: HashMap<String, &StackItem> = HashMap::new();
+                for (key, value) in map.items().iter() {
+                    let key_str = map_key_string(key)?;
+                    actual_by_key.insert(key_str, value);
+                }
+
+                for (expected_key, expected_value) in expected_obj.iter() {
+                    let expected_child: VMUTStackItem =
+                        serde_json::from_value(expected_value.clone()).map_err(|e| {
+                            format!("invalid map value for key {expected_key}: {e}")
+                        })?;
+                    let actual_value = actual_by_key
+                        .get(expected_key)
+                        .ok_or_else(|| format!("missing map key {}", expected_key))?;
+                    verify_stack_item(&expected_child, actual_value)
+                        .map_err(|e| format!("map key {expected_key}: {e}"))?;
+                }
+
+                Ok(())
+            }
+            _ => Err(format!("expected Map, got {:?}", actual.stack_item_type())),
+        },
+        "interop" => match actual {
+            StackItem::InteropInterface(_) => {
+                if expected.value.is_none() {
+                    return Ok(());
+                }
+                let expected_value = expected
+                    .value
+                    .as_ref()
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Object");
+                if expected_value == "Object" {
+                    Ok(())
+                } else {
+                    Err(format!("expected interop {}, got Object", expected_value))
+                }
+            }
+            _ => Err(format!(
+                "expected InteropInterface, got {:?}",
+                actual.stack_item_type()
+            )),
+        },
+        other => Err(format!("unsupported expected stack item type: {}", other)),
+    }
+}
+
+fn parse_bigint(value: Option<&Value>) -> Option<BigInt> {
+    match value {
+        Some(Value::Number(n)) => {
+            if let Some(i) = n.as_i64() {
+                Some(BigInt::from(i))
+            } else {
+                n.as_u64().map(BigInt::from)
+            }
+        }
+        Some(Value::String(s)) => s.parse::<BigInt>().ok(),
+        _ => None,
+    }
+}
+
+fn map_key_string(key: &StackItem) -> Result<String, String> {
+    let bytes = key
+        .as_bytes()
+        .map_err(|e| format!("failed to encode map key: {e}"))?;
+    if bytes.is_empty() {
+        return Ok(String::new());
+    }
+    Ok(bytes_to_hex_prefixed(&bytes))
+}
+
+fn bytes_to_hex_prefixed(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(2 + bytes.len() * 2);
+    out.push_str("0x");
+    for b in bytes {
+        out.push(HEX[(b >> 4) as usize] as char);
+        out.push(HEX[(b & 0x0f) as usize] as char);
+    }
+    out
+}
+
+fn hex_eq(expected: &str, actual: &str) -> bool {
+    expected.trim().eq_ignore_ascii_case(actual.trim())
+}
+
+const HEX: &[u8; 16] = b"0123456789abcdef";

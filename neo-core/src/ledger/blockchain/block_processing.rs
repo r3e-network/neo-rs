@@ -192,8 +192,8 @@ impl Blockchain {
         settings: &ProtocolSettings,
         snapshot: &DataCache,
     ) -> std::collections::HashSet<UInt160> {
-        use crate::smart_contract::native::{NeoToken, RoleManagement, Role};
         use crate::smart_contract::native::helpers::NativeHelpers;
+        use crate::smart_contract::native::{NeoToken, Role, RoleManagement};
         use crate::smart_contract::Contract;
 
         let current_height = LedgerContract::new().current_index(snapshot).unwrap_or(0);
@@ -217,9 +217,11 @@ impl Blockchain {
         }
 
         // State validators (optional): BFT multi-sig address + individual signature contracts.
-        if let Ok(state_validators) = RoleManagement::new()
-            .get_designated_by_role_at(snapshot, Role::StateValidator, current_height)
-        {
+        if let Ok(state_validators) = RoleManagement::new().get_designated_by_role_at(
+            snapshot,
+            Role::StateValidator,
+            current_height,
+        ) {
             if !state_validators.is_empty() {
                 whitelist.insert(NativeHelpers::get_bft_address(&state_validators));
                 whitelist.extend(

@@ -10,7 +10,6 @@
 use super::{
     channels_config::ChannelsConfig, local_node::RemoteNodeSnapshot, payloads::VersionPayload,
 };
-use crate::network::u_pn_p::UPnP;
 use crate::akka::{ActorContext, ActorRef, Cancelable};
 use if_addrs::get_if_addrs;
 use rand::{seq::IteratorRandom, thread_rng};
@@ -369,7 +368,10 @@ impl PeerState {
         self.timer = Some(handle);
     }
 
+    #[cfg(feature = "upnp")]
     fn configure_upnp(&mut self) {
+        use crate::network::u_pn_p::UPnP;
+
         if self.listener_tcp_port == 0 || self.upnp_configured {
             return;
         }
@@ -396,6 +398,9 @@ impl PeerState {
         let _ = UPnP::forward_port(self.listener_tcp_port as i32, "TCP", "NEO Tcp");
         self.upnp_configured = true;
     }
+
+    #[cfg(not(feature = "upnp"))]
+    fn configure_upnp(&mut self) {}
 }
 
 /// Messages handled by the peer controller.  These align with the public

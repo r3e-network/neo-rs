@@ -71,8 +71,8 @@ repos:
   - repo: local
     hooks:
       - id: todo-check
-        name: Check TODOs
-        entry: bash -c 'COUNT=$(grep -r "TODO\|FIXME\|HACK" --include="*.rs" crates/ | wc -l); echo "TODO/FIXME count: $COUNT"; if [ "$COUNT" -gt "50" ]; then echo "Warning: High number of TODOs"; fi'
+        name: Check Non-Production Markers
+        entry: ./scripts/find_non_production_code.sh --fail
         language: system
         pass_filenames: false
 

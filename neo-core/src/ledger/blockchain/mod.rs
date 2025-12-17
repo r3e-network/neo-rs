@@ -50,6 +50,7 @@
 //! - **Unverified Cache**: Blocks received out of order, pending verification
 //! - **Extensible Whitelist**: Authorized senders for extensible payloads
 
+use crate::akka::{Actor, ActorContext, ActorResult, Props};
 use crate::error::CoreError;
 use crate::events::PluginEvent;
 use crate::ledger::LedgerContext;
@@ -69,7 +70,6 @@ use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::native::LedgerContract;
 use crate::state_service::{StateRoot, STATE_SERVICE_CATEGORY};
 use crate::{UInt160, UInt256};
-use crate::akka::{Actor, ActorContext, ActorResult, Props};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
@@ -79,7 +79,9 @@ use tokio::sync::RwLock;
 use tracing::{debug, warn};
 
 use super::VerifyResult;
-use types::{classify_import_block, should_schedule_reverify_idle, ImportDisposition, UnverifiedBlocksList};
+use types::{
+    classify_import_block, should_schedule_reverify_idle, ImportDisposition, UnverifiedBlocksList,
+};
 
 const MAX_TX_TO_REVERIFY_PER_IDLE: usize = 10;
 
@@ -139,10 +141,10 @@ impl Blockchain {
     }
 }
 
-mod handlers;
-mod block_processing;
-mod transaction;
 mod actor;
+mod block_processing;
+mod handlers;
+mod transaction;
 mod types;
 
 pub use types::{

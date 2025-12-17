@@ -16,9 +16,8 @@
 
 pub mod block;
 pub mod block_header;
-// blockchain module moved to neo-node (Phase 2 refactoring)
-// It contains runtime code that depends on actors/akka
-// pub mod blockchain;
+#[cfg(feature = "runtime")]
+pub mod blockchain;
 pub mod blockchain_application_executed;
 pub mod header_cache;
 pub mod ledger_context;
@@ -33,11 +32,11 @@ pub mod verify_result;
 // Re-export commonly used types
 pub use block::Block;
 pub use block_header::BlockHeader;
-// Blockchain runtime types moved to neo-node
-// pub use blockchain::{
-//     Blockchain, BlockchainCommand, FillCompleted, FillMemoryPool, Import, ImportCompleted,
-//     PersistCompleted, PreverifyCompleted, RelayResult, Reverify, ReverifyItem,
-// };
+#[cfg(feature = "runtime")]
+pub use blockchain::{
+    Blockchain, BlockchainCommand, FillCompleted, FillMemoryPool, Import, ImportCompleted,
+    PersistCompleted, PreverifyCompleted, RelayResult, Reverify, ReverifyItem,
+};
 pub use blockchain_application_executed::ApplicationExecuted;
 pub use header_cache::HeaderCache;
 pub use ledger_context::LedgerContext;
@@ -50,7 +49,8 @@ pub use transaction_verification_context::TransactionVerificationContext;
 pub use verify_result::VerifyResult;
 
 // Compatibility types for callers that referenced the old `neo-core::ledger` surface.
-/// Relay result (runtime implementation lives in `neo-node`).
+#[cfg(not(feature = "runtime"))]
+/// Relay result (runtime implementation lives behind `neo-core/runtime`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RelayResult {
     /// Successfully relayed
@@ -69,7 +69,8 @@ pub enum RelayResult {
     Unknown,
 }
 
-/// Persist completed event (runtime implementation lives in `neo-node`).
+#[cfg(not(feature = "runtime"))]
+/// Persist completed event (runtime implementation lives behind `neo-core/runtime`).
 #[derive(Debug, Clone)]
 pub struct PersistCompleted {
     /// Block index that was persisted

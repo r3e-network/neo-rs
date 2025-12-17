@@ -78,11 +78,7 @@ impl ActorBridge {
     }
 
     /// Creates an ActorContext from the current state.
-    fn make_context(
-        &self,
-        state: &BridgeState,
-        self_ref: ActorRef,
-    ) -> ActorContext {
+    fn make_context(&self, state: &BridgeState, self_ref: ActorRef) -> ActorContext {
         ActorContext {
             system: Arc::clone(&self.system),
             self_ref,
@@ -260,11 +256,8 @@ impl RactorActor for ActorBridge {
         state: &mut Self::State,
     ) -> Result<(), ActorProcessingErr> {
         // Create self_ref for cleanup
-        let self_ref = ActorRef::from_ractor(
-            self.path.clone(),
-            myself,
-            Arc::downgrade(&self.system),
-        );
+        let self_ref =
+            ActorRef::from_ractor(self.path.clone(), myself, Arc::downgrade(&self.system));
 
         // Call post_stop on the wrapped actor
         {

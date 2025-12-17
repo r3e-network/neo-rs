@@ -36,7 +36,13 @@ EXCLUDE_GLOBS=(
 )
 
 if [[ "$INCLUDE_ALL" -eq 0 ]]; then
-  EXCLUDE_GLOBS+=( --glob '!tests/**' --glob '!docs/**' --glob '!**/*test*/**' --glob '!**/*_test.rs' )
+  EXCLUDE_GLOBS+=(
+    --glob '!tests/**'
+    --glob '!docs/**'
+    --glob '!**/tests/**'
+    --glob '!**/docs/**'
+    --glob '!**/*_test.rs'
+  )
 fi
 
 HARD_REGEX='\b(TODO|FIXME|HACK|XXX)\b|\b(todo!|unimplemented!)\s*\('

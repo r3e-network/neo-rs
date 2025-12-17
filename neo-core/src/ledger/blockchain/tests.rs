@@ -2,6 +2,8 @@
 // tests.rs - Unit tests for Blockchain actor
 //
 
+#![allow(clippy::module_inception)]
+
 use super::*;
 
 mod tests {
@@ -13,12 +15,12 @@ mod tests {
     use crate::network::p2p::payloads::extensible_payload::ExtensiblePayload;
     use crate::network::p2p::payloads::witness::Witness as PayloadWitness;
     use crate::persistence::StoreCache;
-    use crate::smart_contract::Contract;
     use crate::smart_contract::native::{role_management::RoleManagement, NativeContract, Role};
+    use crate::smart_contract::Contract;
     use crate::smart_contract::{StorageItem, StorageKey};
+    use crate::state_service::state_store::StateServiceSettings;
     use crate::wallets::KeyPair;
     use crate::{neo_io::Serializable, NeoSystem, ProtocolSettings};
-    use crate::state_service::state_store::StateServiceSettings;
     use neo_vm::op_code::OpCode;
     use tokio::time::{sleep, timeout, Duration};
 
@@ -38,7 +40,8 @@ mod tests {
         invocation.push(OpCode::PUSHDATA1 as u8);
         invocation.push(signature.len() as u8);
         invocation.extend_from_slice(&signature);
-        payload.witness = PayloadWitness::new_with_scripts(invocation, keypair.get_verification_script());
+        payload.witness =
+            PayloadWitness::new_with_scripts(invocation, keypair.get_verification_script());
     }
 
     #[test]
@@ -69,6 +72,11 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn state_service_payload_ingests_into_shared_state_store() {
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(tracing_subscriber::EnvFilter::new("state=debug"))
+            .with_test_writer()
+            .try_init();
+
         let mut settings = ProtocolSettings::mainnet();
         let keypair = KeyPair::generate().expect("generate keypair");
         let validator = keypair
@@ -118,12 +126,38 @@ mod tests {
             .add(key, StorageItem::from_bytes(value));
         store_cache.commit();
 
+        // Sanity check: RoleManagement designation should be visible through the verifier
+        // snapshot provider used by StateRootVerifier::from_store.
+        let verifier_snapshot = StoreCache::new_from_store(system.store(), true)
+            .data_cache()
+            .clone_cache();
+        let designated = RoleManagement::new()
+            .get_designated_by_role_at(&verifier_snapshot, Role::StateValidator, height)
+            .expect("load designated validators");
+        assert_eq!(designated.len(), 1);
+
         // Advance the local state root index to a height covered by the designation.
         state_store.update_local_state_root_snapshot(height, std::iter::empty());
         state_store.update_local_state_root(height);
+        assert_eq!(
+            state_store.local_root_index(),
+            Some(height),
+            "local state root index should advance after committing snapshot"
+        );
+        let local_root = state_store
+            .get_state_root(height)
+            .expect("local state root should be persisted for ingest");
+        assert!(
+            local_root.witness.is_none(),
+            "local state root should not be pre-validated"
+        );
         let root_hash = state_store
             .current_local_root_hash()
             .expect("local root hash seeded");
+        assert_eq!(
+            local_root.root_hash, root_hash,
+            "local root hash should match persisted state root"
+        );
 
         let mut state_root = StateRoot::new_current(height, root_hash);
         let hash = state_root.hash();
@@ -140,12 +174,17 @@ mod tests {
             invocation,
             verification_script,
         ));
+        assert!(
+            state_root.verify(&settings, &verifier_snapshot),
+            "state root witness should verify against designated state validators"
+        );
 
         let mut writer = BinaryWriter::new();
         state_root
             .serialize(&mut writer)
             .expect("serialize state root");
-        let mut payload_bytes = vec![0u8];
+        // Neo.Plugins.StateService.Network.MessageType: StateRoot = 1.
+        let mut payload_bytes = vec![1u8];
         payload_bytes.extend_from_slice(&writer.into_bytes());
 
         let mut payload = ExtensiblePayload::new();
@@ -154,6 +193,7 @@ mod tests {
         payload.valid_block_end = height + 10;
         payload.sender = keypair.get_script_hash();
         payload.data = payload_bytes;
+        sign_extensible_payload(&mut payload, &keypair, &settings);
 
         let blockchain = Blockchain::new(system.ledger_context());
         let accepted = blockchain

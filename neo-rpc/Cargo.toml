@@ -18,7 +18,7 @@ description = "RPC server and client for Neo blockchain"
 neo-primitives = { workspace = true }
 neo-crypto = { workspace = true }
 neo-io = { workspace = true }
-neo-core = { path = "../neo-core", optional = true }
+neo-core = { path = "../neo-core", optional = true, features = ["runtime"] }
 neo-vm = { path = "../neo-vm", optional = true }
 neo-json = { path = "../neo-json", optional = true }
 neo-config = { path = "../neo-config", optional = true }

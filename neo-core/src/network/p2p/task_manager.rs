@@ -66,16 +66,16 @@ use super::payloads::{
     InventoryType, VersionPayload,
 };
 use super::task_session::TaskSession;
+use crate::akka::{
+    Actor, ActorContext, ActorRef, ActorResult, Cancelable, EventStreamHandle, Props, Terminated,
+};
 use crate::ledger::{PersistCompleted, RelayResult, VerifyResult};
 use crate::neo_system::NeoSystemContext;
 use crate::network::p2p::{NetworkMessage, ProtocolMessage, RemoteNodeCommand};
 use crate::smart_contract::native::LedgerContract;
 use crate::UInt256;
-use crate::akka::{
-    Actor, ActorContext, ActorRef, ActorResult, Cancelable, EventStreamHandle, Props, Terminated,
-};
 use async_trait::async_trait;
-use std::any::{type_name_of_val, Any};
+use std::any::Any;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
@@ -847,7 +847,7 @@ impl Actor for TaskManagerActor {
         envelope: Box<dyn Any + Send>,
         ctx: &mut ActorContext,
     ) -> ActorResult {
-        let message_type_name = type_name_of_val(envelope.as_ref());
+        let message_type_id = envelope.as_ref().type_id();
 
         match envelope.downcast::<TaskManagerCommand>() {
             Ok(command) => {
@@ -917,7 +917,7 @@ impl Actor for TaskManagerActor {
                         Err(other) => {
                             warn!(
                                 target: "neo",
-                                message_type = %message_type_name,
+                                message_type_id = ?message_type_id,
                                 "unknown message routed to task manager actor"
                             );
                             drop(other);

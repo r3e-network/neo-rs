@@ -1,6 +1,5 @@
 //! Node-related RPC handlers (port of `RpcServer.Node.cs`).
 
-use super::service_access::CoreServiceAccess;
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_method_attribute::RpcMethodDescriptor;
@@ -241,6 +240,7 @@ impl RpcServerNode {
     fn fetch_local_node(server: &RpcServer) -> Result<Arc<LocalNode>, RpcException> {
         let system = server.system();
         if let Some(local) = system
+            .context()
             .local_node_service()
             .map_err(|err| Self::internal_error(err.to_string()))?
         {

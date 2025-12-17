@@ -203,19 +203,43 @@ impl AttestationReport {
     pub fn verify(&self) -> bool {
         match self.report_type {
             ReportType::Simulated => true, // Always valid in simulation
-            ReportType::Local => self.verify_local_report(),
-            ReportType::Remote => self.verify_remote_quote(),
+            ReportType::Local => {
+                #[cfg(feature = "sgx-hw")]
+                {
+                    self.verify_local_report()
+                }
+                #[cfg(not(feature = "sgx-hw"))]
+                {
+                    false
+                }
+            }
+            ReportType::Remote => {
+                #[cfg(feature = "attestation")]
+                {
+                    self.verify_remote_quote()
+                }
+                #[cfg(not(feature = "attestation"))]
+                {
+                    false
+                }
+            }
         }
     }
 
+    #[cfg(feature = "sgx-hw")]
     fn verify_local_report(&self) -> bool {
-        // In production, verify using EREPORT
-        !self.raw_report.is_empty()
+        // Real SGX local report verification requires EREPORT/EREPORTKEY inside an enclave.
+        // Until the verifier is implemented, fail closed for non-simulated reports.
+        tracing::warn!(target: "neo", "SGX local report verification not implemented");
+        false
     }
 
+    #[cfg(feature = "attestation")]
     fn verify_remote_quote(&self) -> bool {
-        // In production, verify quote with Intel IAS or DCAP
-        self.quote.as_ref().map(|q| !q.is_empty()).unwrap_or(false)
+        // Real remote quote verification requires IAS/DCAP integration.
+        // Until the verifier is implemented, fail closed for non-simulated reports.
+        tracing::warn!(target: "neo", "SGX remote quote verification not implemented");
+        false
     }
 
     /// Serialize report to bytes

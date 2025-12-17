@@ -133,7 +133,8 @@ impl AttestationService {
 
     /// Get the expected MRENCLAVE for this enclave version
     pub fn expected_mrenclave(&self) -> [u8; 32] {
-        // In production, this would be computed from the enclave binary
+        // On real hardware, this should be computed from the enclave binary (MRENCLAVE).
+        // In simulation mode we use a deterministic value to keep tests reproducible.
         let mut hasher = Sha256::new();
         hasher.update(b"neo-tee-enclave-v1");
         let hash = hasher.finalize();

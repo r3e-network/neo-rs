@@ -192,7 +192,8 @@ impl ActorSystemInner {
                     .await
                     .map(|(actor_ref, _join_handle)| actor_ref)
             })
-        }).map_err(|e| AkkaError::system(format!("Failed to spawn ractor actor: {}", e)))?;
+        })
+        .map_err(|e| AkkaError::system(format!("Failed to spawn ractor actor: {}", e)))?;
 
         // Register in the system
         {
@@ -200,7 +201,11 @@ impl ActorSystemInner {
             registry.insert(path.to_string(), ActorEntry::Ractor(ractor_ref.clone()));
         }
 
-        Ok(ActorRef::from_ractor(path, ractor_ref, Arc::downgrade(self)))
+        Ok(ActorRef::from_ractor(
+            path,
+            ractor_ref,
+            Arc::downgrade(self),
+        ))
     }
 
     /// Spawns an actor using the legacy mailbox backend.

@@ -129,16 +129,18 @@ pub mod state_service;
 pub mod services;
 
 // Actor runtime moved to neo-node crate (Phase 2 refactoring)
-// The actors module and ractor dependency have been removed from neo-core
-// to keep this crate as a pure protocol layer without async runtime dependencies.
-//
-// If you need actor functionality, use neo-node which provides the runtime.
-// pub mod actors;
-// pub use actors as akka;
+// Runtime / actor-driven subsystems are feature-gated to keep `neo-core` usable as a
+// protocol-only layer by default, while enabling full-node composition when required.
+#[cfg(feature = "runtime")]
+pub mod actors;
+#[cfg(feature = "runtime")]
+pub use actors as akka;
 
-// Tokens tracker module moved to neo-node (Phase 2 refactoring)
-// It depends on NeoSystem runtime which is now in neo-node
-// pub mod tokens_tracker;
+#[cfg(feature = "runtime")]
+pub mod neo_system;
+
+#[cfg(feature = "runtime")]
+pub mod tokens_tracker;
 
 // Re-exports for convenient access
 pub use big_decimal::BigDecimal;
@@ -153,7 +155,8 @@ pub use neo_primitives::{
     InvalidWitnessScopeError, UInt160, UInt256, WitnessScope, UINT160_SIZE, UINT256_SIZE,
 };
 // NeoSystem moved to neo-node crate
-// pub use neo_system::NeoSystem;
+#[cfg(feature = "runtime")]
+pub use neo_system::NeoSystem;
 pub use network::p2p::payloads::{
     InventoryType, OracleResponseCode, Signer, Transaction, TransactionAttribute,
     TransactionAttributeType, HEADER_SIZE, MAX_TRANSACTION_ATTRIBUTES, MAX_TRANSACTION_SIZE,

@@ -304,20 +304,16 @@ impl ApplicationEngine {
     }
 
     pub fn push_log(&mut self, event: LogEventArgs) {
-        // Runtime notification callbacks moved to neo-node
-        // The runtime context can implement custom notification handling
-        // if let Some(context) = self.runtime_context.as_ref() {
-        //     context.notify_application_log(self, &event);
-        // }
+        if let Some(context) = self.runtime_context.as_ref() {
+            context.notify_application_log(self, &event);
+        }
         self.logs.push(event);
     }
 
     pub fn push_notification(&mut self, event: NotifyEventArgs) {
-        // Runtime notification callbacks moved to neo-node
-        // The runtime context can implement custom notification handling
-        // if let Some(context) = self.runtime_context.as_ref() {
-        //     context.notify_application_notify(self, &event);
-        // }
+        if let Some(context) = self.runtime_context.as_ref() {
+            context.notify_application_notify(self, &event);
+        }
         self.notifications.push(event);
     }
 

@@ -1,5 +1,5 @@
-use super::*;
 use super::supervision::SupervisorDirective;
+use super::*;
 use async_trait::async_trait;
 use parking_lot::Mutex;
 use std::any::Any;

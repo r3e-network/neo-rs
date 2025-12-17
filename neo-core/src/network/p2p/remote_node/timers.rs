@@ -32,7 +32,10 @@ impl RemoteNode {
         }
     }
 
-    pub(super) async fn on_timer(&mut self, ctx: &mut crate::akka::ActorContext) -> crate::akka::ActorResult {
+    pub(super) async fn on_timer(
+        &mut self,
+        ctx: &mut crate::akka::ActorContext,
+    ) -> crate::akka::ActorResult {
         let cutoff = Instant::now()
             .checked_sub(PENDING_HASH_TTL)
             .unwrap_or_else(Instant::now);

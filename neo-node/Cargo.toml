@@ -26,7 +26,7 @@ tee-sgx = ["tee", "neo-tee/sgx-hw"]
 
 [dependencies]
 # Enable full neo-core features for production node (rocksdb, upnp, monitoring)
-neo-core = { path = "../neo-core", features = ["full"] }
+neo-core = { path = "../neo-core", features = ["full", "runtime"] }
 neo-state = { path = "../neo-state" }
 neo-chain = { path = "../neo-chain" }
 neo-mempool = { path = "../neo-mempool" }
@@ -34,6 +34,7 @@ neo-consensus = { path = "../neo-consensus" }
 neo-p2p = { path = "../neo-p2p" }
 neo-crypto = { path = "../neo-crypto" }
 neo-vm = { path = "../neo-vm" }
+neo-rpc = { path = "../neo-rpc", features = ["server"] }
 
 # TEMPORARILY DISABLED: neo-plugins being refactored
 # neo-plugins = { path = "../neo-plugins" }
@@ -49,6 +50,7 @@ serde_json.workspace = true
 toml.workspace = true
 lazy_static = "1.4"
 prometheus = { workspace = true }
+parking_lot = { workspace = true }
 
 # Async runtime
 tokio.workspace = true

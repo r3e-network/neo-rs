@@ -12,6 +12,7 @@ use crate::neo_ledger::{ApplicationExecuted, Block};
 use crate::persistence::{DataCache, IStore};
 use crate::NeoSystem;
 use parking_lot::RwLock;
+use std::any::Any;
 use std::sync::Arc;
 
 /// Runtime handler for token balance/transfer tracking.
@@ -71,11 +72,14 @@ impl TokensTracker {
 impl ICommittingHandler for TokensTracker {
     fn blockchain_committing_handler(
         &self,
-        system: &NeoSystem,
+        system: &dyn Any,
         block: &Block,
         snapshot: &DataCache,
         application_executed_list: &[ApplicationExecuted],
     ) {
+        let Some(system) = system.downcast_ref::<NeoSystem>() else {
+            return;
+        };
         if system.settings().network != self.settings.network {
             return;
         }
@@ -89,7 +93,10 @@ impl ICommittingHandler for TokensTracker {
 }
 
 impl ICommittedHandler for TokensTracker {
-    fn blockchain_committed_handler(&self, system: &NeoSystem, _block: &Block) {
+    fn blockchain_committed_handler(&self, system: &dyn Any, _block: &Block) {
+        let Some(system) = system.downcast_ref::<NeoSystem>() else {
+            return;
+        };
         if system.settings().network != self.settings.network {
             return;
         }

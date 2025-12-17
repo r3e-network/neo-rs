@@ -20,8 +20,8 @@ use super::relay::{RelayExtensibleCache, RelayExtensibleEntry, LEDGER_HYDRATION_
 use super::system::{ReadinessStatus, STATE_STORE_SERVICE};
 use crate::contains_transaction_type::ContainsTransactionType;
 use crate::error::{CoreError, CoreResult};
-use crate::extensions::log_level::LogLevel;
 use crate::events::{broadcast_plugin_event, PluginEvent};
+use crate::extensions::log_level::LogLevel;
 use crate::i_event_handlers::{
     ICommittedHandler, ICommittingHandler, ILogHandler, ILoggingHandler, INotifyHandler,
     IServiceAddedHandler, ITransactionAddedHandler, ITransactionRemovedHandler,
@@ -37,6 +37,7 @@ use crate::network::p2p::{
 };
 use crate::persistence::{i_store::IStore, i_store_provider::IStoreProvider, StoreCache};
 use crate::protocol_settings::ProtocolSettings;
+use crate::services::SystemContext;
 use crate::services::{
     LedgerService, LockedMempoolService, MempoolService, PeerManagerService, StateStoreService,
 };
@@ -726,5 +727,47 @@ impl NeoSystemContext {
     /// Provides shared access to the underlying ledger context for advanced consumers.
     pub fn ledger_handle(&self) -> Arc<LedgerContext> {
         Arc::clone(&self.ledger)
+    }
+}
+
+impl SystemContext for NeoSystemContext {
+    fn store_cache(&self) -> StoreCache {
+        NeoSystemContext::store_cache(self)
+    }
+
+    fn protocol_settings(&self) -> Arc<ProtocolSettings> {
+        NeoSystemContext::protocol_settings(self)
+    }
+
+    fn current_block_index(&self) -> u32 {
+        self.ledger.current_height()
+    }
+
+    fn block_hash_at(&self, index: u32) -> Option<UInt256> {
+        self.ledger.block_hash_at(index)
+    }
+
+    fn mempool_count(&self) -> usize {
+        self.memory_pool.lock().count()
+    }
+
+    fn mempool_contains(&self, hash: &UInt256) -> bool {
+        self.memory_pool.lock().contains_key(hash)
+    }
+
+    fn header_height(&self) -> u32 {
+        self.ledger.highest_header_index()
+    }
+
+    fn is_ready(&self) -> bool {
+        self.is_ready(Some(20))
+    }
+
+    fn notify_application_log(&self, engine: &ApplicationEngine, args: &LogEventArgs) {
+        NeoSystemContext::notify_application_log(self, engine, args);
+    }
+
+    fn notify_application_notify(&self, engine: &ApplicationEngine, args: &NotifyEventArgs) {
+        NeoSystemContext::notify_application_notify(self, engine, args);
     }
 }

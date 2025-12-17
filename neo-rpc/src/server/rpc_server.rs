@@ -389,25 +389,10 @@ fn log_join_error(error: tokio::task::JoinError) {
 pub static SERVERS: Lazy<RwLock<HashMap<u32, Arc<RwLock<RpcServer>>>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
 
-pub static PENDING_HANDLERS: Lazy<RwLock<HashMap<u32, Vec<RpcHandler>>>> =
-    Lazy::new(|| RwLock::new(HashMap::new()));
-
 pub fn remove_server(network: u32) {
     if SERVERS.write().remove(&network).is_some() {
         info!("Removed RPC server for network {}", network);
     }
-}
-
-pub fn add_pending_handler(network: u32, handler: RpcHandler) {
-    let mut guard = PENDING_HANDLERS.write();
-    guard.entry(network).or_default().push(handler);
-}
-
-pub fn take_pending_handlers(network: u32) -> Vec<RpcHandler> {
-    PENDING_HANDLERS
-        .write()
-        .remove(&network)
-        .unwrap_or_default()
 }
 
 pub fn register_server(network: u32, server: Arc<RwLock<RpcServer>>) {

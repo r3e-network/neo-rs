@@ -5,51 +5,44 @@
 
 mod cli;
 mod config;
-mod executor;
-mod genesis;
 mod health;
 mod logging;
 mod metrics;
-mod p2p_service;
-mod rpc_service;
-mod runtime;
 mod startup;
-mod state_validator;
-mod sync_service;
 #[cfg(feature = "tee")]
 mod tee_integration;
-mod validator_service;
-
-pub use p2p_service::{P2PService, P2PServiceState};
-pub use rpc_service::{RpcService, RpcServiceConfig, RpcServiceState};
-pub use runtime::{NodeRuntime, RuntimeConfig, RuntimeEvent};
-pub use sync_service::{SyncService, SyncState, SyncStats};
-pub use validator_service::{ValidatorConfig, ValidatorService, ValidatorState};
 
 use anyhow::{bail, Context, Result};
 use clap::Parser;
 use cli::NodeCli;
 use config::NodeConfig;
 use neo_core::{
-    protocol_settings::ProtocolSettings, state_service::state_store::StateServiceSettings,
+    neo_system::NeoSystem,
+    network::p2p::channels_config::ChannelsConfig,
+    protocol_settings::ProtocolSettings,
+    state_service::{metrics::state_root_ingest_stats, state_store::StateServiceSettings},
 };
-use std::{path::PathBuf, sync::Arc};
+use neo_rpc::server::{
+    RpcServer, RpcServerBlockchain, RpcServerNode, RpcServerSettings, RpcServerSmartContract,
+    RpcServerState, RpcServerUtilities, RpcServerWallet,
+};
+use parking_lot::RwLock as ParkingRwLock;
+use serde_json::Value;
+use std::{fs, path::PathBuf, sync::Arc};
 use tokio::signal;
-use tracing::{error, info, warn};
+use tokio::sync::RwLock;
+use tracing::{error, info};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = NodeCli::parse();
     let mut node_config = NodeConfig::load(&cli.config)?;
 
-    // Initialize logging
     let logging_handles = logging::init_tracing(&node_config.logging, cli.daemon)?;
     let _log_guard = logging_handles.guard;
 
-    // Apply CLI overrides
     apply_cli_overrides(&cli, &mut node_config);
 
-    // Build protocol settings
     let storage_config = node_config.storage_config();
     let storage_path = cli
         .storage
@@ -69,7 +62,6 @@ async fn main() -> Result<()> {
         cli.rpc_hardened,
     )?;
 
-    // Handle check modes
     if cli.check_all {
         startup::check_storage_access(
             backend_name.as_deref(),
@@ -110,25 +102,14 @@ async fn main() -> Result<()> {
         "build profile"
     );
 
-    // Write RPC server plugin configuration
-    if let Some(path) = node_config.write_rpc_server_plugin_config(&protocol_settings)? {
-        info!(
-            target: "neo",
-            path = %path.display(),
-            "rpc server configuration emitted"
-        );
-    }
-
-    if read_only_storage && !(cli.check_all || cli.check_config || cli.check_storage) {
+    if read_only_storage {
         bail!("read-only storage mode is only supported with --check-* flags; cannot start the node in read-only mode");
     }
 
-    // Initialize storage provider
     let store_provider = startup::select_store_provider(backend_name.as_deref(), storage_config)?;
     if let (Some(_provider), Some(path)) = (&store_provider, &storage_path) {
         startup::check_storage_network(path, protocol_settings.network, read_only_storage)?;
     }
-
     if store_provider.is_some() && storage_path.is_none() {
         let backend = backend_name.unwrap_or_else(|| "unknown".to_string());
         bail!(
@@ -137,54 +118,235 @@ async fn main() -> Result<()> {
         );
     }
 
-    // Build state service settings if enabled
     let state_service_settings = build_state_service_settings(&cli, storage_path.as_deref());
 
-    // Build validators list from protocol settings
-    let validators = build_validators_list(&protocol_settings);
+    // Generate the RpcServer.json consumed by the neo-rpc server settings loader.
+    let rpc_plugin_config_path = node_config
+        .write_rpc_server_plugin_config(&protocol_settings)?
+        .map(|path| path.to_string_lossy().to_string());
+    if let Some(path) = rpc_plugin_config_path.as_deref() {
+        info!(target: "neo", path, "rpc server configuration emitted");
+    }
 
-    info!(
-        target: "neo",
-        validator_count = validators.len(),
-        "loaded validators from protocol settings"
-    );
+    let system = NeoSystem::new_with_state_service(
+        protocol_settings.clone(),
+        store_provider.clone(),
+        storage_path.clone(),
+        state_service_settings.clone(),
+    )
+    .map_err(|e| anyhow::anyhow!(e.to_string()))
+    .context("failed to initialise NeoSystem")?;
 
-    // Load validator configuration from wallet if provided
-    let (validator_index, private_key) = load_validator_config(&cli, &protocol_settings)?;
+    let channels_config = build_channels_config(&node_config);
+    system
+        .start_node(channels_config)
+        .map_err(|e| anyhow::anyhow!(e.to_string()))
+        .context("failed to start P2P subsystem")?;
 
-    // Build RuntimeConfig
-    let runtime_config = RuntimeConfig {
-        network_magic: protocol_settings.network,
-        protocol_version: 0,
-        validator_index,
-        validators,
-        private_key,
-        p2p: neo_p2p::P2PConfig {
-            listen_address: format!("0.0.0.0:{}", node_config.p2p.listen_port.unwrap_or(10333))
-                .parse()
-                .unwrap_or_else(|_| "0.0.0.0:10333".parse().unwrap()),
-            max_inbound: node_config.p2p.max_connections.unwrap_or(10),
-            max_outbound: node_config.p2p.min_desired_connections.unwrap_or(10),
-            seed_nodes: startup::resolve_seed_nodes(&node_config.p2p.seed_nodes).await,
-            network_magic: protocol_settings.network,
-            ..Default::default()
-        },
-        mempool: neo_mempool::MempoolConfig::default(),
-        state_service: state_service_settings,
-        protocol_settings: protocol_settings.clone(),
+    let rpc_server = start_rpc_server_if_enabled(
+        &node_config,
+        system.clone(),
+        protocol_settings.network,
+        rpc_plugin_config_path.as_deref(),
+    )
+    .context("failed to start RPC server")?;
+
+    let health_state = Arc::new(RwLock::new(health::HealthState::default()));
+    start_health_endpoint_if_enabled(&cli, &node_config, health_state.clone()).await;
+    let (pump_shutdown_tx, mut pump_shutdown_rx) = tokio::sync::watch::channel(false);
+    let metrics_storage_path = storage_path.clone();
+    let metrics_system = system.clone();
+    let pump_health_state = health_state.clone();
+    let metrics_handle = tokio::spawn(async move {
+        let tick = std::time::Duration::from_secs(1);
+        loop {
+            tokio::select! {
+                _ = tokio::time::sleep(tick) => {}
+                _ = pump_shutdown_rx.changed() => {
+                    if *pump_shutdown_rx.borrow() {
+                        break;
+                    }
+                    continue;
+                }
+            }
+
+            let block_height = metrics_system.current_block_index();
+            let header_height = metrics_system.ledger_context().highest_header_index();
+            let header_lag = header_height.saturating_sub(block_height);
+
+            let peer_count = metrics_system.peer_count().await.unwrap_or(0);
+            let mempool_size = metrics_system.mempool().lock().count() as u32;
+
+            let timeouts = neo_core::network::p2p::timeouts::stats();
+
+            let (state_local_root, state_validated_root) = match metrics_system.state_store() {
+                Ok(Some(store)) => (store.local_root_index(), store.validated_root_index()),
+                _ => (None, None),
+            };
+            let state_validated_lag = match (state_local_root, state_validated_root) {
+                (Some(local), Some(validated)) => Some(local.saturating_sub(validated)),
+                _ => None,
+            };
+
+            let ingest = state_root_ingest_stats();
+
+            metrics::update_metrics(
+                block_height,
+                header_height,
+                header_lag,
+                mempool_size,
+                timeouts,
+                peer_count,
+                metrics_storage_path.as_deref(),
+                state_local_root,
+                state_validated_root,
+                state_validated_lag,
+                ingest.accepted,
+                ingest.rejected,
+            );
+
+            {
+                let mut state = pump_health_state.write().await;
+                state.block_height = block_height;
+                state.header_height = header_height;
+                state.peer_count = peer_count;
+                state.mempool_size = mempool_size;
+                state.is_syncing = header_lag > 0;
+            }
+        }
+    });
+
+    info!(target: "neo", "node running, press Ctrl+C to stop");
+    if let Err(err) = signal::ctrl_c().await {
+        error!(target: "neo", error = %err, "failed to wait for shutdown signal");
+    } else {
+        info!(target: "neo", "shutdown signal received (Ctrl+C)");
+    }
+
+    let _ = pump_shutdown_tx.send(true);
+    let _ = metrics_handle.await;
+
+    if let Some(server) = rpc_server {
+        if let Some(mut guard) = server.try_write() {
+            guard.stop_rpc_server();
+        }
+    }
+
+    system
+        .shutdown()
+        .await
+        .map_err(|e| anyhow::anyhow!(e.to_string()))
+        .context("failed to shut down NeoSystem")?;
+
+    info!(target: "neo", "shutdown complete");
+    Ok(())
+}
+
+fn build_channels_config(node_config: &NodeConfig) -> ChannelsConfig {
+    node_config.channels_config()
+}
+
+fn start_rpc_server_if_enabled(
+    node_config: &NodeConfig,
+    system: Arc<NeoSystem>,
+    network: u32,
+    rpc_config_path: Option<&str>,
+) -> Result<Option<Arc<ParkingRwLock<RpcServer>>>> {
+    if !node_config.rpc.enabled {
+        return Ok(None);
+    }
+
+    let mut settings_json: Option<Value> = None;
+    if let Some(path) = rpc_config_path {
+        let raw = fs::read_to_string(path)
+            .with_context(|| format!("failed to read rpc config at {}", path))?;
+        settings_json = Some(serde_json::from_str(&raw).context("invalid rpc config json")?);
+    }
+    RpcServerSettings::load(settings_json.as_ref())
+        .map_err(|e| anyhow::anyhow!(e.to_string()))
+        .context("failed to load rpc server settings")?;
+
+    let settings = RpcServerSettings::current()
+        .server_for_network(network)
+        .unwrap_or_default();
+
+    let mut server = RpcServer::new(system, settings);
+    server.register_handlers(RpcServerNode::register_handlers());
+    server.register_handlers(RpcServerBlockchain::register_handlers());
+    server.register_handlers(RpcServerState::register_handlers());
+    server.register_handlers(RpcServerUtilities::register_handlers());
+    server.register_handlers(RpcServerSmartContract::register_handlers());
+    server.register_handlers(RpcServerWallet::register_handlers());
+
+    let handle = Arc::new(ParkingRwLock::new(server));
+    neo_rpc::server::register_server(network, Arc::clone(&handle));
+    handle.write().start_rpc_server(Arc::downgrade(&handle));
+
+    Ok(Some(handle))
+}
+
+async fn start_health_endpoint_if_enabled(
+    cli: &NodeCli,
+    node_config: &NodeConfig,
+    health_state: Arc<RwLock<health::HealthState>>,
+) {
+    let Some(health_port) = cli.health_port else {
+        return;
     };
 
+    let max_lag = cli
+        .health_max_header_lag
+        .unwrap_or(health::DEFAULT_MAX_HEADER_LAG);
+    let storage_for_health = node_config.storage_path();
+    let rpc_enabled_for_health = node_config.rpc.enabled;
+
+    tokio::spawn(async move {
+        if let Err(e) = health::serve_health_with_state(
+            health_port,
+            max_lag,
+            storage_for_health,
+            rpc_enabled_for_health,
+            health_state,
+        )
+        .await
+        {
+            error!(target: "neo", error = %e, "health endpoint failed");
+        }
+    });
+    info!(target: "neo", port = health_port, "health endpoint started");
+}
+
+fn build_state_service_settings(
+    cli: &NodeCli,
+    storage_path: Option<&str>,
+) -> Option<StateServiceSettings> {
+    if !cli.state_root {
+        return None;
+    }
+
+    let default_state_dir = PathBuf::from("StateRoot");
+    let requested_state_dir = cli
+        .state_root_path
+        .clone()
+        .unwrap_or_else(|| default_state_dir.clone());
+    let resolved_state_dir = if requested_state_dir.is_absolute() {
+        requested_state_dir
+    } else if let Some(storage_root) = storage_path {
+        PathBuf::from(storage_root).join(requested_state_dir)
+    } else {
+        requested_state_dir
+    };
+    let state_path = resolved_state_dir.to_string_lossy().to_string();
     info!(
         target: "neo",
-        network = format!("{:#X}", protocol_settings.network),
-        backend = backend_name.as_deref().unwrap_or("memory"),
-        storage = storage_path.as_deref().unwrap_or("<in-memory>"),
-        rpc_enabled = node_config.rpc.enabled,
-        "configuration validated successfully"
+        path = %state_path,
+        full_state = cli.state_root_full_state,
+        "state root calculation enabled"
     );
-
-    // Start services and run main loop
-    run_node(runtime_config, &node_config, &cli).await
+    Some(StateServiceSettings {
+        full_state: cli.state_root_full_state,
+        path: state_path,
+    })
 }
 
 /// Applies CLI argument overrides to the node configuration.
@@ -277,329 +439,4 @@ fn apply_cli_overrides(cli: &NodeCli, node_config: &mut NodeConfig) {
         }
         node_config.rpc.disabled_methods = disabled;
     }
-}
-
-/// Builds state service settings if state root is enabled.
-fn build_state_service_settings(
-    cli: &NodeCli,
-    storage_path: Option<&str>,
-) -> Option<StateServiceSettings> {
-    if !cli.state_root {
-        return None;
-    }
-
-    let default_state_dir = PathBuf::from("StateRoot");
-    let requested_state_dir = cli
-        .state_root_path
-        .clone()
-        .unwrap_or_else(|| default_state_dir.clone());
-    let resolved_state_dir = if requested_state_dir.is_absolute() {
-        requested_state_dir
-    } else if let Some(storage_root) = storage_path {
-        PathBuf::from(storage_root).join(requested_state_dir)
-    } else {
-        requested_state_dir
-    };
-    let state_path = resolved_state_dir.to_string_lossy().to_string();
-    info!(
-        target: "neo",
-        path = %state_path,
-        full_state = cli.state_root_full_state,
-        "state root calculation enabled"
-    );
-    Some(StateServiceSettings {
-        full_state: cli.state_root_full_state,
-        path: state_path,
-    })
-}
-
-/// Builds the validators list from protocol settings.
-fn build_validators_list(
-    protocol_settings: &ProtocolSettings,
-) -> Vec<neo_consensus::ValidatorInfo> {
-    protocol_settings
-        .standby_committee
-        .iter()
-        .take(protocol_settings.validators_count as usize)
-        .enumerate()
-        .map(|(index, public_key)| {
-            let script_hash =
-                neo_core::smart_contract::Contract::create_signature_contract(public_key.clone())
-                    .script_hash();
-            neo_consensus::ValidatorInfo {
-                index: index as u8,
-                public_key: public_key.clone(),
-                script_hash,
-            }
-        })
-        .collect()
-}
-
-/// Loads validator configuration from wallet if provided.
-fn load_validator_config(
-    cli: &NodeCli,
-    protocol_settings: &ProtocolSettings,
-) -> Result<(Option<u8>, Vec<u8>)> {
-    if let (Some(wallet_path), Some(password)) = (&cli.wallet, &cli.wallet_password) {
-        info!(
-            target: "neo",
-            wallet = %wallet_path.display(),
-            "loading validator wallet"
-        );
-
-        match validator_service::load_validator_from_wallet(
-            wallet_path.to_str().unwrap_or(""),
-            password,
-            Arc::new(protocol_settings.clone()),
-        ) {
-            Ok(Some(config)) => {
-                info!(
-                    target: "neo",
-                    validator_index = config.validator_index,
-                    script_hash = %config.script_hash,
-                    "validator mode enabled"
-                );
-                Ok((Some(config.validator_index), config.private_key))
-            }
-            Ok(None) => {
-                warn!(
-                    target: "neo",
-                    "wallet account is not in standby committee - running in non-validator mode"
-                );
-                Ok((None, Vec::new()))
-            }
-            Err(e) => {
-                warn!(
-                    target: "neo",
-                    error = %e,
-                    "failed to load validator wallet - running in non-validator mode"
-                );
-                Ok((None, Vec::new()))
-            }
-        }
-    } else if cli.wallet.is_some() {
-        bail!("--wallet-password is required when --wallet is specified");
-    } else {
-        Ok((None, Vec::new()))
-    }
-}
-
-/// Runs the node with the given configuration.
-async fn run_node(
-    runtime_config: RuntimeConfig,
-    node_config: &NodeConfig,
-    cli: &NodeCli,
-) -> Result<()> {
-    // Create and start the node runtime
-    let mut node_runtime = NodeRuntime::new(runtime_config.clone());
-
-    info!(target: "neo", "starting neo-node runtime...");
-
-    // Create P2P service early so the runtime can broadcast consensus/extensible payloads
-    // via the same broadcast channel that each peer connection subscribes to.
-    let compression_enabled = node_config.p2p.enable_compression.unwrap_or(true);
-    let mut p2p_service = P2PService::new(
-        runtime_config.p2p.clone(),
-        node_runtime.p2p_event_sender(),
-        compression_enabled,
-    );
-    node_runtime.set_p2p_broadcast_sender(p2p_service.broadcast_sender());
-    p2p_service.set_chain(node_runtime.chain_handle());
-
-    node_runtime
-        .start()
-        .await
-        .context("failed to start node runtime")?;
-
-    info!(
-        target: "neo",
-        height = node_runtime.height().await,
-        mempool_size = node_runtime.mempool_size().await,
-        "neo-node runtime started"
-    );
-
-    // Ensure P2P starts with an accurate local height for VersionPayload capabilities.
-    p2p_service
-        .set_local_height(node_runtime.height().await)
-        .await;
-
-    // Start P2P service
-    if let Err(e) = p2p_service.start().await {
-        error!(target: "neo", error = %e, "failed to start P2P service");
-    } else {
-        info!(
-            target: "neo",
-            listen = %runtime_config.p2p.listen_address,
-            seeds = runtime_config.p2p.seed_nodes.len(),
-            "P2P service started"
-        );
-    }
-
-    // Optionally start RPC service
-    let rpc_service =
-        start_rpc_service_if_enabled(node_config, &runtime_config, &p2p_service).await;
-
-    // Keep P2P/RPC state in sync with the runtime (height, peers, mempool).
-    let chain_handle = node_runtime.chain_handle();
-    let mempool_handle = node_runtime.mempool_handle();
-    let p2p_for_pump = p2p_service.clone();
-    let rpc_for_pump = rpc_service.clone();
-    let (pump_shutdown_tx, mut pump_shutdown_rx) = tokio::sync::watch::channel(false);
-    let pump_handle = tokio::spawn(async move {
-        let tick = std::time::Duration::from_secs(1);
-        loop {
-            tokio::select! {
-                _ = tokio::time::sleep(tick) => {}
-                _ = pump_shutdown_rx.changed() => {
-                    if *pump_shutdown_rx.borrow() {
-                        break;
-                    }
-                    continue;
-                }
-            }
-
-            let height = chain_handle.read().await.height();
-            p2p_for_pump.set_local_height(height).await;
-
-            let peers = p2p_for_pump.peers().await;
-            let connected: Vec<_> = peers
-                .iter()
-                .filter(|p| p.state == crate::p2p_service::ConnectionState::Ready)
-                .map(|p| {
-                    let port = p.listener_port.unwrap_or(p.address.port());
-                    (p.address.ip().to_string(), port)
-                })
-                .collect();
-            let peer_count = connected.len();
-
-            let mempool_hashes: Vec<String> = mempool_handle
-                .read()
-                .await
-                .hashes()
-                .into_iter()
-                .map(|h| h.to_string())
-                .collect();
-
-            if let Some(rpc) = &rpc_for_pump {
-                rpc.update_state_with_mempool(height, peer_count, mempool_hashes)
-                    .await;
-                rpc.update_peers_connected(connected).await;
-            }
-        }
-    });
-
-    // Optionally start health endpoint
-    start_health_endpoint_if_enabled(cli, node_config).await;
-
-    // Wait for shutdown signal
-    info!(target: "neo", "node running, press Ctrl+C to stop");
-
-    if let Err(err) = signal::ctrl_c().await {
-        error!(target: "neo", error = %err, "failed to wait for shutdown signal");
-    } else {
-        info!(target: "neo", "shutdown signal received (Ctrl+C)");
-    }
-
-    // Graceful shutdown
-    let _ = pump_shutdown_tx.send(true);
-    let _ = pump_handle.await;
-
-    if let Err(e) = p2p_service.stop().await {
-        error!(target: "neo", error = %e, "failed to stop P2P service");
-    }
-
-    if let Some(rpc) = rpc_service {
-        if let Err(e) = rpc.stop().await {
-            error!(target: "neo", error = %e, "failed to stop RPC service");
-        }
-    }
-
-    node_runtime
-        .stop()
-        .await
-        .context("failed to stop node runtime")?;
-
-    info!(target: "neo", "shutdown complete");
-    Ok(())
-}
-
-/// Starts the RPC service if enabled in configuration.
-async fn start_rpc_service_if_enabled(
-    node_config: &NodeConfig,
-    runtime_config: &RuntimeConfig,
-    p2p_service: &P2PService,
-) -> Option<RpcService> {
-    if !node_config.rpc.enabled {
-        return None;
-    }
-
-    let rpc_bind = node_config
-        .rpc
-        .bind_address
-        .as_deref()
-        .unwrap_or("127.0.0.1");
-    let rpc_port = node_config.rpc.port.unwrap_or(10332);
-    let rpc_addr = format!("{}:{}", rpc_bind, rpc_port)
-        .parse()
-        .unwrap_or_else(|_| "127.0.0.1:10332".parse().unwrap());
-
-    let rpc_config = RpcServiceConfig {
-        bind_address: rpc_addr,
-        cors_enabled: node_config.rpc.cors_enabled.unwrap_or(true),
-        allowed_origins: node_config.rpc.allow_origins.clone(),
-    };
-
-    let service = RpcService::new(rpc_config);
-    service
-        .set_network_magic(runtime_config.network_magic)
-        .await;
-    service
-        .set_node_info(
-            runtime_config.p2p.listen_address.port(),
-            p2p_service.nonce(),
-            runtime_config.p2p.user_agent.clone(),
-        )
-        .await;
-    service
-        .set_version_settings(
-            runtime_config.protocol_settings.clone(),
-            node_config.rpc.max_iterator_result_items.unwrap_or(100),
-            node_config.rpc.session_enabled.unwrap_or(false),
-        )
-        .await;
-
-    if let Err(e) = service.start().await {
-        error!(target: "neo", error = %e, "failed to start RPC service");
-    } else {
-        info!(target: "neo", address = %rpc_addr, "RPC service started");
-    }
-
-    Some(service)
-}
-
-/// Starts the health endpoint if enabled via CLI.
-async fn start_health_endpoint_if_enabled(cli: &NodeCli, node_config: &NodeConfig) {
-    let Some(health_port) = cli.health_port else {
-        return;
-    };
-
-    let max_lag = cli
-        .health_max_header_lag
-        .unwrap_or(health::DEFAULT_MAX_HEADER_LAG);
-    let storage_for_health = node_config.storage_path();
-    let rpc_enabled_for_health = node_config.rpc.enabled;
-
-    tokio::spawn(async move {
-        if let Err(e) = health::serve_health(
-            health_port,
-            max_lag,
-            storage_for_health,
-            rpc_enabled_for_health,
-        )
-        .await
-        {
-            error!(target: "neo", error = %e, "health endpoint failed");
-        }
-    });
-    info!(target: "neo", port = health_port, "health endpoint started");
 }

@@ -219,37 +219,6 @@ pub fn check_storage_access(
     Ok(())
 }
 
-/// Resolves seed node hostnames to socket addresses via DNS lookup.
-pub async fn resolve_seed_nodes(seeds: &[String]) -> Vec<std::net::SocketAddr> {
-    use tokio::net::lookup_host;
-
-    let mut resolved = Vec::new();
-    for seed in seeds {
-        // Try direct parse first (for IP:port format)
-        if let Ok(addr) = seed.parse() {
-            resolved.push(addr);
-            continue;
-        }
-
-        // DNS lookup for hostname:port format
-        match lookup_host(seed).await {
-            Ok(addrs) => {
-                // Take the first resolved address
-                if let Some(addr) = addrs.into_iter().next() {
-                    info!(target: "neo", seed = %seed, resolved = %addr, "resolved seed node");
-                    resolved.push(addr);
-                } else {
-                    warn!(target: "neo", seed = %seed, "DNS lookup returned no addresses");
-                }
-            }
-            Err(e) => {
-                warn!(target: "neo", seed = %seed, error = %e, "failed to resolve seed node");
-            }
-        }
-    }
-    resolved
-}
-
 /// Builds a summary of enabled features.
 #[allow(clippy::useless_vec)]
 pub fn build_feature_summary() -> String {

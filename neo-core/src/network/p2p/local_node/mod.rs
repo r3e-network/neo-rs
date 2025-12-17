@@ -63,6 +63,7 @@ use super::{
     peer::{PeerCommand, PeerState, PeerTimer, MAX_COUNT_FROM_SEED_LIST},
     remote_node::{RemoteNode, RemoteNodeCommand},
 };
+use crate::akka::{Actor, ActorContext, ActorRef, ActorResult, Props, Terminated};
 use crate::neo_io::{BinaryWriter, Serializable};
 use crate::network::p2p::payloads::{
     addr_payload::MAX_COUNT_TO_SEND, block::Block, extensible_payload::ExtensiblePayload,
@@ -72,11 +73,10 @@ use crate::network::p2p::payloads::{
 use crate::network::p2p::{NetworkMessage, ProtocolMessage};
 use crate::services::PeerManagerService;
 use crate::{neo_system::NeoSystemContext, protocol_settings::ProtocolSettings};
-use crate::akka::{Actor, ActorContext, ActorRef, ActorResult, Props, Terminated};
 use async_trait::async_trait;
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use rand::{rngs::OsRng, seq::IteratorRandom, thread_rng, RngCore};
-use std::any::{type_name_of_val, Any};
+use std::any::Any;
 use std::collections::{HashMap, HashSet};
 use std::io::ErrorKind;
 use std::net::{IpAddr, SocketAddr, TcpListener as StdTcpListener};
@@ -94,16 +94,16 @@ use tracing::{debug, error, trace, warn};
 /// Note: This constant is used for Version message payload, not the Neo3 protocol version indicator.
 pub const PROTOCOL_VERSION: u32 = 0;
 
-mod types;
-mod helpers;
-mod state;
 mod actor;
 mod actor_impl;
+mod helpers;
+mod state;
+mod types;
 
 // Re-exports
-pub use types::{BroadcastEvent, LocalNodeCommand, RelayInventory, RemoteNodeSnapshot};
-pub use state::LocalNode;
 pub use actor::LocalNodeActor;
+pub use state::LocalNode;
+pub use types::{BroadcastEvent, LocalNodeCommand, RelayInventory, RemoteNodeSnapshot};
 
 #[cfg(test)]
 mod tests;

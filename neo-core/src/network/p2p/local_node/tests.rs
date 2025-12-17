@@ -2,8 +2,10 @@
 // tests.rs - Unit tests for local node
 //
 
-use super::*;
+#![allow(clippy::module_inception)]
+
 use super::state::LocalNode;
+use super::*;
 
 mod tests {
     use super::*;

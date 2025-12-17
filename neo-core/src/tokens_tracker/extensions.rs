@@ -2,10 +2,10 @@
 //!
 //! Utility functions for serialization size calculation and database queries.
 
-use base64::Engine;
 use crate::neo_io::serializable::helper::get_var_size;
 use crate::neo_io::{MemoryReader, Serializable};
 use crate::persistence::{IStore, SeekDirection};
+use base64::Engine;
 use num_bigint::BigInt;
 
 /// Converts a byte slice to a Base64 string (empty slice -> empty string).

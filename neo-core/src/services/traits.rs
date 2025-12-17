@@ -55,6 +55,7 @@ pub trait RpcService: Send + Sync {
 
 use crate::persistence::StoreCache;
 use crate::protocol_settings::ProtocolSettings;
+use crate::smart_contract::{ApplicationEngine, LogEventArgs, NotifyEventArgs};
 use neo_primitives::UInt256;
 use std::sync::Arc;
 
@@ -94,6 +95,12 @@ pub trait SystemContext: Send + Sync {
 
     /// Returns true if the system is ready (synced within acceptable lag).
     fn is_ready(&self) -> bool;
+
+    /// Dispatches an ApplicationEngine log event to registered handlers.
+    fn notify_application_log(&self, engine: &ApplicationEngine, args: &LogEventArgs);
+
+    /// Dispatches an ApplicationEngine notification event to registered handlers.
+    fn notify_application_notify(&self, engine: &ApplicationEngine, args: &NotifyEventArgs);
 }
 
 #[cfg(test)]

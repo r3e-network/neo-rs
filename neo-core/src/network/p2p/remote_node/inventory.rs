@@ -345,7 +345,10 @@ impl RemoteNode {
         Ok(())
     }
 
-    pub(super) async fn on_get_blocks(&mut self, payload: GetBlocksPayload) -> crate::akka::ActorResult {
+    pub(super) async fn on_get_blocks(
+        &mut self,
+        payload: GetBlocksPayload,
+    ) -> crate::akka::ActorResult {
         // Validate that the start hash exists in the ledger (matches C# behavior)
         if self.system.try_get_block(&payload.hash_start).is_none() {
             return Ok(());

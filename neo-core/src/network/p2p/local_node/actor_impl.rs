@@ -2,8 +2,8 @@
 // actor_impl.rs - Actor trait implementation for LocalNodeActor
 //
 
-use super::*;
 use super::actor::LocalNodeActor;
+use super::*;
 
 #[async_trait]
 impl Actor for LocalNodeActor {
@@ -23,7 +23,7 @@ impl Actor for LocalNodeActor {
                         Err(payload) => {
                             warn!(
                                 target: "neo",
-                                message_type = %type_name_of_val(payload.as_ref()),
+                                message_type_id = ?payload.as_ref().type_id(),
                                 "unknown message routed to local node actor"
                             );
                             Ok(())

@@ -1,8 +1,8 @@
 # neo-rs Full Node Review (Module-by-Module)
 
-**Date:** 2025-12-15  
+**Date:** 2025-12-17  
 **Workspace root:** `/home/neo/git/neo-rs`  
-**Commit:** `3327d458573d31ce8b4608231f781179005f7212` (local working tree has uncommitted changes)
+**Note:** This file is a living review; keep it in sync with `neo-node` wiring.
 
 This document is a *technical review* of the current codebase layout, crate responsibilities, and
 end-to-end “full node” completeness from the perspective of running `neo-node` + querying it with `neo-cli`.
@@ -25,24 +25,16 @@ end-to-end “full node” completeness from the perspective of running `neo-nod
 - Foundation crates (`neo-primitives`, `neo-io`, `neo-json`, `neo-storage`, `neo-crypto`) compile cleanly and are reusable.
 - `neo-consensus` now contains a real dBFT implementation (not just enums/types).
 
-### Major Completeness Gaps (Full Node)
+### Current Status (Full Node Wiring)
 
-At the moment, `neo-node` is **not yet a complete, interoperable Neo JSON-RPC full node**:
+`neo-node` now wires the daemon to the parity runtime and full RPC server:
 
-1. **RPC surface mismatch**
-   - `neo-cli` expects the full Neo JSON-RPC API via the `neo-rpc` client.
-   - `neo-node` currently runs a lightweight in-process RPC stub (`neo-node/src/rpc_service.rs`) implementing only a handful of methods.
+- **Runtime:** `neo_core::neo_system::NeoSystem` (actor-based, feature `neo-core/runtime`)
+- **P2P:** started via `NeoSystem::start_node(...)`
+- **RPC:** `neo_rpc::server::RpcServer` (feature `neo-rpc/server`) with the standard Neo handler set
 
-2. **State/persistence wiring is not production-complete**
-   - `neo-node` uses `neo-chain` (in-memory chain state) + `neo-state` (world state + trie), but block execution currently uses an in-memory `neo_core::persistence::DataCache` snapshot with **no backing store**.
-   - Genesis execution is not performed in the new runtime path, so native contract state initialization is not represented.
-
-3. **Consensus/validator mode is not complete**
-   - Validator wallet loading is still stubbed (`neo-node/src/validator_service.rs`).
-   - Consensus event bridging (broadcasting dBFT payloads to P2P and servicing transaction requests from mempool) is marked TODO in both `neo-node/src/runtime.rs` and `neo-node/src/validator_service.rs`.
-
-4. **P2P serving behavior is incomplete**
-   - `GetHeaders` handling is TODO in `neo-node/src/p2p_service.rs` (node does not serve headers to peers yet).
+The earlier “refactor stub” node runtime (`neo-node/src/runtime/*`, `neo-node/src/p2p_service.rs`,
+`neo-node/src/rpc_service.rs`, etc.) has been removed to avoid maintaining two competing stacks.
 
 These gaps do not necessarily mean the *protocol code* is incorrect; they mean the “node daemon”
 composition is still mid-refactor and does not yet present a full-node contract end-to-end.
@@ -114,12 +106,8 @@ composition is still mid-refactor and does not yet present a full-node contract 
 ### Application Layer
 
 #### `neo-node`
-- **Role (intended):** Node daemon wiring P2P + sync + execution + consensus + RPC.
-- **Status:** **WIP/refactor-in-progress**.
-  - RPC server is a minimal stub and does not match `neo-cli` expectations.
-  - Block execution uses `DataCache::new(false)` with no backing store; state is not persisted.
-  - Consensus validator mode is stubbed (wallet load + event bridging TODOs).
-  - Health is explicitly marked “simplified during refactoring”.
+- **Role:** Node daemon that hosts P2P + RPC on top of `NeoSystem`.
+- **Status:** Uses `neo-rpc` server handlers; health/metrics are pumped from the live runtime.
 
 #### `neo-cli`
 - **Role:** JSON-RPC client CLI for a Neo node.
@@ -144,24 +132,17 @@ composition is still mid-refactor and does not yet present a full-node contract 
    - (B) finish the new modular runtime (`neo-chain` + `neo-state` + `neo-mempool` + `neo-consensus`) and adapt `neo-rpc` server to it.
    - Today the repo contains significant pieces of both approaches, and the integration seams are the main source of incompleteness.
 
-2. **Replace the RPC stub**
-   - Deprecate `neo-node/src/rpc_service.rs` or move it behind an explicit “dev” feature.
-   - Integrate `neo-rpc` server (feature `neo-rpc/server`) once the runtime can satisfy its required service interfaces.
+2. **Keep the wiring single-path**
+   - Avoid reintroducing the removed stub services; keep `neo-node` as composition + configuration around `NeoSystem` and `neo-rpc`.
 
 3. **Back block execution with real state**
    - Execute genesis (or otherwise initialize native contract storage) and ensure every block executes against the previous block’s committed snapshot.
    - Persist state changes (storage) and expose correct block/transaction queries for RPC.
 
-4. **Finish validator mode**
-   - Implement wallet loading (even minimal NEP-6 support) for validator keys.
-   - Bridge `ConsensusEvent::BroadcastMessage` → P2P extensible payload relay.
-   - Bridge `ConsensusEvent::RequestTransactions` → mempool transaction selection.
-
-5. **Complete P2P request/response baseline**
-   - Implement responses for `GetHeaders` at minimum to behave as a cooperative peer.
+4. **Consensus scope**
+   - Consensus (dBFT validator mode) can remain a separate “service layer” concern; keep it optional and well-isolated from the sync/validation path.
 
 ## Documentation Notes
 
 - `README.md` references `docs/METRICS.md`; that file now exists and documents the health/metrics endpoints.
 - Several older docs refer to a removed `neo-plugins` crate; treat them as historical or update them as the refactor stabilizes.
-

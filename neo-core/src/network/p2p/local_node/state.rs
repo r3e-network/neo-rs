@@ -2,8 +2,8 @@
 // state.rs - LocalNode state management
 //
 
-use super::*;
 use super::helpers::current_unix_timestamp;
+use super::*;
 
 #[derive(Debug, Clone)]
 pub(super) struct RemoteActorEntry {

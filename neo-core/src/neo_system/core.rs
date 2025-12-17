@@ -67,8 +67,8 @@ use super::system::STATE_STORE_SERVICE;
 use crate::akka::{ActorRef, ActorSystem, EventStreamHandle};
 
 use crate::error::{CoreError, CoreResult};
-use crate::extensions::log_level::LogLevel;
 use crate::events::{broadcast_plugin_event, PluginEvent};
+use crate::extensions::log_level::LogLevel;
 use crate::extensions::utility::ExtensionsUtility;
 #[cfg(test)]
 use crate::extensions::LogLevel as ExternalLogLevel;
@@ -267,9 +267,11 @@ impl NeoSystem {
         });
 
         if state_service_enabled {
-            let handlers = Arc::new(crate::state_service::commit_handlers::StateServiceCommitHandlers::new(
-                state_store.clone(),
-            ));
+            let handlers = Arc::new(
+                crate::state_service::commit_handlers::StateServiceCommitHandlers::new(
+                    state_store.clone(),
+                ),
+            );
             context.register_committing_handler(handlers.clone())?;
             context.register_committed_handler(handlers)?;
         }

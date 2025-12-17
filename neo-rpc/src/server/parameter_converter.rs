@@ -41,16 +41,6 @@ impl ParameterConverter {
     ) -> Result<T, RpcException> {
         T::from_token(token, ctx)
     }
-
-    pub fn convert_optional<T: RpcConvertible>(
-        token: Option<&JToken>,
-        ctx: &ConversionContext,
-    ) -> Result<Option<T>, RpcException> {
-        match token {
-            Some(value) => T::from_token(value, ctx).map(Some),
-            None => Ok(None),
-        }
-    }
 }
 
 impl RpcConvertible for String {
