@@ -43,13 +43,14 @@ jobs:
       - name: Prepare tmp directory
         run: |
           echo "TMPDIR=${RUNNER_TEMP}/tmp" >> "$GITHUB_ENV"
+          echo "CARGO_TARGET_DIR=${RUNNER_TEMP}/target" >> "$GITHUB_ENV"
           mkdir -p "${RUNNER_TEMP}/tmp"
 
       - name: Format check
         run: cargo fmt --all --check
 
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --profile test -- -D warnings
 
       - name: Tests
         run: cargo test --workspace
