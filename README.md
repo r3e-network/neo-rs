@@ -5,10 +5,30 @@ Rust implementation of the Neo N3 node stack, including the virtual machine, cor
 For a high-level tour of crate boundaries and service lifecycles, see `docs/ARCHITECTURE.md`.
 For metrics and health payload fields, see `docs/METRICS.md`.
 
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Application Layer                        │
+│  neo-cli (CLI Client)     │  neo-node (Node Daemon)         │
+├─────────────────────────────────────────────────────────────┤
+│                    Chain Management                         │
+│  neo-chain (Blockchain)   │  neo-mempool (Transaction Pool) │
+├─────────────────────────────────────────────────────────────┤
+│                    Core Layer                               │
+│  neo-core (Core Logic)  │  neo-vm (Virtual Machine)         │
+│  neo-consensus (dBFT)   │  neo-p2p (P2P Network)            │
+│  neo-rpc (RPC Server)                                       │
+├─────────────────────────────────────────────────────────────┤
+│                    Foundation Layer                         │
+│  neo-primitives │ neo-crypto │ neo-storage │ neo-io │ neo-json│
+└─────────────────────────────────────────────────────────────┘
+```
+
 ## Compatibility
 
-| neo-rs Version | Neo N3 Version | C# Reference Commit |
-|----------------|----------------|---------------------|
+| neo-rs Version | Neo N3 Version | C# Reference Commit                                                                             |
+| -------------- | -------------- | ----------------------------------------------------------------------------------------------- |
 | 0.4.x          | 3.8.2          | [`ede620e`](https://github.com/neo-project/neo/commit/ede620e5722c48e199a0f3f2ab482ae090c1b878) |
 
 This implementation maintains byte-for-byte serialization compatibility with the official C# Neo implementation for blocks, transactions, and P2P messages.
@@ -77,6 +97,7 @@ make preflight
 ```
 
 Environment overrides:
+
 - `NEO_CONFIG` (path to TOML), `NEO_STORAGE` (data path), `NEO_BACKEND` (storage backend)
 - `NEO_STORAGE_READONLY` (open storage read-only; use with `--check-*` only)
 - `NEO_NETWORK_MAGIC`, `NEO_LISTEN_PORT`, `NEO_SEED_NODES`
@@ -94,6 +115,7 @@ Environment overrides:
 - `/readyz` is available when the health server is enabled (same contract as `/healthz`).
 
 Hardened RPC preset:
+
 - Use `--rpc-hardened` (or set via CLI) to disable CORS, require auth, and disable `openwallet`/`listplugins` by default; combine with `NEO_RPC_USER/NEO_RPC_PASS`.
 
 Example hardened run:
@@ -118,6 +140,7 @@ docker run -d --name neo-node \
 ```
 
 Key environment knobs:
+
 - `NEO_NETWORK`: `testnet` (default) or `mainnet` to pick the bundled TOML config.
 - `NEO_STORAGE`: RocksDB path inside the container (defaults to `/data/testnet` or `/data/mainnet` based on `NEO_NETWORK`).
 - `NEO_CONFIG`: custom config path if you bind-mount your own TOML.
