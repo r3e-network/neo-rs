@@ -1,6 +1,0 @@
-- Run `cargo fmt` and ensure no formatting diffs.
-- Run `cargo clippy -p neo-core -- -D warnings` when time permits.
-- Run `cargo test -p neo-core` (or targeted tests) to validate changes; share results.
-- For simple edits, at least run `cargo check -p neo-core` to confirm build.
-- Document noteworthy behavior/risk in PR summary or commit message.
-- Avoid reverting user changes; respect existing workspace settings.

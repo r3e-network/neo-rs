@@ -1,7 +1,0 @@
-- `cargo build --release` / `cargo build --workspace` – compile the full node.
-- `cargo test --workspace` – run all workspace tests (default). Use `cargo test --all-features` for full coverage.
-- `cargo fmt --all` and `cargo clippy --all-targets --all-features -- -D warnings` – formatting and linting.
-- `cargo doc --no-deps --all-features` – documentation check (used in pre-commit).
-- `./target/release/neo-node --network mainnet|testnet` – run the node binaries after build.
-- `make build`, `make build-release`, `make test`, `make run[-testnet|-mainnet]` – convenience wrapper targets; `make docker` & friends for container workflows.
-- `pre-commit run --all-files` – run project pre-commit hooks if configured.

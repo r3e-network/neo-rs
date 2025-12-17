@@ -1,4 +1,0 @@
-- High-performance Rust implementation of the Neo N3 blockchain protocol aiming for full compatibility with the official C# node.
-- Provides complete node functionality: VM, consensus (dBFT), networking, ledger, RPC, wallets, and storage components.
-- Targets production deployments with improved performance, memory safety, and tooling compared to the legacy C# implementation.
-- Workspace of Rust crates plus `node` binary; includes tooling for Docker deployment and scripts for automation.

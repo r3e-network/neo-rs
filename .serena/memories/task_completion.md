@@ -1,5 +1,0 @@
-- Ensure `cargo fmt --all` and `cargo clippy --all-targets --all-features -- -D warnings` pass.
-- Run `cargo test --workspace` (or targeted subsets relevant to the change).
-- For node-level work, consider `cargo test --all-features` or integration suites if applicable.
-- When touching documentation or configs, build docs via `cargo doc --no-deps --all-features` if relevant.
-- Update Docker artefacts/Make targets only if corresponding feature is modified; no automated check provided.

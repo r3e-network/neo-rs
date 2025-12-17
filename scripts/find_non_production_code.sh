@@ -8,6 +8,7 @@
 #
 # Notes:
 # - "Hard" markers (TODO/FIXME/HACK/XXX) are always reported.
+# - Rust hard markers also include `todo!()` / `unimplemented!()`.
 # - "Soft" markers ("for now", "placeholder", "simplified", "in production", etc.) are only
 #   reported when they appear in comments/docstrings to avoid false positives on identifiers.
 
@@ -38,14 +39,19 @@ if [[ "$INCLUDE_ALL" -eq 0 ]]; then
   EXCLUDE_GLOBS+=( --glob '!tests/**' --glob '!docs/**' --glob '!**/*test*/**' --glob '!**/*_test.rs' )
 fi
 
-HARD_REGEX='\\b(TODO|FIXME|HACK|XXX)\\b'
+HARD_REGEX='\b(TODO|FIXME|HACK|XXX)\b|\b(todo!|unimplemented!)\s*\('
 SOFT_REGEX='(for now|in production|in real implementation|simplified|placeholder|stub|not production|non-production)'
 SOFT_IN_COMMENTS_REGEX="(^|\\s)(//|///|//!|/\\*|\\*)\\s*.*${SOFT_REGEX}"
 
 echo "Searching for non-production markers..."
 echo ""
 
-hard_count=$(rg -n -S --hidden "${EXCLUDE_GLOBS[@]}" "$HARD_REGEX" . | wc -l | tr -d ' ')
+hard_count=0
+if [[ "$INCLUDE_ALL" -eq 0 ]]; then
+  hard_count=$(rg -n -S --hidden "${EXCLUDE_GLOBS[@]}" --type rust "$HARD_REGEX" . | wc -l | tr -d ' ')
+else
+  hard_count=$(rg -n -S --hidden "${EXCLUDE_GLOBS[@]}" "$HARD_REGEX" . | wc -l | tr -d ' ')
+fi
 soft_rust_count=$(rg -n -S --hidden "${EXCLUDE_GLOBS[@]}" --type rust -i "$SOFT_IN_COMMENTS_REGEX" . | wc -l | tr -d ' ')
 soft_text_count=0
 if [[ "$INCLUDE_ALL" -eq 1 ]]; then
@@ -64,7 +70,11 @@ echo ""
 echo "=== Detailed Findings ==="
 echo ""
 
-rg -n -S --hidden "${EXCLUDE_GLOBS[@]}" "$HARD_REGEX" . || true
+if [[ "$INCLUDE_ALL" -eq 0 ]]; then
+  rg -n -S --hidden "${EXCLUDE_GLOBS[@]}" --type rust "$HARD_REGEX" . || true
+else
+  rg -n -S --hidden "${EXCLUDE_GLOBS[@]}" "$HARD_REGEX" . || true
+fi
 
 echo ""
 echo "=== Soft Markers (Rust comments/docstrings only) ==="

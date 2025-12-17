@@ -37,6 +37,8 @@ Thumbs.db
 .claude-flow/
 .hive-mind/
 .cargo-ai/
+.serena/
+**/.serena/
 
 # Compiled binaries
 /neo-node
