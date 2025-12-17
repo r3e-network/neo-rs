@@ -11,7 +11,7 @@ use neo_core::{
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
-    fs,
+    env, fs,
     fs::OpenOptions,
     io::Write,
     net::{IpAddr, Ipv4Addr, SocketAddr},
@@ -20,7 +20,11 @@ use std::{
 
 /// Returns the default config directory for RPC server configuration.
 fn config_directory() -> PathBuf {
-    PathBuf::from("config/RpcServer")
+    let plugins_dir = match env::var_os("NEO_PLUGINS_DIR") {
+        Some(dir) if !dir.is_empty() => PathBuf::from(dir),
+        _ => PathBuf::from("data/Plugins"),
+    };
+    plugins_dir.join("RpcServer")
 }
 
 /// High-level node configuration derived from the Neo CLI TOML files.
@@ -391,6 +395,20 @@ impl NodeConfig {
             )
         })?;
 
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            fs::set_permissions(&config_path, fs::Permissions::from_mode(0o600)).with_context(
+                || {
+                    format!(
+                        "failed to set permissions on RPC server configuration at {}",
+                        config_path.display()
+                    )
+                },
+            )?;
+        }
+
         Ok(Some(config_path))
     }
 
@@ -551,6 +569,11 @@ mod tests {
             .write_rpc_server_plugin_config(&settings)
             .expect("write rpc config")
             .expect("path returned");
+
+        assert!(
+            path.starts_with(tmp.path()),
+            "rpc config should be written under NEO_PLUGINS_DIR"
+        );
 
         let metadata = fs::metadata(&path).expect("metadata");
         #[cfg(unix)]
