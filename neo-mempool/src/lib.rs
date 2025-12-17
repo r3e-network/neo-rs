@@ -40,7 +40,7 @@ mod transaction_entry;
 pub use error::{MempoolError, MempoolResult};
 pub use policy::FeePolicy;
 pub use pool::{Mempool, MempoolConfig};
-pub use transaction_entry::TransactionEntry;
+pub use transaction_entry::{TransactionEntry, TransactionEntryParams};
 
 /// Default maximum mempool capacity
 pub const DEFAULT_MAX_TRANSACTIONS: usize = 50_000;

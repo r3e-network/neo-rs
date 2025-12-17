@@ -203,54 +203,83 @@ impl Blockchain {
     }
 
     pub(super) async fn handle_reverify(&self, reverify: Reverify, ctx: &ActorContext) {
-        for item in &reverify.inventories {
-            match item.inventory_type {
-                InventoryType::Block => {
-                    if let Some(block) = Self::deserialize_inventory::<Block>(&item.payload) {
-                        if let Err(error) = self.handle_block_inventory(block, false, ctx).await {
-                            tracing::debug!(
-                                target: "neo",
-                                %error,
-                                "failed to reverify block inventory"
-                            );
-                        }
-                    } else {
+        let max_to_verify = reverify.inventories.len().max(1);
+
+        for item in reverify.inventories {
+            match item.payload {
+                InventoryPayload::Block(block) => {
+                    if let Err(error) = self.handle_block_inventory(*block, false, ctx).await {
                         tracing::debug!(
                             target: "neo",
-                            "failed to deserialize block payload during reverify"
+                            %error,
+                            "failed to reverify block inventory"
                         );
                     }
                 }
-                InventoryType::Transaction => {
-                    if let Some(tx) = Self::deserialize_inventory::<Transaction>(&item.payload) {
-                        let _ = self.on_new_transaction(&tx);
-                    } else {
-                        tracing::debug!(
-                            target: "neo",
-                            "failed to deserialize transaction payload during reverify"
-                        );
-                    }
+                InventoryPayload::Transaction(tx) => {
+                    let _ = self.on_new_transaction(&tx);
                 }
-                InventoryType::Consensus | InventoryType::Extensible => {
-                    if let Some(payload) =
-                        Self::deserialize_inventory::<ExtensiblePayload>(&item.payload)
+                InventoryPayload::Extensible(payload) => {
+                    if let Err(error) = self
+                        .handle_extensible_inventory(*payload, false, ctx)
+                        .await
                     {
-                        if let Err(error) =
-                            self.handle_extensible_inventory(payload, false, ctx).await
-                        {
-                            tracing::debug!(
-                                target: "neo",
-                                %error,
-                                "failed to reverify extensible payload"
-                            );
-                        }
-                    } else {
                         tracing::debug!(
                             target: "neo",
-                            "failed to deserialize extensible payload during reverify"
+                            %error,
+                            "failed to reverify extensible payload"
                         );
                     }
                 }
+                InventoryPayload::Raw(inventory_type, payload) => match inventory_type {
+                    InventoryType::Block => {
+                        if let Some(block) = Self::deserialize_inventory::<Block>(&payload) {
+                            if let Err(error) = self.handle_block_inventory(block, false, ctx).await
+                            {
+                                tracing::debug!(
+                                    target: "neo",
+                                    %error,
+                                    "failed to reverify block inventory"
+                                );
+                            }
+                        } else {
+                            tracing::debug!(
+                                target: "neo",
+                                "failed to deserialize block payload during reverify"
+                            );
+                        }
+                    }
+                    InventoryType::Transaction => {
+                        if let Some(tx) = Self::deserialize_inventory::<Transaction>(&payload) {
+                            let _ = self.on_new_transaction(&tx);
+                        } else {
+                            tracing::debug!(
+                                target: "neo",
+                                "failed to deserialize transaction payload during reverify"
+                            );
+                        }
+                    }
+                    InventoryType::Consensus | InventoryType::Extensible => {
+                        if let Some(payload) =
+                            Self::deserialize_inventory::<ExtensiblePayload>(&payload)
+                        {
+                            if let Err(error) =
+                                self.handle_extensible_inventory(payload, false, ctx).await
+                            {
+                                tracing::debug!(
+                                    target: "neo",
+                                    %error,
+                                    "failed to reverify extensible payload"
+                                );
+                            }
+                        } else {
+                            tracing::debug!(
+                                target: "neo",
+                                "failed to deserialize extensible payload during reverify"
+                            );
+                        }
+                    }
+                },
             }
         }
 
@@ -260,7 +289,6 @@ impl Blockchain {
             let header_cache = context.header_cache();
             let header_backlog = header_cache.count() > 0 || self.ledger.has_future_headers();
             let snapshot = store_cache.data_cache();
-            let max_to_verify = reverify.inventories.len().max(1);
             let more_pending = context
                 .memory_pool()
                 .lock()

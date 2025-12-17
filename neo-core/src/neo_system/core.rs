@@ -84,6 +84,7 @@ use crate::persistence::{
 pub use crate::protocol_settings::ProtocolSettings;
 use crate::services::{LedgerService, MempoolService, PeerManagerService, StateStoreService};
 use crate::smart_contract::native::helpers::NativeHelpers;
+use crate::smart_contract::native::ledger_contract::LedgerContract;
 use crate::state_service::StateStore;
 use neo_primitives::UInt256;
 #[cfg(test)]
@@ -189,7 +190,9 @@ impl NeoSystem {
 
         let actor_system = ActorSystem::new("neo").map_err(to_core_error)?;
         let settings_arc = Arc::new(settings.clone());
-        let genesis_block = Arc::new(crate::ledger::create_genesis_block(&settings));
+        let mut genesis_block_val = crate::ledger::create_genesis_block(&settings);
+        let genesis_hash = genesis_block_val.hash();
+        let genesis_block = Arc::new(genesis_block_val);
 
         let service_registry = Arc::new(ServiceRegistry::new());
         let service_added_handlers: Arc<RwLock<Vec<Arc<dyn IServiceAddedHandler + Send + Sync>>>> =
@@ -303,7 +306,7 @@ impl NeoSystem {
             store_provider,
             store,
             ledger,
-            genesis_block,
+            genesis_block: genesis_block.clone(),
             context,
             self_ref: Mutex::new(Weak::new()),
         });
@@ -316,6 +319,18 @@ impl NeoSystem {
         }
 
         initialise_plugins(&system)?;
+
+        // Ensure genesis block is persisted if not present
+        {
+            let store = system.store();
+            let snapshot = store.get_snapshot();
+            let store_cache = StoreCache::new_from_snapshot(snapshot);
+            let ledger_contract = LedgerContract::new();
+            if !ledger_contract.contains_block(&store_cache, &genesis_hash) {
+                tracing::info!(target: "neo", "persisting genesis block to initialize state");
+                system.persist_block(genesis_block.as_ref().clone())?;
+            }
+        }
 
         Ok(system)
     }

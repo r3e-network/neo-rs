@@ -464,10 +464,12 @@ fn normalize_endpoint(endpoint: SocketAddr) -> SocketAddr {
     }
 }
 
+#[cfg(feature = "upnp")]
 fn is_ipv4_mapped(addr: &IpAddr) -> bool {
     matches!(addr, IpAddr::V6(v6) if v6.to_ipv4().is_some())
 }
 
+#[cfg(feature = "upnp")]
 fn is_intranet_address(addr: &IpAddr) -> bool {
     match addr {
         IpAddr::V4(v4) => {

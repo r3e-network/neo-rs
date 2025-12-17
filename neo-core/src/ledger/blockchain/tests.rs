@@ -262,4 +262,63 @@ mod tests {
         let result = blockchain.on_new_extensible(payload).await;
         assert_eq!(result, VerifyResult::Succeed);
     }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn reverify_accepts_deserialized_payload() {
+        use crate::ledger::blockchain::{
+            BlockchainCommand, InventoryPayload, Reverify, ReverifyItem,
+        };
+
+        let settings = ProtocolSettings::mainnet();
+        let system = NeoSystem::new(settings.clone(), None, None).expect("NeoSystem::new");
+
+        // We'll send a Reverify command with a Block payload.
+        // Using genesis block for simplicity.
+        let genesis = system.genesis_block();
+        let item = ReverifyItem {
+            payload: InventoryPayload::Block(Box::new(genesis.as_ref().clone())),
+            block_index: Some(0),
+        };
+        let reverify = Reverify {
+            inventories: vec![item],
+        };
+
+        // Send to blockchain actor
+        let blockchain = system.blockchain_actor();
+        blockchain
+            .tell(BlockchainCommand::Reverify(reverify))
+            .expect("send failed");
+
+        // Wait a bit for processing to ensure no crashes
+        sleep(Duration::from_millis(100)).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn import_rejects_out_of_order_blocks() {
+        use crate::ledger::blockchain::{BlockchainCommand, Import};
+
+        let settings = ProtocolSettings::mainnet();
+        let system = NeoSystem::new(settings.clone(), None, None).expect("NeoSystem::new");
+        let blockchain = system.blockchain_actor();
+
+        // Genesis is block 0. Current height is 0.
+        // Send block 2 (future gap).
+        let mut block = system.genesis_block().as_ref().clone();
+        block.header.set_index(2);
+
+        let import = Import {
+            blocks: vec![block],
+            verify: true,
+        };
+
+        blockchain
+            .tell(BlockchainCommand::Import(import))
+            .expect("send failed");
+
+        sleep(Duration::from_millis(100)).await;
+
+        // Verify height didn't change
+        let height = system.ledger_context().current_height();
+        assert_eq!(height, 0);
+    }
 }

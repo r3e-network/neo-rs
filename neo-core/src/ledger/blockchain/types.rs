@@ -53,9 +53,16 @@ pub struct FillMemoryPool {
 pub struct FillCompleted;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum InventoryPayload {
+    Block(Box<Block>),
+    Transaction(Box<Transaction>),
+    Extensible(Box<ExtensiblePayload>),
+    Raw(InventoryType, Vec<u8>),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReverifyItem {
-    pub inventory_type: InventoryType,
-    pub payload: Vec<u8>,
+    pub payload: InventoryPayload,
     #[serde(default)]
     pub block_index: Option<u32>,
 }

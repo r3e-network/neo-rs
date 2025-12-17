@@ -37,30 +37,32 @@ pub struct TransactionEntry {
     pub data: Vec<u8>,
 }
 
+/// Parameters for creating a new transaction entry
+pub struct TransactionEntryParams {
+    pub hash: UInt256,
+    pub sender: UInt160,
+    pub system_fee: i64,
+    pub network_fee: i64,
+    pub size: usize,
+    pub valid_until_block: u32,
+    pub priority: i64,
+    pub data: Vec<u8>,
+}
+
 impl TransactionEntry {
     /// Create a new transaction entry
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        hash: UInt256,
-        sender: UInt160,
-        system_fee: i64,
-        network_fee: i64,
-        size: usize,
-        valid_until_block: u32,
-        priority: i64,
-        data: Vec<u8>,
-    ) -> Self {
+    pub fn new(params: TransactionEntryParams) -> Self {
         Self {
-            hash,
-            sender,
-            system_fee,
-            network_fee,
-            size,
-            valid_until_block,
-            priority,
+            hash: params.hash,
+            sender: params.sender,
+            system_fee: params.system_fee,
+            network_fee: params.network_fee,
+            size: params.size,
+            valid_until_block: params.valid_until_block,
+            priority: params.priority,
             added_at: Instant::now(),
             proposal_count: 0,
-            data,
+            data: params.data,
         }
     }
 
@@ -133,43 +135,43 @@ mod tests {
 
     #[test]
     fn test_transaction_entry_ordering() {
-        let high_priority = TransactionEntry::new(
-            UInt256::zero(),
-            UInt160::zero(),
-            1_000_000,
-            10_000_000,
-            100,
-            1000,
-            100,
-            vec![],
-        );
+        let high_priority = TransactionEntry::new(TransactionEntryParams {
+            hash: UInt256::zero(),
+            sender: UInt160::zero(),
+            system_fee: 1_000_000,
+            network_fee: 10_000_000,
+            size: 100,
+            valid_until_block: 1000,
+            priority: 100,
+            data: vec![],
+        });
 
-        let low_priority = TransactionEntry::new(
-            UInt256::from([1u8; 32]),
-            UInt160::zero(),
-            100_000,
-            1_000_000,
-            100,
-            1000,
-            10,
-            vec![],
-        );
+        let low_priority = TransactionEntry::new(TransactionEntryParams {
+            hash: UInt256::from([1u8; 32]),
+            sender: UInt160::zero(),
+            system_fee: 100_000,
+            network_fee: 1_000_000,
+            size: 100,
+            valid_until_block: 1000,
+            priority: 10,
+            data: vec![],
+        });
 
         assert!(high_priority < low_priority); // high_priority comes first in ordering
     }
 
     #[test]
     fn test_expiration() {
-        let entry = TransactionEntry::new(
-            UInt256::zero(),
-            UInt160::zero(),
-            1_000_000,
-            10_000_000,
-            100,
-            1000,
-            100,
-            vec![],
-        );
+        let entry = TransactionEntry::new(TransactionEntryParams {
+            hash: UInt256::zero(),
+            sender: UInt160::zero(),
+            system_fee: 1_000_000,
+            network_fee: 10_000_000,
+            size: 100,
+            valid_until_block: 1000,
+            priority: 100,
+            data: vec![],
+        });
 
         assert!(!entry.is_expired(999));
         assert!(entry.is_expired(1000));

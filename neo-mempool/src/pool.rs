@@ -1,6 +1,8 @@
 //! Transaction mempool implementation
 
-use crate::{FeePolicy, MempoolError, MempoolResult, TransactionEntry, DEFAULT_MAX_TRANSACTIONS};
+use crate::{
+    FeePolicy, MempoolError, MempoolResult, TransactionEntry, DEFAULT_MAX_TRANSACTIONS,
+};
 use hashbrown::{HashMap, HashSet};
 use neo_primitives::{UInt160, UInt256};
 use parking_lot::RwLock;
@@ -357,21 +359,22 @@ pub struct MempoolStats {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::TransactionEntryParams;
 
     fn create_test_entry(hash_byte: u8, priority: i64) -> TransactionEntry {
         let mut hash_bytes = [0u8; 32];
         hash_bytes[0] = hash_byte;
 
-        TransactionEntry::new(
-            UInt256::from(hash_bytes),
-            UInt160::zero(),
-            1_000_000,
-            10_000_000,
-            100,
-            10000,
+        TransactionEntry::new(TransactionEntryParams {
+            hash: UInt256::from(hash_bytes),
+            sender: UInt160::zero(),
+            system_fee: 1_000_000,
+            network_fee: 10_000_000,
+            size: 100,
+            valid_until_block: 10000,
             priority,
-            vec![0u8; 100],
-        )
+            data: vec![0u8; 100],
+        })
     }
 
     #[test]

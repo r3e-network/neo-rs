@@ -148,8 +148,8 @@ mod transaction;
 mod types;
 
 pub use types::{
-    BlockchainCommand, FillCompleted, FillMemoryPool, Import, ImportCompleted, PersistCompleted,
-    PreverifyCompleted, RelayResult, Reverify, ReverifyItem,
+    BlockchainCommand, FillCompleted, FillMemoryPool, Import, ImportCompleted, InventoryPayload,
+    PersistCompleted, PreverifyCompleted, RelayResult, Reverify, ReverifyItem,
 };
 
 #[cfg(test)]
