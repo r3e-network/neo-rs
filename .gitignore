@@ -54,7 +54,7 @@ Thumbs.db
 *.rej
 
 # Large test data
-chain.*
+/chain.*
 blockchain_data/
 testnet_data/
 
