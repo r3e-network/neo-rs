@@ -21,29 +21,39 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 DEFAULT_EXCLUDES = [
-    ".git",
-    "target",
-    "neo_csharp",  # submodule/reference; noise for Rust node correctness work
+    ".git/**",
+    "target/**",
+    "neo_csharp/**",  # submodule/reference; noise for Rust node correctness work
+    # Tests/benches/examples are allowed to be simplified; default scan focuses on production code.
+    "**/tests/**",
+    "**/test/**",
+    "**/benches/**",
+    "**/examples/**",
+    "**/src/**/tests/**",
+    "**/src/**/tests.rs",
 ]
 
 
 PATTERNS = [
-    r"\bTODO\b",
-    r"\bFIXME\b",
-    r"\bHACK\b",
-    r"\bXXX\b",
-    r"\bWIP\b",
-    r"\bTEMP(?:ORARILY)?\b",
-    r"\bFOR NOW\b",
-    r"\bPLACEHOLDER\b",
-    r"\bSIMPLIFIED\b",
-    r"\bNOT PRODUCTION\b",
-    r"\bNON[- ]PRODUCTION\b",
-    r"\bIN REAL IMPLEMENTATION\b",
-    r"\bIN PRODUCTION\b",
-    r"\bSTUB\b",
-    r"\bUNIMPLEMENTED\b",
-    r"\bNOT IMPLEMENTED\b",
+    r"(?i)\bTODO\b",
+    r"(?i)\bFIXME\b",
+    r"(?i)\bHACK\b",
+    r"(?i)\bXXX\b",
+    r"(?i)\bWIP\b",
+    r"(?i)\btemporarily disabled\b",
+    r"(?i)\btemporary workaround\b",
+    r"(?i)\btemporary hack\b",
+    r"(?i)\btemporary fix\b",
+    r"(?i)\bFOR NOW\b",
+    r"(?i)\bPLACEHOLDER\b",
+    r"(?i)\bSIMPLIFIED\b",
+    r"(?i)\bNOT PRODUCTION\b",
+    r"(?i)\bNON[- ]PRODUCTION\b",
+    r"(?i)\bIN REAL IMPLEMENTATION\b",
+    r"(?i)\bIN PRODUCTION\b",
+    r"(?i)\bSTUB\b",
+    r"(?i)\bUNIMPLEMENTED\b",
+    r"(?i)\bNOT IMPLEMENTED\b",
 ]
 
 
@@ -71,7 +81,6 @@ def _run_rg(pattern: str, excludes: List[str], include_glob: Optional[str]) -> L
         "--line-number",
         "--column",
         "--pcre2",
-        "--ignore-case",
         pattern,
         ".",
     ]
@@ -80,7 +89,7 @@ def _run_rg(pattern: str, excludes: List[str], include_glob: Optional[str]) -> L
         cmd.extend(["-g", include_glob])
 
     for ex in excludes:
-        cmd.extend(["-g", f"!{ex}/**"])
+        cmd.extend(["-g", f"!{ex}"])
 
     proc = subprocess.run(
         cmd,

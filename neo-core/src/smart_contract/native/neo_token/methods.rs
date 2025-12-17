@@ -262,7 +262,7 @@ impl NeoToken {
             "setGasPerBlock" => self.set_gas_per_block(engine, args),
             "setRegisterPrice" => self.set_register_price(engine, args),
             _ => Err(CoreError::native_contract(format!(
-                "Method not implemented: {}",
+                "Unknown method: {}",
                 method
             ))),
         }

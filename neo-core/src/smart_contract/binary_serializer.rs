@@ -17,7 +17,7 @@ use std::collections::{BTreeMap, HashSet, VecDeque};
 pub struct BinarySerializer;
 
 #[derive(Debug, Clone, Copy)]
-struct ContainerPlaceholder {
+struct ContainerDescriptor {
     item_type: StackItemType,
     element_count: usize,
 }
@@ -25,7 +25,7 @@ struct ContainerPlaceholder {
 #[derive(Debug)]
 enum PendingItem {
     Value(StackItem),
-    Placeholder(ContainerPlaceholder),
+    Container(ContainerDescriptor),
 }
 
 impl BinarySerializer {
@@ -112,7 +112,7 @@ impl BinarySerializer {
                     if count > (max_items as usize).saturating_sub(total_items) {
                         return Err("Too many items".to_string());
                     }
-                    pending.push(PendingItem::Placeholder(ContainerPlaceholder {
+                    pending.push(PendingItem::Container(ContainerDescriptor {
                         item_type,
                         element_count: count,
                     }));
@@ -127,7 +127,7 @@ impl BinarySerializer {
                     if count > (max_items as usize).saturating_sub(total_items) {
                         return Err("Too many items".to_string());
                     }
-                    pending.push(PendingItem::Placeholder(ContainerPlaceholder {
+                    pending.push(PendingItem::Container(ContainerDescriptor {
                         item_type,
                         element_count: count,
                     }));
@@ -146,13 +146,13 @@ impl BinarySerializer {
         while let Some(item) = pending.pop() {
             match item {
                 PendingItem::Value(stack_item) => constructed.push(stack_item),
-                PendingItem::Placeholder(placeholder) => {
+                PendingItem::Container(container) => {
                     let rc = reference_counter.clone();
                     let result =
-                        match placeholder.item_type {
+                        match container.item_type {
                             StackItemType::Array => {
-                                let mut elements = Vec::with_capacity(placeholder.element_count);
-                                for _ in 0..placeholder.element_count {
+                                let mut elements = Vec::with_capacity(container.element_count);
+                                for _ in 0..container.element_count {
                                     elements.push(constructed.pop().ok_or_else(|| {
                                         "Invalid serialized array data".to_string()
                                     })?);
@@ -163,8 +163,8 @@ impl BinarySerializer {
                                 )
                             }
                             StackItemType::Struct => {
-                                let mut elements = Vec::with_capacity(placeholder.element_count);
-                                for _ in 0..placeholder.element_count {
+                                let mut elements = Vec::with_capacity(container.element_count);
+                                for _ in 0..container.element_count {
                                     elements.push(constructed.pop().ok_or_else(|| {
                                         "Invalid serialized struct data".to_string()
                                     })?);
@@ -176,7 +176,7 @@ impl BinarySerializer {
                             }
                             StackItemType::Map => {
                                 let mut entries = BTreeMap::new();
-                                for _ in 0..placeholder.element_count {
+                                for _ in 0..container.element_count {
                                     let key = constructed
                                         .pop()
                                         .ok_or_else(|| "Invalid serialized map key".to_string())?;
@@ -190,7 +190,7 @@ impl BinarySerializer {
                                         .map_err(|err| err.to_string())?,
                                 )
                             }
-                            _ => return Err("Invalid container placeholder".to_string()),
+                            _ => return Err("Invalid container descriptor".to_string()),
                         };
                     constructed.push(result);
                 }

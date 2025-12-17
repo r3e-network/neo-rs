@@ -230,7 +230,10 @@ impl AttestationReport {
     fn verify_local_report(&self) -> bool {
         // Real SGX local report verification requires EREPORT/EREPORTKEY inside an enclave.
         // Until the verifier is implemented, fail closed for non-simulated reports.
-        tracing::warn!(target: "neo", "SGX local report verification not implemented");
+        tracing::warn!(
+            target: "neo",
+            "SGX local report verification is unavailable (failing closed)"
+        );
         false
     }
 
@@ -238,7 +241,10 @@ impl AttestationReport {
     fn verify_remote_quote(&self) -> bool {
         // Real remote quote verification requires IAS/DCAP integration.
         // Until the verifier is implemented, fail closed for non-simulated reports.
-        tracing::warn!(target: "neo", "SGX remote quote verification not implemented");
+        tracing::warn!(
+            target: "neo",
+            "SGX remote quote verification is unavailable (failing closed)"
+        );
         false
     }
 

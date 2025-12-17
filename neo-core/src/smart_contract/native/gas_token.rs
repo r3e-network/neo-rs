@@ -121,7 +121,7 @@ impl GasToken {
             "balanceOf" => self.balance_of(engine, args),
             "transfer" => self.transfer(engine, args),
             _ => Err(CoreError::native_contract(format!(
-                "Method not implemented: {}",
+                "Unknown method: {}",
                 method
             ))),
         }

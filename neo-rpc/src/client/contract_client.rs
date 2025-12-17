@@ -44,7 +44,8 @@ impl ContractClient {
         args: Vec<serde_json::Value>,
     ) -> Result<RpcInvokeResult, Box<dyn std::error::Error>> {
         // Create script using script builder
-        let script = self.make_script(script_hash, operation, args)?;
+        let script =
+            Self::build_dynamic_call_script(script_hash, operation, &args, CallFlags::ALL)?;
 
         // Call RPC invoke script method
         self.rpc_client
@@ -61,25 +62,7 @@ impl ContractClient {
         manifest: &ContractManifest,
         key: &KeyPair,
     ) -> Result<Transaction, Box<dyn std::error::Error>> {
-        let manifest_json = manifest.to_json()?.to_string();
-
-        let mut sb = ScriptBuilder::new();
-        // C# parity: ScriptBuilderExtensions.EmitDynamicCall(ContractManagement.Hash, "deploy", nef, manifestJson)
-        // CreateArray(args)
-        sb.emit_push(manifest_json.as_bytes());
-        sb.emit_push(nef_file);
-        sb.emit_push_int(2);
-        sb.emit_pack();
-        // EmitPush(flags)
-        sb.emit_push_int(CallFlags::ALL.bits() as i64);
-        // EmitPush(method)
-        sb.emit_push("deploy".as_bytes());
-        // EmitPush(scriptHash)
-        sb.emit_push(&ContractManagement::contract_hash().to_array());
-        // Syscall
-        sb.emit_syscall("System.Contract.Call")?;
-
-        let script = sb.to_array();
+        let script = Self::build_deploy_contract_script(nef_file, manifest, CallFlags::ALL)?;
 
         let sender = key.get_script_hash();
         let signers = vec![Signer::new(sender, WitnessScope::CALLED_BY_ENTRY)];
@@ -91,12 +74,11 @@ impl ContractClient {
         manager.sign().await
     }
 
-    /// Helper method to create script from contract call
-    fn make_script(
-        &self,
+    fn build_dynamic_call_script(
         script_hash: &UInt160,
-        operation: &str,
-        args: Vec<serde_json::Value>,
+        method: &str,
+        args: &[serde_json::Value],
+        call_flags: CallFlags,
     ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         let mut sb = ScriptBuilder::new();
 
@@ -113,9 +95,35 @@ impl ContractClient {
         }
 
         // EmitPush(flags), EmitPush(method), EmitPush(scriptHash), SYSCALL System.Contract.Call
-        sb.emit_push_int(CallFlags::ALL.bits() as i64);
-        sb.emit_push(operation.as_bytes());
+        sb.emit_push_int(call_flags.bits() as i64);
+        sb.emit_push(method.as_bytes());
         sb.emit_push(&script_hash.to_array());
+        sb.emit_syscall("System.Contract.Call")?;
+
+        Ok(sb.to_array())
+    }
+
+    fn build_deploy_contract_script(
+        nef_file: &[u8],
+        manifest: &ContractManifest,
+        call_flags: CallFlags,
+    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        let manifest_json = manifest.to_json()?.to_string();
+
+        let mut sb = ScriptBuilder::new();
+        // C# parity: ScriptBuilderExtensions.EmitDynamicCall(ContractManagement.Hash, "deploy", nef, manifestJson)
+        // CreateArray(args)
+        sb.emit_push(manifest_json.as_bytes());
+        sb.emit_push(nef_file);
+        sb.emit_push_int(2);
+        sb.emit_pack();
+        // EmitPush(flags)
+        sb.emit_push_int(call_flags.bits() as i64);
+        // EmitPush(method)
+        sb.emit_push("deploy".as_bytes());
+        // EmitPush(scriptHash)
+        sb.emit_push(&ContractManagement::contract_hash().to_array());
+        // Syscall
         sb.emit_syscall("System.Contract.Call")?;
 
         Ok(sb.to_array())
@@ -163,3 +171,6 @@ impl ContractClient {
         }
     }
 }
+
+// NOTE: Script byte layout parity tests live in `neo-vm/tests/*` so they run in
+// CI without requiring the optional `neo-rpc/client` feature.
