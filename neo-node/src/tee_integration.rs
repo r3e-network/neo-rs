@@ -1,6 +1,10 @@
 //! TEE integration for neo-node
 //!
 //! This module provides TEE-protected wallet and mempool functionality.
+//!
+//! Note: This module is feature-gated and will be fully integrated when TEE support is enabled.
+
+#![allow(dead_code)]
 
 use neo_tee::{
     attestation::AttestationService,

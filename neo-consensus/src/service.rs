@@ -102,6 +102,15 @@ impl ConsensusService {
         }
     }
 
+    /// Returns our validator index, or an error if we're not a validator.
+    /// This is a safe alternative to `my_index.unwrap()` for production code.
+    #[inline]
+    fn my_index(&self) -> ConsensusResult<u8> {
+        self.context
+            .my_index
+            .ok_or(ConsensusError::NotValidator)
+    }
+
     /// Starts consensus for a new block
     pub fn start(
         &mut self,
@@ -256,7 +265,7 @@ impl ConsensusService {
         let msg = PrepareRequestMessage::new(
             self.context.block_index,
             self.context.view_number,
-            self.context.my_index.unwrap(),
+            self.my_index()?,
             self.context.version,
             self.context.prev_hash,
             timestamp,
@@ -264,7 +273,7 @@ impl ConsensusService {
             tx_hashes,
         );
 
-        let payload = self.create_payload(ConsensusMessageType::PrepareRequest, msg.serialize());
+        let payload = self.create_payload(ConsensusMessageType::PrepareRequest, msg.serialize())?;
 
         // Cache the primary PrepareRequest payload hash (ExtensiblePayload.Hash).
         if let Ok(hash) = self.dbft_payload_hash(&payload) {
@@ -370,18 +379,18 @@ impl ConsensusService {
         let response = PrepareResponseMessage::new(
             self.context.block_index,
             self.context.view_number,
-            self.context.my_index.unwrap(),
+            self.my_index()?,
             preparation_hash,
         );
 
         let response_payload =
-            self.create_payload(ConsensusMessageType::PrepareResponse, response.serialize());
+            self.create_payload(ConsensusMessageType::PrepareResponse, response.serialize())?;
         let my_witness = response_payload.witness.clone();
         self.broadcast(response_payload)?;
 
         // Add our own response
         self.context
-            .add_prepare_response(self.context.my_index.unwrap(), my_witness)?;
+            .add_prepare_response(self.my_index()?, my_witness)?;
 
         self.check_prepare_responses()?;
 
@@ -462,16 +471,16 @@ impl ConsensusService {
         let commit = CommitMessage::new(
             self.context.block_index,
             self.context.view_number,
-            self.context.my_index.unwrap(),
+            self.my_index()?,
             signature.clone(),
         );
 
-        let payload = self.create_payload(ConsensusMessageType::Commit, commit.serialize());
+        let payload = self.create_payload(ConsensusMessageType::Commit, commit.serialize())?;
         self.broadcast(payload)?;
 
         // Add our own commit
         self.context
-            .add_commit(self.context.my_index.unwrap(), signature)?;
+            .add_commit(self.my_index()?, signature)?;
 
         self.check_commits()?;
 
@@ -719,7 +728,7 @@ impl ConsensusService {
 
         // Add our own change view
         self.context.add_change_view(
-            self.context.my_index.unwrap(),
+            self.my_index()?,
             new_view,
             reason,
             timestamp,
@@ -729,12 +738,12 @@ impl ConsensusService {
         let msg = ChangeViewMessage::new(
             self.context.block_index,
             self.context.view_number,
-            self.context.my_index.unwrap(),
+            self.my_index()?,
             timestamp,
             reason,
         );
 
-        let payload = self.create_payload(ConsensusMessageType::ChangeView, msg.serialize());
+        let payload = self.create_payload(ConsensusMessageType::ChangeView, msg.serialize())?;
         self.broadcast(payload)?;
 
         // Check if we already have enough
@@ -764,14 +773,14 @@ impl ConsensusService {
         let recovery_request = RecoveryRequestMessage::new(
             self.context.block_index,
             self.context.view_number,
-            self.context.my_index.unwrap(),
+            self.my_index()?,
             timestamp,
         );
 
         let payload = self.create_payload(
             ConsensusMessageType::RecoveryRequest,
             recovery_request.serialize(),
-        );
+        )?;
         self.broadcast(payload)?;
 
         Ok(())
@@ -814,11 +823,11 @@ impl ConsensusService {
         let recovery = RecoveryMessage::new(
             self.context.block_index,
             self.context.view_number,
-            self.context.my_index.unwrap(),
+            self.my_index()?,
         );
 
         let payload =
-            self.create_payload(ConsensusMessageType::RecoveryMessage, recovery.serialize());
+            self.create_payload(ConsensusMessageType::RecoveryMessage, recovery.serialize())?;
         self.broadcast(payload)?;
 
         Ok(())
@@ -992,7 +1001,7 @@ impl ConsensusService {
                     signature.clone(),
                 );
 
-                let payload = self.create_payload(ConsensusMessageType::Commit, commit.serialize());
+                let payload = self.create_payload(ConsensusMessageType::Commit, commit.serialize())?;
                 self.broadcast(payload)?;
 
                 // Add our own commit
@@ -1005,11 +1014,11 @@ impl ConsensusService {
     }
 
     /// Creates a consensus payload
-    fn create_payload(&self, msg_type: ConsensusMessageType, data: Vec<u8>) -> ConsensusPayload {
+    fn create_payload(&self, msg_type: ConsensusMessageType, data: Vec<u8>) -> ConsensusResult<ConsensusPayload> {
         let mut payload = ConsensusPayload::new(
             self.network,
             self.context.block_index,
-            self.context.my_index.unwrap(),
+            self.my_index()?,
             self.context.view_number,
             msg_type,
             data,
@@ -1022,7 +1031,7 @@ impl ConsensusService {
             payload.set_witness(signature);
         }
 
-        payload
+        Ok(payload)
     }
 
     /// Broadcasts a consensus payload
