@@ -4,6 +4,7 @@
 
 use crate::error::CoreError;
 use crate::persistence::storage::CompressionAlgorithm;
+use std::io::Cursor;
 
 // Compression is always compiled in; the previous feature gate is removed to keep
 // behaviour deterministic across builds.
@@ -16,10 +17,8 @@ pub fn compress(data: &[u8], algorithm: CompressionAlgorithm) -> crate::Result<V
             use lz4_flex::compress_prepend_size;
             Ok(compress_prepend_size(data))
         }
-        CompressionAlgorithm::Zstd => {
-            // ZSTD temporarily disabled due to build issues
-            Err(CoreError::io("ZSTD compression not available"))
-        }
+        CompressionAlgorithm::Zstd => zstd::stream::encode_all(Cursor::new(data), 0)
+            .map_err(|e| CoreError::io(format!("ZSTD compression failed: {e}"))),
     }
 }
 
@@ -35,10 +34,8 @@ pub fn decompress(
             decompress_size_prepended(compressed_data)
                 .map_err(|e| CoreError::io(format!("LZ4 decompression failed: {}", e)))
         }
-        CompressionAlgorithm::Zstd => {
-            // ZSTD temporarily disabled due to build issues
-            Err(CoreError::io("ZSTD decompression not available"))
-        }
+        CompressionAlgorithm::Zstd => zstd::stream::decode_all(Cursor::new(compressed_data))
+            .map_err(|e| CoreError::io(format!("ZSTD decompression failed: {e}"))),
     }
 }
 
@@ -120,17 +117,19 @@ mod tests {
     }
 
     #[test]
-    fn compress_zstd_returns_error() {
-        let data = vec![1, 2, 3, 4, 5];
-        let result = compress(&data, CompressionAlgorithm::Zstd);
-        assert!(result.is_err());
+    fn compress_zstd_roundtrip() {
+        let data = b"Hello, Neo blockchain! This is test data for zstd.".to_vec();
+        let compressed = compress(&data, CompressionAlgorithm::Zstd).unwrap();
+        let decompressed = decompress(&compressed, CompressionAlgorithm::Zstd).unwrap();
+        assert_eq!(decompressed, data);
     }
 
     #[test]
-    fn decompress_zstd_returns_error() {
-        let data = vec![1, 2, 3, 4, 5];
-        let result = decompress(&data, CompressionAlgorithm::Zstd);
-        assert!(result.is_err());
+    fn compress_zstd_empty_data() {
+        let data: Vec<u8> = vec![];
+        let compressed = compress(&data, CompressionAlgorithm::Zstd).unwrap();
+        let decompressed = decompress(&compressed, CompressionAlgorithm::Zstd).unwrap();
+        assert_eq!(decompressed, data);
     }
 
     // ============================================================================

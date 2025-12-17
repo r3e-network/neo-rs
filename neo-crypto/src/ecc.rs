@@ -493,15 +493,70 @@ impl PartialOrd for ECPoint {
     }
 }
 
-// Ordering is lexicographic over (curve, compressed_bytes) for deterministic
-// sorting and compatibility with the C# node. This is not constant-time, but the
-// compared values are public.
+// Ordering mirrors the C# `Neo.Cryptography.ECC.ECPoint.CompareTo` implementation:
+// - Points must be on the same curve to be comparable in C# (it throws otherwise).
+// - Infinity compares before finite points.
+// - Finite points compare by X coordinate, then Y coordinate (numeric compare).
+//
+// For robustness/determinism in Rust, we define an order across curves by comparing
+// the curve first, then applying the C# ordering within the curve.
 impl Ord for ECPoint {
     fn cmp(&self, other: &Self) -> Ordering {
-        // Compare by curve first, then by data
         match self.curve.cmp(&other.curve) {
-            Ordering::Equal => self.data.cmp(&other.data),
-            other => other,
+            Ordering::Equal => {}
+            non_equal => return non_equal,
+        }
+
+        match (self.is_infinity(), other.is_infinity()) {
+            (true, true) => return Ordering::Equal,
+            (true, false) => return Ordering::Less,
+            (false, true) => return Ordering::Greater,
+            (false, false) => {}
+        }
+
+        match self.curve {
+            ECCurve::Secp256r1 => {
+                let left = Self::parse_p256_point(&self.data)
+                    .expect("validated secp256r1 points must remain parseable");
+                let right = Self::parse_p256_point(&other.data)
+                    .expect("validated secp256r1 points must remain parseable");
+
+                let left = left.to_encoded_point(false);
+                let right = right.to_encoded_point(false);
+
+                let left_x = left.x().expect("uncompressed point must have X");
+                let right_x = right.x().expect("uncompressed point must have X");
+                match left_x.cmp(right_x) {
+                    Ordering::Equal => {}
+                    non_equal => return non_equal,
+                }
+
+                let left_y = left.y().expect("uncompressed point must have Y");
+                let right_y = right.y().expect("uncompressed point must have Y");
+                left_y.cmp(right_y)
+            }
+            ECCurve::Secp256k1 => {
+                let left = Self::parse_k256_point(&self.data)
+                    .expect("validated secp256k1 points must remain parseable");
+                let right = Self::parse_k256_point(&other.data)
+                    .expect("validated secp256k1 points must remain parseable");
+
+                let left = left.to_encoded_point(false);
+                let right = right.to_encoded_point(false);
+
+                let left_x = left.x().expect("uncompressed point must have X");
+                let right_x = right.x().expect("uncompressed point must have X");
+                match left_x.cmp(right_x) {
+                    Ordering::Equal => {}
+                    non_equal => return non_equal,
+                }
+
+                let left_y = left.y().expect("uncompressed point must have Y");
+                let right_y = right.y().expect("uncompressed point must have Y");
+                left_y.cmp(right_y)
+            }
+            // Ed25519 isn't used by Neo N3 consensus/committee keys, but keep a deterministic order.
+            ECCurve::Ed25519 => self.data.cmp(&other.data),
         }
     }
 }

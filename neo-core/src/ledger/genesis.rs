@@ -1,7 +1,10 @@
 //! Genesis block creation utilities.
 //!
-//! This module provides functions for creating the genesis block
-//! based on protocol settings.
+//! Neo N3 defines a fixed, deterministic genesis block derived from protocol settings:
+//! - No transactions
+//! - Merkle root set to zero
+//! - Timestamp/nonce are fixed constants
+//! - NextConsensus is derived from the standby validators via the BFT multisig address
 
 use crate::constants::GENESIS_TIMESTAMP_MS;
 use crate::network::p2p::payloads::{
@@ -13,18 +16,6 @@ use neo_primitives::{UInt160, UInt256};
 use neo_vm::OpCode;
 
 /// Creates the genesis block for the given protocol settings.
-///
-/// The genesis block is the first block in the blockchain and contains
-/// no transactions. Its structure is determined by the protocol settings,
-/// particularly the standby validators which determine the next consensus address.
-///
-/// # Arguments
-///
-/// * `settings` - The protocol settings to use for genesis block creation
-///
-/// # Returns
-///
-/// A new `Block` representing the genesis block
 pub fn create_genesis_block(settings: &ProtocolSettings) -> Block {
     let mut header = Header::new();
     header.set_version(0);
@@ -53,6 +44,7 @@ pub fn create_genesis_block(settings: &ProtocolSettings) -> Block {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::wallets::helper::Helper;
 
     #[test]
     fn genesis_block_has_correct_index() {
@@ -80,5 +72,27 @@ mod tests {
         let settings = ProtocolSettings::default_settings();
         let genesis = create_genesis_block(&settings);
         assert_eq!(genesis.header.timestamp(), GENESIS_TIMESTAMP_MS);
+    }
+
+    #[test]
+    fn mainnet_genesis_next_consensus_matches_csharp() {
+        let settings = ProtocolSettings::mainnet();
+        let genesis = create_genesis_block(&settings);
+        let expected = Helper::to_script_hash(
+            "NVg7LjGcUSrgxgjX3zEgqaksfMaiS8Z6e1",
+            settings.address_version,
+        )
+        .expect("reference address should decode");
+        assert_eq!(*genesis.header.next_consensus(), expected);
+    }
+
+    #[test]
+    fn mainnet_genesis_hash_matches_csharp() {
+        let settings = ProtocolSettings::mainnet();
+        let mut genesis = create_genesis_block(&settings);
+        let expected =
+            UInt256::parse("0x1f4d1defa46faa5e7b9b8d3f79a06bec777d7c26c4aa5f6f5899a291daa87c15")
+                .expect("reference genesis hash should parse");
+        assert_eq!(genesis.hash(), expected);
     }
 }

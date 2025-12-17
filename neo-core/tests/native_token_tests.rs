@@ -62,13 +62,12 @@ fn system_contract_call_can_invoke_native_gas_symbol() {
     );
     let mut sb = ScriptBuilder::new();
 
-    // Push arguments for System.Contract.Call in reverse order:
-    // hash, method, callFlags, args[]
-    sb.emit_push_byte_array(&gas.hash().to_bytes());
-    sb.emit_push_string("symbol");
+    // C# parity: ScriptBuilderExtensions.EmitDynamicCall(scriptHash, method, CallFlags.All, args)
+    // stack before SYSCALL: [args_array, call_flags, method, contract_hash]
+    sb.emit_opcode(OpCode::NEWARRAY0);
     sb.emit_push_int(CallFlags::ALL.bits() as i64);
-    sb.emit_push_int(0);
-    sb.emit_pack();
+    sb.emit_push_string("symbol");
+    sb.emit_push_byte_array(&gas.hash().to_bytes());
     sb.emit_syscall("System.Contract.Call")
         .expect("System.Contract.Call syscall");
     sb.emit_opcode(OpCode::RET);

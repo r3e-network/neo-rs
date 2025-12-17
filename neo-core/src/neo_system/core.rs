@@ -189,7 +189,7 @@ impl NeoSystem {
 
         let actor_system = ActorSystem::new("neo").map_err(to_core_error)?;
         let settings_arc = Arc::new(settings.clone());
-        let genesis_block = Arc::new(super::genesis::create_genesis_block(&settings));
+        let genesis_block = Arc::new(crate::ledger::create_genesis_block(&settings));
 
         let service_registry = Arc::new(ServiceRegistry::new());
         let service_added_handlers: Arc<RwLock<Vec<Arc<dyn IServiceAddedHandler + Send + Sync>>>> =

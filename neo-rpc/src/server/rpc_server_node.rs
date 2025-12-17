@@ -146,9 +146,11 @@ impl RpcServerNode {
                 json!(protocol.initial_gas_distribution),
             );
 
+            // Match Neo's RpcServer: omit hardfork entries with blockheight == 0.
             let hardforks = protocol
                 .hardforks
                 .iter()
+                .filter(|(_, height)| **height > 0)
                 .map(|(fork, height)| {
                     json!({
                         "name": Self::format_hardfork(*fork),
@@ -264,7 +266,7 @@ impl RpcServerNode {
     }
 
     fn format_public_key(bytes: &[u8]) -> String {
-        format!("0x{}", hex::encode(bytes))
+        hex::encode(bytes)
     }
 
     fn internal_error(message: impl Into<String>) -> RpcException {

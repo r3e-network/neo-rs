@@ -77,12 +77,12 @@ fn contract_call_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
 ) -> VmResult<()> {
-    let args = app.pop_array().map_err(|e| VmError::InteropService {
-        service: "System.Contract.Call".to_string(),
-        error: e,
-    })?;
-
-    let call_flags_value = app.pop_integer().map_err(|e| VmError::InteropService {
+    // C# parity (Neo.Extensions.ScriptBuilderExtensions.EmitDynamicCall):
+    // stack before SYSCALL: [args_array, call_flags, method, contract_hash]
+    // parameters are consumed in declaration order:
+    //   CallContract(UInt160 contractHash, string method, CallFlags callFlags, Array args)
+    // so we must pop: hash -> method -> flags -> args.
+    let hash_bytes = app.pop_bytes().map_err(|e| VmError::InteropService {
         service: "System.Contract.Call".to_string(),
         error: e,
     })?;
@@ -92,7 +92,12 @@ fn contract_call_handler(
         error: e,
     })?;
 
-    let hash_bytes = app.pop_bytes().map_err(|e| VmError::InteropService {
+    let call_flags_value = app.pop_integer().map_err(|e| VmError::InteropService {
+        service: "System.Contract.Call".to_string(),
+        error: e,
+    })?;
+
+    let args = app.pop_array().map_err(|e| VmError::InteropService {
         service: "System.Contract.Call".to_string(),
         error: e,
     })?;

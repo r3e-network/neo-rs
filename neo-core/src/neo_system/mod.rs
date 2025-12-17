@@ -31,7 +31,6 @@ mod core;
 pub(crate) mod actors;
 pub mod builder;
 pub(crate) mod converters;
-pub(crate) mod genesis;
 pub(crate) mod helpers;
 pub(crate) mod mempool;
 pub(crate) mod network;

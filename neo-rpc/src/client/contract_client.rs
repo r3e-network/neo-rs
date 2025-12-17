@@ -11,7 +11,11 @@
 
 use super::models::RpcInvokeResult;
 use crate::RpcClient;
-use neo_core::{ContractManifest, KeyPair, Transaction};
+use neo_core::smart_contract::native::ContractManagement;
+use neo_core::{
+    smart_contract::call_flags::CallFlags, ContractManifest, KeyPair, Signer, Transaction,
+    WitnessScope,
+};
 use neo_primitives::UInt160;
 use neo_vm::op_code::OpCode;
 use neo_vm::ScriptBuilder;
@@ -57,8 +61,34 @@ impl ContractClient {
         manifest: &ContractManifest,
         key: &KeyPair,
     ) -> Result<Transaction, Box<dyn std::error::Error>> {
-        let _ = (nef_file, manifest, key);
-        Err("Contract deployment via RPC is not implemented yet in the Rust port".into())
+        let manifest_json = manifest.to_json()?.to_string();
+
+        let mut sb = ScriptBuilder::new();
+        // C# parity: ScriptBuilderExtensions.EmitDynamicCall(ContractManagement.Hash, "deploy", nef, manifestJson)
+        // CreateArray(args)
+        sb.emit_push(manifest_json.as_bytes());
+        sb.emit_push(nef_file);
+        sb.emit_push_int(2);
+        sb.emit_pack();
+        // EmitPush(flags)
+        sb.emit_push_int(CallFlags::ALL.bits() as i64);
+        // EmitPush(method)
+        sb.emit_push("deploy".as_bytes());
+        // EmitPush(scriptHash)
+        sb.emit_push(&ContractManagement::contract_hash().to_array());
+        // Syscall
+        sb.emit_syscall("System.Contract.Call")?;
+
+        let script = sb.to_array();
+
+        let sender = key.get_script_hash();
+        let signers = vec![Signer::new(sender, WitnessScope::CALLED_BY_ENTRY)];
+
+        let mut manager = crate::TransactionManagerFactory::new(self.rpc_client.clone())
+            .make_transaction(&script, &signers)
+            .await?;
+        manager.add_signature(key)?;
+        manager.sign().await
     }
 
     /// Helper method to create script from contract call
@@ -70,12 +100,20 @@ impl ContractClient {
     ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         let mut sb = ScriptBuilder::new();
 
-        // Convert args to ContractParameter format and emit
-        for arg in args.iter().rev() {
-            Self::emit_argument(&mut sb, arg)?;
+        // C# parity: ScriptBuilderExtensions.EmitDynamicCall(scriptHash, method, CallFlags.All, args)
+        if args.is_empty() {
+            sb.emit_opcode(OpCode::NEWARRAY0);
+        } else {
+            // CreateArray(args): push elements in reverse order, push count, PACK
+            for arg in args.iter().rev() {
+                Self::emit_argument(&mut sb, arg)?;
+            }
+            sb.emit_push_int(args.len() as i64);
+            sb.emit_pack();
         }
 
-        // Emit operation and script hash
+        // EmitPush(flags), EmitPush(method), EmitPush(scriptHash), SYSCALL System.Contract.Call
+        sb.emit_push_int(CallFlags::ALL.bits() as i64);
         sb.emit_push(operation.as_bytes());
         sb.emit_push(&script_hash.to_array());
         sb.emit_syscall("System.Contract.Call")?;
@@ -113,7 +151,8 @@ impl ContractClient {
                 Ok(())
             }
             serde_json::Value::Array(arr) => {
-                for item in arr {
+                // C# CreateArray pushes in reverse order.
+                for item in arr.iter().rev() {
                     Self::emit_argument(sb, item)?;
                 }
                 sb.emit_push_int(arr.len() as i64);

@@ -19,6 +19,7 @@ pub mod block_header;
 #[cfg(feature = "runtime")]
 pub mod blockchain;
 pub mod blockchain_application_executed;
+pub mod genesis;
 pub mod header_cache;
 pub mod ledger_context;
 pub mod memory_pool;
@@ -38,6 +39,7 @@ pub use blockchain::{
     PersistCompleted, PreverifyCompleted, RelayResult, Reverify, ReverifyItem,
 };
 pub use blockchain_application_executed::ApplicationExecuted;
+pub use genesis::create_genesis_block;
 pub use header_cache::HeaderCache;
 pub use ledger_context::LedgerContext;
 pub use memory_pool::MemoryPool;
