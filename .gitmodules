@@ -1,0 +1,3 @@
+[submodule "neo_csharp"]
+	path = neo_csharp
+	url = https://github.com/neo-project/neo.git
