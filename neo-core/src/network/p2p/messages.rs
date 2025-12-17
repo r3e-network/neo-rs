@@ -99,7 +99,7 @@ impl NetworkMessage {
         Ok(writer.into_bytes())
     }
 
-    /// Decodes a message that was previously produced by [`to_bytes`].
+    /// Decodes a message that was previously produced by [`Self::to_bytes`].
     pub fn from_bytes(bytes: &[u8]) -> NetworkResult<Self> {
         if bytes.len() < 2 {
             return Err(NetworkError::InvalidMessage(

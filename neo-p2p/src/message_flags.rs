@@ -26,7 +26,7 @@ impl MessageFlags {
         self.0
     }
 
-    /// Alias for [`to_byte`]; retained for backward compatibility.
+    /// Alias for [`Self::to_byte`]; retained for backward compatibility.
     pub fn as_byte(self) -> u8 {
         self.to_byte()
     }

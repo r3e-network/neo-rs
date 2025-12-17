@@ -4,7 +4,7 @@
 //!
 //! **IMPORTANT**: This crate provides the **production deployment** telemetry stack.
 //! For internal metrics collection within neo-core components (without external dependencies),
-//! use [`neo_core::telemetry`] instead.
+//! use `neo_core::telemetry` instead.
 //!
 //! ## When to use this crate
 //!

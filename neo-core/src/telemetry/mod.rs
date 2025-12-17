@@ -2,7 +2,7 @@
 //!
 //! **IMPORTANT**: This module provides **internal metrics collection** for neo-core.
 //! For production deployment with Prometheus endpoints and system monitoring,
-//! use the [`neo_telemetry`] crate instead.
+//! use the `neo_telemetry` crate instead.
 //!
 //! ## When to use this module
 //!

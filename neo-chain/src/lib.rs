@@ -4,7 +4,7 @@
 //!
 //! **IMPORTANT**: This crate provides a **standalone chain state machine** without neo-core dependency.
 //! For the full C# parity implementation with actor system and NeoSystem integration,
-//! use [`neo_core::ledger::blockchain`] instead.
+//! use `neo_core::ledger::blockchain` instead.
 //!
 //! ## When to use this crate
 //!

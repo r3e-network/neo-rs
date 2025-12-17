@@ -68,7 +68,7 @@ impl EvaluationStack {
         Ok(&self.stack[idx])
     }
 
-    /// Mutable version of [`peek`].
+    /// Mutable version of [`Self::peek`].
     #[inline]
     pub fn peek_mut(&mut self, index_from_top: usize) -> VmResult<&mut StackItem> {
         let idx = self.resolve_top_index(index_from_top)?;
