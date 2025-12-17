@@ -14,7 +14,6 @@ RUN apt-get update && apt-get install -y \
     llvm-14 \
     libclang-14-dev \
     clang-14 \
-    librocksdb-dev \
     libsnappy-dev \
     liblz4-dev \
     libzstd-dev \
@@ -29,24 +28,31 @@ ENV LIBCLANG_PATH=/usr/lib/llvm-14/lib
 # Create app directory
 WORKDIR /app
 
-# Copy manifests and workspace crates
+# Copy manifests and workspace crates (kept explicit for better Docker layer caching).
 COPY Cargo.toml Cargo.lock ./
-COPY neo-akka/ neo-akka/
-COPY neo-bls12-381/ neo-bls12-381/
-COPY neo-cli/ neo-cli/
-COPY neo-core/ neo-core/
-COPY neo-extensions/ neo-extensions/
+COPY neo-primitives/ neo-primitives/
+COPY neo-crypto/ neo-crypto/
+COPY neo-storage/ neo-storage/
 COPY neo-io/ neo-io/
 COPY neo-json/ neo-json/
-COPY neo-node/ neo-node/
-COPY neo-plugins/ neo-plugins/
-COPY neo-rpc-client/ neo-rpc-client/
-COPY neo-services/ neo-services/
-COPY neo-tee/ neo-tee/
+COPY neo-core/ neo-core/
 COPY neo-vm/ neo-vm/
+COPY neo-p2p/ neo-p2p/
+COPY neo-rpc/ neo-rpc/
+COPY neo-consensus/ neo-consensus/
+COPY neo-tee/ neo-tee/
+COPY neo-config/ neo-config/
+COPY neo-telemetry/ neo-telemetry/
+COPY neo-state/ neo-state/
+COPY neo-mempool/ neo-mempool/
+COPY neo-chain/ neo-chain/
+COPY neo-cli/ neo-cli/
+COPY neo-node/ neo-node/
+COPY scripts/ scripts/
+COPY neo_mainnet_node.toml neo_testnet_node.toml neo_production_node.toml ./
 
-# Build release binaries (neo-cli and workspace crates)
-RUN cargo build --release --workspace --locked
+# Build release binaries (neo-node daemon + neo-cli client)
+RUN cargo build --release --locked -p neo-node -p neo-cli
 
 # Runtime stage
 FROM debian:bullseye-slim
@@ -55,7 +61,6 @@ FROM debian:bullseye-slim
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     bash \
-    librocksdb-dev \
     libsnappy1v5 \
     liblz4-1 \
     libzstd1 \
@@ -73,10 +78,12 @@ RUN groupadd -r neo && useradd -r -g neo -d /home/neo neo \
 RUN mkdir -p /data /data/blocks /data/Logs /data/logs && chown -R neo:neo /data
 
 # Copy binaries from builder stage
+COPY --from=builder /app/target/release/neo-node /usr/local/bin/neo-node
 COPY --from=builder /app/target/release/neo-cli /usr/local/bin/neo-cli
 
 # Copy default configs and entrypoint
 COPY neo_mainnet_node.toml /etc/neo/neo_mainnet_node.toml
+COPY neo_testnet_node.toml /etc/neo/neo_testnet_node.toml
 COPY neo_production_node.toml /etc/neo/neo_production_node.toml
 COPY scripts/docker-entrypoint.sh /usr/local/bin/neo-entrypoint.sh
 RUN chmod +x /usr/local/bin/neo-entrypoint.sh && chown -R neo:neo /etc/neo

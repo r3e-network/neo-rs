@@ -39,6 +39,7 @@ pub struct TransactionEntry {
 
 impl TransactionEntry {
     /// Create a new transaction entry
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         hash: UInt256,
         sender: UInt160,

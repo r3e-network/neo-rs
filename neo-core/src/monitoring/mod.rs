@@ -34,6 +34,9 @@ impl std::fmt::Debug for MonitoringError {
 
 pub type MonitoringResult<T> = Result<T, MonitoringError>;
 
+type AlertCallback = dyn Fn(Alert) + Send + Sync;
+type AlertCallbacks = Arc<RwLock<Vec<Arc<AlertCallback>>>>;
+
 /// Overall monitoring container returned by `init_monitoring`.
 #[derive(Clone)]
 pub struct MonitoringSystem {
@@ -373,7 +376,7 @@ impl Default for PerformanceStats {
 pub struct PerformanceMonitor {
     metrics: Arc<RwLock<HashMap<String, PerformanceStats>>>,
     thresholds: Arc<RwLock<HashMap<String, PerformanceThreshold>>>,
-    callbacks: Arc<RwLock<Vec<Arc<dyn Fn(Alert) + Send + Sync>>>>,
+    callbacks: AlertCallbacks,
 }
 
 impl PerformanceMonitor {

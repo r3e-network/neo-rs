@@ -1239,6 +1239,7 @@ fn compute_next_consensus_address(validators: &[ValidatorInfo]) -> UInt160 {
     UInt160::from_script(&builder.to_array())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn compute_header_hash(
     version: u32,
     prev_hash: UInt256,

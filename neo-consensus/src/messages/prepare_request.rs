@@ -28,6 +28,7 @@ pub struct PrepareRequestMessage {
 
 impl PrepareRequestMessage {
     /// Creates a new PrepareRequest message
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         block_index: u32,
         view_number: u8,

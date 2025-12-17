@@ -1,6 +1,6 @@
 name: CI
 
-on:
+"on":
   push:
     branches: [main, master]
   pull_request:
@@ -10,7 +10,6 @@ jobs:
   build-test:
     runs-on: ubuntu-latest
     env:
-      TMPDIR: ${{ runner.temp }}/tmp
       CARGO_INCREMENTAL: 0
     steps:
       - name: Checkout
@@ -19,16 +18,32 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends librocksdb-dev
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            clang \
+            cmake \
+            libbz2-dev \
+            libclang-dev \
+            liblz4-dev \
+            librocksdb-dev \
+            libsnappy-dev \
+            libssl-dev \
+            libzstd-dev \
+            pkg-config \
+            zlib1g-dev
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
       - name: Prepare tmp directory
-        run: mkdir -p "$TMPDIR"
+        run: |
+          echo "TMPDIR=${RUNNER_TEMP}/tmp" >> "$GITHUB_ENV"
+          mkdir -p "${RUNNER_TEMP}/tmp"
 
       - name: Format check
         run: cargo fmt --all --check

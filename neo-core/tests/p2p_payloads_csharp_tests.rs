@@ -42,7 +42,10 @@ fn csharp_ut_version_payload_duplicate_capability_rejected() {
         nonce: 789,
         user_agent: "neo3".to_string(),
         allow_compression: true,
-        capabilities: vec![NodeCapability::tcp_server(22), NodeCapability::tcp_server(22)],
+        capabilities: vec![
+            NodeCapability::tcp_server(22),
+            NodeCapability::tcp_server(22),
+        ],
     };
     let bytes = payload.to_array().expect("serialize");
     let mut reader = MemoryReader::new(&bytes);
@@ -103,11 +106,7 @@ fn csharp_ut_network_address_with_time_roundtrip_and_duplicate_known_rejected() 
     let test = NetworkAddressWithTime::new(
         1,
         addr,
-        vec![
-            NodeCapability::tcp_server(22),
-            ext0.clone(),
-            ext0.clone(),
-        ],
+        vec![NodeCapability::tcp_server(22), ext0.clone(), ext0.clone()],
     );
     let bytes = test.to_array().expect("serialize");
     let mut reader = MemoryReader::new(&bytes);
@@ -118,7 +117,10 @@ fn csharp_ut_network_address_with_time_roundtrip_and_duplicate_known_rejected() 
     let dup_known = NetworkAddressWithTime::new(
         1,
         addr,
-        vec![NodeCapability::tcp_server(22), NodeCapability::tcp_server(22)],
+        vec![
+            NodeCapability::tcp_server(22),
+            NodeCapability::tcp_server(22),
+        ],
     );
     let bytes = dup_known.to_array().expect("serialize");
     let mut reader = MemoryReader::new(&bytes);

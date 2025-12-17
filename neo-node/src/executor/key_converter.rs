@@ -145,8 +145,8 @@ impl StorageKeyConverter {
         let id_bytes = id.to_le_bytes();
         bytes[0..4].copy_from_slice(&id_bytes);
         // Fill remaining bytes with a pattern based on ID
-        for i in 4..20 {
-            bytes[i] = ((id.wrapping_mul(i as i32)) & 0xFF) as u8;
+        for (index, byte) in bytes.iter_mut().enumerate().skip(4) {
+            *byte = ((id.wrapping_mul(index as i32)) & 0xFF) as u8;
         }
         UInt160::from(bytes)
     }

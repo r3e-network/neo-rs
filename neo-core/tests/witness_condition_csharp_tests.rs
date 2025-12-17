@@ -5,12 +5,10 @@ use std::str::FromStr;
 
 fn group_bytes() -> Vec<u8> {
     // Same secp256r1 point used across the C# unit tests.
-    let encoded = hex::decode(
-        "03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c",
-    )
-    .expect("hex");
-    let point = neo_core::ECPoint::decode(&encoded, neo_core::ECCurve::secp256r1())
-        .expect("valid ECPoint");
+    let encoded = hex::decode("03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c")
+        .expect("hex");
+    let point =
+        neo_core::ECPoint::decode(&encoded, neo_core::ECCurve::secp256r1()).expect("valid ECPoint");
     point.encode_point(true).expect("compress")
 }
 
@@ -21,7 +19,9 @@ fn csharp_ut_witness_condition_from_json_1() {
     let condition = WitnessCondition::Or {
         conditions: vec![
             WitnessCondition::CalledByContract { hash },
-            WitnessCondition::CalledByGroup { group: point.clone() },
+            WitnessCondition::CalledByGroup {
+                group: point.clone(),
+            },
         ],
     };
 
@@ -44,7 +44,10 @@ fn csharp_ut_witness_condition_from_json_1() {
     let WitnessCondition::CalledByContract { hash: parsed_hash } = &conditions[0] else {
         unreachable!();
     };
-    let WitnessCondition::CalledByGroup { group: parsed_group } = &conditions[1] else {
+    let WitnessCondition::CalledByGroup {
+        group: parsed_group,
+    } = &conditions[1]
+    else {
         unreachable!();
     };
     assert_eq!(*parsed_hash, hash);
@@ -55,15 +58,13 @@ fn csharp_ut_witness_condition_from_json_1() {
 fn csharp_ut_witness_condition_from_json_2() {
     let point = group_bytes();
     let hash1 = UInt160::zero();
-    let hash2 =
-        UInt160::from_str("0xd2a4cff31913016155e38e474a2c06d08be276cf").expect("hash2");
+    let hash2 = UInt160::from_str("0xd2a4cff31913016155e38e474a2c06d08be276cf").expect("hash2");
 
     let jstr = "{\"type\":\"Or\",\"expressions\":[{\"type\":\"And\",\"expressions\":[{\"type\":\"CalledByContract\",\"hash\":\"0x0000000000000000000000000000000000000000\"},{\"type\":\"ScriptHash\",\"hash\":\"0xd2a4cff31913016155e38e474a2c06d08be276cf\"}]},{\"type\":\"Or\",\"expressions\":[{\"type\":\"CalledByGroup\",\"group\":\"03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c\"},{\"type\":\"Boolean\",\"expression\":true}]}]}";
     let json: Value = serde_json::from_str(jstr).expect("json");
 
-    let parsed =
-        WitnessCondition::from_json_with_depth(&json, WitnessCondition::MAX_NESTING_DEPTH)
-            .expect("parse");
+    let parsed = WitnessCondition::from_json_with_depth(&json, WitnessCondition::MAX_NESTING_DEPTH)
+        .expect("parse");
 
     let WitnessCondition::Or { conditions } = parsed else {
         panic!("expected OrCondition");
@@ -186,7 +187,9 @@ fn csharp_ut_witness_condition_nesting_binary_roundtrip_and_overflow() {
 #[test]
 fn witness_group_condition_wire_format_matches_csharp() {
     let group = group_bytes();
-    let condition = WitnessCondition::Group { group: group.clone() };
+    let condition = WitnessCondition::Group {
+        group: group.clone(),
+    };
 
     let bytes = condition.to_array().expect("serialize");
     assert_eq!(bytes.len(), 1 + 33);

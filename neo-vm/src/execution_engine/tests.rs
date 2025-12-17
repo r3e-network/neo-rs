@@ -5,7 +5,7 @@
 use super::*;
 
 #[allow(dead_code)]
-mod tests {
+mod execution_engine_tests {
     use super::*;
     use crate::op_code::OpCode;
 

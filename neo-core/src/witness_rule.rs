@@ -7,8 +7,8 @@
 use crate::neo_config::ADDRESS_SIZE;
 use crate::neo_io::serializable::helper::get_var_size;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use crate::{ECCurve, ECPoint};
 use crate::UInt160;
+use crate::{ECCurve, ECPoint};
 use hex::{decode as hex_decode, encode as hex_encode};
 use neo_vm::StackItem;
 use serde::de::Error as SerdeDeError;
@@ -264,7 +264,9 @@ impl WitnessCondition {
                     + conditions.iter().map(|c| c.size()).sum::<usize>()
             }
             WitnessCondition::ScriptHash { .. } => ADDRESS_SIZE,
-            WitnessCondition::Group { group } | WitnessCondition::CalledByGroup { group } => group.len(),
+            WitnessCondition::Group { group } | WitnessCondition::CalledByGroup { group } => {
+                group.len()
+            }
             WitnessCondition::CalledByEntry => 0,
             WitnessCondition::CalledByContract { .. } => ADDRESS_SIZE,
         };
@@ -829,10 +831,9 @@ mod tests {
 
     #[test]
     fn group_condition_json_roundtrip_without_prefix() {
-        let bytes = parse_group_bytes(
-            "03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c",
-        )
-        .unwrap();
+        let bytes =
+            parse_group_bytes("03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c")
+                .unwrap();
         let condition = WitnessCondition::Group {
             group: bytes.clone(),
         };

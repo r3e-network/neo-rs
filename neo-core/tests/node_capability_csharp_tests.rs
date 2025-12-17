@@ -53,4 +53,3 @@ fn csharp_ut_unknown_capability_deserialize_unknown_roundtrip() {
     assert!(matches!(cap, NodeCapability::Unknown { .. }));
     assert_eq!(cap.to_array().expect("serialize"), buf);
 }
-

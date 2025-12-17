@@ -302,6 +302,7 @@ impl P2PService {
     }
 
     /// Runs the TCP listener for inbound connections
+    #[allow(clippy::too_many_arguments)]
     async fn run_listener(
         config: P2PConfig,
         peers: Arc<RwLock<HashMap<SocketAddr, ConnectedPeer>>>,
@@ -413,6 +414,7 @@ impl P2PService {
     }
 
     /// Runs the connector for outbound connections to seed nodes
+    #[allow(clippy::too_many_arguments)]
     async fn run_connector(
         config: P2PConfig,
         peers: Arc<RwLock<HashMap<SocketAddr, ConnectedPeer>>>,
@@ -520,6 +522,7 @@ impl P2PService {
     }
 
     /// Handles a single peer connection with full Neo P2P protocol
+    #[allow(clippy::too_many_arguments)]
     async fn handle_connection(
         stream: TcpStream,
         addr: SocketAddr,
@@ -963,7 +966,7 @@ impl P2PService {
                     debug!(target: "neo::p2p", addr = %addr, inv_type = ?inv.inventory_type, count = inv.hashes.len(), "received inv");
                     let _ = event_tx
                         .send(P2PEvent::InventoryReceived {
-                            inv_type: inv.inventory_type.into(),
+                            inv_type: inv.inventory_type,
                             hashes: inv.hashes.clone(),
                             from: addr,
                         })
