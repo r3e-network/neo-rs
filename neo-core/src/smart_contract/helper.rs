@@ -396,21 +396,19 @@ impl Helper {
         // Check if witness has empty verification script (contract verification)
         if witness.verification_script.is_empty() {
             // Contract verification: load the contract's Verify method
-            let contract = ContractManagement::get_contract_from_snapshot(snapshot, hash)?
+            let mut contract = ContractManagement::get_contract_from_snapshot(snapshot, hash)?
                 .ok_or_else(|| {
                     CoreError::invalid_operation(format!("Contract not found for hash {}", hash))
                 })?;
 
-            // Find the Verify method and clone it to avoid borrow issues
+            // Resolve the Verify method using C# semantics (pcount = -1 matches any signature).
             let verify_method = contract
                 .manifest
                 .abi
-                .methods
-                .iter()
-                .find(|m| {
-                    m.name == ContractBasicMethod::VERIFY
-                        && m.parameters.len() as i32 == ContractBasicMethod::VERIFY_P_COUNT
-                })
+                .get_method(
+                    ContractBasicMethod::VERIFY,
+                    ContractBasicMethod::VERIFY_P_COUNT,
+                )
                 .cloned()
                 .ok_or_else(|| {
                     CoreError::invalid_operation(
