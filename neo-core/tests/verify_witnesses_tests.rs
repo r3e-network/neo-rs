@@ -11,7 +11,7 @@ use neo_core::smart_contract::manifest::{
 };
 use neo_core::smart_contract::native::trimmed_block::TrimmedBlock;
 use neo_core::smart_contract::ContractParameterType;
-use neo_core::{UInt160, UInt256, Witness};
+use neo_core::{IVerifiable, UInt160, UInt256, Witness};
 use neo_vm::op_code::OpCode;
 
 const CONTRACT_MANAGEMENT_ID: i32 = -1;
@@ -83,6 +83,56 @@ fn make_contract_manifest(
 fn make_contract(hash: UInt160, script: Vec<u8>, manifest: ContractManifest) -> ContractState {
     let nef = NefFile::new("test".to_string(), script);
     ContractState::new(1, hash, nef, manifest)
+}
+
+struct ManualWitness {
+    hashes: Vec<UInt160>,
+    witnesses: Vec<Witness>,
+    hash: UInt256,
+    hash_data: Vec<u8>,
+}
+
+impl ManualWitness {
+    fn new(hashes: Vec<UInt160>, witnesses: Vec<Witness>) -> Self {
+        let hash = UInt256::from([9u8; 32]);
+        let hash_data = hash.to_bytes();
+        Self {
+            hashes,
+            witnesses,
+            hash,
+            hash_data,
+        }
+    }
+}
+
+impl IVerifiable for ManualWitness {
+    fn verify(&self) -> bool {
+        true
+    }
+
+    fn hash(&self) -> neo_core::CoreResult<UInt256> {
+        Ok(self.hash)
+    }
+
+    fn get_hash_data(&self) -> Vec<u8> {
+        self.hash_data.clone()
+    }
+
+    fn get_script_hashes_for_verifying(&self, _snapshot: &DataCache) -> Vec<UInt160> {
+        self.hashes.clone()
+    }
+
+    fn get_witnesses(&self) -> Vec<&Witness> {
+        self.witnesses.iter().collect()
+    }
+
+    fn get_witnesses_mut(&mut self) -> Vec<&mut Witness> {
+        self.witnesses.iter_mut().collect()
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 #[test]
@@ -157,6 +207,44 @@ fn verify_witnesses_succeeds_with_verify_method() {
 
     assert!(Helper::verify_witnesses(
         &header,
+        &settings,
+        &snapshot,
+        1_000_000
+    ));
+}
+
+#[test]
+fn verify_witnesses_succeeds_with_manual_verifiable() {
+    let settings = ProtocolSettings::default();
+    let snapshot = DataCache::new(false);
+    let contract_hash = contract_hash(4);
+
+    let parameters = vec![ContractParameterDefinition::new(
+        "signature".to_string(),
+        ContractParameterType::Signature,
+    )
+    .expect("parameter")];
+    let method = ContractMethodDescriptor::new(
+        ContractBasicMethod::VERIFY.to_string(),
+        parameters,
+        ContractParameterType::Boolean,
+        0,
+        false,
+    )
+    .expect("method");
+    let mut manifest = ContractManifest::new("verify".to_string());
+    manifest.abi = ContractAbi::new(vec![method], Vec::new());
+
+    let contract = make_contract(
+        contract_hash,
+        vec![OpCode::PUSH1 as u8, OpCode::RET as u8],
+        manifest,
+    );
+    store_contract(&snapshot, contract_hash, contract);
+
+    let verifiable = ManualWitness::new(vec![contract_hash], vec![Witness::empty()]);
+    assert!(Helper::verify_witnesses(
+        &verifiable,
         &settings,
         &snapshot,
         1_000_000
