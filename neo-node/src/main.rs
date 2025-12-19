@@ -6,13 +6,13 @@
 mod cli;
 mod config;
 mod health;
+#[cfg(feature = "hsm")]
+mod hsm_integration;
 mod logging;
 mod metrics;
 mod startup;
 #[cfg(feature = "tee")]
 mod tee_integration;
-#[cfg(feature = "hsm")]
-mod hsm_integration;
 
 use anyhow::{bail, Context, Result};
 use clap::Parser;
@@ -23,6 +23,7 @@ use neo_core::{
     network::p2p::channels_config::ChannelsConfig,
     protocol_settings::ProtocolSettings,
     state_service::{metrics::state_root_ingest_stats, state_store::StateServiceSettings},
+    wallets::{Nep6Wallet, Wallet as CoreWallet},
 };
 use neo_rpc::server::{
     RpcServer, RpcServerBlockchain, RpcServerNode, RpcServerSettings, RpcServerSmartContract,
@@ -33,7 +34,7 @@ use serde_json::Value;
 use std::{fs, path::PathBuf, sync::Arc};
 use tokio::signal;
 use tokio::sync::RwLock;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -152,6 +153,8 @@ async fn main() -> Result<()> {
         rpc_plugin_config_path.as_deref(),
     )
     .context("failed to start RPC server")?;
+
+    maybe_open_wallet(&cli, &node_config, &rpc_server, &system)?;
 
     let health_state = Arc::new(RwLock::new(health::HealthState::default()));
     start_health_endpoint_if_enabled(&cli, &node_config, health_state.clone()).await;
@@ -285,6 +288,73 @@ fn start_rpc_server_if_enabled(
     handle.write().start_rpc_server(Arc::downgrade(&handle));
 
     Ok(Some(handle))
+}
+
+fn resolve_wallet_config(
+    cli: &NodeCli,
+    node_config: &NodeConfig,
+) -> Result<Option<(PathBuf, String)>> {
+    if let Some(path) = cli.wallet.clone() {
+        let password = cli
+            .wallet_password
+            .clone()
+            .or_else(|| node_config.unlock_wallet.password.clone())
+            .ok_or_else(|| anyhow::anyhow!("wallet password required (--wallet-password)"))?;
+        return Ok(Some((path, password)));
+    }
+
+    if node_config.unlock_wallet.is_active {
+        let path = node_config
+            .unlock_wallet
+            .path
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("unlock_wallet.path must be set when enabled"))?;
+        let password =
+            node_config.unlock_wallet.password.clone().ok_or_else(|| {
+                anyhow::anyhow!("unlock_wallet.password must be set when enabled")
+            })?;
+        return Ok(Some((PathBuf::from(path), password)));
+    }
+
+    Ok(None)
+}
+
+fn maybe_open_wallet(
+    cli: &NodeCli,
+    node_config: &NodeConfig,
+    rpc_server: &Option<Arc<ParkingRwLock<RpcServer>>>,
+    system: &Arc<NeoSystem>,
+) -> Result<()> {
+    let Some((wallet_path, password)) = resolve_wallet_config(cli, node_config)? else {
+        return Ok(());
+    };
+
+    let Some(server) = rpc_server else {
+        warn!(
+            target: "neo",
+            path = %wallet_path.display(),
+            "wallet configured but RPC is disabled; skipping wallet load"
+        );
+        return Ok(());
+    };
+
+    if !wallet_path.exists() {
+        bail!("wallet file not found: {}", wallet_path.display());
+    }
+
+    let settings = Arc::new(system.settings().clone());
+    let wallet = Nep6Wallet::from_file(&wallet_path, &password, settings)
+        .map_err(|err| anyhow::anyhow!(err.to_string()))
+        .context("failed to open wallet")?;
+    let wallet_arc: Arc<dyn CoreWallet> = Arc::new(wallet);
+    server.write().set_wallet(Some(wallet_arc));
+
+    info!(
+        target: "neo",
+        path = %wallet_path.display(),
+        "wallet opened for RPC signing"
+    );
+    Ok(())
 }
 
 async fn start_health_endpoint_if_enabled(
