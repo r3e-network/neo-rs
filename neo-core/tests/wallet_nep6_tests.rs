@@ -9,6 +9,7 @@ use neo_core::wallets::wallet::WalletError;
 use neo_core::wallets::wallet::WalletResult;
 use neo_core::wallets::{KeyPair, Nep6Wallet, Wallet};
 use neo_core::WitnessScope;
+use neo_crypto::Secp256r1Crypto;
 use neo_vm::op_code::OpCode;
 use rand::RngCore;
 use tokio::runtime::Runtime;
@@ -68,6 +69,17 @@ fn nep6_wallet_imports_and_signs() -> WalletResult<()> {
     let verification_script =
         ContractHelper::signature_redeem_script(&original_key.compressed_public_key());
     assert_eq!(witness.verification_script, verification_script);
+    let signature_len = witness.invocation_script[1] as usize;
+    let signature_bytes: [u8; 64] = witness.invocation_script[2..2 + signature_len]
+        .try_into()
+        .expect("signature length");
+    let sign_data =
+        neo_core::network::p2p::helper::get_sign_data_vec(&transaction, settings.network)
+            .expect("sign data");
+    assert!(
+        Secp256r1Crypto::verify(&sign_data, &signature_bytes, &original_key.compressed_public_key())
+            .expect("verify witness signature")
+    );
 
     fs::remove_file(wallet_path).ok();
     Ok(())
