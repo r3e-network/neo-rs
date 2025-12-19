@@ -270,8 +270,13 @@ impl WalletAccount for StandardWalletAccount {
 
     fn create_witness(&self, transaction: &Transaction) -> WalletResult<Witness> {
         let key = self.key_pair.as_ref().ok_or(WalletError::AccountLocked)?;
+        let sign_data = crate::network::p2p::helper::get_sign_data_vec(
+            transaction,
+            self.protocol_settings.network,
+        )
+        .map_err(|e| WalletError::SigningFailed(e.to_string()))?;
         let signature = key
-            .sign(&transaction.get_hash_data())
+            .sign(&sign_data)
             .map_err(|e| WalletError::SigningFailed(e.to_string()))?;
 
         let verification_script = if let Some(contract) = &self.contract {
