@@ -24,7 +24,7 @@ impl ApplicationEngine {
 
         let message_bytes = self.get_sign_data()?;
 
-        Ok(self.verify_signature(&message_bytes, &public_key, &signature))
+        self.verify_signature(&message_bytes, &public_key, &signature)
     }
 
     /// Verifies multiple signatures (m-of-n multisig)
@@ -56,12 +56,17 @@ impl ApplicationEngine {
 
         for signature in &signatures {
             while key_index < public_keys.len() {
-                if self.verify_signature(&message_bytes, &public_keys[key_index], signature) {
-                    verified += 1;
-                    key_index += 1;
-                    break;
+                match self.verify_signature(&message_bytes, &public_keys[key_index], signature) {
+                    Ok(true) => {
+                        verified += 1;
+                        key_index += 1;
+                        break;
+                    }
+                    Ok(false) => {
+                        key_index += 1;
+                    }
+                    Err(err) => return Err(err),
                 }
-                key_index += 1;
             }
             // Early exit if remaining signatures exceed remaining keys
             if m - verified > n - key_index {
@@ -139,23 +144,35 @@ impl ApplicationEngine {
         self.push_bytes(result.to_vec())
     }
 
-    /// Verifies a signature using secp256r1
-    fn verify_signature(&self, message: &[u8], public_key: &[u8], signature: &[u8]) -> bool {
+    /// Verifies a signature using secp256r1.
+    ///
+    /// Returns an error when the public key is not a valid SEC1 encoding, matching
+    /// the C# `CheckSig` semantics (invalid public key formats fault the syscall).
+    fn verify_signature(
+        &self,
+        message: &[u8],
+        public_key: &[u8],
+        signature: &[u8],
+    ) -> Result<bool, String> {
         use p256::ecdsa::{signature::Verifier, Signature, VerifyingKey};
 
-        if signature.len() != 64 || public_key.len() != 33 {
-            return false;
+        if signature.len() != 64 {
+            return Ok(false);
         }
 
-        let Ok(verifying_key) = VerifyingKey::from_sec1_bytes(public_key) else {
-            return false;
+        if public_key.len() != 33 && public_key.len() != 65 {
+            return Err("Invalid public key length".to_string());
+        }
+
+        let verifying_key = VerifyingKey::from_sec1_bytes(public_key)
+            .map_err(|_| "Invalid public key".to_string())?;
+
+        let sig = match Signature::from_slice(signature) {
+            Ok(sig) => sig,
+            Err(_) => return Ok(false),
         };
 
-        let Ok(sig) = Signature::from_slice(signature) else {
-            return false;
-        };
-
-        verifying_key.verify(message, &sig).is_ok()
+        Ok(verifying_key.verify(message, &sig).is_ok())
     }
 }
 
