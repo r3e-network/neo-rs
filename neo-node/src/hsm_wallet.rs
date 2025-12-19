@@ -50,9 +50,10 @@ impl HsmWallet {
         let mut accounts = HashMap::new();
         let mut default_account = None;
         for key in keys {
-            let account = HsmWalletAccount::from_key_info(&signer, &settings, &key)?;
+            let mut account = HsmWalletAccount::from_key_info(&signer, &settings, &key)?;
             let hash = account.script_hash();
             if default_account.is_none() {
+                account.is_default = true;
                 default_account = Some(hash);
             }
             accounts.insert(hash, Arc::new(account));
@@ -448,4 +449,64 @@ fn signature_invocation(signature: &[u8]) -> WalletResult<Vec<u8>> {
     invocation.push(signature.len() as u8);
     invocation.extend_from_slice(signature);
     Ok(invocation)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::hsm_integration::HsmRuntime;
+    use neo_core::network::p2p::payloads::signer::Signer;
+    use neo_core::smart_contract::helper::Helper as ContractHelper;
+    use neo_core::WitnessScope;
+    use neo_crypto::Secp256r1Crypto;
+    use neo_hsm::{HsmConfig, SimulationSigner};
+    use neo_vm::op_code::OpCode;
+
+    #[tokio::test]
+    async fn hsm_wallet_signs_and_builds_witness() {
+        let signer = SimulationSigner::with_test_key().expect("simulation signer");
+        let keys = signer.list_keys().await.expect("list keys");
+        let key = keys.first().expect("key").clone();
+        let settings = Arc::new(ProtocolSettings::default());
+        let runtime = HsmRuntime {
+            signer: Arc::new(signer),
+            config: HsmConfig::default(),
+            active_key: Some(key.clone()),
+            address_version: settings.address_version,
+        };
+
+        let wallet = HsmWallet::from_runtime(runtime, Arc::clone(&settings))
+            .await
+            .expect("wallet");
+        let script_hash = UInt160::from_bytes(&key.script_hash).expect("script hash");
+
+        let payload = b"neo-hsm-wallet";
+        let signature = wallet.sign(payload, &script_hash).await.expect("sign data");
+        let signature_bytes: [u8; 64] = signature.as_slice().try_into().expect("sig");
+        assert!(
+            Secp256r1Crypto::verify(payload, &signature_bytes, &key.public_key).expect("verify")
+        );
+
+        let mut tx = Transaction::new();
+        tx.set_script(vec![OpCode::PUSH1 as u8]);
+        tx.set_valid_until_block(1);
+        tx.add_signer(Signer::new(script_hash, WitnessScope::CALLED_BY_ENTRY));
+        wallet.sign_transaction(&mut tx).await.expect("sign tx");
+
+        assert_eq!(tx.witnesses().len(), 1);
+        let witness = &tx.witnesses()[0];
+        let expected_verification = ContractHelper::signature_redeem_script(&key.public_key);
+        assert_eq!(witness.verification_script, expected_verification);
+
+        assert_eq!(witness.invocation_script[0], OpCode::PUSHDATA1 as u8);
+        let sig_len = witness.invocation_script[1] as usize;
+        assert_eq!(sig_len, 64);
+        let sig_slice = &witness.invocation_script[2..2 + sig_len];
+        let sig_bytes: [u8; 64] = sig_slice.try_into().expect("sig slice");
+        let sign_data = get_sign_data_vec(&tx, settings.network).expect("sign data");
+        assert!(
+            Secp256r1Crypto::verify(&sign_data, &sig_bytes, &key.public_key)
+                .expect("verify tx signature")
+        );
+    }
 }
