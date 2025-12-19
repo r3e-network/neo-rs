@@ -12,6 +12,7 @@ use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::smart_contract::contract::Contract;
 use neo_core::smart_contract::contract_parameters_context::ContractParametersContext;
+use neo_core::smart_contract::helper::Helper as ContractHelper;
 use neo_core::smart_contract::native::{
     GasToken, LedgerContract, NativeContract, NeoToken, PolicyContract,
 };
@@ -687,6 +688,8 @@ impl RpcServerWallet {
         )
         .map_err(Self::wallet_failure)?;
 
+        let mut sign_data: Option<Vec<u8>> = None;
+
         // Build contract parameter context and add signatures from available keys
         let mut context = ContractParametersContext::new_with_type(
             snapshot_arc.clone(),
@@ -723,6 +726,32 @@ impl RpcServerWallet {
                                     .map_err(|e| Self::internal_error(e.to_string()))?;
                             let _ = context.add_signature(contract.clone(), pub_key, signature);
                         }
+                    } else if account.has_key() && !account.is_locked() {
+                        let sign_data = match sign_data.as_ref() {
+                            Some(data) => data.clone(),
+                            None => {
+                                let data = neo_core::network::p2p::helper::get_sign_data_vec(
+                                    &tx,
+                                    server.system().settings().network,
+                                )
+                                .map_err(|err| Self::internal_error(err.to_string()))?;
+                                sign_data = Some(data.clone());
+                                data
+                            }
+                        };
+                        let wallet_clone = Arc::clone(wallet);
+                        let signature = Self::await_wallet_future(Box::pin(async move {
+                            wallet_clone.sign(&sign_data, &signer.account).await
+                        }))?;
+                        if signature.len() != 64 {
+                            return Err(Self::internal_error(
+                                "Invalid signature length from wallet".to_string(),
+                            ));
+                        }
+                        let pub_key_bytes = signature_contract_pubkey(&contract.script)?;
+                        let pub_key = ECPoint::new(ECCurve::Secp256r1, pub_key_bytes)
+                            .map_err(|e| Self::internal_error(e.to_string()))?;
+                        let _ = context.add_signature(contract.clone(), pub_key, signature);
                     }
                 }
             }
@@ -879,5 +908,37 @@ impl RpcServerWallet {
             .recv()
             .map_err(|err| Self::internal_error(err.to_string()))?;
         Ok(result)
+    }
+}
+
+fn signature_contract_pubkey(script: &[u8]) -> Result<Vec<u8>, RpcException> {
+    if !ContractHelper::is_signature_contract(script) {
+        return Err(RpcException::from(
+            RpcError::invalid_params().with_data("Unsupported contract script for signing"),
+        ));
+    }
+
+    if script.len() < 35 {
+        return Err(RpcException::from(
+            RpcError::invalid_params().with_data("Invalid signature contract script"),
+        ));
+    }
+
+    Ok(script[2..35].to_vec())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use neo_core::smart_contract::helper::Helper as ContractHelper;
+    use neo_crypto::Secp256r1Crypto;
+
+    #[test]
+    fn signature_contract_pubkey_roundtrip() {
+        let private_key = [1u8; 32];
+        let public_key = Secp256r1Crypto::derive_public_key(&private_key).expect("pubkey");
+        let script = ContractHelper::signature_redeem_script(&public_key);
+        let recovered = signature_contract_pubkey(&script).expect("parse pubkey");
+        assert_eq!(recovered, public_key);
     }
 }

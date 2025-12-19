@@ -8,6 +8,8 @@ mod config;
 mod health;
 #[cfg(feature = "hsm")]
 mod hsm_integration;
+#[cfg(feature = "hsm")]
+mod hsm_wallet;
 mod logging;
 mod metrics;
 mod startup;
@@ -154,7 +156,11 @@ async fn main() -> Result<()> {
     )
     .context("failed to start RPC server")?;
 
-    maybe_open_wallet(&cli, &node_config, &rpc_server, &system)?;
+    let hsm_wallet_enabled =
+        maybe_enable_hsm_wallet(&cli, &node_config, &rpc_server, &system).await?;
+    if !hsm_wallet_enabled {
+        maybe_open_wallet(&cli, &node_config, &rpc_server, &system)?;
+    }
 
     let health_state = Arc::new(RwLock::new(health::HealthState::default()));
     start_health_endpoint_if_enabled(&cli, &node_config, health_state.clone()).await;
@@ -288,6 +294,49 @@ fn start_rpc_server_if_enabled(
     handle.write().start_rpc_server(Arc::downgrade(&handle));
 
     Ok(Some(handle))
+}
+
+async fn maybe_enable_hsm_wallet(
+    cli: &NodeCli,
+    node_config: &NodeConfig,
+    rpc_server: &Option<Arc<ParkingRwLock<RpcServer>>>,
+    system: &Arc<NeoSystem>,
+) -> Result<bool> {
+    #[cfg(feature = "hsm")]
+    {
+        if !cli.hsm {
+            return Ok(false);
+        }
+
+        let Some(server) = rpc_server else {
+            warn!(target: "neo", "HSM requested but RPC is disabled; skipping HSM wallet");
+            return Ok(false);
+        };
+
+        if resolve_wallet_config(cli, node_config)?.is_some() {
+            warn!(
+                target: "neo",
+                "HSM requested; ignoring NEP-6 wallet configuration to avoid conflicting signers"
+            );
+        }
+
+        let runtime = hsm_integration::initialize_hsm(cli, system.settings().address_version)
+            .await
+            .context("failed to initialize HSM")?;
+        hsm_integration::print_hsm_status(&runtime);
+        let wallet =
+            hsm_wallet::HsmWallet::from_runtime(runtime, Arc::new(system.settings().clone()))
+                .await
+                .context("failed to build HSM wallet")?;
+        server.write().set_wallet(Some(Arc::new(wallet)));
+        return Ok(true);
+    }
+
+    #[cfg(not(feature = "hsm"))]
+    {
+        let _ = (cli, node_config, rpc_server, system);
+        Ok(false)
+    }
 }
 
 fn resolve_wallet_config(
