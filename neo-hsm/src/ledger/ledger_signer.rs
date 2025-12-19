@@ -2,7 +2,7 @@
 
 use crate::device::{HsmDeviceInfo, HsmDeviceType};
 use crate::error::{HsmError, HsmResult};
-use crate::signer::{HsmKeyInfo, HsmSigner};
+use crate::signer::{normalize_public_key, script_hash_from_public_key, HsmKeyInfo, HsmSigner};
 use async_trait::async_trait;
 use parking_lot::RwLock;
 
@@ -95,23 +95,16 @@ impl LedgerSigner {
     }
 
     /// Send an APDU command to the Ledger
-    fn send_apdu(
-        &self,
-        cla: u8,
-        ins: u8,
-        p1: u8,
-        p2: u8,
-        data: &[u8],
-    ) -> HsmResult<Vec<u8>> {
+    fn send_apdu(&self, cla: u8, ins: u8, p1: u8, p2: u8, data: &[u8]) -> HsmResult<Vec<u8>> {
         let devices: Vec<_> = self
             .hid_api
             .device_list()
             .filter(|d| d.vendor_id() == LEDGER_VENDOR_ID)
             .collect();
 
-        let device_info = devices.get(self.device_index as usize).ok_or_else(|| {
-            HsmError::DeviceNotFound("Ledger device disconnected".to_string())
-        })?;
+        let device_info = devices
+            .get(self.device_index as usize)
+            .ok_or_else(|| HsmError::DeviceNotFound("Ledger device disconnected".to_string()))?;
 
         let device = device_info
             .open_device(&self.hid_api)
@@ -190,10 +183,13 @@ impl LedgerSigner {
 
         let pubkey_len = response[0] as usize;
         if response.len() < 1 + pubkey_len {
-            return Err(HsmError::LedgerError("Invalid public key response".to_string()));
+            return Err(HsmError::LedgerError(
+                "Invalid public key response".to_string(),
+            ));
         }
 
-        Ok(response[1..1 + pubkey_len].to_vec())
+        let public_key = response[1..1 + pubkey_len].to_vec();
+        normalize_public_key(&public_key)
     }
 
     /// Encode derivation path for APDU
@@ -271,14 +267,9 @@ impl HsmSigner for LedgerSigner {
 
     async fn get_key(&self, key_id: &str) -> HsmResult<HsmKeyInfo> {
         let public_key = self.get_public_key_internal(key_id)?;
+        let script_hash = script_hash_from_public_key(&public_key)?;
 
-        // Calculate script hash
-        let script_hash_vec = neo_crypto::Crypto::hash160(&public_key);
-        let mut script_hash = [0u8; 20];
-        script_hash.copy_from_slice(&script_hash_vec);
-
-        Ok(HsmKeyInfo::new(key_id, public_key, script_hash)
-            .with_derivation_path(key_id))
+        Ok(HsmKeyInfo::new(key_id, public_key, script_hash).with_derivation_path(key_id))
     }
 
     async fn sign(&self, key_id: &str, data: &[u8]) -> HsmResult<Vec<u8>> {

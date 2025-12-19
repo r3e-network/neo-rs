@@ -37,10 +37,7 @@ pub fn prompt_pin_with_retry(device_name: &str, max_attempts: u32) -> HsmResult<
         match prompt_pin(device_name) {
             Ok(pin) => return Ok(pin),
             Err(HsmError::PinRequired) if attempt < max_attempts => {
-                eprintln!(
-                    "PIN cannot be empty. Attempt {}/{}",
-                    attempt, max_attempts
-                );
+                eprintln!("PIN cannot be empty. Attempt {}/{}", attempt, max_attempts);
                 continue;
             }
             Err(e) => return Err(e),

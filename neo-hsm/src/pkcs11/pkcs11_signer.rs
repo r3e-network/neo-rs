@@ -2,7 +2,7 @@
 
 use crate::device::{HsmDeviceInfo, HsmDeviceType};
 use crate::error::{HsmError, HsmResult};
-use crate::signer::{HsmKeyInfo, HsmSigner};
+use crate::signer::{normalize_public_key, script_hash_from_public_key, HsmKeyInfo, HsmSigner};
 use async_trait::async_trait;
 use parking_lot::RwLock;
 use std::path::Path;
@@ -14,6 +14,7 @@ use cryptoki::{
     session::{Session, UserType},
     types::AuthPin,
 };
+use neo_crypto::Crypto;
 
 /// PKCS#11 HSM signer
 pub struct Pkcs11Signer {
@@ -173,6 +174,7 @@ impl Pkcs11Signer {
                     AttributeType::Label,
                     AttributeType::Id,
                     AttributeType::EcPoint,
+                    AttributeType::EcParams,
                 ],
             )
             .map_err(|e| HsmError::Pkcs11Error(e.to_string()))?;
@@ -193,22 +195,22 @@ impl Pkcs11Signer {
                     // EC point is DER-encoded, extract the raw point
                     public_key = Some(self.extract_ec_point(&point)?);
                 }
+                Attribute::EcParams(params) => {
+                    self.validate_ec_params(&params)?;
+                }
                 _ => {}
             }
         }
 
-        let key_id = key_id.or_else(|| label.clone()).ok_or_else(|| {
-            HsmError::Pkcs11Error("Key has no label or ID".to_string())
-        })?;
+        let key_id = key_id
+            .or_else(|| label.clone())
+            .ok_or_else(|| HsmError::Pkcs11Error("Key has no label or ID".to_string()))?;
 
-        let public_key = public_key.ok_or_else(|| {
-            HsmError::Pkcs11Error("Could not get public key".to_string())
-        })?;
+        let public_key = public_key
+            .ok_or_else(|| HsmError::Pkcs11Error("Could not get public key".to_string()))?;
 
-        // Calculate script hash
-        let script_hash_vec = neo_crypto::Crypto::hash160(&public_key);
-        let mut script_hash = [0u8; 20];
-        script_hash.copy_from_slice(&script_hash_vec);
+        let public_key = normalize_public_key(&public_key)?;
+        let script_hash = script_hash_from_public_key(&public_key)?;
 
         let mut info = HsmKeyInfo::new(key_id, public_key, script_hash);
         if let Some(l) = label {
@@ -220,37 +222,73 @@ impl Pkcs11Signer {
 
     /// Extract raw EC point from DER-encoded EC point
     fn extract_ec_point(&self, der: &[u8]) -> HsmResult<Vec<u8>> {
-        // DER format: 0x04 len point...
-        // For secp256r1, uncompressed point is 65 bytes (0x04 + 32 + 32)
-        // Compressed point is 33 bytes (0x02/0x03 + 32)
-        if der.len() < 2 {
-            return Err(HsmError::InvalidKeyFormat("EC point too short".to_string()));
+        if der.is_empty() {
+            return Err(HsmError::InvalidKeyFormat("EC point is empty".to_string()));
         }
 
-        // Skip DER OCTET STRING wrapper if present
-        let point = if der[0] == 0x04 && der.len() == 67 {
-            // DER: 0x04 0x41 <65-byte uncompressed point>
-            &der[2..]
-        } else if der[0] == 0x04 && der.len() == 65 {
-            // Raw uncompressed point
-            der
-        } else if (der[0] == 0x02 || der[0] == 0x03) && der.len() == 33 {
-            // Already compressed
-            return Ok(der.to_vec());
+        let point = if der[0] == 0x04 {
+            match self.decode_der_octet_string(der) {
+                Ok(Some(point)) => point,
+                Ok(None) => der,
+                Err(err) => return Err(err),
+            }
         } else {
             der
         };
 
-        // Compress the point if uncompressed
-        if point.len() == 65 && point[0] == 0x04 {
-            let x = &point[1..33];
-            let y_last = point[64];
-            let prefix = if y_last % 2 == 0 { 0x02 } else { 0x03 };
-            let mut compressed = vec![prefix];
-            compressed.extend_from_slice(x);
-            Ok(compressed)
+        normalize_public_key(point)
+    }
+
+    fn decode_der_octet_string(&self, der: &[u8]) -> HsmResult<Option<&[u8]>> {
+        if der.len() < 2 || der[0] != 0x04 {
+            return Ok(None);
+        }
+
+        let (len, offset) = match der[1] {
+            len if len & 0x80 == 0 => (len as usize, 2usize),
+            0x81 => {
+                if der.len() < 3 {
+                    return Err(HsmError::InvalidKeyFormat(
+                        "Invalid DER length for EC point".to_string(),
+                    ));
+                }
+                (der[2] as usize, 3)
+            }
+            0x82 => {
+                if der.len() < 4 {
+                    return Err(HsmError::InvalidKeyFormat(
+                        "Invalid DER length for EC point".to_string(),
+                    ));
+                }
+                let len = ((der[2] as usize) << 8) | (der[3] as usize);
+                (len, 4)
+            }
+            _ => return Ok(None),
+        };
+
+        if offset + len > der.len() {
+            return Ok(None);
+        }
+
+        let point = &der[offset..offset + len];
+        if point.len() == 33 || point.len() == 65 {
+            Ok(Some(point))
         } else {
-            Ok(point.to_vec())
+            Ok(None)
+        }
+    }
+
+    fn validate_ec_params(&self, params: &[u8]) -> HsmResult<()> {
+        const SECP256R1_DER: &[u8] = &[0x06, 0x08, 0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x03, 0x01, 0x07];
+        const SECP256R1_RAW: &[u8] = &[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x03, 0x01, 0x07];
+
+        if params == SECP256R1_DER || params == SECP256R1_RAW {
+            Ok(())
+        } else {
+            Err(HsmError::InvalidKeyFormat(format!(
+                "Unsupported EC params (expected secp256r1), got {}",
+                hex::encode(params)
+            )))
         }
     }
 }
@@ -274,16 +312,18 @@ impl HsmSigner for Pkcs11Signer {
             .map_err(|e| HsmError::Pkcs11Error(format!("Failed to open session: {}", e)))?;
 
         let auth_pin = AuthPin::new(pin.to_string());
-        session.login(UserType::User, Some(&auth_pin)).map_err(|e| {
-            let err_str = e.to_string();
-            if err_str.contains("PIN_INCORRECT") || err_str.contains("CKR_PIN_INCORRECT") {
-                HsmError::InvalidPin
-            } else if err_str.contains("PIN_LOCKED") || err_str.contains("CKR_PIN_LOCKED") {
-                HsmError::PinLocked
-            } else {
-                HsmError::Pkcs11Error(format!("Login failed: {}", e))
-            }
-        })?;
+        session
+            .login(UserType::User, Some(&auth_pin))
+            .map_err(|e| {
+                let err_str = e.to_string();
+                if err_str.contains("PIN_INCORRECT") || err_str.contains("CKR_PIN_INCORRECT") {
+                    HsmError::InvalidPin
+                } else if err_str.contains("PIN_LOCKED") || err_str.contains("CKR_PIN_LOCKED") {
+                    HsmError::PinLocked
+                } else {
+                    HsmError::Pkcs11Error(format!("Login failed: {}", e))
+                }
+            })?;
 
         *self.session.write() = Some(session);
         *self.is_locked.write() = false;
@@ -313,9 +353,7 @@ impl HsmSigner for Pkcs11Signer {
 
     async fn list_keys(&self) -> HsmResult<Vec<HsmKeyInfo>> {
         let session_guard = self.session.read();
-        let session = session_guard
-            .as_ref()
-            .ok_or(HsmError::NotInitialized)?;
+        let session = session_guard.as_ref().ok_or(HsmError::NotInitialized)?;
 
         // Find all EC public keys (easier to enumerate than private keys)
         let template = vec![Attribute::Class(ObjectClass::PUBLIC_KEY)];
@@ -336,9 +374,7 @@ impl HsmSigner for Pkcs11Signer {
 
     async fn get_key(&self, key_id: &str) -> HsmResult<HsmKeyInfo> {
         let session_guard = self.session.read();
-        let session = session_guard
-            .as_ref()
-            .ok_or(HsmError::NotInitialized)?;
+        let session = session_guard.as_ref().ok_or(HsmError::NotInitialized)?;
 
         let handle = self.find_public_key(session, key_id)?;
         self.get_key_info_from_handle(session, handle)
@@ -350,17 +386,16 @@ impl HsmSigner for Pkcs11Signer {
         }
 
         let session_guard = self.session.read();
-        let session = session_guard
-            .as_ref()
-            .ok_or(HsmError::NotInitialized)?;
+        let session = session_guard.as_ref().ok_or(HsmError::NotInitialized)?;
 
         let key_handle = self.find_private_key(session, key_id)?;
 
         // Use ECDSA mechanism for secp256r1
         let mechanism = Mechanism::Ecdsa;
 
+        let digest = Crypto::sha256(data);
         let signature = session
-            .sign(&mechanism, key_handle, data)
+            .sign(&mechanism, key_handle, &digest)
             .map_err(|e| HsmError::SigningFailed(e.to_string()))?;
 
         Ok(signature)

@@ -2,7 +2,7 @@
 
 use crate::device::HsmDeviceInfo;
 use crate::error::{HsmError, HsmResult};
-use crate::signer::{HsmKeyInfo, HsmSigner};
+use crate::signer::{normalize_public_key, script_hash_from_public_key, HsmKeyInfo, HsmSigner};
 use async_trait::async_trait;
 use parking_lot::RwLock;
 use std::collections::HashMap;
@@ -61,10 +61,8 @@ impl SimulationSigner {
         let public_key = Secp256r1Crypto::derive_public_key(&private_key)
             .map_err(|e| HsmError::CryptoError(format!("Failed to derive public key: {}", e)))?;
 
-        // Calculate script hash (hash160 of public key)
-        let script_hash_vec = neo_crypto::Crypto::hash160(&public_key);
-        let mut script_hash = [0u8; 20];
-        script_hash.copy_from_slice(&script_hash_vec);
+        let public_key = normalize_public_key(&public_key)?;
+        let script_hash = script_hash_from_public_key(&public_key)?;
 
         let key_info = HsmKeyInfo::new(key_id, public_key.clone(), script_hash);
         let key_info = if let Some(l) = label {
@@ -108,10 +106,8 @@ impl SimulationSigner {
         let public_key = Secp256r1Crypto::derive_public_key(&pk)
             .map_err(|e| HsmError::CryptoError(format!("Failed to derive public key: {}", e)))?;
 
-        // Calculate script hash
-        let script_hash_vec = neo_crypto::Crypto::hash160(&public_key);
-        let mut script_hash = [0u8; 20];
-        script_hash.copy_from_slice(&script_hash_vec);
+        let public_key = normalize_public_key(&public_key)?;
+        let script_hash = script_hash_from_public_key(&public_key)?;
 
         let key_info = HsmKeyInfo::new(key_id, public_key.clone(), script_hash);
         let key_info = if let Some(l) = label {
@@ -261,10 +257,7 @@ mod tests {
 
         // Sign data
         let data = b"test data to sign";
-        let signature = signer
-            .sign("test-key", data)
-            .await
-            .expect("Failed to sign");
+        let signature = signer.sign("test-key", data).await.expect("Failed to sign");
 
         assert_eq!(signature.len(), 64); // r || s
     }
@@ -272,7 +265,9 @@ mod tests {
     #[tokio::test]
     async fn test_simulation_signer_with_pin() {
         let signer = SimulationSigner::new();
-        signer.generate_key("key1", None).expect("Failed to generate key");
+        signer
+            .generate_key("key1", None)
+            .expect("Failed to generate key");
         signer.set_pin("1234");
 
         // Should be locked

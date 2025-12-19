@@ -4,9 +4,7 @@
 //! It supports Ledger hardware wallets and PKCS#11 generic HSM interfaces.
 
 use anyhow::{Context, Result};
-use neo_hsm::{
-    HsmConfig, HsmDeviceInfo, HsmDeviceType, HsmKeyInfo, HsmSigner,
-};
+use neo_hsm::{HsmConfig, HsmDeviceInfo, HsmDeviceType, HsmKeyInfo, HsmSigner};
 use std::sync::Arc;
 use tracing::{info, warn};
 
@@ -20,6 +18,8 @@ pub struct HsmRuntime {
     pub config: HsmConfig,
     /// Cached key info (if a specific key was requested)
     pub active_key: Option<HsmKeyInfo>,
+    /// Address version for the current network
+    pub address_version: u8,
 }
 
 impl HsmRuntime {
@@ -40,7 +40,7 @@ impl HsmRuntime {
 }
 
 /// Initialize HSM from CLI arguments
-pub async fn initialize_hsm(cli: &NodeCli) -> Result<HsmRuntime> {
+pub async fn initialize_hsm(cli: &NodeCli, address_version: u8) -> Result<HsmRuntime> {
     let device_type: HsmDeviceType = cli
         .hsm_device
         .parse()
@@ -83,9 +83,7 @@ pub async fn initialize_hsm(cli: &NodeCli) -> Result<HsmRuntime> {
             }
             #[cfg(not(feature = "hsm-ledger"))]
             {
-                anyhow::bail!(
-                    "Ledger support not enabled. Build with --features hsm-ledger"
-                );
+                anyhow::bail!("Ledger support not enabled. Build with --features hsm-ledger");
             }
         }
         HsmDeviceType::Pkcs11 => {
@@ -100,9 +98,7 @@ pub async fn initialize_hsm(cli: &NodeCli) -> Result<HsmRuntime> {
             }
             #[cfg(not(feature = "hsm-pkcs11"))]
             {
-                anyhow::bail!(
-                    "PKCS#11 support not enabled. Build with --features hsm-pkcs11"
-                );
+                anyhow::bail!("PKCS#11 support not enabled. Build with --features hsm-pkcs11");
             }
         }
     };
@@ -123,8 +119,7 @@ pub async fn initialize_hsm(cli: &NodeCli) -> Result<HsmRuntime> {
             }
             _ => {
                 // Prompt for PIN
-                let pin = neo_hsm::prompt_pin(&device_name)
-                    .context("Failed to read PIN")?;
+                let pin = neo_hsm::prompt_pin(&device_name).context("Failed to read PIN")?;
                 signer.unlock(&pin).await.context("Failed to unlock HSM")?;
             }
         }
@@ -132,7 +127,10 @@ pub async fn initialize_hsm(cli: &NodeCli) -> Result<HsmRuntime> {
 
     // Unlock the device (for Ledger, this verifies the Neo app is open)
     if !signer.is_ready() {
-        signer.unlock("").await.context("Failed to initialize HSM")?;
+        signer
+            .unlock("")
+            .await
+            .context("Failed to initialize HSM")?;
     }
 
     // Get active key if specified
@@ -148,7 +146,7 @@ pub async fn initialize_hsm(cli: &NodeCli) -> Result<HsmRuntime> {
                         target: "neo::hsm",
                         "Using default key: {} ({})",
                         k.key_id,
-                        k.neo_address()
+                        k.neo_address(address_version)
                     );
                 }
                 key
@@ -171,7 +169,7 @@ pub async fn initialize_hsm(cli: &NodeCli) -> Result<HsmRuntime> {
             target: "neo::hsm",
             "Active key: {} -> {}",
             key.key_id,
-            key.neo_address()
+            key.neo_address(address_version)
         );
     }
 
@@ -179,6 +177,7 @@ pub async fn initialize_hsm(cli: &NodeCli) -> Result<HsmRuntime> {
         signer,
         config,
         active_key,
+        address_version,
     })
 }
 
@@ -200,6 +199,6 @@ pub fn print_hsm_status(runtime: &HsmRuntime) {
 
     if let Some(ref key) = runtime.active_key {
         println!("  Active Key: {}", key.key_id);
-        println!("  Address: {}", key.neo_address());
+        println!("  Address: {}", key.neo_address(runtime.address_version));
     }
 }
