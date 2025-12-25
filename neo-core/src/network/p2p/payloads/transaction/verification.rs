@@ -39,6 +39,9 @@ impl Transaction {
         }
 
         let hashes = self.get_script_hashes_for_verifying(snapshot);
+        if hashes.len() != self.witnesses.len() {
+            return VerifyResult::Invalid;
+        }
         for hash in &hashes {
             if policy.is_blocked_snapshot(snapshot, hash).unwrap_or(false) {
                 return VerifyResult::PolicyFail;
@@ -216,12 +219,12 @@ impl Transaction {
         for (i, hash) in hashes.iter().enumerate() {
             let witness = &self.witnesses[i];
 
-            if witness.script_hash() != *hash {
-                return VerifyResult::Invalid;
-            }
-
             if Helper::is_signature_contract(&witness.verification_script) {
                 if witness.verification_script.len() < 35 {
+                    return VerifyResult::Invalid;
+                }
+
+                if witness.script_hash() != *hash {
                     return VerifyResult::Invalid;
                 }
 
@@ -246,6 +249,10 @@ impl Transaction {
             } else if let Some((m, public_keys)) =
                 Helper::parse_multi_sig_contract(&witness.verification_script)
             {
+                if witness.script_hash() != *hash {
+                    return VerifyResult::Invalid;
+                }
+
                 let Some(signatures) =
                     Helper::parse_multi_sig_invocation(&witness.invocation_script, m)
                 else {

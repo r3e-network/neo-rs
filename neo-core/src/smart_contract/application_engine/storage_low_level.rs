@@ -151,14 +151,15 @@ impl ApplicationEngine {
                 .map_err(|e| Error::invalid_operation(format!("Invalid script hash: {e}")))?;
             let state_arc = context
                 .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
-            {
+            let call_flags = {
                 let mut state = state_arc.lock();
                 state.snapshot_cache = Some(Arc::clone(&self.snapshot_cache));
                 configure(&mut state);
                 if state.script_hash.is_none() {
                     state.script_hash = Some(script_hash);
                 }
-            }
+                state.call_flags
+            };
 
             engine
                 .load_context(context)
@@ -167,6 +168,7 @@ impl ApplicationEngine {
             // Loading a new execution context during instruction execution must be treated like a
             // jump so the VM does not advance the newly loaded context's instruction pointer.
             engine.is_jumping = true;
+            engine.set_call_flags(call_flags);
         }
 
         let new_context = self

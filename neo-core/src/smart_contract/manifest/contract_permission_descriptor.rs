@@ -110,7 +110,10 @@ impl ContractPermissionDescriptor {
         match item {
             StackItem::Null => Ok(Self::create_wildcard()),
             StackItem::ByteString(bytes) => Self::from_bytes(bytes),
-            StackItem::Buffer(buffer) => Self::from_bytes(buffer.data()),
+            StackItem::Buffer(buffer) => {
+                let data = buffer.data();
+                Self::from_bytes(&data)
+            }
             other => Err(format!(
                 "Unsupported stack item type for ContractPermissionDescriptor: {:?}",
                 other.stack_item_type()

@@ -262,7 +262,8 @@ impl BinarySerializer {
                 }
                 StackItem::Buffer(buffer) => {
                     writer.push(StackItemType::Buffer as u8);
-                    Self::write_var_bytes(writer, buffer.data())?;
+                    let data = buffer.data();
+                    Self::write_var_bytes(writer, &data)?;
                 }
                 StackItem::Array(array) => {
                     writer.push(StackItemType::Array as u8);

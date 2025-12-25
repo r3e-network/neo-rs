@@ -3,7 +3,6 @@
 //! This module provides the ContractManagement native contract which manages
 //! all deployed smart contracts on the Neo blockchain.
 
-use crate::cryptography::Crypto;
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
 use crate::neo_io::{BinaryWriter, MemoryReader, Serializable};
@@ -11,7 +10,7 @@ use crate::persistence::{DataCache, StoreCache};
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::contract_state::{ContractState, NefFile};
-use crate::smart_contract::manifest::{ContractManifest, ContractPermissionDescriptor};
+use crate::smart_contract::manifest::ContractManifest;
 use crate::smart_contract::native::{NativeContract, NativeMethod, PolicyContract};
 use crate::smart_contract::ContractParameterType;
 use crate::smart_contract::StorageKey;
@@ -86,6 +85,12 @@ impl ContractManagement {
 
     #[inline]
     fn contract_id_storage_key(id: i32) -> Vec<u8> {
+        let bytes = id.to_be_bytes();
+        Self::storage_key(PREFIX_CONTRACT_HASH, bytes.as_ref())
+    }
+
+    #[inline]
+    fn contract_id_storage_key_legacy(id: i32) -> Vec<u8> {
         let bytes = id.to_le_bytes();
         Self::storage_key(PREFIX_CONTRACT_HASH, bytes.as_ref())
     }
@@ -148,7 +153,7 @@ impl ContractManagement {
                 "deploy".to_string(),
                 0,
                 false,
-                0x0F,
+                0x0B,
                 vec![
                     ContractParameterType::ByteArray,
                     ContractParameterType::ByteArray,
@@ -160,7 +165,7 @@ impl ContractManagement {
                 "update".to_string(),
                 0,
                 false,
-                0x0F,
+                0x0B,
                 vec![
                     ContractParameterType::ByteArray,
                     ContractParameterType::ByteArray,
@@ -172,7 +177,7 @@ impl ContractManagement {
                 "destroy".to_string(),
                 1 << 15,
                 false,
-                0x0F,
+                0x0B,
                 Vec::new(),
                 ContractParameterType::Void,
             ),
@@ -188,7 +193,7 @@ impl ContractManagement {
                 "setMinimumDeploymentFee".to_string(),
                 1 << 15,
                 false,
-                0x0F,
+                0x03,
                 vec![ContractParameterType::Integer],
                 ContractParameterType::Void,
             ),
@@ -213,12 +218,21 @@ impl ContractManagement {
                 ContractParameterType::ByteArray,
             ),
             NativeMethod::new(
+                "isContract".to_string(),
+                1 << 14,
+                true,
+                0x01,
+                vec![ContractParameterType::Hash160],
+                ContractParameterType::Boolean,
+            )
+            .with_active_in(crate::hardfork::Hardfork::HfEchidna),
+            NativeMethod::new(
                 "getContractHashes".to_string(),
                 1 << 15,
                 true,
                 0x01,
                 Vec::new(),
-                ContractParameterType::ByteArray,
+                ContractParameterType::InteropInterface,
             ),
         ];
 
@@ -246,3 +260,5 @@ mod native_impl;
 mod query;
 mod update;
 mod validation;
+#[cfg(test)]
+mod tests;

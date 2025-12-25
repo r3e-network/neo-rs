@@ -20,10 +20,11 @@ use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use super::rcp_server_settings::RpcServerConfig;
-use super::routes::{build_rpc_routes, BasicAuth};
+use super::routes::{build_rpc_routes, build_ws_route, BasicAuth};
 use super::session::Session;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_method_attribute::RpcMethodDescriptor;
+use warp::Filter;
 
 pub type RpcCallback =
     dyn Fn(&RpcServer, &[Value]) -> Result<Value, RpcException> + Send + Sync + 'static;
@@ -85,6 +86,10 @@ pub struct RpcServer {
     session_purge_task: Option<JoinHandle<()>>,
     session_purge_shutdown: Option<oneshot::Sender<()>>,
     self_handle: Option<Weak<RwLock<RpcServer>>>,
+    /// WebSocket event bridge for real-time subscriptions
+    ws_bridge: Option<Arc<super::ws::WsEventBridge>>,
+    /// WebSocket subscription manager
+    ws_subscription_mgr: Option<Arc<super::ws::SubscriptionManager>>,
 }
 
 impl RpcServer {
@@ -101,6 +106,8 @@ impl RpcServer {
             session_purge_task: None,
             session_purge_shutdown: None,
             self_handle: None,
+            ws_bridge: None,
+            ws_subscription_mgr: None,
         }
     }
 
@@ -114,6 +121,34 @@ impl RpcServer {
 
     pub fn system(&self) -> Arc<NeoSystem> {
         Arc::clone(&self.system)
+    }
+
+    /// Enable WebSocket subscriptions
+    ///
+    /// Creates and returns an event bridge that can be used to push events
+    /// to connected WebSocket clients. Call this before `start_rpc_server`.
+    ///
+    /// # Arguments
+    /// * `capacity` - Buffer capacity for the broadcast channel
+    ///
+    /// # Returns
+    /// The event bridge that should be used to publish events
+    pub fn enable_websocket(&mut self, capacity: usize) -> Arc<super::ws::WsEventBridge> {
+        let bridge = Arc::new(super::ws::WsEventBridge::new(capacity));
+        let subscription_mgr = Arc::new(super::ws::SubscriptionManager::new());
+        self.ws_bridge = Some(Arc::clone(&bridge));
+        self.ws_subscription_mgr = Some(subscription_mgr);
+        bridge
+    }
+
+    /// Get the WebSocket event bridge if enabled
+    pub fn ws_bridge(&self) -> Option<Arc<super::ws::WsEventBridge>> {
+        self.ws_bridge.clone()
+    }
+
+    /// Check if WebSocket is enabled
+    pub fn is_websocket_enabled(&self) -> bool {
+        self.ws_bridge.is_some()
     }
 
     pub fn start_rpc_server(&mut self, handle: Weak<RwLock<RpcServer>>) {
@@ -170,7 +205,7 @@ impl RpcServer {
         ));
         let address = SocketAddr::new(self.settings.bind_address, self.settings.port);
 
-        let routes = build_rpc_routes(
+        let rpc_routes = build_rpc_routes(
             handle.clone(),
             disabled_methods,
             auth.clone(),
@@ -178,7 +213,17 @@ impl RpcServer {
             self.settings.clone(),
         );
 
+        // Combine RPC routes with WebSocket route if enabled
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        let routes = if let (Some(bridge), Some(subscription_mgr)) =
+            (&self.ws_bridge, &self.ws_subscription_mgr)
+        {
+            info!("WebSocket subscriptions enabled at /ws");
+            let ws_route = build_ws_route(bridge.sender(), Arc::clone(subscription_mgr));
+            rpc_routes.or(ws_route).unify().boxed()
+        } else {
+            rpc_routes.boxed()
+        };
         let svc = warp::service(routes);
         let make_svc = make_service_fn(move |conn: &AddrStream| {
             let remote_addr = conn.remote_addr();

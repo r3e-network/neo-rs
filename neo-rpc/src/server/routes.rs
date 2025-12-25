@@ -1,3 +1,4 @@
+use super::middleware::{GovernorRateLimiter, RateLimitConfig};
 use super::rcp_server_settings::RpcServerConfig;
 use super::rpc_error::RpcError;
 use super::rpc_server::{RpcServer, RPC_ERR_TOTAL, RPC_REQ_TOTAL};
@@ -5,14 +6,13 @@ use super::rpc_server::{RpcServer, RPC_ERR_TOTAL, RPC_REQ_TOTAL};
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::Engine as _;
 use bytes::Bytes;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::RwLock;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::convert::Infallible;
-use std::net::{IpAddr, SocketAddr};
+use std::net::SocketAddr;
 use std::sync::{Arc, Weak};
-use std::time::{Duration, Instant};
 use subtle::ConstantTimeEq;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use warp::http::header::{
@@ -114,7 +114,7 @@ struct RpcFilters {
     disabled: Arc<HashSet<String>>,
     auth: Arc<Option<BasicAuth>>,
     semaphore: Arc<Semaphore>,
-    rate_limiter: Option<Arc<Mutex<RateLimiter>>>,
+    rate_limiter: Option<Arc<GovernorRateLimiter>>,
     cors: Option<CorsConfig>,
 }
 
@@ -130,65 +130,6 @@ struct RpcQueryParams {
     params: Option<String>,
 }
 
-struct TokenBucket {
-    tokens: f64,
-    last_refill: Instant,
-}
-
-struct RateLimiter {
-    max_rps: u32,
-    burst: u32,
-    buckets: HashMap<IpAddr, TokenBucket>,
-}
-
-impl RateLimiter {
-    fn new(max_rps: u32, burst: u32) -> Self {
-        let burst = if burst == 0 {
-            max_rps.max(1)
-        } else {
-            burst.max(1)
-        };
-        Self {
-            max_rps,
-            burst,
-            buckets: HashMap::new(),
-        }
-    }
-
-    fn allow(&mut self, ip: IpAddr) -> bool {
-        if self.max_rps == 0 {
-            return true;
-        }
-
-        const STALE_AFTER: Duration = Duration::from_secs(10 * 60);
-        const MAX_BUCKETS: usize = 4096;
-
-        let now = Instant::now();
-        if self.buckets.len() > MAX_BUCKETS {
-            self.buckets
-                .retain(|_, bucket| now.duration_since(bucket.last_refill) < STALE_AFTER);
-        }
-
-        let bucket = self.buckets.entry(ip).or_insert(TokenBucket {
-            tokens: self.burst as f64,
-            last_refill: now,
-        });
-
-        let elapsed = now.duration_since(bucket.last_refill).as_secs_f64();
-        if elapsed > 0.0 {
-            bucket.tokens = (bucket.tokens + elapsed * self.max_rps as f64).min(self.burst as f64);
-            bucket.last_refill = now;
-        }
-
-        if bucket.tokens >= 1.0 {
-            bucket.tokens -= 1.0;
-            true
-        } else {
-            false
-        }
-    }
-}
-
 pub(crate) fn build_rpc_routes(
     handle: Weak<RwLock<RpcServer>>,
     disabled: Arc<HashSet<String>>,
@@ -198,10 +139,14 @@ pub(crate) fn build_rpc_routes(
 ) -> impl Filter<Extract = (HttpResponse,), Error = warp::Rejection> + Clone {
     let has_auth = auth.is_some();
     let rate_limiter = if settings.max_requests_per_second > 0 {
-        Some(Arc::new(Mutex::new(RateLimiter::new(
-            settings.max_requests_per_second,
-            settings.rate_limit_burst,
-        ))))
+        Some(Arc::new(GovernorRateLimiter::new(RateLimitConfig {
+            max_rps: settings.max_requests_per_second,
+            burst: if settings.rate_limit_burst == 0 {
+                settings.max_requests_per_second
+            } else {
+                settings.rate_limit_burst
+            },
+        })))
     } else {
         None
     };
@@ -251,6 +196,26 @@ pub(crate) fn build_rpc_routes(
     post_route.or(get_route).unify().or(options_route).unify()
 }
 
+/// Build WebSocket route for event subscriptions
+///
+/// This is separate from `build_rpc_routes` because WebSocket requires
+/// an event broadcast channel which may not always be available.
+pub(crate) fn build_ws_route(
+    event_tx: tokio::sync::broadcast::Sender<super::ws::WsEvent>,
+    subscription_mgr: std::sync::Arc<super::ws::SubscriptionManager>,
+) -> impl Filter<Extract = (HttpResponse,), Error = warp::Rejection> + Clone {
+    let event_tx = std::sync::Arc::new(event_tx);
+
+    warp::path("ws")
+        .and(warp::ws())
+        .map(move |ws: warp::ws::Ws| {
+            let event_rx = event_tx.subscribe();
+            let mgr = subscription_mgr.clone();
+            ws.on_upgrade(move |socket| super::ws::ws_handler(socket, event_rx, mgr))
+        })
+        .map(warp::reply::Reply::into_response)
+}
+
 fn with_filters(
     filters: RpcFilters,
 ) -> impl Filter<Extract = (RpcFilters,), Error = Infallible> + Clone {
@@ -266,7 +231,7 @@ async fn handle_post_request(
 ) -> Result<HttpResponse, Infallible> {
     if let Some(limiter) = filters.rate_limiter.as_ref() {
         if let Some(addr) = remote.map(|addr| addr.ip()) {
-            if !limiter.lock().allow(addr) {
+            if !limiter.check(addr) {
                 let mut response = build_http_response(
                     Some(error_response(None, RpcError::too_many_requests())),
                     false,
@@ -305,7 +270,7 @@ async fn handle_get_request(
 ) -> Result<HttpResponse, Infallible> {
     if let Some(limiter) = filters.rate_limiter.as_ref() {
         if let Some(addr) = remote.map(|addr| addr.ip()) {
-            if !limiter.lock().allow(addr) {
+            if !limiter.check(addr) {
                 let mut response = build_http_response(
                     Some(error_response(None, RpcError::too_many_requests())),
                     false,
@@ -680,6 +645,24 @@ impl RequestOutcome {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::server::rcp_server_settings::RpcServerConfig;
+    use crate::server::rpc_server_blockchain::RpcServerBlockchain;
+    use crate::server::rpc_server_node::RpcServerNode;
+    use neo_core::neo_io::BinaryWriter;
+    use neo_core::neo_system::NeoSystem;
+    use neo_core::network::p2p::helper::get_sign_data_vec;
+    use neo_core::network::p2p::payloads::signer::Signer;
+    use neo_core::network::p2p::payloads::transaction::Transaction;
+    use neo_core::network::p2p::payloads::witness::Witness;
+    use neo_core::protocol_settings::ProtocolSettings;
+    use neo_core::smart_contract::native::LedgerContract;
+    use neo_core::smart_contract::{StorageItem, StorageKey};
+    use neo_core::wallets::KeyPair;
+    use neo_core::WitnessScope;
+    use neo_vm::op_code::OpCode;
+    use neo_vm::vm_state::VMState;
+    use parking_lot::RwLock;
+    use std::sync::Arc;
 
     fn build_test_routes(
         settings: RpcServerConfig,
@@ -689,6 +672,88 @@ mod tests {
         let auth: Arc<Option<BasicAuth>> = Arc::new(None);
         let semaphore = Arc::new(Semaphore::new(1));
         build_rpc_routes(handle, disabled, auth, semaphore, settings)
+    }
+
+    fn build_filters_with_handlers() -> (Arc<RwLock<RpcServer>>, RpcFilters) {
+        let system =
+            NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+        let mut server = RpcServer::new(system, RpcServerConfig::default());
+        server.register_handlers(RpcServerBlockchain::register_handlers());
+        server.register_handlers(RpcServerNode::register_handlers());
+
+        let server = Arc::new(RwLock::new(server));
+        let filters = RpcFilters {
+            server: Arc::downgrade(&server),
+            disabled: Arc::new(HashSet::new()),
+            auth: Arc::new(None),
+            semaphore: Arc::new(Semaphore::new(1)),
+            rate_limiter: None,
+            cors: None,
+        };
+        (server, filters)
+    }
+
+    fn build_filters_with_auth(
+        auth: Arc<Option<BasicAuth>>,
+        include_wallet: bool,
+    ) -> (Arc<RwLock<RpcServer>>, RpcFilters) {
+        let system =
+            NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+        let mut server = RpcServer::new(system, RpcServerConfig::default());
+        server.register_handlers(RpcServerBlockchain::register_handlers());
+        server.register_handlers(RpcServerNode::register_handlers());
+        if include_wallet {
+            server.register_handlers(crate::server::rpc_server_wallet::RpcServerWallet::register_handlers());
+        }
+
+        let server = Arc::new(RwLock::new(server));
+        let filters = RpcFilters {
+            server: Arc::downgrade(&server),
+            disabled: Arc::new(HashSet::new()),
+            auth,
+            semaphore: Arc::new(Semaphore::new(1)),
+            rate_limiter: None,
+            cors: None,
+        };
+        (server, filters)
+    }
+
+    #[test]
+    fn verify_basic_auth_accepts_valid_credentials() {
+        let auth = BasicAuth {
+            user: b"testuser".to_vec(),
+            pass: b"testpass".to_vec(),
+        };
+        let header = format!(
+            "Basic {}",
+            BASE64_STANDARD.encode("testuser:testpass")
+        );
+        assert!(verify_basic_auth(Some(&header), &auth));
+    }
+
+    #[test]
+    fn verify_basic_auth_rejects_invalid_credentials() {
+        let auth = BasicAuth {
+            user: b"testuser".to_vec(),
+            pass: b"testpass".to_vec(),
+        };
+        let wrong_user = format!(
+            "Basic {}",
+            BASE64_STANDARD.encode("wrong:testpass")
+        );
+        let wrong_pass = format!(
+            "Basic {}",
+            BASE64_STANDARD.encode("testuser:wrong")
+        );
+        let wrong_scheme = format!(
+            "Bearer {}",
+            BASE64_STANDARD.encode("testuser:testpass")
+        );
+
+        assert!(!verify_basic_auth(Some(&wrong_user), &auth));
+        assert!(!verify_basic_auth(Some(&wrong_pass), &auth));
+        assert!(!verify_basic_auth(Some(&wrong_scheme), &auth));
+        assert!(!verify_basic_auth(None, &auth));
     }
 
     #[tokio::test]
@@ -771,5 +836,247 @@ mod tests {
             Some("*")
         );
         assert!(resp.headers().get(VARY).is_none());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn process_body_rejects_malformed_json() {
+        let (_server, filters) = build_filters_with_handlers();
+        let (response, unauthorized) = process_body(&filters, None, b"{ invalid json");
+        assert!(!unauthorized);
+
+        let response = response.expect("response");
+        let error = response
+            .get("error")
+            .and_then(Value::as_object)
+            .expect("error object");
+        let code = error.get("code").and_then(Value::as_i64).expect("code");
+        assert_eq!(code, RpcError::bad_request().code() as i64);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn process_body_rejects_empty_batch() {
+        let (_server, filters) = build_filters_with_handlers();
+        let (response, unauthorized) = process_body(&filters, None, b"[]");
+        assert!(!unauthorized);
+
+        let response = response.expect("response");
+        let error = response
+            .get("error")
+            .and_then(Value::as_object)
+            .expect("error object");
+        let code = error.get("code").and_then(Value::as_i64).expect("code");
+        assert_eq!(code, RpcError::invalid_request().code() as i64);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn process_body_mixed_batch() {
+        let (_server, filters) = build_filters_with_handlers();
+        let body = br#"[
+            {"jsonrpc": "2.0", "method": "getblockcount", "params": [], "id": 1},
+            {"jsonrpc": "2.0", "method": "nonexistentmethod", "params": [], "id": 2},
+            {"jsonrpc": "2.0", "method": "getblock", "params": ["invalid_index"], "id": 3},
+            {"jsonrpc": "2.0", "method": "getversion", "id": 4}
+        ]"#;
+
+        let (response, unauthorized) = process_body(&filters, None, body);
+        assert!(!unauthorized);
+
+        let response = response.expect("response");
+        let batch = response.as_array().expect("batch array");
+        assert_eq!(batch.len(), 4);
+
+        let first = batch[0].as_object().expect("first response");
+        assert!(first.get("error").is_none());
+        assert!(first.get("result").is_some());
+        assert_eq!(first.get("id").and_then(Value::as_i64), Some(1));
+
+        let second = batch[1].as_object().expect("second response");
+        let second_error = second
+            .get("error")
+            .and_then(Value::as_object)
+            .expect("second error");
+        assert_eq!(
+            second_error.get("code").and_then(Value::as_i64),
+            Some(RpcError::method_not_found().code() as i64)
+        );
+        assert_eq!(second.get("id").and_then(Value::as_i64), Some(2));
+
+        let third = batch[2].as_object().expect("third response");
+        let third_error = third
+            .get("error")
+            .and_then(Value::as_object)
+            .expect("third error");
+        assert_eq!(
+            third_error.get("code").and_then(Value::as_i64),
+            Some(RpcError::invalid_params().code() as i64)
+        );
+        assert_eq!(third.get("id").and_then(Value::as_i64), Some(3));
+
+        let fourth = batch[3].as_object().expect("fourth response");
+        assert!(fourth.get("error").is_none());
+        assert!(fourth.get("result").is_some());
+        assert_eq!(fourth.get("id").and_then(Value::as_i64), Some(4));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn process_body_reports_already_exists_for_sendrawtransaction() {
+        let (server, filters) = build_filters_with_handlers();
+        let settings = ProtocolSettings::default();
+        let keypair = KeyPair::from_private_key(&[0x55u8; 32]).expect("keypair");
+        let tx = build_signed_transaction(&settings, &keypair, 2, 0);
+        let mut store = server.read().system().context().store_snapshot_cache();
+        persist_transaction_record(&mut store, &tx, 1);
+
+        let payload = BASE64_STANDARD.encode(tx.to_bytes());
+        let request = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "sendrawtransaction",
+            "params": [payload],
+        });
+        let body = serde_json::to_vec(&request).expect("serialize body");
+        let (response, unauthorized) =
+            tokio::task::block_in_place(|| process_body(&filters, None, &body));
+        assert!(!unauthorized);
+
+        let response = response.expect("response");
+        let error = response
+            .get("error")
+            .and_then(Value::as_object)
+            .expect("error object");
+        assert_eq!(
+            error.get("code").and_then(Value::as_i64),
+            Some(RpcError::already_exists().code() as i64)
+        );
+        let message = error
+            .get("message")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        assert!(message.contains(RpcError::already_exists().message()));
+    }
+
+    fn build_signed_transaction(
+        settings: &ProtocolSettings,
+        keypair: &KeyPair,
+        nonce: u32,
+        system_fee: i64,
+    ) -> Transaction {
+        let mut tx = Transaction::new();
+        tx.set_nonce(nonce);
+        tx.set_network_fee(1_0000_0000);
+        tx.set_system_fee(system_fee);
+        tx.set_valid_until_block(1);
+        tx.set_script(vec![OpCode::PUSH1 as u8]);
+        tx.set_signers(vec![Signer::new(
+            keypair.get_script_hash(),
+            WitnessScope::GLOBAL,
+        )]);
+
+        let sign_data = get_sign_data_vec(&tx, settings.network).expect("sign data");
+        let signature = keypair.sign(&sign_data).expect("sign");
+        let mut invocation = Vec::with_capacity(signature.len() + 2);
+        invocation.push(OpCode::PUSHDATA1 as u8);
+        invocation.push(signature.len() as u8);
+        invocation.extend_from_slice(&signature);
+        let verification_script = keypair.get_verification_script();
+        tx.set_witnesses(vec![Witness::new_with_scripts(
+            invocation,
+            verification_script,
+        )]);
+        tx
+    }
+
+    fn persist_transaction_record(
+        store: &mut neo_core::persistence::StoreCache,
+        tx: &Transaction,
+        block_index: u32,
+    ) {
+        const PREFIX_TRANSACTION: u8 = 0x0b;
+        const RECORD_KIND_TRANSACTION: u8 = 0x01;
+
+        let mut writer = BinaryWriter::new();
+        writer
+            .write_u8(RECORD_KIND_TRANSACTION)
+            .expect("record kind");
+        writer.write_u32(block_index).expect("block index");
+        writer.write_u8(VMState::NONE as u8).expect("vm state");
+        let tx_bytes = tx.to_bytes();
+        writer.write_var_bytes(&tx_bytes).expect("tx bytes");
+
+        let mut key_bytes = Vec::with_capacity(1 + 32);
+        key_bytes.push(PREFIX_TRANSACTION);
+        key_bytes.extend_from_slice(&tx.hash().to_bytes());
+        let key = StorageKey::new(LedgerContract::ID, key_bytes);
+        store.add(key, StorageItem::from_bytes(writer.to_bytes()));
+        store.commit();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn process_body_rejects_protected_method_without_auth_config() {
+        let (_server, filters) = build_filters_with_auth(Arc::new(None), true);
+        let body = br#"{"jsonrpc": "2.0", "method": "getnewaddress", "params": [], "id": 1}"#;
+
+        let (response, unauthorized) = process_body(&filters, None, body);
+        assert!(unauthorized);
+
+        let response = response.expect("response");
+        let error = response
+            .get("error")
+            .and_then(Value::as_object)
+            .expect("error object");
+        assert_eq!(
+            error.get("code").and_then(Value::as_i64),
+            Some(RpcError::access_denied().code() as i64)
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn process_body_rejects_invalid_auth_header() {
+        let auth = Arc::new(Some(BasicAuth {
+            user: b"testuser".to_vec(),
+            pass: b"testpass".to_vec(),
+        }));
+        let (_server, filters) = build_filters_with_auth(auth, false);
+        let body = br#"{"jsonrpc": "2.0", "method": "getblockcount", "params": [], "id": 1}"#;
+
+        let header = format!(
+            "Basic {}",
+            BASE64_STANDARD.encode("testuser:wrongpass")
+        );
+        let (response, unauthorized) = process_body(&filters, Some(&header), body);
+        assert!(unauthorized);
+
+        let response = response.expect("response");
+        let error = response
+            .get("error")
+            .and_then(Value::as_object)
+            .expect("error object");
+        assert_eq!(
+            error.get("code").and_then(Value::as_i64),
+            Some(RpcError::access_denied().code() as i64)
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn process_body_accepts_valid_auth_header() {
+        let auth = Arc::new(Some(BasicAuth {
+            user: b"testuser".to_vec(),
+            pass: b"testpass".to_vec(),
+        }));
+        let (_server, filters) = build_filters_with_auth(auth, false);
+        let body = br#"{"jsonrpc": "2.0", "method": "getblockcount", "params": [], "id": 1}"#;
+
+        let header = format!(
+            "Basic {}",
+            BASE64_STANDARD.encode("testuser:testpass")
+        );
+        let (response, unauthorized) = process_body(&filters, Some(&header), body);
+        assert!(!unauthorized);
+
+        let response = response.expect("response");
+        let obj = response.as_object().expect("response object");
+        assert!(obj.get("error").is_none());
+        assert!(obj.get("result").is_some());
+        assert_eq!(obj.get("id").and_then(Value::as_i64), Some(1));
     }
 }

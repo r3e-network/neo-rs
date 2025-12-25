@@ -104,7 +104,7 @@ fn test_buffer_stack_item() {
 
     // Test conversion to boolean
     assert!(buffer.as_bool().unwrap());
-    assert!(!empty_buffer.as_bool().unwrap());
+    assert!(empty_buffer.as_bool().unwrap());
 
     // Test conversion to integer
     assert_eq!(buffer.as_int().unwrap(), BigInt::from(0x030201));
@@ -135,7 +135,7 @@ fn test_array_stack_item() {
 
     // Test conversion to boolean
     assert!(array.as_bool().unwrap());
-    assert!(!empty_array.as_bool().unwrap());
+    assert!(empty_array.as_bool().unwrap());
 
     // Test equality
     assert!(array.equals(&array).unwrap());
@@ -173,7 +173,7 @@ fn test_struct_stack_item() {
 
     // Test conversion to boolean
     assert!(struct_item.as_bool().unwrap());
-    assert!(!empty_struct.as_bool().unwrap());
+    assert!(empty_struct.as_bool().unwrap());
 
     // Test equality
     assert!(struct_item.equals(&struct_item).unwrap());
@@ -215,7 +215,7 @@ fn test_map_stack_item() {
 
     // Test conversion to boolean
     assert!(map_item.as_bool().unwrap());
-    assert!(!empty_map.as_bool().unwrap());
+    assert!(empty_map.as_bool().unwrap());
 
     // Test equality
     assert!(map_item.equals(&map_item).unwrap());

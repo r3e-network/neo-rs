@@ -91,6 +91,9 @@ impl RpcTransferOut {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use neo_json::JArray;
+    use std::fs;
+    use std::path::PathBuf;
 
     #[test]
     fn rpc_transfer_out_roundtrip() {
@@ -156,5 +159,61 @@ mod tests {
         let parsed =
             RpcTransferOut::from_json(&json, &ProtocolSettings::default_settings()).expect("parse");
         assert_eq!(parsed.script_hash, script_hash);
+    }
+
+    fn load_rpc_case_params(name: &str) -> JArray {
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.push("..");
+        path.push("neo_csharp");
+        path.push("tests");
+        path.push("Neo.RpcClient.Tests");
+        path.push("RpcTestCases.json");
+        let payload = fs::read_to_string(&path).expect("read RpcTestCases.json");
+        let token = JToken::parse(&payload, 128).expect("parse RpcTestCases.json");
+        let cases = token.as_array().expect("RpcTestCases.json should be an array");
+        for entry in cases.children() {
+            let token = entry.as_ref().expect("array entry");
+            let obj = token.as_object().expect("case object");
+            let case_name = obj
+                .get("Name")
+                .and_then(|value| value.as_string())
+                .unwrap_or_default();
+            if case_name.eq_ignore_ascii_case(name) {
+                let request = obj
+                    .get("Request")
+                    .and_then(|value| value.as_object())
+                    .expect("case request");
+                let params = request
+                    .get("params")
+                    .and_then(|value| value.as_array())
+                    .expect("case params");
+                return params.clone();
+            }
+        }
+        panic!("RpcTestCases.json missing case: {name}");
+    }
+
+    #[test]
+    fn transfer_out_to_json_matches_rpc_test_case() {
+        let settings = ProtocolSettings::default_settings();
+        let params = load_rpc_case_params("sendmanyasync");
+        let transfers = params
+            .get(1)
+            .and_then(|value| value.as_array())
+            .expect("transfer outputs array");
+        let parsed = transfers
+            .children()
+            .iter()
+            .filter_map(|entry| entry.as_ref())
+            .filter_map(|token| token.as_object())
+            .filter_map(|obj| RpcTransferOut::from_json(obj, &settings).ok())
+            .collect::<Vec<_>>();
+        let actual = JArray::from(
+            parsed
+                .iter()
+                .map(|transfer| JToken::Object(transfer.to_json(&settings)))
+                .collect::<Vec<_>>(),
+        );
+        assert_eq!(transfers.to_string(), actual.to_string());
     }
 }

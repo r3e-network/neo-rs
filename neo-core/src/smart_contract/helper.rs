@@ -1,5 +1,6 @@
 //! Helper - matches C# Neo.SmartContract.Helper exactly
 
+use crate::cryptography::ECPoint;
 use crate::error::{CoreError, CoreResult};
 use crate::network::p2p::payloads::Witness;
 use crate::persistence::DataCache;
@@ -87,7 +88,9 @@ impl Helper {
 
         // Check basic pattern for multi-sig
         let _m = match script[0] {
-            0x51..=0x60 => script[0] - 0x50, // PUSH1-PUSH16
+            value if (OpCode::PUSH1 as u8..=OpCode::PUSH16 as u8).contains(&value) => {
+                value - OpCode::PUSH0 as u8
+            }
             _ => return false,
         };
 
@@ -130,29 +133,15 @@ impl Helper {
             )));
         }
 
-        let mut script = Vec::new();
-
-        // Push m
-        script.push(0x50 + m as u8); // PUSH1-PUSH16
-
-        // Push public keys (sorted)
-        let mut sorted_keys = public_keys.to_vec();
-        sorted_keys.sort();
-
-        for key in &sorted_keys {
-            script.push(0x0C); // PUSHDATA1
-            script.push(key.len() as u8);
-            script.extend_from_slice(key);
+        let mut points = Vec::with_capacity(public_keys.len());
+        for key in public_keys {
+            let point = ECPoint::from_bytes(key)
+                .map_err(|e| CoreError::invalid_operation(format!("Invalid public key: {e}")))?;
+            points.push(point);
         }
 
-        // Push n
-        script.push(0x50 + sorted_keys.len() as u8); // PUSH1-PUSH16
-
-        // Add SYSCALL CheckMultisig
-        script.push(0x41); // SYSCALL
-        script.extend_from_slice(&Self::check_multisig_hash());
-
-        Ok(script)
+        Contract::try_create_multi_sig_redeem_script(m, &points)
+            .map_err(|err| CoreError::invalid_operation(err.to_string()))
     }
 
     /// Creates a multi-sig redeem script (panics on invalid input).
@@ -201,10 +190,10 @@ impl Helper {
 
         let mut offset = 0usize;
         let first = script[offset];
-        if !(0x51..=0x60).contains(&first) {
+        if !(OpCode::PUSH1 as u8..=OpCode::PUSH16 as u8).contains(&first) {
             return None;
         }
-        let m = (first - 0x50) as usize;
+        let m = (first - OpCode::PUSH0 as u8) as usize;
         offset += 1;
 
         let mut public_keys = Vec::new();
@@ -230,7 +219,9 @@ impl Helper {
         }
         let n = public_keys.len();
 
-        if offset >= script.len() || script[offset] != (0x50 + n as u8) {
+        if offset >= script.len()
+            || script[offset] != (OpCode::PUSH0 as u8).wrapping_add(n as u8)
+        {
             return None;
         }
         offset += 1;
@@ -379,10 +370,15 @@ impl Helper {
         // Create verification engine
         let cloned_snapshot = Arc::new(snapshot.clone_cache());
         let container_hash = verifiable.hash()?;
-        let container = Arc::new(VerifiableHashContainer {
-            hash: container_hash,
-            hash_data: verifiable.get_hash_data(),
-        });
+        let container: Arc<dyn IVerifiable> =
+            if let Some(transaction) = verifiable.as_transaction() {
+                Arc::new(transaction.clone())
+            } else {
+                Arc::new(VerifiableHashContainer {
+                    hash: container_hash,
+                    hash_data: verifiable.get_hash_data(),
+                })
+            };
         let mut engine = ApplicationEngine::new(
             TriggerType::Verification,
             Some(container),

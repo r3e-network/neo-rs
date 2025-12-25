@@ -12,12 +12,16 @@ impl ApplicationEngine {
         // evaluation stack items (`rvcount = -1`) so that witness invocation
         // scripts can pass parameters to verification scripts and invocation
         // results are preserved on `ResultStack`.
-        self.load_script_with_state(script, -1, 0, move |state| {
+        let context = self.load_script_with_state(script, -1, 0, move |state| {
             state.call_flags = call_flags;
             if let Some(hash) = script_hash {
                 state.script_hash = Some(hash);
             }
         })?;
+
+        let script_hash = UInt160::from_bytes(&context.script_hash())
+            .map_err(|e| Error::invalid_operation(format!("Invalid script hash: {e}")))?;
+        self.increment_invocation_counter(&script_hash);
         Ok(())
     }
 
@@ -184,10 +188,12 @@ impl ApplicationEngine {
             .current_script_hash
             .ok_or_else(|| Error::invalid_operation("No current contract".to_string()))?;
 
-        // 2. Get contract state to get the ID
-        let contract = self
-            .get_contract(&contract_hash)
-            .ok_or_else(|| Error::not_found(format!("Contract not found: {}", contract_hash)))?;
+        // 2. Get contract state to get the ID (matches C# snapshot lookup)
+        let contract = ContractManagement::get_contract_from_snapshot(
+            self.snapshot_cache.as_ref(),
+            &contract_hash,
+        )?
+        .ok_or_else(|| Error::not_found(format!("Contract not found: {}", contract_hash)))?;
 
         // 3. Create storage context (matches C# StorageContext creation)
         Ok(StorageContext {

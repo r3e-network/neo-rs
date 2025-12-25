@@ -1,12 +1,13 @@
 use std::any::Any;
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use neo_json::JObject;
+use base64::{engine::general_purpose, Engine as _};
+use neo_json::{JArray, JObject, JToken};
 use neo_vm::stack_item::InteropInterface;
-use neo_vm::{Script, StackItem};
+use neo_vm::{OrderedDictionary, Script, StackItem};
 use num_bigint::BigInt;
 use serde_json::Value as JsonValue;
+use std::collections::HashSet;
 
 use super::parsing::{jobject_to_serde, parse_base64_token, parse_u32_token};
 
@@ -18,7 +19,17 @@ pub fn stack_item_from_json(json: &JObject) -> Result<StackItem, String> {
         .ok_or("StackItem entry missing 'type' field")?;
 
     match item_type.as_str() {
-        "Any" => Ok(StackItem::null()),
+        "Any" => {
+            let value = json.get("value");
+            let text = value
+                .and_then(|token| token.as_string().map(|s| s.to_string()))
+                .or_else(|| value.map(|token| token.to_string()));
+            if let Some(text) = text {
+                Ok(StackItem::from_byte_string(text.into_bytes()))
+            } else {
+                Ok(StackItem::null())
+            }
+        }
         "Boolean" => {
             let value = json
                 .get("value")
@@ -83,7 +94,7 @@ pub fn stack_item_from_json(json: &JObject) -> Result<StackItem, String> {
                 .and_then(|token| token.as_array())
                 .ok_or("Map stack item missing 'value' array")?;
             #[allow(clippy::mutable_key_type)]
-            let mut map = BTreeMap::new();
+            let mut map = OrderedDictionary::new();
             for entry in entries.children() {
                 let token = entry.as_ref().ok_or("Map entries must be objects")?;
                 let obj = token.as_object().ok_or("Map entries must be objects")?;
@@ -110,19 +121,123 @@ pub fn stack_item_from_json(json: &JObject) -> Result<StackItem, String> {
             Ok(StackItem::from_pointer(script, index))
         }
         "InteropInterface" => {
-            let payload = json
-                .get("value")
-                .and_then(|token| token.as_object())
-                .ok_or("InteropInterface missing 'value' object")?;
-            let serde_payload = jobject_to_serde(payload)?;
-            Ok(StackItem::from_interface(JsonInteropInterface::new(
-                serde_payload,
-            )))
+            let serde_payload = jobject_to_serde(json)?;
+            Ok(StackItem::from_interface(JsonInteropInterface::new(serde_payload)))
         }
-        other => Err(format!(
-            "Unsupported stack item type '{other}' in JSON payload"
-        )),
+        _other => {
+            let value = json.get("value");
+            let text = value
+                .and_then(|token| token.as_string().map(|s| s.to_string()))
+                .or_else(|| value.map(|token| token.to_string()));
+
+            if let Some(text) = text {
+                Ok(StackItem::from_byte_string(text.into_bytes()))
+            } else {
+                Ok(StackItem::null())
+            }
+        }
     }
+}
+
+/// Converts a VM stack item into its `neo-json` representation.
+pub fn stack_item_to_json(item: &StackItem) -> Result<JObject, String> {
+    let mut context = HashSet::new();
+    stack_item_to_json_inner(item, &mut context)
+}
+
+fn stack_item_to_json_inner(
+    item: &StackItem,
+    context: &mut HashSet<usize>,
+) -> Result<JObject, String> {
+    let mut json = JObject::new();
+    json.insert(
+        "type".to_string(),
+        JToken::String(format!("{:?}", item.stack_item_type())),
+    );
+
+    match item {
+        StackItem::Null | StackItem::InteropInterface(_) => {}
+        StackItem::Boolean(value) => {
+            json.insert("value".to_string(), JToken::Boolean(*value));
+        }
+        StackItem::Integer(value) => {
+            json.insert(
+                "value".to_string(),
+                JToken::String(value.to_string()),
+            );
+        }
+        StackItem::ByteString(bytes) => {
+            json.insert(
+                "value".to_string(),
+                JToken::String(general_purpose::STANDARD.encode(bytes)),
+            );
+        }
+        StackItem::Buffer(buffer) => {
+            json.insert(
+                "value".to_string(),
+                JToken::String(general_purpose::STANDARD.encode(buffer.data())),
+            );
+        }
+        StackItem::Pointer(pointer) => {
+            json.insert(
+                "value".to_string(),
+                JToken::Number(pointer.position() as f64),
+            );
+        }
+        StackItem::Array(array) => {
+            let id = array.id();
+            if !context.insert(id) {
+                return Err("Circular reference.".to_string());
+            }
+            let entries = array
+                .items()
+                .iter()
+                .map(|entry| stack_item_to_json_inner(entry, context))
+                .collect::<Result<Vec<_>, _>>();
+            context.remove(&id);
+            let entries = entries?;
+            let values = entries.into_iter().map(JToken::Object).collect::<Vec<_>>();
+            json.insert("value".to_string(), JToken::Array(JArray::from(values)));
+        }
+        StackItem::Struct(structure) => {
+            let id = structure.id();
+            if !context.insert(id) {
+                return Err("Circular reference.".to_string());
+            }
+            let entries = structure
+                .items()
+                .iter()
+                .map(|entry| stack_item_to_json_inner(entry, context))
+                .collect::<Result<Vec<_>, _>>();
+            context.remove(&id);
+            let entries = entries?;
+            let values = entries.into_iter().map(JToken::Object).collect::<Vec<_>>();
+            json.insert("value".to_string(), JToken::Array(JArray::from(values)));
+        }
+        StackItem::Map(map) => {
+            let id = map.id();
+            if !context.insert(id) {
+                return Err("Circular reference.".to_string());
+            }
+            let entries = map
+                .items()
+                .iter()
+                .map(|(key, value)| {
+                    let key_json = stack_item_to_json_inner(key, context)?;
+                    let value_json = stack_item_to_json_inner(value, context)?;
+                    let mut entry = JObject::new();
+                    entry.insert("key".to_string(), JToken::Object(key_json));
+                    entry.insert("value".to_string(), JToken::Object(value_json));
+                    Ok(JToken::Object(entry))
+                })
+                .collect::<Result<Vec<_>, String>>();
+            context.remove(&id);
+            let entries = entries?;
+            json.insert("value".to_string(), JToken::Array(JArray::from(entries)));
+        }
+    }
+
+    Ok(json)
 }
 
 #[derive(Debug)]

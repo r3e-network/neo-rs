@@ -57,8 +57,5 @@ pub(super) fn terminate_session(
     }
     let session_id = expect_uuid_param(params, 0, "terminatesession")?;
     server.purge_expired_sessions();
-    if !server.terminate_session(&session_id) {
-        return Err(RpcException::from(RpcError::unknown_session()));
-    }
-    Ok(Value::Bool(true))
+    Ok(Value::Bool(server.terminate_session(&session_id)))
 }

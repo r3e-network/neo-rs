@@ -136,7 +136,7 @@ impl ContractState {
 }
 
 impl NefFile {
-    const MAGIC: u32 = 0x3346_454E;
+    pub const MAGIC: u32 = 0x3346_454E;
     const COMPILER_LENGTH: usize = 64;
     const MAX_SOURCE_LENGTH: usize = 256;
     const MAX_TOKENS: usize = 128;

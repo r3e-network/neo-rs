@@ -259,8 +259,7 @@ impl DataCache {
             return;
         }
 
-        // In a real implementation, this would write to the underlying storage
-        // Clear the change set after commit
+        // Persistence is handled by StoreCache/Snapshot; here we only clear tracked changes.
         if let Some(ref change_set) = self.change_set {
             change_set.write().clear();
         }

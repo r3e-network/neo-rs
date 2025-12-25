@@ -11,6 +11,7 @@ use neo_core::smart_contract::manifest::{
 use neo_core::smart_contract::native::{ContractManagement, GasToken, NativeContract, NeoToken};
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::witness::Witness;
+use neo_core::wallets::KeyPair;
 use neo_core::{IVerifiable, UInt160, WitnessScope};
 use neo_vm::{OpCode, ScriptBuilder};
 use num_bigint::BigInt;
@@ -255,4 +256,29 @@ fn gas_transfer_triggers_on_nep17_payment_with_native_caller() {
         .as_bytes()
         .expect("calling hash bytes");
     assert_eq!(calling_hash_bytes, gas.hash().to_bytes());
+}
+
+#[test]
+fn neo_get_candidate_vote_returns_negative_one_for_missing_candidate() {
+    let snapshot = Arc::new(DataCache::new(false));
+    let mut engine = ApplicationEngine::new(
+        TriggerType::Application,
+        None,
+        snapshot,
+        None,
+        Default::default(),
+        400_000_000,
+        None,
+    )
+    .expect("engine");
+
+    let key_pair = KeyPair::new(vec![1u8; 32]).expect("keypair");
+    let pubkey = key_pair.compressed_public_key();
+
+    let neo = NeoToken::new();
+    let result = neo
+        .invoke(&mut engine, "getCandidateVote", &[pubkey])
+        .expect("getCandidateVote");
+    let value = BigInt::from_signed_bytes_le(&result);
+    assert_eq!(value, BigInt::from(-1));
 }

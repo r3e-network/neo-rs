@@ -154,6 +154,17 @@ impl NativeContract for ContractManagement {
                 let result = self.has_method(&hash, &method, pcount)?;
                 Ok(vec![if result { 1 } else { 0 }])
             }
+            "isContract" => {
+                if args.len() != 1 {
+                    return Err(Error::invalid_argument(
+                        "isContract requires 1 argument".to_string(),
+                    ));
+                }
+                let hash = UInt160::from_bytes(&args[0])
+                    .map_err(|e| Error::invalid_argument(format!("Invalid hash: {}", e)))?;
+                let result = Self::is_contract(engine.snapshot_cache().as_ref(), &hash)?;
+                Ok(vec![if result { 1 } else { 0 }])
+            }
             "getContractById" => {
                 if args.len() != 1 {
                     return Err(Error::invalid_argument(
@@ -187,17 +198,8 @@ impl NativeContract for ContractManagement {
                         "getContractHashes requires no arguments".to_string(),
                     ));
                 }
-                let hashes = self.get_contract_hashes()?;
-                let mut writer = BinaryWriter::new();
-                writer.write_var_int(hashes.len() as u64).map_err(|e| {
-                    Error::serialization(format!("Failed to write hash count: {}", e))
-                })?;
-                for hash in hashes {
-                    writer.write_bytes(&hash.as_bytes()).map_err(|e| {
-                        Error::serialization(format!("Failed to write hash: {}", e))
-                    })?;
-                }
-                Ok(writer.to_bytes())
+                let iterator_id = self.get_contract_hashes_iterator(engine)?;
+                Ok(iterator_id.to_le_bytes().to_vec())
             }
             _ => Err(Error::native_contract(format!(
                 "Method {} not found",

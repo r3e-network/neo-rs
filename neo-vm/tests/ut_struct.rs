@@ -28,15 +28,17 @@ fn test_struct_clone() {
     let s2 = s1.deep_copy(&limits).unwrap();
 
     // Modify original struct
-    if let StackItem::Struct(ref mut items) = s1.clone() {
-        items[0] = StackItem::from_int(BigInt::from(3));
+    if let StackItem::Struct(ref items) = s1.clone() {
+        items.set(0, StackItem::from_int(BigInt::from(3))).unwrap();
     }
 
     // Verify clone is independent
     if let StackItem::Struct(ref items) = s2 {
-        assert_eq!(items[0], StackItem::from_int(BigInt::from(1)));
-        if let StackItem::Struct(ref nested) = items[1] {
-            assert_eq!(nested[0], StackItem::from_int(BigInt::from(2)));
+        let struct_items = items.items();
+        assert_eq!(struct_items[0], StackItem::from_int(BigInt::from(1)));
+        if let StackItem::Struct(ref nested) = struct_items[1] {
+            let nested_items = nested.items();
+            assert_eq!(nested_items[0], StackItem::from_int(BigInt::from(2)));
         }
     }
 }
@@ -168,13 +170,14 @@ fn test_struct_reference_equals() {
     let limits = ExecutionEngineLimits::default();
     let s3 = s1.deep_copy(&limits).unwrap();
 
-    if let StackItem::Struct(ref mut items) = s1.clone() {
-        items[0] = StackItem::from_int(BigInt::from(2));
+    if let StackItem::Struct(ref items) = s1.clone() {
+        items.set(0, StackItem::from_int(BigInt::from(2))).unwrap();
     }
 
     // s3 should still have original value
     if let StackItem::Struct(ref items) = s3 {
-        assert_eq!(items[0], StackItem::from_int(BigInt::from(1)));
+        let struct_items = items.items();
+        assert_eq!(struct_items[0], StackItem::from_int(BigInt::from(1)));
     }
 }
 
@@ -204,14 +207,16 @@ fn test_struct_with_various_types() {
     ]);
 
     if let StackItem::Struct(ref items) = s {
-        assert_eq!(items.len(), 5);
-        assert_eq!(items[0], StackItem::from_int(BigInt::from(42)));
-        assert_eq!(items[1], StackItem::Boolean(true));
-        assert_eq!(items[2], StackItem::ByteString(vec![0x01, 0x02, 0x03]));
-        assert_eq!(items[3], StackItem::Null);
+        let struct_items = items.items();
+        assert_eq!(struct_items.len(), 5);
+        assert_eq!(struct_items[0], StackItem::from_int(BigInt::from(42)));
+        assert_eq!(struct_items[1], StackItem::Boolean(true));
+        assert_eq!(struct_items[2], StackItem::ByteString(vec![0x01, 0x02, 0x03]));
+        assert_eq!(struct_items[3], StackItem::Null);
 
-        if let StackItem::Array(ref arr) = items[4] {
-            assert_eq!(arr[0], StackItem::from_int(BigInt::from(1)));
+        if let StackItem::Array(ref arr) = struct_items[4] {
+            let arr_items = arr.items();
+            assert_eq!(arr_items[0], StackItem::from_int(BigInt::from(1)));
         }
     }
 }
@@ -232,9 +237,12 @@ fn test_struct_circular_reference() {
     let s3 = StackItem::from_struct(vec![s2]);
 
     if let StackItem::Struct(ref items) = s3 {
-        if let StackItem::Struct(ref nested) = items[0] {
-            if let StackItem::Struct(ref deeply_nested) = nested[0] {
-                assert_eq!(deeply_nested[0], StackItem::from_int(BigInt::from(1)));
+        let struct_items = items.items();
+        if let StackItem::Struct(ref nested) = struct_items[0] {
+            let nested_items = nested.items();
+            if let StackItem::Struct(ref deeply_nested) = nested_items[0] {
+                let deep_items = deeply_nested.items();
+                assert_eq!(deep_items[0], StackItem::from_int(BigInt::from(1)));
             }
         }
     }

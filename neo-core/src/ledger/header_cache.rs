@@ -59,16 +59,11 @@ impl HeaderCache {
         headers.get(offset).cloned()
     }
 
-    /// Attempts to enqueue a new header. Drops the oldest header when capacity is exceeded.
+    /// Attempts to enqueue a new header. Returns false when capacity is exceeded.
     pub fn add(&self, header: Header) -> bool {
         let mut headers = self.write();
-        if let Some(last) = headers.back() {
-            if header.index() <= last.index() {
-                return false;
-            }
-        }
         if headers.len() >= MAX_HEADERS {
-            headers.pop_front();
+            return false;
         }
         headers.push_back(header);
         true
@@ -133,24 +128,18 @@ mod tests {
     }
 
     #[test]
-    fn drops_oldest_when_full() {
+    fn refuses_to_add_when_full() {
         let cache = HeaderCache::new();
-        for index in 0..=(MAX_HEADERS as u32) {
+        for index in 0..(MAX_HEADERS as u32) {
             assert!(cache.add(make_header(index)));
         }
 
+        assert!(cache.full());
+        assert_eq!(cache.last().unwrap().index(), (MAX_HEADERS - 1) as u32);
+        assert!(!cache.add(make_header(MAX_HEADERS as u32)));
         assert_eq!(cache.count(), MAX_HEADERS);
-        assert_eq!(cache.first_index(), Some(1));
-        assert!(cache.get(0).is_none());
-        assert!(cache.get(1).is_some());
-    }
-
-    #[test]
-    fn rejects_non_increasing_indexes() {
-        let cache = HeaderCache::new();
-        assert!(cache.add(make_header(1)));
-        assert!(!cache.add(make_header(1)));
-        assert!(!cache.add(make_header(0)));
+        assert_eq!(cache.last().unwrap().index(), (MAX_HEADERS - 1) as u32);
+        assert!(cache.get(MAX_HEADERS as u32).is_none());
     }
 
     #[test]

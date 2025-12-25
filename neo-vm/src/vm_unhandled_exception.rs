@@ -39,21 +39,21 @@ impl VMUnhandledException {
         let mut message = String::from("An unhandled exception was thrown.");
 
         let mut bytes_opt = match e {
-            StackItem::ByteString(bytes) => Some(bytes.as_slice()),
+            StackItem::ByteString(bytes) => Some(bytes.clone()),
             _ => None,
         };
 
         if bytes_opt.is_none() {
             if let Ok(array) = e.as_array() {
                 if let Some(StackItem::ByteString(bytes)) = array.first() {
-                    bytes_opt = Some(bytes.as_slice());
+                    bytes_opt = Some(bytes.clone());
                 }
             }
         }
 
         if let Some(bytes) = bytes_opt {
             message.push(' ');
-            message.push_str(&String::from_utf8_lossy(bytes));
+            message.push_str(&String::from_utf8_lossy(&bytes));
         }
 
         message

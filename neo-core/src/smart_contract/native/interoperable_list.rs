@@ -81,7 +81,7 @@ impl<T: IInteroperable + Clone + Default> IInteroperable for InteroperableList<T
         self.items.clear();
         
         if let StackItem::Array(array) = stack_item {
-            for element in array.into_iter() {
+            for element in array.items() {
                 let mut value = T::default();
                 value.from_stack_item(element);
                 self.items.push(value);

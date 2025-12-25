@@ -70,13 +70,15 @@ impl RpcResponse {
         json.insert("id".to_string(), self.id.clone());
         json.insert("jsonrpc".to_string(), JToken::String(self.json_rpc.clone()));
 
-        if let Some(ref error) = self.error {
-            json.insert("error".to_string(), JToken::Object(error.to_json()));
-        }
+        let error = self
+            .error
+            .as_ref()
+            .map(|value| JToken::Object(value.to_json()))
+            .unwrap_or(JToken::Null);
+        json.insert("error".to_string(), error);
 
-        if let Some(ref result) = self.result {
-            json.insert("result".to_string(), result.clone());
-        }
+        let result = self.result.clone().unwrap_or(JToken::Null);
+        json.insert("result".to_string(), result);
 
         json
     }
@@ -127,9 +129,8 @@ impl RpcResponseError {
         json.insert("code".to_string(), JToken::Number(self.code as f64));
         json.insert("message".to_string(), JToken::String(self.message.clone()));
 
-        if let Some(ref data) = self.data {
-            json.insert("data".to_string(), data.clone());
-        }
+        let data = self.data.clone().unwrap_or(JToken::Null);
+        json.insert("data".to_string(), data);
 
         json
     }
@@ -139,6 +140,8 @@ impl RpcResponseError {
 mod tests {
     use super::*;
     use neo_json::JToken;
+    use std::fs;
+    use std::path::PathBuf;
 
     #[test]
     fn rpc_response_roundtrip_success() {
@@ -196,5 +199,75 @@ mod tests {
         assert_eq!(err.message, "failure");
         assert_eq!(err.data.unwrap().as_string().unwrap(), "details");
         assert_eq!(parsed.result.unwrap().as_string().unwrap(), "ignored");
+    }
+
+    fn load_rpc_case_response(name: &str) -> JObject {
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.push("..");
+        path.push("neo_csharp");
+        path.push("tests");
+        path.push("Neo.RpcClient.Tests");
+        path.push("RpcTestCases.json");
+        let payload = fs::read_to_string(&path).expect("read RpcTestCases.json");
+        let token = JToken::parse(&payload, 128).expect("parse RpcTestCases.json");
+        let cases = token.as_array().expect("RpcTestCases.json should be an array");
+        for entry in cases.children() {
+            let token = entry.as_ref().expect("array entry");
+            let obj = token.as_object().expect("case object");
+            let case_name = obj
+                .get("Name")
+                .and_then(|value| value.as_string())
+                .unwrap_or_default();
+            if case_name.eq_ignore_ascii_case(name) {
+                let response = obj
+                    .get("Response")
+                    .and_then(|value| value.as_object())
+                    .expect("case response");
+                return response.clone();
+            }
+        }
+        panic!("RpcTestCases.json missing case: {name}");
+    }
+
+    fn build_expected_response(response: &JObject) -> JObject {
+        let mut expected = JObject::new();
+        expected.insert(
+            "id".to_string(),
+            response.get("id").cloned().unwrap_or(JToken::Null),
+        );
+        expected.insert(
+            "jsonrpc".to_string(),
+            response
+                .get("jsonrpc")
+                .cloned()
+                .unwrap_or(JToken::String("2.0".into())),
+        );
+        expected.insert(
+            "error".to_string(),
+            response.get("error").cloned().unwrap_or(JToken::Null),
+        );
+        expected.insert(
+            "result".to_string(),
+            response.get("result").cloned().unwrap_or(JToken::Null),
+        );
+        expected
+    }
+
+    #[test]
+    fn response_to_json_matches_rpc_test_case_success() {
+        let response = load_rpc_case_response("getbestblockhashasync");
+        let expected = build_expected_response(&response);
+        let parsed = RpcResponse::from_json(&response).expect("parse");
+        let actual = parsed.to_json();
+        assert_eq!(expected.to_string(), actual.to_string());
+    }
+
+    #[test]
+    fn response_to_json_matches_rpc_test_case_error() {
+        let response = load_rpc_case_response("sendrawtransactionasyncerror");
+        let expected = build_expected_response(&response);
+        let parsed = RpcResponse::from_json(&response).expect("parse");
+        let actual = parsed.to_json();
+        assert_eq!(expected.to_string(), actual.to_string());
     }
 }

@@ -7,11 +7,17 @@ use crate::reference_counter::{CompoundParent, ReferenceCounter};
 use crate::stack_item::stack_item_type::StackItemType;
 use crate::stack_item::stack_item_vertex::next_stack_item_id;
 use crate::stack_item::StackItem;
-use std::ops::{Index, IndexMut};
+use parking_lot::Mutex;
+use std::sync::Arc;
 
 /// Represents an array of stack items in the VM.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Array {
+    inner: Arc<Mutex<ArrayInner>>,
+}
+
+#[derive(Debug)]
+struct ArrayInner {
     /// The items in the array.
     items: Vec<StackItem>,
     /// Reference counter shared with the VM (mirrors C# behaviour).
@@ -28,16 +34,17 @@ impl Array {
         items: Vec<StackItem>,
         reference_counter: Option<ReferenceCounter>,
     ) -> VmResult<Self> {
-        let mut array = Self {
-            items,
-            reference_counter,
-            id: next_stack_item_id(),
-            is_read_only: false,
+        let array = Self {
+            inner: Arc::new(Mutex::new(ArrayInner {
+                items,
+                reference_counter,
+                id: next_stack_item_id(),
+                is_read_only: false,
+            })),
         };
 
-        if let Some(rc) = array.reference_counter.clone() {
+        if let Some(rc) = array.reference_counter() {
             array.add_reference_for_items(&rc)?;
-            array.reference_counter = Some(rc);
         }
 
         Ok(array)
@@ -46,97 +53,97 @@ impl Array {
     /// Creates a new array without a reference counter.
     pub fn new_untracked(items: Vec<StackItem>) -> Self {
         Self {
-            items,
-            reference_counter: None,
-            id: next_stack_item_id(),
-            is_read_only: false,
+            inner: Arc::new(Mutex::new(ArrayInner {
+                items,
+                reference_counter: None,
+                id: next_stack_item_id(),
+                is_read_only: false,
+            })),
         }
     }
 
     /// Returns the reference counter associated with this array, if any.
-    pub fn reference_counter(&self) -> Option<&ReferenceCounter> {
-        self.reference_counter.as_ref()
+    pub fn reference_counter(&self) -> Option<ReferenceCounter> {
+        self.inner.lock().reference_counter.clone()
     }
 
     /// Returns the unique identifier for this array.
     pub fn id(&self) -> usize {
-        self.id
+        self.inner.lock().id
     }
 
     /// Returns whether the array is marked as read-only.
     pub fn is_read_only(&self) -> bool {
-        self.is_read_only
+        self.inner.lock().is_read_only
     }
 
     /// Sets the read-only flag.
-    pub fn set_read_only(&mut self, read_only: bool) {
-        self.is_read_only = read_only;
+    pub fn set_read_only(&self, read_only: bool) {
+        self.inner.lock().is_read_only = read_only;
     }
 
     /// Gets the items in the array.
-    pub fn items(&self) -> &[StackItem] {
-        &self.items
-    }
-
-    /// Gets a mutable reference to the items in the array.
-    pub(crate) fn items_mut(&mut self) -> &mut Vec<StackItem> {
-        &mut self.items
+    pub fn items(&self) -> Vec<StackItem> {
+        self.inner.lock().items.clone()
     }
 
     /// Returns a stable pointer used for identity tracking.
     pub fn as_ptr(&self) -> *const StackItem {
-        self.items.as_ptr()
+        self.inner.lock().items.as_ptr()
     }
 
     /// Gets the item at the specified index.
-    pub fn get(&self, index: usize) -> Option<&StackItem> {
-        self.items.get(index)
+    pub fn get(&self, index: usize) -> Option<StackItem> {
+        self.inner.lock().items.get(index).cloned()
     }
 
     /// Sets the item at the specified index.
-    pub fn set(&mut self, index: usize, item: StackItem) -> VmResult<()> {
-        if index >= self.items.len() {
+    pub fn set(&self, index: usize, item: StackItem) -> VmResult<()> {
+        let mut inner = self.inner.lock();
+        if index >= inner.items.len() {
             return Err(VmError::invalid_operation_msg(format!(
                 "Index out of range: {index}"
             )));
         }
 
-        self.ensure_mutable()?;
+        Self::ensure_mutable(&inner)?;
 
-        if let Some(rc) = &self.reference_counter {
-            self.validate_compound_reference(rc, &item)?;
-            let parent = CompoundParent::Array(self.id);
-            rc.remove_compound_reference(&self.items[index], parent);
+        if let Some(rc) = &inner.reference_counter {
+            Self::validate_compound_reference(rc, &item)?;
+            let parent = CompoundParent::Array(inner.id);
+            rc.remove_compound_reference(&inner.items[index], parent);
             rc.add_compound_reference(&item, parent);
         }
 
-        self.items[index] = item;
+        inner.items[index] = item;
         Ok(())
     }
 
     /// Adds an item to the end of the array.
-    pub fn push(&mut self, item: StackItem) -> VmResult<()> {
-        self.ensure_mutable()?;
+    pub fn push(&self, item: StackItem) -> VmResult<()> {
+        let mut inner = self.inner.lock();
+        Self::ensure_mutable(&inner)?;
 
-        if let Some(rc) = &self.reference_counter {
-            self.validate_compound_reference(rc, &item)?;
-            rc.add_compound_reference(&item, CompoundParent::Array(self.id));
+        if let Some(rc) = &inner.reference_counter {
+            Self::validate_compound_reference(rc, &item)?;
+            rc.add_compound_reference(&item, CompoundParent::Array(inner.id));
         }
 
-        self.items.push(item);
+        inner.items.push(item);
         Ok(())
     }
 
     /// Removes and returns the last item in the array.
-    pub fn pop(&mut self) -> VmResult<StackItem> {
-        self.ensure_mutable()?;
-        let item = self
+    pub fn pop(&self) -> VmResult<StackItem> {
+        let mut inner = self.inner.lock();
+        Self::ensure_mutable(&inner)?;
+        let item = inner
             .items
             .pop()
             .ok_or_else(|| VmError::invalid_operation_msg("Array is empty"))?;
 
-        if let Some(rc) = &self.reference_counter {
-            rc.remove_compound_reference(&item, CompoundParent::Array(self.id));
+        if let Some(rc) = &inner.reference_counter {
+            rc.remove_compound_reference(&item, CompoundParent::Array(inner.id));
         }
 
         Ok(item)
@@ -144,31 +151,36 @@ impl Array {
 
     /// Gets the number of items in the array.
     pub fn len(&self) -> usize {
-        self.items.len()
+        self.inner.lock().items.len()
     }
 
     /// Returns true if the array is empty.
     pub fn is_empty(&self) -> bool {
-        self.items.is_empty()
+        self.inner.lock().items.is_empty()
     }
 
     /// Removes all items from the array.
-    pub fn clear(&mut self) -> VmResult<()> {
-        self.ensure_mutable()?;
-        if let Some(rc) = &self.reference_counter {
-            let parent = CompoundParent::Array(self.id);
-            for item in &self.items {
+    pub fn clear(&self) -> VmResult<()> {
+        let mut inner = self.inner.lock();
+        Self::ensure_mutable(&inner)?;
+        if let Some(rc) = &inner.reference_counter {
+            let parent = CompoundParent::Array(inner.id);
+            for item in &inner.items {
                 rc.remove_compound_reference(item, parent);
             }
         }
-        self.items.clear();
+        inner.items.clear();
         Ok(())
     }
 
     /// Creates a deep copy of the array.
     pub fn deep_copy(&self, reference_counter: Option<ReferenceCounter>) -> VmResult<Self> {
-        let items = self.items.iter().map(|item| item.deep_clone()).collect();
-        let mut copy = Self::new(items, reference_counter)?;
+        let items = self
+            .items()
+            .into_iter()
+            .map(|item| item.deep_clone())
+            .collect();
+        let copy = Self::new(items, reference_counter)?;
         copy.set_read_only(true);
         Ok(copy)
     }
@@ -179,54 +191,59 @@ impl Array {
     }
 
     /// Inserts an item at the specified index.
-    pub fn insert(&mut self, index: usize, item: StackItem) -> VmResult<()> {
-        if index > self.items.len() {
+    pub fn insert(&self, index: usize, item: StackItem) -> VmResult<()> {
+        let mut inner = self.inner.lock();
+        if index > inner.items.len() {
             return Err(VmError::invalid_operation_msg(format!(
                 "Index out of range: {index}"
             )));
         }
 
-        self.ensure_mutable()?;
+        Self::ensure_mutable(&inner)?;
 
-        if let Some(rc) = &self.reference_counter {
-            self.validate_compound_reference(rc, &item)?;
-            rc.add_compound_reference(&item, CompoundParent::Array(self.id));
+        if let Some(rc) = &inner.reference_counter {
+            Self::validate_compound_reference(rc, &item)?;
+            rc.add_compound_reference(&item, CompoundParent::Array(inner.id));
         }
 
-        self.items.insert(index, item);
+        inner.items.insert(index, item);
         Ok(())
     }
 
     /// Removes the item at the specified index.
-    pub fn remove(&mut self, index: usize) -> VmResult<StackItem> {
-        if index >= self.items.len() {
+    pub fn remove(&self, index: usize) -> VmResult<StackItem> {
+        let mut inner = self.inner.lock();
+        if index >= inner.items.len() {
             return Err(VmError::invalid_operation_msg(format!(
                 "Index out of range: {index}"
             )));
         }
 
-        self.ensure_mutable()?;
-        let removed = self.items.remove(index);
+        Self::ensure_mutable(&inner)?;
+        let removed = inner.items.remove(index);
 
-        if let Some(rc) = &self.reference_counter {
-            rc.remove_compound_reference(&removed, CompoundParent::Array(self.id));
+        if let Some(rc) = &inner.reference_counter {
+            rc.remove_compound_reference(&removed, CompoundParent::Array(inner.id));
         }
 
         Ok(removed)
     }
 
     /// Returns an iterator over the items.
-    pub fn iter(&self) -> std::slice::Iter<'_, StackItem> {
-        self.items.iter()
+    pub fn iter(&self) -> std::vec::IntoIter<StackItem> {
+        self.items().into_iter()
     }
 
-    /// Returns a mutable iterator over the items.
-    pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, StackItem> {
-        self.items.iter_mut()
+    /// Reverses the order of items in the array.
+    pub fn reverse_items(&self) -> VmResult<()> {
+        let mut inner = self.inner.lock();
+        Self::ensure_mutable(&inner)?;
+        inner.items.reverse();
+        Ok(())
     }
 
-    fn ensure_mutable(&self) -> VmResult<()> {
-        if self.is_read_only {
+    fn ensure_mutable(inner: &ArrayInner) -> VmResult<()> {
+        if inner.is_read_only {
             Err(VmError::invalid_operation_msg(
                 "The array is readonly, can not modify.".to_string(),
             ))
@@ -235,16 +252,17 @@ impl Array {
         }
     }
 
-    fn add_reference_for_items(&mut self, rc: &ReferenceCounter) -> VmResult<()> {
-        let parent = CompoundParent::Array(self.id);
-        for item in &self.items {
-            self.validate_compound_reference(rc, item)?;
+    fn add_reference_for_items(&self, rc: &ReferenceCounter) -> VmResult<()> {
+        let items = self.items();
+        let parent = CompoundParent::Array(self.id());
+        for item in &items {
+            Self::validate_compound_reference(rc, item)?;
             rc.add_compound_reference(item, parent);
         }
         Ok(())
     }
 
-    fn validate_compound_reference(&self, rc: &ReferenceCounter, item: &StackItem) -> VmResult<()> {
+    fn validate_compound_reference(rc: &ReferenceCounter, item: &StackItem) -> VmResult<()> {
         match item {
             StackItem::Array(inner) => match inner.reference_counter() {
                 Some(child_rc) if child_rc.ptr_eq(rc) => Ok(()),
@@ -269,58 +287,33 @@ impl Array {
     }
 
     /// Ensures the array and its children share the provided reference counter.
-    pub(crate) fn attach_reference_counter(&mut self, rc: &ReferenceCounter) -> VmResult<()> {
-        if let Some(existing) = &self.reference_counter {
-            if existing.ptr_eq(rc) {
-                return Ok(());
+    pub(crate) fn attach_reference_counter(&self, rc: &ReferenceCounter) -> VmResult<()> {
+        {
+            let mut inner = self.inner.lock();
+            if let Some(existing) = &inner.reference_counter {
+                if existing.ptr_eq(rc) {
+                    return Ok(());
+                }
+                return Err(VmError::invalid_operation_msg(
+                    "Array has mismatched reference counter.",
+                ));
             }
-            return Err(VmError::invalid_operation_msg(
-                "Array has mismatched reference counter.",
-            ));
+
+            for item in &mut inner.items {
+                item.attach_reference_counter(rc)?;
+            }
+
+            inner.reference_counter = Some(rc.clone());
         }
 
-        for item in &mut self.items {
-            item.attach_reference_counter(rc)?;
-        }
-
-        self.reference_counter = Some(rc.clone());
         self.add_reference_for_items(rc)?;
         Ok(())
     }
 }
 
-impl Clone for Array {
-    fn clone(&self) -> Self {
-        let mut clone = Self {
-            items: self.items.clone(),
-            reference_counter: self.reference_counter.clone(),
-            id: next_stack_item_id(),
-            is_read_only: self.is_read_only,
-        };
-
-        if let Some(rc) = clone.reference_counter.clone() {
-            if clone.add_reference_for_items(&rc).is_err() {
-                clone.reference_counter = None;
-            } else {
-                clone.reference_counter = Some(rc);
-            }
-        }
-
-        clone
-    }
-}
-
-impl Index<usize> for Array {
-    type Output = StackItem;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.items[index]
-    }
-}
-
-impl IndexMut<usize> for Array {
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        &mut self.items[index]
+impl From<Array> for Vec<StackItem> {
+    fn from(array: Array) -> Self {
+        array.items()
     }
 }
 
@@ -329,30 +322,15 @@ impl IntoIterator for Array {
     type IntoIter = std::vec::IntoIter<StackItem>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.items.into_iter()
+        self.items().into_iter()
     }
 }
 
 impl<'a> IntoIterator for &'a Array {
-    type Item = &'a StackItem;
-    type IntoIter = std::slice::Iter<'a, StackItem>;
+    type Item = StackItem;
+    type IntoIter = std::vec::IntoIter<StackItem>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.items.iter()
-    }
-}
-
-impl<'a> IntoIterator for &'a mut Array {
-    type Item = &'a mut StackItem;
-    type IntoIter = std::slice::IterMut<'a, StackItem>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.items.iter_mut()
-    }
-}
-
-impl From<Array> for Vec<StackItem> {
-    fn from(array: Array) -> Self {
-        array.items
+        self.items().into_iter()
     }
 }

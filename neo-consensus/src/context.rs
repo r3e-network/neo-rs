@@ -209,12 +209,13 @@ impl ConsensusContext {
         self.commits.len() >= self.m()
     }
 
-    /// Returns true if we have enough change view requests (M requests)
+    /// Returns true if we have enough change view requests (M requests).
+    /// Matches C# DBFTPlugin's `CheckExpectedView` logic: counts NewViewNumber >= requested view.
     pub fn has_enough_change_views(&self, new_view: u8) -> bool {
         let count = self
             .change_views
             .values()
-            .filter(|(v, _)| *v == new_view)
+            .filter(|(v, _)| *v >= new_view)
             .count();
         count >= self.m()
     }

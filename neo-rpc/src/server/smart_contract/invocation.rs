@@ -110,7 +110,7 @@ fn execute_script(
         let system_fee = engine.fee_consumed();
         let exception_value = engine
             .fault_exception()
-            .map(|msg| Value::String(msg.to_string()))
+            .map(|msg| Value::String(normalize_fault_message(msg)))
             .unwrap_or(Value::Null);
         let notifications_snapshot = engine.notifications().to_vec();
         let stack_snapshot: Vec<StackItem> = engine.result_stack().iter().cloned().collect();
@@ -226,6 +226,14 @@ fn process_invoke_with_wallet(
         Err(message) => {
             result.insert("exception".to_string(), Value::String(message));
         }
+    }
+}
+
+fn normalize_fault_message(message: &str) -> String {
+    if message.contains("Gas exhausted") || message.contains("Gas limit exceeded") {
+        "Insufficient GAS".to_string()
+    } else {
+        message.to_string()
     }
 }
 

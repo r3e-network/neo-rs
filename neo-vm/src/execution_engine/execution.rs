@@ -98,30 +98,7 @@ impl ExecutionEngine {
             return Ok(());
         }
 
-        // Get the current instruction
-        let instruction = context.current_instruction()?;
-
-        // Get the instruction handler
-        let handler = self
-            .jump_table
-            .get_handler(instruction.opcode())
-            .ok_or_else(|| {
-                VmError::invalid_operation_msg(format!(
-                    "No handler for opcode: {:?}",
-                    instruction.opcode()
-                ))
-            })?;
-
-        // Execute the instruction
-        handler(self, &instruction)?;
-
-        if !self.is_jumping {
-            if let Some(context) = self.current_context_mut() {
-                let _ = context.move_next(); // Ignore errors for out-of-range pointers
-            }
-        }
-
-        Ok(())
+        self.execute_next_internal()
     }
 
     /// Executes the next instruction - C# API compatibility
@@ -161,10 +138,15 @@ impl ExecutionEngine {
             .current_context_mut()
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-        // Get the current instruction
+        // Get the current instruction and snapshot the context for host hooks.
         let instruction = context.current_instruction()?;
+        let context_snapshot = context.clone();
 
         self.pre_execute_instruction(&instruction)?;
+        if let Some(host_ptr) = self.interop_host {
+            // SAFETY: See interop_host field documentation for invariants
+            unsafe { (*host_ptr).pre_execute_instruction(self, &context_snapshot, &instruction)? };
+        }
 
         // Execute the instruction
         // We need to avoid borrowing conflicts by extracting the jump table temporarily
@@ -204,7 +186,7 @@ impl ExecutionEngine {
     }
 
     /// Called before executing an instruction.
-    fn pre_execute_instruction(&mut self, instruction: &Instruction) -> VmResult<()> {
+    fn pre_execute_instruction(&mut self, _instruction: &Instruction) -> VmResult<()> {
         // SECURITY FIX (H-4): Pre-execution stack overflow check
         // Check stack size BEFORE executing instructions that could significantly
         // increase stack usage. This prevents attackers from exploiting the gap
@@ -224,12 +206,6 @@ impl ExecutionEngine {
             }
         }
 
-        if let Some(host_ptr) = self.interop_host {
-            if let Some(context) = self.current_context().cloned() {
-                // SAFETY: See interop_host field documentation for invariants
-                unsafe { (*host_ptr).pre_execute_instruction(self, &context, instruction)? };
-            }
-        }
         Ok(())
     }
 

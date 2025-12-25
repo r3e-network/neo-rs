@@ -18,7 +18,7 @@ use crate::UInt160;
 use neo_vm::StackItem;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// Maximum length of a contract manifest in bytes.
 pub const MAX_MANIFEST_LENGTH: usize = u16::MAX as usize;
@@ -170,6 +170,24 @@ impl ContractManifest {
             return Err(Error::invalid_data("Contract name cannot be empty"));
         }
 
+        if !self.features.is_empty() {
+            return Err(Error::invalid_data("Features field must be empty"));
+        }
+
+        let mut seen_standards = HashSet::new();
+        for standard in &self.supported_standards {
+            if standard.is_empty() {
+                return Err(Error::invalid_data(
+                    "Supported standards cannot include empty strings",
+                ));
+            }
+            if !seen_standards.insert(standard) {
+                return Err(Error::invalid_data(
+                    "Supported standards must be unique",
+                ));
+            }
+        }
+
         // Validate manifest size
         if self.size() > MAX_MANIFEST_LENGTH {
             return Err(Error::invalid_data(
@@ -178,8 +196,15 @@ impl ContractManifest {
         }
 
         // Validate groups
+        let mut group_keys = Vec::new();
         for group in &self.groups {
             group.validate()?;
+            if group_keys.iter().any(|key| key == &group.pub_key) {
+                return Err(Error::invalid_data(
+                    "Duplicate group public key in manifest",
+                ));
+            }
+            group_keys.push(group.pub_key.clone());
         }
 
         // Validate permissions
@@ -187,12 +212,27 @@ impl ContractManifest {
             return Err(Error::invalid_data("At least one permission required"));
         }
 
+        let mut permission_contracts = Vec::new();
         for permission in &self.permissions {
             permission.validate()?;
+            if permission_contracts
+                .iter()
+                .any(|contract| contract == &permission.contract)
+            {
+                return Err(Error::invalid_data(
+                    "Duplicate permission contract in manifest",
+                ));
+            }
+            permission_contracts.push(permission.contract.clone());
         }
 
         if let WildCardContainer::List(trusts) = &self.trusts {
+            let mut seen_trusts = Vec::new();
             for trust in trusts {
+                if seen_trusts.iter().any(|existing| existing == trust) {
+                    return Err(Error::invalid_data("Duplicate trust entry in manifest"));
+                }
+                seen_trusts.push(trust.clone());
                 if let ContractPermissionDescriptor::Group(pub_key) = trust {
                     if !pub_key.is_valid() {
                         return Err(Error::invalid_data("Invalid group public key in trusts"));
@@ -544,7 +584,10 @@ impl IInteroperable for ContractManifest {
         self.extra = match &items[7] {
             StackItem::Null => None,
             StackItem::ByteString(bytes) => parse_extra_bytes(bytes.as_slice()),
-            StackItem::Buffer(buffer) => parse_extra_bytes(buffer.data()),
+            StackItem::Buffer(buffer) => {
+                let data = buffer.data();
+                parse_extra_bytes(&data)
+            }
             other => {
                 tracing::error!(
                     "ContractManifest extra must be byte string or null, found {:?}",

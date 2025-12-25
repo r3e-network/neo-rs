@@ -194,6 +194,9 @@ impl ContractParametersContext {
         if self.context_items.contains_key(&hash) {
             return false;
         }
+        if !self.script_hashes.contains(&hash) {
+            return false;
+        }
 
         let item = ContextItem::from_contract(&contract);
         self.context_items.insert(hash, item);
@@ -213,41 +216,101 @@ impl ContractParametersContext {
 
         let hash = contract.script_hash();
 
-        // Add contract if not present
-        if !self.context_items.contains_key(&hash) {
-            self.add(contract.clone());
-        }
-
-        if let Some(item) = self.context_items.get_mut(&hash) {
-            if item.signatures.contains_key(&public_key) {
+        // Multi-signature contract path
+        if let Some((_m, public_keys)) = ContractHelper::parse_multi_sig_contract(&contract.script) {
+            let encoded = public_key
+                .encode_point(true)
+                .map_err(|e| e.to_string())?;
+            if !public_keys.iter().any(|key| key.as_slice() == encoded.as_slice()) {
                 return Ok(false);
             }
 
+            if !self.context_items.contains_key(&hash) {
+                if !self.add(contract.clone()) {
+                    return Ok(false);
+                }
+            }
+
+            let item = match self.context_items.get_mut(&hash) {
+                Some(item) => item,
+                None => return Ok(false),
+            };
+
+            if item
+                .parameters
+                .iter()
+                .all(|p| !matches!(p.value, ContractParameterValue::Any))
+            {
+                return Ok(false);
+            }
+
+            if item.signatures.contains_key(&public_key) {
+                return Ok(false);
+            }
             item.signatures
                 .insert(public_key.clone(), signature.clone());
 
-            // Try to update parameters for signature contracts
-            if item.parameters.len() == 1
-                && item.parameters[0].param_type == ContractParameterType::Signature
-            {
-                item.parameters[0].value = ContractParameterValue::Signature(signature);
-                return Ok(true);
-            }
+            if item.signatures.len() == contract.parameter_list.len() {
+                let mut indexed: Vec<(usize, Vec<u8>)> = item
+                    .signatures
+                    .iter()
+                    .filter_map(|(key, sig)| {
+                        let key_bytes = key.encode_point(true).ok()?;
+                        public_keys
+                            .iter()
+                            .position(|pk| pk.as_slice() == key_bytes.as_slice())
+                            .map(|index| (index, sig.clone()))
+                    })
+                    .collect();
+                indexed.sort_by(|a, b| b.0.cmp(&a.0));
 
-            if ContractHelper::is_multi_sig_contract(&contract.script)
-                && item.signatures.len() >= item.parameters.len()
-            {
-                for (idx, param) in item.parameters.iter_mut().enumerate() {
-                    if let Some((_, sig)) = item.signatures.iter().nth(idx) {
-                        param.value = ContractParameterValue::Signature(sig.clone());
+                for (idx, (_, sig)) in indexed.into_iter().enumerate() {
+                    if let Some(param) = item.parameters.get_mut(idx) {
+                        param.value = ContractParameterValue::Signature(sig);
                     }
                 }
             }
 
-            Ok(true)
-        } else {
-            Ok(false)
+            return Ok(true);
         }
+
+        // Single-signature contract path
+        let mut index = None;
+        for (i, param) in contract.parameter_list.iter().enumerate() {
+            if *param == ContractParameterType::Signature {
+                if index.is_some() {
+                    return Err("more than one signature parameter".to_string());
+                }
+                index = Some(i);
+            }
+        }
+
+        let Some(index) = index else {
+            return Ok(false);
+        };
+
+        if !self.context_items.contains_key(&hash) {
+            if !self.add(contract.clone()) {
+                return Ok(false);
+            }
+        }
+
+        let item = match self.context_items.get_mut(&hash) {
+            Some(item) => item,
+            None => return Ok(false),
+        };
+
+        if item.signatures.contains_key(&public_key) {
+            return Ok(false);
+        }
+
+        item.signatures
+            .insert(public_key.clone(), signature.clone());
+        if let Some(param) = item.parameters.get_mut(index) {
+            param.value = ContractParameterValue::Signature(signature);
+        }
+
+        Ok(true)
     }
 
     /// Gets the witnesses

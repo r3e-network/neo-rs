@@ -59,9 +59,14 @@ impl MerkleBlockPayload {
 }
 
 fn pad_flags(mut flags: Vec<bool>, depth: usize) -> Vec<bool> {
-    if depth <= 1 {
+    if depth == 0 {
+        return flags;
+    }
+    if depth == 1 {
         if flags.is_empty() {
             flags.push(false);
+        } else {
+            flags.truncate(1);
         }
         return flags;
     }
@@ -117,7 +122,7 @@ mod tests {
 impl Serializable for MerkleBlockPayload {
     fn size(&self) -> usize {
         self.header.size()
-            + get_var_size(self.tx_count as u64)
+            + std::mem::size_of::<u32>()
             + get_var_size(self.hashes.len() as u64)
             + self.hashes.len() * UINT256_SIZE
             + get_var_size(self.flags.len() as u64)

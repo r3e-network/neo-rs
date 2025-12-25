@@ -3,6 +3,10 @@
 //
 
 use super::*;
+use crate::hardfork::Hardfork;
+use crate::smart_contract::call_flags::CallFlags;
+use crate::smart_contract::manifest::contract_manifest::MAX_MANIFEST_LENGTH;
+use neo_vm::Script;
 
 impl ContractManagement {
     /// Deploys a new contract
@@ -13,6 +17,34 @@ impl ContractManagement {
         manifest_bytes: Vec<u8>,
         data: Vec<u8>,
     ) -> Result<ContractState> {
+        if nef_file.is_empty() {
+            return Err(Error::invalid_argument(
+                "NEF file length cannot be zero".to_string(),
+            ));
+        }
+        if manifest_bytes.is_empty() {
+            return Err(Error::invalid_argument(
+                "Manifest length cannot be zero".to_string(),
+            ));
+        }
+        if manifest_bytes.len() > MAX_MANIFEST_LENGTH {
+            return Err(Error::invalid_argument(
+                "Manifest exceeds maximum allowed length".to_string(),
+            ));
+        }
+
+        if engine.is_hardfork_enabled(Hardfork::HfAspidochelone) {
+            if let Ok(state) = engine.current_execution_state() {
+                let state = state.lock();
+                if !state.call_flags.contains(CallFlags::ALL) {
+                    return Err(Error::invalid_operation(format!(
+                        "Cannot call Deploy with the flag {:?}.",
+                        state.call_flags
+                    )));
+                }
+            }
+        }
+
         // Parse and validate NEF file
         let mut reader = MemoryReader::new(&nef_file);
         let nef = <NefFile as crate::neo_io::Serializable>::deserialize(&mut reader)
@@ -36,6 +68,13 @@ impl ContractManagement {
 
         // Calculate contract hash
         let contract_hash = Self::calculate_contract_hash(&sender, nef.checksum, &manifest.name);
+        Self::validate_manifest_groups(&manifest, &contract_hash)?;
+        Self::validate_manifest_serialization(&manifest, engine.execution_limits())?;
+
+        let strict = engine.is_hardfork_enabled(Hardfork::HfBasilisk);
+        let script = Script::new(nef.script.clone(), strict)
+            .map_err(|e| Error::invalid_data(format!("Invalid contract script: {e}")))?;
+        Self::validate_script_and_abi(&script, &manifest.abi)?;
 
         // Ensure hash is not blocked by policy
         let policy = PolicyContract::new();

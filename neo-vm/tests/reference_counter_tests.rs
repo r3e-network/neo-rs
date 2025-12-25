@@ -74,7 +74,7 @@ fn array_compound_references_track_children() {
     let child_struct = StackItem::Struct(
         Struct::new(Vec::new(), Some(counter.clone())).expect("failed to create struct"),
     );
-    let mut array = Array::new(Vec::new(), Some(counter.clone())).expect("failed to create array");
+    let array = Array::new(Vec::new(), Some(counter.clone())).expect("failed to create array");
 
     assert_eq!(counter.count(), 0);
 
@@ -90,7 +90,7 @@ fn array_compound_references_track_children() {
 #[test]
 fn map_references_keys_and_values() {
     let counter = ReferenceCounter::new();
-    let mut map = Map::new(BTreeMap::new(), Some(counter.clone())).expect("failed to create map");
+    let map = Map::new(BTreeMap::new(), Some(counter.clone())).expect("failed to create map");
 
     let key = StackItem::from_int(7);
     let value = StackItem::Struct(

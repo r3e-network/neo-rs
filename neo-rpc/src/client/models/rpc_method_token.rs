@@ -86,10 +86,52 @@ impl RpcMethodToken {
         );
         json.insert(
             "callflags".to_string(),
-            neo_json::JToken::String(self.method_token.call_flags.bits().to_string()),
+            neo_json::JToken::String(call_flags_to_string(self.method_token.call_flags)),
         );
         json
     }
+}
+
+fn call_flags_to_string(flags: CallFlags) -> String {
+    if flags.is_empty() {
+        return "None".to_string();
+    }
+    if flags == CallFlags::READ_STATES {
+        return "ReadStates".to_string();
+    }
+    if flags == CallFlags::WRITE_STATES {
+        return "WriteStates".to_string();
+    }
+    if flags == CallFlags::ALLOW_CALL {
+        return "AllowCall".to_string();
+    }
+    if flags == CallFlags::ALLOW_NOTIFY {
+        return "AllowNotify".to_string();
+    }
+    if flags == CallFlags::STATES {
+        return "States".to_string();
+    }
+    if flags == CallFlags::READ_ONLY {
+        return "ReadOnly".to_string();
+    }
+    if flags == CallFlags::ALL {
+        return "All".to_string();
+    }
+
+    let mut parts = Vec::new();
+    if flags.contains(CallFlags::READ_STATES) {
+        parts.push("ReadStates");
+    }
+    if flags.contains(CallFlags::WRITE_STATES) {
+        parts.push("WriteStates");
+    }
+    if flags.contains(CallFlags::ALLOW_CALL) {
+        parts.push("AllowCall");
+    }
+    if flags.contains(CallFlags::ALLOW_NOTIFY) {
+        parts.push("AllowNotify");
+    }
+    parts.join(", ")
 }
 
 fn parse_call_flags(value: &str) -> Option<CallFlags> {
@@ -213,5 +255,26 @@ mod tests {
         let parsed = RpcMethodToken::from_json(&json).expect("method token");
         assert_eq!(parsed.method_token.method, token.method_token.method);
         assert_eq!(parsed.method_token.call_flags, CallFlags::ALL);
+    }
+
+    #[test]
+    fn method_token_to_json_uses_named_flags() {
+        let token = RpcMethodToken {
+            method_token: MethodToken {
+                hash: UInt160::from([0x0e, 0x1b, 0x9b, 0xfa, 0xa4, 0x4e, 0x60, 0x31, 0x1f, 0x6f, 0x3c, 0x96, 0xcf, 0xcd, 0x6d, 0x12, 0xc2, 0xfc, 0x3a, 0xdd]),
+                method: "test".into(),
+                parameters_count: 1,
+                has_return_value: true,
+                call_flags: CallFlags::ALL,
+            },
+        };
+
+        let json = token.to_json();
+        assert_eq!(
+            json.get("callflags")
+                .and_then(|value| value.as_string())
+                .unwrap_or_default(),
+            "All"
+        );
     }
 }

@@ -115,6 +115,12 @@ impl BigDecimal {
         Ok(Self { value, decimals })
     }
 
+    /// Converts to a BigInteger scaled to the requested decimals.
+    pub fn to_big_integer(&self, decimals: u8) -> CoreResult<BigInt> {
+        let scaled = self.change_decimals(decimals)?;
+        Ok(scaled.value)
+    }
+
     /// Try parse a BigDecimal from a string.
     ///
     /// # Arguments
@@ -378,6 +384,22 @@ mod tests {
         // Negative
         let bd = BigDecimal::new(BigInt::from(-12345), 2);
         assert_eq!(bd.to_string(), "-123.45");
+    }
+
+    #[test]
+    fn test_big_decimal_to_big_integer() {
+        let amount = BigDecimal::parse("1.23456789", 9).expect("parse");
+        let result = amount.to_big_integer(9).expect("bigint");
+        assert_eq!(result, BigInt::from(1234567890u64));
+
+        let amount = BigDecimal::parse("1.23456789", 18).expect("parse");
+        let result = amount.to_big_integer(18).expect("bigint");
+        let expected = BigInt::from_str("1234567890000000000").expect("bigint");
+        assert_eq!(result, expected);
+
+        let amount = BigDecimal::parse("1.23456789", 9).expect("parse");
+        let result = amount.to_big_integer(4);
+        assert!(result.is_err());
     }
     #[test]
     fn test_big_decimal_comparison() {

@@ -3,6 +3,13 @@
 //
 
 use super::*;
+use crate::smart_contract::helper::Helper;
+use crate::smart_contract::manifest::ContractAbi;
+use crate::smart_contract::binary_serializer::BinarySerializer;
+use crate::smart_contract::i_interoperable::IInteroperable;
+use neo_vm::ExecutionEngineLimits;
+use neo_vm::Script;
+use std::collections::HashSet;
 
 impl ContractManagement {
     /// Gets the next available contract ID and increments it
@@ -14,22 +21,9 @@ impl ContractManagement {
         Ok(id)
     }
 
-    /// Calculates contract hash from script
-    ///
-    /// # Panics
-    /// This function will not panic as SHA256 always produces 32 bytes,
-    /// and UInt160 requires only 20 bytes which is always available.
+    /// Calculates contract hash using the Neo N3 algorithm (matches C# Helper.GetContractHash).
     pub(super) fn calculate_contract_hash(sender: &UInt160, checksum: u32, name: &str) -> UInt160 {
-        let mut buffer = Vec::with_capacity(1 + sender.as_bytes().len() + 4 + name.len());
-        buffer.push(0xFF); // Contract prefix
-        buffer.extend_from_slice(&sender.as_bytes());
-        buffer.extend_from_slice(&checksum.to_le_bytes());
-        buffer.extend_from_slice(name.as_bytes());
-
-        let hash = Crypto::sha256(&buffer);
-        // SAFETY: SHA256 always produces 32 bytes, we only need 20
-        UInt160::from_bytes(&hash[..20])
-            .unwrap_or_else(|_| unreachable!("SHA256 output is always >= 20 bytes"))
+        Helper::get_contract_hash(sender, checksum, name)
     }
 
     /// Validates NEF file structure
@@ -60,36 +54,58 @@ impl ContractManagement {
 
     /// Validates contract manifest
     pub(super) fn validate_manifest(manifest: &ContractManifest) -> Result<()> {
-        // Validate ABI
-        if manifest.abi.methods.is_empty() {
-            return Err(Error::invalid_data(
-                "Contract must have at least one method".to_string(),
-            ));
-        }
+        manifest.validate()
+    }
 
-        // Validate permissions
-        for permission in &manifest.permissions {
-            // Check if permission is valid - at least one must be specified
-            let contract_valid = match &permission.contract {
-                ContractPermissionDescriptor::Wildcard => true,
-                ContractPermissionDescriptor::Hash(_) => true,
-                ContractPermissionDescriptor::Group(_) => true,
-            };
-
-            if !contract_valid {
+    pub(super) fn validate_manifest_groups(
+        manifest: &ContractManifest,
+        contract_hash: &UInt160,
+    ) -> Result<()> {
+        for group in &manifest.groups {
+            let ok = group.verify_signature(&contract_hash.to_bytes())?;
+            if !ok {
                 return Err(Error::invalid_data(
-                    "Invalid permission definition".to_string(),
+                    "Invalid group signature for contract".to_string(),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn validate_manifest_serialization(
+        manifest: &ContractManifest,
+        limits: &ExecutionEngineLimits,
+    ) -> Result<()> {
+        BinarySerializer::serialize(&manifest.to_stack_item(), limits)
+            .map_err(|e| Error::invalid_operation(format!("Invalid manifest: {e}")))?;
+        Ok(())
+    }
+
+    pub(super) fn validate_script_and_abi(script: &Script, abi: &ContractAbi) -> Result<()> {
+        let mut seen_methods: HashSet<(String, usize)> = HashSet::new();
+        for method in &abi.methods {
+            if method.offset < 0 {
+                return Err(Error::invalid_data(
+                    "Contract method offset cannot be negative".to_string(),
+                ));
+            }
+            let offset = method.offset as usize;
+            script
+                .get_instruction(offset)
+                .map_err(|e| Error::invalid_data(format!("Invalid method offset: {e}")))?;
+
+            let key = (method.name.clone(), method.parameters.len());
+            if !seen_methods.insert(key) {
+                return Err(Error::invalid_data(
+                    "Duplicate contract method definition".to_string(),
                 ));
             }
         }
 
-        // Validate groups
-        for group in &manifest.groups {
-            // ECPoint always has a value, check signature
-            if group.signature.is_empty() {
-                return Err(Error::invalid_data(
-                    "Invalid group definition - missing signature".to_string(),
-                ));
+        let mut seen_events: HashSet<String> = HashSet::new();
+        for event in &abi.events {
+            if !seen_events.insert(event.name.clone()) {
+                return Err(Error::invalid_data("Duplicate event name".to_string()));
             }
         }
 
@@ -135,11 +151,16 @@ impl ContractManagement {
                 }
                 PREFIX_CONTRACT_HASH => {
                     if rest.len() == 4 {
-                        let mut id_bytes = [0u8; 4];
-                        id_bytes.copy_from_slice(rest);
-                        let id = i32::from_le_bytes(id_bytes);
                         if let Ok(hash) = UInt160::from_bytes(&value) {
-                            storage.contract_ids.insert(id, hash);
+                            let contract_id = storage.contracts.get(&hash).map(|c| c.id);
+                            if let Some(contract_id) = contract_id {
+                                storage.contract_ids.entry(contract_id).or_insert(hash);
+                            } else {
+                                let mut id_bytes = [0u8; 4];
+                                id_bytes.copy_from_slice(rest);
+                                let id = i32::from_be_bytes(id_bytes);
+                                storage.contract_ids.entry(id).or_insert(hash);
+                            }
                         }
                     }
                 }

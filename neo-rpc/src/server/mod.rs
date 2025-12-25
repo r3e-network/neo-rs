@@ -4,6 +4,7 @@
 //! Previously implemented as a plugin, now integrated directly into neo-rpc.
 
 mod diagnostic;
+pub mod middleware;
 pub mod model;
 mod parameter_converter;
 mod rcp_server_settings;
@@ -22,6 +23,7 @@ mod session;
 pub mod smart_contract;
 mod tree;
 mod tree_node;
+pub mod ws;
 
 // Public exports
 pub use rcp_server_settings::{RpcServerConfig, RpcServerSettings};
@@ -40,3 +42,6 @@ pub use session::Session;
 
 // Re-export smart contract handlers
 pub use smart_contract::RpcServerSmartContract;
+
+// Re-export WebSocket types
+pub use ws::{SharedWsEventBridge, WsEvent, WsEventBridge, WsEventType, WsNotification};

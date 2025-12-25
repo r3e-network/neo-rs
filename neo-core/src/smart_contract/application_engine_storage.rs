@@ -197,7 +197,7 @@ fn storage_get_handler(app: &mut ApplicationEngine, _engine: &mut ExecutionEngin
         .map_err(|e| map_storage_error("System.Storage.Get", e))?;
     let key = match key_item {
         StackItem::ByteString(bytes) => bytes,
-        StackItem::Buffer(buffer) => buffer.data().to_vec(),
+        StackItem::Buffer(buffer) => buffer.data(),
         _ => {
             return Err(map_storage_error(
                 "System.Storage.Get",
@@ -233,7 +233,7 @@ fn storage_put_handler(app: &mut ApplicationEngine, _engine: &mut ExecutionEngin
         .map_err(|e| map_storage_error("System.Storage.Put", e))?;
     let value = match value_item {
         StackItem::ByteString(bytes) => bytes,
-        StackItem::Buffer(buffer) => buffer.data().to_vec(),
+        StackItem::Buffer(buffer) => buffer.data(),
         _ => {
             return Err(map_storage_error(
                 "System.Storage.Put",
@@ -247,7 +247,7 @@ fn storage_put_handler(app: &mut ApplicationEngine, _engine: &mut ExecutionEngin
         .map_err(|e| map_storage_error("System.Storage.Put", e))?;
     let key = match key_item {
         StackItem::ByteString(bytes) => bytes,
-        StackItem::Buffer(buffer) => buffer.data().to_vec(),
+        StackItem::Buffer(buffer) => buffer.data(),
         _ => {
             return Err(map_storage_error(
                 "System.Storage.Put",
@@ -276,7 +276,7 @@ fn storage_delete_handler(
         .map_err(|e| map_storage_error("System.Storage.Delete", e))?;
     let key = match key_item {
         StackItem::ByteString(bytes) => bytes,
-        StackItem::Buffer(buffer) => buffer.data().to_vec(),
+        StackItem::Buffer(buffer) => buffer.data(),
         _ => {
             return Err(map_storage_error(
                 "System.Storage.Delete",
@@ -327,7 +327,7 @@ fn storage_put_local_handler(
         .map_err(|e| map_storage_error("System.Storage.Local.Put", e))?;
     let value = match value_item {
         StackItem::ByteString(bytes) => bytes,
-        StackItem::Buffer(buffer) => buffer.data().to_vec(),
+        StackItem::Buffer(buffer) => buffer.data(),
         _ => {
             return Err(map_storage_error(
                 "System.Storage.Local.Put",
@@ -341,7 +341,7 @@ fn storage_put_local_handler(
         .map_err(|e| map_storage_error("System.Storage.Local.Put", e))?;
     let key = match key_item {
         StackItem::ByteString(bytes) => bytes,
-        StackItem::Buffer(buffer) => buffer.data().to_vec(),
+        StackItem::Buffer(buffer) => buffer.data(),
         _ => {
             return Err(map_storage_error(
                 "System.Storage.Local.Put",

@@ -2,8 +2,52 @@
 //! Converted from C# Neo.UnitTests.SmartContract.UT_SmartContractHelper.cs
 //! and C# Neo.UnitTests.SmartContract.UT_Helper.cs
 
+use neo_core::network::p2p::helper::get_sign_data_vec;
+use neo_core::network::p2p::payloads::signer::Signer;
+use neo_core::network::p2p::payloads::witness::Witness;
+use neo_core::persistence::DataCache;
+use neo_core::protocol_settings::ProtocolSettings;
+use neo_core::smart_contract::application_engine::{ApplicationEngine, TEST_MODE_GAS};
+use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::smart_contract::helper::Helper;
-use neo_core::UInt160;
+use neo_core::smart_contract::i_diagnostic::IDiagnostic;
+use neo_core::smart_contract::native::policy_contract::PolicyContract;
+use neo_core::smart_contract::trigger_type::TriggerType;
+use neo_core::wallets::key_pair::KeyPair;
+use neo_core::{Transaction, UInt160, WitnessScope};
+use neo_vm::execution_context::ExecutionContext;
+use neo_vm::instruction::Instruction;
+use neo_vm::op_code::OpCode;
+use neo_vm::ScriptBuilder;
+use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
+use std::sync::Arc;
+
+#[derive(Debug)]
+struct OpcodeDiagnostic {
+    pre_exec_count: Arc<AtomicUsize>,
+    opcode_units: Arc<AtomicI64>,
+    context_loaded_count: Arc<AtomicUsize>,
+}
+
+impl IDiagnostic for OpcodeDiagnostic {
+    fn initialized(&mut self, _engine: &mut ApplicationEngine) {}
+
+    fn disposed(&mut self) {}
+
+    fn context_loaded(&mut self, _context: &ExecutionContext) {
+        self.context_loaded_count.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn context_unloaded(&mut self, _context: &ExecutionContext) {}
+
+    fn pre_execute_instruction(&mut self, instruction: &Instruction) {
+        self.pre_exec_count.fetch_add(1, Ordering::Relaxed);
+        let units = ApplicationEngine::get_opcode_price(instruction.opcode as u8);
+        self.opcode_units.fetch_add(units, Ordering::Relaxed);
+    }
+
+    fn post_execute_instruction(&mut self, _instruction: &Instruction) {}
+}
 
 // ============================================================================
 // Helper.IsSignatureContract tests (from C# UT_SmartContractHelper.cs)
@@ -133,6 +177,80 @@ fn test_signature_contract_cost() {
     // The cost should be reasonable for a signature verification
 }
 
+/// Test converted from C# TestSignatureContractCost (engine fee consumption).
+#[test]
+fn test_signature_contract_engine_fee_consumed() {
+    let snapshot = DataCache::new(false);
+    let settings = ProtocolSettings::default();
+    let key = KeyPair::from_private_key(&[1u8; 32]).expect("key");
+    let verification_script = key.get_verification_script();
+    let script_hash = UInt160::from_script(&verification_script);
+    let pre_exec_count = Arc::new(AtomicUsize::new(0));
+    let opcode_units = Arc::new(AtomicI64::new(0));
+    let context_loaded_count = Arc::new(AtomicUsize::new(0));
+
+    let mut tx = Transaction::new();
+    tx.set_version(0);
+    tx.set_nonce(1);
+    tx.set_system_fee(0);
+    tx.set_network_fee(0);
+    tx.set_valid_until_block(1);
+    tx.set_script(vec![OpCode::PUSH1 as u8]);
+    tx.set_signers(vec![Signer::new(script_hash, WitnessScope::GLOBAL)]);
+    tx.set_attributes(Vec::new());
+    tx.set_witnesses(Vec::new());
+
+    let sign_data = get_sign_data_vec(&tx, settings.network).expect("sign data");
+    let signature = key.sign(&sign_data).expect("sign");
+    let mut builder = ScriptBuilder::new();
+    builder.emit_push(&signature);
+    let invocation_script = builder.to_array();
+    tx.set_witnesses(vec![Witness::new_with_scripts(
+        invocation_script.clone(),
+        verification_script.clone(),
+    )]);
+
+    let diagnostic = OpcodeDiagnostic {
+        pre_exec_count: Arc::clone(&pre_exec_count),
+        opcode_units: Arc::clone(&opcode_units),
+        context_loaded_count: Arc::clone(&context_loaded_count),
+    };
+    let mut engine = ApplicationEngine::new(
+        TriggerType::Verification,
+        Some(Arc::new(tx)),
+        Arc::new(snapshot.clone_cache()),
+        None,
+        settings,
+        TEST_MODE_GAS,
+        Some(Box::new(diagnostic)),
+    )
+    .expect("engine");
+    engine
+        .load_script(verification_script, CallFlags::READ_ONLY, Some(script_hash))
+        .expect("load verification");
+    engine
+        .load_script(invocation_script, CallFlags::NONE, None)
+        .expect("load invocation");
+    engine.execute().expect("execute");
+
+    assert!(engine
+        .result_stack()
+        .peek(0)
+        .expect("result")
+        .get_boolean()
+        .unwrap_or(false));
+
+    let expected_opcode_units = ApplicationEngine::get_opcode_price(OpCode::PUSHDATA1 as u8) * 2
+        + ApplicationEngine::get_opcode_price(OpCode::SYSCALL as u8);
+    assert!(context_loaded_count.load(Ordering::Relaxed) > 0);
+    assert!(pre_exec_count.load(Ordering::Relaxed) > 0);
+    assert_eq!(opcode_units.load(Ordering::Relaxed), expected_opcode_units);
+
+    let expected_fee =
+        Helper::signature_contract_cost() * PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64;
+    assert_eq!(engine.fee_consumed(), expected_fee);
+}
+
 /// Test converted from C# TestMultiSignatureContractCost
 #[test]
 fn test_multi_signature_contract_cost() {
@@ -155,6 +273,97 @@ fn test_multi_signature_contract_cost() {
         cost_1_5 > cost_1_3,
         "More signers should mean higher verification cost"
     );
+}
+
+/// Test converted from C# TestMultiSignatureContractCost (engine fee consumption).
+#[test]
+fn test_multi_signature_contract_engine_fee_consumed() {
+    let snapshot = DataCache::new(false);
+    let settings = ProtocolSettings::default();
+    let key1 = KeyPair::from_private_key(&[2u8; 32]).expect("key1");
+    let key2 = KeyPair::from_private_key(&[3u8; 32]).expect("key2");
+    let public_keys = vec![key1.compressed_public_key(), key2.compressed_public_key()];
+    let verification_script = Helper::multi_sig_redeem_script(2, &public_keys);
+    let script_hash = UInt160::from_script(&verification_script);
+    let pre_exec_count = Arc::new(AtomicUsize::new(0));
+    let opcode_units = Arc::new(AtomicI64::new(0));
+    let context_loaded_count = Arc::new(AtomicUsize::new(0));
+
+    let mut tx = Transaction::new();
+    tx.set_version(0);
+    tx.set_nonce(2);
+    tx.set_system_fee(0);
+    tx.set_network_fee(0);
+    tx.set_valid_until_block(1);
+    tx.set_script(vec![OpCode::PUSH1 as u8]);
+    tx.set_signers(vec![Signer::new(script_hash, WitnessScope::GLOBAL)]);
+    tx.set_attributes(Vec::new());
+    tx.set_witnesses(Vec::new());
+
+    let sign_data = get_sign_data_vec(&tx, settings.network).expect("sign data");
+    let mut ordered = vec![
+        (key1.compressed_public_key(), key1.clone()),
+        (key2.compressed_public_key(), key2.clone()),
+    ];
+    ordered.sort_by(|a, b| a.0.cmp(&b.0));
+    let signatures: Vec<Vec<u8>> = ordered
+        .iter()
+        .map(|(_, key)| key.sign(&sign_data).expect("sign"))
+        .collect();
+
+    let mut builder = ScriptBuilder::new();
+    for signature in &signatures {
+        builder.emit_push(signature);
+    }
+    let invocation_script = builder.to_array();
+    tx.set_witnesses(vec![Witness::new_with_scripts(
+        invocation_script.clone(),
+        verification_script.clone(),
+    )]);
+
+    let diagnostic = OpcodeDiagnostic {
+        pre_exec_count: Arc::clone(&pre_exec_count),
+        opcode_units: Arc::clone(&opcode_units),
+        context_loaded_count: Arc::clone(&context_loaded_count),
+    };
+    let mut engine = ApplicationEngine::new(
+        TriggerType::Verification,
+        Some(Arc::new(tx)),
+        Arc::new(snapshot.clone_cache()),
+        None,
+        settings,
+        TEST_MODE_GAS,
+        Some(Box::new(diagnostic)),
+    )
+    .expect("engine");
+    engine
+        .load_script(verification_script, CallFlags::READ_ONLY, Some(script_hash))
+        .expect("load verification");
+    engine
+        .load_script(invocation_script, CallFlags::NONE, None)
+        .expect("load invocation");
+    engine.execute().expect("execute");
+
+    assert!(engine
+        .result_stack()
+        .peek(0)
+        .expect("result")
+        .get_boolean()
+        .unwrap_or(false));
+
+    let push_cost = ApplicationEngine::get_opcode_price(OpCode::PUSHDATA1 as u8);
+    let m_opcode = ApplicationEngine::get_opcode_price(OpCode::PUSH2 as u8);
+    let n_opcode = ApplicationEngine::get_opcode_price(OpCode::PUSH2 as u8);
+    let syscall_cost = ApplicationEngine::get_opcode_price(OpCode::SYSCALL as u8);
+    let expected_opcode_units = push_cost * 4 + m_opcode + n_opcode + syscall_cost;
+    assert!(context_loaded_count.load(Ordering::Relaxed) > 0);
+    assert!(pre_exec_count.load(Ordering::Relaxed) > 0);
+    assert_eq!(opcode_units.load(Ordering::Relaxed), expected_opcode_units);
+
+    let expected_fee =
+        Helper::multi_signature_contract_cost(2, public_keys.len() as i32)
+            * PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64;
+    assert_eq!(engine.fee_consumed(), expected_fee);
 }
 
 // ============================================================================
@@ -278,8 +487,8 @@ fn test_multi_sig_redeem_script_creation() {
     let public_keys = vec![vec![0x02; 33], vec![0x03; 33], vec![0x04; 33]];
     let script = Helper::multi_sig_redeem_script(2, &public_keys);
 
-    // Script should start with PUSH2 (0x52 = 0x50 + 2)
-    assert_eq!(script[0], 0x52);
+    // Script should start with PUSH2 (Neo VM opcode 0x12)
+    assert_eq!(script[0], OpCode::PUSH2 as u8);
 
     // Should end with SYSCALL and CheckMultisig hash
     let len = script.len();

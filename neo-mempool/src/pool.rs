@@ -1,8 +1,6 @@
 //! Transaction mempool implementation
 
-use crate::{
-    FeePolicy, MempoolError, MempoolResult, TransactionEntry, DEFAULT_MAX_TRANSACTIONS,
-};
+use crate::{FeePolicy, MempoolError, MempoolResult, TransactionEntry, DEFAULT_MAX_TRANSACTIONS};
 use hashbrown::{HashMap, HashSet};
 use neo_primitives::{UInt160, UInt256};
 use parking_lot::RwLock;

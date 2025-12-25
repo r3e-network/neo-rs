@@ -3,11 +3,44 @@
 //! This module implements critical transaction validation edge cases from C# UT_Transaction.cs
 //! to ensure complete behavioral compatibility between Neo-RS and Neo-CS.
 
-use neo_core::neo_io::Serializable;
-use neo_core::network::p2p::payloads::{signer::Signer, witness::Witness, InventoryType};
-use neo_core::{
-    Transaction, TransactionAttribute, UInt160, WitnessScope, HEADER_SIZE, MAX_TRANSACTION_SIZE,
+use base64::{engine::general_purpose, Engine as _};
+use neo_core::big_decimal::BigDecimal;
+use neo_core::neo_io::serializable::helper::{
+    get_var_size, get_var_size_bytes, get_var_size_serializable_slice,
 };
+use neo_core::neo_io::{BinaryWriter, Serializable};
+use neo_core::network::p2p::payloads::{signer::Signer, witness::Witness, InventoryType};
+use neo_core::persistence::{DataCache, StorageItem, StorageKey};
+use neo_core::protocol_settings::ProtocolSettings;
+use neo_core::smart_contract::call_flags::CallFlags;
+use neo_core::smart_contract::application_engine::TEST_MODE_GAS;
+use neo_core::smart_contract::application_engine::ApplicationEngine;
+use neo_core::smart_contract::contract::Contract;
+use neo_core::smart_contract::helper::Helper as ContractHelper;
+use neo_core::smart_contract::manifest::{
+    ContractAbi, ContractManifest, ContractMethodDescriptor, ContractParameterDefinition,
+};
+use neo_core::smart_contract::contract_state::{ContractState, NefFile};
+use neo_core::smart_contract::native::fungible_token::PREFIX_ACCOUNT;
+use neo_core::smart_contract::native::{GasToken, NativeContract, PolicyContract};
+use neo_core::smart_contract::ContractBasicMethod;
+use neo_core::smart_contract::ContractParameterType;
+use neo_core::smart_contract::ContractParametersContext;
+use neo_core::smart_contract::trigger_type::TriggerType;
+use neo_core::wallets::helper::Helper as WalletHelper;
+use neo_core::wallets::key_pair::KeyPair;
+use neo_core::wallets::{Nep6Wallet, TransferOutput, Wallet};
+use neo_core::{
+    ledger::VerifyResult,
+    network::p2p::helper::get_sign_data_vec,
+    ledger::TransactionVerificationContext,
+    Transaction, TransactionAttribute, TransactionAttributeType, UInt160, WitnessScope, HEADER_SIZE,
+    MAX_TRANSACTION_SIZE,
+};
+use neo_vm::op_code::OpCode;
+use neo_vm::ScriptBuilder;
+use num_bigint::BigInt;
+use std::sync::Arc;
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
@@ -153,6 +186,148 @@ fn get_test_byte_array(size: usize, fill_byte: u8) -> Vec<u8> {
     vec![fill_byte; size]
 }
 
+fn make_signature_invocation_with(signature: &[u8]) -> Vec<u8> {
+    let mut invocation = Vec::with_capacity(2 + signature.len());
+    invocation.push(OpCode::PUSHDATA1 as u8);
+    invocation.push(signature.len() as u8);
+    invocation.extend_from_slice(signature);
+    invocation
+}
+
+fn make_signature_invocation() -> Vec<u8> {
+    make_signature_invocation_with(&[0u8; 64])
+}
+
+fn make_multi_sig_invocation(m: usize) -> Vec<u8> {
+    let mut invocation = Vec::with_capacity(66 * m);
+    for _ in 0..m {
+        invocation.push(OpCode::PUSHDATA1 as u8);
+        invocation.push(64);
+        invocation.extend_from_slice(&[0u8; 64]);
+    }
+    invocation
+}
+
+fn make_multi_sig_invocation_with(signatures: &[Vec<u8>]) -> Vec<u8> {
+    let mut invocation = Vec::with_capacity(66 * signatures.len());
+    for signature in signatures {
+        invocation.push(OpCode::PUSHDATA1 as u8);
+        invocation.push(signature.len() as u8);
+        invocation.extend_from_slice(signature);
+    }
+    invocation
+}
+
+fn expected_base_size(tx: &Transaction) -> usize {
+    HEADER_SIZE
+        + get_var_size_serializable_slice(tx.signers())
+        + get_var_size_serializable_slice(tx.attributes())
+        + get_var_size_bytes(tx.script())
+        + get_var_size(tx.signers().len() as u64)
+}
+
+const CONTRACT_MANAGEMENT_ID: i32 = -1;
+const PREFIX_CONTRACT: u8 = 8;
+
+fn store_contract(snapshot: &DataCache, contract: ContractState) {
+    let mut writer = BinaryWriter::new();
+    contract.serialize(&mut writer).expect("serialize contract");
+    let mut key = Vec::with_capacity(1 + UInt160::LENGTH);
+    key.push(PREFIX_CONTRACT);
+    key.extend_from_slice(&contract.hash.to_bytes());
+    snapshot.add(
+        StorageKey::new(CONTRACT_MANAGEMENT_ID, key),
+        StorageItem::from_bytes(writer.into_bytes()),
+    );
+}
+
+fn seed_gas_balance(snapshot: &DataCache, account: &UInt160, balance: BigInt) {
+    let gas = GasToken::new();
+    let key = StorageKey::create_with_uint160(gas.id(), PREFIX_ACCOUNT, account);
+    snapshot.add(key, StorageItem::from_bigint(balance));
+}
+
+fn signature_fee_for_signer(signer: Signer, verification_script: Vec<u8>) -> i64 {
+    let script_hash = signer.account;
+    let mut tx = Transaction::new();
+    tx.set_version(0);
+    tx.set_nonce(1);
+    tx.set_system_fee(0);
+    tx.set_network_fee(0);
+    tx.set_valid_until_block(1);
+    tx.set_script(vec![OpCode::PUSH1 as u8]);
+    tx.set_signers(vec![signer]);
+    tx.set_attributes(Vec::new());
+    tx.set_witnesses(Vec::new());
+
+    let snapshot = DataCache::new(true);
+    let settings = ProtocolSettings::default();
+    let script_lookup = verification_script.clone();
+    let hash_lookup = script_hash;
+    let fee = WalletHelper::calculate_network_fee(
+        &tx,
+        &snapshot,
+        &settings,
+        Some(Box::new(move |hash| {
+            if *hash == hash_lookup {
+                Some(script_lookup.clone())
+            } else {
+                None
+            }
+        })),
+        TEST_MODE_GAS,
+    )
+    .expect("network fee");
+
+    let base_size = expected_base_size(&tx);
+    let invocation_len = 66usize;
+    let invocation_size = get_var_size(invocation_len as u64) + invocation_len;
+    let verification_size = get_var_size_bytes(&verification_script);
+    let expected_size = base_size + invocation_size + verification_size;
+    let expected_fee = expected_size as i64 * PolicyContract::DEFAULT_FEE_PER_BYTE as i64
+        + PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64
+            * ContractHelper::signature_contract_cost();
+
+    assert_eq!(fee, expected_fee);
+
+    let mut signed = tx.clone();
+    signed.set_witnesses(vec![Witness::new_with_scripts(
+        make_signature_invocation(),
+        verification_script,
+    )]);
+    assert_eq!(signed.size(), expected_size);
+
+    fee
+}
+
+fn verification_fee_for_witness(
+    tx: &Transaction,
+    witness: &Witness,
+    signer: &UInt160,
+    snapshot: &DataCache,
+    settings: &ProtocolSettings,
+) -> i64 {
+    ContractHelper::verify_witness(tx, settings, snapshot, signer, witness, TEST_MODE_GAS)
+        .expect("verify witness")
+}
+
+fn build_multi_sig_script(m: usize, public_keys: &[Vec<u8>]) -> Vec<u8> {
+    let mut builder = ScriptBuilder::new();
+    builder.emit_push_int(m as i64);
+
+    let mut sorted_keys = public_keys.to_vec();
+    sorted_keys.sort();
+    for key in &sorted_keys {
+        builder.emit_push(key);
+    }
+
+    builder.emit_push_int(sorted_keys.len() as i64);
+    builder
+        .emit_syscall("System.Crypto.CheckMultisig")
+        .expect("syscall");
+    builder.to_array()
+}
+
 // ============================================================================
 // Comprehensive Transaction Validation Tests
 // ============================================================================
@@ -160,6 +335,7 @@ fn get_test_byte_array(size: usize, fill_byte: u8) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::runtime::Runtime;
 
     /// Test Script_Get functionality (matches C# UT_Transaction.Script_Get)
     #[test]
@@ -236,9 +412,16 @@ mod tests {
         assert_eq!(0, tx.version());
         assert_eq!(32, tx.script().len());
 
-        // Basic size calculation verification
+        // Basic size calculation verification (matches C# UT_Transaction.Size_Get)
         let size = tx.size();
-        assert!(size > HEADER_SIZE); // Should be header + script + empty collections
+        assert_eq!(HEADER_SIZE, 25);
+        let expected_size = HEADER_SIZE
+            + get_var_size_serializable_slice(tx.signers())
+            + get_var_size_serializable_slice(tx.attributes())
+            + get_var_size_bytes(tx.script())
+            + get_var_size_serializable_slice(tx.witnesses());
+        assert_eq!(expected_size, size);
+        assert_eq!(63, size);
     }
 
     /// Test oversized transaction validation (matches C# behavior)
@@ -399,10 +582,22 @@ mod tests {
 
         // Test with no attributes
         assert_eq!(tx.attributes().len(), 0);
+        assert!(tx
+            .get_attribute(TransactionAttributeType::OracleResponse)
+            .is_none());
+        assert!(tx
+            .get_attribute(TransactionAttributeType::HighPriority)
+            .is_none());
 
         // Test with high priority attribute
         tx.set_attributes(vec![TransactionAttribute::high_priority()]);
         assert_eq!(tx.attributes().len(), 1);
+        assert!(tx
+            .get_attribute(TransactionAttributeType::OracleResponse)
+            .is_none());
+        assert!(tx
+            .get_attribute(TransactionAttributeType::HighPriority)
+            .is_some());
 
         // Test with multiple attributes
         tx.set_attributes(vec![
@@ -423,14 +618,864 @@ mod tests {
 
         // Create witness with invalid verification script
         let witness = Witness::new_with_scripts(vec![], vec![0x10, 0x75]); // PUSH0, DROP
+        let signer = Signer::new(witness.script_hash(), WitnessScope::CalledByEntry);
         tx.set_witnesses(vec![witness]);
-
-        let signer = Signer::new(UInt160::zero(), WitnessScope::CalledByEntry);
         tx.set_signers(vec![signer]);
 
-        // Verification should detect issues with witness script
-        assert_eq!(tx.witnesses().len(), 1);
-        assert_eq!(tx.signers().len(), 1);
+        let settings = ProtocolSettings::default();
+        let snapshot = DataCache::new(false);
+
+        // Verification should detect issues with witness script (matches C# CheckNoItems)
+        assert!(!ContractHelper::verify_witnesses(
+            &tx,
+            &settings,
+            &snapshot,
+            tx.network_fee()
+        ));
+    }
+
+    /// Test network fee calculation for signature contracts (matches C# fee + size gas).
+    #[test]
+    fn test_network_fee_signature_contract_parity() {
+        let key = KeyPair::from_private_key(&[1u8; 32]).expect("key");
+        let script_hash = key.get_script_hash();
+        let verification_script = key.get_verification_script();
+
+        let mut tx = Transaction::new();
+        tx.set_version(0);
+        tx.set_nonce(1);
+        tx.set_system_fee(0);
+        tx.set_network_fee(0);
+        tx.set_valid_until_block(1);
+        tx.set_script(vec![OpCode::PUSH1 as u8]);
+        tx.set_signers(vec![Signer::new(script_hash, WitnessScope::GLOBAL)]);
+        tx.set_attributes(Vec::new());
+        tx.set_witnesses(Vec::new());
+
+        let snapshot = DataCache::new(true);
+        let settings = ProtocolSettings::default();
+        let script_lookup = verification_script.clone();
+        let hash_lookup = script_hash;
+        let fee = WalletHelper::calculate_network_fee(
+            &tx,
+            &snapshot,
+            &settings,
+            Some(Box::new(move |hash| {
+                if *hash == hash_lookup {
+                    Some(script_lookup.clone())
+                } else {
+                    None
+                }
+            })),
+            TEST_MODE_GAS,
+        )
+        .expect("network fee");
+
+        let base_size = expected_base_size(&tx);
+        let invocation_len = 66usize;
+        let invocation_size = get_var_size(invocation_len as u64) + invocation_len;
+        let verification_size = get_var_size_bytes(&verification_script);
+        let expected_size = base_size + invocation_size + verification_size;
+        let expected_fee = expected_size as i64 * PolicyContract::DEFAULT_FEE_PER_BYTE as i64
+            + PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64
+                * ContractHelper::signature_contract_cost();
+
+        assert_eq!(fee, expected_fee);
+
+        let mut signed = tx.clone();
+        signed.set_witnesses(vec![Witness::new_with_scripts(
+            make_signature_invocation(),
+            verification_script,
+        )]);
+        assert_eq!(signed.size(), expected_size);
+    }
+
+    /// Test network fee calculation for multi-sig contracts (matches C# fee + size gas).
+    #[test]
+    fn test_network_fee_multi_sig_contract_parity() {
+        let key1 = KeyPair::from_private_key(&[2u8; 32]).expect("key1");
+        let key2 = KeyPair::from_private_key(&[3u8; 32]).expect("key2");
+        let public_keys = vec![
+            key1.compressed_public_key(),
+            key2.compressed_public_key(),
+        ];
+
+        let m = 2usize;
+        let verification_script = build_multi_sig_script(m, &public_keys);
+        let script_hash = UInt160::from_script(&verification_script);
+
+        let mut tx = Transaction::new();
+        tx.set_version(0);
+        tx.set_nonce(2);
+        tx.set_system_fee(0);
+        tx.set_network_fee(0);
+        tx.set_valid_until_block(1);
+        tx.set_script(vec![OpCode::PUSH1 as u8]);
+        tx.set_signers(vec![Signer::new(script_hash, WitnessScope::GLOBAL)]);
+        tx.set_attributes(Vec::new());
+        tx.set_witnesses(Vec::new());
+
+        let snapshot = DataCache::new(true);
+        let settings = ProtocolSettings::default();
+        let script_lookup = verification_script.clone();
+        let hash_lookup = script_hash;
+        let fee = WalletHelper::calculate_network_fee(
+            &tx,
+            &snapshot,
+            &settings,
+            Some(Box::new(move |hash| {
+                if *hash == hash_lookup {
+                    Some(script_lookup.clone())
+                } else {
+                    None
+                }
+            })),
+            TEST_MODE_GAS,
+        )
+        .expect("network fee");
+
+        let base_size = expected_base_size(&tx);
+        let invocation_len = 66 * m;
+        let invocation_size = get_var_size(invocation_len as u64) + invocation_len;
+        let verification_size = get_var_size_bytes(&verification_script);
+        let expected_size = base_size + invocation_size + verification_size;
+        let expected_fee = expected_size as i64 * PolicyContract::DEFAULT_FEE_PER_BYTE as i64
+            + PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64
+                * ContractHelper::multi_signature_contract_cost(m as i32, public_keys.len() as i32);
+
+        assert_eq!(fee, expected_fee);
+
+        let mut signed = tx.clone();
+        signed.set_witnesses(vec![Witness::new_with_scripts(
+            make_multi_sig_invocation(m),
+            verification_script,
+        )]);
+        assert_eq!(signed.size(), expected_size);
+    }
+
+    /// Test signature contract network fee matches engine verification gas + size gas.
+    #[test]
+    fn test_network_fee_signature_contract_engine_parity() {
+        let settings = ProtocolSettings::default();
+        let snapshot = DataCache::new(false);
+        let key = KeyPair::from_private_key(&[8u8; 32]).expect("key");
+        let verification_script = key.get_verification_script();
+        let script_hash = key.get_script_hash();
+
+        let mut tx = Transaction::new();
+        tx.set_version(0);
+        tx.set_nonce(20);
+        tx.set_system_fee(0);
+        tx.set_network_fee(0);
+        tx.set_valid_until_block(1);
+        tx.set_script(vec![OpCode::PUSH1 as u8]);
+        tx.set_signers(vec![Signer::new(script_hash, WitnessScope::GLOBAL)]);
+        tx.set_attributes(Vec::new());
+        tx.set_witnesses(Vec::new());
+
+        let script_lookup = verification_script.clone();
+        let hash_lookup = script_hash;
+        let network_fee = WalletHelper::calculate_network_fee(
+            &tx,
+            &snapshot,
+            &settings,
+            Some(Box::new(move |hash| {
+                if *hash == hash_lookup {
+                    Some(script_lookup.clone())
+                } else {
+                    None
+                }
+            })),
+            TEST_MODE_GAS,
+        )
+        .expect("network fee");
+        tx.set_network_fee(network_fee);
+
+        let sign_data = get_sign_data_vec(&tx, settings.network).expect("sign data");
+        let signature = key.sign(&sign_data).expect("sign");
+        let witness = Witness::new_with_scripts(
+            make_signature_invocation_with(&signature),
+            verification_script,
+        );
+        tx.set_witnesses(vec![witness.clone()]);
+
+        let verification_fee =
+            verification_fee_for_witness(&tx, &witness, &script_hash, &snapshot, &settings);
+        let size_fee = tx.size() as i64 * PolicyContract::DEFAULT_FEE_PER_BYTE as i64;
+        assert_eq!(network_fee, verification_fee + size_fee);
+    }
+
+    /// Test multi-sig contract network fee matches engine verification gas + size gas.
+    #[test]
+    fn test_network_fee_multi_sig_contract_engine_parity() {
+        let settings = ProtocolSettings::default();
+        let snapshot = DataCache::new(false);
+        let key1 = KeyPair::from_private_key(&[9u8; 32]).expect("key1");
+        let key2 = KeyPair::from_private_key(&[10u8; 32]).expect("key2");
+        let public_keys = vec![
+            key1.compressed_public_key(),
+            key2.compressed_public_key(),
+        ];
+
+        let m = 2usize;
+        let verification_script = build_multi_sig_script(m, &public_keys);
+        let script_hash = UInt160::from_script(&verification_script);
+
+        let mut tx = Transaction::new();
+        tx.set_version(0);
+        tx.set_nonce(21);
+        tx.set_system_fee(0);
+        tx.set_network_fee(0);
+        tx.set_valid_until_block(1);
+        tx.set_script(vec![OpCode::PUSH1 as u8]);
+        tx.set_signers(vec![Signer::new(script_hash, WitnessScope::GLOBAL)]);
+        tx.set_attributes(Vec::new());
+        tx.set_witnesses(Vec::new());
+
+        let script_lookup = verification_script.clone();
+        let hash_lookup = script_hash;
+        let network_fee = WalletHelper::calculate_network_fee(
+            &tx,
+            &snapshot,
+            &settings,
+            Some(Box::new(move |hash| {
+                if *hash == hash_lookup {
+                    Some(script_lookup.clone())
+                } else {
+                    None
+                }
+            })),
+            TEST_MODE_GAS,
+        )
+        .expect("network fee");
+        tx.set_network_fee(network_fee);
+
+        let sign_data = get_sign_data_vec(&tx, settings.network).expect("sign data");
+        let mut ordered = vec![
+            (key1.compressed_public_key(), key1.clone()),
+            (key2.compressed_public_key(), key2.clone()),
+        ];
+        ordered.sort_by(|a, b| a.0.cmp(&b.0));
+        let signatures: Vec<Vec<u8>> = ordered
+            .iter()
+            .map(|(_, key)| key.sign(&sign_data).expect("sign"))
+            .collect();
+
+        let witness =
+            Witness::new_with_scripts(make_multi_sig_invocation_with(&signatures), verification_script);
+        tx.set_witnesses(vec![witness.clone()]);
+
+        let verification_fee =
+            verification_fee_for_witness(&tx, &witness, &script_hash, &snapshot, &settings);
+        let size_fee = tx.size() as i64 * PolicyContract::DEFAULT_FEE_PER_BYTE as i64;
+        assert_eq!(network_fee, verification_fee + size_fee);
+    }
+
+    /// Test signature contract fee details using wallet MakeTransaction flow (matches C# FeeIsSignatureContractDetailed).
+    #[test]
+    fn test_fee_is_signature_contract_detailed() {
+        let settings = ProtocolSettings::default();
+        let snapshot = DataCache::new(false);
+        let private_key = [11u8; 32];
+        let key = KeyPair::from_private_key(&private_key).expect("key");
+
+        let wallet = Nep6Wallet::new(
+            Some("signature-wallet".to_string()),
+            None,
+            Arc::new(settings.clone()),
+        );
+        let rt = Runtime::new().expect("runtime");
+        let account = rt
+            .block_on(wallet.create_account(&private_key))
+            .expect("create account");
+        let account_hash = account.script_hash();
+
+        seed_gas_balance(&snapshot, &account_hash, BigInt::from(1_000_000_000_000i64));
+
+        let output = TransferOutput {
+            asset_id: GasToken::new().hash(),
+            value: BigDecimal::new(BigInt::from(1), 8),
+            script_hash: account_hash,
+            data: None,
+        };
+
+        let mut tx = WalletHelper::make_transfer_transaction(
+            &wallet,
+            &snapshot,
+            &[output],
+            Some(account_hash),
+            None,
+            &settings,
+            None,
+            TEST_MODE_GAS,
+        )
+        .expect("tx");
+
+        assert!(tx.witnesses().is_empty());
+        assert_eq!(1_228_520, tx.network_fee());
+
+        let mut context =
+            ContractParametersContext::new(Arc::new(snapshot.clone()), tx.clone(), settings.network);
+        assert_eq!(context.script_hashes(), &[account_hash]);
+
+        let sign_data = get_sign_data_vec(&tx, settings.network).expect("sign data");
+        let signature = key.sign(&sign_data).expect("sign");
+        let public_key = key.get_public_key_point().expect("pub");
+        let contract = Contract::create_signature_contract(public_key.clone());
+        assert!(context
+            .add_signature(contract, public_key, signature)
+            .expect("add signature"));
+        assert!(context.completed());
+
+        let witnesses = context.get_witnesses().expect("witnesses");
+        tx.set_witnesses(witnesses);
+
+        assert!(ContractHelper::verify_witnesses(
+            &tx,
+            &settings,
+            &snapshot,
+            tx.network_fee()
+        ));
+
+        let mut verification_gas = 0;
+        for witness in tx.witnesses() {
+            verification_gas += ContractHelper::verify_witness(
+                &tx,
+                &settings,
+                &snapshot,
+                &account_hash,
+                witness,
+                tx.network_fee(),
+            )
+            .expect("verify witness");
+        }
+
+        assert_eq!(25, HEADER_SIZE);
+        assert_eq!(1, get_var_size_serializable_slice(tx.attributes()));
+        assert_eq!(22, get_var_size_serializable_slice(tx.signers()));
+        assert_eq!(88, get_var_size_bytes(tx.script()));
+        assert_eq!(109, get_var_size_serializable_slice(tx.witnesses()));
+        assert_eq!(245, tx.size());
+
+        let size_fee = tx.size() as i64 * PolicyContract::DEFAULT_FEE_PER_BYTE as i64;
+        assert_eq!(245_000, size_fee);
+        assert_eq!(983_520, verification_gas);
+        assert_eq!(tx.network_fee(), verification_gas + size_fee);
+    }
+
+    /// Test multi-sig contract fee details using wallet MakeTransaction flow (matches C# FeeIsMultiSigContract).
+    #[test]
+    fn test_fee_is_multi_sig_contract() {
+        let settings = ProtocolSettings::default();
+        let snapshot = DataCache::new(false);
+        let key_a = KeyPair::from_private_key(&[12u8; 32]).expect("key a");
+        let key_b = KeyPair::from_private_key(&[13u8; 32]).expect("key b");
+        let pub_a = key_a.get_public_key_point().expect("pub a");
+        let pub_b = key_b.get_public_key_point().expect("pub b");
+
+        let contract = Contract::create_multi_sig_contract(2, &[pub_a.clone(), pub_b.clone()]);
+        let contract_hash = contract.script_hash();
+
+        let settings_arc = Arc::new(settings.clone());
+        let wallet_a =
+            Nep6Wallet::new(Some("multisig-wallet-a".to_string()), None, Arc::clone(&settings_arc));
+        let wallet_b =
+            Nep6Wallet::new(Some("multisig-wallet-b".to_string()), None, Arc::clone(&settings_arc));
+        let rt = Runtime::new().expect("runtime");
+        rt.block_on(wallet_a.create_account_with_contract(
+            contract.clone(),
+            Some(key_a.clone()),
+        ))
+        .expect("account a");
+        rt.block_on(wallet_b.create_account_with_contract(
+            contract.clone(),
+            Some(key_b.clone()),
+        ))
+        .expect("account b");
+
+        seed_gas_balance(&snapshot, &contract_hash, BigInt::from(1_000_000_000_000i64));
+
+        let output = TransferOutput {
+            asset_id: GasToken::new().hash(),
+            value: BigDecimal::new(BigInt::from(1), 8),
+            script_hash: contract_hash,
+            data: None,
+        };
+
+        let mut tx = WalletHelper::make_transfer_transaction(
+            &wallet_a,
+            &snapshot,
+            &[output],
+            Some(contract_hash),
+            None,
+            &settings,
+            None,
+            TEST_MODE_GAS,
+        )
+        .expect("tx");
+
+        assert!(tx.witnesses().is_empty());
+        assert_eq!(2_315_100, tx.network_fee());
+
+        let mut context =
+            ContractParametersContext::new(Arc::new(snapshot.clone()), tx.clone(), settings.network);
+        assert_eq!(context.script_hashes(), &[contract_hash]);
+
+        let sign_data = get_sign_data_vec(&tx, settings.network).expect("sign data");
+        let sig_a = key_a.sign(&sign_data).expect("sign a");
+        let sig_b = key_b.sign(&sign_data).expect("sign b");
+        assert!(context
+            .add_signature(contract.clone(), pub_a, sig_a)
+            .expect("add signature a"));
+        assert!(context
+            .add_signature(contract.clone(), pub_b, sig_b)
+            .expect("add signature b"));
+        assert!(context.completed());
+
+        let witnesses = context.get_witnesses().expect("witnesses");
+        tx.set_witnesses(witnesses);
+
+        assert!(ContractHelper::verify_witnesses(
+            &tx,
+            &settings,
+            &snapshot,
+            tx.network_fee()
+        ));
+
+        let mut verification_gas = 0;
+        for witness in tx.witnesses() {
+            verification_gas += ContractHelper::verify_witness(
+                &tx,
+                &settings,
+                &snapshot,
+                &contract_hash,
+                witness,
+                tx.network_fee(),
+            )
+            .expect("verify witness");
+        }
+
+        let size_fee = tx.size() as i64 * PolicyContract::DEFAULT_FEE_PER_BYTE as i64;
+        assert_eq!(348, tx.size());
+        assert_eq!(348_000, size_fee);
+        assert_eq!(1_967_100, verification_gas);
+        assert_eq!(tx.network_fee(), verification_gas + size_fee);
+    }
+
+    /// Test signature contract fees across witness scope variants (Global vs CustomContracts).
+    #[test]
+    fn test_network_fee_signature_contract_scope_variants() {
+        let key = KeyPair::from_private_key(&[4u8; 32]).expect("key");
+        let script_hash = key.get_script_hash();
+        let verification_script = key.get_verification_script();
+
+        let global_signer = Signer::new(script_hash, WitnessScope::GLOBAL);
+        let fee_global = signature_fee_for_signer(global_signer.clone(), verification_script.clone());
+
+        let mut custom_signer = Signer::new(script_hash, WitnessScope::CUSTOM_CONTRACTS);
+        custom_signer.allowed_contracts = vec![UInt160::zero()];
+        let fee_custom = signature_fee_for_signer(custom_signer.clone(), verification_script.clone());
+
+        let mut combined_signer =
+            Signer::new(script_hash, WitnessScope::CUSTOM_CONTRACTS | WitnessScope::CALLED_BY_ENTRY);
+        combined_signer.allowed_contracts = vec![UInt160::zero()];
+        let fee_combined = signature_fee_for_signer(combined_signer, verification_script);
+
+        let mut custom_two = Signer::new(script_hash, WitnessScope::CUSTOM_CONTRACTS);
+        custom_two.allowed_contracts = vec![
+            UInt160::zero(),
+            UInt160::from_bytes(&[0x01u8; 20]).expect("hash"),
+        ];
+        let fee_custom_two =
+            signature_fee_for_signer(custom_two.clone(), key.get_verification_script());
+
+        let size_delta = custom_signer.size().saturating_sub(global_signer.size()) as i64;
+        let expected_delta = size_delta * PolicyContract::DEFAULT_FEE_PER_BYTE as i64;
+        assert_eq!(fee_custom - fee_global, expected_delta);
+        assert_eq!(fee_custom, fee_combined);
+
+        let size_delta_two = custom_two.size().saturating_sub(global_signer.size()) as i64;
+        let expected_delta_two = size_delta_two * PolicyContract::DEFAULT_FEE_PER_BYTE as i64;
+        assert_eq!(fee_custom_two - fee_global, expected_delta_two);
+        assert!(fee_custom_two > fee_custom);
+    }
+
+    /// Test network fee calculation for contract-based verification (empty verification script).
+    #[test]
+    fn test_network_fee_contract_based_verification() {
+        let snapshot = DataCache::new(false);
+        let settings = ProtocolSettings::default();
+
+        let script = vec![OpCode::PUSH1 as u8, OpCode::RET as u8];
+        let contract_hash = UInt160::from_script(&script);
+
+        let method = ContractMethodDescriptor::new(
+            ContractBasicMethod::VERIFY.to_string(),
+            Vec::<ContractParameterDefinition>::new(),
+            ContractParameterType::Boolean,
+            0,
+            false,
+        )
+        .expect("method");
+
+        let mut manifest = ContractManifest::new("verify".to_string());
+        manifest.abi = ContractAbi::new(vec![method.clone()], Vec::new());
+        let nef = NefFile::new("unit".to_string(), script.clone());
+        let contract = ContractState::new(1, contract_hash, nef, manifest);
+        store_contract(&snapshot, contract.clone());
+
+        let mut tx = Transaction::new();
+        tx.set_version(0);
+        tx.set_nonce(9);
+        tx.set_system_fee(0);
+        tx.set_network_fee(0);
+        tx.set_valid_until_block(1);
+        tx.set_script(vec![OpCode::PUSH1 as u8]);
+        tx.set_signers(vec![Signer::new(contract_hash, WitnessScope::GLOBAL)]);
+        tx.set_attributes(Vec::new());
+        tx.set_witnesses(vec![Witness::new_with_scripts(Vec::new(), Vec::new())]);
+
+        let fee = WalletHelper::calculate_network_fee(
+            &tx,
+            &snapshot,
+            &settings,
+            None,
+            TEST_MODE_GAS,
+        )
+        .expect("network fee");
+
+        let expected_size =
+            expected_base_size(&tx) + get_var_size_bytes(&[]) + get_var_size_bytes(&[]);
+        assert_eq!(tx.size(), expected_size);
+
+        let mut engine = ApplicationEngine::new(
+            TriggerType::Verification,
+            Some(Arc::new(tx.clone())),
+            Arc::new(snapshot.clone_cache()),
+            None,
+            settings.clone(),
+            TEST_MODE_GAS,
+            None,
+        )
+        .expect("engine");
+        engine
+            .load_contract_method(contract, method, CallFlags::READ_ONLY)
+            .expect("load contract");
+        engine.execute().expect("execute");
+        assert_eq!(engine.result_stack().len(), 1);
+        assert!(engine
+            .result_stack()
+            .peek(0)
+            .expect("result")
+            .get_boolean()
+            .unwrap_or(false));
+
+        let expected_fee = engine.fee_consumed()
+            + expected_size as i64 * PolicyContract::DEFAULT_FEE_PER_BYTE as i64;
+        assert_eq!(fee, expected_fee);
+    }
+
+    /// Test VerifyStateIndependent returns InvalidSignature when witness signature is wrong.
+    #[test]
+    fn test_verify_state_independent_invalid_signature() {
+        let settings = ProtocolSettings::default();
+        let key_valid = KeyPair::from_private_key(&[5u8; 32]).expect("valid key");
+        let key_wrong = KeyPair::from_private_key(&[6u8; 32]).expect("wrong key");
+        let verification_script = key_valid.get_verification_script();
+        let signer_hash = UInt160::from_script(&verification_script);
+
+        let mut tx = Transaction::new();
+        tx.set_version(0);
+        tx.set_nonce(7);
+        tx.set_system_fee(0);
+        tx.set_network_fee(0);
+        tx.set_valid_until_block(1);
+        tx.set_script(vec![OpCode::PUSH1 as u8]);
+        tx.set_signers(vec![Signer::new(signer_hash, WitnessScope::GLOBAL)]);
+        tx.set_attributes(Vec::new());
+
+        let sign_data = get_sign_data_vec(&tx, settings.network).expect("sign data");
+        let signature = key_wrong.sign(&sign_data).expect("sign");
+        let invocation = make_signature_invocation_with(&signature);
+        tx.set_witnesses(vec![Witness::new_with_scripts(
+            invocation,
+            verification_script,
+        )]);
+
+        assert_eq!(
+            tx.verify_state_independent(&settings),
+            VerifyResult::InvalidSignature
+        );
+    }
+
+    /// Test VerifyStateIndependent invalid signature for multi-sig contracts.
+    #[test]
+    fn test_verify_state_independent_multisig_invalid_signature() {
+        let settings = ProtocolSettings::default();
+        let key1 = KeyPair::from_private_key(&[10u8; 32]).expect("key1");
+        let key2 = KeyPair::from_private_key(&[11u8; 32]).expect("key2");
+        let key_wrong = KeyPair::from_private_key(&[12u8; 32]).expect("key_wrong");
+
+        let public_keys = vec![key1.compressed_public_key(), key2.compressed_public_key()];
+        let verification_script = ContractHelper::multi_sig_redeem_script(2, &public_keys);
+        let signer_hash = UInt160::from_script(&verification_script);
+
+        let mut tx = Transaction::new();
+        tx.set_version(0);
+        tx.set_nonce(10);
+        tx.set_system_fee(0);
+        tx.set_network_fee(0);
+        tx.set_valid_until_block(1);
+        tx.set_script(vec![OpCode::PUSH1 as u8]);
+        tx.set_signers(vec![Signer::new(signer_hash, WitnessScope::GLOBAL)]);
+        tx.set_attributes(Vec::new());
+
+        let sign_data = get_sign_data_vec(&tx, settings.network).expect("sign data");
+
+        let mut ordered = vec![
+            (key1.compressed_public_key(), key1.clone()),
+            (key2.compressed_public_key(), key2.clone()),
+        ];
+        ordered.sort_by(|a, b| a.0.cmp(&b.0));
+        let mut signatures: Vec<Vec<u8>> = ordered
+            .iter()
+            .map(|(_, key)| key.sign(&sign_data).expect("sign"))
+            .collect();
+
+        tx.set_witnesses(vec![Witness::new_with_scripts(
+            make_multi_sig_invocation_with(&signatures),
+            verification_script.clone(),
+        )]);
+        assert_eq!(tx.verify_state_independent(&settings), VerifyResult::Succeed);
+
+        signatures[1] = key_wrong.sign(&sign_data).expect("sign wrong");
+        tx.set_witnesses(vec![Witness::new_with_scripts(
+            make_multi_sig_invocation_with(&signatures),
+            verification_script,
+        )]);
+
+        assert_eq!(
+            tx.verify_state_independent(&settings),
+            VerifyResult::InvalidSignature
+        );
+    }
+
+    /// Test VerifyStateIndependent returns InvalidScript for malformed scripts.
+    #[test]
+    fn test_verify_state_independent_invalid_script() {
+        let settings = ProtocolSettings::default();
+        let mut tx = Transaction::new();
+        tx.set_version(0);
+        tx.set_nonce(13);
+        tx.set_system_fee(0);
+        tx.set_network_fee(0);
+        tx.set_valid_until_block(1);
+        tx.set_signers(vec![Signer::new(UInt160::zero(), WitnessScope::GLOBAL)]);
+        tx.set_attributes(Vec::new());
+        tx.set_witnesses(vec![Witness::empty()]);
+
+        // PUSHDATA1 claims 2 bytes but only 1 byte follows.
+        tx.set_script(vec![OpCode::PUSHDATA1 as u8, 0x02, 0x01]);
+        assert_eq!(
+            tx.verify_state_independent(&settings),
+            VerifyResult::InvalidScript
+        );
+    }
+
+    /// Test VerifyStateIndependent rejects invalid invocation script formats.
+    #[test]
+    fn test_verify_state_independent_invalid_invocation_script() {
+        let settings = ProtocolSettings::default();
+        let key = KeyPair::from_private_key(&[15u8; 32]).expect("key");
+        let verification_script = key.get_verification_script();
+        let signer_hash = UInt160::from_script(&verification_script);
+
+        let mut tx = Transaction::new();
+        tx.set_version(0);
+        tx.set_nonce(14);
+        tx.set_system_fee(0);
+        tx.set_network_fee(0);
+        tx.set_valid_until_block(1);
+        tx.set_script(vec![OpCode::PUSH1 as u8]);
+        tx.set_signers(vec![Signer::new(signer_hash, WitnessScope::GLOBAL)]);
+        tx.set_attributes(Vec::new());
+
+        // Missing 64-byte signature payload.
+        let invalid_invocation = vec![OpCode::PUSHDATA1 as u8, 0x40];
+        tx.set_witnesses(vec![Witness::new_with_scripts(
+            invalid_invocation,
+            verification_script,
+        )]);
+
+        assert_eq!(
+            tx.verify_state_independent(&settings),
+            VerifyResult::Invalid
+        );
+    }
+
+    /// Test VerifyStateIndependent handles oversize and empty-script transactions (matches C#).
+    #[test]
+    fn test_verify_state_independent_oversize_and_empty_script() {
+        let settings = ProtocolSettings::default();
+        let mut tx = Transaction::new();
+        tx.set_version(0);
+        tx.set_nonce(42);
+        tx.set_system_fee(0);
+        tx.set_network_fee(0);
+        tx.set_valid_until_block(1);
+        tx.set_signers(vec![Signer::new(UInt160::zero(), WitnessScope::GLOBAL)]);
+        tx.set_attributes(Vec::new());
+        tx.set_witnesses(vec![Witness::empty()]);
+
+        tx.set_script(vec![0x42; MAX_TRANSACTION_SIZE]);
+        assert_eq!(
+            tx.verify_state_independent(&settings),
+            VerifyResult::OverSize
+        );
+
+        tx.set_script(Vec::new());
+        assert_eq!(
+            tx.verify_state_independent(&settings),
+            VerifyResult::Succeed
+        );
+    }
+
+    /// Test VerifyStateDependent succeeds for valid multi-sig witness with sufficient balance.
+    #[test]
+    fn test_verify_state_dependent_multisig_succeeds() {
+        let settings = ProtocolSettings::default();
+        let snapshot = DataCache::new(false);
+        let context = TransactionVerificationContext::with_balance_provider(|_, _| {
+            BigInt::from(5_0000_0000i64)
+        });
+
+        let key1 = KeyPair::from_private_key(&[13u8; 32]).expect("key1");
+        let key2 = KeyPair::from_private_key(&[14u8; 32]).expect("key2");
+        let public_keys = vec![key1.compressed_public_key(), key2.compressed_public_key()];
+        let verification_script = ContractHelper::multi_sig_redeem_script(2, &public_keys);
+        let signer_hash = UInt160::from_script(&verification_script);
+
+        let mut tx = Transaction::new();
+        tx.set_version(0);
+        tx.set_nonce(11);
+        tx.set_system_fee(0);
+        tx.set_network_fee(0);
+        tx.set_valid_until_block(1);
+        tx.set_script(vec![OpCode::PUSH1 as u8]);
+        tx.set_signers(vec![Signer::new(signer_hash, WitnessScope::GLOBAL)]);
+        tx.set_attributes(Vec::new());
+
+        tx.set_witnesses(vec![Witness::new_with_scripts(
+            make_multi_sig_invocation(2),
+            verification_script.clone(),
+        )]);
+
+        let expected_fee = tx.size() as i64 * PolicyContract::DEFAULT_FEE_PER_BYTE as i64
+            + PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64
+                * ContractHelper::multi_signature_contract_cost(2, public_keys.len() as i32);
+        tx.set_network_fee(expected_fee);
+
+        let sign_data = get_sign_data_vec(&tx, settings.network).expect("sign data");
+        let mut ordered = vec![
+            (key1.compressed_public_key(), key1.clone()),
+            (key2.compressed_public_key(), key2.clone()),
+        ];
+        ordered.sort_by(|a, b| a.0.cmp(&b.0));
+        let signatures: Vec<Vec<u8>> = ordered
+            .iter()
+            .map(|(_, key)| key.sign(&sign_data).expect("sign"))
+            .collect();
+
+        tx.set_witnesses(vec![Witness::new_with_scripts(
+            make_multi_sig_invocation_with(&signatures),
+            verification_script,
+        )]);
+
+        assert_eq!(tx.verify_state_independent(&settings), VerifyResult::Succeed);
+        assert_eq!(
+            tx.verify_state_dependent(&settings, &snapshot, Some(&context), &[]),
+            VerifyResult::Succeed
+        );
+    }
+
+    /// Test VerifyStateDependent returns Invalid when hashes length differs from witnesses length.
+    #[test]
+    fn test_verify_state_dependent_hashes_length_mismatch() {
+        let settings = ProtocolSettings::default();
+        let snapshot = DataCache::new(false);
+
+        let mut tx = Transaction::new();
+        tx.set_version(0);
+        tx.set_nonce(12);
+        tx.set_system_fee(0);
+        tx.set_network_fee(0);
+        tx.set_valid_until_block(1);
+        tx.set_script(vec![OpCode::PUSH1 as u8]);
+        tx.set_signers(vec![Signer::new(UInt160::zero(), WitnessScope::GLOBAL)]);
+        tx.set_attributes(Vec::new());
+        tx.set_witnesses(Vec::new());
+
+        assert_eq!(
+            tx.verify_state_dependent(&settings, &snapshot, None, &[]),
+            VerifyResult::Invalid
+        );
+    }
+
+    /// Test VerifyStateIndependent accepts a known multi-signature transaction fixture.
+    #[test]
+    fn test_verify_state_independent_multisig_fixture() {
+        let tx_data = general_purpose::STANDARD
+            .decode(concat!(
+                "AHXd31W0NlsAAAAAAJRGawAAAAAA3g8CAAGSs5x3qmDym1fBc87ZF/F/0yGm6wEAX",
+                "wsDAOQLVAIAAAAMFLqZBJj+L0XZPXNHHM9MBfCza5HnDBSSs5x3qmDym1fBc87ZF/F/0yGm6xTAHwwIdHJhbnNmZXIMFM924ovQ",
+                "BixKR47jVWEBExnzz6TSQWJ9W1I5Af1KAQxAnZvOQOCdkM+j22dS5SdEncZVYVVi1F26MhheNzNImTD4Ekw5kFR6Fojs7gD57Bd",
+                "euo8tLS1UXpzflmKcQ3pniAxAYvGgxtokrk6PVdduxCBwVbdfie+ZxiaDsjK0FYregl24cDr2v5cTLHrURVfJJ1is+4G6Jaer7n",
+                "B1JrDrw+Qt6QxATA5GdR4rKFPPPQQ24+42OP2tz0HylG1LlANiOtIdag3ZPkUfZiBfEGoOteRD1O0UnMdJP4Su7PFhDuCdHu4Ml",
+                "wxAuGFEk2m/rdruleBGYz8DIzExJtwb/TsFxZdHxo4VV8ktv2Nh71Fwhg2bhW2tq8hV6RK2GFXNAU72KAgf/Qv6BQxA0j3srkwY",
+                "333KvGNtw7ZvSG8X36Tqu000CEtDx4SMOt8qhVYGMr9PClsUVcYFHdrJaodilx8ewXDHNIq+OnS7SfwVDCEDAJt1QOEPJWLl/Y+",
+                "snq7CUWaliybkEjSP9ahpJ7+sIqIMIQMCBenO+upaHfxYCvIMjVqiRouwFI8aXkYF/GIsgOYEugwhAhS68M7qOmbxfn4eg56iX9",
+                "i+1s2C5rtuaCUBiQZfRP8BDCECPpsy6om5TQZuZJsST9UOOW7pE2no4qauGxHBcNAiJW0MIQNAjc1BY5b2R4OsWH6h4Vk8V9n+q",
+                "IDIpqGSDpKiWUd4BgwhAqeDS+mzLimB0VfLW706y0LP0R6lw7ECJNekTpjFkQ8bDCECuixw9ZlvNXpDGYcFhZ+uLP6hPhFyligA",
+                "dys9WIqdSr0XQZ7Q3Do="
+            ))
+            .expect("decode base64 tx");
+        let tx = Transaction::from_bytes(&tx_data).expect("deserialize tx");
+        let settings = ProtocolSettings {
+            network: 844_378_958,
+            ..ProtocolSettings::default()
+        };
+
+        assert_eq!(tx.verify_state_independent(&settings), VerifyResult::Succeed);
+    }
+
+    /// Test VerifyStateDependent returns InsufficientFunds when balance is too low.
+    #[test]
+    fn test_verify_state_dependent_insufficient_funds() {
+        let settings = ProtocolSettings::default();
+        let snapshot = DataCache::new(false);
+        let context =
+            TransactionVerificationContext::with_balance_provider(|_, _| BigInt::from(0));
+
+        let key = KeyPair::from_private_key(&[7u8; 32]).expect("key");
+        let verification_script = key.get_verification_script();
+        let signer_hash = UInt160::from_script(&verification_script);
+
+        let mut tx = Transaction::new();
+        tx.set_version(0);
+        tx.set_nonce(8);
+        tx.set_system_fee(10);
+        tx.set_network_fee(55_000);
+        tx.set_valid_until_block(1);
+        tx.set_script(vec![OpCode::PUSH1 as u8]);
+        tx.set_signers(vec![Signer::new(signer_hash, WitnessScope::GLOBAL)]);
+        tx.set_attributes(Vec::new());
+        tx.set_witnesses(vec![Witness::new_with_scripts(
+            make_signature_invocation(),
+            verification_script,
+        )]);
+
+        let result = tx.verify_state_dependent(&settings, &snapshot, Some(&context), &[]);
+        assert_eq!(result, VerifyResult::InsufficientFunds);
     }
 
     /// Test transaction verification context with oracle responses
@@ -451,6 +1496,46 @@ mod tests {
         tx2.set_attributes(vec![TransactionAttribute::oracle_response(1)]);
 
         assert!(!context.check_transaction(&tx2, &conflicts));
+    }
+
+    /// Test TransactionVerificationContext rejects duplicate oracle responses (matches C#).
+    #[test]
+    fn test_transaction_verification_context_duplicate_oracle() {
+        let snapshot = DataCache::new(false);
+        let mut context =
+            TransactionVerificationContext::with_balance_provider(|_, _| BigInt::from(10));
+
+        let mut tx1 = create_transaction_with_fee(1, 2);
+        tx1.set_attributes(vec![TransactionAttribute::oracle_response(1)]);
+        let conflicts: Vec<Transaction> = Vec::new();
+        assert!(context.check_transaction(&tx1, conflicts.iter(), &snapshot));
+        context.add_transaction(&tx1);
+
+        let mut tx2 = create_transaction_with_fee(2, 1);
+        tx2.set_attributes(vec![TransactionAttribute::oracle_response(1)]);
+        assert!(!context.check_transaction(&tx2, conflicts.iter(), &snapshot));
+    }
+
+    /// Test TransactionVerificationContext fee tracking (matches C# sender fee tests).
+    #[test]
+    fn test_transaction_verification_context_fee_tracking() {
+        let snapshot = DataCache::new(false);
+        let mut context =
+            TransactionVerificationContext::with_balance_provider(|_, _| BigInt::from(7));
+
+        let tx = create_transaction_with_fee(1, 2);
+        let conflicts: Vec<Transaction> = Vec::new();
+
+        assert!(context.check_transaction(&tx, conflicts.iter(), &snapshot));
+        context.add_transaction(&tx);
+        assert!(context.check_transaction(&tx, conflicts.iter(), &snapshot));
+        context.add_transaction(&tx);
+        assert!(!context.check_transaction(&tx, conflicts.iter(), &snapshot));
+
+        context.remove_transaction(&tx);
+        assert!(context.check_transaction(&tx, conflicts.iter(), &snapshot));
+        context.add_transaction(&tx);
+        assert!(!context.check_transaction(&tx, conflicts.iter(), &snapshot));
     }
 
     /// Test transaction verification context with fee tracking
@@ -476,6 +1561,29 @@ mod tests {
         // Remove one instance and check again
         context.remove_transaction(&tx);
         assert!(context.check_transaction(&tx, &conflicts));
+    }
+
+    /// Test transaction verification context conflict fee adjustment (matches C#).
+    #[test]
+    fn test_transaction_verification_context_conflicts() {
+        let snapshot = DataCache::new(false);
+        let mut context =
+            TransactionVerificationContext::with_balance_provider(|_, _| BigInt::from(7));
+
+        let tx1 = create_transaction_with_fee(1, 2);
+        let tx2 = create_transaction_with_fee(1, 2);
+        let tx3 = create_transaction_with_fee(1, 2);
+        let conflict_tx = create_transaction_with_fee(1, 1); // 2 total fee
+
+        let empty_conflicts: Vec<Transaction> = Vec::new();
+        assert!(context.check_transaction(&tx1, empty_conflicts.iter(), &snapshot));
+        context.add_transaction(&tx1);
+        assert!(context.check_transaction(&tx2, empty_conflicts.iter(), &snapshot));
+        context.add_transaction(&tx2);
+        assert!(!context.check_transaction(&tx3, empty_conflicts.iter(), &snapshot));
+
+        let conflicts = vec![conflict_tx];
+        assert!(context.check_transaction(&tx3, conflicts.iter(), &snapshot));
     }
 
     /// Test transaction size limits (matches C# size validation)

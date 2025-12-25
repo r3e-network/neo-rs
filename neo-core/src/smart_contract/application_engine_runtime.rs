@@ -54,7 +54,12 @@ impl ApplicationEngine {
             .get_script_container()
             .cloned()
             .ok_or_else(|| "No script container".to_string())?;
-        self.push_interop_container(container)
+
+        if let Some(transaction) = container.as_any().downcast_ref::<crate::network::p2p::payloads::Transaction>() {
+            self.push(transaction.to_stack_item())
+        } else {
+            Err("Script container does not implement IInteroperable".to_string())
+        }
     }
 
     /// Loads a script at runtime (matches C# RuntimeLoadScript).
@@ -89,20 +94,29 @@ impl ApplicationEngine {
 
     /// Gets the executing script hash
     pub fn runtime_get_executing_script_hash(&mut self) -> Result<(), String> {
-        let hash = self.current_script_hash().ok_or("No executing script")?;
-        self.push_bytes(hash.to_bytes())
+        if let Some(hash) = self.current_script_hash() {
+            self.push_bytes(hash.to_bytes())
+        } else {
+            self.push_null()
+        }
     }
 
     /// Gets the calling script hash
     pub fn runtime_get_calling_script_hash(&mut self) -> Result<(), String> {
-        let hash = self.get_calling_script_hash().unwrap_or_else(UInt160::zero);
-        self.push_bytes(hash.to_bytes())
+        if let Some(hash) = self.get_calling_script_hash() {
+            self.push_bytes(hash.to_bytes())
+        } else {
+            self.push_null()
+        }
     }
 
     /// Gets the entry script hash
     pub fn runtime_get_entry_script_hash(&mut self) -> Result<(), String> {
-        let hash = self.entry_script_hash().ok_or("No entry script")?;
-        self.push_bytes(hash.to_bytes())
+        if let Some(hash) = self.entry_script_hash() {
+            self.push_bytes(hash.to_bytes())
+        } else {
+            self.push_null()
+        }
     }
 
     /// Checks witness
@@ -120,7 +134,9 @@ impl ApplicationEngine {
                 let hash = self.pubkey_to_hash(&hash_or_pubkey);
                 self.check_witness_hash(&hash).map_err(|e| e.to_string())?
             }
-            _ => false,
+            _ => {
+                return Err("Invalid hashOrPubkey length".to_string());
+            }
         };
 
         self.push_boolean(result)

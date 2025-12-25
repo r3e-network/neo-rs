@@ -463,10 +463,10 @@ mod tests {
             "Non-empty byte string should convert to true"
         );
         assert!(
-            !StackItem::from_array(Vec::<StackItem>::new())
+            StackItem::from_array(Vec::<StackItem>::new())
                 .as_bool()
                 .unwrap(),
-            "Empty array should convert to false"
+            "Empty array should convert to true"
         );
         assert!(
             StackItem::from_array(vec![StackItem::Null])

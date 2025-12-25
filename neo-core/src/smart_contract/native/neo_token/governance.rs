@@ -106,6 +106,26 @@ impl NeoToken {
         }
     }
 
+    /// Snapshot helper for retrieving a candidate's vote count.
+    pub fn get_candidate_vote_snapshot<S>(
+        &self,
+        snapshot: &S,
+        pubkey: &ECPoint,
+    ) -> CoreResult<BigInt>
+    where
+        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+    {
+        if let Some(state) = self.get_candidate_state(snapshot, pubkey)? {
+            if state.registered {
+                Ok(state.votes)
+            } else {
+                Ok(BigInt::from(-1))
+            }
+        } else {
+            Ok(BigInt::from(-1))
+        }
+    }
+
     pub(super) fn get_candidate_state<S>(
         &self,
         snapshot: &S,
@@ -197,6 +217,15 @@ impl NeoToken {
             candidates.push((pk, state.votes));
         }
         Ok(candidates)
+    }
+
+    /// Snapshot helper for retrieving the registered candidates (limited to 256).
+    pub fn get_candidates_snapshot<S>(&self, snapshot: &S) -> CoreResult<Vec<(ECPoint, BigInt)>>
+    where
+        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+    {
+        let candidates = self.get_candidates_internal(snapshot)?;
+        Ok(candidates.into_iter().take(256).collect())
     }
 
     /// getCommittee - returns current committee members

@@ -145,7 +145,7 @@ impl Signer {
             let groups: Vec<_> = self
                 .allowed_groups
                 .iter()
-                .map(|g| serde_json::Value::String(format!("0x{}", hex_encode(g.as_bytes()))))
+                .map(|g| serde_json::Value::String(hex_encode(g.as_bytes())))
                 .collect();
             json.insert(
                 "allowedgroups".to_string(),
@@ -307,7 +307,7 @@ impl Serializable for Signer {
                 if encoded.len() != 33 {
                     return Err(IoError::invalid_data("Group must be compressed"));
                 }
-                writer.write_var_bytes(&encoded)?;
+                writer.write_bytes(&encoded)?;
             }
         }
 
@@ -377,10 +377,7 @@ impl Serializable for Signer {
             }
             allowed_groups.reserve(count);
             for _ in 0..count {
-                let encoded = reader.read_var_bytes(ECPOINT_COMPRESSED_SIZE)?;
-                if encoded.len() != ECPOINT_COMPRESSED_SIZE {
-                    return Err(IoError::invalid_data("Invalid ECPoint length"));
-                }
+                let encoded = reader.read_bytes(ECPOINT_COMPRESSED_SIZE)?;
                 let point = ECPoint::decode_compressed_with_curve(ECCurve::secp256r1(), &encoded)
                     .map_err(|e| IoError::invalid_data(e.to_string()))?;
                 allowed_groups.push(point);

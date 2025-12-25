@@ -220,7 +220,7 @@ fn ensure_reference_counter_compatible(item: &StackItem, rc: &ReferenceCounter) 
             )),
             None => {
                 for child in array.items() {
-                    ensure_reference_counter_compatible(child, rc)?;
+                    ensure_reference_counter_compatible(&child, rc)?;
                 }
                 Ok(())
             }
@@ -232,7 +232,7 @@ fn ensure_reference_counter_compatible(item: &StackItem, rc: &ReferenceCounter) 
             )),
             None => {
                 for child in structure.items() {
-                    ensure_reference_counter_compatible(child, rc)?;
+                    ensure_reference_counter_compatible(&child, rc)?;
                 }
                 Ok(())
             }
@@ -243,7 +243,7 @@ fn ensure_reference_counter_compatible(item: &StackItem, rc: &ReferenceCounter) 
                 "Map has mismatched reference counter.",
             )),
             None => {
-                for (key, value) in map.items() {
+                for (key, value) in map.items().iter() {
                     ensure_reference_counter_compatible(key, rc)?;
                     ensure_reference_counter_compatible(value, rc)?;
                 }

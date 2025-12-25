@@ -10,6 +10,10 @@
 // modifications are permitted.
 
 use crate::network::p2p::payloads::signer::Signer;
+use crate::network::p2p::payloads::transaction::HEADER_SIZE;
+use crate::neo_io::serializable::helper::{
+    get_var_size, get_var_size_bytes, get_var_size_serializable_slice,
+};
 use crate::IVerifiable as CoreIVerifiable;
 use crate::{
     network::p2p,
@@ -19,15 +23,18 @@ use crate::{
         application_engine::ApplicationEngine,
         call_flags::CallFlags,
         helper::Helper as ContractHelper,
+        native::contract_management::ContractManagement,
         native::{
             ledger_contract::LedgerContract, native_contract::NativeContract,
             policy_contract::PolicyContract, GasToken,
         },
+        ContractBasicMethod, ContractParameterType,
         trigger_type::TriggerType,
     },
     wallets::{transfer_output::TransferOutput, wallet::Wallet, wallet::WalletError, KeyPair},
     Transaction, UInt160,
 };
+use neo_primitives::UInt256;
 use neo_primitives::WitnessScope;
 use neo_vm::{op_code::OpCode, ScriptBuilder};
 use num_bigint::{BigInt, Sign};
@@ -183,6 +190,7 @@ impl Helper {
             for account in &accounts {
                 let mut inner = ScriptBuilder::new();
                 inner.emit_push(&account.to_bytes());
+                inner.emit_push_int(1);
                 inner.emit_opcode(OpCode::PACK);
                 inner.emit_push_int(CallFlags::READ_ONLY.bits() as i64);
                 inner.emit_push("balanceOf".as_bytes());
@@ -208,6 +216,7 @@ impl Helper {
                     .execute()
                     .map_err(|e| WalletError::Other(e.to_string()))?;
                 if let Ok(value) = engine
+                    .result_stack()
                     .peek(0)
                     .map_err(|e| WalletError::Other(e.to_string()))
                     .and_then(|item| item.as_int().map_err(|e| WalletError::Other(e.to_string())))
@@ -294,10 +303,11 @@ impl Helper {
         tx.set_signers(signers);
 
         // Execute script to calculate system fee
+        let script_container: Arc<dyn CoreIVerifiable> = Arc::new(tx.clone());
         let mut engine = ApplicationEngine::new(
             TriggerType::Application,
-            None,
-            Arc::new(snapshot.clone()),
+            Some(script_container),
+            Arc::new(snapshot.clone_cache()),
             persisting_block.cloned(),
             settings.clone(),
             max_gas,
@@ -336,6 +346,114 @@ impl Helper {
 
         Err(WalletError::InsufficientFunds)
     }
+
+    /// Builds a smart-contract invocation transaction matching the C# wallet implementation.
+    #[allow(clippy::too_many_arguments)]
+    pub fn make_transaction(
+        wallet: &dyn Wallet,
+        snapshot: &DataCache,
+        script: &[u8],
+        sender: Option<UInt160>,
+        cosigners: Option<&[Signer]>,
+        attributes: Option<&[p2p::payloads::transaction_attribute::TransactionAttribute]>,
+        settings: &ProtocolSettings,
+        persisting_block: Option<&crate::ledger::Block>,
+        max_gas: i64,
+    ) -> Result<Transaction, WalletError> {
+        let accounts: Vec<UInt160> = if let Some(sender) = sender {
+            vec![sender]
+        } else {
+            wallet
+                .get_accounts()
+                .into_iter()
+                .filter(|a| !a.is_locked() && a.has_key())
+                .map(|a| a.script_hash())
+                .collect()
+        };
+
+        if accounts.is_empty() {
+            return Err(WalletError::InsufficientFunds);
+        }
+
+        let gas = GasToken::new();
+        let balances_gas: Vec<(UInt160, BigInt)> = accounts
+            .iter()
+            .filter_map(|account| {
+                let balance = gas.balance_of_snapshot(snapshot, account);
+                if balance.sign() == Sign::Plus {
+                    Some((*account, balance))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if balances_gas.is_empty() {
+            return Err(WalletError::InsufficientFunds);
+        }
+
+        let ledger = LedgerContract::new();
+        let policy = PolicyContract::new();
+        let current_height = ledger
+            .current_index(snapshot)
+            .map_err(|e| WalletError::Other(e.to_string()))?;
+        let valid_until = current_height
+            + policy
+                .get_max_valid_until_block_increment_snapshot(snapshot, settings)
+                .unwrap_or(settings.max_valid_until_block_increment);
+
+        let attributes = attributes.unwrap_or(&[]);
+        let cosigners = cosigners.unwrap_or(&[]);
+
+        for (account, balance) in balances_gas {
+            let mut tx = Transaction::new();
+            tx.set_nonce(OsRng.next_u32());
+            tx.set_script(script.to_vec());
+            tx.set_valid_until_block(valid_until);
+            tx.set_signers(reorder_signers(account, cosigners.to_vec()));
+            tx.set_attributes(attributes.to_vec());
+
+            let script_container: Arc<dyn CoreIVerifiable> = Arc::new(tx.clone());
+            let mut engine = ApplicationEngine::new(
+                TriggerType::Application,
+                Some(script_container),
+                Arc::new(snapshot.clone_cache()),
+                persisting_block.cloned(),
+                settings.clone(),
+                max_gas,
+                None,
+            )
+            .map_err(|e| WalletError::TransactionCreationFailed(e.to_string()))?;
+            engine
+                .load_script(tx.script().to_vec(), CallFlags::ALL, None)
+                .map_err(|e| WalletError::TransactionCreationFailed(e.to_string()))?;
+            engine
+                .execute()
+                .map_err(|e| WalletError::TransactionCreationFailed(e.to_string()))?;
+            if engine.state() == neo_vm::vm_state::VMState::FAULT {
+                return Err(WalletError::TransactionCreationFailed(
+                    "Smart contract execution failed.".to_string(),
+                ));
+            }
+            tx.set_system_fee(engine.fee_consumed());
+
+            let network_fee = Helper::calculate_network_fee_with_wallet(
+                &tx,
+                snapshot,
+                settings,
+                Some(wallet),
+                max_gas,
+            )
+            .map_err(WalletError::TransactionCreationFailed)?;
+            tx.set_network_fee(network_fee);
+
+            if balance >= BigInt::from(tx.system_fee() + tx.network_fee()) {
+                return Ok(tx);
+            }
+        }
+
+        Err(WalletError::InsufficientFunds)
+    }
 }
 
 fn calculate_network_fee_impl(
@@ -343,47 +461,157 @@ fn calculate_network_fee_impl(
     snapshot: &DataCache,
     settings: &ProtocolSettings,
     account_script: Option<&AccountScriptResolver<'_>>,
-    _max_execution_cost: i64,
+    max_execution_cost: i64,
 ) -> Result<i64, String> {
-    let mut hashes = tx.get_script_hashes_for_verifying(snapshot);
-    hashes.sort();
-    hashes.dedup();
+    let hashes = tx.get_script_hashes_for_verifying(snapshot);
 
     let exec_fee_factor = PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64;
     let fee_per_byte = PolicyContract::DEFAULT_FEE_PER_BYTE as i64;
 
-    let mut size: i64 = 0;
+    let base_size = HEADER_SIZE
+        + get_var_size_serializable_slice(tx.signers())
+        + get_var_size_serializable_slice(tx.attributes())
+        + get_var_size_bytes(tx.script())
+        + get_var_size(hashes.len() as u64);
+    let mut size: i64 = base_size as i64;
     let mut network_fee: i64 = 0;
+    let mut remaining_execution_cost = max_execution_cost;
 
     for (index, hash) in hashes.iter().enumerate() {
-        let witness_script = account_script
-            .and_then(|resolver| resolver(hash))
-            .or_else(|| {
-                tx.witnesses()
-                    .get(index)
-                    .map(|w| w.verification_script.clone())
-            });
+        let mut invocation_script: Option<Vec<u8>> = None;
+        let mut witness_script = account_script.and_then(|resolver| resolver(hash));
 
-        if witness_script
-            .as_ref()
-            .map(|s| s.is_empty())
-            .unwrap_or(true)
-        {
-            return Err(format!(
-                "The smart contract or address {} ({}) is not found. If this is your wallet address and you want to sign a transaction with it, make sure you have opened this wallet.",
-                hex::encode(hash.to_array()),
-                Helper::to_address(hash, settings.address_version)
-            ));
+        if witness_script.is_none() {
+            if let Some(witness) = tx.witnesses().get(index) {
+                if witness.verification_script.is_empty() {
+                    invocation_script = Some(witness.invocation_script.clone());
+                } else {
+                    witness_script = Some(witness.verification_script.clone());
+                }
+            }
         }
 
-        let witness_script = witness_script.expect("script presence checked");
+        let witness_script = witness_script.unwrap_or_default();
+
+        if witness_script.is_empty() {
+            let contract = ContractManagement::get_contract_from_snapshot(snapshot, hash)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| {
+                    format!(
+                        "The smart contract or address {} ({}) is not found. If this is your wallet address and you want to sign a transaction with it, make sure you have opened this wallet.",
+                        hash.to_hex_string(),
+                        Helper::to_address(hash, settings.address_version)
+                    )
+                })?;
+
+            let contract_hash = contract.hash;
+            let mut abi = contract.manifest.abi.clone();
+            let method = abi
+                .get_method(
+                    ContractBasicMethod::VERIFY,
+                    ContractBasicMethod::VERIFY_P_COUNT,
+                )
+                .ok_or_else(|| {
+                    format!("The smart contract {} haven't got verify method", contract.hash)
+                })?
+                .clone();
+
+            if method.return_type != ContractParameterType::Boolean {
+                return Err("The verify method doesn't return boolean value.".to_string());
+            }
+
+            if method.parameters.len() > 0 && invocation_script.is_none() {
+                let mut builder = ScriptBuilder::new();
+                for param in &method.parameters {
+                    match param.param_type {
+                        ContractParameterType::Any
+                        | ContractParameterType::Signature
+                        | ContractParameterType::String
+                        | ContractParameterType::ByteArray => {
+                            builder.emit_push(&[0u8; 64]);
+                        }
+                        ContractParameterType::Boolean => {
+                            builder.emit_push_bool(true);
+                        }
+                        ContractParameterType::Integer => {
+                            builder.emit_instruction(OpCode::PUSHINT256, &[0u8; 32]);
+                        }
+                        ContractParameterType::Hash160 => {
+                            builder.emit_push(&[0u8; UInt160::LENGTH]);
+                        }
+                        ContractParameterType::Hash256 => {
+                            builder.emit_push(&[0u8; UInt256::LENGTH]);
+                        }
+                        ContractParameterType::PublicKey => {
+                            builder.emit_push(&[0u8; 33]);
+                        }
+                        ContractParameterType::Array => {
+                            builder.emit_opcode(OpCode::NEWARRAY0);
+                        }
+                        _ => {}
+                    }
+                }
+                invocation_script = Some(builder.to_array());
+            }
+
+            let has_invocation_script = invocation_script.is_some();
+            let invocation_script = invocation_script.unwrap_or_default();
+            size += (get_var_size_bytes(&[]) + get_var_size_bytes(&invocation_script)) as i64;
+
+            let snapshot_clone = Arc::new(snapshot.clone_cache());
+            let mut engine = ApplicationEngine::new(
+                TriggerType::Verification,
+                Some(Arc::new(tx.clone())),
+                snapshot_clone,
+                None,
+                settings.clone(),
+                remaining_execution_cost,
+                None,
+            )
+            .map_err(|e| e.to_string())?;
+
+            engine
+                .load_contract_method(contract, method, CallFlags::READ_ONLY)
+                .map_err(|e| e.to_string())?;
+
+            if has_invocation_script {
+                engine
+                    .load_script(invocation_script, CallFlags::NONE, None)
+                    .map_err(|e| e.to_string())?;
+            }
+
+            engine.execute().map_err(|e| e.to_string())?;
+            if engine.result_stack().len() != 1 {
+                return Err(format!(
+                    "Smart contract {} verification fault.",
+                    contract_hash
+                ));
+            }
+            let result_item = engine
+                .result_stack()
+                .peek(0)
+                .map_err(|e| e.to_string())?;
+            if result_item.get_boolean().unwrap_or(false) == false {
+                return Err(format!(
+                    "Smart contract {} verification fault.",
+                    contract_hash
+                ));
+            }
+
+            remaining_execution_cost -= engine.fee_consumed();
+            if remaining_execution_cost <= 0 {
+                return Err("Insufficient GAS.".to_string());
+            }
+            network_fee += engine.fee_consumed();
+            continue;
+        }
 
         if ContractHelper::is_signature_contract(&witness_script) {
             size += 67 + var_size_with_payload(witness_script.len());
             network_fee += exec_fee_factor * ContractHelper::signature_contract_cost();
         } else if let Some((m, n)) = parse_multi_sig_contract(&witness_script) {
             let invocation_len = 66 * m as i64;
-            size += var_size_with_payload(invocation_len as usize) + invocation_len;
+            size += var_size_with_payload(invocation_len as usize);
             size += var_size_with_payload(witness_script.len());
             network_fee +=
                 exec_fee_factor * ContractHelper::multi_signature_contract_cost(m as i32, n as i32);
@@ -485,33 +713,36 @@ fn emit_transfer(
     amount: &BigInt,
     data: Option<&dyn std::any::Any>,
 ) -> Result<(), WalletError> {
-    let mut args = Vec::new();
-    args.push(from.to_bytes());
-    args.push(to.to_bytes());
-    let mut amount_bytes = amount.to_signed_bytes_le();
-    if amount_bytes.is_empty() {
-        amount_bytes.push(0);
-    }
-    args.push(amount_bytes);
+    let mut arg_count = 0usize;
+
     if let Some(extra) = data {
         if let Some(bytes) = extra.downcast_ref::<Vec<u8>>() {
-            args.push(bytes.clone());
+            builder.emit_push(bytes);
         } else if let Some(text) = extra.downcast_ref::<String>() {
-            args.push(text.as_bytes().to_vec());
+            builder.emit_push(text.as_bytes());
         } else {
-            args.push(Vec::new());
+            builder.emit_opcode(OpCode::PUSHNULL);
         }
     } else {
-        args.push(Vec::new());
+        builder.emit_opcode(OpCode::PUSHNULL);
     }
+    arg_count += 1;
 
-    if args.is_empty() {
+    builder
+        .emit_push_bigint(amount.clone())
+        .map_err(|e| WalletError::TransactionCreationFailed(e.to_string()))?;
+    arg_count += 1;
+
+    builder.emit_push(&to.to_bytes());
+    arg_count += 1;
+
+    builder.emit_push(&from.to_bytes());
+    arg_count += 1;
+
+    if arg_count == 0 {
         builder.emit_opcode(OpCode::NEWARRAY0);
     } else {
-        for arg in args.iter().rev() {
-            builder.emit_push(arg);
-        }
-        builder.emit_push_int(args.len() as i64);
+        builder.emit_push_int(arg_count as i64);
         builder.emit_opcode(OpCode::PACK);
     }
 

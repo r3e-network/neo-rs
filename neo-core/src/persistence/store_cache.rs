@@ -303,27 +303,35 @@ impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for StoreCache {
     ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
         let cache_items = self.data_cache.find(key_prefix, direction);
 
-        let store_items: Box<dyn Iterator<Item = (StorageKey, StorageItem)>> =
-            if let Some(store) = &self.store {
-                store.find(key_prefix, direction)
-            } else {
-                Box::new(std::iter::empty())
-            };
+        if self.store.is_some() && self.snapshot.is_none() {
+            // `data_cache.find` already merges the backing store and cache and sorts results.
+            return Box::new(cache_items.into_iter());
+        }
 
-        let snapshot_items: Box<dyn Iterator<Item = (StorageKey, StorageItem)>> =
-            if let Some(snapshot) = &self.snapshot {
-                let prefix_bytes = key_prefix.map(|k| k.to_array());
-                Box::new(
-                    snapshot
-                        .find(prefix_bytes.as_ref(), direction)
-                        .map(|(key, value)| {
-                            (StorageKey::from_bytes(&key), StorageItem::from_bytes(value))
-                        }),
-                )
-            } else {
-                Box::new(std::iter::empty())
-            };
+        let snapshot_items: Vec<(StorageKey, StorageItem)> = if let Some(snapshot) = &self.snapshot {
+            let prefix_bytes = key_prefix.map(|k| k.to_array());
+            snapshot
+                .find(prefix_bytes.as_ref(), direction)
+                .map(|(key, value)| (StorageKey::from_bytes(&key), StorageItem::from_bytes(value)))
+                .collect()
+        } else {
+            Vec::new()
+        };
 
-        Box::new(cache_items.chain(store_items).chain(snapshot_items))
+        let mut merged = std::collections::HashMap::new();
+        for (key, value) in snapshot_items {
+            merged.insert(key, value);
+        }
+        for (key, value) in cache_items {
+            merged.insert(key, value);
+        }
+
+        let mut sorted: Vec<_> = merged.into_iter().collect();
+        match direction {
+            SeekDirection::Forward => sorted.sort_by(|a, b| a.0.cmp(&b.0)),
+            SeekDirection::Backward => sorted.sort_by(|a, b| b.0.cmp(&a.0)),
+        }
+
+        Box::new(sorted.into_iter())
     }
 }

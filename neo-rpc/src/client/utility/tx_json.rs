@@ -2,6 +2,7 @@ use base64::{engine::general_purpose, Engine as _};
 use neo_config::ProtocolSettings;
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::{Block, BlockHeader, Signer, Transaction};
+use neo_io::serializable::helper::get_var_size;
 use neo_io::serializable::Serializable;
 use neo_json::{JArray, JObject, JToken};
 
@@ -15,7 +16,9 @@ pub fn block_to_json(block: &Block, protocol_settings: &ProtocolSettings) -> JOb
     let header = &block.header;
 
     json.insert("hash".to_string(), JToken::String(block.hash().to_string()));
-    let block_size = header.size() + block.transactions.iter().map(|tx| tx.size()).sum::<usize>();
+    let block_size = header.size()
+        + get_var_size(block.transactions.len() as u64)
+        + block.transactions.iter().map(|tx| tx.size()).sum::<usize>();
     json.insert("size".to_string(), JToken::Number(block_size as f64));
     json.insert("version".to_string(), JToken::Number(header.version as f64));
     json.insert(
@@ -29,7 +32,7 @@ pub fn block_to_json(block: &Block, protocol_settings: &ProtocolSettings) -> JOb
     json.insert("time".to_string(), JToken::Number(header.timestamp as f64));
     json.insert(
         "nonce".to_string(),
-        JToken::String(format!("{:016x}", header.nonce)),
+        JToken::String(format!("{:016X}", header.nonce)),
     );
     json.insert("index".to_string(), JToken::Number(header.index as f64));
     json.insert(

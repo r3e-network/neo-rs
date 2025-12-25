@@ -56,7 +56,8 @@ impl JsonSerializer {
                 Ok(JsonValue::String(string))
             }
             StackItem::Buffer(buffer) => {
-                let string = String::from_utf8_lossy(buffer.data()).to_string();
+                let data = buffer.data();
+                let string = String::from_utf8_lossy(&data).to_string();
                 Ok(JsonValue::String(string))
             }
             StackItem::Array(array) => Self::serialize_compound_array(array, seen),
@@ -80,7 +81,7 @@ impl JsonSerializer {
 
         let mut result = Vec::with_capacity(array.len());
         for element in array.items() {
-            result.push(Self::serialize_internal(element, seen)?);
+            result.push(Self::serialize_internal(&element, seen)?);
         }
 
         seen.remove(&identity);
@@ -98,7 +99,7 @@ impl JsonSerializer {
 
         let mut result = Vec::with_capacity(structure.len());
         for element in structure.items() {
-            result.push(Self::serialize_internal(element, seen)?);
+            result.push(Self::serialize_internal(&element, seen)?);
         }
 
         seen.remove(&identity);
@@ -118,14 +119,14 @@ impl JsonSerializer {
         for (key, value) in map.items() {
             let key_bytes = match key {
                 StackItem::ByteString(bytes) => bytes.clone(),
-                StackItem::Buffer(buffer) => buffer.data().to_vec(),
+                StackItem::Buffer(buffer) => buffer.data(),
                 _ => return Err("Map key must be a byte string".to_string()),
             };
 
             let key_str =
                 String::from_utf8(key_bytes).map_err(|_| "Invalid UTF-8 in map key".to_string())?;
 
-            let value_json = Self::serialize_internal(value, seen)?;
+            let value_json = Self::serialize_internal(&value, seen)?;
             result.insert(key_str, value_json);
         }
 

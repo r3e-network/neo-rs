@@ -3,8 +3,13 @@
 //! Critical transaction validation edge cases from C# UT_Transaction.cs
 //! ensuring behavioral compatibility between Neo-RS and Neo-CS.
 
+use neo_core::ledger::{TransactionVerificationContext, VerifyResult};
 use neo_core::neo_io::Serializable;
-use neo_core::network::p2p::payloads::{signer::Signer, witness::Witness};
+use neo_core::network::p2p::payloads::{signer::Signer, witness::Witness, InventoryType};
+use neo_core::persistence::DataCache;
+use neo_core::protocol_settings::ProtocolSettings;
+use neo_vm::op_code::OpCode;
+use neo_vm::StackItem;
 use neo_core::{
     Transaction, TransactionAttribute, UInt160, WitnessScope, HEADER_SIZE, MAX_TRANSACTION_SIZE,
 };
@@ -40,6 +45,11 @@ fn get_test_byte_array(size: usize, fill_byte: u8) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use neo_core::network::p2p::payloads::i_inventory::IInventory;
+    use neo_core::smart_contract::IInteroperable;
+    use neo_core::IVerifiable;
+    use num_traits::ToPrimitive;
+    use std::str::FromStr;
 
     /// Test Script_Get functionality (matches C# UT_Transaction.Script_Get)
     #[test]
@@ -107,6 +117,65 @@ mod tests {
         // Size should include header + script + collections
         let size = tx.size();
         assert!(size >= HEADER_SIZE + 32); // At minimum header + script
+    }
+
+    /// Test inventory type (matches C# UT_Transaction.InventoryType_Get)
+    #[test]
+    fn test_inventory_type_get() {
+        let tx = Transaction::new();
+        assert_eq!(tx.inventory_type(), InventoryType::Transaction);
+    }
+
+    /// Test ToStackItem output when sender is set (matches C# stack item layout).
+    #[test]
+    fn test_to_stack_item_includes_sender() {
+        let mut tx = Transaction::new();
+        tx.set_version(0);
+        tx.set_nonce(42);
+        tx.set_system_fee(7);
+        tx.set_network_fee(9);
+        tx.set_valid_until_block(10);
+        tx.set_script(vec![0x01, 0x02]);
+        tx.set_signers(vec![Signer::new(
+            UInt160::zero(),
+            WitnessScope::CALLED_BY_ENTRY,
+        )]);
+
+        let item = tx.to_stack_item();
+        assert!(!item.is_null());
+
+        let array = item.as_array().expect("array");
+        assert_eq!(array.len(), 8);
+        assert_eq!(array[0].as_bytes().expect("hash bytes"), tx.hash().to_bytes());
+        assert_eq!(array[1].as_int().expect("version").to_i64().unwrap(), 0);
+        assert_eq!(array[2].as_int().expect("nonce").to_i64().unwrap(), 42);
+        assert_eq!(
+            array[3].as_bytes().expect("sender"),
+            UInt160::zero().to_bytes()
+        );
+        assert_eq!(array[4].as_int().expect("sysfee").to_i64().unwrap(), 7);
+        assert_eq!(array[5].as_int().expect("netfee").to_i64().unwrap(), 9);
+        assert_eq!(
+            array[6].as_int().expect("vub").to_i64().unwrap(),
+            10
+        );
+        assert_eq!(array[7].as_bytes().expect("script"), vec![0x01, 0x02]);
+    }
+
+    /// Test ToStackItem returns null when sender is missing.
+    #[test]
+    fn test_to_stack_item_requires_sender() {
+        let tx = Transaction::new();
+        let item = tx.to_stack_item();
+        assert!(item.is_null());
+    }
+
+    /// Test FromStackItem panics (matches C# NotSupportedException).
+    #[test]
+    #[should_panic(expected = "NotSupportedException: Transaction::from_stack_item is not supported")]
+    fn test_from_stack_item_not_supported() {
+        let mut tx = Transaction::new();
+        tx.from_stack_item(StackItem::null());
     }
 
     /// Test transaction size limits (matches C# size validation behavior)
@@ -284,6 +353,57 @@ mod tests {
         assert_eq!(tx.signers().len(), 1);
         assert_eq!(tx.network_fee(), 1000000);
         assert_eq!(tx.system_fee(), 1000000);
+    }
+
+    /// Test state-dependent verification when witness count mismatches script hashes.
+    #[test]
+    fn test_verify_state_dependent_witness_count_mismatch() {
+        let settings = ProtocolSettings::default();
+        let snapshot = DataCache::new(true);
+        let context = TransactionVerificationContext::new();
+
+        let mut tx = Transaction::new();
+        tx.set_network_fee(1);
+        tx.set_system_fee(100_000_000);
+        tx.set_valid_until_block(1);
+        tx.set_script(vec![OpCode::PUSH1 as u8]);
+        tx.set_signers(vec![Signer::new(
+            UInt160::from_bytes(&[0x01; 20]).expect("signer"),
+            WitnessScope::GLOBAL,
+        )]);
+        // Leave witnesses empty to trigger mismatch.
+
+        let result = tx.verify_state_dependent(&settings, &snapshot, Some(&context), &[]);
+        assert_ne!(result, VerifyResult::Succeed);
+    }
+
+    /// Test reverify hash length mismatch (matches C# Reverify hash length vs witnesses length).
+    #[test]
+    fn test_reverify_hashes_length_unequal_to_witnesses() {
+        let settings = ProtocolSettings::default();
+        let snapshot = DataCache::new(true);
+        let context = TransactionVerificationContext::new();
+
+        let mut tx = Transaction::new();
+        tx.set_version(0);
+        tx.set_nonce(0x01020304);
+        tx.set_system_fee(100_000_000);
+        tx.set_network_fee(1);
+        tx.set_valid_until_block(0x01020304);
+        tx.set_signers(vec![Signer::new(
+            UInt160::from_str("0x0001020304050607080900010203040506070809").unwrap(),
+            WitnessScope::GLOBAL,
+        )]);
+        tx.set_attributes(Vec::new());
+        tx.set_script(vec![OpCode::PUSH1 as u8]);
+        tx.set_witnesses(Vec::new());
+
+        let hashes = tx.get_script_hashes_for_verifying(&snapshot);
+        assert_eq!(hashes.len(), 1);
+        assert_ne!(
+            tx.verify_state_dependent(&settings, &snapshot, Some(&context), &[]),
+            VerifyResult::Succeed
+        );
     }
 
     /// Test transaction sender calculation

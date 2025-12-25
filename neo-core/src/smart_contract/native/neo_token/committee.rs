@@ -36,15 +36,15 @@ impl NeoToken {
         fn stack_item_to_bytes(item: &VmStackItem) -> Option<Vec<u8>> {
             match item {
                 VmStackItem::ByteString(bytes) => Some(bytes.clone()),
-                VmStackItem::Buffer(buffer) => Some(buffer.data().to_vec()),
+                VmStackItem::Buffer(buffer) => Some(buffer.data()),
                 _ => None,
             }
         }
 
         fn decode_entry(entry: &VmStackItem) -> Result<Option<ECPoint>, String> {
             let elements: Vec<VmStackItem> = match entry {
-                VmStackItem::Struct(structure) => structure.items().to_vec(),
-                VmStackItem::Array(array) => array.items().to_vec(),
+                VmStackItem::Struct(structure) => structure.items(),
+                VmStackItem::Array(array) => array.items(),
                 _ => return Ok(None),
             };
 
@@ -62,7 +62,7 @@ impl NeoToken {
             VmStackItem::Array(array) => {
                 let mut committee = Vec::with_capacity(array.len());
                 for entry in array.items() {
-                    if let Some(point) = decode_entry(entry)? {
+                    if let Some(point) = decode_entry(&entry)? {
                         committee.push(point);
                     }
                 }
@@ -75,7 +75,7 @@ impl NeoToken {
             VmStackItem::Struct(structure) => {
                 let mut committee = Vec::with_capacity(structure.len());
                 for entry in structure.items() {
-                    if let Some(point) = decode_entry(entry)? {
+                    if let Some(point) = decode_entry(&entry)? {
                         committee.push(point);
                     }
                 }
@@ -121,15 +121,15 @@ impl NeoToken {
         fn stack_item_to_bytes(item: &StackItem) -> Option<Vec<u8>> {
             match item {
                 StackItem::ByteString(bytes) => Some(bytes.clone()),
-                StackItem::Buffer(buffer) => Some(buffer.data().to_vec()),
+                StackItem::Buffer(buffer) => Some(buffer.data()),
                 _ => None,
             }
         }
 
         fn decode_entry(entry: &StackItem) -> Result<Option<(ECPoint, BigInt)>, String> {
             let elements: Vec<StackItem> = match entry {
-                StackItem::Struct(structure) => structure.items().to_vec(),
-                StackItem::Array(array) => array.items().to_vec(),
+                StackItem::Struct(structure) => structure.items(),
+                StackItem::Array(array) => array.items(),
                 _ => return Ok(None),
             };
 
@@ -152,7 +152,7 @@ impl NeoToken {
             StackItem::Array(array) => {
                 let mut committee = Vec::with_capacity(array.len());
                 for entry in array.items() {
-                    if let Some(value) = decode_entry(entry)? {
+                    if let Some(value) = decode_entry(&entry)? {
                         committee.push(value);
                     }
                 }
@@ -161,7 +161,7 @@ impl NeoToken {
             StackItem::Struct(structure) => {
                 let mut committee = Vec::with_capacity(structure.len());
                 for entry in structure.items() {
-                    if let Some(value) = decode_entry(entry)? {
+                    if let Some(value) = decode_entry(&entry)? {
                         committee.push(value);
                     }
                 }

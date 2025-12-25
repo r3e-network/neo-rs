@@ -1,0 +1,327 @@
+use super::super::ConsensusService;
+use crate::context::ConsensusState;
+use crate::messages::{
+    ChangeViewMessage, CommitMessage, ConsensusPayload, PrepareResponseMessage, RecoveryMessage,
+};
+use crate::{ChangeViewReason, ConsensusError, ConsensusMessageType, ConsensusResult};
+use tracing::{debug, info, warn};
+
+impl ConsensusService {
+    /// Handles RecoveryRequest message
+    pub(in crate::service) fn on_recovery_request(
+        &mut self,
+        payload: &ConsensusPayload,
+    ) -> ConsensusResult<()> {
+        debug!(
+            block_index = self.context.block_index,
+            validator = payload.validator_index,
+            "Received RecoveryRequest"
+        );
+
+        if !self.should_send_recovery_response(payload.validator_index)? {
+            return Ok(());
+        }
+
+        // Build and send recovery message with current state
+        let recovery = RecoveryMessage::new(
+            self.context.block_index,
+            self.context.view_number,
+            self.my_index()?,
+        );
+
+        let payload =
+            self.create_payload(ConsensusMessageType::RecoveryMessage, recovery.serialize())?;
+        self.broadcast(payload)?;
+
+        Ok(())
+    }
+
+    /// Handles RecoveryMessage
+    pub(in crate::service) fn on_recovery_message(
+        &mut self,
+        payload: &ConsensusPayload,
+    ) -> ConsensusResult<()> {
+        // Verify the payload signature (security fix: matches C# DBFTPlugin)
+        let sign_data = self.dbft_sign_data(payload)?;
+        if !payload.witness.is_empty()
+            && !self.verify_signature(&sign_data, &payload.witness, payload.validator_index)
+        {
+            warn!(
+                validator = payload.validator_index,
+                "RecoveryMessage signature verification failed"
+            );
+            return Err(ConsensusError::signature_failed(
+                "RecoveryMessage signature invalid",
+            ));
+        }
+
+        debug!(
+            block_index = self.context.block_index,
+            validator = payload.validator_index,
+            "Received RecoveryMessage"
+        );
+
+        // Validate block index matches
+        if payload.block_index != self.context.block_index {
+            debug!(
+                expected = self.context.block_index,
+                received = payload.block_index,
+                "RecoveryMessage block index mismatch, ignoring"
+            );
+            return Ok(());
+        }
+
+        // Parse the recovery message
+        let recovery = RecoveryMessage::deserialize(
+            &payload.data,
+            payload.block_index,
+            payload.view_number,
+            payload.validator_index,
+        )?;
+
+        // Validate the recovery message
+        recovery.validate()?;
+
+        info!(
+            block_index = payload.block_index,
+            view_number = payload.view_number,
+            change_views = recovery.change_view_messages.len(),
+            preparations = recovery.preparation_messages.len(),
+            commits = recovery.commit_messages.len(),
+            has_prepare_request = recovery.prepare_request_message.is_some(),
+            "Applying recovery message state"
+        );
+
+        let message_view = payload.view_number;
+        let commit_sent = self
+            .context
+            .my_index
+            .and_then(|idx| self.context.commits.get(&idx))
+            .is_some();
+
+        if message_view > self.context.view_number {
+            if commit_sent {
+                return Ok(());
+            }
+
+            for cv in &recovery.change_view_messages {
+                if cv.validator_index as usize >= self.context.validator_count() {
+                    continue;
+                }
+                let msg = ChangeViewMessage::new(
+                    payload.block_index,
+                    cv.original_view_number,
+                    cv.validator_index,
+                    cv.timestamp,
+                    ChangeViewReason::Timeout,
+                );
+                let recovered = ConsensusPayload {
+                    network: self.network,
+                    block_index: payload.block_index,
+                    validator_index: cv.validator_index,
+                    view_number: cv.original_view_number,
+                    message_type: ConsensusMessageType::ChangeView,
+                    data: msg.serialize(),
+                    witness: cv.invocation_script.clone(),
+                };
+                self.reprocess_recovery_payload(recovered);
+            }
+
+            return Ok(());
+        }
+
+        if message_view == self.context.view_number && !commit_sent {
+            if !self.context.prepare_request_received {
+                if let Some(ref prep_req) = recovery.prepare_request_message {
+                    let primary_index = self.context.primary_index();
+                    if let Some(primary_prep) = recovery
+                        .preparation_messages
+                        .iter()
+                        .find(|p| p.validator_index == primary_index)
+                    {
+                        let recovered = ConsensusPayload {
+                            network: self.network,
+                            block_index: prep_req.block_index,
+                            validator_index: prep_req.validator_index,
+                            view_number: prep_req.view_number,
+                            message_type: ConsensusMessageType::PrepareRequest,
+                            data: prep_req.serialize(),
+                            witness: primary_prep.invocation_script.clone(),
+                        };
+                        self.reprocess_recovery_payload(recovered);
+                    }
+                }
+            }
+
+            if self.context.preparation_hash.is_none() {
+                if let Some(hash) = recovery.preparation_hash {
+                    self.context.preparation_hash = Some(hash);
+                }
+            }
+
+            let primary_index = self.context.primary_index();
+            let prep_hash = recovery.preparation_hash.or(self.context.preparation_hash);
+            if let Some(prep_hash) = prep_hash {
+                for prep in &recovery.preparation_messages {
+                    if prep.validator_index as usize >= self.context.validator_count() {
+                        continue;
+                    }
+                    if prep.validator_index == primary_index {
+                        continue;
+                    }
+
+                    let msg = PrepareResponseMessage::new(
+                        payload.block_index,
+                        message_view,
+                        prep.validator_index,
+                        prep_hash,
+                    );
+                    let recovered = ConsensusPayload {
+                        network: self.network,
+                        block_index: payload.block_index,
+                        validator_index: prep.validator_index,
+                        view_number: message_view,
+                        message_type: ConsensusMessageType::PrepareResponse,
+                        data: msg.serialize(),
+                        witness: prep.invocation_script.clone(),
+                    };
+                    self.reprocess_recovery_payload(recovered);
+                }
+            }
+        }
+
+        if message_view <= self.context.view_number {
+            for commit in &recovery.commit_messages {
+                if commit.validator_index as usize >= self.context.validator_count() {
+                    continue;
+                }
+                if commit.view_number != self.context.view_number {
+                    continue;
+                }
+                let msg = CommitMessage::new(
+                    payload.block_index,
+                    commit.view_number,
+                    commit.validator_index,
+                    commit.signature.clone(),
+                );
+                let recovered = ConsensusPayload {
+                    network: self.network,
+                    block_index: payload.block_index,
+                    validator_index: commit.validator_index,
+                    view_number: commit.view_number,
+                    message_type: ConsensusMessageType::Commit,
+                    data: msg.serialize(),
+                    witness: commit.invocation_script.clone(),
+                };
+                self.reprocess_recovery_payload(recovered);
+            }
+        }
+
+        // Check if we can now commit after applying recovery state
+        if self.context.has_enough_commits() && self.context.state != ConsensusState::Committed {
+            info!(
+                block_index = self.context.block_index,
+                commits = self.context.commits.len(),
+                "Recovery enabled block commit"
+            );
+            self.check_commits()?;
+        }
+        // Check if we can now send commit after applying recovery state
+        else if self.context.has_enough_prepare_responses()
+            && !self
+                .context
+                .commits
+                .contains_key(&self.context.my_index.unwrap_or(255))
+        {
+            if let Some(my_idx) = self.context.my_index {
+                info!(
+                    block_index = self.context.block_index,
+                    "Recovery enabled sending commit"
+                );
+                // Create and broadcast commit message
+                let block_hash = self.context.proposed_block_hash.unwrap_or_default();
+                let signature = self.sign_block_hash(&block_hash);
+
+                let commit = CommitMessage::new(
+                    self.context.block_index,
+                    self.context.view_number,
+                    my_idx,
+                    signature.clone(),
+                );
+
+                let payload =
+                    self.create_payload(ConsensusMessageType::Commit, commit.serialize())?;
+                self.broadcast(payload)?;
+
+                // Add our own commit
+                self.context.add_commit(my_idx, signature)?;
+                self.check_commits()?;
+            }
+        }
+
+        Ok(())
+    }
+
+    pub(in crate::service) fn reprocess_recovery_payload(&mut self, payload: ConsensusPayload) {
+        let result = match payload.message_type {
+            ConsensusMessageType::ChangeView => self.on_change_view(&payload),
+            ConsensusMessageType::PrepareRequest => self.on_prepare_request(&payload),
+            ConsensusMessageType::PrepareResponse => self.on_prepare_response(&payload),
+            ConsensusMessageType::Commit => self.on_commit(&payload),
+            _ => Ok(()),
+        };
+        if let Err(err) = result {
+            debug!(error = %err, msg_type = ?payload.message_type, "Ignored recovery payload");
+        }
+    }
+
+    /// Determines whether this node should respond with a RecoveryMessage.
+    ///
+    /// Mirrors C# DBFTPlugin behavior:
+    /// - If we've already sent a commit, always respond.
+    /// - Otherwise, only `f + 1` nodes respond, selected by validator index rotation.
+    pub(in crate::service) fn should_send_recovery_response(
+        &self,
+        requester_index: u8,
+    ) -> ConsensusResult<bool> {
+        let my_index = self.my_index()?;
+        if self.context.commits.contains_key(&my_index) {
+            return Ok(true);
+        }
+
+        let validators = self.context.validator_count();
+        if validators == 0 {
+            return Ok(false);
+        }
+
+        let allowed = self.context.f() + 1;
+        for offset in 1..=allowed {
+            let chosen = ((requester_index as usize + offset) % validators) as u8;
+            if chosen == my_index {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
+    }
+
+    pub(in crate::service) fn maybe_send_recovery_response(
+        &mut self,
+        requester_index: u8,
+    ) -> ConsensusResult<()> {
+        if !self.should_send_recovery_response(requester_index)? {
+            return Ok(());
+        }
+
+        let recovery = RecoveryMessage::new(
+            self.context.block_index,
+            self.context.view_number,
+            self.my_index()?,
+        );
+
+        let payload =
+            self.create_payload(ConsensusMessageType::RecoveryMessage, recovery.serialize())?;
+        self.broadcast(payload)?;
+        Ok(())
+    }
+}

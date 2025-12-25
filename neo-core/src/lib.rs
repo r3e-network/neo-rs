@@ -144,7 +144,10 @@ pub mod tokens_tracker;
 
 // Re-exports for convenient access
 pub use big_decimal::BigDecimal;
-pub use builders::{SignerBuilder, TransactionBuilder, WitnessBuilder};
+pub use builders::{
+    AndConditionBuilder, OrConditionBuilder, SignerBuilder, TransactionAttributesBuilder,
+    TransactionBuilder, WitnessBuilder, WitnessConditionBuilder, WitnessRuleBuilder,
+};
 pub use contains_transaction_type::ContainsTransactionType;
 pub use cryptography::{ECCurve, ECPoint};
 pub use error::{CoreError, CoreResult, Result};

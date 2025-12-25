@@ -392,7 +392,10 @@ fn maybe_open_wallet(
     }
 
     let settings = Arc::new(system.settings().clone());
-    let wallet = Nep6Wallet::from_file(&wallet_path, &password, settings)
+    let wallet_path_str = wallet_path
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!("wallet path is not valid UTF-8"))?;
+    let wallet = Nep6Wallet::from_file(wallet_path_str, &password, settings)
         .map_err(|err| anyhow::anyhow!(err.to_string()))
         .context("failed to open wallet")?;
     let wallet_arc: Arc<dyn CoreWallet> = Arc::new(wallet);

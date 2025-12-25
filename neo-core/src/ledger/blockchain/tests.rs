@@ -14,14 +14,31 @@ mod tests {
     use crate::neo_io::BinaryWriter;
     use crate::network::p2p::payloads::extensible_payload::ExtensiblePayload;
     use crate::network::p2p::payloads::witness::Witness as PayloadWitness;
+    use crate::network::p2p::{
+        helper::get_sign_data_vec,
+        payloads::{
+            block::Block as PayloadBlock,
+            conflicts::Conflicts,
+            header::Header,
+            signer::Signer,
+            transaction::Transaction,
+            transaction_attribute::TransactionAttribute,
+            witness::Witness,
+            InventoryType,
+        },
+    };
     use crate::persistence::StoreCache;
+    use crate::smart_contract::native::fungible_token::PREFIX_ACCOUNT;
+    use crate::smart_contract::native::gas_token::GasToken;
     use crate::smart_contract::native::{role_management::RoleManagement, NativeContract, Role};
     use crate::smart_contract::Contract;
     use crate::smart_contract::{StorageItem, StorageKey};
     use crate::state_service::state_store::StateServiceSettings;
     use crate::wallets::KeyPair;
     use crate::{neo_io::Serializable, NeoSystem, ProtocolSettings};
+    use crate::WitnessScope;
     use neo_vm::op_code::OpCode;
+    use num_bigint::BigInt;
     use tokio::time::{sleep, timeout, Duration};
 
     fn sign_extensible_payload(
@@ -42,6 +59,47 @@ mod tests {
         invocation.extend_from_slice(&signature);
         payload.witness =
             PayloadWitness::new_with_scripts(invocation, keypair.get_verification_script());
+    }
+
+    fn build_signed_transaction(settings: &ProtocolSettings, keypair: &KeyPair) -> Transaction {
+        build_signed_transaction_with_attrs(settings, keypair, 1, Vec::new())
+    }
+
+    fn build_signed_transaction_with_attrs(
+        settings: &ProtocolSettings,
+        keypair: &KeyPair,
+        valid_until_block: u32,
+        attributes: Vec<TransactionAttribute>,
+    ) -> Transaction {
+        let mut tx = Transaction::new();
+        tx.set_network_fee(1_0000_0000);
+        tx.set_valid_until_block(valid_until_block);
+        tx.set_script(vec![OpCode::PUSH1 as u8]);
+        tx.set_signers(vec![Signer::new(
+            keypair.get_script_hash(),
+            WitnessScope::GLOBAL,
+        )]);
+        tx.set_attributes(attributes);
+
+        let sign_data = get_sign_data_vec(&tx, settings.network).expect("sign data");
+        let signature = keypair.sign(&sign_data).expect("sign");
+        let mut invocation = Vec::with_capacity(signature.len() + 2);
+        invocation.push(OpCode::PUSHDATA1 as u8);
+        invocation.push(signature.len() as u8);
+        invocation.extend_from_slice(&signature);
+        tx.set_witnesses(vec![Witness::new_with_scripts(
+            invocation,
+            keypair.get_verification_script(),
+        )]);
+        tx
+    }
+
+    fn seed_gas_balance(store: &mut StoreCache, account: UInt160, amount: i64) {
+        let key = StorageKey::create_with_uint160(GasToken::new().id(), PREFIX_ACCOUNT, &account);
+        store
+            .data_cache()
+            .update(key, StorageItem::from_bigint(BigInt::from(amount)));
+        store.commit();
     }
 
     #[test]
@@ -293,6 +351,85 @@ mod tests {
         sleep(Duration::from_millis(100)).await;
     }
 
+    #[test]
+    fn relay_accepts_valid_transaction_then_reports_already_in_pool() {
+        let settings = ProtocolSettings::default();
+        let system = NeoSystem::new(settings.clone(), None, None).expect("neo system");
+        let keypair = KeyPair::generate().expect("keypair");
+        let account = keypair.get_script_hash();
+
+        let mut store_cache = StoreCache::new_from_store(system.store(), false);
+        seed_gas_balance(&mut store_cache, account, 50_0000_0000);
+
+        let mut blockchain = Blockchain::new(system.ledger_context());
+        blockchain.system_context = Some(system.context());
+
+        let tx = build_signed_transaction(&settings, &keypair);
+        assert_eq!(blockchain.on_new_transaction(&tx), VerifyResult::Succeed);
+        assert_eq!(blockchain.on_new_transaction(&tx), VerifyResult::AlreadyInPool);
+    }
+
+    #[test]
+    fn relay_rejects_mismatched_signers_and_witnesses() {
+        let settings = ProtocolSettings::default();
+        let system = NeoSystem::new(settings.clone(), None, None).expect("neo system");
+        let keypair = KeyPair::generate().expect("keypair");
+
+        let mut blockchain = Blockchain::new(system.ledger_context());
+        blockchain.system_context = Some(system.context());
+
+        let mut tx = build_signed_transaction(&settings, &keypair);
+        tx.set_signers(Vec::new());
+
+        assert_eq!(blockchain.on_new_transaction(&tx), VerifyResult::Invalid);
+    }
+
+    #[test]
+    fn relay_rejects_on_chain_conflict_with_same_sender() {
+        let settings = ProtocolSettings::default();
+        let system = NeoSystem::new(settings.clone(), None, None).expect("neo system");
+        let keypair_a = KeyPair::generate().expect("keypair a");
+        let keypair_b = KeyPair::generate().expect("keypair b");
+
+        let account_a = keypair_a.get_script_hash();
+        let account_b = keypair_b.get_script_hash();
+
+        let mut store_cache = StoreCache::new_from_store(system.store(), false);
+        seed_gas_balance(&mut store_cache, account_a, 50_0000_0000);
+        seed_gas_balance(&mut store_cache, account_b, 50_0000_0000);
+
+        let tx2 = build_signed_transaction_with_attrs(&settings, &keypair_a, 10, Vec::new());
+        let tx3 = build_signed_transaction_with_attrs(&settings, &keypair_b, 10, Vec::new());
+        let tx1 = build_signed_transaction_with_attrs(
+            &settings,
+            &keypair_a,
+            10,
+            vec![
+                TransactionAttribute::Conflicts(Conflicts::new(tx2.hash())),
+                TransactionAttribute::Conflicts(Conflicts::new(tx3.hash())),
+            ],
+        );
+
+        let mut block = PayloadBlock::new();
+        let mut header = Header::new();
+        header.set_index(5);
+        header.set_prev_hash(UInt256::zero());
+        header.set_merkle_root(UInt256::zero());
+        header.set_next_consensus(UInt160::zero());
+        header.set_timestamp(0);
+        header.witness = Witness::new();
+        block.header = header;
+        block.transactions = vec![tx1];
+
+        system.persist_block(block).expect("persist block");
+
+        let mut blockchain = Blockchain::new(system.ledger_context());
+        blockchain.system_context = Some(system.context());
+
+        assert_eq!(blockchain.on_new_transaction(&tx2), VerifyResult::HasConflicts);
+        assert_eq!(blockchain.on_new_transaction(&tx3), VerifyResult::Succeed);
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     async fn import_rejects_out_of_order_blocks() {
         use crate::ledger::blockchain::{BlockchainCommand, Import};
@@ -320,5 +457,113 @@ mod tests {
         // Verify height didn't change
         let height = system.ledger_context().current_height();
         assert_eq!(height, 0);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn import_rejects_invalid_block_when_verify_enabled() {
+        use crate::ledger::blockchain::{BlockchainCommand, Import};
+        use crate::UInt256;
+
+        let settings = ProtocolSettings::mainnet();
+        let system = NeoSystem::new(settings.clone(), None, None).expect("NeoSystem::new");
+        let blockchain = system.blockchain_actor();
+
+        let mut block = system.genesis_block().as_ref().clone();
+        block.header.set_index(1);
+        let invalid_prev =
+            UInt256::from_bytes(&[1u8; 32]).expect("construct invalid prev hash");
+        block.header.set_prev_hash(invalid_prev);
+
+        let import = Import {
+            blocks: vec![block],
+            verify: true,
+        };
+
+        blockchain
+            .tell(BlockchainCommand::Import(import))
+            .expect("send failed");
+
+        sleep(Duration::from_millis(100)).await;
+
+        let height = system.ledger_context().current_height();
+        assert_eq!(height, 0);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn reverify_accepts_raw_transaction_payload() {
+        use crate::ledger::blockchain::{
+            BlockchainCommand, InventoryPayload, Reverify, ReverifyItem,
+        };
+
+        let settings = ProtocolSettings::mainnet();
+        let system = NeoSystem::new(settings.clone(), None, None).expect("NeoSystem::new");
+        let keypair = KeyPair::generate().expect("keypair");
+
+        let tx = build_signed_transaction(&settings, &keypair);
+        let mut writer = BinaryWriter::new();
+        tx.serialize(&mut writer).expect("serialize tx");
+        let payload = writer.into_bytes();
+
+        // Sanity check: raw payload deserializes before handing to the actor.
+        assert!(Blockchain::deserialize_inventory::<Transaction>(&payload).is_some());
+
+        let item = ReverifyItem {
+            payload: InventoryPayload::Raw(InventoryType::Transaction, payload),
+            block_index: None,
+        };
+        let reverify = Reverify {
+            inventories: vec![item],
+        };
+
+        let blockchain = system.blockchain_actor();
+        blockchain
+            .tell(BlockchainCommand::Reverify(reverify))
+            .expect("send failed");
+
+        sleep(Duration::from_millis(100)).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn reverify_does_not_schedule_idle_when_header_backlog_exists() {
+        use crate::ledger::blockchain::{BlockchainCommand, Reverify};
+        use crate::network::p2p::payloads::Header;
+
+        let settings = ProtocolSettings::mainnet();
+        let system = NeoSystem::new(settings.clone(), None, None).expect("NeoSystem::new");
+        let context = system.context();
+
+        timeout(Duration::from_secs(2), async {
+            loop {
+                if system.ledger_context().block_hash_at(0).is_some() {
+                    break;
+                }
+                sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("genesis block should be persisted before reverify test");
+
+        // Seed a header backlog so reverify should avoid scheduling idle.
+        let mut header = Header::new();
+        header.set_index(1);
+        context.header_cache().add(header);
+
+        let memory_pool = context.memory_pool_handle();
+        memory_pool
+            .lock()
+            .insert_unverified_for_test(Transaction::new());
+
+        let reverify = Reverify {
+            inventories: Vec::new(),
+        };
+
+        let blockchain = system.blockchain_actor();
+        blockchain
+            .tell(BlockchainCommand::Reverify(reverify))
+            .expect("send failed");
+
+        sleep(Duration::from_millis(200)).await;
+
+        assert_eq!(memory_pool.lock().unverified_count(), 1);
     }
 }

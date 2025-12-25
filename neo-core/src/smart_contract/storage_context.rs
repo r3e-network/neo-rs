@@ -79,7 +79,10 @@ impl StorageContext {
     pub fn from_stack_item(item: &StackItem) -> Result<Self, String> {
         match item {
             StackItem::ByteString(bytes) => Self::from_bytes(bytes),
-            StackItem::Buffer(buffer) => Self::from_bytes(buffer.data()),
+            StackItem::Buffer(buffer) => {
+                let data = buffer.data();
+                Self::from_bytes(&data)
+            }
             _ => Err("StorageContext stack representation must be a byte array".to_string()),
         }
     }

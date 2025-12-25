@@ -72,8 +72,9 @@ impl TransactionManagerFactory {
         signers: &[Signer],
         attributes: &[TransactionAttribute],
     ) -> Result<TransactionManager, Box<dyn std::error::Error>> {
-        // Get current block count
+        // Get current block count (RPC returns height + 1)
         let block_count = self.rpc_client.get_block_count().await?;
+        let current_height = block_count.saturating_sub(1);
 
         // Generate random nonce
         let mut rng = rand::thread_rng();
@@ -85,11 +86,13 @@ impl TransactionManagerFactory {
         tx.set_script(script.to_vec());
         tx.set_signers(signers.to_vec());
         tx.set_valid_until_block(
-            block_count - 1
-                + self
-                    .rpc_client
-                    .protocol_settings
-                    .max_valid_until_block_increment,
+            current_height
+                .saturating_sub(1)
+                .saturating_add(
+                    self.rpc_client
+                        .protocol_settings
+                        .max_valid_until_block_increment,
+                ),
         );
         tx.set_system_fee(system_fee);
         tx.set_attributes(attributes.to_vec());

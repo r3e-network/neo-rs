@@ -25,7 +25,7 @@ use std::path::{Path, PathBuf};
 
 /// Root of the checked-in C# Neo VM JSON tests.
 pub fn csharp_vm_tests_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../neo_csharp/tests/Neo.VM.Tests/Tests")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../neo_csharp/tests/Neo.VM.Tests/Tests")
 }
 
 /// Resolves a test directory relative to the C# Neo VM test tree.

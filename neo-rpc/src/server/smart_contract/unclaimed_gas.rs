@@ -33,9 +33,10 @@ pub(super) fn get_unclaimed_gas(
     let unclaimed = neo
         .unclaimed_gas(&store, &script_hash, height)
         .map_err(|err| internal_error(err.to_string()))?;
+    let address = WalletHelper::to_address(&script_hash, version);
 
     Ok(json!({
-        "address": script_hash.to_string(),
+        "address": address,
         "unclaimed": BigDecimal::new(unclaimed, neo.decimals()).to_string()
     }))
 }

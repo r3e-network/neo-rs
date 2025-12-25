@@ -41,6 +41,7 @@ impl ContractManagement {
         let context = engine.get_native_storage_context(&self.hash)?;
         engine.delete_storage_item(&context, &Self::contract_storage_key(&contract_hash))?;
         engine.delete_storage_item(&context, &Self::contract_id_storage_key(contract.id))?;
+        engine.delete_storage_item(&context, &Self::contract_id_storage_key_legacy(contract.id))?;
         engine.put_storage_item(&context, &Self::contract_count_key(), &contract_count_bytes)?;
         engine.put_storage_item(&context, &Self::next_id_key(), &next_id_bytes)?;
         engine.put_storage_item(

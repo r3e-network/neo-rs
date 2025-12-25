@@ -683,6 +683,19 @@ dependencies = [
 
 [[package]]
 name = "dashmap"
+version = "5.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "978747c1d849a7d2ee5e8adc0159961c48fb7e5db2f06af6723b80123bb53856"
+dependencies = [
+ "cfg-if",
+ "hashbrown 0.14.5",
+ "lock_api",
+ "once_cell",
+ "parking_lot_core",
+]
+
+[[package]]
+name = "dashmap"
 version = "6.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5041cc499144891f3790297212f32a74fb938e5136a14943f338ef9e0ae276cf"
@@ -1693,9 +1706,9 @@ dependencies = [
 
 [[package]]
 name = "libredox"
-version = "0.1.11"
+version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df15f6eac291ed1cf25865b1ee60399f57e7c227e7f51bdbd4c5270396a9ed50"
+checksum = "416f7e718bdb06000964960ffa43b4335ad4012ae8b99060261aa4a8088d5ccb"
 dependencies = [
  "bitflags 2.10.0",
  "libc",
@@ -2210,6 +2223,8 @@ dependencies = [
  "base64 0.21.7",
  "bs58",
  "bytes",
+ "dashmap 5.5.3",
+ "futures",
  "hex",
  "hyper 0.14.32",
  "mockito",
@@ -2822,7 +2837,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "769be10c5d80be6ac864fe6920316193e2add9536c50bf73eceffcd16846566d"
 dependencies = [
  "async-trait",
- "dashmap",
+ "dashmap 6.1.0",
  "futures",
  "once_cell",
  "strum",

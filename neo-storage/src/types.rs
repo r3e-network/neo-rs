@@ -132,8 +132,20 @@ impl StorageKey {
         Self::new(id, key)
     }
 
+    /// Creates a storage key with prefix and u32 value (big endian).
+    pub fn create_with_uint32(id: i32, prefix: u8, big_endian: u32) -> Self {
+        let key = Self::storage_key(prefix, &big_endian.to_be_bytes());
+        Self::new(id, key)
+    }
+
     /// Creates a storage key with prefix and i64 value (big endian).
     pub fn create_with_int64(id: i32, prefix: u8, big_endian: i64) -> Self {
+        let key = Self::storage_key(prefix, &big_endian.to_be_bytes());
+        Self::new(id, key)
+    }
+
+    /// Creates a storage key with prefix and u64 value (big endian).
+    pub fn create_with_uint64(id: i32, prefix: u8, big_endian: u64) -> Self {
         let key = Self::storage_key(prefix, &big_endian.to_be_bytes());
         Self::new(id, key)
     }

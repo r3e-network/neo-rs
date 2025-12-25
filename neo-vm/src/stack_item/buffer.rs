@@ -4,14 +4,21 @@ use crate::stack_item::stack_item_type::StackItemType;
 use crate::stack_item::stack_item_vertex::next_stack_item_id;
 use crate::{VmError, VmResult};
 use num_bigint::BigInt;
+use parking_lot::Mutex;
+use std::sync::Arc;
 
 /// Represents a mutable byte buffer in the VM.
 ///
 /// In C# Neo, Buffer uses reference equality (ReferenceEquals), meaning two Buffer
 /// instances are only equal if they are the same instance. We achieve this in Rust
 /// by assigning each Buffer a unique `id` at creation and comparing only the `id`.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Buffer {
+    inner: Arc<Mutex<BufferInner>>,
+}
+
+#[derive(Debug)]
+struct BufferInner {
     data: Vec<u8>,
     id: usize,
 }
@@ -19,7 +26,7 @@ pub struct Buffer {
 impl PartialEq for Buffer {
     /// Compares Buffers by identity (id), matching C# ReferenceEquals semantics.
     fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
+        self.id() == other.id()
     }
 }
 
@@ -29,29 +36,32 @@ impl Buffer {
     /// Creates a new buffer with the specified data.
     pub fn new(data: Vec<u8>) -> Self {
         Self {
-            data,
-            id: next_stack_item_id(),
+            inner: Arc::new(Mutex::new(BufferInner {
+                data,
+                id: next_stack_item_id(),
+            })),
         }
     }
 
     /// Returns the identity assigned to this buffer.
     pub fn id(&self) -> usize {
-        self.id
+        self.inner.lock().id
     }
 
     /// Gets the buffer data.
-    pub fn data(&self) -> &[u8] {
-        &self.data
+    pub fn data(&self) -> Vec<u8> {
+        self.inner.lock().data.clone()
     }
 
     /// Gets a mutable reference to the buffer data.
-    pub fn data_mut(&mut self) -> &mut Vec<u8> {
-        &mut self.data
+    pub(crate) fn with_data_mut<R>(&self, f: impl FnOnce(&mut Vec<u8>) -> R) -> R {
+        let mut inner = self.inner.lock();
+        f(&mut inner.data)
     }
 
     /// Returns a stable pointer to the underlying storage for identity tracking.
     pub fn as_ptr(&self) -> *const u8 {
-        self.data.as_ptr()
+        self.inner.lock().data.as_ptr()
     }
 
     /// Gets the type of the stack item.
@@ -61,41 +71,45 @@ impl Buffer {
 
     /// Gets the length of the buffer.
     pub fn len(&self) -> usize {
-        self.data.len()
+        self.inner.lock().data.len()
     }
 
     /// Returns true if the buffer is empty.
     pub fn is_empty(&self) -> bool {
-        self.data.is_empty()
+        self.inner.lock().data.is_empty()
     }
 
     /// Gets the byte at the specified index.
     pub fn get(&self, index: usize) -> VmResult<u8> {
-        self.data
+        let inner = self.inner.lock();
+        inner
+            .data
             .get(index)
             .copied()
             .ok_or_else(|| VmError::invalid_operation_msg(format!("Index out of range: {index}")))
     }
 
     /// Sets the byte at the specified index.
-    pub fn set(&mut self, index: usize, value: u8) -> VmResult<()> {
-        if index >= self.data.len() {
+    pub fn set(&self, index: usize, value: u8) -> VmResult<()> {
+        let mut inner = self.inner.lock();
+        if index >= inner.data.len() {
             return Err(VmError::invalid_operation_msg(format!(
                 "Index out of range: {index}"
             )));
         }
 
-        self.data[index] = value;
+        inner.data[index] = value;
         Ok(())
     }
 
     /// Converts the buffer to an integer.
     pub fn to_integer(&self) -> VmResult<BigInt> {
-        if self.data.is_empty() {
+        let data = self.data();
+        if data.is_empty() {
             return Ok(BigInt::from(0));
         }
 
-        let bytes = &self.data;
+        let bytes = &data;
         let is_negative = (bytes[bytes.len() - 1] & 0x80) != 0;
 
         if is_negative {
@@ -111,28 +125,22 @@ impl Buffer {
 
     /// Converts the buffer to a boolean.
     pub fn to_boolean(&self) -> bool {
-        self.data.iter().any(|&byte| byte != 0)
+        self.inner.lock().data.iter().any(|&byte| byte != 0)
     }
 
     /// Creates a deep copy of the buffer.
     pub fn deep_copy(&self) -> Self {
-        Self::new(self.data.clone())
+        Self::new(self.data())
     }
 
     /// Appends the given bytes to the buffer.
-    pub fn extend_from_slice(&mut self, slice: &[u8]) {
-        self.data.extend_from_slice(slice);
+    pub fn extend_from_slice(&self, slice: &[u8]) {
+        self.with_data_mut(|data| data.extend_from_slice(slice));
     }
 
     /// Consumes the buffer and returns the underlying bytes.
     pub fn into_vec(self) -> Vec<u8> {
-        self.data
-    }
-}
-
-impl Clone for Buffer {
-    fn clone(&self) -> Self {
-        Self::new(self.data.clone())
+        self.data()
     }
 }
 
@@ -144,6 +152,6 @@ impl PartialOrd for Buffer {
 
 impl Ord for Buffer {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.data.cmp(&other.data)
+        self.data().cmp(&other.data())
     }
 }

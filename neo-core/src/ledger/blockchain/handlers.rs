@@ -36,10 +36,16 @@ impl Blockchain {
         }
 
         if let Some(context) = &self.system_context {
-            context
-                .memory_pool()
-                .lock()
-                .update_pool_for_block_persisted(&block);
+            let store_cache = context.store_cache();
+            let snapshot = store_cache.data_cache();
+            let settings = context.settings();
+            let header_backlog_present = context.header_cache().count() > 0;
+            context.memory_pool().lock().update_pool_for_block_persisted(
+                &block,
+                snapshot,
+                settings.as_ref(),
+                header_backlog_present,
+            );
         }
 
         if let Some(context) = &self.system_context {
@@ -207,80 +213,44 @@ impl Blockchain {
 
         for item in reverify.inventories {
             match item.payload {
-                InventoryPayload::Block(block) => {
-                    if let Err(error) = self.handle_block_inventory(*block, false, ctx).await {
-                        tracing::debug!(
-                            target: "neo",
-                            %error,
-                            "failed to reverify block inventory"
-                        );
+                InventoryPayload::Raw(inventory_type, payload) => {
+                    let cache_key = InventoryCacheKey::new(inventory_type, &payload);
+                    if let Some(cached) = self.inventory_cache_get(&cache_key).await {
+                        self.handle_reverify_payload(cached, ctx).await;
+                        continue;
                     }
-                }
-                InventoryPayload::Transaction(tx) => {
-                    let _ = self.on_new_transaction(&tx);
-                }
-                InventoryPayload::Extensible(payload) => {
-                    if let Err(error) = self
-                        .handle_extensible_inventory(*payload, false, ctx)
-                        .await
-                    {
-                        tracing::debug!(
-                            target: "neo",
-                            %error,
-                            "failed to reverify extensible payload"
-                        );
-                    }
-                }
-                InventoryPayload::Raw(inventory_type, payload) => match inventory_type {
-                    InventoryType::Block => {
-                        if let Some(block) = Self::deserialize_inventory::<Block>(&payload) {
-                            if let Err(error) = self.handle_block_inventory(block, false, ctx).await
-                            {
-                                tracing::debug!(
-                                    target: "neo",
-                                    %error,
-                                    "failed to reverify block inventory"
-                                );
-                            }
-                        } else {
-                            tracing::debug!(
-                                target: "neo",
-                                "failed to deserialize block payload during reverify"
-                            );
+
+                    let decoded = match inventory_type {
+                        InventoryType::Block => {
+                            Self::deserialize_inventory::<Block>(&payload)
+                                .map(|block| InventoryPayload::Block(Box::new(block)))
                         }
-                    }
-                    InventoryType::Transaction => {
-                        if let Some(tx) = Self::deserialize_inventory::<Transaction>(&payload) {
-                            let _ = self.on_new_transaction(&tx);
-                        } else {
-                            tracing::debug!(
-                                target: "neo",
-                                "failed to deserialize transaction payload during reverify"
-                            );
+                        InventoryType::Transaction => {
+                            Self::deserialize_inventory::<Transaction>(&payload)
+                                .map(|tx| InventoryPayload::Transaction(Box::new(tx)))
                         }
-                    }
-                    InventoryType::Consensus | InventoryType::Extensible => {
-                        if let Some(payload) =
+                        InventoryType::Consensus | InventoryType::Extensible => {
                             Self::deserialize_inventory::<ExtensiblePayload>(&payload)
-                        {
-                            if let Err(error) =
-                                self.handle_extensible_inventory(payload, false, ctx).await
-                            {
-                                tracing::debug!(
-                                    target: "neo",
-                                    %error,
-                                    "failed to reverify extensible payload"
-                                );
-                            }
-                        } else {
-                            tracing::debug!(
-                                target: "neo",
-                                "failed to deserialize extensible payload during reverify"
-                            );
+                                .map(|payload| InventoryPayload::Extensible(Box::new(payload)))
                         }
+                    };
+
+                    if let Some(payload) = decoded {
+                        self.inventory_cache_insert(cache_key, payload.clone())
+                            .await;
+                        self.handle_reverify_payload(payload, ctx).await;
+                    } else {
+                        tracing::debug!(
+                            target: "neo",
+                            inventory_type = ?inventory_type,
+                            "failed to deserialize payload during reverify"
+                        );
                     }
-                },
-            }
+                }
+                payload => {
+                    self.handle_reverify_payload(payload, ctx).await;
+                }
+            };
         }
 
         if let Some(context) = &self.system_context {
@@ -308,6 +278,33 @@ impl Blockchain {
                     );
                 }
             }
+        }
+    }
+
+    async fn handle_reverify_payload(&self, payload: InventoryPayload, ctx: &ActorContext) {
+        match payload {
+            InventoryPayload::Block(block) => {
+                if let Err(error) = self.handle_block_inventory(*block, false, ctx).await {
+                    tracing::debug!(
+                        target: "neo",
+                        %error,
+                        "failed to reverify block inventory"
+                    );
+                }
+            }
+            InventoryPayload::Transaction(tx) => {
+                let _ = self.on_new_transaction(&tx);
+            }
+            InventoryPayload::Extensible(payload) => {
+                if let Err(error) = self.handle_extensible_inventory(*payload, false, ctx).await {
+                    tracing::debug!(
+                        target: "neo",
+                        %error,
+                        "failed to reverify extensible payload"
+                    );
+                }
+            }
+            InventoryPayload::Raw(_, _) => {}
         }
     }
 

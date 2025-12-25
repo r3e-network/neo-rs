@@ -5,10 +5,6 @@ use crate::smart_contract::ContractParameterType;
 use crate::{UInt160, UInt256};
 use base64::{engine::general_purpose, Engine as _};
 use num_bigint::BigInt;
-use p256::{
-    elliptic_curve::{group::prime::PrimeCurveAffine, sec1::ToEncodedPoint},
-    AffinePoint as P256AffinePoint,
-};
 
 /// Represents a parameter of a contract method (matches C# ContractParameter)
 #[derive(Clone, Debug)]
@@ -41,25 +37,10 @@ pub enum ContractParameterValue {
 impl ContractParameter {
     /// Initializes a new instance
     pub fn new(param_type: ContractParameterType) -> Self {
-        let value = match param_type {
-            ContractParameterType::Any => ContractParameterValue::Any,
-            ContractParameterType::Signature => ContractParameterValue::Signature(vec![0u8; 64]),
-            ContractParameterType::Boolean => ContractParameterValue::Boolean(false),
-            ContractParameterType::Integer => ContractParameterValue::Integer(BigInt::from(0)),
-            ContractParameterType::Hash160 => ContractParameterValue::Hash160(UInt160::default()),
-            ContractParameterType::Hash256 => ContractParameterValue::Hash256(UInt256::default()),
-            ContractParameterType::ByteArray => ContractParameterValue::ByteArray(Vec::new()),
-            ContractParameterType::PublicKey => {
-                ContractParameterValue::PublicKey(Self::default_public_key())
-            }
-            ContractParameterType::String => ContractParameterValue::String(String::new()),
-            ContractParameterType::Array => ContractParameterValue::Array(Vec::new()),
-            ContractParameterType::Map => ContractParameterValue::Map(Vec::new()),
-            ContractParameterType::InteropInterface => ContractParameterValue::InteropInterface,
-            ContractParameterType::Void => ContractParameterValue::Void,
-        };
-
-        Self { param_type, value }
+        Self {
+            param_type,
+            value: ContractParameterValue::Any,
+        }
     }
 
     /// Creates with a specific value
@@ -117,12 +98,6 @@ impl ContractParameter {
         };
 
         Ok(())
-    }
-
-    fn default_public_key() -> ECPoint {
-        let generator = P256AffinePoint::generator().to_encoded_point(true);
-        ECPoint::from_bytes(generator.as_bytes())
-            .expect("secp256r1 generator encoding must be valid")
     }
 
     /// Converts to JSON representation

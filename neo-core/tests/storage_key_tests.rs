@@ -1,6 +1,7 @@
 use neo_core::smart_contract::key_builder::KeyBuilder;
 use neo_core::smart_contract::storage_key::StorageKey;
-use neo_core::{UInt160, UInt256};
+use neo_core::{ECCurve, ECPoint, UInt160, UInt256};
+use hex::decode;
 
 fn sample_uint160() -> UInt160 {
     UInt160::from("2d3b96ae1bcc5a585e075e3b81920210dec16302")
@@ -58,6 +59,16 @@ fn storage_key_create_variants_match_key_builder() {
             .to_array()
     );
 
+    let point_bytes = decode("03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c")
+        .expect("hex");
+    let point = ECPoint::decode(&point_bytes, ECCurve::secp256r1()).expect("valid point");
+    let mut builder = KeyBuilder::new_with_default(id, prefix);
+    builder.add_ecpoint(&point);
+    assert_eq!(
+        builder.to_bytes(),
+        StorageKey::create_with_bytes(id, prefix, point.as_bytes()).to_array()
+    );
+
     let mut builder = KeyBuilder::new_with_default(id, prefix);
     builder.add(&3i32.to_be_bytes());
     assert_eq!(
@@ -66,10 +77,24 @@ fn storage_key_create_variants_match_key_builder() {
     );
 
     let mut builder = KeyBuilder::new_with_default(id, prefix);
+    builder.add(&3u32.to_be_bytes());
+    assert_eq!(
+        builder.to_bytes(),
+        StorageKey::create_with_uint32(id, prefix, 3).to_array()
+    );
+
+    let mut builder = KeyBuilder::new_with_default(id, prefix);
     builder.add(&3i64.to_be_bytes());
     assert_eq!(
         builder.to_bytes(),
         StorageKey::create_with_int64(id, prefix, 3).to_array()
+    );
+
+    let mut builder = KeyBuilder::new_with_default(id, prefix);
+    builder.add(&3u64.to_be_bytes());
+    assert_eq!(
+        builder.to_bytes(),
+        StorageKey::create_with_uint64(id, prefix, 3).to_array()
     );
 }
 

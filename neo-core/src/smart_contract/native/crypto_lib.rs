@@ -3,18 +3,24 @@
 //! Provides cryptographic functions for the Neo blockchain.
 //! Matches the C# Neo.SmartContract.Native.CryptoLib contract.
 
-use crate::cryptography::ECCurve;
-use crate::cryptography::{Crypto, HashAlgorithm};
+use crate::cryptography::crypto_utils::murmur::murmur32;
+use crate::cryptography::{Crypto, Ed25519Crypto, HashAlgorithm, NamedCurveHash};
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
+use crate::hardfork::Hardfork;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::native::{NativeContract, NativeMethod};
 use crate::smart_contract::ContractParameterType;
 use crate::UInt160;
+use num_bigint::BigInt;
+use num_traits::ToPrimitive;
 use std::any::Any;
 
 // BLS12-381 support using blst crate
-use blst::{blst_fp12, blst_p1, blst_p1_affine, blst_p2, blst_p2_affine, blst_scalar, BLST_ERROR};
+use blst::{
+    blst_fp, blst_fp12, blst_p1, blst_p1_affine, blst_p2, blst_p2_affine, blst_scalar,
+    BLST_ERROR,
+};
 
 pub struct CryptoLib {
     id: i32,
@@ -36,6 +42,16 @@ impl CryptoLib {
         let methods = vec![
             // Hash functions
             NativeMethod::safe(
+                "recoverSecp256K1".to_string(),
+                1 << 15,
+                vec![
+                    ContractParameterType::ByteArray,
+                    ContractParameterType::ByteArray,
+                ],
+                ContractParameterType::ByteArray,
+            )
+            .with_active_in(Hardfork::HfEchidna),
+            NativeMethod::safe(
                 "sha256".to_string(),
                 1 << 15,
                 vec![ContractParameterType::ByteArray],
@@ -47,6 +63,19 @@ impl CryptoLib {
                 vec![ContractParameterType::ByteArray],
                 ContractParameterType::ByteArray,
             ),
+            NativeMethod::safe(
+                "murmur32".to_string(),
+                1 << 13,
+                vec![ContractParameterType::ByteArray, ContractParameterType::Integer],
+                ContractParameterType::ByteArray,
+            ),
+            NativeMethod::safe(
+                "keccak256".to_string(),
+                1 << 15,
+                vec![ContractParameterType::ByteArray],
+                ContractParameterType::ByteArray,
+            )
+            .with_active_in(Hardfork::HfCockatrice),
             // ECDSA functions
             NativeMethod::safe(
                 "verifyWithECDsa".to_string(),
@@ -55,11 +84,25 @@ impl CryptoLib {
                     ContractParameterType::ByteArray,
                     ContractParameterType::ByteArray,
                     ContractParameterType::ByteArray,
+                    ContractParameterType::Integer,
                 ],
                 ContractParameterType::Boolean,
-            ),
+            )
+            .with_deprecated_in(Hardfork::HfCockatrice),
             NativeMethod::safe(
-                "verifyWithECDsaSecp256k1".to_string(),
+                "verifyWithECDsa".to_string(),
+                1 << 15,
+                vec![
+                    ContractParameterType::ByteArray,
+                    ContractParameterType::ByteArray,
+                    ContractParameterType::ByteArray,
+                    ContractParameterType::Integer,
+                ],
+                ContractParameterType::Boolean,
+            )
+            .with_active_in(Hardfork::HfCockatrice),
+            NativeMethod::safe(
+                "verifyWithEd25519".to_string(),
                 1 << 15,
                 vec![
                     ContractParameterType::ByteArray,
@@ -67,48 +110,8 @@ impl CryptoLib {
                     ContractParameterType::ByteArray,
                 ],
                 ContractParameterType::Boolean,
-            ),
-            NativeMethod::safe(
-                "verifyWithECDsaSecp256r1".to_string(),
-                1 << 15,
-                vec![
-                    ContractParameterType::ByteArray,
-                    ContractParameterType::ByteArray,
-                    ContractParameterType::ByteArray,
-                ],
-                ContractParameterType::Boolean,
-            ),
-            // Multi-signature verification
-            NativeMethod::safe(
-                "checkMultisig".to_string(),
-                1 << 16,
-                vec![
-                    ContractParameterType::ByteArray,
-                    ContractParameterType::Any,
-                    ContractParameterType::Any,
-                ],
-                ContractParameterType::Boolean,
-            ),
-            NativeMethod::safe(
-                "checkMultisigWithECDsaSecp256k1".to_string(),
-                1 << 16,
-                vec![
-                    ContractParameterType::ByteArray,
-                    ContractParameterType::Any,
-                    ContractParameterType::Any,
-                ],
-                ContractParameterType::Boolean,
-            ),
-            NativeMethod::safe(
-                "checkMultisigWithECDsaSecp256r1".to_string(),
-                1 << 16,
-                vec![
-                    ContractParameterType::ByteArray,
-                    ContractParameterType::Any,
-                    ContractParameterType::Any,
-                ],
-                ContractParameterType::Boolean,
-            ),
+            )
+            .with_active_in(Hardfork::HfEchidna),
             // BLS12-381 functions
             NativeMethod::safe(
                 "bls12381Add".to_string(),
@@ -186,128 +189,138 @@ impl CryptoLib {
         Ok(Crypto::ripemd160(data).to_vec())
     }
 
-    /// Verify ECDSA signature (default secp256r1)
-    fn verify_with_ecdsa(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
-        self.verify_with_curve(
-            args,
-            ECCurve::secp256r1(),
-            "verifyWithECDsa requires message, signature, and public key arguments",
-        )
+    /// Murmur32 hash function backed by the shared cryptography crate.
+    fn murmur32(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
+        if args.len() != 2 {
+            return Err(Error::native_contract(
+                "murmur32 requires data and seed arguments".to_string(),
+            ));
+        }
+
+        let seed = BigInt::from_signed_bytes_le(&args[1])
+            .to_u32()
+            .ok_or_else(|| Error::invalid_argument("Invalid murmur32 seed".to_string()))?;
+        let hash = murmur32(&args[0], seed);
+        Ok(hash.to_le_bytes().to_vec())
     }
 
-    /// Verify ECDSA signature with secp256k1 curve
-    fn verify_with_ecdsa_secp256k1(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
-        self.verify_with_curve(
-            args,
-            ECCurve::secp256k1(),
-            "verifyWithECDsaSecp256k1 requires message, signature, and public key arguments",
-        )
+    /// Keccak256 hash function backed by the shared cryptography crate.
+    fn keccak256(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
+        let data = args.first().ok_or_else(|| {
+            Error::native_contract("keccak256 requires data argument".to_string())
+        })?;
+
+        Ok(Crypto::keccak256(data).to_vec())
     }
 
-    /// Verify ECDSA signature with secp256r1 curve (Neo's default)
-    fn verify_with_ecdsa_secp256r1(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
-        self.verify_with_curve(
-            args,
-            ECCurve::secp256r1(),
-            "verifyWithECDsaSecp256r1 requires message, signature, and public key arguments",
-        )
-    }
-
-    fn verify_with_curve(
+    /// Verify ECDSA signature with named curve/hash pair.
+    fn verify_with_ecdsa(
         &self,
+        engine: &ApplicationEngine,
         args: &[Vec<u8>],
-        curve: ECCurve,
-        error_msg: &str,
     ) -> Result<Vec<u8>> {
-        if args.len() < 3 {
-            return Err(Error::native_contract(error_msg.to_string()));
+        if args.len() != 4 {
+            return Err(Error::native_contract(
+                "verifyWithECDsa requires message, public key, signature, and curveHash arguments"
+                    .to_string(),
+            ));
         }
 
         let message = &args[0];
-        let signature = &args[1];
-        let public_key = &args[2];
+        let public_key = &args[1];
+        let signature = &args[2];
+        let curve_arg = &args[3];
+
+        let cockatrice_enabled = engine.is_hardfork_enabled(Hardfork::HfCockatrice);
+        let curve_hash = match Self::parse_named_curve_hash(curve_arg) {
+            Some(value) => value,
+            None if cockatrice_enabled => return Ok(vec![0]),
+            None => {
+                return Err(Error::invalid_argument(
+                    "Invalid curve hash for verifyWithECDsa".to_string(),
+                ))
+            }
+        };
+
+        if !cockatrice_enabled
+            && !matches!(
+                curve_hash,
+                NamedCurveHash::Secp256k1SHA256 | NamedCurveHash::Secp256r1SHA256
+            )
+        {
+            return Err(Error::invalid_argument(
+                "Unsupported curve hash for legacy verifyWithECDsa".to_string(),
+            ));
+        }
 
         if signature.len() != 64 || public_key.is_empty() {
             return Ok(vec![0]);
         }
 
-        let is_valid = Crypto::verify_signature_with_curve(
-            message,
-            signature,
-            public_key,
-            &curve,
-            HashAlgorithm::Sha256,
-        );
+        let curve = curve_hash.curve();
+        let hash_algorithm = if cockatrice_enabled {
+            curve_hash.hash_algorithm()
+        } else {
+            HashAlgorithm::Sha256
+        };
+
+        let is_valid =
+            Crypto::verify_signature_with_curve(message, signature, public_key, &curve, hash_algorithm);
 
         Ok(vec![if is_valid { 1 } else { 0 }])
     }
 
-    /// Check multi-signature (default secp256r1)
-    fn check_multisig(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
-        self.check_multisig_with_curve(
-            args,
-            ECCurve::secp256r1(),
-            "checkMultisig requires message, signatures, and public keys arguments",
-        )
-    }
-
-    /// Check multi-signature with secp256k1 curve
-    fn check_multisig_secp256k1(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
-        self.check_multisig_with_curve(
-            args,
-            ECCurve::secp256k1(),
-            "checkMultisigWithECDsaSecp256k1 requires message, signatures, and public keys arguments",
-        )
-    }
-
-    /// Check multi-signature with secp256r1 curve (Neo's default)
-    fn check_multisig_secp256r1(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
-        self.check_multisig_with_curve(
-            args,
-            ECCurve::secp256r1(),
-            "checkMultisigWithECDsaSecp256r1 requires message, signatures, and public keys arguments",
-        )
-    }
-
-    fn check_multisig_with_curve(
-        &self,
-        args: &[Vec<u8>],
-        curve: ECCurve,
-        error_msg: &str,
-    ) -> Result<Vec<u8>> {
-        if args.len() < 3 {
-            return Err(Error::native_contract(error_msg.to_string()));
+    /// Verify Ed25519 signature (Echidna+).
+    fn verify_with_ed25519(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
+        if args.len() != 3 {
+            return Err(Error::native_contract(
+                "verifyWithEd25519 requires message, public key, and signature arguments"
+                    .to_string(),
+            ));
         }
 
         let message = &args[0];
-        let signatures_data = &args[1];
-        let public_keys_data = &args[2];
+        let public_key = &args[1];
+        let signature = &args[2];
 
-        let signatures = self.parse_signature_array(signatures_data)?;
-        let public_keys = self.parse_public_key_array(public_keys_data)?;
-
-        if signatures.len() > public_keys.len() {
+        if signature.len() != 64 || public_key.len() != 32 {
             return Ok(vec![0]);
         }
 
-        let mut sig_index = 0;
-        for pubkey in &public_keys {
-            if sig_index >= signatures.len() {
-                break;
-            }
+        let sig_bytes: [u8; 64] = match signature.as_slice().try_into() {
+            Ok(bytes) => bytes,
+            Err(_) => return Ok(vec![0]),
+        };
+        let pub_bytes: [u8; 32] = match public_key.as_slice().try_into() {
+            Ok(bytes) => bytes,
+            Err(_) => return Ok(vec![0]),
+        };
 
-            if Crypto::verify_signature_with_curve(
-                message,
-                &signatures[sig_index],
-                pubkey,
-                &curve,
-                HashAlgorithm::Sha256,
-            ) {
-                sig_index += 1;
-            }
+        let is_valid = Ed25519Crypto::verify(message, &sig_bytes, &pub_bytes).unwrap_or(false);
+        Ok(vec![if is_valid { 1 } else { 0 }])
+    }
+
+    /// Recover a secp256k1 public key from a message hash and signature.
+    fn recover_secp256k1(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
+        if args.len() != 2 {
+            return Err(Error::native_contract(
+                "recoverSecp256K1 requires messageHash and signature arguments".to_string(),
+            ));
         }
 
-        Ok(vec![if sig_index == signatures.len() { 1 } else { 0 }])
+        let message_hash = &args[0];
+        let signature = &args[1];
+
+        match crate::cryptography::Secp256k1Crypto::recover_public_key(message_hash, signature) {
+            Ok(public_key) => Ok(public_key),
+            Err(_) => Ok(Vec::new()),
+        }
+    }
+
+    fn parse_named_curve_hash(arg: &[u8]) -> Option<NamedCurveHash> {
+        BigInt::from_signed_bytes_le(arg)
+            .to_u8()
+            .and_then(NamedCurveHash::from_byte)
     }
 
     /// BLS12-381 point addition
@@ -340,6 +353,15 @@ impl CryptoLib {
                 let result = self.g2_add(&p1, &p2);
                 self.serialize_g2(&result)
             }
+            576 => {
+                if y.len() != 576 {
+                    return Err(Error::native_contract("Point size mismatch".to_string()));
+                }
+                let p1 = self.deserialize_gt(x)?;
+                let p2 = self.deserialize_gt(y)?;
+                let result = self.gt_add(&p1, &p2);
+                self.serialize_gt(&result)
+            }
             _ => Err(Error::native_contract(
                 "Invalid BLS12-381 point size".to_string(),
             )),
@@ -357,12 +379,44 @@ impl CryptoLib {
         let x = &args[0];
         let y = &args[1];
 
-        if x.len() != y.len() {
-            return Ok(vec![0]);
+        match x.len() {
+            48 => {
+                if y.len() != 48 {
+                    return Err(Error::native_contract(
+                        "BLS12-381 type mismatch".to_string(),
+                    ));
+                }
+                let p1 = self.deserialize_g1(x)?;
+                let p2 = self.deserialize_g1(y)?;
+                let equal = unsafe { blst::blst_p1_affine_is_equal(&p1, &p2) };
+                Ok(vec![if equal { 1 } else { 0 }])
+            }
+            96 => {
+                if y.len() != 96 {
+                    return Err(Error::native_contract(
+                        "BLS12-381 type mismatch".to_string(),
+                    ));
+                }
+                let p1 = self.deserialize_g2(x)?;
+                let p2 = self.deserialize_g2(y)?;
+                let equal = unsafe { blst::blst_p2_affine_is_equal(&p1, &p2) };
+                Ok(vec![if equal { 1 } else { 0 }])
+            }
+            576 => {
+                if y.len() != 576 {
+                    return Err(Error::native_contract(
+                        "BLS12-381 type mismatch".to_string(),
+                    ));
+                }
+                let p1 = self.deserialize_gt(x)?;
+                let p2 = self.deserialize_gt(y)?;
+                let equal = unsafe { blst::blst_fp12_is_equal(&p1, &p2) };
+                Ok(vec![if equal { 1 } else { 0 }])
+            }
+            _ => Err(Error::native_contract(
+                "Invalid BLS12-381 point size".to_string(),
+            )),
         }
-
-        let equal = x == y;
-        Ok(vec![if equal { 1 } else { 0 }])
     }
 
     /// BLS12-381 scalar multiplication
@@ -380,9 +434,14 @@ impl CryptoLib {
             .map(|v| !v.is_empty() && v[0] != 0)
             .unwrap_or(false);
 
+        if scalar.len() != 32 {
+            return Err(Error::native_contract(
+                "Invalid BLS12-381 scalar size".to_string(),
+            ));
+        }
+
         let mut scalar_bytes = [0u8; 32];
-        let len = scalar.len().min(32);
-        scalar_bytes[..len].copy_from_slice(&scalar[..len]);
+        scalar_bytes.copy_from_slice(scalar);
 
         match point.len() {
             48 => {
@@ -394,6 +453,11 @@ impl CryptoLib {
                 let p = self.deserialize_g2(point)?;
                 let result = self.g2_mul(&p, &scalar_bytes, neg);
                 self.serialize_g2(&result)
+            }
+            576 => {
+                let p = self.deserialize_gt(point)?;
+                let result = self.gt_mul(&p, &scalar_bytes, neg);
+                self.serialize_gt(&result)
             }
             _ => Err(Error::native_contract(
                 "Invalid BLS12-381 point size".to_string(),
@@ -431,7 +495,32 @@ impl CryptoLib {
                 "bls12381Serialize requires point argument".to_string(),
             ));
         }
-        Ok(args[0].clone())
+        let data = &args[0];
+        match data.len() {
+            48 => {
+                let point = self.deserialize_g1(data)?;
+                let mut proj = blst_p1::default();
+                unsafe {
+                    blst::blst_p1_from_affine(&mut proj, &point);
+                }
+                self.serialize_g1(&proj)
+            }
+            96 => {
+                let point = self.deserialize_g2(data)?;
+                let mut proj = blst_p2::default();
+                unsafe {
+                    blst::blst_p2_from_affine(&mut proj, &point);
+                }
+                self.serialize_g2(&proj)
+            }
+            576 => {
+                let point = self.deserialize_gt(data)?;
+                self.serialize_gt(&point)
+            }
+            _ => Err(Error::native_contract(
+                "Invalid BLS12-381 point size".to_string(),
+            )),
+        }
     }
 
     /// BLS12-381 point deserialization
@@ -453,7 +542,10 @@ impl CryptoLib {
                 let _ = self.deserialize_g2(data)?;
                 Ok(data.clone())
             }
-            576 => Ok(data.clone()),
+            576 => {
+                let _ = self.deserialize_gt(data)?;
+                Ok(data.clone())
+            }
             _ => Err(Error::native_contract(
                 "Invalid BLS12-381 serialized point size".to_string(),
             )),
@@ -529,6 +621,34 @@ impl CryptoLib {
         Ok(out)
     }
 
+    fn serialize_gt(&self, point: &blst_fp12) -> Result<Vec<u8>> {
+        const FP_SIZE: usize = 48;
+        const FP2_SIZE: usize = FP_SIZE * 2;
+        const FP6_SIZE: usize = FP2_SIZE * 3;
+        const FP12_SIZE: usize = FP6_SIZE * 2;
+
+        let mut out = vec![0u8; FP12_SIZE];
+        let mut offset = 0usize;
+
+        for fp6_index in [1usize, 0usize] {
+            for fp2_index in [2usize, 1usize, 0usize] {
+                for fp_index in [1usize, 0usize] {
+                    let fp = &point.fp6[fp6_index].fp2[fp2_index].fp[fp_index];
+                    // SAFETY: `out` slice is pre-sized to 48 bytes for each field element.
+                    unsafe {
+                        blst::blst_bendian_from_fp(
+                            out[offset..offset + FP_SIZE].as_mut_ptr(),
+                            fp,
+                        );
+                    }
+                    offset += FP_SIZE;
+                }
+            }
+        }
+
+        Ok(out)
+    }
+
     fn g1_add(&self, p1: &blst_p1_affine, p2: &blst_p1_affine) -> blst_p1 {
         let mut result = blst_p1::default();
         let mut p1_proj = blst_p1::default();
@@ -553,6 +673,16 @@ impl CryptoLib {
             blst::blst_p2_from_affine(&mut p1_proj, p1);
             blst::blst_p2_from_affine(&mut p2_proj, p2);
             blst::blst_p2_add(&mut result, &p1_proj, &p2_proj);
+        }
+        result
+    }
+
+    fn gt_add(&self, p1: &blst_fp12, p2: &blst_fp12) -> blst_fp12 {
+        let mut result = blst_fp12::default();
+        // SAFETY: All arguments are valid references to properly initialized blst structures.
+        // GT group operation corresponds to multiplication in Fp12.
+        unsafe {
+            blst::blst_fp12_mul(&mut result, p1, p2);
         }
         result
     }
@@ -599,6 +729,91 @@ impl CryptoLib {
         result
     }
 
+    fn gt_mul(&self, p: &blst_fp12, scalar: &[u8; 32], neg: bool) -> blst_fp12 {
+        let mut result = unsafe { *blst::blst_fp12_one() };
+        let base = *p;
+
+        for byte in scalar.iter().rev() {
+            for bit in (0..8).rev() {
+                // SAFETY: result and base are valid blst_fp12 values.
+                unsafe {
+                    blst::blst_fp12_sqr(&mut result, &result);
+                }
+                if (byte >> bit) & 1 == 1 {
+                    unsafe {
+                        blst::blst_fp12_mul(&mut result, &result, &base);
+                    }
+                }
+            }
+        }
+
+        if neg {
+            // SAFETY: result is a valid blst_fp12 value.
+            unsafe {
+                blst::blst_fp12_inverse(&mut result, &result);
+            }
+        }
+
+        result
+    }
+
+    fn deserialize_gt(&self, data: &[u8]) -> Result<blst_fp12> {
+        const FP_SIZE: usize = 48;
+        const FP2_SIZE: usize = FP_SIZE * 2;
+        const FP6_SIZE: usize = FP2_SIZE * 3;
+        const FP12_SIZE: usize = FP6_SIZE * 2;
+
+        if data.len() != FP12_SIZE {
+            return Err(Error::native_contract(
+                "Invalid BLS12-381 GT point size".to_string(),
+            ));
+        }
+
+        let mut point = blst_fp12::default();
+        let mut offset = 0usize;
+
+        for fp6_index in [1usize, 0usize] {
+            for fp2_index in [2usize, 1usize, 0usize] {
+                for fp_index in [1usize, 0usize] {
+                    let slice = &data[offset..offset + FP_SIZE];
+                    Self::read_fp_from_bendian(
+                        &mut point.fp6[fp6_index].fp2[fp2_index].fp[fp_index],
+                        slice,
+                    )?;
+                    offset += FP_SIZE;
+                }
+            }
+        }
+
+        Ok(point)
+    }
+
+    fn read_fp_from_bendian(target: &mut blst_fp, data: &[u8]) -> Result<()> {
+        const FP_SIZE: usize = 48;
+        if data.len() != FP_SIZE {
+            return Err(Error::native_contract(
+                "Invalid BLS12-381 field element size".to_string(),
+            ));
+        }
+
+        unsafe {
+            blst::blst_fp_from_bendian(target, data.as_ptr());
+        }
+
+        let mut check = [0u8; FP_SIZE];
+        unsafe {
+            blst::blst_bendian_from_fp(check.as_mut_ptr(), target);
+        }
+
+        if check != data {
+            return Err(Error::native_contract(
+                "Invalid BLS12-381 GT point".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+
     fn compute_pairing(&self, g1: &blst_p1_affine, g2: &blst_p2_affine) -> Result<Vec<u8>> {
         let mut result = blst_fp12::default();
         // SAFETY: All arguments are valid references to properly initialized blst structures.
@@ -607,47 +822,9 @@ impl CryptoLib {
             blst::blst_miller_loop(&mut result, g2, g1);
             blst::blst_final_exp(&mut result, &result);
         }
-
-        let mut out = vec![0u8; 576];
-        // SAFETY: `result` is a valid blst_fp12 (576 bytes), `out` is pre-allocated with
-        // exactly 576 bytes. We copy the raw bytes representation of the Fp12 element.
-        unsafe {
-            std::ptr::copy_nonoverlapping(&result as *const _ as *const u8, out.as_mut_ptr(), 576);
-        }
-        Ok(out)
+        self.serialize_gt(&result)
     }
 
-    fn parse_signature_array(&self, data: &[u8]) -> Result<Vec<Vec<u8>>> {
-        if data.is_empty() {
-            return Ok(vec![]);
-        }
-
-        let mut signatures = Vec::new();
-        let mut offset = 0;
-
-        while offset + 64 <= data.len() {
-            signatures.push(data[offset..offset + 64].to_vec());
-            offset += 64;
-        }
-
-        Ok(signatures)
-    }
-
-    fn parse_public_key_array(&self, data: &[u8]) -> Result<Vec<Vec<u8>>> {
-        if data.is_empty() {
-            return Ok(vec![]);
-        }
-
-        let mut public_keys = Vec::new();
-        let mut offset = 0;
-
-        while offset + 33 <= data.len() {
-            public_keys.push(data[offset..offset + 33].to_vec());
-            offset += 33;
-        }
-
-        Ok(public_keys)
-    }
 }
 
 impl NativeContract for CryptoLib {
@@ -669,19 +846,18 @@ impl NativeContract for CryptoLib {
 
     fn invoke(
         &self,
-        _engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine,
         method: &str,
         args: &[Vec<u8>],
     ) -> Result<Vec<u8>> {
         match method {
+            "recoverSecp256K1" => self.recover_secp256k1(args),
             "sha256" => self.sha256(args),
             "ripemd160" => self.ripemd160(args),
-            "verifyWithECDsa" => self.verify_with_ecdsa(args),
-            "verifyWithECDsaSecp256k1" => self.verify_with_ecdsa_secp256k1(args),
-            "verifyWithECDsaSecp256r1" => self.verify_with_ecdsa_secp256r1(args),
-            "checkMultisig" => self.check_multisig(args),
-            "checkMultisigWithECDsaSecp256k1" => self.check_multisig_secp256k1(args),
-            "checkMultisigWithECDsaSecp256r1" => self.check_multisig_secp256r1(args),
+            "murmur32" => self.murmur32(args),
+            "keccak256" => self.keccak256(args),
+            "verifyWithECDsa" => self.verify_with_ecdsa(engine, args),
+            "verifyWithEd25519" => self.verify_with_ed25519(args),
             "bls12381Add" => self.bls12381_add(args),
             "bls12381Equal" => self.bls12381_equal(args),
             "bls12381Mul" => self.bls12381_mul(args),

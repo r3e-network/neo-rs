@@ -114,7 +114,7 @@ impl InteropParameterDescriptor {
                 StackItem::ByteString(bytes) => String::from_utf8(bytes.clone())
                     .map(ConvertedValue::String)
                     .map_err(|_| "Invalid UTF-8 string".to_string()),
-                StackItem::Buffer(buffer) => String::from_utf8(buffer.data().to_vec())
+                StackItem::Buffer(buffer) => String::from_utf8(buffer.data())
                     .map(ConvertedValue::String)
                     .map_err(|_| "Invalid UTF-8 string".to_string()),
                 _ => Err("Expected string".to_string()),
@@ -122,7 +122,7 @@ impl InteropParameterDescriptor {
             InteropParameterType::ByteArray => match item {
                 StackItem::Null => Ok(ConvertedValue::ByteArray(Vec::new())),
                 StackItem::ByteString(bytes) => Ok(ConvertedValue::ByteArray(bytes.clone())),
-                StackItem::Buffer(buffer) => Ok(ConvertedValue::ByteArray(buffer.data().to_vec())),
+                StackItem::Buffer(buffer) => Ok(ConvertedValue::ByteArray(buffer.data())),
                 _ => Err("Expected byte array".to_string()),
             },
             InteropParameterType::UInt160 => match item {
@@ -134,8 +134,9 @@ impl InteropParameterDescriptor {
                     Ok(ConvertedValue::UInt160(value))
                 }
                 StackItem::Buffer(buffer) if buffer.data().len() == 20 => {
+                    let data = buffer.data();
                     let mut arr = [0u8; 20];
-                    arr.copy_from_slice(buffer.data());
+                    arr.copy_from_slice(&data);
                     let value = crate::UInt160::from_bytes(&arr).map_err(|e| e.to_string())?;
                     Ok(ConvertedValue::UInt160(value))
                 }
@@ -150,8 +151,9 @@ impl InteropParameterDescriptor {
                     Ok(ConvertedValue::UInt256(value))
                 }
                 StackItem::Buffer(buffer) if buffer.data().len() == 32 => {
+                    let data = buffer.data();
                     let mut arr = [0u8; 32];
-                    arr.copy_from_slice(buffer.data());
+                    arr.copy_from_slice(&data);
                     let value = crate::UInt256::from_bytes(&arr).map_err(|e| e.to_string())?;
                     Ok(ConvertedValue::UInt256(value))
                 }

@@ -476,28 +476,35 @@ impl ApplicationEngine {
             "No current contract context".to_string(),
         ))
     }
-    pub(super) fn refresh_context_tracking(&mut self) -> Result<()> {
+    pub(crate) fn refresh_context_tracking(&mut self) -> Result<()> {
         if let Some(current_context) = self.vm_engine.engine().current_context() {
-            let current_hash = UInt160::from_bytes(&current_context.script_hash())
+            let fallback_hash = UInt160::from_bytes(&current_context.script_hash())
                 .map_err(|e| Error::invalid_operation(format!("Invalid script hash: {e}")))?;
+            let state_arc = current_context
+                .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+            let state = state_arc.lock();
+            let current_hash = state.script_hash.unwrap_or(fallback_hash);
+
             self.current_script_hash = Some(current_hash);
             if self.entry_script_hash.is_none() {
                 self.entry_script_hash = Some(current_hash);
             }
-
-            let state_arc = current_context
-                .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
-            let state = state_arc.lock();
 
             self.call_flags = state.call_flags;
             self.calling_script_hash = state
                 .native_calling_script_hash
                 .or(state.calling_script_hash)
                 .or_else(|| {
-                    state
-                        .calling_context
-                        .as_ref()
-                        .and_then(|ctx| UInt160::from_bytes(&ctx.script_hash()).ok())
+                    state.calling_context.as_ref().and_then(|ctx| {
+                        let ctx_state =
+                            ctx.get_state_with_factory::<ExecutionContextState, _>(
+                                ExecutionContextState::new,
+                            );
+                        let ctx_state = ctx_state.lock();
+                        ctx_state
+                            .script_hash
+                            .or_else(|| UInt160::from_bytes(&ctx.script_hash()).ok())
+                    })
                 });
         } else {
             self.current_script_hash = None;

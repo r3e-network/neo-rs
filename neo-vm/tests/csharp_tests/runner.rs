@@ -4,8 +4,11 @@
 //! This module contains the JsonTestRunner implementation that executes
 //! C# Neo VM JSON test files and verifies the results match expected behavior.
 
-use neo_vm::stack_item::StackItem;
-use neo_vm::{ExecutionEngine, Script};
+use neo_vm::instruction::Instruction;
+use neo_vm::jump_table::JumpTable;
+use neo_vm::op_code::OpCode;
+use neo_vm::stack_item::{InteropInterface, StackItem};
+use neo_vm::{ExecutionEngine, Script, VmError, VmResult};
 use num_bigint::BigInt;
 use serde_json;
 use serde_json::Value;
@@ -13,6 +16,36 @@ use std::collections::HashMap;
 use std::fs;
 
 use super::common::*;
+
+#[derive(Debug)]
+struct TestInteropInterface;
+
+impl InteropInterface for TestInteropInterface {
+    fn interface_type(&self) -> &str {
+        "Object"
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+fn test_syscall(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
+    let method = instruction.token_u32();
+    match method {
+        0x77777777 => engine.push(StackItem::from_interface(TestInteropInterface)),
+        0xaddeadde => engine.execute_throw(Some(StackItem::from_byte_string(b"error".to_vec()))),
+        _ => Err(VmError::invalid_operation_msg(format!(
+            "Syscall 0x{method:08x} not implemented"
+        ))),
+    }
+}
+
+fn build_test_engine() -> ExecutionEngine {
+    let mut jump_table = JumpTable::default();
+    jump_table.register(OpCode::SYSCALL, test_syscall);
+    ExecutionEngine::new(Some(jump_table))
+}
 
 /// Test runner for C# JSON test files (matches C# test execution behavior)
 pub struct JsonTestRunner {
@@ -237,7 +270,7 @@ impl JsonTestRunner {
         opcode_map.insert("CONVERT".to_string(), 0xdb);
 
         Self {
-            engine: ExecutionEngine::new(None),
+            engine: build_test_engine(),
             opcode_map,
         }
     }
@@ -306,8 +339,8 @@ impl JsonTestRunner {
         let script_bytes = self.compile_script(&test.script)?;
 
         let script = Script::new(script_bytes, false)?;
-        self.engine = ExecutionEngine::new(None); // Reset engine for each test
-        self.engine.load_script(script, 0, 0)?;
+        self.engine = build_test_engine(); // Reset engine for each test
+        self.engine.load_script(script, -1, 0)?;
 
         for (step_index, step) in test.steps.iter().enumerate() {
             let step_name = step.name.as_deref().unwrap_or("Unnamed step");
@@ -674,7 +707,7 @@ fn verify_stack_item(expected: &VMUTStackItem, actual: &StackItem) -> Result<(),
                     .as_ref()
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| "expected buffer hex value".to_string())?;
-                let actual_hex = bytes_to_hex_prefixed(buffer.data());
+                let actual_hex = bytes_to_hex_prefixed(&buffer.data());
                 if hex_eq(expected_hex, &actual_hex) {
                     Ok(())
                 } else {
@@ -723,7 +756,7 @@ fn verify_stack_item(expected: &VMUTStackItem, actual: &StackItem) -> Result<(),
                     let actual_child = array
                         .get(idx)
                         .ok_or_else(|| format!("missing array element[{idx}]"))?;
-                    verify_stack_item(&expected_child, actual_child)
+                    verify_stack_item(&expected_child, &actual_child)
                         .map_err(|e| format!("array element[{idx}]: {e}"))?;
                 }
                 Ok(())
@@ -754,7 +787,7 @@ fn verify_stack_item(expected: &VMUTStackItem, actual: &StackItem) -> Result<(),
                     let actual_child = structure
                         .get(idx)
                         .map_err(|e| format!("missing struct element[{idx}]: {e}"))?;
-                    verify_stack_item(&expected_child, actual_child)
+                    verify_stack_item(&expected_child, &actual_child)
                         .map_err(|e| format!("struct element[{idx}]: {e}"))?;
                 }
                 Ok(())
@@ -780,10 +813,10 @@ fn verify_stack_item(expected: &VMUTStackItem, actual: &StackItem) -> Result<(),
                     ));
                 }
 
-                let mut actual_by_key: HashMap<String, &StackItem> = HashMap::new();
+                let mut actual_by_key: HashMap<String, StackItem> = HashMap::new();
                 for (key, value) in map.items().iter() {
                     let key_str = map_key_string(key)?;
-                    actual_by_key.insert(key_str, value);
+                    actual_by_key.insert(key_str, value.clone());
                 }
 
                 for (expected_key, expected_value) in expected_obj.iter() {

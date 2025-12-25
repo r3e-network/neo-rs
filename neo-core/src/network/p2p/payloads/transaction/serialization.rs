@@ -161,11 +161,6 @@ impl Serializable for Transaction {
 
     fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
         self.serialize_unsigned(writer)?;
-        if self.witnesses.len() != self.signers.len() {
-            return Err(IoError::invalid_data(
-                "Witness count must match signer count",
-            ));
-        }
         writer.write_var_uint(self.witnesses.len() as u64)?;
         for witness in &self.witnesses {
             writer.write_serializable(witness)?;

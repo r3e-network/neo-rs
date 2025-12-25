@@ -18,6 +18,7 @@ pub struct ContractMethodDescriptor {
     pub parameters: Vec<ContractParameterDefinition>,
 
     /// The return type of the method
+    #[serde(rename = "returntype")]
     pub return_type: ContractParameterType,
 
     /// The position of the method in the contract script

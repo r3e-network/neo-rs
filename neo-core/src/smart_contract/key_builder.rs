@@ -4,6 +4,7 @@
 //! The implementation mirrors the C# Neo.SmartContract.KeyBuilder class.
 
 use crate::{CoreError, UInt160, UInt256};
+use crate::cryptography::ECPoint;
 use num_bigint::BigInt;
 
 /// Error type for KeyBuilder operations.
@@ -61,14 +62,7 @@ impl KeyBuilder {
 
     /// Initializes a new instance.
     ///
-    /// # Errors
-    ///
-    /// Returns `KeyBuilderError::InvalidMaxLength` if `max_length` is zero.
     pub fn try_new(id: i32, prefix: u8, max_length: usize) -> Result<Self, KeyBuilderError> {
-        if max_length == 0 {
-            return Err(KeyBuilderError::InvalidMaxLength);
-        }
-
         let mut cache_data = vec![0u8; max_length + Self::PREFIX_LENGTH];
         cache_data[..4].copy_from_slice(&id.to_le_bytes());
         cache_data[4] = prefix;
@@ -84,7 +78,7 @@ impl KeyBuilder {
     /// Prefer `try_new` for fallible construction.
     #[inline]
     pub fn new(id: i32, prefix: u8, max_length: usize) -> Self {
-        Self::try_new(id, prefix, max_length).expect("max_length must be greater than zero")
+        Self::try_new(id, prefix, max_length).expect("KeyBuilder construction failed")
     }
 
     /// Creates with default max length
@@ -154,6 +148,12 @@ impl KeyBuilder {
         self.add(&key.to_bytes())
     }
 
+    /// Adds an ECPoint to the key.
+    #[inline]
+    pub fn add_ecpoint(&mut self, key: &ECPoint) -> &mut Self {
+        self.add(key.as_bytes())
+    }
+
     /// Adds a BigInteger to the key.
     ///
     /// # Errors
@@ -206,8 +206,9 @@ mod tests {
 
     #[test]
     fn test_try_new_with_zero_max_length() {
-        let result = KeyBuilder::try_new(1, 0x01, 0);
-        assert!(matches!(result, Err(KeyBuilderError::InvalidMaxLength)));
+        let mut builder = KeyBuilder::try_new(1, 0x01, 0).expect("builder");
+        let result = builder.try_add(&[0x01]);
+        assert!(matches!(result, Err(KeyBuilderError::DataTooLarge { .. })));
     }
 
     #[test]

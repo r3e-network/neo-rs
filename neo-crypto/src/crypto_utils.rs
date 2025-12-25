@@ -46,11 +46,12 @@ use ed25519_dalek::{
 use ed25519_dalek::{Signer as _, Verifier as _};
 use hex;
 use p256::{
-    ecdsa::{Signature, SigningKey, VerifyingKey},
+    ecdsa::{signature::hazmat::PrehashVerifier, Signature, SigningKey, VerifyingKey},
     PublicKey as P256PublicKey, SecretKey as P256SecretKey,
 };
 use rand::{rngs::OsRng, RngCore};
 use secp256k1::{
+    ecdsa::{RecoverableSignature, RecoveryId},
     Message, PublicKey as Secp256k1PublicKey, Secp256k1, SecretKey as Secp256k1SecretKey,
 };
 use sha2::{Digest, Sha256};
@@ -189,6 +190,47 @@ impl Secp256k1Crypto {
             .map_err(|e| format!("Invalid signature: {}", e))?;
 
         Ok(secp.verify_ecdsa(&message, &signature, &public_key).is_ok())
+    }
+
+    /// Recovers a compressed secp256k1 public key from a message hash and signature.
+    /// Accepts 65-byte (r||s||v) or 64-byte EIP-2098 compact signatures.
+    pub fn recover_public_key(message_hash: &[u8], signature: &[u8]) -> Result<Vec<u8>, String> {
+        if signature.len() != 65 && signature.len() != 64 {
+            return Err("Signature must be 65 or 64 bytes".to_string());
+        }
+        if message_hash.len() != 32 {
+            return Err("Message hash must be 32 bytes".to_string());
+        }
+
+        let msg = Message::from_digest_slice(message_hash)
+            .map_err(|e| format!("Invalid message hash: {}", e))?;
+
+        let (rec_id, sig_bytes) = if signature.len() == 65 {
+            let rec = signature[64];
+            let rec_id = if rec >= 27 { rec - 27 } else { rec };
+            if rec_id > 3 {
+                return Err("Recovery id must be in range 0..3".to_string());
+            }
+            (rec_id, signature[..64].to_vec())
+        } else {
+            let mut sig = signature.to_vec();
+            let y_parity = (sig[32] & 0x80) != 0;
+            sig[32] &= 0x7f;
+            let rec_id = if y_parity { 1 } else { 0 };
+            (rec_id, sig)
+        };
+
+        let rec_id =
+            RecoveryId::from_i32(rec_id as i32).map_err(|e| format!("Invalid recovery id: {}", e))?;
+        let recoverable = RecoverableSignature::from_compact(&sig_bytes, rec_id)
+            .map_err(|e| format!("Invalid recoverable signature: {}", e))?;
+
+        let secp = Secp256k1::new();
+        let public_key = secp
+            .recover_ecdsa(&msg, &recoverable)
+            .map_err(|e| format!("Failed to recover public key: {}", e))?;
+
+        Ok(public_key.serialize().to_vec())
     }
 }
 
@@ -437,9 +479,48 @@ impl Crypto {
         signature: &[u8],
         public_key: &[u8],
         curve: &ECCurve,
-        _hash_algorithm: HashAlgorithm,
+        hash_algorithm: HashAlgorithm,
     ) -> bool {
-        ECDsa::verify(data, signature, public_key, *curve).unwrap_or(false)
+        match (curve, hash_algorithm) {
+            (ECCurve::Secp256k1, HashAlgorithm::Keccak256) => {
+                if signature.len() != 64 {
+                    return false;
+                }
+                let sig = match secp256k1::ecdsa::Signature::from_compact(signature) {
+                    Ok(sig) => sig,
+                    Err(_) => return false,
+                };
+                let pubkey = match Secp256k1PublicKey::from_slice(public_key) {
+                    Ok(key) => key,
+                    Err(_) => return false,
+                };
+                let hash = Crypto::keccak256(data);
+                let msg = match Message::from_digest_slice(&hash) {
+                    Ok(msg) => msg,
+                    Err(_) => return false,
+                };
+                Secp256k1::verification_only()
+                    .verify_ecdsa(&msg, &sig, &pubkey)
+                    .is_ok()
+            }
+            (ECCurve::Secp256r1, HashAlgorithm::Keccak256) => {
+                if signature.len() != 64 {
+                    return false;
+                }
+                let public_key = match P256PublicKey::from_sec1_bytes(public_key) {
+                    Ok(key) => key,
+                    Err(_) => return false,
+                };
+                let verifying_key = VerifyingKey::from(public_key);
+                let signature = match Signature::try_from(signature) {
+                    Ok(sig) => sig,
+                    Err(_) => return false,
+                };
+                let hash = Crypto::keccak256(data);
+                verifying_key.verify_prehash(&hash, &signature).is_ok()
+            }
+            _ => ECDsa::verify(data, signature, public_key, *curve).unwrap_or(false),
+        }
     }
 
     /// Verifies a signature against the supplied public key, inferring the curve where possible.

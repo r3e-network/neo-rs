@@ -68,6 +68,11 @@ impl ApplicationEngine {
             state.method_name = Some(method_clone.name.clone());
             state.argument_count = argument_count;
             state.return_type = Some(method_clone.return_type);
+            state.parameter_types = method_clone
+                .parameters
+                .iter()
+                .map(|param| param.param_type)
+                .collect();
             state.native_calling_script_hash = None;
             state.is_dynamic_call = false;
             state.script_hash = Some(contract_clone.hash);

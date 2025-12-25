@@ -1,4 +1,5 @@
 use neo_core::network::p2p::payloads::{Signer, Witness};
+use neo_core::neo_io::Serializable;
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract;
@@ -81,28 +82,12 @@ fn calculate_network_fee_for_standard_signature() {
     )
     .expect("network fee");
 
-    let expected_size = 67 + var_size_with_payload_test(verification_script_len(&tx));
+    let expected_size = tx.size() as i64;
     let expected_fee = expected_size * PolicyContract::DEFAULT_FEE_PER_BYTE as i64
         + (PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64)
             * smart_contract::helper::Helper::signature_contract_cost();
 
     assert_eq!(fee, expected_fee);
-}
-
-fn verification_script_len(tx: &Transaction) -> usize {
-    tx.witnesses()[0].verification_script.len()
-}
-
-fn var_size_with_payload_test(len: usize) -> i64 {
-    if len < 0xFD {
-        1 + len as i64
-    } else if len <= 0xFFFF {
-        3 + len as i64
-    } else if len <= 0xFFFF_FFFF {
-        5 + len as i64
-    } else {
-        9 + len as i64
-    }
 }
 
 #[test]

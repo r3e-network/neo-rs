@@ -21,6 +21,7 @@ pub mod role;
 pub mod role_management;
 pub mod std_lib;
 pub mod trimmed_block;
+pub mod transaction_state;
 
 pub use self::oracle_request::OracleRequest;
 pub use contract_management::ContractManagement;
@@ -37,6 +38,7 @@ pub use policy_contract::PolicyContract;
 pub use role::Role;
 pub use role_management::RoleManagement;
 pub use std_lib::StdLib;
+pub use transaction_state::TransactionState;
 
 use crate::UInt160;
 use std::collections::HashMap;

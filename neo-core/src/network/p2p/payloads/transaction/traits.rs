@@ -91,8 +91,7 @@ impl IInteroperable for Transaction {
     fn from_stack_item(&mut self, _stack_item: StackItem) {
         // This operation is not supported for Transaction.
         // The C# implementation throws NotSupportedException.
-        // In Rust, we log and return without modification.
-        tracing::error!("NotSupportedException: Transaction::from_stack_item is not supported");
+        panic!("NotSupportedException: Transaction::from_stack_item is not supported");
     }
 
     fn to_stack_item(&self) -> StackItem {

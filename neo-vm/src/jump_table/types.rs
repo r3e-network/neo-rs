@@ -9,7 +9,7 @@ use crate::instruction::Instruction;
 use crate::jump_table::JumpTable;
 use crate::op_code::OpCode;
 use crate::stack_item::stack_item_type::StackItemType;
-use crate::stack_item::{Array, Map, StackItem, Struct};
+use crate::stack_item::{Array, StackItem, Struct};
 
 /// Registers the type operation handlers.
 pub fn register_handlers(jump_table: &mut JumpTable) {
@@ -35,61 +35,55 @@ fn convert(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
     // Convert the type byte to a StackItemType
     let item_type = StackItemType::from_byte(type_byte)
         .ok_or_else(|| VmError::invalid_instruction_msg(format!("Invalid type: {type_byte}")))?;
+    if item_type == StackItemType::Any {
+        return Err(VmError::invalid_instruction_msg(format!(
+            "Invalid type: {type_byte}"
+        )));
+    }
 
     // Pop the item from the stack
     let item = context.pop()?;
 
+    if matches!(item, StackItem::Null) {
+        context.push(StackItem::Null)?;
+        return Ok(());
+    }
+
     // Convert the item to the specified type
-    let result = match (item, item_type) {
-        // Convert to Boolean
-        (item, StackItemType::Boolean) => StackItem::from_bool(item.as_bool()?),
+    let result = if item.stack_item_type() == item_type {
+        item
+    } else {
+        match (item, item_type) {
+            // Convert to Boolean
+            (item, StackItemType::Boolean) => StackItem::from_bool(item.as_bool()?),
 
-        // Convert to Integer
-        (item, StackItemType::Integer) => StackItem::from_int(item.as_int()?),
+            // Convert to Integer
+            (item, StackItemType::Integer) => StackItem::from_int(item.as_int()?),
 
-        // Convert to ByteString
-        (item, StackItemType::ByteString) => StackItem::from_byte_string(item.as_bytes()?),
+            // Convert to ByteString
+            (item, StackItemType::ByteString) => StackItem::from_byte_string(item.as_bytes()?),
 
-        // Convert to Buffer
-        (item, StackItemType::Buffer) => StackItem::from_buffer(item.as_bytes()?),
+            // Convert to Buffer
+            (item, StackItemType::Buffer) => StackItem::from_buffer(item.as_bytes()?),
 
-        // Convert to Array
-        (StackItem::Array(items), StackItemType::Array) => StackItem::Array(items),
-        (StackItem::Struct(items), StackItemType::Array) => StackItem::Array(Array::new(
-            items.into(),
-            Some(context.reference_counter().clone()),
-        )?),
+            // Convert to Array/Struct
+            (StackItem::Struct(items), StackItemType::Array) => StackItem::Array(Array::new(
+                items.into(),
+                Some(context.reference_counter().clone()),
+            )?),
+            (StackItem::Array(items), StackItemType::Struct) => StackItem::Struct(Struct::new(
+                items.into(),
+                Some(context.reference_counter().clone()),
+            )?),
 
-        (StackItem::Array(items), StackItemType::Struct) => StackItem::Struct(Struct::new(
-            items.into(),
-            Some(context.reference_counter().clone()),
-        )?),
-        (StackItem::Struct(items), StackItemType::Struct) => StackItem::Struct(Struct::new(
-            items.into(),
-            Some(context.reference_counter().clone()),
-        )?),
-
-        // Convert to Map
-        (StackItem::Map(entries), StackItemType::Map) => StackItem::Map(Map::new(
-            entries.into(),
-            Some(context.reference_counter().clone()),
-        )?),
-
-        // Convert to Pointer
-        (StackItem::Pointer(pointer), StackItemType::Pointer) => StackItem::Pointer(pointer),
-
-        // Convert to InteropInterface
-        (StackItem::InteropInterface(interface), StackItemType::InteropInterface) => {
-            StackItem::InteropInterface(interface)
-        }
-
-        // Invalid conversions
-        (item, target_type) => {
-            return Err(VmError::invalid_type_simple(format!(
-                "Cannot convert {:?} to {:?}",
-                item.stack_item_type(),
-                target_type
-            )));
+            // Map, Pointer, InteropInterface conversions are only valid to the same type
+            (item, target_type) => {
+                return Err(VmError::invalid_type_simple(format!(
+                    "Cannot convert {:?} to {:?}",
+                    item.stack_item_type(),
+                    target_type
+                )));
+            }
         }
     };
 
@@ -115,50 +109,16 @@ fn is_type(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
     // Convert the type byte to a StackItemType
     let item_type = StackItemType::from_byte(type_byte)
         .ok_or_else(|| VmError::invalid_instruction_msg(format!("Invalid type: {type_byte}")))?;
+    if item_type == StackItemType::Any {
+        return Err(VmError::invalid_instruction_msg(format!(
+            "Invalid type: {type_byte}"
+        )));
+    }
 
-    // Peek the item on the stack
-    let item = context.peek(0)?;
+    // Pop the item on the stack
+    let item = context.pop()?;
 
-    let result = match (item.stack_item_type(), item_type) {
-        // Any type can be converted to Boolean
-        (_, StackItemType::Boolean) => true,
-
-        // Integer, Boolean, ByteString, and Buffer can be converted to Integer
-        (StackItemType::Integer, StackItemType::Integer) => true,
-        (StackItemType::Boolean, StackItemType::Integer) => true,
-        (StackItemType::ByteString, StackItemType::Integer) => true,
-        (StackItemType::Buffer, StackItemType::Integer) => true,
-
-        // Integer, Boolean, ByteString, and Buffer can be converted to ByteString
-        (StackItemType::Integer, StackItemType::ByteString) => true,
-        (StackItemType::Boolean, StackItemType::ByteString) => true,
-        (StackItemType::ByteString, StackItemType::ByteString) => true,
-        (StackItemType::Buffer, StackItemType::ByteString) => true,
-
-        // Integer, Boolean, ByteString, and Buffer can be converted to Buffer
-        (StackItemType::Integer, StackItemType::Buffer) => true,
-        (StackItemType::Boolean, StackItemType::Buffer) => true,
-        (StackItemType::ByteString, StackItemType::Buffer) => true,
-        (StackItemType::Buffer, StackItemType::Buffer) => true,
-
-        (StackItemType::Array, StackItemType::Array) => true,
-        (StackItemType::Struct, StackItemType::Array) => true,
-
-        (StackItemType::Array, StackItemType::Struct) => true,
-        (StackItemType::Struct, StackItemType::Struct) => true,
-
-        // Map can be converted to Map
-        (StackItemType::Map, StackItemType::Map) => true,
-
-        // Pointer can be converted to Pointer
-        (StackItemType::Pointer, StackItemType::Pointer) => true,
-
-        // InteropInterface can be converted to InteropInterface
-        (StackItemType::InteropInterface, StackItemType::InteropInterface) => true,
-
-        // All other conversions are invalid
-        _ => false,
-    };
+    let result = item.stack_item_type() == item_type;
 
     context.push(StackItem::from_bool(result))?;
 
@@ -172,8 +132,8 @@ fn is_null(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    // Peek the item on the stack
-    let item = context.peek(0)?;
+    // Pop the item on the stack
+    let item = context.pop()?;
 
     let result = matches!(item, StackItem::Null);
 

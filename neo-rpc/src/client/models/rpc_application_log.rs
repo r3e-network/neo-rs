@@ -9,12 +9,12 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use super::vm_state_utils::vm_state_from_str;
+use super::vm_state_utils::{vm_state_from_str, vm_state_to_string};
 use std::str::FromStr;
 
 use neo_config::ProtocolSettings;
 use neo_core::smart_contract::TriggerType;
-use neo_json::JObject;
+use neo_json::{JArray, JObject, JToken};
 use neo_primitives::{UInt160, UInt256};
 use neo_vm::{StackItem, VMState};
 /// Application log information matching C# RpcApplicationLog
@@ -61,6 +61,28 @@ impl RpcApplicationLog {
             block_hash,
             executions,
         })
+    }
+
+    /// Converts to JSON
+    /// Matches C# ToJson
+    pub fn to_json(&self) -> JObject {
+        let mut json = JObject::new();
+        if let Some(tx_id) = &self.tx_id {
+            json.insert("txid".to_string(), JToken::String(tx_id.to_string()));
+        }
+        if let Some(block_hash) = &self.block_hash {
+            json.insert(
+                "blockhash".to_string(),
+                JToken::String(block_hash.to_string()),
+            );
+        }
+        let executions = self
+            .executions
+            .iter()
+            .map(|exec| JToken::Object(exec.to_json()))
+            .collect::<Vec<_>>();
+        json.insert("executions".to_string(), JToken::Array(JArray::from(executions)));
+        json
     }
 }
 
@@ -150,6 +172,51 @@ impl Execution {
             notifications,
         })
     }
+
+    /// Converts to JSON
+    /// Matches C# ToJson
+    pub fn to_json(&self) -> JObject {
+        let mut json = JObject::new();
+        json.insert(
+            "trigger".to_string(),
+            JToken::String(trigger_type_to_string(self.trigger)),
+        );
+        json.insert(
+            "vmstate".to_string(),
+            JToken::String(vm_state_to_string(self.vm_state)),
+        );
+        json.insert(
+            "gasconsumed".to_string(),
+            JToken::String(self.gas_consumed.to_string()),
+        );
+        json.insert(
+            "exception".to_string(),
+            self.exception_message
+                .as_ref()
+                .map(|value| JToken::String(value.clone()))
+                .unwrap_or(JToken::Null),
+        );
+        let stack = self
+            .stack
+            .iter()
+            .map(super::super::utility::stack_item_to_json)
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap_or_default()
+            .into_iter()
+            .map(JToken::Object)
+            .collect::<Vec<_>>();
+        json.insert("stack".to_string(), JToken::Array(JArray::from(stack)));
+        let notifications = self
+            .notifications
+            .iter()
+            .map(|notice| JToken::Object(notice.to_json()))
+            .collect::<Vec<_>>();
+        json.insert(
+            "notifications".to_string(),
+            JToken::Array(JArray::from(notifications)),
+        );
+        json
+    }
 }
 
 /// Notification event arguments matching C# RpcNotifyEventArgs
@@ -196,12 +263,54 @@ impl RpcNotifyEventArgs {
             state,
         })
     }
+
+    /// Converts to JSON
+    /// Matches C# ToJson
+    pub fn to_json(&self) -> JObject {
+        let mut json = JObject::new();
+        json.insert(
+            "contract".to_string(),
+            JToken::String(self.contract.to_string()),
+        );
+        json.insert(
+            "eventname".to_string(),
+            JToken::String(self.event_name.clone()),
+        );
+        json.insert(
+            "state".to_string(),
+            JToken::Object(
+                super::super::utility::stack_item_to_json(&self.state)
+                    .unwrap_or_else(|_| JObject::new()),
+            ),
+        );
+        json
+    }
+}
+
+fn trigger_type_to_string(trigger: TriggerType) -> String {
+    if trigger == TriggerType::ON_PERSIST {
+        "OnPersist".to_string()
+    } else if trigger == TriggerType::POST_PERSIST {
+        "PostPersist".to_string()
+    } else if trigger == TriggerType::VERIFICATION {
+        "Verification".to_string()
+    } else if trigger == TriggerType::APPLICATION {
+        "Application".to_string()
+    } else if trigger == TriggerType::SYSTEM {
+        "System".to_string()
+    } else if trigger == TriggerType::ALL {
+        "All".to_string()
+    } else {
+        format!("{:?}", trigger)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use neo_json::{JArray, JToken};
+    use std::fs;
+    use std::path::PathBuf;
 
     fn sample_stack_item() -> JObject {
         let mut item = JObject::new();
@@ -255,5 +364,57 @@ mod tests {
         assert_eq!(exec.stack.len(), 1);
         assert_eq!(exec.notifications.len(), 1);
         assert_eq!(exec.notifications[0].event_name, "TestEvent");
+    }
+
+    fn load_rpc_case_result(name: &str) -> JObject {
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.push("..");
+        path.push("neo_csharp");
+        path.push("tests");
+        path.push("Neo.RpcClient.Tests");
+        path.push("RpcTestCases.json");
+        let payload = fs::read_to_string(&path).expect("read RpcTestCases.json");
+        let token = JToken::parse(&payload, 128).expect("parse RpcTestCases.json");
+        let cases = token.as_array().expect("RpcTestCases.json should be an array");
+        for entry in cases.children() {
+            let token = entry.as_ref().expect("array entry");
+            let obj = token.as_object().expect("case object");
+            let case_name = obj
+                .get("Name")
+                .and_then(|value| value.as_string())
+                .unwrap_or_default();
+            if case_name.eq_ignore_ascii_case(name) {
+                let response = obj
+                    .get("Response")
+                    .and_then(|value| value.as_object())
+                    .expect("case response");
+                let result = response
+                    .get("result")
+                    .and_then(|value| value.as_object())
+                    .expect("case result");
+                return result.clone();
+            }
+        }
+        panic!("RpcTestCases.json missing case: {name}");
+    }
+
+    #[test]
+    fn application_log_to_json_matches_rpc_test_case() {
+        let expected = load_rpc_case_result("getapplicationlogasync");
+        let parsed =
+            RpcApplicationLog::from_json(&expected, &ProtocolSettings::default_settings())
+                .expect("parse");
+        let actual = parsed.to_json();
+        assert_eq!(expected.to_string(), actual.to_string());
+    }
+
+    #[test]
+    fn application_log_trigger_filter_to_json_matches_rpc_test_case() {
+        let expected = load_rpc_case_result("getapplicationlogasync_triggertype");
+        let parsed =
+            RpcApplicationLog::from_json(&expected, &ProtocolSettings::default_settings())
+                .expect("parse");
+        let actual = parsed.to_json();
+        assert_eq!(expected.to_string(), actual.to_string());
     }
 }

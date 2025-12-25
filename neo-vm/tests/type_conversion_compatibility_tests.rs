@@ -255,7 +255,7 @@ fn test_array_and_struct_conversions() {
                 builder.emit_instruction(OpCode::CONVERT, &[StackItemType::Struct.to_byte()]);
                 builder.to_script()
             },
-            vec!["3", "2", "1"], // Order reflects PACK behaviour in ScriptBuilder
+            vec!["1", "2", "3"], // Order reflects PACK behaviour in ScriptBuilder
         ),
         (
             {
@@ -267,7 +267,7 @@ fn test_array_and_struct_conversions() {
                 builder.emit_instruction(OpCode::CONVERT, &[StackItemType::Array.to_byte()]);
                 builder.to_script()
             },
-            vec!["3", "2", "1"], // C# VM converts struct to array with same elements
+            vec!["1", "2", "3"], // C# VM converts struct to array with same elements
         ),
     ];
 
@@ -323,7 +323,7 @@ fn test_invalid_conversions() {
 
     let test_cases = vec![
         (array_to_int, VMState::FAULT, None),
-        (map_to_bool, VMState::HALT, Some("false")),
+        (map_to_bool, VMState::HALT, Some("true")),
     ];
 
     for (script, expected_state, expected_bool) in test_cases {
@@ -400,7 +400,7 @@ fn test_complex_conversions() {
         .iter()
         .map(|item| item.as_int().unwrap().to_string())
         .collect();
-    assert_eq!(struct_values, vec!["3".to_string(), "2".to_string()]);
+    assert_eq!(struct_values, vec!["2".to_string(), "3".to_string()]);
 
     assert!(
         stack_items

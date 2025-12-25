@@ -192,3 +192,252 @@ impl StateApi {
             .map_err(|e| e.into())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::RpcClient;
+    use mockito::{Matcher, Server};
+    use reqwest::Url;
+    use std::net::TcpListener;
+    use std::sync::Arc;
+    use regex::escape;
+
+    fn localhost_binding_permitted() -> bool {
+        TcpListener::bind("127.0.0.1:0").is_ok()
+    }
+
+    #[tokio::test]
+    async fn state_api_get_state_root_parses_response() {
+        if !localhost_binding_permitted() {
+            return;
+        }
+        let mut server = Server::new_async().await;
+        let root_hash = UInt256::zero();
+        let body = format!(
+            r#"{{"jsonrpc":"2.0","id":1,"result":{{"version":0,"index":1,"roothash":"{root_hash}"}}}}"#
+        );
+        let _m = server
+            .mock("POST", "/")
+            .match_body(Matcher::Regex(
+                r#""method"\s*:\s*"getstateroot".*"params"\s*:\s*\[\s*1\s*\]"#.to_string(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(body)
+            .create();
+
+        let url = Url::parse(&server.url()).expect("server url");
+        let client = RpcClient::builder(url).build().expect("client");
+        let api = StateApi::new(Arc::new(client));
+
+        let parsed = api.get_state_root(1).await.expect("state root");
+        assert_eq!(parsed.version, 0);
+        assert_eq!(parsed.index, 1);
+        assert_eq!(parsed.root_hash, root_hash);
+        assert!(parsed.witness.is_none());
+    }
+
+    #[tokio::test]
+    async fn state_api_get_state_height_handles_nullable_indices() {
+        if !localhost_binding_permitted() {
+            return;
+        }
+        let mut server = Server::new_async().await;
+        let body =
+            r#"{"jsonrpc":"2.0","id":1,"result":{"localrootindex":2,"validatedrootindex":null}}"#;
+        let _m = server
+            .mock("POST", "/")
+            .match_body(Matcher::Regex(
+                r#""method"\s*:\s*"getstateheight".*"params"\s*:\s*\[\s*\]"#.to_string(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(body)
+            .create();
+
+        let url = Url::parse(&server.url()).expect("server url");
+        let client = RpcClient::builder(url).build().expect("client");
+        let api = StateApi::new(Arc::new(client));
+
+        let (local, validated) = api.get_state_height().await.expect("state height");
+        assert_eq!(local, Some(2));
+        assert_eq!(validated, None);
+    }
+
+    #[tokio::test]
+    async fn state_api_get_state_and_proof_round_trip_bytes() {
+        if !localhost_binding_permitted() {
+            return;
+        }
+        let mut server = Server::new_async().await;
+        let root_hash = UInt256::zero();
+        let script_hash = UInt160::zero();
+        let key = b"state-key";
+        let value = b"value";
+        let key_b64 = general_purpose::STANDARD.encode(key);
+        let value_b64 = general_purpose::STANDARD.encode(value);
+
+        let _m = server
+            .mock("POST", "/")
+            .match_body(Matcher::Regex(format!(
+                r#""method"\s*:\s*"getstate".*"params"\s*:\s*\[\s*"{root}".*"{script}".*"{key}".*\]"#,
+                root = escape(&root_hash.to_string()),
+                script = escape(&script_hash.to_string()),
+                key = escape(&key_b64),
+            )))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(format!(
+                r#"{{"jsonrpc":"2.0","id":1,"result":"{value_b64}"}}"#
+            ))
+            .create();
+
+        let url = Url::parse(&server.url()).expect("server url");
+        let client = RpcClient::builder(url).build().expect("client");
+        let api = StateApi::new(Arc::new(client));
+
+        let parsed = api
+            .get_state(&root_hash, &script_hash, key)
+            .await
+            .expect("state value");
+        assert_eq!(parsed, value.to_vec());
+    }
+
+    #[tokio::test]
+    async fn state_api_get_and_verify_proof_round_trip_bytes() {
+        if !localhost_binding_permitted() {
+            return;
+        }
+        let mut server = Server::new_async().await;
+        let root_hash = UInt256::zero();
+        let script_hash = UInt160::zero();
+        let key = b"proof-key";
+        let proof = b"proof-data";
+        let key_b64 = general_purpose::STANDARD.encode(key);
+        let proof_b64 = general_purpose::STANDARD.encode(proof);
+        let value = b"verified";
+        let value_b64 = general_purpose::STANDARD.encode(value);
+
+        let _m_get = server
+            .mock("POST", "/")
+            .match_body(Matcher::Regex(format!(
+                r#""method"\s*:\s*"getproof".*"params"\s*:\s*\[\s*"{root}".*"{script}".*"{key}".*\]"#,
+                root = escape(&root_hash.to_string()),
+                script = escape(&script_hash.to_string()),
+                key = escape(&key_b64),
+            )))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(format!(
+                r#"{{"jsonrpc":"2.0","id":1,"result":"{proof_b64}"}}"#
+            ))
+            .create();
+
+        let _m_verify = server
+            .mock("POST", "/")
+            .match_body(Matcher::Regex(format!(
+                r#""method"\s*:\s*"verifyproof".*"params"\s*:\s*\[\s*"{root}".*"{proof}".*\]"#,
+                root = escape(&root_hash.to_string()),
+                proof = escape(&proof_b64),
+            )))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(format!(
+                r#"{{"jsonrpc":"2.0","id":1,"result":"{value_b64}"}}"#
+            ))
+            .create();
+
+        let url = Url::parse(&server.url()).expect("server url");
+        let client = RpcClient::builder(url).build().expect("client");
+        let api = StateApi::new(Arc::new(client));
+
+        let parsed_proof = api
+            .get_proof(&root_hash, &script_hash, key)
+            .await
+            .expect("proof");
+        assert_eq!(parsed_proof, proof.to_vec());
+
+        let parsed_value = api
+            .verify_proof(&root_hash, &parsed_proof)
+            .await
+            .expect("verified value");
+        assert_eq!(parsed_value, value.to_vec());
+    }
+
+    #[tokio::test]
+    async fn state_api_find_states_parses_results_and_proofs() {
+        if !localhost_binding_permitted() {
+            return;
+        }
+        let mut server = Server::new_async().await;
+        let root_hash = UInt256::zero();
+        let script_hash = UInt160::zero();
+        let prefix = b"pre";
+        let from = b"from";
+        let prefix_b64 = general_purpose::STANDARD.encode(prefix);
+        let from_b64 = general_purpose::STANDARD.encode(from);
+
+        let response = format!(
+            r#"{{"jsonrpc":"2.0","id":1,"result":{{"truncated":false,"results":[{{"key":"{key}","value":"{value}"}}],"firstProof":"{first}","lastProof":"{last}"}}}}"#,
+            key = general_purpose::STANDARD.encode(b"k"),
+            value = general_purpose::STANDARD.encode(b"v"),
+            first = general_purpose::STANDARD.encode(b"first"),
+            last = general_purpose::STANDARD.encode(b"last"),
+        );
+
+        let _m = server
+            .mock("POST", "/")
+            .match_body(Matcher::Regex(format!(
+                r#""method"\s*:\s*"findstates".*"params"\s*:\s*\[\s*"{root}".*"{script}".*"{prefix}".*"{from}".*2\s*\]"#,
+                root = escape(&root_hash.to_string()),
+                script = escape(&script_hash.to_string()),
+                prefix = escape(&prefix_b64),
+                from = escape(&from_b64),
+            )))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(response)
+            .create();
+
+        let url = Url::parse(&server.url()).expect("server url");
+        let client = RpcClient::builder(url).build().expect("client");
+        let api = StateApi::new(Arc::new(client));
+
+        let parsed = api
+            .find_states(&root_hash, &script_hash, prefix, Some(from), Some(2))
+            .await
+            .expect("found states");
+        assert!(!parsed.truncated);
+        assert_eq!(parsed.results.len(), 1);
+        assert_eq!(parsed.results[0].0, b"k".to_vec());
+        assert_eq!(parsed.results[0].1, b"v".to_vec());
+        assert_eq!(parsed.first_proof.as_deref(), Some(b"first".as_slice()));
+        assert_eq!(parsed.last_proof.as_deref(), Some(b"last".as_slice()));
+    }
+
+    #[test]
+    fn state_api_make_find_states_params_handles_defaults() {
+        let root_hash = UInt256::zero();
+        let script_hash = UInt160::zero();
+        let params = StateApi::make_find_states_params(
+            &root_hash,
+            &script_hash,
+            b"prefix",
+            None,
+            None,
+        );
+
+        assert_eq!(params.len(), 4);
+        assert_eq!(params[0].as_string().unwrap(), root_hash.to_string());
+        assert_eq!(params[1].as_string().unwrap(), script_hash.to_string());
+        assert_eq!(
+            params[2].as_string().unwrap(),
+            general_purpose::STANDARD.encode(b"prefix")
+        );
+        assert_eq!(
+            params[3].as_string().unwrap(),
+            general_purpose::STANDARD.encode(b"")
+        );
+    }
+}

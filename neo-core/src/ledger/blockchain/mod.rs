@@ -73,7 +73,7 @@ use crate::{UInt160, UInt256};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, warn};
@@ -84,6 +84,23 @@ use types::{
 };
 
 const MAX_TX_TO_REVERIFY_PER_IDLE: usize = 10;
+const MAX_REVERIFY_INVENTORY_CACHE: usize = 256;
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+struct InventoryCacheKey {
+    inventory_type: InventoryType,
+    payload_hash: UInt256,
+}
+
+impl InventoryCacheKey {
+    fn new(inventory_type: InventoryType, payload: &[u8]) -> Self {
+        let payload_hash = UInt256::from(crate::neo_crypto::sha256(payload));
+        Self {
+            inventory_type,
+            payload_hash,
+        }
+    }
+}
 
 /// Rust analogue of `Neo.Ledger.Blockchain` (actor based on Akka).
 pub struct Blockchain {
@@ -92,6 +109,8 @@ pub struct Blockchain {
     _block_cache: Arc<RwLock<HashMap<UInt256, Block>>>,
     _block_cache_unverified: Arc<RwLock<HashMap<u32, UnverifiedBlocksList>>>,
     _extensible_witness_white_list: Arc<RwLock<HashSet<UInt160>>>,
+    _inventory_cache: Arc<RwLock<HashMap<InventoryCacheKey, InventoryPayload>>>,
+    _inventory_cache_order: Arc<RwLock<VecDeque<InventoryCacheKey>>>,
 }
 
 impl Blockchain {
@@ -102,6 +121,8 @@ impl Blockchain {
             _block_cache: Arc::new(RwLock::new(HashMap::new())),
             _block_cache_unverified: Arc::new(RwLock::new(HashMap::new())),
             _extensible_witness_white_list: Arc::new(RwLock::new(HashSet::new())),
+            _inventory_cache: Arc::new(RwLock::new(HashMap::new())),
+            _inventory_cache_order: Arc::new(RwLock::new(VecDeque::new())),
         }
     }
 
@@ -138,6 +159,27 @@ impl Blockchain {
     {
         let mut reader = MemoryReader::new(payload);
         T::deserialize(&mut reader).ok()
+    }
+
+    async fn inventory_cache_get(&self, key: &InventoryCacheKey) -> Option<InventoryPayload> {
+        self._inventory_cache.read().await.get(key).cloned()
+    }
+
+    async fn inventory_cache_insert(&self, key: InventoryCacheKey, payload: InventoryPayload) {
+        let mut cache = self._inventory_cache.write().await;
+        if cache.contains_key(&key) {
+            return;
+        }
+
+        let mut order = self._inventory_cache_order.write().await;
+        cache.insert(key, payload);
+        order.push_back(key);
+
+        while order.len() > MAX_REVERIFY_INVENTORY_CACHE {
+            if let Some(evicted) = order.pop_front() {
+                cache.remove(&evicted);
+            }
+        }
     }
 }
 

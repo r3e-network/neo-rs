@@ -5,6 +5,7 @@
 //! with a lightweight Vec-backed structure that preserves insertion order while
 //! providing dictionary-like access.
 
+use std::collections::BTreeMap;
 use std::fmt::{self, Debug};
 
 /// Ordered dictionary keeping keys in insertion order while offering key-based lookup.
@@ -86,12 +87,12 @@ where
     }
 
     /// Returns an iterator over the key/value pairs in insertion order.
-    pub fn iter(&self) -> impl Iterator<Item = (&K, &V)> {
+    pub fn iter(&self) -> impl DoubleEndedIterator<Item = (&K, &V)> + ExactSizeIterator {
         self.entries.iter().map(|(k, v)| (k, v))
     }
 
     /// Returns a mutable iterator over the key/value pairs in insertion order.
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = (&K, &mut V)> {
+    pub fn iter_mut(&mut self) -> impl DoubleEndedIterator<Item = (&K, &mut V)> + ExactSizeIterator {
         self.entries.iter_mut().map(|(k, v)| (&*k, v))
     }
 
@@ -103,6 +104,71 @@ where
     /// Returns an iterator over the values in insertion order.
     pub fn values(&self) -> impl Iterator<Item = &V> {
         self.entries.iter().map(|(_, v)| v)
+    }
+}
+
+impl<K, V> From<Vec<(K, V)>> for VmOrderedDictionary<K, V>
+where
+    K: PartialEq,
+{
+    fn from(entries: Vec<(K, V)>) -> Self {
+        Self { entries }
+    }
+}
+
+impl<K, V> From<BTreeMap<K, V>> for VmOrderedDictionary<K, V>
+where
+    K: Ord + PartialEq,
+{
+    fn from(map: BTreeMap<K, V>) -> Self {
+        let entries = map.into_iter().collect::<Vec<_>>();
+        Self { entries }
+    }
+}
+
+impl<K, V> IntoIterator for VmOrderedDictionary<K, V>
+where
+    K: PartialEq,
+{
+    type Item = (K, V);
+    type IntoIter = std::vec::IntoIter<(K, V)>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.entries.into_iter()
+    }
+}
+
+fn entry_to_ref<K, V>(entry: &(K, V)) -> (&K, &V) {
+    (&entry.0, &entry.1)
+}
+
+fn entry_to_ref_mut<K, V>(entry: &mut (K, V)) -> (&K, &mut V) {
+    let (key, value) = entry;
+    (key, value)
+}
+
+impl<'a, K, V> IntoIterator for &'a VmOrderedDictionary<K, V>
+where
+    K: PartialEq,
+{
+    type Item = (&'a K, &'a V);
+    type IntoIter = std::iter::Map<std::slice::Iter<'a, (K, V)>, fn(&(K, V)) -> (&K, &V)>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.entries.iter().map(entry_to_ref::<K, V>)
+    }
+}
+
+impl<'a, K, V> IntoIterator for &'a mut VmOrderedDictionary<K, V>
+where
+    K: PartialEq,
+{
+    type Item = (&'a K, &'a mut V);
+    type IntoIter =
+        std::iter::Map<std::slice::IterMut<'a, (K, V)>, fn(&mut (K, V)) -> (&K, &mut V)>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.entries.iter_mut().map(entry_to_ref_mut::<K, V>)
     }
 }
 

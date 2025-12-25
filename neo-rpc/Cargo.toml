@@ -26,6 +26,7 @@ neo-config = { path = "../neo-config", optional = true }
 # Async runtime
 tokio = { workspace = true }
 async-trait = { workspace = true }
+futures = { workspace = true, optional = true }
 
 # Serialization
 serde = { workspace = true }
@@ -42,6 +43,9 @@ tracing = { workspace = true }
 # Web server (server feature)
 warp = { version = "0.3", optional = true }
 hyper = { workspace = true, optional = true }
+
+# Rate limiting (server feature)
+dashmap = { workspace = true, optional = true }
 
 # HTTP client (client feature)
 reqwest = { workspace = true, optional = true }
@@ -93,6 +97,8 @@ server = [
     "dep:sha2",
     "dep:zeroize",
     "dep:subtle",
+    "dep:dashmap",
+    "dep:futures",
 ]
 client = [
     "dep:neo-config",

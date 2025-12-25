@@ -8,7 +8,6 @@
 use crate::error::{VmError, VmResult};
 use crate::stack_item::StackItem;
 use crate::stack_item::StackItemType;
-use std::collections::BTreeMap;
 
 /// Read-only view over a compound stack item.
 #[derive(Debug, Clone, Copy)]
@@ -40,8 +39,8 @@ impl<'a> CompoundType<'a> {
     /// semantics used by the C# implementation when tracking references.
     pub fn sub_items(&self) -> Vec<StackItem> {
         match self.item {
-            StackItem::Array(array) => array.iter().cloned().collect(),
-            StackItem::Struct(structure) => structure.items().to_vec(),
+            StackItem::Array(array) => array.iter().collect(),
+            StackItem::Struct(structure) => structure.items(),
             StackItem::Map(map) => map.items().values().cloned().collect(),
             _ => Vec::new(),
         }
@@ -92,26 +91,7 @@ impl<'a> CompoundTypeMut<'a> {
         }
     }
 
-    /// Provides mutable access to the underlying array/struct items.
-    pub fn items_mut(&mut self) -> VmResult<&mut Vec<StackItem>> {
-        match self.item {
-            StackItem::Array(array) => Ok(array.items_mut()),
-            StackItem::Struct(structure) => Ok(structure.items_mut()),
-            _ => Err(VmError::invalid_type_simple(
-                "CompoundTypeMut: expected array or struct",
-            )),
-        }
-    }
-
-    /// Provides mutable access to the underlying map.
-    pub fn map_mut(&mut self) -> VmResult<&mut BTreeMap<StackItem, StackItem>> {
-        match self.item {
-            StackItem::Map(map) => Ok(map.items_mut()),
-            _ => Err(VmError::invalid_type_simple(
-                "CompoundTypeMut: expected map",
-            )),
-        }
-    }
+    // NOTE: Direct mutable access to compound items is no longer exposed here.
 }
 
 /// Helper extension trait to obtain a compound view.

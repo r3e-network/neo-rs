@@ -86,6 +86,7 @@ exclude = [
     "docs",
     "examples",
     "neo_csharp",
+    "fuzz",
 ]
 
 [workspace.package]

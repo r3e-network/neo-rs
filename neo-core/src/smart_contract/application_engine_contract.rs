@@ -211,7 +211,7 @@ fn contract_call_native_handler(
             .ok_or_else(|| "No current execution context".to_string())?;
         let state_arc =
             context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
-        let (script_hash, method_name, arg_count, return_type) = {
+        let (script_hash, method_name, arg_count, return_type, parameter_types) = {
             let state = state_arc.lock();
             let script_hash = state
                 .script_hash
@@ -222,7 +222,8 @@ fn contract_call_native_handler(
                 .ok_or_else(|| "Native contract context missing method name".to_string())?;
             let arg_count = state.argument_count;
             let return_type = state.return_type;
-            (script_hash, method_name, arg_count, return_type)
+            let parameter_types = state.parameter_types.clone();
+            (script_hash, method_name, arg_count, return_type, parameter_types)
         };
 
         let stack_len = context.evaluation_stack().len();
@@ -234,9 +235,16 @@ fn contract_call_native_handler(
         }
 
         let mut args = Vec::with_capacity(arg_count);
-        for _ in 0..arg_count {
+        for index in 0..arg_count {
             let item = engine.pop().map_err(|e| e.to_string())?;
-            let bytes = ApplicationEngine::stack_item_to_bytes(item)?;
+            let bytes = match parameter_types.get(index) {
+                Some(ContractParameterType::Any) => BinarySerializer::serialize(
+                    &item,
+                    app.execution_limits(),
+                )
+                .map_err(|e| e.to_string())?,
+                _ => ApplicationEngine::stack_item_to_bytes(item)?,
+            };
             args.push(bytes);
         }
 
@@ -249,6 +257,7 @@ fn contract_call_native_handler(
             state.argument_count = 0;
             state.method_name = None;
             state.return_type = None;
+            state.parameter_types.clear();
         }
 
         if let Some(ret_type) = return_type {
@@ -292,7 +301,7 @@ fn push_native_result(
                 .push(StackItem::from_byte_string(string_bytes))
                 .map_err(|e| e.to_string())
         }
-        ContractParameterType::Array | ContractParameterType::Map => {
+        ContractParameterType::Array | ContractParameterType::Map | ContractParameterType::Any => {
             match BinarySerializer::deserialize(&result, &ExecutionEngineLimits::default(), None) {
                 Ok(item) => engine.push(item).map_err(|e| e.to_string()),
                 Err(_) => engine

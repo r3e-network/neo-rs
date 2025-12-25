@@ -264,21 +264,21 @@ mod tests {
 
         // Test buffer values
         assert!(StackItem::from_buffer(vec![1u8]).as_bool().unwrap());
-        assert!(!StackItem::from_buffer(Vec::<u8>::new()).as_bool().unwrap());
-        assert!(!StackItem::from_buffer(vec![0u8]).as_bool().unwrap());
+        assert!(StackItem::from_buffer(Vec::<u8>::new()).as_bool().unwrap());
+        assert!(StackItem::from_buffer(vec![0u8]).as_bool().unwrap());
 
         // Test array values
         assert!(StackItem::from_array(vec![StackItem::Null])
             .as_bool()
             .unwrap());
-        assert!(!StackItem::from_array(Vec::<StackItem>::new())
+        assert!(StackItem::from_array(Vec::<StackItem>::new())
             .as_bool()
             .unwrap());
 
         assert!(StackItem::from_struct(vec![StackItem::Null])
             .as_bool()
             .unwrap());
-        assert!(!StackItem::from_struct(Vec::<StackItem>::new())
+        assert!(StackItem::from_struct(Vec::<StackItem>::new())
             .as_bool()
             .unwrap());
 
@@ -286,7 +286,7 @@ mod tests {
         let mut map = BTreeMap::new();
         map.insert(StackItem::Integer(BigInt::from(0)), StackItem::Null);
         assert!(StackItem::from_map(map).as_bool().unwrap());
-        assert!(!StackItem::from_map(BTreeMap::new()).as_bool().unwrap());
+        assert!(StackItem::from_map(BTreeMap::new()).as_bool().unwrap());
     }
 
     /// Test integer conversion (matches C# TestInteger)

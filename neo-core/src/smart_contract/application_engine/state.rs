@@ -55,6 +55,9 @@ impl ApplicationEngine {
         app.register_native_contracts();
         app.refresh_policy_settings();
         app.register_default_interops()?;
+        // Ignore any fees incurred during engine initialization (native contract setup, policy reads).
+        app.fee_consumed = 0;
+        app.gas_consumed = 0;
 
         if let Some(mut diagnostic) = app.diagnostic.take() {
             diagnostic.initialized(&mut app);
@@ -65,7 +68,8 @@ impl ApplicationEngine {
     }
 
     pub(super) fn attach_host(&mut self) {
-        let host_ptr = self as *mut _ as *mut dyn InteropHost;
+        let host: &mut dyn InteropHost = self;
+        let host_ptr = host as *mut dyn InteropHost;
         self.vm_engine.engine_mut().set_interop_host(host_ptr);
     }
 
@@ -351,6 +355,10 @@ impl ApplicationEngine {
     /// Returns a clone of the current snapshot cache.
     pub fn snapshot_cache(&self) -> Arc<DataCache> {
         Arc::clone(&self.snapshot_cache)
+    }
+
+    pub(crate) fn original_snapshot_cache(&self) -> Arc<DataCache> {
+        Arc::clone(&self.original_snapshot_cache)
     }
 
     pub(super) fn policy_contract(&self) -> Option<Arc<dyn NativeContract>> {

@@ -14,6 +14,7 @@ mod parsing;
 mod stack;
 mod tx_json;
 mod witness;
+mod witness_rule;
 
 #[allow(unused_imports)]
 pub use attributes::attribute_from_json;
@@ -26,19 +27,28 @@ pub use parsing::{
 pub use witness::{
     payload_witness_from_json, payload_witness_to_json, scripts_to_witness_json, witness_to_json,
 };
+#[allow(unused_imports)]
+pub use witness_rule::rule_from_json;
 
 use neo_config::ProtocolSettings;
+use neo_core::smart_contract::native::NativeRegistry;
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::{Block, BlockHeader, Contract, ECCurve, ECPoint, KeyPair, Transaction, Witness};
 use neo_json::{JObject, JToken};
 use neo_primitives::{UInt160, UInt256};
 use neo_vm::StackItem;
+use std::sync::OnceLock;
 
 /// Utility functions for RPC client
 /// Matches C# Utility class
 pub struct RpcUtility;
 
 impl RpcUtility {
+    fn native_registry() -> &'static NativeRegistry {
+        static REGISTRY: OnceLock<NativeRegistry> = OnceLock::new();
+        REGISTRY.get_or_init(NativeRegistry::new)
+    }
+
     /// Converts a JToken to a script hash
     /// Matches C# ToScriptHash extension
     pub fn to_script_hash(
@@ -58,6 +68,14 @@ impl RpcUtility {
     /// Converts an address or script hash string to script hash string
     /// Matches C# AsScriptHash extension
     pub fn as_script_hash(address_or_script_hash: &str) -> String {
+        for contract in Self::native_registry().contracts() {
+            if address_or_script_hash.eq_ignore_ascii_case(contract.name())
+                || address_or_script_hash == contract.id().to_string()
+            {
+                return contract.hash().to_string();
+            }
+        }
+
         if address_or_script_hash.len() < 40 {
             address_or_script_hash.to_string()
         } else {
@@ -240,9 +258,22 @@ impl RpcUtility {
         stack::stack_item_from_json(json)
     }
 
+    /// Converts a VM stack item into a `neo-json` representation.
+    pub fn stack_item_to_json(item: &StackItem) -> Result<JObject, String> {
+        stack::stack_item_to_json(item)
+    }
+
     /// Creates a witness from JSON (invocation/verification scripts encoded as base64).
     pub fn witness_from_json(json: &JObject) -> Result<Witness, String> {
         witness::witness_from_json(json)
+    }
+
+    /// Parses a witness rule from JSON (RPC utility parity).
+    pub fn rule_from_json(
+        json: &JObject,
+        protocol_settings: &ProtocolSettings,
+    ) -> Result<neo_core::WitnessRule, String> {
+        witness_rule::rule_from_json(json, protocol_settings)
     }
 }
 
@@ -273,9 +304,14 @@ pub fn stack_item_from_json(json: &JObject) -> Result<StackItem, String> {
     RpcUtility::stack_item_from_json(json)
 }
 
+pub fn stack_item_to_json(item: &StackItem) -> Result<JObject, String> {
+    RpcUtility::stack_item_to_json(item)
+}
+
 pub fn witness_from_json(json: &JObject) -> Result<Witness, String> {
     RpcUtility::witness_from_json(json)
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -321,6 +357,70 @@ mod tests {
     }
 
     #[test]
+    fn get_key_pair_accepts_wif_and_hex() {
+        let wif = "KyXwTh1hB76RRMquSvnxZrJzQx7h9nQP2PCRL38v6VDb5ip3nf1p";
+        let expected = KeyPair::from_wif(wif).expect("keypair");
+
+        let parsed = RpcUtility::get_key_pair(wif).expect("wif parse");
+        assert_eq!(parsed, expected);
+
+        let hex_key = hex::encode(expected.private_key());
+        let parsed = RpcUtility::get_key_pair(&hex_key).expect("hex parse");
+        assert_eq!(parsed, expected);
+
+        let hex_prefixed = format!("0x{hex_key}");
+        let parsed = RpcUtility::get_key_pair(&hex_prefixed).expect("hex parse");
+        assert_eq!(parsed, expected);
+    }
+
+    #[test]
+    fn get_key_pair_rejects_invalid_input() {
+        let err = RpcUtility::get_key_pair("").expect_err("empty");
+        assert_eq!(err, "Key cannot be empty");
+
+        let err = RpcUtility::get_key_pair("00").expect_err("invalid");
+        assert_eq!(err, "Invalid key format");
+    }
+
+    #[test]
+    fn get_script_hash_accepts_hash_and_rejects_invalid() {
+        let hash = UInt160::zero();
+        let hash_string = hex::encode(hash.to_array());
+
+        let parsed =
+            RpcUtility::get_script_hash(&hash_string, &ProtocolSettings::default_settings())
+                .unwrap();
+        assert_eq!(parsed, hash);
+
+        let prefixed = format!("0x{hash_string}");
+        let parsed =
+            RpcUtility::get_script_hash(&prefixed, &ProtocolSettings::default_settings()).unwrap();
+        assert_eq!(parsed, hash);
+
+        let err =
+            RpcUtility::get_script_hash("", &ProtocolSettings::default_settings()).expect_err("empty");
+        assert_eq!(err, "Account cannot be empty");
+
+        let err = RpcUtility::get_script_hash("00", &ProtocolSettings::default_settings())
+            .expect_err("invalid");
+        assert_eq!(err, "Invalid account format");
+    }
+
+    #[test]
+    fn as_script_hash_maps_native_contract_name_and_id() {
+        let registry = NativeRegistry::new();
+        let contract = registry
+            .get_by_name("NeoToken")
+            .expect("NeoToken contract");
+        let expected_hash = contract.hash().to_string();
+        let name = contract.name().to_string();
+        let id = contract.id().to_string();
+
+        assert_eq!(RpcUtility::as_script_hash(&name), expected_hash);
+        assert_eq!(RpcUtility::as_script_hash(&id), expected_hash);
+    }
+
+    #[test]
     fn witness_roundtrip_from_json() {
         let invocation = vec![1u8; ADDRESS_SIZE];
         let verification = vec![2u8; ADDRESS_SIZE];
@@ -347,6 +447,77 @@ mod tests {
 
         let item = RpcUtility::stack_item_from_json(&obj).expect("stack item");
         assert!(item.as_bool().unwrap());
+    }
+
+    #[test]
+    fn stack_item_parses_interop_interface_without_value() {
+        let mut obj = JObject::new();
+        obj.insert(
+            "type".to_string(),
+            JToken::String("InteropInterface".to_string()),
+        );
+        obj.insert("id".to_string(), JToken::String("iter-1".to_string()));
+
+        let item = RpcUtility::stack_item_from_json(&obj).expect("stack item");
+        assert!(matches!(item, StackItem::InteropInterface(_)));
+    }
+
+    #[test]
+    fn stack_item_parses_bytestring_and_buffer() {
+        let bytes = vec![1u8, 2, 3];
+        let encoded = BASE64.encode(&bytes);
+
+        let mut bytestring = JObject::new();
+        bytestring.insert("type".to_string(), JToken::String("ByteString".to_string()));
+        bytestring.insert("value".to_string(), JToken::String(encoded.clone()));
+        let item = RpcUtility::stack_item_from_json(&bytestring).expect("bytestring");
+        assert_eq!(item.as_bytes().expect("bytestring bytes"), bytes);
+
+        let mut buffer = JObject::new();
+        buffer.insert("type".to_string(), JToken::String("Buffer".to_string()));
+        buffer.insert("value".to_string(), JToken::String(encoded));
+        let item = RpcUtility::stack_item_from_json(&buffer).expect("buffer");
+        assert_eq!(item.as_bytes().expect("buffer bytes"), bytes);
+    }
+
+    #[test]
+    fn stack_item_parses_pointer_and_any() {
+        let mut pointer = JObject::new();
+        pointer.insert("type".to_string(), JToken::String("Pointer".to_string()));
+        pointer.insert("value".to_string(), JToken::String("7".to_string()));
+
+        let item = RpcUtility::stack_item_from_json(&pointer).expect("pointer");
+        let pointer_item = item.get_pointer().expect("pointer item");
+        assert_eq!(pointer_item.position(), 7);
+
+        let mut any = JObject::new();
+        any.insert("type".to_string(), JToken::String("Any".to_string()));
+        let item = RpcUtility::stack_item_from_json(&any).expect("any");
+        assert!(matches!(item, StackItem::Null));
+    }
+
+    #[test]
+    fn stack_item_parses_any_with_value() {
+        let mut any = JObject::new();
+        any.insert("type".to_string(), JToken::String("Any".to_string()));
+        any.insert("value".to_string(), JToken::String("data".to_string()));
+        let item = RpcUtility::stack_item_from_json(&any).expect("any");
+        assert_eq!(item.as_bytes().expect("bytes"), b"data");
+    }
+
+    #[test]
+    fn stack_item_fallbacks_for_unknown_type() {
+        let mut unknown = JObject::new();
+        unknown.insert("type".to_string(), JToken::String("Unknown".to_string()));
+        unknown.insert("value".to_string(), JToken::String("hello".to_string()));
+
+        let item = RpcUtility::stack_item_from_json(&unknown).expect("fallback");
+        assert_eq!(item.as_bytes().expect("bytes"), b"hello");
+
+        let mut empty = JObject::new();
+        empty.insert("type".to_string(), JToken::String("Unknown".to_string()));
+        let item = RpcUtility::stack_item_from_json(&empty).expect("fallback null");
+        assert!(matches!(item, StackItem::Null));
     }
 
     #[test]

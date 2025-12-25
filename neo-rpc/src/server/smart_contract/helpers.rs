@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
@@ -24,6 +23,7 @@ use crate::server::session::Session;
 use crate::server::tree_node::TreeNode;
 
 use neo_vm::stack_item::StackItem;
+use neo_vm::OrderedDictionary;
 
 pub(super) fn parse_contract_parameters(
     arg: Option<&Value>,
@@ -127,7 +127,7 @@ pub(super) fn contract_parameter_to_stack_item(
         }
         ContractParameterValue::Map(entries) => {
             #[allow(clippy::mutable_key_type)]
-            let mut map = BTreeMap::new();
+            let mut map = OrderedDictionary::new();
             for (key, value) in entries {
                 let key_item = contract_parameter_to_stack_item(key)?;
                 let value_item = contract_parameter_to_stack_item(value)?;
@@ -202,8 +202,8 @@ pub(super) fn stack_item_to_json(
             let entries = map
                 .iter()
                 .map(|(key, value)| {
-                    let key_json = stack_item_to_json(key, session.as_deref_mut())?;
-                    let value_json = stack_item_to_json(value, session.as_deref_mut())?;
+                    let key_json = stack_item_to_json(&key, session.as_deref_mut())?;
+                    let value_json = stack_item_to_json(&value, session.as_deref_mut())?;
                     Ok(json!({
                         "key": key_json,
                         "value": value_json,

@@ -12,7 +12,9 @@ use crate::{
     persistence::data_cache::DataCache,
     protocol_settings::ProtocolSettings,
     smart_contract::{
-        application_engine::ApplicationEngine, call_flags::CallFlags, native::ContractManagement,
+        application_engine::ApplicationEngine,
+        call_flags::CallFlags,
+        native::{ContractManagement, LedgerContract, NativeRegistry},
         trigger_type::TriggerType,
     },
 };
@@ -38,14 +40,25 @@ impl AssetDescriptor {
         settings: &ProtocolSettings,
         asset_id: UInt160,
     ) -> Result<Self, String> {
-        let contract = ContractManagement::get_contract_from_snapshot(snapshot, &asset_id)
+        let missing_contract = || {
+            format!(
+                "No asset contract found for assetId {}. Please ensure the assetId is correct and deployed.",
+                asset_id
+            )
+        };
+        let contract = match ContractManagement::get_contract_from_snapshot(snapshot, &asset_id)
             .map_err(|err| err.to_string())?
-            .ok_or_else(|| {
-                format!(
-                    "No asset contract found for assetId {}. Please ensure the assetId is correct and deployed.",
-                    asset_id
-                )
-            })?;
+        {
+            Some(contract) => contract,
+            None => {
+                let registry = NativeRegistry::new();
+                let height = LedgerContract::new().current_index(snapshot).unwrap_or(0);
+                registry
+                    .get(&asset_id)
+                    .and_then(|native| native.contract_state(settings, height))
+                    .ok_or_else(missing_contract)?
+            }
+        };
         let asset_name = contract.manifest.name.clone();
 
         let mut builder = ScriptBuilder::new();

@@ -237,10 +237,11 @@ impl ScriptBuilder {
                 self.emit_push(&bytes);
             }
             StackItem::Buffer(buffer) => {
-                self.emit_push(buffer.data());
+                let data = buffer.data();
+                self.emit_push(&data);
             }
             StackItem::Array(array) => {
-                let items: Vec<_> = array.into_iter().collect();
+                let items = array.items();
                 let items_len = items.len();
                 for item in items.into_iter().rev() {
                     self.emit_push_stack_item(item)?;
@@ -249,7 +250,7 @@ impl ScriptBuilder {
                 self.emit_pack();
             }
             StackItem::Struct(structure) => {
-                let items: Vec<_> = structure.into_iter().collect();
+                let items = structure.items();
                 let items_len = items.len();
                 for item in items.into_iter().rev() {
                     self.emit_push_stack_item(item)?;
@@ -258,16 +259,13 @@ impl ScriptBuilder {
                 self.emit_pack();
             }
             StackItem::Map(map) => {
-                // 1. Emit map size (production map format)
-                self.emit_push_int(map.len() as i64);
-
-                // 2. Create new map instruction (production map creation)
+                // Create a new map instruction
                 self.emit_opcode(OpCode::NEWMAP);
 
-                // 3. Emit key-value pairs (production map population)
-                for (key, value) in map {
+                // Emit key-value pairs
+                for (key, value) in map.iter() {
+                    // Keep the map on stack now that SETITEM consumes the collection.
                     self.emit_opcode(OpCode::DUP);
-
                     // Push key and value onto stack
                     self.emit_push_stack_item(key)?;
                     self.emit_push_stack_item(value)?;

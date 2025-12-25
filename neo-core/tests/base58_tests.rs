@@ -1,156 +1,59 @@
-//! Basic Base58 tests - Implementation needs fixing for full C# compatibility.
-//! These tests verify the basic structure and error handling of the Base58 implementation.
+//! Base58 tests converted from `Neo.UnitTests.Cryptography.UT_Base58`.
 
 use neo_core::cryptography::crypto_utils::base58;
 
-// ============================================================================
-
-/// Test invalid Base58 characters
 #[test]
-fn test_base58_invalid_characters() {
-    // Characters that are not in the Base58 alphabet
-    let invalid_chars = vec!["0", "O", "I", "l", "+", "/"];
+fn base58_encode_decode_vectors_match_csharp() {
+    let test_vectors = vec![
+        ("", ""),
+        ("61", "2g"),
+        ("626262", "a3gV"),
+        ("636363", "aPEr"),
+        (
+            "73696d706c792061206c6f6e6720737472696e67",
+            "2cFupjhnEsSn59qHXstmK2ffpLv2",
+        ),
+        (
+            "00eb15231dfceb60925886b67d065299925915aeb172c06647",
+            "1NS17iag9jJgTHD1VXjvLCEnZuQ3rJDE9L",
+        ),
+        ("516b6fcd0f", "ABnLTmg"),
+        ("bf4f89001e670274dd", "3SEo3LWLoPntC"),
+        ("572e4794", "3EFU7m"),
+        ("ecac89cad93923c02321", "EJDM8drfXA6uyA"),
+        ("10c8511e", "Rt5zm"),
+        ("00000000000000000000", "1111111111"),
+        (
+            "000111d38e5fc9071ffcd20b4a763cc9ae4f252bb4e48fd66a835e252ada93ff480d6dd43dc62a641155a5",
+            "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz",
+        ),
+        (
+            "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2\
+             c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758\
+             595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f80818283848\
+             5868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1\
+             b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcddd\
+             edfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+            "1cWB5HCBdLjAuqGGReWE3R3CguuwSjw6RHn39s2yuDRTS5NsBgNiFpWgAnEx6VQi8csexkgYw3mdYrMHr8x9i7aEw\
+             P8kZ7vccXWqKDvGv3u1GxFKPuAkn8JCPPGDMf3vMMnbzm6Nh9zh1gcNsMvH3ZNLmP5fSG6DGbbi2tuwMWPthr4boW\
+             wCxf7ewSgNQeacyozhKDDQQ1qL5fQFUW52QKUZDZ5fw3KXNQJMcNTcaB723LchjeKun7MuGW5qyCBZYzA1KjofN1g\
+             YBV3NqyhQJ3Ns746GNuf9N2pQPmHz4xpnSrrfCvy6TVVz5d4PdrjeshsWQwpZsZGzvbdAdN8MKV5QsBDY",
+        ),
+        ("00", "1"),
+        ("00010203040506070809", "1kA3B2yGe2z4"),
+    ];
 
-    for invalid_char in invalid_chars {
-        let result = base58::decode(invalid_char);
-        assert!(
-            result.is_err(),
-            "Should fail to decode invalid character: {invalid_char}"
-        );
-    }
-}
-
-/// Test Base58 edge cases that work
-#[test]
-fn test_base58_edge_cases() {
-    assert_eq!("", base58::encode(&[]));
-    assert_eq!(Vec::<u8>::new(), base58::decode("").unwrap());
-
-    // Single zero byte
-    assert_eq!("1", base58::encode(&[0]));
-    assert_eq!(vec![0], base58::decode("1").unwrap());
-
-    // Multiple zero bytes
-    assert_eq!("111", base58::encode(&[0, 0, 0]));
-    assert_eq!(vec![0, 0, 0], base58::decode("111").unwrap());
-}
-
-/// Test Base58Check with too short input
-#[test]
-fn test_base58_check_too_short() {
-    let short_inputs = vec!["", "1", "11", "111"];
-
-    for input in short_inputs {
-        let result = base58::decode_check(input);
-        assert!(result.is_err(), "Should fail with too short input: {input}");
-    }
-}
-
-/// Test Base58 alphabet consistency
-#[test]
-fn test_base58_alphabet_consistency() {
-    // Ensure our implementation uses the correct Base58 alphabet
-    let alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-
-    // Test that each character in the alphabet can be decoded
-    for c in alphabet.chars() {
-        let single_char_string = c.to_string();
-        let result = base58::decode(&single_char_string);
-
-        assert!(result.is_ok(), "Character '{c}' should be decodable");
-    }
-}
-
-/// Test that Base58 functions exist and don't panic
-#[test]
-fn test_base58_functions_exist() {
-    // Test that the functions exist and can be called without panicking
-    let test_data = vec![1, 2, 3];
-
-    // Should not panic
-    let encoded = base58::encode(&test_data);
-    assert!(!encoded.is_empty(), "Encoded string should not be empty");
-
-    // Should not panic
-    let _encoded_check = base58::encode_check(&test_data);
-
-    let _decoded = base58::decode(&encoded);
-}
-
-// ============================================================================
-// ✅ Base58 Implementation Fixed - Now using proven bs58 crate
-// ============================================================================
-
-// The current Base58 implementation has fundamental issues that cause it to
-// produce different results than the C# Neo implementation. This needs to be
-// completely rewritten or replaced with a working implementation.
-//
-// Issues identified:
-// 1. Algorithm produces wrong results for most inputs
-// 2. Round-trip encoding/decoding fails
-// 3. Base58Check checksum verification fails
-//
-// Recommended approach:
-// 1. Use a proven Base58 library like `bs58` crate
-// 2. Or rewrite the algorithm following Bitcoin Core implementation
-// 3. Ensure all test vectors from C# pass
-
-#[test]
-fn test_base58_encode_decode_basic() {
-    // This should work but currently fails due to algorithm issues
-    let basic_test_vectors = vec![("", ""), ("00", "1")];
-
-    for (hex_input, expected_base58) in basic_test_vectors {
-        let input_bytes = hex::decode(hex_input).unwrap();
-        let encoded = base58::encode(&input_bytes);
+    for (hex_input, expected_base58) in test_vectors {
+        let input_bytes = hex::decode(hex_input).expect("hex decode");
+        assert_eq!(expected_base58, base58::encode(&input_bytes));
         assert_eq!(
-            expected_base58, encoded,
-            "Encoding failed for input: {hex_input}"
+            input_bytes,
+            base58::decode(expected_base58).expect("base58 decode")
         );
     }
-}
 
-#[test]
-fn test_base58_round_trip_simple() {
-    // This should work but currently fails
-    let test_cases = vec![vec![1, 2, 3], vec![42, 123, 200]];
-
-    for test_data in test_cases {
-        let encoded = base58::encode(&test_data);
-        let decoded = base58::decode(&encoded).unwrap();
-        assert_eq!(
-            test_data, decoded,
-            "Round-trip failed for data: {test_data:?}"
-        );
-    }
-}
-
-#[test]
-fn test_base58_check_encode_decode_simple() {
-    // This should work but currently fails
-    let test_cases = vec![vec![1, 2, 3], b"Neo".to_vec()];
-
-    for test_data in test_cases {
-        let encoded = base58::encode_check(&test_data);
-        let decoded = base58::decode_check(&encoded).unwrap();
-        assert_eq!(
-            test_data, decoded,
-            "Base58Check round-trip failed for data: {test_data:?}"
-        );
-    }
-}
-
-#[test]
-fn test_base58_encode_decode_full_compatibility() {
-    // Full test vectors from Bitcoin Core tests - currently failing
-    let bitcoin_test_vectors = vec![("61", "2g"), ("626262", "a3gV"), ("636363", "aPEr")];
-
-    for (hex_input, expected_base58) in bitcoin_test_vectors {
-        let input_bytes = hex::decode(hex_input).unwrap();
-        let encoded = base58::encode(&input_bytes);
-        assert_eq!(
-            expected_base58, encoded,
-            "Encoding failed for input: {hex_input}"
-        );
+    let invalid_base58 = ["0", "O", "I", "l", "+", "/"];
+    for input in invalid_base58 {
+        assert!(base58::decode(input).is_err(), "invalid base58: {input}");
     }
 }

@@ -44,7 +44,7 @@ impl NeoAccountState {
                 } else {
                     let bytes = match &entries[2] {
                         StackItem::ByteString(data) => data.clone(),
-                        StackItem::Buffer(buf) => buf.data().to_vec(),
+                        StackItem::Buffer(buf) => buf.data(),
                         other => {
                             return Err(format!(
                                 "vote target must be byte array, found {:?}",
@@ -125,8 +125,8 @@ impl CandidateState {
 
     pub(super) fn from_stack_item(item: StackItem) -> Result<Self, String> {
         let entries = match item {
-            StackItem::Struct(structure) => structure.items().to_vec(),
-            StackItem::Array(array) => array.items().to_vec(),
+            StackItem::Struct(structure) => structure.items(),
+            StackItem::Array(array) => array.items(),
             StackItem::Integer(votes) => {
                 return Ok(Self {
                     registered: votes.sign() != num_bigint::Sign::Minus,

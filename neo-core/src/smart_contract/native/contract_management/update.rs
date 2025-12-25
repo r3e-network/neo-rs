@@ -3,6 +3,10 @@
 //
 
 use super::*;
+use crate::hardfork::Hardfork;
+use crate::smart_contract::call_flags::CallFlags;
+use crate::smart_contract::manifest::contract_manifest::MAX_MANIFEST_LENGTH;
+use neo_vm::Script;
 
 impl ContractManagement {
     /// Updates an existing contract
@@ -17,6 +21,38 @@ impl ContractManagement {
             return Err(Error::invalid_argument(
                 "NEF file and manifest cannot both be empty".to_string(),
             ));
+        }
+
+        if let Some(nef_bytes) = nef_file.as_ref() {
+            if nef_bytes.is_empty() {
+                return Err(Error::invalid_argument(
+                    "NEF file length cannot be zero".to_string(),
+                ));
+            }
+        }
+        if let Some(manifest_payload) = manifest_bytes.as_ref() {
+            if manifest_payload.is_empty() {
+                return Err(Error::invalid_argument(
+                    "Manifest length cannot be zero".to_string(),
+                ));
+            }
+            if manifest_payload.len() > MAX_MANIFEST_LENGTH {
+                return Err(Error::invalid_argument(
+                    "Manifest exceeds maximum allowed length".to_string(),
+                ));
+            }
+        }
+
+        if engine.is_hardfork_enabled(Hardfork::HfAspidochelone) {
+            if let Ok(state) = engine.current_execution_state() {
+                let state = state.lock();
+                if !state.call_flags.contains(CallFlags::ALL) {
+                    return Err(Error::invalid_operation(format!(
+                        "Cannot call Update with the flag {:?}.",
+                        state.call_flags
+                    )));
+                }
+            }
         }
 
         // Get calling contract hash
@@ -34,6 +70,12 @@ impl ContractManagement {
                 .cloned()
                 .ok_or_else(|| Error::invalid_operation("Contract not found".to_string()))?
         };
+
+        if contract.update_counter == u16::MAX {
+            return Err(Error::invalid_operation(
+                "The contract reached the maximum number of updates.".to_string(),
+            ));
+        }
 
         let nef_len = nef_file.as_ref().map(|v| v.len()).unwrap_or(0);
         let manifest_len = manifest_bytes.as_ref().map(|v| v.len()).unwrap_or(0);
@@ -68,8 +110,15 @@ impl ContractManagement {
                 ));
             }
             Self::validate_manifest(&manifest)?;
+            Self::validate_manifest_groups(&manifest, &contract_hash)?;
+            Self::validate_manifest_serialization(&manifest, engine.execution_limits())?;
             contract.manifest = manifest;
         }
+
+        let strict = engine.is_hardfork_enabled(Hardfork::HfBasilisk);
+        let script = Script::new(contract.nef.script.clone(), strict)
+            .map_err(|e| Error::invalid_data(format!("Invalid contract script: {e}")))?;
+        Self::validate_script_and_abi(&script, &contract.manifest.abi)?;
 
         // Increment update counter
         contract.update_counter += 1;

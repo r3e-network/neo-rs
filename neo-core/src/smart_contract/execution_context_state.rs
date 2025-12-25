@@ -46,6 +46,9 @@ pub struct ExecutionContextState {
 
     /// Return type of the executing method
     pub return_type: Option<ContractParameterType>,
+
+    /// Parameter types for the executing method
+    pub parameter_types: Vec<ContractParameterType>,
 }
 
 impl ExecutionContextState {
@@ -64,6 +67,7 @@ impl ExecutionContextState {
             method_name: None,
             argument_count: 0,
             return_type: None,
+            parameter_types: Vec::new(),
         }
     }
 }

@@ -10,8 +10,10 @@ use crate::smart_contract::i_interoperable::IInteroperable;
 use crate::smart_contract::notify_event_args::NotifyEventArgs;
 use crate::smart_contract::trigger_type::TriggerType;
 use crate::UInt160;
-use neo_vm::{StackItem, VMState};
+use neo_vm::stack_item::{Array, Map, Struct};
+use neo_vm::{OrderedDictionary, StackItem, VMState};
 use num_traits::ToPrimitive;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 
 impl ApplicationEngine {
@@ -167,8 +169,8 @@ impl ApplicationEngine {
     pub fn pop_array(&mut self) -> Result<Vec<StackItem>, String> {
         let item = self.pop()?;
         match item {
-            StackItem::Array(array) => Ok(array.items().to_vec()),
-            StackItem::Struct(struct_item) => Ok(struct_item.items().to_vec()),
+            StackItem::Array(array) => Ok(array.items()),
+            StackItem::Struct(struct_item) => Ok(struct_item.items()),
             _ => Err("Expected array".to_string()),
         }
     }
@@ -224,6 +226,7 @@ impl ApplicationEngine {
 
     /// Ensures the notification payload size stays within protocol limits.
     pub fn ensure_notification_size(&self, state: &[StackItem]) -> Result<(), String> {
+        detect_circular_reference(state)?;
         let limits = self.execution_limits();
         let serialized =
             BinarySerializer::serialize(&StackItem::from_array(state.to_vec()), limits)
@@ -249,10 +252,7 @@ impl ApplicationEngine {
         // Get optional container (can be None for OnPersist/PostPersist triggers)
         let container = self.script_container().cloned();
 
-        let mut copied = Vec::with_capacity(state.len());
-        for item in state {
-            copied.push(item.deep_clone());
-        }
+        let copied = clone_notification_state(&state)?;
 
         let notification = NotifyEventArgs::new_with_optional_container(
             container,
@@ -277,5 +277,163 @@ impl ApplicationEngine {
             }
         }
         Ok(result)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum CompoundKey {
+    Array(usize),
+    Struct(usize),
+    Map(usize),
+}
+
+fn detect_circular_reference(state: &[StackItem]) -> Result<(), String> {
+    let mut visiting = HashSet::new();
+    let mut visited = HashSet::new();
+    for item in state {
+        detect_stack_item_cycle(item, &mut visiting, &mut visited)?;
+    }
+    Ok(())
+}
+
+fn detect_stack_item_cycle(
+    item: &StackItem,
+    visiting: &mut HashSet<CompoundKey>,
+    visited: &mut HashSet<CompoundKey>,
+) -> Result<(), String> {
+    match item {
+        StackItem::Array(array) => {
+            let key = CompoundKey::Array(array.id());
+            detect_compound_cycle(
+                key,
+                visiting,
+                visited,
+                array.items(),
+                "Circular reference detected while serializing array",
+            )
+        }
+        StackItem::Struct(struct_item) => {
+            let key = CompoundKey::Struct(struct_item.id());
+            detect_compound_cycle(
+                key,
+                visiting,
+                visited,
+                struct_item.items(),
+                "Circular reference detected while serializing struct",
+            )
+        }
+        StackItem::Map(map) => {
+            let key = CompoundKey::Map(map.id());
+            if visited.contains(&key) {
+                return Ok(());
+            }
+            if !visiting.insert(key) {
+                return Err("Circular reference detected while serializing map".to_string());
+            }
+            for (entry_key, entry_value) in map.items().iter() {
+                detect_stack_item_cycle(entry_key, visiting, visited)?;
+                detect_stack_item_cycle(entry_value, visiting, visited)?;
+            }
+            visiting.remove(&key);
+            visited.insert(key);
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
+fn detect_compound_cycle(
+    key: CompoundKey,
+    visiting: &mut HashSet<CompoundKey>,
+    visited: &mut HashSet<CompoundKey>,
+    items: Vec<StackItem>,
+    cycle_message: &str,
+) -> Result<(), String> {
+    if visited.contains(&key) {
+        return Ok(());
+    }
+    if !visiting.insert(key) {
+        return Err(cycle_message.to_string());
+    }
+    for item in items {
+        detect_stack_item_cycle(&item, visiting, visited)?;
+    }
+    visiting.remove(&key);
+    visited.insert(key);
+    Ok(())
+}
+
+fn clone_notification_state(state: &[StackItem]) -> Result<Vec<StackItem>, String> {
+    let mut seen = HashMap::new();
+    let mut copied = Vec::with_capacity(state.len());
+    for item in state {
+        copied.push(clone_stack_item_as_immutable(item, &mut seen)?);
+    }
+    Ok(copied)
+}
+
+fn clone_stack_item_as_immutable(
+    item: &StackItem,
+    seen: &mut HashMap<CompoundKey, StackItem>,
+) -> Result<StackItem, String> {
+    match item {
+        StackItem::Null => Ok(StackItem::Null),
+        StackItem::Boolean(value) => Ok(StackItem::Boolean(*value)),
+        StackItem::Integer(value) => Ok(StackItem::Integer(value.clone())),
+        StackItem::ByteString(bytes) => Ok(StackItem::ByteString(bytes.clone())),
+        StackItem::Buffer(buffer) => Ok(StackItem::ByteString(buffer.data())),
+        StackItem::Pointer(pointer) => Ok(StackItem::Pointer(pointer.clone())),
+        StackItem::InteropInterface(interface) => {
+            Ok(StackItem::InteropInterface(interface.clone()))
+        }
+        StackItem::Array(array) => {
+            let key = CompoundKey::Array(array.id());
+            if let Some(existing) = seen.get(&key) {
+                return Ok(existing.clone());
+            }
+            let cloned_array = Array::new_untracked(Vec::new());
+            let cloned_item = StackItem::Array(cloned_array.clone());
+            seen.insert(key, cloned_item.clone());
+            for element in array.items() {
+                let cloned = clone_stack_item_as_immutable(&element, seen)?;
+                cloned_array
+                    .push(cloned)
+                    .map_err(|err| err.to_string())?;
+            }
+            Ok(cloned_item)
+        }
+        StackItem::Struct(struct_item) => {
+            let key = CompoundKey::Struct(struct_item.id());
+            if let Some(existing) = seen.get(&key) {
+                return Ok(existing.clone());
+            }
+            let cloned_struct = Struct::new_untracked(Vec::new());
+            let cloned_item = StackItem::Struct(cloned_struct.clone());
+            seen.insert(key, cloned_item.clone());
+            for element in struct_item.items() {
+                let cloned = clone_stack_item_as_immutable(&element, seen)?;
+                cloned_struct
+                    .push(cloned)
+                    .map_err(|err| err.to_string())?;
+            }
+            Ok(cloned_item)
+        }
+        StackItem::Map(map) => {
+            let key = CompoundKey::Map(map.id());
+            if let Some(existing) = seen.get(&key) {
+                return Ok(existing.clone());
+            }
+            let cloned_map = Map::new_untracked(OrderedDictionary::new());
+            let cloned_item = StackItem::Map(cloned_map.clone());
+            seen.insert(key, cloned_item.clone());
+            for (entry_key, entry_value) in map.items().iter() {
+                let cloned_key = clone_stack_item_as_immutable(entry_key, seen)?;
+                let cloned_value = clone_stack_item_as_immutable(entry_value, seen)?;
+                cloned_map
+                    .set(cloned_key, cloned_value)
+                    .map_err(|err| err.to_string())?;
+            }
+            Ok(cloned_item)
+        }
     }
 }
