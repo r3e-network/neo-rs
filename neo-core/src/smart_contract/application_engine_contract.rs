@@ -6,6 +6,7 @@ use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::contract_parameter_type::ContractParameterType;
 use crate::smart_contract::execution_context_state::ExecutionContextState;
 use crate::smart_contract::iterators::IteratorInterop;
+use crate::smart_contract::native::crypto_lib::Bls12381Interop;
 use crate::UInt160;
 use neo_vm::{ExecutionEngine, ExecutionEngineLimits, StackItem, VmError, VmResult};
 use num_bigint::BigInt;
@@ -248,6 +249,7 @@ fn contract_call_native_handler(
                     BinarySerializer::serialize(&item, app.execution_limits())
                         .map_err(|e| e.to_string())?
                 }
+                Some(ContractParameterType::InteropInterface) => stack_item_to_interop_bytes(item)?,
                 _ => ApplicationEngine::stack_item_to_bytes(item)?,
             };
             args.push(bytes);
@@ -315,24 +317,36 @@ fn push_native_result(
             }
         }
         ContractParameterType::InteropInterface => {
-            if result.len() != 4 {
-                let item =
-                    BinarySerializer::deserialize(&result, &ExecutionEngineLimits::default(), None)
-                        .map_err(|e| e.to_string())?;
-                return engine.push(item).map_err(|e| e.to_string());
+            if result.len() == 4 {
+                let id = BigInt::from_signed_bytes_le(&result);
+                let iterator_id = id
+                    .to_u32()
+                    .ok_or_else(|| "Iterator identifier out of range".to_string())?;
+                return engine
+                    .push(StackItem::from_interface(IteratorInterop::new(iterator_id)))
+                    .map_err(|e| e.to_string());
             }
 
-            let id = BigInt::from_signed_bytes_le(&result);
-            let iterator_id = id
-                .to_u32()
-                .ok_or_else(|| "Iterator identifier out of range".to_string())?;
+            let interop =
+                Bls12381Interop::from_encoded_bytes(&result).map_err(|e| e.to_string())?;
             engine
-                .push(StackItem::from_interface(IteratorInterop::new(iterator_id)))
+                .push(StackItem::from_interface(interop))
                 .map_err(|e| e.to_string())
         }
         _ => engine
             .push(StackItem::from_byte_string(result))
             .map_err(|e| e.to_string()),
+    }
+}
+
+fn stack_item_to_interop_bytes(item: StackItem) -> Result<Vec<u8>, String> {
+    match item {
+        StackItem::InteropInterface(interface) => interface
+            .as_any()
+            .downcast_ref::<Bls12381Interop>()
+            .map(|interop| interop.to_encoded_bytes())
+            .ok_or_else(|| "Invalid interop interface argument".to_string()),
+        _ => Err("Stack item is not an InteropInterface".to_string()),
     }
 }
 

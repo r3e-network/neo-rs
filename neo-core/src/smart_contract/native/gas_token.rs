@@ -279,29 +279,14 @@ impl GasToken {
         if let Ok(stack_item) =
             BinarySerializer::deserialize(&bytes, &ExecutionEngineLimits::default(), None)
         {
-            if let Some(balance) = Self::balance_from_stack_item(&stack_item) {
-                return AccountState::with_balance(balance);
+            if matches!(stack_item, StackItem::Struct(_)) {
+                let mut state = AccountState::default();
+                state.from_stack_item(stack_item);
+                return state;
             }
         }
 
         AccountState::with_balance(item.to_bigint())
-    }
-
-    fn balance_from_stack_item(item: &StackItem) -> Option<BigInt> {
-        match item {
-            StackItem::Struct(struct_item) => struct_item
-                .items()
-                .first()
-                .and_then(|entry| entry.as_int().ok()),
-            StackItem::Array(array_item) => array_item
-                .items()
-                .first()
-                .and_then(|entry| entry.as_int().ok()),
-            StackItem::Integer(value) => Some(value.clone()),
-            StackItem::ByteString(bytes) => Some(BigInt::from_signed_bytes_le(bytes)),
-            StackItem::Buffer(buffer) => Some(BigInt::from_signed_bytes_le(&buffer.data())),
-            _ => None,
-        }
     }
 
     fn encode_amount(value: &BigInt) -> Vec<u8> {

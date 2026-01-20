@@ -9,11 +9,10 @@ use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
 use crate::hardfork::Hardfork;
 use crate::smart_contract::application_engine::ApplicationEngine;
-use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::native::{NativeContract, NativeMethod};
 use crate::smart_contract::ContractParameterType;
 use crate::UInt160;
-use neo_vm::{ExecutionEngineLimits, StackItem};
+use neo_vm::stack_item::InteropInterface as VmInteropInterface;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use std::any::Any;
@@ -22,6 +21,132 @@ use std::any::Any;
 use blst::{
     blst_fp, blst_fp12, blst_p1, blst_p1_affine, blst_p2, blst_p2_affine, blst_scalar, BLST_ERROR,
 };
+
+const BLS_INTEROP_G1_AFFINE: u8 = 0x01;
+const BLS_INTEROP_G1_PROJECTIVE: u8 = 0x02;
+const BLS_INTEROP_G2_AFFINE: u8 = 0x03;
+const BLS_INTEROP_G2_PROJECTIVE: u8 = 0x04;
+const BLS_INTEROP_GT: u8 = 0x05;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Bls12381Group {
+    G1,
+    G2,
+    Gt,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Bls12381Kind {
+    G1Affine,
+    G1Projective,
+    G2Affine,
+    G2Projective,
+    Gt,
+}
+
+impl Bls12381Kind {
+    fn from_tag(tag: u8) -> Option<Self> {
+        match tag {
+            BLS_INTEROP_G1_AFFINE => Some(Self::G1Affine),
+            BLS_INTEROP_G1_PROJECTIVE => Some(Self::G1Projective),
+            BLS_INTEROP_G2_AFFINE => Some(Self::G2Affine),
+            BLS_INTEROP_G2_PROJECTIVE => Some(Self::G2Projective),
+            BLS_INTEROP_GT => Some(Self::Gt),
+            _ => None,
+        }
+    }
+
+    fn tag(self) -> u8 {
+        match self {
+            Self::G1Affine => BLS_INTEROP_G1_AFFINE,
+            Self::G1Projective => BLS_INTEROP_G1_PROJECTIVE,
+            Self::G2Affine => BLS_INTEROP_G2_AFFINE,
+            Self::G2Projective => BLS_INTEROP_G2_PROJECTIVE,
+            Self::Gt => BLS_INTEROP_GT,
+        }
+    }
+
+    fn group(self) -> Bls12381Group {
+        match self {
+            Self::G1Affine | Self::G1Projective => Bls12381Group::G1,
+            Self::G2Affine | Self::G2Projective => Bls12381Group::G2,
+            Self::Gt => Bls12381Group::Gt,
+        }
+    }
+
+    fn expected_len(self) -> usize {
+        match self {
+            Self::G1Affine | Self::G1Projective => 48,
+            Self::G2Affine | Self::G2Projective => 96,
+            Self::Gt => 576,
+        }
+    }
+
+    fn interface_type(self) -> &'static str {
+        match self {
+            Self::G1Affine => "Bls12381G1Affine",
+            Self::G1Projective => "Bls12381G1Projective",
+            Self::G2Affine => "Bls12381G2Affine",
+            Self::G2Projective => "Bls12381G2Projective",
+            Self::Gt => "Bls12381Gt",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct Bls12381Interop {
+    kind: Bls12381Kind,
+    bytes: Vec<u8>,
+}
+
+impl Bls12381Interop {
+    pub(crate) fn new(kind: Bls12381Kind, bytes: Vec<u8>) -> Result<Self> {
+        if bytes.len() != kind.expected_len() {
+            return Err(Error::native_contract(
+                "Invalid BLS12-381 point size".to_string(),
+            ));
+        }
+        Ok(Self { kind, bytes })
+    }
+
+    pub(crate) fn from_encoded_bytes(data: &[u8]) -> Result<Self> {
+        if data.len() < 2 {
+            return Err(Error::native_contract(
+                "Invalid BLS12-381 interop payload".to_string(),
+            ));
+        }
+        let kind = Bls12381Kind::from_tag(data[0]).ok_or_else(|| {
+            Error::native_contract("Invalid BLS12-381 interop payload".to_string())
+        })?;
+        let bytes = data[1..].to_vec();
+        Self::new(kind, bytes)
+    }
+
+    pub(crate) fn to_encoded_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(self.bytes.len() + 1);
+        out.push(self.kind.tag());
+        out.extend_from_slice(&self.bytes);
+        out
+    }
+
+    pub(crate) fn kind(&self) -> Bls12381Kind {
+        self.kind
+    }
+
+    pub(crate) fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
+impl VmInteropInterface for Bls12381Interop {
+    fn interface_type(&self) -> &str {
+        self.kind.interface_type()
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
 
 pub struct CryptoLib {
     id: i32,
@@ -261,14 +386,6 @@ impl CryptoLib {
         Ok(Crypto::keccak256(data).to_vec())
     }
 
-    fn wrap_interop_bytes(&self, data: Vec<u8>) -> Result<Vec<u8>> {
-        BinarySerializer::serialize(
-            &StackItem::from_byte_string(data),
-            &ExecutionEngineLimits::default(),
-        )
-        .map_err(|e| Error::serialization(format!("Failed to serialize interop payload: {e}")))
-    }
-
     /// Verify ECDSA signature with named curve/hash pair.
     fn verify_with_ecdsa(&self, engine: &ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.len() != 4 {
@@ -388,45 +505,42 @@ impl CryptoLib {
             ));
         }
 
-        let x = &args[0];
-        let y = &args[1];
+        let x = Bls12381Interop::from_encoded_bytes(&args[0])?;
+        let y = Bls12381Interop::from_encoded_bytes(&args[1])?;
 
-        let bytes = match x.len() {
-            48 => {
-                if y.len() != 48 {
-                    return Err(Error::native_contract("Point size mismatch".to_string()));
-                }
-                let p1 = self.deserialize_g1(x)?;
-                let p2 = self.deserialize_g1(y)?;
+        if x.kind().group() != y.kind().group() {
+            return Err(Error::native_contract(
+                "BLS12-381 type mismatch".to_string(),
+            ));
+        }
+
+        let bytes = match x.kind().group() {
+            Bls12381Group::G1 => {
+                let p1 = self.deserialize_g1(x.bytes())?;
+                let p2 = self.deserialize_g1(y.bytes())?;
                 let result = self.g1_add(&p1, &p2);
                 self.serialize_g1(&result)?
             }
-            96 => {
-                if y.len() != 96 {
-                    return Err(Error::native_contract("Point size mismatch".to_string()));
-                }
-                let p1 = self.deserialize_g2(x)?;
-                let p2 = self.deserialize_g2(y)?;
+            Bls12381Group::G2 => {
+                let p1 = self.deserialize_g2(x.bytes())?;
+                let p2 = self.deserialize_g2(y.bytes())?;
                 let result = self.g2_add(&p1, &p2);
                 self.serialize_g2(&result)?
             }
-            576 => {
-                if y.len() != 576 {
-                    return Err(Error::native_contract("Point size mismatch".to_string()));
-                }
-                let p1 = self.deserialize_gt(x)?;
-                let p2 = self.deserialize_gt(y)?;
+            Bls12381Group::Gt => {
+                let p1 = self.deserialize_gt(x.bytes())?;
+                let p2 = self.deserialize_gt(y.bytes())?;
                 let result = self.gt_add(&p1, &p2);
                 self.serialize_gt(&result)?
             }
-            _ => {
-                return Err(Error::native_contract(
-                    "Invalid BLS12-381 point size".to_string(),
-                ))
-            }
         };
 
-        self.wrap_interop_bytes(bytes)
+        let output_kind = match x.kind().group() {
+            Bls12381Group::G1 => Bls12381Kind::G1Projective,
+            Bls12381Group::G2 => Bls12381Kind::G2Projective,
+            Bls12381Group::Gt => Bls12381Kind::Gt,
+        };
+        Ok(Bls12381Interop::new(output_kind, bytes)?.to_encoded_bytes())
     }
 
     /// BLS12-381 equality check
@@ -437,46 +551,34 @@ impl CryptoLib {
             ));
         }
 
-        let x = &args[0];
-        let y = &args[1];
+        let x = Bls12381Interop::from_encoded_bytes(&args[0])?;
+        let y = Bls12381Interop::from_encoded_bytes(&args[1])?;
 
-        match x.len() {
-            48 => {
-                if y.len() != 48 {
-                    return Err(Error::native_contract(
-                        "BLS12-381 type mismatch".to_string(),
-                    ));
-                }
-                let p1 = self.deserialize_g1(x)?;
-                let p2 = self.deserialize_g1(y)?;
+        if x.kind() != y.kind() {
+            return Err(Error::native_contract(
+                "BLS12-381 type mismatch".to_string(),
+            ));
+        }
+
+        match x.kind().group() {
+            Bls12381Group::G1 => {
+                let p1 = self.deserialize_g1(x.bytes())?;
+                let p2 = self.deserialize_g1(y.bytes())?;
                 let equal = unsafe { blst::blst_p1_affine_is_equal(&p1, &p2) };
                 Ok(vec![if equal { 1 } else { 0 }])
             }
-            96 => {
-                if y.len() != 96 {
-                    return Err(Error::native_contract(
-                        "BLS12-381 type mismatch".to_string(),
-                    ));
-                }
-                let p1 = self.deserialize_g2(x)?;
-                let p2 = self.deserialize_g2(y)?;
+            Bls12381Group::G2 => {
+                let p1 = self.deserialize_g2(x.bytes())?;
+                let p2 = self.deserialize_g2(y.bytes())?;
                 let equal = unsafe { blst::blst_p2_affine_is_equal(&p1, &p2) };
                 Ok(vec![if equal { 1 } else { 0 }])
             }
-            576 => {
-                if y.len() != 576 {
-                    return Err(Error::native_contract(
-                        "BLS12-381 type mismatch".to_string(),
-                    ));
-                }
-                let p1 = self.deserialize_gt(x)?;
-                let p2 = self.deserialize_gt(y)?;
+            Bls12381Group::Gt => {
+                let p1 = self.deserialize_gt(x.bytes())?;
+                let p2 = self.deserialize_gt(y.bytes())?;
                 let equal = unsafe { blst::blst_fp12_is_equal(&p1, &p2) };
                 Ok(vec![if equal { 1 } else { 0 }])
             }
-            _ => Err(Error::native_contract(
-                "Invalid BLS12-381 point size".to_string(),
-            )),
         }
     }
 
@@ -488,7 +590,7 @@ impl CryptoLib {
             ));
         }
 
-        let point = &args[0];
+        let point = Bls12381Interop::from_encoded_bytes(&args[0])?;
         let scalar = &args[1];
         let neg = args
             .get(2)
@@ -504,30 +606,30 @@ impl CryptoLib {
         let mut scalar_bytes = [0u8; 32];
         scalar_bytes.copy_from_slice(scalar);
 
-        let bytes = match point.len() {
-            48 => {
-                let p = self.deserialize_g1(point)?;
+        let bytes = match point.kind().group() {
+            Bls12381Group::G1 => {
+                let p = self.deserialize_g1(point.bytes())?;
                 let result = self.g1_mul(&p, &scalar_bytes, neg);
                 self.serialize_g1(&result)?
             }
-            96 => {
-                let p = self.deserialize_g2(point)?;
+            Bls12381Group::G2 => {
+                let p = self.deserialize_g2(point.bytes())?;
                 let result = self.g2_mul(&p, &scalar_bytes, neg);
                 self.serialize_g2(&result)?
             }
-            576 => {
-                let p = self.deserialize_gt(point)?;
+            Bls12381Group::Gt => {
+                let p = self.deserialize_gt(point.bytes())?;
                 let result = self.gt_mul(&p, &scalar_bytes, neg);
                 self.serialize_gt(&result)?
             }
-            _ => {
-                return Err(Error::native_contract(
-                    "Invalid BLS12-381 point size".to_string(),
-                ))
-            }
         };
 
-        self.wrap_interop_bytes(bytes)
+        let output_kind = match point.kind().group() {
+            Bls12381Group::G1 => Bls12381Kind::G1Projective,
+            Bls12381Group::G2 => Bls12381Kind::G2Projective,
+            Bls12381Group::Gt => Bls12381Kind::Gt,
+        };
+        Ok(Bls12381Interop::new(output_kind, bytes)?.to_encoded_bytes())
     }
 
     /// BLS12-381 pairing operation
@@ -538,20 +640,22 @@ impl CryptoLib {
             ));
         }
 
-        let g1_point = &args[0];
-        let g2_point = &args[1];
+        let g1_point = Bls12381Interop::from_encoded_bytes(&args[0])?;
+        let g2_point = Bls12381Interop::from_encoded_bytes(&args[1])?;
 
-        if g1_point.len() != 48 || g2_point.len() != 96 {
+        if g1_point.kind().group() != Bls12381Group::G1
+            || g2_point.kind().group() != Bls12381Group::G2
+        {
             return Err(Error::native_contract(
-                "Invalid point sizes for pairing (G1: 48, G2: 96 bytes)".to_string(),
+                "BLS12-381 type mismatch".to_string(),
             ));
         }
 
-        let p1 = self.deserialize_g1(g1_point)?;
-        let p2 = self.deserialize_g2(g2_point)?;
+        let p1 = self.deserialize_g1(g1_point.bytes())?;
+        let p2 = self.deserialize_g2(g2_point.bytes())?;
 
         let bytes = self.compute_pairing(&p1, &p2)?;
-        self.wrap_interop_bytes(bytes)
+        Ok(Bls12381Interop::new(Bls12381Kind::Gt, bytes)?.to_encoded_bytes())
     }
 
     /// BLS12-381 point serialization
@@ -561,9 +665,10 @@ impl CryptoLib {
                 "bls12381Serialize requires point argument".to_string(),
             ));
         }
-        let data = &args[0];
-        match data.len() {
-            48 => {
+        let interop = Bls12381Interop::from_encoded_bytes(&args[0])?;
+        let data = interop.bytes();
+        match interop.kind().group() {
+            Bls12381Group::G1 => {
                 let point = self.deserialize_g1(data)?;
                 let mut proj = blst_p1::default();
                 unsafe {
@@ -571,7 +676,7 @@ impl CryptoLib {
                 }
                 self.serialize_g1(&proj)
             }
-            96 => {
+            Bls12381Group::G2 => {
                 let point = self.deserialize_g2(data)?;
                 let mut proj = blst_p2::default();
                 unsafe {
@@ -579,13 +684,10 @@ impl CryptoLib {
                 }
                 self.serialize_g2(&proj)
             }
-            576 => {
+            Bls12381Group::Gt => {
                 let point = self.deserialize_gt(data)?;
                 self.serialize_gt(&point)
             }
-            _ => Err(Error::native_contract(
-                "Invalid BLS12-381 point size".to_string(),
-            )),
         }
     }
 
@@ -599,18 +701,18 @@ impl CryptoLib {
 
         let data = &args[0];
 
-        let bytes = match data.len() {
+        let (kind, bytes) = match data.len() {
             48 => {
                 let _ = self.deserialize_g1(data)?;
-                data.clone()
+                (Bls12381Kind::G1Affine, data.clone())
             }
             96 => {
                 let _ = self.deserialize_g2(data)?;
-                data.clone()
+                (Bls12381Kind::G2Affine, data.clone())
             }
             576 => {
                 let _ = self.deserialize_gt(data)?;
-                data.clone()
+                (Bls12381Kind::Gt, data.clone())
             }
             _ => {
                 return Err(Error::native_contract(
@@ -619,7 +721,7 @@ impl CryptoLib {
             }
         };
 
-        self.wrap_interop_bytes(bytes)
+        Ok(Bls12381Interop::new(kind, bytes)?.to_encoded_bytes())
     }
 
     // BLS12-381 helper functions

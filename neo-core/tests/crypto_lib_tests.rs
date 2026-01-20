@@ -15,12 +15,11 @@ use neo_core::network::p2p::payloads::{Signer, Transaction, Witness, WitnessScop
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
-use neo_core::smart_contract::binary_serializer::BinarySerializer;
 use neo_core::smart_contract::native::crypto_lib::CryptoLib;
 use neo_core::smart_contract::native::NativeContract;
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::UInt160;
-use neo_vm::{ExecutionEngineLimits, OpCode, ScriptBuilder};
+use neo_vm::{OpCode, ScriptBuilder};
 use num_bigint::BigInt;
 use p256::ecdsa::SigningKey as P256SigningKey;
 use p256::ecdsa::{signature::hazmat::PrehashSigner, Signature as P256Signature};
@@ -500,14 +499,42 @@ fn decode_hex(value: &str) -> Vec<u8> {
     hex_decode(value).expect("hex decode")
 }
 
-fn unwrap_interop_bytes(result: Vec<u8>) -> Vec<u8> {
-    if result.len() == 4 {
-        return result;
-    }
+const BLS_TAG_G1_AFFINE: u8 = 0x01;
+const BLS_TAG_G1_PROJECTIVE: u8 = 0x02;
+const BLS_TAG_G2_AFFINE: u8 = 0x03;
+const BLS_TAG_G2_PROJECTIVE: u8 = 0x04;
+const BLS_TAG_GT: u8 = 0x05;
 
-    let item = BinarySerializer::deserialize(&result, &ExecutionEngineLimits::default(), None)
-        .expect("deserialize interop payload");
-    item.as_bytes().expect("interop payload bytes")
+fn bls_affine_tag_for_len(len: usize) -> u8 {
+    match len {
+        48 => BLS_TAG_G1_AFFINE,
+        96 => BLS_TAG_G2_AFFINE,
+        576 => BLS_TAG_GT,
+        _ => panic!("unsupported BLS point length"),
+    }
+}
+
+fn bls_projective_tag_for_len(len: usize) -> u8 {
+    match len {
+        48 => BLS_TAG_G1_PROJECTIVE,
+        96 => BLS_TAG_G2_PROJECTIVE,
+        576 => BLS_TAG_GT,
+        _ => panic!("unsupported BLS point length"),
+    }
+}
+
+fn encode_bls_interop(point: &[u8]) -> Vec<u8> {
+    let tag = bls_affine_tag_for_len(point.len());
+    let mut out = Vec::with_capacity(point.len() + 1);
+    out.push(tag);
+    out.extend_from_slice(point);
+    out
+}
+
+fn decode_bls_interop(result: Vec<u8>, expected_tag: u8) -> Vec<u8> {
+    assert!(!result.is_empty(), "empty interop payload");
+    assert_eq!(result[0], expected_tag, "unexpected interop payload tag");
+    result[1..].to_vec()
 }
 
 fn assert_native_keccak256(input: &[u8], expected_hex: &str) {
@@ -527,12 +554,18 @@ fn call_bls_mul(
     neg: bool,
 ) -> Vec<u8> {
     let point = decode_hex(point_hex);
+    let encoded_point = encode_bls_interop(&point);
     let scalar = decode_hex(scalar_hex);
     let neg_flag = vec![if neg { 1 } else { 0 }];
     let result = engine
-        .call_native_contract(crypto.hash(), "bls12381Mul", &[point, scalar, neg_flag])
+        .call_native_contract(
+            crypto.hash(),
+            "bls12381Mul",
+            &[encoded_point, scalar, neg_flag],
+        )
         .expect("bls12381Mul");
-    unwrap_interop_bytes(result)
+    let expected_tag = bls_projective_tag_for_len(point.len());
+    decode_bls_interop(result, expected_tag)
 }
 
 #[test]
@@ -1104,7 +1137,7 @@ fn crypto_lib_bls12381_deserialize_g1() {
     let crypto = CryptoLib::new();
     let g1 = decode_hex(BLS_G1_HEX);
 
-    let result = unwrap_interop_bytes(
+    let result = decode_bls_interop(
         engine
             .call_native_contract(
                 crypto.hash(),
@@ -1112,6 +1145,7 @@ fn crypto_lib_bls12381_deserialize_g1() {
                 std::slice::from_ref(&g1),
             )
             .expect("bls12381Deserialize g1"),
+        BLS_TAG_G1_AFFINE,
     );
 
     assert_eq!(hex_encode(result), BLS_G1_HEX);
@@ -1123,7 +1157,7 @@ fn crypto_lib_bls12381_deserialize_g2() {
     let crypto = CryptoLib::new();
     let g2 = decode_hex(BLS_G2_HEX);
 
-    let result = unwrap_interop_bytes(
+    let result = decode_bls_interop(
         engine
             .call_native_contract(
                 crypto.hash(),
@@ -1131,6 +1165,7 @@ fn crypto_lib_bls12381_deserialize_g2() {
                 std::slice::from_ref(&g2),
             )
             .expect("bls12381Deserialize g2"),
+        BLS_TAG_G2_AFFINE,
     );
 
     assert_eq!(hex_encode(result), BLS_G2_HEX);
@@ -1142,7 +1177,7 @@ fn crypto_lib_bls12381_deserialize_gt() {
     let crypto = CryptoLib::new();
     let gt = decode_hex(BLS_GT_HEX);
 
-    let result = unwrap_interop_bytes(
+    let result = decode_bls_interop(
         engine
             .call_native_contract(
                 crypto.hash(),
@@ -1150,6 +1185,7 @@ fn crypto_lib_bls12381_deserialize_gt() {
                 std::slice::from_ref(&gt),
             )
             .expect("bls12381Deserialize gt"),
+        BLS_TAG_GT,
     );
 
     assert_eq!(hex_encode(result), BLS_GT_HEX);
@@ -1183,31 +1219,34 @@ fn crypto_lib_bls12381_serialize_roundtrip() {
     let crypto = CryptoLib::new();
 
     let g1 = decode_hex(BLS_G1_HEX);
+    let g1_interop = encode_bls_interop(&g1);
     let result = engine
         .call_native_contract(
             crypto.hash(),
             "bls12381Serialize",
-            std::slice::from_ref(&g1),
+            std::slice::from_ref(&g1_interop),
         )
         .expect("bls12381Serialize g1");
     assert_eq!(hex_encode(result), BLS_G1_HEX);
 
     let g2 = decode_hex(BLS_G2_HEX);
+    let g2_interop = encode_bls_interop(&g2);
     let result = engine
         .call_native_contract(
             crypto.hash(),
             "bls12381Serialize",
-            std::slice::from_ref(&g2),
+            std::slice::from_ref(&g2_interop),
         )
         .expect("bls12381Serialize g2");
     assert_eq!(hex_encode(result), BLS_G2_HEX);
 
     let gt = decode_hex(BLS_GT_HEX);
+    let gt_interop = encode_bls_interop(&gt);
     let result = engine
         .call_native_contract(
             crypto.hash(),
             "bls12381Serialize",
-            std::slice::from_ref(&gt),
+            std::slice::from_ref(&gt_interop),
         )
         .expect("bls12381Serialize gt");
     assert_eq!(hex_encode(result), BLS_GT_HEX);
@@ -1218,11 +1257,17 @@ fn crypto_lib_bls12381_add_gt() {
     let mut engine = make_engine(protocol_settings_all_active());
     let crypto = CryptoLib::new();
     let gt = decode_hex(BLS_GT_HEX);
+    let gt_interop = encode_bls_interop(&gt);
 
-    let result = unwrap_interop_bytes(
+    let result = decode_bls_interop(
         engine
-            .call_native_contract(crypto.hash(), "bls12381Add", &[gt.clone(), gt])
+            .call_native_contract(
+                crypto.hash(),
+                "bls12381Add",
+                &[gt_interop.clone(), gt_interop],
+            )
             .expect("bls12381Add gt"),
+        BLS_TAG_GT,
     );
 
     assert_eq!(hex_encode(result), BLS_ADD_GT_EXPECTED);
@@ -1233,25 +1278,28 @@ fn crypto_lib_bls12381_mul_gt() {
     let mut engine = make_engine(protocol_settings_all_active());
     let crypto = CryptoLib::new();
     let gt = decode_hex(BLS_GT_HEX);
+    let gt_interop = encode_bls_interop(&gt);
     let mut scalar = vec![0u8; 32];
     scalar[0] = 0x03;
 
-    let result = unwrap_interop_bytes(
+    let result = decode_bls_interop(
         engine
             .call_native_contract(
                 crypto.hash(),
                 "bls12381Mul",
-                &[gt.clone(), scalar.clone(), vec![0]],
+                &[gt_interop.clone(), scalar.clone(), vec![0]],
             )
             .expect("bls12381Mul gt"),
+        BLS_TAG_GT,
     );
 
     assert_eq!(hex_encode(result), BLS_MUL_GT_EXPECTED);
 
-    let result = unwrap_interop_bytes(
+    let result = decode_bls_interop(
         engine
-            .call_native_contract(crypto.hash(), "bls12381Mul", &[gt, scalar, vec![1]])
+            .call_native_contract(crypto.hash(), "bls12381Mul", &[gt_interop, scalar, vec![1]])
             .expect("bls12381Mul gt neg"),
+        BLS_TAG_GT,
     );
 
     assert_eq!(hex_encode(result), BLS_MUL_GT_EXPECTED_NEG);
@@ -1262,9 +1310,11 @@ fn crypto_lib_bls12381_mul_invalid_scalar_length() {
     let mut engine = make_engine(protocol_settings_all_active());
     let crypto = CryptoLib::new();
     let gt = decode_hex(BLS_GT_HEX);
+    let gt_interop = encode_bls_interop(&gt);
     let scalar = vec![0x01, 0x02, 0x03];
 
-    let result = engine.call_native_contract(crypto.hash(), "bls12381Mul", &[gt, scalar, vec![0]]);
+    let result =
+        engine.call_native_contract(crypto.hash(), "bls12381Mul", &[gt_interop, scalar, vec![0]]);
 
     assert!(result.is_err());
 }
@@ -1346,11 +1396,14 @@ fn crypto_lib_bls12381_pairing_g1_g2() {
     let crypto = CryptoLib::new();
     let g1 = decode_hex(BLS_G1_HEX);
     let g2 = decode_hex(BLS_G2_HEX);
+    let g1_interop = encode_bls_interop(&g1);
+    let g2_interop = encode_bls_interop(&g2);
 
-    let result = unwrap_interop_bytes(
+    let result = decode_bls_interop(
         engine
-            .call_native_contract(crypto.hash(), "bls12381Pairing", &[g1, g2])
+            .call_native_contract(crypto.hash(), "bls12381Pairing", &[g1_interop, g2_interop])
             .expect("bls12381Pairing"),
+        BLS_TAG_GT,
     );
 
     assert_eq!(hex_encode(result), BLS_GT_HEX);
@@ -1361,9 +1414,14 @@ fn crypto_lib_bls12381_equal_g1() {
     let mut engine = make_engine(protocol_settings_all_active());
     let crypto = CryptoLib::new();
     let g1 = decode_hex(BLS_G1_HEX);
+    let g1_interop = encode_bls_interop(&g1);
 
     let result = engine
-        .call_native_contract(crypto.hash(), "bls12381Equal", &[g1.clone(), g1])
+        .call_native_contract(
+            crypto.hash(),
+            "bls12381Equal",
+            &[g1_interop.clone(), g1_interop],
+        )
         .expect("bls12381Equal");
 
     assert_eq!(result, vec![1]);
@@ -1375,8 +1433,11 @@ fn crypto_lib_bls12381_equal_type_mismatch_faults() {
     let crypto = CryptoLib::new();
     let g1 = decode_hex(BLS_G1_HEX);
     let g2 = decode_hex(BLS_G2_HEX);
+    let g1_interop = encode_bls_interop(&g1);
+    let g2_interop = encode_bls_interop(&g2);
 
-    let result = engine.call_native_contract(crypto.hash(), "bls12381Equal", &[g1, g2]);
+    let result =
+        engine.call_native_contract(crypto.hash(), "bls12381Equal", &[g1_interop, g2_interop]);
 
     assert!(result.is_err());
 }
