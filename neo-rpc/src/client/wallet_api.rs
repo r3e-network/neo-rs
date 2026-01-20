@@ -140,7 +140,7 @@ impl WalletApi {
         key: &str,
         add_assert: bool,
     ) -> Result<Transaction, Box<dyn std::error::Error>> {
-        let key_pair = RpcUtility::get_key_pair(key).map_err(|err| std::io::Error::other(err))?;
+        let key_pair = RpcUtility::get_key_pair(key).map_err(std::io::Error::other)?;
         self.claim_gas_with_assert(&key_pair, add_assert).await
     }
 
@@ -262,8 +262,7 @@ impl WalletApi {
         data: Option<serde_json::Value>,
         add_assert: bool,
     ) -> Result<(Transaction, String), Box<dyn std::error::Error>> {
-        let key_pair =
-            RpcUtility::get_key_pair(from_key).map_err(|err| std::io::Error::other(err))?;
+        let key_pair = RpcUtility::get_key_pair(from_key).map_err(std::io::Error::other)?;
         self.transfer_decimal_with_assert(
             token_hash, &key_pair, to_address, amount, data, add_assert,
         )
@@ -319,6 +318,7 @@ impl WalletApi {
         Ok((tx, hash.to_string()))
     }
 
+    #[allow(clippy::too_many_arguments)]
     /// Transfer NEP17 token from multi-sig account.
     /// Matches C# TransferAsync multi-sig overload.
     pub async fn transfer_multi_sig(
@@ -1152,7 +1152,8 @@ mod tests {
             UInt256::parse("0x0000000000000000000000000000000000000000000000000000000000000033")
                 .expect("hash");
 
-        let sender = Contract::create_multi_sig_contract(1, &[public_key.clone()]).script_hash();
+        let sender =
+            Contract::create_multi_sig_contract(1, std::slice::from_ref(&public_key)).script_hash();
         let amount = BigInt::from(100u64);
         let script = build_transfer_script(
             &gas_hash(),

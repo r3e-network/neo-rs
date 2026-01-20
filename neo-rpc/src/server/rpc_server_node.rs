@@ -509,6 +509,7 @@ mod tests {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn build_signed_transaction_with(
         settings: &ProtocolSettings,
         keypair: &KeyPair,

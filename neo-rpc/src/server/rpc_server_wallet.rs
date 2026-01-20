@@ -1151,6 +1151,21 @@ mod tests {
         make_authenticated_server_with_max_fee(RpcServerConfig::default().max_fee)
     }
 
+    fn authenticated_config() -> RpcServerConfig {
+        RpcServerConfig {
+            rpc_user: "user".to_string(),
+            rpc_pass: "pass".to_string(),
+            ..Default::default()
+        }
+    }
+
+    fn authenticated_config_with_max_fee(max_fee: i64) -> RpcServerConfig {
+        RpcServerConfig {
+            max_fee,
+            ..authenticated_config()
+        }
+    }
+
     fn make_authenticated_server_with_max_fee(max_fee: i64) -> RpcServer {
         let system = if Handle::try_current().is_ok() {
             NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start")
@@ -1162,10 +1177,7 @@ mod tests {
             drop(rt);
             system
         };
-        let mut config = RpcServerConfig::default();
-        config.rpc_user = "user".to_string();
-        config.rpc_pass = "pass".to_string();
-        config.max_fee = max_fee;
+        let config = authenticated_config_with_max_fee(max_fee);
         RpcServer::new(system, config)
     }
 
@@ -1266,10 +1278,7 @@ mod tests {
 
         let system =
             NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
-        let mut config = RpcServerConfig::default();
-        config.rpc_user = "user".to_string();
-        config.rpc_pass = "pass".to_string();
-        let server = RpcServer::new(system, config);
+        let server = RpcServer::new(system, authenticated_config());
         let handlers = RpcServerWallet::register_handlers();
         let open_handler = handlers
             .iter()
@@ -1332,10 +1341,7 @@ mod tests {
 
         let system =
             NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
-        let mut config = RpcServerConfig::default();
-        config.rpc_user = "user".to_string();
-        config.rpc_pass = "pass".to_string();
-        let server = RpcServer::new(system, config);
+        let server = RpcServer::new(system, authenticated_config());
         let handlers = RpcServerWallet::register_handlers();
         let open_handler = handlers
             .iter()
@@ -1358,10 +1364,7 @@ mod tests {
     async fn open_wallet_rejects_missing_file() {
         let system =
             NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
-        let mut config = RpcServerConfig::default();
-        config.rpc_user = "user".to_string();
-        config.rpc_pass = "pass".to_string();
-        let server = RpcServer::new(system, config);
+        let server = RpcServer::new(system, authenticated_config());
         let handlers = RpcServerWallet::register_handlers();
         let open_handler = find_handler(&handlers, "openwallet");
 
@@ -1379,10 +1382,7 @@ mod tests {
     async fn open_wallet_rejects_invalid_wallet_format() {
         let system =
             NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
-        let mut config = RpcServerConfig::default();
-        config.rpc_user = "user".to_string();
-        config.rpc_pass = "pass".to_string();
-        let server = RpcServer::new(system, config);
+        let server = RpcServer::new(system, authenticated_config());
         let handlers = RpcServerWallet::register_handlers();
         let open_handler = find_handler(&handlers, "openwallet");
 
@@ -1409,10 +1409,7 @@ mod tests {
             NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start")
         });
         drop(rt);
-        let mut config = RpcServerConfig::default();
-        config.rpc_user = "user".to_string();
-        config.rpc_pass = "pass".to_string();
-        let server = RpcServer::new(system, config);
+        let server = RpcServer::new(system, authenticated_config());
         let handlers = RpcServerWallet::register_handlers();
         let open_handler = find_handler(&handlers, "openwallet");
         let new_address_handler = find_handler(&handlers, "getnewaddress");
@@ -1446,10 +1443,7 @@ mod tests {
 
         let system =
             NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
-        let mut config = RpcServerConfig::default();
-        config.rpc_user = "user".to_string();
-        config.rpc_pass = "pass".to_string();
-        let server = RpcServer::new(system, config);
+        let server = RpcServer::new(system, authenticated_config());
         let handlers = RpcServerWallet::register_handlers();
         let open_handler = find_handler(&handlers, "openwallet");
         let balance_handler = find_handler(&handlers, "getwalletbalance");
@@ -1480,10 +1474,7 @@ mod tests {
 
         let system =
             NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
-        let mut config = RpcServerConfig::default();
-        config.rpc_user = "user".to_string();
-        config.rpc_pass = "pass".to_string();
-        let server = RpcServer::new(system, config);
+        let server = RpcServer::new(system, authenticated_config());
         let handlers = RpcServerWallet::register_handlers();
         let open_handler = find_handler(&handlers, "openwallet");
         let balance_handler = find_handler(&handlers, "getwalletbalance");
@@ -1513,10 +1504,7 @@ mod tests {
 
         let system =
             NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
-        let mut config = RpcServerConfig::default();
-        config.rpc_user = "user".to_string();
-        config.rpc_pass = "pass".to_string();
-        let server = RpcServer::new(system, config);
+        let server = RpcServer::new(system, authenticated_config());
         let handlers = RpcServerWallet::register_handlers();
         let open_handler = find_handler(&handlers, "openwallet");
         let gas_handler = find_handler(&handlers, "getwalletunclaimedgas");
@@ -1547,10 +1535,7 @@ mod tests {
         });
         drop(rt);
 
-        let mut config = RpcServerConfig::default();
-        config.rpc_user = "user".to_string();
-        config.rpc_pass = "pass".to_string();
-        let server = RpcServer::new(system, config);
+        let server = RpcServer::new(system, authenticated_config());
         let handlers = RpcServerWallet::register_handlers();
         let open_handler = find_handler(&handlers, "openwallet");
         let import_handler = find_handler(&handlers, "importprivkey");
@@ -1600,10 +1585,7 @@ mod tests {
         let (path, _keypair, _address) = create_wallet_file(password).await;
         let system =
             NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
-        let mut config = RpcServerConfig::default();
-        config.rpc_user = "user".to_string();
-        config.rpc_pass = "pass".to_string();
-        let server = RpcServer::new(system, config);
+        let server = RpcServer::new(system, authenticated_config());
         let handlers = RpcServerWallet::register_handlers();
         let open_handler = find_handler(&handlers, "openwallet");
         let import_handler = find_handler(&handlers, "importprivkey");
@@ -1632,10 +1614,7 @@ mod tests {
         let (path, _keypair, _address) = create_wallet_file(password).await;
         let system =
             NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
-        let mut config = RpcServerConfig::default();
-        config.rpc_user = "user".to_string();
-        config.rpc_pass = "pass".to_string();
-        let server = RpcServer::new(system, config);
+        let server = RpcServer::new(system, authenticated_config());
         let handlers = RpcServerWallet::register_handlers();
         let open_handler = find_handler(&handlers, "openwallet");
         let import_handler = find_handler(&handlers, "importprivkey");
@@ -1669,7 +1648,7 @@ mod tests {
         if let Some(label) = existing.label() {
             assert_eq!(obj.get("label").and_then(Value::as_str), Some(label));
         } else {
-            assert!(obj.get("label").map_or(false, Value::is_null));
+            assert!(obj.get("label").is_some_and(Value::is_null));
         }
 
         let current_count = wallet.get_accounts().len();
@@ -1688,10 +1667,7 @@ mod tests {
 
         let system =
             NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
-        let mut config = RpcServerConfig::default();
-        config.rpc_user = "user".to_string();
-        config.rpc_pass = "pass".to_string();
-        let server = RpcServer::new(system, config);
+        let server = RpcServer::new(system, authenticated_config());
         let handlers = RpcServerWallet::register_handlers();
         let open_handler = find_handler(&handlers, "openwallet");
         let dump_handler = find_handler(&handlers, "dumpprivkey");
@@ -1728,10 +1704,7 @@ mod tests {
 
         let system =
             NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
-        let mut config = RpcServerConfig::default();
-        config.rpc_user = "user".to_string();
-        config.rpc_pass = "pass".to_string();
-        let server = RpcServer::new(system, config);
+        let server = RpcServer::new(system, authenticated_config());
         let handlers = RpcServerWallet::register_handlers();
         let open_handler = find_handler(&handlers, "openwallet");
         let dump_handler = find_handler(&handlers, "dumpprivkey");
@@ -2226,10 +2199,7 @@ mod tests {
         let (path, keypair, address) = create_wallet_file(password).await;
         let system =
             NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
-        let mut config = RpcServerConfig::default();
-        config.rpc_user = "user".to_string();
-        config.rpc_pass = "pass".to_string();
-        let server = RpcServer::new(system.clone(), config);
+        let server = RpcServer::new(system.clone(), authenticated_config());
         let handlers = RpcServerWallet::register_handlers();
         let open_handler = find_handler(&handlers, "openwallet");
         let send_handler = find_handler(&handlers, "sendfrom");
@@ -2294,10 +2264,7 @@ mod tests {
         let (path, _keypair, address) = create_wallet_file(password).await;
         let system =
             NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
-        let mut config = RpcServerConfig::default();
-        config.rpc_user = "user".to_string();
-        config.rpc_pass = "pass".to_string();
-        let server = RpcServer::new(system, config);
+        let server = RpcServer::new(system, authenticated_config());
         let handlers = RpcServerWallet::register_handlers();
         let open_handler = find_handler(&handlers, "openwallet");
         let send_handler = find_handler(&handlers, "sendfrom");
@@ -2351,10 +2318,7 @@ mod tests {
         let (path, _keypair, _address) = create_wallet_file(password).await;
         let system =
             NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
-        let mut config = RpcServerConfig::default();
-        config.rpc_user = "user".to_string();
-        config.rpc_pass = "pass".to_string();
-        let server = RpcServer::new(system, config);
+        let server = RpcServer::new(system, authenticated_config());
         let handlers = RpcServerWallet::register_handlers();
         let open_handler = find_handler(&handlers, "openwallet");
         let handler = find_handler(&handlers, "sendtoaddress");
@@ -2390,10 +2354,7 @@ mod tests {
         let (path, _keypair, _address) = create_wallet_file(password).await;
         let system =
             NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
-        let mut config = RpcServerConfig::default();
-        config.rpc_user = "user".to_string();
-        config.rpc_pass = "pass".to_string();
-        let server = RpcServer::new(system, config);
+        let server = RpcServer::new(system, authenticated_config());
         let handlers = RpcServerWallet::register_handlers();
         let open_handler = find_handler(&handlers, "openwallet");
         let handler = find_handler(&handlers, "sendtoaddress");
@@ -2428,10 +2389,7 @@ mod tests {
         let (path, _keypair, address) = create_wallet_file(password).await;
         let system =
             NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
-        let mut config = RpcServerConfig::default();
-        config.rpc_user = "user".to_string();
-        config.rpc_pass = "pass".to_string();
-        let server = RpcServer::new(system, config);
+        let server = RpcServer::new(system, authenticated_config());
         let handlers = RpcServerWallet::register_handlers();
         let open_handler = find_handler(&handlers, "openwallet");
         let handler = find_handler(&handlers, "sendtoaddress");
@@ -2467,10 +2425,7 @@ mod tests {
         let (path, _keypair, address) = create_wallet_file(password).await;
         let system =
             NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
-        let mut config = RpcServerConfig::default();
-        config.rpc_user = "user".to_string();
-        config.rpc_pass = "pass".to_string();
-        let server = RpcServer::new(system, config);
+        let server = RpcServer::new(system, authenticated_config());
         let handlers = RpcServerWallet::register_handlers();
         let open_handler = find_handler(&handlers, "openwallet");
         let handler = find_handler(&handlers, "sendtoaddress");
@@ -2523,10 +2478,7 @@ mod tests {
         let (path, _keypair, _address) = create_wallet_file(password).await;
         let system =
             NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
-        let mut config = RpcServerConfig::default();
-        config.rpc_user = "user".to_string();
-        config.rpc_pass = "pass".to_string();
-        let server = RpcServer::new(system, config);
+        let server = RpcServer::new(system, authenticated_config());
         let handlers = RpcServerWallet::register_handlers();
         let open_handler = find_handler(&handlers, "openwallet");
         let handler = find_handler(&handlers, "sendmany");
@@ -2565,10 +2517,7 @@ mod tests {
         let (path, _keypair, address) = create_wallet_file(password).await;
         let system =
             NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
-        let mut config = RpcServerConfig::default();
-        config.rpc_user = "user".to_string();
-        config.rpc_pass = "pass".to_string();
-        let server = RpcServer::new(system, config);
+        let server = RpcServer::new(system, authenticated_config());
         let handlers = RpcServerWallet::register_handlers();
         let open_handler = find_handler(&handlers, "openwallet");
         let handler = find_handler(&handlers, "sendmany");
@@ -2605,10 +2554,7 @@ mod tests {
         let (path, _keypair, address) = create_wallet_file(password).await;
         let system =
             NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
-        let mut config = RpcServerConfig::default();
-        config.rpc_user = "user".to_string();
-        config.rpc_pass = "pass".to_string();
-        let server = RpcServer::new(system, config);
+        let server = RpcServer::new(system, authenticated_config());
         let handlers = RpcServerWallet::register_handlers();
         let open_handler = find_handler(&handlers, "openwallet");
         let handler = find_handler(&handlers, "sendmany");
@@ -2648,10 +2594,7 @@ mod tests {
         let (path, _keypair, address) = create_wallet_file(password).await;
         let system =
             NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
-        let mut config = RpcServerConfig::default();
-        config.rpc_user = "user".to_string();
-        config.rpc_pass = "pass".to_string();
-        let server = RpcServer::new(system, config);
+        let server = RpcServer::new(system, authenticated_config());
         let handlers = RpcServerWallet::register_handlers();
         let open_handler = find_handler(&handlers, "openwallet");
         let handler = find_handler(&handlers, "sendmany");
@@ -2697,10 +2640,7 @@ mod tests {
         let (path, keypair, address) = create_wallet_file(password).await;
         let system =
             NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
-        let mut config = RpcServerConfig::default();
-        config.rpc_user = "user".to_string();
-        config.rpc_pass = "pass".to_string();
-        let server = RpcServer::new(system.clone(), config);
+        let server = RpcServer::new(system.clone(), authenticated_config());
         let handlers = RpcServerWallet::register_handlers();
         let open_handler = find_handler(&handlers, "openwallet");
         let handler = find_handler(&handlers, "sendmany");
@@ -2765,10 +2705,7 @@ mod tests {
         let (path, _keypair, address) = create_wallet_file(password).await;
         let system =
             NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
-        let mut config = RpcServerConfig::default();
-        config.rpc_user = "user".to_string();
-        config.rpc_pass = "pass".to_string();
-        let server = RpcServer::new(system, config);
+        let server = RpcServer::new(system, authenticated_config());
         let handlers = RpcServerWallet::register_handlers();
         let open_handler = find_handler(&handlers, "openwallet");
         let handler = find_handler(&handlers, "sendmany");

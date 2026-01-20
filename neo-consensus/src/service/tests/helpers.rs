@@ -75,15 +75,10 @@ impl PersistCompletedHarness {
         let mut services = Vec::with_capacity(validator_count);
         let mut receivers = Vec::with_capacity(validator_count);
 
-        for i in 0..validator_count {
+        for (i, key) in keys.iter().enumerate() {
             let (tx, rx) = mpsc::channel(256);
-            let service = ConsensusService::new(
-                network,
-                validators.clone(),
-                Some(i as u8),
-                keys[i].to_vec(),
-                tx,
-            );
+            let service =
+                ConsensusService::new(network, validators.clone(), Some(i as u8), key.to_vec(), tx);
             services.push(service);
             receivers.push(rx);
         }

@@ -66,6 +66,26 @@ pub(super) fn token_as_boolean(token: JToken, context: &str) -> Result<bool, Cli
     }
 }
 
+pub(super) fn parse_plugins(result: &JToken) -> Result<Vec<RpcPlugin>, ClientRpcError> {
+    let array = result
+        .as_array()
+        .ok_or_else(|| ClientRpcError::new(-32603, "listplugins returned non-array"))?;
+
+    array
+        .iter()
+        .map(|item| {
+            let token = item
+                .as_ref()
+                .ok_or_else(|| ClientRpcError::new(-32603, "plugin entry was null"))?;
+            let obj = token
+                .as_object()
+                .ok_or_else(|| ClientRpcError::new(-32603, "plugin entry was not an object"))?;
+            RpcPlugin::from_json(obj)
+                .map_err(|err| ClientRpcError::new(-32603, format!("invalid plugin entry: {err}")))
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -100,24 +120,4 @@ mod tests {
         assert!(token_as_boolean(JToken::Array(JArray::new()), "ctx").unwrap());
         assert!(token_as_boolean(JToken::Object(JObject::new()), "ctx").unwrap());
     }
-}
-
-pub(super) fn parse_plugins(result: &JToken) -> Result<Vec<RpcPlugin>, ClientRpcError> {
-    let array = result
-        .as_array()
-        .ok_or_else(|| ClientRpcError::new(-32603, "listplugins returned non-array"))?;
-
-    array
-        .iter()
-        .map(|item| {
-            let token = item
-                .as_ref()
-                .ok_or_else(|| ClientRpcError::new(-32603, "plugin entry was null"))?;
-            let obj = token
-                .as_object()
-                .ok_or_else(|| ClientRpcError::new(-32603, "plugin entry was not an object"))?;
-            RpcPlugin::from_json(obj)
-                .map_err(|err| ClientRpcError::new(-32603, format!("invalid plugin entry: {err}")))
-        })
-        .collect()
 }

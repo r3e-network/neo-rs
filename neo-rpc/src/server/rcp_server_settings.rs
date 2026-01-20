@@ -239,12 +239,12 @@ fn parse_gas_value(value: Value) -> Result<i64, String> {
 
 fn parse_gas_number(number: &serde_json::Number) -> Result<i64, String> {
     if let Some(int_value) = number.as_i64() {
-        return Ok(apply_gas_threshold(int_value)?);
+        return apply_gas_threshold(int_value);
     }
     if let Some(uint_value) = number.as_u64() {
         let int_value =
             i64::try_from(uint_value).map_err(|_| "gas value exceeds i64".to_string())?;
-        return Ok(apply_gas_threshold(int_value)?);
+        return apply_gas_threshold(int_value);
     }
     let float_value = number
         .as_f64()
@@ -258,7 +258,7 @@ fn parse_gas_string(text: &str) -> Result<i64, String> {
         return Err("gas value cannot be empty".to_string());
     }
     if let Ok(int_value) = trimmed.parse::<i64>() {
-        return Ok(apply_gas_threshold(int_value)?);
+        return apply_gas_threshold(int_value);
     }
     let float_value = trimmed
         .parse::<f64>()

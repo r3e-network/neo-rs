@@ -122,7 +122,7 @@ impl PolicyContract {
                 // Set request time for recover funds.
                 let timestamp = engine
                     .get_current_block_time()
-                    .map_err(|e| Error::invalid_operation(e))?;
+                    .map_err(Error::invalid_operation)?;
                 engine.put_storage_item(&context, &key, &Self::encode_u64(timestamp))?;
             }
             return Ok(false);
@@ -139,7 +139,7 @@ impl PolicyContract {
         let value = if engine.is_hardfork_enabled(Hardfork::HfFaun) {
             let timestamp = engine
                 .get_current_block_time()
-                .map_err(|e| Error::invalid_operation(e))?;
+                .map_err(Error::invalid_operation)?;
             Self::encode_u64(timestamp)
         } else {
             Vec::new()
@@ -181,7 +181,7 @@ impl PolicyContract {
 
         let current_time = engine
             .get_current_block_time()
-            .map_err(|e| Error::invalid_operation(e))?;
+            .map_err(Error::invalid_operation)?;
 
         let elapsed = current_time.saturating_sub(request_time);
         if elapsed < Self::REQUIRED_TIME_FOR_RECOVER_FUND_MS {

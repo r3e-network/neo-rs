@@ -91,7 +91,7 @@ pub fn get_mnemonic_code_with_language(
 /// Converts a BIP-39 mnemonic back to entropy (any supported language).
 pub fn mnemonic_to_entropy(mnemonic: &[&str]) -> Result<Vec<u8>, String> {
     let word_count = mnemonic.len();
-    if word_count < 12 || word_count > 24 || word_count % 3 != 0 {
+    if !(12..=24).contains(&word_count) || word_count % 3 != 0 {
         return Err("The number of words should be 12, 15, 18, 21 or 24.".to_string());
     }
 
@@ -99,7 +99,7 @@ pub fn mnemonic_to_entropy(mnemonic: &[&str]) -> Result<Vec<u8>, String> {
     let entropy_bits = total_bits * 32 / 33;
     let checksum_bits = total_bits - entropy_bits;
     let entropy_bytes = entropy_bits / 8;
-    let checksum_bytes = (checksum_bits + 7) / 8;
+    let checksum_bytes = checksum_bits.div_ceil(8);
 
     let mut entropy = vec![0u8; entropy_bytes];
     let mut checksum = vec![0u8; checksum_bytes];

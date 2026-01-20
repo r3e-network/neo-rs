@@ -535,7 +535,7 @@ mod tests {
         manager.sign().await.expect("sign");
 
         manager.add_signature(&key).expect("add signature again");
-        let err = manager.sign().await.err().expect("duplicate signature");
+        let err = manager.sign().await.expect_err("duplicate signature");
         assert!(err.to_string().contains("AddSignature failed"));
         assert!(manager.tx().witnesses().is_empty());
     }
@@ -570,7 +570,7 @@ mod tests {
                 .expect("manager");
         manager.add_signature(&key).expect("add signature");
 
-        let err = manager.sign().await.err().expect("insufficient gas");
+        let err = manager.sign().await.expect_err("insufficient gas");
         assert!(err.to_string().contains("Insufficient GAS"));
     }
 

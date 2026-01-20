@@ -123,6 +123,7 @@ fn build_notary_data(owner: Option<UInt160>, till: u32) -> Vec<u8> {
         .expect("serialize notary data")
 }
 
+#[allow(clippy::too_many_arguments)]
 fn try_token_transfer(
     contract_hash: UInt160,
     snapshot: Arc<DataCache>,

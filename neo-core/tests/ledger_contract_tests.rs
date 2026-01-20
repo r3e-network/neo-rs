@@ -31,15 +31,17 @@ fn make_transaction(nonce: u32) -> Transaction {
 }
 
 fn make_block(index: u32, transactions: Vec<Transaction>) -> Block {
-    let mut header = BlockHeader::default();
-    header.index = index;
-    header.previous_hash = UInt256::zero();
-    header.merkle_root = UInt256::zero();
-    header.timestamp = 1;
-    header.nonce = 0;
-    header.primary_index = 0;
-    header.next_consensus = UInt160::zero();
-    header.witnesses = vec![Witness::empty()];
+    let header = BlockHeader {
+        index,
+        previous_hash: UInt256::zero(),
+        merkle_root: UInt256::zero(),
+        timestamp: 1,
+        nonce: 0,
+        primary_index: 0,
+        next_consensus: UInt160::zero(),
+        witnesses: vec![Witness::empty()],
+        ..Default::default()
+    };
     Block::new(header, transactions)
 }
 

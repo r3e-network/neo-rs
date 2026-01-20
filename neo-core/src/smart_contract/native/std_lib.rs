@@ -817,7 +817,7 @@ impl StdLib {
         } else {
             bit_len + 1
         };
-        let nibbles = (bits_required + 3) / 4;
+        let nibbles = bits_required.div_ceil(4);
         let bits = nibbles * 4;
         let modulus = BigInt::from(1) << bits;
         let unsigned = modulus + value;

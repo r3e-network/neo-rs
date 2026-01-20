@@ -46,8 +46,10 @@ fn make_test_transaction(sender: UInt160) -> Transaction {
 }
 
 fn make_persisting_block(nonce: u64) -> Block {
-    let mut header = BlockHeader::default();
-    header.nonce = nonce;
+    let header = BlockHeader {
+        nonce,
+        ..Default::default()
+    };
     Block::new(header, Vec::new())
 }
 

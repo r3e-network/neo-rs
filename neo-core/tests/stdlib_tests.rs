@@ -44,8 +44,10 @@ fn make_engine_with_height(height: Option<u32>) -> ApplicationEngine {
     container.add_witness(Witness::new());
     let script_container: Arc<dyn IVerifiable> = Arc::new(container);
     let persisting_block = height.map(|index| {
-        let mut header = BlockHeader::default();
-        header.index = index;
+        let header = BlockHeader {
+            index,
+            ..Default::default()
+        };
         Block::new(header, Vec::new())
     });
     ApplicationEngine::new(
@@ -934,6 +936,7 @@ fn stdlib_json_deserialize_faults_on_invalid() {
 }
 
 #[test]
+#[allow(clippy::mutable_key_type)]
 fn stdlib_json_serialize_parity() {
     let stdlib = StdLib::new();
     let mut sb = ScriptBuilder::new();

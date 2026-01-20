@@ -75,6 +75,12 @@ impl TreasuryContract {
     }
 }
 
+impl Default for TreasuryContract {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NativeContract for TreasuryContract {
     fn id(&self) -> i32 {
         self.id

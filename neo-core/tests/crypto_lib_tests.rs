@@ -835,7 +835,7 @@ fn crypto_lib_verify_with_ecdsa_custom_tx_witness_multi_sig() {
     let priv3: [u8; 32] = priv3.as_slice().try_into().expect("priv3 len");
     let priv4: [u8; 32] = priv4.as_slice().try_into().expect("priv4 len");
 
-    let mut keys = vec![
+    let mut keys = [
         (
             Secp256k1Crypto::derive_public_key(&priv1).expect("pub1"),
             priv1,
@@ -1106,7 +1106,11 @@ fn crypto_lib_bls12381_deserialize_g1() {
 
     let result = unwrap_interop_bytes(
         engine
-            .call_native_contract(crypto.hash(), "bls12381Deserialize", &[g1.clone()])
+            .call_native_contract(
+                crypto.hash(),
+                "bls12381Deserialize",
+                std::slice::from_ref(&g1),
+            )
             .expect("bls12381Deserialize g1"),
     );
 
@@ -1121,7 +1125,11 @@ fn crypto_lib_bls12381_deserialize_g2() {
 
     let result = unwrap_interop_bytes(
         engine
-            .call_native_contract(crypto.hash(), "bls12381Deserialize", &[g2.clone()])
+            .call_native_contract(
+                crypto.hash(),
+                "bls12381Deserialize",
+                std::slice::from_ref(&g2),
+            )
             .expect("bls12381Deserialize g2"),
     );
 
@@ -1136,7 +1144,11 @@ fn crypto_lib_bls12381_deserialize_gt() {
 
     let result = unwrap_interop_bytes(
         engine
-            .call_native_contract(crypto.hash(), "bls12381Deserialize", &[gt.clone()])
+            .call_native_contract(
+                crypto.hash(),
+                "bls12381Deserialize",
+                std::slice::from_ref(&gt),
+            )
             .expect("bls12381Deserialize gt"),
     );
 
@@ -1172,19 +1184,31 @@ fn crypto_lib_bls12381_serialize_roundtrip() {
 
     let g1 = decode_hex(BLS_G1_HEX);
     let result = engine
-        .call_native_contract(crypto.hash(), "bls12381Serialize", &[g1.clone()])
+        .call_native_contract(
+            crypto.hash(),
+            "bls12381Serialize",
+            std::slice::from_ref(&g1),
+        )
         .expect("bls12381Serialize g1");
     assert_eq!(hex_encode(result), BLS_G1_HEX);
 
     let g2 = decode_hex(BLS_G2_HEX);
     let result = engine
-        .call_native_contract(crypto.hash(), "bls12381Serialize", &[g2.clone()])
+        .call_native_contract(
+            crypto.hash(),
+            "bls12381Serialize",
+            std::slice::from_ref(&g2),
+        )
         .expect("bls12381Serialize g2");
     assert_eq!(hex_encode(result), BLS_G2_HEX);
 
     let gt = decode_hex(BLS_GT_HEX);
     let result = engine
-        .call_native_contract(crypto.hash(), "bls12381Serialize", &[gt.clone()])
+        .call_native_contract(
+            crypto.hash(),
+            "bls12381Serialize",
+            std::slice::from_ref(&gt),
+        )
         .expect("bls12381Serialize gt");
     assert_eq!(hex_encode(result), BLS_GT_HEX);
 }

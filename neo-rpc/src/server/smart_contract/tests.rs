@@ -520,8 +520,10 @@ async fn invokescript_rejects_invalid_base64() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn invokescript_faults_when_gas_limit_exceeded() {
-    let mut config = RpcServerConfig::default();
-    config.max_gas_invoke = 1_000_000;
+    let config = RpcServerConfig {
+        max_gas_invoke: 1_000_000,
+        ..Default::default()
+    };
     let max_gas = config.max_gas_invoke;
     let server = make_server(config);
     let handlers = RpcServerSmartContract::register_handlers();
@@ -726,8 +728,10 @@ async fn terminate_session_rejects_sessions_disabled() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn traverse_iterator_rejects_unknown_session() {
-    let mut config = RpcServerConfig::default();
-    config.session_enabled = true;
+    let config = RpcServerConfig {
+        session_enabled: true,
+        ..Default::default()
+    };
     let server = make_server(config);
     let handlers = RpcServerSmartContract::register_handlers();
     let traverse = find_handler(&handlers, "traverseiterator");
@@ -743,9 +747,11 @@ async fn traverse_iterator_rejects_unknown_session() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn traverse_iterator_rejects_expired_session() {
-    let mut config = RpcServerConfig::default();
-    config.session_enabled = true;
-    config.session_expiration_time = 0;
+    let config = RpcServerConfig {
+        session_enabled: true,
+        session_expiration_time: 0,
+        ..Default::default()
+    };
     let server = make_server(config);
     let handlers = RpcServerSmartContract::register_handlers();
     let traverse = find_handler(&handlers, "traverseiterator");
@@ -772,8 +778,10 @@ async fn traverse_iterator_rejects_expired_session() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn terminate_session_returns_false_for_unknown_session() {
-    let mut config = RpcServerConfig::default();
-    config.session_enabled = true;
+    let config = RpcServerConfig {
+        session_enabled: true,
+        ..Default::default()
+    };
     let server = make_server(config);
     let handlers = RpcServerSmartContract::register_handlers();
     let terminate = find_handler(&handlers, "terminatesession");
@@ -785,9 +793,11 @@ async fn terminate_session_returns_false_for_unknown_session() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn traverse_iterator_rejects_count_limit_exceeded() {
-    let mut config = RpcServerConfig::default();
-    config.session_enabled = true;
-    config.max_iterator_result_items = 1;
+    let config = RpcServerConfig {
+        session_enabled: true,
+        max_iterator_result_items: 1,
+        ..Default::default()
+    };
     let server = make_server(config);
     let handlers = RpcServerSmartContract::register_handlers();
     let traverse = find_handler(&handlers, "traverseiterator");
@@ -803,9 +813,11 @@ async fn traverse_iterator_rejects_count_limit_exceeded() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn traverse_iterator_returns_items_and_can_terminate_session() {
-    let mut config = RpcServerConfig::default();
-    config.session_enabled = true;
-    config.max_iterator_result_items = 10;
+    let config = RpcServerConfig {
+        session_enabled: true,
+        max_iterator_result_items: 10,
+        ..Default::default()
+    };
     let server = make_server(config);
     let handlers = RpcServerSmartContract::register_handlers();
     let traverse = find_handler(&handlers, "traverseiterator");
@@ -864,7 +876,7 @@ async fn traverse_iterator_returns_items_and_can_terminate_session() {
             .and_then(Value::as_array)
             .expect("value array");
         let key_bytes = values
-            .get(0)
+            .first()
             .and_then(|item| item.get("value"))
             .and_then(Value::as_str)
             .map(|s| BASE64_STANDARD.decode(s).expect("base64 key"))

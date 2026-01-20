@@ -878,18 +878,16 @@ impl NativeContract for Notary {
 
                 total_fees += attr.nkeys as i64 + 1;
 
-                if tx.sender() == Some(self.hash()) {
-                    if tx.signers().len() >= 2 {
-                        let payer = tx.signers()[1].account;
-                        let key = Self::deposit_key(&payer);
-                        if let Some(item) = snapshot_ref.try_get(&key) {
-                            let mut deposit = deserialize_deposit(&item.get_value())?;
-                            deposit.amount -= BigInt::from(tx.system_fee() + tx.network_fee());
-                            if deposit.amount.is_zero() {
-                                snapshot.delete(&key);
-                            } else {
-                                Self::persist_deposit(&snapshot, key, true, &deposit);
-                            }
+                if tx.sender() == Some(self.hash()) && tx.signers().len() >= 2 {
+                    let payer = tx.signers()[1].account;
+                    let key = Self::deposit_key(&payer);
+                    if let Some(item) = snapshot_ref.try_get(&key) {
+                        let mut deposit = deserialize_deposit(&item.get_value())?;
+                        deposit.amount -= BigInt::from(tx.system_fee() + tx.network_fee());
+                        if deposit.amount.is_zero() {
+                            snapshot.delete(&key);
+                        } else {
+                            Self::persist_deposit(&snapshot, key, true, &deposit);
                         }
                     }
                 }

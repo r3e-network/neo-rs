@@ -306,7 +306,7 @@ fn test_multi_signature_contract_engine_fee_consumed() {
     tx.set_witnesses(Vec::new());
 
     let sign_data = get_sign_data_vec(&tx, settings.network).expect("sign data");
-    let mut ordered = vec![
+    let mut ordered = [
         (key1.compressed_public_key(), key1.clone()),
         (key2.compressed_public_key(), key2.clone()),
     ];
@@ -520,6 +520,6 @@ fn test_multi_sig_redeem_script_invalid_m_greater_than_n() {
 #[test]
 #[should_panic(expected = "Invalid multi-sig parameters")]
 fn test_multi_sig_redeem_script_invalid_n_greater_than_16() {
-    let public_keys: Vec<Vec<u8>> = (1..=17).map(|i| make_public_key(i)).collect();
+    let public_keys: Vec<Vec<u8>> = (1..=17).map(make_public_key).collect();
     let _script = Helper::multi_sig_redeem_script(1, &public_keys); // n=17 > 16
 }

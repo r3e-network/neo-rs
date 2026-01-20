@@ -228,6 +228,7 @@ impl Nep17Api {
         .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     /// Create NEP17 token transfer transaction with explicit from and optional assert.
     pub async fn create_transfer_tx_with_from_and_assert(
         &self,
@@ -260,6 +261,7 @@ impl Nep17Api {
         Ok(transaction)
     }
 
+    #[allow(clippy::too_many_arguments)]
     /// Create NEP17 token transfer transaction from multi-sig account.
     /// Matches C# CreateTransferTxAsync with multi-sig overload.
     pub async fn create_transfer_tx_multi_sig(
@@ -285,6 +287,7 @@ impl Nep17Api {
         .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     /// Create NEP17 token transfer transaction from multi-sig account with optional assert.
     pub async fn create_transfer_tx_multi_sig_with_assert(
         &self,

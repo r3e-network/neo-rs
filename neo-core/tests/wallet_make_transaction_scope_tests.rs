@@ -25,7 +25,7 @@ fn build_gas_transfer_script(account: &UInt160) -> Vec<u8> {
         amount_bytes.push(0);
     }
 
-    let args = vec![
+    let args = [
         account.to_bytes(),
         account.to_bytes(),
         amount_bytes,

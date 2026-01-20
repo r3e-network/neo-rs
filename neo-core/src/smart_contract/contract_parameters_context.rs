@@ -227,10 +227,8 @@ impl ContractParametersContext {
                 return Ok(false);
             }
 
-            if !self.context_items.contains_key(&hash) {
-                if !self.add(contract.clone()) {
-                    return Ok(false);
-                }
+            if !self.context_items.contains_key(&hash) && !self.add(contract.clone()) {
+                return Ok(false);
             }
 
             let item = match self.context_items.get_mut(&hash) {
@@ -291,10 +289,8 @@ impl ContractParametersContext {
             return Ok(false);
         };
 
-        if !self.context_items.contains_key(&hash) {
-            if !self.add(contract.clone()) {
-                return Ok(false);
-            }
+        if !self.context_items.contains_key(&hash) && !self.add(contract.clone()) {
+            return Ok(false);
         }
 
         let item = match self.context_items.get_mut(&hash) {

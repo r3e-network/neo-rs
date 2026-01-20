@@ -978,15 +978,17 @@ mod tests {
                 .unwrap_or_else(UInt256::zero)
         };
 
-        let mut header = LedgerBlockHeader::default();
-        header.index = index;
-        header.previous_hash = prev_hash;
-        header.merkle_root = merkle_root;
-        header.timestamp = 1;
-        header.nonce = 0;
-        header.primary_index = 0;
-        header.next_consensus = UInt160::zero();
-        header.witnesses = vec![LedgerWitness::empty()];
+        let header = LedgerBlockHeader {
+            index,
+            previous_hash: prev_hash,
+            merkle_root,
+            timestamp: 1,
+            nonce: 0,
+            primary_index: 0,
+            next_consensus: UInt160::zero(),
+            witnesses: vec![LedgerWitness::empty()],
+            ..Default::default()
+        };
 
         LedgerBlock::new(header, transactions)
     }
@@ -2011,8 +2013,10 @@ mod tests {
     async fn find_storage_paginates_results() {
         let system =
             NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
-        let mut config = RpcServerConfig::default();
-        config.find_storage_page_size = 10;
+        let config = RpcServerConfig {
+            find_storage_page_size: 10,
+            ..Default::default()
+        };
         let server = RpcServer::new(system.clone(), config);
         let handlers = RpcServerBlockchain::register_handlers();
         let handler = find_handler(&handlers, "findstorage");
@@ -2402,7 +2406,7 @@ mod tests {
 
         let candidate_active = settings
             .standby_committee
-            .get(0)
+            .first()
             .expect("candidate")
             .clone();
         let candidate_blocked = settings

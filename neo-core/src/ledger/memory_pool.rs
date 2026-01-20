@@ -490,7 +490,7 @@ impl MemoryPool {
                 .iter()
                 .filter_map(|item| {
                     let item_hash = item.transaction.hash();
-                    let matches_conflict = conflicts.get(&item_hash).map_or(false, |signers| {
+                    let matches_conflict = conflicts.get(&item_hash).is_some_and(|signers| {
                         item.transaction
                             .signers()
                             .iter()
@@ -841,7 +841,7 @@ impl IntoIterator for MemoryPool {
     }
 }
 
-impl<'a> IntoIterator for &'a MemoryPool {
+impl IntoIterator for &MemoryPool {
     type Item = Transaction;
     type IntoIter = std::vec::IntoIter<Transaction>;
 
@@ -952,8 +952,10 @@ mod tests {
 
     #[test]
     fn transaction_added_event_is_emitted() {
-        let mut settings = ProtocolSettings::default();
-        settings.memory_pool_max_transactions = 10;
+        let settings = ProtocolSettings {
+            memory_pool_max_transactions: 10,
+            ..Default::default()
+        };
         let mut pool = test_balance_pool(&settings);
         let snapshot = DataCache::new(false);
 
@@ -978,8 +980,10 @@ mod tests {
 
     #[test]
     fn capacity_exceeded_emits_removed_event() {
-        let mut settings = ProtocolSettings::default();
-        settings.memory_pool_max_transactions = 1;
+        let settings = ProtocolSettings {
+            memory_pool_max_transactions: 1,
+            ..Default::default()
+        };
         let mut pool = test_balance_pool(&settings);
         let snapshot = DataCache::new(false);
 
@@ -1138,8 +1142,10 @@ mod tests {
 
     #[test]
     fn capacity_enforces_high_fee_eviction() {
-        let mut settings = ProtocolSettings::default();
-        settings.memory_pool_max_transactions = 2;
+        let settings = ProtocolSettings {
+            memory_pool_max_transactions: 2,
+            ..Default::default()
+        };
         let mut pool = test_balance_pool(&settings);
         let snapshot = DataCache::new(false);
 
@@ -1237,8 +1243,10 @@ mod tests {
 
     #[test]
     fn can_transaction_fit_in_pool_checks_lowest_fee() {
-        let mut settings = ProtocolSettings::default();
-        settings.memory_pool_max_transactions = 3;
+        let settings = ProtocolSettings {
+            memory_pool_max_transactions: 3,
+            ..Default::default()
+        };
         let mut pool = test_balance_pool(&settings);
         let snapshot = DataCache::new(false);
 
@@ -1310,8 +1318,10 @@ mod tests {
 
     #[test]
     fn reverify_batches_progress_without_exhausting_pool() {
-        let mut settings = ProtocolSettings::default();
-        settings.memory_pool_max_transactions = 1000;
+        let settings = ProtocolSettings {
+            memory_pool_max_transactions: 1000,
+            ..Default::default()
+        };
         let mut pool = test_balance_pool(&settings);
         let snapshot = DataCache::new(false);
 
@@ -1701,8 +1711,10 @@ mod tests {
 
     #[test]
     fn unverified_high_priority_transactions_prevent_low_fee_admission() {
-        let mut settings = ProtocolSettings::default();
-        settings.memory_pool_max_transactions = 100;
+        let settings = ProtocolSettings {
+            memory_pool_max_transactions: 100,
+            ..Default::default()
+        };
         let mut pool = test_balance_pool(&settings);
         let snapshot = DataCache::new(false);
 
@@ -1770,9 +1782,11 @@ mod tests {
 
     #[test]
     fn reverify_limits_when_verified_exceeds_max_per_block() {
-        let mut settings = ProtocolSettings::default();
-        settings.max_transactions_per_block = 2;
-        settings.memory_pool_max_transactions = 10;
+        let settings = ProtocolSettings {
+            max_transactions_per_block: 2,
+            memory_pool_max_transactions: 10,
+            ..Default::default()
+        };
         let mut pool = test_balance_pool(&settings);
         let snapshot = DataCache::new(false);
 
@@ -2042,8 +2056,10 @@ mod tests {
 
     #[test]
     fn conflict_replacement_preserves_tracking_and_fee_context() {
-        let mut settings = ProtocolSettings::default();
-        settings.milliseconds_per_block = 1000;
+        let settings = ProtocolSettings {
+            milliseconds_per_block: 1000,
+            ..Default::default()
+        };
         let mut pool = MemoryPool::new(&settings);
         pool.verification_context =
             TransactionVerificationContext::with_balance_provider(|_, _| {
@@ -2088,9 +2104,11 @@ mod tests {
 
     #[test]
     fn rebroadcast_respects_scaled_threshold() {
-        let mut settings = ProtocolSettings::default();
-        settings.milliseconds_per_block = 1000;
-        settings.memory_pool_max_transactions = 10;
+        let settings = ProtocolSettings {
+            milliseconds_per_block: 1000,
+            memory_pool_max_transactions: 10,
+            ..Default::default()
+        };
 
         let mut pool = MemoryPool::new(&settings);
         pool.verification_context =
@@ -2154,9 +2172,11 @@ mod tests {
 
     #[test]
     fn rebroadcast_triggers_for_stale_transactions() {
-        let mut settings = ProtocolSettings::default();
-        settings.milliseconds_per_block = 1000;
-        settings.memory_pool_max_transactions = 50;
+        let settings = ProtocolSettings {
+            milliseconds_per_block: 1000,
+            memory_pool_max_transactions: 50,
+            ..Default::default()
+        };
 
         let mut pool = MemoryPool::new(&settings);
         pool.verification_context =
@@ -2185,8 +2205,10 @@ mod tests {
 
     #[test]
     fn update_pool_for_block_persisted_removes_conflicts() {
-        let mut settings = ProtocolSettings::default();
-        settings.milliseconds_per_block = 1000;
+        let settings = ProtocolSettings {
+            milliseconds_per_block: 1000,
+            ..Default::default()
+        };
 
         let snapshot = DataCache::new(false);
         let mut pool = MemoryPool::new(&settings);

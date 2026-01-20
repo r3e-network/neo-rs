@@ -533,7 +533,7 @@ fn calculate_network_fee_impl(
                 return Err("The verify method doesn't return boolean value.".to_string());
             }
 
-            if method.parameters.len() > 0 && invocation_script.is_none() {
+            if !method.parameters.is_empty() && invocation_script.is_none() {
                 let mut builder = ScriptBuilder::new();
                 for param in &method.parameters {
                     match param.param_type {
@@ -601,7 +601,7 @@ fn calculate_network_fee_impl(
                 ));
             }
             let result_item = engine.result_stack().peek(0).map_err(|e| e.to_string())?;
-            if result_item.get_boolean().unwrap_or(false) == false {
+            if !result_item.get_boolean().unwrap_or(false) {
                 return Err(format!(
                     "Smart contract {} verification fault.",
                     contract_hash

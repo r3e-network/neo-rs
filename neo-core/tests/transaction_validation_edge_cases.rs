@@ -843,7 +843,7 @@ mod tests {
         tx.set_network_fee(network_fee);
 
         let sign_data = get_sign_data_vec(&tx, settings.network).expect("sign data");
-        let mut ordered = vec![
+        let mut ordered = [
             (key1.compressed_public_key(), key1.clone()),
             (key2.compressed_public_key(), key2.clone()),
         ];
@@ -1235,7 +1235,7 @@ mod tests {
 
         let sign_data = get_sign_data_vec(&tx, settings.network).expect("sign data");
 
-        let mut ordered = vec![
+        let mut ordered = [
             (key1.compressed_public_key(), key1.clone()),
             (key2.compressed_public_key(), key2.clone()),
         ];
@@ -1382,7 +1382,7 @@ mod tests {
         tx.set_network_fee(expected_fee);
 
         let sign_data = get_sign_data_vec(&tx, settings.network).expect("sign data");
-        let mut ordered = vec![
+        let mut ordered = [
             (key1.compressed_public_key(), key1.clone()),
             (key2.compressed_public_key(), key2.clone()),
         ];
@@ -1593,7 +1593,7 @@ mod tests {
         context.add_transaction(&tx2);
         assert!(!context.check_transaction(&tx3, empty_conflicts.iter(), &snapshot));
 
-        let conflicts = vec![conflict_tx];
+        let conflicts = [conflict_tx];
         assert!(context.check_transaction(&tx3, conflicts.iter(), &snapshot));
     }
 

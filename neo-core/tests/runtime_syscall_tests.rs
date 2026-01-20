@@ -131,9 +131,9 @@ fn runtime_current_signers_returns_transaction_signers() {
         .expect("scopes fits u8");
     assert_eq!(scopes, WitnessScope::GLOBAL.bits());
 
-    for index in 2..5 {
-        let StackItem::Array(array) = &field_items[index] else {
-            panic!("expected array at {index}, got {:?}", field_items[index]);
+    for (index, item) in field_items.iter().enumerate().take(5).skip(2) {
+        let StackItem::Array(array) = item else {
+            panic!("expected array at {index}, got {item:?}");
         };
         assert!(array.items().is_empty());
     }

@@ -181,7 +181,7 @@ mod tests {
         suffix.extend_from_slice(&height.to_be_bytes());
         let key = StorageKey::new(RoleManagement::new().id(), suffix);
         let value = RoleManagement::new()
-            .serialize_public_keys(&[validator.clone()])
+            .serialize_public_keys(std::slice::from_ref(&validator))
             .expect("serialize public keys");
         store_cache
             .data_cache()
