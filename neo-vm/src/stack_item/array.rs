@@ -326,7 +326,7 @@ impl IntoIterator for Array {
     }
 }
 
-impl<'a> IntoIterator for &'a Array {
+impl IntoIterator for &Array {
     type Item = StackItem;
     type IntoIter = std::vec::IntoIter<StackItem>;
 
