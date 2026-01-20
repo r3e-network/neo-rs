@@ -161,7 +161,10 @@ mod tests {
         let params = [Value::String(spaced.clone())];
         let result = (handler.callback())(&server, &params).expect("validateaddress");
         let obj = result.as_object().expect("validateaddress object");
-        assert_eq!(obj.get("address").and_then(Value::as_str), Some(spaced.as_str()));
+        assert_eq!(
+            obj.get("address").and_then(Value::as_str),
+            Some(spaced.as_str())
+        );
         assert_eq!(obj.get("isvalid").and_then(Value::as_bool), Some(false));
     }
 

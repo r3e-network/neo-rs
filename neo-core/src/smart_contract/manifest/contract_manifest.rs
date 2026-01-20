@@ -182,9 +182,7 @@ impl ContractManifest {
                 ));
             }
             if !seen_standards.insert(standard) {
-                return Err(Error::invalid_data(
-                    "Supported standards must be unique",
-                ));
+                return Err(Error::invalid_data("Supported standards must be unique"));
             }
         }
 

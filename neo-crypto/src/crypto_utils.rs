@@ -245,8 +245,8 @@ impl Secp256k1Crypto {
             (rec_id, sig)
         };
 
-        let rec_id =
-            RecoveryId::from_i32(rec_id as i32).map_err(|e| format!("Invalid recovery id: {}", e))?;
+        let rec_id = RecoveryId::from_i32(rec_id as i32)
+            .map_err(|e| format!("Invalid recovery id: {}", e))?;
         let recoverable = RecoverableSignature::from_compact(&sig_bytes, rec_id)
             .map_err(|e| format!("Invalid recoverable signature: {}", e))?;
 

@@ -412,7 +412,10 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(&json).expect("parse json");
         let data = parsed.get("data").and_then(|v| v.as_str()).expect("data");
         assert_eq!(data, error.data().expect("data"));
-        let message = parsed.get("message").and_then(|v| v.as_str()).expect("message");
+        let message = parsed
+            .get("message")
+            .and_then(|v| v.as_str())
+            .expect("message");
         assert!(message.contains(error.message()));
         assert!(message.contains(data));
     }

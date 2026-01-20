@@ -703,7 +703,9 @@ mod tests {
         server.register_handlers(RpcServerBlockchain::register_handlers());
         server.register_handlers(RpcServerNode::register_handlers());
         if include_wallet {
-            server.register_handlers(crate::server::rpc_server_wallet::RpcServerWallet::register_handlers());
+            server.register_handlers(
+                crate::server::rpc_server_wallet::RpcServerWallet::register_handlers(),
+            );
         }
 
         let server = Arc::new(RwLock::new(server));
@@ -724,10 +726,7 @@ mod tests {
             user: b"testuser".to_vec(),
             pass: b"testpass".to_vec(),
         };
-        let header = format!(
-            "Basic {}",
-            BASE64_STANDARD.encode("testuser:testpass")
-        );
+        let header = format!("Basic {}", BASE64_STANDARD.encode("testuser:testpass"));
         assert!(verify_basic_auth(Some(&header), &auth));
     }
 
@@ -737,18 +736,9 @@ mod tests {
             user: b"testuser".to_vec(),
             pass: b"testpass".to_vec(),
         };
-        let wrong_user = format!(
-            "Basic {}",
-            BASE64_STANDARD.encode("wrong:testpass")
-        );
-        let wrong_pass = format!(
-            "Basic {}",
-            BASE64_STANDARD.encode("testuser:wrong")
-        );
-        let wrong_scheme = format!(
-            "Bearer {}",
-            BASE64_STANDARD.encode("testuser:testpass")
-        );
+        let wrong_user = format!("Basic {}", BASE64_STANDARD.encode("wrong:testpass"));
+        let wrong_pass = format!("Basic {}", BASE64_STANDARD.encode("testuser:wrong"));
+        let wrong_scheme = format!("Bearer {}", BASE64_STANDARD.encode("testuser:testpass"));
 
         assert!(!verify_basic_auth(Some(&wrong_user), &auth));
         assert!(!verify_basic_auth(Some(&wrong_pass), &auth));
@@ -1039,10 +1029,7 @@ mod tests {
         let (_server, filters) = build_filters_with_auth(auth, false);
         let body = br#"{"jsonrpc": "2.0", "method": "getblockcount", "params": [], "id": 1}"#;
 
-        let header = format!(
-            "Basic {}",
-            BASE64_STANDARD.encode("testuser:wrongpass")
-        );
+        let header = format!("Basic {}", BASE64_STANDARD.encode("testuser:wrongpass"));
         let (response, unauthorized) = process_body(&filters, Some(&header), body);
         assert!(unauthorized);
 
@@ -1066,10 +1053,7 @@ mod tests {
         let (_server, filters) = build_filters_with_auth(auth, false);
         let body = br#"{"jsonrpc": "2.0", "method": "getblockcount", "params": [], "id": 1}"#;
 
-        let header = format!(
-            "Basic {}",
-            BASE64_STANDARD.encode("testuser:testpass")
-        );
+        let header = format!("Basic {}", BASE64_STANDARD.encode("testuser:testpass"));
         let (response, unauthorized) = process_body(&filters, Some(&header), body);
         assert!(!unauthorized);
 

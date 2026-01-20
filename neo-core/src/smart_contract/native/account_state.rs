@@ -18,12 +18,12 @@ impl AccountState {
             balance: BigInt::from(0),
         }
     }
-    
+
     /// Creates with initial balance
     pub fn with_balance(balance: BigInt) -> Self {
         Self { balance }
     }
-    
+
     /// Adds to balance
     pub fn add_balance(&mut self, amount: &BigInt) -> Result<(), String> {
         if amount.sign() == num_bigint::Sign::Minus {
@@ -32,7 +32,7 @@ impl AccountState {
         self.balance += amount;
         Ok(())
     }
-    
+
     /// Subtracts from balance
     pub fn subtract_balance(&mut self, amount: &BigInt) -> Result<(), String> {
         if amount.sign() == num_bigint::Sign::Minus {
@@ -57,11 +57,11 @@ impl IInteroperable for AccountState {
             }
         }
     }
-    
+
     fn to_stack_item(&self) -> StackItem {
         StackItem::from_struct(vec![StackItem::from_int(self.balance.clone())])
     }
-    
+
     fn clone_box(&self) -> Box<dyn IInteroperable> {
         Box::new(self.clone())
     }

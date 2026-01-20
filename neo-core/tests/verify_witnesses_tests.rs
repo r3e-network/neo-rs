@@ -143,7 +143,9 @@ fn verify_witnesses_fails_without_previous_header() {
     header.set_prev_hash(UInt256::from([1u8; 32]));
     header.witness = Witness::empty();
 
-    assert!(!Helper::verify_witnesses(&header, &settings, &snapshot, 100));
+    assert!(!Helper::verify_witnesses(
+        &header, &settings, &snapshot, 100
+    ));
 }
 
 #[test]
@@ -158,7 +160,9 @@ fn verify_witnesses_fails_when_contract_missing() {
     header.set_prev_hash(trimmed.hash());
     header.witness = Witness::empty();
 
-    assert!(!Helper::verify_witnesses(&header, &settings, &snapshot, 100));
+    assert!(!Helper::verify_witnesses(
+        &header, &settings, &snapshot, 100
+    ));
 }
 
 #[test]
@@ -181,7 +185,9 @@ fn verify_witnesses_fails_with_invalid_verify_method() {
     header.set_prev_hash(trimmed.hash());
     header.witness = Witness::empty();
 
-    assert!(!Helper::verify_witnesses(&header, &settings, &snapshot, 100));
+    assert!(!Helper::verify_witnesses(
+        &header, &settings, &snapshot, 100
+    ));
 }
 
 #[test]
@@ -206,10 +212,7 @@ fn verify_witnesses_succeeds_with_verify_method() {
     header.witness = Witness::empty();
 
     assert!(Helper::verify_witnesses(
-        &header,
-        &settings,
-        &snapshot,
-        1_000_000
+        &header, &settings, &snapshot, 1_000_000
     ));
 }
 

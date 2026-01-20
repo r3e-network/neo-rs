@@ -217,7 +217,11 @@ fn append(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
         StackItem::Struct(structure) => {
             structure.push(item)?;
         }
-        _ => return Err(VmError::invalid_type_simple("Expected Array, Struct, or Map")),
+        _ => {
+            return Err(VmError::invalid_type_simple(
+                "Expected Array, Struct, or Map",
+            ))
+        }
     }
 
     Ok(())

@@ -4,9 +4,7 @@
 
 use neo_core::hardfork::HardforkManager;
 use neo_core::ledger::{create_genesis_block, Block, BlockHeader};
-use neo_core::network::p2p::payloads::{
-    NotaryAssisted, Signer, Transaction, TransactionAttribute,
-};
+use neo_core::network::p2p::payloads::{NotaryAssisted, Signer, Transaction, TransactionAttribute};
 use neo_core::persistence::DataCache;
 use neo_core::persistence::IReadOnlyStoreGeneric;
 use neo_core::protocol_settings::ProtocolSettings;
@@ -469,11 +467,9 @@ fn check_on_nep17_payment() {
         let snapshot = make_snapshot_with_genesis(&settings);
         set_ledger_current_index(&snapshot, persisting_block.index() - 1);
         let tx = make_tx_with_signer(from);
-        let data = BinarySerializer::serialize(
-            &StackItem::from_int(5),
-            &ExecutionEngineLimits::default(),
-        )
-        .expect("serialize data");
+        let data =
+            BinarySerializer::serialize(&StackItem::from_int(5), &ExecutionEngineLimits::default())
+                .expect("serialize data");
         let amount = BigInt::zero();
         let result = try_token_transfer(
             GasToken::new().hash(),
@@ -603,8 +599,7 @@ fn check_expiration_of() {
 
     let mut till = persisting_block.index() + 123;
     let data = build_notary_data(None, till);
-    let amount =
-        BigInt::from(2 * PolicyContract::DEFAULT_NOTARY_ASSISTED_ATTRIBUTE_FEE as i64 + 1);
+    let amount = BigInt::from(2 * PolicyContract::DEFAULT_NOTARY_ASSISTED_ATTRIBUTE_FEE as i64 + 1);
     let tx = make_tx_with_signer(from);
     let ok = try_token_transfer(
         GasToken::new().hash(),
@@ -660,8 +655,8 @@ fn check_expiration_of() {
 
     // Deposit to side account with custom owner.
     let to = UInt160::from_bytes(&[
-        0x01, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff,
-        0x00, 0xff, 0x00, 0xff, 0x00, 0xa4,
+        0x01, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00,
+        0xff, 0x00, 0xff, 0x00, 0xa4,
     ])
     .expect("to");
     let data = build_notary_data(Some(to), till);
@@ -680,8 +675,7 @@ fn check_expiration_of() {
     .expect("transfer");
     assert!(ok);
 
-    let expected_till =
-        persisting_block.index() - 1 + 5760; // DefaultDepositDeltaTill
+    let expected_till = persisting_block.index() - 1 + 5760; // DefaultDepositDeltaTill
     let expiration = call_notary_int(
         Arc::clone(&snapshot),
         settings.clone(),
@@ -750,8 +744,7 @@ fn check_lock_deposit_until() {
     // Make initial deposit.
     let till = persisting_block.index() + 123;
     let data = build_notary_data(None, till);
-    let amount =
-        BigInt::from(2 * PolicyContract::DEFAULT_NOTARY_ASSISTED_ATTRIBUTE_FEE as i64 + 1);
+    let amount = BigInt::from(2 * PolicyContract::DEFAULT_NOTARY_ASSISTED_ATTRIBUTE_FEE as i64 + 1);
     let tx = make_tx_with_signer(from);
     let ok = try_token_transfer(
         GasToken::new().hash(),
@@ -769,8 +762,8 @@ fn check_lock_deposit_until() {
 
     // Update deposit till for side account should fail.
     let other = UInt160::from_bytes(&[
-        0x01, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff,
-        0x00, 0xff, 0x00, 0xff, 0x00, 0xa4,
+        0x01, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00,
+        0xff, 0x00, 0xff, 0x00, 0xa4,
     ])
     .expect("other");
     let ok = call_notary_bool(
@@ -884,8 +877,8 @@ fn check_balance_of() {
 
     // Deposit to side account.
     let to = UInt160::from_bytes(&[
-        0x01, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff,
-        0x00, 0xff, 0x00, 0xff, 0x00, 0xa4,
+        0x01, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00,
+        0xff, 0x00, 0xff, 0x00, 0xa4,
     ])
     .expect("to");
     let data = build_notary_data(Some(to), till);
@@ -1016,8 +1009,8 @@ fn check_withdraw() {
 
     // Unwitnessed withdraw should fail.
     let side_account = UInt160::from_bytes(&[
-        0x01, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff,
-        0x00, 0xff, 0x00, 0xff, 0x00, 0xa4,
+        0x01, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00,
+        0xff, 0x00, 0xff, 0x00, 0xa4,
     ])
     .expect("side");
     let ok = call_notary_bool(

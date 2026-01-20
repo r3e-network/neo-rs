@@ -98,14 +98,9 @@ impl Map {
     /// Gets the value for the specified key.
     pub fn get(&self, key: &StackItem) -> VmResult<StackItem> {
         self.validate_key(key)?;
-        self.inner
-            .lock()
-            .items
-            .get(key)
-            .cloned()
-            .ok_or_else(|| {
-                VmError::catchable_exception_msg(format!("Key {:?} not found in Map.", key))
-            })
+        self.inner.lock().items.get(key).cloned().ok_or_else(|| {
+            VmError::catchable_exception_msg(format!("Key {:?} not found in Map.", key))
+        })
     }
 
     /// Sets the value for the specified key.

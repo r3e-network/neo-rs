@@ -404,22 +404,16 @@ impl RpcServerWallet {
             let obj = entry
                 .as_object()
                 .ok_or_else(|| Self::invalid_params(format!("Invalid 'to' parameter at {}.", i)))?;
-            let asset_str = obj
-                .get("asset")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| {
-                    Self::invalid_params(format!("no 'asset' parameter at 'to[{}]'.", i))
-                })?;
+            let asset_str = obj.get("asset").and_then(|v| v.as_str()).ok_or_else(|| {
+                Self::invalid_params(format!("no 'asset' parameter at 'to[{}]'.", i))
+            })?;
             let asset = UInt160::from_str(asset_str)
                 .map_err(|e| Self::invalid_params(format!("invalid asset {}: {}", asset_str, e)))?;
             let descriptor =
                 descriptor_cache(&asset).map_err(|e| Self::invalid_params(e.to_string()))?;
-            let value_str = obj
-                .get("value")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| {
-                    Self::invalid_params(format!("no 'value' parameter at 'to[{}]'.", i))
-                })?;
+            let value_str = obj.get("value").and_then(|v| v.as_str()).ok_or_else(|| {
+                Self::invalid_params(format!("no 'value' parameter at 'to[{}]'.", i))
+            })?;
             let (ok, value) = BigDecimal::try_parse(value_str, descriptor.decimals);
             if !ok {
                 return Err(Self::invalid_params(format!(
@@ -433,12 +427,9 @@ impl RpcServerWallet {
                     asset
                 )));
             }
-            let address_str = obj
-                .get("address")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| {
-                    Self::invalid_params(format!("no 'address' parameter at 'to[{}]'.", i))
-                })?;
+            let address_str = obj.get("address").and_then(|v| v.as_str()).ok_or_else(|| {
+                Self::invalid_params(format!("no 'address' parameter at 'to[{}]'.", i))
+            })?;
             let to_hash = Self::parse_script_hash(server, address_str)?;
             transfers.push(TransferOutput {
                 asset_id: asset,
@@ -448,25 +439,20 @@ impl RpcServerWallet {
             });
         }
 
-        let tx_json = match Self::build_and_relay(
-            server,
-            &wallet,
-            &transfers,
-            from,
-            signers.as_deref(),
-        ) {
-            Ok(value) => value,
-            Err(err) => {
-                let rpc_error: RpcError = err.into();
-                if rpc_error.code() == RpcError::insufficient_funds_wallet().code() {
-                    return Err(RpcException::new(
-                        INVALID_OPERATION_HRESULT,
-                        rpc_error.error_message(),
-                    ));
+        let tx_json =
+            match Self::build_and_relay(server, &wallet, &transfers, from, signers.as_deref()) {
+                Ok(value) => value,
+                Err(err) => {
+                    let rpc_error: RpcError = err.into();
+                    if rpc_error.code() == RpcError::insufficient_funds_wallet().code() {
+                        return Err(RpcException::new(
+                            INVALID_OPERATION_HRESULT,
+                            rpc_error.error_message(),
+                        ));
+                    }
+                    return Err(RpcException::from(rpc_error));
                 }
-                return Err(RpcException::from(rpc_error));
-            }
-        };
+            };
         Ok(tx_json)
     }
 
@@ -526,7 +512,10 @@ impl RpcServerWallet {
         .map_err(Self::wallet_failure)?;
 
         if let Some(conflict_tx) = server.system().mempool().lock().try_get(&txid) {
-            let bumped = tx.network_fee().max(conflict_tx.network_fee()).saturating_add(1);
+            let bumped = tx
+                .network_fee()
+                .max(conflict_tx.network_fee())
+                .saturating_add(1);
             tx.set_network_fee(bumped);
         } else if let Some(extra_fee) = params.get(2).and_then(Value::as_str) {
             let decimals = GasToken::new().decimals();
@@ -1096,27 +1085,27 @@ fn signature_contract_pubkey(script: &[u8]) -> Result<Vec<u8>, RpcException> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_core::smart_contract::helper::Helper as ContractHelper;
-    use neo_core::protocol_settings::ProtocolSettings;
-    use neo_core::IVerifiable;
-    use neo_core::NeoSystem;
-    use neo_core::Witness;
+    use crate::server::rcp_server_settings::RpcServerConfig;
+    use neo_core::neo_io::BinaryWriter;
     use neo_core::network::p2p::helper::get_sign_data_vec;
     use neo_core::network::p2p::payloads::conflicts::Conflicts;
     use neo_core::network::p2p::payloads::signer::Signer;
     use neo_core::network::p2p::payloads::transaction::Transaction;
     use neo_core::network::p2p::payloads::transaction_attribute::TransactionAttribute;
+    use neo_core::protocol_settings::ProtocolSettings;
+    use neo_core::smart_contract::helper::Helper as ContractHelper;
+    use neo_core::smart_contract::native::LedgerContract;
+    use neo_core::smart_contract::{StorageItem, StorageKey};
+    use neo_core::IVerifiable;
+    use neo_core::NeoSystem;
+    use neo_core::UInt256;
+    use neo_core::Witness;
     use neo_crypto::Secp256r1Crypto;
-    use crate::server::rcp_server_settings::RpcServerConfig;
+    use neo_vm::vm_state::VMState;
     use num_bigint::BigInt;
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
     use tokio::runtime::{Handle, Runtime};
-    use neo_core::UInt256;
-    use neo_core::neo_io::BinaryWriter;
-    use neo_core::smart_contract::native::LedgerContract;
-    use neo_core::smart_contract::{StorageItem, StorageKey};
-    use neo_vm::vm_state::VMState;
 
     fn temp_wallet_path() -> String {
         let nanos = SystemTime::now()
@@ -1139,7 +1128,11 @@ mod tests {
     async fn create_wallet_file(password: &str) -> (String, KeyPair, String) {
         let settings = Arc::new(ProtocolSettings::default());
         let path = temp_wallet_path();
-        let wallet = Nep6Wallet::new(Some("rpc-wallet".to_string()), Some(path.clone()), settings.clone());
+        let wallet = Nep6Wallet::new(
+            Some("rpc-wallet".to_string()),
+            Some(path.clone()),
+            settings.clone(),
+        );
         let keypair = KeyPair::from_private_key(&[0x11u8; 32]).expect("keypair");
         let nep2 = keypair
             .to_nep2(password, settings.address_version)
@@ -1149,7 +1142,8 @@ mod tests {
             .await
             .expect("import nep2");
         wallet.persist().expect("persist wallet");
-        let address = WalletHelper::to_address(&keypair.get_script_hash(), settings.address_version);
+        let address =
+            WalletHelper::to_address(&keypair.get_script_hash(), settings.address_version);
         (path, keypair, address)
     }
 
@@ -1244,9 +1238,7 @@ mod tests {
             .write_u8(RECORD_KIND_TRANSACTION)
             .expect("record kind");
         writer.write_u32(0).expect("block index");
-        writer
-            .write_u8(VMState::NONE as u8)
-            .expect("vm state");
+        writer.write_u8(VMState::NONE as u8).expect("vm state");
         let tx_bytes = tx.to_bytes();
         writer.write_var_bytes(&tx_bytes).expect("tx bytes");
 
@@ -1285,14 +1277,27 @@ mod tests {
             .expect("openwallet handler");
         let dump_handler = handlers
             .iter()
-            .find(|handler| handler.descriptor().name.eq_ignore_ascii_case("dumpprivkey"))
+            .find(|handler| {
+                handler
+                    .descriptor()
+                    .name
+                    .eq_ignore_ascii_case("dumpprivkey")
+            })
             .expect("dumpprivkey handler");
         let close_handler = handlers
             .iter()
-            .find(|handler| handler.descriptor().name.eq_ignore_ascii_case("closewallet"))
+            .find(|handler| {
+                handler
+                    .descriptor()
+                    .name
+                    .eq_ignore_ascii_case("closewallet")
+            })
             .expect("closewallet handler");
 
-        let params = [Value::String(path.clone()), Value::String(password.to_string())];
+        let params = [
+            Value::String(path.clone()),
+            Value::String(password.to_string()),
+        ];
         let result = (open_handler.callback())(&server, &params).expect("open wallet");
         assert_eq!(result.as_bool(), Some(true));
         assert!(server.wallet().is_some());
@@ -1337,7 +1342,10 @@ mod tests {
             .find(|handler| handler.descriptor().name.eq_ignore_ascii_case("openwallet"))
             .expect("openwallet handler");
 
-        let params = [Value::String(path.clone()), Value::String("wrong".to_string())];
+        let params = [
+            Value::String(path.clone()),
+            Value::String("wrong".to_string()),
+        ];
         let err = (open_handler.callback())(&server, &params).expect_err("invalid password");
         let rpc_error: RpcError = err.into();
         assert_eq!(rpc_error.code(), RpcError::wallet_not_supported().code());
@@ -1358,7 +1366,10 @@ mod tests {
         let open_handler = find_handler(&handlers, "openwallet");
 
         let path = temp_wallet_path();
-        let params = [Value::String(path.clone()), Value::String("password".to_string())];
+        let params = [
+            Value::String(path.clone()),
+            Value::String("password".to_string()),
+        ];
         let err = (open_handler.callback())(&server, &params).expect_err("missing wallet");
         let rpc_error: RpcError = err.into();
         assert_eq!(rpc_error.code(), RpcError::wallet_not_found().code());
@@ -1378,7 +1389,10 @@ mod tests {
         let path = temp_wallet_path();
         fs::write(&path, "{}").expect("write invalid wallet");
 
-        let params = [Value::String(path.clone()), Value::String("password".to_string())];
+        let params = [
+            Value::String(path.clone()),
+            Value::String("password".to_string()),
+        ];
         let err = (open_handler.callback())(&server, &params).expect_err("invalid wallet");
         let rpc_error: RpcError = err.into();
         assert_eq!(rpc_error.code(), RpcError::wallet_not_supported().code());
@@ -1404,12 +1418,14 @@ mod tests {
         let new_address_handler = find_handler(&handlers, "getnewaddress");
         let close_handler = find_handler(&handlers, "closewallet");
 
-        let params = [Value::String(path.clone()), Value::String(password.to_string())];
+        let params = [
+            Value::String(path.clone()),
+            Value::String(password.to_string()),
+        ];
         let result = (open_handler.callback())(&server, &params).expect("open wallet");
         assert_eq!(result.as_bool(), Some(true));
 
-        let result = (new_address_handler.callback())(&server, &[])
-            .expect("get new address");
+        let result = (new_address_handler.callback())(&server, &[]).expect("get new address");
         let new_address = result.as_str().expect("address");
         let wallet = server.wallet().expect("wallet");
         let accounts = wallet.get_accounts();
@@ -1439,13 +1455,15 @@ mod tests {
         let balance_handler = find_handler(&handlers, "getwalletbalance");
         let close_handler = find_handler(&handlers, "closewallet");
 
-        let params = [Value::String(path.clone()), Value::String(password.to_string())];
+        let params = [
+            Value::String(path.clone()),
+            Value::String(password.to_string()),
+        ];
         (open_handler.callback())(&server, &params).expect("open wallet");
 
         let asset = NeoToken::new().hash().to_string();
         let params = [Value::String(asset)];
-        let result = (balance_handler.callback())(&server, &params)
-            .expect("get wallet balance");
+        let result = (balance_handler.callback())(&server, &params).expect("get wallet balance");
         let obj = result.as_object().expect("balance object");
         assert!(obj.get("balance").is_some());
 
@@ -1471,12 +1489,14 @@ mod tests {
         let balance_handler = find_handler(&handlers, "getwalletbalance");
         let close_handler = find_handler(&handlers, "closewallet");
 
-        let params = [Value::String(path.clone()), Value::String(password.to_string())];
+        let params = [
+            Value::String(path.clone()),
+            Value::String(password.to_string()),
+        ];
         (open_handler.callback())(&server, &params).expect("open wallet");
 
         let params = [Value::String("NotAValidAssetID".to_string())];
-        let err = (balance_handler.callback())(&server, &params)
-            .expect_err("invalid asset id");
+        let err = (balance_handler.callback())(&server, &params).expect_err("invalid asset id");
         let rpc_error: RpcError = err.into();
         assert_eq!(rpc_error.code(), RpcError::invalid_params().code());
 
@@ -1502,11 +1522,13 @@ mod tests {
         let gas_handler = find_handler(&handlers, "getwalletunclaimedgas");
         let close_handler = find_handler(&handlers, "closewallet");
 
-        let params = [Value::String(path.clone()), Value::String(password.to_string())];
+        let params = [
+            Value::String(path.clone()),
+            Value::String(password.to_string()),
+        ];
         (open_handler.callback())(&server, &params).expect("open wallet");
 
-        let result = (gas_handler.callback())(&server, &[])
-            .expect("get wallet unclaimed gas");
+        let result = (gas_handler.callback())(&server, &[]).expect("get wallet unclaimed gas");
         assert!(result.as_str().is_some());
 
         let result = (close_handler.callback())(&server, &[]).expect("close wallet");
@@ -1535,13 +1557,18 @@ mod tests {
         let list_handler = find_handler(&handlers, "listaddress");
         let close_handler = find_handler(&handlers, "closewallet");
 
-        let params = [Value::String(path.clone()), Value::String(password.to_string())];
+        let params = [
+            Value::String(path.clone()),
+            Value::String(password.to_string()),
+        ];
         (open_handler.callback())(&server, &params).expect("open wallet");
 
         let new_key = KeyPair::from_private_key(&[0x22u8; 32]).expect("keypair");
         let wif = new_key.to_wif();
-        let expected_address =
-            WalletHelper::to_address(&new_key.get_script_hash(), ProtocolSettings::default().address_version);
+        let expected_address = WalletHelper::to_address(
+            &new_key.get_script_hash(),
+            ProtocolSettings::default().address_version,
+        );
 
         let params = [Value::String(wif)];
         let result = (import_handler.callback())(&server, &params).expect("import privkey");
@@ -1558,7 +1585,8 @@ mod tests {
         assert!(accounts
             .iter()
             .filter_map(|entry| entry.as_object())
-            .any(|entry| entry.get("address").and_then(Value::as_str) == Some(expected_address.as_str())));
+            .any(|entry| entry.get("address").and_then(Value::as_str)
+                == Some(expected_address.as_str())));
 
         let result = (close_handler.callback())(&server, &[]).expect("close wallet");
         assert_eq!(result.as_bool(), Some(true));
@@ -1581,7 +1609,10 @@ mod tests {
         let import_handler = find_handler(&handlers, "importprivkey");
         let close_handler = find_handler(&handlers, "closewallet");
 
-        let params = [Value::String(path.clone()), Value::String(password.to_string())];
+        let params = [
+            Value::String(path.clone()),
+            Value::String(password.to_string()),
+        ];
         (open_handler.callback())(&server, &params).expect("open wallet");
 
         let params = [Value::String("ThisIsAnInvalidWIFString".to_string())];
@@ -1610,7 +1641,10 @@ mod tests {
         let import_handler = find_handler(&handlers, "importprivkey");
         let close_handler = find_handler(&handlers, "closewallet");
 
-        let params = [Value::String(path.clone()), Value::String(password.to_string())];
+        let params = [
+            Value::String(path.clone()),
+            Value::String(password.to_string()),
+        ];
         (open_handler.callback())(&server, &params).expect("open wallet");
 
         let wallet = server.wallet().expect("wallet");
@@ -1623,9 +1657,8 @@ mod tests {
         let initial_count = wallet.get_accounts().len();
 
         let params = [Value::String(existing_wif)];
-        let result =
-            tokio::task::block_in_place(|| (import_handler.callback())(&server, &params))
-                .expect("import existing");
+        let result = tokio::task::block_in_place(|| (import_handler.callback())(&server, &params))
+            .expect("import existing");
         let obj = result.as_object().expect("account json");
         assert_eq!(
             obj.get("address").and_then(Value::as_str),
@@ -1664,12 +1697,17 @@ mod tests {
         let dump_handler = find_handler(&handlers, "dumpprivkey");
         let close_handler = find_handler(&handlers, "closewallet");
 
-        let params = [Value::String(path.clone()), Value::String(password.to_string())];
+        let params = [
+            Value::String(path.clone()),
+            Value::String(password.to_string()),
+        ];
         (open_handler.callback())(&server, &params).expect("open wallet");
 
         let other_key = KeyPair::from_private_key(&[0x33u8; 32]).expect("keypair");
-        let other_address =
-            WalletHelper::to_address(&other_key.get_script_hash(), ProtocolSettings::default().address_version);
+        let other_address = WalletHelper::to_address(
+            &other_key.get_script_hash(),
+            ProtocolSettings::default().address_version,
+        );
         let params = [Value::String(other_address)];
         let err = (dump_handler.callback())(&server, &params).expect_err("unknown account");
         let rpc_error: RpcError = err.into();
@@ -1699,7 +1737,10 @@ mod tests {
         let dump_handler = find_handler(&handlers, "dumpprivkey");
         let close_handler = find_handler(&handlers, "closewallet");
 
-        let params = [Value::String(path.clone()), Value::String(password.to_string())];
+        let params = [
+            Value::String(path.clone()),
+            Value::String(password.to_string()),
+        ];
         (open_handler.callback())(&server, &params).expect("open wallet");
 
         let params = [Value::String("NotAValidAddress".to_string())];
@@ -1719,10 +1760,8 @@ mod tests {
         let handlers = RpcServerWallet::register_handlers();
         let handler = find_handler(&handlers, "canceltransaction");
         let txid = UInt256::from([0x11u8; 32]).to_string();
-        let address = WalletHelper::to_address(
-            &UInt160::zero(),
-            server.system().settings().address_version,
-        );
+        let address =
+            WalletHelper::to_address(&UInt160::zero(), server.system().settings().address_version);
         let params = [
             Value::String(txid),
             Value::Array(vec![Value::String(address)]),
@@ -1743,7 +1782,10 @@ mod tests {
         let handler = find_handler(&handlers, "canceltransaction");
         let close_handler = find_handler(&handlers, "closewallet");
 
-        let params = [Value::String(path.clone()), Value::String(password.to_string())];
+        let params = [
+            Value::String(path.clone()),
+            Value::String(password.to_string()),
+        ];
         (open_handler.callback())(&server, &params).expect("open wallet");
 
         let params = [
@@ -1770,7 +1812,10 @@ mod tests {
         let handler = find_handler(&handlers, "canceltransaction");
         let close_handler = find_handler(&handlers, "closewallet");
 
-        let params = [Value::String(path.clone()), Value::String(password.to_string())];
+        let params = [
+            Value::String(path.clone()),
+            Value::String(password.to_string()),
+        ];
         (open_handler.callback())(&server, &params).expect("open wallet");
 
         let params = [
@@ -1806,7 +1851,10 @@ mod tests {
         );
         store.commit();
 
-        let params = [Value::String(path.clone()), Value::String(password.to_string())];
+        let params = [
+            Value::String(path.clone()),
+            Value::String(password.to_string()),
+        ];
         (open_handler.callback())(&server, &params).expect("open wallet");
 
         let txid = UInt256::from([0x33u8; 32]).to_string();
@@ -1817,13 +1865,16 @@ mod tests {
         let result = tokio::task::block_in_place(|| (handler.callback())(&server, &params))
             .expect("canceltransaction");
         let obj = result.as_object().expect("tx json");
-        assert_eq!(obj.get("sender").and_then(Value::as_str), Some(address.as_str()));
-        let signers = obj.get("signers").and_then(Value::as_array).expect("signers");
-        let signer = signers[0].as_object().expect("signer");
         assert_eq!(
-            signer.get("scopes").and_then(Value::as_str),
-            Some("None")
+            obj.get("sender").and_then(Value::as_str),
+            Some(address.as_str())
         );
+        let signers = obj
+            .get("signers")
+            .and_then(Value::as_array)
+            .expect("signers");
+        let signer = signers[0].as_object().expect("signer");
+        assert_eq!(signer.get("scopes").and_then(Value::as_str), Some("None"));
         let attributes = obj
             .get("attributes")
             .and_then(Value::as_array)
@@ -1849,7 +1900,10 @@ mod tests {
         let handler = find_handler(&handlers, "canceltransaction");
         let close_handler = find_handler(&handlers, "closewallet");
 
-        let params = [Value::String(path.clone()), Value::String(password.to_string())];
+        let params = [
+            Value::String(path.clone()),
+            Value::String(password.to_string()),
+        ];
         (open_handler.callback())(&server, &params).expect("open wallet");
 
         let params = [
@@ -1876,7 +1930,10 @@ mod tests {
         let handler = find_handler(&handlers, "canceltransaction");
         let close_handler = find_handler(&handlers, "closewallet");
 
-        let params = [Value::String(path.clone()), Value::String(password.to_string())];
+        let params = [
+            Value::String(path.clone()),
+            Value::String(password.to_string()),
+        ];
         (open_handler.callback())(&server, &params).expect("open wallet");
 
         let confirmed = build_signed_transaction_custom(
@@ -1924,7 +1981,10 @@ mod tests {
         );
         store.commit();
 
-        let params = [Value::String(path.clone()), Value::String(password.to_string())];
+        let params = [
+            Value::String(path.clone()),
+            Value::String(password.to_string()),
+        ];
         (open_handler.callback())(&server, &params).expect("open wallet");
 
         let params = [
@@ -1961,7 +2021,10 @@ mod tests {
         );
         store.commit();
 
-        let params = [Value::String(path.clone()), Value::String(password.to_string())];
+        let params = [
+            Value::String(path.clone()),
+            Value::String(password.to_string()),
+        ];
         (open_handler.callback())(&server, &params).expect("open wallet");
 
         let params = [
@@ -1999,7 +2062,10 @@ mod tests {
         );
         store.commit();
 
-        let params = [Value::String(path.clone()), Value::String(password.to_string())];
+        let params = [
+            Value::String(path.clone()),
+            Value::String(password.to_string()),
+        ];
         (open_handler.callback())(&server, &params).expect("open wallet");
 
         let txid = UInt256::from([0x55u8; 32]);
@@ -2071,14 +2137,17 @@ mod tests {
         );
         let txid = conflict_tx.hash();
         let store_cache = server.system().store_cache();
-        let verify = server
-            .system()
-            .mempool()
-            .lock()
-            .try_add(conflict_tx.clone(), store_cache.data_cache(), server.system().settings());
+        let verify = server.system().mempool().lock().try_add(
+            conflict_tx.clone(),
+            store_cache.data_cache(),
+            server.system().settings(),
+        );
         assert_eq!(verify, VerifyResult::Succeed);
 
-        let params = [Value::String(path.clone()), Value::String(password.to_string())];
+        let params = [
+            Value::String(path.clone()),
+            Value::String(password.to_string()),
+        ];
         (open_handler.callback())(&server, &params).expect("open wallet");
 
         let params = [
@@ -2103,10 +2172,8 @@ mod tests {
     fn wallet_methods_require_open_wallet() {
         let server = make_authenticated_server();
         let handlers = RpcServerWallet::register_handlers();
-        let address = WalletHelper::to_address(
-            &UInt160::zero(),
-            server.system().settings().address_version,
-        );
+        let address =
+            WalletHelper::to_address(&UInt160::zero(), server.system().settings().address_version);
         let asset = GasToken::new().hash().to_string();
         let keypair = KeyPair::from_private_key(&[0x55u8; 32]).expect("keypair");
         let wif = keypair.to_wif();
@@ -2138,10 +2205,8 @@ mod tests {
         let server = make_authenticated_server();
         let handlers = RpcServerWallet::register_handlers();
         let send_handler = find_handler(&handlers, "sendfrom");
-        let address = WalletHelper::to_address(
-            &UInt160::zero(),
-            server.system().settings().address_version,
-        );
+        let address =
+            WalletHelper::to_address(&UInt160::zero(), server.system().settings().address_version);
         let asset = GasToken::new().hash().to_string();
         let params = [
             Value::String(asset),
@@ -2179,7 +2244,10 @@ mod tests {
         );
         store.commit();
 
-        let params = [Value::String(path.clone()), Value::String(password.to_string())];
+        let params = [
+            Value::String(path.clone()),
+            Value::String(password.to_string()),
+        ];
         (open_handler.callback())(&server, &params).expect("open wallet");
 
         let asset = GasToken::new().hash().to_string();
@@ -2193,9 +2261,15 @@ mod tests {
             .expect("sendfrom");
         let obj = result.as_object().expect("tx json");
         assert_eq!(obj.len(), 12);
-        assert_eq!(obj.get("sender").and_then(Value::as_str), Some(address.as_str()));
+        assert_eq!(
+            obj.get("sender").and_then(Value::as_str),
+            Some(address.as_str())
+        );
 
-        let signers = obj.get("signers").and_then(Value::as_array).expect("signers");
+        let signers = obj
+            .get("signers")
+            .and_then(Value::as_array)
+            .expect("signers");
         assert_eq!(signers.len(), 1);
         let signer = signers[0].as_object().expect("signer");
         let expected_account = keypair.get_script_hash().to_string();
@@ -2229,7 +2303,10 @@ mod tests {
         let send_handler = find_handler(&handlers, "sendfrom");
         let close_handler = find_handler(&handlers, "closewallet");
 
-        let params = [Value::String(path.clone()), Value::String(password.to_string())];
+        let params = [
+            Value::String(path.clone()),
+            Value::String(password.to_string()),
+        ];
         (open_handler.callback())(&server, &params).expect("open wallet");
 
         let asset = GasToken::new().hash().to_string();
@@ -2254,10 +2331,8 @@ mod tests {
         let server = make_authenticated_server();
         let handlers = RpcServerWallet::register_handlers();
         let handler = find_handler(&handlers, "sendtoaddress");
-        let address = WalletHelper::to_address(
-            &UInt160::zero(),
-            server.system().settings().address_version,
-        );
+        let address =
+            WalletHelper::to_address(&UInt160::zero(), server.system().settings().address_version);
         let asset = GasToken::new().hash().to_string();
         let params = [
             Value::String(asset),
@@ -2285,13 +2360,14 @@ mod tests {
         let handler = find_handler(&handlers, "sendtoaddress");
         let close_handler = find_handler(&handlers, "closewallet");
 
-        let params = [Value::String(path.clone()), Value::String(password.to_string())];
+        let params = [
+            Value::String(path.clone()),
+            Value::String(password.to_string()),
+        ];
         (open_handler.callback())(&server, &params).expect("open wallet");
 
-        let address = WalletHelper::to_address(
-            &UInt160::zero(),
-            server.system().settings().address_version,
-        );
+        let address =
+            WalletHelper::to_address(&UInt160::zero(), server.system().settings().address_version);
         let params = [
             Value::String("NotAnAssetId".to_string()),
             Value::String(address),
@@ -2323,7 +2399,10 @@ mod tests {
         let handler = find_handler(&handlers, "sendtoaddress");
         let close_handler = find_handler(&handlers, "closewallet");
 
-        let params = [Value::String(path.clone()), Value::String(password.to_string())];
+        let params = [
+            Value::String(path.clone()),
+            Value::String(password.to_string()),
+        ];
         (open_handler.callback())(&server, &params).expect("open wallet");
 
         let asset = GasToken::new().hash().to_string();
@@ -2358,7 +2437,10 @@ mod tests {
         let handler = find_handler(&handlers, "sendtoaddress");
         let close_handler = find_handler(&handlers, "closewallet");
 
-        let params = [Value::String(path.clone()), Value::String(password.to_string())];
+        let params = [
+            Value::String(path.clone()),
+            Value::String(password.to_string()),
+        ];
         (open_handler.callback())(&server, &params).expect("open wallet");
 
         let asset = GasToken::new().hash().to_string();
@@ -2394,7 +2476,10 @@ mod tests {
         let handler = find_handler(&handlers, "sendtoaddress");
         let close_handler = find_handler(&handlers, "closewallet");
 
-        let params = [Value::String(path.clone()), Value::String(password.to_string())];
+        let params = [
+            Value::String(path.clone()),
+            Value::String(password.to_string()),
+        ];
         (open_handler.callback())(&server, &params).expect("open wallet");
 
         let asset = GasToken::new().hash().to_string();
@@ -2417,10 +2502,8 @@ mod tests {
         let server = make_authenticated_server();
         let handlers = RpcServerWallet::register_handlers();
         let handler = find_handler(&handlers, "sendmany");
-        let address = WalletHelper::to_address(
-            &UInt160::zero(),
-            server.system().settings().address_version,
-        );
+        let address =
+            WalletHelper::to_address(&UInt160::zero(), server.system().settings().address_version);
         let asset = GasToken::new().hash().to_string();
         let outputs = json!([{
             "asset": asset,
@@ -2449,7 +2532,10 @@ mod tests {
         let handler = find_handler(&handlers, "sendmany");
         let close_handler = find_handler(&handlers, "closewallet");
 
-        let params = [Value::String(path.clone()), Value::String(password.to_string())];
+        let params = [
+            Value::String(path.clone()),
+            Value::String(password.to_string()),
+        ];
         (open_handler.callback())(&server, &params).expect("open wallet");
 
         let asset = GasToken::new().hash().to_string();
@@ -2488,7 +2574,10 @@ mod tests {
         let handler = find_handler(&handlers, "sendmany");
         let close_handler = find_handler(&handlers, "closewallet");
 
-        let params = [Value::String(path.clone()), Value::String(password.to_string())];
+        let params = [
+            Value::String(path.clone()),
+            Value::String(password.to_string()),
+        ];
         (open_handler.callback())(&server, &params).expect("open wallet");
 
         let params = [Value::String(address), Value::Array(vec![])];
@@ -2525,7 +2614,10 @@ mod tests {
         let handler = find_handler(&handlers, "sendmany");
         let close_handler = find_handler(&handlers, "closewallet");
 
-        let params = [Value::String(path.clone()), Value::String(password.to_string())];
+        let params = [
+            Value::String(path.clone()),
+            Value::String(password.to_string()),
+        ];
         (open_handler.callback())(&server, &params).expect("open wallet");
 
         let params = [
@@ -2565,7 +2657,10 @@ mod tests {
         let handler = find_handler(&handlers, "sendmany");
         let close_handler = find_handler(&handlers, "closewallet");
 
-        let params = [Value::String(path.clone()), Value::String(password.to_string())];
+        let params = [
+            Value::String(path.clone()),
+            Value::String(password.to_string()),
+        ];
         (open_handler.callback())(&server, &params).expect("open wallet");
 
         let asset_id = GasToken::new().hash();
@@ -2620,7 +2715,10 @@ mod tests {
         );
         store.commit();
 
-        let params = [Value::String(path.clone()), Value::String(password.to_string())];
+        let params = [
+            Value::String(path.clone()),
+            Value::String(password.to_string()),
+        ];
         (open_handler.callback())(&server, &params).expect("open wallet");
 
         let asset = GasToken::new().hash().to_string();
@@ -2634,9 +2732,15 @@ mod tests {
             .expect("sendmany");
         let obj = result.as_object().expect("tx json");
         assert_eq!(obj.len(), 12);
-        assert_eq!(obj.get("sender").and_then(Value::as_str), Some(address.as_str()));
+        assert_eq!(
+            obj.get("sender").and_then(Value::as_str),
+            Some(address.as_str())
+        );
 
-        let signers = obj.get("signers").and_then(Value::as_array).expect("signers");
+        let signers = obj
+            .get("signers")
+            .and_then(Value::as_array)
+            .expect("signers");
         assert_eq!(signers.len(), 1);
         let signer = signers[0].as_object().expect("signer");
         let expected_account = keypair.get_script_hash().to_string();
@@ -2670,7 +2774,10 @@ mod tests {
         let handler = find_handler(&handlers, "sendmany");
         let close_handler = find_handler(&handlers, "closewallet");
 
-        let params = [Value::String(path.clone()), Value::String(password.to_string())];
+        let params = [
+            Value::String(path.clone()),
+            Value::String(password.to_string()),
+        ];
         (open_handler.callback())(&server, &params).expect("open wallet");
 
         let outputs = json!([{
@@ -2720,7 +2827,10 @@ mod tests {
         let params = [Value::String(payload)];
         let result = (handler.callback())(&server, &params).expect("network fee");
         let obj = result.as_object().expect("network fee object");
-        let fee = obj.get("networkfee").and_then(Value::as_str).expect("network fee");
+        let fee = obj
+            .get("networkfee")
+            .and_then(Value::as_str)
+            .expect("network fee");
         assert!(fee.parse::<i64>().is_ok());
     }
 

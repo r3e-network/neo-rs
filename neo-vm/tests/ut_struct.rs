@@ -211,7 +211,10 @@ fn test_struct_with_various_types() {
         assert_eq!(struct_items.len(), 5);
         assert_eq!(struct_items[0], StackItem::from_int(BigInt::from(42)));
         assert_eq!(struct_items[1], StackItem::Boolean(true));
-        assert_eq!(struct_items[2], StackItem::ByteString(vec![0x01, 0x02, 0x03]));
+        assert_eq!(
+            struct_items[2],
+            StackItem::ByteString(vec![0x01, 0x02, 0x03])
+        );
         assert_eq!(struct_items[3], StackItem::Null);
 
         if let StackItem::Array(ref arr) = struct_items[4] {

@@ -103,11 +103,11 @@ impl NativeContract for ContractManagement {
                         let bytes =
                             BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
                                 .map_err(|e| {
-                                    Error::serialization(format!(
-                                        "Failed to serialize contract state: {}",
-                                        e
-                                    ))
-                                })?;
+                                Error::serialization(format!(
+                                    "Failed to serialize contract state: {}",
+                                    e
+                                ))
+                            })?;
                         Ok(bytes)
                     }
                     None => Ok(vec![]),
@@ -121,19 +121,19 @@ impl NativeContract for ContractManagement {
                 }
                 let nef_bytes = args[0].clone();
                 let manifest_bytes = args[1].clone();
-                let data = if args.len() == 3 { args[2].clone() } else { Vec::new() };
+                let data = if args.len() == 3 {
+                    args[2].clone()
+                } else {
+                    Vec::new()
+                };
 
                 let contract = self.deploy(engine, nef_bytes, manifest_bytes, data)?;
 
                 let item = contract.to_stack_item();
-                let bytes =
-                    BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
-                        .map_err(|e| {
-                            Error::serialization(format!(
-                                "Failed to serialize contract state: {}",
-                                e
-                            ))
-                        })?;
+                let bytes = BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
+                    .map_err(|e| {
+                    Error::serialization(format!("Failed to serialize contract state: {}", e))
+                })?;
                 Ok(bytes)
             }
             "update" => {
@@ -155,7 +155,11 @@ impl NativeContract for ContractManagement {
                     Some(args[1].clone())
                 };
 
-                let data = if args.len() == 3 { args[2].clone() } else { Vec::new() };
+                let data = if args.len() == 3 {
+                    args[2].clone()
+                } else {
+                    Vec::new()
+                };
 
                 self.update(engine, nef_bytes, manifest_bytes, data)?;
                 Ok(vec![])
@@ -248,16 +252,14 @@ impl NativeContract for ContractManagement {
                 match self.get_contract_by_id(id)? {
                     Some(contract) => {
                         let item = contract.to_stack_item();
-                        let bytes = BinarySerializer::serialize(
-                            &item,
-                            &ExecutionEngineLimits::default(),
-                        )
-                        .map_err(|e| {
-                            Error::serialization(format!(
-                                "Failed to serialize contract state: {}",
-                                e
-                            ))
-                        })?;
+                        let bytes =
+                            BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
+                                .map_err(|e| {
+                                Error::serialization(format!(
+                                    "Failed to serialize contract state: {}",
+                                    e
+                                ))
+                            })?;
                         Ok(bytes)
                     }
                     None => Ok(vec![]),
@@ -284,9 +286,9 @@ impl NativeContract for ContractManagement {
     }
 
     fn on_persist(&self, engine: &mut ApplicationEngine) -> Result<()> {
-        let persisting_block = engine.persisting_block().ok_or_else(|| {
-            Error::native_contract("No persisting block available".to_string())
-        })?;
+        let persisting_block = engine
+            .persisting_block()
+            .ok_or_else(|| Error::native_contract("No persisting block available".to_string()))?;
         let block_height = persisting_block.header.index;
         let settings = engine.protocol_settings().clone();
 
@@ -319,12 +321,18 @@ impl NativeContract for ContractManagement {
             {
                 let mut storage = self.storage.write();
                 if is_new {
-                    storage.contracts.insert(contract_hash, contract_state.clone());
-                    storage.contract_ids.insert(contract_state.id, contract_hash);
+                    storage
+                        .contracts
+                        .insert(contract_hash, contract_state.clone());
+                    storage
+                        .contract_ids
+                        .insert(contract_state.id, contract_hash);
                     storage.contract_count = storage.contract_count.saturating_add(1);
                     contract_count_changed = true;
                 } else {
-                    storage.contracts.insert(contract_hash, contract_state.clone());
+                    storage
+                        .contracts
+                        .insert(contract_hash, contract_state.clone());
                     storage
                         .contract_ids
                         .entry(contract_state.id)
@@ -390,12 +398,7 @@ impl NativeContract for ContractManagement {
             .get_storage_item(&context, &Self::next_id_key())
             .is_none()
         {
-            put_storage_if_changed(
-                engine,
-                &context,
-                &Self::next_id_key(),
-                &next_id_bytes,
-            )?;
+            put_storage_if_changed(engine, &context, &Self::next_id_key(), &next_id_bytes)?;
         }
 
         if contract_count_changed
@@ -403,12 +406,7 @@ impl NativeContract for ContractManagement {
                 .get_storage_item(&context, &Self::contract_count_key())
                 .is_none()
         {
-            put_storage_if_changed(
-                engine,
-                &context,
-                &Self::contract_count_key(),
-                &count_bytes,
-            )?;
+            put_storage_if_changed(engine, &context, &Self::contract_count_key(), &count_bytes)?;
         }
 
         Ok(())

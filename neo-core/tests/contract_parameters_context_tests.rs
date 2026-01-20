@@ -2,8 +2,8 @@ use neo_core::network::p2p::helper::get_sign_data_vec;
 use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::contract::Contract;
-use neo_core::smart_contract::helper::Helper as ContractHelper;
 use neo_core::smart_contract::contract_parameter_type::ContractParameterType;
+use neo_core::smart_contract::helper::Helper as ContractHelper;
 use neo_core::smart_contract::ContractParametersContext;
 use neo_core::wallets::key_pair::KeyPair;
 use neo_core::{Transaction, UInt160, WitnessScope};
@@ -42,7 +42,9 @@ fn test_multisig_invocation_ordering() {
     let (_, parsed_keys) =
         ContractHelper::parse_multi_sig_contract(&contract.script).expect("parse multisig");
     let pub2_bytes = pub2.encode_point(true).expect("pub2 bytes");
-    assert!(parsed_keys.iter().any(|k| k.as_slice() == pub2_bytes.as_slice()));
+    assert!(parsed_keys
+        .iter()
+        .any(|k| k.as_slice() == pub2_bytes.as_slice()));
 
     let mut tx = make_tx_for_contract(contract.script_hash());
     let sign_data = get_sign_data_vec(&tx, settings.network).expect("sign data");
@@ -100,12 +102,8 @@ fn test_add_contract_requires_script_hash_in_context() {
 
     let key1 = KeyPair::from_private_key(&[7u8; 32]).expect("key1");
     let key2 = KeyPair::from_private_key(&[8u8; 32]).expect("key2");
-    let contract1 = Contract::create_signature_contract(
-        key1.get_public_key_point().expect("pub1"),
-    );
-    let contract2 = Contract::create_signature_contract(
-        key2.get_public_key_point().expect("pub2"),
-    );
+    let contract1 = Contract::create_signature_contract(key1.get_public_key_point().expect("pub1"));
+    let contract2 = Contract::create_signature_contract(key2.get_public_key_point().expect("pub2"));
 
     let tx = make_tx_for_contract(contract1.script_hash());
     let mut context = ContractParametersContext::new(snapshot, tx, settings.network);
@@ -133,7 +131,5 @@ fn test_single_signature_rejects_multiple_signature_parameters() {
     let sig = key.sign(&sign_data).expect("sig");
 
     let mut context = ContractParametersContext::new(snapshot, tx, settings.network);
-    assert!(context
-        .add_signature(contract, pub_key, sig)
-        .is_err());
+    assert!(context.add_signature(contract, pub_key, sig).is_err());
 }

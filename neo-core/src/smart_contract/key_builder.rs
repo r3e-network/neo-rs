@@ -3,8 +3,8 @@
 //! This module provides a builder for constructing storage keys used by native contracts.
 //! The implementation mirrors the C# Neo.SmartContract.KeyBuilder class.
 
-use crate::{CoreError, UInt160, UInt256};
 use crate::cryptography::ECPoint;
+use crate::{CoreError, UInt160, UInt256};
 use num_bigint::BigInt;
 
 /// Error type for KeyBuilder operations.

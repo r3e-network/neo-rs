@@ -132,11 +132,8 @@ mod tests {
     }
 
     fn stack_bytes(state: &TransactionState) -> Vec<u8> {
-        BinarySerializer::serialize(
-            &state.to_stack_item(),
-            &ExecutionEngineLimits::default(),
-        )
-        .expect("serialize stack item")
+        BinarySerializer::serialize(&state.to_stack_item(), &ExecutionEngineLimits::default())
+            .expect("serialize stack item")
     }
 
     fn decode_stack(bytes: &[u8]) -> StackItem {
@@ -216,8 +213,7 @@ mod tests {
             origin.transaction.as_ref().unwrap().nonce()
         );
 
-        let new_origin =
-            TransactionState::new(2, Some(sample_transaction(99, 200)), VMState::NONE);
+        let new_origin = TransactionState::new(2, Some(sample_transaction(99, 200)), VMState::NONE);
         replica.from_replica(&new_origin);
 
         assert_eq!(stack_bytes(&replica), stack_bytes(&new_origin));

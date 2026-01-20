@@ -4,8 +4,8 @@
 //! This contract assists with multisignature transaction forming by managing
 //! GAS deposits for notary service fees.
 
-use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::cryptography::Crypto;
+use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::hardfork::Hardfork;
 use crate::network::p2p::payloads::{Transaction, TransactionAttribute, TransactionAttributeType};
 use crate::persistence::i_read_only_store::IReadOnlyStoreGeneric;
@@ -14,7 +14,6 @@ use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::call_flags::CallFlags;
-use crate::smart_contract::Contract;
 use crate::smart_contract::helper::Helper;
 use crate::smart_contract::i_interoperable::IInteroperable;
 use crate::smart_contract::native::helpers::NativeHelpers;
@@ -23,6 +22,7 @@ use crate::smart_contract::native::{
     role_management::RoleManagement, NativeContract, NativeMethod, Role,
 };
 use crate::smart_contract::storage_key::StorageKey;
+use crate::smart_contract::Contract;
 use crate::smart_contract::ContractParameterType;
 use crate::smart_contract::StorageItem;
 use crate::UInt160;
@@ -299,9 +299,9 @@ impl Notary {
         let owner = if items[0].is_null() {
             *default_owner
         } else {
-            let bytes = items[0].as_bytes().map_err(|err| {
-                Error::native_contract(format!("Invalid deposit owner: {}", err))
-            })?;
+            let bytes = items[0]
+                .as_bytes()
+                .map_err(|err| Error::native_contract(format!("Invalid deposit owner: {}", err)))?;
             if bytes.len() != UInt160::LENGTH {
                 return Err(Error::native_contract(
                     "Deposit owner must be 20 bytes".to_string(),
@@ -522,9 +522,9 @@ impl Notary {
         let account = UInt160::from_bytes(&args[0])
             .map_err(|_| Error::native_contract("Invalid account address".to_string()))?;
         let till_value = BigInt::from_signed_bytes_le(&args[1]);
-        let till = till_value.to_u32().ok_or_else(|| {
-            Error::native_contract("Invalid till argument".to_string())
-        })?;
+        let till = till_value
+            .to_u32()
+            .ok_or_else(|| Error::native_contract("Invalid till argument".to_string()))?;
 
         // Verify witness for account
         if !engine.check_witness_hash(&account)? {
@@ -858,9 +858,10 @@ impl NativeContract for Notary {
     }
 
     fn on_persist(&self, engine: &mut ApplicationEngine) -> Result<()> {
-        let block = engine.persisting_block().cloned().ok_or_else(|| {
-            Error::native_contract("No persisting block available".to_string())
-        })?;
+        let block = engine
+            .persisting_block()
+            .cloned()
+            .ok_or_else(|| Error::native_contract("No persisting block available".to_string()))?;
 
         let snapshot = engine.snapshot_cache();
         let snapshot_ref = snapshot.as_ref();

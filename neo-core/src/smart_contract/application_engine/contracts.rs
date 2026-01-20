@@ -177,8 +177,8 @@ impl ApplicationEngine {
         }
 
         if whitelisted {
-            let state_arc =
-                new_context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+            let state_arc = new_context
+                .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
             state_arc.lock().whitelisted = true;
         }
 

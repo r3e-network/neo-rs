@@ -20,8 +20,7 @@ use std::any::Any;
 
 // BLS12-381 support using blst crate
 use blst::{
-    blst_fp, blst_fp12, blst_p1, blst_p1_affine, blst_p2, blst_p2_affine, blst_scalar,
-    BLST_ERROR,
+    blst_fp, blst_fp12, blst_p1, blst_p1_affine, blst_p2, blst_p2_affine, blst_scalar, BLST_ERROR,
 };
 
 pub struct CryptoLib {
@@ -65,7 +64,10 @@ impl CryptoLib {
             NativeMethod::safe(
                 "murmur32".to_string(),
                 1 << 13,
-                vec![ContractParameterType::ByteArray, ContractParameterType::Integer],
+                vec![
+                    ContractParameterType::ByteArray,
+                    ContractParameterType::Integer,
+                ],
                 ContractParameterType::ByteArray,
             ),
             NativeMethod::safe(
@@ -164,54 +166,50 @@ impl CryptoLib {
         ];
         let methods = methods
             .into_iter()
-            .map(|method| match (method.name.as_str(), method.parameters.len()) {
-                ("bls12381Add", 2) => method.with_parameter_names(vec![
-                    "x".to_string(),
-                    "y".to_string(),
-                ]),
-                ("bls12381Deserialize", 1) => {
-                    method.with_parameter_names(vec!["data".to_string()])
-                }
-                ("bls12381Equal", 2) => method.with_parameter_names(vec![
-                    "x".to_string(),
-                    "y".to_string(),
-                ]),
-                ("bls12381Mul", 3) => method.with_parameter_names(vec![
-                    "x".to_string(),
-                    "mul".to_string(),
-                    "neg".to_string(),
-                ]),
-                ("bls12381Pairing", 2) => method.with_parameter_names(vec![
-                    "g1".to_string(),
-                    "g2".to_string(),
-                ]),
-                ("bls12381Serialize", 1) => {
-                    method.with_parameter_names(vec!["g".to_string()])
-                }
-                ("keccak256", 1) => method.with_parameter_names(vec!["data".to_string()]),
-                ("murmur32", 2) => method.with_parameter_names(vec![
-                    "data".to_string(),
-                    "seed".to_string(),
-                ]),
-                ("recoverSecp256K1", 2) => method.with_parameter_names(vec![
-                    "messageHash".to_string(),
-                    "signature".to_string(),
-                ]),
-                ("ripemd160", 1) => method.with_parameter_names(vec!["data".to_string()]),
-                ("sha256", 1) => method.with_parameter_names(vec!["data".to_string()]),
-                ("verifyWithECDsa", 4) => method.with_parameter_names(vec![
-                    "message".to_string(),
-                    "pubkey".to_string(),
-                    "signature".to_string(),
-                    "curveHash".to_string(),
-                ]),
-                ("verifyWithEd25519", 3) => method.with_parameter_names(vec![
-                    "message".to_string(),
-                    "pubkey".to_string(),
-                    "signature".to_string(),
-                ]),
-                _ => method,
-            })
+            .map(
+                |method| match (method.name.as_str(), method.parameters.len()) {
+                    ("bls12381Add", 2) => {
+                        method.with_parameter_names(vec!["x".to_string(), "y".to_string()])
+                    }
+                    ("bls12381Deserialize", 1) => {
+                        method.with_parameter_names(vec!["data".to_string()])
+                    }
+                    ("bls12381Equal", 2) => {
+                        method.with_parameter_names(vec!["x".to_string(), "y".to_string()])
+                    }
+                    ("bls12381Mul", 3) => method.with_parameter_names(vec![
+                        "x".to_string(),
+                        "mul".to_string(),
+                        "neg".to_string(),
+                    ]),
+                    ("bls12381Pairing", 2) => {
+                        method.with_parameter_names(vec!["g1".to_string(), "g2".to_string()])
+                    }
+                    ("bls12381Serialize", 1) => method.with_parameter_names(vec!["g".to_string()]),
+                    ("keccak256", 1) => method.with_parameter_names(vec!["data".to_string()]),
+                    ("murmur32", 2) => {
+                        method.with_parameter_names(vec!["data".to_string(), "seed".to_string()])
+                    }
+                    ("recoverSecp256K1", 2) => method.with_parameter_names(vec![
+                        "messageHash".to_string(),
+                        "signature".to_string(),
+                    ]),
+                    ("ripemd160", 1) => method.with_parameter_names(vec!["data".to_string()]),
+                    ("sha256", 1) => method.with_parameter_names(vec!["data".to_string()]),
+                    ("verifyWithECDsa", 4) => method.with_parameter_names(vec![
+                        "message".to_string(),
+                        "pubkey".to_string(),
+                        "signature".to_string(),
+                        "curveHash".to_string(),
+                    ]),
+                    ("verifyWithEd25519", 3) => method.with_parameter_names(vec![
+                        "message".to_string(),
+                        "pubkey".to_string(),
+                        "signature".to_string(),
+                    ]),
+                    _ => method,
+                },
+            )
             .collect();
 
         Self {
@@ -272,11 +270,7 @@ impl CryptoLib {
     }
 
     /// Verify ECDSA signature with named curve/hash pair.
-    fn verify_with_ecdsa(
-        &self,
-        engine: &ApplicationEngine,
-        args: &[Vec<u8>],
-    ) -> Result<Vec<u8>> {
+    fn verify_with_ecdsa(&self, engine: &ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.len() != 4 {
             return Err(Error::native_contract(
                 "verifyWithECDsa requires message, public key, signature, and curveHash arguments"
@@ -322,8 +316,13 @@ impl CryptoLib {
             HashAlgorithm::Sha256
         };
 
-        let is_valid =
-            Crypto::verify_signature_with_curve(message, signature, public_key, &curve, hash_algorithm);
+        let is_valid = Crypto::verify_signature_with_curve(
+            message,
+            signature,
+            public_key,
+            &curve,
+            hash_algorithm,
+        );
 
         Ok(vec![if is_valid { 1 } else { 0 }])
     }
@@ -707,10 +706,7 @@ impl CryptoLib {
                     let fp = &point.fp6[fp6_index].fp2[fp2_index].fp[fp_index];
                     // SAFETY: `out` slice is pre-sized to 48 bytes for each field element.
                     unsafe {
-                        blst::blst_bendian_from_fp(
-                            out[offset..offset + FP_SIZE].as_mut_ptr(),
-                            fp,
-                        );
+                        blst::blst_bendian_from_fp(out[offset..offset + FP_SIZE].as_mut_ptr(), fp);
                     }
                     offset += FP_SIZE;
                 }
@@ -895,7 +891,6 @@ impl CryptoLib {
         }
         self.serialize_gt(&result)
     }
-
 }
 
 impl NativeContract for CryptoLib {

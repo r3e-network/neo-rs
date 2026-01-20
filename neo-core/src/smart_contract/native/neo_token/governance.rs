@@ -562,10 +562,14 @@ impl NeoToken {
         if !engine.check_witness_hash(&account)? {
             return Ok(vec![0]);
         }
-        
-        Ok(vec![if self.vote_internal(engine, &account, vote_to)? { 1 } else { 0 }])
+
+        Ok(vec![if self.vote_internal(engine, &account, vote_to)? {
+            1
+        } else {
+            0
+        }])
     }
-    
+
     /// vote_internal - actual voting logic (bypasses witness check)
     pub(crate) fn vote_internal(
         &self,

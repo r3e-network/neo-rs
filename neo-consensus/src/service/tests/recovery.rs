@@ -1,11 +1,11 @@
 use super::helpers::{create_validators_with_keys, sign_commit, sign_payload};
-use crate::{ConsensusEvent, ConsensusService};
 use crate::messages::{
     ChangeViewPayloadCompact, CommitMessage, CommitPayloadCompact, ConsensusPayload,
     PreparationPayloadCompact, PrepareRequestMessage, PrepareResponseMessage, RecoveryMessage,
     RecoveryRequestMessage,
 };
 use crate::ConsensusMessageType;
+use crate::{ConsensusEvent, ConsensusService};
 use neo_primitives::UInt256;
 use tokio::sync::mpsc;
 
@@ -18,8 +18,7 @@ async fn recovery_request_broadcasts_recovery_message() {
     let network = 0x4E454F;
     let (tx, mut rx) = mpsc::channel(100);
     let (validators, keys) = create_validators_with_keys(4);
-    let mut service =
-        ConsensusService::new(network, validators, Some(2), keys[2].to_vec(), tx);
+    let mut service = ConsensusService::new(network, validators, Some(2), keys[2].to_vec(), tx);
 
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
 
@@ -54,8 +53,7 @@ async fn recovery_request_ignored_by_non_selected_validator() {
     let network = 0x4E454F;
     let (tx, mut rx) = mpsc::channel(100);
     let (validators, keys) = create_validators_with_keys(4);
-    let mut service =
-        ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
 
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
 
@@ -90,8 +88,7 @@ async fn recovery_request_responds_when_commit_sent() {
     let network = 0x4E454F;
     let (tx, mut rx) = mpsc::channel(100);
     let (validators, keys) = create_validators_with_keys(4);
-    let mut service =
-        ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
 
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
     service
@@ -130,8 +127,7 @@ async fn recovery_message_change_view_triggers_view_change() {
     let network = 0x4E454F;
     let (tx, mut rx) = mpsc::channel(100);
     let (validators, keys) = create_validators_with_keys(4);
-    let mut service =
-        ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
 
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
 
@@ -171,7 +167,10 @@ async fn recovery_message_change_view_triggers_view_change() {
 
     let mut view_changed = None;
     while let Ok(event) = rx.try_recv() {
-        if let ConsensusEvent::ViewChanged { old_view, new_view, .. } = event {
+        if let ConsensusEvent::ViewChanged {
+            old_view, new_view, ..
+        } = event
+        {
             view_changed = Some((old_view, new_view));
             break;
         }
@@ -186,8 +185,7 @@ async fn recovery_message_ignores_commits_for_wrong_view() {
     let network = 0x4E454F;
     let (tx, mut rx) = mpsc::channel(100);
     let (validators, keys) = create_validators_with_keys(4);
-    let mut service =
-        ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
 
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
 
@@ -242,12 +240,12 @@ async fn recovery_message_ignores_invalid_prepare_request_signature() {
     let network = 0x4E454F;
     let (tx, _rx) = mpsc::channel(100);
     let (validators, keys) = create_validators_with_keys(4);
-    let mut service =
-        ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
 
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
 
-    let prepare_request = PrepareRequestMessage::new(0, 0, 0, 0, UInt256::zero(), 1_000, 7, Vec::new());
+    let prepare_request =
+        PrepareRequestMessage::new(0, 0, 0, 0, UInt256::zero(), 1_000, 7, Vec::new());
 
     let mut bad_payload = ConsensusPayload::new(
         network,
@@ -288,8 +286,7 @@ async fn recovery_message_ignores_invalid_prepare_response_signature() {
     let network = 0x4E454F;
     let (tx, _rx) = mpsc::channel(100);
     let (validators, keys) = create_validators_with_keys(4);
-    let mut service =
-        ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
 
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
 
@@ -320,8 +317,7 @@ async fn recovery_message_ignores_invalid_commit_signature() {
     let network = 0x4E454F;
     let (tx, mut rx) = mpsc::channel(100);
     let (validators, keys) = create_validators_with_keys(4);
-    let mut service =
-        ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
 
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
     service.on_transactions_received(Vec::new()).unwrap();
@@ -377,8 +373,7 @@ async fn recovery_message_ignores_prepare_response_with_mismatched_hash() {
     let network = 0x4E454F;
     let (tx, _rx) = mpsc::channel(100);
     let (validators, keys) = create_validators_with_keys(4);
-    let mut service =
-        ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
 
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
 
@@ -420,12 +415,12 @@ async fn recovery_message_with_commits_triggers_block_commit() {
     let network = 0x4E454F;
     let (tx, mut rx) = mpsc::channel(100);
     let (validators, keys) = create_validators_with_keys(4);
-    let mut service =
-        ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
 
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
 
-    let prepare_request = PrepareRequestMessage::new(0, 0, 0, 0, UInt256::zero(), 1_000, 7, Vec::new());
+    let prepare_request =
+        PrepareRequestMessage::new(0, 0, 0, 0, UInt256::zero(), 1_000, 7, Vec::new());
 
     let mut prepare_payload = ConsensusPayload::new(
         network,

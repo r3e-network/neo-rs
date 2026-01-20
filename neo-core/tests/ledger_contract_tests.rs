@@ -1,9 +1,9 @@
+use neo_core::constants::GENESIS_TIMESTAMP_MS;
 use neo_core::ledger::block_header::BlockHeader;
 use neo_core::ledger::Block;
+use neo_core::neo_io::{BinaryWriter, Serializable};
 use neo_core::network::p2p::payloads::{Signer, Transaction, WitnessScope};
 use neo_core::persistence::{DataCache, StorageItem, StorageKey};
-use neo_core::constants::GENESIS_TIMESTAMP_MS;
-use neo_core::neo_io::{BinaryWriter, Serializable};
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::call_flags::CallFlags;
@@ -60,7 +60,10 @@ fn make_genesis_block(settings: &ProtocolSettings) -> Block {
         0,
         0,
         next_consensus,
-        vec![Witness::new_with_scripts(Vec::new(), vec![OpCode::PUSH1 as u8])],
+        vec![Witness::new_with_scripts(
+            Vec::new(),
+            vec![OpCode::PUSH1 as u8],
+        )],
     );
 
     Block::new(header, Vec::new())
@@ -100,12 +103,8 @@ fn serialize_transaction_state_record(
     tx: &Transaction,
 ) -> Vec<u8> {
     let mut writer = BinaryWriter::new();
-    writer
-        .write_u8(0x01)
-        .expect("record kind");
-    writer
-        .write_u32(block_index)
-        .expect("block index");
+    writer.write_u8(0x01).expect("record kind");
+    writer.write_u32(block_index).expect("block index");
     writer.write_u8(vm_state as u8).expect("vm state");
 
     let mut tx_writer = BinaryWriter::new();
@@ -180,13 +179,13 @@ fn ledger_get_block_reconstructs_from_trimmed_block_and_states() {
 
     let mut tx1 = make_transaction(1);
     tx1.set_script(vec![
-        0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-        0x01, 0x01,
+        0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+        0x01,
     ]);
     let mut tx2 = make_transaction(2);
     tx2.set_script(vec![
-        0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-        0x01, 0x02,
+        0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+        0x02,
     ]);
 
     let tx1_key =
@@ -211,7 +210,10 @@ fn ledger_get_block_reconstructs_from_trimmed_block_and_states() {
         1,
         0,
         UInt160::from("0xa400ff00ff00ff00ff00ff00ff00ff00ff00ff01"),
-        vec![Witness::new_with_scripts(Vec::new(), vec![OpCode::PUSH1 as u8])],
+        vec![Witness::new_with_scripts(
+            Vec::new(),
+            vec![OpCode::PUSH1 as u8],
+        )],
     );
     let trimmed = neo_core::smart_contract::native::trimmed_block::TrimmedBlock::create(
         header.clone(),
@@ -322,10 +324,7 @@ fn ledger_contract_call_get_transaction_height() {
         .expect("load script");
     engine.execute().expect("execute");
 
-    let result = engine
-        .result_stack()
-        .peek(0)
-        .expect("result stack");
+    let result = engine.result_stack().peek(0).expect("result stack");
     let height = result
         .as_int()
         .expect("int result")

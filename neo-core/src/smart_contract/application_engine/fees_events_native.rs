@@ -209,7 +209,10 @@ impl ApplicationEngine {
         }
 
         let mut is_whitelisted = false;
-        if self.protocol_settings.is_hardfork_enabled(Hardfork::HfFaun, block_height) {
+        if self
+            .protocol_settings
+            .is_hardfork_enabled(Hardfork::HfFaun, block_height)
+        {
             let policy = PolicyContract::new();
             if policy
                 .get_whitelisted_fee(

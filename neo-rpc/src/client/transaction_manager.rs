@@ -18,8 +18,8 @@ use neo_core::{
     smart_contract::ContractParametersContext, Contract, ECPoint, IVerifiable, KeyPair,
     NativeContract, Signer, Transaction, TransactionAttribute, Witness,
 };
-use num_bigint::BigInt;
 use neo_primitives::UInt160;
+use num_bigint::BigInt;
 use std::sync::Arc;
 
 /// Sign item for transaction signing
@@ -208,8 +208,10 @@ impl TransactionManager {
             .await?;
         let required_fee = BigInt::from(self.tx.system_fee() + self.tx.network_fee());
         if gas_balance < required_fee {
-            let address =
-                WalletHelper::to_address(&sender, self._rpc_client.protocol_settings.address_version);
+            let address = WalletHelper::to_address(
+                &sender,
+                self._rpc_client.protocol_settings.address_version,
+            );
             return Err(format!("Insufficient GAS in address: {address}").into());
         }
 
@@ -422,14 +424,9 @@ mod tests {
         let sender = key.get_script_hash();
         let signers = vec![Signer::new(sender, WitnessScope::GLOBAL)];
 
-        let manager = TransactionManager::make_transaction(
-            client,
-            &[0x01],
-            Some(signers),
-            None,
-        )
-        .await
-        .expect("manager");
+        let manager = TransactionManager::make_transaction(client, &[0x01], Some(signers), None)
+            .await
+            .expect("manager");
 
         assert_eq!(manager.tx().signers()[0].scopes(), WitnessScope::GLOBAL);
     }

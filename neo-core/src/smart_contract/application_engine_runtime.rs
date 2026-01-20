@@ -55,7 +55,10 @@ impl ApplicationEngine {
             .cloned()
             .ok_or_else(|| "No script container".to_string())?;
 
-        if let Some(transaction) = container.as_any().downcast_ref::<crate::network::p2p::payloads::Transaction>() {
+        if let Some(transaction) = container
+            .as_any()
+            .downcast_ref::<crate::network::p2p::payloads::Transaction>()
+        {
             self.push(transaction.to_stack_item())
         } else {
             Err("Script container does not implement IInteroperable".to_string())

@@ -662,8 +662,12 @@ impl Ord for StackItem {
             (StackItem::Integer(a), StackItem::Integer(b)) => a.cmp(b),
             (StackItem::ByteString(a), StackItem::ByteString(b)) => a.cmp(b),
             (StackItem::Buffer(a), StackItem::Buffer(b)) => a.cmp(b),
-            (StackItem::ByteString(a), StackItem::Buffer(b)) => a.as_slice().cmp(b.data().as_slice()),
-            (StackItem::Buffer(a), StackItem::ByteString(b)) => a.data().as_slice().cmp(b.as_slice()),
+            (StackItem::ByteString(a), StackItem::Buffer(b)) => {
+                a.as_slice().cmp(b.data().as_slice())
+            }
+            (StackItem::Buffer(a), StackItem::ByteString(b)) => {
+                a.data().as_slice().cmp(b.as_slice())
+            }
             (StackItem::Pointer(a), StackItem::Pointer(b)) => a.cmp(b),
             (StackItem::Array(a), StackItem::Array(b)) => {
                 let len_cmp = a.len().cmp(&b.len());

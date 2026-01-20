@@ -219,9 +219,7 @@ impl Helper {
         }
         let n = public_keys.len();
 
-        if offset >= script.len()
-            || script[offset] != (OpCode::PUSH0 as u8).wrapping_add(n as u8)
-        {
+        if offset >= script.len() || script[offset] != (OpCode::PUSH0 as u8).wrapping_add(n as u8) {
             return None;
         }
         offset += 1;
@@ -370,15 +368,15 @@ impl Helper {
         // Create verification engine
         let cloned_snapshot = Arc::new(snapshot.clone_cache());
         let container_hash = verifiable.hash()?;
-        let container: Arc<dyn IVerifiable> =
-            if let Some(transaction) = verifiable.as_transaction() {
-                Arc::new(transaction.clone())
-            } else {
-                Arc::new(VerifiableHashContainer {
-                    hash: container_hash,
-                    hash_data: verifiable.get_hash_data(),
-                })
-            };
+        let container: Arc<dyn IVerifiable> = if let Some(transaction) = verifiable.as_transaction()
+        {
+            Arc::new(transaction.clone())
+        } else {
+            Arc::new(VerifiableHashContainer {
+                hash: container_hash,
+                hash_data: verifiable.get_hash_data(),
+            })
+        };
         let mut engine = ApplicationEngine::new(
             TriggerType::Verification,
             Some(container),

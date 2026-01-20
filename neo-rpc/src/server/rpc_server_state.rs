@@ -366,9 +366,7 @@ mod tests {
     use neo_core::state_service::state_store::StateServiceSettings;
     use neo_core::{NeoSystem, ProtocolSettings};
 
-    fn make_server_with_state(
-        full_state: bool,
-    ) -> (Arc<NeoSystem>, Arc<StateStore>, RpcServer) {
+    fn make_server_with_state(full_state: bool) -> (Arc<NeoSystem>, Arc<StateStore>, RpcServer) {
         let settings = ProtocolSettings::default();
         let system = NeoSystem::new_with_state_service(
             settings,
@@ -398,7 +396,10 @@ mod tests {
         (system, state_store, server)
     }
 
-    fn store_contract_state(store: &mut neo_core::persistence::StoreCache, contract: &ContractState) {
+    fn store_contract_state(
+        store: &mut neo_core::persistence::StoreCache,
+        contract: &ContractState,
+    ) {
         const PREFIX_CONTRACT: u8 = 0x08;
         const PREFIX_CONTRACT_HASH: u8 = 0x0c;
 
@@ -408,9 +409,7 @@ mod tests {
             .id();
 
         let mut writer = BinaryWriter::new();
-        contract
-            .serialize(&mut writer)
-            .expect("serialize contract");
+        contract.serialize(&mut writer).expect("serialize contract");
 
         let mut key_bytes = Vec::with_capacity(1 + 20);
         key_bytes.push(PREFIX_CONTRACT);
@@ -422,13 +421,19 @@ mod tests {
         id_bytes.push(PREFIX_CONTRACT_HASH);
         id_bytes.extend_from_slice(&contract.id.to_be_bytes());
         let id_key = StorageKey::new(contract_mgmt_id, id_bytes);
-        store.add(id_key, StorageItem::from_bytes(contract.hash.to_bytes().to_vec()));
+        store.add(
+            id_key,
+            StorageItem::from_bytes(contract.hash.to_bytes().to_vec()),
+        );
 
         let mut legacy_bytes = Vec::with_capacity(1 + 4);
         legacy_bytes.push(PREFIX_CONTRACT_HASH);
         legacy_bytes.extend_from_slice(&contract.id.to_le_bytes());
         let legacy_key = StorageKey::new(contract_mgmt_id, legacy_bytes);
-        store.add(legacy_key, StorageItem::from_bytes(contract.hash.to_bytes().to_vec()));
+        store.add(
+            legacy_key,
+            StorageItem::from_bytes(contract.hash.to_bytes().to_vec()),
+        );
 
         store.commit();
     }
@@ -614,7 +619,8 @@ mod tests {
 
         let storage_key = StorageKey::new(1, vec![0x01, 0x02]);
         let value = vec![0xaa, 0xbb];
-        let root_hash = seed_state_root(state_store.as_ref(), 1, vec![(storage_key, value.clone())]);
+        let root_hash =
+            seed_state_root(state_store.as_ref(), 1, vec![(storage_key, value.clone())]);
 
         let params = vec![
             Value::String(root_hash.to_string()),
@@ -648,10 +654,7 @@ mod tests {
         let root_hash = seed_state_root(
             state_store.as_ref(),
             1,
-            vec![
-                (key1, vec![0xaa, 0xbb]),
-                (key2, vec![0xcc, 0xdd]),
-            ],
+            vec![(key1, vec![0xaa, 0xbb]), (key2, vec![0xcc, 0xdd])],
         );
 
         let params = vec![

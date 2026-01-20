@@ -217,11 +217,13 @@ impl ContractParametersContext {
         let hash = contract.script_hash();
 
         // Multi-signature contract path
-        if let Some((_m, public_keys)) = ContractHelper::parse_multi_sig_contract(&contract.script) {
-            let encoded = public_key
-                .encode_point(true)
-                .map_err(|e| e.to_string())?;
-            if !public_keys.iter().any(|key| key.as_slice() == encoded.as_slice()) {
+        if let Some((_m, public_keys)) = ContractHelper::parse_multi_sig_contract(&contract.script)
+        {
+            let encoded = public_key.encode_point(true).map_err(|e| e.to_string())?;
+            if !public_keys
+                .iter()
+                .any(|key| key.as_slice() == encoded.as_slice())
+            {
                 return Ok(false);
             }
 

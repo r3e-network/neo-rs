@@ -59,9 +59,7 @@ fn method_token_deserialize_rejects_overlong_method_name() {
         .expect("method");
     writer.write_u16(123).expect("params");
     writer.write_bool(true).expect("return");
-    writer
-        .write_u8(CallFlags::ALL.bits())
-        .expect("flags");
+    writer.write_u8(CallFlags::ALL.bits()).expect("flags");
 
     let bytes = writer.into_bytes();
     let mut reader = MemoryReader::new(&bytes);

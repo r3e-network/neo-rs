@@ -3,8 +3,8 @@
 //! This module provides the built-in native contracts for the Neo blockchain,
 //! including NEO, GAS, Policy, Notary, and other system contracts.
 
-pub mod contract_management;
 pub mod account_state;
+pub mod contract_management;
 pub mod crypto_lib;
 pub mod fungible_token;
 pub mod gas_token;
@@ -22,9 +22,9 @@ pub mod policy_contract;
 pub mod role;
 pub mod role_management;
 pub mod std_lib;
+pub mod transaction_state;
 pub mod treasury;
 pub mod trimmed_block;
-pub mod transaction_state;
 
 pub use self::oracle_request::OracleRequest;
 pub use account_state::AccountState;
@@ -43,8 +43,8 @@ pub use policy_contract::PolicyContract;
 pub use role::Role;
 pub use role_management::RoleManagement;
 pub use std_lib::StdLib;
-pub use treasury::TreasuryContract;
 pub use transaction_state::TransactionState;
+pub use treasury::TreasuryContract;
 
 use crate::UInt160;
 use std::collections::HashMap;
@@ -144,7 +144,7 @@ impl NativeRegistry {
 
         // Register Notary contract (active after HF_Echidna)
         self.register(Arc::new(Notary::new()));
-        
+
         // Register Treasury contract (active after HF_Faun)
         self.register(Arc::new(TreasuryContract::new()));
     }

@@ -92,7 +92,9 @@ where
     }
 
     /// Returns a mutable iterator over the key/value pairs in insertion order.
-    pub fn iter_mut(&mut self) -> impl DoubleEndedIterator<Item = (&K, &mut V)> + ExactSizeIterator {
+    pub fn iter_mut(
+        &mut self,
+    ) -> impl DoubleEndedIterator<Item = (&K, &mut V)> + ExactSizeIterator {
         self.entries.iter_mut().map(|(k, v)| (&*k, v))
     }
 

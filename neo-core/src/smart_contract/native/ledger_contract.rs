@@ -107,10 +107,7 @@ impl LedgerContract {
                 ],
                 ContractParameterType::Array,
             )
-            .with_parameter_names(vec![
-                "blockIndexOrHash".to_string(),
-                "txIndex".to_string(),
-            ]),
+            .with_parameter_names(vec!["blockIndexOrHash".to_string(), "txIndex".to_string()]),
             NativeMethod::new(
                 "getTransactionHeight".to_string(),
                 1 << 15,
@@ -614,9 +611,12 @@ impl NativeContract for LedgerContract {
                     ));
                 }
                 let target = self.parse_index_or_hash(&args[0], "blockIndexOrHash")?;
-                let tx_index = BigInt::from_signed_bytes_le(&args[1])
-                    .to_i32()
-                    .ok_or_else(|| Error::invalid_argument("Invalid transaction index".to_string()))?;
+                let tx_index =
+                    BigInt::from_signed_bytes_le(&args[1])
+                        .to_i32()
+                        .ok_or_else(|| {
+                            Error::invalid_argument("Invalid transaction index".to_string())
+                        })?;
                 if tx_index < 0 {
                     return Err(Error::invalid_argument(
                         "Transaction index out of range".to_string(),

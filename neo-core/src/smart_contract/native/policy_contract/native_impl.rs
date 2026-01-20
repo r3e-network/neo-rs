@@ -42,29 +42,48 @@ impl NativeContract for PolicyContract {
         .expect("MillisecondsPerBlockChanged event descriptor")];
 
         if settings.is_hardfork_enabled(Hardfork::HfFaun, block_height) {
-            events.push(ContractEventDescriptor::new(
-                "WhitelistFeeChanged".to_string(),
-                vec![
-                    ContractParameterDefinition::new("contract".to_string(), ContractParameterType::Hash160)
+            events.push(
+                ContractEventDescriptor::new(
+                    "WhitelistFeeChanged".to_string(),
+                    vec![
+                        ContractParameterDefinition::new(
+                            "contract".to_string(),
+                            ContractParameterType::Hash160,
+                        )
                         .expect("WhitelistFeeChanged.contract"),
-                    ContractParameterDefinition::new("method".to_string(), ContractParameterType::String)
+                        ContractParameterDefinition::new(
+                            "method".to_string(),
+                            ContractParameterType::String,
+                        )
                         .expect("WhitelistFeeChanged.method"),
-                    ContractParameterDefinition::new("argCount".to_string(), ContractParameterType::Integer)
+                        ContractParameterDefinition::new(
+                            "argCount".to_string(),
+                            ContractParameterType::Integer,
+                        )
                         .expect("WhitelistFeeChanged.argCount"),
-                    ContractParameterDefinition::new("fee".to_string(), ContractParameterType::Any)
+                        ContractParameterDefinition::new(
+                            "fee".to_string(),
+                            ContractParameterType::Any,
+                        )
                         .expect("WhitelistFeeChanged.fee"),
-                ],
-            ).expect("WhitelistFeeChanged event descriptor"));
-            
-            events.push(ContractEventDescriptor::new(
-                "RecoveredFund".to_string(),
-                vec![
-                    ContractParameterDefinition::new("account".to_string(), ContractParameterType::Hash160)
-                        .expect("RecoveredFund.account"),
-                ],
-            ).expect("RecoveredFund event descriptor"));
+                    ],
+                )
+                .expect("WhitelistFeeChanged event descriptor"),
+            );
+
+            events.push(
+                ContractEventDescriptor::new(
+                    "RecoveredFund".to_string(),
+                    vec![ContractParameterDefinition::new(
+                        "account".to_string(),
+                        ContractParameterType::Hash160,
+                    )
+                    .expect("RecoveredFund.account")],
+                )
+                .expect("RecoveredFund event descriptor"),
+            );
         }
-        
+
         events
     }
 

@@ -365,9 +365,8 @@ fn test_multi_signature_contract_engine_fee_consumed() {
     assert!(pre_exec_count.load(Ordering::Relaxed) > 0);
     assert_eq!(opcode_units.load(Ordering::Relaxed), expected_opcode_units);
 
-    let expected_fee =
-        Helper::multi_signature_contract_cost(2, public_keys.len() as i32)
-            * PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64;
+    let expected_fee = Helper::multi_signature_contract_cost(2, public_keys.len() as i32)
+        * PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64;
     assert_eq!(engine.fee_consumed(), expected_fee);
 }
 

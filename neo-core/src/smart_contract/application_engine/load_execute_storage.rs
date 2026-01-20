@@ -113,11 +113,9 @@ impl ApplicationEngine {
             let step = self.vm_engine.engine_mut().execute_next();
             if let Err(err) = step {
                 let message = err.to_string();
-                self.vm_engine
-                    .engine_mut()
-                    .set_uncaught_exception(Some(StackItem::from_byte_string(
-                        message.clone().into_bytes(),
-                    )));
+                self.vm_engine.engine_mut().set_uncaught_exception(Some(
+                    StackItem::from_byte_string(message.clone().into_bytes()),
+                ));
                 self.vm_engine.engine_mut().set_state(VMState::FAULT);
                 self.capture_fault_exception_from_vm();
                 return VMState::FAULT;

@@ -94,9 +94,9 @@ fn crypto_checkmultisig_behaves_like_csharp() {
 
     let mut empty_pubkeys = make_engine(tx.clone(), settings.clone());
     empty_pubkeys
-        .push(StackItem::from_array(vec![
-            StackItem::from_byte_string(signature1.clone())
-        ]))
+        .push(StackItem::from_array(vec![StackItem::from_byte_string(
+            signature1.clone(),
+        )]))
         .expect("push signatures");
     empty_pubkeys
         .push(StackItem::from_array(Vec::new()))
@@ -133,9 +133,9 @@ fn crypto_checkmultisig_behaves_like_csharp() {
 
     let mut invalid_pubkey = make_engine(tx, settings);
     invalid_pubkey
-        .push(StackItem::from_array(vec![
-            StackItem::from_byte_string(signature2)
-        ]))
+        .push(StackItem::from_array(vec![StackItem::from_byte_string(
+            signature2,
+        )]))
         .expect("push signatures");
     invalid_pubkey
         .push(StackItem::from_array(vec![StackItem::from_byte_string(

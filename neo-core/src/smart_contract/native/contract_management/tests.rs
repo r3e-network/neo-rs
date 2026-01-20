@@ -1,4 +1,5 @@
 use super::*;
+use crate::neo_io::BinaryWriter;
 use crate::network::p2p::payloads::signer::Signer;
 use crate::network::p2p::payloads::transaction::Transaction;
 use crate::persistence::{DataCache, IReadOnlyStoreGeneric, SeekDirection, StorageItem};
@@ -6,20 +7,19 @@ use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::contract_state::NefFile;
 use crate::smart_contract::execution_context_state::ExecutionContextState;
+use crate::smart_contract::manifest::contract_manifest::MAX_MANIFEST_LENGTH;
 use crate::smart_contract::manifest::{
     ContractAbi, ContractGroup, ContractManifest, ContractMethodDescriptor,
     ContractParameterDefinition, ContractPermission, WildCardContainer,
 };
-use crate::smart_contract::manifest::contract_manifest::MAX_MANIFEST_LENGTH;
 use crate::smart_contract::trigger_type::TriggerType;
 use crate::smart_contract::IInteroperable;
-use crate::witness::Witness;
 use crate::wallets::KeyPair;
+use crate::witness::Witness;
 use crate::{IVerifiable, UInt160, WitnessScope};
-use crate::neo_io::BinaryWriter;
+use neo_vm::execution_engine_limits::ExecutionEngineLimits;
 use neo_vm::OpCode;
 use neo_vm::StackItem;
-use neo_vm::execution_engine_limits::ExecutionEngineLimits;
 use std::sync::Arc;
 
 fn default_manifest() -> ContractManifest {
@@ -64,15 +64,21 @@ fn contract_from_bytes(bytes: &[u8]) -> ContractState {
 
 fn add_contract_to_snapshot(snapshot: &DataCache, contract: &ContractState) {
     let mut writer = BinaryWriter::new();
-    contract
-        .serialize(&mut writer)
-        .expect("serialize contract");
-    let key = StorageKey::new(ContractManagement::ID, ContractManagement::contract_storage_key(&contract.hash));
+    contract.serialize(&mut writer).expect("serialize contract");
+    let key = StorageKey::new(
+        ContractManagement::ID,
+        ContractManagement::contract_storage_key(&contract.hash),
+    );
     snapshot.add(key, StorageItem::from_bytes(writer.into_bytes()));
 
-    let id_key =
-        StorageKey::new(ContractManagement::ID, ContractManagement::contract_id_storage_key(contract.id));
-    snapshot.add(id_key, StorageItem::from_bytes(contract.hash.to_bytes().to_vec()));
+    let id_key = StorageKey::new(
+        ContractManagement::ID,
+        ContractManagement::contract_id_storage_key(contract.id),
+    );
+    snapshot.add(
+        id_key,
+        StorageItem::from_bytes(contract.hash.to_bytes().to_vec()),
+    );
 }
 
 fn make_engine(
@@ -118,10 +124,15 @@ fn deploy_rejects_missing_sender_and_invalid_payloads() {
         .expect_err("missing sender should fail");
     assert!(matches!(err, Error::InvalidOperation { .. }));
 
-    let mut oversized_manifest = make_engine(Arc::clone(&snapshot), Some(UInt160::zero()), 50_000_000_000);
+    let mut oversized_manifest =
+        make_engine(Arc::clone(&snapshot), Some(UInt160::zero()), 50_000_000_000);
     let too_large = vec![0u8; MAX_MANIFEST_LENGTH + 1];
     let err = oversized_manifest
-        .call_native_contract(cm_hash, "deploy", &[nef_bytes.clone(), too_large, Vec::new()])
+        .call_native_contract(
+            cm_hash,
+            "deploy",
+            &[nef_bytes.clone(), too_large, Vec::new()],
+        )
         .expect_err("oversized manifest should fail");
     assert!(matches!(err, Error::InvalidData { .. }));
 
@@ -135,13 +146,19 @@ fn deploy_rejects_missing_sender_and_invalid_payloads() {
         .expect_err("empty NEF should fail");
     assert!(matches!(err, Error::InvalidData { .. }));
 
-    let mut empty_manifest = make_engine(Arc::clone(&snapshot), Some(UInt160::zero()), 50_000_000_000);
+    let mut empty_manifest =
+        make_engine(Arc::clone(&snapshot), Some(UInt160::zero()), 50_000_000_000);
     let err = empty_manifest
-        .call_native_contract(cm_hash, "deploy", &[nef_bytes.clone(), Vec::new(), Vec::new()])
+        .call_native_contract(
+            cm_hash,
+            "deploy",
+            &[nef_bytes.clone(), Vec::new(), Vec::new()],
+        )
         .expect_err("empty manifest should fail");
     assert!(matches!(err, Error::InvalidData { .. }));
 
-    let mut insufficient_gas = make_engine(Arc::clone(&snapshot), Some(UInt160::zero()), 10_000_000);
+    let mut insufficient_gas =
+        make_engine(Arc::clone(&snapshot), Some(UInt160::zero()), 10_000_000);
     let err = insufficient_gas
         .call_native_contract(
             cm_hash,
@@ -177,7 +194,11 @@ fn deploy_returns_expected_hash_and_prevents_duplicates() {
     );
 
     let err = engine
-        .call_native_contract(cm_hash, "deploy", &[nef_bytes, manifest_payload, Vec::new()])
+        .call_native_contract(
+            cm_hash,
+            "deploy",
+            &[nef_bytes, manifest_payload, Vec::new()],
+        )
         .expect_err("duplicate deploy should fail");
     assert!(matches!(err, Error::InvalidOperation { .. }));
 }
@@ -191,9 +212,14 @@ fn update_preserves_storage_and_increments_counter() {
     let manifest = default_manifest();
     let manifest_payload = manifest_bytes(&manifest);
 
-    let mut deploy_engine = make_engine(Arc::clone(&snapshot), Some(UInt160::zero()), 50_000_000_000);
+    let mut deploy_engine =
+        make_engine(Arc::clone(&snapshot), Some(UInt160::zero()), 50_000_000_000);
     let contract_bytes = deploy_engine
-        .call_native_contract(cm_hash, "deploy", &[initial_nef.to_bytes(), manifest_payload, Vec::new()])
+        .call_native_contract(
+            cm_hash,
+            "deploy",
+            &[initial_nef.to_bytes(), manifest_payload, Vec::new()],
+        )
         .expect("deploy succeeds");
     let contract = contract_from_bytes(&contract_bytes);
 
@@ -243,9 +269,7 @@ fn update_preserves_storage_and_increments_counter() {
     assert_eq!(updated.manifest, updated_manifest);
 
     let prefix = StorageKey::new(contract.id, Vec::new());
-    let count = snapshot
-        .find(Some(&prefix), SeekDirection::Forward)
-        .count();
+    let count = snapshot.find(Some(&prefix), SeekDirection::Forward).count();
     assert_eq!(count, 1);
 }
 
@@ -268,7 +292,11 @@ fn update_requires_calling_context() {
 
     let mut engine = make_engine(snapshot, None, 50_000_000_000);
     let err = engine
-        .call_native_contract(cm_hash, "update", &[nef.to_bytes(), manifest_payload, Vec::new()])
+        .call_native_contract(
+            cm_hash,
+            "update",
+            &[nef.to_bytes(), manifest_payload, Vec::new()],
+        )
         .expect_err("missing calling context should fail");
     assert!(matches!(err, Error::InvalidOperation { .. }));
 }
@@ -280,7 +308,8 @@ fn update_rejects_empty_payloads() {
     let nef = make_nef(vec![OpCode::RET as u8]);
     let manifest = default_manifest();
 
-    let mut deploy_engine = make_engine(Arc::clone(&snapshot), Some(UInt160::zero()), 50_000_000_000);
+    let mut deploy_engine =
+        make_engine(Arc::clone(&snapshot), Some(UInt160::zero()), 50_000_000_000);
     let contract_bytes = deploy_engine
         .call_native_contract(
             cm_hash,
@@ -318,7 +347,8 @@ fn update_rejects_oversized_manifest() {
     let nef = make_nef(vec![OpCode::RET as u8]);
     let manifest = default_manifest();
 
-    let mut deploy_engine = make_engine(Arc::clone(&snapshot), Some(UInt160::zero()), 50_000_000_000);
+    let mut deploy_engine =
+        make_engine(Arc::clone(&snapshot), Some(UInt160::zero()), 50_000_000_000);
     let contract_bytes = deploy_engine
         .call_native_contract(
             cm_hash,
@@ -383,8 +413,10 @@ fn has_method_accepts_any_parameter_count() {
     manifest.abi = ContractAbi::new(
         vec![ContractMethodDescriptor::new(
             "alpha".to_string(),
-            vec![ContractParameterDefinition::new("p0".to_string(), ContractParameterType::Any)
-                .unwrap()],
+            vec![
+                ContractParameterDefinition::new("p0".to_string(), ContractParameterType::Any)
+                    .unwrap(),
+            ],
             ContractParameterType::Void,
             0,
             true,
@@ -412,14 +444,33 @@ fn contract_hashes_sorted_and_non_native() {
     let manifest = default_manifest();
     let nef = make_nef(vec![OpCode::RET as u8]);
 
-    let contract_a = ContractState::new(2, UInt160::from_bytes(&[0x02; 20]).unwrap(), nef.clone(), manifest.clone());
-    let contract_b = ContractState::new(1, UInt160::from_bytes(&[0x01; 20]).unwrap(), nef.clone(), manifest);
-    let native = ContractState::new(-5, UInt160::from_bytes(&[0xFF; 20]).unwrap(), nef, default_manifest());
+    let contract_a = ContractState::new(
+        2,
+        UInt160::from_bytes(&[0x02; 20]).unwrap(),
+        nef.clone(),
+        manifest.clone(),
+    );
+    let contract_b = ContractState::new(
+        1,
+        UInt160::from_bytes(&[0x01; 20]).unwrap(),
+        nef.clone(),
+        manifest,
+    );
+    let native = ContractState::new(
+        -5,
+        UInt160::from_bytes(&[0xFF; 20]).unwrap(),
+        nef,
+        default_manifest(),
+    );
 
     {
         let mut storage = cm.storage.write();
-        storage.contracts.insert(contract_a.hash, contract_a.clone());
-        storage.contracts.insert(contract_b.hash, contract_b.clone());
+        storage
+            .contracts
+            .insert(contract_a.hash, contract_a.clone());
+        storage
+            .contracts
+            .insert(contract_b.hash, contract_b.clone());
         storage.contracts.insert(native.hash, native.clone());
         storage.contract_ids.insert(contract_a.id, contract_a.hash);
         storage.contract_ids.insert(contract_b.id, contract_b.hash);
@@ -437,10 +488,18 @@ fn get_contract_hashes_returns_iterator() {
     let manifest = default_manifest();
     let nef = make_nef(vec![OpCode::RET as u8]);
 
-    let contract_a =
-        ContractState::new(1, UInt160::from_bytes(&[0x01; 20]).unwrap(), nef.clone(), manifest.clone());
-    let contract_b =
-        ContractState::new(2, UInt160::from_bytes(&[0x02; 20]).unwrap(), nef.clone(), manifest);
+    let contract_a = ContractState::new(
+        1,
+        UInt160::from_bytes(&[0x01; 20]).unwrap(),
+        nef.clone(),
+        manifest.clone(),
+    );
+    let contract_b = ContractState::new(
+        2,
+        UInt160::from_bytes(&[0x02; 20]).unwrap(),
+        nef.clone(),
+        manifest,
+    );
     add_contract_to_snapshot(snapshot.as_ref(), &contract_a);
     add_contract_to_snapshot(snapshot.as_ref(), &contract_b);
 
@@ -448,12 +507,7 @@ fn get_contract_hashes_returns_iterator() {
     let result = engine
         .call_native_contract(cm_hash, "getContractHashes", &[])
         .expect("getContractHashes");
-    let iterator_id = u32::from_le_bytes(
-        result
-            .as_slice()
-            .try_into()
-            .expect("iterator id length"),
-    );
+    let iterator_id = u32::from_le_bytes(result.as_slice().try_into().expect("iterator id length"));
 
     let mut hashes = Vec::new();
     while engine
@@ -511,9 +565,7 @@ fn destroy_removes_contract_and_storage() {
     }
     let state = engine.current_execution_state().expect("execution state");
     state.lock().native_calling_script_hash = Some(contract.hash);
-    engine
-        .refresh_context_tracking()
-        .expect("refresh context");
+    engine.refresh_context_tracking().expect("refresh context");
     engine
         .call_native_contract(cm_hash, "destroy", &[])
         .expect("destroy");

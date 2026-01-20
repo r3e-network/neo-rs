@@ -11,8 +11,8 @@
 
 use super::super::utility::{witness_to_json, RpcUtility};
 use neo_config::ProtocolSettings;
-use neo_core::BlockHeader;
 use neo_core::wallets::helper::Helper as WalletHelper;
+use neo_core::BlockHeader;
 use neo_io::Serializable;
 use neo_json::{JArray, JObject, JToken};
 use neo_primitives::UInt256;
@@ -128,7 +128,10 @@ impl RpcBlockHeader {
     pub fn to_json(&self, protocol_settings: &ProtocolSettings) -> JObject {
         let header = &self.header;
         let mut json = JObject::new();
-        json.insert("hash".to_string(), JToken::String(header.hash().to_string()));
+        json.insert(
+            "hash".to_string(),
+            JToken::String(header.hash().to_string()),
+        );
         json.insert("size".to_string(), JToken::Number(header.size() as f64));
         json.insert("version".to_string(), JToken::Number(header.version as f64));
         json.insert(
@@ -257,7 +260,9 @@ mod tests {
         path.push("RpcTestCases.json");
         let payload = fs::read_to_string(&path).expect("read RpcTestCases.json");
         let token = JToken::parse(&payload, 128).expect("parse RpcTestCases.json");
-        let cases = token.as_array().expect("RpcTestCases.json should be an array");
+        let cases = token
+            .as_array()
+            .expect("RpcTestCases.json should be an array");
         for entry in cases.children() {
             let token = entry.as_ref().expect("array entry");
             let obj = token.as_object().expect("case object");

@@ -10,9 +10,9 @@ use neo_core::smart_contract::manifest::{
     ContractAbi, ContractManifest, ContractMethodDescriptor, ContractPermission, WildCardContainer,
 };
 use neo_core::smart_contract::storage_context::StorageContext;
-use neo_core::smart_contract::{StorageItem, StorageKey};
 use neo_core::smart_contract::trigger_type::TriggerType;
-use neo_core::{UInt160, constants};
+use neo_core::smart_contract::{StorageItem, StorageKey};
+use neo_core::{constants, UInt160};
 use neo_vm::{OpCode, StackItem};
 use std::sync::Arc;
 
@@ -22,9 +22,7 @@ const PREFIX_CONTRACT_HASH: u8 = 12;
 
 fn add_contract_to_snapshot(snapshot: &DataCache, contract: &ContractState) {
     let mut writer = BinaryWriter::new();
-    contract
-        .serialize(&mut writer)
-        .expect("serialize contract");
+    contract.serialize(&mut writer).expect("serialize contract");
     let mut contract_key = Vec::with_capacity(1 + UInt160::LENGTH);
     contract_key.push(PREFIX_CONTRACT);
     contract_key.extend_from_slice(&contract.hash.to_bytes());
@@ -35,7 +33,10 @@ fn add_contract_to_snapshot(snapshot: &DataCache, contract: &ContractState) {
     id_key_bytes.push(PREFIX_CONTRACT_HASH);
     id_key_bytes.extend_from_slice(&contract.id.to_be_bytes());
     let id_key = StorageKey::new(CONTRACT_MANAGEMENT_ID, id_key_bytes);
-    snapshot.add(id_key, StorageItem::from_bytes(contract.hash.to_bytes().to_vec()));
+    snapshot.add(
+        id_key,
+        StorageItem::from_bytes(contract.hash.to_bytes().to_vec()),
+    );
 }
 
 fn make_contract(id: i32, name: &str, script: Vec<u8>) -> ContractState {
@@ -111,7 +112,11 @@ fn storage_get_returns_value() {
 
     let mut engine = make_engine(Arc::clone(&snapshot));
     engine
-        .load_script(vec![OpCode::RET as u8], CallFlags::READ_STATES, Some(contract.hash))
+        .load_script(
+            vec![OpCode::RET as u8],
+            CallFlags::READ_STATES,
+            Some(contract.hash),
+        )
         .expect("load script");
 
     let context = StorageContext::new(contract.id, false);
@@ -159,9 +164,7 @@ fn storage_put_validates_sizes_and_readonly() {
     engine
         .storage_put(context.clone(), empty_key.clone(), Vec::new())
         .expect("empty value");
-    let stored = engine
-        .storage_get(context, empty_key)
-        .expect("get empty");
+    let stored = engine.storage_get(context, empty_key).expect("get empty");
     assert_eq!(stored, Some(Vec::new()));
 }
 
@@ -196,7 +199,11 @@ fn storage_find_values_only_returns_payload() {
 
     let mut engine = make_engine(Arc::clone(&snapshot));
     engine
-        .load_script(vec![OpCode::RET as u8], CallFlags::READ_STATES, Some(contract.hash))
+        .load_script(
+            vec![OpCode::RET as u8],
+            CallFlags::READ_STATES,
+            Some(contract.hash),
+        )
         .expect("load script");
 
     let context = StorageContext::new(contract.id, false);

@@ -15,8 +15,11 @@ pub fn rule_from_json(
         .get("condition")
         .and_then(|value| value.as_object())
         .ok_or_else(|| "WitnessRule missing condition".to_string())?;
-    let condition =
-        condition_from_json(condition_token, protocol_settings, WitnessCondition::MAX_NESTING_DEPTH)?;
+    let condition = condition_from_json(
+        condition_token,
+        protocol_settings,
+        WitnessCondition::MAX_NESTING_DEPTH,
+    )?;
     Ok(WitnessRule::new(action, condition))
 }
 
@@ -63,8 +66,7 @@ fn condition_from_json(
                 .get("expression")
                 .and_then(|value| value.as_object())
                 .ok_or_else(|| "Not condition missing expression".to_string())?;
-            let condition =
-                condition_from_json(expression, protocol_settings, max_depth - 1)?;
+            let condition = condition_from_json(expression, protocol_settings, max_depth - 1)?;
             Ok(WitnessCondition::Not {
                 condition: Box::new(condition),
             })
@@ -170,10 +172,7 @@ mod tests {
     fn rule_from_json_roundtrip_matches_csharp_cases() {
         let action = WitnessRuleAction::Allow;
 
-        assert_rule_roundtrip(WitnessRule::new(
-            action,
-            WitnessCondition::CalledByEntry,
-        ));
+        assert_rule_roundtrip(WitnessRule::new(action, WitnessCondition::CalledByEntry));
 
         assert_rule_roundtrip(WitnessRule::new(
             action,
@@ -213,7 +212,9 @@ mod tests {
 
         assert_rule_roundtrip(WitnessRule::new(
             action,
-            WitnessCondition::Group { group: group.clone() },
+            WitnessCondition::Group {
+                group: group.clone(),
+            },
         ));
 
         assert_rule_roundtrip(WitnessRule::new(

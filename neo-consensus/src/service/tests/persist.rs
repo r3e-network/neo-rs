@@ -10,10 +10,7 @@ async fn persist_completed_starts_consensus_round() {
     harness
         .persist_completed_all(0, prev_hash, 1_000)
         .expect("persist completed");
-    harness
-        .drive_until_idle(50)
-        .await
-        .expect("drive");
+    harness.drive_until_idle(50).await.expect("drive");
 
     assert!(harness.saw_prepare_request(1));
 }
@@ -28,10 +25,7 @@ async fn persist_completed_multiple_rounds() {
         harness
             .persist_completed_all(round, prev_hash, 1_000 + round as u64)
             .expect("persist completed");
-        harness
-            .drive_until_idle(50)
-            .await
-            .expect("drive");
+        harness.drive_until_idle(50).await.expect("drive");
 
         assert!(harness.saw_prepare_request(round + 1));
         harness.take_events();
@@ -47,10 +41,7 @@ async fn persist_completed_round_emits_block_committed() {
     harness
         .persist_completed_all(0, prev_hash, 1_000)
         .expect("persist completed");
-    harness
-        .drive_until_idle(200)
-        .await
-        .expect("drive");
+    harness.drive_until_idle(200).await.expect("drive");
 
     assert!(harness.saw_block_committed(1));
 }

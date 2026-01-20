@@ -1,10 +1,11 @@
+use hex::{decode as hex_decode, encode as hex_encode};
+use neo_core::cryptography::Secp256r1Crypto;
 use neo_core::ledger::block_header::BlockHeader;
 use neo_core::ledger::Block;
-use neo_core::network::p2p::payloads::{Signer, Transaction, WitnessScope};
-use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::cryptography::Secp256r1Crypto;
 use neo_core::neo_io::BinaryWriter;
+use neo_core::network::p2p::payloads::{Signer, Transaction, WitnessScope};
 use neo_core::persistence::DataCache;
+use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::smart_contract::contract_parameter_type::ContractParameterType;
@@ -15,11 +16,10 @@ use neo_core::smart_contract::manifest::{
 };
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::smart_contract::{StorageItem, StorageKey};
-use neo_core::{UInt160, UInt256};
 use neo_core::wallets::KeyPair;
+use neo_core::{UInt160, UInt256};
 use neo_vm::vm_state::VMState;
 use neo_vm::{OpCode, ScriptBuilder, StackItem};
-use hex::{decode as hex_decode, encode as hex_encode};
 use num_traits::ToPrimitive;
 use std::sync::Arc;
 
@@ -674,9 +674,7 @@ const PREFIX_CONTRACT_HASH: u8 = 12;
 
 fn add_contract_to_snapshot(snapshot: &DataCache, contract: &ContractState) {
     let mut writer = BinaryWriter::new();
-    contract
-        .serialize(&mut writer)
-        .expect("serialize contract");
+    contract.serialize(&mut writer).expect("serialize contract");
     let mut contract_key = Vec::with_capacity(1 + UInt160::LENGTH);
     contract_key.push(PREFIX_CONTRACT);
     contract_key.extend_from_slice(&contract.hash.to_bytes());
@@ -687,7 +685,10 @@ fn add_contract_to_snapshot(snapshot: &DataCache, contract: &ContractState) {
     id_key_bytes.push(PREFIX_CONTRACT_HASH);
     id_key_bytes.extend_from_slice(&contract.id.to_be_bytes());
     let id_key = StorageKey::new(CONTRACT_MANAGEMENT_ID, id_key_bytes);
-    snapshot.add(id_key, StorageItem::from_bytes(contract.hash.to_bytes().to_vec()));
+    snapshot.add(
+        id_key,
+        StorageItem::from_bytes(contract.hash.to_bytes().to_vec()),
+    );
 }
 
 fn manifest_with(
@@ -785,10 +786,8 @@ fn contract_create_standard_account_matches_csharp() {
     )
     .expect("engine");
 
-    let pubkey = hex_decode(
-        "024b817ef37f2fc3d4a33fe36687e592d9f30fe24b3e28187dc8f12b3b3b2b839e",
-    )
-    .expect("pubkey bytes");
+    let pubkey = hex_decode("024b817ef37f2fc3d4a33fe36687e592d9f30fe24b3e28187dc8f12b3b3b2b839e")
+        .expect("pubkey bytes");
     let account = engine
         .create_standard_account(&pubkey)
         .expect("standard account");
@@ -954,8 +953,8 @@ fn runtime_get_notifications_reports_all_and_filtered() {
     let event_param =
         ContractParameterDefinition::new("arg".to_string(), ContractParameterType::Any)
             .expect("param");
-    let event = ContractEventDescriptor::new("testEvent2".to_string(), vec![event_param])
-        .expect("event");
+    let event =
+        ContractEventDescriptor::new("testEvent2".to_string(), vec![event_param]).expect("event");
     let method = ContractMethodDescriptor::new(
         "test".to_string(),
         Vec::new(),
@@ -1019,9 +1018,7 @@ fn runtime_get_notifications_reports_all_and_filtered() {
     let entry_nef = NefFile::new("entry".to_string(), vec![OpCode::RET as u8]);
     let entry_hash = ContractState::calculate_hash(&UInt160::zero(), entry_nef.checksum, "entry");
     let entry_contract = ContractState::new(7, entry_hash, entry_nef, entry_manifest);
-    let state_arc = engine
-        .current_execution_state()
-        .expect("execution context");
+    let state_arc = engine.current_execution_state().expect("execution context");
     state_arc.lock().contract = Some(entry_contract);
 
     engine.execute().expect("execute");
@@ -1071,12 +1068,8 @@ fn runtime_get_notifications_reports_all_and_filtered() {
         if field_items.len() < 2 {
             continue;
         }
-        let script_hash = field_items[0]
-            .as_bytes()
-            .expect("script hash bytes");
-        let event_name = field_items[1]
-            .as_bytes()
-            .expect("event name bytes");
+        let script_hash = field_items[0].as_bytes().expect("script hash bytes");
+        let event_name = field_items[1].as_bytes().expect("event name bytes");
         if script_hash == expected_entry_hash.to_bytes() && event_name == b"testEvent1" {
             found_event1 = true;
         }

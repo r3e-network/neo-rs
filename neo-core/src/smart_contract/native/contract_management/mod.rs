@@ -17,10 +17,10 @@ use crate::smart_contract::ContractParameterType;
 use crate::smart_contract::StorageKey;
 use crate::UInt160;
 use neo_vm::{ExecutionEngineLimits, StackItem};
+use num_traits::ToPrimitive;
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
-use num_traits::ToPrimitive;
 
 /// Prefix for minimum deployment fee storage
 const PREFIX_MINIMUM_DEPLOYMENT_FEE: u8 = 20;
@@ -163,9 +163,9 @@ impl ContractManagement {
         let id = items[0]
             .as_int()
             .map_err(|e| Error::deserialization(format!("ContractState id: {e}")))?;
-        let id = id.to_i32().ok_or_else(|| {
-            Error::deserialization("ContractState id out of range".to_string())
-        })?;
+        let id = id
+            .to_i32()
+            .ok_or_else(|| Error::deserialization("ContractState id out of range".to_string()))?;
 
         let update_counter = items[1]
             .as_int()
@@ -238,7 +238,10 @@ impl ContractManagement {
                 0,
                 false,
                 0x0B,
-                vec![ContractParameterType::ByteArray, ContractParameterType::ByteArray],
+                vec![
+                    ContractParameterType::ByteArray,
+                    ContractParameterType::ByteArray,
+                ],
                 ContractParameterType::Array,
             ),
             NativeMethod::new(
@@ -258,7 +261,10 @@ impl ContractManagement {
                 0,
                 false,
                 0x0B,
-                vec![ContractParameterType::ByteArray, ContractParameterType::ByteArray],
+                vec![
+                    ContractParameterType::ByteArray,
+                    ContractParameterType::ByteArray,
+                ],
                 ContractParameterType::Void,
             ),
             NativeMethod::new(
@@ -339,27 +345,23 @@ impl ContractManagement {
             .into_iter()
             .map(|method| match method.name.as_str() {
                 "getContract" => method.with_parameter_names(vec!["hash".to_string()]),
-                "deploy" if method.parameters.len() == 2 => method.with_parameter_names(vec![
-                    "nefFile".to_string(),
-                    "manifest".to_string(),
-                ]),
+                "deploy" if method.parameters.len() == 2 => {
+                    method.with_parameter_names(vec!["nefFile".to_string(), "manifest".to_string()])
+                }
                 "deploy" => method.with_parameter_names(vec![
                     "nefFile".to_string(),
                     "manifest".to_string(),
                     "data".to_string(),
                 ]),
-                "update" if method.parameters.len() == 2 => method.with_parameter_names(vec![
-                    "nefFile".to_string(),
-                    "manifest".to_string(),
-                ]),
+                "update" if method.parameters.len() == 2 => {
+                    method.with_parameter_names(vec!["nefFile".to_string(), "manifest".to_string()])
+                }
                 "update" => method.with_parameter_names(vec![
                     "nefFile".to_string(),
                     "manifest".to_string(),
                     "data".to_string(),
                 ]),
-                "setMinimumDeploymentFee" => {
-                    method.with_parameter_names(vec!["value".to_string()])
-                }
+                "setMinimumDeploymentFee" => method.with_parameter_names(vec!["value".to_string()]),
                 "hasMethod" => method.with_parameter_names(vec![
                     "hash".to_string(),
                     "method".to_string(),
@@ -393,7 +395,7 @@ mod deploy;
 mod destroy;
 mod native_impl;
 mod query;
-mod update;
-mod validation;
 #[cfg(test)]
 mod tests;
+mod update;
+mod validation;

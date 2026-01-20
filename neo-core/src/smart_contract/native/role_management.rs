@@ -50,10 +50,7 @@ impl RoleManagement {
                 "designateAsRole".to_string(),
                 Self::CPU_FEE,
                 (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
-                vec![
-                    ContractParameterType::Integer,
-                    ContractParameterType::Array,
-                ],
+                vec![ContractParameterType::Integer, ContractParameterType::Array],
                 ContractParameterType::Void,
             ),
         ];
@@ -63,10 +60,9 @@ impl RoleManagement {
                 "getDesignatedByRole" => method
                     .with_parameter_names(vec!["role".to_string(), "index".to_string()])
                     .with_required_call_flags(CallFlags::READ_STATES),
-                "designateAsRole" => method.with_parameter_names(vec![
-                    "role".to_string(),
-                    "nodes".to_string(),
-                ]),
+                "designateAsRole" => {
+                    method.with_parameter_names(vec!["role".to_string(), "nodes".to_string()])
+                }
                 _ => method,
             })
             .collect();
@@ -325,12 +321,10 @@ impl RoleManagement {
             return Ok(Vec::new());
         }
 
-        let item = BinarySerializer::deserialize(
-            data,
-            &ExecutionEngineLimits::default(),
-            None,
-        )
-        .map_err(|e| Error::native_contract(format!("Failed to deserialize public keys: {e}")))?;
+        let item = BinarySerializer::deserialize(data, &ExecutionEngineLimits::default(), None)
+            .map_err(|e| {
+                Error::native_contract(format!("Failed to deserialize public keys: {e}"))
+            })?;
 
         let StackItem::Array(array) = item else {
             return Err(Error::native_contract(

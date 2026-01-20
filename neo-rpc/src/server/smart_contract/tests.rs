@@ -4,19 +4,19 @@ use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::transaction::Transaction;
 use neo_core::network::p2p::payloads::witness::Witness;
 use neo_core::persistence::transaction::apply_tracked_items;
-use neo_core::smart_contract::helper::Helper as ContractHelper;
 use neo_core::smart_contract::binary_serializer::BinarySerializer;
+use neo_core::smart_contract::helper::Helper as ContractHelper;
 use neo_core::smart_contract::iterators::{IteratorInterop, StorageIterator};
 use neo_core::smart_contract::manifest::{
-    ContractAbi, ContractMethodDescriptor, ContractParameterDefinition, ContractManifest,
+    ContractAbi, ContractManifest, ContractMethodDescriptor, ContractParameterDefinition,
 };
 use neo_core::smart_contract::native::{ContractManagement, NativeContract, NeoToken};
 use neo_core::smart_contract::{
     ApplicationEngine, Contract, ContractParameterType, ContractState, FindOptions, IInteroperable,
     NefFile, StorageItem, StorageKey, TriggerType,
 };
-use neo_core::wallets::wallet::{Wallet, WalletError, WalletResult};
 use neo_core::wallets::helper::Helper as WalletHelper;
+use neo_core::wallets::wallet::{Wallet, WalletError, WalletResult};
 use neo_core::wallets::{KeyPair, StandardWalletAccount, WalletAccount};
 use neo_core::{NeoSystem, ProtocolSettings, UInt160, WitnessScope};
 
@@ -231,12 +231,9 @@ fn deploy_verify_contract(system: &Arc<NeoSystem>) -> UInt160 {
         )
         .expect("deploy");
 
-    let item = BinarySerializer::deserialize(
-        &contract_bytes,
-        &ExecutionEngineLimits::default(),
-        None,
-    )
-    .expect("contract stack item");
+    let item =
+        BinarySerializer::deserialize(&contract_bytes, &ExecutionEngineLimits::default(), None)
+            .expect("contract stack item");
     let mut contract = ContractState::default();
     contract.from_stack_item(item);
 
@@ -312,10 +309,7 @@ async fn invokecontractverify_returns_true_for_deployed_contract() {
         .and_then(Value::as_array)
         .expect("stack");
     let first = stack.first().expect("stack item");
-    assert_eq!(
-        first.get("type").and_then(Value::as_str),
-        Some("Boolean")
-    );
+    assert_eq!(first.get("type").and_then(Value::as_str), Some("Boolean"));
     assert_eq!(first.get("value").and_then(Value::as_bool), Some(true));
 }
 
@@ -368,10 +362,7 @@ async fn invokefunction_total_supply_matches_csharp() {
         .and_then(|value| value.as_array())
         .expect("stack");
     let first = stack.first().expect("stack entry");
-    assert_eq!(
-        first.get("type").and_then(|v| v.as_str()),
-        Some("Integer")
-    );
+    assert_eq!(first.get("type").and_then(|v| v.as_str()), Some("Integer"));
     assert_eq!(
         first.get("value").and_then(|v| v.as_str()),
         Some("100000000")
@@ -401,10 +392,7 @@ async fn invokefunction_symbol_returns_byte_string() {
         first.get("type").and_then(|v| v.as_str()),
         Some("ByteString")
     );
-    assert_eq!(
-        first.get("value").and_then(|v| v.as_str()),
-        Some("TkVP")
-    );
+    assert_eq!(first.get("value").and_then(|v| v.as_str()), Some("TkVP"));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -434,10 +422,7 @@ async fn invokescript_total_supply_matches_csharp() {
         .and_then(|value| value.as_array())
         .expect("stack");
     let first = stack.first().expect("stack entry");
-    assert_eq!(
-        first.get("type").and_then(|v| v.as_str()),
-        Some("Integer")
-    );
+    assert_eq!(first.get("type").and_then(|v| v.as_str()), Some("Integer"));
     assert_eq!(
         first.get("value").and_then(|v| v.as_str()),
         Some("100000000")
@@ -465,14 +450,8 @@ async fn invokescript_transfer_returns_false() {
         .and_then(|value| value.as_array())
         .expect("stack");
     let first = stack.first().expect("stack entry");
-    assert_eq!(
-        first.get("type").and_then(|v| v.as_str()),
-        Some("Boolean")
-    );
-    assert_eq!(
-        first.get("value").and_then(|v| v.as_bool()),
-        Some(false)
-    );
+    assert_eq!(first.get("type").and_then(|v| v.as_str()), Some("Boolean"));
+    assert_eq!(first.get("value").and_then(|v| v.as_bool()), Some(false));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -549,18 +528,13 @@ async fn invokescript_faults_when_gas_limit_exceeded() {
     let invokescript = find_handler(&handlers, "invokescript");
 
     let mut builder = neo_vm::script_builder::ScriptBuilder::new();
-    builder
-        .emit_jump(OpCode::JMP_L, 0)
-        .expect("jump loop");
+    builder.emit_jump(OpCode::JMP_L, 0).expect("jump loop");
     let script = builder.to_array();
 
     let params = [Value::String(BASE64_STANDARD.encode(script))];
     let result = (invokescript.callback())(&server, &params).expect("invoke loop");
 
-    let state = result
-        .get("state")
-        .and_then(Value::as_str)
-        .expect("state");
+    let state = result.get("state").and_then(Value::as_str).expect("state");
     assert_eq!(state, "FAULT");
 
     let exception = result
@@ -720,10 +694,7 @@ async fn invokefunction_returns_fault_state_for_missing_method() {
     ];
     let result = (invokefunction.callback())(&server, &params).expect("invoke result");
 
-    let state = result
-        .get("state")
-        .and_then(Value::as_str)
-        .expect("state");
+    let state = result.get("state").and_then(Value::as_str).expect("state");
     assert_eq!(state, "FAULT");
 
     let exception = result
@@ -851,13 +822,21 @@ async fn traverse_iterator_returns_items_and_can_terminate_session() {
     .expect("session");
 
     let entries = vec![
-        (StorageKey::new(1, vec![0x01]), StorageItem::from_bytes(vec![0xaa])),
-        (StorageKey::new(1, vec![0x02]), StorageItem::from_bytes(vec![0xbb])),
+        (
+            StorageKey::new(1, vec![0x01]),
+            StorageItem::from_bytes(vec![0xaa]),
+        ),
+        (
+            StorageKey::new(1, vec![0x02]),
+            StorageItem::from_bytes(vec![0xbb]),
+        ),
     ];
     let iterator = StorageIterator::new(entries, 0, FindOptions::None);
     let iterator_id = {
         let mut engine = session.engine_mut();
-        engine.store_storage_iterator(iterator).expect("store iterator")
+        engine
+            .store_storage_iterator(iterator)
+            .expect("store iterator")
     };
     let interop = Arc::new(IteratorInterop::new(iterator_id)) as Arc<dyn VmInteropInterface>;
     let iterator_uuid = session
@@ -880,7 +859,10 @@ async fn traverse_iterator_returns_items_and_can_terminate_session() {
     ] {
         let entry = items[index].as_object().expect("entry object");
         assert_eq!(entry.get("type").and_then(Value::as_str), Some("Struct"));
-        let values = entry.get("value").and_then(Value::as_array).expect("value array");
+        let values = entry
+            .get("value")
+            .and_then(Value::as_array)
+            .expect("value array");
         let key_bytes = values
             .get(0)
             .and_then(|item| item.get("value"))
@@ -918,12 +900,7 @@ async fn invokefunction_with_wallet_returns_signed_tx() {
     let settings = Arc::new(ProtocolSettings::default());
     let key_pair = KeyPair::generate().expect("key pair");
     let contract = signature_contract_for_keypair(&key_pair);
-    let account = StandardWalletAccount::new_with_key(
-        key_pair,
-        Some(contract),
-        settings,
-        None,
-    );
+    let account = StandardWalletAccount::new_with_key(key_pair, Some(contract), settings, None);
     let account_hash = account.script_hash();
     fund_gas(&server.system(), account_hash, 100_000_000);
     server.set_wallet(Some(Arc::new(TestWallet {
@@ -999,23 +976,15 @@ async fn invokefunction_with_missing_wallet_account_sets_exception() {
     let settings = Arc::new(ProtocolSettings::default());
     let key_pair = KeyPair::generate().expect("key pair");
     let contract = signature_contract_for_keypair(&key_pair);
-    let account = StandardWalletAccount::new_with_key(
-        key_pair,
-        Some(contract),
-        settings,
-        None,
-    );
+    let account = StandardWalletAccount::new_with_key(key_pair, Some(contract), settings, None);
     server.set_wallet(Some(Arc::new(TestWallet {
         name: "test".to_string(),
         account: Arc::new(account),
     })));
 
-    let missing_account =
-        UInt160::from_bytes(&[0x42; 20]).expect("missing account hash");
-    let missing_address = WalletHelper::to_address(
-        &missing_account,
-        server.system().settings().address_version,
-    );
+    let missing_account = UInt160::from_bytes(&[0x42; 20]).expect("missing account hash");
+    let missing_address =
+        WalletHelper::to_address(&missing_account, server.system().settings().address_version);
 
     let signers = json!([{
         "signer": {
@@ -1062,10 +1031,8 @@ async fn get_unclaimed_gas_returns_address_string() {
     let handlers = RpcServerSmartContract::register_handlers();
     let get_unclaimed_gas = find_handler(&handlers, "getunclaimedgas");
 
-    let address = WalletHelper::to_address(
-        &UInt160::zero(),
-        server.system().settings().address_version,
-    );
+    let address =
+        WalletHelper::to_address(&UInt160::zero(), server.system().settings().address_version);
     let params = [Value::String(address.clone())];
     let result = (get_unclaimed_gas.callback())(&server, &params).expect("unclaimed gas");
 

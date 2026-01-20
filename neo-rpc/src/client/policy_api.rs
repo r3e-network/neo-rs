@@ -124,10 +124,7 @@ mod tests {
         let mut result = JObject::new();
         result.insert("script".to_string(), JToken::String("00".to_string()));
         result.insert("state".to_string(), JToken::String("HALT".to_string()));
-        result.insert(
-            "gasconsumed".to_string(),
-            JToken::String("0".to_string()),
-        );
+        result.insert("gasconsumed".to_string(), JToken::String("0".to_string()));
         result.insert(
             "stack".to_string(),
             JToken::Array(JArray::from(vec![JToken::Object(stack_item)])),
@@ -202,8 +199,7 @@ mod tests {
         sb.emit_push_int(neo_core::smart_contract::call_flags::CallFlags::ALL.bits() as i64);
         sb.emit_push(operation.as_bytes());
         sb.emit_push(&PolicyContract::new().hash().to_array());
-        sb.emit_syscall("System.Contract.Call")
-            .expect("syscall");
+        sb.emit_syscall("System.Contract.Call").expect("syscall");
 
         sb.to_array()
     }

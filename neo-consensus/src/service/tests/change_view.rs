@@ -1,9 +1,12 @@
-use super::helpers::{create_test_validators, create_validators_with_keys, sign_commit, sign_payload};
-use crate::{ConsensusEvent, ConsensusService};
+use super::helpers::{
+    create_test_validators, create_validators_with_keys, sign_commit, sign_payload,
+};
 use crate::messages::{
-    ChangeViewMessage, CommitMessage, ConsensusPayload, PrepareRequestMessage, PrepareResponseMessage,
+    ChangeViewMessage, CommitMessage, ConsensusPayload, PrepareRequestMessage,
+    PrepareResponseMessage,
 };
 use crate::{ChangeViewReason, ConsensusMessageType};
+use crate::{ConsensusEvent, ConsensusService};
 use neo_primitives::UInt256;
 use tokio::sync::mpsc;
 
@@ -67,8 +70,7 @@ async fn timeout_view_change_allows_new_prepare_request() {
     let network = 0x4E454F;
     let (tx, mut rx) = mpsc::channel(100);
     let (validators, keys) = create_validators_with_keys(4);
-    let mut service =
-        ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
 
     service.start(0, 0, UInt256::zero(), 0).unwrap();
     while rx.try_recv().is_ok() {}
@@ -136,8 +138,7 @@ async fn view_change_allows_consensus_to_complete() {
     let network = 0x4E454F;
     let (tx, mut rx) = mpsc::channel(100);
     let (validators, keys) = create_validators_with_keys(4);
-    let mut service =
-        ConsensusService::new(network, validators, Some(3), keys[3].to_vec(), tx);
+    let mut service = ConsensusService::new(network, validators, Some(3), keys[3].to_vec(), tx);
 
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
     while rx.try_recv().is_ok() {}
@@ -222,10 +223,7 @@ async fn view_change_allows_consensus_to_complete() {
     assert_eq!(commit_payload.view_number, 1);
     assert_eq!(commit_payload.block_index, prepare_payload.block_index);
 
-    let block_hash = service
-        .context()
-        .proposed_block_hash
-        .expect("block hash");
+    let block_hash = service.context().proposed_block_hash.expect("block hash");
 
     for validator_index in 0..=1 {
         let signature = sign_commit(network, &block_hash, &keys[validator_index as usize]);
@@ -258,8 +256,7 @@ async fn change_view_threshold_triggers_view_change() {
     let network = 0x4E454F;
     let (tx, mut rx) = mpsc::channel(100);
     let (validators, keys) = create_validators_with_keys(4);
-    let mut service =
-        ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
 
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
 
@@ -285,7 +282,10 @@ async fn change_view_threshold_triggers_view_change() {
 
     let mut view_changed = None;
     while let Ok(event) = rx.try_recv() {
-        if let ConsensusEvent::ViewChanged { old_view, new_view, .. } = event {
+        if let ConsensusEvent::ViewChanged {
+            old_view, new_view, ..
+        } = event
+        {
             view_changed = Some((old_view, new_view));
             break;
         }

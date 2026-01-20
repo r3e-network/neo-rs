@@ -223,7 +223,13 @@ fn contract_call_native_handler(
             let arg_count = state.argument_count;
             let return_type = state.return_type;
             let parameter_types = state.parameter_types.clone();
-            (script_hash, method_name, arg_count, return_type, parameter_types)
+            (
+                script_hash,
+                method_name,
+                arg_count,
+                return_type,
+                parameter_types,
+            )
         };
 
         let stack_len = context.evaluation_stack().len();
@@ -238,11 +244,10 @@ fn contract_call_native_handler(
         for index in 0..arg_count {
             let item = engine.pop().map_err(|e| e.to_string())?;
             let bytes = match parameter_types.get(index) {
-                Some(ContractParameterType::Any) => BinarySerializer::serialize(
-                    &item,
-                    app.execution_limits(),
-                )
-                .map_err(|e| e.to_string())?,
+                Some(ContractParameterType::Any) => {
+                    BinarySerializer::serialize(&item, app.execution_limits())
+                        .map_err(|e| e.to_string())?
+                }
                 _ => ApplicationEngine::stack_item_to_bytes(item)?,
             };
             args.push(bytes);
@@ -311,12 +316,9 @@ fn push_native_result(
         }
         ContractParameterType::InteropInterface => {
             if result.len() != 4 {
-                let item = BinarySerializer::deserialize(
-                    &result,
-                    &ExecutionEngineLimits::default(),
-                    None,
-                )
-                .map_err(|e| e.to_string())?;
+                let item =
+                    BinarySerializer::deserialize(&result, &ExecutionEngineLimits::default(), None)
+                        .map_err(|e| e.to_string())?;
                 return engine.push(item).map_err(|e| e.to_string());
             }
 

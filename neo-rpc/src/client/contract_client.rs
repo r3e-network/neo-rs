@@ -212,10 +212,7 @@ mod tests {
             "gasconsumed".to_string(),
             JToken::String(gas_consumed.to_string()),
         );
-        result.insert(
-            "stack".to_string(),
-            JToken::Array(JArray::from(stack)),
-        );
+        result.insert("stack".to_string(), JToken::Array(JArray::from(stack)));
 
         rpc_response(JToken::Object(result))
     }
@@ -338,9 +335,13 @@ mod tests {
         let script_hash = GasToken::new().hash();
         let account = UInt160::zero();
         let args = vec![serde_json::json!(account.to_string())];
-        let script =
-            ContractClient::build_dynamic_call_script(&script_hash, "balanceOf", &args, CallFlags::ALL)
-                .expect("script");
+        let script = ContractClient::build_dynamic_call_script(
+            &script_hash,
+            "balanceOf",
+            &args,
+            CallFlags::ALL,
+        )
+        .expect("script");
         let script_b64 = general_purpose::STANDARD.encode(script);
 
         let bytes = [0x00u8, 0xe0, 0x57, 0xeb, 0x48, 0x1b];
@@ -376,13 +377,9 @@ mod tests {
 
         let script_hash = UInt160::zero();
         let args = vec![serde_json::json!(1)];
-        let script = ContractClient::build_dynamic_call_script(
-            &script_hash,
-            "get",
-            &args,
-            CallFlags::ALL,
-        )
-        .expect("script");
+        let script =
+            ContractClient::build_dynamic_call_script(&script_hash, "get", &args, CallFlags::ALL)
+                .expect("script");
         let script_b64 = general_purpose::STANDARD.encode(script);
 
         let key_b64 = general_purpose::STANDARD.encode("key".as_bytes());
@@ -423,10 +420,8 @@ mod tests {
             ])),
         );
 
-        let response = invoke_response(
-            vec![JToken::Object(map_obj), JToken::Object(struct_obj)],
-            0,
-        );
+        let response =
+            invoke_response(vec![JToken::Object(map_obj), JToken::Object(struct_obj)], 0);
 
         let mut server = Server::new_async().await;
         mock_invokescript(&mut server, &script_b64, &response);
@@ -459,10 +454,8 @@ mod tests {
         }
 
         let settings = ProtocolSettings::default_settings();
-        let key = KeyPair::from_wif(
-            "KyXwTh1hB76RRMquSvnxZrJzQx7h9nQP2PCRL38v6VDb5ip3nf1p",
-        )
-        .expect("key pair");
+        let key = KeyPair::from_wif("KyXwTh1hB76RRMquSvnxZrJzQx7h9nQP2PCRL38v6VDb5ip3nf1p")
+            .expect("key pair");
         let sender = key.get_script_hash();
         let manifest = ContractManifest::new("TestContract".to_string());
         let nef = vec![1u8];

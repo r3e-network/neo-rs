@@ -122,7 +122,9 @@ pub fn stack_item_from_json(json: &JObject) -> Result<StackItem, String> {
         }
         "InteropInterface" => {
             let serde_payload = jobject_to_serde(json)?;
-            Ok(StackItem::from_interface(JsonInteropInterface::new(serde_payload)))
+            Ok(StackItem::from_interface(JsonInteropInterface::new(
+                serde_payload,
+            )))
         }
         _other => {
             let value = json.get("value");
@@ -161,10 +163,7 @@ fn stack_item_to_json_inner(
             json.insert("value".to_string(), JToken::Boolean(*value));
         }
         StackItem::Integer(value) => {
-            json.insert(
-                "value".to_string(),
-                JToken::String(value.to_string()),
-            );
+            json.insert("value".to_string(), JToken::String(value.to_string()));
         }
         StackItem::ByteString(bytes) => {
             json.insert(

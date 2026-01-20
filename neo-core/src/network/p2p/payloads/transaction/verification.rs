@@ -84,7 +84,8 @@ impl Transaction {
 
         let exec_fee_factor = policy
             .get_exec_fee_factor_snapshot(snapshot, settings, height)
-            .unwrap_or(PolicyContract::DEFAULT_EXEC_FEE_FACTOR) as i64;
+            .unwrap_or(PolicyContract::DEFAULT_EXEC_FEE_FACTOR)
+            as i64;
 
         let sign_data = self.get_sign_data(settings.network);
 

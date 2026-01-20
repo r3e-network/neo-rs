@@ -369,8 +369,11 @@ impl JsonVmTestRunner {
                 }
             }
 
-            verify_stack_against_evaluation(&expected_ctx.evaluation_stack, actual_ctx.evaluation_stack())
-                .map_err(|e| format!("Invocation stack[{}] evaluation stack: {}", depth, e))?;
+            verify_stack_against_evaluation(
+                &expected_ctx.evaluation_stack,
+                actual_ctx.evaluation_stack(),
+            )
+            .map_err(|e| format!("Invocation stack[{}] evaluation stack: {}", depth, e))?;
         }
 
         Ok(())

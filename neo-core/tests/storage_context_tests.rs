@@ -5,8 +5,7 @@ use neo_core::smart_contract::binary_serializer::BinarySerializer;
 use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::smart_contract::contract_state::{ContractState, NefFile};
 use neo_core::smart_contract::manifest::{
-    ContractAbi, ContractManifest, ContractMethodDescriptor, ContractPermission,
-    WildCardContainer,
+    ContractAbi, ContractManifest, ContractMethodDescriptor, ContractPermission, WildCardContainer,
 };
 use neo_core::smart_contract::native::ContractManagement;
 use neo_core::smart_contract::storage_context::StorageContext;
@@ -40,7 +39,10 @@ fn default_manifest() -> ContractManifest {
     }
 }
 
-fn make_engine(snapshot: Arc<DataCache>, sender: UInt160) -> neo_core::smart_contract::application_engine::ApplicationEngine {
+fn make_engine(
+    snapshot: Arc<DataCache>,
+    sender: UInt160,
+) -> neo_core::smart_contract::application_engine::ApplicationEngine {
     let mut tx = Transaction::new();
     tx.set_signers(vec![Signer::new(sender, WitnessScope::GLOBAL)]);
     tx.add_witness(Witness::new());
@@ -68,14 +70,22 @@ fn deploy_contract(
 
     let cm_hash = ContractManagement::new().hash();
     let result = engine
-        .call_native_contract(cm_hash, "deploy", &[nef.to_bytes(), manifest_bytes, Vec::new()])
+        .call_native_contract(
+            cm_hash,
+            "deploy",
+            &[nef.to_bytes(), manifest_bytes, Vec::new()],
+        )
         .expect("deploy");
 
     let contract_item =
         BinarySerializer::deserialize(&result, &ExecutionEngineLimits::default(), None)
             .expect("contract state item");
-    let mut contract =
-        ContractState::new(0, UInt160::zero(), nef, ContractManifest::new(String::new()));
+    let mut contract = ContractState::new(
+        0,
+        UInt160::zero(),
+        nef,
+        ContractManifest::new(String::new()),
+    );
     contract.from_stack_item(contract_item);
     contract
 }
@@ -94,7 +104,9 @@ fn storage_context_matches_contract_id() {
     assert_eq!(context.id, contract.id);
     assert!(!context.is_read_only);
 
-    let ro_context = engine.get_read_only_storage_context().expect("readonly context");
+    let ro_context = engine
+        .get_read_only_storage_context()
+        .expect("readonly context");
     assert_eq!(ro_context.id, contract.id);
     assert!(ro_context.is_read_only);
 }

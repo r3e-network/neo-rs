@@ -17,14 +17,9 @@ mod tests {
     use crate::network::p2p::{
         helper::get_sign_data_vec,
         payloads::{
-            block::Block as PayloadBlock,
-            conflicts::Conflicts,
-            header::Header,
-            signer::Signer,
-            transaction::Transaction,
-            transaction_attribute::TransactionAttribute,
-            witness::Witness,
-            InventoryType,
+            block::Block as PayloadBlock, conflicts::Conflicts, header::Header, signer::Signer,
+            transaction::Transaction, transaction_attribute::TransactionAttribute,
+            witness::Witness, InventoryType,
         },
     };
     use crate::persistence::StoreCache;
@@ -38,8 +33,8 @@ mod tests {
     use crate::smart_contract::{IInteroperable, StorageItem, StorageKey};
     use crate::state_service::state_store::StateServiceSettings;
     use crate::wallets::KeyPair;
-    use crate::{neo_io::Serializable, NeoSystem, ProtocolSettings, UInt160, UInt256};
     use crate::WitnessScope;
+    use crate::{neo_io::Serializable, NeoSystem, ProtocolSettings, UInt160, UInt256};
     use neo_vm::execution_engine_limits::ExecutionEngineLimits;
     use neo_vm::op_code::OpCode;
     use num_bigint::BigInt;
@@ -102,11 +97,9 @@ mod tests {
     fn seed_gas_balance(store: &mut StoreCache, account: UInt160, amount: i64) {
         let key = StorageKey::create_with_uint160(GasToken::new().id(), PREFIX_ACCOUNT, &account);
         let state = AccountState::with_balance(BigInt::from(amount));
-        let bytes = BinarySerializer::serialize(
-            &state.to_stack_item(),
-            &ExecutionEngineLimits::default(),
-        )
-        .expect("serialize account state");
+        let bytes =
+            BinarySerializer::serialize(&state.to_stack_item(), &ExecutionEngineLimits::default())
+                .expect("serialize account state");
         store
             .data_cache()
             .update(key, StorageItem::from_bytes(bytes));
@@ -377,7 +370,10 @@ mod tests {
 
         let tx = build_signed_transaction(&settings, &keypair);
         assert_eq!(blockchain.on_new_transaction(&tx), VerifyResult::Succeed);
-        assert_eq!(blockchain.on_new_transaction(&tx), VerifyResult::AlreadyInPool);
+        assert_eq!(
+            blockchain.on_new_transaction(&tx),
+            VerifyResult::AlreadyInPool
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -437,7 +433,10 @@ mod tests {
         let mut blockchain = Blockchain::new(system.ledger_context());
         blockchain.system_context = Some(system.context());
 
-        assert_eq!(blockchain.on_new_transaction(&tx2), VerifyResult::HasConflicts);
+        assert_eq!(
+            blockchain.on_new_transaction(&tx2),
+            VerifyResult::HasConflicts
+        );
         assert_eq!(blockchain.on_new_transaction(&tx3), VerifyResult::Succeed);
     }
 
@@ -481,8 +480,7 @@ mod tests {
 
         let mut block = system.genesis_block().as_ref().clone();
         block.header.set_index(1);
-        let invalid_prev =
-            UInt256::from_bytes(&[1u8; 32]).expect("construct invalid prev hash");
+        let invalid_prev = UInt256::from_bytes(&[1u8; 32]).expect("construct invalid prev hash");
         block.header.set_prev_hash(invalid_prev);
 
         let import = Import {

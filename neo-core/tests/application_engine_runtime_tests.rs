@@ -86,10 +86,8 @@ fn run_get_random(engine: &mut ApplicationEngine, count: usize) -> Vec<BigInt> {
 }
 
 fn install_notify_contract(engine: &mut ApplicationEngine, param_type: ContractParameterType) {
-    let param =
-        ContractParameterDefinition::new("arg".to_string(), param_type).expect("param");
-    let event =
-        ContractEventDescriptor::new("e1".to_string(), vec![param]).expect("event");
+    let param = ContractParameterDefinition::new("arg".to_string(), param_type).expect("param");
+    let event = ContractEventDescriptor::new("e1".to_string(), vec![param]).expect("event");
     let abi = ContractAbi::new(Vec::new(), vec![event]);
     let manifest = ContractManifest {
         name: "notify".to_string(),
@@ -222,8 +220,8 @@ fn runtime_log_rejects_invalid_utf8() {
         .expect("load script");
 
     let msg = vec![
-        68, 216, 160, 6, 89, 102, 86, 72, 37, 15, 132, 45, 76, 221, 170, 21, 128, 51, 34,
-        168, 205, 56, 10, 228, 51, 114, 4, 218, 245, 155, 172, 132,
+        68, 216, 160, 6, 89, 102, 86, 72, 37, 15, 132, 45, 76, 221, 170, 21, 128, 51, 34, 168, 205,
+        56, 10, 228, 51, 114, 4, 218, 245, 155, 172, 132,
     ];
     engine
         .push(StackItem::from_byte_string(msg))
@@ -348,8 +346,6 @@ fn runtime_notify_rejects_interop_interface_argument() {
     let state = StackItem::from_array(vec![interop]);
     push_notify_args(&mut engine, "e1", state);
 
-    let err = engine
-        .runtime_notify()
-        .expect_err("interop should fail");
+    let err = engine.runtime_notify().expect_err("interop should fail");
     assert!(err.contains("Unsupported stack item type"));
 }

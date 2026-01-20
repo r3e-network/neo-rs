@@ -224,59 +224,37 @@ impl StdLib {
         ];
         let methods = methods
             .into_iter()
-            .map(|method| {
-                match (method.name.as_str(), method.parameters.len()) {
+            .map(
+                |method| match (method.name.as_str(), method.parameters.len()) {
                     ("atoi", 1) => method.with_parameter_names(vec!["value".to_string()]),
-                    ("atoi", 2) => method.with_parameter_names(vec![
-                        "value".to_string(),
-                        "base".to_string(),
-                    ]),
-                    ("base58CheckDecode", 1) => {
-                        method.with_parameter_names(vec!["s".to_string()])
+                    ("atoi", 2) => {
+                        method.with_parameter_names(vec!["value".to_string(), "base".to_string()])
                     }
+                    ("base58CheckDecode", 1) => method.with_parameter_names(vec!["s".to_string()]),
                     ("base58CheckEncode", 1) => {
                         method.with_parameter_names(vec!["data".to_string()])
                     }
                     ("base58Decode", 1) => method.with_parameter_names(vec!["s".to_string()]),
-                    ("base58Encode", 1) => {
-                        method.with_parameter_names(vec!["data".to_string()])
-                    }
+                    ("base58Encode", 1) => method.with_parameter_names(vec!["data".to_string()]),
                     ("base64Decode", 1) => method.with_parameter_names(vec!["s".to_string()]),
-                    ("base64Encode", 1) => {
-                        method.with_parameter_names(vec!["data".to_string()])
-                    }
-                    ("base64UrlDecode", 1) => {
-                        method.with_parameter_names(vec!["s".to_string()])
-                    }
-                    ("base64UrlEncode", 1) => {
-                        method.with_parameter_names(vec!["data".to_string()])
-                    }
-                    ("deserialize", 1) => {
-                        method.with_parameter_names(vec!["data".to_string()])
-                    }
+                    ("base64Encode", 1) => method.with_parameter_names(vec!["data".to_string()]),
+                    ("base64UrlDecode", 1) => method.with_parameter_names(vec!["s".to_string()]),
+                    ("base64UrlEncode", 1) => method.with_parameter_names(vec!["data".to_string()]),
+                    ("deserialize", 1) => method.with_parameter_names(vec!["data".to_string()]),
                     ("hexDecode", 1) => method.with_parameter_names(vec!["str".to_string()]),
-                    ("hexEncode", 1) => {
-                        method.with_parameter_names(vec!["bytes".to_string()])
-                    }
+                    ("hexEncode", 1) => method.with_parameter_names(vec!["bytes".to_string()]),
                     ("itoa", 1) => method.with_parameter_names(vec!["value".to_string()]),
-                    ("itoa", 2) => method.with_parameter_names(vec![
-                        "value".to_string(),
-                        "base".to_string(),
-                    ]),
-                    ("jsonDeserialize", 1) => {
-                        method.with_parameter_names(vec!["json".to_string()])
+                    ("itoa", 2) => {
+                        method.with_parameter_names(vec!["value".to_string(), "base".to_string()])
                     }
-                    ("jsonSerialize", 1) => {
-                        method.with_parameter_names(vec!["item".to_string()])
+                    ("jsonDeserialize", 1) => method.with_parameter_names(vec!["json".to_string()]),
+                    ("jsonSerialize", 1) => method.with_parameter_names(vec!["item".to_string()]),
+                    ("memoryCompare", 2) => {
+                        method.with_parameter_names(vec!["str1".to_string(), "str2".to_string()])
                     }
-                    ("memoryCompare", 2) => method.with_parameter_names(vec![
-                        "str1".to_string(),
-                        "str2".to_string(),
-                    ]),
-                    ("memorySearch", 2) => method.with_parameter_names(vec![
-                        "mem".to_string(),
-                        "value".to_string(),
-                    ]),
+                    ("memorySearch", 2) => {
+                        method.with_parameter_names(vec!["mem".to_string(), "value".to_string()])
+                    }
                     ("memorySearch", 3) => method.with_parameter_names(vec![
                         "mem".to_string(),
                         "value".to_string(),
@@ -290,18 +268,16 @@ impl StdLib {
                     ]),
                     ("serialize", 1) => method.with_parameter_names(vec!["item".to_string()]),
                     ("strLen", 1) => method.with_parameter_names(vec!["str".to_string()]),
-                    ("stringSplit", 2) => method.with_parameter_names(vec![
-                        "str".to_string(),
-                        "separator".to_string(),
-                    ]),
+                    ("stringSplit", 2) => method
+                        .with_parameter_names(vec!["str".to_string(), "separator".to_string()]),
                     ("stringSplit", 3) => method.with_parameter_names(vec![
                         "str".to_string(),
                         "separator".to_string(),
                         "removeEmptyEntries".to_string(),
                     ]),
                     _ => method,
-                }
-            })
+                },
+            )
             .collect();
 
         Self {
@@ -365,12 +341,7 @@ impl StdLib {
                 .parse::<BigInt>()
                 .map_err(|_| Error::native_contract("Invalid number format".to_string()))?,
             16 => self.parse_hex_twos_complement(&string_data)?,
-            _ => {
-                return Err(Error::native_contract(format!(
-                    "Invalid base: {}",
-                    base
-                )))
-            }
+            _ => return Err(Error::native_contract(format!("Invalid base: {}", base))),
         };
 
         Ok(value.to_signed_bytes_le())
@@ -389,12 +360,7 @@ impl StdLib {
         let encoded = match base {
             10 => value.to_string(),
             16 => self.format_hex_twos_complement(&value),
-            _ => {
-                return Err(Error::native_contract(format!(
-                    "Invalid base: {}",
-                    base
-                )))
-            }
+            _ => return Err(Error::native_contract(format!("Invalid base: {}", base))),
         };
 
         Ok(encoded.into_bytes())
@@ -428,11 +394,7 @@ impl StdLib {
     }
 
     /// Serializes a stack item to JSON.
-    fn json_serialize(
-        &self,
-        engine: &ApplicationEngine,
-        args: &[Vec<u8>],
-    ) -> Result<Vec<u8>> {
+    fn json_serialize(&self, engine: &ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.is_empty() {
             return Err(Error::native_contract(
                 "jsonSerialize requires data argument".to_string(),
@@ -445,11 +407,7 @@ impl StdLib {
     }
 
     /// Deserializes JSON into a stack item.
-    fn json_deserialize(
-        &self,
-        engine: &ApplicationEngine,
-        args: &[Vec<u8>],
-    ) -> Result<Vec<u8>> {
+    fn json_deserialize(&self, engine: &ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.is_empty() {
             return Err(Error::native_contract(
                 "jsonDeserialize requires JSON string argument".to_string(),
@@ -652,9 +610,9 @@ impl StdLib {
         // Parse optional start parameter (default: 0)
         let start = if args.len() >= 3 {
             let start_value = BigInt::from_signed_bytes_le(&args[2]);
-            start_value.to_i32().ok_or_else(|| {
-                Error::native_contract("start parameter out of range".to_string())
-            })?
+            start_value
+                .to_i32()
+                .ok_or_else(|| Error::native_contract("start parameter out of range".to_string()))?
         } else {
             0
         };
@@ -801,34 +759,31 @@ impl StdLib {
         Ok(())
     }
 
-    fn parse_optional_base(
-        &self,
-        args: &[Vec<u8>],
-        index: usize,
-        method: &str,
-    ) -> Result<i32> {
+    fn parse_optional_base(&self, args: &[Vec<u8>], index: usize, method: &str) -> Result<i32> {
         if args.len() <= index {
             return Ok(10);
         }
         let base = BigInt::from_signed_bytes_le(&args[index]);
-        base.to_i32().ok_or_else(|| {
-            Error::native_contract(format!("Invalid base argument for {}", method))
-        })
+        base.to_i32()
+            .ok_or_else(|| Error::native_contract(format!("Invalid base argument for {}", method)))
     }
 
     fn parse_hex_twos_complement(&self, input: &str) -> Result<BigInt> {
         let trimmed = input.trim();
         if trimmed.is_empty() {
-            return Err(Error::native_contract("Invalid hex number format".to_string()));
+            return Err(Error::native_contract(
+                "Invalid hex number format".to_string(),
+            ));
         }
         if trimmed.starts_with('+') || trimmed.starts_with('-') {
-            return Err(Error::native_contract("Invalid hex number format".to_string()));
+            return Err(Error::native_contract(
+                "Invalid hex number format".to_string(),
+            ));
         }
 
         let normalized = trimmed.to_ascii_lowercase();
-        let unsigned = BigInt::from_str_radix(&normalized, 16).map_err(|_| {
-            Error::native_contract("Invalid hex number format".to_string())
-        })?;
+        let unsigned = BigInt::from_str_radix(&normalized, 16)
+            .map_err(|_| Error::native_contract("Invalid hex number format".to_string()))?;
         let bits = trimmed
             .len()
             .checked_mul(4)
@@ -856,8 +811,7 @@ impl StdLib {
 
         let abs_value = (-value).to_biguint().unwrap_or_default();
         let bit_len = abs_value.to_str_radix(2).len();
-        let is_power_of_two =
-            !abs_value.is_zero() && (&abs_value & (&abs_value - 1u32)).is_zero();
+        let is_power_of_two = !abs_value.is_zero() && (&abs_value & (&abs_value - 1u32)).is_zero();
         let bits_required = if is_power_of_two {
             bit_len
         } else {
@@ -875,11 +829,7 @@ impl StdLib {
         hex
     }
 
-    fn decode_stack_item(
-        &self,
-        engine: &ApplicationEngine,
-        data: &[u8],
-    ) -> Result<StackItem> {
+    fn decode_stack_item(&self, engine: &ApplicationEngine, data: &[u8]) -> Result<StackItem> {
         let limits = engine.execution_limits();
         match BinarySerializer::deserialize(data, limits, None) {
             Ok(item) => Ok(item),
@@ -1106,9 +1056,7 @@ mod tests {
 
         let string = "hello,world,test".as_bytes().to_vec();
         let separator = ",".as_bytes().to_vec();
-        let result = stdlib
-            .string_split(&engine, &[string, separator])
-            .unwrap();
+        let result = stdlib.string_split(&engine, &[string, separator]).unwrap();
         let item = BinarySerializer::deserialize(&result, engine.execution_limits(), None).unwrap();
         let parts = item.as_array().unwrap();
         assert_eq!(parts.len(), 3);

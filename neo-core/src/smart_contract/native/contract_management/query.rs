@@ -83,12 +83,10 @@ impl ContractManagement {
         id: i32,
     ) -> Result<Option<UInt160>> {
         let storage_key = StorageKey::new(Self::ID, Self::contract_id_storage_key(id));
-        let item = store_cache
-            .get(&storage_key)
-            .or_else(|| {
-                let legacy = StorageKey::new(Self::ID, Self::contract_id_storage_key_legacy(id));
-                store_cache.get(&legacy)
-            });
+        let item = store_cache.get(&storage_key).or_else(|| {
+            let legacy = StorageKey::new(Self::ID, Self::contract_id_storage_key_legacy(id));
+            store_cache.get(&legacy)
+        });
         let Some(item) = item else {
             return Ok(None);
         };

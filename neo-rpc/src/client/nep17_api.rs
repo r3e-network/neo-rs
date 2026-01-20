@@ -11,9 +11,9 @@
 
 use super::models::{RpcContractState, RpcNep17TokenInfo, RpcNep17Transfers};
 use crate::{ContractClient, RpcClient, TransactionManagerFactory};
+use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::{Contract, ECPoint, KeyPair, Signer, Transaction};
-use neo_core::smart_contract::call_flags::CallFlags;
 use neo_primitives::{UInt160, WitnessScope};
 use neo_vm::op_code::OpCode;
 use neo_vm::{stack_item::StackItem, ScriptBuilder};
@@ -424,7 +424,6 @@ impl Nep17Api {
         })
     }
 
-
     fn make_script(
         &self,
         script_hash: &UInt160,
@@ -505,9 +504,9 @@ mod tests {
     use super::*;
     use base64::{engine::general_purpose, Engine as _};
     use mockito::{Matcher, Server};
-    use neo_json::{JArray, JObject, JToken};
     use neo_core::smart_contract::native::GasToken;
     use neo_core::NativeContract;
+    use neo_json::{JArray, JObject, JToken};
     use neo_vm::op_code::OpCode;
     use neo_vm::ScriptBuilder;
     use regex::escape;
@@ -536,10 +535,7 @@ mod tests {
             "gasconsumed".to_string(),
             JToken::String(gas_consumed.to_string()),
         );
-        result.insert(
-            "stack".to_string(),
-            JToken::Array(JArray::from(stack)),
-        );
+        result.insert("stack".to_string(), JToken::Array(JArray::from(stack)));
 
         rpc_response(JToken::Object(result))
     }
@@ -615,8 +611,7 @@ mod tests {
         sb.emit_push_int(CallFlags::ALL.bits() as i64);
         sb.emit_push(operation.as_bytes());
         sb.emit_push(&script_hash.to_array());
-        sb.emit_syscall("System.Contract.Call")
-            .expect("syscall");
+        sb.emit_syscall("System.Contract.Call").expect("syscall");
 
         sb.to_array()
     }
@@ -672,7 +667,9 @@ mod tests {
         path.push("RpcTestCases.json");
         let payload = fs::read_to_string(&path).expect("read RpcTestCases.json");
         let token = JToken::parse(&payload, 128).expect("parse RpcTestCases.json");
-        let cases = token.as_array().expect("RpcTestCases.json should be an array");
+        let cases = token
+            .as_array()
+            .expect("RpcTestCases.json should be an array");
         for entry in cases.children() {
             let token = entry.as_ref().expect("array entry");
             let obj = token.as_object().expect("case object");
@@ -749,7 +746,9 @@ mod tests {
         let mut server = Server::new_async().await;
         let _m_contract = server
             .mock("POST", "/")
-            .match_body(Matcher::Regex(r#""method"\s*:\s*"getcontractstate""#.into()))
+            .match_body(Matcher::Regex(
+                r#""method"\s*:\s*"getcontractstate""#.into(),
+            ))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(contract_state_response)
@@ -835,13 +834,14 @@ mod tests {
         let invoke_info_response = format!(
             r#"{{"jsonrpc":"2.0","id":1,"result":{{"script":"00","state":"HALT","gasconsumed":"0","stack":[{{"type":"ByteString","value":"{symbol_b64}"}},{{"type":"Integer","value":"8"}},{{"type":"Integer","value":"100000000"}}]}}}}"#
         );
-        let invoke_balance_response =
-            r#"{"jsonrpc":"2.0","id":1,"result":{"script":"00","state":"HALT","gasconsumed":"0","stack":[{"type":"Integer","value":"42"}]}}"#;
+        let invoke_balance_response = r#"{"jsonrpc":"2.0","id":1,"result":{"script":"00","state":"HALT","gasconsumed":"0","stack":[{"type":"Integer","value":"42"}]}}"#;
 
         let mut server = Server::new_async().await;
         let _m_contract = server
             .mock("POST", "/")
-            .match_body(Matcher::Regex(r#""method"\s*:\s*"getcontractstate""#.into()))
+            .match_body(Matcher::Regex(
+                r#""method"\s*:\s*"getcontractstate""#.into(),
+            ))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(contract_state_response)
@@ -889,8 +889,7 @@ mod tests {
             return;
         }
 
-        let invoke_response =
-            r#"{"jsonrpc":"2.0","id":1,"result":{"script":"00","state":"HALT","gasconsumed":"0","stack":[{"type":"Integer","value":"42"}]}}"#;
+        let invoke_response = r#"{"jsonrpc":"2.0","id":1,"result":{"script":"00","state":"HALT","gasconsumed":"0","stack":[{"type":"Integer","value":"42"}]}}"#;
 
         let mut server = Server::new_async().await;
         let _m_invoke = server
@@ -949,8 +948,7 @@ mod tests {
             return;
         }
 
-        let invoke_response =
-            r#"{"jsonrpc":"2.0","id":1,"result":{"script":"00","state":"HALT","gasconsumed":"0","stack":[{"type":"Integer","value":"8"}]}}"#;
+        let invoke_response = r#"{"jsonrpc":"2.0","id":1,"result":{"script":"00","state":"HALT","gasconsumed":"0","stack":[{"type":"Integer","value":"8"}]}}"#;
 
         let mut server = Server::new_async().await;
         let _m_invoke = server
@@ -976,8 +974,7 @@ mod tests {
             return;
         }
 
-        let invoke_response =
-            r#"{"jsonrpc":"2.0","id":1,"result":{"script":"00","state":"HALT","gasconsumed":"0","stack":[{"type":"Integer","value":"100000000"}]}}"#;
+        let invoke_response = r#"{"jsonrpc":"2.0","id":1,"result":{"script":"00","state":"HALT","gasconsumed":"0","stack":[{"type":"Integer","value":"100000000"}]}}"#;
 
         let mut server = Server::new_async().await;
         let _m_invoke = server
@@ -993,10 +990,7 @@ mod tests {
         let api = Nep17Api::new(Arc::new(client));
 
         let script_hash = UInt160::zero();
-        let total_supply = api
-            .total_supply(&script_hash)
-            .await
-            .expect("total supply");
+        let total_supply = api.total_supply(&script_hash).await.expect("total supply");
         assert_eq!(total_supply, BigInt::from(100000000u64));
     }
 
@@ -1006,10 +1000,8 @@ mod tests {
             return;
         }
 
-        let key = KeyPair::from_wif(
-            "KyXwTh1hB76RRMquSvnxZrJzQx7h9nQP2PCRL38v6VDb5ip3nf1p",
-        )
-        .expect("key pair");
+        let key = KeyPair::from_wif("KyXwTh1hB76RRMquSvnxZrJzQx7h9nQP2PCRL38v6VDb5ip3nf1p")
+            .expect("key pair");
         let from_script = Contract::create_signature_redeem_script(
             key.get_public_key_point().expect("public key"),
         );
@@ -1030,7 +1022,8 @@ mod tests {
         mock_invokescript(&mut server, &transfer_script_b64, &invoke_response_empty(0));
 
         let balance_args = vec![serde_json::json!(from.to_string())];
-        let balance_script = build_dynamic_call_script(&GasToken::new().hash(), "balanceOf", &balance_args);
+        let balance_script =
+            build_dynamic_call_script(&GasToken::new().hash(), "balanceOf", &balance_args);
         let balance_script_b64 = general_purpose::STANDARD.encode(balance_script);
         mock_invokescript(
             &mut server,
@@ -1068,14 +1061,10 @@ mod tests {
             return;
         }
 
-        let key1 = KeyPair::from_wif(
-            "KyXwTh1hB76RRMquSvnxZrJzQx7h9nQP2PCRL38v6VDb5ip3nf1p",
-        )
-        .expect("key pair 1");
-        let key2 = KeyPair::from_wif(
-            "KwFfNUhSDaASSAwtG7ssQM1uVX8RgX5GHWnnLfhfiQDigjioWXHH",
-        )
-        .expect("key pair 2");
+        let key1 = KeyPair::from_wif("KyXwTh1hB76RRMquSvnxZrJzQx7h9nQP2PCRL38v6VDb5ip3nf1p")
+            .expect("key pair 1");
+        let key2 = KeyPair::from_wif("KwFfNUhSDaASSAwtG7ssQM1uVX8RgX5GHWnnLfhfiQDigjioWXHH")
+            .expect("key pair 2");
 
         let public_keys = vec![
             key1.get_public_key_point().expect("public key 1"),
@@ -1099,7 +1088,8 @@ mod tests {
         mock_invokescript(&mut server, &transfer_script_b64, &invoke_response_empty(0));
 
         let balance_args = vec![serde_json::json!(sender.to_string())];
-        let balance_script = build_dynamic_call_script(&GasToken::new().hash(), "balanceOf", &balance_args);
+        let balance_script =
+            build_dynamic_call_script(&GasToken::new().hash(), "balanceOf", &balance_args);
         let balance_script_b64 = general_purpose::STANDARD.encode(balance_script);
         mock_invokescript(
             &mut server,
@@ -1138,10 +1128,8 @@ mod tests {
         let client = RpcClient::builder(url).build().expect("client");
         let api = Nep17Api::new(Arc::new(client));
 
-        let key = KeyPair::from_wif(
-            "KyXwTh1hB76RRMquSvnxZrJzQx7h9nQP2PCRL38v6VDb5ip3nf1p",
-        )
-        .expect("key pair");
+        let key = KeyPair::from_wif("KyXwTh1hB76RRMquSvnxZrJzQx7h9nQP2PCRL38v6VDb5ip3nf1p")
+            .expect("key pair");
         let public_keys = vec![key.get_public_key_point().expect("public key")];
 
         let err = api

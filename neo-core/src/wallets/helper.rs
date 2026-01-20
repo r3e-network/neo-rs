@@ -9,11 +9,11 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use crate::network::p2p::payloads::signer::Signer;
-use crate::network::p2p::payloads::transaction::HEADER_SIZE;
 use crate::neo_io::serializable::helper::{
     get_var_size, get_var_size_bytes, get_var_size_serializable_slice,
 };
+use crate::network::p2p::payloads::signer::Signer;
+use crate::network::p2p::payloads::transaction::HEADER_SIZE;
 use crate::IVerifiable as CoreIVerifiable;
 use crate::{
     network::p2p,
@@ -28,8 +28,8 @@ use crate::{
             ledger_contract::LedgerContract, native_contract::NativeContract,
             policy_contract::PolicyContract, GasToken,
         },
-        ContractBasicMethod, ContractParameterType,
         trigger_type::TriggerType,
+        ContractBasicMethod, ContractParameterType,
     },
     wallets::{transfer_output::TransferOutput, wallet::Wallet, wallet::WalletError, KeyPair},
     Transaction, UInt160,
@@ -522,7 +522,10 @@ fn calculate_network_fee_impl(
                     ContractBasicMethod::VERIFY_P_COUNT,
                 )
                 .ok_or_else(|| {
-                    format!("The smart contract {} haven't got verify method", contract.hash)
+                    format!(
+                        "The smart contract {} haven't got verify method",
+                        contract.hash
+                    )
                 })?
                 .clone();
 
@@ -597,10 +600,7 @@ fn calculate_network_fee_impl(
                     contract_hash
                 ));
             }
-            let result_item = engine
-                .result_stack()
-                .peek(0)
-                .map_err(|e| e.to_string())?;
+            let result_item = engine.result_stack().peek(0).map_err(|e| e.to_string())?;
             if result_item.get_boolean().unwrap_or(false) == false {
                 return Err(format!(
                     "Smart contract {} verification fault.",

@@ -1,5 +1,5 @@
-use neo_core::network::p2p::payloads::{Signer, Witness};
 use neo_core::neo_io::Serializable;
+use neo_core::network::p2p::payloads::{Signer, Witness};
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract;

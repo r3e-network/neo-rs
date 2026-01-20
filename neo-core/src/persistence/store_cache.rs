@@ -323,7 +323,8 @@ impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for StoreCache {
             return Box::new(cache_items.into_iter());
         }
 
-        let snapshot_items: Vec<(StorageKey, StorageItem)> = if let Some(snapshot) = &self.snapshot {
+        let snapshot_items: Vec<(StorageKey, StorageItem)> = if let Some(snapshot) = &self.snapshot
+        {
             let prefix_bytes = key_prefix.map(|k| k.to_array());
             snapshot
                 .find(prefix_bytes.as_ref(), direction)

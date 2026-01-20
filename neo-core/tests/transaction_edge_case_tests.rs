@@ -8,11 +8,11 @@ use neo_core::neo_io::Serializable;
 use neo_core::network::p2p::payloads::{signer::Signer, witness::Witness, InventoryType};
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
-use neo_vm::op_code::OpCode;
-use neo_vm::StackItem;
 use neo_core::{
     Transaction, TransactionAttribute, UInt160, WitnessScope, HEADER_SIZE, MAX_TRANSACTION_SIZE,
 };
+use neo_vm::op_code::OpCode;
+use neo_vm::StackItem;
 
 // ============================================================================
 // Test Helper Functions
@@ -146,7 +146,10 @@ mod tests {
 
         let array = item.as_array().expect("array");
         assert_eq!(array.len(), 8);
-        assert_eq!(array[0].as_bytes().expect("hash bytes"), tx.hash().to_bytes());
+        assert_eq!(
+            array[0].as_bytes().expect("hash bytes"),
+            tx.hash().to_bytes()
+        );
         assert_eq!(array[1].as_int().expect("version").to_i64().unwrap(), 0);
         assert_eq!(array[2].as_int().expect("nonce").to_i64().unwrap(), 42);
         assert_eq!(
@@ -155,10 +158,7 @@ mod tests {
         );
         assert_eq!(array[4].as_int().expect("sysfee").to_i64().unwrap(), 7);
         assert_eq!(array[5].as_int().expect("netfee").to_i64().unwrap(), 9);
-        assert_eq!(
-            array[6].as_int().expect("vub").to_i64().unwrap(),
-            10
-        );
+        assert_eq!(array[6].as_int().expect("vub").to_i64().unwrap(), 10);
         assert_eq!(array[7].as_bytes().expect("script"), vec![0x01, 0x02]);
     }
 
@@ -172,7 +172,9 @@ mod tests {
 
     /// Test FromStackItem panics (matches C# NotSupportedException).
     #[test]
-    #[should_panic(expected = "NotSupportedException: Transaction::from_stack_item is not supported")]
+    #[should_panic(
+        expected = "NotSupportedException: Transaction::from_stack_item is not supported"
+    )]
     fn test_from_stack_item_not_supported() {
         let mut tx = Transaction::new();
         tx.from_stack_item(StackItem::null());

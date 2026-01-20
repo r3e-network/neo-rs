@@ -145,10 +145,7 @@ impl Crypto {
     }
 
     /// Computes BLAKE2b-512 hash of the input data with an optional 16-byte salt.
-    pub fn blake2b_512(
-        data: &[u8],
-        salt: Option<&[u8]>,
-    ) -> CryptoResult<[u8; 64]> {
+    pub fn blake2b_512(data: &[u8], salt: Option<&[u8]>) -> CryptoResult<[u8; 64]> {
         let salt = salt.unwrap_or(&[]);
         if !salt.is_empty() && salt.len() != 16 {
             return Err(CryptoError::invalid_argument(
@@ -169,10 +166,7 @@ impl Crypto {
     }
 
     /// Computes BLAKE2b-256 hash of the input data with an optional 16-byte salt.
-    pub fn blake2b_256(
-        data: &[u8],
-        salt: Option<&[u8]>,
-    ) -> CryptoResult<[u8; 32]> {
+    pub fn blake2b_256(data: &[u8], salt: Option<&[u8]>) -> CryptoResult<[u8; 32]> {
         let salt = salt.unwrap_or(&[]);
         if !salt.is_empty() && salt.len() != 16 {
             return Err(CryptoError::invalid_argument(
@@ -328,8 +322,9 @@ mod tests {
     #[test]
     fn test_sha3_256() {
         let hash = Crypto::sha3_256(b"hello world");
-        let expected = hex::decode("644bcc7e564373040999aac89e7622f3ca71fba1d972fd94a31c3bfbf24e3938")
-            .unwrap();
+        let expected =
+            hex::decode("644bcc7e564373040999aac89e7622f3ca71fba1d972fd94a31c3bfbf24e3938")
+                .unwrap();
         assert_eq!(hash.to_vec(), expected);
     }
 
@@ -373,14 +368,16 @@ mod tests {
     #[test]
     fn test_blake2b_256() {
         let hash = Crypto::blake2b_256(b"hello world", None).unwrap();
-        let expected = hex::decode("256c83b297114d201b30179f3f0ef0cace9783622da5974326b436178aeef610")
-            .unwrap();
+        let expected =
+            hex::decode("256c83b297114d201b30179f3f0ef0cace9783622da5974326b436178aeef610")
+                .unwrap();
         assert_eq!(hash.to_vec(), expected);
 
         let salt = b"0123456789abcdef";
         let hash = Crypto::blake2b_256(b"hello world", Some(salt)).unwrap();
-        let expected = hex::decode("779c5f2194a9c2c03e73e3ffcf3e1508dd83cb85cd861029415ab961a755cc4e")
-            .unwrap();
+        let expected =
+            hex::decode("779c5f2194a9c2c03e73e3ffcf3e1508dd83cb85cd861029415ab961a755cc4e")
+                .unwrap();
         assert_eq!(hash.to_vec(), expected);
 
         assert!(Crypto::blake2b_256(b"abc", Some(&[0u8; 15])).is_err());

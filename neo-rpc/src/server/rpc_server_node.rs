@@ -124,10 +124,7 @@ impl RpcServerNode {
                 "validatorscount".to_string(),
                 json!(protocol.validators_count),
             );
-            protocol_info.insert(
-                "msperblock".to_string(),
-                json!(time_per_block_ms),
-            );
+            protocol_info.insert("msperblock".to_string(), json!(time_per_block_ms));
             protocol_info.insert(
                 "maxtraceableblocks".to_string(),
                 json!(max_traceable_blocks),
@@ -421,28 +418,28 @@ mod tests {
     use crate::client::models::RpcPeers;
     use crate::server::rcp_server_settings::RpcServerConfig;
     use neo_core::extensions::io::serializable::SerializableExtensions;
+    use neo_core::ledger::TransactionVerificationContext;
+    use neo_core::neo_io::BinaryWriter;
     use neo_core::network::p2p::helper::get_sign_data_vec;
-    use neo_core::network::p2p::payloads::{Block, Header, TransactionAttribute};
     use neo_core::network::p2p::payloads::oracle_response::{OracleResponse, MAX_RESULT_SIZE};
     use neo_core::network::p2p::payloads::oracle_response_code::OracleResponseCode;
-    use neo_core::ledger::TransactionVerificationContext;
     use neo_core::network::p2p::payloads::signer::Signer;
     use neo_core::network::p2p::payloads::transaction::Transaction;
     use neo_core::network::p2p::payloads::witness::Witness;
-    use neo_core::protocol_settings::ProtocolSettings;
-    use neo_core::smart_contract::application_engine::ApplicationEngine;
+    use neo_core::network::p2p::payloads::{Block, Header, TransactionAttribute};
     use neo_core::persistence::transaction::apply_tracked_items;
     use neo_core::persistence::StoreCache;
-    use neo_core::smart_contract::native::GasToken;
+    use neo_core::protocol_settings::ProtocolSettings;
+    use neo_core::smart_contract::application_engine::ApplicationEngine;
     use neo_core::smart_contract::native::helpers::NativeHelpers;
+    use neo_core::smart_contract::native::GasToken;
     use neo_core::smart_contract::native::LedgerContract;
-    use neo_core::smart_contract::native::PolicyContract;
     use neo_core::smart_contract::native::NativeContract;
+    use neo_core::smart_contract::native::PolicyContract;
     use neo_core::smart_contract::trigger_type::TriggerType;
     use neo_core::smart_contract::Contract;
-    use neo_core::wallets::KeyPair;
-    use neo_core::neo_io::BinaryWriter;
     use neo_core::smart_contract::{StorageItem, StorageKey};
+    use neo_core::wallets::KeyPair;
     use neo_core::{IVerifiable, NeoSystem, UInt160, UInt256, WitnessScope};
     use neo_json::JToken;
     use neo_vm::op_code::OpCode;
@@ -460,10 +457,7 @@ mod tests {
     fn parse_object(value: &Value) -> neo_json::JObject {
         let json = serde_json::to_string(value).expect("serialize");
         let token = JToken::parse(&json, 128).expect("parse");
-        token
-            .as_object()
-            .cloned()
-            .expect("expected JSON object")
+        token.as_object().cloned().expect("expected JSON object")
     }
 
     fn build_signed_transaction_custom(
@@ -643,9 +637,7 @@ mod tests {
             .write_u8(RECORD_KIND_TRANSACTION)
             .expect("record kind");
         writer.write_u32(block_index).expect("block index");
-        writer
-            .write_u8(VMState::NONE as u8)
-            .expect("vm state");
+        writer.write_u8(VMState::NONE as u8).expect("vm state");
         let tx_bytes = tx.to_bytes();
         writer.write_var_bytes(&tx_bytes).expect("tx bytes");
 
@@ -678,7 +670,10 @@ mod tests {
             .expect("unconnected array");
         assert_eq!(unconnected.len(), 1);
 
-        let bad = result.get("bad").and_then(|v| v.as_array()).expect("bad array");
+        let bad = result
+            .get("bad")
+            .and_then(|v| v.as_array())
+            .expect("bad array");
         assert!(bad.is_empty());
 
         let connected = result
@@ -703,7 +698,10 @@ mod tests {
             .expect("unconnected array");
         assert!(unconnected.is_empty());
 
-        let bad = result.get("bad").and_then(|v| v.as_array()).expect("bad array");
+        let bad = result
+            .get("bad")
+            .and_then(|v| v.as_array())
+            .expect("bad array");
         assert!(bad.is_empty());
 
         let connected = result
@@ -772,7 +770,11 @@ mod tests {
             "seedlist",
             "hardforks",
         ] {
-            assert!(protocol.get(key).is_some(), "missing protocol field {}", key);
+            assert!(
+                protocol.get(key).is_some(),
+                "missing protocol field {}",
+                key
+            );
         }
     }
 
@@ -926,10 +928,7 @@ mod tests {
         let params = [Value::String(payload)];
         let result = tokio::task::block_in_place(|| (handler.callback())(&server, &params))
             .expect("send raw");
-        let hash = result
-            .get("hash")
-            .and_then(Value::as_str)
-            .expect("hash");
+        let hash = result.get("hash").and_then(Value::as_str).expect("hash");
         assert_eq!(hash, tx.hash().to_string());
     }
 
@@ -1004,11 +1003,9 @@ mod tests {
             keypair.get_script_hash(),
             WitnessScope::GLOBAL,
         )]);
-        tx.set_attributes(vec![TransactionAttribute::OracleResponse(OracleResponse::new(
-            1,
-            OracleResponseCode::Success,
-            vec![0u8; MAX_RESULT_SIZE],
-        ))]);
+        tx.set_attributes(vec![TransactionAttribute::OracleResponse(
+            OracleResponse::new(1, OracleResponseCode::Success, vec![0u8; MAX_RESULT_SIZE]),
+        )]);
         tx.set_script(vec![OpCode::PUSH0 as u8; u16::MAX as usize]);
         tx.set_witnesses(vec![Witness::empty()]);
 
@@ -1264,8 +1261,12 @@ mod tests {
             vec![OpCode::PUSH1 as u8],
         );
         let snapshot = store.data_cache();
-        let verification =
-            tx.verify(&settings, snapshot, Some(&TransactionVerificationContext::new()), &[]);
+        let verification = tx.verify(
+            &settings,
+            snapshot,
+            Some(&TransactionVerificationContext::new()),
+            &[],
+        );
         assert_eq!(verification, VerifyResult::Succeed);
         let store = system.context().store_cache();
         let mut block = build_signed_block(&settings, &store, &validator, vec![tx]);
@@ -1275,10 +1276,7 @@ mod tests {
         let params = [Value::String(payload)];
         let result = tokio::task::block_in_place(|| (handler.callback())(&server, &params))
             .expect("submit block");
-        let hash = result
-            .get("hash")
-            .and_then(Value::as_str)
-            .expect("hash");
+        let hash = result.get("hash").and_then(Value::as_str).expect("hash");
         assert_eq!(hash, expected_hash.to_string());
     }
 

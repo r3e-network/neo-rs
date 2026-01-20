@@ -312,7 +312,6 @@ pub fn witness_from_json(json: &JObject) -> Result<Witness, String> {
     RpcUtility::witness_from_json(json)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -397,8 +396,8 @@ mod tests {
             RpcUtility::get_script_hash(&prefixed, &ProtocolSettings::default_settings()).unwrap();
         assert_eq!(parsed, hash);
 
-        let err =
-            RpcUtility::get_script_hash("", &ProtocolSettings::default_settings()).expect_err("empty");
+        let err = RpcUtility::get_script_hash("", &ProtocolSettings::default_settings())
+            .expect_err("empty");
         assert_eq!(err, "Account cannot be empty");
 
         let err = RpcUtility::get_script_hash("00", &ProtocolSettings::default_settings())
@@ -409,9 +408,7 @@ mod tests {
     #[test]
     fn as_script_hash_maps_native_contract_name_and_id() {
         let registry = NativeRegistry::new();
-        let contract = registry
-            .get_by_name("NeoToken")
-            .expect("NeoToken contract");
+        let contract = registry.get_by_name("NeoToken").expect("NeoToken contract");
         let expected_hash = contract.hash().to_string();
         let name = contract.name().to_string();
         let id = contract.id().to_string();

@@ -27,10 +27,10 @@ use neo_core::smart_contract::native::{
 use neo_core::smart_contract::storage_key::StorageKey;
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::{UInt160, UInt256, Witness as LedgerWitness};
+use num_traits::ToPrimitive;
 use serde_json::{json, Map, Value};
 use std::str::FromStr;
 use std::sync::Arc;
-use num_traits::ToPrimitive;
 
 pub struct RpcServerBlockchain;
 
@@ -444,9 +444,7 @@ impl RpcServerBlockchain {
         let snapshot = store.data_cache().clone();
         let neo = neo_core::smart_contract::native::neo_token::NeoToken::new();
         let candidates = neo.get_candidates_snapshot(&snapshot).map_err(|_| {
-            RpcException::from(
-                RpcError::internal_server_error().with_data("Can't get candidates."),
-            )
+            RpcException::from(RpcError::internal_server_error().with_data("Can't get candidates."))
         })?;
         let validators = neo
             .get_next_block_validators_snapshot(
@@ -456,8 +454,7 @@ impl RpcServerBlockchain {
             )
             .map_err(|_| {
                 RpcException::from(
-                    RpcError::internal_server_error()
-                        .with_data("Can't get next block validators."),
+                    RpcError::internal_server_error().with_data("Can't get next block validators."),
                 )
             })?;
         let result: Vec<Value> = candidates
@@ -854,23 +851,25 @@ mod tests {
     use neo_core::extensions::io::serializable::SerializableExtensions;
     use neo_core::ledger::block::Block as LedgerBlock;
     use neo_core::ledger::block_header::BlockHeader as LedgerBlockHeader;
+    use neo_core::ledger::VerifyResult;
+    use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
     use neo_core::network::p2p::helper::get_sign_data_vec;
     use neo_core::network::p2p::payloads::block::Block;
     use neo_core::network::p2p::payloads::signer::Signer;
     use neo_core::network::p2p::payloads::transaction::Transaction;
     use neo_core::network::p2p::payloads::witness::Witness;
-    use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
     use neo_core::protocol_settings::ProtocolSettings;
-    use neo_core::ledger::VerifyResult;
     use neo_core::smart_contract::application_engine::ApplicationEngine;
+    use neo_core::smart_contract::native::trimmed_block::TrimmedBlock;
     use neo_core::smart_contract::native::GasToken;
     use neo_core::smart_contract::native::LedgerContract;
-    use neo_core::smart_contract::native::trimmed_block::TrimmedBlock;
+    use neo_core::smart_contract::trigger_type::TriggerType;
     use neo_core::smart_contract::{BinarySerializer, ContractManifest, ContractState, NefFile};
     use neo_core::smart_contract::{StorageItem, StorageKey};
-    use neo_core::smart_contract::trigger_type::TriggerType;
     use neo_core::wallets::KeyPair;
-    use neo_core::{IVerifiable, NeoSystem, UInt160, UInt256, Witness as LedgerWitness, WitnessScope};
+    use neo_core::{
+        IVerifiable, NeoSystem, UInt160, UInt256, Witness as LedgerWitness, WitnessScope,
+    };
     use neo_json::JToken;
     use neo_vm::op_code::OpCode;
     use neo_vm::vm_state::VMState;
@@ -888,10 +887,7 @@ mod tests {
     fn parse_object(value: &Value) -> neo_json::JObject {
         let json = serde_json::to_string(value).expect("serialize");
         let token = JToken::parse(&json, 128).expect("parse");
-        token
-            .as_object()
-            .cloned()
-            .expect("expected JSON object")
+        token.as_object().cloned().expect("expected JSON object")
     }
 
     fn build_signed_transaction(
@@ -1025,9 +1021,7 @@ mod tests {
                 .write_u8(RECORD_KIND_TRANSACTION)
                 .expect("record kind");
             writer.write_u32(index).expect("block index");
-            writer
-                .write_u8(VMState::NONE as u8)
-                .expect("vm state");
+            writer.write_u8(VMState::NONE as u8).expect("vm state");
             writer.write_var_bytes(&tx.to_bytes()).expect("tx bytes");
 
             let mut tx_key_bytes = Vec::with_capacity(1 + 32);
@@ -1045,7 +1039,10 @@ mod tests {
         store.commit();
     }
 
-    fn store_contract_state(store: &mut neo_core::persistence::StoreCache, contract: &ContractState) {
+    fn store_contract_state(
+        store: &mut neo_core::persistence::StoreCache,
+        contract: &ContractState,
+    ) {
         const PREFIX_CONTRACT: u8 = 0x08;
         const PREFIX_CONTRACT_HASH: u8 = 0x0c;
 
@@ -1055,9 +1052,7 @@ mod tests {
             .id();
 
         let mut writer = BinaryWriter::new();
-        contract
-            .serialize(&mut writer)
-            .expect("serialize contract");
+        contract.serialize(&mut writer).expect("serialize contract");
 
         let mut key_bytes = Vec::with_capacity(1 + 20);
         key_bytes.push(PREFIX_CONTRACT);
@@ -1069,13 +1064,19 @@ mod tests {
         id_bytes.push(PREFIX_CONTRACT_HASH);
         id_bytes.extend_from_slice(&contract.id.to_be_bytes());
         let id_key = StorageKey::new(contract_mgmt_id, id_bytes);
-        store.add(id_key, StorageItem::from_bytes(contract.hash.to_bytes().to_vec()));
+        store.add(
+            id_key,
+            StorageItem::from_bytes(contract.hash.to_bytes().to_vec()),
+        );
 
         let mut legacy_bytes = Vec::with_capacity(1 + 4);
         legacy_bytes.push(PREFIX_CONTRACT_HASH);
         legacy_bytes.extend_from_slice(&contract.id.to_le_bytes());
         let legacy_key = StorageKey::new(contract_mgmt_id, legacy_bytes);
-        store.add(legacy_key, StorageItem::from_bytes(contract.hash.to_bytes().to_vec()));
+        store.add(
+            legacy_key,
+            StorageItem::from_bytes(contract.hash.to_bytes().to_vec()),
+        );
 
         store.commit();
     }
@@ -1111,9 +1112,8 @@ mod tests {
             })
             .collect();
         let array = neo_vm::StackItem::from_array(items);
-        let bytes =
-            BinarySerializer::serialize(&array, &neo_vm::ExecutionEngineLimits::default())
-                .expect("serialize committee");
+        let bytes = BinarySerializer::serialize(&array, &neo_vm::ExecutionEngineLimits::default())
+            .expect("serialize committee");
         let key = StorageKey::create(neo_token_id, PREFIX_COMMITTEE);
         store.add(key, StorageItem::from_bytes(bytes));
         store.commit();
@@ -1129,9 +1129,8 @@ mod tests {
             neo_vm::StackItem::from_bool(registered),
             neo_vm::StackItem::from_int(votes),
         ]);
-        let bytes =
-            BinarySerializer::serialize(&item, &neo_vm::ExecutionEngineLimits::default())
-                .expect("serialize candidate");
+        let bytes = BinarySerializer::serialize(&item, &neo_vm::ExecutionEngineLimits::default())
+            .expect("serialize candidate");
         store_candidate_state_raw(store, candidate, bytes);
     }
 
@@ -1153,10 +1152,7 @@ mod tests {
         store.commit();
     }
 
-    fn store_blocked_account(
-        store: &mut neo_core::persistence::StoreCache,
-        account: &UInt160,
-    ) {
+    fn store_blocked_account(store: &mut neo_core::persistence::StoreCache, account: &UInt160) {
         const PREFIX_BLOCKED_ACCOUNT: u8 = 0x0f;
         let policy_id = NativeRegistry::new()
             .get_by_name("PolicyContract")
@@ -1254,10 +1250,16 @@ mod tests {
         let result = (handler.callback())(&server, &params).expect("getrawmempool verbose");
         let parsed = RpcRawMemPool::from_json(&parse_object(&result)).expect("parse mempool");
 
-        let verified_hashes: HashSet<String> =
-            parsed.verified.iter().map(|hash| hash.to_string()).collect();
-        let unverified_hashes: HashSet<String> =
-            parsed.unverified.iter().map(|hash| hash.to_string()).collect();
+        let verified_hashes: HashSet<String> = parsed
+            .verified
+            .iter()
+            .map(|hash| hash.to_string())
+            .collect();
+        let unverified_hashes: HashSet<String> = parsed
+            .unverified
+            .iter()
+            .map(|hash| hash.to_string())
+            .collect();
 
         assert!(verified_hashes.contains(&tx3.hash().to_string()));
         assert!(unverified_hashes.contains(&tx1.hash().to_string()));
@@ -1367,7 +1369,11 @@ mod tests {
         let handlers = RpcServerBlockchain::register_handlers();
         let handler = find_handler(&handlers, "getblockhash");
 
-        let block = make_ledger_block(&system.context().store_cache(), 1, vec![make_transaction(1)]);
+        let block = make_ledger_block(
+            &system.context().store_cache(),
+            1,
+            vec![make_transaction(1)],
+        );
         let mut store = system.context().store_snapshot_cache();
         store_block(&mut store, &block);
 
@@ -1384,7 +1390,11 @@ mod tests {
         let handlers = RpcServerBlockchain::register_handlers();
         let handler = find_handler(&handlers, "getblock");
 
-        let block = make_ledger_block(&system.context().store_cache(), 1, vec![make_transaction(1)]);
+        let block = make_ledger_block(
+            &system.context().store_cache(),
+            1,
+            vec![make_transaction(1)],
+        );
         let mut store = system.context().store_snapshot_cache();
         store_block(&mut store, &block);
 
@@ -1496,15 +1506,27 @@ mod tests {
         let handlers = RpcServerBlockchain::register_handlers();
         let handler = find_handler(&handlers, "getblock");
 
-        let block = make_ledger_block(&system.context().store_cache(), 1, vec![make_transaction(2)]);
+        let block = make_ledger_block(
+            &system.context().store_cache(),
+            1,
+            vec![make_transaction(2)],
+        );
         let mut store = system.context().store_snapshot_cache();
         store_block(&mut store, &block);
 
         let params = [Value::Number(1u32.into()), Value::Bool(true)];
         let result = (handler.callback())(&server, &params).expect("get block verbose");
         let obj = result.as_object().expect("object");
-        assert_eq!(obj.get("hash").and_then(Value::as_str).unwrap(), block.hash().to_string());
-        assert_eq!(obj.get("confirmations").and_then(Value::as_u64).unwrap_or_default(), 1);
+        assert_eq!(
+            obj.get("hash").and_then(Value::as_str).unwrap(),
+            block.hash().to_string()
+        );
+        assert_eq!(
+            obj.get("confirmations")
+                .and_then(Value::as_u64)
+                .unwrap_or_default(),
+            1
+        );
         let txs = obj.get("tx").and_then(Value::as_array).expect("tx array");
         assert_eq!(txs.len(), 1);
     }
@@ -1531,7 +1553,11 @@ mod tests {
         let handlers = RpcServerBlockchain::register_handlers();
         let handler = find_handler(&handlers, "getblockheader");
 
-        let block = make_ledger_block(&system.context().store_cache(), 1, vec![make_transaction(3)]);
+        let block = make_ledger_block(
+            &system.context().store_cache(),
+            1,
+            vec![make_transaction(3)],
+        );
         let mut store = system.context().store_snapshot_cache();
         store_block(&mut store, &block);
 
@@ -1547,9 +1573,14 @@ mod tests {
         let params = [Value::String(block.hash().to_string()), Value::Bool(true)];
         let result = (handler.callback())(&server, &params).expect("get block header verbose");
         let obj = result.as_object().expect("object");
-        assert_eq!(obj.get("hash").and_then(Value::as_str).unwrap(), block.hash().to_string());
         assert_eq!(
-            obj.get("confirmations").and_then(Value::as_u64).unwrap_or_default(),
+            obj.get("hash").and_then(Value::as_str).unwrap(),
+            block.hash().to_string()
+        );
+        assert_eq!(
+            obj.get("confirmations")
+                .and_then(Value::as_u64)
+                .unwrap_or_default(),
             1
         );
     }
@@ -1654,9 +1685,11 @@ mod tests {
         let handlers = RpcServerBlockchain::register_handlers();
         let handler = find_handler(&handlers, "getcontractstate");
 
-        let params = [Value::String(UInt160::from_bytes(&[0x22u8; 20])
-            .expect("hash")
-            .to_string())];
+        let params = [Value::String(
+            UInt160::from_bytes(&[0x22u8; 20])
+                .expect("hash")
+                .to_string(),
+        )];
         let err = (handler.callback())(&server, &params).expect_err("unknown contract");
         let rpc_error: RpcError = err.into();
         assert_eq!(rpc_error.code(), RpcError::unknown_contract().code());
@@ -1706,7 +1739,12 @@ mod tests {
         let keypair = KeyPair::from_private_key(&[0x21u8; 32]).expect("keypair");
         let account = keypair.get_script_hash();
         let mut store = system.context().store_snapshot_cache();
-        mint_gas(&mut store, &settings, account, BigInt::from(50_0000_0000i64));
+        mint_gas(
+            &mut store,
+            &settings,
+            account,
+            BigInt::from(50_0000_0000i64),
+        );
         store.commit();
 
         let tx = build_signed_transaction(&settings, &keypair, 1);
@@ -1767,11 +1805,23 @@ mod tests {
         let result = (handler.callback())(&server, &params).expect("get raw tx verbose");
         let obj = result.as_object().expect("object");
         assert_eq!(
-            obj.get("blockhash").and_then(Value::as_str).unwrap_or_default(),
+            obj.get("blockhash")
+                .and_then(Value::as_str)
+                .unwrap_or_default(),
             block_hash.to_string()
         );
-        assert_eq!(obj.get("confirmations").and_then(Value::as_u64).unwrap_or_default(), 1);
-        assert_eq!(obj.get("blocktime").and_then(Value::as_u64).unwrap_or_default(), 1);
+        assert_eq!(
+            obj.get("confirmations")
+                .and_then(Value::as_u64)
+                .unwrap_or_default(),
+            1
+        );
+        assert_eq!(
+            obj.get("blocktime")
+                .and_then(Value::as_u64)
+                .unwrap_or_default(),
+            1
+        );
         assert!(obj.get("sysfee").is_some());
         assert!(obj.get("netfee").is_some());
     }
@@ -1821,7 +1871,10 @@ mod tests {
         let key_b64 = BASE64_STANDARD.encode([0x01u8]);
         let params = [Value::String(hash.to_string()), Value::String(key_b64)];
         let result = (handler.callback())(&server, &params).expect("get storage");
-        assert_eq!(result.as_str().unwrap_or_default(), BASE64_STANDARD.encode([0x02u8]));
+        assert_eq!(
+            result.as_str().unwrap_or_default(),
+            BASE64_STANDARD.encode([0x02u8])
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -1843,9 +1896,15 @@ mod tests {
         store_storage_item(&mut store, gas_state.id, &[0x01], &[0x02]);
 
         let key_b64 = BASE64_STANDARD.encode([0x01u8]);
-        let params = [Value::String("GasToken".to_string()), Value::String(key_b64)];
+        let params = [
+            Value::String("GasToken".to_string()),
+            Value::String(key_b64),
+        ];
         let result = (handler.callback())(&server, &params).expect("get storage");
-        assert_eq!(result.as_str().unwrap_or_default(), BASE64_STANDARD.encode([0x02u8]));
+        assert_eq!(
+            result.as_str().unwrap_or_default(),
+            BASE64_STANDARD.encode([0x02u8])
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -1880,7 +1939,10 @@ mod tests {
             .expect("results");
         let first = results.first().and_then(Value::as_object).expect("entry");
         assert_eq!(
-            first.get("value").and_then(Value::as_str).unwrap_or_default(),
+            first
+                .get("value")
+                .and_then(Value::as_str)
+                .unwrap_or_default(),
             BASE64_STANDARD.encode([0x02u8])
         );
     }
@@ -1894,7 +1956,11 @@ mod tests {
         let handler = find_handler(&handlers, "getstorage");
 
         let params = [
-            Value::String(UInt160::from_bytes(&[0x11u8; 20]).expect("hash").to_string()),
+            Value::String(
+                UInt160::from_bytes(&[0x11u8; 20])
+                    .expect("hash")
+                    .to_string(),
+            ),
             Value::String(BASE64_STANDARD.encode([0x01u8])),
         ];
         let err = (handler.callback())(&server, &params).expect_err("unknown contract");
@@ -1906,7 +1972,10 @@ mod tests {
         let mut store = system.context().store_snapshot_cache();
         store_contract_state(&mut store, &contract);
 
-        let params = [Value::String(hash.to_string()), Value::String(BASE64_STANDARD.encode([0x01u8]))];
+        let params = [
+            Value::String(hash.to_string()),
+            Value::String(BASE64_STANDARD.encode([0x01u8])),
+        ];
         let err = (handler.callback())(&server, &params).expect_err("unknown storage item");
         let rpc_error: RpcError = err.into();
         assert_eq!(rpc_error.code(), RpcError::unknown_storage_item().code());
@@ -1925,7 +1994,14 @@ mod tests {
         let rpc_error: RpcError = err.into();
         assert_eq!(rpc_error.code(), RpcError::invalid_params().code());
 
-        let params = [Value::String(UInt160::from_bytes(&[0x13u8; 20]).expect("hash").to_string()), Value::Null];
+        let params = [
+            Value::String(
+                UInt160::from_bytes(&[0x13u8; 20])
+                    .expect("hash")
+                    .to_string(),
+            ),
+            Value::Null,
+        ];
         let err = (handler.callback())(&server, &params).expect_err("null key");
         let rpc_error: RpcError = err.into();
         assert_eq!(rpc_error.code(), RpcError::invalid_params().code());
@@ -1959,12 +2035,22 @@ mod tests {
         store.commit();
 
         let prefix = BASE64_STANDARD.encode([0xAAu8]);
-        let params = [Value::String(hash.to_string()), Value::String(prefix), Value::Number(0u64.into())];
+        let params = [
+            Value::String(hash.to_string()),
+            Value::String(prefix),
+            Value::Number(0u64.into()),
+        ];
         let result = (handler.callback())(&server, &params).expect("find storage page1");
         let obj = result.as_object().expect("object");
-        assert!(obj.get("truncated").and_then(Value::as_bool).unwrap_or(false));
+        assert!(obj
+            .get("truncated")
+            .and_then(Value::as_bool)
+            .unwrap_or(false));
         assert_eq!(
-            obj.get("results").and_then(Value::as_array).map(|v| v.len()).unwrap_or_default(),
+            obj.get("results")
+                .and_then(Value::as_array)
+                .map(|v| v.len())
+                .unwrap_or_default(),
             page_size
         );
         let next = obj.get("next").and_then(Value::as_u64).unwrap_or_default() as usize;
@@ -1978,9 +2064,15 @@ mod tests {
         let result = (handler.callback())(&server, &params).expect("find storage page2");
         let obj = result.as_object().expect("object");
         println!("page2 result: {}", result);
-        assert!(!obj.get("truncated").and_then(Value::as_bool).unwrap_or(true));
+        assert!(!obj
+            .get("truncated")
+            .and_then(Value::as_bool)
+            .unwrap_or(true));
         assert_eq!(
-            obj.get("results").and_then(Value::as_array).map(|v| v.len()).unwrap_or_default(),
+            obj.get("results")
+                .and_then(Value::as_array)
+                .map(|v| v.len())
+                .unwrap_or_default(),
             5
         );
     }
@@ -2017,8 +2109,14 @@ mod tests {
         ];
         let result = (handler.callback())(&server, &params).expect("find storage page1");
         let obj = result.as_object().expect("object");
-        assert!(!obj.get("truncated").and_then(Value::as_bool).unwrap_or(true));
-        let results = obj.get("results").and_then(Value::as_array).expect("results");
+        assert!(!obj
+            .get("truncated")
+            .and_then(Value::as_bool)
+            .unwrap_or(true));
+        let results = obj
+            .get("results")
+            .and_then(Value::as_array)
+            .expect("results");
         assert_eq!(results.len(), 3);
         let next = obj.get("next").and_then(Value::as_u64).unwrap_or_default();
         assert_eq!(next, 3);
@@ -2030,8 +2128,14 @@ mod tests {
         ];
         let result = (handler.callback())(&server, &params).expect("find storage page2");
         let obj = result.as_object().expect("object");
-        assert!(!obj.get("truncated").and_then(Value::as_bool).unwrap_or(true));
-        let results = obj.get("results").and_then(Value::as_array).expect("results");
+        assert!(!obj
+            .get("truncated")
+            .and_then(Value::as_bool)
+            .unwrap_or(true));
+        let results = obj
+            .get("results")
+            .and_then(Value::as_array)
+            .expect("results");
         assert!(results.is_empty());
         let next_end = obj.get("next").and_then(Value::as_u64).unwrap_or_default();
         assert_eq!(next_end, next);
@@ -2045,12 +2149,23 @@ mod tests {
         let handlers = RpcServerBlockchain::register_handlers();
         let handler = find_handler(&handlers, "findstorage");
 
-        let params = [Value::Null, Value::String(BASE64_STANDARD.encode([0x01u8])), Value::Number(0u64.into())];
+        let params = [
+            Value::Null,
+            Value::String(BASE64_STANDARD.encode([0x01u8])),
+            Value::Number(0u64.into()),
+        ];
         let err = (handler.callback())(&server, &params).expect_err("null contract");
         let rpc_error: RpcError = err.into();
         assert_eq!(rpc_error.code(), RpcError::invalid_params().code());
 
-        let params = [Value::String(UInt160::from_bytes(&[0x30u8; 20]).expect("hash").to_string()), Value::Null];
+        let params = [
+            Value::String(
+                UInt160::from_bytes(&[0x30u8; 20])
+                    .expect("hash")
+                    .to_string(),
+            ),
+            Value::Null,
+        ];
         let err = (handler.callback())(&server, &params).expect_err("null prefix");
         let rpc_error: RpcError = err.into();
         assert_eq!(rpc_error.code(), RpcError::invalid_params().code());
@@ -2085,7 +2200,12 @@ mod tests {
         let keypair = KeyPair::from_private_key(&[0x23u8; 32]).expect("keypair");
         let account = keypair.get_script_hash();
         let mut store = system.context().store_snapshot_cache();
-        mint_gas(&mut store, &settings, account, BigInt::from(50_0000_0000i64));
+        mint_gas(
+            &mut store,
+            &settings,
+            account,
+            BigInt::from(50_0000_0000i64),
+        );
         store.commit();
 
         let tx = build_signed_transaction(&settings, &keypair, 1);
@@ -2187,7 +2307,13 @@ mod tests {
                 (public_key == key).then_some(obj)
             })
             .expect("candidate entry");
-        assert_eq!(entry.get("votes").and_then(Value::as_i64).unwrap_or_default(), 42);
+        assert_eq!(
+            entry
+                .get("votes")
+                .and_then(Value::as_i64)
+                .unwrap_or_default(),
+            42
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -2217,7 +2343,13 @@ mod tests {
                 (public_key == key).then_some(obj)
             })
             .expect("candidate entry");
-        assert_eq!(entry.get("votes").and_then(Value::as_i64).unwrap_or_default(), -1);
+        assert_eq!(
+            entry
+                .get("votes")
+                .and_then(Value::as_i64)
+                .unwrap_or_default(),
+            -1
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -2248,10 +2380,16 @@ mod tests {
             })
             .expect("candidate entry");
         assert_eq!(
-            entry.get("votes").and_then(Value::as_str).unwrap_or_default(),
+            entry
+                .get("votes")
+                .and_then(Value::as_str)
+                .unwrap_or_default(),
             "10000"
         );
-        assert!(entry.get("active").and_then(Value::as_bool).unwrap_or(false));
+        assert!(entry
+            .get("active")
+            .and_then(Value::as_bool)
+            .unwrap_or(false));
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -2359,7 +2497,9 @@ mod tests {
 
         let registry = NativeRegistry::new();
         let gas_contract = registry.get_by_name("GasToken").expect("gas token");
-        let gas_state = gas_contract.contract_state(&settings, 0).expect("gas state");
+        let gas_state = gas_contract
+            .contract_state(&settings, 0)
+            .expect("gas state");
         let gas_hash = gas_state.hash;
 
         let mut store = system.context().store_snapshot_cache();
@@ -2433,7 +2573,11 @@ mod tests {
         let handlers = RpcServerBlockchain::register_handlers();
         let handler = find_handler(&handlers, "getblock");
 
-        let block = make_ledger_block(&system.context().store_cache(), 1, vec![make_transaction(5)]);
+        let block = make_ledger_block(
+            &system.context().store_cache(),
+            1,
+            vec![make_transaction(5)],
+        );
         let mut store = system.context().store_snapshot_cache();
         store_block(&mut store, &block);
 
@@ -2456,7 +2600,11 @@ mod tests {
         let handlers = RpcServerBlockchain::register_handlers();
         let handler = find_handler(&handlers, "getblockhash");
 
-        let block = make_ledger_block(&system.context().store_cache(), 1, vec![make_transaction(6)]);
+        let block = make_ledger_block(
+            &system.context().store_cache(),
+            1,
+            vec![make_transaction(6)],
+        );
         let mut store = system.context().store_snapshot_cache();
         store_block(&mut store, &block);
 

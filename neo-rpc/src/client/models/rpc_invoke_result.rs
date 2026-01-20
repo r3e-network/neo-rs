@@ -131,9 +131,7 @@ impl RpcInvokeResult {
                 let values: Vec<JToken> = items.into_iter().map(JToken::Object).collect();
                 JToken::Array(JArray::from(values))
             })
-            .unwrap_or_else(|_| {
-                JToken::String("error: recursive reference".to_string())
-            });
+            .unwrap_or_else(|_| JToken::String("error: recursive reference".to_string()));
         json.insert("stack".to_string(), stack_json);
 
         if let Some(tx) = &self.tx {
@@ -266,7 +264,9 @@ mod tests {
         };
         let json = result.to_json();
         assert_eq!(
-            json.get("state").and_then(|token| token.as_string()).unwrap(),
+            json.get("state")
+                .and_then(|token| token.as_string())
+                .unwrap(),
             "HALT"
         );
         let stack = json
@@ -294,7 +294,9 @@ mod tests {
 
         let json = result.to_json();
         assert_eq!(
-            json.get("stack").and_then(|token| token.as_string()).unwrap(),
+            json.get("stack")
+                .and_then(|token| token.as_string())
+                .unwrap(),
             "error: recursive reference"
         );
     }
@@ -309,7 +311,9 @@ mod tests {
         path.push("RpcTestCases.json");
         let payload = fs::read_to_string(&path).expect("read RpcTestCases.json");
         let token = JToken::parse(&payload, 128).expect("parse RpcTestCases.json");
-        let cases = token.as_array().expect("RpcTestCases.json should be an array");
+        let cases = token
+            .as_array()
+            .expect("RpcTestCases.json should be an array");
         for entry in cases.children() {
             let token = entry.as_ref().expect("array entry");
             let obj = token.as_object().expect("case object");

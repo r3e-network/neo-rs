@@ -115,7 +115,7 @@ impl PolicyContract {
 
         let context = engine.get_native_storage_context(&self.hash)?;
         let key = Self::blocked_account_suffix(account);
-        
+
         let block_data = engine.get_storage_item(&context, &key);
         if let Some(item) = block_data {
             if item.is_empty() && engine.is_hardfork_enabled(Hardfork::HfFaun) {
@@ -130,11 +130,11 @@ impl PolicyContract {
 
         if engine.is_hardfork_enabled(Hardfork::HfFaun) {
             use crate::smart_contract::native::neo_token::NeoToken;
-             // We ignore the result of VoteInternal as C# does (await and forget return?)
-             // C# `await NEO.VoteInternal(...)` returns bool, but BlockAccount continues regardless.
-             let _ = NeoToken::new().vote_internal(engine, account, None)?;
+            // We ignore the result of VoteInternal as C# does (await and forget return?)
+            // C# `await NEO.VoteInternal(...)` returns bool, but BlockAccount continues regardless.
+            let _ = NeoToken::new().vote_internal(engine, account, None)?;
         }
-        
+
         // Add to blocked list
         let value = if engine.is_hardfork_enabled(Hardfork::HfFaun) {
             let timestamp = engine
@@ -170,7 +170,8 @@ impl PolicyContract {
         // 2. Check blocked time
         let context = engine.get_native_storage_context(&self.hash)?;
         let key = Self::blocked_account_suffix(&account);
-        let block_data = engine.get_storage_item(&context, &key)
+        let block_data = engine
+            .get_storage_item(&context, &key)
             .ok_or_else(|| Error::invalid_operation("Request not found.".to_string()))?;
 
         // Parse timestamp from block_data
@@ -207,9 +208,15 @@ impl PolicyContract {
         // 3. Confirm contract exists and is NEP-17
         let contract_state = crate::smart_contract::native::contract_management::ContractManagement::get_contract_from_snapshot(engine.snapshot_cache().as_ref(), &token)?
              .ok_or_else(|| Error::invalid_operation(format!("Contract {token} does not exist.")))?;
-        
-        if !contract_state.manifest.supported_standards.contains(&"NEP-17".to_string()) {
-             return Err(Error::invalid_operation(format!("Contract {token} does not implement NEP-17 standard.")));
+
+        if !contract_state
+            .manifest
+            .supported_standards
+            .contains(&"NEP-17".to_string())
+        {
+            return Err(Error::invalid_operation(format!(
+                "Contract {token} does not implement NEP-17 standard."
+            )));
         }
 
         let original_depth = engine.invocation_stack().len();

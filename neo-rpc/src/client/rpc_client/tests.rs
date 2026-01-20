@@ -1,4 +1,8 @@
 use super::*;
+use crate::client::models::{
+    RpcAccount, RpcContractState, RpcPlugin, RpcRawMemPool, RpcRequest, RpcTransferOut,
+    RpcValidator,
+};
 use base64::{engine::general_purpose, Engine as _};
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Response, Server as HyperServer};
@@ -6,23 +10,19 @@ use mockito::Matcher;
 use mockito::Server;
 use neo_config::ProtocolSettings;
 use neo_core::big_decimal::BigDecimal;
-use neo_core::neo_io::{MemoryReader, Serializable};
 use neo_core::extensions::SerializableExtensions;
+use neo_core::neo_io::{MemoryReader, Serializable};
 use neo_core::network::p2p::payloads::block::Block;
-use crate::client::models::{
-    RpcAccount, RpcContractState, RpcPlugin, RpcRawMemPool, RpcRequest, RpcTransferOut,
-    RpcValidator,
-};
 use neo_core::Transaction;
 use neo_json::{JArray, JObject, JToken};
 use neo_primitives::UInt256;
 use num_bigint::BigInt;
-use std::str::FromStr;
 use regex::escape;
 use std::convert::Infallible;
+use std::fs;
 use std::net::{SocketAddr, TcpListener};
 use std::path::PathBuf;
-use std::fs;
+use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::oneshot;
@@ -48,7 +48,9 @@ fn load_rpc_cases(name: &str) -> Vec<JObject> {
     path.push("RpcTestCases.json");
     let payload = fs::read_to_string(&path).expect("read RpcTestCases.json");
     let token = JToken::parse(&payload, 128).expect("parse RpcTestCases.json");
-    let cases = token.as_array().expect("RpcTestCases.json should be an array");
+    let cases = token
+        .as_array()
+        .expect("RpcTestCases.json should be an array");
     let mut matches = Vec::new();
     for entry in cases.children() {
         let token = entry.as_ref().expect("array entry");
@@ -68,7 +70,6 @@ enum ContractStateRequest {
     Hash(String),
     Id(i32),
 }
-
 
 async fn start_slow_server(
     delay: Duration,
@@ -243,8 +244,7 @@ async fn rpc_send_by_hash_or_index_parses_negative_index() {
     }
 
     let mut server = Server::new_async().await;
-    let body_re =
-        r#""method"\s*:\s*"getblockheader".*"params"\s*:\s*\[\s*-1\s*\]"#;
+    let body_re = r#""method"\s*:\s*"getblockheader".*"params"\s*:\s*\[\s*-1\s*\]"#;
     let _m = server
         .mock("POST", "/")
         .match_body(Matcher::Regex(body_re.into()))
@@ -269,8 +269,7 @@ async fn rpc_send_by_hash_or_index_trims_numeric_input() {
     }
 
     let mut server = Server::new_async().await;
-    let body_re =
-        r#""method"\s*:\s*"getblock".*"params"\s*:\s*\[\s*7\s*\]"#;
+    let body_re = r#""method"\s*:\s*"getblock".*"params"\s*:\s*\[\s*7\s*\]"#;
     let _m = server
         .mock("POST", "/")
         .match_body(Matcher::Regex(body_re.into()))
@@ -362,9 +361,8 @@ async fn send_raw_transaction_uses_base64_and_returns_hash() {
 
     let mut server = Server::new_async().await;
     let escaped = escape(&base64_tx);
-    let body_re = format!(
-        r#""method"\s*:\s*"sendrawtransaction".*"params"\s*:\s*\[\s*"{escaped}"\s*\]"#
-    );
+    let body_re =
+        format!(r#""method"\s*:\s*"sendrawtransaction".*"params"\s*:\s*\[\s*"{escaped}"\s*\]"#);
     let response_body = format!(
         r#"{{"jsonrpc":"2.0","id":1,"result":{{"hash":"{}"}}}}"#,
         expected_hash
@@ -421,9 +419,8 @@ async fn send_raw_transaction_propagates_error_response() {
 
     let mut server = Server::new_async().await;
     let escaped = escape(&base64_tx);
-    let body_re = format!(
-        r#""method"\s*:\s*"sendrawtransaction".*"params"\s*:\s*\[\s*"{escaped}"\s*\]"#
-    );
+    let body_re =
+        format!(r#""method"\s*:\s*"sendrawtransaction".*"params"\s*:\s*\[\s*"{escaped}"\s*\]"#);
     let _m = server
         .mock("POST", "/")
         .match_body(Matcher::Regex(body_re))
@@ -499,7 +496,9 @@ async fn rpc_client_with_basic_auth_sends_authorization_header() {
     let _m = server
         .mock("POST", "/")
         .match_header("authorization", expected.as_str())
-        .match_body(Matcher::Regex(r#""method"\s*:\s*"getblockcount""#.to_string()))
+        .match_body(Matcher::Regex(
+            r#""method"\s*:\s*"getblockcount""#.to_string(),
+        ))
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(r#"{"jsonrpc":"2.0","id":1,"result":7}"#)
@@ -531,20 +530,17 @@ async fn rpc_client_new_with_basic_auth_sends_authorization_header() {
     let _m = server
         .mock("POST", "/")
         .match_header("authorization", expected.as_str())
-        .match_body(Matcher::Regex(r#""method"\s*:\s*"getblockcount""#.to_string()))
+        .match_body(Matcher::Regex(
+            r#""method"\s*:\s*"getblockcount""#.to_string(),
+        ))
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(r#"{"jsonrpc":"2.0","id":1,"result":7}"#)
         .create();
 
     let url = Url::parse(&server.url()).unwrap();
-    let client = RpcClient::new(
-        url,
-        Some(user.to_string()),
-        Some(pass.to_string()),
-        None,
-    )
-    .expect("rpc client");
+    let client = RpcClient::new(url, Some(user.to_string()), Some(pass.to_string()), None)
+        .expect("rpc client");
     let count = client.get_block_count().await.expect("block count");
     assert_eq!(count, 7);
 }
@@ -558,14 +554,11 @@ async fn submit_block_uses_base64_and_returns_hash() {
     let mut block = Block::new();
     block.rebuild_merkle_root();
     let expected_hash = block.hash().to_string();
-    let base64_block = general_purpose::STANDARD
-        .encode(block.to_array().expect("serialize block"));
+    let base64_block = general_purpose::STANDARD.encode(block.to_array().expect("serialize block"));
 
     let mut server = Server::new_async().await;
     let escaped = escape(&base64_block);
-    let body_re = format!(
-        r#""method"\s*:\s*"submitblock".*"params"\s*:\s*\[\s*"{escaped}"\s*\]"#
-    );
+    let body_re = format!(r#""method"\s*:\s*"submitblock".*"params"\s*:\s*\[\s*"{escaped}"\s*\]"#);
     let response_body = format!(
         r#"{{"jsonrpc":"2.0","id":1,"result":{{"hash":"{}"}}}}"#,
         expected_hash
@@ -631,9 +624,8 @@ async fn invoke_script_uses_base64_and_parses_result() {
 
         let mut server = Server::new_async().await;
         let escaped = escape(&base64_script);
-        let body_re = format!(
-            r#""method"\s*:\s*"invokescript".*"params"\s*:\s*\[\s*"{escaped}"\s*\]"#
-        );
+        let body_re =
+            format!(r#""method"\s*:\s*"invokescript".*"params"\s*:\s*\[\s*"{escaped}"\s*\]"#);
         let response_body = JToken::Object(response.clone()).to_string();
         let _m = server
             .mock("POST", "/")
@@ -713,9 +705,7 @@ async fn get_block_hash_matches_fixture() {
         .expect("result");
 
     let mut server = Server::new_async().await;
-    let body_re = format!(
-        r#""method"\s*:\s*"getblockhash".*"params"\s*:\s*\[\s*{index}\s*\]"#
-    );
+    let body_re = format!(r#""method"\s*:\s*"getblockhash".*"params"\s*:\s*\[\s*{index}\s*\]"#);
     let response_body = JToken::Object(response.clone()).to_string();
     let _m = server
         .mock("POST", "/")
@@ -748,8 +738,7 @@ async fn get_block_header_count_matches_fixture() {
         .expect("result") as u32;
 
     let mut server = Server::new_async().await;
-    let body_re =
-        r#""method"\s*:\s*"getblockheadercount".*"params"\s*:\s*\[\s*\]"#;
+    let body_re = r#""method"\s*:\s*"getblockheadercount".*"params"\s*:\s*\[\s*\]"#;
     let response_body = JToken::Object(response.clone()).to_string();
     let _m = server
         .mock("POST", "/")
@@ -791,9 +780,7 @@ async fn get_block_sys_fee_matches_fixture() {
         .get("Response")
         .and_then(|value| value.as_object())
         .expect("case response");
-    let expected_token = response
-        .get("result")
-        .expect("result token");
+    let expected_token = response.get("result").expect("result token");
     let expected = if let Some(text) = expected_token.as_string() {
         BigInt::from_str(&text).expect("parse sysfee")
     } else if let Some(number) = expected_token.as_number() {
@@ -803,8 +790,7 @@ async fn get_block_sys_fee_matches_fixture() {
     };
 
     let mut server = Server::new_async().await;
-    let body_re =
-        format!(r#""method"\s*:\s*"getblocksysfee".*"params"\s*:\s*\[\s*{height}\s*\]"#);
+    let body_re = format!(r#""method"\s*:\s*"getblocksysfee".*"params"\s*:\s*\[\s*{height}\s*\]"#);
     let response_body = JToken::Object(response.clone()).to_string();
     let _m = server
         .mock("POST", "/")
@@ -843,17 +829,13 @@ async fn get_block_header_hex_matches_fixture() {
             let index = index as u32;
             (
                 index.to_string(),
-                format!(
-                    r#""method"\s*:\s*"getblockheader".*"params"\s*:\s*\[\s*{index}\s*\]"#
-                ),
+                format!(r#""method"\s*:\s*"getblockheader".*"params"\s*:\s*\[\s*{index}\s*\]"#),
             )
         } else if let Some(hash) = param.as_string() {
             let escaped = escape(&hash);
             (
                 hash.to_string(),
-                format!(
-                    r#""method"\s*:\s*"getblockheader".*"params"\s*:\s*\[\s*"{escaped}"\s*\]"#
-                ),
+                format!(r#""method"\s*:\s*"getblockheader".*"params"\s*:\s*\[\s*"{escaped}"\s*\]"#),
             )
         } else {
             panic!("invalid getblockheader param");
@@ -908,17 +890,13 @@ async fn get_block_hex_matches_fixture() {
             let index = index as u32;
             (
                 index.to_string(),
-                format!(
-                    r#""method"\s*:\s*"getblock".*"params"\s*:\s*\[\s*{index}\s*\]"#
-                ),
+                format!(r#""method"\s*:\s*"getblock".*"params"\s*:\s*\[\s*{index}\s*\]"#),
             )
         } else if let Some(hash) = param.as_string() {
             let escaped = escape(&hash);
             (
                 hash.to_string(),
-                format!(
-                    r#""method"\s*:\s*"getblock".*"params"\s*:\s*\[\s*"{escaped}"\s*\]"#
-                ),
+                format!(r#""method"\s*:\s*"getblock".*"params"\s*:\s*\[\s*"{escaped}"\s*\]"#),
             )
         } else {
             panic!("invalid getblock param");
@@ -1008,8 +986,7 @@ async fn get_raw_mempool_both_matches_fixture() {
     let expected = RpcRawMemPool::from_json(expected_result).expect("parse expected mempool");
 
     let mut server = Server::new_async().await;
-    let body_re =
-        r#""method"\s*:\s*"getrawmempool".*"params"\s*:\s*\[\s*true\s*\]"#;
+    let body_re = r#""method"\s*:\s*"getrawmempool".*"params"\s*:\s*\[\s*true\s*\]"#;
     let response_body = JToken::Object(response.clone()).to_string();
     let _m = server
         .mock("POST", "/")
@@ -1060,9 +1037,8 @@ async fn get_raw_transaction_hex_matches_fixture() {
 
     let mut server = Server::new_async().await;
     let escaped = escape(&hash);
-    let body_re = format!(
-        r#""method"\s*:\s*"getrawtransaction".*"params"\s*:\s*\[\s*"{escaped}"\s*\]"#
-    );
+    let body_re =
+        format!(r#""method"\s*:\s*"getrawtransaction".*"params"\s*:\s*\[\s*"{escaped}"\s*\]"#);
     let response_body = JToken::Object(response.clone()).to_string();
     let _m = server
         .mock("POST", "/")
@@ -1226,8 +1202,7 @@ async fn get_connection_count_matches_fixture() {
         .expect("result") as u32;
 
     let mut server = Server::new_async().await;
-    let body_re =
-        r#""method"\s*:\s*"getconnectioncount".*"params"\s*:\s*\[\s*\]"#;
+    let body_re = r#""method"\s*:\s*"getconnectioncount".*"params"\s*:\s*\[\s*\]"#;
     let response_body = JToken::Object(response.clone()).to_string();
     let _m = server
         .mock("POST", "/")
@@ -1306,8 +1281,7 @@ async fn get_next_block_validators_matches_fixture() {
         .collect::<Vec<_>>();
 
     let mut server = Server::new_async().await;
-    let body_re =
-        r#""method"\s*:\s*"getnextblockvalidators".*"params"\s*:\s*\[\s*\]"#;
+    let body_re = r#""method"\s*:\s*"getnextblockvalidators".*"params"\s*:\s*\[\s*\]"#;
     let response_body = JToken::Object(response.clone()).to_string();
     let _m = server
         .mock("POST", "/")
@@ -1358,9 +1332,8 @@ async fn get_transaction_height_matches_fixture() {
 
     let mut server = Server::new_async().await;
     let escaped = escape(&hash);
-    let body_re = format!(
-        r#""method"\s*:\s*"gettransactionheight".*"params"\s*:\s*\[\s*"{escaped}"\s*\]"#
-    );
+    let body_re =
+        format!(r#""method"\s*:\s*"gettransactionheight".*"params"\s*:\s*\[\s*"{escaped}"\s*\]"#);
     let response_body = JToken::Object(response.clone()).to_string();
     let _m = server
         .mock("POST", "/")
@@ -1625,9 +1598,7 @@ async fn dump_priv_key_matches_fixture() {
 
     let mut server = Server::new_async().await;
     let escaped = escape(&address);
-    let body_re = format!(
-        r#""method"\s*:\s*"dumpprivkey".*"params"\s*:\s*\[\s*"{escaped}"\s*\]"#
-    );
+    let body_re = format!(r#""method"\s*:\s*"dumpprivkey".*"params"\s*:\s*\[\s*"{escaped}"\s*\]"#);
     let response_body = JToken::Object(response.clone()).to_string();
     let _m = server
         .mock("POST", "/")
@@ -1722,9 +1693,8 @@ async fn get_wallet_balance_matches_fixture() {
 
     let mut server = Server::new_async().await;
     let escaped_asset = escape(&asset_id);
-    let wallet_body_re = format!(
-        r#""method"\s*:\s*"getwalletbalance".*"params"\s*:\s*\[\s*"{escaped_asset}"\s*\]"#
-    );
+    let wallet_body_re =
+        format!(r#""method"\s*:\s*"getwalletbalance".*"params"\s*:\s*\[\s*"{escaped_asset}"\s*\]"#);
     let response_body = JToken::Object(response.clone()).to_string();
     let _m_wallet = server
         .mock("POST", "/")
@@ -1772,8 +1742,7 @@ async fn get_wallet_unclaimed_gas_matches_fixture() {
     let expected = BigDecimal::new(expected_value, 8);
 
     let mut server = Server::new_async().await;
-    let body_re =
-        r#""method"\s*:\s*"getwalletunclaimedgas".*"params"\s*:\s*\[\s*\]"#;
+    let body_re = r#""method"\s*:\s*"getwalletunclaimedgas".*"params"\s*:\s*\[\s*\]"#;
     let response_body = JToken::Object(response.clone()).to_string();
     let _m = server
         .mock("POST", "/")
@@ -1894,10 +1863,7 @@ async fn get_best_block_hash_matches_fixture() {
 
     let url = Url::parse(&server.url()).unwrap();
     let client = RpcClient::builder(url).build().unwrap();
-    let actual = client
-        .get_best_block_hash()
-        .await
-        .expect("best block hash");
+    let actual = client.get_best_block_hash().await.expect("best block hash");
     assert_eq!(actual, expected);
 }
 
@@ -2185,9 +2151,8 @@ async fn get_contract_state_matches_fixture() {
             (body_re, ContractStateRequest::Hash(name.to_string()))
         } else if let Some(id) = contract.as_number() {
             let id = id as i32;
-            let body_re = format!(
-                r#""method"\s*:\s*"getcontractstate".*"params"\s*:\s*\[\s*{id}\s*\]"#
-            );
+            let body_re =
+                format!(r#""method"\s*:\s*"getcontractstate".*"params"\s*:\s*\[\s*{id}\s*\]"#);
             (body_re, ContractStateRequest::Id(id))
         } else {
             panic!("invalid getcontractstate param");

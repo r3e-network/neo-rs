@@ -70,9 +70,9 @@ use crate::error::{CoreError, CoreResult};
 use crate::events::{broadcast_plugin_event, PluginEvent};
 use crate::extensions::log_level::LogLevel;
 use crate::extensions::utility::ExtensionsUtility;
-use crate::hardfork::Hardfork;
 #[cfg(test)]
 use crate::extensions::LogLevel as ExternalLogLevel;
+use crate::hardfork::Hardfork;
 use crate::i_event_handlers::IServiceAddedHandler;
 use crate::ledger::blockchain::{Blockchain, BlockchainCommand};
 use crate::ledger::{HeaderCache, LedgerContext, MemoryPool};

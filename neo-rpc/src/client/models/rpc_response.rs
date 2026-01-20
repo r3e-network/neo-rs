@@ -211,7 +211,9 @@ mod tests {
         path.push("RpcTestCases.json");
         let payload = fs::read_to_string(&path).expect("read RpcTestCases.json");
         let token = JToken::parse(&payload, 128).expect("parse RpcTestCases.json");
-        let cases = token.as_array().expect("RpcTestCases.json should be an array");
+        let cases = token
+            .as_array()
+            .expect("RpcTestCases.json should be an array");
         for entry in cases.children() {
             let token = entry.as_ref().expect("array entry");
             let obj = token.as_object().expect("case object");

@@ -18,26 +18,26 @@ use super::super::models::{
 use super::super::ClientRpcError;
 use base64::{engine::general_purpose, Engine as _};
 use neo_config::ProtocolSettings;
-use neo_core::network::p2p::payloads::block::Block;
 use neo_core::big_decimal::BigDecimal;
+use neo_core::network::p2p::payloads::block::Block;
 use neo_core::{Signer, Transaction};
 use neo_io::{BinaryWriter, Serializable};
 use neo_json::{JArray, JObject, JToken};
 use neo_primitives::UInt256;
 use num_bigint::BigInt;
-use std::str::FromStr;
 use regex::Regex;
 use reqwest::{Client, Url};
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use super::super::{Nep17Api, RpcUtility};
 use super::builder::RpcClientBuilder;
 use super::helpers::{
-    parse_plugins, token_as_number, token_as_object, token_as_string, token_as_boolean,
+    parse_plugins, token_as_boolean, token_as_number, token_as_object, token_as_string,
 };
 use super::hooks::RpcRequestOutcome;
 use super::{RpcClient, RpcClientHooks, MAX_JSON_NESTING, RPC_NAME_REGEX};
-use super::super::{Nep17Api, RpcUtility};
 
 impl RpcClient {
     /// Creates a configurable builder for the RPC client.
@@ -386,9 +386,8 @@ impl RpcClient {
             .rpc_send_async("getblocksysfee", vec![JToken::Number(height as f64)])
             .await?;
         match result {
-            JToken::String(value) => BigInt::from_str(&value).map_err(|_| {
-                ClientRpcError::new(-32603, format!("Invalid sysfee value: {value}"))
-            }),
+            JToken::String(value) => BigInt::from_str(&value)
+                .map_err(|_| ClientRpcError::new(-32603, format!("Invalid sysfee value: {value}"))),
             JToken::Number(value) => Ok(BigInt::from(value as i64)),
             _ => Err(ClientRpcError::new(
                 -32603,
@@ -482,7 +481,9 @@ impl RpcClient {
     /// Returns the next block validators.
     /// Matches C# GetNextBlockValidatorsAsync
     pub async fn get_next_block_validators(&self) -> Result<Vec<RpcValidator>, ClientRpcError> {
-        let result = self.rpc_send_async("getnextblockvalidators", vec![]).await?;
+        let result = self
+            .rpc_send_async("getnextblockvalidators", vec![])
+            .await?;
         let array = result.as_array().ok_or_else(|| {
             ClientRpcError::new(-32603, "getnextblockvalidators returned non-array")
         })?;
@@ -494,8 +495,9 @@ impl RpcClient {
             let obj = token.as_object().ok_or_else(|| {
                 ClientRpcError::new(-32603, "getnextblockvalidators returned non-object")
             })?;
-            validators
-                .push(RpcValidator::from_json(obj).map_err(|err| ClientRpcError::new(-32603, err))?);
+            validators.push(
+                RpcValidator::from_json(obj).map_err(|err| ClientRpcError::new(-32603, err))?,
+            );
         }
         Ok(validators)
     }
@@ -504,11 +506,7 @@ impl RpcClient {
     /// Matches C# GetStorageAsync
     pub async fn get_storage(&self, hash: &str, key: &str) -> Result<String, ClientRpcError> {
         let result = self
-            .rpc_send_by_hash_or_index(
-                "getstorage",
-                hash,
-                vec![JToken::String(key.to_string())],
-            )
+            .rpc_send_by_hash_or_index("getstorage", hash, vec![JToken::String(key.to_string())])
             .await?;
         token_as_string(result, "getstorage")
     }
@@ -534,18 +532,18 @@ impl RpcClient {
             )
             .await?;
         let value = token_as_string(result, "gettransactionheight")?;
-        value.parse::<u32>().map_err(|_| {
-            ClientRpcError::new(-32603, format!("Invalid height value: {value}"))
-        })
+        value
+            .parse::<u32>()
+            .map_err(|_| ClientRpcError::new(-32603, format!("Invalid height value: {value}")))
     }
 
     /// Returns the list of native contracts.
     /// Matches C# GetNativeContractsAsync
     pub async fn get_native_contracts(&self) -> Result<Vec<RpcContractState>, ClientRpcError> {
         let result = self.rpc_send_async("getnativecontracts", vec![]).await?;
-        let array = result.as_array().ok_or_else(|| {
-            ClientRpcError::new(-32603, "getnativecontracts returned non-array")
-        })?;
+        let array = result
+            .as_array()
+            .ok_or_else(|| ClientRpcError::new(-32603, "getnativecontracts returned non-array"))?;
         let mut contracts = Vec::with_capacity(array.len());
         for item in array.iter() {
             let token = item.as_ref().ok_or_else(|| {
@@ -554,8 +552,9 @@ impl RpcClient {
             let obj = token.as_object().ok_or_else(|| {
                 ClientRpcError::new(-32603, "getnativecontracts returned non-object")
             })?;
-            contracts
-                .push(RpcContractState::from_json(obj).map_err(|err| ClientRpcError::new(-32603, err))?);
+            contracts.push(
+                RpcContractState::from_json(obj).map_err(|err| ClientRpcError::new(-32603, err))?,
+            );
         }
         Ok(contracts)
     }
@@ -610,7 +609,10 @@ impl RpcClient {
     /// Matches C# GetWalletBalanceAsync
     pub async fn get_wallet_balance(&self, asset_id: &str) -> Result<BigDecimal, ClientRpcError> {
         let result = self
-            .rpc_send_async("getwalletbalance", vec![JToken::String(asset_id.to_string())])
+            .rpc_send_async(
+                "getwalletbalance",
+                vec![JToken::String(asset_id.to_string())],
+            )
             .await?;
         let obj = token_as_object(result, "getwalletbalance")?;
         let balance_str = obj
@@ -632,7 +634,10 @@ impl RpcClient {
 
     /// Gets the amount of unclaimed GAS for an address.
     /// Matches C# GetUnclaimedGasAsync
-    pub async fn get_unclaimed_gas(&self, address: &str) -> Result<RpcUnclaimedGas, ClientRpcError> {
+    pub async fn get_unclaimed_gas(
+        &self,
+        address: &str,
+    ) -> Result<RpcUnclaimedGas, ClientRpcError> {
         let result = self
             .rpc_send_async("getunclaimedgas", vec![JToken::String(address.to_string())])
             .await?;
@@ -666,7 +671,8 @@ impl RpcClient {
             let obj = token
                 .as_object()
                 .ok_or_else(|| ClientRpcError::new(-32603, "listaddress returned non-object"))?;
-            accounts.push(RpcAccount::from_json(obj).map_err(|err| ClientRpcError::new(-32603, err))?);
+            accounts
+                .push(RpcAccount::from_json(obj).map_err(|err| ClientRpcError::new(-32603, err))?);
         }
         Ok(accounts)
     }
@@ -677,7 +683,10 @@ impl RpcClient {
         let result = self
             .rpc_send_async(
                 "openwallet",
-                vec![JToken::String(path.to_string()), JToken::String(password.to_string())],
+                vec![
+                    JToken::String(path.to_string()),
+                    JToken::String(password.to_string()),
+                ],
             )
             .await?;
         token_as_boolean(result, "openwallet")
@@ -743,14 +752,14 @@ impl RpcClient {
     /// Matches C# GetRawMempoolAsync
     pub async fn get_raw_mempool(&self) -> Result<Vec<String>, ClientRpcError> {
         let result = self.rpc_send_async("getrawmempool", vec![]).await?;
-        let array = result.as_array().ok_or_else(|| {
-            ClientRpcError::new(-32603, "getrawmempool returned non-array")
-        })?;
+        let array = result
+            .as_array()
+            .ok_or_else(|| ClientRpcError::new(-32603, "getrawmempool returned non-array"))?;
         let mut hashes = Vec::with_capacity(array.len());
         for item in array.iter() {
-            let token = item.as_ref().ok_or_else(|| {
-                ClientRpcError::new(-32603, "getrawmempool returned null entry")
-            })?;
+            let token = item
+                .as_ref()
+                .ok_or_else(|| ClientRpcError::new(-32603, "getrawmempool returned null entry"))?;
             let hash = token.as_string().ok_or_else(|| {
                 ClientRpcError::new(-32603, "getrawmempool returned non-string entry")
             })?;
@@ -946,20 +955,14 @@ impl RpcClient {
             JToken::String(value) => value.parse::<i64>().map_err(|_| {
                 ClientRpcError::new(-32603, format!("Invalid networkfee value: {value}"))
             }),
-            _ => Err(ClientRpcError::new(
-                -32603,
-                "Invalid networkfee token type",
-            )),
+            _ => Err(ClientRpcError::new(-32603, "Invalid networkfee token type")),
         }?;
         Ok(fee)
     }
 
     /// Broadcasts a raw transaction.
     /// Returns the transaction hash on success (C# parity).
-    pub async fn send_raw_transaction(
-        &self,
-        tx: &Transaction,
-    ) -> Result<UInt256, ClientRpcError> {
+    pub async fn send_raw_transaction(&self, tx: &Transaction) -> Result<UInt256, ClientRpcError> {
         let mut writer = BinaryWriter::new();
         tx.serialize(&mut writer)
             .map_err(|err| ClientRpcError::new(-32603, format!("serialization failed: {err}")))?;

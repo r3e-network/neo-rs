@@ -1,6 +1,6 @@
+use neo_core::hardfork::Hardfork;
 use neo_core::ledger::block_header::BlockHeader;
 use neo_core::ledger::Block;
-use neo_core::hardfork::Hardfork;
 use neo_core::network::p2p::payloads::{signer::Signer, transaction::Transaction};
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
@@ -8,8 +8,8 @@ use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::smart_contract::native::{NativeContract, StdLib};
 use neo_core::smart_contract::trigger_type::TriggerType;
-use neo_core::{IVerifiable, UInt160, WitnessScope};
 use neo_core::witness::Witness;
+use neo_core::{IVerifiable, UInt160, WitnessScope};
 use neo_vm::{OpCode, ScriptBuilder, StackItem};
 use num_traits::ToPrimitive;
 use std::collections::{BTreeMap, HashMap};
@@ -121,19 +121,9 @@ fn stdlib_binary_encoding_matches_csharp() {
     assert_eq!(decoded_base58, vec![1, 2, 3, 4]);
     let decoded_base64 = engine.result_stack().peek(1).unwrap().as_bytes().unwrap();
     assert_eq!(decoded_base64, vec![1, 2, 3]);
-    let encoded_base58 = engine
-        .result_stack()
-        .peek(2)
-        .unwrap()
-        .as_bytes()
-        .unwrap();
+    let encoded_base58 = engine.result_stack().peek(2).unwrap().as_bytes().unwrap();
     assert_eq!(String::from_utf8(encoded_base58).unwrap(), "2VfUX");
-    let encoded_base64 = engine
-        .result_stack()
-        .peek(3)
-        .unwrap()
-        .as_bytes()
-        .unwrap();
+    let encoded_base64 = engine.result_stack().peek(3).unwrap().as_bytes().unwrap();
     assert_eq!(String::from_utf8(encoded_base64).unwrap(), "AQIDBA==");
 }
 
@@ -176,25 +166,37 @@ fn stdlib_itoa_atoi_parity() {
         &mut sb,
         stdlib.hash(),
         "atoi",
-        vec![StackItem::from_byte_string(b"-1".to_vec()), StackItem::from_int(10)],
+        vec![
+            StackItem::from_byte_string(b"-1".to_vec()),
+            StackItem::from_int(10),
+        ],
     );
     emit_stdlib_call(
         &mut sb,
         stdlib.hash(),
         "atoi",
-        vec![StackItem::from_byte_string(b"+1".to_vec()), StackItem::from_int(10)],
+        vec![
+            StackItem::from_byte_string(b"+1".to_vec()),
+            StackItem::from_int(10),
+        ],
     );
     emit_stdlib_call(
         &mut sb,
         stdlib.hash(),
         "atoi",
-        vec![StackItem::from_byte_string(b"ff".to_vec()), StackItem::from_int(16)],
+        vec![
+            StackItem::from_byte_string(b"ff".to_vec()),
+            StackItem::from_int(16),
+        ],
     );
     emit_stdlib_call(
         &mut sb,
         stdlib.hash(),
         "atoi",
-        vec![StackItem::from_byte_string(b"FF".to_vec()), StackItem::from_int(16)],
+        vec![
+            StackItem::from_byte_string(b"FF".to_vec()),
+            StackItem::from_int(16),
+        ],
     );
     sb.emit_opcode(OpCode::RET);
 
@@ -241,51 +243,22 @@ fn stdlib_itoa_atoi_parity() {
         .to_i32()
         .unwrap();
     assert_eq!(atoi_minus, -1);
-    let itoa_big = engine
-        .result_stack()
-        .peek(4)
-        .unwrap()
-        .as_bytes()
-        .unwrap();
+    let itoa_big = engine.result_stack().peek(4).unwrap().as_bytes().unwrap();
     assert_eq!(String::from_utf8(itoa_big).unwrap(), "3b9aca00");
-    let itoa_hex_neg = engine
-        .result_stack()
-        .peek(5)
-        .unwrap()
-        .as_bytes()
-        .unwrap();
+    let itoa_hex_neg = engine.result_stack().peek(5).unwrap().as_bytes().unwrap();
     assert_eq!(String::from_utf8(itoa_hex_neg).unwrap(), "f");
-    let itoa_neg = engine
-        .result_stack()
-        .peek(6)
-        .unwrap()
-        .as_bytes()
-        .unwrap();
+    let itoa_neg = engine.result_stack().peek(6).unwrap().as_bytes().unwrap();
     assert_eq!(String::from_utf8(itoa_neg).unwrap(), "-1");
-    let itoa_hex = engine
-        .result_stack()
-        .peek(7)
-        .unwrap()
-        .as_bytes()
-        .unwrap();
+    let itoa_hex = engine.result_stack().peek(7).unwrap().as_bytes().unwrap();
     assert_eq!(String::from_utf8(itoa_hex).unwrap(), "1");
-    let itoa_dec = engine
-        .result_stack()
-        .peek(8)
-        .unwrap()
-        .as_bytes()
-        .unwrap();
+    let itoa_dec = engine.result_stack().peek(8).unwrap().as_bytes().unwrap();
     assert_eq!(String::from_utf8(itoa_dec).unwrap(), "1");
 }
 
 #[test]
 fn stdlib_atoi_invalid_inputs_fault() {
     let stdlib = StdLib::new();
-    let cases = [
-        ("a", 10),
-        ("g", 16),
-        ("a", 11),
-    ];
+    let cases = [("a", 10), ("g", 16), ("a", 11)];
 
     for (value, base) in cases {
         let mut sb = ScriptBuilder::new();
@@ -422,12 +395,7 @@ fn stdlib_base58_check_encode_decode() {
     assert_eq!(engine.result_stack().len(), 2);
     let decoded = engine.result_stack().peek(0).unwrap().as_bytes().unwrap();
     assert_eq!(decoded, vec![1, 2, 3]);
-    let encoded = engine
-        .result_stack()
-        .peek(1)
-        .unwrap()
-        .as_bytes()
-        .unwrap();
+    let encoded = engine.result_stack().peek(1).unwrap().as_bytes().unwrap();
     assert_eq!(String::from_utf8(encoded).unwrap(), "3DUz7ncyT");
 }
 
@@ -873,7 +841,9 @@ fn stdlib_strlen_handles_invalid_utf8_sequence() {
         &mut sb,
         stdlib.hash(),
         "strLen",
-        vec![StackItem::from_byte_string(format!("{bad_str}ab").into_bytes())],
+        vec![StackItem::from_byte_string(
+            format!("{bad_str}ab").into_bytes(),
+        )],
     );
     sb.emit_opcode(OpCode::RET);
 
@@ -1012,40 +982,15 @@ fn stdlib_json_serialize_parity() {
     engine.execute().expect("execute");
 
     assert_eq!(engine.result_stack().len(), 5);
-    let map_json = engine
-        .result_stack()
-        .peek(0)
-        .unwrap()
-        .as_bytes()
-        .unwrap();
+    let map_json = engine.result_stack().peek(0).unwrap().as_bytes().unwrap();
     assert_eq!(String::from_utf8(map_json).unwrap(), "{\"key\":\"value\"}");
-    let null_json = engine
-        .result_stack()
-        .peek(1)
-        .unwrap()
-        .as_bytes()
-        .unwrap();
+    let null_json = engine.result_stack().peek(1).unwrap().as_bytes().unwrap();
     assert_eq!(String::from_utf8(null_json).unwrap(), "null");
-    let string_json = engine
-        .result_stack()
-        .peek(2)
-        .unwrap()
-        .as_bytes()
-        .unwrap();
+    let string_json = engine.result_stack().peek(2).unwrap().as_bytes().unwrap();
     assert_eq!(String::from_utf8(string_json).unwrap(), "\"test\"");
-    let bool_json = engine
-        .result_stack()
-        .peek(3)
-        .unwrap()
-        .as_bytes()
-        .unwrap();
+    let bool_json = engine.result_stack().peek(3).unwrap().as_bytes().unwrap();
     assert_eq!(String::from_utf8(bool_json).unwrap(), "true");
-    let int_json = engine
-        .result_stack()
-        .peek(4)
-        .unwrap()
-        .as_bytes()
-        .unwrap();
+    let int_json = engine.result_stack().peek(4).unwrap().as_bytes().unwrap();
     assert_eq!(String::from_utf8(int_json).unwrap(), "5");
 }
 
@@ -1111,26 +1056,11 @@ fn stdlib_runtime_serialize_deserialize_parity() {
         .to_i32()
         .unwrap();
     assert_eq!(deserialized_int, 100);
-    let deserialized_string = engine
-        .result_stack()
-        .peek(1)
-        .unwrap()
-        .as_bytes()
-        .unwrap();
+    let deserialized_string = engine.result_stack().peek(1).unwrap().as_bytes().unwrap();
     assert_eq!(String::from_utf8(deserialized_string).unwrap(), "test");
-    let serialized_string = engine
-        .result_stack()
-        .peek(2)
-        .unwrap()
-        .as_bytes()
-        .unwrap();
+    let serialized_string = engine.result_stack().peek(2).unwrap().as_bytes().unwrap();
     assert_eq!(hex::encode(serialized_string), "280474657374");
-    let serialized_int = engine
-        .result_stack()
-        .peek(3)
-        .unwrap()
-        .as_bytes()
-        .unwrap();
+    let serialized_int = engine.result_stack().peek(3).unwrap().as_bytes().unwrap();
     assert_eq!(hex::encode(serialized_int), "210164");
 }
 
@@ -1151,8 +1081,7 @@ fn stdlib_base64_url_parity() {
         stdlib.hash(),
         "base64UrlDecode",
         vec![StackItem::from_byte_string(
-            b"U3ViamVjdD10ZXN0QGV4YW1wbGUuY29tJklzc3Vlcj1odHRwczovL2V4YW1wbGUuY29t"
-                .to_vec(),
+            b"U3ViamVjdD10ZXN0QGV4YW1wbGUuY29tJklzc3Vlcj1odHRwczovL2V4YW1wbGUuY29t".to_vec(),
         )],
     );
     emit_stdlib_call(
@@ -1173,32 +1102,17 @@ fn stdlib_base64_url_parity() {
     engine.execute().expect("execute");
 
     assert_eq!(engine.result_stack().len(), 3);
-    let decoded_ws = engine
-        .result_stack()
-        .peek(0)
-        .unwrap()
-        .as_bytes()
-        .unwrap();
+    let decoded_ws = engine.result_stack().peek(0).unwrap().as_bytes().unwrap();
     assert_eq!(
         String::from_utf8(decoded_ws).unwrap(),
         "Subject=test@example.com&Issuer=https://example.com"
     );
-    let decoded = engine
-        .result_stack()
-        .peek(1)
-        .unwrap()
-        .as_bytes()
-        .unwrap();
+    let decoded = engine.result_stack().peek(1).unwrap().as_bytes().unwrap();
     assert_eq!(
         String::from_utf8(decoded).unwrap(),
         "Subject=test@example.com&Issuer=https://example.com"
     );
-    let encoded = engine
-        .result_stack()
-        .peek(2)
-        .unwrap()
-        .as_bytes()
-        .unwrap();
+    let encoded = engine.result_stack().peek(2).unwrap().as_bytes().unwrap();
     assert_eq!(
         String::from_utf8(encoded).unwrap(),
         "U3ViamVjdD10ZXN0QGV4YW1wbGUuY29tJklzc3Vlcj1odHRwczovL2V4YW1wbGUuY29t"
@@ -1236,12 +1150,7 @@ fn stdlib_hex_encode_decode_parity() {
     assert_eq!(engine.result_stack().len(), 2);
     let decoded = engine.result_stack().peek(0).unwrap().as_bytes().unwrap();
     assert_eq!(decoded, vec![0x00, 0x01, 0x02, 0x03]);
-    let encoded = engine
-        .result_stack()
-        .peek(1)
-        .unwrap()
-        .as_bytes()
-        .unwrap();
+    let encoded = engine.result_stack().peek(1).unwrap().as_bytes().unwrap();
     assert_eq!(String::from_utf8(encoded).unwrap(), "00010203");
 }
 

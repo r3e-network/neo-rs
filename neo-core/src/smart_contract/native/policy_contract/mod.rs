@@ -145,7 +145,7 @@ impl PolicyContract {
 
     /// Required waiting time before recoverFund can execute (milliseconds).
     const REQUIRED_TIME_FOR_RECOVER_FUND_MS: u64 = 365 * 24 * 60 * 60 * 1_000;
-    
+
     // Whitelist fee contracts prefix
     const PREFIX_WHITELISTED_FEE_CONTRACTS: u8 = 16;
 
@@ -325,7 +325,6 @@ impl PolicyContract {
             )
             .with_required_call_flags(CallFlags::READ_STATES)
             .with_parameter_names(vec!["account".to_string()]),
-            
             // BlockAccount overloads (hardfork switch at Faun)
             NativeMethod::unsafe_method(
                 "blockAccount".to_string(),
@@ -336,7 +335,6 @@ impl PolicyContract {
             )
             .with_deprecated_in(Hardfork::HfFaun)
             .with_parameter_names(vec!["account".to_string()]),
-
             NativeMethod::unsafe_method(
                 "blockAccount".to_string(),
                 Self::CPU_FEE,
@@ -346,7 +344,6 @@ impl PolicyContract {
             )
             .with_active_in(Hardfork::HfFaun)
             .with_parameter_names(vec!["account".to_string()]),
-
             NativeMethod::unsafe_method(
                 "unblockAccount".to_string(),
                 Self::CPU_FEE,
@@ -355,7 +352,6 @@ impl PolicyContract {
                 ContractParameterType::Boolean,
             )
             .with_parameter_names(vec!["account".to_string()]),
-
             NativeMethod::safe(
                 "getBlockedAccounts".to_string(),
                 Self::CPU_FEE,
@@ -364,7 +360,6 @@ impl PolicyContract {
             )
             .with_active_in(Hardfork::HfFaun)
             .with_required_call_flags(CallFlags::READ_STATES),
-            
             // Whitelist management (HF_Faun)
             NativeMethod::unsafe_method(
                 "setWhitelistFeeContract".to_string(),
@@ -410,7 +405,6 @@ impl PolicyContract {
             )
             .with_active_in(Hardfork::HfFaun)
             .with_required_call_flags(CallFlags::READ_STATES),
-
             // Recover fund (HF_Faun)
             NativeMethod::unsafe_method(
                 "recoverFund".to_string(),

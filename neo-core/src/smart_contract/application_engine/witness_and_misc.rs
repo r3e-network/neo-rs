@@ -271,8 +271,6 @@ impl ApplicationEngine {
         Ok(iterator_id)
     }
 
-
-
     /// Gets a storage iterator by ID.
     pub fn get_storage_iterator(&self, iterator_id: u32) -> Option<&StorageIterator> {
         self.storage_iterators.get(&iterator_id)
@@ -498,10 +496,9 @@ impl ApplicationEngine {
                 .or(state.calling_script_hash)
                 .or_else(|| {
                     state.calling_context.as_ref().and_then(|ctx| {
-                        let ctx_state =
-                            ctx.get_state_with_factory::<ExecutionContextState, _>(
-                                ExecutionContextState::new,
-                            );
+                        let ctx_state = ctx.get_state_with_factory::<ExecutionContextState, _>(
+                            ExecutionContextState::new,
+                        );
                         let ctx_state = ctx_state.lock();
                         ctx_state
                             .script_hash
@@ -595,9 +592,7 @@ impl ApplicationEngine {
                     .protocol_settings
                     .is_hardfork_enabled(Hardfork::HfFaun, block_height - 1)
             {
-                self.exec_fee_factor = self
-                    .exec_fee_factor
-                    .saturating_mul(FEE_FACTOR as u32);
+                self.exec_fee_factor = self.exec_fee_factor.saturating_mul(FEE_FACTOR as u32);
             }
 
             if let Ok(raw) = policy.invoke(self, "getStoragePrice", &[]) {

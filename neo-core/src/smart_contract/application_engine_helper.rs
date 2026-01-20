@@ -396,9 +396,7 @@ fn clone_stack_item_as_immutable(
             seen.insert(key, cloned_item.clone());
             for element in array.items() {
                 let cloned = clone_stack_item_as_immutable(&element, seen)?;
-                cloned_array
-                    .push(cloned)
-                    .map_err(|err| err.to_string())?;
+                cloned_array.push(cloned).map_err(|err| err.to_string())?;
             }
             Ok(cloned_item)
         }
@@ -412,9 +410,7 @@ fn clone_stack_item_as_immutable(
             seen.insert(key, cloned_item.clone());
             for element in struct_item.items() {
                 let cloned = clone_stack_item_as_immutable(&element, seen)?;
-                cloned_struct
-                    .push(cloned)
-                    .map_err(|err| err.to_string())?;
+                cloned_struct.push(cloned).map_err(|err| err.to_string())?;
             }
             Ok(cloned_item)
         }

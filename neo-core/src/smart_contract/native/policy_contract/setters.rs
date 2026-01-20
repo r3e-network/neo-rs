@@ -47,7 +47,7 @@ impl PolicyContract {
         }
 
         let value = Self::parse_u32_argument(&args[0], "value")?;
-        
+
         let max_value = if engine.is_hardfork_enabled(Hardfork::HfFaun) {
             Self::MAX_EXEC_FEE_FACTOR * crate::smart_contract::application_engine::FEE_FACTOR as u32
         } else {
@@ -289,15 +289,17 @@ impl PolicyContract {
         }
 
         let contract_hash = UInt160::from_bytes(&args[0])
-             .map_err(|e| Error::invalid_argument(format!("Invalid contract hash: {e}")))?;
+            .map_err(|e| Error::invalid_argument(format!("Invalid contract hash: {e}")))?;
         let method = std::str::from_utf8(&args[1])
             .map_err(|_| Error::native_contract("Invalid method name string"))?;
-        
+
         let arg_count = Self::parse_u32_argument(&args[2], "argCount")?;
         let fixed_fee = Self::parse_i64_argument(&args[3], "fixedFee")?;
 
         if fixed_fee < 0 {
-             return Err(Error::native_contract(format!("FixedFee must be non-negative, got {fixed_fee}")));
+            return Err(Error::native_contract(format!(
+                "FixedFee must be non-negative, got {fixed_fee}"
+            )));
         }
 
         Self::assert_committee(engine)?;
@@ -305,9 +307,17 @@ impl PolicyContract {
         let contract = crate::smart_contract::native::contract_management::ContractManagement::get_contract_from_snapshot(engine.snapshot_cache().as_ref(), &contract_hash)?
             .ok_or_else(|| Error::invalid_operation("Is not a valid contract"))?;
 
-        let method_descriptor = contract.manifest.abi.methods.iter()
+        let method_descriptor = contract
+            .manifest
+            .abi
+            .methods
+            .iter()
             .find(|m| m.name == method && m.parameters.len() == arg_count as usize)
-            .ok_or_else(|| Error::invalid_operation(format!("Method {method} with {arg_count} args was not found in {contract_hash}")))?;
+            .ok_or_else(|| {
+                Error::invalid_operation(format!(
+                    "Method {method} with {arg_count} args was not found in {contract_hash}"
+                ))
+            })?;
 
         let key = Self::whitelist_fee_contract_key(&contract_hash, method_descriptor.offset);
 
@@ -325,24 +335,22 @@ impl PolicyContract {
         .map_err(|e| Error::native_contract(format!("Failed to serialize whitelist info: {e}")))?;
 
         let context = engine.get_native_storage_context(&self.hash)?;
-        engine.put_storage_item(
-             &context,
-             key.suffix(),
-             &bytes,
-        )?;
-        
+        engine.put_storage_item(&context, key.suffix(), &bytes)?;
+
         // Emit event
         // WhitelistChangedEventName = "WhitelistFeeChanged"
-        engine.send_notification(
-             self.hash,
-             "WhitelistFeeChanged".to_string(),
-             vec![
-                StackItem::ByteString(contract_hash.to_bytes().to_vec()),
-                StackItem::ByteString(method.as_bytes().to_vec()),
-                StackItem::Integer(BigInt::from(arg_count)),
-                StackItem::Integer(BigInt::from(fixed_fee)),
-             ]
-        ).map_err(Error::native_contract)?;
+        engine
+            .send_notification(
+                self.hash,
+                "WhitelistFeeChanged".to_string(),
+                vec![
+                    StackItem::ByteString(contract_hash.to_bytes().to_vec()),
+                    StackItem::ByteString(method.as_bytes().to_vec()),
+                    StackItem::Integer(BigInt::from(arg_count)),
+                    StackItem::Integer(BigInt::from(fixed_fee)),
+                ],
+            )
+            .map_err(Error::native_contract)?;
 
         Ok(Vec::new())
     }
@@ -353,13 +361,13 @@ impl PolicyContract {
         args: &[Vec<u8>],
     ) -> Result<Vec<u8>> {
         if args.len() != 3 {
-             return Err(Error::native_contract(
+            return Err(Error::native_contract(
                 "removeWhitelistFeeContract requires 3 arguments".to_string(),
-             ));
+            ));
         }
-        
+
         let contract_hash = UInt160::from_bytes(&args[0])
-             .map_err(|e| Error::invalid_argument(format!("Invalid contract hash: {e}")))?;
+            .map_err(|e| Error::invalid_argument(format!("Invalid contract hash: {e}")))?;
         let method = std::str::from_utf8(&args[1])
             .map_err(|_| Error::native_contract("Invalid method name string"))?;
         let arg_count = Self::parse_u32_argument(&args[2], "argCount")?;
@@ -369,32 +377,42 @@ impl PolicyContract {
         let contract = crate::smart_contract::native::contract_management::ContractManagement::get_contract_from_snapshot(engine.snapshot_cache().as_ref(), &contract_hash)?
             .ok_or_else(|| Error::invalid_operation("Is not a valid contract"))?;
 
-        let method_descriptor = contract.manifest.abi.methods.iter()
+        let method_descriptor = contract
+            .manifest
+            .abi
+            .methods
+            .iter()
             .find(|m| m.name == method && m.parameters.len() == arg_count as usize)
-            .ok_or_else(|| Error::invalid_operation(format!("Method {method} with {arg_count} args was not found in {contract_hash}")))?;
-        
+            .ok_or_else(|| {
+                Error::invalid_operation(format!(
+                    "Method {method} with {arg_count} args was not found in {contract_hash}"
+                ))
+            })?;
+
         let key = Self::whitelist_fee_contract_key(&contract_hash, method_descriptor.offset);
 
         let context = engine.get_native_storage_context(&self.hash)?;
-        
+
         // Check existence?
         if engine.get_storage_item(&context, key.suffix()).is_none() {
-             return Err(Error::invalid_operation("Whitelist not found"));
+            return Err(Error::invalid_operation("Whitelist not found"));
         }
-        
+
         engine.delete_storage_item(&context, key.suffix())?;
 
-        engine.send_notification(
-             self.hash,
-             "WhitelistFeeChanged".to_string(),
-             vec![
-                StackItem::ByteString(contract_hash.to_bytes().to_vec()),
-                StackItem::ByteString(method.as_bytes().to_vec()),
-                StackItem::Integer(BigInt::from(arg_count)),
-                StackItem::Null,
-             ]
-        ).map_err(Error::native_contract)?;
-        
+        engine
+            .send_notification(
+                self.hash,
+                "WhitelistFeeChanged".to_string(),
+                vec![
+                    StackItem::ByteString(contract_hash.to_bytes().to_vec()),
+                    StackItem::ByteString(method.as_bytes().to_vec()),
+                    StackItem::Integer(BigInt::from(arg_count)),
+                    StackItem::Null,
+                ],
+            )
+            .map_err(Error::native_contract)?;
+
         Ok(Vec::new())
     }
 
@@ -407,7 +425,10 @@ impl PolicyContract {
         let prefix = StorageKey::new(self.id, Self::whitelist_fee_contract_prefix(&contract.hash));
         let mut count = 0usize;
 
-        for (key, item) in snapshot.find(Some(&prefix), crate::persistence::seek_direction::SeekDirection::Forward) {
+        for (key, item) in snapshot.find(
+            Some(&prefix),
+            crate::persistence::seek_direction::SeekDirection::Forward,
+        ) {
             snapshot.delete(&key);
             count += 1;
 
@@ -416,29 +437,31 @@ impl PolicyContract {
                 continue;
             }
 
-            let stack_item = crate::smart_contract::binary_serializer::BinarySerializer::deserialize(
-                &bytes,
-                &neo_vm::execution_engine_limits::ExecutionEngineLimits::default(),
-                None,
-            )
-            .map_err(|e| {
-                Error::native_contract(format!("Failed to deserialize whitelist info: {e}"))
-            })?;
+            let stack_item =
+                crate::smart_contract::binary_serializer::BinarySerializer::deserialize(
+                    &bytes,
+                    &neo_vm::execution_engine_limits::ExecutionEngineLimits::default(),
+                    None,
+                )
+                .map_err(|e| {
+                    Error::native_contract(format!("Failed to deserialize whitelist info: {e}"))
+                })?;
 
             let mut whitelist = WhitelistedContract::default();
             whitelist.from_stack_item(stack_item);
 
-            engine.send_notification(
-                self.hash,
-                "WhitelistFeeChanged".to_string(),
-                vec![
-                    StackItem::ByteString(contract.hash.to_bytes().to_vec()),
-                    StackItem::ByteString(whitelist.method.as_bytes().to_vec()),
-                    StackItem::Integer(BigInt::from(whitelist.arg_count)),
-                    StackItem::Null,
-                ],
-            )
-            .map_err(Error::native_contract)?;
+            engine
+                .send_notification(
+                    self.hash,
+                    "WhitelistFeeChanged".to_string(),
+                    vec![
+                        StackItem::ByteString(contract.hash.to_bytes().to_vec()),
+                        StackItem::ByteString(whitelist.method.as_bytes().to_vec()),
+                        StackItem::Integer(BigInt::from(whitelist.arg_count)),
+                        StackItem::Null,
+                    ],
+                )
+                .map_err(Error::native_contract)?;
         }
 
         Ok(count)

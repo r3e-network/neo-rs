@@ -87,7 +87,10 @@ impl PolicyContract {
         Self::blocked_account_key(account).suffix().to_vec()
     }
 
-    pub(super) fn whitelist_fee_contract_key(contract_hash: &UInt160, method_offset: i32) -> StorageKey {
+    pub(super) fn whitelist_fee_contract_key(
+        contract_hash: &UInt160,
+        method_offset: i32,
+    ) -> StorageKey {
         let mut key = Vec::with_capacity(1 + contract_hash.as_bytes().len() + 4);
         key.push(Self::PREFIX_WHITELISTED_FEE_CONTRACTS);
         key.extend_from_slice(&contract_hash.as_bytes());
@@ -139,7 +142,8 @@ impl PolicyContract {
 
         if !engine.check_witness_hash(&script_hash)? {
             return Err(Error::invalid_operation(
-                "Invalid committee signature. It should be a multisig(max(1,len(committee) - 2)).".to_string(),
+                "Invalid committee signature. It should be a multisig(max(1,len(committee) - 2))."
+                    .to_string(),
             ));
         }
 

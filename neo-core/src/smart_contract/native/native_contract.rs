@@ -8,8 +8,8 @@ use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::manifest::{
     ContractAbi, ContractEventDescriptor, ContractMethodDescriptor, ContractParameterDefinition,
 };
-use crate::smart_contract::{ContractManifest, ContractParameterType, ContractState, NefFile};
 use crate::smart_contract::native::IHardforkActivable;
+use crate::smart_contract::{ContractManifest, ContractParameterType, ContractState, NefFile};
 use crate::UInt160;
 use neo_vm::{OpCode, ScriptBuilder};
 use serde::{Deserialize, Serialize};
@@ -261,9 +261,11 @@ impl NativeMethod {
 
     /// Returns true if this method is active at the given height.
     pub fn is_active(&self, settings: &ProtocolSettings, block_height: u32) -> bool {
-        is_active_for(self, |hardfork, height| {
-            settings.is_hardfork_enabled(hardfork, height)
-        }, block_height)
+        is_active_for(
+            self,
+            |hardfork, height| settings.is_hardfork_enabled(hardfork, height),
+            block_height,
+        )
     }
 
     /// Creates a new safe (read-only) method.
@@ -316,8 +318,7 @@ pub fn is_active_for<T: IHardforkActivable>(
     (item.active_in().is_none() && item.deprecated_in().is_none())
         || (item.deprecated_in().is_some()
             && !hf_checker(item.deprecated_in().unwrap(), block_height))
-        || (item.active_in().is_some()
-            && hf_checker(item.active_in().unwrap(), block_height))
+        || (item.active_in().is_some() && hf_checker(item.active_in().unwrap(), block_height))
 }
 
 /// Base implementation for native contracts.

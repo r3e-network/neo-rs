@@ -1,23 +1,23 @@
+use hex::{decode as hex_decode, encode as hex_encode};
 use neo_core::cryptography::bloom_filter::BloomFilter;
 use neo_core::cryptography::{ECCurve, ECPoint, NeoHash};
+use neo_core::ledger::create_genesis_block;
 use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable, SerializableExt};
 use neo_core::network::p2p::capabilities::{NodeCapability, NodeCapabilityType};
-use neo_core::network::p2p::payloads::{
-    AddrPayload, Block, Conflicts, ExtensiblePayload, FilterAddPayload, FilterLoadPayload,
-    GetBlockByIndexPayload, GetBlocksPayload, Header, HeadersPayload, InvPayload, InventoryType,
-    MerkleBlockPayload, NetworkAddressWithTime, NotValidBefore, NotaryAssisted, Signer, Transaction,
-    TransactionAttribute, TransactionAttributeType, VersionPayload, Witness, WitnessCondition,
-    WitnessScope,
-};
-use neo_core::ledger::create_genesis_block;
 use neo_core::network::p2p::payloads::headers_payload::MAX_HEADERS_COUNT;
 use neo_core::network::p2p::payloads::inv_payload::MAX_HASHES_COUNT;
 use neo_core::network::p2p::payloads::transaction::MAX_TRANSACTION_ATTRIBUTES;
+use neo_core::network::p2p::payloads::{
+    AddrPayload, Block, Conflicts, ExtensiblePayload, FilterAddPayload, FilterLoadPayload,
+    GetBlockByIndexPayload, GetBlocksPayload, Header, HeadersPayload, InvPayload, InventoryType,
+    MerkleBlockPayload, NetworkAddressWithTime, NotValidBefore, NotaryAssisted, Signer,
+    Transaction, TransactionAttribute, TransactionAttributeType, VersionPayload, Witness,
+    WitnessCondition, WitnessScope,
+};
 use neo_core::persistence::{DataCache, StorageItem, StorageKey};
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::native::{LedgerContract, NativeContract, PolicyContract};
 use neo_core::{IVerifiable, UInt160, UInt256};
-use hex::{decode as hex_decode, encode as hex_encode};
 use neo_vm::{OpCode, VMState};
 use serde_json::json;
 use std::net::{IpAddr, Ipv4Addr};
@@ -199,21 +199,15 @@ fn seed_ledger_current_index(snapshot: &DataCache, index: u32) {
 fn transaction_record_conflict_stub(block_index: u32) -> Vec<u8> {
     let mut writer = BinaryWriter::new();
     writer.write_u8(0x02).expect("write record kind");
-    writer
-        .write_u32(block_index)
-        .expect("write block index");
+    writer.write_u32(block_index).expect("write block index");
     writer.into_bytes()
 }
 
 fn transaction_record_full(block_index: u32, tx: &Transaction, vm_state: VMState) -> Vec<u8> {
     let mut writer = BinaryWriter::new();
     writer.write_u8(0x01).expect("write record kind");
-    writer
-        .write_u32(block_index)
-        .expect("write block index");
-    writer
-        .write_u8(vm_state as u8)
-        .expect("write vm state");
+    writer.write_u32(block_index).expect("write block index");
+    writer.write_u8(vm_state as u8).expect("write vm state");
 
     let mut tx_writer = BinaryWriter::new();
     tx.serialize(&mut tx_writer).expect("serialize tx");
@@ -363,14 +357,8 @@ fn csharp_ut_inv_payload_size_group_and_invalid_type() {
     assert_eq!(groups.len(), 2);
     assert_eq!(groups[0].inventory_type, InventoryType::Transaction);
     assert_eq!(groups[1].inventory_type, InventoryType::Transaction);
-    assert_eq!(
-        groups[0].hashes,
-        hashes[..MAX_HASHES_COUNT].to_vec()
-    );
-    assert_eq!(
-        groups[1].hashes,
-        hashes[MAX_HASHES_COUNT..].to_vec()
-    );
+    assert_eq!(groups[0].hashes, hashes[..MAX_HASHES_COUNT].to_vec());
+    assert_eq!(groups[1].hashes, hashes[MAX_HASHES_COUNT..].to_vec());
 
     let mut bytes = payload.to_array().expect("serialize");
     bytes[0] = 0xff;
@@ -593,10 +581,7 @@ fn csharp_ut_transaction_to_json_includes_sender_and_witnesses() {
     tx.set_witnesses(vec![witness.clone()]);
 
     let json = tx.to_json(&settings);
-    let expected_sender = neo_core::wallets::Helper::to_address(
-        &account,
-        settings.address_version,
-    );
+    let expected_sender = neo_core::wallets::Helper::to_address(&account, settings.address_version);
 
     assert_eq!(json["sender"], expected_sender);
     assert_eq!(json["validuntilblock"], 42);
@@ -665,12 +650,10 @@ fn csharp_ut_signer_serialize_custom_contracts() {
 
 #[test]
 fn csharp_ut_signer_serialize_custom_groups() {
-    let group_bytes = hex_decode(
-        "03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c",
-    )
-    .expect("hex");
-    let group =
-        ECPoint::from_bytes_with_curve(ECCurve::secp256r1(), &group_bytes).expect("group");
+    let group_bytes =
+        hex_decode("03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c")
+            .expect("hex");
+    let group = ECPoint::from_bytes_with_curve(ECCurve::secp256r1(), &group_bytes).expect("group");
 
     let mut signer = Signer::new(UInt160::zero(), WitnessScope::CUSTOM_GROUPS);
     signer.allowed_groups = vec![group];
@@ -712,12 +695,10 @@ fn csharp_ut_signer_json_cases() {
         "{\"account\":\"0x0000000000000000000000000000000000000000\",\"scopes\":\"CustomContracts\",\"allowedcontracts\":[\"0x0000000000000000000000000000000000000000\"]}"
     );
 
-    let group_bytes = hex_decode(
-        "03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c",
-    )
-    .expect("hex");
-    let group =
-        ECPoint::from_bytes_with_curve(ECCurve::secp256r1(), &group_bytes).expect("group");
+    let group_bytes =
+        hex_decode("03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c")
+            .expect("hex");
+    let group = ECPoint::from_bytes_with_curve(ECCurve::secp256r1(), &group_bytes).expect("group");
     let mut signer = Signer::new(UInt160::zero(), WitnessScope::CUSTOM_GROUPS);
     signer.allowed_groups = vec![group];
     assert_eq!(
@@ -751,12 +732,10 @@ fn csharp_ut_signer_json_roundtrip() {
 
 #[test]
 fn csharp_ut_signer_equatable_semantics() {
-    let group_bytes = hex_decode(
-        "03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c",
-    )
-    .expect("hex");
-    let group =
-        ECPoint::from_bytes_with_curve(ECCurve::secp256r1(), &group_bytes).expect("group");
+    let group_bytes =
+        hex_decode("03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c")
+            .expect("hex");
+    let group = ECPoint::from_bytes_with_curve(ECCurve::secp256r1(), &group_bytes).expect("group");
 
     let rule = neo_core::WitnessRule::new(
         neo_core::WitnessRuleAction::Allow,
@@ -797,8 +776,7 @@ fn csharp_ut_signer_max_nested_and_rejected_on_deserialize() {
     let bytes = signer.to_array().expect("serialize");
     assert_eq!(
         bytes,
-        hex_decode("00000000000000000000000000000000000000004001010201020102010001")
-            .expect("hex")
+        hex_decode("00000000000000000000000000000000000000004001010201020102010001").expect("hex")
     );
 
     let mut reader = MemoryReader::new(&bytes);
@@ -821,8 +799,7 @@ fn csharp_ut_signer_max_nested_or_rejected_on_deserialize() {
     let bytes = signer.to_array().expect("serialize");
     assert_eq!(
         bytes,
-        hex_decode("00000000000000000000000000000000000000004001010301030103010001")
-            .expect("hex")
+        hex_decode("00000000000000000000000000000000000000004001010301030103010001").expect("hex")
     );
 
     let mut reader = MemoryReader::new(&bytes);
@@ -878,8 +855,7 @@ fn csharp_ut_witness_max_size_errors() {
 
 #[test]
 fn csharp_ut_extensible_payload_size_and_roundtrip() {
-    let sender =
-        UInt160::from_bytes(&NeoHash::hash160(&[])).expect("empty script hash");
+    let sender = UInt160::from_bytes(&NeoHash::hash160(&[])).expect("empty script hash");
     let mut payload = ExtensiblePayload::new();
     payload.category = "123".to_string();
     payload.valid_block_start = 0;
@@ -964,7 +940,10 @@ fn csharp_ut_not_valid_before_attribute_parity() {
 
     let attr = TransactionAttribute::NotValidBefore(NotValidBefore::new(42));
     assert_eq!(attr.size(), 5);
-    assert_eq!(attr.to_json(), json!({ "type": "NotValidBefore", "height": 42 }));
+    assert_eq!(
+        attr.to_json(),
+        json!({ "type": "NotValidBefore", "height": 42 })
+    );
 
     let bytes = attr.to_array().expect("serialize");
     let mut reader = MemoryReader::new(&bytes);
@@ -1034,13 +1013,10 @@ fn csharp_ut_notary_assisted_attribute_parity() {
     let settings = ProtocolSettings::default_settings();
     let snapshot = DataCache::new(false);
 
-    let notary_hash = neo_core::smart_contract::Helper::get_contract_hash(
-        &UInt160::zero(),
-        0,
-        "Notary",
-    );
-    let expected = UInt160::parse("0xc1e14f19c3e60d0b9244d06dd7ba9b113135ec3b")
-        .expect("notary hash");
+    let notary_hash =
+        neo_core::smart_contract::Helper::get_contract_hash(&UInt160::zero(), 0, "Notary");
+    let expected =
+        UInt160::parse("0xc1e14f19c3e60d0b9244d06dd7ba9b113135ec3b").expect("notary hash");
     assert_eq!(notary_hash, expected);
 
     let attr = TransactionAttribute::NotaryAssisted(NotaryAssisted::new(4));
@@ -1073,8 +1049,7 @@ fn csharp_ut_notary_assisted_attribute_parity() {
     let tx_bad2 = {
         let mut tx = Transaction::new();
         tx.set_signers(vec![Signer::new(
-            UInt160::parse("0xa400ff00ff00ff00ff00ff00ff00ff00ff00ff01")
-                .expect("signer"),
+            UInt160::parse("0xa400ff00ff00ff00ff00ff00ff00ff00ff00ff01").expect("signer"),
             WitnessScope::GLOBAL,
         )]);
         tx

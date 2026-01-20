@@ -76,10 +76,12 @@ fn nep6_wallet_imports_and_signs() -> WalletResult<()> {
     let sign_data =
         neo_core::network::p2p::helper::get_sign_data_vec(&transaction, settings.network)
             .expect("sign data");
-    assert!(
-        Secp256r1Crypto::verify(&sign_data, &signature_bytes, &original_key.compressed_public_key())
-            .expect("verify witness signature")
-    );
+    assert!(Secp256r1Crypto::verify(
+        &sign_data,
+        &signature_bytes,
+        &original_key.compressed_public_key()
+    )
+    .expect("verify witness signature"));
 
     fs::remove_file(wallet_path).ok();
     Ok(())

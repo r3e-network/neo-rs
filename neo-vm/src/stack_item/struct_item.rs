@@ -31,7 +31,10 @@ struct StructInner {
 
 impl Struct {
     /// Creates a new struct with the specified items and reference counter.
-    pub fn new(items: Vec<StackItem>, reference_counter: Option<ReferenceCounter>) -> VmResult<Self> {
+    pub fn new(
+        items: Vec<StackItem>,
+        reference_counter: Option<ReferenceCounter>,
+    ) -> VmResult<Self> {
         let structure = Self {
             inner: Arc::new(Mutex::new(StructInner {
                 items,
@@ -200,7 +203,10 @@ impl Struct {
     /// Creates a deep copy of the struct.
     pub fn deep_copy(&self, reference_counter: Option<ReferenceCounter>) -> VmResult<Self> {
         let copy = Self::new(
-            self.items().into_iter().map(|item| item.deep_clone()).collect(),
+            self.items()
+                .into_iter()
+                .map(|item| item.deep_clone())
+                .collect(),
             reference_counter,
         )?;
         copy.set_read_only(true);
@@ -241,7 +247,9 @@ impl Struct {
             }
 
             let cloned_item = match item {
-                StackItem::Struct(inner) => StackItem::Struct(inner.clone_with_remaining(remaining, visited)?),
+                StackItem::Struct(inner) => {
+                    StackItem::Struct(inner.clone_with_remaining(remaining, visited)?)
+                }
                 _ => item.clone(),
             };
 

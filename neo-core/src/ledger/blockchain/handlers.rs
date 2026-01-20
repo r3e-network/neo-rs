@@ -40,12 +40,15 @@ impl Blockchain {
             let snapshot = store_cache.data_cache();
             let settings = context.settings();
             let header_backlog_present = context.header_cache().count() > 0;
-            context.memory_pool().lock().update_pool_for_block_persisted(
-                &block,
-                snapshot,
-                settings.as_ref(),
-                header_backlog_present,
-            );
+            context
+                .memory_pool()
+                .lock()
+                .update_pool_for_block_persisted(
+                    &block,
+                    snapshot,
+                    settings.as_ref(),
+                    header_backlog_present,
+                );
         }
 
         if let Some(context) = &self.system_context {
@@ -219,10 +222,8 @@ impl Blockchain {
                     }
 
                     let decoded = match inventory_type {
-                        InventoryType::Block => {
-                            Self::deserialize_inventory::<Block>(&payload)
-                                .map(|block| InventoryPayload::Block(Box::new(block)))
-                        }
+                        InventoryType::Block => Self::deserialize_inventory::<Block>(&payload)
+                            .map(|block| InventoryPayload::Block(Box::new(block))),
                         InventoryType::Transaction => {
                             Self::deserialize_inventory::<Transaction>(&payload)
                                 .map(|tx| InventoryPayload::Transaction(Box::new(tx)))

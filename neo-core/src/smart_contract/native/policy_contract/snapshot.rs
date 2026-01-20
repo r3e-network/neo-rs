@@ -134,7 +134,7 @@ impl PolicyContract {
             .try_get(&Self::blocked_account_key(account))
             .is_some())
     }
-    
+
     /// Gets the fixed fee for a whitelisted contract method, if it exists.
     pub fn get_whitelisted_fee(
         &self,
@@ -146,13 +146,16 @@ impl PolicyContract {
         use crate::smart_contract::binary_serializer::BinarySerializer;
         use crate::smart_contract::native::ContractManagement;
         use neo_vm::execution_engine_limits::ExecutionEngineLimits;
-        
+
         // Retrieve the contract state
         let contract = ContractManagement::get_contract_from_snapshot(snapshot, contract_hash)?;
-        
+
         if let Some(contract) = contract {
             // Find method descriptor
-            let method_descriptor = contract.manifest.abi.get_method_ref(method, arg_count as usize);
+            let method_descriptor = contract
+                .manifest
+                .abi
+                .get_method_ref(method, arg_count as usize);
 
             if let Some(descriptor) = method_descriptor {
                 let key = Self::whitelist_fee_contract_key(contract_hash, descriptor.offset);
@@ -170,9 +173,7 @@ impl PolicyContract {
                         None,
                     )
                     .map_err(|e| {
-                        Error::native_contract(format!(
-                            "Failed to deserialize whitelist info: {e}"
-                        ))
+                        Error::native_contract(format!("Failed to deserialize whitelist info: {e}"))
                     })?;
 
                     let mut whitelist = WhitelistedContract::default();

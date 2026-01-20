@@ -81,7 +81,10 @@ impl RpcApplicationLog {
             .iter()
             .map(|exec| JToken::Object(exec.to_json()))
             .collect::<Vec<_>>();
-        json.insert("executions".to_string(), JToken::Array(JArray::from(executions)));
+        json.insert(
+            "executions".to_string(),
+            JToken::Array(JArray::from(executions)),
+        );
         json
     }
 }
@@ -376,7 +379,9 @@ mod tests {
         path.push("RpcTestCases.json");
         let payload = fs::read_to_string(&path).expect("read RpcTestCases.json");
         let token = JToken::parse(&payload, 128).expect("parse RpcTestCases.json");
-        let cases = token.as_array().expect("RpcTestCases.json should be an array");
+        let cases = token
+            .as_array()
+            .expect("RpcTestCases.json should be an array");
         for entry in cases.children() {
             let token = entry.as_ref().expect("array entry");
             let obj = token.as_object().expect("case object");
@@ -402,9 +407,8 @@ mod tests {
     #[test]
     fn application_log_to_json_matches_rpc_test_case() {
         let expected = load_rpc_case_result("getapplicationlogasync");
-        let parsed =
-            RpcApplicationLog::from_json(&expected, &ProtocolSettings::default_settings())
-                .expect("parse");
+        let parsed = RpcApplicationLog::from_json(&expected, &ProtocolSettings::default_settings())
+            .expect("parse");
         let actual = parsed.to_json();
         assert_eq!(expected.to_string(), actual.to_string());
     }
@@ -412,9 +416,8 @@ mod tests {
     #[test]
     fn application_log_trigger_filter_to_json_matches_rpc_test_case() {
         let expected = load_rpc_case_result("getapplicationlogasync_triggertype");
-        let parsed =
-            RpcApplicationLog::from_json(&expected, &ProtocolSettings::default_settings())
-                .expect("parse");
+        let parsed = RpcApplicationLog::from_json(&expected, &ProtocolSettings::default_settings())
+            .expect("parse");
         let actual = parsed.to_json();
         assert_eq!(expected.to_string(), actual.to_string());
     }

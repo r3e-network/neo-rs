@@ -37,7 +37,10 @@ pub enum UnhandledExceptionPolicy {
 pub struct RpcServerConfig {
     #[serde(default = "RpcServerConfig::default_network", alias = "Network")]
     pub network: u32,
-    #[serde(default = "RpcServerConfig::default_bind_address", alias = "BindAddress")]
+    #[serde(
+        default = "RpcServerConfig::default_bind_address",
+        alias = "BindAddress"
+    )]
     pub bind_address: IpAddr,
     #[serde(default = "RpcServerConfig::default_port", alias = "Port")]
     pub port: u16,
@@ -73,10 +76,7 @@ pub struct RpcServerConfig {
     pub rpc_user: String,
     #[serde(default, alias = "RpcPass")]
     pub rpc_pass: String,
-    #[serde(
-        default = "RpcServerConfig::default_enable_cors",
-        alias = "EnableCors"
-    )]
+    #[serde(default = "RpcServerConfig::default_enable_cors", alias = "EnableCors")]
     pub enable_cors: bool,
     #[serde(default, alias = "AllowOrigins")]
     pub allow_origins: Vec<String>,
@@ -242,8 +242,8 @@ fn parse_gas_number(number: &serde_json::Number) -> Result<i64, String> {
         return Ok(apply_gas_threshold(int_value)?);
     }
     if let Some(uint_value) = number.as_u64() {
-        let int_value = i64::try_from(uint_value)
-            .map_err(|_| "gas value exceeds i64".to_string())?;
+        let int_value =
+            i64::try_from(uint_value).map_err(|_| "gas value exceeds i64".to_string())?;
         return Ok(apply_gas_threshold(int_value)?);
     }
     let float_value = number
@@ -431,8 +431,7 @@ mod tests {
     #[test]
     fn rpc_server_config_loads_csharp_settings() {
         let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let config_path =
-            manifest_dir.join("../neo_csharp/node/plugins/RpcServer/RpcServer.json");
+        let config_path = manifest_dir.join("../neo_csharp/node/plugins/RpcServer/RpcServer.json");
         let raw = fs::read_to_string(&config_path).expect("read rpc server config");
         let json: Value = serde_json::from_str(&raw).expect("parse rpc server config");
         let servers = json["PluginConfiguration"]["Servers"]

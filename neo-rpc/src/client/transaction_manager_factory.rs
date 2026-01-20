@@ -86,13 +86,11 @@ impl TransactionManagerFactory {
         tx.set_script(script.to_vec());
         tx.set_signers(signers.to_vec());
         tx.set_valid_until_block(
-            current_height
-                .saturating_sub(1)
-                .saturating_add(
-                    self.rpc_client
-                        .protocol_settings
-                        .max_valid_until_block_increment,
-                ),
+            current_height.saturating_sub(1).saturating_add(
+                self.rpc_client
+                    .protocol_settings
+                    .max_valid_until_block_increment,
+            ),
         );
         tx.set_system_fee(system_fee);
         tx.set_attributes(attributes.to_vec());

@@ -62,7 +62,12 @@ fn contract_create_standard_account_matches_redeem_script_hash() {
 fn contract_create_multisig_account_matches_redeem_script_hash() {
     let snapshot = Arc::new(DataCache::new(false));
     let settings = ProtocolSettings::default();
-    let public_keys = settings.standby_committee.iter().take(3).cloned().collect::<Vec<_>>();
+    let public_keys = settings
+        .standby_committee
+        .iter()
+        .take(3)
+        .cloned()
+        .collect::<Vec<_>>();
     let expected = Contract::create_multi_sig_contract(2, &public_keys).script_hash();
     let pubkey_bytes = public_keys
         .iter()

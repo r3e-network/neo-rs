@@ -12,37 +12,35 @@ use neo_core::neo_io::{BinaryWriter, Serializable};
 use neo_core::network::p2p::payloads::{signer::Signer, witness::Witness, InventoryType};
 use neo_core::persistence::{DataCache, StorageItem, StorageKey};
 use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::smart_contract::call_flags::CallFlags;
-use neo_core::smart_contract::application_engine::TEST_MODE_GAS;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
+use neo_core::smart_contract::application_engine::TEST_MODE_GAS;
+use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::smart_contract::contract::Contract;
+use neo_core::smart_contract::contract_state::{ContractState, NefFile};
 use neo_core::smart_contract::helper::Helper as ContractHelper;
 use neo_core::smart_contract::manifest::{
     ContractAbi, ContractManifest, ContractMethodDescriptor, ContractParameterDefinition,
 };
-use neo_core::smart_contract::contract_state::{ContractState, NefFile};
 use neo_core::smart_contract::native::fungible_token::PREFIX_ACCOUNT;
 use neo_core::smart_contract::native::{GasToken, NativeContract, PolicyContract};
+use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::smart_contract::ContractBasicMethod;
 use neo_core::smart_contract::ContractParameterType;
 use neo_core::smart_contract::ContractParametersContext;
-use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::wallets::key_pair::KeyPair;
 use neo_core::wallets::{Nep6Wallet, TransferOutput, Wallet};
 use neo_core::{
-    ledger::VerifyResult,
-    network::p2p::helper::get_sign_data_vec,
-    ledger::TransactionVerificationContext,
-    Transaction, TransactionAttribute, TransactionAttributeType, UInt160, WitnessScope, HEADER_SIZE,
-    MAX_TRANSACTION_SIZE,
+    ledger::TransactionVerificationContext, ledger::VerifyResult,
+    network::p2p::helper::get_sign_data_vec, Transaction, TransactionAttribute,
+    TransactionAttributeType, UInt160, WitnessScope, HEADER_SIZE, MAX_TRANSACTION_SIZE,
 };
 use neo_vm::op_code::OpCode;
 use neo_vm::ScriptBuilder;
 use num_bigint::BigInt;
-use std::sync::Arc;
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
+use std::sync::Arc;
 
 // ============================================================================
 // Mock Transaction Verification Context (matches C# TransactionVerificationContext)
@@ -695,10 +693,7 @@ mod tests {
     fn test_network_fee_multi_sig_contract_parity() {
         let key1 = KeyPair::from_private_key(&[2u8; 32]).expect("key1");
         let key2 = KeyPair::from_private_key(&[3u8; 32]).expect("key2");
-        let public_keys = vec![
-            key1.compressed_public_key(),
-            key2.compressed_public_key(),
-        ];
+        let public_keys = vec![key1.compressed_public_key(), key2.compressed_public_key()];
 
         let m = 2usize;
         let verification_script = build_multi_sig_script(m, &public_keys);
@@ -812,10 +807,7 @@ mod tests {
         let snapshot = DataCache::new(false);
         let key1 = KeyPair::from_private_key(&[9u8; 32]).expect("key1");
         let key2 = KeyPair::from_private_key(&[10u8; 32]).expect("key2");
-        let public_keys = vec![
-            key1.compressed_public_key(),
-            key2.compressed_public_key(),
-        ];
+        let public_keys = vec![key1.compressed_public_key(), key2.compressed_public_key()];
 
         let m = 2usize;
         let verification_script = build_multi_sig_script(m, &public_keys);
@@ -861,8 +853,10 @@ mod tests {
             .map(|(_, key)| key.sign(&sign_data).expect("sign"))
             .collect();
 
-        let witness =
-            Witness::new_with_scripts(make_multi_sig_invocation_with(&signatures), verification_script);
+        let witness = Witness::new_with_scripts(
+            make_multi_sig_invocation_with(&signatures),
+            verification_script,
+        );
         tx.set_witnesses(vec![witness.clone()]);
 
         let verification_fee =
@@ -914,8 +908,11 @@ mod tests {
         assert!(tx.witnesses().is_empty());
         assert_eq!(1_228_520, tx.network_fee());
 
-        let mut context =
-            ContractParametersContext::new(Arc::new(snapshot.clone()), tx.clone(), settings.network);
+        let mut context = ContractParametersContext::new(
+            Arc::new(snapshot.clone()),
+            tx.clone(),
+            settings.network,
+        );
         assert_eq!(context.script_hashes(), &[account_hash]);
 
         let sign_data = get_sign_data_vec(&tx, settings.network).expect("sign data");
@@ -977,23 +974,27 @@ mod tests {
         let contract_hash = contract.script_hash();
 
         let settings_arc = Arc::new(settings.clone());
-        let wallet_a =
-            Nep6Wallet::new(Some("multisig-wallet-a".to_string()), None, Arc::clone(&settings_arc));
-        let wallet_b =
-            Nep6Wallet::new(Some("multisig-wallet-b".to_string()), None, Arc::clone(&settings_arc));
+        let wallet_a = Nep6Wallet::new(
+            Some("multisig-wallet-a".to_string()),
+            None,
+            Arc::clone(&settings_arc),
+        );
+        let wallet_b = Nep6Wallet::new(
+            Some("multisig-wallet-b".to_string()),
+            None,
+            Arc::clone(&settings_arc),
+        );
         let rt = Runtime::new().expect("runtime");
-        rt.block_on(wallet_a.create_account_with_contract(
-            contract.clone(),
-            Some(key_a.clone()),
-        ))
-        .expect("account a");
-        rt.block_on(wallet_b.create_account_with_contract(
-            contract.clone(),
-            Some(key_b.clone()),
-        ))
-        .expect("account b");
+        rt.block_on(wallet_a.create_account_with_contract(contract.clone(), Some(key_a.clone())))
+            .expect("account a");
+        rt.block_on(wallet_b.create_account_with_contract(contract.clone(), Some(key_b.clone())))
+            .expect("account b");
 
-        seed_gas_balance(&snapshot, &contract_hash, BigInt::from(1_000_000_000_000i64));
+        seed_gas_balance(
+            &snapshot,
+            &contract_hash,
+            BigInt::from(1_000_000_000_000i64),
+        );
 
         let output = TransferOutput {
             asset_id: GasToken::new().hash(),
@@ -1017,8 +1018,11 @@ mod tests {
         assert!(tx.witnesses().is_empty());
         assert_eq!(2_315_100, tx.network_fee());
 
-        let mut context =
-            ContractParametersContext::new(Arc::new(snapshot.clone()), tx.clone(), settings.network);
+        let mut context = ContractParametersContext::new(
+            Arc::new(snapshot.clone()),
+            tx.clone(),
+            settings.network,
+        );
         assert_eq!(context.script_hashes(), &[contract_hash]);
 
         let sign_data = get_sign_data_vec(&tx, settings.network).expect("sign data");
@@ -1070,14 +1074,18 @@ mod tests {
         let verification_script = key.get_verification_script();
 
         let global_signer = Signer::new(script_hash, WitnessScope::GLOBAL);
-        let fee_global = signature_fee_for_signer(global_signer.clone(), verification_script.clone());
+        let fee_global =
+            signature_fee_for_signer(global_signer.clone(), verification_script.clone());
 
         let mut custom_signer = Signer::new(script_hash, WitnessScope::CUSTOM_CONTRACTS);
         custom_signer.allowed_contracts = vec![UInt160::zero()];
-        let fee_custom = signature_fee_for_signer(custom_signer.clone(), verification_script.clone());
+        let fee_custom =
+            signature_fee_for_signer(custom_signer.clone(), verification_script.clone());
 
-        let mut combined_signer =
-            Signer::new(script_hash, WitnessScope::CUSTOM_CONTRACTS | WitnessScope::CALLED_BY_ENTRY);
+        let mut combined_signer = Signer::new(
+            script_hash,
+            WitnessScope::CUSTOM_CONTRACTS | WitnessScope::CALLED_BY_ENTRY,
+        );
         combined_signer.allowed_contracts = vec![UInt160::zero()];
         let fee_combined = signature_fee_for_signer(combined_signer, verification_script);
 
@@ -1135,14 +1143,9 @@ mod tests {
         tx.set_attributes(Vec::new());
         tx.set_witnesses(vec![Witness::new_with_scripts(Vec::new(), Vec::new())]);
 
-        let fee = WalletHelper::calculate_network_fee(
-            &tx,
-            &snapshot,
-            &settings,
-            None,
-            TEST_MODE_GAS,
-        )
-        .expect("network fee");
+        let fee =
+            WalletHelper::calculate_network_fee(&tx, &snapshot, &settings, None, TEST_MODE_GAS)
+                .expect("network fee");
 
         let expected_size =
             expected_base_size(&tx) + get_var_size_bytes(&[]) + get_var_size_bytes(&[]);
@@ -1246,7 +1249,10 @@ mod tests {
             make_multi_sig_invocation_with(&signatures),
             verification_script.clone(),
         )]);
-        assert_eq!(tx.verify_state_independent(&settings), VerifyResult::Succeed);
+        assert_eq!(
+            tx.verify_state_independent(&settings),
+            VerifyResult::Succeed
+        );
 
         signatures[1] = key_wrong.sign(&sign_data).expect("sign wrong");
         tx.set_witnesses(vec![Witness::new_with_scripts(
@@ -1391,7 +1397,10 @@ mod tests {
             verification_script,
         )]);
 
-        assert_eq!(tx.verify_state_independent(&settings), VerifyResult::Succeed);
+        assert_eq!(
+            tx.verify_state_independent(&settings),
+            VerifyResult::Succeed
+        );
         assert_eq!(
             tx.verify_state_dependent(&settings, &snapshot, Some(&context), &[]),
             VerifyResult::Succeed
@@ -1445,7 +1454,10 @@ mod tests {
             ..ProtocolSettings::default()
         };
 
-        assert_eq!(tx.verify_state_independent(&settings), VerifyResult::Succeed);
+        assert_eq!(
+            tx.verify_state_independent(&settings),
+            VerifyResult::Succeed
+        );
     }
 
     /// Test VerifyStateDependent returns InsufficientFunds when balance is too low.
@@ -1453,8 +1465,7 @@ mod tests {
     fn test_verify_state_dependent_insufficient_funds() {
         let settings = ProtocolSettings::default();
         let snapshot = DataCache::new(false);
-        let context =
-            TransactionVerificationContext::with_balance_provider(|_, _| BigInt::from(0));
+        let context = TransactionVerificationContext::with_balance_provider(|_, _| BigInt::from(0));
 
         let key = KeyPair::from_private_key(&[7u8; 32]).expect("key");
         let verification_script = key.get_verification_script();

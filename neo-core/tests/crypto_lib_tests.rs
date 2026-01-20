@@ -22,14 +22,13 @@ use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::UInt160;
 use neo_vm::{ExecutionEngineLimits, OpCode, ScriptBuilder};
 use num_bigint::BigInt;
+use p256::ecdsa::SigningKey as P256SigningKey;
 use p256::ecdsa::{signature::hazmat::PrehashSigner, Signature as P256Signature};
-use p256::ecdsa::{SigningKey as P256SigningKey};
 use secp256k1::{Message, Secp256k1, SecretKey};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-const BLS_G1_HEX: &str =
-    "97f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac58\
+const BLS_G1_HEX: &str = "97f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac58\
 6c55e83ff97a1aeffb3af00adb22c6bb";
 const BLS_G2_HEX: &str = concat!(
     "93e02b6052719f607dacd3a088274f65596bd0d09920b61ab5da61bbdc7f5049",
@@ -631,10 +630,8 @@ fn crypto_lib_verify_with_ecdsa_named_curve_hash_sha256() {
     let crypto = CryptoLib::new();
     let message = b"HelloWorld";
 
-    let priv_r1 = hex::decode(
-        "6e63fda41e9e3aba9bb5696d58a75731f044a9bdc48fe546da571543b2fa460e",
-    )
-    .expect("priv r1");
+    let priv_r1 = hex::decode("6e63fda41e9e3aba9bb5696d58a75731f044a9bdc48fe546da571543b2fa460e")
+        .expect("priv r1");
     let priv_r1: [u8; 32] = priv_r1.as_slice().try_into().expect("priv r1 len");
     let pub_r1 = Secp256r1Crypto::derive_public_key(&priv_r1)
         .expect("r1 pubkey")
@@ -656,10 +653,8 @@ fn crypto_lib_verify_with_ecdsa_named_curve_hash_sha256() {
         .expect("verify r1");
     assert_eq!(result, vec![1]);
 
-    let priv_k1 = hex::decode(
-        "0b5fb3a050385196b327be7d86cbce6e40a04c8832445af83ad19c82103b3ed9",
-    )
-    .expect("priv k1");
+    let priv_k1 = hex::decode("0b5fb3a050385196b327be7d86cbce6e40a04c8832445af83ad19c82103b3ed9")
+        .expect("priv k1");
     let priv_k1: [u8; 32] = priv_k1.as_slice().try_into().expect("priv k1 len");
     let pub_k1 = Secp256k1Crypto::derive_public_key(&priv_k1)
         .expect("k1 pubkey")
@@ -703,10 +698,8 @@ fn crypto_lib_verify_with_ecdsa_named_curve_hash_keccak() {
     let crypto = CryptoLib::new();
     let message = b"HelloWorld";
 
-    let priv_r1 = hex::decode(
-        "6e63fda41e9e3aba9bb5696d58a75731f044a9bdc48fe546da571543b2fa460e",
-    )
-    .expect("priv r1");
+    let priv_r1 = hex::decode("6e63fda41e9e3aba9bb5696d58a75731f044a9bdc48fe546da571543b2fa460e")
+        .expect("priv r1");
     let priv_r1: [u8; 32] = priv_r1.as_slice().try_into().expect("priv r1 len");
     let pub_r1 = Secp256r1Crypto::derive_public_key(&priv_r1)
         .expect("r1 pubkey")
@@ -730,10 +723,8 @@ fn crypto_lib_verify_with_ecdsa_named_curve_hash_keccak() {
         .expect("verify r1 keccak");
     assert_eq!(result, vec![1]);
 
-    let priv_k1 = hex::decode(
-        "0b5fb3a050385196b327be7d86cbce6e40a04c8832445af83ad19c82103b3ed9",
-    )
-    .expect("priv k1");
+    let priv_k1 = hex::decode("0b5fb3a050385196b327be7d86cbce6e40a04c8832445af83ad19c82103b3ed9")
+        .expect("priv k1");
     let priv_k1: [u8; 32] = priv_k1.as_slice().try_into().expect("priv k1 len");
     let pub_k1 = Secp256k1Crypto::derive_public_key(&priv_k1)
         .expect("k1 pubkey")
@@ -761,10 +752,8 @@ fn crypto_lib_verify_with_ecdsa_named_curve_hash_keccak() {
 #[test]
 fn crypto_lib_verify_with_ecdsa_custom_tx_witness_single_sig() {
     let settings = protocol_settings_all_active();
-    let priv_key = hex::decode(
-        "7177f0d04c79fa0b8c91fe90c1cf1d44772d1fba6e5eb9b281a22cd3aafb51fe",
-    )
-    .expect("priv key");
+    let priv_key = hex::decode("7177f0d04c79fa0b8c91fe90c1cf1d44772d1fba6e5eb9b281a22cd3aafb51fe")
+        .expect("priv key");
     let priv_key: [u8; 32] = priv_key.as_slice().try_into().expect("priv key len");
     let pub_key = Secp256k1Crypto::derive_public_key(&priv_key).expect("pub key");
 
@@ -816,12 +805,14 @@ fn crypto_lib_verify_with_ecdsa_custom_tx_witness_single_sig() {
         verification_script,
     )]);
 
-    assert_eq!(tx.verify_state_independent(&settings), VerifyResult::Succeed);
+    assert_eq!(
+        tx.verify_state_independent(&settings),
+        VerifyResult::Succeed
+    );
 
     let snapshot = DataCache::new(false);
-    let context = TransactionVerificationContext::with_balance_provider(|_, _| {
-        BigInt::from(5_0000_0000i64)
-    });
+    let context =
+        TransactionVerificationContext::with_balance_provider(|_, _| BigInt::from(5_0000_0000i64));
     let result = tx.verify_state_dependent(&settings, &snapshot, Some(&context), &[]);
     assert_eq!(result, VerifyResult::Succeed);
 }
@@ -830,22 +821,14 @@ fn crypto_lib_verify_with_ecdsa_custom_tx_witness_single_sig() {
 fn crypto_lib_verify_with_ecdsa_custom_tx_witness_multi_sig() {
     let settings = protocol_settings_all_active();
 
-    let priv1 = hex::decode(
-        "b2dde592bfce654ef03f1ceea452d2b0112e90f9f52099bcd86697a2bd0a2b60",
-    )
-    .expect("priv1");
-    let priv2 = hex::decode(
-        "b9879e26941872ee6c9e6f01045681496d8170ed2cc4a54ce617b39ae1891b3a",
-    )
-    .expect("priv2");
-    let priv3 = hex::decode(
-        "4e1fe2561a6da01ee030589d504d62b23c26bfd56c5e07dfc9b8b74e4602832a",
-    )
-    .expect("priv3");
-    let priv4 = hex::decode(
-        "6dfd066bb989d3786043aa5c1f0476215d6f5c44f5fc3392dd15e2599b67a728",
-    )
-    .expect("priv4");
+    let priv1 = hex::decode("b2dde592bfce654ef03f1ceea452d2b0112e90f9f52099bcd86697a2bd0a2b60")
+        .expect("priv1");
+    let priv2 = hex::decode("b9879e26941872ee6c9e6f01045681496d8170ed2cc4a54ce617b39ae1891b3a")
+        .expect("priv2");
+    let priv3 = hex::decode("4e1fe2561a6da01ee030589d504d62b23c26bfd56c5e07dfc9b8b74e4602832a")
+        .expect("priv3");
+    let priv4 = hex::decode("6dfd066bb989d3786043aa5c1f0476215d6f5c44f5fc3392dd15e2599b67a728")
+        .expect("priv4");
 
     let priv1: [u8; 32] = priv1.as_slice().try_into().expect("priv1 len");
     let priv2: [u8; 32] = priv2.as_slice().try_into().expect("priv2 len");
@@ -998,12 +981,14 @@ fn crypto_lib_verify_with_ecdsa_custom_tx_witness_multi_sig() {
         verification_script,
     )]);
 
-    assert_eq!(tx.verify_state_independent(&settings), VerifyResult::Succeed);
+    assert_eq!(
+        tx.verify_state_independent(&settings),
+        VerifyResult::Succeed
+    );
 
     let snapshot = DataCache::new(false);
-    let context = TransactionVerificationContext::with_balance_provider(|_, _| {
-        BigInt::from(5_0000_0000i64)
-    });
+    let context =
+        TransactionVerificationContext::with_balance_provider(|_, _| BigInt::from(5_0000_0000i64));
     let result = tx.verify_state_dependent(&settings, &snapshot, Some(&context), &[]);
     assert_eq!(result, VerifyResult::Succeed);
 }
@@ -1092,7 +1077,9 @@ fn crypto_lib_recover_secp256k1_roundtrip() {
     let secp = Secp256k1::new();
     let secret = SecretKey::from_slice(&[7u8; 32]).expect("secret");
     let msg = Message::from_digest_slice(&message_hash).expect("message");
-    let (recid, sig_bytes) = secp.sign_ecdsa_recoverable(&msg, &secret).serialize_compact();
+    let (recid, sig_bytes) = secp
+        .sign_ecdsa_recoverable(&msg, &secret)
+        .serialize_compact();
 
     let mut signature = sig_bytes.to_vec();
     signature.push((recid.to_i32() as u8) + 27);
@@ -1253,11 +1240,7 @@ fn crypto_lib_bls12381_mul_invalid_scalar_length() {
     let gt = decode_hex(BLS_GT_HEX);
     let scalar = vec![0x01, 0x02, 0x03];
 
-    let result = engine.call_native_contract(
-        crypto.hash(),
-        "bls12381Mul",
-        &[gt, scalar, vec![0]],
-    );
+    let result = engine.call_native_contract(crypto.hash(), "bls12381Mul", &[gt, scalar, vec![0]]);
 
     assert!(result.is_err());
 }
@@ -1306,18 +1289,10 @@ fn crypto_lib_bls12381_mul_vectors() {
     let expected = format!("{:0>1152}", "1");
     assert_eq!(hex_encode(result), expected);
 
-    let result = run(
-        BLS_G1_SCALAR_MUL_POINT,
-        BLS_G1_SCALAR_MUL_SCALAR,
-        false,
-    );
+    let result = run(BLS_G1_SCALAR_MUL_POINT, BLS_G1_SCALAR_MUL_SCALAR, false);
     assert_eq!(hex_encode(result), BLS_G1_SCALAR_MUL_EXPECTED);
 
-    let result = run(
-        BLS_G1_SCALAR_MUL_POINT,
-        BLS_G1_SCALAR_MUL_SCALAR,
-        true,
-    );
+    let result = run(BLS_G1_SCALAR_MUL_POINT, BLS_G1_SCALAR_MUL_SCALAR, true);
     assert_eq!(hex_encode(result), BLS_G1_SCALAR_MUL_EXPECTED_NEG);
 
     let result = run(
@@ -1327,18 +1302,10 @@ fn crypto_lib_bls12381_mul_vectors() {
     );
     assert_eq!(hex_encode(result), BLS_G1_SCALAR_MUL_EXPECTED_ZERO);
 
-    let result = run(
-        BLS_G2_SCALAR_MUL_POINT,
-        BLS_G2_SCALAR_MUL_SCALAR,
-        false,
-    );
+    let result = run(BLS_G2_SCALAR_MUL_POINT, BLS_G2_SCALAR_MUL_SCALAR, false);
     assert_eq!(hex_encode(result), BLS_G2_SCALAR_MUL_EXPECTED);
 
-    let result = run(
-        BLS_G2_SCALAR_MUL_POINT,
-        BLS_G2_SCALAR_MUL_SCALAR,
-        true,
-    );
+    let result = run(BLS_G2_SCALAR_MUL_POINT, BLS_G2_SCALAR_MUL_SCALAR, true);
     assert_eq!(hex_encode(result), BLS_G2_SCALAR_MUL_EXPECTED_NEG);
 
     let result = run(

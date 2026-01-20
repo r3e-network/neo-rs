@@ -35,7 +35,9 @@ fn signer_builder_allows_group() {
     )
     .expect("ecpoint");
 
-    let signer = SignerBuilder::create_empty().allow_group(group.clone()).build();
+    let signer = SignerBuilder::create_empty()
+        .allow_group(group.clone())
+        .build();
 
     assert_eq!(signer.allowed_groups, vec![group]);
 }

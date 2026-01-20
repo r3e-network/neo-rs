@@ -272,7 +272,9 @@ impl TransactionAttributesBuilder {
             );
         }
         self.attributes
-            .push(TransactionAttribute::NotValidBefore(NotValidBefore::new(height)));
+            .push(TransactionAttribute::NotValidBefore(NotValidBefore::new(
+                height,
+            )));
         self
     }
 

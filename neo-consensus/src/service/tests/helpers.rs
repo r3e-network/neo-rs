@@ -1,5 +1,5 @@
-use crate::{ConsensusEvent, ConsensusService};
 use crate::messages::ConsensusPayload;
+use crate::{ConsensusEvent, ConsensusService};
 use crate::{ConsensusMessageType, ConsensusResult, ValidatorInfo};
 use neo_crypto::{Crypto, ECCurve, ECPoint, Secp256r1Crypto};
 use neo_primitives::{UInt160, UInt256};

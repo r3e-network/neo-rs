@@ -186,9 +186,8 @@ impl RpcConvertible for ContractNameOrHashOrId {
                 }
                 Ok(ContractNameOrHashOrId::from_id(rounded as i32))
             }
-            JToken::String(text) => ContractNameOrHashOrId::try_parse(text).ok_or_else(|| {
-                invalid_params(format!("Invalid contract identifier: {}", text))
-            }),
+            JToken::String(text) => ContractNameOrHashOrId::try_parse(text)
+                .ok_or_else(|| invalid_params(format!("Invalid contract identifier: {}", text))),
             _ => Err(invalid_params("Expected contract identifier string")),
         }
     }
@@ -217,9 +216,7 @@ impl RpcConvertible for SignersAndWitnesses {
             })?;
             let obj = expect_object(token)?;
 
-            let signer_token = obj
-                .get("signer")
-                .unwrap_or(token);
+            let signer_token = obj.get("signer").unwrap_or(token);
             let signer = parse_signer(signer_token, ctx)?;
             signers.push(signer);
 
@@ -768,7 +765,8 @@ mod tests {
         let version = ctx().address_version;
         let base58 = WalletHelper::to_address(&UInt160::zero(), version);
         let token = JToken::Array(JArray::from(vec![JToken::String(base58)]));
-        let addresses = ParameterConverter::convert::<Vec<Address>>(&token, &ctx()).expect("addresses");
+        let addresses =
+            ParameterConverter::convert::<Vec<Address>>(&token, &ctx()).expect("addresses");
         assert_eq!(addresses.len(), 1);
         assert_eq!(addresses[0].script_hash(), &UInt160::zero());
     }
@@ -798,8 +796,7 @@ mod tests {
 
     #[test]
     fn block_hash_or_index_accepts_hash_string() {
-        let hash_text =
-            "0x761a9bb72ca2a63984db0cc43f943a2a25e464f62d1a91114c2b6fbbfd24b51d";
+        let hash_text = "0x761a9bb72ca2a63984db0cc43f943a2a25e464f62d1a91114c2b6fbbfd24b51d";
         let token = JToken::String(hash_text.to_string());
         let value = ParameterConverter::convert::<BlockHashOrIndex>(&token, &ctx()).expect("hash");
         assert!(!value.is_index());
@@ -943,8 +940,14 @@ mod tests {
     #[test]
     fn signers_reject_invalid_rules() {
         let mut signer = JObject::new();
-        signer.insert("account".to_string(), JToken::String(UInt160::zero().to_string()));
-        signer.insert("scopes".to_string(), JToken::String("WitnessRules".to_string()));
+        signer.insert(
+            "account".to_string(),
+            JToken::String(UInt160::zero().to_string()),
+        );
+        signer.insert(
+            "scopes".to_string(),
+            JToken::String("WitnessRules".to_string()),
+        );
         signer.insert("rules".to_string(), JToken::String("invalid".to_string()));
         let mut entry = JObject::new();
         entry.insert("signer".to_string(), JToken::Object(signer));
@@ -972,7 +975,10 @@ mod tests {
     #[test]
     fn signers_reject_missing_account_field() {
         let mut entry = JObject::new();
-        entry.insert("scopes".to_string(), JToken::String("CalledByEntry".to_string()));
+        entry.insert(
+            "scopes".to_string(),
+            JToken::String("CalledByEntry".to_string()),
+        );
         let token = JToken::Array(JArray::from(vec![JToken::Object(entry)]));
         let err = ParameterConverter::convert::<SignersAndWitnesses>(&token, &ctx()).unwrap_err();
         assert_invalid_params(err);
@@ -1038,7 +1044,8 @@ mod tests {
             JToken::String("CalledByEntry".to_string()),
         );
         let token = JToken::Array(JArray::from(vec![JToken::Object(entry)]));
-        let parsed = ParameterConverter::convert::<SignersAndWitnesses>(&token, &ctx()).expect("signers");
+        let parsed =
+            ParameterConverter::convert::<SignersAndWitnesses>(&token, &ctx()).expect("signers");
         assert_eq!(parsed.signers().len(), 1);
         assert!(parsed.witnesses().is_empty());
     }
@@ -1054,7 +1061,8 @@ mod tests {
             JToken::String("CalledByEntry".to_string()),
         );
         let token = JToken::Array(JArray::from(vec![JToken::Object(entry)]));
-        let parsed = ParameterConverter::convert::<SignersAndWitnesses>(&token, &ctx()).expect("signers");
+        let parsed =
+            ParameterConverter::convert::<SignersAndWitnesses>(&token, &ctx()).expect("signers");
         assert_eq!(parsed.signers().len(), 1);
         assert_eq!(parsed.signers()[0].account, UInt160::zero());
     }
@@ -1079,17 +1087,22 @@ mod tests {
             JToken::String("V29ybGQK".to_string()),
         );
         let token = JToken::Array(JArray::from(vec![JToken::Object(entry)]));
-        let parsed = ParameterConverter::convert::<SignersAndWitnesses>(&token, &ctx()).expect("signers");
+        let parsed =
+            ParameterConverter::convert::<SignersAndWitnesses>(&token, &ctx()).expect("signers");
         assert_eq!(parsed.signers().len(), 1);
         assert_eq!(parsed.witnesses().len(), 1);
         let witness = &parsed.witnesses()[0];
         assert_eq!(
             witness.invocation_script,
-            BASE64_STANDARD.decode("SGVsbG8K").expect("decode invocation")
+            BASE64_STANDARD
+                .decode("SGVsbG8K")
+                .expect("decode invocation")
         );
         assert_eq!(
             witness.verification_script,
-            BASE64_STANDARD.decode("V29ybGQK").expect("decode verification")
+            BASE64_STANDARD
+                .decode("V29ybGQK")
+                .expect("decode verification")
         );
     }
 
@@ -1149,7 +1162,8 @@ mod tests {
     #[test]
     fn contract_parameters_reject_null_entry() {
         let token = JToken::Array(JArray::from(vec![JToken::Null]));
-        let err = ParameterConverter::convert::<Vec<ContractParameter>>(&token, &ctx()).unwrap_err();
+        let err =
+            ParameterConverter::convert::<Vec<ContractParameter>>(&token, &ctx()).unwrap_err();
         assert_invalid_params(err);
     }
 }

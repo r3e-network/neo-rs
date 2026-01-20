@@ -9,8 +9,8 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use crate::{Nep17Api, RpcClient, RpcUtility};
 use super::models::RpcTransaction;
+use crate::{Nep17Api, RpcClient, RpcUtility};
 use neo_core::big_decimal::BigDecimal;
 use neo_core::smart_contract::native::{GasToken, NeoToken};
 use neo_core::wallets::helper::Helper as WalletHelper;
@@ -140,8 +140,7 @@ impl WalletApi {
         key: &str,
         add_assert: bool,
     ) -> Result<Transaction, Box<dyn std::error::Error>> {
-        let key_pair =
-            RpcUtility::get_key_pair(key).map_err(|err| std::io::Error::other(err))?;
+        let key_pair = RpcUtility::get_key_pair(key).map_err(|err| std::io::Error::other(err))?;
         self.claim_gas_with_assert(&key_pair, add_assert).await
     }
 
@@ -248,12 +247,7 @@ impl WalletApi {
         data: Option<serde_json::Value>,
     ) -> Result<(Transaction, String), Box<dyn std::error::Error>> {
         self.transfer_decimal_from_key_with_assert(
-            token_hash,
-            from_key,
-            to_address,
-            amount,
-            data,
-            true,
+            token_hash, from_key, to_address, amount, data, true,
         )
         .await
     }
@@ -270,8 +264,10 @@ impl WalletApi {
     ) -> Result<(Transaction, String), Box<dyn std::error::Error>> {
         let key_pair =
             RpcUtility::get_key_pair(from_key).map_err(|err| std::io::Error::other(err))?;
-        self.transfer_decimal_with_assert(token_hash, &key_pair, to_address, amount, data, add_assert)
-            .await
+        self.transfer_decimal_with_assert(
+            token_hash, &key_pair, to_address, amount, data, add_assert,
+        )
+        .await
     }
 
     /// Transfer NEP17 token using decimal amount.
@@ -468,9 +464,9 @@ mod tests {
     use mockito::{Matcher, Server};
     use neo_config::ProtocolSettings;
     use neo_json::{JObject, JToken};
+    use neo_primitives::UInt256;
     use neo_vm::op_code::OpCode;
     use neo_vm::ScriptBuilder;
-    use neo_primitives::UInt256;
     use regex::escape;
     use reqwest::Url;
     use std::fs;
@@ -500,7 +496,9 @@ mod tests {
         path.push("RpcTestCases.json");
         let payload = fs::read_to_string(&path).expect("read RpcTestCases.json");
         let token = JToken::parse(&payload, 128).expect("parse RpcTestCases.json");
-        let cases = token.as_array().expect("RpcTestCases.json should be an array");
+        let cases = token
+            .as_array()
+            .expect("RpcTestCases.json should be an array");
         for entry in cases.children() {
             let token = entry.as_ref().expect("array entry");
             let obj = token.as_object().expect("case object");
@@ -600,8 +598,7 @@ mod tests {
         sb.emit_push_int(neo_core::smart_contract::call_flags::CallFlags::ALL.bits() as i64);
         sb.emit_push(operation.as_bytes());
         sb.emit_push(&script_hash.to_array());
-        sb.emit_syscall("System.Contract.Call")
-            .expect("syscall");
+        sb.emit_syscall("System.Contract.Call").expect("syscall");
 
         sb.to_array()
     }
@@ -628,8 +625,7 @@ mod tests {
         sb.emit_push_int(neo_core::smart_contract::call_flags::CallFlags::ALL.bits() as i64);
         sb.emit_push(b"transfer");
         sb.emit_push(&script_hash.to_array());
-        sb.emit_syscall("System.Contract.Call")
-            .expect("syscall");
+        sb.emit_syscall("System.Contract.Call").expect("syscall");
         if add_assert {
             sb.emit_opcode(OpCode::ASSERT);
         }
@@ -655,9 +651,7 @@ mod tests {
     fn mock_invokescript_any(server: &mut Server, response_body: &str) {
         let _m = server
             .mock("POST", "/")
-            .match_body(Matcher::Regex(
-                r#""method"\s*:\s*"invokescript""#.into(),
-            ))
+            .match_body(Matcher::Regex(r#""method"\s*:\s*"invokescript""#.into()))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(response_body)
@@ -733,7 +727,11 @@ mod tests {
             .with_body(rpc_response(JToken::Number(block_count as f64)))
             .expect(1)
             .create();
-        mock_invokescript(&mut server, &script_b64, &invoke_response_integer(110_000_000));
+        mock_invokescript(
+            &mut server,
+            &script_b64,
+            &invoke_response_integer(110_000_000),
+        );
 
         let url = Url::parse(&server.url()).expect("server url");
         let client = RpcClient::builder(url)
@@ -742,7 +740,10 @@ mod tests {
             .expect("client");
         let api = WalletApi::new(Arc::new(client));
 
-        let balance = api.get_unclaimed_gas(&address).await.expect("unclaimed gas");
+        let balance = api
+            .get_unclaimed_gas(&address)
+            .await
+            .expect("unclaimed gas");
         assert!((balance - 1.1).abs() < f64::EPSILON);
     }
 
@@ -795,8 +796,16 @@ mod tests {
         let gas_script_b64 = general_purpose::STANDARD.encode(gas_script);
 
         let mut server = Server::new_async().await;
-        mock_invokescript(&mut server, &neo_script_b64, &invoke_response_integer(1_00000000));
-        mock_invokescript(&mut server, &gas_script_b64, &invoke_response_integer(2_50000000));
+        mock_invokescript(
+            &mut server,
+            &neo_script_b64,
+            &invoke_response_integer(1_00000000),
+        );
+        mock_invokescript(
+            &mut server,
+            &gas_script_b64,
+            &invoke_response_integer(2_50000000),
+        );
 
         let url = Url::parse(&server.url()).expect("server url");
         let client = RpcClient::builder(url)
@@ -830,15 +839,24 @@ mod tests {
             serde_json::json!(account.to_string()),
             serde_json::json!(block_count - 1),
         ];
-        let unclaimed_script = build_dynamic_call_script(&neo_hash(), "unclaimedGas", &unclaimed_args);
+        let unclaimed_script =
+            build_dynamic_call_script(&neo_hash(), "unclaimedGas", &unclaimed_args);
 
         let neo_script_b64 = general_purpose::STANDARD.encode(neo_script);
         let gas_script_b64 = general_purpose::STANDARD.encode(gas_script);
         let unclaimed_script_b64 = general_purpose::STANDARD.encode(unclaimed_script);
 
         let mut server = Server::new_async().await;
-        mock_invokescript(&mut server, &neo_script_b64, &invoke_response_integer(10_00000000));
-        mock_invokescript(&mut server, &gas_script_b64, &invoke_response_integer(2_10000000));
+        mock_invokescript(
+            &mut server,
+            &neo_script_b64,
+            &invoke_response_integer(10_00000000),
+        );
+        mock_invokescript(
+            &mut server,
+            &gas_script_b64,
+            &invoke_response_integer(2_10000000),
+        );
         let _m_block = server
             .mock("POST", "/")
             .match_body(Matcher::Regex(r#""method"\s*:\s*"getblockcount""#.into()))
@@ -860,7 +878,10 @@ mod tests {
             .expect("client");
         let api = WalletApi::new(Arc::new(client));
 
-        let state = api.get_account_state(&address).await.expect("account state");
+        let state = api
+            .get_account_state(&address)
+            .await
+            .expect("account state");
         assert_eq!(state.address, address);
         assert_eq!(state.neo_balance, 10_00000000u32);
         assert!((state.gas_balance - 2.1).abs() < f64::EPSILON);
@@ -874,10 +895,8 @@ mod tests {
         }
 
         let settings = ProtocolSettings::default_settings();
-        let key = KeyPair::from_wif(
-            "KyXwTh1hB76RRMquSvnxZrJzQx7h9nQP2PCRL38v6VDb5ip3nf1p",
-        )
-        .expect("key pair");
+        let key = KeyPair::from_wif("KyXwTh1hB76RRMquSvnxZrJzQx7h9nQP2PCRL38v6VDb5ip3nf1p")
+            .expect("key pair");
 
         let mut server = Server::new_async().await;
         mock_block_count(&mut server, 2);
@@ -935,10 +954,8 @@ mod tests {
         }
 
         let settings = ProtocolSettings::default_settings();
-        let key = KeyPair::from_wif(
-            "KyXwTh1hB76RRMquSvnxZrJzQx7h9nQP2PCRL38v6VDb5ip3nf1p",
-        )
-        .expect("key pair");
+        let key = KeyPair::from_wif("KyXwTh1hB76RRMquSvnxZrJzQx7h9nQP2PCRL38v6VDb5ip3nf1p")
+            .expect("key pair");
         let to_hash = UInt160::from_bytes(&[0x55u8; 20]).expect("to hash");
         let to_address = WalletHelper::to_address(&to_hash, settings.address_version);
         let expected_hash =
@@ -995,14 +1012,8 @@ mod tests {
 
         let decimals_script = build_dynamic_call_script(&token_hash, "decimals", &[]);
         let decimals_script_b64 = general_purpose::STANDARD.encode(decimals_script);
-        let transfer_script = build_transfer_script(
-            &token_hash,
-            &sender,
-            &to_hash,
-            &amount_integer,
-            None,
-            true,
-        );
+        let transfer_script =
+            build_transfer_script(&token_hash, &sender, &to_hash, &amount_integer, None, true);
         let transfer_script_b64 = general_purpose::STANDARD.encode(&transfer_script);
 
         let balance_args = vec![serde_json::json!(sender.to_string())];
@@ -1010,7 +1021,11 @@ mod tests {
         let balance_script_b64 = general_purpose::STANDARD.encode(balance_script);
 
         let mut server = Server::new_async().await;
-        mock_invokescript(&mut server, &decimals_script_b64, &invoke_response_integer(8));
+        mock_invokescript(
+            &mut server,
+            &decimals_script_b64,
+            &invoke_response_integer(8),
+        );
         mock_invokescript(
             &mut server,
             &transfer_script_b64,
@@ -1051,10 +1066,8 @@ mod tests {
 
     #[tokio::test]
     async fn wallet_api_transfer_multi_sig_requires_enough_keys() {
-        let key = KeyPair::from_wif(
-            "KyXwTh1hB76RRMquSvnxZrJzQx7h9nQP2PCRL38v6VDb5ip3nf1p",
-        )
-        .expect("key pair");
+        let key = KeyPair::from_wif("KyXwTh1hB76RRMquSvnxZrJzQx7h9nQP2PCRL38v6VDb5ip3nf1p")
+            .expect("key pair");
         let public_key = key.get_public_key_point().expect("public key");
         let to = UInt160::from_bytes(&[0x44u8; 20]).expect("to hash");
 
@@ -1085,10 +1098,8 @@ mod tests {
         }
 
         let settings = ProtocolSettings::default_settings();
-        let key = KeyPair::from_wif(
-            "KyXwTh1hB76RRMquSvnxZrJzQx7h9nQP2PCRL38v6VDb5ip3nf1p",
-        )
-        .expect("key pair");
+        let key = KeyPair::from_wif("KyXwTh1hB76RRMquSvnxZrJzQx7h9nQP2PCRL38v6VDb5ip3nf1p")
+            .expect("key pair");
         let public_key = key.get_public_key_point().expect("public key");
         let to = UInt160::from_bytes(&[0x66u8; 20]).expect("to hash");
         let expected_hash =
@@ -1133,10 +1144,8 @@ mod tests {
         }
 
         let settings = ProtocolSettings::default_settings();
-        let key = KeyPair::from_wif(
-            "KyXwTh1hB76RRMquSvnxZrJzQx7h9nQP2PCRL38v6VDb5ip3nf1p",
-        )
-        .expect("key pair");
+        let key = KeyPair::from_wif("KyXwTh1hB76RRMquSvnxZrJzQx7h9nQP2PCRL38v6VDb5ip3nf1p")
+            .expect("key pair");
         let public_key = key.get_public_key_point().expect("public key");
         let to = UInt160::from_bytes(&[0x77u8; 20]).expect("to hash");
         let expected_hash =
@@ -1160,7 +1169,11 @@ mod tests {
         let balance_script_b64 = general_purpose::STANDARD.encode(balance_script);
 
         let mut server = Server::new_async().await;
-        mock_invokescript(&mut server, &script_b64, &invoke_response_integer(1_00000000));
+        mock_invokescript(
+            &mut server,
+            &script_b64,
+            &invoke_response_integer(1_00000000),
+        );
         mock_invokescript(
             &mut server,
             &balance_script_b64,
@@ -1230,10 +1243,13 @@ mod tests {
 
         let rpc_tx = api.wait_transaction(&tx).await.expect("wait tx");
         assert_eq!(rpc_tx.confirmations, Some(643));
-        assert_eq!(rpc_tx.block_hash, result_json
-            .get("blockhash")
-            .and_then(|v| v.as_string())
-            .and_then(|s| UInt256::parse(&s).ok()));
+        assert_eq!(
+            rpc_tx.block_hash,
+            result_json
+                .get("blockhash")
+                .and_then(|v| v.as_string())
+                .and_then(|s| UInt256::parse(&s).ok())
+        );
     }
 
     #[tokio::test]

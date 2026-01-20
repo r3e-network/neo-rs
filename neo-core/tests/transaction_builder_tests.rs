@@ -48,7 +48,9 @@ fn transaction_builder_sets_network_fee() {
 #[test]
 fn transaction_builder_sets_valid_until() {
     let expected = 123u32;
-    let tx = TransactionBuilder::create_empty().valid_until(expected).build();
+    let tx = TransactionBuilder::create_empty()
+        .valid_until(expected)
+        .build();
     assert_eq!(tx.valid_until_block(), expected);
 }
 

@@ -1,7 +1,9 @@
 use super::helpers::{create_validators_with_keys, sign_commit, sign_payload};
-use crate::{ConsensusEvent, ConsensusService};
-use crate::messages::{CommitMessage, ConsensusPayload, PrepareRequestMessage, PrepareResponseMessage};
+use crate::messages::{
+    CommitMessage, ConsensusPayload, PrepareRequestMessage, PrepareResponseMessage,
+};
 use crate::{ConsensusError, ConsensusMessageType};
+use crate::{ConsensusEvent, ConsensusService};
 use neo_primitives::UInt256;
 use tokio::sync::mpsc;
 
@@ -14,8 +16,7 @@ async fn consensus_round_emits_block_committed() {
     let network = 0x4E454F;
     let (tx, mut rx) = mpsc::channel(100);
     let (validators, keys) = create_validators_with_keys(4);
-    let mut service =
-        ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
 
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
     service.on_transactions_received(Vec::new()).unwrap();
@@ -50,10 +51,7 @@ async fn consensus_round_emits_block_committed() {
         service.process_message(payload).unwrap();
     }
 
-    let block_hash = service
-        .context()
-        .proposed_block_hash
-        .expect("block hash");
+    let block_hash = service.context().proposed_block_hash.expect("block hash");
 
     for validator_index in 1..=2 {
         let signature = sign_commit(network, &block_hash, &keys[validator_index as usize]);
@@ -87,8 +85,7 @@ async fn prepare_request_with_wrong_primary_rejected() {
     let network = 0x4E454F;
     let (tx, _rx) = mpsc::channel(100);
     let (validators, keys) = create_validators_with_keys(4);
-    let mut service =
-        ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
 
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
 
@@ -104,10 +101,7 @@ async fn prepare_request_with_wrong_primary_rejected() {
     sign_payload(&service, &mut payload, &keys[1]);
 
     let result = service.process_message(payload);
-    assert!(matches!(
-        result,
-        Err(ConsensusError::InvalidPrimary { .. })
-    ));
+    assert!(matches!(result, Err(ConsensusError::InvalidPrimary { .. })));
 }
 
 #[tokio::test]
@@ -115,8 +109,7 @@ async fn prepare_response_rejects_mismatched_hash() {
     let network = 0x4E454F;
     let (tx, _rx) = mpsc::channel(100);
     let (validators, keys) = create_validators_with_keys(4);
-    let mut service =
-        ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
 
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
     service.on_transactions_received(Vec::new()).unwrap();
@@ -165,8 +158,7 @@ async fn prepare_response_duplicate_from_same_validator_rejected() {
     let network = 0x4E454F;
     let (tx, _rx) = mpsc::channel(100);
     let (validators, keys) = create_validators_with_keys(4);
-    let mut service =
-        ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
 
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
     service.on_transactions_received(Vec::new()).unwrap();
@@ -210,8 +202,7 @@ async fn byzantine_conflicting_prepare_responses_do_not_replace_first() {
     let network = 0x4E454F;
     let (tx, _rx) = mpsc::channel(100);
     let (validators, keys) = create_validators_with_keys(4);
-    let mut service =
-        ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
 
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
     service.on_transactions_received(Vec::new()).unwrap();
@@ -257,8 +248,7 @@ async fn prepare_response_with_wrong_block_rejected() {
     let network = 0x4E454F;
     let (tx, _rx) = mpsc::channel(100);
     let (validators, keys) = create_validators_with_keys(4);
-    let mut service =
-        ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
 
     service.start(2, 1_000, UInt256::zero(), 0).unwrap();
 
@@ -282,8 +272,7 @@ async fn prepare_response_with_future_block_is_ignored() {
     let network = 0x4E454F;
     let (tx, _rx) = mpsc::channel(100);
     let (validators, keys) = create_validators_with_keys(4);
-    let mut service =
-        ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
 
     service.start(2, 1_000, UInt256::zero(), 0).unwrap();
 
@@ -307,8 +296,7 @@ async fn primary_broadcasts_prepare_request_with_transactions() {
     let network = 0x4E454F;
     let (tx, mut rx) = mpsc::channel(100);
     let (validators, keys) = create_validators_with_keys(4);
-    let mut service =
-        ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
 
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
     while rx.try_recv().is_ok() {}
@@ -374,7 +362,9 @@ async fn multi_round_prepare_requests_rotate_primary() {
     while rx0.try_recv().is_ok() {}
 
     let first_txs = vec![UInt256::from([0x10; 32])];
-    service0.on_transactions_received(first_txs.clone()).unwrap();
+    service0
+        .on_transactions_received(first_txs.clone())
+        .unwrap();
 
     let mut first_prepare = None;
     while let Ok(event) = rx0.try_recv() {
@@ -399,13 +389,14 @@ async fn multi_round_prepare_requests_rotate_primary() {
     assert_eq!(first_msg.validator_index, 0);
 
     let (tx1, mut rx1) = mpsc::channel(100);
-    let mut service1 =
-        ConsensusService::new(network, validators, Some(1), keys[1].to_vec(), tx1);
+    let mut service1 = ConsensusService::new(network, validators, Some(1), keys[1].to_vec(), tx1);
     service1.start(1, 2_000, UInt256::zero(), 0).unwrap();
     while rx1.try_recv().is_ok() {}
 
     let second_txs = vec![UInt256::from([0x20; 32])];
-    service1.on_transactions_received(second_txs.clone()).unwrap();
+    service1
+        .on_transactions_received(second_txs.clone())
+        .unwrap();
 
     let mut second_prepare = None;
     while let Ok(event) = rx1.try_recv() {
@@ -435,8 +426,7 @@ async fn prepare_responses_trigger_commit_broadcast() {
     let network = 0x4E454F;
     let (tx, mut rx) = mpsc::channel(100);
     let (validators, keys) = create_validators_with_keys(4);
-    let mut service =
-        ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
 
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
     while rx.try_recv().is_ok() {}
@@ -497,8 +487,7 @@ async fn commits_reach_threshold_emit_block_committed() {
     let network = 0x4E454F;
     let (tx, mut rx) = mpsc::channel(100);
     let (validators, keys) = create_validators_with_keys(4);
-    let mut service =
-        ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
 
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
     service.on_transactions_received(Vec::new()).unwrap();
@@ -533,10 +522,7 @@ async fn commits_reach_threshold_emit_block_committed() {
         service.process_message(payload).unwrap();
     }
 
-    let block_hash = service
-        .context()
-        .proposed_block_hash
-        .expect("block hash");
+    let block_hash = service.context().proposed_block_hash.expect("block hash");
 
     for validator_index in 1..=2 {
         let signature = sign_commit(network, &block_hash, &keys[validator_index as usize]);

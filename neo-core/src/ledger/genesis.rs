@@ -10,8 +10,8 @@ use crate::constants::GENESIS_TIMESTAMP_MS;
 use crate::ledger::{Block, BlockHeader};
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::native::helpers::NativeHelpers;
-use neo_primitives::{UInt160, UInt256};
 use crate::Witness;
+use neo_primitives::{UInt160, UInt256};
 use neo_vm::OpCode;
 
 /// Creates the genesis block for the given protocol settings.
@@ -31,7 +31,10 @@ pub fn create_genesis_block(settings: &ProtocolSettings) -> Block {
         0,
         0,
         next_consensus,
-        vec![Witness::new_with_scripts(Vec::new(), vec![OpCode::PUSH1 as u8])],
+        vec![Witness::new_with_scripts(
+            Vec::new(),
+            vec![OpCode::PUSH1 as u8],
+        )],
     );
 
     Block::new(header, Vec::new())

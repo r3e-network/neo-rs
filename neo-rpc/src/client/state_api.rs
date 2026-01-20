@@ -198,10 +198,10 @@ mod tests {
     use super::*;
     use crate::RpcClient;
     use mockito::{Matcher, Server};
+    use regex::escape;
     use reqwest::Url;
     use std::net::TcpListener;
     use std::sync::Arc;
-    use regex::escape;
 
     fn localhost_binding_permitted() -> bool {
         TcpListener::bind("127.0.0.1:0").is_ok()
@@ -420,13 +420,8 @@ mod tests {
     fn state_api_make_find_states_params_handles_defaults() {
         let root_hash = UInt256::zero();
         let script_hash = UInt160::zero();
-        let params = StateApi::make_find_states_params(
-            &root_hash,
-            &script_hash,
-            b"prefix",
-            None,
-            None,
-        );
+        let params =
+            StateApi::make_find_states_params(&root_hash, &script_hash, b"prefix", None, None);
 
         assert_eq!(params.len(), 4);
         assert_eq!(params[0].as_string().unwrap(), root_hash.to_string());

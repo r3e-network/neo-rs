@@ -1,6 +1,6 @@
 use super::helpers::{create_test_validators, create_validators_with_keys};
-use crate::ConsensusService;
 use crate::messages::{ConsensusPayload, PrepareRequestMessage};
+use crate::ConsensusService;
 use crate::{ConsensusError, ConsensusMessageType};
 use neo_primitives::UInt256;
 use tokio::sync::mpsc;
@@ -151,16 +151,7 @@ async fn invalid_validator_index_rejected() {
 
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
 
-    let msg = PrepareRequestMessage::new(
-        0,
-        99,
-        0,
-        0,
-        UInt256::zero(),
-        1_000,
-        1,
-        Vec::new(),
-    );
+    let msg = PrepareRequestMessage::new(0, 99, 0, 0, UInt256::zero(), 1_000, 1, Vec::new());
     let payload = ConsensusPayload::new(
         network,
         0,
