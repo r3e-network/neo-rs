@@ -310,6 +310,16 @@ fn push_native_result(
             }
         }
         ContractParameterType::InteropInterface => {
+            if result.len() != 4 {
+                let item = BinarySerializer::deserialize(
+                    &result,
+                    &ExecutionEngineLimits::default(),
+                    None,
+                )
+                .map_err(|e| e.to_string())?;
+                return engine.push(item).map_err(|e| e.to_string());
+            }
+
             let id = BigInt::from_signed_bytes_le(&result);
             let iterator_id = id
                 .to_u32()

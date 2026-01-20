@@ -100,6 +100,9 @@ impl RpcServerNode {
             let system = server.system();
             let protocol = system.settings();
             let rpc_settings = server.settings();
+            let time_per_block_ms = system.time_per_block().as_millis() as u64;
+            let max_traceable_blocks = system.max_traceable_blocks();
+            let max_valid_until_block_increment = system.max_valid_until_block_increment();
 
             let mut rpc_info = Map::new();
             rpc_info.insert(
@@ -123,15 +126,15 @@ impl RpcServerNode {
             );
             protocol_info.insert(
                 "msperblock".to_string(),
-                json!(protocol.milliseconds_per_block),
+                json!(time_per_block_ms),
             );
             protocol_info.insert(
                 "maxtraceableblocks".to_string(),
-                json!(protocol.max_traceable_blocks),
+                json!(max_traceable_blocks),
             );
             protocol_info.insert(
                 "maxvaliduntilblockincrement".to_string(),
-                json!(protocol.max_valid_until_block_increment),
+                json!(max_valid_until_block_increment),
             );
             protocol_info.insert(
                 "maxtransactionsperblock".to_string(),
@@ -146,15 +149,15 @@ impl RpcServerNode {
                 json!(protocol.initial_gas_distribution),
             );
 
-            // Match Neo's RpcServer: omit hardfork entries with blockheight == 0.
-            let hardforks = protocol
-                .hardforks
+            // Match Neo's RpcServer: include configured hardforks in declaration order.
+            let hardforks = Hardfork::all()
                 .iter()
-                .filter(|(_, height)| **height > 0)
-                .map(|(fork, height)| {
-                    json!({
-                        "name": Self::format_hardfork(*fork),
-                        "blockheight": height,
+                .filter_map(|fork| {
+                    protocol.hardforks.get(fork).map(|height| {
+                        json!({
+                            "name": Self::format_hardfork(*fork),
+                            "blockheight": height,
+                        })
                     })
                 })
                 .collect();
@@ -422,11 +425,13 @@ mod tests {
     use neo_core::network::p2p::payloads::{Block, Header, TransactionAttribute};
     use neo_core::network::p2p::payloads::oracle_response::{OracleResponse, MAX_RESULT_SIZE};
     use neo_core::network::p2p::payloads::oracle_response_code::OracleResponseCode;
+    use neo_core::ledger::TransactionVerificationContext;
     use neo_core::network::p2p::payloads::signer::Signer;
     use neo_core::network::p2p::payloads::transaction::Transaction;
     use neo_core::network::p2p::payloads::witness::Witness;
     use neo_core::protocol_settings::ProtocolSettings;
     use neo_core::smart_contract::application_engine::ApplicationEngine;
+    use neo_core::persistence::transaction::apply_tracked_items;
     use neo_core::persistence::StoreCache;
     use neo_core::smart_contract::native::GasToken;
     use neo_core::smart_contract::native::helpers::NativeHelpers;
@@ -625,6 +630,8 @@ mod tests {
         let gas = GasToken::new();
         gas.mint(&mut engine, &account, &amount, false)
             .expect("mint");
+        let tracked = engine.snapshot_cache().tracked_items();
+        apply_tracked_items(store, tracked);
     }
 
     fn persist_transaction_record(store: &mut StoreCache, tx: &Transaction, block_index: u32) {
@@ -799,16 +806,17 @@ mod tests {
                 .and_then(Value::as_u64)
                 .expect("hardfork blockheight");
             assert!(!name.starts_with("HF_"));
-            assert!(blockheight > 0);
+            let _ = blockheight;
         }
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn get_version_omits_zero_height_hardforks() {
+    async fn get_version_includes_zero_height_hardforks() {
         let mut settings = ProtocolSettings::default();
         for height in settings.hardforks.values_mut() {
             *height = 0;
         }
+        let expected = settings.hardforks.len();
         let system = NeoSystem::new(settings, None, None).expect("system to start");
         let server = RpcServer::new(system, RpcServerConfig::default());
         let handlers = RpcServerNode::register_handlers();
@@ -824,7 +832,13 @@ mod tests {
             .get("hardforks")
             .and_then(Value::as_array)
             .expect("hardforks array");
-        assert!(hardforks.is_empty());
+        assert_eq!(hardforks.len(), expected);
+        assert!(hardforks.iter().all(|fork| {
+            fork.as_object()
+                .and_then(|obj| obj.get("blockheight"))
+                .and_then(Value::as_u64)
+                == Some(0)
+        }));
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -1249,6 +1263,10 @@ mod tests {
             1_0000_0000,
             vec![OpCode::PUSH1 as u8],
         );
+        let snapshot = store.data_cache();
+        let verification =
+            tx.verify(&settings, snapshot, Some(&TransactionVerificationContext::new()), &[]);
+        assert_eq!(verification, VerifyResult::Succeed);
         let store = system.context().store_cache();
         let mut block = build_signed_block(&settings, &store, &validator, vec![tx]);
         let expected_hash = Block::hash(&mut block);

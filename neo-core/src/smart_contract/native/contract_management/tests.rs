@@ -2,6 +2,7 @@ use super::*;
 use crate::network::p2p::payloads::signer::Signer;
 use crate::network::p2p::payloads::transaction::Transaction;
 use crate::persistence::{DataCache, IReadOnlyStoreGeneric, SeekDirection, StorageItem};
+use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::contract_state::NefFile;
 use crate::smart_contract::execution_context_state::ExecutionContextState;
@@ -11,12 +12,14 @@ use crate::smart_contract::manifest::{
 };
 use crate::smart_contract::manifest::contract_manifest::MAX_MANIFEST_LENGTH;
 use crate::smart_contract::trigger_type::TriggerType;
+use crate::smart_contract::IInteroperable;
 use crate::witness::Witness;
 use crate::wallets::KeyPair;
 use crate::{IVerifiable, UInt160, WitnessScope};
 use crate::neo_io::BinaryWriter;
 use neo_vm::OpCode;
 use neo_vm::StackItem;
+use neo_vm::execution_engine_limits::ExecutionEngineLimits;
 use std::sync::Arc;
 
 fn default_manifest() -> ContractManifest {
@@ -49,6 +52,14 @@ fn manifest_bytes(manifest: &ContractManifest) -> Vec<u8> {
 
 fn make_nef(script: Vec<u8>) -> NefFile {
     NefFile::new(String::new(), script)
+}
+
+fn contract_from_bytes(bytes: &[u8]) -> ContractState {
+    let item = BinarySerializer::deserialize(bytes, &ExecutionEngineLimits::default(), None)
+        .expect("deserialize contract state stack item");
+    let mut contract = ContractState::default();
+    contract.from_stack_item(item);
+    contract
 }
 
 fn add_contract_to_snapshot(snapshot: &DataCache, contract: &ContractState) {
@@ -159,8 +170,7 @@ fn deploy_returns_expected_hash_and_prevents_duplicates() {
         )
         .expect("deploy succeeds");
 
-    let mut reader = MemoryReader::new(&contract_bytes);
-    let contract = ContractState::deserialize(&mut reader).expect("contract state");
+    let contract = contract_from_bytes(&contract_bytes);
     assert_eq!(
         contract.hash.to_hex_string(),
         "0x7b37d4bd3d87f53825c3554bd1a617318235a685"
@@ -185,8 +195,7 @@ fn update_preserves_storage_and_increments_counter() {
     let contract_bytes = deploy_engine
         .call_native_contract(cm_hash, "deploy", &[initial_nef.to_bytes(), manifest_payload, Vec::new()])
         .expect("deploy succeeds");
-    let mut reader = MemoryReader::new(&contract_bytes);
-    let contract = ContractState::deserialize(&mut reader).expect("contract state");
+    let contract = contract_from_bytes(&contract_bytes);
 
     let storage_key = StorageKey::new(contract.id, vec![0x01]);
     snapshot.add(storage_key, StorageItem::from_bytes(vec![0x01]));
@@ -279,8 +288,7 @@ fn update_rejects_empty_payloads() {
             &[nef.to_bytes(), manifest_bytes(&manifest), Vec::new()],
         )
         .expect("deploy succeeds");
-    let mut reader = MemoryReader::new(&contract_bytes);
-    let contract = ContractState::deserialize(&mut reader).expect("contract state");
+    let contract = contract_from_bytes(&contract_bytes);
 
     let mut update_engine = make_engine(Arc::clone(&snapshot), None, 50_000_000_000);
     update_engine
@@ -318,8 +326,7 @@ fn update_rejects_oversized_manifest() {
             &[nef.to_bytes(), manifest_bytes(&manifest), Vec::new()],
         )
         .expect("deploy succeeds");
-    let mut reader = MemoryReader::new(&contract_bytes);
-    let contract = ContractState::deserialize(&mut reader).expect("contract state");
+    let contract = contract_from_bytes(&contract_bytes);
 
     let mut update_engine = make_engine(Arc::clone(&snapshot), None, 50_000_000_000);
     update_engine
@@ -485,8 +492,7 @@ fn destroy_removes_contract_and_storage() {
             &[nef.to_bytes(), manifest_payload, Vec::new()],
         )
         .expect("deploy");
-    let mut reader = MemoryReader::new(&contract_bytes);
-    let contract = ContractState::deserialize(&mut reader).expect("contract state");
+    let contract = contract_from_bytes(&contract_bytes);
 
     let storage_key = StorageKey::new(contract.id, vec![0x01]);
     snapshot.add(storage_key, StorageItem::from_bytes(vec![0x01]));

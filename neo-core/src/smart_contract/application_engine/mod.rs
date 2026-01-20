@@ -129,6 +129,7 @@ pub const MAX_EVENT_NAME: usize = 32;
 pub const MAX_NOTIFICATION_SIZE: usize = 1024;
 pub const MAX_NOTIFICATION_COUNT: usize = 512;
 pub const CHECK_SIG_PRICE: i64 = 1 << 15;
+pub const FEE_FACTOR: i64 = 10000;
 
 type InteropHandler = fn(&mut ApplicationEngine, &mut ExecutionEngine) -> VmResult<()>;
 type StdResult<T> = std::result::Result<T, String>;

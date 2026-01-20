@@ -1,7 +1,9 @@
 use neo_core::ledger::block_header::BlockHeader;
 use neo_core::ledger::Block;
+use neo_core::hardfork::Hardfork;
 use neo_core::network::p2p::payloads::{signer::Signer, transaction::Transaction};
 use neo_core::persistence::DataCache;
+use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::smart_contract::native::{NativeContract, StdLib};
@@ -10,11 +12,29 @@ use neo_core::{IVerifiable, UInt160, WitnessScope};
 use neo_core::witness::Witness;
 use neo_vm::{OpCode, ScriptBuilder, StackItem};
 use num_traits::ToPrimitive;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 fn make_engine() -> ApplicationEngine {
     make_engine_with_height(None)
+}
+
+fn make_engine_with_settings(settings: ProtocolSettings) -> ApplicationEngine {
+    const TEST_GAS_LIMIT: i64 = 400_000_000;
+    let mut container = Transaction::new();
+    container.set_signers(vec![Signer::new(UInt160::zero(), WitnessScope::GLOBAL)]);
+    container.add_witness(Witness::new());
+    let script_container: Arc<dyn IVerifiable> = Arc::new(container);
+    ApplicationEngine::new(
+        TriggerType::Application,
+        Some(script_container),
+        Arc::new(DataCache::new(false)),
+        None,
+        settings,
+        TEST_GAS_LIMIT,
+        None,
+    )
+    .expect("engine")
 }
 
 fn make_engine_with_height(height: Option<u32>) -> ApplicationEngine {
@@ -1203,7 +1223,11 @@ fn stdlib_hex_encode_decode_parity() {
     );
     sb.emit_opcode(OpCode::RET);
 
-    let mut engine = make_engine();
+    let mut settings = ProtocolSettings::default();
+    let mut hardforks = HashMap::new();
+    hardforks.insert(Hardfork::HfFaun, 0);
+    settings.hardforks = hardforks;
+    let mut engine = make_engine_with_settings(settings);
     engine
         .load_script(sb.to_array(), CallFlags::ALL, None)
         .expect("load script");

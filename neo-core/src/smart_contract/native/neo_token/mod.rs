@@ -20,7 +20,6 @@ use super::{
 use crate::cryptography::ECPoint;
 use crate::error::{CoreError, CoreResult};
 use crate::hardfork::Hardfork;
-use crate::neo_config::SECONDS_PER_BLOCK;
 use crate::persistence::{i_read_only_store::IReadOnlyStoreGeneric, seek_direction::SeekDirection};
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::application_engine::ApplicationEngine;

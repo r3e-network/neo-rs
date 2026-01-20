@@ -2386,15 +2386,15 @@ mod tests {
         let handler = find_handler(&handlers, "getnativecontracts");
 
         let registry = NativeRegistry::new();
-        let mut store = system.context().store_snapshot_cache();
+        let store = system.context().store_cache();
         let mut expected = Vec::new();
-        let block_height = u32::MAX;
         for contract in registry.contracts() {
-            let state = contract
-                .contract_state(&settings, block_height)
-                .expect("contract state");
-            store_contract_state(&mut store, &state);
-            expected.push(contract_state_to_json(&state));
+            if let Some(state) =
+                ContractManagement::get_contract_from_store_cache(&store, &contract.hash())
+                    .expect("contract read")
+            {
+                expected.push(contract_state_to_json(&state));
+            }
         }
 
         let result = (handler.callback())(&server, &[]).expect("native contracts");

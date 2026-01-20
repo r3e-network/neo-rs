@@ -4,15 +4,22 @@
 //! of a deployed smart contract in the Neo blockchain.
 
 use crate::cryptography::Crypto;
+use crate::error::CoreResult;
 use crate::neo_config::ADDRESS_SIZE;
 use crate::neo_io::serializable::helper::{
     get_var_size_bytes, get_var_size_serializable_slice, get_var_size_str,
 };
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::smart_contract::{
-    helper::Helper, manifest::ContractManifest, method_token::MethodToken, CallFlags,
+    helper::Helper, i_interoperable::IInteroperable, manifest::ContractManifest,
+    method_token::MethodToken, CallFlags,
 };
 use crate::UInt160;
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
+use base64::Engine;
+use neo_vm::StackItem;
+use num_traits::ToPrimitive;
+use serde_json::{json, Value};
 
 /// Represents the state of a deployed smart contract.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -133,6 +140,18 @@ impl ContractState {
             manifest,
         })
     }
+
+    /// Converts the contract state to JSON (matches C# ContractState.ToJson).
+    pub fn to_json(&self) -> CoreResult<Value> {
+        let manifest = self.manifest.to_json()?;
+        Ok(json!({
+            "id": self.id,
+            "updatecounter": self.update_counter,
+            "hash": self.hash.to_string(),
+            "nef": self.nef.to_json(),
+            "manifest": manifest,
+        }))
+    }
 }
 
 impl NefFile {
@@ -212,6 +231,102 @@ impl NefFile {
     pub fn parse(data: &[u8]) -> IoResult<Self> {
         let mut reader = MemoryReader::new(data);
         Self::deserialize(&mut reader)
+    }
+
+    /// Converts the NEF file to JSON (matches C# NefFile.ToJson).
+    pub fn to_json(&self) -> Value {
+        json!({
+            "magic": Self::MAGIC,
+            "compiler": self.compiler,
+            "source": self.source,
+            "tokens": self.tokens.iter().map(|t| t.to_json()).collect::<Vec<_>>(),
+            "script": BASE64_STANDARD.encode(&self.script),
+            "checksum": self.checksum,
+        })
+    }
+}
+
+impl IInteroperable for ContractState {
+    fn from_stack_item(&mut self, stack_item: StackItem) {
+        let items = match stack_item {
+            StackItem::Array(array) => array.items(),
+            StackItem::Struct(struct_item) => struct_item.items(),
+            other => {
+                tracing::error!(
+                    "ContractState expects array stack item, found {:?}",
+                    other.stack_item_type()
+                );
+                return;
+            }
+        };
+
+        if items.len() < 5 {
+            tracing::error!("ContractState stack item must contain five elements");
+            return;
+        }
+
+        let id = match items[0].as_int() {
+            Ok(value) => value.to_i32().unwrap_or_default(),
+            Err(_) => {
+                tracing::error!("ContractState id must be Integer");
+                return;
+            }
+        };
+
+        let update_counter = match items[1].as_int() {
+            Ok(value) => value.to_u16().unwrap_or_default(),
+            Err(_) => {
+                tracing::error!("ContractState update counter must be Integer");
+                return;
+            }
+        };
+
+        let hash_bytes = match items[2].as_bytes() {
+            Ok(bytes) => bytes,
+            Err(_) => {
+                tracing::error!("ContractState hash must be ByteString");
+                return;
+            }
+        };
+        let Ok(hash) = UInt160::from_bytes(&hash_bytes) else {
+            tracing::error!("ContractState hash must be UInt160 bytes");
+            return;
+        };
+
+        let nef_bytes = match items[3].as_bytes() {
+            Ok(bytes) => bytes,
+            Err(_) => {
+                tracing::error!("ContractState NEF must be ByteString");
+                return;
+            }
+        };
+        let Ok(nef) = NefFile::parse(&nef_bytes) else {
+            tracing::error!("ContractState NEF bytes failed to parse");
+            return;
+        };
+
+        let mut manifest = ContractManifest::new(String::new());
+        manifest.from_stack_item(items[4].clone());
+
+        self.id = id;
+        self.update_counter = update_counter;
+        self.hash = hash;
+        self.nef = nef;
+        self.manifest = manifest;
+    }
+
+    fn to_stack_item(&self) -> StackItem {
+        StackItem::from_array(vec![
+            StackItem::from_int(self.id),
+            StackItem::from_int(self.update_counter),
+            StackItem::from_byte_string(self.hash.to_bytes().to_vec()),
+            StackItem::from_byte_string(self.nef.to_bytes()),
+            self.manifest.to_stack_item(),
+        ])
+    }
+
+    fn clone_box(&self) -> Box<dyn IInteroperable> {
+        Box::new(self.clone())
     }
 }
 

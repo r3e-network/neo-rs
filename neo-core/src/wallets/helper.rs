@@ -465,8 +465,18 @@ fn calculate_network_fee_impl(
 ) -> Result<i64, String> {
     let hashes = tx.get_script_hashes_for_verifying(snapshot);
 
-    let exec_fee_factor = PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64;
-    let fee_per_byte = PolicyContract::DEFAULT_FEE_PER_BYTE as i64;
+    let ledger = LedgerContract::new();
+    let height = ledger
+        .current_index(snapshot)
+        .unwrap_or(0)
+        .saturating_add(1);
+    let policy = PolicyContract::new();
+    let exec_fee_factor = policy
+        .get_exec_fee_factor_snapshot(snapshot, settings, height)
+        .unwrap_or(PolicyContract::DEFAULT_EXEC_FEE_FACTOR) as i64;
+    let fee_per_byte = policy
+        .get_fee_per_byte_snapshot(snapshot)
+        .unwrap_or(PolicyContract::DEFAULT_FEE_PER_BYTE as i64);
 
     let base_size = HEADER_SIZE
         + get_var_size_serializable_slice(tx.signers())

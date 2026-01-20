@@ -70,6 +70,7 @@ use crate::error::{CoreError, CoreResult};
 use crate::events::{broadcast_plugin_event, PluginEvent};
 use crate::extensions::log_level::LogLevel;
 use crate::extensions::utility::ExtensionsUtility;
+use crate::hardfork::Hardfork;
 #[cfg(test)]
 use crate::extensions::LogLevel as ExternalLogLevel;
 use crate::i_event_handlers::IServiceAddedHandler;
@@ -85,6 +86,7 @@ pub use crate::protocol_settings::ProtocolSettings;
 use crate::services::{LedgerService, MempoolService, PeerManagerService, StateStoreService};
 use crate::smart_contract::native::helpers::NativeHelpers;
 use crate::smart_contract::native::ledger_contract::LedgerContract;
+use crate::smart_contract::native::PolicyContract;
 use crate::state_service::StateStore;
 use neo_primitives::UInt256;
 #[cfg(test)]
@@ -190,9 +192,9 @@ impl NeoSystem {
 
         let actor_system = ActorSystem::new("neo").map_err(to_core_error)?;
         let settings_arc = Arc::new(settings.clone());
-        let mut genesis_block_val = crate::ledger::create_genesis_block(&settings);
-        let genesis_hash = genesis_block_val.hash();
-        let genesis_block = Arc::new(genesis_block_val);
+        let genesis_ledger = crate::ledger::create_genesis_block(&settings);
+        let genesis_hash = genesis_ledger.hash();
+        let genesis_block = Arc::new(super::converters::convert_ledger_block(genesis_ledger));
 
         let service_registry = Arc::new(ServiceRegistry::new());
         let service_added_handlers: Arc<RwLock<Vec<Arc<dyn IServiceAddedHandler + Send + Sync>>>> =
@@ -220,7 +222,22 @@ impl NeoSystem {
         let ledger = Arc::new(LedgerContext::default());
         let header_cache = Arc::new(HeaderCache::new());
         super::storage::hydrate_ledger(&store_cache_for_hydration, &ledger, &header_cache);
-        let memory_pool = Arc::new(Mutex::new(MemoryPool::new(&settings)));
+        let time_per_block = {
+            let current_index = LedgerContract::new()
+                .current_index(&store_cache_for_hydration)
+                .unwrap_or(0);
+            if settings.is_hardfork_enabled(Hardfork::HfEchidna, current_index) {
+                PolicyContract::get_milliseconds_per_block_snapshot(&store_cache_for_hydration)
+                    .map(|ms| Duration::from_millis(ms as u64))
+                    .unwrap_or_else(|| settings.time_per_block())
+            } else {
+                settings.time_per_block()
+            }
+        };
+        let memory_pool = Arc::new(Mutex::new(MemoryPool::new_with_time_per_block(
+            &settings,
+            time_per_block,
+        )));
         let relay_cache = Arc::new(RelayExtensibleCache::new(RELAY_CACHE_CAPACITY));
 
         register_builtin_services(
@@ -377,7 +394,52 @@ impl NeoSystem {
 
     /// Convenience wrapper returning `Duration` between blocks.
     pub fn time_per_block(&self) -> Duration {
-        self.settings.time_per_block()
+        let settings = &self.settings;
+        let store_cache = StoreCache::new_from_snapshot(self.store().get_snapshot());
+        let index = LedgerContract::new()
+            .current_index(&store_cache)
+            .unwrap_or(0);
+
+        if !settings.is_hardfork_enabled(Hardfork::HfEchidna, index) {
+            return settings.time_per_block();
+        }
+
+        PolicyContract::get_milliseconds_per_block_snapshot(&store_cache)
+            .map(|ms| Duration::from_millis(ms as u64))
+            .unwrap_or_else(|| settings.time_per_block())
+    }
+
+    /// Returns the max valid-until-block increment with Policy overrides after HF_Echidna.
+    pub fn max_valid_until_block_increment(&self) -> u32 {
+        let settings = &self.settings;
+        let store_cache = StoreCache::new_from_snapshot(self.store().get_snapshot());
+        let index = LedgerContract::new()
+            .current_index(&store_cache)
+            .unwrap_or(0);
+
+        if !settings.is_hardfork_enabled(Hardfork::HfEchidna, index) {
+            return settings.max_valid_until_block_increment;
+        }
+
+        PolicyContract::new()
+            .get_max_valid_until_block_increment_snapshot(&store_cache, settings)
+            .unwrap_or(settings.max_valid_until_block_increment)
+    }
+
+    /// Returns the max traceable blocks with Policy overrides after HF_Echidna.
+    pub fn max_traceable_blocks(&self) -> u32 {
+        let settings = &self.settings;
+        let store_cache = StoreCache::new_from_snapshot(self.store().get_snapshot());
+        let index = LedgerContract::new()
+            .current_index(&store_cache)
+            .unwrap_or(0);
+
+        if !settings.is_hardfork_enabled(Hardfork::HfEchidna, index) {
+            return settings.max_traceable_blocks;
+        }
+
+        PolicyContract::get_max_traceable_blocks_snapshot(&store_cache)
+            .unwrap_or(settings.max_traceable_blocks)
     }
 
     /// Reference to the blockchain actor.

@@ -49,6 +49,11 @@ impl IDiagnostic for OpcodeDiagnostic {
     fn post_execute_instruction(&mut self, _instruction: &Instruction) {}
 }
 
+fn make_public_key(seed: u8) -> Vec<u8> {
+    let key = KeyPair::from_private_key(&[seed; 32]).expect("key");
+    key.compressed_public_key()
+}
+
 // ============================================================================
 // Helper.IsSignatureContract tests (from C# UT_SmartContractHelper.cs)
 // ============================================================================
@@ -57,7 +62,7 @@ impl IDiagnostic for OpcodeDiagnostic {
 #[test]
 fn test_is_signature_contract() {
     // Create a valid signature contract script
-    let public_key = vec![0u8; 33]; // 33-byte compressed public key
+    let public_key = make_public_key(1);
     let script = Helper::signature_redeem_script(&public_key);
 
     // Should be recognized as a signature contract
@@ -73,12 +78,12 @@ fn test_is_signature_contract() {
 #[test]
 fn test_is_standard_contract() {
     // Test with signature contract
-    let public_key = vec![0u8; 33];
+    let public_key = make_public_key(1);
     let signature_script = Helper::signature_redeem_script(&public_key);
     assert!(Helper::is_standard_contract(&signature_script));
 
     // Test with multi-sig contract (3-of-3)
-    let public_keys = vec![vec![0u8; 33], vec![1u8; 33], vec![2u8; 33]];
+    let public_keys = vec![make_public_key(2), make_public_key(3), make_public_key(4)];
     let multi_sig_script = Helper::multi_sig_redeem_script(3, &public_keys);
     assert!(Helper::is_standard_contract(&multi_sig_script));
 
@@ -95,7 +100,7 @@ fn test_is_standard_contract() {
 #[test]
 fn test_is_multi_sig_contract() {
     // Test 3-of-3 multi-sig
-    let public_keys = vec![vec![0u8; 33], vec![1u8; 33], vec![2u8; 33]];
+    let public_keys = vec![make_public_key(1), make_public_key(2), make_public_key(3)];
     let script = Helper::multi_sig_redeem_script(3, &public_keys);
     assert!(Helper::is_multi_sig_contract(&script));
 
@@ -374,7 +379,7 @@ fn test_multi_signature_contract_engine_fee_consumed() {
 #[test]
 fn test_parse_multi_sig_contract_valid() {
     // Create a 2-of-3 multi-sig script
-    let public_keys = vec![vec![0u8; 33], vec![1u8; 33], vec![2u8; 33]];
+    let public_keys = vec![make_public_key(1), make_public_key(2), make_public_key(3)];
     let script = Helper::multi_sig_redeem_script(2, &public_keys);
 
     // Parse it
@@ -458,7 +463,7 @@ fn test_parse_multi_sig_invocation_invalid() {
 /// Test signature_redeem_script creation
 #[test]
 fn test_signature_redeem_script_creation() {
-    let public_key = vec![0x02; 33]; // Compressed public key format
+    let public_key = make_public_key(1);
     let script = Helper::signature_redeem_script(&public_key);
 
     // Script should be exactly 40 bytes
@@ -484,7 +489,7 @@ fn test_signature_redeem_script_creation() {
 #[test]
 fn test_multi_sig_redeem_script_creation() {
     // Test with 2-of-3
-    let public_keys = vec![vec![0x02; 33], vec![0x03; 33], vec![0x04; 33]];
+    let public_keys = vec![make_public_key(1), make_public_key(2), make_public_key(3)];
     let script = Helper::multi_sig_redeem_script(2, &public_keys);
 
     // Script should start with PUSH2 (Neo VM opcode 0x12)
@@ -502,20 +507,20 @@ fn test_multi_sig_redeem_script_creation() {
 #[test]
 #[should_panic(expected = "Invalid multi-sig parameters")]
 fn test_multi_sig_redeem_script_invalid_m_zero() {
-    let public_keys = vec![vec![0x02; 33]];
+    let public_keys = vec![make_public_key(1)];
     let _script = Helper::multi_sig_redeem_script(0, &public_keys);
 }
 
 #[test]
 #[should_panic(expected = "Invalid multi-sig parameters")]
 fn test_multi_sig_redeem_script_invalid_m_greater_than_n() {
-    let public_keys = vec![vec![0x02; 33]];
+    let public_keys = vec![make_public_key(1)];
     let _script = Helper::multi_sig_redeem_script(2, &public_keys); // m=2 > n=1
 }
 
 #[test]
 #[should_panic(expected = "Invalid multi-sig parameters")]
 fn test_multi_sig_redeem_script_invalid_n_greater_than_16() {
-    let public_keys: Vec<Vec<u8>> = (0..17).map(|i| vec![i as u8; 33]).collect();
+    let public_keys: Vec<Vec<u8>> = (1..=17).map(|i| make_public_key(i)).collect();
     let _script = Helper::multi_sig_redeem_script(1, &public_keys); // n=17 > 16
 }

@@ -8,6 +8,7 @@ use crate::error::CoreResult as Result;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::native::NativeContract;
 use crate::UInt160;
+use neo_vm::StackItem;
 use num_bigint::BigInt;
 
 /// Prefix for storing total supply in storage.
@@ -83,20 +84,23 @@ pub trait FungibleToken: NativeContract {
         to: Option<&UInt160>,
         amount: &BigInt,
     ) -> Result<()> {
-        let from_bytes = match from {
-            Some(addr) => addr.to_bytes(),
-            None => vec![], // null for mint
+        let from_item = match from {
+            Some(addr) => StackItem::from_byte_string(addr.to_bytes()),
+            None => StackItem::Null,
         };
-
-        let to_bytes = match to {
-            Some(addr) => addr.to_bytes(),
-            None => vec![], // null for burn
+        let to_item = match to {
+            Some(addr) => StackItem::from_byte_string(addr.to_bytes()),
+            None => StackItem::Null,
         };
+        let amount_item = StackItem::from_int(amount.clone());
 
-        engine.emit_event(
-            "Transfer",
-            vec![from_bytes, to_bytes, amount.to_signed_bytes_le()],
-        )?;
+        engine
+            .send_notification(
+                self.hash(),
+                "Transfer".to_string(),
+                vec![from_item, to_item, amount_item],
+            )
+            .map_err(Error::native_contract)?;
 
         Ok(())
     }

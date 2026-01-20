@@ -9,6 +9,7 @@ use crate::smart_contract::manifest::{
     ContractAbi, ContractEventDescriptor, ContractMethodDescriptor, ContractParameterDefinition,
 };
 use crate::smart_contract::{ContractManifest, ContractParameterType, ContractState, NefFile};
+use crate::smart_contract::native::IHardforkActivable;
 use crate::UInt160;
 use neo_vm::{OpCode, ScriptBuilder};
 use serde::{Deserialize, Serialize};
@@ -26,12 +27,84 @@ pub trait NativeContract: Any + Send + Sync {
     /// Gets the name of the native contract.
     fn name(&self) -> &str;
 
+    /// Hardfork that activates this contract (matches C# `NativeContract.ActiveIn`).
+    fn active_in(&self) -> Option<Hardfork> {
+        None
+    }
+
     /// Gets the supported methods of the native contract.
     fn methods(&self) -> &[NativeMethod];
 
     /// Determines whether the native contract is active under the given settings.
-    fn is_active(&self, _settings: &ProtocolSettings, _block_height: u32) -> bool {
-        true
+    fn is_active(&self, settings: &ProtocolSettings, block_height: u32) -> bool {
+        match self.active_in() {
+            Some(hardfork) => {
+                let activation_height = settings.hardforks.get(&hardfork).copied().unwrap_or(0);
+                block_height >= activation_height
+            }
+            None => true,
+        }
+    }
+
+    /// Returns hardforks that should trigger a contract manifest refresh.
+    ///
+    /// This mirrors C# `NativeContract.Activations` for manifest-only updates
+    /// such as supported standards changes.
+    fn activations(&self) -> Vec<Hardfork> {
+        Vec::new()
+    }
+
+    /// Returns the hardforks that affect this contract (methods/activations).
+    ///
+    /// Mirrors C# NativeContract `_usedHardforks` (excluding event attributes).
+    fn used_hardforks(&self) -> Vec<Hardfork> {
+        let mut hardforks = Vec::new();
+
+        if let Some(hardfork) = self.active_in() {
+            hardforks.push(hardfork);
+        }
+
+        for method in self.methods() {
+            if let Some(hardfork) = method.active_in {
+                hardforks.push(hardfork);
+            }
+            if let Some(hardfork) = method.deprecated_in {
+                hardforks.push(hardfork);
+            }
+        }
+
+        hardforks.extend(self.activations());
+        hardforks.sort();
+        hardforks.dedup();
+        hardforks
+    }
+
+    /// Returns whether this block should initialize/refresh the native contract.
+    ///
+    /// Matches C# `NativeContract.IsInitializeBlock` semantics.
+    fn is_initialize_block(
+        &self,
+        settings: &ProtocolSettings,
+        index: u32,
+    ) -> (bool, Vec<Hardfork>) {
+        let mut hits = Vec::new();
+        for hardfork in self.used_hardforks() {
+            if let Some(&activation_height) = settings.hardforks.get(&hardfork) {
+                if activation_height == index {
+                    hits.push(hardfork);
+                }
+            }
+        }
+
+        if !hits.is_empty() {
+            return (true, hits);
+        }
+
+        if index == 0 && self.active_in().is_none() {
+            return (true, Vec::new());
+        }
+
+        (false, Vec::new())
     }
 
     /// Returns the contract state metadata if available.
@@ -188,17 +261,9 @@ impl NativeMethod {
 
     /// Returns true if this method is active at the given height.
     pub fn is_active(&self, settings: &ProtocolSettings, block_height: u32) -> bool {
-        match (self.active_in, self.deprecated_in) {
-            (None, None) => true,
-            (Some(active_in), None) => settings.is_hardfork_enabled(active_in, block_height),
-            (None, Some(deprecated_in)) => {
-                !settings.is_hardfork_enabled(deprecated_in, block_height)
-            }
-            (Some(active_in), Some(deprecated_in)) => {
-                settings.is_hardfork_enabled(active_in, block_height)
-                    && !settings.is_hardfork_enabled(deprecated_in, block_height)
-            }
-        }
+        is_active_for(self, |hardfork, height| {
+            settings.is_hardfork_enabled(hardfork, height)
+        }, block_height)
     }
 
     /// Creates a new safe (read-only) method.
@@ -228,6 +293,31 @@ impl NativeMethod {
             return_type,
         )
     }
+}
+
+impl IHardforkActivable for NativeMethod {
+    fn active_in(&self) -> Option<Hardfork> {
+        self.active_in
+    }
+
+    fn deprecated_in(&self) -> Option<Hardfork> {
+        self.deprecated_in
+    }
+}
+
+/// Checks whether a hardfork-activable item is active.
+///
+/// Mirrors C# `NativeContract.IsActive(IHardforkActivable, ...)` exactly.
+pub fn is_active_for<T: IHardforkActivable>(
+    item: &T,
+    hf_checker: impl Fn(Hardfork, u32) -> bool,
+    block_height: u32,
+) -> bool {
+    (item.active_in().is_none() && item.deprecated_in().is_none())
+        || (item.deprecated_in().is_some()
+            && !hf_checker(item.deprecated_in().unwrap(), block_height))
+        || (item.active_in().is_some()
+            && hf_checker(item.active_in().unwrap(), block_height))
 }
 
 /// Base implementation for native contracts.

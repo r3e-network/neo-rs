@@ -13,8 +13,11 @@ use neo_core::smart_contract::native::{
 use neo_core::smart_contract::storage_item::StorageItem;
 use neo_core::smart_contract::storage_key::StorageKey;
 use neo_core::smart_contract::trigger_type::TriggerType;
+use neo_core::smart_contract::binary_serializer::BinarySerializer;
 use neo_core::smart_contract::Contract;
 use neo_core::{IVerifiable, UInt160};
+use neo_vm::execution_engine_limits::ExecutionEngineLimits;
+use neo_vm::StackItem;
 use num_bigint::BigInt;
 use std::sync::Arc;
 
@@ -30,13 +33,13 @@ fn sample_point(byte: u8) -> ECPoint {
 }
 
 fn serialize_nodes(nodes: &[ECPoint]) -> Vec<u8> {
-    let mut buffer = Vec::with_capacity(4 + nodes.len() * 33);
-    buffer.extend_from_slice(&(nodes.len() as u32).to_le_bytes());
-    for node in nodes {
-        let encoded = node.encode_compressed().expect("compressible");
-        buffer.extend_from_slice(&encoded);
-    }
-    buffer
+    let items: Vec<StackItem> = nodes
+        .iter()
+        .map(|node| StackItem::from_byte_string(node.as_bytes().to_vec()))
+        .collect();
+    let array = StackItem::from_array(items);
+    BinarySerializer::serialize(&array, &ExecutionEngineLimits::default())
+        .expect("serialize node list")
 }
 
 fn setup_engine(snapshot: Arc<DataCache>, block: Block) -> ApplicationEngine {

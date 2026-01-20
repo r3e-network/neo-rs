@@ -1,7 +1,7 @@
-use neo_core::neo_io::MemoryReader;
 use neo_core::network::p2p::payloads::{signer::Signer, transaction::Transaction};
 use neo_core::persistence::DataCache;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
+use neo_core::smart_contract::binary_serializer::BinarySerializer;
 use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::smart_contract::contract_parameter_type::ContractParameterType;
 use neo_core::smart_contract::contract_state::{ContractState, NefFile};
@@ -10,10 +10,11 @@ use neo_core::smart_contract::manifest::{
 };
 use neo_core::smart_contract::native::{ContractManagement, GasToken, NativeContract, NeoToken};
 use neo_core::smart_contract::trigger_type::TriggerType;
+use neo_core::smart_contract::IInteroperable;
 use neo_core::witness::Witness;
 use neo_core::wallets::KeyPair;
 use neo_core::{IVerifiable, UInt160, WitnessScope};
-use neo_vm::{OpCode, ScriptBuilder};
+use neo_vm::{ExecutionEngineLimits, OpCode, ScriptBuilder};
 use num_bigint::BigInt;
 use num_traits::Zero;
 use std::sync::Arc;
@@ -215,8 +216,15 @@ fn gas_transfer_triggers_on_nep17_payment_with_native_caller() {
     let contract_bytes = engine
         .call_native_contract(cm_hash, "deploy", &deploy_args)
         .expect("deploy succeeds");
-    let mut reader = MemoryReader::new(&contract_bytes);
-    let receiver = ContractState::deserialize(&mut reader).expect("contract state");
+    let contract_item = BinarySerializer::deserialize(
+        &contract_bytes,
+        &ExecutionEngineLimits::default(),
+        None,
+    )
+    .expect("contract state item");
+    let mut receiver =
+        ContractState::new(0, UInt160::zero(), nef.clone(), ContractManifest::new(String::new()));
+    receiver.from_stack_item(contract_item);
     let receiver_hash = receiver.hash;
 
     // Fund sender with GAS and transfer to receiver contract.

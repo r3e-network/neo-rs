@@ -97,6 +97,9 @@ impl ContractManagement {
             contract.nef = nef;
         }
 
+        // Clean whitelist entries using the old manifest before updates.
+        PolicyContract::new().clean_whitelist(engine, &contract)?;
+
         // Update manifest if provided
         if let Some(manifest_payload) = manifest_bytes {
             let manifest_json = String::from_utf8(manifest_payload)
@@ -124,11 +127,7 @@ impl ContractManagement {
         contract.update_counter += 1;
 
         // Update storage
-        let mut writer = BinaryWriter::new();
-        contract
-            .serialize(&mut writer)
-            .map_err(|e| Error::serialization(format!("Failed to serialize contract: {}", e)))?;
-        let contract_bytes = writer.to_bytes();
+        let contract_bytes = Self::serialize_contract_state(&contract)?;
 
         {
             let mut storage = self.storage.write();

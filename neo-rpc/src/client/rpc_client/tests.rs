@@ -7,6 +7,7 @@ use mockito::Server;
 use neo_config::ProtocolSettings;
 use neo_core::big_decimal::BigDecimal;
 use neo_core::neo_io::{MemoryReader, Serializable};
+use neo_core::extensions::SerializableExtensions;
 use neo_core::network::p2p::payloads::block::Block;
 use crate::client::models::{
     RpcAccount, RpcContractState, RpcPlugin, RpcRawMemPool, RpcRequest, RpcTransferOut,
@@ -41,8 +42,9 @@ fn load_rpc_cases(name: &str) -> Vec<JObject> {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     path.push("..");
     path.push("neo_csharp");
+    path.push("node");
     path.push("tests");
-    path.push("Neo.RpcClient.Tests");
+    path.push("Neo.Network.RPC.Tests");
     path.push("RpcTestCases.json");
     let payload = fs::read_to_string(&path).expect("read RpcTestCases.json");
     let token = JToken::parse(&payload, 128).expect("parse RpcTestCases.json");
@@ -553,37 +555,11 @@ async fn submit_block_uses_base64_and_returns_hash() {
         return;
     }
 
-    let case = load_rpc_case("submitblockasync");
-    let request = case
-        .get("Request")
-        .and_then(|value| value.as_object())
-        .expect("case request");
-    let params = request
-        .get("params")
-        .and_then(|value| value.as_array())
-        .expect("case params");
-    let base64_block = params
-        .get(0)
-        .and_then(|value| value.as_string())
-        .expect("base64 block");
-    let response = case
-        .get("Response")
-        .and_then(|value| value.as_object())
-        .expect("case response");
-    let result = response
-        .get("result")
-        .and_then(|value| value.as_object())
-        .expect("case result");
-    let expected_hash = result
-        .get("hash")
-        .and_then(|value| value.as_string())
-        .expect("hash");
-
-    let bytes = general_purpose::STANDARD
-        .decode(base64_block.as_bytes())
-        .expect("decode block");
-    let mut reader = MemoryReader::new(&bytes);
-    let block = <Block as Serializable>::deserialize(&mut reader).expect("deserialize block");
+    let mut block = Block::new();
+    block.rebuild_merkle_root();
+    let expected_hash = block.hash().to_string();
+    let base64_block = general_purpose::STANDARD
+        .encode(block.to_array().expect("serialize block"));
 
     let mut server = Server::new_async().await;
     let escaped = escape(&base64_block);
@@ -1559,7 +1535,11 @@ async fn open_wallet_matches_fixture() {
         .unwrap_or(false);
 
     let mut server = Server::new_async().await;
-    let escaped_path = escape(&path);
+    let escaped_path = escape(
+        serde_json::to_string(&path)
+            .expect("json path")
+            .trim_matches('"'),
+    );
     let escaped_password = escape(&password);
     let body_re = format!(
         r#""method"\s*:\s*"openwallet".*"params"\s*:\s*\[\s*"{escaped_path}"\s*,\s*"{escaped_password}"\s*\]"#

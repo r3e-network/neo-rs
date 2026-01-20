@@ -4,12 +4,14 @@
 //! including NEO, GAS, Policy, Notary, and other system contracts.
 
 pub mod contract_management;
+pub mod account_state;
 pub mod crypto_lib;
 pub mod fungible_token;
 pub mod gas_token;
 // Removed governance_types - not in C# structure
 pub mod hash_index_state;
 pub mod helpers;
+pub mod i_hardfork_activable;
 pub mod ledger_contract;
 pub mod native_contract;
 pub mod neo_token;
@@ -20,17 +22,20 @@ pub mod policy_contract;
 pub mod role;
 pub mod role_management;
 pub mod std_lib;
+pub mod treasury;
 pub mod trimmed_block;
 pub mod transaction_state;
 
 pub use self::oracle_request::OracleRequest;
+pub use account_state::AccountState;
 pub use contract_management::ContractManagement;
 pub use crypto_lib::CryptoLib;
 pub use fungible_token::{DefaultTokenAccountState, FungibleToken, TokenAccountState};
 pub use gas_token::GasToken;
 pub use helpers::NativeHelpers;
+pub use i_hardfork_activable::IHardforkActivable;
 pub use ledger_contract::{LedgerContract, LedgerTransactionStates};
-pub use native_contract::{NativeContract, NativeContractsCache, NativeMethod};
+pub use native_contract::{is_active_for, NativeContract, NativeContractsCache, NativeMethod};
 pub use neo_token::NeoToken;
 pub use notary::{Deposit as NotaryDeposit, Notary};
 pub use oracle_contract::OracleContract;
@@ -38,6 +43,7 @@ pub use policy_contract::PolicyContract;
 pub use role::Role;
 pub use role_management::RoleManagement;
 pub use std_lib::StdLib;
+pub use treasury::TreasuryContract;
 pub use transaction_state::TransactionState;
 
 use crate::UInt160;
@@ -138,6 +144,9 @@ impl NativeRegistry {
 
         // Register Notary contract (active after HF_Echidna)
         self.register(Arc::new(Notary::new()));
+        
+        // Register Treasury contract (active after HF_Faun)
+        self.register(Arc::new(TreasuryContract::new()));
     }
 }
 

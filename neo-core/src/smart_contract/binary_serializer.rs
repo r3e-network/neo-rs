@@ -250,9 +250,9 @@ impl BinarySerializer {
                 }
                 StackItem::Integer(integer) => {
                     writer.push(StackItemType::Integer as u8);
-                    let (sign, bytes) = integer.to_bytes_le();
-                    if sign == num_bigint::Sign::Minus {
-                        return Err("Negative integers are not supported".to_string());
+                    let mut bytes = integer.to_signed_bytes_le();
+                    if bytes.is_empty() {
+                        bytes.push(0);
                     }
                     Self::write_var_bytes(writer, &bytes)?;
                 }

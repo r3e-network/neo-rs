@@ -38,13 +38,6 @@ impl HardforkManager {
         ]
     }
 
-    fn ensure_all(mut hardforks: HashMap<Hardfork, u32>) -> HashMap<Hardfork, u32> {
-        for hardfork in Self::all() {
-            hardforks.entry(hardfork).or_insert(0);
-        }
-        hardforks
-    }
-
     /// Creates a new HardforkManager with default hardfork heights (matches C# ProtocolSettings.Default exactly).
     ///
     /// # Returns
@@ -63,9 +56,7 @@ impl HardforkManager {
         hardforks.insert(Hardfork::HfCockatrice, 5450000);
         hardforks.insert(Hardfork::HfDomovoi, 5570000);
         hardforks.insert(Hardfork::HfEchidna, 7300000);
-        Self {
-            hardforks: Self::ensure_all(hardforks),
-        }
+        Self { hardforks }
     }
 
     /// Creates a new HardforkManager with TestNet hardfork heights (matches C# config.testnet.json exactly).
@@ -76,9 +67,7 @@ impl HardforkManager {
         hardforks.insert(Hardfork::HfCockatrice, 3967000);
         hardforks.insert(Hardfork::HfDomovoi, 4144000);
         hardforks.insert(Hardfork::HfEchidna, 5870000);
-        Self {
-            hardforks: Self::ensure_all(hardforks),
-        }
+        Self { hardforks }
     }
 
     /// Gets the global instance of the HardforkManager.

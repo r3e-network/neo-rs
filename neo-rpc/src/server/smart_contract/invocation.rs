@@ -259,7 +259,7 @@ fn build_and_sign_transaction(
     let valid_until = ledger
         .current_index(snapshot)
         .map_err(|err| err.to_string())?
-        .saturating_add(protocol_settings.max_valid_until_block_increment);
+        .saturating_add(system.max_valid_until_block_increment());
     tx.set_valid_until_block(valid_until);
     tx.set_system_fee(system_fee);
 

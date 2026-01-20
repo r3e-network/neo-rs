@@ -5,9 +5,7 @@
 
 use crate::cryptography::NeoHash;
 use crate::error::{CoreError as Error, CoreResult as Result};
-use crate::neo_config::{
-    HASH_SIZE, MAX_SCRIPT_SIZE, MAX_TRANSACTIONS_PER_BLOCK, SECONDS_PER_BLOCK,
-};
+use crate::neo_config::{HASH_SIZE, MAX_SCRIPT_SIZE, MAX_TRANSACTIONS_PER_BLOCK};
 use crate::network::p2p::payloads::{
     oracle_response::OracleResponse as TxOracleResponse,
     transaction_attribute::TransactionAttribute,
@@ -17,7 +15,9 @@ use crate::persistence::{
 };
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;
+use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::contract::Contract;
+use crate::smart_contract::manifest::{ContractEventDescriptor, ContractParameterDefinition};
 use crate::smart_contract::native::{
     oracle_request::OracleRequest, GasToken, NativeContract, NativeMethod, Role, RoleManagement,
 };
@@ -213,17 +213,14 @@ impl OracleContract {
     /// Creates a new Oracle contract.
     pub fn new() -> Self {
         // Oracle contract hash: 0xfe924b7cfe89ddd271abaf7210a80a7e11178758
-        let hash = UInt160::from_bytes(&[
-            0xfe, 0x92, 0x4b, 0x7c, 0xfe, 0x89, 0xdd, 0xd2, 0x71, 0xab, 0xaf, 0x72, 0x10, 0xa8,
-            0x0a, 0x7e, 0x11, 0x17, 0x87, 0x58,
-        ])
-        .expect("Operation failed");
+        let hash = UInt160::parse("0xfe924b7cfe89ddd271abaf7210a80a7e11178758")
+            .expect("Valid OracleContract hash");
 
         let methods = vec![
             NativeMethod::unsafe_method(
                 "request".to_string(),
-                1 << SECONDS_PER_BLOCK,
-                0x0f,
+                0,
+                (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
                 vec![
                     ContractParameterType::String,
                     ContractParameterType::String,
@@ -231,35 +228,50 @@ impl OracleContract {
                     ContractParameterType::Any,
                     ContractParameterType::Integer,
                 ],
-                ContractParameterType::Integer,
+                ContractParameterType::Void,
             ),
             NativeMethod::safe(
                 "getPrice".to_string(),
-                1 << 4,
+                1 << 15,
                 Vec::new(),
                 ContractParameterType::Integer,
-            ),
+            )
+            .with_required_call_flags(CallFlags::READ_STATES),
             NativeMethod::unsafe_method(
                 "setPrice".to_string(),
-                1 << SECONDS_PER_BLOCK,
-                0x01,
+                1 << 15,
+                CallFlags::STATES.bits(),
                 vec![ContractParameterType::Integer],
                 ContractParameterType::Void,
             ),
             NativeMethod::unsafe_method(
                 "finish".to_string(),
-                1 << SECONDS_PER_BLOCK,
-                0x0f,
+                0,
+                (CallFlags::STATES | CallFlags::ALLOW_CALL | CallFlags::ALLOW_NOTIFY).bits(),
                 Vec::new(),
                 ContractParameterType::Void,
             ),
             NativeMethod::safe(
                 "verify".to_string(),
-                1 << SECONDS_PER_BLOCK,
+                1 << 15,
                 Vec::new(),
                 ContractParameterType::Boolean,
             ),
         ];
+        let methods = methods
+            .into_iter()
+            .map(|method| match method.name.as_str() {
+                "request" => method.with_parameter_names(vec![
+                    "url".to_string(),
+                    "filter".to_string(),
+                    "callback".to_string(),
+                    "userData".to_string(),
+                    "gasForResponse".to_string(),
+                ]),
+                "setPrice" => method.with_parameter_names(vec!["price".to_string()]),
+                _ => method,
+            })
+            .collect();
 
         Self {
             id: Self::ID,
@@ -391,7 +403,7 @@ impl OracleContract {
         self.append_request_id(snapshot, &url_hash, id)?;
         self.emit_oracle_request(engine, id, calling_contract, &request)?;
 
-        Ok(id.to_le_bytes().to_vec())
+        Ok(Vec::new())
     }
 
     fn finish(&self, engine: &mut ApplicationEngine) -> Result<Vec<u8>> {
@@ -887,6 +899,22 @@ impl OracleContract {
 }
 
 impl NativeContract for OracleContract {
+    fn supported_standards(
+        &self,
+        settings: &crate::protocol_settings::ProtocolSettings,
+        block_height: u32,
+    ) -> Vec<String> {
+        if settings.is_hardfork_enabled(crate::hardfork::Hardfork::HfFaun, block_height) {
+            vec!["NEP-30".to_string()]
+        } else {
+            Vec::new()
+        }
+    }
+
+    fn activations(&self) -> Vec<crate::hardfork::Hardfork> {
+        vec![crate::hardfork::Hardfork::HfFaun]
+    }
+
     fn initialize(&self, engine: &mut ApplicationEngine) -> Result<()> {
         let snapshot_arc = engine.snapshot_cache();
         let snapshot = snapshot_arc.as_ref();
@@ -915,6 +943,57 @@ impl NativeContract for OracleContract {
 
     fn methods(&self) -> &[NativeMethod] {
         &self.methods
+    }
+
+    fn events(
+        &self,
+        _settings: &crate::protocol_settings::ProtocolSettings,
+        _block_height: u32,
+    ) -> Vec<ContractEventDescriptor> {
+        vec![
+            ContractEventDescriptor::new(
+                "OracleRequest".to_string(),
+                vec![
+                    ContractParameterDefinition::new(
+                        "Id".to_string(),
+                        ContractParameterType::Integer,
+                    )
+                    .expect("OracleRequest.Id"),
+                    ContractParameterDefinition::new(
+                        "RequestContract".to_string(),
+                        ContractParameterType::Hash160,
+                    )
+                    .expect("OracleRequest.RequestContract"),
+                    ContractParameterDefinition::new(
+                        "Url".to_string(),
+                        ContractParameterType::String,
+                    )
+                    .expect("OracleRequest.Url"),
+                    ContractParameterDefinition::new(
+                        "Filter".to_string(),
+                        ContractParameterType::String,
+                    )
+                    .expect("OracleRequest.Filter"),
+                ],
+            )
+            .expect("OracleRequest event descriptor"),
+            ContractEventDescriptor::new(
+                "OracleResponse".to_string(),
+                vec![
+                    ContractParameterDefinition::new(
+                        "Id".to_string(),
+                        ContractParameterType::Integer,
+                    )
+                    .expect("OracleResponse.Id"),
+                    ContractParameterDefinition::new(
+                        "OriginalTx".to_string(),
+                        ContractParameterType::Hash256,
+                    )
+                    .expect("OracleResponse.OriginalTx"),
+                ],
+            )
+            .expect("OracleResponse event descriptor"),
+        ]
     }
 
     fn invoke(

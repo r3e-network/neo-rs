@@ -38,6 +38,9 @@ pub struct ExecutionContextState {
     /// Indicates whether this context was produced by a dynamic call
     pub is_dynamic_call: bool,
 
+    /// Indicates whether this context is whitelisted for fixed fees
+    pub whitelisted: bool,
+
     /// Name of the method currently executing
     pub method_name: Option<String>,
 
@@ -64,6 +67,7 @@ impl ExecutionContextState {
             snapshot_cache: None,
             notification_count: 0,
             is_dynamic_call: false,
+            whitelisted: false,
             method_name: None,
             argument_count: 0,
             return_type: None,

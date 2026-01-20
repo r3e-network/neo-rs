@@ -22,9 +22,9 @@ impl ApplicationEngine {
             protocol_settings,
             gas_limit,
             gas_consumed: 0,
-            fee_amount: gas_limit,
+            fee_amount: gas_limit.saturating_mul(FEE_FACTOR),
             fee_consumed: 0,
-            exec_fee_factor: PolicyContract::DEFAULT_EXEC_FEE_FACTOR,
+            exec_fee_factor: PolicyContract::DEFAULT_EXEC_FEE_FACTOR * (FEE_FACTOR as u32),
             storage_price: PolicyContract::DEFAULT_STORAGE_PRICE,
             call_flags: CallFlags::ALL,
             vm_engine: VmEngineHost::new(engine),
@@ -231,7 +231,7 @@ impl ApplicationEngine {
         self.persisting_block
             .as_ref()
             .map(|block| block.header.timestamp)
-            .ok_or_else(|| "No persisting block available".to_string())
+            .ok_or_else(|| "GetTime can only be called with Application trigger.".to_string())
     }
 
     /// Returns the block currently being persisted, if any.
@@ -253,11 +253,11 @@ impl ApplicationEngine {
     }
 
     pub fn gas_consumed(&self) -> i64 {
-        self.gas_consumed
+        (self.gas_consumed + FEE_FACTOR - 1) / FEE_FACTOR
     }
 
     pub fn fee_consumed(&self) -> i64 {
-        self.fee_consumed
+        (self.fee_consumed + FEE_FACTOR - 1) / FEE_FACTOR
     }
 
     /// Returns the current storage price (datoshi per byte) cached from the Policy contract.
@@ -364,6 +364,10 @@ impl ApplicationEngine {
     pub(super) fn policy_contract(&self) -> Option<Arc<dyn NativeContract>> {
         let policy_hash = PolicyContract::new().hash();
         self.native_registry.get(&policy_hash)
+    }
+
+    pub(crate) fn native_contracts(&self) -> Vec<Arc<dyn NativeContract>> {
+        self.native_registry.contracts().collect()
     }
 
     pub(super) fn get_contract(&self, hash: &UInt160) -> Option<&ContractState> {

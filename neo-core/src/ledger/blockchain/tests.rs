@@ -28,15 +28,19 @@ mod tests {
         },
     };
     use crate::persistence::StoreCache;
+    use crate::smart_contract::binary_serializer::BinarySerializer;
     use crate::smart_contract::native::fungible_token::PREFIX_ACCOUNT;
     use crate::smart_contract::native::gas_token::GasToken;
-    use crate::smart_contract::native::{role_management::RoleManagement, NativeContract, Role};
+    use crate::smart_contract::native::{
+        role_management::RoleManagement, AccountState, NativeContract, Role,
+    };
     use crate::smart_contract::Contract;
-    use crate::smart_contract::{StorageItem, StorageKey};
+    use crate::smart_contract::{IInteroperable, StorageItem, StorageKey};
     use crate::state_service::state_store::StateServiceSettings;
     use crate::wallets::KeyPair;
-    use crate::{neo_io::Serializable, NeoSystem, ProtocolSettings};
+    use crate::{neo_io::Serializable, NeoSystem, ProtocolSettings, UInt160, UInt256};
     use crate::WitnessScope;
+    use neo_vm::execution_engine_limits::ExecutionEngineLimits;
     use neo_vm::op_code::OpCode;
     use num_bigint::BigInt;
     use tokio::time::{sleep, timeout, Duration};
@@ -73,6 +77,7 @@ mod tests {
     ) -> Transaction {
         let mut tx = Transaction::new();
         tx.set_network_fee(1_0000_0000);
+        tx.set_system_fee(30);
         tx.set_valid_until_block(valid_until_block);
         tx.set_script(vec![OpCode::PUSH1 as u8]);
         tx.set_signers(vec![Signer::new(
@@ -96,9 +101,15 @@ mod tests {
 
     fn seed_gas_balance(store: &mut StoreCache, account: UInt160, amount: i64) {
         let key = StorageKey::create_with_uint160(GasToken::new().id(), PREFIX_ACCOUNT, &account);
+        let state = AccountState::with_balance(BigInt::from(amount));
+        let bytes = BinarySerializer::serialize(
+            &state.to_stack_item(),
+            &ExecutionEngineLimits::default(),
+        )
+        .expect("serialize account state");
         store
             .data_cache()
-            .update(key, StorageItem::from_bigint(BigInt::from(amount)));
+            .update(key, StorageItem::from_bytes(bytes));
         store.commit();
     }
 
@@ -176,9 +187,9 @@ mod tests {
         let mut suffix = vec![Role::StateValidator as u8];
         suffix.extend_from_slice(&height.to_be_bytes());
         let key = StorageKey::new(RoleManagement::new().id(), suffix);
-        let mut value = Vec::with_capacity(4 + 33);
-        value.extend_from_slice(&1u32.to_le_bytes());
-        value.extend_from_slice(&validator.encode_compressed().expect("compress validator"));
+        let value = RoleManagement::new()
+            .serialize_public_keys(&[validator.clone()])
+            .expect("serialize public keys");
         store_cache
             .data_cache()
             .add(key, StorageItem::from_bytes(value));
@@ -351,8 +362,8 @@ mod tests {
         sleep(Duration::from_millis(100)).await;
     }
 
-    #[test]
-    fn relay_accepts_valid_transaction_then_reports_already_in_pool() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn relay_accepts_valid_transaction_then_reports_already_in_pool() {
         let settings = ProtocolSettings::default();
         let system = NeoSystem::new(settings.clone(), None, None).expect("neo system");
         let keypair = KeyPair::generate().expect("keypair");
@@ -369,8 +380,8 @@ mod tests {
         assert_eq!(blockchain.on_new_transaction(&tx), VerifyResult::AlreadyInPool);
     }
 
-    #[test]
-    fn relay_rejects_mismatched_signers_and_witnesses() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn relay_rejects_mismatched_signers_and_witnesses() {
         let settings = ProtocolSettings::default();
         let system = NeoSystem::new(settings.clone(), None, None).expect("neo system");
         let keypair = KeyPair::generate().expect("keypair");
@@ -384,8 +395,8 @@ mod tests {
         assert_eq!(blockchain.on_new_transaction(&tx), VerifyResult::Invalid);
     }
 
-    #[test]
-    fn relay_rejects_on_chain_conflict_with_same_sender() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn relay_rejects_on_chain_conflict_with_same_sender() {
         let settings = ProtocolSettings::default();
         let system = NeoSystem::new(settings.clone(), None, None).expect("neo system");
         let keypair_a = KeyPair::generate().expect("keypair a");
@@ -542,6 +553,7 @@ mod tests {
         })
         .await
         .expect("genesis block should be persisted before reverify test");
+        sleep(Duration::from_millis(50)).await;
 
         // Seed a header backlog so reverify should avoid scheduling idle.
         let mut header = Header::new();

@@ -49,8 +49,23 @@ impl StoreCache {
 
     /// Initializes a new instance of the StoreCache class with a snapshot.
     pub fn new_from_snapshot(snapshot: Arc<dyn IStoreSnapshot>) -> Self {
+        let snapshot_for_get = snapshot.clone();
+        let snapshot_for_find = snapshot.clone();
+        let snapshot_get: Arc<StoreGetFn> = Arc::new(move |key: &StorageKey| {
+            let key_bytes = key.to_array();
+            snapshot_for_get
+                .try_get(&key_bytes)
+                .map(StorageItem::from_bytes)
+        });
+        let snapshot_find: Arc<StoreFindFn> = Arc::new(move |prefix, direction| {
+            let prefix_bytes = prefix.map(|key| key.to_array());
+            snapshot_for_find
+                .find(prefix_bytes.as_ref(), direction)
+                .map(|(key, value)| (StorageKey::from_bytes(&key), StorageItem::from_bytes(value)))
+                .collect::<Vec<(StorageKey, StorageItem)>>()
+        });
         Self {
-            data_cache: DataCache::new(false),
+            data_cache: DataCache::new_with_store(false, Some(snapshot_get), Some(snapshot_find)),
             store: None,
             snapshot: Some(snapshot),
         }

@@ -23,17 +23,7 @@ impl ApplicationEngine {
     }
 
     fn is_contract_blocked(&mut self, contract_hash: &UInt160) -> Result<bool> {
-        let policy_hash = PolicyContract::new().hash();
-        let args = vec![contract_hash.to_bytes()];
-        let original_flags = self.call_flags;
-        self.call_flags |= CallFlags::READ_STATES;
-        let result = self.call_native_contract(policy_hash, "isBlocked", &args);
-        self.call_flags = original_flags;
-        match result {
-            Ok(value) => Ok(!value.is_empty() && value[0] != 0),
-            Err(Error::NotFound { .. }) => Ok(false),
-            Err(err) => Err(err),
-        }
+        PolicyContract::new().is_blocked_snapshot(self.snapshot_cache.as_ref(), contract_hash)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -129,16 +119,29 @@ impl ApplicationEngine {
 
         if method.safe {
             flags.remove(CallFlags::WRITE_STATES | CallFlags::ALLOW_NOTIFY);
-        } else if let Some(executing_contract) = executing_contract {
-            if !executing_contract.manifest.can_call(
-                &contract.manifest,
-                &contract.hash,
-                &method.name,
-            ) {
-                return Err(Error::invalid_operation(format!(
-                    "Cannot call method {} of contract {} from contract {}.",
-                    method.name, contract.hash, previous_hash
-                )));
+        } else {
+            let executing_contract = if self.is_hardfork_enabled(Hardfork::HfDomovoi) {
+                executing_contract
+            } else {
+                ContractManagement::get_contract_from_snapshot(
+                    self.snapshot_cache.as_ref(),
+                    &previous_hash,
+                )
+                .ok()
+                .flatten()
+            };
+
+            if let Some(executing_contract) = executing_contract {
+                if !executing_contract.manifest.can_call(
+                    &contract.manifest,
+                    &contract.hash,
+                    &method.name,
+                ) {
+                    return Err(Error::invalid_operation(format!(
+                        "Cannot call method {} of contract {} from contract {}.",
+                        method.name, contract.hash, previous_hash
+                    )));
+                }
             }
         }
 
@@ -155,6 +158,29 @@ impl ApplicationEngine {
             Some(previous_hash),
             has_return_value,
         )?;
+
+        let mut whitelisted = false;
+        if self
+            .protocol_settings
+            .is_hardfork_enabled(Hardfork::HfFaun, self.current_block_index())
+        {
+            let policy = PolicyContract::new();
+            if let Some(fixed_fee) = policy.get_whitelisted_fee(
+                self.snapshot_cache.as_ref(),
+                &contract.hash,
+                &method.name,
+                method.parameters.len() as u32,
+            )? {
+                self.add_fee_datoshi(fixed_fee)?;
+                whitelisted = true;
+            }
+        }
+
+        if whitelisted {
+            let state_arc =
+                new_context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+            state_arc.lock().whitelisted = true;
+        }
 
         {
             let engine = self.vm_engine.engine_mut();

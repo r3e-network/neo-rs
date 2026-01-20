@@ -4,19 +4,23 @@ use super::helpers::NativeHelpers;
 use super::native_contract::{NativeContract, NativeMethod};
 use super::neo_token::NeoToken;
 use super::policy_contract::PolicyContract;
+use super::AccountState;
 use crate::error::{CoreError, CoreResult};
 use crate::network::p2p::payloads::{Transaction, TransactionAttribute, TransactionAttributeType};
 use crate::persistence::i_read_only_store::IReadOnlyStoreGeneric;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::application_engine::ApplicationEngine;
+use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::helper::Helper;
 use crate::smart_contract::manifest::{ContractEventDescriptor, ContractParameterDefinition};
 use crate::smart_contract::storage_context::StorageContext;
 use crate::smart_contract::storage_key::StorageKey;
 use crate::smart_contract::ContractParameterType;
+use crate::smart_contract::IInteroperable;
 use crate::smart_contract::StorageItem;
 use crate::UInt160;
 use lazy_static::lazy_static;
+use neo_vm::execution_engine_limits::ExecutionEngineLimits;
 use neo_vm::StackItem;
 use num_bigint::BigInt;
 use num_traits::{Signed, Zero};
@@ -198,6 +202,25 @@ impl GasToken {
         if from_balance < amount {
             return Ok(vec![0]);
         }
+        if from == to {
+            self.emit_transfer_event(engine, Some(&from), Some(&to), &amount)?;
+            if ContractManagement::get_contract_from_snapshot(snapshot_ref, &to)
+                .map_err(|e| CoreError::native_contract(e.to_string()))?
+                .is_some()
+            {
+                engine.queue_contract_call_from_native(
+                    self.hash(),
+                    to,
+                    "onNEP17Payment",
+                    vec![
+                        StackItem::from_byte_string(from.to_bytes()),
+                        StackItem::from_int(amount.clone()),
+                        data_item,
+                    ],
+                );
+            }
+            return Ok(vec![1]);
+        }
         from_balance -= &amount;
         let mut to_balance = self.balance_of_snapshot(snapshot_ref, &to);
         to_balance += &amount;
@@ -247,6 +270,40 @@ impl GasToken {
             .to_vec()
     }
 
+    fn account_state_from_item(item: &StorageItem) -> AccountState {
+        let bytes = item.get_value();
+        if bytes.is_empty() {
+            return AccountState::default();
+        }
+
+        if let Ok(stack_item) =
+            BinarySerializer::deserialize(&bytes, &ExecutionEngineLimits::default(), None)
+        {
+            if let Some(balance) = Self::balance_from_stack_item(&stack_item) {
+                return AccountState::with_balance(balance);
+            }
+        }
+
+        AccountState::with_balance(item.to_bigint())
+    }
+
+    fn balance_from_stack_item(item: &StackItem) -> Option<BigInt> {
+        match item {
+            StackItem::Struct(struct_item) => struct_item
+                .items()
+                .first()
+                .and_then(|entry| entry.as_int().ok()),
+            StackItem::Array(array_item) => array_item
+                .items()
+                .first()
+                .and_then(|entry| entry.as_int().ok()),
+            StackItem::Integer(value) => Some(value.clone()),
+            StackItem::ByteString(bytes) => Some(BigInt::from_signed_bytes_le(bytes)),
+            StackItem::Buffer(buffer) => Some(BigInt::from_signed_bytes_le(&buffer.data())),
+            _ => None,
+        }
+    }
+
     fn encode_amount(value: &BigInt) -> Vec<u8> {
         let mut bytes = value.to_signed_bytes_le();
         if bytes.is_empty() {
@@ -288,7 +345,12 @@ impl GasToken {
         if balance.is_zero() {
             engine.delete_storage_item(context, &key)?;
         } else {
-            let bytes = Self::encode_amount(balance);
+            let state = AccountState::with_balance(balance.clone());
+            let bytes = BinarySerializer::serialize(
+                &state.to_stack_item(),
+                &ExecutionEngineLimits::default(),
+            )
+            .map_err(CoreError::native_contract)?;
             engine.put_storage_item(context, &key, &bytes)?;
         }
         Ok(())
@@ -446,7 +508,7 @@ impl GasToken {
         let key = StorageKey::create_with_uint160(Self::ID, ACCOUNT_PREFIX, account);
         snapshot
             .try_get(&key)
-            .map(|item| item.to_bigint())
+            .map(|item| Self::account_state_from_item(&item).balance)
             .unwrap_or_else(BigInt::zero)
     }
 }

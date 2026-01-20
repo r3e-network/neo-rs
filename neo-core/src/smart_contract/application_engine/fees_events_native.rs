@@ -8,9 +8,23 @@ impl ApplicationEngine {
         )
     }
 
-    /// Adds datoshis to `FeeConsumed` / `GasConsumed` (matches C# `ApplicationEngine.AddFee`).
-    fn add_fee_datoshi(&mut self, datoshi: i64) -> Result<()> {
-        if datoshi < 0 {
+    /// Adds datoshis to `FeeConsumed` / `GasConsumed`.
+    pub(crate) fn add_fee_datoshi(&mut self, datoshi: i64) -> Result<()> {
+        let pico_gas = datoshi
+            .checked_mul(FEE_FACTOR)
+            .ok_or_else(|| Error::invalid_operation("Fee multiplication overflow".to_string()))?;
+        self.add_fee_pico(pico_gas)
+    }
+
+    /// Adds picoGAS to `FeeConsumed` / `GasConsumed`.
+    fn add_fee_pico(&mut self, pico_gas: i64) -> Result<()> {
+        if let Ok(state_arc) = self.current_execution_state() {
+            if state_arc.lock().whitelisted {
+                return Ok(());
+            }
+        }
+
+        if pico_gas < 0 {
             return Err(Error::invalid_operation(
                 "Negative gas fee is not allowed".to_string(),
             ));
@@ -18,15 +32,15 @@ impl ApplicationEngine {
 
         let total = self
             .fee_consumed
-            .checked_add(datoshi)
+            .checked_add(pico_gas)
             .ok_or_else(|| Error::invalid_operation("Fee addition overflow".to_string()))?;
 
         self.fee_consumed = total;
         self.gas_consumed = total;
 
         if self.fee_consumed > self.fee_amount {
-            let required = self.fee_consumed.max(0) as u64;
-            let available = self.fee_amount.max(0) as u64;
+            let required = (self.fee_consumed.max(0) as u64).div_ceil(FEE_FACTOR as u64);
+            let available = (self.fee_amount.max(0) as u64) / (FEE_FACTOR as u64);
             return Err(Error::insufficient_gas(required, available));
         }
 
@@ -44,10 +58,10 @@ impl ApplicationEngine {
             return Ok(());
         }
 
-        let datoshi = fee_units
+        let pico_gas = fee_units
             .checked_mul(i64::from(self.exec_fee_factor))
             .ok_or_else(|| Error::invalid_operation("CPU fee overflow".to_string()))?;
-        self.add_fee_datoshi(datoshi)
+        self.add_fee_pico(pico_gas)
     }
 
     pub fn charge_execution_fee(&mut self, fee: u64) -> Result<()> {
@@ -130,7 +144,11 @@ impl ApplicationEngine {
 
     /// Checks if enough gas is available for an operation.
     pub fn check_gas(&self, required_gas: i64) -> Result<()> {
-        if self.gas_consumed + required_gas > self.gas_limit {
+        let required_pico = required_gas
+            .checked_mul(FEE_FACTOR)
+            .ok_or_else(|| Error::invalid_operation("Gas multiplication overflow".to_string()))?;
+
+        if self.gas_consumed + required_pico > self.gas_limit {
             return Err(Error::invalid_operation("Out of gas".to_string()));
         }
         Ok(())
@@ -190,18 +208,36 @@ impl ApplicationEngine {
             )));
         }
 
-        // Charge native contract fees upfront (matches C# NativeContract.Invoke).
-        if method_meta.cpu_fee != 0 {
-            self.add_cpu_fee(method_meta.cpu_fee)?;
+        let mut is_whitelisted = false;
+        if self.protocol_settings.is_hardfork_enabled(Hardfork::HfFaun, block_height) {
+            let policy = PolicyContract::new();
+            if policy
+                .get_whitelisted_fee(
+                    self.snapshot_cache.as_ref(),
+                    &contract_hash,
+                    method,
+                    args.len() as u32,
+                )?
+                .is_some()
+            {
+                is_whitelisted = true;
+            }
         }
-        if method_meta.storage_fee != 0 {
-            let storage_fee = method_meta
-                .storage_fee
-                .checked_mul(i64::from(self.storage_price))
-                .ok_or_else(|| {
-                    Error::invalid_operation("Native storage fee overflow".to_string())
-                })?;
-            self.add_fee_datoshi(storage_fee)?;
+
+        if !is_whitelisted {
+            // Charge native contract fees upfront (matches C# NativeContract.Invoke).
+            if method_meta.cpu_fee != 0 {
+                self.add_cpu_fee(method_meta.cpu_fee)?;
+            }
+            if method_meta.storage_fee != 0 {
+                let storage_fee = method_meta
+                    .storage_fee
+                    .checked_mul(i64::from(self.storage_price))
+                    .ok_or_else(|| {
+                        Error::invalid_operation("Native storage fee overflow".to_string())
+                    })?;
+                self.add_fee_datoshi(storage_fee)?;
+            }
         }
 
         let result = native.invoke(self, method, args)?;
@@ -268,7 +304,11 @@ impl ApplicationEngine {
             ));
         }
 
-        let Some(total) = self.fee_consumed.checked_add(gas) else {
+        let pico_gas = gas
+            .checked_mul(FEE_FACTOR)
+            .ok_or_else(|| Error::invalid_operation("Gas multiplication overflow".to_string()))?;
+
+        let Some(total) = self.fee_consumed.checked_add(pico_gas) else {
             return Err(Error::invalid_operation(
                 "Gas addition overflow".to_string(),
             ));

@@ -666,8 +666,9 @@ mod tests {
         let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         path.push("..");
         path.push("neo_csharp");
+        path.push("node");
         path.push("tests");
-        path.push("Neo.RpcClient.Tests");
+        path.push("Neo.Network.RPC.Tests");
         path.push("RpcTestCases.json");
         let payload = fs::read_to_string(&path).expect("read RpcTestCases.json");
         let token = JToken::parse(&payload, 128).expect("parse RpcTestCases.json");
@@ -716,6 +717,14 @@ mod tests {
                 .and_then(|value| value.as_string())
                 .unwrap_or_default()
                 .to_string();
+            let contract = if UInt160::parse(&contract).is_ok() {
+                contract
+            } else {
+                neo_core::smart_contract::native::NativeRegistry::new()
+                    .get_by_name(&contract)
+                    .map(|native| native.hash().to_string())
+                    .unwrap_or(contract)
+            };
 
             return (contract, response.to_string());
         }
@@ -837,30 +846,34 @@ mod tests {
             .with_header("content-type", "application/json")
             .with_body(contract_state_response)
             .create();
-        let _m_invoke_info = server
-            .mock("POST", "/")
-            .match_body(Matcher::Regex(
-                r#""method"\s*:\s*"invokescript".*"c3ltYm9s""#.into(),
-            ))
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_body(invoke_info_response)
-            .create();
-        let _m_invoke_balance = server
-            .mock("POST", "/")
-            .match_body(Matcher::Regex(
-                r#""method"\s*:\s*"invokescript".*"YmFsYW5jZU9m""#.into(),
-            ))
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_body(invoke_balance_response)
-            .create();
 
         let url = Url::parse(&server.url()).expect("parse server url");
         let client = RpcClient::builder(url).build().expect("build client");
         let api = Nep17Api::new(Arc::new(client));
 
         let script_hash = UInt160::parse(&contract_hash).expect("script hash");
+        let mut info_script = Vec::new();
+        info_script.extend(
+            api.make_script(&script_hash, "symbol", vec![])
+                .expect("symbol script"),
+        );
+        info_script.extend(
+            api.make_script(&script_hash, "decimals", vec![])
+                .expect("decimals script"),
+        );
+        info_script.extend(
+            api.make_script(&script_hash, "totalSupply", vec![])
+                .expect("total supply script"),
+        );
+        let info_script_b64 = general_purpose::STANDARD.encode(info_script);
+        mock_invokescript(&mut server, &info_script_b64, &invoke_info_response);
+
+        let account =
+            WalletHelper::to_script_hash(&address, settings.address_version).expect("account");
+        let balance_args = vec![serde_json::json!(account.to_string())];
+        let balance_script = build_dynamic_call_script(&script_hash, "balanceOf", &balance_args);
+        let balance_script_b64 = general_purpose::STANDARD.encode(balance_script);
+        mock_invokescript(&mut server, &balance_script_b64, invoke_balance_response);
         let info = api
             .get_token_info_with_balance(&address, &script_hash)
             .await

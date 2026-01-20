@@ -14,7 +14,7 @@ use super::{
     witness::Witness, InventoryType, TransactionAttributeType,
 };
 use crate::cryptography::Secp256r1Crypto;
-use crate::hardfork::{is_hardfork_enabled, Hardfork};
+use crate::hardfork::Hardfork;
 use crate::neo_crypto::sha256;
 use crate::neo_io::serializable::helper::get_var_size;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};

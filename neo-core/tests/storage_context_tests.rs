@@ -1,7 +1,7 @@
-use neo_core::neo_io::MemoryReader;
 use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::transaction::Transaction;
 use neo_core::persistence::DataCache;
+use neo_core::smart_contract::binary_serializer::BinarySerializer;
 use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::smart_contract::contract_state::{ContractState, NefFile};
 use neo_core::smart_contract::manifest::{
@@ -11,9 +11,10 @@ use neo_core::smart_contract::manifest::{
 use neo_core::smart_contract::native::ContractManagement;
 use neo_core::smart_contract::storage_context::StorageContext;
 use neo_core::smart_contract::trigger_type::TriggerType;
+use neo_core::smart_contract::IInteroperable;
 use neo_core::witness::Witness;
 use neo_core::{IVerifiable, NativeContract, UInt160, WitnessScope};
-use neo_vm::OpCode;
+use neo_vm::{ExecutionEngineLimits, OpCode};
 use std::sync::Arc;
 
 fn default_manifest() -> ContractManifest {
@@ -70,8 +71,13 @@ fn deploy_contract(
         .call_native_contract(cm_hash, "deploy", &[nef.to_bytes(), manifest_bytes, Vec::new()])
         .expect("deploy");
 
-    let mut reader = MemoryReader::new(&result);
-    ContractState::deserialize(&mut reader).expect("contract state")
+    let contract_item =
+        BinarySerializer::deserialize(&result, &ExecutionEngineLimits::default(), None)
+            .expect("contract state item");
+    let mut contract =
+        ContractState::new(0, UInt160::zero(), nef, ContractManifest::new(String::new()));
+    contract.from_stack_item(contract_item);
+    contract
 }
 
 #[test]

@@ -58,49 +58,55 @@ impl NeoToken {
             // Governance query methods (safe)
             NativeMethod::safe(
                 "unclaimedGas".to_string(),
-                1 << 4,
+                1 << 17,
                 vec![
                     ContractParameterType::Hash160,
                     ContractParameterType::Integer,
                 ],
                 ContractParameterType::Integer,
             )
+            .with_required_call_flags(CallFlags::READ_STATES)
             .with_parameter_names(vec!["account".to_string(), "end".to_string()]),
             NativeMethod::safe(
                 "getAccountState".to_string(),
-                1 << 4,
+                1 << 15,
                 vec![ContractParameterType::Hash160],
                 ContractParameterType::Array,
             )
+            .with_required_call_flags(CallFlags::READ_STATES)
             .with_parameter_names(vec!["account".to_string()]),
             NativeMethod::safe(
                 "getCandidates".to_string(),
                 1 << 22,
                 Vec::new(),
                 ContractParameterType::Array,
-            ),
+            )
+            .with_required_call_flags(CallFlags::READ_STATES),
             NativeMethod::safe(
                 "getAllCandidates".to_string(),
                 1 << 22,
                 Vec::new(),
-                ContractParameterType::Array,
-            ),
+                ContractParameterType::InteropInterface,
+            )
+            .with_required_call_flags(CallFlags::READ_STATES),
             NativeMethod::safe(
                 "getCandidateVote".to_string(),
-                1 << 4,
+                1 << 15,
                 vec![ContractParameterType::PublicKey],
                 ContractParameterType::Integer,
             )
-            .with_parameter_names(vec!["pubkey".to_string()]),
+            .with_required_call_flags(CallFlags::READ_STATES)
+            .with_parameter_names(vec!["pubKey".to_string()]),
             NativeMethod::safe(
                 "getCommittee".to_string(),
-                1 << 4,
+                1 << 16,
                 Vec::new(),
                 ContractParameterType::Array,
-            ),
+            )
+            .with_required_call_flags(CallFlags::READ_STATES),
             NativeMethod::safe(
                 "getCommitteeAddress".to_string(),
-                1 << 4,
+                1 << 16,
                 Vec::new(),
                 ContractParameterType::Hash160,
             )
@@ -108,26 +114,29 @@ impl NeoToken {
             .with_required_call_flags(CallFlags::READ_STATES),
             NativeMethod::safe(
                 "getNextBlockValidators".to_string(),
-                1 << 4,
+                1 << 16,
                 Vec::new(),
                 ContractParameterType::Array,
-            ),
+            )
+            .with_required_call_flags(CallFlags::READ_STATES),
             NativeMethod::safe(
                 "getGasPerBlock".to_string(),
-                1 << 4,
+                1 << 15,
                 Vec::new(),
                 ContractParameterType::Integer,
-            ),
+            )
+            .with_required_call_flags(CallFlags::READ_STATES),
             NativeMethod::safe(
                 "getRegisterPrice".to_string(),
-                1 << 4,
+                1 << 15,
                 Vec::new(),
                 ContractParameterType::Integer,
-            ),
+            )
+            .with_required_call_flags(CallFlags::READ_STATES),
             // NEP-17 callbacks (Echidna+).
             NativeMethod::unsafe_method(
                 "onNEP17Payment".to_string(),
-                1 << 15,
+                0,
                 (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
                 vec![
                     ContractParameterType::Hash160,
@@ -145,7 +154,7 @@ impl NeoToken {
             // Governance write methods (unsafe - require witness/committee)
             NativeMethod::unsafe_method(
                 "registerCandidate".to_string(),
-                1 << SECONDS_PER_BLOCK,
+                0,
                 CallFlags::STATES.bits(),
                 vec![ContractParameterType::PublicKey],
                 ContractParameterType::Boolean,
@@ -154,7 +163,7 @@ impl NeoToken {
             .with_parameter_names(vec!["pubkey".to_string()]),
             NativeMethod::unsafe_method(
                 "registerCandidate".to_string(),
-                1 << SECONDS_PER_BLOCK,
+                0,
                 (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
                 vec![ContractParameterType::PublicKey],
                 ContractParameterType::Boolean,
@@ -163,7 +172,7 @@ impl NeoToken {
             .with_parameter_names(vec!["pubkey".to_string()]),
             NativeMethod::unsafe_method(
                 "unregisterCandidate".to_string(),
-                1 << SECONDS_PER_BLOCK,
+                1 << 16,
                 CallFlags::STATES.bits(),
                 vec![ContractParameterType::PublicKey],
                 ContractParameterType::Boolean,
@@ -172,7 +181,7 @@ impl NeoToken {
             .with_parameter_names(vec!["pubkey".to_string()]),
             NativeMethod::unsafe_method(
                 "unregisterCandidate".to_string(),
-                1 << SECONDS_PER_BLOCK,
+                1 << 16,
                 (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
                 vec![ContractParameterType::PublicKey],
                 ContractParameterType::Boolean,
@@ -181,7 +190,7 @@ impl NeoToken {
             .with_parameter_names(vec!["pubkey".to_string()]),
             NativeMethod::unsafe_method(
                 "vote".to_string(),
-                1 << SECONDS_PER_BLOCK,
+                1 << 16,
                 CallFlags::STATES.bits(),
                 vec![
                     ContractParameterType::Hash160,
@@ -193,7 +202,7 @@ impl NeoToken {
             .with_parameter_names(vec!["account".to_string(), "voteTo".to_string()]),
             NativeMethod::unsafe_method(
                 "vote".to_string(),
-                1 << SECONDS_PER_BLOCK,
+                1 << 16,
                 (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
                 vec![
                     ContractParameterType::Hash160,
@@ -205,18 +214,20 @@ impl NeoToken {
             .with_parameter_names(vec!["account".to_string(), "voteTo".to_string()]),
             NativeMethod::unsafe_method(
                 "setGasPerBlock".to_string(),
-                1 << 4,
+                1 << 15,
                 CallFlags::STATES.bits(),
                 vec![ContractParameterType::Integer],
                 ContractParameterType::Void,
-            ),
+            )
+            .with_parameter_names(vec!["gasPerBlock".to_string()]),
             NativeMethod::unsafe_method(
                 "setRegisterPrice".to_string(),
-                1 << 4,
+                1 << 15,
                 CallFlags::STATES.bits(),
                 vec![ContractParameterType::Integer],
                 ContractParameterType::Void,
-            ),
+            )
+            .with_parameter_names(vec!["registerPrice".to_string()]),
         ];
 
         Self { methods }

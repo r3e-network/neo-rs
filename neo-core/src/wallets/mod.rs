@@ -3,6 +3,8 @@
 //! This module provides wallet functionality matching the C# Neo.Wallets namespace.
 
 pub mod asset_descriptor;
+pub mod bip32;
+pub mod bip39;
 pub mod helper;
 pub mod i_wallet_factory;
 pub mod i_wallet_provider;
@@ -15,6 +17,8 @@ pub mod wallet_account;
 
 // Re-export commonly used types
 pub use asset_descriptor::AssetDescriptor;
+pub use bip32::{ExtendedKey, KeyPath};
+pub use bip39::{get_mnemonic_code, get_mnemonic_code_with_language, mnemonic_to_entropy};
 pub use helper::Helper;
 pub use i_wallet_factory::IWalletFactory;
 pub use i_wallet_provider::IWalletProvider;

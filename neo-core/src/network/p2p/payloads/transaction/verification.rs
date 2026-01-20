@@ -57,7 +57,7 @@ impl Transaction {
         let mut attributes_fee = 0i64;
         for attribute in &self.attributes {
             if attribute.get_type() == TransactionAttributeType::NotaryAssisted
-                && !is_hardfork_enabled(Hardfork::HfEchidna, height)
+                && !settings.is_hardfork_enabled(Hardfork::HfEchidna, height)
             {
                 return VerifyResult::InvalidAttribute;
             }
@@ -83,9 +83,8 @@ impl Transaction {
         }
 
         let exec_fee_factor = policy
-            .get_exec_fee_factor_snapshot(snapshot)
-            .unwrap_or(PolicyContract::DEFAULT_EXEC_FEE_FACTOR)
-            as i64;
+            .get_exec_fee_factor_snapshot(snapshot, settings, height)
+            .unwrap_or(PolicyContract::DEFAULT_EXEC_FEE_FACTOR) as i64;
 
         let sign_data = self.get_sign_data(settings.network);
 

@@ -121,11 +121,7 @@ impl ContractManagement {
         let contract = ContractState::new(contract_id, contract_hash, nef, manifest);
 
         // Serialize contract state for persistence
-        let mut writer = BinaryWriter::new();
-        contract
-            .serialize(&mut writer)
-            .map_err(|e| Error::serialization(format!("Failed to serialize contract: {}", e)))?;
-        let contract_bytes = writer.to_bytes();
+        let contract_bytes = Self::serialize_contract_state(&contract)?;
         let contract_hash_bytes = contract_hash.as_bytes();
 
         // Store contract in in-memory cache and prepare metadata snapshots

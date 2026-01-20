@@ -3,7 +3,7 @@
 ## [0.7.0] - 2025-11-30
 
 ### Compatibility
-- Compatible with Neo N3 v3.8.2
+- Compatible with Neo N3 v3.9.0 (C# v3.9.0 release)
 - Verified TestNet connectivity and block synchronization
 
 ### Added

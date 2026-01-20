@@ -56,6 +56,9 @@ impl ContractManagement {
         // Block the contract hash so it cannot be redeployed without governance approval
         let _ = PolicyContract::new().block_account_internal(engine, &contract_hash)?;
 
+        // Clean whitelist entries (emit events) for the destroyed contract.
+        PolicyContract::new().clean_whitelist(engine, &contract)?;
+
         // Emit Destroy event
         engine.emit_notification(&self.hash, "Destroy", &[contract_hash.to_bytes()])?;
 

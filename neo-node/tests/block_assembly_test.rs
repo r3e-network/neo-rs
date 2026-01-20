@@ -3,6 +3,7 @@
 use neo_consensus::BlockData;
 use neo_core::network::p2p::payloads::Block;
 use neo_crypto::{ecc::generate_keypair, ECCurve};
+use neo_vm::op_code::OpCode;
 
 #[tokio::test]
 async fn test_complete_block_assembly_workflow() {
@@ -52,7 +53,7 @@ async fn test_complete_block_assembly_workflow() {
     assert_eq!(witness.invocation_script.len(), 198);
 
     // Verify verification script format
-    assert_eq!(witness.verification_script[0], 0x53); // PUSH3 for M=3
+    assert_eq!(witness.verification_script[0], OpCode::PUSH3 as u8); // PUSH3 for M=3
 
     println!("✓ Block assembly test passed");
     println!("  Block index: {}", block.index());

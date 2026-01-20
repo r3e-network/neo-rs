@@ -432,7 +432,7 @@ mod tests {
     fn rpc_server_config_loads_csharp_settings() {
         let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let config_path =
-            manifest_dir.join("../neo_csharp/src/Plugins/RpcServer/RpcServer.json");
+            manifest_dir.join("../neo_csharp/node/plugins/RpcServer/RpcServer.json");
         let raw = fs::read_to_string(&config_path).expect("read rpc server config");
         let json: Value = serde_json::from_str(&raw).expect("parse rpc server config");
         let servers = json["PluginConfiguration"]["Servers"]

@@ -32,10 +32,7 @@ impl ContractManagement {
             return Ok(None);
         }
 
-        let mut reader = MemoryReader::new(&bytes);
-        let contract = <ContractState as Serializable>::deserialize(&mut reader).map_err(|e| {
-            Error::deserialization(format!("Failed to deserialize contract: {}", e))
-        })?;
+        let contract = Self::deserialize_contract_state(&bytes)?;
         Ok(Some(contract))
     }
 
@@ -54,10 +51,7 @@ impl ContractManagement {
             return Ok(None);
         }
 
-        let mut reader = MemoryReader::new(&bytes);
-        let contract = <ContractState as Serializable>::deserialize(&mut reader).map_err(|e| {
-            Error::deserialization(format!("Failed to deserialize contract: {}", e))
-        })?;
+        let contract = Self::deserialize_contract_state(&bytes)?;
         Ok(Some(contract))
     }
 
@@ -193,8 +187,7 @@ impl ContractManagement {
             .find(Some(&prefix), SeekDirection::Forward)
             .filter_map(|(_, item)| {
                 let bytes = item.get_value();
-                let mut reader = MemoryReader::new(&bytes);
-                <ContractState as Serializable>::deserialize(&mut reader).ok()
+                Self::deserialize_contract_state(&bytes).ok()
             })
             .filter(|contract| contract.id >= 0)
             .collect();

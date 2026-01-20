@@ -90,6 +90,41 @@ impl ApplicationEngine {
         state
     }
 
+    /// Executes instructions until the invocation stack depth returns to `target_depth`
+    /// or the VM halts/faults. Intended for native contract helpers that need to run
+    /// a nested contract call synchronously.
+    pub fn execute_until_invocation_stack_depth(&mut self, target_depth: usize) -> VMState {
+        // Keep the engine host pointer aligned with this instance across moves.
+        self.attach_host();
+
+        loop {
+            let state = self.vm_engine.engine().state();
+            if state == VMState::HALT || state == VMState::FAULT {
+                if state == VMState::FAULT {
+                    self.capture_fault_exception_from_vm();
+                }
+                return state;
+            }
+
+            if self.vm_engine.engine().invocation_stack().len() <= target_depth {
+                return state;
+            }
+
+            let step = self.vm_engine.engine_mut().execute_next();
+            if let Err(err) = step {
+                let message = err.to_string();
+                self.vm_engine
+                    .engine_mut()
+                    .set_uncaught_exception(Some(StackItem::from_byte_string(
+                        message.clone().into_bytes(),
+                    )));
+                self.vm_engine.engine_mut().set_state(VMState::FAULT);
+                self.capture_fault_exception_from_vm();
+                return VMState::FAULT;
+            }
+        }
+    }
+
     /// Executes the loaded scripts until the VM halts or faults.
     pub fn execute(&mut self) -> Result<()> {
         let state = self.execute_allow_fault();

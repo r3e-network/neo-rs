@@ -89,6 +89,7 @@ pub(super) fn classify_import_block(current_height: u32, block_index: u32) -> Im
     }
 }
 
+#[cfg(test)]
 pub(super) fn should_schedule_reverify_idle(more_pending: bool, header_backlog: bool) -> bool {
     more_pending && !header_backlog
 }

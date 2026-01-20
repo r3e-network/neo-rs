@@ -69,6 +69,10 @@ impl ApplicationEngine {
         call_flags: CallFlags,
         args: Vec<StackItem>,
     ) -> Result<(), String> {
+        if call_flags.bits() & !CallFlags::ALL.bits() != 0 {
+            return Err(format!("Invalid call flags: {call_flags:?}"));
+        }
+
         let calling_context = self
             .current_context()
             .cloned()

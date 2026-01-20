@@ -22,6 +22,82 @@ use num_bigint::{BigInt, Sign};
 use num_traits::{ToPrimitive, Zero};
 use std::any::Any;
 
+use crate::smart_contract::i_interoperable::IInteroperable;
+
+/// Whitelisted fee contract info.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WhitelistedContract {
+    /// Contract hash.
+    pub contract_hash: UInt160,
+    /// Method name.
+    pub method: String,
+    /// Argument count.
+    pub arg_count: u32,
+    /// Fixed fee in datoshi.
+    pub fixed_fee: i64,
+}
+
+impl Default for WhitelistedContract {
+    fn default() -> Self {
+        Self {
+            contract_hash: UInt160::zero(),
+            method: String::new(),
+            arg_count: 0,
+            fixed_fee: 0,
+        }
+    }
+}
+
+impl IInteroperable for WhitelistedContract {
+    fn from_stack_item(&mut self, stack_item: StackItem) {
+        let StackItem::Struct(struct_item) = stack_item else {
+            return;
+        };
+
+        let items = struct_item.items();
+        if items.len() < 4 {
+            return;
+        }
+
+        if let Ok(bytes) = items[0].as_bytes() {
+            if let Ok(hash) = UInt160::from_bytes(&bytes) {
+                self.contract_hash = hash;
+            }
+        }
+
+        if let Ok(bytes) = items[1].as_bytes() {
+            if let Ok(method) = String::from_utf8(bytes) {
+                self.method = method;
+            }
+        }
+
+        if let Ok(value) = items[2].as_int() {
+            if let Some(count) = value.to_u32() {
+                self.arg_count = count;
+            }
+        }
+
+        if let Ok(value) = items[3].as_int() {
+            if let Some(fee) = value.to_i64() {
+                self.fixed_fee = fee;
+            }
+        }
+    }
+
+    fn to_stack_item(&self) -> StackItem {
+        StackItem::from_struct(vec![
+            StackItem::from_byte_string(self.contract_hash.to_bytes()),
+            StackItem::from_byte_string(self.method.as_bytes().to_vec()),
+            StackItem::from_int(self.arg_count as i64),
+            StackItem::from_int(self.fixed_fee),
+        ])
+    }
+
+    fn clone_box(&self) -> Box<dyn IInteroperable> {
+        Box::new(self.clone())
+    }
+}
+
 /// The Policy native contract.
 pub struct PolicyContract {
     id: i32,
@@ -67,6 +143,12 @@ impl PolicyContract {
     /// Maximum MaxTraceableBlocks committee can set.
     pub const MAX_MAX_TRACEABLE_BLOCKS: u32 = 2_102_400;
 
+    /// Required waiting time before recoverFund can execute (milliseconds).
+    const REQUIRED_TIME_FOR_RECOVER_FUND_MS: u64 = 365 * 24 * 60 * 60 * 1_000;
+    
+    // Whitelist fee contracts prefix
+    const PREFIX_WHITELISTED_FEE_CONTRACTS: u8 = 16;
+
     const PREFIX_BLOCKED_ACCOUNT: u8 = 15;
     const PREFIX_FEE_PER_BYTE: u8 = 10;
     const PREFIX_EXEC_FEE_FACTOR: u8 = 18;
@@ -81,11 +163,8 @@ impl PolicyContract {
     /// Creates a new Policy contract.
     pub fn new() -> Self {
         // Policy contract hash: 0xcc5e4edd9f5f8dba8bb65734541df7a1c081c67b
-        let hash = UInt160::from_bytes(&[
-            0xcc, 0x5e, 0x4e, 0xdd, 0x9f, 0x5f, 0x8d, 0xba, 0x8b, 0xb6, 0x57, 0x34, 0x54, 0x1d,
-            0xf7, 0xa1, 0xc0, 0x81, 0xc6, 0x7b,
-        ])
-        .expect("PolicyContract hash should be valid");
+        let hash = UInt160::parse("0xcc5e4edd9f5f8dba8bb65734541df7a1c081c67b")
+            .expect("PolicyContract hash should be valid");
 
         let methods = vec![
             NativeMethod::safe(
@@ -101,6 +180,14 @@ impl PolicyContract {
                 Vec::new(),
                 ContractParameterType::Integer,
             )
+            .with_required_call_flags(CallFlags::READ_STATES),
+            NativeMethod::safe(
+                "getExecPicoFeeFactor".to_string(),
+                Self::CPU_FEE,
+                Vec::new(),
+                ContractParameterType::Integer,
+            )
+            .with_active_in(Hardfork::HfFaun)
             .with_required_call_flags(CallFlags::READ_STATES),
             NativeMethod::safe(
                 "getStoragePrice".to_string(),
@@ -238,6 +325,8 @@ impl PolicyContract {
             )
             .with_required_call_flags(CallFlags::READ_STATES)
             .with_parameter_names(vec!["account".to_string()]),
+            
+            // BlockAccount overloads (hardfork switch at Faun)
             NativeMethod::unsafe_method(
                 "blockAccount".to_string(),
                 Self::CPU_FEE,
@@ -245,7 +334,19 @@ impl PolicyContract {
                 vec![ContractParameterType::Hash160],
                 ContractParameterType::Boolean,
             )
+            .with_deprecated_in(Hardfork::HfFaun)
             .with_parameter_names(vec!["account".to_string()]),
+
+            NativeMethod::unsafe_method(
+                "blockAccount".to_string(),
+                Self::CPU_FEE,
+                (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
+                vec![ContractParameterType::Hash160],
+                ContractParameterType::Boolean,
+            )
+            .with_active_in(Hardfork::HfFaun)
+            .with_parameter_names(vec!["account".to_string()]),
+
             NativeMethod::unsafe_method(
                 "unblockAccount".to_string(),
                 Self::CPU_FEE,
@@ -254,6 +355,7 @@ impl PolicyContract {
                 ContractParameterType::Boolean,
             )
             .with_parameter_names(vec!["account".to_string()]),
+
             NativeMethod::safe(
                 "getBlockedAccounts".to_string(),
                 Self::CPU_FEE,
@@ -262,6 +364,66 @@ impl PolicyContract {
             )
             .with_active_in(Hardfork::HfFaun)
             .with_required_call_flags(CallFlags::READ_STATES),
+            
+            // Whitelist management (HF_Faun)
+            NativeMethod::unsafe_method(
+                "setWhitelistFeeContract".to_string(),
+                Self::CPU_FEE,
+                (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
+                vec![
+                    ContractParameterType::Hash160,
+                    ContractParameterType::String,
+                    ContractParameterType::Integer,
+                    ContractParameterType::Integer,
+                ],
+                ContractParameterType::Void,
+            )
+            .with_active_in(Hardfork::HfFaun)
+            .with_parameter_names(vec![
+                "contractHash".to_string(),
+                "method".to_string(),
+                "argCount".to_string(),
+                "fixedFee".to_string(),
+            ]),
+            NativeMethod::unsafe_method(
+                "removeWhitelistFeeContract".to_string(),
+                Self::CPU_FEE,
+                (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
+                vec![
+                    ContractParameterType::Hash160,
+                    ContractParameterType::String,
+                    ContractParameterType::Integer,
+                ],
+                ContractParameterType::Void,
+            )
+            .with_active_in(Hardfork::HfFaun)
+            .with_parameter_names(vec![
+                "contractHash".to_string(),
+                "method".to_string(),
+                "argCount".to_string(),
+            ]),
+            NativeMethod::safe(
+                "getWhitelistFeeContracts".to_string(),
+                Self::CPU_FEE,
+                Vec::new(),
+                ContractParameterType::InteropInterface,
+            )
+            .with_active_in(Hardfork::HfFaun)
+            .with_required_call_flags(CallFlags::READ_STATES),
+
+            // Recover fund (HF_Faun)
+            NativeMethod::unsafe_method(
+                "recoverFund".to_string(),
+                Self::CPU_FEE,
+                (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
+                vec![
+                    ContractParameterType::Hash160,
+                    ContractParameterType::Hash160,
+                ],
+                ContractParameterType::Boolean,
+            )
+            .with_active_in(Hardfork::HfFaun)
+            .with_parameter_names(vec!["account".to_string(), "token".to_string()]),
         ];
 
         Self {
@@ -279,3 +441,6 @@ mod helpers;
 mod native_impl;
 mod setters;
 mod snapshot;
+
+#[cfg(test)]
+mod tests;

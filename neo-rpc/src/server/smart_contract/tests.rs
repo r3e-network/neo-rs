@@ -3,17 +3,17 @@ use crate::server::rcp_server_settings::RpcServerConfig;
 use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::transaction::Transaction;
 use neo_core::network::p2p::payloads::witness::Witness;
-use neo_core::neo_io::MemoryReader;
 use neo_core::persistence::transaction::apply_tracked_items;
 use neo_core::smart_contract::helper::Helper as ContractHelper;
+use neo_core::smart_contract::binary_serializer::BinarySerializer;
 use neo_core::smart_contract::iterators::{IteratorInterop, StorageIterator};
 use neo_core::smart_contract::manifest::{
     ContractAbi, ContractMethodDescriptor, ContractParameterDefinition, ContractManifest,
 };
 use neo_core::smart_contract::native::{ContractManagement, NativeContract, NeoToken};
 use neo_core::smart_contract::{
-    ApplicationEngine, Contract, ContractParameterType, ContractState, FindOptions, NefFile,
-    StorageItem, StorageKey, TriggerType,
+    ApplicationEngine, Contract, ContractParameterType, ContractState, FindOptions, IInteroperable,
+    NefFile, StorageItem, StorageKey, TriggerType,
 };
 use neo_core::wallets::wallet::{Wallet, WalletError, WalletResult};
 use neo_core::wallets::helper::Helper as WalletHelper;
@@ -21,6 +21,7 @@ use neo_core::wallets::{KeyPair, StandardWalletAccount, WalletAccount};
 use neo_core::{NeoSystem, ProtocolSettings, UInt160, WitnessScope};
 
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use neo_vm::execution_engine_limits::ExecutionEngineLimits;
 use neo_vm::op_code::OpCode;
 use neo_vm::stack_item::InteropInterface as VmInteropInterface;
 use num_bigint::BigInt;
@@ -230,8 +231,14 @@ fn deploy_verify_contract(system: &Arc<NeoSystem>) -> UInt160 {
         )
         .expect("deploy");
 
-    let mut reader = MemoryReader::new(&contract_bytes);
-    let contract = ContractState::deserialize(&mut reader).expect("contract state");
+    let item = BinarySerializer::deserialize(
+        &contract_bytes,
+        &ExecutionEngineLimits::default(),
+        None,
+    )
+    .expect("contract stack item");
+    let mut contract = ContractState::default();
+    contract.from_stack_item(item);
 
     let tracked = engine.snapshot_cache().tracked_items();
     apply_tracked_items(&mut store_cache, tracked);

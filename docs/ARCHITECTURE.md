@@ -156,7 +156,7 @@ To prevent deadlocks, acquire locks in this order:
 - Unit tests for serialization, VM, state store (proofs, validation), and contract/native logic remain in `neo-core`.
 - Foundation crates (`neo-primitives`, `neo-crypto`, `neo-storage`) have comprehensive unit tests.
 - Integration tests should exercise service registration and RPC surfaces (e.g., state-service endpoints) with in-process components where possible.
-- Golden compatibility tests (C# parity) must not be broken without updating fixtures.
+- Golden compatibility tests (C# parity, Neo N3 v3.9.0 fixtures) must not be broken without updating fixtures.
 
 ## Observability
 
@@ -169,6 +169,8 @@ To prevent deadlocks, acquire locks in this order:
 - For new components, add a config struct, validation, and a TOML example snippet under `docs/`.
 
 ## C# Neo Compatibility
+
+Target compatibility: Neo N3 v3.9.0 (C# v3.9.0 release).
 
 The crate structure mirrors the C# Neo implementation:
 

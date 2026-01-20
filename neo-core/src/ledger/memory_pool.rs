@@ -15,13 +15,16 @@
 // using System.Threading;
 
 use super::{
+    new_transaction_event_args::NewTransactionEventArgs,
     transaction_removal_reason::TransactionRemovalReason, verify_result::VerifyResult, PoolItem,
     TransactionRemovedEventArgs, TransactionVerificationContext,
 };
+use crate::hardfork::Hardfork;
 use crate::network::p2p::payloads::transaction_attribute::TransactionAttribute;
 use crate::network::p2p::payloads::{conflicts::Conflicts, Transaction};
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
+use crate::smart_contract::native::{LedgerContract, PolicyContract};
 use crate::{UInt160, UInt256};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::{Duration, Instant, SystemTime};
@@ -34,8 +37,23 @@ const _BLOCKS_TILL_REBROADCAST: i32 = 10;
 type TransactionAddedCallback = dyn Fn(&MemoryPool, &Transaction) + Send + Sync;
 type TransactionRemovedCallback = dyn Fn(&MemoryPool, &TransactionRemovedEventArgs) + Send + Sync;
 type TransactionRelayCallback = dyn Fn(&Transaction) + Send + Sync;
+type NewTransactionCallback = dyn Fn(&MemoryPool, &mut NewTransactionEventArgs) + Send + Sync;
+
+fn resolve_time_per_block(snapshot: &DataCache, settings: &ProtocolSettings) -> Duration {
+    let current_index = LedgerContract::new().current_index(snapshot).unwrap_or(0);
+    if !settings.is_hardfork_enabled(Hardfork::HfEchidna, current_index) {
+        return settings.time_per_block();
+    }
+
+    PolicyContract::get_milliseconds_per_block_snapshot(snapshot)
+        .map(|ms| Duration::from_millis(ms as u64))
+        .unwrap_or_else(|| settings.time_per_block())
+}
 
 pub struct MemoryPool {
+    /// Callback invoked to validate a new transaction before adding it to the pool.
+    pub new_transaction: Option<Box<NewTransactionCallback>>,
+
     /// Callback invoked when a transaction is added to the pool.
     pub transaction_added: Option<Box<TransactionAddedCallback>>,
 
@@ -62,10 +80,19 @@ pub struct MemoryPool {
 impl MemoryPool {
     /// Creates a memory pool using the provided protocol settings.
     pub fn new(settings: &ProtocolSettings) -> Self {
+        Self::new_with_time_per_block(settings, settings.time_per_block())
+    }
+
+    /// Creates a memory pool using the provided protocol settings and block time.
+    pub fn new_with_time_per_block(
+        settings: &ProtocolSettings,
+        time_per_block: Duration,
+    ) -> Self {
         let capacity = settings.memory_pool_max_transactions as usize;
-        let time_per_block_ms = settings.time_per_block().as_secs_f64() * 1000.0;
+        let time_per_block_ms = time_per_block.as_secs_f64() * 1000.0;
 
         Self {
+            new_transaction: None,
             transaction_added: None,
             transaction_removed: None,
             transaction_relay: None,
@@ -260,6 +287,18 @@ impl MemoryPool {
         settings: &ProtocolSettings,
     ) -> VerifyResult {
         let hash = tx.hash();
+
+        if let Some(handler) = &self.new_transaction {
+            let mut args = NewTransactionEventArgs {
+                transaction: tx.clone(),
+                snapshot: snapshot.clone(),
+                cancel: false,
+            };
+            handler(self, &mut args);
+            if args.cancel {
+                return VerifyResult::PolicyFail;
+            }
+        }
 
         if self.verified_transactions.contains_key(&hash)
             || self.unverified_transactions.contains_key(&hash)
@@ -659,8 +698,8 @@ impl MemoryPool {
             blocks_till_rebroadcast = scaled.clamp(1, i32::MAX as i64) as i32;
         }
 
-        let rebroadcast_duration = settings
-            .time_per_block()
+        let time_per_block = resolve_time_per_block(snapshot, settings);
+        let rebroadcast_duration = time_per_block
             .checked_mul(blocks_till_rebroadcast as u32)
             .unwrap_or_else(|| Duration::from_secs(0));
         let rebroadcast_cutoff = now
@@ -824,12 +863,15 @@ mod tests {
     use crate::network::p2p::payloads::transaction::Transaction;
     use crate::network::p2p::payloads::transaction_attribute::TransactionAttribute;
     use crate::network::p2p::payloads::witness::Witness;
+    use crate::smart_contract::binary_serializer::BinarySerializer;
     use crate::smart_contract::native::fungible_token::PREFIX_ACCOUNT;
     use crate::smart_contract::native::gas_token::GasToken;
     use crate::smart_contract::native::native_contract::NativeContract;
-    use crate::smart_contract::{StorageItem, StorageKey};
+    use crate::smart_contract::native::AccountState;
+    use crate::smart_contract::{IInteroperable, StorageItem, StorageKey};
     use crate::wallets::KeyPair;
     use crate::WitnessScope;
+    use neo_vm::execution_engine_limits::ExecutionEngineLimits;
     use neo_vm::op_code::OpCode;
     use num_bigint::BigInt;
     use std::collections::HashSet;
@@ -848,7 +890,13 @@ mod tests {
 
     fn set_gas_balance(snapshot: &DataCache, account: UInt160, amount: i64) {
         let key = StorageKey::create_with_uint160(GasToken::new().id(), PREFIX_ACCOUNT, &account);
-        snapshot.update(key, StorageItem::from_bigint(BigInt::from(amount)));
+        let state = AccountState::with_balance(BigInt::from(amount));
+        let bytes = BinarySerializer::serialize(
+            &state.to_stack_item(),
+            &ExecutionEngineLimits::default(),
+        )
+        .expect("serialize account state");
+        snapshot.update(key, StorageItem::from_bytes(bytes));
     }
 
     fn build_signed_transaction(
@@ -882,6 +930,28 @@ mod tests {
             verification_script,
         )]);
         tx
+    }
+
+    #[test]
+    fn new_transaction_event_can_cancel() {
+        let settings = ProtocolSettings::default();
+        let mut pool = MemoryPool::new(&settings);
+        let snapshot = DataCache::new(false);
+
+        let called = Arc::new(AtomicBool::new(false));
+        let called_ref = called.clone();
+        pool.new_transaction = Some(Box::new(move |_sender, args| {
+            called_ref.store(true, AtomicOrdering::SeqCst);
+            args.cancel = true;
+        }));
+
+        let tx = Transaction::new();
+        assert_eq!(
+            pool.try_add(tx, &snapshot, &settings),
+            VerifyResult::PolicyFail
+        );
+
+        assert!(called.load(AtomicOrdering::SeqCst));
     }
 
     #[test]

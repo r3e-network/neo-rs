@@ -3,6 +3,27 @@
 //
 
 use super::*;
+use crate::protocol_settings::ProtocolSettings;
+use crate::smart_contract::binary_serializer::BinarySerializer;
+use crate::smart_contract::i_interoperable::IInteroperable;
+use crate::smart_contract::manifest::{ContractEventDescriptor, ContractParameterDefinition};
+use crate::smart_contract::storage_context::StorageContext;
+use neo_vm::execution_engine_limits::ExecutionEngineLimits;
+
+fn put_storage_if_changed(
+    engine: &mut ApplicationEngine,
+    context: &StorageContext,
+    key: &[u8],
+    value: &[u8],
+) -> Result<()> {
+    if let Some(existing) = engine.get_storage_item(context, key) {
+        if existing == value {
+            return Ok(());
+        }
+    }
+    engine.put_storage_item(context, key, value)?;
+    Ok(())
+}
 
 impl NativeContract for ContractManagement {
     fn id(&self) -> i32 {
@@ -25,6 +46,42 @@ impl NativeContract for ContractManagement {
         &self.methods
     }
 
+    fn events(
+        &self,
+        _settings: &ProtocolSettings,
+        _block_height: u32,
+    ) -> Vec<ContractEventDescriptor> {
+        vec![
+            ContractEventDescriptor::new(
+                "Deploy".to_string(),
+                vec![ContractParameterDefinition::new(
+                    "Hash".to_string(),
+                    ContractParameterType::Hash160,
+                )
+                .expect("Deploy.Hash")],
+            )
+            .expect("Deploy event descriptor"),
+            ContractEventDescriptor::new(
+                "Update".to_string(),
+                vec![ContractParameterDefinition::new(
+                    "Hash".to_string(),
+                    ContractParameterType::Hash160,
+                )
+                .expect("Update.Hash")],
+            )
+            .expect("Update event descriptor"),
+            ContractEventDescriptor::new(
+                "Destroy".to_string(),
+                vec![ContractParameterDefinition::new(
+                    "Hash".to_string(),
+                    ContractParameterType::Hash160,
+                )
+                .expect("Destroy.Hash")],
+            )
+            .expect("Destroy event descriptor"),
+        ]
+    }
+
     fn invoke(
         &self,
         engine: &mut ApplicationEngine,
@@ -42,39 +99,47 @@ impl NativeContract for ContractManagement {
                     .map_err(|e| Error::invalid_argument(format!("Invalid hash: {}", e)))?;
                 match self.get_contract(&hash)? {
                     Some(contract) => {
-                        // Serialize contract state
-                        let mut writer = BinaryWriter::new();
-                        contract.serialize(&mut writer).map_err(|e| {
-                            Error::serialization(format!("Failed to serialize contract: {}", e))
-                        })?;
-                        Ok(writer.to_bytes())
+                        let item = contract.to_stack_item();
+                        let bytes =
+                            BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
+                                .map_err(|e| {
+                                    Error::serialization(format!(
+                                        "Failed to serialize contract state: {}",
+                                        e
+                                    ))
+                                })?;
+                        Ok(bytes)
                     }
                     None => Ok(vec![]),
                 }
             }
             "deploy" => {
-                if args.len() != 3 {
+                if args.len() != 2 && args.len() != 3 {
                     return Err(Error::invalid_argument(
-                        "deploy requires 3 arguments".to_string(),
+                        "deploy requires 2 or 3 arguments".to_string(),
                     ));
                 }
                 let nef_bytes = args[0].clone();
                 let manifest_bytes = args[1].clone();
-                let data = args[2].clone();
+                let data = if args.len() == 3 { args[2].clone() } else { Vec::new() };
 
                 let contract = self.deploy(engine, nef_bytes, manifest_bytes, data)?;
 
-                // Serialize contract state
-                let mut writer = BinaryWriter::new();
-                contract.serialize(&mut writer).map_err(|e| {
-                    Error::serialization(format!("Failed to serialize contract: {}", e))
-                })?;
-                Ok(writer.to_bytes())
+                let item = contract.to_stack_item();
+                let bytes =
+                    BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
+                        .map_err(|e| {
+                            Error::serialization(format!(
+                                "Failed to serialize contract state: {}",
+                                e
+                            ))
+                        })?;
+                Ok(bytes)
             }
             "update" => {
-                if args.len() != 3 {
+                if args.len() != 2 && args.len() != 3 {
                     return Err(Error::invalid_argument(
-                        "update requires 3 arguments".to_string(),
+                        "update requires 2 or 3 arguments".to_string(),
                     ));
                 }
 
@@ -90,7 +155,7 @@ impl NativeContract for ContractManagement {
                     Some(args[1].clone())
                 };
 
-                let data = args[2].clone();
+                let data = if args.len() == 3 { args[2].clone() } else { Vec::new() };
 
                 self.update(engine, nef_bytes, manifest_bytes, data)?;
                 Ok(vec![])
@@ -182,12 +247,18 @@ impl NativeContract for ContractManagement {
                 );
                 match self.get_contract_by_id(id)? {
                     Some(contract) => {
-                        // Serialize contract state
-                        let mut writer = BinaryWriter::new();
-                        contract.serialize(&mut writer).map_err(|e| {
-                            Error::serialization(format!("Failed to serialize contract: {}", e))
+                        let item = contract.to_stack_item();
+                        let bytes = BinarySerializer::serialize(
+                            &item,
+                            &ExecutionEngineLimits::default(),
+                        )
+                        .map_err(|e| {
+                            Error::serialization(format!(
+                                "Failed to serialize contract state: {}",
+                                e
+                            ))
                         })?;
-                        Ok(writer.to_bytes())
+                        Ok(bytes)
                     }
                     None => Ok(vec![]),
                 }
@@ -212,8 +283,134 @@ impl NativeContract for ContractManagement {
         self
     }
 
-    fn on_persist(&self, _engine: &mut ApplicationEngine) -> Result<()> {
-        // No special persistence logic needed
+    fn on_persist(&self, engine: &mut ApplicationEngine) -> Result<()> {
+        let persisting_block = engine.persisting_block().ok_or_else(|| {
+            Error::native_contract("No persisting block available".to_string())
+        })?;
+        let block_height = persisting_block.header.index;
+        let settings = engine.protocol_settings().clone();
+
+        let context = engine.get_native_storage_context(&self.hash)?;
+        let native_contracts = engine.native_contracts();
+        let mut contract_count_changed = false;
+
+        for contract in native_contracts {
+            let contract_hash = contract.hash();
+            let (should_initialize, _hardforks_now) =
+                contract.is_initialize_block(&settings, block_height);
+            if !should_initialize {
+                continue;
+            }
+
+            let Some(mut contract_state) = contract.contract_state(&settings, block_height) else {
+                continue;
+            };
+
+            let existing_state = {
+                let storage = self.storage.read();
+                storage.contracts.get(&contract_hash).cloned()
+            };
+
+            let is_new = existing_state.is_none();
+            if let Some(existing) = existing_state {
+                contract_state.update_counter = existing.update_counter.saturating_add(1);
+            }
+
+            {
+                let mut storage = self.storage.write();
+                if is_new {
+                    storage.contracts.insert(contract_hash, contract_state.clone());
+                    storage.contract_ids.insert(contract_state.id, contract_hash);
+                    storage.contract_count = storage.contract_count.saturating_add(1);
+                    contract_count_changed = true;
+                } else {
+                    storage.contracts.insert(contract_hash, contract_state.clone());
+                    storage
+                        .contract_ids
+                        .entry(contract_state.id)
+                        .or_insert(contract_hash);
+                }
+            }
+
+            let contract_bytes = Self::serialize_contract_state(&contract_state)?;
+            put_storage_if_changed(
+                engine,
+                &context,
+                &Self::contract_storage_key(&contract_hash),
+                &contract_bytes,
+            )?;
+
+            let contract_hash_bytes = contract_hash.as_bytes();
+            if is_new
+                || engine
+                    .get_storage_item(&context, &Self::contract_id_storage_key(contract_state.id))
+                    .is_none()
+            {
+                put_storage_if_changed(
+                    engine,
+                    &context,
+                    &Self::contract_id_storage_key(contract_state.id),
+                    contract_hash_bytes.as_ref(),
+                )?;
+            }
+
+            if contract_hash != self.hash {
+                contract.initialize(engine)?;
+            }
+
+            engine.emit_notification(
+                &self.hash,
+                if is_new { "Deploy" } else { "Update" },
+                &[contract_hash.to_bytes()],
+            )?;
+        }
+
+        let (min_fee_bytes, next_id_bytes, count_bytes) = {
+            let storage = self.storage.read();
+            (
+                storage.minimum_deployment_fee.to_le_bytes(),
+                storage.next_id.to_le_bytes(),
+                storage.contract_count.to_le_bytes(),
+            )
+        };
+
+        if engine
+            .get_storage_item(&context, &Self::minimum_deployment_fee_key())
+            .is_none()
+        {
+            put_storage_if_changed(
+                engine,
+                &context,
+                &Self::minimum_deployment_fee_key(),
+                &min_fee_bytes,
+            )?;
+        }
+
+        if engine
+            .get_storage_item(&context, &Self::next_id_key())
+            .is_none()
+        {
+            put_storage_if_changed(
+                engine,
+                &context,
+                &Self::next_id_key(),
+                &next_id_bytes,
+            )?;
+        }
+
+        if contract_count_changed
+            || engine
+                .get_storage_item(&context, &Self::contract_count_key())
+                .is_none()
+        {
+            put_storage_if_changed(
+                engine,
+                &context,
+                &Self::contract_count_key(),
+                &count_bytes,
+            )?;
+        }
+
         Ok(())
     }
 }

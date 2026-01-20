@@ -10,6 +10,7 @@
 //! - **SHA-512**: Used in key derivation
 //! - **RIPEMD-160**: Script hash computation (Hash160 = RIPEMD160(SHA256(data)))
 //! - **Keccak-256**: Ethereum compatibility
+//! - **SHA3-256/SHA3-512**: SHA-3 family hashes
 //! - **Blake2b/Blake2s**: Alternative hash functions
 //!
 //! ## Elliptic Curve Cryptography
@@ -36,7 +37,7 @@
 //! - Private keys are handled as `SecretKey` types with zeroization on drop
 //! - Signature verification is constant-time to prevent timing attacks
 
-use crate::{Crypto, ECCurve, ECPoint, HashAlgorithm};
+use crate::{Crypto, CryptoResult, ECCurve, ECPoint, HashAlgorithm};
 use bs58;
 use core::convert::TryFrom;
 use ed25519_dalek::{
@@ -85,6 +86,18 @@ impl NeoHash {
         Crypto::keccak256(data)
     }
 
+    /// Computes SHA3-256 hash of the input data
+    #[inline]
+    pub fn sha3_256(data: &[u8]) -> [u8; 32] {
+        Crypto::sha3_256(data)
+    }
+
+    /// Computes SHA3-512 hash of the input data
+    #[inline]
+    pub fn sha3_512(data: &[u8]) -> [u8; 64] {
+        Crypto::sha3_512(data)
+    }
+
     /// Computes RIPEMD-160 hash of the input data
     #[inline]
     pub fn ripemd160(data: &[u8]) -> [u8; 20] {
@@ -95,6 +108,18 @@ impl NeoHash {
     #[inline]
     pub fn blake2b(data: &[u8]) -> [u8; 64] {
         Crypto::blake2b(data)
+    }
+
+    /// Computes BLAKE2b-512 hash of the input data with optional salt
+    #[inline]
+    pub fn blake2b_512(data: &[u8], salt: Option<&[u8]>) -> CryptoResult<[u8; 64]> {
+        Crypto::blake2b_512(data, salt)
+    }
+
+    /// Computes BLAKE2b-256 hash of the input data with optional salt
+    #[inline]
+    pub fn blake2b_256(data: &[u8], salt: Option<&[u8]>) -> CryptoResult<[u8; 32]> {
+        Crypto::blake2b_256(data, salt)
     }
 
     /// Computes BLAKE2s hash of the input data

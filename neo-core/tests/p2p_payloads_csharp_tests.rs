@@ -22,6 +22,29 @@ use neo_vm::{OpCode, VMState};
 use serde_json::json;
 use std::net::{IpAddr, Ipv4Addr};
 
+fn create_payload_genesis_block(settings: &ProtocolSettings) -> Block {
+    let ledger_block = create_genesis_block(settings);
+    let mut header = Header::new();
+    header.set_version(ledger_block.header.version);
+    header.set_prev_hash(ledger_block.header.previous_hash);
+    header.set_merkle_root(ledger_block.header.merkle_root);
+    header.set_timestamp(ledger_block.header.timestamp);
+    header.set_nonce(ledger_block.header.nonce);
+    header.set_index(ledger_block.header.index);
+    header.set_primary_index(ledger_block.header.primary_index);
+    header.set_next_consensus(ledger_block.header.next_consensus);
+    header.witness = ledger_block
+        .header
+        .witnesses
+        .first()
+        .cloned()
+        .unwrap_or_else(Witness::empty);
+    Block {
+        header,
+        transactions: ledger_block.transactions,
+    }
+}
+
 #[test]
 fn csharp_ut_version_payload_size_and_roundtrip() {
     let empty = VersionPayload {
@@ -358,7 +381,7 @@ fn csharp_ut_inv_payload_size_group_and_invalid_type() {
 #[test]
 fn csharp_ut_merkle_block_payload_size_and_roundtrip() {
     let settings = ProtocolSettings::default_settings();
-    let mut block = create_genesis_block(&settings);
+    let mut block = create_payload_genesis_block(&settings);
 
     let payload = MerkleBlockPayload::create(&mut block, vec![false; 1024]);
     assert_eq!(payload.size(), 247);

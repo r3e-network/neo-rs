@@ -265,15 +265,9 @@ impl LocalNode {
             capabilities.push(NodeCapability::full_node(current_height));
         }
 
-        let can_advertise_archival = context
-            .as_ref()
-            .map(|ctx| ctx.store_provider.name() != "Memory")
-            .unwrap_or(false);
-
-        if can_advertise_archival
-            && !capabilities
-                .iter()
-                .any(|cap| matches!(cap, NodeCapability::ArchivalNode))
+        if !capabilities
+            .iter()
+            .any(|cap| matches!(cap, NodeCapability::ArchivalNode))
         {
             capabilities.push(NodeCapability::archival_node());
         }

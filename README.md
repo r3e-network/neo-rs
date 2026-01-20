@@ -27,11 +27,12 @@ For metrics and health payload fields, see `docs/METRICS.md`.
 
 ## Compatibility
 
-| neo-rs Version | Neo N3 Version | C# Reference Commit                                                                             |
-| -------------- | -------------- | ----------------------------------------------------------------------------------------------- |
+| neo-rs Version | Neo N3 Version | C# Reference                                                                                      |
+| -------------- | -------------- | ------------------------------------------------------------------------------------------------- |
+| 0.7.x          | 3.9.0          | [`v3.9.0`](https://github.com/neo-project/neo/releases/tag/v3.9.0)                               |
 | 0.4.x          | 3.8.2          | [`ede620e`](https://github.com/neo-project/neo/commit/ede620e5722c48e199a0f3f2ab482ae090c1b878) |
 
-This implementation maintains byte-for-byte serialization compatibility with the official C# Neo implementation for blocks, transactions, and P2P messages.
+This implementation maintains byte-for-byte serialization compatibility with the official C# Neo implementation (v3.9.0) for blocks, transactions, and P2P messages.
 
 ## Prerequisites
 

@@ -6,27 +6,31 @@ use self::keys::{
 };
 use self::state::{
     deserialize_hash_index_state, deserialize_transaction_record, deserialize_trimmed_block,
-    serialize_hash_index_state, serialize_transaction, serialize_transaction_record,
-    serialize_trimmed_block, TransactionStateRecord,
+    serialize_hash_index_state, serialize_transaction_record, serialize_trimmed_block,
+    TransactionStateRecord,
 };
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
 use crate::hardfork::Hardfork;
 use crate::ledger::Block;
-use crate::neo_io::BinaryWriter;
 use crate::network::p2p::payloads::transaction_attribute::TransactionAttribute;
 #[cfg(test)]
 use crate::network::p2p::payloads::Transaction;
 use crate::persistence::{i_read_only_store::IReadOnlyStoreGeneric, DataCache};
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::application_engine::ApplicationEngine;
+use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::native::{
     policy_contract::PolicyContract, trimmed_block::TrimmedBlock, NativeContract, NativeMethod,
 };
 use crate::smart_contract::ContractParameterType;
+use crate::smart_contract::IInteroperable;
 use crate::smart_contract::{StorageItem, StorageKey};
 use crate::{UInt160, UInt256};
 use neo_vm::vm_state::VMState;
+use neo_vm::{ExecutionEngineLimits, StackItem};
+use num_bigint::BigInt;
+use num_traits::ToPrimitive;
 
 /// Prefix for block-hash-by-index storage
 const PREFIX_BLOCK_HASH: u8 = 9;
@@ -54,11 +58,8 @@ impl LedgerContract {
     /// Creates a new LedgerContract instance
     pub fn new() -> Self {
         // LedgerContract hash: 0xda65b600f7124ce6c79950c1772a36403104f2be
-        let hash = UInt160::from_bytes(&[
-            0xda, 0x65, 0xb6, 0x00, 0xf7, 0x12, 0x4c, 0xe6, 0xc7, 0x99, 0x50, 0xc1, 0x77, 0x2a,
-            0x36, 0x40, 0x31, 0x04, 0xf2, 0xbe,
-        ])
-        .expect("Valid LedgerContract hash");
+        let hash = UInt160::parse("0xda65b600f7124ce6c79950c1772a36403104f2be")
+            .expect("Valid LedgerContract hash");
 
         let methods = vec![
             NativeMethod::new(
@@ -82,28 +83,34 @@ impl LedgerContract {
                 1 << 15,
                 true,
                 0x01,
-                vec![ContractParameterType::Any],
-                ContractParameterType::ByteArray,
-            ),
+                vec![ContractParameterType::ByteArray],
+                ContractParameterType::Array,
+            )
+            .with_parameter_names(vec!["indexOrHash".to_string()]),
             NativeMethod::new(
                 "getTransaction".to_string(),
                 1 << 15,
                 true,
                 0x01,
                 vec![ContractParameterType::Hash256],
-                ContractParameterType::ByteArray,
-            ),
+                ContractParameterType::Array,
+            )
+            .with_parameter_names(vec!["hash".to_string()]),
             NativeMethod::new(
                 "getTransactionFromBlock".to_string(),
-                1 << 15,
+                1 << 16,
                 true,
                 0x01,
                 vec![
-                    ContractParameterType::Hash256,
+                    ContractParameterType::ByteArray,
                     ContractParameterType::Integer,
                 ],
-                ContractParameterType::ByteArray,
-            ),
+                ContractParameterType::Array,
+            )
+            .with_parameter_names(vec![
+                "blockIndexOrHash".to_string(),
+                "txIndex".to_string(),
+            ]),
             NativeMethod::new(
                 "getTransactionHeight".to_string(),
                 1 << 15,
@@ -111,15 +118,17 @@ impl LedgerContract {
                 0x01,
                 vec![ContractParameterType::Hash256],
                 ContractParameterType::Integer,
-            ),
+            )
+            .with_parameter_names(vec!["hash".to_string()]),
             NativeMethod::new(
                 "getTransactionSigners".to_string(),
                 1 << 15,
                 true,
                 0x01,
                 vec![ContractParameterType::Hash256],
-                ContractParameterType::ByteArray,
-            ),
+                ContractParameterType::Array,
+            )
+            .with_parameter_names(vec!["hash".to_string()]),
             NativeMethod::new(
                 "getTransactionVMState".to_string(),
                 1 << 15,
@@ -127,23 +136,8 @@ impl LedgerContract {
                 0x01,
                 vec![ContractParameterType::Hash256],
                 ContractParameterType::Integer,
-            ),
-            NativeMethod::new(
-                "containsBlock".to_string(),
-                1 << 15,
-                true,
-                0x01,
-                vec![ContractParameterType::Hash256],
-                ContractParameterType::Boolean,
-            ),
-            NativeMethod::new(
-                "containsTransaction".to_string(),
-                1 << 15,
-                true,
-                0x01,
-                vec![ContractParameterType::Hash256],
-                ContractParameterType::Boolean,
-            ),
+            )
+            .with_parameter_names(vec!["hash".to_string()]),
         ];
 
         Self {
@@ -565,19 +559,7 @@ impl NativeContract for LedgerContract {
                     ));
                 }
                 let selector = &args[0];
-                let target = if selector.len() == 32 {
-                    let hash = UInt256::from_bytes(selector)
-                        .map_err(|e| Error::invalid_argument(format!("Invalid block hash: {e}")))?;
-                    HashOrIndex::Hash(hash)
-                } else if selector.len() == 4 {
-                    let mut buf = [0u8; 4];
-                    buf.copy_from_slice(selector);
-                    HashOrIndex::Index(u32::from_le_bytes(buf))
-                } else {
-                    return Err(Error::invalid_argument(
-                        "Invalid selector for getBlock".to_string(),
-                    ));
-                };
+                let target = self.parse_index_or_hash(selector, "indexOrHash")?;
 
                 let maybe_trimmed = match &target {
                     HashOrIndex::Hash(hash) => self.get_trimmed_block(snapshot, hash)?,
@@ -590,7 +572,7 @@ impl NativeContract for LedgerContract {
                     }
                 };
 
-                match maybe_trimmed {
+                let item = match maybe_trimmed {
                     Some(trimmed)
                         if Self::is_traceable_block(
                             current_index,
@@ -598,10 +580,11 @@ impl NativeContract for LedgerContract {
                             max_traceable_blocks,
                         ) =>
                     {
-                        serialize_trimmed_block(&trimmed)
+                        trimmed.to_stack_item()
                     }
-                    _ => Ok(Vec::new()),
-                }
+                    _ => StackItem::null(),
+                };
+                Self::serialize_stack_item(item)
             }
             "getTransaction" => {
                 if args.len() != 1 {
@@ -612,17 +595,17 @@ impl NativeContract for LedgerContract {
                 let hash = UInt256::from_bytes(&args[0]).map_err(|e| {
                     Error::invalid_argument(format!("Invalid transaction hash: {e}"))
                 })?;
-                if let Some(state) = self.get_transaction_state_if_traceable(
+                let item = if let Some(state) = self.get_transaction_state_if_traceable(
                     snapshot,
                     &hash,
                     current_index,
                     max_traceable_blocks,
                 )? {
-                    let bytes = serialize_transaction(state.transaction())?;
-                    Ok(bytes)
+                    state.transaction().to_stack_item()
                 } else {
-                    Ok(Vec::new())
-                }
+                    StackItem::null()
+                };
+                Self::serialize_stack_item(item)
             }
             "getTransactionFromBlock" => {
                 if args.len() != 2 {
@@ -630,29 +613,38 @@ impl NativeContract for LedgerContract {
                         "getTransactionFromBlock requires 2 arguments".to_string(),
                     ));
                 }
-                let block_hash = UInt256::from_bytes(&args[0])
-                    .map_err(|e| Error::invalid_argument(format!("Invalid block hash: {e}")))?;
-                if args[1].len() != 4 {
+                let target = self.parse_index_or_hash(&args[0], "blockIndexOrHash")?;
+                let tx_index = BigInt::from_signed_bytes_le(&args[1])
+                    .to_i32()
+                    .ok_or_else(|| Error::invalid_argument("Invalid transaction index".to_string()))?;
+                if tx_index < 0 {
                     return Err(Error::invalid_argument(
-                        "Invalid transaction index".to_string(),
+                        "Transaction index out of range".to_string(),
                     ));
                 }
-                let mut buf = [0u8; 4];
-                buf.copy_from_slice(&args[1]);
-                let tx_index = u32::from_le_bytes(buf);
 
-                if let Some(tx) = self.get_transaction_from_block(
-                    snapshot,
-                    &block_hash,
-                    tx_index,
-                    current_index,
-                    max_traceable_blocks,
-                )? {
-                    let bytes = serialize_transaction(tx.transaction())?;
-                    Ok(bytes)
+                let block_hash = match target {
+                    HashOrIndex::Hash(hash) => Some(hash),
+                    HashOrIndex::Index(index) => self.load_block_hash(snapshot, index)?,
+                };
+
+                let item = if let Some(block_hash) = block_hash {
+                    if let Some(tx) = self.get_transaction_from_block(
+                        snapshot,
+                        &block_hash,
+                        tx_index as u32,
+                        current_index,
+                        max_traceable_blocks,
+                    )? {
+                        tx.transaction().to_stack_item()
+                    } else {
+                        StackItem::null()
+                    }
                 } else {
-                    Ok(Vec::new())
-                }
+                    StackItem::null()
+                };
+
+                Self::serialize_stack_item(item)
             }
             "getTransactionHeight" => {
                 if args.len() != 1 {
@@ -663,16 +655,17 @@ impl NativeContract for LedgerContract {
                 let hash = UInt256::from_bytes(&args[0]).map_err(|e| {
                     Error::invalid_argument(format!("Invalid transaction hash: {e}"))
                 })?;
-                if let Some(state) = self.get_transaction_state_if_traceable(
+                let bytes = if let Some(state) = self.get_transaction_state_if_traceable(
                     snapshot,
                     &hash,
                     current_index,
                     max_traceable_blocks,
                 )? {
-                    Ok(state.block_index().to_le_bytes().to_vec())
+                    BigInt::from(state.block_index()).to_signed_bytes_le()
                 } else {
-                    Ok(Vec::new())
-                }
+                    BigInt::from(-1).to_signed_bytes_le()
+                };
+                Ok(bytes)
             }
             "getTransactionSigners" => {
                 if args.len() != 1 {
@@ -683,20 +676,23 @@ impl NativeContract for LedgerContract {
                 let hash = UInt256::from_bytes(&args[0]).map_err(|e| {
                     Error::invalid_argument(format!("Invalid transaction hash: {e}"))
                 })?;
-                if let Some(state) = self.get_transaction_state_if_traceable(
+                let item = if let Some(state) = self.get_transaction_state_if_traceable(
                     snapshot,
                     &hash,
                     current_index,
                     max_traceable_blocks,
                 )? {
-                    let mut writer = BinaryWriter::new();
-                    writer
-                        .write_serializable_vec(state.transaction().signers())
-                        .map_err(|e| Error::serialization(e.to_string()))?;
-                    Ok(writer.to_bytes())
+                    let items = state
+                        .transaction()
+                        .signers()
+                        .iter()
+                        .map(|signer| signer.to_stack_item())
+                        .collect::<Vec<_>>();
+                    StackItem::from_array(items)
                 } else {
-                    Ok(Vec::new())
-                }
+                    StackItem::null()
+                };
+                Self::serialize_stack_item(item)
             }
             "getTransactionVMState" => {
                 if args.len() != 1 {
@@ -717,43 +713,6 @@ impl NativeContract for LedgerContract {
                 } else {
                     Ok(vec![0])
                 }
-            }
-            "containsBlock" => {
-                if args.len() != 1 {
-                    return Err(Error::invalid_argument(
-                        "containsBlock requires 1 argument".to_string(),
-                    ));
-                }
-                let hash = UInt256::from_bytes(&args[0])
-                    .map_err(|e| Error::invalid_argument(format!("Invalid block hash: {e}")))?;
-                Ok(vec![if self.contains_block(snapshot, &hash) {
-                    1
-                } else {
-                    0
-                }])
-            }
-            "containsTransaction" => {
-                if args.len() != 1 {
-                    return Err(Error::invalid_argument(
-                        "containsTransaction requires 1 argument".to_string(),
-                    ));
-                }
-                let hash = UInt256::from_bytes(&args[0]).map_err(|e| {
-                    Error::invalid_argument(format!("Invalid transaction hash: {e}"))
-                })?;
-                Ok(vec![if self
-                    .get_transaction_state_if_traceable(
-                        snapshot,
-                        &hash,
-                        current_index,
-                        max_traceable_blocks,
-                    )?
-                    .is_some()
-                {
-                    1
-                } else {
-                    0
-                }])
             }
             _ => Err(Error::native_contract(format!(
                 "Method {} not found",
@@ -956,6 +915,29 @@ mod tests {
 }
 
 impl LedgerContract {
+    fn parse_index_or_hash(&self, data: &[u8], name: &str) -> Result<HashOrIndex> {
+        if data.len() == 32 {
+            let hash = UInt256::from_bytes(data)
+                .map_err(|e| Error::invalid_argument(format!("Invalid {name}: {e}")))?;
+            Ok(HashOrIndex::Hash(hash))
+        } else if data.len() < 32 {
+            let index = BigInt::from_signed_bytes_le(data)
+                .to_u32()
+                .ok_or_else(|| Error::invalid_argument(format!("Invalid {name} value")))?;
+            Ok(HashOrIndex::Index(index))
+        } else {
+            Err(Error::invalid_argument(format!(
+                "Invalid {name} length: {}",
+                data.len()
+            )))
+        }
+    }
+
+    fn serialize_stack_item(item: StackItem) -> Result<Vec<u8>> {
+        BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
+            .map_err(|e| Error::serialization(format!("Failed to serialize ledger result: {e}")))
+    }
+
     fn resolve_max_traceable_blocks<S>(&self, engine: &ApplicationEngine, snapshot: &S) -> u32
     where
         S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
@@ -1017,14 +999,20 @@ impl LedgerContract {
                 return Ok(None);
             }
 
-            if let Some(tx) = block.transactions.get(tx_index as usize) {
-                return self.get_transaction_state_if_traceable(
-                    snapshot,
-                    &tx.hash(),
-                    current_index,
-                    max_traceable,
-                );
+            let tx_index = tx_index as usize;
+            if tx_index >= block.transactions.len() {
+                return Err(Error::invalid_argument(
+                    "Transaction index out of range".to_string(),
+                ));
             }
+
+            let tx = &block.transactions[tx_index];
+            return self.get_transaction_state_if_traceable(
+                snapshot,
+                &tx.hash(),
+                current_index,
+                max_traceable,
+            );
         }
         Ok(None)
     }

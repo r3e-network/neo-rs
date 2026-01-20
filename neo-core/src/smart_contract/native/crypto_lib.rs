@@ -9,9 +9,11 @@ use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
 use crate::hardfork::Hardfork;
 use crate::smart_contract::application_engine::ApplicationEngine;
+use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::native::{NativeContract, NativeMethod};
 use crate::smart_contract::ContractParameterType;
 use crate::UInt160;
+use neo_vm::{ExecutionEngineLimits, StackItem};
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use std::any::Any;
@@ -33,11 +35,8 @@ impl CryptoLib {
 
     pub fn new() -> Self {
         // CryptoLib contract hash: 0x726cb6e0cd8628a1350a611384688911ab75f51b
-        let hash = UInt160::from_bytes(&[
-            0x72, 0x6c, 0xb6, 0xe0, 0xcd, 0x86, 0x28, 0xa1, 0x35, 0x0a, 0x61, 0x13, 0x84, 0x68,
-            0x89, 0x11, 0xab, 0x75, 0xf5, 0x1b,
-        ])
-        .expect("Valid CryptoLib contract hash");
+        let hash = UInt160::parse("0x726cb6e0cd8628a1350a611384688911ab75f51b")
+            .expect("Valid CryptoLib contract hash");
 
         let methods = vec![
             // Hash functions
@@ -117,52 +116,103 @@ impl CryptoLib {
                 "bls12381Add".to_string(),
                 1 << 19,
                 vec![
-                    ContractParameterType::ByteArray,
-                    ContractParameterType::ByteArray,
+                    ContractParameterType::InteropInterface,
+                    ContractParameterType::InteropInterface,
                 ],
-                ContractParameterType::ByteArray,
+                ContractParameterType::InteropInterface,
             ),
             NativeMethod::safe(
                 "bls12381Equal".to_string(),
                 1 << 5,
                 vec![
-                    ContractParameterType::ByteArray,
-                    ContractParameterType::ByteArray,
+                    ContractParameterType::InteropInterface,
+                    ContractParameterType::InteropInterface,
                 ],
                 ContractParameterType::Boolean,
             ),
             NativeMethod::safe(
                 "bls12381Mul".to_string(),
-                1 << 19,
+                1 << 21,
                 vec![
-                    ContractParameterType::ByteArray,
+                    ContractParameterType::InteropInterface,
                     ContractParameterType::ByteArray,
                     ContractParameterType::Boolean,
                 ],
-                ContractParameterType::ByteArray,
+                ContractParameterType::InteropInterface,
             ),
             NativeMethod::safe(
                 "bls12381Pairing".to_string(),
-                1 << 20,
+                1 << 23,
                 vec![
-                    ContractParameterType::ByteArray,
-                    ContractParameterType::ByteArray,
+                    ContractParameterType::InteropInterface,
+                    ContractParameterType::InteropInterface,
                 ],
-                ContractParameterType::ByteArray,
+                ContractParameterType::InteropInterface,
             ),
             NativeMethod::safe(
                 "bls12381Serialize".to_string(),
-                1 << 16,
-                vec![ContractParameterType::ByteArray],
+                1 << 19,
+                vec![ContractParameterType::InteropInterface],
                 ContractParameterType::ByteArray,
             ),
             NativeMethod::safe(
                 "bls12381Deserialize".to_string(),
-                1 << 16,
+                1 << 19,
                 vec![ContractParameterType::ByteArray],
-                ContractParameterType::ByteArray,
+                ContractParameterType::InteropInterface,
             ),
         ];
+        let methods = methods
+            .into_iter()
+            .map(|method| match (method.name.as_str(), method.parameters.len()) {
+                ("bls12381Add", 2) => method.with_parameter_names(vec![
+                    "x".to_string(),
+                    "y".to_string(),
+                ]),
+                ("bls12381Deserialize", 1) => {
+                    method.with_parameter_names(vec!["data".to_string()])
+                }
+                ("bls12381Equal", 2) => method.with_parameter_names(vec![
+                    "x".to_string(),
+                    "y".to_string(),
+                ]),
+                ("bls12381Mul", 3) => method.with_parameter_names(vec![
+                    "x".to_string(),
+                    "mul".to_string(),
+                    "neg".to_string(),
+                ]),
+                ("bls12381Pairing", 2) => method.with_parameter_names(vec![
+                    "g1".to_string(),
+                    "g2".to_string(),
+                ]),
+                ("bls12381Serialize", 1) => {
+                    method.with_parameter_names(vec!["g".to_string()])
+                }
+                ("keccak256", 1) => method.with_parameter_names(vec!["data".to_string()]),
+                ("murmur32", 2) => method.with_parameter_names(vec![
+                    "data".to_string(),
+                    "seed".to_string(),
+                ]),
+                ("recoverSecp256K1", 2) => method.with_parameter_names(vec![
+                    "messageHash".to_string(),
+                    "signature".to_string(),
+                ]),
+                ("ripemd160", 1) => method.with_parameter_names(vec!["data".to_string()]),
+                ("sha256", 1) => method.with_parameter_names(vec!["data".to_string()]),
+                ("verifyWithECDsa", 4) => method.with_parameter_names(vec![
+                    "message".to_string(),
+                    "pubkey".to_string(),
+                    "signature".to_string(),
+                    "curveHash".to_string(),
+                ]),
+                ("verifyWithEd25519", 3) => method.with_parameter_names(vec![
+                    "message".to_string(),
+                    "pubkey".to_string(),
+                    "signature".to_string(),
+                ]),
+                _ => method,
+            })
+            .collect();
 
         Self {
             id: Self::ID,
@@ -211,6 +261,14 @@ impl CryptoLib {
         })?;
 
         Ok(Crypto::keccak256(data).to_vec())
+    }
+
+    fn wrap_interop_bytes(&self, data: Vec<u8>) -> Result<Vec<u8>> {
+        BinarySerializer::serialize(
+            &StackItem::from_byte_string(data),
+            &ExecutionEngineLimits::default(),
+        )
+        .map_err(|e| Error::serialization(format!("Failed to serialize interop payload: {e}")))
     }
 
     /// Verify ECDSA signature with named curve/hash pair.
@@ -334,7 +392,7 @@ impl CryptoLib {
         let x = &args[0];
         let y = &args[1];
 
-        match x.len() {
+        let bytes = match x.len() {
             48 => {
                 if y.len() != 48 {
                     return Err(Error::native_contract("Point size mismatch".to_string()));
@@ -342,7 +400,7 @@ impl CryptoLib {
                 let p1 = self.deserialize_g1(x)?;
                 let p2 = self.deserialize_g1(y)?;
                 let result = self.g1_add(&p1, &p2);
-                self.serialize_g1(&result)
+                self.serialize_g1(&result)?
             }
             96 => {
                 if y.len() != 96 {
@@ -351,7 +409,7 @@ impl CryptoLib {
                 let p1 = self.deserialize_g2(x)?;
                 let p2 = self.deserialize_g2(y)?;
                 let result = self.g2_add(&p1, &p2);
-                self.serialize_g2(&result)
+                self.serialize_g2(&result)?
             }
             576 => {
                 if y.len() != 576 {
@@ -360,12 +418,16 @@ impl CryptoLib {
                 let p1 = self.deserialize_gt(x)?;
                 let p2 = self.deserialize_gt(y)?;
                 let result = self.gt_add(&p1, &p2);
-                self.serialize_gt(&result)
+                self.serialize_gt(&result)?
             }
-            _ => Err(Error::native_contract(
-                "Invalid BLS12-381 point size".to_string(),
-            )),
-        }
+            _ => {
+                return Err(Error::native_contract(
+                    "Invalid BLS12-381 point size".to_string(),
+                ))
+            }
+        };
+
+        self.wrap_interop_bytes(bytes)
     }
 
     /// BLS12-381 equality check
@@ -443,26 +505,30 @@ impl CryptoLib {
         let mut scalar_bytes = [0u8; 32];
         scalar_bytes.copy_from_slice(scalar);
 
-        match point.len() {
+        let bytes = match point.len() {
             48 => {
                 let p = self.deserialize_g1(point)?;
                 let result = self.g1_mul(&p, &scalar_bytes, neg);
-                self.serialize_g1(&result)
+                self.serialize_g1(&result)?
             }
             96 => {
                 let p = self.deserialize_g2(point)?;
                 let result = self.g2_mul(&p, &scalar_bytes, neg);
-                self.serialize_g2(&result)
+                self.serialize_g2(&result)?
             }
             576 => {
                 let p = self.deserialize_gt(point)?;
                 let result = self.gt_mul(&p, &scalar_bytes, neg);
-                self.serialize_gt(&result)
+                self.serialize_gt(&result)?
             }
-            _ => Err(Error::native_contract(
-                "Invalid BLS12-381 point size".to_string(),
-            )),
-        }
+            _ => {
+                return Err(Error::native_contract(
+                    "Invalid BLS12-381 point size".to_string(),
+                ))
+            }
+        };
+
+        self.wrap_interop_bytes(bytes)
     }
 
     /// BLS12-381 pairing operation
@@ -485,7 +551,8 @@ impl CryptoLib {
         let p1 = self.deserialize_g1(g1_point)?;
         let p2 = self.deserialize_g2(g2_point)?;
 
-        self.compute_pairing(&p1, &p2)
+        let bytes = self.compute_pairing(&p1, &p2)?;
+        self.wrap_interop_bytes(bytes)
     }
 
     /// BLS12-381 point serialization
@@ -533,23 +600,27 @@ impl CryptoLib {
 
         let data = &args[0];
 
-        match data.len() {
+        let bytes = match data.len() {
             48 => {
                 let _ = self.deserialize_g1(data)?;
-                Ok(data.clone())
+                data.clone()
             }
             96 => {
                 let _ = self.deserialize_g2(data)?;
-                Ok(data.clone())
+                data.clone()
             }
             576 => {
                 let _ = self.deserialize_gt(data)?;
-                Ok(data.clone())
+                data.clone()
             }
-            _ => Err(Error::native_contract(
-                "Invalid BLS12-381 serialized point size".to_string(),
-            )),
-        }
+            _ => {
+                return Err(Error::native_contract(
+                    "Invalid BLS12-381 serialized point size".to_string(),
+                ))
+            }
+        };
+
+        self.wrap_interop_bytes(bytes)
     }
 
     // BLS12-381 helper functions

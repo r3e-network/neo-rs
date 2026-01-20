@@ -15,6 +15,8 @@ use neo_vm::{OpCode, ScriptBuilder, VMState};
 use num_traits::ToPrimitive;
 use std::sync::Arc;
 
+const TEST_GAS_LIMIT: i64 = 1_000_000_000;
+
 fn sample_account() -> UInt160 {
     UInt160::from_bytes(&[7u8; 20]).expect("valid account")
 }
@@ -71,7 +73,7 @@ fn persist_block(snapshot: &Arc<DataCache>, block: &Block, settings: ProtocolSet
         Arc::clone(snapshot),
         Some(block.clone()),
         settings.clone(),
-        400_000_000,
+        TEST_GAS_LIMIT,
         None,
     )
     .expect("on persist engine");
@@ -83,7 +85,7 @@ fn persist_block(snapshot: &Arc<DataCache>, block: &Block, settings: ProtocolSet
         Arc::clone(snapshot),
         Some(block.clone()),
         settings,
-        400_000_000,
+        TEST_GAS_LIMIT,
         None,
     )
     .expect("post persist engine");

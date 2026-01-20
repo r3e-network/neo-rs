@@ -252,10 +252,7 @@ impl NativeContract for NeoToken {
             .to_vec();
         engine.put_storage_item(&context, &committee_suffix, &committee_bytes)?;
 
-        if crate::hardfork::is_hardfork_enabled(
-            crate::hardfork::Hardfork::HfCockatrice,
-            block.index(),
-        ) {
+        if engine.is_hardfork_enabled(crate::hardfork::Hardfork::HfCockatrice) {
             let new_keys: Vec<ECPoint> = new_committee.iter().map(|(pk, _)| pk.clone()).collect();
             if new_keys != old_keys {
                 let old_array = StackItem::from_array(

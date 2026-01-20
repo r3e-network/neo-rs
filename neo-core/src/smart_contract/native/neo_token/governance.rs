@@ -3,6 +3,8 @@
 //
 
 use super::*;
+use crate::smart_contract::find_options::FindOptions;
+use crate::smart_contract::iterators::StorageIterator;
 
 impl NeoToken {
     /// unclaimedGas invoke wrapper
@@ -78,8 +80,50 @@ impl NeoToken {
 
     /// getAllCandidates - returns iterator over all candidates
     pub(super) fn get_all_candidates(&self, engine: &mut ApplicationEngine) -> CoreResult<Vec<u8>> {
-        // Returns all candidates - delegates to getCandidates which returns the full list
-        self.get_candidates(engine)
+        let snapshot = engine.snapshot_cache();
+        let prefix = StorageKey::create(Self::ID, Self::PREFIX_CANDIDATE);
+        let policy = PolicyContract::new();
+        let mut entries = Vec::new();
+
+        for (key, item) in snapshot.find(Some(&prefix), SeekDirection::Forward) {
+            if key.id != Self::ID {
+                continue;
+            }
+            let suffix = key.suffix();
+            if suffix.first().copied() != Some(Self::PREFIX_CANDIDATE) {
+                continue;
+            }
+
+            let pk_bytes = &suffix[1..];
+            let Ok(pk) = ECPoint::from_bytes(pk_bytes) else {
+                continue;
+            };
+
+            let state =
+                CandidateState::from_storage_item(&item).map_err(CoreError::native_contract)?;
+            if !state.registered {
+                continue;
+            }
+
+            let candidate_account = Contract::create_signature_contract(pk.clone()).script_hash();
+            if policy
+                .is_blocked_snapshot(snapshot.as_ref(), &candidate_account)
+                .unwrap_or(false)
+            {
+                continue;
+            }
+
+            entries.push((key, item));
+        }
+
+        let options =
+            FindOptions::RemovePrefix | FindOptions::DeserializeValues | FindOptions::PickField1;
+        let iterator = StorageIterator::new(entries, 1, options);
+        let iterator_id = engine
+            .store_storage_iterator(iterator)
+            .map_err(CoreError::native_contract)?;
+
+        Ok(iterator_id.to_le_bytes().to_vec())
     }
 
     /// getCandidateVote - returns vote count for specific candidate
@@ -518,26 +562,36 @@ impl NeoToken {
         if !engine.check_witness_hash(&account)? {
             return Ok(vec![0]);
         }
-
+        
+        Ok(vec![if self.vote_internal(engine, &account, vote_to)? { 1 } else { 0 }])
+    }
+    
+    /// vote_internal - actual voting logic (bypasses witness check)
+    pub(crate) fn vote_internal(
+        &self,
+        engine: &mut ApplicationEngine,
+        account: &UInt160,
+        vote_to: Option<ECPoint>,
+    ) -> CoreResult<bool> {
         let snapshot = engine.snapshot_cache();
         let snapshot_ref = snapshot.as_ref();
         let context = engine.get_native_storage_context(&self.hash())?;
 
-        let mut state_account = match self.get_account_state(snapshot_ref, &account)? {
+        let mut state_account = match self.get_account_state(snapshot_ref, account)? {
             Some(state) => state,
-            None => return Ok(vec![0]),
+            None => return Ok(false),
         };
         if state_account.balance.is_zero() {
-            return Ok(vec![0]);
+            return Ok(false);
         }
 
         let mut validator_new: Option<CandidateState> = None;
         if let Some(ref pk) = vote_to {
             let Some(state) = self.get_candidate_state(snapshot_ref, pk)? else {
-                return Ok(vec![0]);
+                return Ok(false);
             };
             if !state.registered {
-                return Ok(vec![0]);
+                return Ok(false);
             }
             validator_new = Some(state);
         }
@@ -562,7 +616,7 @@ impl NeoToken {
             )?;
         }
 
-        let gas_distribution = self.distribute_gas(engine, &account, &mut state_account)?;
+        let gas_distribution = self.distribute_gas(engine, account, &mut state_account)?;
 
         // Remove votes from previous candidate.
         if let Some(old_vote) = state_account.vote_to.clone() {
@@ -591,7 +645,7 @@ impl NeoToken {
             state_account.last_gas_per_vote = BigInt::zero();
         }
 
-        self.write_account_state(&context, engine, &account, &state_account)?;
+        self.write_account_state(&context, engine, account, &state_account)?;
 
         engine
             .send_notification(
@@ -612,10 +666,10 @@ impl NeoToken {
             .map_err(CoreError::native_contract)?;
 
         if let Some(reward) = gas_distribution {
-            GasToken::new().mint(engine, &account, &reward, true)?;
+            GasToken::new().mint(engine, account, &reward, true)?;
         }
 
-        Ok(vec![1])
+        Ok(true)
     }
 
     /// setGasPerBlock - sets GAS generation rate (committee only)

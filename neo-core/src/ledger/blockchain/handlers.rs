@@ -209,8 +209,6 @@ impl Blockchain {
     }
 
     pub(super) async fn handle_reverify(&self, reverify: Reverify, ctx: &ActorContext) {
-        let max_to_verify = reverify.inventories.len().max(1);
-
         for item in reverify.inventories {
             match item.payload {
                 InventoryPayload::Raw(inventory_type, payload) => {
@@ -251,33 +249,6 @@ impl Blockchain {
                     self.handle_reverify_payload(payload, ctx).await;
                 }
             };
-        }
-
-        if let Some(context) = &self.system_context {
-            let store_cache = context.store_cache();
-            let settings = context.settings();
-            let header_cache = context.header_cache();
-            let header_backlog = header_cache.count() > 0 || self.ledger.has_future_headers();
-            let snapshot = store_cache.data_cache();
-            let more_pending = context
-                .memory_pool()
-                .lock()
-                .reverify_top_unverified_transactions(
-                    max_to_verify,
-                    snapshot,
-                    &settings,
-                    header_backlog,
-                );
-
-            if should_schedule_reverify_idle(more_pending, header_backlog) {
-                if let Err(error) = ctx.self_ref().tell(BlockchainCommand::Idle) {
-                    tracing::debug!(
-                        target: "neo",
-                        %error,
-                        "failed to enqueue idle reverify after reverify command"
-                    );
-                }
-            }
         }
     }
 
@@ -379,7 +350,8 @@ impl Blockchain {
             let store_cache = system_context.store_cache();
             let settings = system_context.settings();
             let snapshot = store_cache.data_cache();
-            let header_backlog = self.ledger.has_future_headers();
+            let header_backlog =
+                system_context.header_cache().count() > 0 || self.ledger.has_future_headers();
             let more_pending = system_context
                 .memory_pool()
                 .lock()

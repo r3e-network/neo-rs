@@ -163,8 +163,9 @@ mod tests {
         let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         path.push("..");
         path.push("neo_csharp");
+        path.push("node");
         path.push("tests");
-        path.push("Neo.RpcClient.Tests");
+        path.push("Neo.Network.RPC.Tests");
         path.push("RpcTestCases.json");
         let payload = fs::read_to_string(&path).expect("read RpcTestCases.json");
         let token = JToken::parse(&payload, 128).expect("parse RpcTestCases.json");

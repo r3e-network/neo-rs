@@ -271,6 +271,8 @@ impl ApplicationEngine {
         Ok(iterator_id)
     }
 
+
+
     /// Gets a storage iterator by ID.
     pub fn get_storage_iterator(&self, iterator_id: u32) -> Option<&StorageIterator> {
         self.storage_iterators.get(&iterator_id)
@@ -561,13 +563,41 @@ impl ApplicationEngine {
 
     pub(super) fn refresh_policy_settings(&mut self) {
         if let Some(policy) = self.policy_contract() {
-            if let Ok(raw) = policy.invoke(self, "getExecFeeFactor", &[]) {
-                if !raw.is_empty() {
-                    let mut buffer = [0u8; 4];
-                    let len = raw.len().min(4);
-                    buffer[..len].copy_from_slice(&raw[..len]);
-                    self.exec_fee_factor = u32::from_le_bytes(buffer);
+            let mut got_pico = false;
+            let block_height = self.current_block_index();
+            // Native contract method getExecPicoFeeFactor exists since activeIn Hardfork::HfFaun
+            // But we should check if hardfork is enabled to call it safely/logically.
+            if self.is_hardfork_enabled(Hardfork::HfFaun) {
+                if let Ok(raw) = policy.invoke(self, "getExecPicoFeeFactor", &[]) {
+                    if !raw.is_empty() {
+                        let mut buffer = [0u8; 4];
+                        let len = raw.len().min(4);
+                        buffer[..len].copy_from_slice(&raw[..len]);
+                        self.exec_fee_factor = u32::from_le_bytes(buffer);
+                        got_pico = true;
+                    }
                 }
+            }
+
+            if !got_pico {
+                if let Ok(raw) = policy.invoke(self, "getExecFeeFactor", &[]) {
+                    if !raw.is_empty() {
+                        let mut buffer = [0u8; 4];
+                        let len = raw.len().min(4);
+                        buffer[..len].copy_from_slice(&raw[..len]);
+                        let val = u32::from_le_bytes(buffer);
+                        self.exec_fee_factor = val * (FEE_FACTOR as u32);
+                    }
+                }
+            } else if self.trigger == TriggerType::OnPersist
+                && block_height > 0
+                && !self
+                    .protocol_settings
+                    .is_hardfork_enabled(Hardfork::HfFaun, block_height - 1)
+            {
+                self.exec_fee_factor = self
+                    .exec_fee_factor
+                    .saturating_mul(FEE_FACTOR as u32);
             }
 
             if let Ok(raw) = policy.invoke(self, "getStoragePrice", &[]) {

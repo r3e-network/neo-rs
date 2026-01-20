@@ -112,7 +112,7 @@ impl Session {
             let valid_until = LedgerContract::new()
                 .current_index(&store_cache)
                 .unwrap_or(0)
-                .saturating_add(system.settings().max_valid_until_block_increment);
+                .saturating_add(system.max_valid_until_block_increment());
             tx.set_valid_until_block(valid_until);
             tx.set_signers(signer_list.clone());
             tx.set_attributes(Vec::<TransactionAttribute>::new());

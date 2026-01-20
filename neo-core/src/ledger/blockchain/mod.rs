@@ -79,9 +79,10 @@ use tokio::sync::RwLock;
 use tracing::{debug, warn};
 
 use super::VerifyResult;
-use types::{
-    classify_import_block, should_schedule_reverify_idle, ImportDisposition, UnverifiedBlocksList,
-};
+use types::{classify_import_block, ImportDisposition, UnverifiedBlocksList};
+
+#[cfg(test)]
+use types::should_schedule_reverify_idle;
 
 const MAX_TX_TO_REVERIFY_PER_IDLE: usize = 10;
 const MAX_REVERIFY_INVENTORY_CACHE: usize = 256;

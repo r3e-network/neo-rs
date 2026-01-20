@@ -31,7 +31,17 @@ impl Serialize for JToken {
         match self {
             JToken::Null => serializer.serialize_unit(),
             JToken::Boolean(value) => serializer.serialize_bool(*value),
-            JToken::Number(value) => serializer.serialize_f64(*value),
+            JToken::Number(value) => {
+                if value.is_finite()
+                    && value.fract() == 0.0
+                    && *value >= i64::MIN as f64
+                    && *value <= i64::MAX as f64
+                {
+                    serializer.serialize_i64(*value as i64)
+                } else {
+                    serializer.serialize_f64(*value)
+                }
+            }
             JToken::String(value) => serializer.serialize_str(value),
             JToken::Array(value) => {
                 let mut seq = serializer.serialize_seq(Some(value.len()))?;
@@ -407,7 +417,7 @@ impl<'de> Visitor<'de> for TokenVisitor {
     where
         E: de::Error,
     {
-        Ok(None)
+        Ok(Some(JToken::Null))
     }
 
     fn visit_none<E>(self) -> Result<Self::Value, E>

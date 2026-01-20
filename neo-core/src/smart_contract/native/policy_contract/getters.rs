@@ -20,6 +20,26 @@ impl PolicyContract {
             Self::exec_fee_factor_key().suffix(),
             Self::DEFAULT_EXEC_FEE_FACTOR,
         )?;
+        
+        if engine.is_hardfork_enabled(Hardfork::HfFaun) {
+             // In Faun and later, value is stored in picoGAS, need to scale down for legacy accessor
+             // FeeFactor is 10000.
+             // value is u32, so division is safe.
+             let scaled = value / crate::smart_contract::application_engine::FEE_FACTOR as u32;
+             Ok(Self::encode_u32(scaled))
+        } else {
+             Ok(Self::encode_u32(value))
+        }
+    }
+
+    pub(super) fn get_exec_pico_fee_factor(&self, engine: &mut ApplicationEngine) -> Result<Vec<u8>> {
+        let value = self.read_u32_setting(
+            engine,
+            Self::exec_fee_factor_key().suffix(),
+            Self::DEFAULT_EXEC_FEE_FACTOR,
+        )?;
+        // Return raw value (picoGAS)
+        // Return BigInteger bytes for C# compatibility
         Ok(Self::encode_u32(value))
     }
 
@@ -86,5 +106,24 @@ impl PolicyContract {
             Self::DEFAULT_ATTRIBUTE_FEE,
         )?;
         Ok(Self::encode_u32(value))
+    }
+
+    pub(super) fn get_whitelist_fee_contracts(&self, engine: &mut ApplicationEngine) -> Result<Vec<u8>> {
+        let context = engine.get_native_storage_context(&self.hash)?;
+        
+        let options = FindOptions::RemovePrefix | FindOptions::ValuesOnly | FindOptions::DeserializeValues;
+        
+        let iterator = engine
+            .find_storage_entries(
+                &context,
+                &[Self::PREFIX_WHITELISTED_FEE_CONTRACTS],
+                options,
+            )
+            .map_err(Error::native_contract)?;
+
+        let iterator_id = engine
+            .store_storage_iterator(iterator)
+            .map_err(Error::native_contract)?;
+        Ok(iterator_id.to_le_bytes().to_vec())
     }
 }

@@ -71,7 +71,7 @@ impl IInteroperable for TrimmedBlock {
     }
 
     fn to_stack_item(&self) -> StackItem {
-        StackItem::from_struct(vec![
+        StackItem::from_array(vec![
             StackItem::from_byte_string(self.hash().to_bytes()),
             StackItem::from_int(self.header.version),
             StackItem::from_byte_string(self.header.previous_hash.to_bytes()),

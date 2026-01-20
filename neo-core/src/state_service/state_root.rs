@@ -326,14 +326,10 @@ mod multisig_verify_tests {
         let mut suffix = vec![Role::StateValidator as u8];
         suffix.extend_from_slice(&root.index.to_be_bytes());
         let key = StorageKey::new(RoleManagement::new().id(), suffix);
-        let mut value = Vec::with_capacity(4 + 33 * validators.len());
-        value.extend_from_slice(&(validators.len() as u32).to_le_bytes());
-        for validator in &validators {
-            let encoded = validator
-                .encode_compressed()
-                .expect("validator key must encode");
-            value.extend_from_slice(&encoded);
-        }
+        let role_contract = RoleManagement::new();
+        let value = role_contract
+            .serialize_public_keys(&validators)
+            .expect("serialize state validators");
         snapshot.add(key, StorageItem::from_bytes(value));
         assert!(root.verify(&settings, &snapshot));
     }

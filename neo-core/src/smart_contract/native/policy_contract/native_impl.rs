@@ -30,7 +30,7 @@ impl NativeContract for PolicyContract {
             return Vec::new();
         }
 
-        vec![ContractEventDescriptor::new(
+        let mut events = vec![ContractEventDescriptor::new(
             Self::MILLISECONDS_PER_BLOCK_CHANGED_EVENT_NAME.to_string(),
             vec![
                 ContractParameterDefinition::new("old".to_string(), ContractParameterType::Integer)
@@ -39,7 +39,33 @@ impl NativeContract for PolicyContract {
                     .expect("MillisecondsPerBlockChanged.new"),
             ],
         )
-        .expect("MillisecondsPerBlockChanged event descriptor")]
+        .expect("MillisecondsPerBlockChanged event descriptor")];
+
+        if settings.is_hardfork_enabled(Hardfork::HfFaun, block_height) {
+            events.push(ContractEventDescriptor::new(
+                "WhitelistFeeChanged".to_string(),
+                vec![
+                    ContractParameterDefinition::new("contract".to_string(), ContractParameterType::Hash160)
+                        .expect("WhitelistFeeChanged.contract"),
+                    ContractParameterDefinition::new("method".to_string(), ContractParameterType::String)
+                        .expect("WhitelistFeeChanged.method"),
+                    ContractParameterDefinition::new("argCount".to_string(), ContractParameterType::Integer)
+                        .expect("WhitelistFeeChanged.argCount"),
+                    ContractParameterDefinition::new("fee".to_string(), ContractParameterType::Any)
+                        .expect("WhitelistFeeChanged.fee"),
+                ],
+            ).expect("WhitelistFeeChanged event descriptor"));
+            
+            events.push(ContractEventDescriptor::new(
+                "RecoveredFund".to_string(),
+                vec![
+                    ContractParameterDefinition::new("account".to_string(), ContractParameterType::Hash160)
+                        .expect("RecoveredFund.account"),
+                ],
+            ).expect("RecoveredFund event descriptor"));
+        }
+        
+        events
     }
 
     fn initialize(&self, engine: &mut ApplicationEngine) -> Result<()> {
@@ -65,6 +91,32 @@ impl NativeContract for PolicyContract {
                 Self::storage_price_key(),
                 StorageItem::from_bytes(Self::encode_u32(Self::DEFAULT_STORAGE_PRICE)),
             )?;
+        }
+
+        if engine.is_hardfork_enabled(Hardfork::HfFaun) {
+            if let Some(&faun_height) = engine.protocol_settings().hardforks.get(&Hardfork::HfFaun)
+            {
+                if engine.current_block_index() == faun_height {
+                    if let Some(item) = snapshot_ref.try_get(&Self::exec_fee_factor_key()) {
+                        let value = BigInt::from_signed_bytes_le(&item.get_value())
+                            .to_u32()
+                            .ok_or_else(|| {
+                                Error::native_contract(
+                                    "ExecFeeFactor exceeds u32 capacity".to_string(),
+                                )
+                            })?;
+                        if value <= Self::MAX_EXEC_FEE_FACTOR {
+                            let scaled = value.saturating_mul(
+                                crate::smart_contract::application_engine::FEE_FACTOR as u32,
+                            );
+                            engine.set_storage(
+                                Self::exec_fee_factor_key(),
+                                StorageItem::from_bytes(Self::encode_u32(scaled)),
+                            )?;
+                        }
+                    }
+                }
+            }
         }
 
         if engine.is_hardfork_enabled(Hardfork::HfEchidna) {

@@ -85,7 +85,7 @@ impl ContractManifest {
             supported_standards: Vec::new(),
             abi: ContractAbi::default(),
             permissions: vec![ContractPermission::default_wildcard()],
-            trusts: WildCardContainer::create_wildcard(),
+            trusts: WildCardContainer::default(),
             extra: None,
         }
     }

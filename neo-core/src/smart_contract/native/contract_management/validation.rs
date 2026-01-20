@@ -140,8 +140,7 @@ impl ContractManagement {
             match *prefix {
                 PREFIX_CONTRACT => {
                     if let Ok(contract_hash) = UInt160::from_bytes(rest) {
-                        let mut reader = MemoryReader::new(&value);
-                        if let Ok(contract_state) = ContractState::deserialize(&mut reader) {
+                        if let Ok(contract_state) = Self::deserialize_contract_state(&value) {
                             storage
                                 .contract_ids
                                 .insert(contract_state.id, contract_hash);

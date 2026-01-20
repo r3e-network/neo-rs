@@ -15,11 +15,12 @@ use neo_core::network::p2p::payloads::{Signer, Transaction, Witness, WitnessScop
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
+use neo_core::smart_contract::binary_serializer::BinarySerializer;
 use neo_core::smart_contract::native::crypto_lib::CryptoLib;
 use neo_core::smart_contract::native::NativeContract;
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::UInt160;
-use neo_vm::{OpCode, ScriptBuilder};
+use neo_vm::{ExecutionEngineLimits, OpCode, ScriptBuilder};
 use num_bigint::BigInt;
 use p256::ecdsa::{signature::hazmat::PrehashSigner, Signature as P256Signature};
 use p256::ecdsa::{SigningKey as P256SigningKey};
@@ -500,6 +501,16 @@ fn decode_hex(value: &str) -> Vec<u8> {
     hex_decode(value).expect("hex decode")
 }
 
+fn unwrap_interop_bytes(result: Vec<u8>) -> Vec<u8> {
+    if result.len() == 4 {
+        return result;
+    }
+
+    let item = BinarySerializer::deserialize(&result, &ExecutionEngineLimits::default(), None)
+        .expect("deserialize interop payload");
+    item.as_bytes().expect("interop payload bytes")
+}
+
 fn assert_native_keccak256(input: &[u8], expected_hex: &str) {
     let mut engine = make_engine(protocol_settings_all_active());
     let crypto = CryptoLib::new();
@@ -519,9 +530,10 @@ fn call_bls_mul(
     let point = decode_hex(point_hex);
     let scalar = decode_hex(scalar_hex);
     let neg_flag = vec![if neg { 1 } else { 0 }];
-    engine
+    let result = engine
         .call_native_contract(crypto.hash(), "bls12381Mul", &[point, scalar, neg_flag])
-        .expect("bls12381Mul")
+        .expect("bls12381Mul");
+    unwrap_interop_bytes(result)
 }
 
 #[test]
@@ -1105,9 +1117,11 @@ fn crypto_lib_bls12381_deserialize_g1() {
     let crypto = CryptoLib::new();
     let g1 = decode_hex(BLS_G1_HEX);
 
-    let result = engine
-        .call_native_contract(crypto.hash(), "bls12381Deserialize", &[g1.clone()])
-        .expect("bls12381Deserialize g1");
+    let result = unwrap_interop_bytes(
+        engine
+            .call_native_contract(crypto.hash(), "bls12381Deserialize", &[g1.clone()])
+            .expect("bls12381Deserialize g1"),
+    );
 
     assert_eq!(hex_encode(result), BLS_G1_HEX);
 }
@@ -1118,9 +1132,11 @@ fn crypto_lib_bls12381_deserialize_g2() {
     let crypto = CryptoLib::new();
     let g2 = decode_hex(BLS_G2_HEX);
 
-    let result = engine
-        .call_native_contract(crypto.hash(), "bls12381Deserialize", &[g2.clone()])
-        .expect("bls12381Deserialize g2");
+    let result = unwrap_interop_bytes(
+        engine
+            .call_native_contract(crypto.hash(), "bls12381Deserialize", &[g2.clone()])
+            .expect("bls12381Deserialize g2"),
+    );
 
     assert_eq!(hex_encode(result), BLS_G2_HEX);
 }
@@ -1131,9 +1147,11 @@ fn crypto_lib_bls12381_deserialize_gt() {
     let crypto = CryptoLib::new();
     let gt = decode_hex(BLS_GT_HEX);
 
-    let result = engine
-        .call_native_contract(crypto.hash(), "bls12381Deserialize", &[gt.clone()])
-        .expect("bls12381Deserialize gt");
+    let result = unwrap_interop_bytes(
+        engine
+            .call_native_contract(crypto.hash(), "bls12381Deserialize", &[gt.clone()])
+            .expect("bls12381Deserialize gt"),
+    );
 
     assert_eq!(hex_encode(result), BLS_GT_HEX);
 }
@@ -1190,9 +1208,11 @@ fn crypto_lib_bls12381_add_gt() {
     let crypto = CryptoLib::new();
     let gt = decode_hex(BLS_GT_HEX);
 
-    let result = engine
-        .call_native_contract(crypto.hash(), "bls12381Add", &[gt.clone(), gt])
-        .expect("bls12381Add gt");
+    let result = unwrap_interop_bytes(
+        engine
+            .call_native_contract(crypto.hash(), "bls12381Add", &[gt.clone(), gt])
+            .expect("bls12381Add gt"),
+    );
 
     assert_eq!(hex_encode(result), BLS_ADD_GT_EXPECTED);
 }
@@ -1205,19 +1225,23 @@ fn crypto_lib_bls12381_mul_gt() {
     let mut scalar = vec![0u8; 32];
     scalar[0] = 0x03;
 
-    let result = engine
-        .call_native_contract(
-            crypto.hash(),
-            "bls12381Mul",
-            &[gt.clone(), scalar.clone(), vec![0]],
-        )
-        .expect("bls12381Mul gt");
+    let result = unwrap_interop_bytes(
+        engine
+            .call_native_contract(
+                crypto.hash(),
+                "bls12381Mul",
+                &[gt.clone(), scalar.clone(), vec![0]],
+            )
+            .expect("bls12381Mul gt"),
+    );
 
     assert_eq!(hex_encode(result), BLS_MUL_GT_EXPECTED);
 
-    let result = engine
-        .call_native_contract(crypto.hash(), "bls12381Mul", &[gt, scalar, vec![1]])
-        .expect("bls12381Mul gt neg");
+    let result = unwrap_interop_bytes(
+        engine
+            .call_native_contract(crypto.hash(), "bls12381Mul", &[gt, scalar, vec![1]])
+            .expect("bls12381Mul gt neg"),
+    );
 
     assert_eq!(hex_encode(result), BLS_MUL_GT_EXPECTED_NEG);
 }
@@ -1240,48 +1264,41 @@ fn crypto_lib_bls12381_mul_invalid_scalar_length() {
 
 #[test]
 fn crypto_lib_bls12381_mul_vectors() {
-    let mut engine = make_engine(protocol_settings_all_active());
     let crypto = CryptoLib::new();
+    let run = |point, scalar, neg| {
+        let mut engine = make_engine(protocol_settings_all_active());
+        call_bls_mul(&mut engine, &crypto, point, scalar, neg)
+    };
 
-    let result = call_bls_mul(
-        &mut engine,
-        &crypto,
+    let result = run(
         BLS_GT_SCALAR_MUL_POINT_1,
         BLS_GT_SCALAR_MUL_POINT_1_SCALAR,
         false,
     );
     assert_eq!(hex_encode(result), BLS_GT_SCALAR_MUL_POINT_1_EXPECTED);
 
-    let result = call_bls_mul(
-        &mut engine,
-        &crypto,
+    let result = run(
         BLS_GT_SCALAR_MUL_POINT_2,
         BLS_GT_SCALAR_MUL_POINT_2_SCALAR_1,
         false,
     );
     assert_eq!(hex_encode(result), BLS_GT_SCALAR_MUL_POINT_2_EXPECTED_1);
 
-    let result = call_bls_mul(
-        &mut engine,
-        &crypto,
+    let result = run(
         BLS_GT_SCALAR_MUL_POINT_2,
         BLS_GT_SCALAR_MUL_POINT_2_SCALAR_2,
         false,
     );
     assert_eq!(hex_encode(result), BLS_GT_SCALAR_MUL_POINT_2_EXPECTED_2);
 
-    let result = call_bls_mul(
-        &mut engine,
-        &crypto,
+    let result = run(
         BLS_GT_SCALAR_MUL_POINT_3,
         BLS_GT_SCALAR_MUL_POINT_3_SCALAR,
         true,
     );
     assert_eq!(hex_encode(result), BLS_GT_SCALAR_MUL_POINT_3_EXPECTED);
 
-    let result = call_bls_mul(
-        &mut engine,
-        &crypto,
+    let result = run(
         BLS_GT_SCALAR_MUL_POINT_4,
         BLS_GT_SCALAR_MUL_POINT_4_SCALAR,
         false,
@@ -1289,54 +1306,42 @@ fn crypto_lib_bls12381_mul_vectors() {
     let expected = format!("{:0>1152}", "1");
     assert_eq!(hex_encode(result), expected);
 
-    let result = call_bls_mul(
-        &mut engine,
-        &crypto,
+    let result = run(
         BLS_G1_SCALAR_MUL_POINT,
         BLS_G1_SCALAR_MUL_SCALAR,
         false,
     );
     assert_eq!(hex_encode(result), BLS_G1_SCALAR_MUL_EXPECTED);
 
-    let result = call_bls_mul(
-        &mut engine,
-        &crypto,
+    let result = run(
         BLS_G1_SCALAR_MUL_POINT,
         BLS_G1_SCALAR_MUL_SCALAR,
         true,
     );
     assert_eq!(hex_encode(result), BLS_G1_SCALAR_MUL_EXPECTED_NEG);
 
-    let result = call_bls_mul(
-        &mut engine,
-        &crypto,
+    let result = run(
         BLS_G1_SCALAR_MUL_POINT,
         BLS_GT_SCALAR_MUL_POINT_4_SCALAR,
         false,
     );
     assert_eq!(hex_encode(result), BLS_G1_SCALAR_MUL_EXPECTED_ZERO);
 
-    let result = call_bls_mul(
-        &mut engine,
-        &crypto,
+    let result = run(
         BLS_G2_SCALAR_MUL_POINT,
         BLS_G2_SCALAR_MUL_SCALAR,
         false,
     );
     assert_eq!(hex_encode(result), BLS_G2_SCALAR_MUL_EXPECTED);
 
-    let result = call_bls_mul(
-        &mut engine,
-        &crypto,
+    let result = run(
         BLS_G2_SCALAR_MUL_POINT,
         BLS_G2_SCALAR_MUL_SCALAR,
         true,
     );
     assert_eq!(hex_encode(result), BLS_G2_SCALAR_MUL_EXPECTED_NEG);
 
-    let result = call_bls_mul(
-        &mut engine,
-        &crypto,
+    let result = run(
         BLS_G2_SCALAR_MUL_POINT,
         BLS_GT_SCALAR_MUL_POINT_4_SCALAR,
         false,
@@ -1351,9 +1356,11 @@ fn crypto_lib_bls12381_pairing_g1_g2() {
     let g1 = decode_hex(BLS_G1_HEX);
     let g2 = decode_hex(BLS_G2_HEX);
 
-    let result = engine
-        .call_native_contract(crypto.hash(), "bls12381Pairing", &[g1, g2])
-        .expect("bls12381Pairing");
+    let result = unwrap_interop_bytes(
+        engine
+            .call_native_contract(crypto.hash(), "bls12381Pairing", &[g1, g2])
+            .expect("bls12381Pairing"),
+    );
 
     assert_eq!(hex_encode(result), BLS_GT_HEX);
 }

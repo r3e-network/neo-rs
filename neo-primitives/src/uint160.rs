@@ -177,7 +177,10 @@ impl UInt160 {
 
     /// Tries to parse a UInt160 from a hexadecimal string.
     pub fn try_parse(s: &str, result: &mut Option<Self>) -> bool {
-        let s = s.strip_prefix("0x").unwrap_or(s);
+        let s = s
+            .strip_prefix("0x")
+            .or_else(|| s.strip_prefix("0X"))
+            .unwrap_or(s);
 
         if s.len() != UINT160_SIZE * 2 {
             return false;

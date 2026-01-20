@@ -185,7 +185,10 @@ impl UInt256 {
 
     /// Tries to parse a UInt256 from a hexadecimal string.
     pub fn try_parse(s: &str, result: &mut Option<Self>) -> bool {
-        let s = s.strip_prefix("0x").unwrap_or(s);
+        let s = s
+            .strip_prefix("0x")
+            .or_else(|| s.strip_prefix("0X"))
+            .unwrap_or(s);
 
         if s.len() != UINT256_SIZE * 2 {
             return false;
@@ -384,6 +387,18 @@ mod tests {
         let mut result = None;
         assert!(UInt256::try_parse(
             "0000000000000000000000000000000000000000000000000000000000000001",
+            &mut result
+        ));
+        assert!(result.is_some());
+        let uint = result.unwrap();
+        assert_eq!(uint.value1, 1);
+        assert_eq!(uint.value2, 0);
+        assert_eq!(uint.value3, 0);
+        assert_eq!(uint.value4, 0);
+
+        let mut result = None;
+        assert!(UInt256::try_parse(
+            "0X0000000000000000000000000000000000000000000000000000000000000001",
             &mut result
         ));
         assert!(result.is_some());

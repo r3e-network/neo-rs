@@ -31,11 +31,8 @@ impl StdLib {
     /// Creates a new StdLib contract.
     pub fn new() -> Self {
         // StdLib contract hash: 0xacce6fd80d44e1796aa0c2c625e9e4e0ce39efc0
-        let hash = UInt160::from_bytes(&[
-            0xac, 0xce, 0x6f, 0xd8, 0x0d, 0x44, 0xe1, 0x79, 0x6a, 0xa0, 0xc2, 0xc6, 0x25, 0xe9,
-            0xe4, 0xe0, 0xce, 0x39, 0xef, 0xc0,
-        ])
-        .expect("Operation failed");
+        let hash = UInt160::parse("0xacce6fd80d44e1796aa0c2c625e9e4e0ce39efc0")
+            .expect("Valid StdLib contract hash");
 
         let methods = vec![
             NativeMethod::safe(
@@ -225,6 +222,87 @@ impl StdLib {
                 ContractParameterType::Integer,
             ),
         ];
+        let methods = methods
+            .into_iter()
+            .map(|method| {
+                match (method.name.as_str(), method.parameters.len()) {
+                    ("atoi", 1) => method.with_parameter_names(vec!["value".to_string()]),
+                    ("atoi", 2) => method.with_parameter_names(vec![
+                        "value".to_string(),
+                        "base".to_string(),
+                    ]),
+                    ("base58CheckDecode", 1) => {
+                        method.with_parameter_names(vec!["s".to_string()])
+                    }
+                    ("base58CheckEncode", 1) => {
+                        method.with_parameter_names(vec!["data".to_string()])
+                    }
+                    ("base58Decode", 1) => method.with_parameter_names(vec!["s".to_string()]),
+                    ("base58Encode", 1) => {
+                        method.with_parameter_names(vec!["data".to_string()])
+                    }
+                    ("base64Decode", 1) => method.with_parameter_names(vec!["s".to_string()]),
+                    ("base64Encode", 1) => {
+                        method.with_parameter_names(vec!["data".to_string()])
+                    }
+                    ("base64UrlDecode", 1) => {
+                        method.with_parameter_names(vec!["s".to_string()])
+                    }
+                    ("base64UrlEncode", 1) => {
+                        method.with_parameter_names(vec!["data".to_string()])
+                    }
+                    ("deserialize", 1) => {
+                        method.with_parameter_names(vec!["data".to_string()])
+                    }
+                    ("hexDecode", 1) => method.with_parameter_names(vec!["str".to_string()]),
+                    ("hexEncode", 1) => {
+                        method.with_parameter_names(vec!["bytes".to_string()])
+                    }
+                    ("itoa", 1) => method.with_parameter_names(vec!["value".to_string()]),
+                    ("itoa", 2) => method.with_parameter_names(vec![
+                        "value".to_string(),
+                        "base".to_string(),
+                    ]),
+                    ("jsonDeserialize", 1) => {
+                        method.with_parameter_names(vec!["json".to_string()])
+                    }
+                    ("jsonSerialize", 1) => {
+                        method.with_parameter_names(vec!["item".to_string()])
+                    }
+                    ("memoryCompare", 2) => method.with_parameter_names(vec![
+                        "str1".to_string(),
+                        "str2".to_string(),
+                    ]),
+                    ("memorySearch", 2) => method.with_parameter_names(vec![
+                        "mem".to_string(),
+                        "value".to_string(),
+                    ]),
+                    ("memorySearch", 3) => method.with_parameter_names(vec![
+                        "mem".to_string(),
+                        "value".to_string(),
+                        "start".to_string(),
+                    ]),
+                    ("memorySearch", 4) => method.with_parameter_names(vec![
+                        "mem".to_string(),
+                        "value".to_string(),
+                        "start".to_string(),
+                        "backward".to_string(),
+                    ]),
+                    ("serialize", 1) => method.with_parameter_names(vec!["item".to_string()]),
+                    ("strLen", 1) => method.with_parameter_names(vec!["str".to_string()]),
+                    ("stringSplit", 2) => method.with_parameter_names(vec![
+                        "str".to_string(),
+                        "separator".to_string(),
+                    ]),
+                    ("stringSplit", 3) => method.with_parameter_names(vec![
+                        "str".to_string(),
+                        "separator".to_string(),
+                        "removeEmptyEntries".to_string(),
+                    ]),
+                    _ => method,
+                }
+            })
+            .collect();
 
         Self {
             id: Self::ID,
