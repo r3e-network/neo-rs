@@ -95,19 +95,10 @@ impl IInteroperable for Transaction {
     }
 
     fn to_stack_item(&self) -> StackItem {
-        // Return null stack item if signers is empty (matches C# behavior of throwing ArgumentException)
         if self.signers.is_empty() {
-            tracing::error!("ArgumentException: Sender is not specified in the transaction.");
-            return StackItem::null();
+            panic!("ArgumentException: Sender is not specified in the transaction.");
         }
-
-        let sender = match self.sender() {
-            Some(s) => s.to_bytes(),
-            None => {
-                tracing::error!("Failed to get sender from transaction");
-                return StackItem::null();
-            }
-        };
+        let sender = self.signers[0].account.to_bytes();
 
         StackItem::from_array(vec![
             StackItem::from_byte_string(self.hash().to_bytes()),

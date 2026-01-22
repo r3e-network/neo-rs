@@ -1,4 +1,4 @@
-use crate::messages::ConsensusPayload;
+use crate::messages::{ConsensusPayload, PrepareRequestMessage};
 use crate::{ConsensusEvent, ConsensusService};
 use crate::{ConsensusMessageType, ConsensusResult, ValidatorInfo};
 use neo_crypto::{Crypto, ECCurve, ECPoint, Secp256r1Crypto};
@@ -137,11 +137,25 @@ impl PersistCompletedHarness {
                 self.services[sender_index].on_transactions_received(Vec::new())?;
             }
             ConsensusEvent::BroadcastMessage(payload) => {
+                let maybe_prepare = if payload.message_type == ConsensusMessageType::PrepareRequest {
+                    Some(PrepareRequestMessage::deserialize_body(
+                        &payload.data,
+                        payload.block_index,
+                        payload.view_number,
+                        payload.validator_index,
+                    )?)
+                } else {
+                    None
+                };
+
                 for (idx, service) in self.services.iter_mut().enumerate() {
                     if idx == sender_index {
                         continue;
                     }
                     service.process_message(payload.clone())?;
+                    if let Some(ref prepare) = maybe_prepare {
+                        service.on_transactions_received(prepare.transaction_hashes.clone())?;
+                    }
                 }
             }
             ConsensusEvent::BlockCommitted { .. } | ConsensusEvent::ViewChanged { .. } => {}

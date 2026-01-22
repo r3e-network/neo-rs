@@ -60,13 +60,16 @@ impl IReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MemoryStore {
         direction: SeekDirection,
     ) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)> + '_> {
         let data = self.inner_data.read();
-        let iter: Vec<_> = if let Some(prefix) = key_prefix {
-            data.iter()
-                .filter(|(k, _)| k.starts_with(prefix))
+        let iter: Vec<_> = match (key_prefix, direction) {
+            (Some(prefix), SeekDirection::Forward) => data
+                .range(prefix.clone()..)
                 .map(|(k, v)| (k.clone(), v.clone()))
-                .collect()
-        } else {
-            data.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+                .collect(),
+            (Some(prefix), SeekDirection::Backward) => data
+                .range(..=prefix.clone())
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
+            (None, _) => data.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
         };
 
         if direction == SeekDirection::Backward {

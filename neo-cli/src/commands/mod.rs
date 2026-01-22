@@ -10,6 +10,7 @@ pub mod block_count;
 pub mod block_hash;
 pub mod broadcast;
 pub mod contract;
+pub mod consensus;
 pub mod export;
 pub mod gas;
 pub mod header;

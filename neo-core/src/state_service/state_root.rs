@@ -10,10 +10,12 @@ use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::{
     helper::Helper,
+    native::helpers::NativeHelpers,
     native::{role_management::RoleManagement, Role},
     Contract,
 };
-use crate::UInt256;
+use crate::{IVerifiable, UInt160, UInt256};
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};
 
@@ -108,8 +110,8 @@ impl StateRoot {
             "roothash": self.root_hash.to_string(),
             "witnesses": match &self.witness {
                 Some(w) => serde_json::json!([{
-                    "invocation": hex::encode(&w.invocation_script),
-                    "verification": hex::encode(&w.verification_script)
+                    "invocation": BASE64_STANDARD.encode(&w.invocation_script),
+                    "verification": BASE64_STANDARD.encode(&w.verification_script)
                 }]),
                 None => serde_json::json!([]),
             }
@@ -197,7 +199,8 @@ impl StateRoot {
         let mut sign_data = [0u8; 4 + UInt256::LENGTH];
         sign_data[..4].copy_from_slice(&settings.network.to_le_bytes());
         let mut hashable = self.clone();
-        sign_data[4..].copy_from_slice(&hashable.hash().to_array());
+        let hash = StateRoot::hash(&mut hashable);
+        sign_data[4..].copy_from_slice(&hash.to_array());
 
         // Verify multi-signature set using Neo's CheckMultisig semantics:
         // signatures must be in the same order as the corresponding public keys, but
@@ -263,6 +266,46 @@ impl Serializable for StateRoot {
     }
 }
 
+impl IVerifiable for StateRoot {
+    fn get_script_hashes_for_verifying(&self, snapshot: &DataCache) -> Vec<UInt160> {
+        let validators = RoleManagement::new()
+            .get_designated_by_role_at(snapshot, Role::StateValidator, self.index)
+            .unwrap_or_default();
+        if validators.is_empty() {
+            return Vec::new();
+        }
+        vec![NativeHelpers::get_bft_address(&validators)]
+    }
+
+    fn get_witnesses(&self) -> Vec<&Witness> {
+        self.witness.as_ref().map(|w| vec![w]).unwrap_or_default()
+    }
+
+    fn get_witnesses_mut(&mut self) -> Vec<&mut Witness> {
+        self.witness
+            .as_mut()
+            .map(|w| vec![w])
+            .unwrap_or_default()
+    }
+
+    fn verify(&self) -> bool {
+        true
+    }
+
+    fn hash(&self) -> crate::CoreResult<UInt256> {
+        let mut clone = self.clone();
+        Ok(StateRoot::hash(&mut clone))
+    }
+
+    fn get_hash_data(&self) -> Vec<u8> {
+        self.get_unsigned_data()
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
 impl Default for StateRoot {
     fn default() -> Self {
         Self::new(CURRENT_VERSION, 0, UInt256::zero())
@@ -303,7 +346,7 @@ mod multisig_verify_tests {
         assert_eq!(required, 3);
 
         let mut root = StateRoot::new_current(123, UInt256::from_bytes(&[7u8; 32]).unwrap());
-        let hash = root.hash();
+        let hash = StateRoot::hash(&mut root);
 
         let mut sign_data = Vec::with_capacity(4 + hash.to_bytes().len());
         sign_data.extend_from_slice(&settings.network.to_le_bytes());

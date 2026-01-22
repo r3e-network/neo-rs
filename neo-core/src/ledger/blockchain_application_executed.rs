@@ -1,6 +1,6 @@
 use crate::neo_vm::{StackItem, VMState};
 use crate::network::p2p::payloads::Transaction;
-use crate::smart_contract::{ApplicationEngine, NotifyEventArgs, TriggerType};
+use crate::smart_contract::{ApplicationEngine, LogEventArgs, NotifyEventArgs, TriggerType};
 
 #[derive(Clone)]
 pub struct ApplicationExecuted {
@@ -11,6 +11,7 @@ pub struct ApplicationExecuted {
     pub gas_consumed: i64,
     pub stack: Vec<StackItem>,
     pub notifications: Vec<NotifyEventArgs>,
+    pub logs: Vec<LogEventArgs>,
 }
 
 impl ApplicationExecuted {
@@ -35,6 +36,7 @@ impl ApplicationExecuted {
             exception: engine.fault_exception().map(|e| e.to_string()),
             stack: engine.result_stack().to_vec(),
             notifications: engine.notifications().to_vec(),
+            logs: engine.logs().to_vec(),
         }
     }
 }

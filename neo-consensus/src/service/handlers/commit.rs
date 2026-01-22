@@ -1,4 +1,5 @@
 use super::super::{BlockData, ConsensusEvent, ConsensusService};
+use super::super::helpers::invocation_script_from_signature;
 use crate::context::ConsensusState;
 use crate::messages::ConsensusPayload;
 use crate::{ConsensusError, ConsensusResult};
@@ -20,6 +21,29 @@ impl ConsensusService {
             validator = payload.validator_index,
             "Received Commit"
         );
+
+        if !payload.data.is_empty() && payload.data.len() != 64 {
+            return Err(ConsensusError::InvalidSignatureLength {
+                expected: 64,
+                got: payload.data.len(),
+            });
+        }
+
+        let is_current_view = payload.view_number == self.context.view_number;
+        if !is_current_view {
+            self.context.add_commit(
+                payload.validator_index,
+                payload.view_number,
+                payload.data.clone(),
+            )?;
+            if !payload.witness.is_empty() {
+                self.context.commit_invocations.insert(
+                    payload.validator_index,
+                    invocation_script_from_signature(&payload.witness),
+                );
+            }
+            return Ok(());
+        }
 
         // Verify the commit signature against the proposed block hash
         // The commit data contains the validator's signature of the block hash
@@ -57,7 +81,13 @@ impl ConsensusService {
 
         // Add the commit (signature is in the payload data)
         self.context
-            .add_commit(payload.validator_index, payload.data.clone())?;
+            .add_commit(payload.validator_index, payload.view_number, payload.data.clone())?;
+        if !payload.witness.is_empty() {
+            self.context.commit_invocations.insert(
+                payload.validator_index,
+                invocation_script_from_signature(&payload.witness),
+            );
+        }
 
         self.check_commits()?;
 

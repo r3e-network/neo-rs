@@ -1,4 +1,5 @@
 use super::super::helpers::current_timestamp;
+use super::super::helpers::invocation_script_from_signature;
 use super::super::{ConsensusEvent, ConsensusService};
 use crate::messages::{ChangeViewMessage, ConsensusPayload, RecoveryRequestMessage};
 use crate::{ChangeViewReason, ConsensusMessageType, ConsensusResult};
@@ -52,8 +53,29 @@ impl ConsensusService {
             self.maybe_send_recovery_response(payload.validator_index)?;
         }
 
+        let commit_sent = self
+            .context
+            .my_index
+            .and_then(|idx| self.context.commits.get(&idx))
+            .is_some();
+        if commit_sent {
+            return Ok(());
+        }
+
+        if let Some((expected_view, _)) = self.context.change_views.get(&payload.validator_index) {
+            if new_view <= *expected_view {
+                return Ok(());
+            }
+        }
+
         self.context
             .add_change_view(payload.validator_index, new_view, reason, timestamp)?;
+        if !payload.witness.is_empty() {
+            self.context.change_view_invocations.insert(
+                payload.validator_index,
+                invocation_script_from_signature(&payload.witness),
+            );
+        }
 
         // Check if we have enough change view requests
         if self.context.has_enough_change_views(new_view) {
@@ -70,7 +92,7 @@ impl ConsensusService {
     /// - Otherwise, send a normal ChangeView message
     ///
     /// This prevents network splits when nodes are already committed or failed.
-    pub(in crate::service) fn request_change_view(
+    pub fn request_change_view(
         &mut self,
         reason: ChangeViewReason,
         timestamp: u64,
@@ -115,6 +137,12 @@ impl ConsensusService {
         );
 
         let payload = self.create_payload(ConsensusMessageType::ChangeView, msg.serialize())?;
+        if !payload.witness.is_empty() {
+            self.context.change_view_invocations.insert(
+                self.my_index()?,
+                invocation_script_from_signature(&payload.witness),
+            );
+        }
         self.broadcast(payload)?;
 
         // Check if we already have enough
@@ -130,7 +158,7 @@ impl ConsensusService {
     /// This is called instead of change view when more than F nodes have
     /// committed or are lost. It broadcasts a RecoveryRequest to get the
     /// current consensus state from other nodes.
-    fn request_recovery(&mut self) -> ConsensusResult<()> {
+    pub fn request_recovery(&mut self) -> ConsensusResult<()> {
         let timestamp = current_timestamp();
 
         info!(

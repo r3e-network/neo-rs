@@ -6,6 +6,7 @@ use neo_core::network::p2p::payloads::transaction::MAX_TRANSACTION_ATTRIBUTES;
 use neo_core::network::p2p::payloads::witness::Witness;
 use neo_core::smart_contract::contract_parameter::ContractParameter;
 use neo_core::UInt160;
+use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::{WitnessRule, WitnessScope};
 use neo_json::{JArray, JObject, JToken, MAX_SAFE_INTEGER};
 use std::str::FromStr;
@@ -291,23 +292,21 @@ fn jtoken_to_serde(token: &JToken) -> serde_json::Value {
     }
 }
 fn parse_address(text: &str, address_version: u8) -> Result<Address, RpcException> {
-    let trimmed = text.trim();
     let mut result = None;
-    if UInt160::try_parse(trimmed, &mut result) {
+    if UInt160::try_parse(text, &mut result) {
         if let Some(hash) = result {
             return Ok(Address::new(hash, address_version));
         }
     }
 
-    match UInt160::from_address(trimmed) {
-        Ok(hash) => Ok(Address::new(hash, address_version)),
-        Err(_) => Err(invalid_params(format!("Invalid address: {}", trimmed))),
-    }
+    WalletHelper::to_script_hash(text, address_version)
+        .map(|hash| Address::new(hash, address_version))
+        .map_err(|_| invalid_params(format!("Invalid address: {}", text)))
 }
 
 fn parse_uint160(text: &str) -> Result<UInt160, RpcException> {
     let mut result = None;
-    if UInt160::try_parse(text.trim(), &mut result) {
+    if UInt160::try_parse(text, &mut result) {
         if let Some(value) = result {
             return Ok(value);
         }
@@ -731,6 +730,15 @@ mod tests {
     #[test]
     fn address_conversion_rejects_invalid_address() {
         let token = JToken::String("invalid-address".to_string());
+        let err = ParameterConverter::convert::<Address>(&token, &ctx()).unwrap_err();
+        assert_invalid_params(err);
+    }
+
+    #[test]
+    fn address_conversion_rejects_whitespace_wrapped_address() {
+        let version = ctx().address_version;
+        let base58 = WalletHelper::to_address(&UInt160::zero(), version);
+        let token = JToken::String(format!(" {base58} "));
         let err = ParameterConverter::convert::<Address>(&token, &ctx()).unwrap_err();
         assert_invalid_params(err);
     }

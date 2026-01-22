@@ -1,5 +1,7 @@
 use super::ConsensusEvent;
 use crate::context::{ConsensusContext, ValidatorInfo};
+use crate::ConsensusSigner;
+use std::sync::Arc;
 use tokio::sync::mpsc;
 
 /// The main consensus service implementing dBFT 2.0
@@ -11,6 +13,8 @@ pub struct ConsensusService {
     /// Private key for signing consensus messages (secp256r1 ECDSA)
     #[allow(dead_code)]
     pub(super) private_key: Vec<u8>,
+    /// Optional signer for consensus messages (wallet/HSM/external signer).
+    pub(super) signer: Option<Arc<dyn ConsensusSigner>>,
     /// Event sender
     pub(super) event_tx: mpsc::Sender<ConsensusEvent>,
     /// Whether the service is running
@@ -30,6 +34,24 @@ impl ConsensusService {
             context: ConsensusContext::new(0, validators, my_index),
             network,
             private_key,
+            signer: None,
+            event_tx,
+            running: false,
+        }
+    }
+
+    /// Creates a consensus service from a pre-loaded context (recovery logs).
+    pub fn with_context(
+        network: u32,
+        context: ConsensusContext,
+        private_key: Vec<u8>,
+        event_tx: mpsc::Sender<ConsensusEvent>,
+    ) -> Self {
+        Self {
+            context,
+            network,
+            private_key,
+            signer: None,
             event_tx,
             running: false,
         }

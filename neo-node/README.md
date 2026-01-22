@@ -8,7 +8,7 @@ Standalone Neo N3 blockchain node daemon with built-in RPC server.
 - Synchronizes with the Neo network
 - Provides a JSON-RPC API for external clients
 - Manages the blockchain database
-- Supports plugins (RpcServer, dBFT, ApplicationLogs, etc.)
+- Supports built-in services (RpcServer, ApplicationLogs, TokensTracker, StateService when enabled). Consensus (dBFT) can be enabled via DBFTPlugin settings and a validator wallet.
 
 ## Installation
 
@@ -41,6 +41,7 @@ neo-node --config neo_mainnet_node.toml --stateroot
 Notes:
 - When `--state-root-full-state` is disabled, `getproof`/`getstate`/`findstates` only support the current local root hash (older roots return RPC error `-606`, matching Neo's `StateService` plugin).
 - Validated state roots are only accepted when `RoleManagement` has designated `StateValidator` keys at the given index (also matches Neo's `StateService` rules).
+- When dBFT `auto_start` is disabled, open a wallet and call RPC `startconsensus` to begin consensus.
 
 ## Command-line Options
 
@@ -102,7 +103,7 @@ console_output = true
 │  ┌─────────────────────────────────────────────────────┐│
 │  │                    Plugins                          ││
 │  │  ┌────────────┐  ┌────────────┐  ┌────────────┐   ││
-│  │  │ RpcServer  │  │   dBFT     │  │ AppLogs    │   ││
+│  │  │ RpcServer  │  │ AppLogs    │  │ TokenTrack │   ││
 │  │  └────────────┘  └────────────┘  └────────────┘   ││
 │  └─────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────┘

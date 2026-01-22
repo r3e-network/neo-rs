@@ -63,6 +63,8 @@ pub mod constants;
 pub mod contains_transaction_type;
 /// Core error types and error handling
 pub mod error;
+/// Plugin-style exception policies.
+pub mod unhandled_exception_policy;
 // Advanced error handling utilities moved to extensions
 // Event system moved to i_event_handlers
 // Extensions moved to neo-extensions crate
@@ -127,6 +129,9 @@ pub mod time_provider;
 pub mod state_service;
 // Typed service interfaces for shared subsystems
 pub mod services;
+// Application logs plugin support (matches Neo.Plugins.ApplicationLogs)
+#[cfg(feature = "runtime")]
+pub mod application_logs;
 
 // Actor runtime moved to neo-node crate (Phase 2 refactoring)
 // Runtime / actor-driven subsystems are feature-gated to keep `neo-core` usable as a
@@ -141,6 +146,8 @@ pub mod neo_system;
 
 #[cfg(feature = "runtime")]
 pub mod tokens_tracker;
+#[cfg(feature = "runtime")]
+pub mod oracle_service;
 
 // Re-exports for convenient access
 pub use big_decimal::BigDecimal;
@@ -169,6 +176,7 @@ pub use rpc::RpcException;
 pub use smart_contract::native::NativeContract;
 pub use smart_contract::{Contract, ContractManifest, ContractParameterType, ContractState};
 pub use time_provider::TimeProvider;
+pub use unhandled_exception_policy::UnhandledExceptionPolicy;
 pub use wallets::{KeyPair, Wallet};
 pub use witness::Witness;
 pub use witness_rule::{WitnessCondition, WitnessConditionType, WitnessRule, WitnessRuleAction};

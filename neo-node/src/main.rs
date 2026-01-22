@@ -5,7 +5,9 @@
 
 mod cli;
 mod config;
+mod consensus;
 mod health;
+mod rpc_consensus;
 #[cfg(feature = "hsm")]
 mod hsm_integration;
 #[cfg(feature = "hsm")]
@@ -13,23 +15,37 @@ mod hsm_wallet;
 mod logging;
 mod metrics;
 mod startup;
+mod wallet_provider;
 #[cfg(feature = "tee")]
 mod tee_integration;
 
 use anyhow::{bail, Context, Result};
 use clap::Parser;
 use cli::NodeCli;
-use config::NodeConfig;
+use consensus::DbftConsensusController;
+use config::{
+    resolve_application_logs_store_path, resolve_state_service_store_path,
+    resolve_tokens_tracker_store_path, DbftSettings, NodeConfig,
+};
+use rpc_consensus::RpcServerConsensus;
 use neo_core::{
+    application_logs::ApplicationLogsService,
+    i_event_handlers::{ICommittedHandler, ICommittingHandler, IWalletChangedHandler},
     neo_system::NeoSystem,
+    oracle_service::OracleService,
     network::p2p::channels_config::ChannelsConfig,
     protocol_settings::ProtocolSettings,
-    state_service::{metrics::state_root_ingest_stats, state_store::StateServiceSettings},
-    wallets::{Nep6Wallet, Wallet as CoreWallet},
+    state_service::{
+        metrics::state_root_ingest_stats, state_store::StateServiceSettings,
+        verification::StateServiceVerification,
+    },
+    tokens_tracker::{TokensTracker, TokensTrackerService},
+    UnhandledExceptionPolicy,
+    wallets::{IWalletProvider, Nep6Wallet, Wallet as CoreWallet},
 };
 use neo_rpc::server::{
-    RpcServer, RpcServerBlockchain, RpcServerNode, RpcServerSettings, RpcServerSmartContract,
-    RpcServerState, RpcServerUtilities, RpcServerWallet,
+    RpcServer, RpcServerApplicationLogs, RpcServerBlockchain, RpcServerNode, RpcServerOracle,
+    RpcServerSettings, RpcServerSmartContract, RpcServerState, RpcServerUtilities, RpcServerWallet,
 };
 use parking_lot::RwLock as ParkingRwLock;
 use serde_json::Value;
@@ -37,6 +53,7 @@ use std::{fs, path::PathBuf, sync::Arc};
 use tokio::signal;
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};
+use wallet_provider::NodeWalletProvider;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -123,7 +140,9 @@ async fn main() -> Result<()> {
         );
     }
 
-    let state_service_settings = build_state_service_settings(&cli, storage_path.as_deref());
+    let state_service_settings =
+        build_state_service_settings(&cli, &node_config, storage_path.as_deref(), &protocol_settings)?;
+    let dbft_settings = node_config.dbft_settings(&protocol_settings)?;
 
     // Generate the RpcServer.json consumed by the neo-rpc server settings loader.
     let rpc_plugin_config_path = node_config
@@ -142,6 +161,18 @@ async fn main() -> Result<()> {
     .map_err(|e| anyhow::anyhow!(e.to_string()))
     .context("failed to initialise NeoSystem")?;
 
+    let _application_logs_service =
+        maybe_enable_application_logs(&node_config, &protocol_settings, &system)
+            .context("failed to initialise ApplicationLogs")?;
+
+    let _tokens_tracker_service =
+        maybe_enable_tokens_tracker(&node_config, &protocol_settings, &system)
+            .context("failed to initialise TokensTracker")?;
+
+    let oracle_service =
+        maybe_enable_oracle_service(&node_config, &protocol_settings, &system)
+            .context("failed to initialise OracleService")?;
+
     let channels_config = build_channels_config(&node_config);
     system
         .start_node(channels_config)
@@ -155,6 +186,41 @@ async fn main() -> Result<()> {
         rpc_plugin_config_path.as_deref(),
     )
     .context("failed to start RPC server")?;
+
+    let needs_wallet_provider = state_service_settings
+        .as_ref()
+        .map(|settings| settings.auto_verify)
+        .unwrap_or(false)
+        || oracle_service.is_some()
+        || dbft_settings
+            .as_ref()
+            .map(|settings| settings.auto_start)
+            .unwrap_or(false);
+    let wallet_provider = setup_wallet_provider(&rpc_server, &system, needs_wallet_provider)
+        .context("failed to initialise wallet provider")?;
+    maybe_enable_state_service_verification(
+        &system,
+        &state_service_settings,
+        wallet_provider.as_ref(),
+    )
+    .context("failed to initialise state service verification")?;
+    maybe_enable_dbft_consensus(
+        &dbft_settings,
+        &protocol_settings,
+        &system,
+        wallet_provider.as_ref(),
+    )
+    .context("failed to initialise dBFT consensus")?;
+    if let Some(server) = rpc_server.as_ref() {
+        if dbft_settings
+            .as_ref()
+            .is_some_and(|settings| settings.network == protocol_settings.network)
+        {
+            server
+                .write()
+                .register_handlers(RpcServerConsensus::register_handlers());
+        }
+    }
 
     let hsm_wallet_enabled =
         maybe_enable_hsm_wallet(&cli, &node_config, &rpc_server, &system).await?;
@@ -281,19 +347,353 @@ fn start_rpc_server_if_enabled(
         .server_for_network(network)
         .unwrap_or_default();
 
+    let has_application_logs = system
+        .get_service::<ApplicationLogsService>()
+        .map_err(|e| anyhow::anyhow!(e.to_string()))?
+        .is_some();
+    let has_tokens_tracker = system
+        .get_service::<TokensTrackerService>()
+        .map_err(|e| anyhow::anyhow!(e.to_string()))?
+        .is_some();
+    let has_oracle_service = system
+        .get_service::<OracleService>()
+        .map_err(|e| anyhow::anyhow!(e.to_string()))?
+        .is_some();
+    let has_state_service = system.state_store().ok().flatten().is_some();
+
     let mut server = RpcServer::new(system, settings);
     server.register_handlers(RpcServerNode::register_handlers());
     server.register_handlers(RpcServerBlockchain::register_handlers());
-    server.register_handlers(RpcServerState::register_handlers());
     server.register_handlers(RpcServerUtilities::register_handlers());
     server.register_handlers(RpcServerSmartContract::register_handlers());
     server.register_handlers(RpcServerWallet::register_handlers());
+    if has_application_logs {
+        server.register_handlers(RpcServerApplicationLogs::register_handlers());
+    }
+    if has_state_service {
+        server.register_handlers(RpcServerState::register_handlers());
+    }
+    if has_tokens_tracker {
+        server.register_handlers(neo_rpc::server::RpcServerTokensTracker::register_handlers());
+    }
+    if has_oracle_service {
+        server.register_handlers(RpcServerOracle::register_handlers());
+    }
 
     let handle = Arc::new(ParkingRwLock::new(server));
     neo_rpc::server::register_server(network, Arc::clone(&handle));
     handle.write().start_rpc_server(Arc::downgrade(&handle));
 
     Ok(Some(handle))
+}
+
+fn setup_wallet_provider(
+    rpc_server: &Option<Arc<ParkingRwLock<RpcServer>>>,
+    system: &Arc<NeoSystem>,
+    enable: bool,
+) -> Result<Option<Arc<NodeWalletProvider>>> {
+    if !enable {
+        return Ok(None);
+    }
+
+    let Some(server) = rpc_server else {
+        warn!(target: "neo", "wallet provider requires RPC server; skipping");
+        return Ok(None);
+    };
+
+    let provider = Arc::new(NodeWalletProvider::new());
+    let provider_trait: Arc<dyn IWalletProvider + Send + Sync> = provider.clone();
+    system
+        .attach_wallet_provider(provider_trait)
+        .map_err(|e| anyhow::anyhow!(e.to_string()))
+        .context("failed to attach wallet provider")?;
+
+    let callback_provider = Arc::clone(&provider);
+    server.write().set_wallet_change_callback(Some(Arc::new(move |wallet| {
+        callback_provider.set_wallet(wallet);
+    })));
+
+    info!(target: "neo", "wallet provider enabled");
+    Ok(Some(provider))
+}
+
+fn maybe_enable_state_service_verification(
+    system: &Arc<NeoSystem>,
+    state_service_settings: &Option<StateServiceSettings>,
+    wallet_provider: Option<&Arc<NodeWalletProvider>>,
+) -> Result<()> {
+    let Some(settings) = state_service_settings else {
+        return Ok(());
+    };
+
+    if !settings.auto_verify {
+        info!(
+            target: "neo",
+            "state service verification disabled (auto_verify=false)"
+        );
+        return Ok(());
+    }
+
+    if wallet_provider.is_none() {
+        warn!(
+            target: "neo",
+            "state root verification requires wallet provider; skipping"
+        );
+        return Ok(());
+    }
+
+    system
+        .register_wallet_changed_handler(Arc::new(StateServiceVerification::new(system.clone()))
+            as Arc<dyn IWalletChangedHandler + Send + Sync>)
+        .map_err(|e| anyhow::anyhow!(e.to_string()))
+        .context("failed to register state verification handler")?;
+
+    info!(target: "neo", "state service verification enabled");
+    Ok(())
+}
+
+fn maybe_enable_dbft_consensus(
+    dbft_settings: &Option<DbftSettings>,
+    protocol_settings: &ProtocolSettings,
+    system: &Arc<NeoSystem>,
+    wallet_provider: Option<&Arc<NodeWalletProvider>>,
+) -> Result<()> {
+    let Some(settings) = dbft_settings else {
+        return Ok(());
+    };
+
+    if settings.network != protocol_settings.network {
+        warn!(
+            target: "neo",
+            configured = format_args!("0x{:08x}", settings.network),
+            expected = format_args!("0x{:08x}", protocol_settings.network),
+            "dBFT network mismatch; skipping"
+        );
+        return Ok(());
+    }
+
+    if settings.auto_start && wallet_provider.is_none() {
+        warn!(
+            target: "neo",
+            "dBFT auto_start requires wallet provider; skipping"
+        );
+        return Ok(());
+    }
+
+    system
+        .register_wallet_changed_handler({
+            let controller = Arc::new(DbftConsensusController::new(
+                system.clone(),
+                settings.clone(),
+            ));
+            system
+                .add_service::<DbftConsensusController, _>(Arc::clone(&controller))
+                .map_err(|e| anyhow::anyhow!(e.to_string()))
+                .context("failed to register dBFT consensus service")?;
+            controller as Arc<dyn IWalletChangedHandler + Send + Sync>
+        })
+        .map_err(|e| anyhow::anyhow!(e.to_string()))
+        .context("failed to register dBFT wallet handler")?;
+
+    info!(
+        target: "neo",
+        auto_start = settings.auto_start,
+        recovery_logs = %settings.recovery_logs,
+        "dBFT consensus enabled"
+    );
+    if !settings.auto_start {
+        info!(
+            target: "neo",
+            "dBFT auto_start disabled; consensus will not start automatically"
+        );
+    }
+
+    Ok(())
+}
+
+fn maybe_enable_application_logs(
+    node_config: &NodeConfig,
+    protocol_settings: &ProtocolSettings,
+    system: &Arc<NeoSystem>,
+) -> Result<Option<Arc<ApplicationLogsService>>> {
+    let Some(settings) = node_config.application_logs_settings(protocol_settings)? else {
+        return Ok(None);
+    };
+
+    if settings.network != protocol_settings.network {
+        warn!(
+            target: "neo",
+            configured = format_args!("0x{:08x}", settings.network),
+            expected = format_args!("0x{:08x}", protocol_settings.network),
+            "ApplicationLogs network mismatch; skipping"
+        );
+        return Ok(None);
+    }
+
+    let store_path = resolve_application_logs_store_path(&settings);
+    if let Some(parent) = store_path.parent() {
+        fs::create_dir_all(parent).with_context(|| {
+            format!(
+                "failed to create ApplicationLogs directory {}",
+                parent.display()
+            )
+        })?;
+    }
+    let path = store_path
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!("ApplicationLogs path is not valid UTF-8"))?;
+    let store = system
+        .store_provider()
+        .get_store(path)
+        .map_err(|e| anyhow::anyhow!(e.to_string()))
+        .context("failed to open ApplicationLogs store")?;
+
+    let service = Arc::new(ApplicationLogsService::new(settings.clone(), store));
+    system
+        .add_service::<ApplicationLogsService, _>(Arc::clone(&service))
+        .map_err(|e| anyhow::anyhow!(e.to_string()))
+        .context("failed to register ApplicationLogs service")?;
+    system
+        .register_committing_handler(
+            Arc::clone(&service) as Arc<dyn ICommittingHandler + Send + Sync>
+        )
+        .map_err(|e| anyhow::anyhow!(e.to_string()))
+        .context("failed to register ApplicationLogs committing handler")?;
+    system
+        .register_committed_handler(Arc::clone(&service) as Arc<dyn ICommittedHandler + Send + Sync>)
+        .map_err(|e| anyhow::anyhow!(e.to_string()))
+        .context("failed to register ApplicationLogs committed handler")?;
+
+    info!(
+        target: "neo",
+        path = %store_path.display(),
+        debug = settings.debug,
+        "ApplicationLogs enabled"
+    );
+
+    Ok(Some(service))
+}
+
+fn maybe_enable_tokens_tracker(
+    node_config: &NodeConfig,
+    protocol_settings: &ProtocolSettings,
+    system: &Arc<NeoSystem>,
+) -> Result<Option<Arc<TokensTrackerService>>> {
+    let Some(settings) = node_config.tokens_tracker_settings(protocol_settings)? else {
+        return Ok(None);
+    };
+
+    if settings.network != protocol_settings.network {
+        warn!(
+            target: "neo",
+            configured = format_args!("0x{:08x}", settings.network),
+            expected = format_args!("0x{:08x}", protocol_settings.network),
+            "TokensTracker network mismatch; skipping"
+        );
+        return Ok(None);
+    }
+
+    let store_path = resolve_tokens_tracker_store_path(&settings);
+    if let Some(parent) = store_path.parent() {
+        fs::create_dir_all(parent).with_context(|| {
+            format!(
+                "failed to create TokensTracker directory {}",
+                parent.display()
+            )
+        })?;
+    }
+    let path = store_path
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!("TokensTracker path is not valid UTF-8"))?;
+    let store = system
+        .store_provider()
+        .get_store(path)
+        .map_err(|e| anyhow::anyhow!(e.to_string()))
+        .context("failed to open TokensTracker store")?;
+
+    let tracker = Arc::new(TokensTracker::new(settings.clone(), store.clone(), system.clone()));
+    system
+        .register_committing_handler(Arc::clone(&tracker) as Arc<dyn ICommittingHandler + Send + Sync>)
+        .map_err(|e| anyhow::anyhow!(e.to_string()))
+        .context("failed to register TokensTracker committing handler")?;
+    system
+        .register_committed_handler(Arc::clone(&tracker) as Arc<dyn ICommittedHandler + Send + Sync>)
+        .map_err(|e| anyhow::anyhow!(e.to_string()))
+        .context("failed to register TokensTracker committed handler")?;
+
+    let service = Arc::new(TokensTrackerService::new(settings.clone(), store));
+    system
+        .add_service::<TokensTrackerService, _>(Arc::clone(&service))
+        .map_err(|e| anyhow::anyhow!(e.to_string()))
+        .context("failed to register TokensTracker service")?;
+
+    info!(
+        target: "neo",
+        path = %store_path.display(),
+        trackers = ?settings.enabled_trackers,
+        history = settings.track_history,
+        "TokensTracker enabled"
+    );
+
+    Ok(Some(service))
+}
+
+fn maybe_enable_oracle_service(
+    node_config: &NodeConfig,
+    protocol_settings: &ProtocolSettings,
+    system: &Arc<NeoSystem>,
+) -> Result<Option<Arc<OracleService>>> {
+    if !node_config.rpc.enabled {
+        warn!(
+            target: "neo",
+            "OracleService requires RPC server; skipping"
+        );
+        return Ok(None);
+    }
+
+    let Some(settings) = node_config.oracle_service_settings(protocol_settings)? else {
+        return Ok(None);
+    };
+
+    if settings.network != protocol_settings.network {
+        warn!(
+            target: "neo",
+            configured = format_args!("0x{:08x}", settings.network),
+            expected = format_args!("0x{:08x}", protocol_settings.network),
+            "OracleService network mismatch; skipping"
+        );
+        return Ok(None);
+    }
+
+    let service = Arc::new(
+        OracleService::new(settings.clone(), system.clone())
+            .map_err(|e| anyhow::anyhow!(e.to_string()))?,
+    );
+    service.set_self_ref();
+
+    system
+        .add_service::<OracleService, _>(Arc::clone(&service))
+        .map_err(|e| anyhow::anyhow!(e.to_string()))
+        .context("failed to register OracleService")?;
+    system
+        .register_committing_handler(Arc::clone(&service) as Arc<dyn ICommittingHandler + Send + Sync>)
+        .map_err(|e| anyhow::anyhow!(e.to_string()))
+        .context("failed to register OracleService committing handler")?;
+    system
+        .register_wallet_changed_handler(
+            Arc::clone(&service) as Arc<dyn IWalletChangedHandler + Send + Sync>
+        )
+        .map_err(|e| anyhow::anyhow!(e.to_string()))
+        .context("failed to register OracleService wallet handler")?;
+
+    info!(
+        target: "neo",
+        auto_start = settings.auto_start,
+        nodes = settings.nodes.len(),
+        "OracleService enabled"
+    );
+
+    Ok(Some(service))
 }
 
 async fn maybe_enable_hsm_wallet(
@@ -442,35 +842,69 @@ async fn start_health_endpoint_if_enabled(
 
 fn build_state_service_settings(
     cli: &NodeCli,
+    node_config: &NodeConfig,
     storage_path: Option<&str>,
-) -> Option<StateServiceSettings> {
-    if !cli.state_root {
-        return None;
+    protocol_settings: &ProtocolSettings,
+) -> Result<Option<StateServiceSettings>> {
+    if cli.state_root {
+        let default_state_dir = PathBuf::from("StateRoot");
+        let requested_state_dir = cli
+            .state_root_path
+            .clone()
+            .unwrap_or_else(|| default_state_dir.clone());
+        let mut state_path = requested_state_dir.to_string_lossy().to_string();
+        if state_path.contains("{0}") {
+            state_path = state_path.replace("{0}", &format!("{:08X}", protocol_settings.network));
+        }
+        let resolved_state_dir = if PathBuf::from(&state_path).is_absolute() {
+            PathBuf::from(&state_path)
+        } else if let Some(storage_root) = storage_path {
+            PathBuf::from(storage_root).join(state_path)
+        } else {
+            PathBuf::from(state_path)
+        };
+        let state_path = resolved_state_dir.to_string_lossy().to_string();
+        info!(
+            target: "neo",
+            path = %state_path,
+            full_state = cli.state_root_full_state,
+            "state root calculation enabled"
+        );
+        return Ok(Some(StateServiceSettings {
+            full_state: cli.state_root_full_state,
+            path: state_path,
+            network: protocol_settings.network,
+            auto_verify: false,
+            max_find_result_items: 100,
+            exception_policy: UnhandledExceptionPolicy::StopPlugin,
+        }));
     }
 
-    let default_state_dir = PathBuf::from("StateRoot");
-    let requested_state_dir = cli
-        .state_root_path
-        .clone()
-        .unwrap_or_else(|| default_state_dir.clone());
-    let resolved_state_dir = if requested_state_dir.is_absolute() {
-        requested_state_dir
-    } else if let Some(storage_root) = storage_path {
-        PathBuf::from(storage_root).join(requested_state_dir)
-    } else {
-        requested_state_dir
+    let Some(mut settings) = node_config.state_service_settings(protocol_settings)? else {
+        return Ok(None);
     };
-    let state_path = resolved_state_dir.to_string_lossy().to_string();
+
+    if settings.network != protocol_settings.network {
+        warn!(
+            target: "neo",
+            configured = format_args!("0x{:08x}", settings.network),
+            expected = format_args!("0x{:08x}", protocol_settings.network),
+            "state service network mismatch; skipping"
+        );
+        return Ok(None);
+    }
+
+    let store_path = resolve_state_service_store_path(&settings);
+    settings.path = store_path.to_string_lossy().to_string();
+
     info!(
         target: "neo",
-        path = %state_path,
-        full_state = cli.state_root_full_state,
+        path = %settings.path,
+        full_state = settings.full_state,
+        auto_verify = settings.auto_verify,
         "state root calculation enabled"
     );
-    Some(StateServiceSettings {
-        full_state: cli.state_root_full_state,
-        path: state_path,
-    })
+    Ok(Some(settings))
 }
 
 /// Applies CLI argument overrides to the node configuration.

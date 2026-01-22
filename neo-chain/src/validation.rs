@@ -1,6 +1,7 @@
 //! Block validation logic
 
 use crate::{ChainError, ChainResult, ChainState, MAX_TIME_DRIFT_SECS};
+use neo_primitives::constants::{MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK};
 use neo_primitives::UInt256;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -84,8 +85,8 @@ impl BlockValidator {
     /// Create a new block validator with default settings
     pub fn new() -> Self {
         Self {
-            max_block_size: 5 * 1024 * 1024, // 5 MB
-            max_transactions_per_block: 512,
+            max_block_size: MAX_BLOCK_SIZE,
+            max_transactions_per_block: MAX_TRANSACTIONS_PER_BLOCK,
             expected_block_time_ms: 15_000, // 15 seconds
         }
     }

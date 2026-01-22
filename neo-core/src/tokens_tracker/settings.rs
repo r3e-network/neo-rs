@@ -6,21 +6,7 @@
 use serde::Deserialize;
 use serde_json::Value;
 
-/// Exception handling policy for the tokens tracker.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
-pub enum UnhandledExceptionPolicy {
-    /// Ignore exceptions and continue processing.
-    Ignore,
-    /// Stop the plugin/tracker on exception.
-    StopPlugin,
-    /// Stop the node on exception.
-    #[default]
-    StopNode,
-    /// Continue processing after logging exception.
-    Continue,
-    /// Terminate the process immediately.
-    Terminate,
-}
+use crate::unhandled_exception_policy::UnhandledExceptionPolicy;
 
 /// Configuration settings for the TokensTracker.
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
@@ -42,7 +28,7 @@ pub struct TokensTrackerSettings {
 impl Default for TokensTrackerSettings {
     fn default() -> Self {
         Self {
-            db_path: "TokensBalanceData".to_string(),
+            db_path: "TokenBalanceData".to_string(),
             track_history: true,
             max_results: 1000,
             network: 860_833_102,

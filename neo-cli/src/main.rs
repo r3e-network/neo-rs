@@ -88,6 +88,9 @@ enum Commands {
     /// List loaded plugins on the node
     Plugins,
 
+    /// Start consensus service (dBFT)
+    StartConsensus,
+
     // ==================== Blockchain Queries ====================
     /// Get block by index or hash (alias: show block)
     Block {
@@ -514,6 +517,7 @@ async fn main() -> Result<()> {
         Commands::Peers => peers::execute(&client).await,
         Commands::Mempool { verbose } => mempool::execute(&client, verbose).await,
         Commands::Plugins => plugins::execute(&client).await,
+        Commands::StartConsensus => consensus::start(&client).await,
 
         // Blockchain Queries
         Commands::Block { index_or_hash, raw } => {

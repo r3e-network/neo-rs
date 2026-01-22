@@ -55,12 +55,11 @@ impl RpcServerWallet {
     /// Registers all wallet RPC handlers.
     ///
     /// # Security
-    /// All wallet methods are marked as protected and require authentication.
-    /// If no authentication is configured on the RPC server, these methods will
-    /// be rejected with an access denied error.
+    /// Wallet methods are marked as protected metadata. Authentication is enforced
+    /// only when RPC basic auth is configured, matching C# behavior.
     pub fn register_handlers() -> Vec<RpcHandler> {
         vec![
-            // All wallet methods require authentication for security
+            // Wallet methods are marked as protected metadata.
             Self::protected_handler("closewallet", Self::close_wallet),
             Self::protected_handler("dumpprivkey", Self::dump_priv_key),
             Self::protected_handler("getnewaddress", Self::get_new_address),
@@ -77,7 +76,7 @@ impl RpcServerWallet {
         ]
     }
 
-    /// Creates a protected handler that requires authentication.
+    /// Creates a protected handler for wallet operations.
     fn protected_handler(
         name: &'static str,
         func: fn(&RpcServer, &[Value]) -> Result<Value, RpcException>,
@@ -85,25 +84,12 @@ impl RpcServerWallet {
         RpcHandler::new(RpcMethodDescriptor::new_protected(name), Arc::new(func))
     }
 
-    /// Ensures wallet endpoints are only executed when RPC authentication is configured.
-    fn require_authentication(server: &RpcServer) -> Result<(), RpcException> {
-        if server.settings().rpc_user.trim().is_empty() {
-            return Err(RpcException::from(
-                RpcError::access_denied()
-                    .with_data("Authentication required for wallet operations"),
-            ));
-        }
-        Ok(())
-    }
-
     fn close_wallet(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {
-        Self::require_authentication(server)?;
         server.set_wallet(None);
         Ok(Value::Bool(true))
     }
 
     fn dump_priv_key(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        Self::require_authentication(server)?;
         let address = Self::expect_string_param(params, 0, "dumpprivkey")?;
         let script_hash = Self::parse_script_hash(server, &address)?;
         let wallet = Self::require_wallet(server)?;
@@ -122,7 +108,6 @@ impl RpcServerWallet {
     }
 
     fn get_new_address(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {
-        Self::require_authentication(server)?;
         let wallet = Self::require_wallet(server)?;
         let key_pair = KeyPair::generate().map_err(|err| {
             RpcException::from(RpcError::internal_server_error().with_data(err.to_string()))
@@ -137,7 +122,6 @@ impl RpcServerWallet {
     }
 
     fn get_wallet_balance(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        Self::require_authentication(server)?;
         let asset = Self::parse_uint160(params, 0, "getwalletbalance")?;
         let wallet = Self::require_wallet(server)?;
         if asset == NeoToken::new().hash() {
@@ -183,7 +167,6 @@ impl RpcServerWallet {
         server: &RpcServer,
         _params: &[Value],
     ) -> Result<Value, RpcException> {
-        Self::require_authentication(server)?;
         let wallet = Self::require_wallet(server)?;
         let store = server.system().store_cache();
         let ledger = LedgerContract::new();
@@ -207,7 +190,6 @@ impl RpcServerWallet {
     }
 
     fn import_priv_key(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        Self::require_authentication(server)?;
         let privkey = Self::expect_string_param(params, 0, "importprivkey")?;
         KeyPair::from_wif(&privkey)
             .map_err(|err| Self::invalid_params(format!("invalid WIF: {}", err)))?;
@@ -222,7 +204,6 @@ impl RpcServerWallet {
     }
 
     fn list_address(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {
-        Self::require_authentication(server)?;
         let wallet = Self::require_wallet(server)?;
         let mut entries = Vec::new();
         for account in wallet.get_accounts() {
@@ -232,7 +213,6 @@ impl RpcServerWallet {
     }
 
     fn open_wallet(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        Self::require_authentication(server)?;
         let path = Self::expect_string_param(params, 0, "openwallet")?;
         let password = Self::expect_string_param(params, 1, "openwallet")?;
         if !Path::new(&path).exists() {
@@ -266,7 +246,6 @@ impl RpcServerWallet {
     }
 
     fn calculate_network_fee(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        Self::require_authentication(server)?;
         let payload = Self::expect_string_param(params, 0, "calculatenetworkfee")?;
         let raw = BASE64_STANDARD.decode(payload.trim()).map_err(|_| {
             RpcException::from(RpcError::invalid_params().with_data("Invalid transaction payload"))
@@ -292,7 +271,6 @@ impl RpcServerWallet {
     }
 
     fn send_from(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        Self::require_authentication(server)?;
         let _ = Self::require_wallet(server)?;
         let asset = Self::parse_uint160(params, 0, "sendfrom")?;
         let from_hash =
@@ -327,7 +305,6 @@ impl RpcServerWallet {
     }
 
     fn send_to_address(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        Self::require_authentication(server)?;
         let _ = Self::require_wallet(server)?;
         let asset = Self::parse_uint160(params, 0, "sendtoaddress")?;
         let to_hash = Self::parse_script_hash(
@@ -363,7 +340,6 @@ impl RpcServerWallet {
     }
 
     fn send_many(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        Self::require_authentication(server)?;
         let wallet = Self::require_wallet(server)?;
         if params.is_empty() {
             return Err(Self::invalid_params(
@@ -457,7 +433,6 @@ impl RpcServerWallet {
     }
 
     fn cancel_transaction(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        Self::require_authentication(server)?;
         let txid = Self::parse_uint256(params, 0, "canceltransaction")?;
         let signers_value = params
             .get(1)

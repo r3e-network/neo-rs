@@ -44,8 +44,8 @@ The codebase follows a strict layered architecture with clear dependency rules:
 The application layer is where user-facing binaries live. These binaries orchestrate lower-level crates but
 should not blur boundaries by directly reaching into internal node state when an RPC boundary exists.
 
-- **neo-node**: The node daemon. Runs P2P sync, consensus/services, and (optionally) the JSON-RPC server.
-  It is designed to be deployed and managed like a service.
+- **neo-node**: The node daemon. Runs P2P sync and (optionally) the JSON-RPC server.
+  Consensus (dBFT) is not wired into `neo-node` yet. It is designed to be deployed and managed like a service.
 - **neo-cli**: The RPC client. A user-facing command line tool that connects to a running `neo-node`
   (or any compatible Neo JSON-RPC endpoint) to query state and submit transactions. It does not run a node.
 
@@ -86,7 +86,7 @@ should not blur boundaries by directly reaching into internal node state when an
 ### Application Layer
 
 - **neo-cli**: Thin command wrappers over `neo-rpc` (with `client` feature), no business logic.
-- **neo-node**: Node runtime daemon integrating P2P networking, RPC server, consensus service, and chain state management. Uses tokio channels for component communication. Supports:
+- **neo-node**: Node runtime daemon integrating P2P networking, RPC server, and chain state management. Uses tokio channels for component communication. Supports:
     - Block synchronization from network peers
     - State root calculation and validation
     - Health checks and Prometheus metrics

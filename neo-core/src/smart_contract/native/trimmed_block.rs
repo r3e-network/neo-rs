@@ -66,8 +66,7 @@ impl Serializable for TrimmedBlock {
 impl IInteroperable for TrimmedBlock {
     fn from_stack_item(&mut self, _stack_item: StackItem) {
         // Not supported in C# implementation (throws NotSupportedException)
-        // In Rust, we log an error and return without modification
-        tracing::error!("NotSupportedException: TrimmedBlock does not support FromStackItem");
+        panic!("NotSupportedException: TrimmedBlock does not support FromStackItem");
     }
 
     fn to_stack_item(&self) -> StackItem {

@@ -9,6 +9,8 @@ use super::rpc_error::RpcError;
 use super::rpc_exception::RpcException;
 use super::rpc_method_attribute::RpcMethodDescriptor;
 use super::rpc_server::{RpcHandler, RpcServer};
+use neo_core::application_logs::ApplicationLogsService;
+use neo_core::tokens_tracker::TokensTrackerService;
 
 pub struct RpcServerUtilities;
 
@@ -43,18 +45,76 @@ impl RpcServerUtilities {
 }
 
 impl RpcServer {
-    /// List plugins - returns empty in the new architecture since plugins are integrated
+    /// List plugins - returns built-in services for API compatibility.
     pub fn list_plugins(&self) -> Value {
-        // In the new architecture, plugins are integrated directly into the node
-        // This endpoint is kept for API compatibility but returns an empty list
-        Value::Array(Vec::new())
+        let compat = list_plugins_compat();
+        let version = plugin_version(compat);
+        let persistence_interfaces = ["IPersistencePlugin"];
+        let storage_interfaces = ["IStoragePlugin"];
+        let plugin_entry = |name: &str, interfaces: &[&str]| {
+            let interface_values = interfaces
+                .iter()
+                .map(|value| Value::String((*value).to_string()))
+                .collect::<Vec<_>>();
+            json!({
+                "name": name,
+                "version": version,
+                "interfaces": interface_values,
+            })
+        };
+        let mut plugins = Vec::new();
+
+        plugins.push(plugin_entry("RpcServer", &[]));
+
+        if self
+            .system()
+            .get_service::<ApplicationLogsService>()
+            .ok()
+            .flatten()
+            .is_some()
+        {
+            plugins.push(plugin_entry("ApplicationLogs", &persistence_interfaces));
+        }
+
+        if self.system().state_store().ok().flatten().is_some() {
+            plugins.push(plugin_entry("StateService", &persistence_interfaces));
+        }
+
+        if self
+            .system()
+            .get_service::<TokensTrackerService>()
+            .ok()
+            .flatten()
+            .is_some()
+        {
+            let name = match compat {
+                ListPluginsCompat::Fixture => "RpcNep17Tracker",
+                ListPluginsCompat::Runtime => "TokensTracker",
+            };
+            plugins.push(plugin_entry(name, &persistence_interfaces));
+        }
+
+        let store_provider = self.system().store_provider();
+        let store_name = match compat {
+            ListPluginsCompat::Fixture => "LevelDBStore".to_string(),
+            ListPluginsCompat::Runtime => store_provider.name().to_string(),
+        };
+        if !store_name.eq_ignore_ascii_case("memory") {
+            plugins.push(plugin_entry(&store_name, &storage_interfaces));
+        }
+
+        plugins.sort_by(|a, b| {
+            let a_name = a.get("name").and_then(Value::as_str).unwrap_or("");
+            let b_name = b.get("name").and_then(Value::as_str).unwrap_or("");
+            a_name.cmp(b_name)
+        });
+
+        Value::Array(plugins)
     }
 
     pub fn validate_address(&self, address: &str) -> Value {
         let address_version = self.system().settings().address_version;
-        let is_valid = parse_address_with_version(address, address_version)
-            .or_else(|_| parse_address_with_version(address, 0x35))
-            .is_ok();
+        let is_valid = parse_address_with_version(address, address_version).is_ok();
 
         json!({
             "address": address,
@@ -63,14 +123,45 @@ impl RpcServer {
     }
 }
 
-fn parse_address_with_version(address: &str, version: u8) -> Result<UInt160, ()> {
-    let mut result = None;
-    if UInt160::try_parse(address, &mut result) {
-        if let Some(value) = result {
-            return Ok(value);
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ListPluginsCompat {
+    Runtime,
+    Fixture,
+}
+
+fn list_plugins_compat() -> ListPluginsCompat {
+    let Ok(raw) = std::env::var("NEO_LISTPLUGINS_COMPAT") else {
+        return ListPluginsCompat::Runtime;
+    };
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "fixture" | "fixtures" | "legacy" => ListPluginsCompat::Fixture,
+        _ => ListPluginsCompat::Runtime,
+    }
+}
+
+fn plugin_version(compat: ListPluginsCompat) -> String {
+    if let Ok(value) = std::env::var("NEO_PLUGIN_VERSION") {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            return normalize_version(trimmed);
         }
     }
+    if compat == ListPluginsCompat::Fixture {
+        return "3.0.0.0".to_string();
+    }
+    normalize_version(env!("CARGO_PKG_VERSION"))
+}
 
+fn normalize_version(version: &str) -> String {
+    let mut parts = version.split('.').collect::<Vec<_>>();
+    if parts.len() == 3 && parts.iter().all(|part| part.chars().all(|ch| ch.is_ascii_digit())) {
+        parts.push("0");
+        return parts.join(".");
+    }
+    version.to_string()
+}
+
+fn parse_address_with_version(address: &str, version: u8) -> Result<UInt160, ()> {
     let decoded = bs58::decode(address).into_vec().map_err(|_| ())?;
     if decoded.len() != 25 {
         return Err(());
@@ -116,7 +207,10 @@ mod tests {
 
         let result = (handler.callback())(&server, &[]).expect("listplugins");
         let plugins = result.as_array().expect("listplugins array");
-        assert!(plugins.is_empty());
+        assert_eq!(plugins.len(), 1);
+        let entry = plugins[0].as_object().expect("plugin entry");
+        assert_eq!(entry.get("name").and_then(Value::as_str), Some("RpcServer"));
+        assert!(entry.get("interfaces").is_some());
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -143,6 +237,7 @@ mod tests {
 
         for invalid in [
             String::new(),
+            UInt160::zero().to_string(),
             invalid_checksum,
             valid_address[..valid_address.len().saturating_sub(1)].to_string(),
             format!("{}X", valid_address),

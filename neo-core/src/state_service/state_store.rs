@@ -62,6 +62,7 @@ use crate::persistence::{
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::native::LedgerContract;
 use crate::smart_contract::{StorageItem, StorageKey};
+use crate::unhandled_exception_policy::UnhandledExceptionPolicy;
 use crate::UInt256;
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
@@ -77,13 +78,25 @@ pub struct StateServiceSettings {
     pub full_state: bool,
     /// Path to the state store database.
     pub path: String,
+    /// Network magic number (used for config validation and path formatting).
+    pub network: u32,
+    /// Whether to auto-start state root verification when a wallet is available.
+    pub auto_verify: bool,
+    /// Maximum number of results returned by findstates.
+    pub max_find_result_items: usize,
+    /// Policy for handling unhandled exceptions.
+    pub exception_policy: UnhandledExceptionPolicy,
 }
 
 impl Default for StateServiceSettings {
     fn default() -> Self {
         Self {
             full_state: false,
-            path: "StateRoot".to_string(),
+            path: "Data_MPT_{0}".to_string(),
+            network: 0,
+            auto_verify: false,
+            max_find_result_items: 100,
+            exception_policy: UnhandledExceptionPolicy::StopPlugin,
         }
     }
 }
@@ -447,6 +460,16 @@ impl StateStore {
     /// can be queried for proofs/state (mirrors the C# StateService `FullState` setting).
     pub fn full_state(&self) -> bool {
         self.settings.full_state
+    }
+
+    /// Returns the maximum number of results allowed by findstates.
+    pub fn max_find_result_items(&self) -> usize {
+        self.settings.max_find_result_items
+    }
+
+    /// Returns the configured exception policy.
+    pub fn exception_policy(&self) -> UnhandledExceptionPolicy {
+        self.settings.exception_policy
     }
 
     /// Creates a state store backed by the provided blockchain store and protocol settings,

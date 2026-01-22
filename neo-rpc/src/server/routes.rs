@@ -1,5 +1,5 @@
 use super::middleware::{GovernorRateLimiter, RateLimitConfig};
-use super::rcp_server_settings::RpcServerConfig;
+use super::rcp_server_settings::{RpcServerConfig, RpcServerSettings, UnhandledExceptionPolicy};
 use super::rpc_error::RpcError;
 use super::rpc_server::{RpcServer, RPC_ERR_TOTAL, RPC_REQ_TOTAL};
 
@@ -12,16 +12,20 @@ use serde_json::{json, Map, Value};
 use std::collections::HashSet;
 use std::convert::Infallible;
 use std::net::SocketAddr;
+use std::panic::{self, AssertUnwindSafe};
 use std::sync::{Arc, Weak};
 use subtle::ConstantTimeEq;
-use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tracing::error;
 use warp::http::header::{
-    HeaderValue, ACCESS_CONTROL_ALLOW_HEADERS, ACCESS_CONTROL_ALLOW_METHODS,
-    ACCESS_CONTROL_ALLOW_ORIGIN, CONTENT_TYPE, VARY, WWW_AUTHENTICATE,
+    HeaderValue, ACCESS_CONTROL_ALLOW_CREDENTIALS, ACCESS_CONTROL_ALLOW_HEADERS,
+    ACCESS_CONTROL_ALLOW_METHODS, ACCESS_CONTROL_ALLOW_ORIGIN, CONTENT_TYPE, VARY,
+    WWW_AUTHENTICATE,
 };
 use warp::http::StatusCode;
 use warp::reply::Response as HttpResponse;
 use warp::Filter;
+
+const MAX_PARAMS_DEPTH: usize = 32;
 
 #[derive(Clone)]
 pub(crate) struct BasicAuth {
@@ -113,7 +117,6 @@ struct RpcFilters {
     server: Weak<RwLock<RpcServer>>,
     disabled: Arc<HashSet<String>>,
     auth: Arc<Option<BasicAuth>>,
-    semaphore: Arc<Semaphore>,
     rate_limiter: Option<Arc<GovernorRateLimiter>>,
     cors: Option<CorsConfig>,
 }
@@ -134,7 +137,6 @@ pub(crate) fn build_rpc_routes(
     handle: Weak<RwLock<RpcServer>>,
     disabled: Arc<HashSet<String>>,
     auth: Arc<Option<BasicAuth>>,
-    semaphore: Arc<Semaphore>,
     settings: RpcServerConfig,
 ) -> impl Filter<Extract = (HttpResponse,), Error = warp::Rejection> + Clone {
     let has_auth = auth.is_some();
@@ -154,7 +156,6 @@ pub(crate) fn build_rpc_routes(
         server: handle,
         disabled,
         auth,
-        semaphore,
         rate_limiter,
         cors: CorsConfig::from_settings(&settings, has_auth),
     };
@@ -243,16 +244,7 @@ async fn handle_post_request(
         }
     }
 
-    let permit = acquire_permit(filters.semaphore.clone()).await;
-    let (response, unauthorized) = if permit.is_some() {
-        process_body(&filters, auth_header.as_deref(), body.as_ref())
-    } else {
-        (
-            Some(error_response(None, RpcError::internal_server_error())),
-            false,
-        )
-    };
-    drop(permit);
+    let (response, unauthorized) = process_body(&filters, auth_header.as_deref(), body.as_ref());
 
     let challenge = unauthorized && filters.auth.as_ref().is_some();
     let mut http_response = build_http_response(response, unauthorized, challenge);
@@ -282,42 +274,26 @@ async fn handle_get_request(
         }
     }
 
-    let permit = acquire_permit(filters.semaphore.clone()).await;
-    let (response, unauthorized) = if permit.is_some() {
-        if raw_query.len() as u64 > max_query_len {
-            (Some(error_response(None, RpcError::bad_request())), false)
-        } else {
-            match query_to_request_value(&raw_query) {
-                Some(Value::Object(obj)) => {
-                    let outcome = process_object(obj, &filters, auth_header.as_deref());
-                    (outcome.response, outcome.unauthorized)
-                }
-                Some(_) => (
-                    Some(error_response(None, RpcError::invalid_request())),
-                    false,
-                ),
-                None => (
-                    Some(error_response(None, RpcError::invalid_request())),
-                    false,
-                ),
-            }
-        }
+    let (response, unauthorized) = if raw_query.len() as u64 > max_query_len {
+        (Some(error_response(None, RpcError::bad_request())), false)
     } else {
-        (
-            Some(error_response(None, RpcError::internal_server_error())),
-            false,
-        )
+        match query_to_request_value(&raw_query) {
+            Some(value) if exceeds_max_depth(&value, MAX_PARAMS_DEPTH) => {
+                (Some(error_response(None, RpcError::bad_request())), false)
+            }
+            Some(Value::Object(obj)) => {
+                let outcome = process_object(obj, &filters, auth_header.as_deref());
+                (outcome.response, outcome.unauthorized)
+            }
+            Some(_) => (Some(error_response(None, RpcError::invalid_request())), false),
+            None => (Some(error_response(None, RpcError::invalid_request())), false),
+        }
     };
-    drop(permit);
 
     let challenge = unauthorized && filters.auth.as_ref().is_some();
     let mut http_response = build_http_response(response, unauthorized, challenge);
     apply_cors(&mut http_response, filters.cors.as_ref(), origin.as_ref());
     Ok(http_response)
-}
-
-async fn acquire_permit(semaphore: Arc<Semaphore>) -> Option<OwnedSemaphorePermit> {
-    semaphore.acquire_owned().await.ok()
 }
 
 fn process_body(
@@ -329,6 +305,9 @@ fn process_body(
         Ok(value) => value,
         Err(_) => return (Some(error_response(None, RpcError::bad_request())), false),
     };
+    if exceeds_max_depth(&parsed, MAX_PARAMS_DEPTH) {
+        return (Some(error_response(None, RpcError::bad_request())), false);
+    }
 
     match parsed {
         Value::Array(entries) => process_array(entries, filters, auth_header),
@@ -419,8 +398,8 @@ fn process_object(
         return RequestOutcome::error(error_response(id, RpcError::internal_server_error()), false);
     };
 
-    let server_guard = server_arc.read();
     let handler = {
+        let server_guard = server_arc.read();
         let guard = server_guard.handlers_guard();
         guard.get(&method_key).cloned()
     };
@@ -433,41 +412,51 @@ fn process_object(
         );
     };
 
-    // SECURITY FIX: Check authentication requirements
-    // Protected methods (like wallet operations) require authentication even if
-    // global auth is not configured. This prevents sensitive operations from
-    // being exposed without authentication.
-    let requires_auth = handler.descriptor().requires_auth();
     if let Some(auth) = filters.auth.as_ref() {
-        // Auth is configured - verify credentials
-        if !verify_basic_auth(auth_header, auth) {
+        let header = auth_header.unwrap_or("").trim();
+        if header.is_empty() {
             RPC_ERR_TOTAL.inc();
             return RequestOutcome::error(error_response(id, RpcError::access_denied()), true);
         }
-    } else if requires_auth {
-        // No auth configured but method requires it - reject with 401
-        RPC_ERR_TOTAL.inc();
-        tracing::warn!(
-            "Protected RPC method '{}' called without authentication configured. \
-            Configure rpc_user and rpc_pass to enable wallet operations.",
-            method_key
-        );
-        return RequestOutcome::error(
-            error_response(
-                id,
-                RpcError::access_denied().with_data(
-                    "This method requires authentication. Configure rpc_user and rpc_pass.",
-                ),
-            ),
-            true,
-        );
+        if !verify_basic_auth(Some(header), auth) {
+            RPC_ERR_TOTAL.inc();
+            return RequestOutcome::error(error_response(id, RpcError::access_denied()), false);
+        }
     }
 
-    match handler.callback()(&server_guard, params.as_slice()) {
-        Ok(result) => RequestOutcome::response(success_response(id, result)),
-        Err(err) => {
+    let policy = RpcServerSettings::current().exception_policy();
+    let callback = handler.callback();
+    let call_result = panic::catch_unwind(AssertUnwindSafe(|| {
+        let server_guard = server_arc.read();
+        (callback)(&server_guard, params.as_slice())
+    }));
+
+    match call_result {
+        Ok(Ok(result)) => RequestOutcome::response(success_response(id, result)),
+        Ok(Err(err)) => {
             RPC_ERR_TOTAL.inc();
             RequestOutcome::error(error_response(id, RpcError::from(err)), false)
+        }
+        Err(payload) => {
+            RPC_ERR_TOTAL.inc();
+            error!(
+                target: "neo::rpc",
+                method = method.as_str(),
+                error = panic_message(&payload),
+                "rpc handler panicked"
+            );
+            match policy {
+                UnhandledExceptionPolicy::StopPlugin => {
+                    let mut server = server_arc.write();
+                    server.stop_rpc_server();
+                }
+                UnhandledExceptionPolicy::StopNode => std::process::exit(1),
+                UnhandledExceptionPolicy::Terminate => std::process::abort(),
+                UnhandledExceptionPolicy::Ignore
+                | UnhandledExceptionPolicy::Log
+                | UnhandledExceptionPolicy::Continue => {}
+            }
+            RequestOutcome::error(error_response(id, RpcError::internal_server_error()), false)
         }
     }
 }
@@ -533,6 +522,16 @@ fn constant_time_equals(left: &[u8], right: &[u8]) -> bool {
     left.len() == right.len() && left.ct_eq(right).into()
 }
 
+fn panic_message(payload: &Box<dyn std::any::Any + Send>) -> String {
+    if let Some(message) = payload.downcast_ref::<&str>() {
+        message.to_string()
+    } else if let Some(message) = payload.downcast_ref::<String>() {
+        message.clone()
+    } else {
+        "panic".to_string()
+    }
+}
+
 fn apply_cors(
     response: &mut HttpResponse,
     cors: Option<&CorsConfig>,
@@ -548,6 +547,10 @@ fn apply_cors(
             response
                 .headers_mut()
                 .insert(VARY, HeaderValue::from_static("origin"));
+            response.headers_mut().insert(
+                ACCESS_CONTROL_ALLOW_CREDENTIALS,
+                HeaderValue::from_static("true"),
+            );
         }
         response.headers_mut().insert(
             ACCESS_CONTROL_ALLOW_METHODS,
@@ -555,7 +558,7 @@ fn apply_cors(
         );
         response.headers_mut().insert(
             ACCESS_CONTROL_ALLOW_HEADERS,
-            HeaderValue::from_static("content-type, authorization"),
+            HeaderValue::from_static("content-type"),
         );
     }
 }
@@ -585,7 +588,7 @@ fn error_response(id: Option<Value>, error: RpcError) -> Value {
 }
 
 fn build_http_response(body: Option<Value>, unauthorized: bool, challenge: bool) -> HttpResponse {
-    let (mut response, has_body) = if let Some(body) = body {
+    let (mut response, _has_body) = if let Some(body) = body {
         let json = serde_json::to_vec(&body).unwrap_or_else(|_| b"{}".to_vec());
         let mut response = HttpResponse::new(json.into());
         response
@@ -598,10 +601,8 @@ fn build_http_response(body: Option<Value>, unauthorized: bool, challenge: bool)
 
     *response.status_mut() = if unauthorized {
         StatusCode::UNAUTHORIZED
-    } else if has_body {
-        StatusCode::OK
     } else {
-        StatusCode::NO_CONTENT
+        StatusCode::OK
     };
 
     if challenge {
@@ -617,6 +618,25 @@ fn build_http_response(body: Option<Value>, unauthorized: bool, challenge: bool)
 struct RequestOutcome {
     response: Option<Value>,
     unauthorized: bool,
+}
+
+fn exceeds_max_depth(value: &Value, max_depth: usize) -> bool {
+    fn walk(value: &Value, depth: usize, max_depth: usize) -> bool {
+        if depth > max_depth {
+            return true;
+        }
+        match value {
+            Value::Array(values) => values
+                .iter()
+                .any(|value| walk(value, depth + 1, max_depth)),
+            Value::Object(map) => map
+                .values()
+                .any(|value| walk(value, depth + 1, max_depth)),
+            _ => false,
+        }
+    }
+
+    walk(value, 1, max_depth)
 }
 
 impl RequestOutcome {
@@ -646,6 +666,8 @@ impl RequestOutcome {
 mod tests {
     use super::*;
     use crate::server::rcp_server_settings::RpcServerConfig;
+    use crate::server::rpc_method_attribute::RpcMethodDescriptor;
+    use crate::server::rpc_server::RpcHandler;
     use crate::server::rpc_server_blockchain::RpcServerBlockchain;
     use crate::server::rpc_server_node::RpcServerNode;
     use neo_core::neo_io::BinaryWriter;
@@ -670,8 +692,7 @@ mod tests {
         let handle: Weak<RwLock<RpcServer>> = Weak::new();
         let disabled: Arc<HashSet<String>> = Arc::new(HashSet::new());
         let auth: Arc<Option<BasicAuth>> = Arc::new(None);
-        let semaphore = Arc::new(Semaphore::new(1));
-        build_rpc_routes(handle, disabled, auth, semaphore, settings)
+        build_rpc_routes(handle, disabled, auth, settings)
     }
 
     fn build_filters_with_handlers() -> (Arc<RwLock<RpcServer>>, RpcFilters) {
@@ -686,7 +707,27 @@ mod tests {
             server: Arc::downgrade(&server),
             disabled: Arc::new(HashSet::new()),
             auth: Arc::new(None),
-            semaphore: Arc::new(Semaphore::new(1)),
+            rate_limiter: None,
+            cors: None,
+        };
+        (server, filters)
+    }
+
+    fn build_filters_with_panic_handler() -> (Arc<RwLock<RpcServer>>, RpcFilters) {
+        let system =
+            NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+        let mut server = RpcServer::new(system, RpcServerConfig::default());
+        server.register_handlers(RpcServerBlockchain::register_handlers());
+        server.register_handlers(vec![RpcHandler::new(
+            RpcMethodDescriptor::new("panic"),
+            Arc::new(|_, _| panic!("boom")),
+        )]);
+
+        let server = Arc::new(RwLock::new(server));
+        let filters = RpcFilters {
+            server: Arc::downgrade(&server),
+            disabled: Arc::new(HashSet::new()),
+            auth: Arc::new(None),
             rate_limiter: None,
             cors: None,
         };
@@ -713,7 +754,6 @@ mod tests {
             server: Arc::downgrade(&server),
             disabled: Arc::new(HashSet::new()),
             auth,
-            semaphore: Arc::new(Semaphore::new(1)),
             rate_limiter: None,
             cors: None,
         };
@@ -1002,12 +1042,12 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn process_body_rejects_protected_method_without_auth_config() {
+    async fn process_body_allows_wallet_method_without_auth_config() {
         let (_server, filters) = build_filters_with_auth(Arc::new(None), true);
         let body = br#"{"jsonrpc": "2.0", "method": "getnewaddress", "params": [], "id": 1}"#;
 
         let (response, unauthorized) = process_body(&filters, None, body);
-        assert!(unauthorized);
+        assert!(!unauthorized);
 
         let response = response.expect("response");
         let error = response
@@ -1016,7 +1056,7 @@ mod tests {
             .expect("error object");
         assert_eq!(
             error.get("code").and_then(Value::as_i64),
-            Some(RpcError::access_denied().code() as i64)
+            Some(RpcError::no_opened_wallet().code() as i64)
         );
     }
 
@@ -1031,6 +1071,29 @@ mod tests {
 
         let header = format!("Basic {}", BASE64_STANDARD.encode("testuser:wrongpass"));
         let (response, unauthorized) = process_body(&filters, Some(&header), body);
+        assert!(!unauthorized);
+
+        let response = response.expect("response");
+        let error = response
+            .get("error")
+            .and_then(Value::as_object)
+            .expect("error object");
+        assert_eq!(
+            error.get("code").and_then(Value::as_i64),
+            Some(RpcError::access_denied().code() as i64)
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn process_body_rejects_missing_auth_header() {
+        let auth = Arc::new(Some(BasicAuth {
+            user: b"testuser".to_vec(),
+            pass: b"testpass".to_vec(),
+        }));
+        let (_server, filters) = build_filters_with_auth(auth, false);
+        let body = br#"{"jsonrpc": "2.0", "method": "getblockcount", "params": [], "id": 1}"#;
+
+        let (response, unauthorized) = process_body(&filters, None, body);
         assert!(unauthorized);
 
         let response = response.expect("response");
@@ -1062,5 +1125,24 @@ mod tests {
         assert!(obj.get("error").is_none());
         assert!(obj.get("result").is_some());
         assert_eq!(obj.get("id").and_then(Value::as_i64), Some(1));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn process_body_returns_internal_error_on_panic() {
+        let (_server, filters) = build_filters_with_panic_handler();
+        let body = br#"{"jsonrpc": "2.0", "method": "panic", "params": [], "id": 1}"#;
+
+        let (response, unauthorized) = process_body(&filters, None, body);
+        assert!(!unauthorized);
+
+        let response = response.expect("response");
+        let error = response
+            .get("error")
+            .and_then(Value::as_object)
+            .expect("error object");
+        assert_eq!(
+            error.get("code").and_then(Value::as_i64),
+            Some(RpcError::internal_server_error().code() as i64)
+        );
     }
 }

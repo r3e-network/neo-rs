@@ -18,11 +18,13 @@
 
 pub mod extensions;
 pub mod runtime;
+pub mod service;
 pub mod settings;
 pub mod trackers;
 
 pub use extensions::{bigint_var_size, bytes_var_size, find_prefix, find_range, to_base64};
 pub use runtime::TokensTracker;
+pub use service::TokensTrackerService;
 pub use settings::TokensTrackerSettings;
 pub use trackers::{
     nep_11::{Nep11BalanceKey, Nep11Tracker, Nep11TransferKey},

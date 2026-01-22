@@ -8,7 +8,9 @@ use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::Engine as _;
 use neo_core::neo_system::STATE_STORE_SERVICE;
 use neo_core::smart_contract::native::contract_management::ContractManagement;
+use neo_core::smart_contract::native::NativeContract;
 use neo_core::smart_contract::storage_key::StorageKey;
+use neo_core::smart_contract::StorageItem;
 use neo_core::state_service::{StateRoot, StateStore};
 use neo_core::{UInt160, UInt256};
 use serde_json::{json, Map, Value};
@@ -72,7 +74,7 @@ impl RpcServerState {
 
         let state_store = Self::state_store(server)?;
         Self::check_root_hash(&state_store, root_hash)?;
-        let contract_id = Self::resolve_contract_id(server, &script_hash)?;
+        let contract_id = Self::resolve_contract_id_for_root(&state_store, root_hash, &script_hash)?;
         let storage_key = StorageKey::new(contract_id, key);
         let proof_nodes = state_store
             .get_proof(root_hash, &storage_key)
@@ -103,7 +105,7 @@ impl RpcServerState {
         let key = Self::parse_base64(params, 2, "getstate", "Base64 storage key")?;
         let state_store = Self::state_store(server)?;
         Self::check_root_hash(&state_store, root_hash)?;
-        let contract_id = Self::resolve_contract_id(server, &script_hash)?;
+        let contract_id = Self::resolve_contract_id_for_root(&state_store, root_hash, &script_hash)?;
         let mut trie = state_store.trie_for_root(root_hash);
         let storage_key = StorageKey::new(contract_id, key);
         let value = trie
@@ -144,16 +146,15 @@ impl RpcServerState {
                 })?,
             _ => 0,
         };
-        let max_count = server.settings().find_storage_page_size;
+        let state_store = Self::state_store(server)?;
+        let max_count = state_store.max_find_result_items();
         let count = if count == 0 {
             max_count
         } else {
             count.min(max_count)
         };
-
-        let state_store = Self::state_store(server)?;
         Self::check_root_hash(&state_store, root_hash)?;
-        let contract_id = Self::resolve_contract_id(server, &script_hash)?;
+        let contract_id = Self::resolve_contract_id_for_root(&state_store, root_hash, &script_hash)?;
         let mut trie = state_store.trie_for_root(root_hash);
         let search_prefix = StorageKey::create_search_prefix(contract_id, &prefix);
         let from_key = from
@@ -315,11 +316,26 @@ impl RpcServerState {
             })
     }
 
-    fn resolve_contract_id(server: &RpcServer, hash: &UInt160) -> Result<i32, RpcException> {
-        let store = server.system().store_cache();
-        let contract = ContractManagement::get_contract_from_store_cache(&store, hash)
-            .map_err(Self::internal_error)?
+    fn resolve_contract_id_for_root(
+        state_store: &Arc<StateStore>,
+        root_hash: UInt256,
+        hash: &UInt160,
+    ) -> Result<i32, RpcException> {
+        let contract_mgmt = ContractManagement::new();
+        let storage_key = StorageKey::new(
+            contract_mgmt.id(),
+            ContractManagement::contract_storage_key(hash),
+        );
+        let mut trie = state_store.trie_for_root(root_hash);
+        let value = trie
+            .get(&storage_key.to_array())
+            .map_err(|e| RpcException::from(RpcError::internal_server_error().with_data(e.to_string())))?
             .ok_or_else(|| RpcException::from(RpcError::unknown_contract()))?;
+        let mut item = StorageItem::new();
+        item.deserialize_from_bytes(&value);
+        let contract =
+            ContractManagement::deserialize_contract_state(&item.get_value())
+                .map_err(Self::internal_error)?;
         Ok(contract.id)
     }
 
@@ -331,7 +347,7 @@ impl RpcServerState {
             "roothash".to_string(),
             Value::String(root.root_hash.to_string()),
         );
-        if let Some(witness) = &root.witness {
+        let witnesses = if let Some(witness) = &root.witness {
             let mut witness_obj = Map::new();
             witness_obj.insert(
                 "invocation".to_string(),
@@ -341,11 +357,11 @@ impl RpcServerState {
                 "verification".to_string(),
                 Value::String(BASE64_STANDARD.encode(witness.verification_script())),
             );
-            obj.insert(
-                "witnesses".to_string(),
-                Value::Array(vec![Value::Object(witness_obj)]),
-            );
-        }
+            vec![Value::Object(witness_obj)]
+        } else {
+            Vec::new()
+        };
+        obj.insert("witnesses".to_string(), Value::Array(witnesses));
         Value::Object(obj)
     }
 
@@ -399,7 +415,7 @@ mod tests {
     fn store_contract_state(
         store: &mut neo_core::persistence::StoreCache,
         contract: &ContractState,
-    ) {
+    ) -> (StorageKey, Vec<u8>) {
         const PREFIX_CONTRACT: u8 = 0x08;
         const PREFIX_CONTRACT_HASH: u8 = 0x0c;
 
@@ -410,12 +426,16 @@ mod tests {
 
         let mut writer = BinaryWriter::new();
         contract.serialize(&mut writer).expect("serialize contract");
+        let contract_bytes = writer.into_bytes();
 
         let mut key_bytes = Vec::with_capacity(1 + 20);
         key_bytes.push(PREFIX_CONTRACT);
         key_bytes.extend_from_slice(&contract.hash.to_bytes());
         let key = StorageKey::new(contract_mgmt_id, key_bytes);
-        store.add(key, StorageItem::from_bytes(writer.into_bytes()));
+        store.add(
+            key.clone(),
+            StorageItem::from_bytes(contract_bytes.clone()),
+        );
 
         let mut id_bytes = Vec::with_capacity(1 + 4);
         id_bytes.push(PREFIX_CONTRACT_HASH);
@@ -436,6 +456,7 @@ mod tests {
         );
 
         store.commit();
+        (key, contract_bytes)
     }
 
     fn seed_state_root(
@@ -615,12 +636,15 @@ mod tests {
             ContractManifest::default(),
         );
         let mut store = system.context().store_snapshot_cache();
-        store_contract_state(&mut store, &contract);
+        let (contract_key, contract_bytes) = store_contract_state(&mut store, &contract);
 
         let storage_key = StorageKey::new(1, vec![0x01, 0x02]);
         let value = vec![0xaa, 0xbb];
-        let root_hash =
-            seed_state_root(state_store.as_ref(), 1, vec![(storage_key, value.clone())]);
+        let root_hash = seed_state_root(
+            state_store.as_ref(),
+            1,
+            vec![(contract_key, contract_bytes), (storage_key, value.clone())],
+        );
 
         let params = vec![
             Value::String(root_hash.to_string()),
@@ -647,14 +671,18 @@ mod tests {
             ContractManifest::default(),
         );
         let mut store = system.context().store_snapshot_cache();
-        store_contract_state(&mut store, &contract);
+        let (contract_key, contract_bytes) = store_contract_state(&mut store, &contract);
 
         let key1 = StorageKey::new(1, vec![0x01, 0x02]);
         let key2 = StorageKey::new(1, vec![0x03, 0x04]);
         let root_hash = seed_state_root(
             state_store.as_ref(),
             1,
-            vec![(key1, vec![0xaa, 0xbb]), (key2, vec![0xcc, 0xdd])],
+            vec![
+                (contract_key, contract_bytes),
+                (key1, vec![0xaa, 0xbb]),
+                (key2, vec![0xcc, 0xdd]),
+            ],
         );
 
         let params = vec![

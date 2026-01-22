@@ -75,8 +75,9 @@ impl ContractManagement {
         key
     }
 
+    /// Builds the storage key for a contract state entry (prefix + script hash).
     #[inline]
-    fn contract_storage_key(hash: &UInt160) -> Vec<u8> {
+    pub fn contract_storage_key(hash: &UInt160) -> Vec<u8> {
         Self::storage_key(PREFIX_CONTRACT, hash.as_bytes().as_ref())
     }
 
@@ -122,7 +123,7 @@ impl ContractManagement {
             .map_err(|e| Error::serialization(format!("Failed to serialize contract state: {e}")))
     }
 
-    pub(super) fn deserialize_contract_state(bytes: &[u8]) -> Result<ContractState> {
+    pub fn deserialize_contract_state(bytes: &[u8]) -> Result<ContractState> {
         if bytes.is_empty() {
             return Err(Error::deserialization(
                 "Contract state payload is empty".to_string(),

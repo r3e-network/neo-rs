@@ -78,12 +78,14 @@ pub mod context;
 pub mod error;
 pub mod message_type;
 pub mod messages;
+pub mod signer;
 pub mod service;
 
 // Re-exports - Types
 pub use change_view_reason::ChangeViewReason;
 pub use error::{ConsensusError, ConsensusResult};
 pub use message_type::ConsensusMessageType;
+pub use signer::ConsensusSigner;
 
 // Re-exports - Context
 pub use context::{ConsensusContext, ConsensusState, ValidatorInfo, BLOCK_TIME_MS, MAX_VALIDATORS};

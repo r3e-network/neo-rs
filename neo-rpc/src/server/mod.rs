@@ -14,9 +14,12 @@ mod rpc_error_factory;
 mod rpc_exception;
 mod rpc_method_attribute;
 mod rpc_server;
+mod rpc_server_application_logs;
 mod rpc_server_blockchain;
 mod rpc_server_node;
+mod rpc_server_oracle;
 mod rpc_server_state;
+mod rpc_server_tokens_tracker;
 mod rpc_server_utilities;
 mod rpc_server_wallet;
 mod session;
@@ -33,9 +36,12 @@ pub use rpc_method_attribute::RpcMethodDescriptor;
 pub use rpc_server::{
     get_server, register_server, remove_server, RpcCallback, RpcHandler, RpcServer, SERVERS,
 };
+pub use rpc_server_application_logs::RpcServerApplicationLogs;
 pub use rpc_server_blockchain::RpcServerBlockchain;
 pub use rpc_server_node::RpcServerNode;
+pub use rpc_server_oracle::RpcServerOracle;
 pub use rpc_server_state::RpcServerState;
+pub use rpc_server_tokens_tracker::RpcServerTokensTracker;
 pub use rpc_server_utilities::RpcServerUtilities;
 pub use rpc_server_wallet::RpcServerWallet;
 pub use session::Session;

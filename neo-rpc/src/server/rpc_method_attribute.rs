@@ -11,9 +11,9 @@ use serde::Deserialize;
 pub struct RpcMethodDescriptor {
     /// The name of the RPC method.
     pub name: String,
-    /// Whether this method requires authentication.
-    /// If true, the method will be rejected if no authentication is configured.
-    /// This is critical for sensitive operations like wallet methods.
+    /// Whether this method is marked as requiring authentication.
+    /// Authentication is enforced globally when RPC basic auth is configured,
+    /// matching Neo C# behavior. This flag is kept for metadata only.
     #[serde(default)]
     pub requires_auth: bool,
 }
@@ -27,12 +27,11 @@ impl RpcMethodDescriptor {
         }
     }
 
-    /// Creates a new RPC method descriptor that requires authentication.
+    /// Creates a new RPC method descriptor marked as protected.
     ///
     /// # Security
     /// Use this for sensitive operations like wallet methods, private key export,
-    /// transaction signing, etc. These methods will be rejected if no authentication
-    /// is configured on the RPC server.
+    /// and transaction signing. Enforcement is handled by global RPC auth.
     pub fn new_protected(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),

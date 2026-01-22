@@ -157,13 +157,8 @@ impl Blockchain {
         }
 
         if payload.category == STATE_SERVICE_CATEGORY {
-            match self.process_state_service_payload(context, &payload) {
-                Ok(true) => {}
-                Ok(false) => return VerifyResult::Invalid,
-                Err(err) => {
-                    warn!(target: "neo", %err, "state service payload handling failed");
-                    return VerifyResult::Invalid;
-                }
+            if let Err(err) = self.process_state_service_payload(context, &payload) {
+                warn!(target: "neo", %err, "state service payload handling failed");
             }
         }
 
@@ -260,7 +255,14 @@ impl Blockchain {
         };
 
         let accepted = state_store.on_new_state_root(state_root.clone());
-        if !accepted {
+        if accepted {
+            context
+                .actor_system
+                .event_stream()
+                .publish(crate::state_service::ValidatedRootPersisted {
+                    index: state_root.index,
+                });
+        } else {
             debug!(
                 target: "state",
                 index = state_root.index,

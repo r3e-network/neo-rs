@@ -65,13 +65,16 @@ impl IReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MemorySnapshot {
             }
         }
 
-        let iter: Vec<_> = if let Some(prefix) = key_prefix {
-            merged
-                .into_iter()
-                .filter(|(k, _)| k.starts_with(prefix))
-                .collect()
-        } else {
-            merged.into_iter().collect()
+        let iter: Vec<_> = match (key_prefix, direction) {
+            (Some(prefix), SeekDirection::Forward) => merged
+                .range(prefix.clone()..)
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
+            (Some(prefix), SeekDirection::Backward) => merged
+                .range(..=prefix.clone())
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
+            (None, _) => merged.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
         };
 
         if direction == SeekDirection::Backward {

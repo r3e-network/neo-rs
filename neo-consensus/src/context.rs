@@ -55,6 +55,9 @@ struct PersistedConsensusState {
     view_number: u8,
     /// Proposed block hash (from PrepareRequest)
     proposed_block_hash: Option<UInt256>,
+    /// Hash of the primary PrepareRequest payload (ExtensiblePayload.Hash)
+    #[serde(default)]
+    preparation_hash: Option<UInt256>,
     /// Proposed block timestamp
     proposed_timestamp: u64,
     /// Proposed transaction hashes
@@ -65,10 +68,28 @@ struct PersistedConsensusState {
     prepare_request_received: bool,
     /// PrepareResponse signatures (validator_index -> signature)
     prepare_responses: HashMap<u8, Vec<u8>>,
+    /// PrepareResponse hashes (validator_index -> preparation_hash)
+    #[serde(default)]
+    prepare_response_hashes: HashMap<u8, UInt256>,
     /// Commit signatures (validator_index -> signature)
     commits: HashMap<u8, Vec<u8>>,
+    /// Commit view numbers (validator_index -> view_number)
+    #[serde(default)]
+    commit_view_numbers: HashMap<u8, u8>,
     /// ChangeView requests (validator_index -> (new_view, reason))
     change_views: HashMap<u8, (u8, ChangeViewReason)>,
+    /// Primary PrepareRequest invocation script (payload witness).
+    #[serde(default)]
+    prepare_request_invocation: Option<Vec<u8>>,
+    /// ChangeView invocation script per validator (payload witness).
+    #[serde(default)]
+    change_view_invocations: HashMap<u8, Vec<u8>>,
+    /// ChangeView timestamp per validator.
+    #[serde(default)]
+    change_view_timestamps: HashMap<u8, u64>,
+    /// Commit invocation script per validator (payload witness).
+    #[serde(default)]
+    commit_invocations: HashMap<u8, Vec<u8>>,
 }
 
 /// Consensus context holding all state for the current consensus round
@@ -112,10 +133,20 @@ pub struct ConsensusContext {
     pub prepare_request_received: bool,
     /// PrepareResponse signatures (validator_index -> signature)
     pub prepare_responses: HashMap<u8, Vec<u8>>,
+    /// PrepareResponse hashes (validator_index -> preparation_hash)
+    pub prepare_response_hashes: HashMap<u8, UInt256>,
     /// Commit signatures (validator_index -> signature)
     pub commits: HashMap<u8, Vec<u8>>,
+    /// Commit view numbers (validator_index -> view_number)
+    pub commit_view_numbers: HashMap<u8, u8>,
     /// ChangeView requests (validator_index -> (new_view, reason))
     pub change_views: HashMap<u8, (u8, ChangeViewReason)>,
+    /// Primary PrepareRequest invocation script (payload witness).
+    pub prepare_request_invocation: Option<Vec<u8>>,
+    /// ChangeView invocation script per validator (payload witness).
+    pub change_view_invocations: HashMap<u8, Vec<u8>>,
+    /// Commit invocation script per validator (payload witness).
+    pub commit_invocations: HashMap<u8, Vec<u8>>,
 
     // Recovery
     /// Last change view timestamp per validator
@@ -148,8 +179,13 @@ impl ConsensusContext {
             nonce: 0,
             prepare_request_received: false,
             prepare_responses: HashMap::new(),
+            prepare_response_hashes: HashMap::new(),
             commits: HashMap::new(),
+            commit_view_numbers: HashMap::new(),
             change_views: HashMap::new(),
+            prepare_request_invocation: None,
+            change_view_invocations: HashMap::new(),
+            commit_invocations: HashMap::new(),
             last_change_view_timestamps: HashMap::new(),
             last_seen_messages: HashMap::new(),
             seen_message_hashes: HashSet::new(),
@@ -206,7 +242,18 @@ impl ConsensusContext {
 
     /// Returns true if we have enough commits (M signatures)
     pub fn has_enough_commits(&self) -> bool {
-        self.commits.len() >= self.m()
+        let count = self
+            .commits
+            .keys()
+            .filter(|idx| {
+                self.commit_view_numbers
+                    .get(idx)
+                    .copied()
+                    .unwrap_or(self.view_number)
+                    == self.view_number
+            })
+            .count();
+        count >= self.m()
     }
 
     /// Returns true if we have enough change view requests (M requests).
@@ -240,7 +287,8 @@ impl ConsensusContext {
         // Clear signatures
         self.prepare_request_received = false;
         self.prepare_responses.clear();
-        self.commits.clear();
+        self.prepare_response_hashes.clear();
+        self.prepare_request_invocation = None;
         // Keep change_views for recovery
     }
 
@@ -265,8 +313,13 @@ impl ConsensusContext {
         self.nonce = 0;
         self.prepare_request_received = false;
         self.prepare_responses.clear();
+        self.prepare_response_hashes.clear();
         self.commits.clear();
+        self.commit_view_numbers.clear();
         self.change_views.clear();
+        self.prepare_request_invocation = None;
+        self.change_view_invocations.clear();
+        self.commit_invocations.clear();
         self.last_change_view_timestamps.clear();
         self.last_seen_messages.clear();
 
@@ -274,25 +327,37 @@ impl ConsensusContext {
         self.seen_message_hashes.clear();
     }
 
-    /// Adds a prepare response signature
+    /// Adds a prepare response invocation script
     pub fn add_prepare_response(
         &mut self,
         validator_index: u8,
+        invocation_script: Vec<u8>,
+        preparation_hash: Option<UInt256>,
+    ) -> ConsensusResult<()> {
+        if validator_index as usize >= self.validator_count() {
+            return Err(ConsensusError::InvalidValidatorIndex(validator_index));
+        }
+        self.prepare_responses
+            .insert(validator_index, invocation_script);
+        if let Some(hash) = preparation_hash {
+            self.prepare_response_hashes.insert(validator_index, hash);
+        }
+        Ok(())
+    }
+
+    /// Adds a commit signature
+    pub fn add_commit(
+        &mut self,
+        validator_index: u8,
+        view_number: u8,
         signature: Vec<u8>,
     ) -> ConsensusResult<()> {
         if validator_index as usize >= self.validator_count() {
             return Err(ConsensusError::InvalidValidatorIndex(validator_index));
         }
-        self.prepare_responses.insert(validator_index, signature);
-        Ok(())
-    }
-
-    /// Adds a commit signature
-    pub fn add_commit(&mut self, validator_index: u8, signature: Vec<u8>) -> ConsensusResult<()> {
-        if validator_index as usize >= self.validator_count() {
-            return Err(ConsensusError::InvalidValidatorIndex(validator_index));
-        }
         self.commits.insert(validator_index, signature);
+        self.commit_view_numbers
+            .insert(validator_index, view_number);
         Ok(())
     }
 
@@ -316,8 +381,14 @@ impl ConsensusContext {
 
     /// Gets the timeout duration for the current view
     pub fn get_timeout(&self) -> u64 {
-        // Base timeout + exponential backoff for view changes
-        BLOCK_TIME_MS << self.view_number.min(4)
+        // Base timeout + exponential backoff for view changes.
+        // Use configured expected_block_time when provided (mirrors C# TimePerBlock overrides).
+        let base = if self.expected_block_time > 0 {
+            self.expected_block_time
+        } else {
+            BLOCK_TIME_MS
+        };
+        base << self.view_number.min(4)
     }
 
     /// Checks if the current view has timed out
@@ -329,6 +400,13 @@ impl ConsensusContext {
     pub fn collect_commit_signatures(&self) -> Vec<(u8, Vec<u8>)> {
         self.commits
             .iter()
+            .filter(|(idx, _)| {
+                self.commit_view_numbers
+                    .get(idx)
+                    .copied()
+                    .unwrap_or(self.view_number)
+                    == self.view_number
+            })
             .map(|(idx, sig)| (*idx, sig.clone()))
             .collect()
     }
@@ -426,6 +504,27 @@ impl ConsensusContext {
         (self.count_committed() + self.count_failed()) > self.f()
     }
 
+    /// Returns true if this node has requested a view change.
+    ///
+    /// Mirrors C# DBFTPlugin `ViewChanging`:
+    /// `!WatchOnly && ChangeViewPayloads[MyIndex]?.NewViewNumber > ViewNumber`.
+    pub fn view_changing(&self) -> bool {
+        let Some(my_index) = self.my_index else {
+            return false;
+        };
+        self.change_views
+            .get(&my_index)
+            .map(|(new_view, _)| *new_view > self.view_number)
+            .unwrap_or(false)
+    }
+
+    /// Returns true when we should not accept certain payloads due to an ongoing view change.
+    ///
+    /// Mirrors C# DBFTPlugin `NotAcceptingPayloadsDueToViewChanging`.
+    pub fn not_accepting_payloads_due_to_view_changing(&self) -> bool {
+        self.view_changing() && !self.more_than_f_nodes_committed_or_lost()
+    }
+
     /// Saves the consensus state to disk for crash recovery
     ///
     /// Uses atomic write (write to temp file + rename) to prevent corruption.
@@ -443,18 +542,23 @@ impl ConsensusContext {
             block_index: self.block_index,
             view_number: self.view_number,
             proposed_block_hash: self.proposed_block_hash,
+            preparation_hash: self.preparation_hash,
             proposed_timestamp: self.proposed_timestamp,
             proposed_tx_hashes: self.proposed_tx_hashes.clone(),
             nonce: self.nonce,
             prepare_request_received: self.prepare_request_received,
             prepare_responses: self.prepare_responses.clone(),
+            prepare_response_hashes: self.prepare_response_hashes.clone(),
             commits: self.commits.clone(),
+            commit_view_numbers: self.commit_view_numbers.clone(),
             change_views: self.change_views.clone(),
+            prepare_request_invocation: self.prepare_request_invocation.clone(),
+            change_view_invocations: self.change_view_invocations.clone(),
+            change_view_timestamps: self.last_change_view_timestamps.clone(),
+            commit_invocations: self.commit_invocations.clone(),
         };
 
-        // Serialize to binary using bincode
-        let encoded = bincode::serialize(&state)
-            .map_err(|e| ConsensusError::SerializationError(e.to_string()))?;
+        let encoded = Self::encode_state(&state)?;
 
         // Atomic write: write to temp file first
         let temp_path = path.with_extension("tmp");
@@ -471,6 +575,30 @@ impl ConsensusContext {
         );
 
         Ok(())
+    }
+
+    /// Serializes the persisted consensus state to bytes.
+    pub fn to_bytes(&self) -> ConsensusResult<Vec<u8>> {
+        let state = PersistedConsensusState {
+            block_index: self.block_index,
+            view_number: self.view_number,
+            proposed_block_hash: self.proposed_block_hash,
+            preparation_hash: self.preparation_hash,
+            proposed_timestamp: self.proposed_timestamp,
+            proposed_tx_hashes: self.proposed_tx_hashes.clone(),
+            nonce: self.nonce,
+            prepare_request_received: self.prepare_request_received,
+            prepare_responses: self.prepare_responses.clone(),
+            prepare_response_hashes: self.prepare_response_hashes.clone(),
+            commits: self.commits.clone(),
+            commit_view_numbers: self.commit_view_numbers.clone(),
+            change_views: self.change_views.clone(),
+            prepare_request_invocation: self.prepare_request_invocation.clone(),
+            change_view_invocations: self.change_view_invocations.clone(),
+            change_view_timestamps: self.last_change_view_timestamps.clone(),
+            commit_invocations: self.commit_invocations.clone(),
+        };
+        Self::encode_state(&state)
     }
 
     /// Loads the consensus state from disk for crash recovery
@@ -500,10 +628,16 @@ impl ConsensusContext {
     ) -> ConsensusResult<Self> {
         // Read the file
         let encoded = fs::read(path)?;
+        Self::from_bytes(&encoded, validators, my_index)
+    }
 
-        // Deserialize from binary
-        let state: PersistedConsensusState = bincode::deserialize(&encoded)
-            .map_err(|e| ConsensusError::SerializationError(e.to_string()))?;
+    /// Deserializes a consensus context from raw bytes.
+    pub fn from_bytes(
+        encoded: &[u8],
+        validators: Vec<ValidatorInfo>,
+        my_index: Option<u8>,
+    ) -> ConsensusResult<Self> {
+        let state = Self::decode_state(encoded)?;
 
         tracing::info!(
             "Loaded consensus state: block={}, view={}, prepare_responses={}, commits={}, change_views={}",
@@ -526,18 +660,33 @@ impl ConsensusContext {
             version: 0,
             prev_hash: UInt256::zero(),
             proposed_block_hash: state.proposed_block_hash,
-            preparation_hash: None,
+            preparation_hash: state.preparation_hash,
             proposed_timestamp: state.proposed_timestamp,
             proposed_tx_hashes: state.proposed_tx_hashes,
             nonce: state.nonce,
             prepare_request_received: state.prepare_request_received,
             prepare_responses: state.prepare_responses,
+            prepare_response_hashes: state.prepare_response_hashes,
             commits: state.commits,
+            commit_view_numbers: state.commit_view_numbers,
             change_views: state.change_views,
-            last_change_view_timestamps: HashMap::new(), // Not persisted
+            prepare_request_invocation: state.prepare_request_invocation,
+            change_view_invocations: state.change_view_invocations,
+            commit_invocations: state.commit_invocations,
+            last_change_view_timestamps: state.change_view_timestamps,
             last_seen_messages: HashMap::new(),          // Not persisted
             seen_message_hashes: HashSet::new(),         // Not persisted (cleared on restart)
         })
+    }
+
+    fn encode_state(state: &PersistedConsensusState) -> ConsensusResult<Vec<u8>> {
+        bincode::serialize(state)
+            .map_err(|e| ConsensusError::SerializationError(e.to_string()))
+    }
+
+    fn decode_state(encoded: &[u8]) -> ConsensusResult<PersistedConsensusState> {
+        bincode::deserialize(encoded)
+            .map_err(|e| ConsensusError::SerializationError(e.to_string()))
     }
 }
 
@@ -633,6 +782,7 @@ mod tests {
         ctx.prepare_request_received = true;
         ctx.prepare_responses.insert(0, vec![0]);
         ctx.commits.insert(0, vec![0]);
+        ctx.commit_view_numbers.insert(0, 0);
 
         ctx.reset_for_new_view(1, 1000);
 
@@ -640,7 +790,7 @@ mod tests {
         assert_eq!(ctx.view_start_time, 1000);
         assert!(!ctx.prepare_request_received);
         assert!(ctx.prepare_responses.is_empty());
-        assert!(ctx.commits.is_empty());
+        assert!(!ctx.commits.is_empty());
     }
 
     #[test]
@@ -675,6 +825,7 @@ mod tests {
         // Set up some consensus state
         ctx.view_number = 2;
         ctx.proposed_block_hash = Some(UInt256::from_bytes(&[1u8; 32]).unwrap());
+        ctx.preparation_hash = Some(UInt256::from_bytes(&[9u8; 32]).unwrap());
         ctx.proposed_timestamp = 1234567890;
         ctx.proposed_tx_hashes = vec![
             UInt256::from_bytes(&[2u8; 32]).unwrap(),
@@ -682,13 +833,28 @@ mod tests {
         ];
         ctx.nonce = 42;
         ctx.prepare_request_received = true;
+        ctx.prepare_request_invocation = Some(vec![0x0c, 0x40, 0xaa]);
         ctx.prepare_responses.insert(1, vec![0xaa, 0xbb, 0xcc]);
         ctx.prepare_responses.insert(2, vec![0xdd, 0xee, 0xff]);
+        ctx.prepare_response_hashes
+            .insert(1, UInt256::from_bytes(&[0x10; 32]).unwrap());
+        ctx.prepare_response_hashes
+            .insert(2, UInt256::from_bytes(&[0x11; 32]).unwrap());
         ctx.commits.insert(0, vec![0x11, 0x22, 0x33]);
         ctx.commits.insert(1, vec![0x44, 0x55, 0x66]);
+        ctx.commit_view_numbers.insert(0, 2);
+        ctx.commit_view_numbers.insert(1, 2);
+        ctx.commit_invocations.insert(0, vec![0x0c, 0x40, 0xbb]);
+        ctx.commit_invocations.insert(1, vec![0x0c, 0x40, 0xcc]);
         ctx.change_views.insert(3, (3, ChangeViewReason::Timeout));
         ctx.change_views
             .insert(4, (3, ChangeViewReason::TxNotFound));
+        ctx.change_view_invocations
+            .insert(3, vec![0x0c, 0x40, 0xdd]);
+        ctx.change_view_invocations
+            .insert(4, vec![0x0c, 0x40, 0xee]);
+        ctx.last_change_view_timestamps.insert(3, 1_111);
+        ctx.last_change_view_timestamps.insert(4, 2_222);
 
         // Save to a temporary file
         let temp_dir = env::temp_dir();
@@ -707,6 +873,10 @@ mod tests {
             loaded_ctx.proposed_block_hash,
             Some(UInt256::from_bytes(&[1u8; 32]).unwrap())
         );
+        assert_eq!(
+            loaded_ctx.preparation_hash,
+            Some(UInt256::from_bytes(&[9u8; 32]).unwrap())
+        );
         assert_eq!(loaded_ctx.proposed_timestamp, 1234567890);
         assert_eq!(loaded_ctx.proposed_tx_hashes.len(), 2);
         assert_eq!(
@@ -719,6 +889,7 @@ mod tests {
         );
         assert_eq!(loaded_ctx.nonce, 42);
         assert!(loaded_ctx.prepare_request_received);
+        assert_eq!(loaded_ctx.prepare_request_invocation, Some(vec![0x0c, 0x40, 0xaa]));
         assert_eq!(loaded_ctx.prepare_responses.len(), 2);
         assert_eq!(
             loaded_ctx.prepare_responses.get(&1),
@@ -728,9 +899,28 @@ mod tests {
             loaded_ctx.prepare_responses.get(&2),
             Some(&vec![0xdd, 0xee, 0xff])
         );
+        assert_eq!(loaded_ctx.prepare_response_hashes.len(), 2);
+        assert_eq!(
+            loaded_ctx.prepare_response_hashes.get(&1),
+            Some(&UInt256::from_bytes(&[0x10; 32]).unwrap())
+        );
+        assert_eq!(
+            loaded_ctx.prepare_response_hashes.get(&2),
+            Some(&UInt256::from_bytes(&[0x11; 32]).unwrap())
+        );
         assert_eq!(loaded_ctx.commits.len(), 2);
         assert_eq!(loaded_ctx.commits.get(&0), Some(&vec![0x11, 0x22, 0x33]));
         assert_eq!(loaded_ctx.commits.get(&1), Some(&vec![0x44, 0x55, 0x66]));
+        assert_eq!(loaded_ctx.commit_view_numbers.get(&0), Some(&2));
+        assert_eq!(loaded_ctx.commit_view_numbers.get(&1), Some(&2));
+        assert_eq!(
+            loaded_ctx.commit_invocations.get(&0),
+            Some(&vec![0x0c, 0x40, 0xbb])
+        );
+        assert_eq!(
+            loaded_ctx.commit_invocations.get(&1),
+            Some(&vec![0x0c, 0x40, 0xcc])
+        );
         assert_eq!(loaded_ctx.change_views.len(), 2);
         assert_eq!(
             loaded_ctx.change_views.get(&3),
@@ -740,12 +930,28 @@ mod tests {
             loaded_ctx.change_views.get(&4),
             Some(&(3, ChangeViewReason::TxNotFound))
         );
+        assert_eq!(
+            loaded_ctx.change_view_invocations.get(&3),
+            Some(&vec![0x0c, 0x40, 0xdd])
+        );
+        assert_eq!(
+            loaded_ctx.change_view_invocations.get(&4),
+            Some(&vec![0x0c, 0x40, 0xee])
+        );
+        assert_eq!(
+            loaded_ctx.last_change_view_timestamps.get(&3),
+            Some(&1_111)
+        );
+        assert_eq!(
+            loaded_ctx.last_change_view_timestamps.get(&4),
+            Some(&2_222)
+        );
 
         // Verify non-persisted fields are reset
         assert_eq!(loaded_ctx.state, ConsensusState::Initial);
         assert_eq!(loaded_ctx.view_start_time, 0);
         assert_eq!(loaded_ctx.expected_block_time, 0);
-        assert!(loaded_ctx.last_change_view_timestamps.is_empty());
+        assert!(loaded_ctx.last_seen_messages.is_empty());
 
         // Clean up
         let _ = std::fs::remove_file(&temp_path);
@@ -775,8 +981,13 @@ mod tests {
         assert_eq!(loaded_ctx.proposed_block_hash, None);
         assert!(!loaded_ctx.prepare_request_received);
         assert!(loaded_ctx.prepare_responses.is_empty());
+        assert!(loaded_ctx.prepare_response_hashes.is_empty());
         assert!(loaded_ctx.commits.is_empty());
         assert!(loaded_ctx.change_views.is_empty());
+        assert!(loaded_ctx.change_view_invocations.is_empty());
+        assert!(loaded_ctx.commit_invocations.is_empty());
+        assert!(loaded_ctx.prepare_request_invocation.is_none());
+        assert!(loaded_ctx.commit_view_numbers.is_empty());
 
         // Clean up
         let _ = std::fs::remove_file(&temp_path);
@@ -926,6 +1137,28 @@ mod tests {
         // 3 > 2? Yes - SHOULD REQUEST RECOVERY
         ctx.commits.insert(2, vec![0x33]);
         assert!(ctx.more_than_f_nodes_committed_or_lost());
+    }
+
+    #[test]
+    fn test_not_accepting_payloads_due_to_view_changing() {
+        // 4 validators: f = 1, M = 3
+        let validators = create_test_validators(4);
+        let mut ctx = ConsensusContext::new(100, validators, Some(1));
+
+        assert!(!ctx.view_changing());
+        assert!(!ctx.not_accepting_payloads_due_to_view_changing());
+
+        // Simulate requesting a view change.
+        ctx.change_views
+            .insert(1, (1, ChangeViewReason::Timeout));
+        assert!(ctx.view_changing());
+        assert!(ctx.not_accepting_payloads_due_to_view_changing());
+
+        // If more than F nodes committed or are lost, accept payloads again.
+        ctx.commits.insert(0, vec![0x11]);
+        ctx.commits.insert(2, vec![0x22]);
+        assert!(ctx.more_than_f_nodes_committed_or_lost());
+        assert!(!ctx.not_accepting_payloads_due_to_view_changing());
     }
 
     #[test]

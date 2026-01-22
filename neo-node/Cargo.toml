@@ -52,6 +52,7 @@ rpassword = { version = "7.3", optional = true }
 
 # Async channels
 futures = { workspace = true }
+async-trait.workspace = true
 
 # CLI and configuration
 clap = { workspace = true, features = ["derive"] }
@@ -79,6 +80,7 @@ thiserror.workspace = true
 chrono.workspace = true
 sysinfo.workspace = true
 rand = "0.8"
+url = { workspace = true }
 
 [dev-dependencies]
 tempfile.workspace = true

@@ -12,6 +12,7 @@ keywords.workspace = true
 categories.workspace = true
 readme.workspace = true
 description = "Core functionality for Neo blockchain"
+build = "build.rs"
 
 [dependencies]
 # External dependencies
@@ -45,6 +46,8 @@ tracing = "0.1"
 prometheus = { version = "0.14", optional = true }
 sysinfo = { version = "0.29", optional = true }
 reqwest = { workspace = true, optional = true }
+tonic = { version = "0.11", features = ["transport", "tls", "tls-roots"], optional = true }
+prost = { version = "0.12", optional = true }
 quick-xml = { version = "0.31", features = ["serialize"], optional = true }
 uuid = { version = "1.0", features = ["v4"] }
 base64 = "0.21"
@@ -53,6 +56,7 @@ murmur3 = "0.5"
 zstd = "0.13"
 rocksdb = { workspace = true, optional = true }
 url = "2.4"
+percent-encoding = "2.3"
 bincode = "1.3"
 scrypt = "0.11"
 parking_lot = "0.12"
@@ -74,6 +78,7 @@ neo-vm = { path = "../neo-vm" }
 # neo-akka merged into neo-core/src/akka/ - no longer an external dependency
 neo_io_crate = { path = "../neo-io", package = "neo-io" }
 inventory = "0.3"
+neo-json = { path = "../neo-json" }
 
 # New foundation crates (re-exported for backward compatibility)
 # Foundation layer dependencies only (Layer 0)
@@ -92,6 +97,10 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 # For cryptography tests that need direct secp256k1 access
 secp256k1 = { version = "0.28", features = ["recovery"] }
 
+[build-dependencies]
+tonic-build = "0.11"
+protoc-bin-vendored = "3.0"
+
 [features]
 default = []
 # RocksDB storage provider - enable for production use
@@ -100,7 +109,11 @@ rocksdb = ["dep:rocksdb"]
 upnp = ["dep:reqwest", "dep:quick-xml"]
 # Monitoring subsystem - requires prometheus, sysinfo, reqwest
 monitoring = ["dep:prometheus", "dep:sysinfo", "dep:reqwest"]
+# Oracle service - requires reqwest
+oracle = ["dep:reqwest"]
+# NeoFS gRPC support (optional, for parity with C#)
+neofs-grpc = ["dep:tonic", "dep:prost", "oracle"]
 # All optional features for full functionality
-full = ["rocksdb", "upnp", "monitoring"]
+full = ["rocksdb", "upnp", "monitoring", "oracle", "neofs-grpc"]
 runtime = ["dep:ractor"]
 performance-tests = []

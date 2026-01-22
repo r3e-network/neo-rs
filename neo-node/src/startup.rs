@@ -193,6 +193,10 @@ pub fn validate_node_config(
         }
     }
 
+    // Validate plugin-backed configs to match C# plugin load behavior.
+    let _ = node_config.oracle_service_settings(protocol_settings)?;
+    let _ = node_config.dbft_settings(protocol_settings)?;
+
     Ok(())
 }
 
@@ -224,7 +228,7 @@ pub fn check_storage_access(
 pub fn build_feature_summary() -> String {
     #[allow(unused_mut)]
     let mut features = vec![
-        "plugins: dbft,rpc-server,rocksdb-store,tokens-tracker,application-logs,sqlite-wallet",
+        "plugins: rpc-server,rocksdb-store,tokens-tracker,application-logs",
     ];
 
     #[cfg(feature = "tee")]

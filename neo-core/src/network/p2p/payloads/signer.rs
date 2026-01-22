@@ -418,7 +418,7 @@ impl IInteroperable for Signer {
     fn from_stack_item(&mut self, _stack_item: StackItem) {
         // This operation is not supported for Signer.
         // The C# implementation throws NotSupportedException.
-        tracing::error!("NotSupportedException: Signer::from_stack_item is not supported");
+        panic!("NotSupportedException: Signer::from_stack_item is not supported");
     }
 
     fn to_stack_item(&self) -> StackItem {

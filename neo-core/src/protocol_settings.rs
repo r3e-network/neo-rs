@@ -58,6 +58,10 @@ pub struct ProtocolSettings {
     /// Matches C# MaxTransactionsPerBlock property
     pub max_transactions_per_block: u32,
 
+    /// Indicates the maximum size of a block in bytes.
+    /// Matches C# MaxBlockSize property
+    pub max_block_size: u32,
+
     /// Indicates the maximum number of transactions that can be contained in the memory pool.
     /// Matches C# MemoryPoolMaxTransactions property
     pub memory_pool_max_transactions: i32,
@@ -131,6 +135,7 @@ impl ProtocolSettings {
             ],
             milliseconds_per_block: 15_000,
             max_transactions_per_block: 512,
+            max_block_size: constants::MAX_BLOCK_SIZE as u32,
             max_valid_until_block_increment: 5_760,
             memory_pool_max_transactions: 50_000,
             max_traceable_blocks: constants::MAX_TRACEABLE_BLOCKS,
@@ -182,6 +187,7 @@ impl ProtocolSettings {
             ],
             milliseconds_per_block: 15_000,
             max_transactions_per_block: 5_000,
+            max_block_size: constants::MAX_BLOCK_SIZE as u32,
             max_valid_until_block_increment: 5_760,
             memory_pool_max_transactions: 50_000,
             max_traceable_blocks: constants::MAX_TRACEABLE_BLOCKS,

@@ -68,18 +68,16 @@ impl fmt::Debug for NotifyEventArgs {
 impl IInteroperable for NotifyEventArgs {
     fn from_stack_item(&mut self, _stack_item: StackItem) {
         // Not supported in C# implementation (throws NotSupportedException)
-        // In Rust, we log an error and return without modification
-        tracing::error!(
-            "NotSupportedException: FromStackItem is not supported for NotifyEventArgs"
-        );
+        panic!("NotSupportedException: FromStackItem is not supported for NotifyEventArgs");
     }
 
     fn to_stack_item(&self) -> StackItem {
         // Returns an array with [ScriptHash, EventName, State]
+        let state: Vec<StackItem> = self.state.iter().map(StackItem::deep_clone).collect();
         StackItem::from_array(vec![
             StackItem::from_byte_string(self.script_hash.to_bytes()),
             StackItem::from_byte_string(self.event_name.clone().into_bytes()),
-            StackItem::from_array(self.state.clone()),
+            StackItem::from_array(state),
         ])
     }
 

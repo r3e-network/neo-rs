@@ -162,12 +162,12 @@ mod tests {
         assert_eq!(array[7].as_bytes().expect("script"), vec![0x01, 0x02]);
     }
 
-    /// Test ToStackItem returns null when sender is missing.
+    /// Test ToStackItem panics when sender is missing (matches C# ArgumentException).
     #[test]
+    #[should_panic(expected = "ArgumentException: Sender is not specified in the transaction.")]
     fn test_to_stack_item_requires_sender() {
         let tx = Transaction::new();
-        let item = tx.to_stack_item();
-        assert!(item.is_null());
+        let _ = tx.to_stack_item();
     }
 
     /// Test FromStackItem panics (matches C# NotSupportedException).

@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
@@ -24,6 +25,15 @@ use crate::server::tree_node::TreeNode;
 
 use neo_vm::stack_item::StackItem;
 use neo_vm::OrderedDictionary;
+
+const INVALID_OPERATION_CODE: i32 = -2146233079;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+enum CompoundIdentity {
+    Array(usize),
+    Struct(usize),
+    Map(usize),
+}
 
 pub(super) fn parse_contract_parameters(
     arg: Option<&Value>,
@@ -143,97 +153,33 @@ pub(super) fn contract_parameter_to_stack_item(
 
 pub(super) fn stack_item_to_json(
     item: &StackItem,
-    mut session: Option<&mut Session>,
+    session: Option<&mut Session>,
 ) -> Result<Value, RpcException> {
-    let mut obj = Map::new();
-    match item {
-        StackItem::Null => {
-            obj.insert("type".to_string(), Value::String("Any".to_string()));
-            Ok(Value::Object(obj))
-        }
-        StackItem::Boolean(value) => {
-            obj.insert("type".to_string(), Value::String("Boolean".to_string()));
-            obj.insert("value".to_string(), Value::Bool(*value));
-            Ok(Value::Object(obj))
-        }
-        StackItem::Integer(value) => {
-            obj.insert("type".to_string(), Value::String("Integer".to_string()));
-            obj.insert("value".to_string(), Value::String(value.to_string()));
-            Ok(Value::Object(obj))
-        }
-        StackItem::ByteString(bytes) => {
-            obj.insert("type".to_string(), Value::String("ByteString".to_string()));
-            obj.insert(
-                "value".to_string(),
-                Value::String(BASE64_STANDARD.encode(bytes)),
-            );
-            Ok(Value::Object(obj))
-        }
-        StackItem::Buffer(buffer) => {
-            obj.insert("type".to_string(), Value::String("Buffer".to_string()));
-            obj.insert(
-                "value".to_string(),
-                Value::String(BASE64_STANDARD.encode(buffer.data())),
-            );
-            Ok(Value::Object(obj))
-        }
-        StackItem::Array(array) => {
-            obj.insert("type".to_string(), Value::String("Array".to_string()));
-            let values = array
-                .items()
-                .iter()
-                .map(|entry| stack_item_to_json(entry, session.as_deref_mut()))
-                .collect::<Result<Vec<_>, _>>()?;
-            obj.insert("value".to_string(), Value::Array(values));
-            Ok(Value::Object(obj))
-        }
-        StackItem::Struct(items) => {
-            obj.insert("type".to_string(), Value::String("Struct".to_string()));
-            let values = items
-                .items()
-                .iter()
-                .map(|entry| stack_item_to_json(entry, session.as_deref_mut()))
-                .collect::<Result<Vec<_>, _>>()?;
-            obj.insert("value".to_string(), Value::Array(values));
-            Ok(Value::Object(obj))
-        }
-        StackItem::Map(map) => {
-            obj.insert("type".to_string(), Value::String("Map".to_string()));
-            let entries = map
-                .iter()
-                .map(|(key, value)| {
-                    let key_json = stack_item_to_json(&key, session.as_deref_mut())?;
-                    let value_json = stack_item_to_json(&value, session.as_deref_mut())?;
-                    Ok(json!({
-                        "key": key_json,
-                        "value": value_json,
-                    }))
-                })
-                .collect::<Result<Vec<_>, RpcException>>()?;
-            obj.insert("value".to_string(), Value::Array(entries));
-            Ok(Value::Object(obj))
-        }
-        StackItem::Pointer(pointer) => {
-            obj.insert("type".to_string(), Value::String("Pointer".to_string()));
-            obj.insert(
-                "value".to_string(),
-                Value::Number(JsonNumber::from(pointer.position() as u64)),
-            );
-            Ok(Value::Object(obj))
-        }
-        StackItem::InteropInterface(iface) => {
-            obj.insert(
-                "type".to_string(),
-                Value::String("InteropInterface".to_string()),
-            );
-            let mut value_obj = Map::new();
-            value_obj.insert(
-                "type".to_string(),
-                Value::String(iface.interface_type().to_string()),
-            );
-            obj.insert("value".to_string(), Value::Object(value_obj));
-            if let Some(session) = session.as_mut() {
-                if let Some(iterator_id) = session.register_iterator_interface(iface) {
+    stack_item_to_json_with_budget(item, session, None)
+}
+
+pub(super) fn stack_item_to_json_limited(
+    item: &StackItem,
+    session: Option<&mut Session>,
+    max_size: usize,
+) -> Result<Value, RpcException> {
+    stack_item_to_json_with_budget(item, session, Some(max_size))
+}
+
+fn stack_item_to_json_with_budget(
+    item: &StackItem,
+    session: Option<&mut Session>,
+    max_size: Option<usize>,
+) -> Result<Value, RpcException> {
+    let mut context = HashSet::new();
+    let mut remaining = max_size
+        .and_then(|value| i64::try_from(value).ok())
+        .unwrap_or(i64::MAX);
+    let mut value = stack_item_to_json_inner(item, &mut context, &mut remaining)?;
+    if let StackItem::InteropInterface(iface) = item {
+        if let Some(session) = session {
+            if let Some(iterator_id) = session.register_iterator_interface(iface) {
+                if let Value::Object(obj) = &mut value {
                     obj.insert(
                         "interface".to_string(),
                         Value::String("IIterator".to_string()),
@@ -241,9 +187,138 @@ pub(super) fn stack_item_to_json(
                     obj.insert("id".to_string(), Value::String(iterator_id.to_string()));
                 }
             }
-            Ok(Value::Object(obj))
         }
     }
+    Ok(value)
+}
+
+fn stack_item_to_json_inner(
+    item: &StackItem,
+    context: &mut HashSet<CompoundIdentity>,
+    remaining: &mut i64,
+) -> Result<Value, RpcException> {
+    let type_name = stack_item_type_name(item);
+    let mut obj = Map::new();
+    obj.insert("type".to_string(), Value::String(type_name.to_string()));
+    *remaining -= 11 + type_name.len() as i64;
+
+    let mut value = None;
+    match item {
+        StackItem::Null | StackItem::InteropInterface(_) => {}
+        StackItem::Boolean(flag) => {
+            *remaining -= if *flag { 4 } else { 5 };
+            value = Some(Value::Bool(*flag));
+        }
+        StackItem::Integer(integer) => {
+            let text = integer.to_string();
+            *remaining -= 2 + text.len() as i64;
+            value = Some(Value::String(text));
+        }
+        StackItem::ByteString(bytes) => {
+            let encoded = BASE64_STANDARD.encode(bytes);
+            *remaining -= 2 + encoded.len() as i64;
+            value = Some(Value::String(encoded));
+        }
+        StackItem::Buffer(buffer) => {
+            let encoded = BASE64_STANDARD.encode(buffer.data());
+            *remaining -= 2 + encoded.len() as i64;
+            value = Some(Value::String(encoded));
+        }
+        StackItem::Array(array) => {
+            let identity = CompoundIdentity::Array(array.id());
+            if !context.insert(identity) {
+                return Err(stack_item_error("Circular reference."));
+            }
+            let items = array.items();
+            let count = items.len() as i64;
+            *remaining -= 2 + count.saturating_sub(1);
+            let values = items
+                .iter()
+                .map(|entry| stack_item_to_json_inner(entry, context, remaining))
+                .collect::<Result<Vec<_>, _>>()?;
+            if !context.remove(&identity) {
+                return Err(stack_item_error("Circular reference."));
+            }
+            value = Some(Value::Array(values));
+        }
+        StackItem::Struct(structure) => {
+            let identity = CompoundIdentity::Struct(structure.id());
+            if !context.insert(identity) {
+                return Err(stack_item_error("Circular reference."));
+            }
+            let items = structure.items();
+            let count = items.len() as i64;
+            *remaining -= 2 + count.saturating_sub(1);
+            let values = items
+                .iter()
+                .map(|entry| stack_item_to_json_inner(entry, context, remaining))
+                .collect::<Result<Vec<_>, _>>()?;
+            if !context.remove(&identity) {
+                return Err(stack_item_error("Circular reference."));
+            }
+            value = Some(Value::Array(values));
+        }
+        StackItem::Map(map) => {
+            let identity = CompoundIdentity::Map(map.id());
+            if !context.insert(identity) {
+                return Err(stack_item_error("Circular reference."));
+            }
+            let count = map.len() as i64;
+            *remaining -= 2 + count.saturating_sub(1);
+            let entries = map
+                .iter()
+                .map(|(key, value)| {
+                    *remaining -= 17;
+                    let key_json = stack_item_to_json_inner(&key, context, remaining)?;
+                    let value_json = stack_item_to_json_inner(&value, context, remaining)?;
+                    Ok(json!({
+                        "key": key_json,
+                        "value": value_json,
+                    }))
+                })
+                .collect::<Result<Vec<_>, RpcException>>()?;
+            if !context.remove(&identity) {
+                return Err(stack_item_error("Circular reference."));
+            }
+            value = Some(Value::Array(entries));
+        }
+        StackItem::Pointer(pointer) => {
+            let position = pointer.position();
+            let position_text = position.to_string();
+            *remaining -= position_text.len() as i64;
+            value = Some(Value::Number(JsonNumber::from(position as u64)));
+        }
+    }
+
+    if let Some(value) = value {
+        *remaining -= 9;
+        obj.insert("value".to_string(), value);
+    }
+
+    if *remaining < 0 {
+        return Err(stack_item_error("Max size reached."));
+    }
+
+    Ok(Value::Object(obj))
+}
+
+fn stack_item_type_name(item: &StackItem) -> &'static str {
+    match item {
+        StackItem::Null => "Any",
+        StackItem::Boolean(_) => "Boolean",
+        StackItem::Integer(_) => "Integer",
+        StackItem::ByteString(_) => "ByteString",
+        StackItem::Buffer(_) => "Buffer",
+        StackItem::Array(_) => "Array",
+        StackItem::Struct(_) => "Struct",
+        StackItem::Map(_) => "Map",
+        StackItem::Pointer(_) => "Pointer",
+        StackItem::InteropInterface(_) => "InteropInterface",
+    }
+}
+
+fn stack_item_error(message: impl Into<String>) -> RpcException {
+    RpcException::new(INVALID_OPERATION_CODE, message.into())
 }
 
 pub(super) fn notification_to_json(

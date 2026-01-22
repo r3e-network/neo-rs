@@ -39,6 +39,9 @@ full node aligned with the canonical C# implementation.
   payloads only; prepare/commit replay for current view), with recovered
   ChangeView/PrepareRequest/PrepareResponse/Commit payloads reprocessed through
   standard validation (signature + hash checks).
+- ✔ Recovery responses now include compact ChangeView/PrepareRequest/PrepareResponse/Commit
+  payloads with invocation scripts (primary prepare request included when available),
+  matching DBFTPlugin RecoveryMessage composition.
 - ✔ Added tests to ensure invalid PrepareRequest/PrepareResponse signatures in
   recovery payloads are ignored.
 - ✔ Added recovery tests for invalid commit signatures and mismatched
@@ -65,6 +68,14 @@ full node aligned with the canonical C# implementation.
 - ✔ Added a Rust-native dBFT PersistCompleted integration harness that routes
   consensus broadcasts/events and covers multi-round + committed flows
   (UT_DBFT_Core / UT_DBFT_Integration parity).
+- ✔ Wired consensus signing through a pluggable signer that uses wallet/HSM
+  accounts; private keys are no longer required for validator mode.
+- ✔ Added RPC-driven manual consensus start (startconsensus) for `auto_start=false`.
+- ✔ Added mempool NewTransaction filter to cancel transactions with
+  `SystemFee > MaxBlockSystemFee`, matching DBFTPlugin.
+
+### Open gaps (node integration)
+None.
 
 ## Memory Pool
 - ✔ Header backlog short-circuit behaviour now matches C#, with a unit test in place.
@@ -175,6 +186,13 @@ full node aligned with the canonical C# implementation.
 - ✔ Added Base58 encode/decode vector parity coverage (UT_Base58).
 
 ## RPC / Plugin Surface
+- ✔ Added NeoFS oracle `neofs:` URL handling via NeoFS REST gateway (payload, range,
+  header, and hash responses) plus NeoFS gRPC client parity with C# (signed
+  requests, response matryoshka verification, diagnostic JSON formatting,
+  bearer-token support, and optional `UseGrpc` override). REST fallback retains
+  optional bearer-token headers, base58 ID validation, attribute fallback for
+  `X-Attribute-*`, signature/key normalization (hex/base64), and optional bearer
+  auto-signing (SHA-512 or wallet-connect) using the active oracle key.
 - ✔ Added server-side round-trip tests for `getpeers` and `getrawmempool` to
   validate client model parsing against live handler output.
 - ✔ Added `getversion` structure tests to mirror C# RPC expectations.

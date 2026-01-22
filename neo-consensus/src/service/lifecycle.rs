@@ -31,6 +31,34 @@ impl ConsensusService {
         Ok(())
     }
 
+    /// Resumes consensus from a recovered context.
+    ///
+    /// This restores transient fields that are not persisted and continues the round.
+    pub fn resume(&mut self, timestamp: u64, prev_hash: UInt256, version: u32) -> ConsensusResult<()> {
+        if self.context.my_index.is_none() {
+            return Err(ConsensusError::NotValidator);
+        }
+
+        self.context.prev_hash = prev_hash;
+        self.context.version = version;
+        self.context.view_start_time = timestamp;
+        self.context.state = if self.context.is_primary() {
+            crate::context::ConsensusState::Primary
+        } else {
+            crate::context::ConsensusState::Backup
+        };
+        self.running = true;
+
+        if self.context.is_primary() && !self.context.prepare_request_received {
+            self.initiate_proposal(timestamp)?;
+        } else {
+            self.check_prepare_responses()?;
+            self.check_commits()?;
+        }
+
+        Ok(())
+    }
+
     /// Processes a consensus message
     pub fn process_message(&mut self, payload: ConsensusPayload) -> ConsensusResult<()> {
         if !self.running {
@@ -77,7 +105,7 @@ impl ConsensusService {
         self.context
             .update_last_seen_message(payload.validator_index, payload.block_index);
 
-        // Validate view number (ChangeView and Recovery messages can be for other views)
+        // Validate view number (ChangeView and Recovery messages can be for other views).
         if !matches!(
             payload.message_type,
             ConsensusMessageType::ChangeView
@@ -85,10 +113,9 @@ impl ConsensusService {
                 | ConsensusMessageType::RecoveryMessage
         ) && payload.view_number != self.context.view_number
         {
-            return Err(ConsensusError::WrongView {
-                expected: self.context.view_number,
-                got: payload.view_number,
-            });
+            if payload.message_type != ConsensusMessageType::Commit {
+                return Ok(());
+            }
         }
 
         match payload.message_type {

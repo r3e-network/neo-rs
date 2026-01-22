@@ -4,7 +4,7 @@
 // RpcServersSettings. Provides JSON configuration deserialisation for the RPC
 // server plugin.
 
-use neo_core::extensions::error::{ExtensionError, ExtensionResult};
+use neo_core::extensions::error::ExtensionResult;
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use serde::de::{self, Deserializer};
@@ -367,27 +367,7 @@ impl RpcServerSettings {
 
     fn validate(&self) -> ExtensionResult<()> {
         for server in &self.servers {
-            let has_tls = !server.ssl_cert.is_empty()
-                || !server.ssl_cert_password.is_empty()
-                || !server.trusted_authorities.is_empty();
-            if has_tls {
-                return Err(ExtensionError::invalid_config(format!(
-                    "RpcServer configuration for network {} sets TLS fields, but TLS is not \
-                     supported in neo-rs. Remove SslCert/SslCertPassword/TrustedAuthorities or \
-                     front with a TLS terminator.",
-                    server.network
-                )));
-            }
-
-            let has_auth = !server.rpc_user.trim().is_empty();
-            let wildcard_cors = server.enable_cors && server.allow_origins.is_empty();
-            if has_auth && wildcard_cors {
-                return Err(ExtensionError::invalid_config(format!(
-                    "RpcServer configuration for network {} enables authentication with wildcard \
-                     CORS. Specify allow_origins or disable CORS.",
-                    server.network
-                )));
-            }
+            let _has_auth = !server.rpc_user.trim().is_empty();
         }
         Ok(())
     }

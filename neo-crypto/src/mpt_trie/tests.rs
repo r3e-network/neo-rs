@@ -190,7 +190,7 @@ mod tests {
 
     #[test]
     fn test_new_hash_exception() {
-        // This test verifies hash node creation - always succeeds in Rust
+        // C# throws on null input; Rust cannot represent null hashes.
         let hash = UInt256::zero();
         let node = Node::new_hash(hash);
         assert_eq!(node.node_type, NodeType::HashNode);
@@ -199,7 +199,7 @@ mod tests {
 
     #[test]
     fn test_new_leaf_exception() {
-        // Leaf with empty value should succeed (different from C# which may throw)
+        // C# throws on null input; empty values are valid and should serialize.
         let leaf = Node::new_leaf(vec![]);
         assert_eq!(leaf.node_type, NodeType::LeafNode);
         assert_eq!(leaf.value.len(), 0);

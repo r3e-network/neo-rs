@@ -2,6 +2,7 @@ use super::super::helpers::{
     compute_header_hash, compute_merkle_root, compute_next_consensus_address,
 };
 use super::super::ConsensusService;
+use super::super::helpers::invocation_script_from_signature;
 use crate::context::ConsensusState;
 use crate::messages::{
     CommitMessage, ConsensusPayload, PrepareRequestMessage, PrepareResponseMessage,
@@ -15,6 +16,10 @@ impl ConsensusService {
         &mut self,
         payload: &ConsensusPayload,
     ) -> ConsensusResult<()> {
+        if self.context.not_accepting_payloads_due_to_view_changing() {
+            return Ok(());
+        }
+
         // Verify sender is the primary
         let expected_primary = self.context.primary_index();
         if payload.validator_index != expected_primary {
@@ -61,6 +66,11 @@ impl ConsensusService {
 
         // Mark prepare request as received and store proposal fields.
         self.context.prepare_request_received = true;
+        self.context.prepare_request_invocation = if payload.witness.is_empty() {
+            None
+        } else {
+            Some(invocation_script_from_signature(&payload.witness))
+        };
         self.context.version = prepare_request.version;
         self.context.prev_hash = prepare_request.prev_hash;
         self.context.proposed_timestamp = prepare_request.timestamp;
@@ -69,6 +79,14 @@ impl ConsensusService {
 
         // Cache PrepareRequest payload hash (ExtensiblePayload.Hash) for PrepareResponse.
         self.context.preparation_hash = Some(self.dbft_payload_hash(payload)?);
+        if let Some(expected) = self.context.preparation_hash {
+            self.context
+                .prepare_responses
+                .retain(|idx, _| self.context.prepare_response_hashes.get(idx) == Some(&expected));
+            self.context
+                .prepare_response_hashes
+                .retain(|_, hash| *hash == expected);
+        }
 
         // Calculate block header hash from proposal data (for commit signatures).
         let merkle_root = compute_merkle_root(&self.context.proposed_tx_hashes);
@@ -85,25 +103,10 @@ impl ConsensusService {
         );
         self.context.proposed_block_hash = Some(block_hash);
 
-        // Send PrepareResponse
-        let preparation_hash = self.context.preparation_hash.unwrap_or_default();
-        let response = PrepareResponseMessage::new(
-            self.context.block_index,
-            self.context.view_number,
-            self.my_index()?,
-            preparation_hash,
-        );
-
-        let response_payload =
-            self.create_payload(ConsensusMessageType::PrepareResponse, response.serialize())?;
-        let my_witness = response_payload.witness.clone();
-        self.broadcast(response_payload)?;
-
-        // Add our own response
-        self.context
-            .add_prepare_response(self.my_index()?, my_witness)?;
-
-        self.check_prepare_responses()?;
+        // If there are no transactions, respond immediately.
+        if self.context.proposed_tx_hashes.is_empty() {
+            self.send_prepare_response()?;
+        }
 
         Ok(())
     }
@@ -113,6 +116,10 @@ impl ConsensusService {
         &mut self,
         payload: &ConsensusPayload,
     ) -> ConsensusResult<()> {
+        if self.context.not_accepting_payloads_due_to_view_changing() {
+            return Ok(());
+        }
+
         // Check if we already have this response
         if self
             .context
@@ -142,20 +149,67 @@ impl ConsensusService {
             ));
         }
 
+        let msg = PrepareResponseMessage::deserialize_body(
+            &payload.data,
+            payload.block_index,
+            payload.view_number,
+            payload.validator_index,
+        )?;
+
         // Verify PreparationHash matches the primary PrepareRequest payload hash (C# behavior).
         if let Some(expected) = self.context.preparation_hash {
-            let msg = PrepareResponseMessage::deserialize_body(
-                &payload.data,
-                payload.block_index,
-                payload.view_number,
-                payload.validator_index,
-            )?;
             msg.validate(&expected)?;
         }
 
         // Add the response
+        let invocation_script = invocation_script_from_signature(&payload.witness);
         self.context
-            .add_prepare_response(payload.validator_index, payload.witness.clone())?;
+            .add_prepare_response(
+                payload.validator_index,
+                invocation_script,
+                Some(msg.preparation_hash),
+            )?;
+
+        self.check_prepare_responses()?;
+
+        Ok(())
+    }
+
+    /// Sends our PrepareResponse if needed and not already sent.
+    pub(in crate::service) fn send_prepare_response(&mut self) -> ConsensusResult<()> {
+        if self.context.is_primary() {
+            return Ok(());
+        }
+
+        let my_index = match self.context.my_index {
+            Some(index) => index,
+            None => return Ok(()),
+        };
+
+        if self.context.prepare_responses.contains_key(&my_index) {
+            return Ok(());
+        }
+
+        let preparation_hash = self.context.preparation_hash.unwrap_or_default();
+        let response = PrepareResponseMessage::new(
+            self.context.block_index,
+            self.context.view_number,
+            my_index,
+            preparation_hash,
+        );
+
+        let response_payload =
+            self.create_payload(ConsensusMessageType::PrepareResponse, response.serialize())?;
+        let my_witness = response_payload.witness.clone();
+        let invocation_script = invocation_script_from_signature(&my_witness);
+        self.broadcast(response_payload)?;
+
+        // Add our own response
+        self.context.add_prepare_response(
+            my_index,
+            invocation_script,
+            Some(preparation_hash),
+        )?;
 
         self.check_prepare_responses()?;
 
@@ -180,20 +234,29 @@ impl ConsensusService {
         );
 
         let block_hash = self.context.proposed_block_hash.unwrap_or_default();
-        let signature = self.sign_block_hash(&block_hash);
+        let signature = self.sign_block_hash(&block_hash)?;
 
+        let my_index = self.my_index()?;
         let commit = CommitMessage::new(
             self.context.block_index,
             self.context.view_number,
-            self.my_index()?,
+            my_index,
             signature.clone(),
         );
 
         let payload = self.create_payload(ConsensusMessageType::Commit, commit.serialize())?;
+        let commit_witness = payload.witness.clone();
+        let commit_invocation = invocation_script_from_signature(&commit_witness);
         self.broadcast(payload)?;
+        if !commit_witness.is_empty() {
+            self.context
+                .commit_invocations
+                .insert(my_index, commit_invocation);
+        }
 
         // Add our own commit
-        self.context.add_commit(self.my_index()?, signature)?;
+        self.context
+            .add_commit(my_index, self.context.view_number, signature)?;
 
         self.check_commits()?;
 

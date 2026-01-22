@@ -21,7 +21,7 @@ use neo_vm::op_code::OpCode;
 
 use super::helpers::{
     internal_error, invalid_params, parse_contract_parameters, parse_signers_and_witnesses,
-    stack_item_to_json,
+    stack_item_to_json_limited,
 };
 
 pub(super) fn invoke_contract_verify(
@@ -114,27 +114,39 @@ pub(super) fn invoke_contract_verify(
     engine.execute_allow_fault();
 
     let state = engine.state();
-    let exception = engine
+    let mut exception = engine
         .fault_exception()
         .map(|message| Value::String(message.to_string()))
         .unwrap_or(Value::Null);
 
-    let stack_items = engine
-        .result_stack()
-        .iter()
-        .map(|item| {
-            stack_item_to_json(item, None)
-                .unwrap_or_else(|err| Value::String(format!("error: {err}")))
-        })
-        .collect::<Vec<_>>();
+    let mut stack_items = Vec::new();
+    let mut stack_error: Option<RpcException> = None;
+    for item in engine.result_stack().iter() {
+        match stack_item_to_json_limited(item, None, server.settings().max_stack_size) {
+            Ok(value) => stack_items.push(value),
+            Err(err) => {
+                stack_error = Some(err);
+                break;
+            }
+        }
+    }
+    if let Some(err) = stack_error.as_ref() {
+        exception = Value::String(err.to_string());
+    }
 
-    Ok(json!({
+    let mut result = json!({
         "script": BASE64_STANDARD.encode(&invocation_script),
         "state": format!("{:?}", state),
         "gasconsumed": engine.fee_consumed().to_string(),
         "exception": exception,
-        "stack": stack_items,
-    }))
+    });
+    if stack_error.is_none() {
+        if let Value::Object(ref mut obj) = result {
+            obj.insert("stack".to_string(), Value::Array(stack_items));
+        }
+    }
+
+    Ok(result)
 }
 
 fn build_verification_invocation_script(

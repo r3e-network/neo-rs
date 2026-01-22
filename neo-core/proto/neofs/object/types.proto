@@ -1,0 +1,358 @@
+syntax = "proto3";
+
+package neo.fs.v2.object;
+
+import "refs/types.proto";
+import "session/types.proto";
+
+option csharp_namespace = "Neo.FileStorage.API.Object";
+option go_package = "github.com/nspcc-dev/neofs-sdk-go/proto/object";
+
+// Type of the object payload content. Only `REGULAR` type objects can be split,
+// hence `TOMBSTONE`, `STORAGE_GROUP` and `LOCK` payload is limited by the maximum
+// object size.
+//
+// String presentation of object type is the same as definition:
+// * REGULAR
+// * TOMBSTONE
+// * STORAGE_GROUP
+// * LOCK
+// * LINK
+enum ObjectType {
+  // Just a normal object
+  REGULAR = 0;
+
+  // Used internally to identify deleted objects
+  TOMBSTONE = 1;
+
+  // StorageGroup information. DEPRECATED: no longer used for audit since 2.18.
+  STORAGE_GROUP = 2;
+
+  // Object lock
+  LOCK = 3;
+
+  // Object that stores child object IDs for the split objects.
+  LINK = 4;
+}
+
+// Type of match expression
+enum MatchType {
+  // Unknown. Not used
+  MATCH_TYPE_UNSPECIFIED = 0;
+
+  // Full string match
+  STRING_EQUAL = 1;
+
+  // Full string mismatch
+  STRING_NOT_EQUAL = 2;
+
+  // Lack of key
+  NOT_PRESENT = 3;
+
+  // String prefix match
+  COMMON_PREFIX = 4;
+
+  // Numerical 'greater than'
+  NUM_GT = 5;
+
+  // Numerical 'greater or equal than'
+  NUM_GE = 6;
+
+  // Numerical 'less than'
+  NUM_LT = 7;
+
+  // Numerical 'less or equal than'
+  NUM_LE = 8;
+}
+
+// Filter structure checks if the object header field or the attribute content
+// matches a value.
+//
+// If no filters are set, search request will return all objects of the
+// container, including Regular object, Tombstones and Storage Group
+// objects. Most human users expect to get only object they can directly
+// work with. In that case, `$Object:ROOT` filter should be used.
+//
+// If `match_type` field is numerical, both `value` field and object
+// attribute MUST be base-10 integers.
+//
+// By default `key` field refers to the corresponding object's `Attribute`.
+// Some Object's header fields can also be accessed by adding `$Object:`
+// prefix to the name. Here is the list of fields available via this prefix:
+//
+// * $Object:version \
+//   version
+// * $Object:ownerID \
+//   owner_id
+// * $Object:creationEpoch \
+//   creation_epoch
+// * $Object:payloadLength \
+//   payload_length
+// * $Object:payloadHash \
+//   payload_hash
+// * $Object:objectType \
+//   object_type
+// * $Object:homomorphicHash \
+//   homomorphic_hash
+// * $Object:split.parent \
+//   object_id of parent
+// * $Object:split.splitID \
+//   16 byte UUIDv4 used to identify the split object hierarchy parts
+// * $Object:split.first \
+//   object_id of the first part in split chain; non-acceptable for deprecated V1 split scheme
+//
+// There are some well-known filter aliases to match objects by certain
+// properties:
+//
+// * $Object:ROOT \
+//   Returns only `REGULAR` type objects that are not split or that are the top
+//   level root objects in a split hierarchy. This includes objects not
+//   present physically, like large objects split into smaller objects
+//   without a separate top-level root object. Objects of other types like
+//   StorageGroups and Tombstones will not be shown. This filter may be
+//   useful for listing objects like `ls` command of some virtual file
+//   system. This filter is activated if the `key` exists, disregarding the
+//   value and matcher type.
+// * $Object:PHY \
+//   Returns only objects physically stored in the system. This filter is
+//   activated if the `key` exists, disregarding the value and matcher type.
+//
+// Following filters are deprecated:
+//
+// * $Object:objectID \
+//   object_id
+// * $Object:containerID \
+//   container_id
+//
+// Note: using filters with a key with prefix `$Object:` and match type
+// `NOT_PRESENT `is not recommended since this is not a cross-version approach.
+// Behavior when processing this kind of filters is undefined.
+message SearchFilter {
+  // Match type to use
+  MatchType match_type = 1 [json_name = "matchType"];
+
+  // Attribute or Header fields to match
+  string key = 2 [json_name = "key"];
+
+  // Value to match
+  string value = 3 [json_name = "value"];
+}
+
+// Short header fields
+//
+// DEPRECATED. It is not supported in practice and should not be used. Use full
+// Header instead.
+message ShortHeader {
+  // Object format version. Effectively, the version of API library used to
+  // create particular object.
+  neo.fs.v2.refs.Version version = 1 [json_name = "version"];
+
+  // Epoch when the object was created
+  uint64 creation_epoch = 2 [json_name = "creationEpoch"];
+
+  // Object's owner
+  neo.fs.v2.refs.OwnerID owner_id = 3 [json_name = "ownerID"];
+
+  // Type of the object payload content
+  ObjectType object_type = 4 [json_name = "objectType"];
+
+  // Size of payload in bytes.
+  // `0xFFFFFFFFFFFFFFFF` means `payload_length` is unknown
+  uint64 payload_length = 5 [json_name = "payloadLength"];
+
+  // SHA256 hash of payload bytes.
+  neo.fs.v2.refs.Checksum payload_hash = 6 [json_name = "payloadHash"];
+
+  // Homomorphic hash of the object payload (Tillich-Zemor).
+  neo.fs.v2.refs.Checksum homomorphic_hash = 7 [json_name = "homomorphicHash"];
+}
+
+// Object Header
+message Header {
+  // Object format version. Effectively, the version of API library used to
+  // create particular object
+  neo.fs.v2.refs.Version version = 1 [json_name = "version"];
+
+  // Object's container
+  neo.fs.v2.refs.ContainerID container_id = 2 [json_name = "containerID"];
+
+  // Object's owner
+  neo.fs.v2.refs.OwnerID owner_id = 3 [json_name = "ownerID"];
+
+  // Object creation Epoch
+  uint64 creation_epoch = 4 [json_name = "creationEpoch"];
+
+  // Size of payload in bytes.
+  // `0xFFFFFFFFFFFFFFFF` means `payload_length` is unknown.
+  uint64 payload_length = 5 [json_name = "payloadLength"];
+
+  // SHA256 hash of payload bytes
+  neo.fs.v2.refs.Checksum payload_hash = 6 [json_name = "payloadHash"];
+
+  // Type of the object payload content
+  ObjectType object_type = 7 [json_name = "objectType"];
+
+  // Homomorphic hash of the object payload (Tillich-Zemor).
+  neo.fs.v2.refs.Checksum homomorphic_hash = 8 [json_name = "homomorphicHash"];
+
+  // Session token, if it was used during Object creation. Need it to verify
+  // integrity and authenticity out of Request scope.
+  // Only one of `session_token` or `session_token_v2` can be set.
+  neo.fs.v2.session.SessionToken session_token = 9 [json_name = "sessionToken"];
+
+  // `Attribute` is a user-defined Key-Value metadata pair attached to an
+  // object.
+  //
+  // Key name must be an object-unique valid UTF-8 string. Value can't be empty.
+  // Objects with duplicated attribute names or attributes with empty values
+  // will be considered invalid. Keys and values can't contain zero bytes as
+  // well.
+  //
+  // There are some "well-known" attributes starting with `__NEOFS__` prefix
+  // that affect system behaviour:
+  //
+  // * __NEOFS__EXPIRATION_EPOCH \
+  //   Tells GC to delete object after that epoch (but object is available
+  //   throughout the epoch specified in this attribute).
+  // * __NEOFS__ASSOCIATE \
+  //   Associated object. For TOMBSTONE, LOCK object types it defines object
+  //   to delete and to lock accordingly. For objects of 2.18+ API version, it
+  //   is the only way to delete/lock objects. It MUST be a single stringified
+  //   (according to [refs.ObjectID] message) object ID with no leading or
+  //   trailing spaces.
+  // * __NEOFS__TICK_EPOCH \
+  //   Decimal number that defines what epoch must produce
+  //   object notification with UTF-8 object address in a
+  //   body (`0` value produces notification right after
+  //   object put).
+  //   DEPRECATED: attribute ignored by servers.
+  // * __NEOFS__TICK_TOPIC \
+  //   UTF-8 string topic ID that is used for object notification.
+  //   DEPRECATED: attribute ignored by servers.
+  // * __NEOFS__EC_RULE_IDX \
+  //   Index of EC rule in container's `PlacementPolicy.ec_rules` according to
+  //   which the part was created. Base-10 integer.
+  // * __NEOFS__EC_PART_IDX \
+  //   Index in the EC parts into which the parent object is divided according
+  //   to `__NEOFS__EC_RULE_IDX` EC rule. Base-10 integer.
+  // * __NEOFS__EC_PART_HASHES \
+  //   Ordered list of payload hashes of EC parts into which this object is
+  //   divided. Hash function is SHA-256. Items are comma-separated, each item
+  //   is hex-encoded.
+  //
+  // And some well-known attributes used by applications only:
+  //
+  // * Name \
+  //   Human-friendly name
+  // * FileName \
+  //   File name to be associated with the object on saving
+  // * FilePath \
+  //   Full path to be associated with the object on saving. Should start with a
+  //   '/' and use '/' as a delimiting symbol. Trailing '/' should be
+  //   interpreted as a virtual directory marker. If an object has conflicting
+  //   FilePath and FileName, FilePath should have higher priority, because it
+  //   is used to construct the directory tree. FilePath with trailing '/' and
+  //   non-empty FileName attribute should not be used together.
+  // * Timestamp \
+  //   User-defined local time of object creation in Unix Timestamp format
+  // * Content-Type \
+  //   MIME Content Type of object's payload
+  //
+  // For detailed description of each well-known attribute please see the
+  // corresponding section in NeoFS Technical Specification.
+  message Attribute {
+    // string key to the object attribute
+    string key = 1 [json_name = "key"];
+    // string value of the object attribute
+    string value = 2 [json_name = "value"];
+  }
+  // User-defined object attributes. Attributes vary in length from object to
+  // object, so keep an eye on the entire Header limit depending on the context.
+  repeated Attribute attributes = 10 [json_name = "attributes"];
+
+  // Bigger objects can be split into a chain of smaller objects. Information
+  // about inter-dependencies between spawned objects and how to re-construct
+  // the original one is in the `Split` headers. Parent and children objects
+  // must be within the same container.
+  message Split {
+    // Identifier of the origin object. If the origin object is split to comply
+    // with the object size limit, `parent` is known only to the minor child.
+    neo.fs.v2.refs.ObjectID parent = 1 [json_name = "parent"];
+
+    // Identifier of the left split neighbor
+    neo.fs.v2.refs.ObjectID previous = 2 [json_name = "previous"];
+
+    // `signature` field of the parent object. Used to reconstruct parent.
+    neo.fs.v2.refs.Signature parent_signature = 3 [json_name = "parentSignature"];
+
+    // `header` field of the parent object. Used to reconstruct parent.
+    Header parent_header = 4 [json_name = "parentHeader"];
+
+    // DEPRECATED. Was used before creating the separate LINK object type. Keep
+    // child objects list in the LINK object's payload.
+    // List of identifiers of the objects generated by splitting current one.
+    repeated neo.fs.v2.refs.ObjectID children = 5 [json_name = "children"];
+
+    // DEPRECATED. Was used as an identifier of a split chain. Use the first
+    // part ID instead.
+    // 16 byte UUIDv4 used to identify the split object hierarchy parts. Must be
+    // unique inside container. All objects participating in the split must have
+    // the same `split_id` value.
+    bytes split_id = 6 [json_name = "splitID"];
+
+    // Identifier of the first part of the origin object. Known to all the split
+    // parts except the first one. Identifies the split and allows to differ them.
+    neo.fs.v2.refs.ObjectID first = 7 [json_name = "first"];
+  }
+  // Position of the object in the split hierarchy
+  Split split = 11 [json_name = "split"];
+
+  // Session token V2, if it was used during Object creation. Need it to verify
+  // integrity and authenticity out of Request scope.
+  // Only one of `session_token` or `session_token_v2` can be set.
+  neo.fs.v2.session.SessionTokenV2 session_token_v2 = 12 [json_name = "sessionTokenV2"];
+}
+
+// Object structure. Object is immutable and content-addressed. It means
+// `ObjectID` will change if the header or the payload changes. It's calculated as a
+// hash of header field which contains hash of the object's payload.
+//
+// For non-regular object types payload format depends on object type specified
+// in the header.
+message Object {
+  // Object's unique identifier.
+  neo.fs.v2.refs.ObjectID object_id = 1 [json_name = "objectID"];
+
+  // Signed object_id
+  neo.fs.v2.refs.Signature signature = 2 [json_name = "signature"];
+
+  // Object metadata headers
+  Header header = 3 [json_name = "header"];
+
+  // Payload bytes
+  bytes payload = 4 [json_name = "payload"];
+}
+
+// Meta information of split hierarchy for object assembly. With the last part
+// one can traverse linked list of split hierarchy back to the first part and
+// assemble the original object. With a linking object one can assemble an object
+// right from the object parts.
+message SplitInfo {
+  // DEPRECATED. Was used as an identifier of a split chain. Use the first
+  // part ID instead.
+  // 16 byte UUID used to identify the split object hierarchy parts.
+  bytes split_id = 1;
+
+  // The identifier of the last object in split hierarchy parts. It contains
+  // split header with the original object header.
+  neo.fs.v2.refs.ObjectID last_part = 2;
+
+  // The identifier of a linking object for split hierarchy parts. It contains
+  // split header with the original object header and a sorted list of
+  // object parts.
+  neo.fs.v2.refs.ObjectID link = 3;
+
+  // Identifier of the first part of the origin object. Known to all the split
+  // parts except the first one. Identifies the split and allows to differ them.
+  neo.fs.v2.refs.ObjectID first_part = 4;
+}

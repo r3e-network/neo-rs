@@ -1,0 +1,820 @@
+syntax = "proto3";
+
+package neo.fs.v2.object;
+
+import "object/types.proto";
+import "refs/types.proto";
+import "session/types.proto";
+import "status/types.proto";
+
+option csharp_namespace = "Neo.FileStorage.API.Object";
+option go_package = "github.com/nspcc-dev/neofs-sdk-go/proto/object";
+
+// `ObjectService` provides API for manipulating objects. Object operations do
+// not affect FS chain and are only served by nodes in P2P style.
+service ObjectService {
+  // Receive full object structure, including Headers and payload. Response uses
+  // gRPC stream. First response message carries the object with the requested address.
+  // Chunk messages are parts of the object's payload if it is needed. All
+  // messages, except the first one, carry payload chunks. The requested object can
+  // be restored by concatenation of object message payload and all chunks
+  // keeping the receiving order.
+  //
+  // Extended headers can change `Get` behaviour:
+  // * __NEOFS__NETMAP_EPOCH \
+  //   Will use the requsted version of Network Map for object placement
+  //   calculation. DEPRECATED: header ignored by servers.
+  // * __NEOFS__NETMAP_LOOKUP_DEPTH \
+  //   Will try older versions (starting from `__NEOFS__NETMAP_EPOCH` if specified or
+  //   the latest one otherwise) of Network Map to find an object until the depth
+  //   limit is reached. DEPRECATED: header ignored by servers.
+  //
+  // Please refer to detailed `XHeader` description.
+  //
+  // Statuses:
+  // - **OK** (0, SECTION_SUCCESS): \
+  //   object has been successfully read;
+  // - Common failures (SECTION_FAILURE_COMMON);
+  // - **ACCESS_DENIED** (2048, SECTION_OBJECT): \
+  //   read access to the object is denied;
+  // - **OBJECT_NOT_FOUND** (2049, SECTION_OBJECT): \
+  //   object not found in container;
+  // - **OBJECT_ALREADY_REMOVED** (2052, SECTION_OBJECT): \
+  //   the requested object has been marked as deleted;
+  // - **CONTAINER_NOT_FOUND** (3072, SECTION_CONTAINER): \
+  //   object container not found;
+  // - **TOKEN_EXPIRED** (4097, SECTION_SESSION): \
+  //   provided session token has expired.
+  rpc Get(GetRequest) returns (stream GetResponse);
+
+  // Put the object into container. Request uses gRPC stream. First message
+  // SHOULD be of PutHeader type. `ContainerID` and `OwnerID` of an object
+  // SHOULD be set. Session token SHOULD be obtained before `PUT` operation (see
+  // session package). Chunk messages are considered by server as a part of an
+  // object payload. All messages, except first one, SHOULD be payload chunks.
+  // Chunk messages SHOULD be sent in the direct order of fragmentation.
+  //
+  // Extended headers can change `Put` behaviour:
+  // * __NEOFS__NETMAP_EPOCH \
+  //   Will use the requsted version of Network Map for object placement
+  //   calculation. DEPRECATED: header ignored by servers.
+  //
+  // Please refer to detailed `XHeader` description.
+  //
+  // Statuses:
+  // - **OK** (0, SECTION_SUCCESS): \
+  //   object has been successfully saved in the container;
+  // - **INCOMPLETE** (1, SECTION_SUCCESS): \
+  //   object was put to some nodes, but the number of replicas is not sufficient
+  //   to satisfy placement policy;
+  // - Common failures (SECTION_FAILURE_COMMON);
+  // - **ACCESS_DENIED** (2048, SECTION_OBJECT): \
+  //   write access to the container is denied;
+  // - **LOCKED** (2050, SECTION_OBJECT): \
+  //   placement of an object of type TOMBSTONE that includes at least one locked
+  //   object is prohibited;
+  // - **LOCK_NON_REGULAR_OBJECT** (2051, SECTION_OBJECT): \
+  //   placement of an object of type LOCK that includes at least one object of
+  //   type other than REGULAR is prohibited;
+  // - **QUOTA_EXCEEDED** (2054, SECTION_OBJECT): \
+  //   size quota set by user was exceeded;
+  // - **CONTAINER_NOT_FOUND** (3072, SECTION_CONTAINER): \
+  //   object storage container not found;
+  // - **TOKEN_NOT_FOUND** (4096, SECTION_SESSION): \
+  //   (for trusted object preparation) session private key does not exist or has
+  // been deleted;
+  // - **TOKEN_EXPIRED** (4097, SECTION_SESSION): \
+  //   provided session token has expired.
+  rpc Put(stream PutRequest) returns (PutResponse);
+
+  // Delete the object from a container. There is no immediate removal
+  // guarantee. Object will be marked for removal and deleted eventually.
+  // Notice that some types of objects (see ObjectType) can not be removed,
+  // currently it's Tombstone and Lock.
+  //
+  // Extended headers can change `Delete` behaviour:
+  // * __NEOFS__NETMAP_EPOCH \
+  //   Will use the requsted version of Network Map for object placement
+  //   calculation. DEPRECATED: header ignored by servers.
+  //
+  // Please refer to detailed `XHeader` description.
+  //
+  // Statuses:
+  // - **OK** (0, SECTION_SUCCESS): \
+  //   object has been successfully marked to be removed from the container;
+  // - **INCOMPLETE** (1, SECTION_SUCCESS): \
+  //   some nodes have accepted the deletion mark, but some may still store
+  //   the object;
+  // - Common failures (SECTION_FAILURE_COMMON);
+  // - **ACCESS_DENIED** (2048, SECTION_OBJECT): \
+  //   delete access to the object is denied;
+  // - **LOCKED** (2050, SECTION_OBJECT): \
+  //   deleting a locked object is prohibited;
+  // - **CONTAINER_NOT_FOUND** (3072, SECTION_CONTAINER): \
+  //   object container not found;
+  // - **TOKEN_EXPIRED** (4097, SECTION_SESSION): \
+  //   provided session token has expired.
+  rpc Delete(DeleteRequest) returns (DeleteResponse);
+
+  // Returns the object Headers without data payload. By default full header is
+  // returned. If `main_only` request field is set, the short header with only
+  // the very minimal information will be returned instead.
+  //
+  // Extended headers can change `Head` behaviour:
+  // * __NEOFS__NETMAP_EPOCH \
+  //   Will use the requsted version of Network Map for object placement
+  //   calculation.
+  //
+  // Please refer to detailed `XHeader` description.
+  //
+  // Statuses:
+  // - **OK** (0, SECTION_SUCCESS): \
+  //   object header has been successfully read;
+  // - Common failures (SECTION_FAILURE_COMMON);
+  // - **ACCESS_DENIED** (2048, SECTION_OBJECT): \
+  //   access to operation HEAD of the object is denied;
+  // - **OBJECT_NOT_FOUND** (2049, SECTION_OBJECT): \
+  //   object not found in container;
+  // - **OBJECT_ALREADY_REMOVED** (2052, SECTION_OBJECT): \
+  //   the requested object has been marked as deleted;
+  // - **CONTAINER_NOT_FOUND** (3072, SECTION_CONTAINER): \
+  //   object container not found;
+  // - **TOKEN_EXPIRED** (4097, SECTION_SESSION): \
+  //   provided session token has expired.
+  rpc Head(HeadRequest) returns (HeadResponse);
+
+  // Search objects in container. Search query allows to match by Object
+  // Header's filed values. Please see the corresponding NeoFS Technical
+  // Specification section for more details.
+  //
+  // DEPRECATED: please use SearchV2.
+  //
+  // Extended headers can change `Search` behaviour:
+  // * __NEOFS__NETMAP_EPOCH \
+  //   Will use the requsted version of Network Map for object placement
+  //   calculation.
+  //
+  // Please refer to detailed `XHeader` description.
+  //
+  // Statuses:
+  // - **OK** (0, SECTION_SUCCESS): \
+  //   objects have been successfully selected;
+  // - **INCOMPLETE** (1, SECTION_SUCCESS): \
+  //   some nodes were unable to process the request, so the result may
+  //   not contain all data;
+  // - Common failures (SECTION_FAILURE_COMMON);
+  // - **ACCESS_DENIED** (2048, SECTION_OBJECT): \
+  //   access to operation SEARCH of the object is denied;
+  // - **CONTAINER_NOT_FOUND** (3072, SECTION_CONTAINER): \
+  //   search container not found;
+  // - **TOKEN_EXPIRED** (4097, SECTION_SESSION): \
+  //   provided session token has expired.
+  rpc Search(SearchRequest) returns (stream SearchResponse);
+
+  // Search for objects in a container. Similar to Search, but:
+  // * sorted
+  // * limited in amount of returned data
+  // * single message
+  // * allows for additional header fields to be returned
+  //
+  // Result is ordered by the 1st requested attribute (if any) and object ID.
+  rpc SearchV2(SearchV2Request) returns (SearchV2Response);
+
+  // Get byte range of data payload. Range is set as an (offset, length) tuple.
+  // Like in `Get` method, the response uses gRPC stream. Requested range can be
+  // restored by concatenation of all received payload chunks keeping the receiving
+  // order.
+  //
+  // Extended headers can change `GetRange` behaviour:
+  // * __NEOFS__NETMAP_EPOCH \
+  //   Will use the requsted version of Network Map for object placement
+  //   calculation. DEPRECATED: header ignored by servers.
+  // * __NEOFS__NETMAP_LOOKUP_DEPTH \
+  //   Will try older versions of Network Map to find an object until the depth
+  //   limit is reached. DEPRECATED: header ignored by servers.
+  //
+  // Please refer to detailed `XHeader` description.
+  //
+  // Statuses:
+  // - **OK** (0, SECTION_SUCCESS): \
+  //   data range of the object payload has been successfully read;
+  // - Common failures (SECTION_FAILURE_COMMON);
+  // - **ACCESS_DENIED** (2048, SECTION_OBJECT): \
+  //   access to operation RANGE of the object is denied;
+  // - **OBJECT_NOT_FOUND** (2049, SECTION_OBJECT): \
+  //   object not found in container;
+  // - **OBJECT_ALREADY_REMOVED** (2052, SECTION_OBJECT): \
+  //   the requested object has been marked as deleted.
+  // - **OUT_OF_RANGE** (2053, SECTION_OBJECT): \
+  //   the requested range is out of bounds;
+  // - **CONTAINER_NOT_FOUND** (3072, SECTION_CONTAINER): \
+  //   object container not found;
+  // - **TOKEN_EXPIRED** (4097, SECTION_SESSION): \
+  //   provided session token has expired.
+  rpc GetRange(GetRangeRequest) returns (stream GetRangeResponse);
+
+  // Returns homomorphic or regular hash of object's payload range after
+  // applying XOR operation with the provided `salt`. Ranges are set of (offset,
+  // length) tuples. Hashes order in response corresponds to the ranges order in
+  // the request. Note that hash is calculated for XORed data.
+  //
+  // Extended headers can change `GetRangeHash` behaviour:
+  // * __NEOFS__NETMAP_EPOCH \
+  //   Will use the requsted version of Network Map for object placement
+  //   calculation. DEPRECATED: header ignored by servers.
+  // * __NEOFS__NETMAP_LOOKUP_DEPTH \
+  //   Will try older versions of Network Map to find an object until the depth
+  //   limit is reached. DEPRECATED: header ignored by servers.
+  //
+  // Please refer to detailed `XHeader` description.
+  //
+  // Statuses:
+  // - **OK** (0, SECTION_SUCCESS): \
+  //   data range of the object payload has been successfully hashed;
+  // - Common failures (SECTION_FAILURE_COMMON);
+  // - **ACCESS_DENIED** (2048, SECTION_OBJECT): \
+  //   access to operation RANGEHASH of the object is denied;
+  // - **OBJECT_NOT_FOUND** (2049, SECTION_OBJECT): \
+  //   object not found in container;
+  // - **OUT_OF_RANGE** (2053, SECTION_OBJECT): \
+  //   the requested range is out of bounds;
+  // - **CONTAINER_NOT_FOUND** (3072, SECTION_CONTAINER): \
+  //   object container not found;
+  // - **TOKEN_EXPIRED** (4097, SECTION_SESSION): \
+  //   provided session token has expired.
+  rpc GetRangeHash(GetRangeHashRequest) returns (GetRangeHashResponse);
+
+  // Save replica of the object on the NeoFS storage node. Both client and
+  // server must authenticate NeoFS storage nodes matching storage policy of
+  // the container referenced by the replicated object. Thus, this operation is
+  // purely system: regular users should not pay attention to it but use Put.
+  //
+  // Statuses:
+  // - **OK** (0, SECTION_SUCCESS): \
+  //   the object has been successfully replicated;
+  // - **INTERNAL_SERVER_ERROR** (1024, SECTION_FAILURE_COMMON): \
+  //   internal server error described in the text message;
+  // - **ACCESS_DENIED** (2048, SECTION_OBJECT): \
+  //   the client does not authenticate any NeoFS storage node matching storage
+  //   policy of the container referenced by the replicated object
+  // - **CONTAINER_NOT_FOUND** (3072, SECTION_CONTAINER): \
+  //   the container to which the replicated object is associated was not found.
+  rpc Replicate(ReplicateRequest) returns (ReplicateResponse);
+}
+
+// GET object request.
+//
+// The query for a parent object's EC part locally stored on the server is
+// specified as follows:
+//  - `body.address` is an address of the parent;
+//  - `meta_header.x_headers` includes `__NEOFS__EC_RULE_IDX` and
+//    `__NEOFS__EC_PART_IDX` by object attribute format. Rule index MUST NOT
+//    exceed container's `PlacementPolicy.ec_rules` list. Part index MUST NOT
+//    exceed total part number in the indexed rule.
+// In this case, if `body.address` refers to TOMBSTONE or LOCK object (which
+// cannot have EC parts), the query applies to it.
+message GetRequest {
+  // GET Object request body
+  message Body {
+    // Address of the requested object
+    neo.fs.v2.refs.Address address = 1;
+
+    // If `raw` flag is set, request will work only with objects that are
+    // physically stored on the peer node
+    bool raw = 2;
+  }
+  // Body of get object request message.
+  Body body = 1;
+
+  // Carries request meta information. Header data is used only to regulate
+  // message transport and does not affect request execution.
+  neo.fs.v2.session.RequestMetaHeader meta_header = 2;
+
+  // Carries request verification information. This header is used to
+  // authenticate the nodes of the message route and check the correctness of
+  // transmission.
+  neo.fs.v2.session.RequestVerificationHeader verify_header = 3;
+}
+
+// GET object response
+message GetResponse {
+  // GET Object Response body
+  message Body {
+    // Initial part of the `Object` structure stream. Technically it's a
+    // set of all `Object` structure's fields except `payload`.
+    message Init {
+      // Object's unique identifier.
+      neo.fs.v2.refs.ObjectID object_id = 1;
+
+      // Signed `ObjectID`
+      neo.fs.v2.refs.Signature signature = 2;
+
+      // Object metadata headers
+      Header header = 3;
+    }
+    // Single message in the response stream.
+    oneof object_part {
+      // Initial part of the object stream
+      Init init = 1;
+
+      // Chunked object payload
+      bytes chunk = 2;
+
+      // Meta information of split hierarchy for object assembly.
+      SplitInfo split_info = 3;
+    }
+  }
+  // Body of get object response message.
+  Body body = 1;
+
+  // Carries response meta information. Header data is used only to regulate
+  // message transport and does not affect request execution.
+  neo.fs.v2.session.ResponseMetaHeader meta_header = 2;
+
+  // Carries response verification information. This header is used to
+  // authenticate the nodes of the message route and check the correctness of
+  // transmission.
+  // DEPRECATED: Verify header and payload checksums instead. Servers MUST
+  // attach it for requests with `meta_header.version` <= 2.17.
+  neo.fs.v2.session.ResponseVerificationHeader verify_header = 3;
+}
+
+// PUT object request
+message PutRequest {
+  // PUT request body
+  message Body {
+    // Newly created object structure parameters. If some optional parameters
+    // are not set, they will be calculated by a peer node.
+    message Init {
+      // ObjectID if available.
+      neo.fs.v2.refs.ObjectID object_id = 1;
+
+      // Object signature if available
+      neo.fs.v2.refs.Signature signature = 2;
+
+      // Object's Header. The maximum length is 16KB.
+      Header header = 3;
+
+      // Number of the object copies to store within the RPC call. By default
+      // object is processed according to the container's placement policy.
+      uint32 copies_number = 4;
+    }
+    // Single message in the request stream.
+    oneof object_part {
+      // Initial part of the object stream
+      Init init = 1;
+
+      // Chunked object payload
+      bytes chunk = 2;
+    }
+  }
+  // Body of put object request message.
+  Body body = 1;
+
+  // Carries request meta information. Header data is used only to regulate
+  // message transport and does not affect request execution.
+  neo.fs.v2.session.RequestMetaHeader meta_header = 2;
+
+  // Carries request verification information. This header is used to
+  // authenticate the nodes of the message route and check the correctness of
+  // transmission.
+  neo.fs.v2.session.RequestVerificationHeader verify_header = 3;
+}
+
+// PUT Object response
+message PutResponse {
+  // PUT Object response body
+  message Body {
+    // Identifier of the saved object
+    neo.fs.v2.refs.ObjectID object_id = 1;
+  }
+  // Body of put object response message.
+  Body body = 1;
+
+  // Carries response meta information. Header data is used only to regulate
+  // message transport and does not affect request execution.
+  neo.fs.v2.session.ResponseMetaHeader meta_header = 2;
+
+  // Carries response verification information. This header is used to
+  // authenticate the nodes of the message route and check the correctness of
+  // transmission.
+  neo.fs.v2.session.ResponseVerificationHeader verify_header = 3;
+}
+
+// Object DELETE request
+message DeleteRequest {
+  // Object DELETE request body
+  message Body {
+    // Address of the object to be deleted
+    neo.fs.v2.refs.Address address = 1;
+  }
+  // Body of delete object request message.
+  Body body = 1;
+
+  // Carries request meta information. Header data is used only to regulate
+  // message transport and does not affect request execution.
+  neo.fs.v2.session.RequestMetaHeader meta_header = 2;
+
+  // Carries request verification information. This header is used to
+  // authenticate the nodes of the message route and check the correctness of
+  // transmission.
+  neo.fs.v2.session.RequestVerificationHeader verify_header = 3;
+}
+
+// DeleteResponse body is empty because we cannot guarantee permanent object
+// removal in distributed system.
+message DeleteResponse {
+  // Object DELETE Response has an empty body.
+  message Body {
+    // Address of the tombstone created for the deleted object
+    neo.fs.v2.refs.Address tombstone = 1;
+  }
+
+  // Body of delete object response message.
+  Body body = 1;
+
+  // Carries response meta information. Header data is used only to regulate
+  // message transport and does not affect request execution.
+  neo.fs.v2.session.ResponseMetaHeader meta_header = 2;
+
+  // Carries response verification information. This header is used to
+  // authenticate the nodes of the message route and check the correctness of
+  // transmission.
+  neo.fs.v2.session.ResponseVerificationHeader verify_header = 3;
+}
+
+// Object HEAD request
+message HeadRequest {
+  // Object HEAD request body
+  message Body {
+    // Address of the object with the requested Header
+    neo.fs.v2.refs.Address address = 1;
+
+    // Return only minimal header subset.
+    //
+    // DEPRECATED. This field is ignored.
+    bool main_only = 2;
+
+    // If `raw` flag is set, request will work only with objects that are
+    // physically stored on the peer node
+    bool raw = 3;
+  }
+  // Body of head object request message.
+  Body body = 1;
+
+  // Carries request meta information. Header data is used only to regulate
+  // message transport and does not affect request execution.
+  neo.fs.v2.session.RequestMetaHeader meta_header = 2;
+
+  // Carries request verification information. This header is used to
+  // authenticate the nodes of the message route and check the correctness of
+  // transmission.
+  neo.fs.v2.session.RequestVerificationHeader verify_header = 3;
+}
+
+// Tuple of a full object header and signature of an `ObjectID`. \
+// Signed `ObjectID` is present to verify full header's authenticity through the
+// following steps:
+//
+// 1. Calculate `SHA-256` of the marshalled `Header` structure
+// 2. Check if the resulting hash matches `ObjectID`
+// 3. Check if `ObjectID` signature in `signature` field is correct
+message HeaderWithSignature {
+  // Full object header
+  Header header = 1 [json_name = "header"];
+
+  // Signed `ObjectID` to verify full header's authenticity
+  neo.fs.v2.refs.Signature signature = 2 [json_name = "signature"];
+}
+
+// Object HEAD response.
+//
+// The query for a parent object's EC part locally stored on the server is
+// specified as follows:
+//  - `body.address` is an address of the parent;
+//  - `meta_header.x_headers` includes `__NEOFS__EC_RULE_IDX` and
+//    `__NEOFS__EC_PART_IDX` by object attribute format. Rule index MUST NOT
+//    exceed container's `PlacementPolicy.ec_rules` list. Part index MUST NOT
+//    exceed total part number in the indexed rule.
+// In this case, if `body.address` refers to TOMBSTONE or LOCK object (which
+// cannot have EC parts), the query applies to it.
+message HeadResponse {
+  // Object HEAD response body
+  message Body {
+    // Requested object header, it's part or meta information about split
+    // object.
+    oneof head {
+      // Full object's `Header` with `ObjectID` signature
+      HeaderWithSignature header = 1;
+
+      // Short object header.
+      //
+      // DEPRECATED. Use HeaderWithSignature instead.
+      ShortHeader short_header = 2;
+
+      // Meta information of split hierarchy.
+      SplitInfo split_info = 3;
+    }
+  }
+  // Body of head object response message.
+  Body body = 1;
+
+  // Carries response meta information. Header data is used only to regulate
+  // message transport and does not affect request execution.
+  neo.fs.v2.session.ResponseMetaHeader meta_header = 2;
+
+  // Carries response verification information. This header is used to
+  // authenticate the nodes of the message route and check the correctness of
+  // transmission.
+  // DEPRECATED: Verify header and payload checksums instead. Servers MUST
+  // attach it for requests with `meta_header.version` <= 2.17.
+  neo.fs.v2.session.ResponseVerificationHeader verify_header = 3;
+}
+
+// Object Search request
+message SearchRequest {
+  // Object Search request body
+  message Body {
+    // Container identifier were to search
+    neo.fs.v2.refs.ContainerID container_id = 1;
+
+    // Version of the Query Language used
+    uint32 version = 2;
+
+    // List of search expressions
+    repeated SearchFilter filters = 3;
+  }
+  // Body of search object request message.
+  Body body = 1;
+
+  // Carries request meta information. Header data is used only to regulate
+  // message transport and does not affect request execution.
+  neo.fs.v2.session.RequestMetaHeader meta_header = 2;
+
+  // Carries request verification information. This header is used to
+  // authenticate the nodes of the message route and check the correctness of
+  // transmission.
+  neo.fs.v2.session.RequestVerificationHeader verify_header = 3;
+}
+
+// Search response
+message SearchResponse {
+  // Object Search response body
+  message Body {
+    // List of `ObjectID`s that match the search query
+    repeated neo.fs.v2.refs.ObjectID id_list = 1;
+  }
+  // Body of search object response message.
+  Body body = 1;
+
+  // Carries response meta information. Header data is used only to regulate
+  // message transport and does not affect request execution.
+  neo.fs.v2.session.ResponseMetaHeader meta_header = 2;
+
+  // Carries response verification information. This header is used to
+  // authenticate the nodes of the message route and check the correctness of
+  // transmission.
+  neo.fs.v2.session.ResponseVerificationHeader verify_header = 3;
+}
+
+// Object SearchV2 request
+message SearchV2Request {
+  // Object Search request body
+  message Body {
+    // Container where the search is being performed.
+    neo.fs.v2.refs.ContainerID container_id = 1;
+
+    // Version of the Query Language used.
+    uint32 version = 2;
+
+    // List of search expressions. Limited to 8. If additional attributes are
+    // requested (see attributes below) then the first filter's key MUST be
+    // the first requested attribute. '$Object:containerID' and
+    // '$Object:objectID' filters are prohibited. Numeric filters' values MUST
+    // be in range [-MaxUint256, MaxUint256].
+    repeated SearchFilter filters = 3;
+
+    // Cursor to continue search. Can be omitted or empty for the new search.
+    string cursor = 4;
+
+    // Limits the number of responses to the specified number. Can't be more
+    // than 1000.
+    uint32 count = 5;
+
+    // List of attribute names (including special ones as defined by
+    // SearchFilter key) to include into the reply. Limited to 8, these
+    // attributes also affect result ordering (result is ordered by the 1st one
+    // and then by OID). If additional attributes are requested, then the first
+    // filter's key (see filters above) MUST be the first requested attribute.
+    // '$Object:containerID' and '$Object:objectID' attributes are prohibited.
+    // If meta_header.ttl = 1 and the first filter is not STRING_EQUAL,
+    // values of the first filtered attribute are requested  automatically.
+    repeated string attributes = 6;
+  }
+  // Body of search object request message.
+  Body body = 1;
+
+  // Carries request meta information. Header data is used only to regulate
+  // message transport and does not affect request execution.
+  neo.fs.v2.session.RequestMetaHeader meta_header = 2;
+
+  // Carries request verification information. This header is used to
+  // authenticate the nodes of the message route and check the correctness of
+  // transmission.
+  neo.fs.v2.session.RequestVerificationHeader verify_header = 3;
+}
+
+// SearchV2 response
+message SearchV2Response {
+  // OID with additional requested metadata.
+  message OIDWithMeta {
+    // Object ID that matches search criteria.
+    neo.fs.v2.refs.ObjectID id = 1;
+    // List of attribute data from the respective object, fields
+    // strictly follow requested ones. The only exception are attribute-less
+    // requests with TTL = 1 and the first non-STRING_EQUAL filter: this field
+    // carry value of the first filtered attribute.
+    repeated string attributes = 2;
+  }
+
+  // Main result structure.
+  message Body {
+    // List of object IDs with additional requested attributes.
+    repeated OIDWithMeta result = 1;
+
+    // Cursor that can be used for subsequent requests. For users it's an
+    // opaque string that is omitted or empty when there are no more results
+    // to list. For nodes to interoperate this is defined as the latest OID
+    // for queries without filters and primary (first) attribute value plus
+    // OID. Values are encoded in base64.
+    string cursor = 2;
+  }
+  // Body of search object response message.
+  Body body = 1;
+
+  // Carries response meta information. Header data is used only to regulate
+  // message transport and does not affect request execution.
+  neo.fs.v2.session.ResponseMetaHeader meta_header = 2;
+
+  // Carries response verification information. This header is used to
+  // authenticate the nodes of the message route and check the correctness of
+  // transmission.
+  neo.fs.v2.session.ResponseVerificationHeader verify_header = 3;
+}
+
+// Object payload range. Ranges of zero length SHOULD be considered as invalid
+// except for the special 0:0 request which is interpreted as "get whole
+// payload" and allows to receive payload only when its size is not known.
+message Range {
+  // Offset of the range from the object payload start
+  uint64 offset = 1;
+
+  // Length in bytes of the object payload range
+  uint64 length = 2;
+}
+
+// Request part of object's payload.
+//
+// The query for a parent object's EC part locally stored on the server is
+// specified as follows:
+//  - `body.address` is an address of the parent;
+//  - `meta_header.x_headers` includes `__NEOFS__EC_RULE_IDX` and
+//    `__NEOFS__EC_PART_IDX` by object attribute format. Rule index MUST NOT
+//    exceed container's `PlacementPolicy.ec_rules` list. Part index MUST NOT
+//    exceed total part number in the indexed rule.
+// In this case, if `body.address` refers to TOMBSTONE or LOCK object (which
+// cannot have EC parts), the query applies to it.
+message GetRangeRequest {
+  // Byte range of object's payload request body
+  message Body {
+    // Address of the object containing the requested payload range
+    neo.fs.v2.refs.Address address = 1;
+
+    // Requested payload range
+    Range range = 2;
+
+    // If `raw` flag is set, request will work only with objects that are
+    // physically stored on the peer node.
+    bool raw = 3;
+  }
+
+  // Body of get range object request message.
+  Body body = 1;
+
+  // Carries request meta information. Header data is used only to regulate
+  // message transport and does not affect request execution.
+  neo.fs.v2.session.RequestMetaHeader meta_header = 2;
+
+  // Carries request verification information. This header is used to
+  // authenticate the nodes of the message route and check the correctness of
+  // transmission.
+  neo.fs.v2.session.RequestVerificationHeader verify_header = 3;
+}
+
+// Get part of object's payload
+message GetRangeResponse {
+  // Get Range response body uses streams to transfer the response. Because
+  // object payload considered a byte sequence, there is no need to have some
+  // initial preamble message. The requested byte range is sent as a series
+  // chunks.
+  message Body {
+    // Requested object range or meta information about split object.
+    oneof range_part {
+      // Chunked object payload's range.
+      bytes chunk = 1;
+
+      // Meta information of split hierarchy.
+      SplitInfo split_info = 2;
+    }
+  }
+
+  // Body of get range object response message.
+  Body body = 1;
+
+  // Carries response meta information. Header data is used only to regulate
+  // message transport and does not affect request execution.
+  neo.fs.v2.session.ResponseMetaHeader meta_header = 2;
+
+  // Carries response verification information. This header is used to
+  // authenticate the nodes of the message route and check the correctness of
+  // transmission.
+  neo.fs.v2.session.ResponseVerificationHeader verify_header = 3;
+}
+
+// Get hash of object's payload part
+message GetRangeHashRequest {
+  // Get hash of object's payload part request body.
+  message Body {
+    // Address of the object that containing the requested payload range
+    neo.fs.v2.refs.Address address = 1;
+
+    // List of object's payload ranges to calculate homomorphic hash
+    repeated Range ranges = 2;
+
+    // Binary salt to XOR object's payload ranges before hash calculation
+    bytes salt = 3;
+
+    // Checksum algorithm type
+    neo.fs.v2.refs.ChecksumType type = 4;
+  }
+  // Body of get range hash object request message.
+  Body body = 1;
+
+  // Carries request meta information. Header data is used only to regulate
+  // message transport and does not affect request execution.
+  neo.fs.v2.session.RequestMetaHeader meta_header = 2;
+
+  // Carries request verification information. This header is used to
+  // authenticate the nodes of the message route and check the correctness of
+  // transmission.
+  neo.fs.v2.session.RequestVerificationHeader verify_header = 3;
+}
+
+// Get hash of object's payload part
+message GetRangeHashResponse {
+  // Get hash of object's payload part response body.
+  message Body {
+    // Checksum algorithm type
+    neo.fs.v2.refs.ChecksumType type = 1;
+
+    // List of range hashes in a binary format
+    repeated bytes hash_list = 2;
+  }
+  // Body of get range hash object response message.
+  Body body = 1;
+
+  // Carries response meta information. Header data is used only to regulate
+  // message transport and does not affect request execution.
+  neo.fs.v2.session.ResponseMetaHeader meta_header = 2;
+
+  // Carries response verification information. This header is used to
+  // authenticate the nodes of the message route and check the correctness of
+  // transmission.
+  neo.fs.v2.session.ResponseVerificationHeader verify_header = 3;
+}
+
+// Replicate RPC request
+message ReplicateRequest {
+  // Object to be replicated.
+  neo.fs.v2.object.Object object = 1;
+
+  // Signature of `object.object_id.value` field.
+  neo.fs.v2.refs.Signature signature = 2;
+
+  // Optional flag that requires server side to attach signature of just
+  // replicated object to ensure it has been received correctly. Signature
+  // must be calculated with a key that corresponds to an exposed to the
+  // network map public key of the object receiver.
+  bool sign_object = 3;
+}
+
+// Replicate RPC response
+message ReplicateResponse {
+  // Operation execution status with one of the enumerated codes.
+  neo.fs.v2.status.Status status = 1;
+
+  // Deterministic ECDSA with SHA-256 hashing (RFC 6979) signature of
+  // replicated object. Must be attached if request was made with
+  // `sign_object` flag set.
+  bytes object_signature = 2;
+}

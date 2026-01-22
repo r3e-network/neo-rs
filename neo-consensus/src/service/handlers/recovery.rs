@@ -1,7 +1,10 @@
+use super::super::helpers::{invocation_script_from_signature, signature_from_invocation_script};
 use super::super::ConsensusService;
 use crate::context::ConsensusState;
 use crate::messages::{
-    ChangeViewMessage, CommitMessage, ConsensusPayload, PrepareResponseMessage, RecoveryMessage,
+    ChangeViewMessage, ChangeViewPayloadCompact, CommitMessage, CommitPayloadCompact,
+    ConsensusPayload, PreparationPayloadCompact, PrepareRequestMessage, PrepareResponseMessage,
+    RecoveryMessage,
 };
 use crate::{ChangeViewReason, ConsensusError, ConsensusMessageType, ConsensusResult};
 use tracing::{debug, info, warn};
@@ -23,11 +26,7 @@ impl ConsensusService {
         }
 
         // Build and send recovery message with current state
-        let recovery = RecoveryMessage::new(
-            self.context.block_index,
-            self.context.view_number,
-            self.my_index()?,
-        );
+        let recovery = self.build_recovery_message()?;
 
         let payload =
             self.create_payload(ConsensusMessageType::RecoveryMessage, recovery.serialize())?;
@@ -108,6 +107,11 @@ impl ConsensusService {
                 if cv.validator_index as usize >= self.context.validator_count() {
                     continue;
                 }
+                let Some(signature) =
+                    signature_from_invocation_script(&cv.invocation_script)
+                else {
+                    continue;
+                };
                 let msg = ChangeViewMessage::new(
                     payload.block_index,
                     cv.original_view_number,
@@ -122,7 +126,7 @@ impl ConsensusService {
                     view_number: cv.original_view_number,
                     message_type: ConsensusMessageType::ChangeView,
                     data: msg.serialize(),
-                    witness: cv.invocation_script.clone(),
+                    witness: signature,
                 };
                 self.reprocess_recovery_payload(recovered);
             }
@@ -130,7 +134,10 @@ impl ConsensusService {
             return Ok(());
         }
 
-        if message_view == self.context.view_number && !commit_sent {
+        if message_view == self.context.view_number
+            && !commit_sent
+            && !self.context.not_accepting_payloads_due_to_view_changing()
+        {
             if !self.context.prepare_request_received {
                 if let Some(ref prep_req) = recovery.prepare_request_message {
                     let primary_index = self.context.primary_index();
@@ -139,16 +146,20 @@ impl ConsensusService {
                         .iter()
                         .find(|p| p.validator_index == primary_index)
                     {
-                        let recovered = ConsensusPayload {
-                            network: self.network,
-                            block_index: prep_req.block_index,
-                            validator_index: prep_req.validator_index,
-                            view_number: prep_req.view_number,
-                            message_type: ConsensusMessageType::PrepareRequest,
-                            data: prep_req.serialize(),
-                            witness: primary_prep.invocation_script.clone(),
-                        };
-                        self.reprocess_recovery_payload(recovered);
+                        if let Some(signature) =
+                            signature_from_invocation_script(&primary_prep.invocation_script)
+                        {
+                            let recovered = ConsensusPayload {
+                                network: self.network,
+                                block_index: prep_req.block_index,
+                                validator_index: prep_req.validator_index,
+                                view_number: prep_req.view_number,
+                                message_type: ConsensusMessageType::PrepareRequest,
+                                data: prep_req.serialize(),
+                                witness: signature,
+                            };
+                            self.reprocess_recovery_payload(recovered);
+                        }
                     }
                 }
             }
@@ -169,6 +180,11 @@ impl ConsensusService {
                     if prep.validator_index == primary_index {
                         continue;
                     }
+                    let Some(signature) =
+                        signature_from_invocation_script(&prep.invocation_script)
+                    else {
+                        continue;
+                    };
 
                     let msg = PrepareResponseMessage::new(
                         payload.block_index,
@@ -183,7 +199,7 @@ impl ConsensusService {
                         view_number: message_view,
                         message_type: ConsensusMessageType::PrepareResponse,
                         data: msg.serialize(),
-                        witness: prep.invocation_script.clone(),
+                        witness: signature,
                     };
                     self.reprocess_recovery_payload(recovered);
                 }
@@ -195,9 +211,11 @@ impl ConsensusService {
                 if commit.validator_index as usize >= self.context.validator_count() {
                     continue;
                 }
-                if commit.view_number != self.context.view_number {
+                let Some(signature) =
+                    signature_from_invocation_script(&commit.invocation_script)
+                else {
                     continue;
-                }
+                };
                 let msg = CommitMessage::new(
                     payload.block_index,
                     commit.view_number,
@@ -211,7 +229,7 @@ impl ConsensusService {
                     view_number: commit.view_number,
                     message_type: ConsensusMessageType::Commit,
                     data: msg.serialize(),
-                    witness: commit.invocation_script.clone(),
+                    witness: signature,
                 };
                 self.reprocess_recovery_payload(recovered);
             }
@@ -240,7 +258,7 @@ impl ConsensusService {
                 );
                 // Create and broadcast commit message
                 let block_hash = self.context.proposed_block_hash.unwrap_or_default();
-                let signature = self.sign_block_hash(&block_hash);
+                let signature = self.sign_block_hash(&block_hash)?;
 
                 let commit = CommitMessage::new(
                     self.context.block_index,
@@ -251,10 +269,18 @@ impl ConsensusService {
 
                 let payload =
                     self.create_payload(ConsensusMessageType::Commit, commit.serialize())?;
+                let commit_witness = payload.witness.clone();
+                let commit_invocation = invocation_script_from_signature(&commit_witness);
                 self.broadcast(payload)?;
+                if !commit_witness.is_empty() {
+                    self.context
+                        .commit_invocations
+                        .insert(my_idx, commit_invocation);
+                }
 
                 // Add our own commit
-                self.context.add_commit(my_idx, signature)?;
+                self.context
+                    .add_commit(my_idx, self.context.view_number, signature)?;
                 self.check_commits()?;
             }
         }
@@ -313,15 +339,142 @@ impl ConsensusService {
             return Ok(());
         }
 
-        let recovery = RecoveryMessage::new(
-            self.context.block_index,
-            self.context.view_number,
-            self.my_index()?,
-        );
+        let recovery = self.build_recovery_message()?;
 
         let payload =
             self.create_payload(ConsensusMessageType::RecoveryMessage, recovery.serialize())?;
         self.broadcast(payload)?;
         Ok(())
+    }
+
+    pub(in crate::service) fn build_recovery_message(&self) -> ConsensusResult<RecoveryMessage> {
+        let mut recovery = RecoveryMessage::new(
+            self.context.block_index,
+            self.context.view_number,
+            self.my_index()?,
+        );
+
+        let view_number = self.context.view_number;
+        let change_view_limit = self.context.m();
+        let mut change_views: Vec<ChangeViewPayloadCompact> = self
+            .context
+            .change_views
+            .iter()
+            .filter_map(|(&validator_index, &(new_view, _reason))| {
+                if new_view < view_number {
+                    return None;
+                }
+                let original_view_number = new_view.saturating_sub(1);
+                let timestamp = self
+                    .context
+                    .last_change_view_timestamps
+                    .get(&validator_index)
+                    .copied()
+                    .unwrap_or(0);
+                let invocation_script = self
+                    .context
+                    .change_view_invocations
+                    .get(&validator_index)
+                    .cloned()
+                    .unwrap_or_default();
+                Some(ChangeViewPayloadCompact {
+                    validator_index,
+                    original_view_number,
+                    timestamp,
+                    invocation_script,
+                })
+            })
+            .collect();
+        change_views.sort_by_key(|p| p.validator_index);
+        for payload in change_views.into_iter().take(change_view_limit) {
+            recovery.change_view_messages.push(payload);
+        }
+
+        let primary_index = self.context.primary_index();
+        let has_prepare_request_invocation = self
+            .context
+            .prepare_request_invocation
+            .as_ref()
+            .map(|inv| !inv.is_empty())
+            .unwrap_or(false);
+        let include_prepare_request =
+            self.context.prepare_request_received && has_prepare_request_invocation;
+
+        if include_prepare_request {
+            let prepare_request = PrepareRequestMessage::new(
+                self.context.block_index,
+                self.context.view_number,
+                primary_index,
+                self.context.version,
+                self.context.prev_hash,
+                self.context.proposed_timestamp,
+                self.context.nonce,
+                self.context.proposed_tx_hashes.clone(),
+            );
+            recovery.prepare_request_message = Some(prepare_request);
+
+            if let Some(invocation_script) = self.context.prepare_request_invocation.clone() {
+                recovery
+                    .preparation_messages
+                    .push(PreparationPayloadCompact {
+                        validator_index: primary_index,
+                        invocation_script,
+                    });
+            }
+        } else {
+            let mut counts = std::collections::HashMap::new();
+            for hash in self.context.prepare_response_hashes.values() {
+                *counts.entry(*hash).or_insert(0usize) += 1;
+            }
+            let majority = counts
+                .into_iter()
+                .max_by_key(|(_, count)| *count)
+                .map(|(hash, _)| hash);
+            if let Some(hash) = majority.or(self.context.preparation_hash) {
+                recovery.preparation_hash = Some(hash);
+            }
+        }
+
+        for (&validator_index, invocation_script) in &self.context.prepare_responses {
+            if validator_index == primary_index && include_prepare_request {
+                continue;
+            }
+            recovery
+                .preparation_messages
+                .push(PreparationPayloadCompact {
+                    validator_index,
+                    invocation_script: invocation_script.clone(),
+                });
+        }
+
+        let commit_sent = self
+            .context
+            .my_index
+            .and_then(|idx| self.context.commits.get(&idx))
+            .is_some();
+        if commit_sent {
+            for (&validator_index, signature) in &self.context.commits {
+                let invocation_script = self
+                    .context
+                    .commit_invocations
+                    .get(&validator_index)
+                    .cloned()
+                    .unwrap_or_default();
+                let commit_view = self
+                    .context
+                    .commit_view_numbers
+                    .get(&validator_index)
+                    .copied()
+                    .unwrap_or(self.context.view_number);
+                recovery.commit_messages.push(CommitPayloadCompact {
+                    view_number: commit_view,
+                    validator_index,
+                    signature: signature.clone(),
+                    invocation_script,
+                });
+            }
+        }
+
+        Ok(recovery)
     }
 }

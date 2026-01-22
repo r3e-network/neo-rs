@@ -1,22 +1,32 @@
-use hyper::server::conn::AddrStream;
+use futures::stream;
+use hyper::server::accept::from_stream;
 use hyper::service::{make_service_fn, service_fn, Service};
 use neo_core::{neo_system::NeoSystem, services::RpcService, wallets::Wallet};
 use once_cell::sync::Lazy;
 use parking_lot::{Mutex, RwLock, RwLockReadGuard};
 use prometheus::Counter;
+use p12::PFX;
+use rustls::server::AllowAnyAuthenticatedClient;
+use rustls::{Certificate, PrivateKey, RootCertStore, ServerConfig};
 use serde_json::Value;
 use tokio::{
-    sync::{oneshot, Semaphore},
+    io::{AsyncRead, AsyncWrite, ReadBuf},
+    net::{TcpListener, TcpStream},
+    sync::{oneshot, OwnedSemaphorePermit, Semaphore},
     task::JoinHandle,
     time::sleep,
 };
-use tracing::{error, info, warn};
+use tokio_rustls::TlsAcceptor;
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
+use std::io;
 use std::net::SocketAddr;
+use std::pin::Pin;
 use std::sync::{Arc, Weak};
+use std::task::{Context, Poll};
 use std::time::Duration;
 
 use super::rcp_server_settings::RpcServerConfig;
@@ -24,7 +34,10 @@ use super::routes::{build_rpc_routes, build_ws_route, BasicAuth};
 use super::session::Session;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_method_attribute::RpcMethodDescriptor;
+use sha1::{Digest, Sha1};
+use socket2::{SockRef, TcpKeepalive};
 use warp::Filter;
+use warp::filters::compression;
 
 pub type RpcCallback =
     dyn Fn(&RpcServer, &[Value]) -> Result<Value, RpcException> + Send + Sync + 'static;
@@ -74,6 +87,7 @@ pub struct RpcServer {
     handler_lookup: Arc<RwLock<HashMap<String, Arc<RpcHandler>>>>,
     started: bool,
     wallet: Arc<RwLock<Option<Arc<dyn Wallet>>>>,
+    wallet_change_callback: Option<Arc<dyn Fn(Option<Arc<dyn Wallet>>) + Send + Sync>>,
     /// Session storage using Mutex instead of RwLock to enforce exclusive access.
     ///
     /// # Security Note
@@ -100,6 +114,7 @@ impl RpcServer {
             handler_lookup: Arc::new(RwLock::new(HashMap::new())),
             started: false,
             wallet: Arc::new(RwLock::new(None)),
+            wallet_change_callback: None,
             sessions: Arc::new(Mutex::new(HashMap::new())),
             server_task: None,
             shutdown_signal: None,
@@ -158,22 +173,19 @@ impl RpcServer {
 
         self.self_handle = Some(handle.clone());
 
-        if !self.settings.ssl_cert.is_empty()
-            || !self.settings.ssl_cert_password.is_empty()
-            || !self.settings.trusted_authorities.is_empty()
-        {
-            error!(
-                "RPC TLS configuration (SslCert/SslCertPassword/TrustedAuthorities) is currently \
-                 unsupported. Refusing to start the server to avoid running plaintext while TLS \
-                 is expected. Remove TLS settings or place the server behind a TLS terminator."
-            );
-            return;
-        }
+        let tls_config = match build_tls_config(&self.settings) {
+            Ok(config) => config,
+            Err(err) => {
+                error!("RPC TLS configuration error: {}", err);
+                return;
+            }
+        };
+        let tls_enabled = tls_config.is_some();
 
         // Security warning for production deployments without TLS
         let has_auth = !self.settings.rpc_user.trim().is_empty();
         let is_localhost = self.settings.bind_address.is_loopback();
-        if has_auth && !is_localhost {
+        if has_auth && !is_localhost && !tls_enabled {
             warn!(
                 "SECURITY WARNING: RPC server is binding to non-localhost address ({}) with \
                 authentication enabled but WITHOUT TLS encryption. Credentials will be \
@@ -184,14 +196,6 @@ impl RpcServer {
                 self.settings.bind_address
             );
         }
-        if has_auth && self.settings.enable_cors && self.settings.allow_origins.is_empty() {
-            error!(
-                "RPC CORS wildcard ('*') cannot be used with authentication enabled. Provide \
-                 explicit allow_origins or disable CORS."
-            );
-            return;
-        }
-
         let disabled_methods: Arc<HashSet<String>> = Arc::new(
             self.settings
                 .disabled_methods
@@ -200,7 +204,7 @@ impl RpcServer {
                 .collect(),
         );
         let auth = Arc::new(BasicAuth::from_settings(&self.settings));
-        let semaphore = Arc::new(Semaphore::new(
+        let connection_limiter = Arc::new(Semaphore::new(
             self.settings.max_concurrent_connections.max(1),
         ));
         let address = SocketAddr::new(self.settings.bind_address, self.settings.port);
@@ -209,9 +213,10 @@ impl RpcServer {
             handle.clone(),
             disabled_methods,
             auth.clone(),
-            semaphore,
             self.settings.clone(),
-        );
+        )
+        .with(compression::gzip())
+        .map(warp::reply::Reply::into_response);
 
         // Combine RPC routes with WebSocket route if enabled
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
@@ -225,45 +230,215 @@ impl RpcServer {
             rpc_routes.boxed()
         };
         let svc = warp::service(routes);
-        let make_svc = make_service_fn(move |conn: &AddrStream| {
-            let remote_addr = conn.remote_addr();
-            let svc = svc.clone();
-
-            async move {
-                Ok::<_, Infallible>(service_fn(move |mut req: hyper::Request<hyper::Body>| {
-                    req.extensions_mut().insert(remote_addr);
-                    let mut svc = svc.clone();
-                    async move { svc.call(req).await }
-                }))
+        let (task, bound_addr) = if let Some(tls_config) = tls_config {
+            if self.settings.trusted_authorities.is_empty() {
+                info!("RPC TLS enabled (client certificates optional)");
+            } else {
+                info!(
+                    "RPC TLS enabled with {} trusted authorities",
+                    self.settings.trusted_authorities.len()
+                );
             }
-        });
 
-        let mut builder = match hyper::Server::try_bind(&address) {
-            Ok(builder) => builder,
-            Err(err) => {
-                error!("error binding RPC server to {}: {}", address, err);
+            let std_listener = match std::net::TcpListener::bind(address) {
+                Ok(listener) => listener,
+                Err(err) => {
+                    error!("error binding RPC TLS server to {}: {}", address, err);
+                    return;
+                }
+            };
+            let bound_addr = match std_listener.local_addr() {
+                Ok(addr) => addr,
+                Err(err) => {
+                    error!("error getting RPC TLS bound address: {}", err);
+                    return;
+                }
+            };
+            if let Err(err) = std_listener.set_nonblocking(true) {
+                error!("error configuring RPC TLS listener: {}", err);
                 return;
             }
+            let listener = match TcpListener::from_std(std_listener) {
+                Ok(listener) => listener,
+                Err(err) => {
+                    error!("error initializing RPC TLS listener: {}", err);
+                    return;
+                }
+            };
+
+            let tls_acceptor = TlsAcceptor::from(tls_config);
+            let keepalive = self.settings.keep_alive_timeout_duration();
+            let incoming = stream::unfold(listener, move |listener| {
+                let tls_acceptor = tls_acceptor.clone();
+                let connection_limiter = connection_limiter.clone();
+                async move {
+                    loop {
+                        match listener.accept().await {
+                            Ok((stream, remote_addr)) => {
+                                apply_tcp_keepalive(&stream, keepalive);
+                                let permit = match connection_limiter.clone().try_acquire_owned() {
+                                    Ok(permit) => permit,
+                                    Err(_) => {
+                                        debug!(
+                                            "RPC max concurrent connections reached; dropping {}",
+                                            remote_addr
+                                        );
+                                        continue;
+                                    }
+                                };
+                                match tls_acceptor.accept(stream).await {
+                                    Ok(tls_stream) => {
+                                        let conn = TlsConnection {
+                                            stream: tls_stream,
+                                            remote_addr,
+                                            _permit: permit,
+                                        };
+                                        return Some((Ok::<TlsConnection, io::Error>(conn), listener));
+                                    }
+                                    Err(err) => {
+                                        warn!(
+                                            "RPC TLS handshake failed for {}: {}",
+                                            remote_addr, err
+                                        );
+                                        continue;
+                                    }
+                                }
+                            }
+                            Err(err) => {
+                                error!("RPC TLS accept error: {}", err);
+                                sleep(Duration::from_millis(250)).await;
+                                continue;
+                            }
+                        }
+                    }
+                }
+            });
+            let incoming = from_stream(incoming);
+            let svc = svc.clone();
+            let make_svc = make_service_fn(move |conn: &TlsConnection| {
+                let remote_addr = conn.remote_addr();
+                let svc = svc.clone();
+
+                async move {
+                    Ok::<_, Infallible>(service_fn(move |mut req: hyper::Request<hyper::Body>| {
+                        req.extensions_mut().insert(remote_addr);
+                        let mut svc = svc.clone();
+                        async move { svc.call(req).await }
+                    }))
+                }
+            });
+
+            let mut builder = hyper::Server::builder(incoming);
+            if self.settings.request_headers_timeout > 0 {
+                builder = builder
+                    .http1_header_read_timeout(self.settings.request_headers_timeout_duration());
+            }
+
+            let server = builder.serve(make_svc);
+            let server = server.with_graceful_shutdown(async move {
+                let _ = shutdown_rx.await;
+            });
+            let task = tokio::spawn(async move {
+                if let Err(err) = server.await {
+                    error!("RPC server error: {}", err);
+                }
+            });
+            (task, bound_addr)
+        } else {
+            let svc = svc.clone();
+            let std_listener = match std::net::TcpListener::bind(address) {
+                Ok(listener) => listener,
+                Err(err) => {
+                    error!("error binding RPC server to {}: {}", address, err);
+                    return;
+                }
+            };
+            let bound_addr = match std_listener.local_addr() {
+                Ok(addr) => addr,
+                Err(err) => {
+                    error!("error getting RPC bound address: {}", err);
+                    return;
+                }
+            };
+            if let Err(err) = std_listener.set_nonblocking(true) {
+                error!("error configuring RPC listener: {}", err);
+                return;
+            }
+            let listener = match TcpListener::from_std(std_listener) {
+                Ok(listener) => listener,
+                Err(err) => {
+                    error!("error initializing RPC listener: {}", err);
+                    return;
+                }
+            };
+
+            let keepalive = self.settings.keep_alive_timeout_duration();
+            let incoming = stream::unfold(listener, move |listener| {
+                let connection_limiter = connection_limiter.clone();
+                async move {
+                    loop {
+                        match listener.accept().await {
+                            Ok((stream, remote_addr)) => {
+                                apply_tcp_keepalive(&stream, keepalive);
+                                let permit = match connection_limiter.clone().try_acquire_owned() {
+                                    Ok(permit) => permit,
+                                    Err(_) => {
+                                        debug!(
+                                            "RPC max concurrent connections reached; dropping {}",
+                                            remote_addr
+                                        );
+                                        continue;
+                                    }
+                                };
+                                let conn = PlainConnection {
+                                    stream,
+                                    remote_addr,
+                                    _permit: permit,
+                                };
+                                return Some((Ok::<PlainConnection, io::Error>(conn), listener));
+                            }
+                            Err(err) => {
+                                error!("RPC accept error: {}", err);
+                                sleep(Duration::from_millis(250)).await;
+                                continue;
+                            }
+                        }
+                    }
+                }
+            });
+            let incoming = from_stream(incoming);
+            let make_svc = make_service_fn(move |conn: &PlainConnection| {
+                let remote_addr = conn.remote_addr();
+                let svc = svc.clone();
+
+                async move {
+                    Ok::<_, Infallible>(service_fn(move |mut req: hyper::Request<hyper::Body>| {
+                        req.extensions_mut().insert(remote_addr);
+                        let mut svc = svc.clone();
+                        async move { svc.call(req).await }
+                    }))
+                }
+            });
+
+            let mut builder = hyper::Server::builder(incoming);
+            if self.settings.request_headers_timeout > 0 {
+                builder = builder
+                    .http1_header_read_timeout(self.settings.request_headers_timeout_duration());
+            }
+
+            let server = builder.serve(make_svc);
+            let server = server.with_graceful_shutdown(async move {
+                let _ = shutdown_rx.await;
+            });
+            let task = tokio::spawn(async move {
+                if let Err(err) = server.await {
+                    error!("RPC server error: {}", err);
+                }
+            });
+            (task, bound_addr)
         };
 
-        if self.settings.request_headers_timeout > 0 {
-            builder =
-                builder.http1_header_read_timeout(self.settings.request_headers_timeout_duration());
-        }
-        builder = builder.tcp_keepalive(self.settings.keep_alive_timeout_duration());
-
-        let server = builder.serve(make_svc);
-        let bound_addr = server.local_addr();
-        let server = server.with_graceful_shutdown(async move {
-            let _ = shutdown_rx.await;
-        });
-
         info!("RPC server bound on {}", bound_addr);
-        let task = tokio::spawn(async move {
-            if let Err(err) = server.await {
-                error!("RPC server error: {}", err);
-            }
-        });
 
         self.shutdown_signal = Some(shutdown_tx);
         self.server_task = Some(task);
@@ -358,10 +533,20 @@ impl RpcServer {
 
     pub fn set_wallet(&self, wallet: Option<Arc<dyn Wallet>>) {
         *self.wallet.write() = wallet;
+        if let Some(callback) = &self.wallet_change_callback {
+            callback(self.wallet.read().clone());
+        }
     }
 
     pub fn wallet(&self) -> Option<Arc<dyn Wallet>> {
         self.wallet.read().clone()
+    }
+
+    pub fn set_wallet_change_callback(
+        &mut self,
+        callback: Option<Arc<dyn Fn(Option<Arc<dyn Wallet>>) + Send + Sync>>,
+    ) {
+        self.wallet_change_callback = callback;
     }
 
     fn session_expiration(&self) -> Duration {
@@ -407,6 +592,200 @@ impl RpcServer {
 impl RpcService for RpcServer {
     fn is_started(&self) -> bool {
         self.started
+    }
+}
+
+struct TlsConnection {
+    stream: tokio_rustls::server::TlsStream<TcpStream>,
+    remote_addr: SocketAddr,
+    _permit: OwnedSemaphorePermit,
+}
+
+impl TlsConnection {
+    fn remote_addr(&self) -> SocketAddr {
+        self.remote_addr
+    }
+}
+
+impl AsyncRead for TlsConnection {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.get_mut().stream).poll_read(cx, buf)
+    }
+}
+
+impl AsyncWrite for TlsConnection {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        data: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        Pin::new(&mut self.get_mut().stream).poll_write(cx, data)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.get_mut().stream).poll_flush(cx)
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.get_mut().stream).poll_shutdown(cx)
+    }
+}
+
+struct PlainConnection {
+    stream: TcpStream,
+    remote_addr: SocketAddr,
+    _permit: OwnedSemaphorePermit,
+}
+
+impl PlainConnection {
+    fn remote_addr(&self) -> SocketAddr {
+        self.remote_addr
+    }
+}
+
+impl AsyncRead for PlainConnection {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.get_mut().stream).poll_read(cx, buf)
+    }
+}
+
+impl AsyncWrite for PlainConnection {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        data: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        Pin::new(&mut self.get_mut().stream).poll_write(cx, data)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.get_mut().stream).poll_flush(cx)
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.get_mut().stream).poll_shutdown(cx)
+    }
+}
+
+fn build_tls_config(settings: &RpcServerConfig) -> Result<Option<Arc<ServerConfig>>, String> {
+    let cert_path = settings.ssl_cert.trim();
+    if cert_path.is_empty() {
+        if !settings.ssl_cert_password.is_empty() || !settings.trusted_authorities.is_empty() {
+            warn!(
+                "RPC TLS settings provided without SslCert; TLS remains disabled (network {}).",
+                settings.network
+            );
+        }
+        return Ok(None);
+    }
+
+    let cert_bytes = std::fs::read(cert_path)
+        .map_err(|err| format!("failed to read TLS certificate {}: {}", cert_path, err))?;
+    let pfx =
+        PFX::parse(&cert_bytes).map_err(|err| format!("invalid PKCS#12 {}: {:?}", cert_path, err))?;
+    if !pfx.verify_mac(settings.ssl_cert_password.as_str()) {
+        return Err(format!(
+            "invalid TLS certificate password for {}",
+            cert_path
+        ));
+    }
+
+    let certs_der = pfx
+        .cert_x509_bags(settings.ssl_cert_password.as_str())
+        .map_err(|err| {
+            format!(
+                "failed to read TLS certificate chain from {}: {:?}",
+                cert_path, err
+            )
+        })?;
+    if certs_der.is_empty() {
+        return Err(format!("no TLS certificates found in {}", cert_path));
+    }
+    let certs = certs_der.into_iter().map(Certificate).collect::<Vec<_>>();
+
+    let mut keys = pfx
+        .key_bags(settings.ssl_cert_password.as_str())
+        .map_err(|err| format!("failed to read TLS private key from {}: {:?}", cert_path, err))?;
+    let key_der = keys
+        .pop()
+        .ok_or_else(|| format!("no TLS private key found in {}", cert_path))?;
+    let key = PrivateKey(key_der);
+
+    let builder = ServerConfig::builder().with_safe_defaults();
+    let builder = if settings.trusted_authorities.is_empty() {
+        builder.with_no_client_auth()
+    } else {
+        let roots = load_trusted_authorities(&settings.trusted_authorities)?;
+        builder.with_client_cert_verifier(Arc::new(AllowAnyAuthenticatedClient::new(roots)))
+    };
+    let config = builder
+        .with_single_cert(certs, key)
+        .map_err(|err| format!("failed to configure TLS for {}: {}", cert_path, err))?;
+
+    Ok(Some(Arc::new(config)))
+}
+
+fn load_trusted_authorities(thumbprints: &[String]) -> Result<RootCertStore, String> {
+    let allowed: HashSet<String> = thumbprints
+        .iter()
+        .map(|value| normalize_thumbprint(value))
+        .filter(|value| !value.is_empty())
+        .collect();
+    let native_certs = rustls_native_certs::load_native_certs()
+        .map_err(|err| format!("failed to load native TLS roots: {:?}", err))?;
+
+    let mut roots = RootCertStore::empty();
+    let mut matched = 0usize;
+    for cert in native_certs {
+        let cert_der = cert.0;
+        let thumbprint = thumbprint_hex(&cert_der);
+        if allowed.contains(&thumbprint) {
+            let rustls_cert = Certificate(cert_der);
+            roots
+                .add(&rustls_cert)
+                .map_err(|err| format!("failed to add trusted authority {}: {}", thumbprint, err))?;
+            matched += 1;
+        }
+    }
+
+    if matched == 0 {
+        warn!("RPC TLS configured with TrustedAuthorities, but no matching roots were found.");
+    }
+
+    Ok(roots)
+}
+
+fn thumbprint_hex(cert_der: &[u8]) -> String {
+    let mut hasher = Sha1::new();
+    hasher.update(cert_der);
+    let digest = hasher.finalize();
+    hex::encode_upper(digest)
+}
+
+fn normalize_thumbprint(value: &str) -> String {
+    value
+        .trim()
+        .trim_matches('"')
+        .replace(':', "")
+        .to_ascii_uppercase()
+}
+
+fn apply_tcp_keepalive(stream: &TcpStream, keepalive: Option<Duration>) {
+    let Some(keepalive) = keepalive else {
+        return;
+    };
+    let sock_ref = SockRef::from(stream);
+    let config = TcpKeepalive::new().with_time(keepalive);
+    if let Err(err) = sock_ref.set_tcp_keepalive(&config) {
+        warn!("error setting TCP keepalive: {}", err);
     }
 }
 

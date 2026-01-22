@@ -13,7 +13,10 @@ use crate::persistence::{DataCache, IStore};
 use crate::NeoSystem;
 use parking_lot::RwLock;
 use std::any::Any;
+use std::panic::{self, AssertUnwindSafe};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use tracing::error;
 
 /// Runtime handler for token balance/transfer tracking.
 ///
@@ -22,6 +25,7 @@ use std::sync::Arc;
 pub struct TokensTracker {
     settings: TokensTrackerSettings,
     trackers: RwLock<Vec<Box<dyn Tracker>>>,
+    disabled: AtomicBool,
 }
 
 impl TokensTracker {
@@ -60,12 +64,56 @@ impl TokensTracker {
         Self {
             settings,
             trackers: RwLock::new(trackers),
+            disabled: AtomicBool::new(false),
         }
     }
 
     /// Returns a reference to the settings.
     pub fn settings(&self) -> &TokensTrackerSettings {
         &self.settings
+    }
+
+    fn handle_panic(
+        &self,
+        tracker: &str,
+        action: &str,
+        payload: Box<dyn Any + Send>,
+    ) -> bool {
+        let message = panic_message(&payload);
+        use crate::unhandled_exception_policy::UnhandledExceptionPolicy;
+        match self.settings.exception_policy {
+            UnhandledExceptionPolicy::Ignore => return true,
+            _ => {
+                error!(
+                    target: "neo::tokens_tracker",
+                    track = tracker,
+                    action = action,
+                    error = message,
+                    "tokens tracker panicked"
+                );
+            }
+        }
+
+        match self.settings.exception_policy {
+            UnhandledExceptionPolicy::Ignore => true,
+            UnhandledExceptionPolicy::Continue => true,
+            UnhandledExceptionPolicy::StopPlugin => {
+                self.disabled.store(true, Ordering::Relaxed);
+                false
+            }
+            UnhandledExceptionPolicy::StopNode => std::process::exit(1),
+            UnhandledExceptionPolicy::Terminate => std::process::abort(),
+        }
+    }
+
+    fn run_tracker_action<F>(&self, tracker: &str, action: &str, f: F) -> bool
+    where
+        F: FnOnce(),
+    {
+        match panic::catch_unwind(AssertUnwindSafe(f)) {
+            Ok(()) => true,
+            Err(payload) => self.handle_panic(tracker, action, payload),
+        }
     }
 }
 
@@ -84,10 +132,24 @@ impl ICommittingHandler for TokensTracker {
             return;
         }
 
+        if self.disabled.load(Ordering::Relaxed) {
+            return;
+        }
+
         let mut trackers = self.trackers.write();
         for tracker in trackers.iter_mut() {
-            tracker.reset_batch();
-            tracker.on_persist(system, block, snapshot, application_executed_list);
+            if self.disabled.load(Ordering::Relaxed) {
+                break;
+            }
+            let track_name = tracker.track_name().to_string();
+            if !self.run_tracker_action(&track_name, "reset_batch", || tracker.reset_batch()) {
+                break;
+            }
+            if !self.run_tracker_action(&track_name, "on_persist", || {
+                tracker.on_persist(system, block, snapshot, application_executed_list)
+            }) {
+                break;
+            }
         }
     }
 }
@@ -101,9 +163,29 @@ impl ICommittedHandler for TokensTracker {
             return;
         }
 
+        if self.disabled.load(Ordering::Relaxed) {
+            return;
+        }
+
         let mut trackers = self.trackers.write();
         for tracker in trackers.iter_mut() {
-            tracker.commit();
+            if self.disabled.load(Ordering::Relaxed) {
+                break;
+            }
+            let track_name = tracker.track_name().to_string();
+            if !self.run_tracker_action(&track_name, "commit", || tracker.commit()) {
+                break;
+            }
         }
+    }
+}
+
+fn panic_message(payload: &Box<dyn Any + Send>) -> String {
+    if let Some(message) = payload.downcast_ref::<&str>() {
+        message.to_string()
+    } else if let Some(message) = payload.downcast_ref::<String>() {
+        message.clone()
+    } else {
+        "panic".to_string()
     }
 }

@@ -131,7 +131,7 @@ async fn prepare_response_rejects_mismatched_hash() {
 }
 
 #[tokio::test]
-async fn prepare_response_with_wrong_view_rejected() {
+async fn prepare_response_with_wrong_view_ignored() {
     let network = 0x4E454F;
     let (tx, _rx) = mpsc::channel(100);
     let (validators, _keys) = create_validators_with_keys(4);
@@ -150,7 +150,8 @@ async fn prepare_response_with_wrong_view_rejected() {
     );
 
     let result = service.process_message(payload);
-    assert!(matches!(result, Err(ConsensusError::WrongView { .. })));
+    assert!(result.is_ok());
+    assert!(service.context().prepare_responses.is_empty());
 }
 
 #[tokio::test]

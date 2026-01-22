@@ -1,32 +1,70 @@
 use super::super::ConsensusService;
-use neo_primitives::UInt256;
+use crate::{ConsensusError, ConsensusResult};
+use neo_primitives::{UInt160, UInt256};
+use neo_vm::{op_code::OpCode, script_builder::ScriptBuilder};
 use tracing::{debug, warn};
 
+pub(in crate::service) fn invocation_script_from_signature(signature: &[u8]) -> Vec<u8> {
+    let mut builder = ScriptBuilder::new();
+    builder.emit_push(signature);
+    builder.to_array()
+}
+
+pub(in crate::service) fn signature_from_invocation_script(invocation: &[u8]) -> Option<Vec<u8>> {
+    if invocation.len() != 66 {
+        return None;
+    }
+    if invocation[0] != OpCode::PUSHDATA1 as u8 || invocation[1] != 0x40 {
+        return None;
+    }
+    Some(invocation[2..66].to_vec())
+}
+
 impl ConsensusService {
+    fn my_script_hash(&self) -> ConsensusResult<UInt160> {
+        let my_index = self.my_index()?;
+        self.context
+            .validators
+            .get(my_index as usize)
+            .map(|validator| validator.script_hash)
+            .ok_or(ConsensusError::InvalidValidatorIndex(my_index))
+    }
+
     /// Signs data with the private key using secp256r1 ECDSA
-    pub(in crate::service) fn sign(&self, data: &[u8]) -> Vec<u8> {
+    pub(in crate::service) fn sign(&self, data: &[u8]) -> ConsensusResult<Vec<u8>> {
+        if let Some(signer) = &self.signer {
+            let script_hash = self.my_script_hash()?;
+            let signature = signer.sign(data, &script_hash)?;
+            if signature.len() != 64 {
+                return Err(ConsensusError::InvalidSignatureLength {
+                    expected: 64,
+                    got: signature.len(),
+                });
+            }
+            return Ok(signature);
+        }
+
         use neo_crypto::Secp256r1Crypto;
 
-        // Sign with secp256r1 if we have a valid private key
-        if self.private_key.len() == 32 {
-            let mut key_bytes = [0u8; 32];
-            key_bytes.copy_from_slice(&self.private_key);
-
-            match Secp256r1Crypto::sign(data, &key_bytes) {
-                Ok(sig) => sig.to_vec(),
-                Err(e) => {
-                    warn!(error = %e, "ECDSA signing failed");
-                    Vec::new()
-                }
-            }
-        } else {
-            // Fallback for testing without valid key
-            Vec::new()
+        if self.private_key.len() != 32 {
+            return Err(ConsensusError::state_error(
+                "Consensus signing key not available",
+            ));
         }
+
+        let mut key_bytes = [0u8; 32];
+        key_bytes.copy_from_slice(&self.private_key);
+
+        Secp256r1Crypto::sign(data, &key_bytes)
+            .map(|sig| sig.to_vec())
+            .map_err(|e| {
+                warn!(error = %e, "ECDSA signing failed");
+                ConsensusError::state_error(format!("ECDSA signing failed: {e}"))
+            })
     }
 
     /// Signs a block hash
-    pub(in crate::service) fn sign_block_hash(&self, hash: &UInt256) -> Vec<u8> {
+    pub(in crate::service) fn sign_block_hash(&self, hash: &UInt256) -> ConsensusResult<Vec<u8>> {
         let mut sign_data = Vec::with_capacity(4 + 32);
         sign_data.extend_from_slice(&self.network.to_le_bytes());
         sign_data.extend_from_slice(&hash.as_bytes());

@@ -16,7 +16,8 @@ Recommendations and a sample `RpcServer.json` for running the RPC plugin securel
 - Use the CLI `--rpc-hardened` switch to force auth, disable CORS, and disable `openwallet`/`listplugins` at startup; this will also fail if credentials are missing.
 - TLS termination is **not supported** by the Rust RPC plugin. Always terminate TLS at a reverse proxy or tunnel; setting `ssl_cert`/`ssl_cert_password`/`trusted_authorities` will cause the server to refuse to start.
 - Expose only what you need: avoid `listplugins` and `openwallet` on untrusted networks; keep them disabled or restrict via proxy ACLs.
-- Default plugin set is limited to the stable plugins (dbft, rpc-server, rocksdb-store, application-logs, sqlite-wallet). `tokens-tracker` is currently a stub and will log a warning if loaded.
+- Compatibility note: set `NEO_LISTPLUGINS_COMPAT=fixture` (and optionally `NEO_PLUGIN_VERSION=3.0.0.0`) to emulate legacy C# `listplugins` output when needed for fixture-based clients.
+- Default plugin set is limited to the stable services (rpc-server, rocksdb-store, application-logs, tokens-tracker). `tokens-tracker` is optional and only exposes RPC methods when enabled. `state-service` is optional and only enabled when configured (or via `--state-root`). Consensus (dBFT) is not wired into `neo-node` yet.
 - Keep `/healthz` bound to localhost by default (`--health-port`/`NEO_HEALTH_PORT`); if you proxy it, ensure it stays internal.
 - Consider setting `--health-max-header-lag` to fail health checks on large sync gaps.
 

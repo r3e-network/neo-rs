@@ -1,17 +1,24 @@
 use super::helpers::{create_validators_with_keys, sign_commit, sign_payload};
 use crate::messages::{
-    ChangeViewPayloadCompact, CommitMessage, CommitPayloadCompact, ConsensusPayload,
-    PreparationPayloadCompact, PrepareRequestMessage, PrepareResponseMessage, RecoveryMessage,
-    RecoveryRequestMessage,
+    ChangeViewMessage, ChangeViewPayloadCompact, CommitMessage, CommitPayloadCompact,
+    ConsensusPayload, PreparationPayloadCompact, PrepareRequestMessage, PrepareResponseMessage,
+    RecoveryMessage, RecoveryRequestMessage,
 };
 use crate::ConsensusMessageType;
-use crate::{ConsensusEvent, ConsensusService};
+use crate::{ChangeViewReason, ConsensusEvent, ConsensusService};
 use neo_primitives::UInt256;
+use neo_vm::ScriptBuilder;
 use tokio::sync::mpsc;
 
 use super::super::helpers::{
     compute_header_hash, compute_merkle_root, compute_next_consensus_address,
 };
+
+fn invocation_script(signature: &[u8]) -> Vec<u8> {
+    let mut builder = ScriptBuilder::new();
+    builder.emit_push(signature);
+    builder.to_array()
+}
 
 #[tokio::test]
 async fn recovery_request_broadcasts_recovery_message() {
@@ -93,7 +100,7 @@ async fn recovery_request_responds_when_commit_sent() {
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
     service
         .context
-        .add_commit(0, vec![0u8; 64])
+        .add_commit(0, 0, vec![0u8; 64])
         .expect("commit");
 
     let msg = RecoveryRequestMessage::new(0, 0, 1, 1_234);
@@ -131,26 +138,36 @@ async fn recovery_message_change_view_triggers_view_change() {
 
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
 
+    let build_change_view = |validator_index: u8, timestamp: u64, key: &[u8; 32]| {
+        let msg = ChangeViewMessage::new(
+            0,
+            0,
+            validator_index,
+            timestamp,
+            ChangeViewReason::Timeout,
+        );
+        let mut payload = ConsensusPayload::new(
+            network,
+            0,
+            validator_index,
+            0,
+            ConsensusMessageType::ChangeView,
+            msg.serialize(),
+        );
+        sign_payload(&service, &mut payload, key);
+        ChangeViewPayloadCompact {
+            validator_index,
+            original_view_number: 0,
+            timestamp,
+            invocation_script: invocation_script(&payload.witness),
+        }
+    };
+
     let mut recovery = RecoveryMessage::new(0, 1, 1);
     recovery.change_view_messages = vec![
-        ChangeViewPayloadCompact {
-            validator_index: 1,
-            original_view_number: 0,
-            timestamp: 1_100,
-            invocation_script: Vec::new(),
-        },
-        ChangeViewPayloadCompact {
-            validator_index: 2,
-            original_view_number: 0,
-            timestamp: 1_200,
-            invocation_script: Vec::new(),
-        },
-        ChangeViewPayloadCompact {
-            validator_index: 3,
-            original_view_number: 0,
-            timestamp: 1_300,
-            invocation_script: Vec::new(),
-        },
+        build_change_view(1, 1_100, &keys[1]),
+        build_change_view(2, 1_200, &keys[2]),
+        build_change_view(3, 1_300, &keys[3]),
     ];
 
     let mut payload = ConsensusPayload::new(
@@ -181,7 +198,7 @@ async fn recovery_message_change_view_triggers_view_change() {
 }
 
 #[tokio::test]
-async fn recovery_message_ignores_commits_for_wrong_view() {
+async fn recovery_message_commits_for_other_view_do_not_commit_block() {
     let network = 0x4E454F;
     let (tx, mut rx) = mpsc::channel(100);
     let (validators, keys) = create_validators_with_keys(4);
@@ -190,26 +207,26 @@ async fn recovery_message_ignores_commits_for_wrong_view() {
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
 
     let mut recovery = RecoveryMessage::new(0, 0, 1);
-    recovery.commit_messages = vec![
-        CommitPayloadCompact {
+    let mut commit_messages = Vec::new();
+    for (validator_index, key) in keys.iter().take(3).enumerate() {
+        let signature = vec![0u8; 64];
+        let mut payload = ConsensusPayload::new(
+            network,
+            0,
+            validator_index as u8,
+            1,
+            ConsensusMessageType::Commit,
+            CommitMessage::new(0, 1, validator_index as u8, signature.clone()).serialize(),
+        );
+        sign_payload(&service, &mut payload, key);
+        commit_messages.push(CommitPayloadCompact {
             view_number: 1,
-            validator_index: 0,
-            signature: vec![0u8; 64],
-            invocation_script: Vec::new(),
-        },
-        CommitPayloadCompact {
-            view_number: 1,
-            validator_index: 1,
-            signature: vec![0u8; 64],
-            invocation_script: Vec::new(),
-        },
-        CommitPayloadCompact {
-            view_number: 1,
-            validator_index: 2,
-            signature: vec![0u8; 64],
-            invocation_script: Vec::new(),
-        },
-    ];
+            validator_index: validator_index as u8,
+            signature,
+            invocation_script: invocation_script(&payload.witness),
+        });
+    }
+    recovery.commit_messages = commit_messages;
 
     let mut payload = ConsensusPayload::new(
         network,
@@ -232,7 +249,7 @@ async fn recovery_message_ignores_commits_for_wrong_view() {
     }
 
     assert!(committed.is_none());
-    assert_eq!(service.context().commits.len(), 0);
+    assert_eq!(service.context().commits.len(), 3);
 }
 
 #[tokio::test]
@@ -261,7 +278,7 @@ async fn recovery_message_ignores_invalid_prepare_request_signature() {
     recovery.prepare_request_message = Some(prepare_request);
     recovery.preparation_messages = vec![PreparationPayloadCompact {
         validator_index: 0,
-        invocation_script: bad_payload.witness.clone(),
+        invocation_script: invocation_script(&bad_payload.witness),
     }];
 
     let mut payload = ConsensusPayload::new(
@@ -294,7 +311,7 @@ async fn recovery_message_ignores_invalid_prepare_response_signature() {
     recovery.preparation_hash = Some(UInt256::zero());
     recovery.preparation_messages = vec![PreparationPayloadCompact {
         validator_index: 1,
-        invocation_script: vec![0xAB; 64],
+        invocation_script: invocation_script(&vec![0xAB; 64]),
     }];
 
     let mut payload = ConsensusPayload::new(
@@ -328,19 +345,19 @@ async fn recovery_message_ignores_invalid_commit_signature() {
             view_number: 0,
             validator_index: 0,
             signature: vec![0x42; 64],
-            invocation_script: vec![0xAA; 64],
+            invocation_script: invocation_script(&vec![0xAA; 64]),
         },
         CommitPayloadCompact {
             view_number: 0,
             validator_index: 1,
             signature: vec![0x42; 64],
-            invocation_script: vec![0xAA; 64],
+            invocation_script: invocation_script(&vec![0xAA; 64]),
         },
         CommitPayloadCompact {
             view_number: 0,
             validator_index: 2,
             signature: vec![0x42; 64],
-            invocation_script: vec![0xAA; 64],
+            invocation_script: invocation_script(&vec![0xAA; 64]),
         },
     ];
 
@@ -392,7 +409,7 @@ async fn recovery_message_ignores_prepare_response_with_mismatched_hash() {
 
     recovery.preparation_messages = vec![PreparationPayloadCompact {
         validator_index: 1,
-        invocation_script: prep_payload.witness.clone(),
+        invocation_script: invocation_script(&prep_payload.witness),
     }];
 
     let mut payload = ConsensusPayload::new(
@@ -449,7 +466,7 @@ async fn recovery_message_with_commits_triggers_block_commit() {
     recovery.prepare_request_message = Some(prepare_request);
     recovery.preparation_messages = vec![PreparationPayloadCompact {
         validator_index: 0,
-        invocation_script: prepare_payload.witness.clone(),
+        invocation_script: invocation_script(&prepare_payload.witness),
     }];
     recovery.commit_messages = vec![
         {
@@ -467,7 +484,7 @@ async fn recovery_message_with_commits_triggers_block_commit() {
                 view_number: 0,
                 validator_index: 0,
                 signature,
-                invocation_script: payload.witness.clone(),
+                invocation_script: invocation_script(&payload.witness),
             }
         },
         {
@@ -485,7 +502,7 @@ async fn recovery_message_with_commits_triggers_block_commit() {
                 view_number: 0,
                 validator_index: 1,
                 signature,
-                invocation_script: payload.witness.clone(),
+                invocation_script: invocation_script(&payload.witness),
             }
         },
         {
@@ -503,7 +520,7 @@ async fn recovery_message_with_commits_triggers_block_commit() {
                 view_number: 0,
                 validator_index: 2,
                 signature,
-                invocation_script: payload.witness.clone(),
+                invocation_script: invocation_script(&payload.witness),
             }
         },
     ];
@@ -529,4 +546,90 @@ async fn recovery_message_with_commits_triggers_block_commit() {
     }
 
     assert_eq!(committed, Some(0));
+}
+
+#[tokio::test]
+async fn recovery_response_includes_compact_payloads() {
+    let network = 0x4E454F;
+    let (tx, _rx) = mpsc::channel(100);
+    let (validators, keys) = create_validators_with_keys(4);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+
+    service.start(0, 1_000, UInt256::zero(), 0).unwrap();
+
+    service
+        .context
+        .add_change_view(1, 1, ChangeViewReason::Timeout, 1_111)
+        .unwrap();
+    service
+        .context
+        .change_view_invocations
+        .insert(1, invocation_script(&vec![0xAA; 64]));
+
+    service.context.prepare_request_received = true;
+    service.context.version = 0;
+    service.context.prev_hash = UInt256::zero();
+    service.context.proposed_timestamp = 2_222;
+    service.context.nonce = 7;
+    service.context.proposed_tx_hashes = vec![UInt256::from([0x01; 32])];
+    service.context.prepare_request_invocation = Some(invocation_script(&vec![0xBB; 64]));
+
+    service
+        .context
+        .add_prepare_response(
+            2,
+            invocation_script(&vec![0xCC; 64]),
+            Some(UInt256::from([0x10; 32])),
+        )
+        .unwrap();
+
+    service.context.add_commit(0, 0, vec![0x11; 64]).unwrap();
+    service
+        .context
+        .commit_invocations
+        .insert(0, invocation_script(&vec![0x12; 64]));
+    service.context.add_commit(3, 0, vec![0xDD; 64]).unwrap();
+    service
+        .context
+        .commit_invocations
+        .insert(3, invocation_script(&vec![0xEE; 64]));
+
+    let recovery = service.build_recovery_message().unwrap();
+
+    assert!(recovery.prepare_request_message.is_some());
+    let change_view = recovery
+        .change_view_messages
+        .iter()
+        .find(|msg| msg.validator_index == 1)
+        .expect("change view");
+    assert_eq!(change_view.original_view_number, 0);
+    assert_eq!(change_view.timestamp, 1_111);
+    assert_eq!(
+        change_view.invocation_script,
+        invocation_script(&vec![0xAA; 64])
+    );
+
+    assert!(
+        recovery
+            .preparation_messages
+            .iter()
+            .any(|msg| msg.validator_index == 0)
+    );
+    assert!(
+        recovery
+            .preparation_messages
+            .iter()
+            .any(|msg| msg.validator_index == 2)
+    );
+
+    let commit = recovery
+        .commit_messages
+        .iter()
+        .find(|msg| msg.validator_index == 3)
+        .expect("commit");
+    assert_eq!(commit.signature, vec![0xDD; 64]);
+    assert_eq!(
+        commit.invocation_script,
+        invocation_script(&vec![0xEE; 64])
+    );
 }
