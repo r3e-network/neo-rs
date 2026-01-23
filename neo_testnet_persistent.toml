@@ -1,0 +1,70 @@
+# Neo Rust Node TestNet Configuration
+# For testing Neo N3 TestNet connectivity
+
+[network]
+# Network type: TestNet
+network_type = "TestNet"
+# Magic number for TestNet (Neo N3 T5)
+network_magic = 0x3554334E  # TestNet magic N3T5
+
+[p2p]
+# P2P listening port (TestNet standard)
+listen_port = 20333
+# Whether to enable message compression
+enable_compression = true
+# Minimum desired peer connections
+min_desired_connections = 5
+# Maximum number of connected peers
+max_connections = 20
+# Maximum connections from the same address
+max_connections_per_address = 3
+# Maximum known hashes tracked
+max_known_hashes = 1000
+# Broadcast history entries to retain
+broadcast_history_limit = 1024
+
+# TestNet seed nodes (official Neo TestNet infrastructure)
+seed_nodes = [
+    "seed1t5.neo.org:20333",
+    "seed2t5.neo.org:20333",
+    "seed3t5.neo.org:20333",
+    "seed4t5.neo.org:20333",
+    "seed5t5.neo.org:20333"
+]
+
+[blockchain]
+# Block time in seconds (Neo N3 standard)
+block_time = 15
+
+[storage]
+# Storage backend: RocksDB for persistent blockchain data
+backend = "rocksdb"
+# Data directory for blockchain storage
+path = "data/testnet"
+
+[rpc]
+# Enable RPC server for querying blockchain data
+enabled = true
+bind_address = "127.0.0.1"
+port = 20332
+
+[logging]
+# Enable CLI logging output for debugging
+active = true
+# Print logs to the console
+console_output = true
+# Debug log level for testing
+level = "debug"
+# Plain text format for readability
+format = "plain"
+# Directory for log files
+path = "Logs"
+
+[plugins]
+download_url = "https://api.github.com/repos/neo-project/neo/releases"
+prerelease = false
+
+[unlock_wallet]
+is_active = false
+path = ""
+password = ""

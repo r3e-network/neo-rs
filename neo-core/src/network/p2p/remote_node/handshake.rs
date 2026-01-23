@@ -24,8 +24,12 @@ impl RemoteNode {
 
         let mut connection = self.connection.lock().await;
         connection.set_state(ConnectionState::Handshaking);
-        connection.compression_allowed =
-            self.local_version.allow_compression && self.config.enable_compression;
+        
+        // Check if compression is allowed based on capabilities (C# parity)
+        let allow_compression = !self.local_version.capabilities
+            .iter()
+            .any(|c| matches!(c, crate::network::p2p::capabilities::NodeCapability::DisableCompression));
+        connection.compression_allowed = allow_compression && self.config.enable_compression;
 
         let message = NetworkMessage::new(ProtocolMessage::Version(self.local_version.clone()));
         drop(connection);

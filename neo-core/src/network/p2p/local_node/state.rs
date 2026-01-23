@@ -289,7 +289,7 @@ impl LocalNode {
 
         VersionPayload::create(
             &self.settings,
-            &self.node_key,
+            self.nonce,
             self.user_agent.clone(),
             capabilities,
         )
@@ -384,7 +384,8 @@ impl LocalNode {
             return false;
         }
 
-        if version.node_id == VersionPayload::compute_node_id(&self.settings, &version.node_key) {
+        // Check if this is our own nonce (self-connection)
+        if version.nonce == self.nonce {
             return false;
         }
 
@@ -417,7 +418,7 @@ impl LocalNode {
         let nodes = self.read_remote_nodes();
         let duplicate = nodes.values().any(|entry| {
             let existing_ip = Self::normalize_ip(entry.snapshot.remote_address);
-            existing_ip == remote_ip && entry.version.node_id == version.node_id
+            existing_ip == remote_ip && entry.version.nonce == version.nonce
         });
         drop(nodes);
 

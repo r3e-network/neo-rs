@@ -586,9 +586,16 @@ impl RemoteNode {
 
         {
             let mut connection = self.connection.lock().await;
-            connection.compression_allowed = self.config.enable_compression
-                && self.local_version.allow_compression
-                && payload.allow_compression;
+            
+            // Check compression based on capabilities (C# parity)
+            let local_allows = !self.local_version.capabilities
+                .iter()
+                .any(|c| matches!(c, crate::network::p2p::capabilities::NodeCapability::DisableCompression));
+            let remote_allows = !payload.capabilities
+                .iter()
+                .any(|c| matches!(c, crate::network::p2p::capabilities::NodeCapability::DisableCompression));
+                
+            connection.compression_allowed = self.config.enable_compression && local_allows && remote_allows;
             connection.set_node_info();
         }
 
@@ -605,7 +612,9 @@ impl RemoteNode {
             user_agent = %payload.user_agent,
             start_height = snapshot.last_block_index,
             listen_port = snapshot.listen_tcp_port,
-            allow_compression = payload.allow_compression,
+            allow_compression = !payload.capabilities
+                .iter()
+                .any(|c| matches!(c, crate::network::p2p::capabilities::NodeCapability::DisableCompression)),
             "received version payload"
         );
 
