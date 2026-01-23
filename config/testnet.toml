@@ -1,0 +1,61 @@
+# Neo N3 TestNet Node Configuration
+# Professional development and testing configuration
+
+[network]
+network_magic = 0x3554334E  # TestNet magic number
+address_version = 0x35
+
+[storage]
+backend = "rocksdb"
+data_dir = "./data/testnet"
+read_only = false
+
+[p2p]
+port = 20333
+max_connections = 50
+min_desired_connections = 5
+seed_nodes = [
+    "seed1t5.neo.org:20333",
+    "seed2t5.neo.org:20333",
+    "seed3t5.neo.org:20333",
+    "seed4t5.neo.org:20333",
+    "seed5t5.neo.org:20333"
+]
+enable_compression = true
+broadcast_history_limit = 50000
+
+[rpc]
+enabled = true
+port = 20332
+bind_address = "127.0.0.1"
+cors_enabled = true
+auth_enabled = false
+max_gas_invoke = 50000000
+max_iterator_results = 100
+disabled_methods = []
+
+[consensus]
+enabled = false
+auto_start = false
+
+[telemetry]
+[telemetry.metrics]
+enabled = true
+port = 9091
+bind_address = "127.0.0.1"
+
+[logging]
+level = "info"
+format = "pretty"
+file_path = "./logs/neo-node-testnet.log"
+max_file_size = "50MB"
+max_files = 5
+
+[blockchain]
+block_time = 15000  # 15 seconds in milliseconds
+max_transactions_per_block = 512
+max_free_transactions_per_block = 20
+
+[mempool]
+max_transactions = 25000
+max_transactions_per_sender = 100

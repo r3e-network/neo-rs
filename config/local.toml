@@ -1,0 +1,55 @@
+# Neo N3 Local Development Configuration
+# Minimal configuration for local development and testing
+
+[network]
+network_magic = 0x4C4F4341  # "LOCA" in hex
+address_version = 0x35
+
+[storage]
+backend = "memory"
+data_dir = "./data/local"
+read_only = false
+
+[p2p]
+port = 30333
+max_connections = 10
+min_desired_connections = 1
+seed_nodes = []
+enable_compression = false
+broadcast_history_limit = 1000
+
+[rpc]
+enabled = true
+port = 30332
+bind_address = "127.0.0.1"
+cors_enabled = true
+auth_enabled = false
+max_gas_invoke = 50000000
+max_iterator_results = 100
+disabled_methods = []
+
+[consensus]
+enabled = false
+auto_start = false
+
+[telemetry]
+[telemetry.metrics]
+enabled = true
+port = 9092
+bind_address = "127.0.0.1"
+
+[logging]
+level = "debug"
+format = "pretty"
+file_path = "./logs/neo-node-local.log"
+max_file_size = "10MB"
+max_files = 3
+
+[blockchain]
+block_time = 1000  # 1 second for fast development
+max_transactions_per_block = 100
+max_free_transactions_per_block = 50
+
+[mempool]
+max_transactions = 1000
+max_transactions_per_sender = 50

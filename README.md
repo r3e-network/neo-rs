@@ -1,9 +1,67 @@
 # neo-rs
 
-Rust implementation of the Neo N3 node stack, including the virtual machine, core protocol logic, and `neo-cli` command line interface.
+Professional Rust implementation of the Neo N3 blockchain node and CLI tools.
 
-For a high-level tour of crate boundaries and service lifecycles, see `docs/ARCHITECTURE.md`.
-For metrics and health payload fields, see `docs/METRICS.md`.
+[![Build Status](https://github.com/r3e-network/neo-rs/workflows/CI/badge.svg)](https://github.com/r3e-network/neo-rs/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Rust Version](https://img.shields.io/badge/rust-1.75+-blue.svg)](https://www.rust-lang.org)
+
+## Quick Start
+
+### Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/r3e-network/neo-rs.git
+cd neo-rs
+
+# Build all components
+cargo build --release
+```
+
+### Running a Node
+
+#### Simple Usage
+```bash
+# TestNet node (default)
+./target/release/neo-node
+
+# MainNet node
+./target/release/neo-node --network mainnet
+
+# Local development node
+./target/release/neo-node --network local --log-level debug
+```
+
+#### Advanced Usage
+```bash
+# Using environment variables
+NEO_NETWORK=testnet NEO_DATA_DIR=./data/testnet ./target/release/neo-node
+
+# Using configuration file
+./target/release/neo-node --config config/testnet.toml
+
+# Production mainnet with metrics
+./target/release/neo-node --network mainnet --data-dir /opt/neo/data --metrics
+```
+
+### Using the CLI Client
+
+```bash
+# Get node status
+./target/release/neo-cli node status
+
+# Get current block height
+./target/release/neo-cli blockchain height
+
+# Get block information
+./target/release/neo-cli blockchain block 1000 --verbose
+
+# Invoke smart contract (read-only)
+./target/release/neo-cli contract invoke 0xcontract123 "balanceOf" --params '["0xaddress123"]'
+```
+
+📖 **See [CLI Usage Guide](docs/CLI_USAGE.md) for comprehensive documentation.**
 
 ## Documentation
 

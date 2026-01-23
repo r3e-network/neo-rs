@@ -1,0 +1,244 @@
+# Neo-rs Professional Makefile
+.PHONY: all build build-release clean test lint format install help
+.PHONY: run-testnet run-mainnet run-local stop-node
+.PHONY: cli-status cli-height cli-peers docker-build docker-run
+
+# Default target
+all: build
+
+# Build targets
+build:
+	@echo "Building neo-rs in debug mode..."
+	cargo build
+
+build-release:
+	@echo "Building neo-rs in release mode..."
+	cargo build --release
+
+# Clean build artifacts
+clean:
+	@echo "Cleaning build artifacts..."
+	cargo clean
+
+# Test targets
+test:
+	@echo "Running tests..."
+	cargo test
+
+test-all:
+	@echo "Running all tests including ignored..."
+	cargo test -- --include-ignored
+
+# Code quality
+lint:
+	@echo "Running clippy..."
+	cargo clippy --all-targets --all-features -- -D warnings
+
+format:
+	@echo "Formatting code..."
+	cargo fmt
+
+format-check:
+	@echo "Checking code format..."
+	cargo fmt -- --check
+
+# Installation
+install: build-release
+	@echo "Installing neo-node and neo-cli..."
+	cargo install --path neo-node --force
+	cargo install --path neo-cli --force
+
+# Node operations
+run-testnet: build-release
+	@echo "Starting TestNet node..."
+	NEO_NETWORK=testnet NEO_DATA_DIR=./data/testnet ./target/release/neo-node
+
+run-mainnet: build-release
+	@echo "Starting MainNet node..."
+	NEO_NETWORK=mainnet NEO_DATA_DIR=./data/mainnet ./target/release/neo-node
+
+run-local: build-release
+	@echo "Starting local development node..."
+	NEO_NETWORK=local NEO_DATA_DIR=./data/local NEO_LOG_LEVEL=debug ./target/release/neo-node
+
+run-testnet-bg: build-release
+	@echo "Starting TestNet node in background..."
+	nohup NEO_NETWORK=testnet NEO_DATA_DIR=./data/testnet ./target/release/neo-node > testnet.log 2>&1 &
+	@echo "Node started. Check testnet.log for output."
+
+run-mainnet-bg: build-release
+	@echo "Starting MainNet node in background..."
+	nohup NEO_NETWORK=mainnet NEO_DATA_DIR=./data/mainnet ./target/release/neo-node > mainnet.log 2>&1 &
+	@echo "Node started. Check mainnet.log for output."
+
+stop-node:
+	@echo "Stopping neo-node processes..."
+	pkill -f neo-node || true
+
+# CLI operations
+cli-status: build-release
+	@echo "Getting node status..."
+	./target/release/neo-cli node status
+
+cli-height: build-release
+	@echo "Getting current block height..."
+	./target/release/neo-cli blockchain height
+
+cli-peers: build-release
+	@echo "Getting peer information..."
+	./target/release/neo-cli node peers
+
+cli-version: build-release
+	@echo "Getting node version..."
+	./target/release/neo-cli node version
+
+# Configuration
+config-validate-testnet:
+	@echo "Validating TestNet configuration..."
+	./target/release/neo-node validate config/testnet.toml
+
+config-validate-mainnet:
+	@echo "Validating MainNet configuration..."
+	./target/release/neo-node validate config/mainnet.toml
+
+config-show-testnet:
+	@echo "Showing TestNet configuration..."
+	NEO_NETWORK=testnet ./target/release/neo-node config
+
+config-show-mainnet:
+	@echo "Showing MainNet configuration..."
+	NEO_NETWORK=mainnet ./target/release/neo-node config
+
+# Docker targets
+docker-build:
+	@echo "Building Docker image..."
+	docker build -t neo-node:latest .
+
+docker-run-testnet:
+	@echo "Running TestNet node in Docker..."
+	docker run -d --name neo-testnet \
+		-p 20332:20332 -p 20333:20333 \
+		-v neo-testnet-data:/data \
+		-e NEO_NETWORK=testnet \
+		-e NEO_DATA_DIR=/data \
+		neo-node:latest
+
+docker-run-mainnet:
+	@echo "Running MainNet node in Docker..."
+	docker run -d --name neo-mainnet \
+		-p 10332:10332 -p 10333:10333 \
+		-v neo-mainnet-data:/data \
+		-e NEO_NETWORK=mainnet \
+		-e NEO_DATA_DIR=/data \
+		neo-node:latest
+
+docker-stop:
+	@echo "Stopping Docker containers..."
+	docker stop neo-testnet neo-mainnet || true
+	docker rm neo-testnet neo-mainnet || true
+
+# Development helpers
+dev-setup:
+	@echo "Setting up development environment..."
+	rustup component add clippy rustfmt
+	cargo install cargo-watch
+
+dev-watch:
+	@echo "Starting development watch mode..."
+	cargo watch -x "build" -x "test"
+
+# Benchmarks
+bench:
+	@echo "Running benchmarks..."
+	cargo bench
+
+# Documentation
+docs:
+	@echo "Building documentation..."
+	cargo doc --no-deps --open
+
+docs-all:
+	@echo "Building documentation with dependencies..."
+	cargo doc --open
+
+# Release preparation
+release-check: format-check lint test
+	@echo "Running release checks..."
+	cargo check --release
+	@echo "Release checks passed!"
+
+# Monitoring and logs
+logs-testnet:
+	@echo "Showing TestNet logs..."
+	tail -f testnet.log
+
+logs-mainnet:
+	@echo "Showing MainNet logs..."
+	tail -f mainnet.log
+
+monitor-testnet:
+	@echo "Monitoring TestNet node..."
+	watch -n 5 './target/release/neo-cli node status'
+
+monitor-mainnet:
+	@echo "Monitoring MainNet node..."
+	NEO_RPC_URL=http://127.0.0.1:10332 watch -n 5 './target/release/neo-cli node status'
+
+# Help
+help:
+	@echo "Neo-rs Professional Build System"
+	@echo ""
+	@echo "Build Commands:"
+	@echo "  build           Build in debug mode"
+	@echo "  build-release   Build in release mode"
+	@echo "  clean           Clean build artifacts"
+	@echo "  install         Install binaries to system"
+	@echo ""
+	@echo "Node Operations:"
+	@echo "  run-testnet     Run TestNet node (foreground)"
+	@echo "  run-mainnet     Run MainNet node (foreground)"
+	@echo "  run-local       Run local development node"
+	@echo "  run-testnet-bg  Run TestNet node (background)"
+	@echo "  run-mainnet-bg  Run MainNet node (background)"
+	@echo "  stop-node       Stop all neo-node processes"
+	@echo ""
+	@echo "CLI Operations:"
+	@echo "  cli-status      Get node status"
+	@echo "  cli-height      Get current block height"
+	@echo "  cli-peers       Get peer information"
+	@echo "  cli-version     Get node version"
+	@echo ""
+	@echo "Configuration:"
+	@echo "  config-validate-testnet   Validate TestNet config"
+	@echo "  config-validate-mainnet   Validate MainNet config"
+	@echo "  config-show-testnet       Show TestNet config"
+	@echo "  config-show-mainnet       Show MainNet config"
+	@echo ""
+	@echo "Development:"
+	@echo "  test            Run tests"
+	@echo "  test-all        Run all tests including ignored"
+	@echo "  lint            Run clippy linter"
+	@echo "  format          Format code"
+	@echo "  format-check    Check code formatting"
+	@echo "  dev-setup       Setup development environment"
+	@echo "  dev-watch       Watch and rebuild on changes"
+	@echo "  bench           Run benchmarks"
+	@echo "  docs            Build and open documentation"
+	@echo ""
+	@echo "Docker:"
+	@echo "  docker-build         Build Docker image"
+	@echo "  docker-run-testnet   Run TestNet in Docker"
+	@echo "  docker-run-mainnet   Run MainNet in Docker"
+	@echo "  docker-stop          Stop Docker containers"
+	@echo ""
+	@echo "Monitoring:"
+	@echo "  logs-testnet      Show TestNet logs"
+	@echo "  logs-mainnet      Show MainNet logs"
+	@echo "  monitor-testnet   Monitor TestNet node"
+	@echo "  monitor-mainnet   Monitor MainNet node"
+	@echo ""
+	@echo "Environment Variables:"
+	@echo "  NEO_NETWORK       Network (mainnet/testnet/local)"
+	@echo "  NEO_DATA_DIR      Data directory"
+	@echo "  NEO_LOG_LEVEL     Log level (debug/info/warn/error)"
+	@echo "  NEO_RPC_URL       RPC endpoint for CLI"
