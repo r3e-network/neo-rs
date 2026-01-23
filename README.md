@@ -5,6 +5,17 @@ Rust implementation of the Neo N3 node stack, including the virtual machine, cor
 For a high-level tour of crate boundaries and service lifecycles, see `docs/ARCHITECTURE.md`.
 For metrics and health payload fields, see `docs/METRICS.md`.
 
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [Architecture](./docs/ARCHITECTURE.md) | Neo system architecture and crate boundaries |
+| [Architecture Comparison](./docs/ARCHITECTURE_COMPARISON.md) | C# vs Rust implementation differences |
+| [Plugin System](./docs/PLUGIN_SYSTEM.md) | Plugin architecture and adding new services |
+| [CLI Architecture](./docs/CLI_ARCHITECTURE.md) | CLI design and wallet operation model |
+| [Deployment](./docs/DEPLOYMENT.md) | Production deployment guide |
+| [Operations](./docs/OPERATIONS.md) | Day-to-day operations and maintenance |
+
 ## Architecture
 
 ```
