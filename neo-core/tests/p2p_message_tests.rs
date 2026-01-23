@@ -10,6 +10,8 @@ use neo_core::network::p2p::payloads::inv_payload::{InvPayload, MAX_HASHES_COUNT
 use neo_core::network::p2p::payloads::ping_payload::PingPayload;
 use neo_core::network::p2p::payloads::InventoryType;
 use neo_core::network::p2p::payloads::VersionPayload;
+use neo_core::protocol_settings::ProtocolSettings;
+use neo_core::wallets::KeyPair;
 use neo_core::UInt256;
 
 /// Tests Message payload max size constant (32 MiB)
@@ -197,25 +199,24 @@ fn test_inv_payload_serialization() {
 /// Tests VersionPayload creation
 #[test]
 fn test_version_payload_creation() {
-    let version = VersionPayload::create(
-        neo_core::constants::TESTNET_MAGIC,
-        12345,
-        "/neo-rs:0.4/".to_string(),
-        vec![],
-    );
-    // Network should match the provided value
-    assert_eq!(version.network, neo_core::constants::TESTNET_MAGIC);
-    assert_eq!(version.nonce, 12345);
+    let settings = ProtocolSettings::default();
+    let key_pair = KeyPair::generate().unwrap();
+    let version = VersionPayload::create(&settings, &key_pair, "/neo-rs:0.4/".to_string(), vec![]);
+    assert_eq!(version.network, settings.network);
     assert!(version.user_agent.contains("neo-rs"));
+    assert!(!version.node_id.is_zero());
+    assert!(!version.signature.is_empty());
 }
 
 /// Tests VersionPayload capabilities
 #[test]
 fn test_version_payload_capabilities() {
     use neo_core::network::p2p::capabilities::NodeCapability;
+    let settings = ProtocolSettings::default();
+    let key_pair = KeyPair::generate().unwrap();
     let version = VersionPayload::create(
-        neo_core::constants::TESTNET_MAGIC,
-        12345,
+        &settings,
+        &key_pair,
         "/neo-rs:0.4/".to_string(),
         vec![NodeCapability::FullNode { start_height: 100 }],
     );

@@ -22,8 +22,7 @@ fn build_neofs_header_payload_includes_fields() {
     headers.insert("X-Attributes", HeaderValue::from_static("{\"k\":\"v\"}"));
 
     let payload = build_neofs_header_payload(&headers);
-    let parsed: serde_json::Value =
-        serde_json::from_str(&payload).expect("valid json");
+    let parsed: serde_json::Value = serde_json::from_str(&payload).expect("valid json");
     assert_eq!(parsed["objectID"]["value"], object_b64);
     assert_eq!(parsed["header"]["containerID"]["value"], container_b64);
     assert_eq!(parsed["header"]["ownerID"]["value"], owner_b64);
@@ -51,8 +50,7 @@ fn build_neofs_header_payload_falls_back_to_attribute_headers() {
     headers.insert("X-Attribute-Custom", HeaderValue::from_static("value"));
 
     let payload = build_neofs_header_payload(&headers);
-    let parsed: serde_json::Value =
-        serde_json::from_str(&payload).expect("valid json");
+    let parsed: serde_json::Value = serde_json::from_str(&payload).expect("valid json");
     assert_eq!(parsed["header"]["containerID"]["value"], container_b64);
     let attributes = parsed["header"]["attributes"]
         .as_array()

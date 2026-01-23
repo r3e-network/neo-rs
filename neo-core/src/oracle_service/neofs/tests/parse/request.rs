@@ -10,8 +10,7 @@ fn parse_neofs_request_payload() {
     let container = sample_neofs_id(1);
     let object = sample_neofs_id(2);
     let request =
-        parse_neofs_request(&format!("neofs:{}/{}", container, object))
-            .expect("parse payload");
+        parse_neofs_request(&format!("neofs:{}/{}", container, object)).expect("parse payload");
     assert_eq!(request.container, container);
     assert_eq!(request.object, object);
     assert!(matches!(request.command, NeoFsCommand::Payload));
@@ -39,11 +38,8 @@ fn parse_neofs_request_rejects_double_slash() {
 fn parse_neofs_request_range() {
     let container = sample_neofs_id(1);
     let object = sample_neofs_id(2);
-    let request = parse_neofs_request(&format!(
-        "neofs:{}/{}/range/10|20",
-        container, object
-    ))
-    .expect("parse range");
+    let request = parse_neofs_request(&format!("neofs:{}/{}/range/10|20", container, object))
+        .expect("parse range");
     assert_eq!(request.container, container);
     assert_eq!(request.object, object);
     match request.command {
@@ -59,11 +55,8 @@ fn parse_neofs_request_range() {
 fn parse_neofs_request_range_percent_decoded() {
     let container = sample_neofs_id(1);
     let object = sample_neofs_id(2);
-    let request = parse_neofs_request(&format!(
-        "neofs:{}/{}/range/10%7C20",
-        container, object
-    ))
-    .expect("parse range");
+    let request = parse_neofs_request(&format!("neofs:{}/{}/range/10%7C20", container, object))
+        .expect("parse range");
     match request.command {
         NeoFsCommand::Range(range) => {
             assert_eq!(range.offset, 10);
@@ -82,18 +75,14 @@ fn parse_neofs_request_header_and_hash() {
     assert!(matches!(header.command, NeoFsCommand::Header));
 
     let hash =
-        parse_neofs_request(&format!("neofs:{}/{}/hash", container, object))
-            .expect("parse hash");
+        parse_neofs_request(&format!("neofs:{}/{}/hash", container, object)).expect("parse hash");
     match hash.command {
         NeoFsCommand::Hash(None) => {}
         _ => panic!("expected hash without range"),
     }
 
-    let hash_range = parse_neofs_request(&format!(
-        "neofs:{}/{}/hash/5|7",
-        container, object
-    ))
-    .expect("parse hash range");
+    let hash_range = parse_neofs_request(&format!("neofs:{}/{}/hash/5|7", container, object))
+        .expect("parse hash range");
     match hash_range.command {
         NeoFsCommand::Hash(Some(range)) => {
             assert_eq!(range.offset, 5);
@@ -107,11 +96,8 @@ fn parse_neofs_request_header_and_hash() {
 fn parse_neofs_request_ignores_query_fragment() {
     let container = sample_neofs_id(1);
     let object = sample_neofs_id(2);
-    let request = parse_neofs_request(&format!(
-        "neofs:{}/{}/header?foo=1#bar",
-        container, object
-    ))
-    .expect("parse header with query");
+    let request = parse_neofs_request(&format!("neofs:{}/{}/header?foo=1#bar", container, object))
+        .expect("parse header with query");
     assert!(matches!(request.command, NeoFsCommand::Header));
     assert_eq!(request.container, container);
     assert_eq!(request.object, object);
@@ -132,8 +118,7 @@ fn parse_neofs_request_missing_range_errors() {
 #[test]
 fn parse_neofs_request_rejects_invalid_ids() {
     let object = sample_neofs_id(2);
-    let err =
-        parse_neofs_request(&format!("neofs:0/{}", object)).expect_err("invalid id");
+    let err = parse_neofs_request(&format!("neofs:0/{}", object)).expect_err("invalid id");
     assert!(
         err.contains("invalid neofs container id"),
         "unexpected error: {err}"

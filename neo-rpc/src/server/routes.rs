@@ -285,8 +285,14 @@ async fn handle_get_request(
                 let outcome = process_object(obj, &filters, auth_header.as_deref());
                 (outcome.response, outcome.unauthorized)
             }
-            Some(_) => (Some(error_response(None, RpcError::invalid_request())), false),
-            None => (Some(error_response(None, RpcError::invalid_request())), false),
+            Some(_) => (
+                Some(error_response(None, RpcError::invalid_request())),
+                false,
+            ),
+            None => (
+                Some(error_response(None, RpcError::invalid_request())),
+                false,
+            ),
         }
     };
 
@@ -626,12 +632,8 @@ fn exceeds_max_depth(value: &Value, max_depth: usize) -> bool {
             return true;
         }
         match value {
-            Value::Array(values) => values
-                .iter()
-                .any(|value| walk(value, depth + 1, max_depth)),
-            Value::Object(map) => map
-                .values()
-                .any(|value| walk(value, depth + 1, max_depth)),
+            Value::Array(values) => values.iter().any(|value| walk(value, depth + 1, max_depth)),
+            Value::Object(map) => map.values().any(|value| walk(value, depth + 1, max_depth)),
             _ => false,
         }
     }

@@ -282,10 +282,7 @@ impl IVerifiable for StateRoot {
     }
 
     fn get_witnesses_mut(&mut self) -> Vec<&mut Witness> {
-        self.witness
-            .as_mut()
-            .map(|w| vec![w])
-            .unwrap_or_default()
+        self.witness.as_mut().map(|w| vec![w]).unwrap_or_default()
     }
 
     fn verify(&self) -> bool {

@@ -53,7 +53,6 @@ impl crate::i_event_handlers::ICommittingHandler for OracleService {
     }
 }
 
-
 impl crate::i_event_handlers::IWalletChangedHandler for OracleService {
     fn i_wallet_provider_wallet_changed_handler(
         &self,

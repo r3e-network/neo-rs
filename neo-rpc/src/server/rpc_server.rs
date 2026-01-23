@@ -3,9 +3,9 @@ use hyper::server::accept::from_stream;
 use hyper::service::{make_service_fn, service_fn, Service};
 use neo_core::{neo_system::NeoSystem, services::RpcService, wallets::Wallet};
 use once_cell::sync::Lazy;
+use p12::PFX;
 use parking_lot::{Mutex, RwLock, RwLockReadGuard};
 use prometheus::Counter;
-use p12::PFX;
 use rustls::server::AllowAnyAuthenticatedClient;
 use rustls::{Certificate, PrivateKey, RootCertStore, ServerConfig};
 use serde_json::Value;
@@ -36,8 +36,8 @@ use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_method_attribute::RpcMethodDescriptor;
 use sha1::{Digest, Sha1};
 use socket2::{SockRef, TcpKeepalive};
-use warp::Filter;
 use warp::filters::compression;
+use warp::Filter;
 
 pub type RpcCallback =
     dyn Fn(&RpcServer, &[Value]) -> Result<Value, RpcException> + Send + Sync + 'static;
@@ -293,7 +293,10 @@ impl RpcServer {
                                             remote_addr,
                                             _permit: permit,
                                         };
-                                        return Some((Ok::<TlsConnection, io::Error>(conn), listener));
+                                        return Some((
+                                            Ok::<TlsConnection, io::Error>(conn),
+                                            listener,
+                                        ));
                                     }
                                     Err(err) => {
                                         warn!(
@@ -689,8 +692,8 @@ fn build_tls_config(settings: &RpcServerConfig) -> Result<Option<Arc<ServerConfi
 
     let cert_bytes = std::fs::read(cert_path)
         .map_err(|err| format!("failed to read TLS certificate {}: {}", cert_path, err))?;
-    let pfx =
-        PFX::parse(&cert_bytes).map_err(|err| format!("invalid PKCS#12 {}: {:?}", cert_path, err))?;
+    let pfx = PFX::parse(&cert_bytes)
+        .map_err(|err| format!("invalid PKCS#12 {}: {:?}", cert_path, err))?;
     if !pfx.verify_mac(settings.ssl_cert_password.as_str()) {
         return Err(format!(
             "invalid TLS certificate password for {}",
@@ -713,7 +716,12 @@ fn build_tls_config(settings: &RpcServerConfig) -> Result<Option<Arc<ServerConfi
 
     let mut keys = pfx
         .key_bags(settings.ssl_cert_password.as_str())
-        .map_err(|err| format!("failed to read TLS private key from {}: {:?}", cert_path, err))?;
+        .map_err(|err| {
+            format!(
+                "failed to read TLS private key from {}: {:?}",
+                cert_path, err
+            )
+        })?;
     let key_der = keys
         .pop()
         .ok_or_else(|| format!("no TLS private key found in {}", cert_path))?;
@@ -749,9 +757,9 @@ fn load_trusted_authorities(thumbprints: &[String]) -> Result<RootCertStore, Str
         let thumbprint = thumbprint_hex(&cert_der);
         if allowed.contains(&thumbprint) {
             let rustls_cert = Certificate(cert_der);
-            roots
-                .add(&rustls_cert)
-                .map_err(|err| format!("failed to add trusted authority {}: {}", thumbprint, err))?;
+            roots.add(&rustls_cert).map_err(|err| {
+                format!("failed to add trusted authority {}: {}", thumbprint, err)
+            })?;
             matched += 1;
         }
     }

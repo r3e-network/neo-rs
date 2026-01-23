@@ -674,19 +674,17 @@ impl ConsensusContext {
             change_view_invocations: state.change_view_invocations,
             commit_invocations: state.commit_invocations,
             last_change_view_timestamps: state.change_view_timestamps,
-            last_seen_messages: HashMap::new(),          // Not persisted
-            seen_message_hashes: HashSet::new(),         // Not persisted (cleared on restart)
+            last_seen_messages: HashMap::new(),  // Not persisted
+            seen_message_hashes: HashSet::new(), // Not persisted (cleared on restart)
         })
     }
 
     fn encode_state(state: &PersistedConsensusState) -> ConsensusResult<Vec<u8>> {
-        bincode::serialize(state)
-            .map_err(|e| ConsensusError::SerializationError(e.to_string()))
+        bincode::serialize(state).map_err(|e| ConsensusError::SerializationError(e.to_string()))
     }
 
     fn decode_state(encoded: &[u8]) -> ConsensusResult<PersistedConsensusState> {
-        bincode::deserialize(encoded)
-            .map_err(|e| ConsensusError::SerializationError(e.to_string()))
+        bincode::deserialize(encoded).map_err(|e| ConsensusError::SerializationError(e.to_string()))
     }
 }
 
@@ -889,7 +887,10 @@ mod tests {
         );
         assert_eq!(loaded_ctx.nonce, 42);
         assert!(loaded_ctx.prepare_request_received);
-        assert_eq!(loaded_ctx.prepare_request_invocation, Some(vec![0x0c, 0x40, 0xaa]));
+        assert_eq!(
+            loaded_ctx.prepare_request_invocation,
+            Some(vec![0x0c, 0x40, 0xaa])
+        );
         assert_eq!(loaded_ctx.prepare_responses.len(), 2);
         assert_eq!(
             loaded_ctx.prepare_responses.get(&1),
@@ -938,14 +939,8 @@ mod tests {
             loaded_ctx.change_view_invocations.get(&4),
             Some(&vec![0x0c, 0x40, 0xee])
         );
-        assert_eq!(
-            loaded_ctx.last_change_view_timestamps.get(&3),
-            Some(&1_111)
-        );
-        assert_eq!(
-            loaded_ctx.last_change_view_timestamps.get(&4),
-            Some(&2_222)
-        );
+        assert_eq!(loaded_ctx.last_change_view_timestamps.get(&3), Some(&1_111));
+        assert_eq!(loaded_ctx.last_change_view_timestamps.get(&4), Some(&2_222));
 
         // Verify non-persisted fields are reset
         assert_eq!(loaded_ctx.state, ConsensusState::Initial);
@@ -1149,8 +1144,7 @@ mod tests {
         assert!(!ctx.not_accepting_payloads_due_to_view_changing());
 
         // Simulate requesting a view change.
-        ctx.change_views
-            .insert(1, (1, ChangeViewReason::Timeout));
+        ctx.change_views.insert(1, (1, ChangeViewReason::Timeout));
         assert!(ctx.view_changing());
         assert!(ctx.not_accepting_payloads_due_to_view_changing());
 

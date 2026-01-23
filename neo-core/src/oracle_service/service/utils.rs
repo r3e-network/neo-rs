@@ -22,7 +22,10 @@ pub(super) fn verify_oracle_signature(pubkey: &ECPoint, data: &[u8], signature: 
     pubkey.verify_signature(data, signature).unwrap_or(false)
 }
 
-pub(super) fn filter_json(input: &str, filter: Option<&str>) -> Result<Vec<u8>, OracleServiceError> {
+pub(super) fn filter_json(
+    input: &str,
+    filter: Option<&str>,
+) -> Result<Vec<u8>, OracleServiceError> {
     if filter.map(|value| value.is_empty()).unwrap_or(true) {
         return Ok(input.as_bytes().to_vec());
     }

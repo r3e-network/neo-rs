@@ -10,6 +10,7 @@ use super::*;
 mod tests {
     use super::*;
     use crate::network::p2p::payloads::extensible_payload::ExtensiblePayload;
+    use crate::wallets::KeyPair;
     use std::sync::Arc;
 
     #[test]
@@ -83,7 +84,8 @@ mod tests {
         };
         node.apply_channels_config(&config);
 
-        let version = VersionPayload::create(settings.network, 1, "/peer".to_string(), Vec::new());
+        let key_pair = KeyPair::generate().unwrap();
+        let version = VersionPayload::create(&settings, &key_pair, "/peer".to_string(), Vec::new());
         let existing = RemoteNodeSnapshot {
             remote_address: "10.0.0.1:20000".parse().unwrap(),
             remote_port: 20000,

@@ -34,7 +34,12 @@ impl ConsensusService {
     /// Resumes consensus from a recovered context.
     ///
     /// This restores transient fields that are not persisted and continues the round.
-    pub fn resume(&mut self, timestamp: u64, prev_hash: UInt256, version: u32) -> ConsensusResult<()> {
+    pub fn resume(
+        &mut self,
+        timestamp: u64,
+        prev_hash: UInt256,
+        version: u32,
+    ) -> ConsensusResult<()> {
         if self.context.my_index.is_none() {
             return Err(ConsensusError::NotValidator);
         }

@@ -10,24 +10,24 @@ mod utils;
 mod tests;
 
 use crate::cryptography::ECPoint;
-use crate::network::p2p::payloads::Transaction;
 use crate::neo_system::NeoSystem;
+use crate::network::p2p::payloads::Transaction;
 use crate::wallets::Wallet;
 use parking_lot::{Mutex, RwLock};
 use std::collections::{BTreeMap, HashMap};
-use std::sync::atomic::{AtomicBool, AtomicU8};
 #[cfg(feature = "oracle")]
 use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicBool, AtomicU8};
 use std::sync::{Arc, Weak};
 use std::time::{Duration, SystemTime};
 use thiserror::Error;
 use tokio::task::JoinHandle;
 
-pub(super) use super::OracleServiceSettings;
 #[cfg(feature = "oracle")]
 pub(super) use super::https::OracleHttpsProtocol;
 #[cfg(feature = "oracle")]
 pub(super) use super::neofs::OracleNeoFsProtocol;
+pub(super) use super::OracleServiceSettings;
 
 const REFRESH_INTERVAL: Duration = Duration::from_secs(3 * 60);
 const FINISHED_CACHE_TTL: Duration = Duration::from_secs(3 * 24 * 60 * 60);

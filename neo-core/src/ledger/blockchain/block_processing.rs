@@ -256,12 +256,11 @@ impl Blockchain {
 
         let accepted = state_store.on_new_state_root(state_root.clone());
         if accepted {
-            context
-                .actor_system
-                .event_stream()
-                .publish(crate::state_service::ValidatedRootPersisted {
+            context.actor_system.event_stream().publish(
+                crate::state_service::ValidatedRootPersisted {
                     index: state_root.index,
-                });
+                },
+            );
         } else {
             debug!(
                 target: "state",

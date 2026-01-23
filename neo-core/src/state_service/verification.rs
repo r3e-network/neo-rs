@@ -4,9 +4,9 @@
 
 use crate::akka::{Actor, ActorContext, ActorRef, ActorResult, Cancelable, Props};
 use crate::ledger::{BlockchainCommand, PersistCompleted, RelayResult, VerifyResult};
+use crate::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use crate::network::p2p::helper::get_sign_data_vec;
 use crate::network::p2p::payloads::extensible_payload::ExtensiblePayload;
-use crate::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use crate::smart_contract::contract::Contract;
 use crate::smart_contract::contract_parameters_context::ContractParametersContext;
 use crate::smart_contract::native::role_management::RoleManagement;
@@ -45,7 +45,11 @@ struct VerificationContext {
 }
 
 impl VerificationContext {
-    fn new(root_index: u32, validators: Vec<crate::cryptography::ECPoint>, my_index: usize) -> Self {
+    fn new(
+        root_index: u32,
+        validators: Vec<crate::cryptography::ECPoint>,
+        my_index: usize,
+    ) -> Self {
         Self {
             root_index,
             validators,
@@ -168,7 +172,9 @@ impl VerificationContext {
                 let Some(sig) = signatures.get(&idx) else {
                     continue;
                 };
-                if let Ok(true) = context.add_signature(contract.clone(), validator.clone(), sig.clone()) {
+                if let Ok(true) =
+                    context.add_signature(contract.clone(), validator.clone(), sig.clone())
+                {
                     added = added.saturating_add(1);
                 }
                 if added >= required {
@@ -311,7 +317,9 @@ impl StateVerificationActor {
     }
 
     async fn on_relay_result(&mut self, result: RelayResult) {
-        if result.result != VerifyResult::Succeed || result.inventory_type != crate::InventoryType::Extensible {
+        if result.result != VerifyResult::Succeed
+            || result.inventory_type != crate::InventoryType::Extensible
+        {
             return;
         }
 
@@ -372,9 +380,7 @@ impl StateVerificationActor {
 
     async fn send_vote(&self, context: &mut VerificationContext) {
         if context.vote_payload.is_none() {
-            let payload = self
-                .build_vote_payload(context)
-                .await;
+            let payload = self.build_vote_payload(context).await;
             context.vote_payload = payload;
         }
 
@@ -409,12 +415,14 @@ impl StateVerificationActor {
     }
 
     fn relay_payload(&self, payload: ExtensiblePayload) {
-        if let Err(error) = self.system.blockchain_actor().tell(
-            BlockchainCommand::InventoryExtensible {
-                payload,
-                relay: true,
-            },
-        ) {
+        if let Err(error) =
+            self.system
+                .blockchain_actor()
+                .tell(BlockchainCommand::InventoryExtensible {
+                    payload,
+                    relay: true,
+                })
+        {
             warn!(target: "state", %error, "failed to relay state service payload");
         }
     }

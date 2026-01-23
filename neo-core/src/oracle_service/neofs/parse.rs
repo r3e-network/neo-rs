@@ -83,4 +83,3 @@ fn validate_neofs_id(value: &str, kind: &str) -> Result<(), String> {
     }
     Ok(())
 }
-

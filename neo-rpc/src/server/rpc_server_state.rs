@@ -74,7 +74,8 @@ impl RpcServerState {
 
         let state_store = Self::state_store(server)?;
         Self::check_root_hash(&state_store, root_hash)?;
-        let contract_id = Self::resolve_contract_id_for_root(&state_store, root_hash, &script_hash)?;
+        let contract_id =
+            Self::resolve_contract_id_for_root(&state_store, root_hash, &script_hash)?;
         let storage_key = StorageKey::new(contract_id, key);
         let proof_nodes = state_store
             .get_proof(root_hash, &storage_key)
@@ -105,7 +106,8 @@ impl RpcServerState {
         let key = Self::parse_base64(params, 2, "getstate", "Base64 storage key")?;
         let state_store = Self::state_store(server)?;
         Self::check_root_hash(&state_store, root_hash)?;
-        let contract_id = Self::resolve_contract_id_for_root(&state_store, root_hash, &script_hash)?;
+        let contract_id =
+            Self::resolve_contract_id_for_root(&state_store, root_hash, &script_hash)?;
         let mut trie = state_store.trie_for_root(root_hash);
         let storage_key = StorageKey::new(contract_id, key);
         let value = trie
@@ -154,7 +156,8 @@ impl RpcServerState {
             count.min(max_count)
         };
         Self::check_root_hash(&state_store, root_hash)?;
-        let contract_id = Self::resolve_contract_id_for_root(&state_store, root_hash, &script_hash)?;
+        let contract_id =
+            Self::resolve_contract_id_for_root(&state_store, root_hash, &script_hash)?;
         let mut trie = state_store.trie_for_root(root_hash);
         let search_prefix = StorageKey::create_search_prefix(contract_id, &prefix);
         let from_key = from
@@ -329,13 +332,14 @@ impl RpcServerState {
         let mut trie = state_store.trie_for_root(root_hash);
         let value = trie
             .get(&storage_key.to_array())
-            .map_err(|e| RpcException::from(RpcError::internal_server_error().with_data(e.to_string())))?
+            .map_err(|e| {
+                RpcException::from(RpcError::internal_server_error().with_data(e.to_string()))
+            })?
             .ok_or_else(|| RpcException::from(RpcError::unknown_contract()))?;
         let mut item = StorageItem::new();
         item.deserialize_from_bytes(&value);
-        let contract =
-            ContractManagement::deserialize_contract_state(&item.get_value())
-                .map_err(Self::internal_error)?;
+        let contract = ContractManagement::deserialize_contract_state(&item.get_value())
+            .map_err(Self::internal_error)?;
         Ok(contract.id)
     }
 
@@ -432,10 +436,7 @@ mod tests {
         key_bytes.push(PREFIX_CONTRACT);
         key_bytes.extend_from_slice(&contract.hash.to_bytes());
         let key = StorageKey::new(contract_mgmt_id, key_bytes);
-        store.add(
-            key.clone(),
-            StorageItem::from_bytes(contract_bytes.clone()),
-        );
+        store.add(key.clone(), StorageItem::from_bytes(contract_bytes.clone()));
 
         let mut id_bytes = Vec::with_capacity(1 + 4);
         id_bytes.push(PREFIX_CONTRACT_HASH);

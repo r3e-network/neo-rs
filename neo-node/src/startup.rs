@@ -227,9 +227,7 @@ pub fn check_storage_access(
 #[allow(clippy::useless_vec)]
 pub fn build_feature_summary() -> String {
     #[allow(unused_mut)]
-    let mut features = vec![
-        "plugins: rpc-server,rocksdb-store,tokens-tracker,application-logs",
-    ];
+    let mut features = vec!["plugins: rpc-server,rocksdb-store,tokens-tracker,application-logs"];
 
     #[cfg(feature = "tee")]
     features.push("tee: enabled");

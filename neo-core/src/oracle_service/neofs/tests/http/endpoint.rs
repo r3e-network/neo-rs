@@ -8,14 +8,12 @@ fn normalize_neofs_endpoint_requires_value() {
 
 #[test]
 fn normalize_neofs_endpoint_adds_scheme() {
-    let normalized =
-        normalize_neofs_endpoint("127.0.0.1:8080").expect("normalize endpoint");
+    let normalized = normalize_neofs_endpoint("127.0.0.1:8080").expect("normalize endpoint");
     assert_eq!(normalized, "http://127.0.0.1:8080");
 }
 
 #[test]
 fn normalize_neofs_endpoint_preserves_scheme() {
-    let normalized =
-        normalize_neofs_endpoint("https://neofs.example").expect("normalize endpoint");
+    let normalized = normalize_neofs_endpoint("https://neofs.example").expect("normalize endpoint");
     assert_eq!(normalized, "https://neofs.example");
 }

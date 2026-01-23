@@ -19,7 +19,5 @@ pub(super) async fn neofs_grpc_client(
         .connect()
         .await
         .map_err(|err| format!("neofs grpc connect failed: {err}"))?;
-    Ok(neofs_v2::object::object_service_client::ObjectServiceClient::new(
-        channel,
-    ))
+    Ok(neofs_v2::object::object_service_client::ObjectServiceClient::new(channel))
 }

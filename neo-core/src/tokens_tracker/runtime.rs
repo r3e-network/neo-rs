@@ -73,12 +73,7 @@ impl TokensTracker {
         &self.settings
     }
 
-    fn handle_panic(
-        &self,
-        tracker: &str,
-        action: &str,
-        payload: Box<dyn Any + Send>,
-    ) -> bool {
+    fn handle_panic(&self, tracker: &str, action: &str, payload: Box<dyn Any + Send>) -> bool {
         let message = panic_message(&payload);
         use crate::unhandled_exception_policy::UnhandledExceptionPolicy;
         match self.settings.exception_policy {

@@ -22,8 +22,7 @@ impl RpcServerConsensus {
     fn start_consensus(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
         if !params.is_empty() {
             return Err(RpcException::from(
-                ServerRpcError::invalid_params()
-                    .with_data("startconsensus expects no parameters"),
+                ServerRpcError::invalid_params().with_data("startconsensus expects no parameters"),
             ));
         }
 

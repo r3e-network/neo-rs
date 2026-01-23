@@ -7,47 +7,47 @@ mod cli;
 mod config;
 mod consensus;
 mod health;
-mod rpc_consensus;
 #[cfg(feature = "hsm")]
 mod hsm_integration;
 #[cfg(feature = "hsm")]
 mod hsm_wallet;
 mod logging;
 mod metrics;
+mod rpc_consensus;
 mod startup;
-mod wallet_provider;
 #[cfg(feature = "tee")]
 mod tee_integration;
+mod wallet_provider;
 
 use anyhow::{bail, Context, Result};
 use clap::Parser;
 use cli::NodeCli;
-use consensus::DbftConsensusController;
 use config::{
     resolve_application_logs_store_path, resolve_state_service_store_path,
     resolve_tokens_tracker_store_path, DbftSettings, NodeConfig,
 };
-use rpc_consensus::RpcServerConsensus;
+use consensus::DbftConsensusController;
 use neo_core::{
     application_logs::ApplicationLogsService,
     i_event_handlers::{ICommittedHandler, ICommittingHandler, IWalletChangedHandler},
     neo_system::NeoSystem,
-    oracle_service::OracleService,
     network::p2p::channels_config::ChannelsConfig,
+    oracle_service::OracleService,
     protocol_settings::ProtocolSettings,
     state_service::{
         metrics::state_root_ingest_stats, state_store::StateServiceSettings,
         verification::StateServiceVerification,
     },
     tokens_tracker::{TokensTracker, TokensTrackerService},
-    UnhandledExceptionPolicy,
     wallets::{IWalletProvider, Nep6Wallet, Wallet as CoreWallet},
+    UnhandledExceptionPolicy,
 };
 use neo_rpc::server::{
     RpcServer, RpcServerApplicationLogs, RpcServerBlockchain, RpcServerNode, RpcServerOracle,
     RpcServerSettings, RpcServerSmartContract, RpcServerState, RpcServerUtilities, RpcServerWallet,
 };
 use parking_lot::RwLock as ParkingRwLock;
+use rpc_consensus::RpcServerConsensus;
 use serde_json::Value;
 use std::{fs, path::PathBuf, sync::Arc};
 use tokio::signal;
@@ -140,8 +140,12 @@ async fn main() -> Result<()> {
         );
     }
 
-    let state_service_settings =
-        build_state_service_settings(&cli, &node_config, storage_path.as_deref(), &protocol_settings)?;
+    let state_service_settings = build_state_service_settings(
+        &cli,
+        &node_config,
+        storage_path.as_deref(),
+        &protocol_settings,
+    )?;
     let dbft_settings = node_config.dbft_settings(&protocol_settings)?;
 
     // Generate the RpcServer.json consumed by the neo-rpc server settings loader.
@@ -169,9 +173,8 @@ async fn main() -> Result<()> {
         maybe_enable_tokens_tracker(&node_config, &protocol_settings, &system)
             .context("failed to initialise TokensTracker")?;
 
-    let oracle_service =
-        maybe_enable_oracle_service(&node_config, &protocol_settings, &system)
-            .context("failed to initialise OracleService")?;
+    let oracle_service = maybe_enable_oracle_service(&node_config, &protocol_settings, &system)
+        .context("failed to initialise OracleService")?;
 
     let channels_config = build_channels_config(&node_config);
     system
@@ -409,9 +412,11 @@ fn setup_wallet_provider(
         .context("failed to attach wallet provider")?;
 
     let callback_provider = Arc::clone(&provider);
-    server.write().set_wallet_change_callback(Some(Arc::new(move |wallet| {
-        callback_provider.set_wallet(wallet);
-    })));
+    server
+        .write()
+        .set_wallet_change_callback(Some(Arc::new(move |wallet| {
+            callback_provider.set_wallet(wallet);
+        })));
 
     info!(target: "neo", "wallet provider enabled");
     Ok(Some(provider))
@@ -611,9 +616,15 @@ fn maybe_enable_tokens_tracker(
         .map_err(|e| anyhow::anyhow!(e.to_string()))
         .context("failed to open TokensTracker store")?;
 
-    let tracker = Arc::new(TokensTracker::new(settings.clone(), store.clone(), system.clone()));
+    let tracker = Arc::new(TokensTracker::new(
+        settings.clone(),
+        store.clone(),
+        system.clone(),
+    ));
     system
-        .register_committing_handler(Arc::clone(&tracker) as Arc<dyn ICommittingHandler + Send + Sync>)
+        .register_committing_handler(
+            Arc::clone(&tracker) as Arc<dyn ICommittingHandler + Send + Sync>
+        )
         .map_err(|e| anyhow::anyhow!(e.to_string()))
         .context("failed to register TokensTracker committing handler")?;
     system
@@ -676,7 +687,9 @@ fn maybe_enable_oracle_service(
         .map_err(|e| anyhow::anyhow!(e.to_string()))
         .context("failed to register OracleService")?;
     system
-        .register_committing_handler(Arc::clone(&service) as Arc<dyn ICommittingHandler + Send + Sync>)
+        .register_committing_handler(
+            Arc::clone(&service) as Arc<dyn ICommittingHandler + Send + Sync>
+        )
         .map_err(|e| anyhow::anyhow!(e.to_string()))
         .context("failed to register OracleService committing handler")?;
     system

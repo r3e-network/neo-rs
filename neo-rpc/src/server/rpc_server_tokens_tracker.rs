@@ -51,16 +51,16 @@ impl RpcServerTokensTracker {
         }
 
         let address_version = server.system().settings().address_version;
-        let script_hash =
-            parse_address_param(params, 0, "getnep11balances", address_version)?;
+        let script_hash = parse_address_param(params, 0, "getnep11balances", address_version)?;
 
         let (balance_prefix, _, _) = Nep11Tracker::rpc_prefixes();
         let mut prefix = Vec::with_capacity(1 + UInt160::LENGTH);
         prefix.push(balance_prefix);
         prefix.extend_from_slice(&script_hash.to_bytes());
 
-        let balances = find_prefix::<Nep11BalanceKey, TokenBalance>(service.store().as_ref(), &prefix)
-            .map_err(|err| internal_error(err))?;
+        let balances =
+            find_prefix::<Nep11BalanceKey, TokenBalance>(service.store().as_ref(), &prefix)
+                .map_err(|err| internal_error(err))?;
 
         let store_cache = server.system().store_cache();
         let snapshot = Arc::new(store_cache.data_cache().clone());
@@ -73,9 +73,11 @@ impl RpcServerTokensTracker {
             if count >= max_results {
                 break;
             }
-            let Some(_) =
-                ContractManagement::get_contract_from_snapshot(snapshot.as_ref(), &key.asset_script_hash)
-                    .map_err(|err| internal_error(err.to_string()))?
+            let Some(_) = ContractManagement::get_contract_from_snapshot(
+                snapshot.as_ref(),
+                &key.asset_script_hash,
+            )
+            .map_err(|err| internal_error(err.to_string()))?
             else {
                 continue;
             };
@@ -135,8 +137,7 @@ impl RpcServerTokensTracker {
         }
 
         let address_version = server.system().settings().address_version;
-        let script_hash =
-            parse_address_param(params, 0, "getnep11transfers", address_version)?;
+        let script_hash = parse_address_param(params, 0, "getnep11transfers", address_version)?;
 
         let now_ms = current_time_millis();
         let start_time = parse_optional_u64(params.get(1))?;
@@ -187,8 +188,7 @@ impl RpcServerTokensTracker {
         }
 
         let address_version = server.system().settings().address_version;
-        let script_hash =
-            parse_address_param(params, 0, "getnep11properties", address_version)?;
+        let script_hash = parse_address_param(params, 0, "getnep11properties", address_version)?;
         let token_id = parse_token_id_param(params, 1, "getnep11properties")?;
 
         let mut script = ScriptBuilder::new();
@@ -234,7 +234,10 @@ impl RpcServerTokensTracker {
 
         let mut result = Map::new();
         for (key, value) in map.iter() {
-            if matches!(value, StackItem::Array(_) | StackItem::Struct(_) | StackItem::Map(_)) {
+            if matches!(
+                value,
+                StackItem::Array(_) | StackItem::Struct(_) | StackItem::Map(_)
+            ) {
                 continue;
             }
 
@@ -276,16 +279,16 @@ impl RpcServerTokensTracker {
         }
 
         let address_version = server.system().settings().address_version;
-        let script_hash =
-            parse_address_param(params, 0, "getnep17balances", address_version)?;
+        let script_hash = parse_address_param(params, 0, "getnep17balances", address_version)?;
 
         let (balance_prefix, _, _) = Nep17Tracker::rpc_prefixes();
         let mut prefix = Vec::with_capacity(1 + UInt160::LENGTH);
         prefix.push(balance_prefix);
         prefix.extend_from_slice(&script_hash.to_bytes());
 
-        let balances = find_prefix::<Nep17BalanceKey, TokenBalance>(service.store().as_ref(), &prefix)
-            .map_err(|err| internal_error(err))?;
+        let balances =
+            find_prefix::<Nep17BalanceKey, TokenBalance>(service.store().as_ref(), &prefix)
+                .map_err(|err| internal_error(err))?;
 
         let store_cache = server.system().store_cache();
         let snapshot = Arc::new(store_cache.data_cache().clone());
@@ -296,9 +299,11 @@ impl RpcServerTokensTracker {
             if results.len() >= max_results {
                 break;
             }
-            let Some(contract) =
-                ContractManagement::get_contract_from_snapshot(snapshot.as_ref(), &key.asset_script_hash)
-                    .map_err(|err| internal_error(err.to_string()))?
+            let Some(contract) = ContractManagement::get_contract_from_snapshot(
+                snapshot.as_ref(),
+                &key.asset_script_hash,
+            )
+            .map_err(|err| internal_error(err.to_string()))?
             else {
                 continue;
             };
@@ -334,8 +339,7 @@ impl RpcServerTokensTracker {
         }
 
         let address_version = server.system().settings().address_version;
-        let script_hash =
-            parse_address_param(params, 0, "getnep17transfers", address_version)?;
+        let script_hash = parse_address_param(params, 0, "getnep17transfers", address_version)?;
 
         let now_ms = current_time_millis();
         let start_time = parse_optional_u64(params.get(1))?;
@@ -455,11 +459,14 @@ fn collect_transfers(
     let start_key = [prefix_bytes.as_slice(), &start.to_be_bytes()].concat();
     let end_key = [prefix_bytes.as_slice(), &end.to_be_bytes()].concat();
 
-    let pairs =
-        find_range::<Nep17TransferKey, TokenTransfer>(store, &start_key, &end_key)
-            .map_err(|err| internal_error(err))?;
+    let pairs = find_range::<Nep17TransferKey, TokenTransfer>(store, &start_key, &end_key)
+        .map_err(|err| internal_error(err))?;
 
-    let mut limited = pairs.into_iter().take(max_results).enumerate().collect::<Vec<_>>();
+    let mut limited = pairs
+        .into_iter()
+        .take(max_results)
+        .enumerate()
+        .collect::<Vec<_>>();
     limited.sort_by(|(left_index, left), (right_index, right)| {
         let left_ts = left.0.timestamp_ms();
         let right_ts = right.0.timestamp_ms();
@@ -508,11 +515,14 @@ fn collect_nep11_transfers(
     let start_key = [prefix_bytes.as_slice(), &start.to_be_bytes()].concat();
     let end_key = [prefix_bytes.as_slice(), &end.to_be_bytes()].concat();
 
-    let pairs =
-        find_range::<Nep11TransferKey, TokenTransfer>(store, &start_key, &end_key)
-            .map_err(|err| internal_error(err))?;
+    let pairs = find_range::<Nep11TransferKey, TokenTransfer>(store, &start_key, &end_key)
+        .map_err(|err| internal_error(err))?;
 
-    let mut limited = pairs.into_iter().take(max_results).enumerate().collect::<Vec<_>>();
+    let mut limited = pairs
+        .into_iter()
+        .take(max_results)
+        .enumerate()
+        .collect::<Vec<_>>();
     limited.sort_by(|(left_index, left), (right_index, right)| {
         let left_ts = left.0.timestamp_ms();
         let right_ts = right.0.timestamp_ms();
@@ -645,16 +655,16 @@ mod tests {
     use neo_core::persistence::IStore;
     use neo_core::persistence::IStoreProvider;
     use neo_core::protocol_settings::ProtocolSettings;
-    use neo_core::smart_contract::native::GasToken;
-    use neo_core::smart_contract::native::NativeRegistry;
     use neo_core::smart_contract::manifest::{
         ContractAbi, ContractManifest, ContractMethodDescriptor, ContractParameterDefinition,
     };
+    use neo_core::smart_contract::native::GasToken;
+    use neo_core::smart_contract::native::NativeRegistry;
     use neo_core::smart_contract::{
         ContractParameterType, ContractState, NefFile, StorageItem, StorageKey,
     };
-    use neo_core::NativeContract;
     use neo_core::tokens_tracker::TokensTrackerSettings;
+    use neo_core::NativeContract;
     use neo_core::UInt256;
     use num_bigint::BigInt;
     use std::collections::HashMap;
@@ -717,9 +727,7 @@ mod tests {
             .id();
 
         let mut writer = neo_core::neo_io::BinaryWriter::new();
-        contract
-            .serialize(&mut writer)
-            .expect("serialize contract");
+        contract.serialize(&mut writer).expect("serialize contract");
 
         let mut store_cache = system.context().store_snapshot_cache();
         let mut key_bytes = Vec::with_capacity(1 + 20);
@@ -781,9 +789,7 @@ mod tests {
 
         let nef = NefFile::new("nep11-properties".to_string(), script.to_array());
         let mut manifest = ContractManifest::new("Nep11Properties".to_string());
-        manifest
-            .supported_standards
-            .push("NEP-11".to_string());
+        manifest.supported_standards.push("NEP-11".to_string());
 
         let parameter = ContractParameterDefinition::new(
             "tokenId".to_string(),
@@ -875,21 +881,22 @@ mod tests {
         let mut prefix = Vec::with_capacity(1 + UInt160::LENGTH);
         prefix.push(balance_prefix);
         prefix.extend_from_slice(&user.to_bytes());
-        let entries =
-            find_prefix::<Nep17BalanceKey, TokenBalance>(store.as_ref(), &prefix)
-                .expect("find prefix");
+        let entries = find_prefix::<Nep17BalanceKey, TokenBalance>(store.as_ref(), &prefix)
+            .expect("find prefix");
         assert_eq!(entries.len(), 1);
 
         let server = RpcServer::new(system, RpcServerConfig::default());
         let handlers = RpcServerTokensTracker::register_handlers();
         let handler = find_handler(&handlers, "getnep17balances");
 
-        let address =
-            WalletHelper::to_address(&user, server.system().settings().address_version);
+        let address = WalletHelper::to_address(&user, server.system().settings().address_version);
         let params = [Value::String(address.clone())];
         let result = (handler.callback())(&server, &params).expect("getnep17balances");
         let obj = result.as_object().expect("result object");
-        assert_eq!(obj.get("address").and_then(Value::as_str), Some(address.as_str()));
+        assert_eq!(
+            obj.get("address").and_then(Value::as_str),
+            Some(address.as_str())
+        );
 
         let balances = obj
             .get("balance")
@@ -960,12 +967,14 @@ mod tests {
         let handlers = RpcServerTokensTracker::register_handlers();
         let handler = find_handler(&handlers, "getnep11balances");
 
-        let address =
-            WalletHelper::to_address(&user, server.system().settings().address_version);
+        let address = WalletHelper::to_address(&user, server.system().settings().address_version);
         let params = [Value::String(address.clone())];
         let result = (handler.callback())(&server, &params).expect("getnep11balances");
         let obj = result.as_object().expect("result object");
-        assert_eq!(obj.get("address").and_then(Value::as_str), Some(address.as_str()));
+        assert_eq!(
+            obj.get("address").and_then(Value::as_str),
+            Some(address.as_str())
+        );
 
         let balances = obj
             .get("balance")
@@ -1008,14 +1017,8 @@ mod tests {
 
         let token_a_key = hex::encode(&token_a);
         let token_b_key = hex::encode(&token_b);
-        assert_eq!(
-            token_map.get(&token_a_key),
-            Some(&(String::from("5"), 10))
-        );
-        assert_eq!(
-            token_map.get(&token_b_key),
-            Some(&(String::from("7"), 11))
-        );
+        assert_eq!(token_map.get(&token_a_key), Some(&(String::from("5"), 10)));
+        assert_eq!(token_map.get(&token_b_key), Some(&(String::from("7"), 11)));
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -1089,14 +1092,23 @@ mod tests {
         let handlers = RpcServerTokensTracker::register_handlers();
         let handler = find_handler(&handlers, "getnep11transfers");
 
-        let address =
-            WalletHelper::to_address(&user, server.system().settings().address_version);
-        let params = [Value::String(address.clone()), json!(t1 - 1), json!(now_ms + 1)];
+        let address = WalletHelper::to_address(&user, server.system().settings().address_version);
+        let params = [
+            Value::String(address.clone()),
+            json!(t1 - 1),
+            json!(now_ms + 1),
+        ];
         let result = (handler.callback())(&server, &params).expect("getnep11transfers");
         let obj = result.as_object().expect("result object");
-        assert_eq!(obj.get("address").and_then(Value::as_str), Some(address.as_str()));
+        assert_eq!(
+            obj.get("address").and_then(Value::as_str),
+            Some(address.as_str())
+        );
 
-        let sent = obj.get("sent").and_then(Value::as_array).expect("sent array");
+        let sent = obj
+            .get("sent")
+            .and_then(Value::as_array)
+            .expect("sent array");
         assert_eq!(sent.len(), 2);
         assert_eq!(sent[0].get("timestamp").and_then(Value::as_u64), Some(t2));
         assert_eq!(sent[1].get("timestamp").and_then(Value::as_u64), Some(t1));
@@ -1124,12 +1136,7 @@ mod tests {
         let system =
             NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
         let store = create_tracker_store();
-        attach_tokens_tracker(
-            &system,
-            store,
-            vec!["NEP-11".to_string()],
-            true,
-        );
+        attach_tokens_tracker(&system, store, vec!["NEP-11".to_string()], true);
 
         let contract = build_nep11_properties_contract();
         let contract_hash = contract.hash;
@@ -1239,21 +1246,28 @@ mod tests {
         let handlers = RpcServerTokensTracker::register_handlers();
         let handler = find_handler(&handlers, "getnep17transfers");
 
-        let address =
-            WalletHelper::to_address(&user, server.system().settings().address_version);
-        let params = [Value::String(address.clone()), json!(t1 - 1), json!(now_ms + 1)];
+        let address = WalletHelper::to_address(&user, server.system().settings().address_version);
+        let params = [
+            Value::String(address.clone()),
+            json!(t1 - 1),
+            json!(now_ms + 1),
+        ];
         let result = (handler.callback())(&server, &params).expect("getnep17transfers");
         let obj = result.as_object().expect("result object");
-        assert_eq!(obj.get("address").and_then(Value::as_str), Some(address.as_str()));
+        assert_eq!(
+            obj.get("address").and_then(Value::as_str),
+            Some(address.as_str())
+        );
 
-        let sent = obj.get("sent").and_then(Value::as_array).expect("sent array");
+        let sent = obj
+            .get("sent")
+            .and_then(Value::as_array)
+            .expect("sent array");
         assert_eq!(sent.len(), 2);
         assert_eq!(sent[0].get("timestamp").and_then(Value::as_u64), Some(t2));
         assert_eq!(sent[1].get("timestamp").and_then(Value::as_u64), Some(t1));
         assert_eq!(
-            sent[0]
-                .get("transferaddress")
-                .and_then(Value::as_str),
+            sent[0].get("transferaddress").and_then(Value::as_str),
             Some(
                 WalletHelper::to_address(&other, server.system().settings().address_version)
                     .as_str()

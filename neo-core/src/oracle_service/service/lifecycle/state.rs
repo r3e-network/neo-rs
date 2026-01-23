@@ -1,12 +1,12 @@
-use super::super::{OracleService, OracleServiceError, OracleServiceSettings, OracleStatus};
 #[cfg(feature = "oracle")]
 use super::super::{OracleHttpsProtocol, OracleNeoFsProtocol};
+use super::super::{OracleService, OracleServiceError, OracleServiceSettings, OracleStatus};
 use crate::neo_system::NeoSystem;
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 #[cfg(feature = "oracle")]
 use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Weak};
 
 impl OracleService {

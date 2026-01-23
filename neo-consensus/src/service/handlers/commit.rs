@@ -1,5 +1,5 @@
-use super::super::{BlockData, ConsensusEvent, ConsensusService};
 use super::super::helpers::invocation_script_from_signature;
+use super::super::{BlockData, ConsensusEvent, ConsensusService};
 use crate::context::ConsensusState;
 use crate::messages::ConsensusPayload;
 use crate::{ConsensusError, ConsensusResult};
@@ -80,8 +80,11 @@ impl ConsensusService {
         }
 
         // Add the commit (signature is in the payload data)
-        self.context
-            .add_commit(payload.validator_index, payload.view_number, payload.data.clone())?;
+        self.context.add_commit(
+            payload.validator_index,
+            payload.view_number,
+            payload.data.clone(),
+        )?;
         if !payload.witness.is_empty() {
             self.context.commit_invocations.insert(
                 payload.validator_index,

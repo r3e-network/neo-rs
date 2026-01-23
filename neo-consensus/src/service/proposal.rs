@@ -102,8 +102,7 @@ impl ConsensusService {
             return Ok(());
         }
 
-        let available: std::collections::HashSet<UInt256> =
-            tx_hashes.into_iter().collect();
+        let available: std::collections::HashSet<UInt256> = tx_hashes.into_iter().collect();
         let all_present = self
             .context
             .proposed_tx_hashes

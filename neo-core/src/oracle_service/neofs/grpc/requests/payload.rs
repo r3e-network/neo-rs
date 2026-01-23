@@ -1,6 +1,6 @@
-use super::super::auth::{build_neofs_meta_header, build_neofs_request_verification_header};
 use super::super::super::proto::neofs_v2;
 use super::super::super::{NeoFsAuth, OracleNeoFsProtocol};
+use super::super::auth::{build_neofs_meta_header, build_neofs_request_verification_header};
 use super::super::verify::validate_neofs_response;
 use crate::network::p2p::payloads::oracle_response::MAX_RESULT_SIZE;
 use crate::network::p2p::payloads::OracleResponseCode;
@@ -104,5 +104,4 @@ impl OracleNeoFsProtocol {
             Err(_) => (OracleResponseCode::Error, String::new()),
         }
     }
-
 }

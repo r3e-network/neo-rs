@@ -1,7 +1,7 @@
 use crate::context::{ConsensusContext, ValidatorInfo};
 use crate::{ConsensusError, ConsensusResult, ConsensusSigner};
-use std::sync::Arc;
 use std::path::Path;
+use std::sync::Arc;
 
 use super::ConsensusService;
 

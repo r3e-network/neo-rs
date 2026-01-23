@@ -137,7 +137,8 @@ impl PersistCompletedHarness {
                 self.services[sender_index].on_transactions_received(Vec::new())?;
             }
             ConsensusEvent::BroadcastMessage(payload) => {
-                let maybe_prepare = if payload.message_type == ConsensusMessageType::PrepareRequest {
+                let maybe_prepare = if payload.message_type == ConsensusMessageType::PrepareRequest
+                {
                     Some(PrepareRequestMessage::deserialize_body(
                         &payload.data,
                         payload.block_index,

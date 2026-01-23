@@ -154,7 +154,11 @@ fn plugin_version(compat: ListPluginsCompat) -> String {
 
 fn normalize_version(version: &str) -> String {
     let mut parts = version.split('.').collect::<Vec<_>>();
-    if parts.len() == 3 && parts.iter().all(|part| part.chars().all(|ch| ch.is_ascii_digit())) {
+    if parts.len() == 3
+        && parts
+            .iter()
+            .all(|part| part.chars().all(|ch| ch.is_ascii_digit()))
+    {
         parts.push("0");
         return parts.join(".");
     }

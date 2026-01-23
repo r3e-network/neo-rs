@@ -145,9 +145,9 @@ pub use actors as akka;
 pub mod neo_system;
 
 #[cfg(feature = "runtime")]
-pub mod tokens_tracker;
-#[cfg(feature = "runtime")]
 pub mod oracle_service;
+#[cfg(feature = "runtime")]
+pub mod tokens_tracker;
 
 // Re-exports for convenient access
 pub use big_decimal::BigDecimal;

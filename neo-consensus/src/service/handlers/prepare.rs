@@ -1,8 +1,8 @@
+use super::super::helpers::invocation_script_from_signature;
 use super::super::helpers::{
     compute_header_hash, compute_merkle_root, compute_next_consensus_address,
 };
 use super::super::ConsensusService;
-use super::super::helpers::invocation_script_from_signature;
 use crate::context::ConsensusState;
 use crate::messages::{
     CommitMessage, ConsensusPayload, PrepareRequestMessage, PrepareResponseMessage,
@@ -163,12 +163,11 @@ impl ConsensusService {
 
         // Add the response
         let invocation_script = invocation_script_from_signature(&payload.witness);
-        self.context
-            .add_prepare_response(
-                payload.validator_index,
-                invocation_script,
-                Some(msg.preparation_hash),
-            )?;
+        self.context.add_prepare_response(
+            payload.validator_index,
+            invocation_script,
+            Some(msg.preparation_hash),
+        )?;
 
         self.check_prepare_responses()?;
 
@@ -205,11 +204,8 @@ impl ConsensusService {
         self.broadcast(response_payload)?;
 
         // Add our own response
-        self.context.add_prepare_response(
-            my_index,
-            invocation_script,
-            Some(preparation_hash),
-        )?;
+        self.context
+            .add_prepare_response(my_index, invocation_script, Some(preparation_hash))?;
 
         self.check_prepare_responses()?;
 

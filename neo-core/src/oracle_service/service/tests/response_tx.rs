@@ -27,12 +27,8 @@ fn seed_transaction_state(
     block_index: u32,
 ) {
     let mut writer = BinaryWriter::new();
-    writer
-        .write_u8(0x01)
-        .expect("transaction record marker");
-    writer
-        .write_u32(block_index)
-        .expect("block index");
+    writer.write_u8(0x01).expect("transaction record marker");
+    writer.write_u32(block_index).expect("block index");
     writer.write_u8(VMState::NONE as u8).expect("vm state");
     let mut tx_writer = BinaryWriter::new();
     tx.serialize(&mut tx_writer).expect("serialize tx");

@@ -748,7 +748,10 @@ impl NodeConfig {
     }
 
     /// Returns dBFT (consensus) settings if enabled via node or plugin config.
-    pub fn dbft_settings(&self, protocol_settings: &ProtocolSettings) -> Result<Option<DbftSettings>> {
+    pub fn dbft_settings(
+        &self,
+        protocol_settings: &ProtocolSettings,
+    ) -> Result<Option<DbftSettings>> {
         if let Some(section) = &self.dbft {
             if !section.enabled {
                 return Ok(None);
@@ -1113,14 +1116,7 @@ fn build_application_logs_settings(
         unhandled_exception_policy.as_deref(),
         UnhandledExceptionPolicy::Ignore,
     );
-    ApplicationLogsSettings::new(
-        true,
-        network,
-        path,
-        max_stack_size,
-        debug,
-        exception_policy,
-    )
+    ApplicationLogsSettings::new(true, network, path, max_stack_size, debug, exception_policy)
 }
 
 fn load_application_logs_plugin_config() -> Result<Option<ApplicationLogsPluginSection>> {
@@ -1128,8 +1124,12 @@ fn load_application_logs_plugin_config() -> Result<Option<ApplicationLogsPluginS
     if !path.exists() {
         return Ok(None);
     }
-    let raw = fs::read_to_string(&path)
-        .with_context(|| format!("unable to read ApplicationLogs config at {}", path.display()))?;
+    let raw = fs::read_to_string(&path).with_context(|| {
+        format!(
+            "unable to read ApplicationLogs config at {}",
+            path.display()
+        )
+    })?;
     let config: ApplicationLogsPluginConfig = serde_json::from_str(&raw)
         .with_context(|| format!("invalid ApplicationLogs config in {}", path.display()))?;
     let Some(section) = config.plugin_configuration else {

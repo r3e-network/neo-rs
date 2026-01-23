@@ -8,9 +8,7 @@ use base64::Engine as _;
 #[cfg(feature = "neofs-grpc")]
 #[test]
 fn neofs_json_session_token_matches_csharp_format() {
-    let id_bytes = vec![
-        1u8, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
-    ];
+    let id_bytes = vec![1u8, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
     let owner_bytes = vec![2u8; 25];
     let session_key = vec![3u8; 33];
     let container_bytes = vec![4u8; 32];
@@ -21,8 +19,7 @@ fn neofs_json_session_token_matches_csharp_format() {
     let id_b64 = base64::engine::general_purpose::STANDARD.encode(&id_bytes);
     let owner_b64 = base64::engine::general_purpose::STANDARD.encode(&owner_bytes);
     let session_b64 = base64::engine::general_purpose::STANDARD.encode(&session_key);
-    let container_b64 =
-        base64::engine::general_purpose::STANDARD.encode(&container_bytes);
+    let container_b64 = base64::engine::general_purpose::STANDARD.encode(&container_bytes);
     let object_b64 = base64::engine::general_purpose::STANDARD.encode(&object_bytes);
     let key_b64 = base64::engine::general_purpose::STANDARD.encode(&key_bytes);
     let sign_b64 = base64::engine::general_purpose::STANDARD.encode(&sign_bytes);
@@ -37,21 +34,19 @@ fn neofs_json_session_token_matches_csharp_format() {
                 iat: 56,
             }),
             session_key,
-            context: Some(
-                neofs_v2::session::session_token::body::Context::Object(
-                    neofs_v2::session::ObjectSessionContext {
-                        verb: neofs_v2::session::object_session_context::Verb::Get as i32,
-                        target: Some(neofs_v2::session::object_session_context::Target {
-                            container: Some(neofs_v2::refs::ContainerId {
-                                value: container_bytes,
-                            }),
-                            objects: vec![neofs_v2::refs::ObjectId {
-                                value: object_bytes,
-                            }],
+            context: Some(neofs_v2::session::session_token::body::Context::Object(
+                neofs_v2::session::ObjectSessionContext {
+                    verb: neofs_v2::session::object_session_context::Verb::Get as i32,
+                    target: Some(neofs_v2::session::object_session_context::Target {
+                        container: Some(neofs_v2::refs::ContainerId {
+                            value: container_bytes,
                         }),
-                    },
-                ),
-            ),
+                        objects: vec![neofs_v2::refs::ObjectId {
+                            value: object_bytes,
+                        }],
+                    }),
+                },
+            )),
         }),
         signature: Some(neofs_v2::refs::Signature {
             key: key_bytes,

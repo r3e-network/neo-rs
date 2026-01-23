@@ -17,10 +17,22 @@ use neo_core::network::p2p::payloads::{
 use neo_core::persistence::{DataCache, StorageItem, StorageKey};
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::native::{LedgerContract, NativeContract, PolicyContract};
+use neo_core::wallets::KeyPair;
 use neo_core::{IVerifiable, UInt160, UInt256};
 use neo_vm::{OpCode, VMState};
 use serde_json::json;
 use std::net::{IpAddr, Ipv4Addr};
+
+fn create_default_ecpoint() -> ECPoint {
+    ECPoint::from_bytes(&[0u8; 33]).unwrap_or_else(|_| {
+        ECPoint::decode_compressed_with_curve(ECCurve::secp256r1(), &[0u8; 33]).unwrap_or_else(
+            |_| {
+                ECPoint::from_bytes(&[2u8; 33])
+                    .unwrap_or_else(|e| panic!("Failed to create default ECPoint: {}", e))
+            },
+        )
+    })
+}
 
 fn create_payload_genesis_block(settings: &ProtocolSettings) -> Block {
     let ledger_block = create_genesis_block(settings);
@@ -51,25 +63,31 @@ fn csharp_ut_version_payload_size_and_roundtrip() {
         network: 123,
         version: neo_core::network::p2p::payloads::version_payload::PROTOCOL_VERSION,
         timestamp: 456,
-        nonce: 789,
+        node_key: create_default_ecpoint(),
+        node_id: UInt256::default(),
         user_agent: "neo3".to_string(),
         allow_compression: true,
         capabilities: vec![],
+        signature: vec![],
     };
-    assert_eq!(empty.size(), 22);
+    let empty_bytes = empty.to_array().expect("serialize empty");
+    assert_eq!(empty.size(), empty_bytes.len());
 
     let with_cap = VersionPayload {
         network: 123,
         version: neo_core::network::p2p::payloads::version_payload::PROTOCOL_VERSION,
         timestamp: 456,
-        nonce: 789,
+        node_key: create_default_ecpoint(),
+        node_id: UInt256::default(),
         user_agent: "neo3".to_string(),
         allow_compression: true,
         capabilities: vec![NodeCapability::tcp_server(22)],
+        signature: vec![],
     };
-    assert_eq!(with_cap.size(), 25);
+    let with_cap_bytes = with_cap.to_array().expect("serialize with_cap");
+    assert_eq!(with_cap.size(), with_cap_bytes.len());
 
-    let bytes = with_cap.to_array().expect("serialize");
+    let bytes = with_cap_bytes;
     let mut reader = MemoryReader::new(&bytes);
     let clone = <VersionPayload as Serializable>::deserialize(&mut reader).expect("deserialize");
     assert_eq!(with_cap, clone);
@@ -81,13 +99,15 @@ fn csharp_ut_version_payload_duplicate_capability_rejected() {
         network: 123,
         version: neo_core::network::p2p::payloads::version_payload::PROTOCOL_VERSION,
         timestamp: 456,
-        nonce: 789,
+        node_key: create_default_ecpoint(),
+        node_id: UInt256::default(),
         user_agent: "neo3".to_string(),
         allow_compression: true,
         capabilities: vec![
             NodeCapability::tcp_server(22),
             NodeCapability::tcp_server(22),
         ],
+        signature: vec![],
     };
     let bytes = payload.to_array().expect("serialize");
     let mut reader = MemoryReader::new(&bytes);
@@ -103,7 +123,8 @@ fn csharp_ut_version_payload_allows_unknown_capabilities() {
         network: 123,
         version: neo_core::network::p2p::payloads::version_payload::PROTOCOL_VERSION,
         timestamp: 456,
-        nonce: 789,
+        node_key: create_default_ecpoint(),
+        node_id: UInt256::default(),
         user_agent: "neo3".to_string(),
         allow_compression: true,
         capabilities: vec![
@@ -112,6 +133,7 @@ fn csharp_ut_version_payload_allows_unknown_capabilities() {
             unknown_b,
             NodeCapability::full_node(1),
         ],
+        signature: vec![],
     };
 
     let bytes = payload.to_array().expect("serialize");

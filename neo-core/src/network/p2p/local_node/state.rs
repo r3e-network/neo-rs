@@ -4,6 +4,7 @@
 
 use super::helpers::current_unix_timestamp;
 use super::*;
+use crate::wallets::KeyPair;
 
 #[derive(Debug, Clone)]
 pub(super) struct RemoteActorEntry {
@@ -23,6 +24,8 @@ pub struct LocalNode {
     pub nonce: u32,
     /// User agent advertised during version handshake.
     pub user_agent: String,
+    /// Node identity key pair for P2P authentication (C# v3.9.2+).
+    node_key: Arc<KeyPair>,
     /// Listening port for inbound connections.
     port: RwLock<u16>,
     /// Supported node capabilities.
@@ -55,6 +58,17 @@ impl LocalNode {
 
     /// Creates a new local node matching the behaviour of the C# constructor.
     pub fn new(settings: Arc<ProtocolSettings>, port: u16, user_agent: String) -> Self {
+        let node_key = Arc::new(KeyPair::generate().expect("Failed to generate node key pair"));
+        Self::with_key(settings, port, user_agent, node_key)
+    }
+
+    /// Creates a local node with a specific identity key pair (C# v3.9.2+).
+    pub fn with_key(
+        settings: Arc<ProtocolSettings>,
+        port: u16,
+        user_agent: String,
+        node_key: Arc<KeyPair>,
+    ) -> Self {
         let mut nonce_bytes = [0u8; 4];
         OsRng.fill_bytes(&mut nonce_bytes);
         Self {
@@ -62,6 +76,7 @@ impl LocalNode {
             config: RwLock::new(ChannelsConfig::default()),
             nonce: u32::from_le_bytes(nonce_bytes),
             user_agent,
+            node_key,
             port: RwLock::new(port),
             capabilities: Arc::new(RwLock::new(vec![
                 NodeCapability::tcp_server(port),
@@ -273,8 +288,8 @@ impl LocalNode {
         }
 
         VersionPayload::create(
-            self.settings.network,
-            self.nonce,
+            &self.settings,
+            &self.node_key,
             self.user_agent.clone(),
             capabilities,
         )
@@ -369,7 +384,7 @@ impl LocalNode {
             return false;
         }
 
-        if version.nonce == self.nonce {
+        if version.node_id == VersionPayload::compute_node_id(&self.settings, &version.node_key) {
             return false;
         }
 
@@ -402,7 +417,7 @@ impl LocalNode {
         let nodes = self.read_remote_nodes();
         let duplicate = nodes.values().any(|entry| {
             let existing_ip = Self::normalize_ip(entry.snapshot.remote_address);
-            existing_ip == remote_ip && entry.version.nonce == version.nonce
+            existing_ip == remote_ip && entry.version.node_id == version.node_id
         });
         drop(nodes);
 

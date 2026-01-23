@@ -78,8 +78,8 @@ pub mod context;
 pub mod error;
 pub mod message_type;
 pub mod messages;
-pub mod signer;
 pub mod service;
+pub mod signer;
 
 // Re-exports - Types
 pub use change_view_reason::ChangeViewReason;

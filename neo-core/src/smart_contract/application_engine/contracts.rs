@@ -19,11 +19,9 @@ impl ApplicationEngine {
             }
         }
 
-        if let Some(contract) = ContractManagement::get_contract_from_snapshot(
-            self.snapshot_cache.as_ref(),
-            hash,
-        )
-        .map_err(|e| Error::invalid_operation(e.to_string()))?
+        if let Some(contract) =
+            ContractManagement::get_contract_from_snapshot(self.snapshot_cache.as_ref(), hash)
+                .map_err(|e| Error::invalid_operation(e.to_string()))?
         {
             self.contracts.insert(*hash, contract.clone());
             return Ok(contract);

@@ -24,17 +24,13 @@ fn filter_matches_csharp_examples() {
     );
     assert_eq!(
         "[50]",
-        String::from_utf8(
-            filter_json(json, Some("$.Manufacturers[0].Products[0].Price")).unwrap()
-        )
-        .unwrap()
+        String::from_utf8(filter_json(json, Some("$.Manufacturers[0].Products[0].Price")).unwrap())
+            .unwrap()
     );
     assert_eq!(
         r#"["Elbow Grease"]"#,
-        String::from_utf8(
-            filter_json(json, Some("$.Manufacturers[1].Products[0].Name")).unwrap()
-        )
-        .unwrap()
+        String::from_utf8(filter_json(json, Some("$.Manufacturers[1].Products[0].Name")).unwrap())
+            .unwrap()
     );
     assert_eq!(
         r#"[{"Name":"Elbow Grease","Price":99.95}]"#,

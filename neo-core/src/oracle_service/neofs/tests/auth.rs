@@ -40,8 +40,6 @@ fn salt_message_wallet_connect_includes_salt_and_suffix() {
         .any(|window| window == salt_bytes);
     assert!(contains_salt, "salt hex not found in message");
 
-    let contains_data = message
-        .windows(data.len())
-        .any(|window| window == data);
+    let contains_data = message.windows(data.len()).any(|window| window == data);
     assert!(contains_data, "data not found in message");
 }

@@ -107,8 +107,7 @@ impl ConsensusService {
                 if cv.validator_index as usize >= self.context.validator_count() {
                     continue;
                 }
-                let Some(signature) =
-                    signature_from_invocation_script(&cv.invocation_script)
+                let Some(signature) = signature_from_invocation_script(&cv.invocation_script)
                 else {
                     continue;
                 };
@@ -180,8 +179,7 @@ impl ConsensusService {
                     if prep.validator_index == primary_index {
                         continue;
                     }
-                    let Some(signature) =
-                        signature_from_invocation_script(&prep.invocation_script)
+                    let Some(signature) = signature_from_invocation_script(&prep.invocation_script)
                     else {
                         continue;
                     };
@@ -211,8 +209,7 @@ impl ConsensusService {
                 if commit.validator_index as usize >= self.context.validator_count() {
                     continue;
                 }
-                let Some(signature) =
-                    signature_from_invocation_script(&commit.invocation_script)
+                let Some(signature) = signature_from_invocation_script(&commit.invocation_script)
                 else {
                     continue;
                 };

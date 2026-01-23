@@ -22,6 +22,7 @@ pub mod policy_contract;
 pub mod role;
 pub mod role_management;
 pub mod std_lib;
+pub mod token_management;
 pub mod transaction_state;
 pub mod treasury;
 pub mod trimmed_block;
@@ -43,6 +44,7 @@ pub use policy_contract::PolicyContract;
 pub use role::Role;
 pub use role_management::RoleManagement;
 pub use std_lib::StdLib;
+pub use token_management::{TokenManagement, TokenState, TokenType};
 pub use transaction_state::TransactionState;
 pub use treasury::TreasuryContract;
 
@@ -147,6 +149,9 @@ impl NativeRegistry {
 
         // Register Treasury contract (active after HF_Faun)
         self.register(Arc::new(TreasuryContract::new()));
+
+        // Register TokenManagement contract (active after HF_Faun)
+        self.register(Arc::new(TokenManagement::new()));
     }
 }
 

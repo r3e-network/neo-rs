@@ -106,7 +106,9 @@ impl ApplicationLogsService {
         key.extend_from_slice(&hash.to_bytes());
         match serde_json::to_vec(&value) {
             Ok(bytes) => snapshot.put(key, bytes),
-            Err(err) => warn!(target: "neo::application_logs", error = %err, "failed to serialize application log"),
+            Err(err) => {
+                warn!(target: "neo::application_logs", error = %err, "failed to serialize application log")
+            }
         }
     }
 
@@ -126,7 +128,10 @@ impl ApplicationLogsService {
             .map(|exec| self.execution_to_json(exec, false))
             .collect::<Vec<_>>();
         let mut obj = Map::new();
-        obj.insert("blockhash".to_string(), Value::String(block_hash.to_string()));
+        obj.insert(
+            "blockhash".to_string(),
+            Value::String(block_hash.to_string()),
+        );
         obj.insert("executions".to_string(), Value::Array(block_executions));
         Value::Object(obj)
     }
@@ -345,7 +350,7 @@ fn stack_item_to_json(
             let text = pointer.position().to_string();
             subtract_size(remaining, text.len() as isize)?;
             json_value = Some(Value::Number(serde_json::Number::from(
-                pointer.position() as u64,
+                pointer.position() as u64
             )));
         }
         StackItem::Array(array) => {

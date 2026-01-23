@@ -11,14 +11,15 @@ fn neofs_json_header_matches_csharp_format() {
     let container_bytes = vec![1u8; 32];
     let owner_bytes = vec![2u8; 25];
     let checksum_bytes = vec![3u8; 32];
-    let container_b64 =
-        base64::engine::general_purpose::STANDARD.encode(&container_bytes);
+    let container_b64 = base64::engine::general_purpose::STANDARD.encode(&container_bytes);
     let owner_b64 = base64::engine::general_purpose::STANDARD.encode(&owner_bytes);
-    let checksum_b64 =
-        base64::engine::general_purpose::STANDARD.encode(&checksum_bytes);
+    let checksum_b64 = base64::engine::general_purpose::STANDARD.encode(&checksum_bytes);
 
     let header = neofs_v2::object::Header {
-        version: Some(neofs_v2::refs::Version { major: 2, minor: 11 }),
+        version: Some(neofs_v2::refs::Version {
+            major: 2,
+            minor: 11,
+        }),
         container_id: Some(neofs_v2::refs::ContainerId {
             value: container_bytes,
         }),

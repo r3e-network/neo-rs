@@ -139,13 +139,8 @@ async fn recovery_message_change_view_triggers_view_change() {
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
 
     let build_change_view = |validator_index: u8, timestamp: u64, key: &[u8; 32]| {
-        let msg = ChangeViewMessage::new(
-            0,
-            0,
-            validator_index,
-            timestamp,
-            ChangeViewReason::Timeout,
-        );
+        let msg =
+            ChangeViewMessage::new(0, 0, validator_index, timestamp, ChangeViewReason::Timeout);
         let mut payload = ConsensusPayload::new(
             network,
             0,
@@ -609,18 +604,14 @@ async fn recovery_response_includes_compact_payloads() {
         invocation_script(&vec![0xAA; 64])
     );
 
-    assert!(
-        recovery
-            .preparation_messages
-            .iter()
-            .any(|msg| msg.validator_index == 0)
-    );
-    assert!(
-        recovery
-            .preparation_messages
-            .iter()
-            .any(|msg| msg.validator_index == 2)
-    );
+    assert!(recovery
+        .preparation_messages
+        .iter()
+        .any(|msg| msg.validator_index == 0));
+    assert!(recovery
+        .preparation_messages
+        .iter()
+        .any(|msg| msg.validator_index == 2));
 
     let commit = recovery
         .commit_messages
@@ -628,8 +619,5 @@ async fn recovery_response_includes_compact_payloads() {
         .find(|msg| msg.validator_index == 3)
         .expect("commit");
     assert_eq!(commit.signature, vec![0xDD; 64]);
-    assert_eq!(
-        commit.invocation_script,
-        invocation_script(&vec![0xEE; 64])
-    );
+    assert_eq!(commit.invocation_script, invocation_script(&vec![0xEE; 64]));
 }
