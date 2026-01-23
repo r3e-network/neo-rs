@@ -68,3 +68,4 @@ neo-node/StateRoot/
 # CodeX build artifacts
 **/target_codex/
 target_codex/
+neo-csharp-latest/

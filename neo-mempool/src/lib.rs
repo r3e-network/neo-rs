@@ -47,3 +47,6 @@ pub const DEFAULT_MAX_TRANSACTIONS: usize = 50_000;
 
 /// Default transaction expiration (in blocks)
 pub const DEFAULT_EXPIRATION_BLOCKS: u32 = 5760; // ~24 hours at 15 sec/block
+
+#[cfg(test)]
+mod tests;

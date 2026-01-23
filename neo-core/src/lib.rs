@@ -659,3 +659,6 @@ pub mod contract {
 // - neo-core is Layer 1 (Core)
 // - neo-p2p and neo-consensus are Layer 2 (Protocol)
 // Import directly from neo-p2p and neo-consensus crates instead.
+
+#[cfg(test)]
+mod tests;

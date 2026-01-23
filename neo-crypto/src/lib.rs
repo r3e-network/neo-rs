@@ -55,3 +55,6 @@ pub use mpt_trie::{
     Cache, MptCache, MptError, MptResult, MptStoreSnapshot, Node, NodeType, Trie, TrieEntry,
 };
 pub use named_curve_hash::NamedCurveHash;
+
+#[cfg(test)]
+mod tests;

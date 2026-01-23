@@ -41,6 +41,12 @@ pub mod verification;
 pub mod verify_result;
 pub mod witness_scope;
 
+#[cfg(test)]
+mod tests;
+
+#[cfg(test)]
+pub use tests::*;
+
 // Re-exports
 pub use constants::*;
 pub use contract_parameter_type::ContractParameterType;
