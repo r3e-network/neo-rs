@@ -44,17 +44,24 @@ mod tests {
 
     #[test]
     fn compression_capability_respects_configuration() {
+        use crate::network::p2p::capabilities::NodeCapability;
+
         let settings = Arc::new(ProtocolSettings::default());
         let node = LocalNode::new(settings, 10333, "/agent".to_string());
 
         let mut config = ChannelsConfig::default();
         node.apply_channels_config(&config);
-        assert!(node.version_payload().allow_compression);
+
+        // Compression is allowed by default (no DisableCompression capability)
+        let payload = node.version_payload();
+        assert!(!payload
+            .capabilities
+            .iter()
+            .any(|cap| matches!(cap, NodeCapability::DisableCompression)));
 
         config.enable_compression = false;
         node.apply_channels_config(&config);
         let payload = node.version_payload();
-        assert!(!payload.allow_compression);
         assert!(payload
             .capabilities
             .iter()

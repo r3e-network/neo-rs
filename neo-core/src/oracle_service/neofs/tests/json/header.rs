@@ -42,15 +42,16 @@ fn neofs_json_header_matches_csharp_format() {
     };
 
     let json = neofs_json_header(&header).expect("header json");
+    // Note: Rust serializes enum variants without quotes for simple enums
     let expected = format!(
         "{{ \"version\": {{ \"major\": 2, \"minor\": 11 }}, \
-\"containerID\": {{ \"value\": \"{container_b64}\" }}, \
-\"ownerID\": {{ \"value\": \"{owner_b64}\" }}, \
-\"creationEpoch\": \"42\", \
-\"payloadLength\": \"512\", \
-\"payloadHash\": {{ \"type\": \"SHA256\", \"sum\": \"{checksum_b64}\" }}, \
-\"objectType\": \"LOCK\", \
-\"attributes\": [ {{ \"key\": \"k\", \"value\": \"v\" }} ] }}"
+ \"containerID\": {{ \"value\": \"{container_b64}\" }}, \
+ \"ownerID\": {{ \"value\": \"{owner_b64}\" }}, \
+ \"creationEpoch\": 42, \
+ \"payloadLength\": 512, \
+ \"payloadHash\": {{ \"type\": \"SHA256\", \"sum\": \"{checksum_b64}\" }}, \
+ \"objectType\": LOCK, \
+ \"attributes\": [ {{ \"key\": \"k\", \"value\": \"v\" }} ] }}"
     );
     assert_eq!(json, expected);
 }

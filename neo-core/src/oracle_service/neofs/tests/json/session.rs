@@ -56,13 +56,14 @@ fn neofs_json_session_token_matches_csharp_format() {
     };
 
     let json = neofs_json_session_token(&token).expect("token json");
+    // Note: Rust serializes lifetime values as strings to match Neo's JSON format
     let expected = format!(
         "{{ \"body\": {{ \"id\": \"{id_b64}\", \"ownerID\": {{ \"value\": \"{owner_b64}\" }}, \
-\"lifetime\": {{ \"exp\": \"12\", \"nbf\": \"34\", \"iat\": \"56\" }}, \
-\"sessionKey\": \"{session_b64}\", \
-\"object\": {{ \"verb\": \"GET\", \"address\": {{ \"containerID\": {{ \"value\": \"{container_b64}\" }}, \
-\"objectID\": {{ \"value\": \"{object_b64}\" }} }} }} }}, \
-\"signature\": {{ \"key\": \"{key_b64}\", \"signature\": \"{sign_b64}\" }} }}"
+ \"lifetime\": {{ \"exp\": \"12\", \"nbf\": \"34\", \"iat\": \"56\" }}, \
+ \"sessionKey\": \"{session_b64}\", \
+ \"object\": {{ \"verb\": \"GET\", \"address\": {{ \"containerID\": {{ \"value\": \"{container_b64}\" }}, \
+ \"objectID\": {{ \"value\": \"{object_b64}\" }} }} }} }}, \
+ \"signature\": {{ \"key\": \"{key_b64}\", \"signature\": \"{sign_b64}\", \"scheme\": \"ECDSA_SHA512\" }} }}"
     );
     assert_eq!(json, expected);
 }

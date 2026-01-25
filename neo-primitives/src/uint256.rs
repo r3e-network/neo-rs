@@ -39,26 +39,31 @@ impl UInt256 {
     pub const LENGTH: usize = UINT256_SIZE;
 
     /// Creates a new UInt256 instance.
+    #[inline]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Returns a zero UInt256.
+    #[inline]
     pub fn zero() -> Self {
         Self::default()
     }
 
     /// Checks if this UInt256 is zero.
+    #[inline]
     pub fn is_zero(&self) -> bool {
         self.value1 == 0 && self.value2 == 0 && self.value3 == 0 && self.value4 == 0
     }
 
     /// Returns the bytes representation of this UInt256.
+    #[inline]
     pub fn as_bytes(&self) -> [u8; HASH_SIZE] {
         self.to_array()
     }
 
     /// Returns the bytes as a Vec<u8>
+    #[inline]
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(HASH_SIZE);
         bytes.extend_from_slice(&self.value1.to_le_bytes());
@@ -69,6 +74,7 @@ impl UInt256 {
     }
 
     /// Determines whether this instance and another specified UInt256 object have the same value.
+    #[inline]
     pub fn equals(&self, other: Option<&Self>) -> bool {
         if let Some(other) = other {
             self.value1 == other.value1
@@ -81,6 +87,7 @@ impl UInt256 {
     }
 
     /// Creates a new UInt256 from a byte array.
+    #[inline]
     pub fn from_bytes(value: &[u8]) -> PrimitiveResult<Self> {
         if value.len() != UINT256_SIZE {
             return Err(PrimitiveError::InvalidFormat {
@@ -145,6 +152,7 @@ impl UInt256 {
     }
 
     /// Gets a byte array representation of the UInt256.
+    #[inline]
     pub fn to_array(&self) -> [u8; UINT256_SIZE] {
         let mut result = [0u8; UINT256_SIZE];
 
@@ -162,11 +170,13 @@ impl UInt256 {
     }
 
     /// Gets a span that represents the current value in little-endian.
+    #[inline]
     pub fn get_span(&self) -> [u8; UINT256_SIZE] {
         self.to_array()
     }
 
     /// Parses a UInt256 from a hexadecimal string.
+    #[inline]
     pub fn parse(s: &str) -> PrimitiveResult<Self> {
         let mut result = None;
         if !Self::try_parse(s, &mut result) {
@@ -313,16 +323,6 @@ impl TryFrom<&[u8]> for UInt256 {
     }
 }
 
-/// **DEPRECATED**: Use `FromStr` trait (via `str::parse()`) instead for proper error handling.
-///
-/// This implementation silently returns zero on parse failure, which can mask errors.
-/// Prefer using `str::parse::<UInt256>()` or `UInt256::parse()` instead.
-impl From<&str> for UInt256 {
-    fn from(s: &str) -> Self {
-        Self::parse(s).unwrap_or_default()
-    }
-}
-
 impl TryFrom<String> for UInt256 {
     type Error = PrimitiveError;
 
@@ -331,13 +331,16 @@ impl TryFrom<String> for UInt256 {
     }
 }
 
-/// **DEPRECATED**: Use `TryFrom<&[u8]>` or `from_bytes()` instead for proper error handling.
-///
-/// This implementation silently returns zero on invalid input, which can mask errors.
-/// Prefer using `UInt256::from_bytes()` or `TryFrom<&[u8]>` instead.
-impl From<Vec<u8>> for UInt256 {
-    fn from(data: Vec<u8>) -> Self {
-        Self::from_bytes(&data).unwrap_or_default()
+impl AsRef<[u8; UINT256_SIZE]> for UInt256 {
+    #[inline]
+    fn as_ref(&self) -> &[u8; UINT256_SIZE] {
+        // SAFETY: UInt256 is repr(C) with four u64 fields that map to 32 bytes.
+        // We can safely reinterpret the struct as a byte array.
+        // This is safe because:
+        // 1. UInt256 is #[derive(Copy, Clone)] and has no padding between fields
+        // 2. We're only reading the bytes, not modifying them
+        // 3. The layout is well-defined as four little-endian fields
+        unsafe { &*((self as *const Self) as *const [u8; UINT256_SIZE]) }
     }
 }
 
@@ -347,6 +350,7 @@ impl From<Vec<u8>> for UInt256 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     #[test]
     fn test_uint256_new() {
@@ -451,5 +455,83 @@ mod tests {
         assert!(uint1.equals(Some(&uint2)));
         assert!(!uint1.equals(Some(&uint3)));
         assert!(!uint1.equals(None));
+    }
+
+    // Property-based tests using proptest
+    proptest! {
+        #[test]
+        fn test_roundtrip_from_bytes(bytes in any::<[u8; UINT256_SIZE]>()) {
+            let uint = UInt256::from_bytes(&bytes).unwrap();
+            let result = uint.to_array();
+            prop_assert_eq!(bytes, result);
+        }
+
+        #[test]
+        fn test_parse_hex_string(hex in "[0-9a-fA-F]{64}") {
+            // Test that parsing is deterministic
+            let uint = UInt256::parse(&format!("0x{}", hex)).unwrap();
+            // Converting to hex string and re-parsing should give same Display representation
+            let hex_str = uint.to_hex_string();
+            let uint2 = UInt256::parse(&hex_str).unwrap();
+            prop_assert_eq!(uint, uint2);
+        }
+
+        #[test]
+        fn test_ordering_transitive(
+            a in any::<[u8; UINT256_SIZE]>(),
+            b in any::<[u8; UINT256_SIZE]>(),
+            c in any::<[u8; UINT256_SIZE]>()
+        ) {
+            let a = UInt256::from_bytes(&a).unwrap();
+            let b = UInt256::from_bytes(&b).unwrap();
+            let c = UInt256::from_bytes(&c).unwrap();
+
+            // Test transitivity of ordering
+            if a < b && b < c {
+                prop_assert!(a < c);
+            }
+            if a > b && b > c {
+                prop_assert!(a > c);
+            }
+        }
+
+        #[test]
+        fn test_is_zero_correct(bytes in any::<[u8; UINT256_SIZE]>()) {
+            let uint = UInt256::from_bytes(&bytes).unwrap();
+            let is_zero = bytes.iter().all(|&b| b == 0);
+            prop_assert_eq!(uint.is_zero(), is_zero);
+        }
+
+        #[test]
+        fn test_as_ref_implementation(bytes in any::<[u8; UINT256_SIZE]>()) {
+            let uint = UInt256::from_bytes(&bytes).unwrap();
+            let ref_bytes: &[u8] = uint.as_ref();
+            prop_assert_eq!(&bytes, ref_bytes);
+        }
+
+        #[test]
+        fn test_get_hash_code_deterministic(bytes in any::<[u8; UINT256_SIZE]>()) {
+            let uint = UInt256::from_bytes(&bytes).unwrap();
+            let hash1 = uint.get_hash_code();
+            let hash2 = uint.get_hash_code();
+            prop_assert_eq!(hash1, hash2);
+        }
+
+        #[test]
+        fn test_equals_is_symmetric(
+            a in any::<[u8; UINT256_SIZE]>(),
+            b in any::<[u8; UINT256_SIZE]>()
+        ) {
+            let uint_a = UInt256::from_bytes(&a).unwrap();
+            let uint_b = UInt256::from_bytes(&b).unwrap();
+            prop_assert_eq!(uint_a.equals(Some(&uint_b)), uint_b.equals(Some(&uint_a)));
+        }
+
+        #[test]
+        fn test_parse_with_0x_prefix(hex in "[0-9a-fA-F]{64}") {
+            let with_prefix = UInt256::parse(&format!("0x{}", hex)).unwrap();
+            let without_prefix = UInt256::parse(&hex).unwrap();
+            prop_assert_eq!(with_prefix, without_prefix);
+        }
     }
 }

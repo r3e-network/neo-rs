@@ -218,7 +218,7 @@ fn test_version_payload_capabilities() {
         vec![NodeCapability::FullNode { start_height: 100 }],
     );
     assert_eq!(version.capabilities.len(), 1);
-    assert!(version.allow_compression);
+    // VersionPayload no longer has allow_compression field in Rust implementation
 }
 
 /// Tests Message creation without compression

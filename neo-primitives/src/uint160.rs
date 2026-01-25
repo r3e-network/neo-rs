@@ -38,26 +38,31 @@ impl UInt160 {
     pub const LENGTH: usize = UINT160_SIZE;
 
     /// Creates a new UInt160 instance.
+    #[inline]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Returns a zero UInt160.
+    #[inline]
     pub fn zero() -> Self {
         Self::default()
     }
 
     /// Checks if this UInt160 is zero (matches C# IsZero property).
+    #[inline]
     pub fn is_zero(&self) -> bool {
         self.value1 == 0 && self.value2 == 0 && self.value3 == 0
     }
 
     /// Returns the bytes representation of this UInt160.
+    #[inline]
     pub fn as_bytes(&self) -> [u8; ADDRESS_SIZE] {
         self.to_array()
     }
 
     /// Returns the bytes as a Vec<u8>
+    #[inline]
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(ADDRESS_SIZE);
         bytes.extend_from_slice(&self.value1.to_le_bytes());
@@ -67,6 +72,7 @@ impl UInt160 {
     }
 
     /// Determines whether this instance and another specified UInt160 object have the same value.
+    #[inline]
     pub fn equals(&self, other: Option<&Self>) -> bool {
         if let Some(other) = other {
             self.value1 == other.value1
@@ -78,6 +84,7 @@ impl UInt160 {
     }
 
     /// Creates a new UInt160 from a byte array.
+    #[inline]
     pub fn from_bytes(value: &[u8]) -> PrimitiveResult<Self> {
         if value.len() != UINT160_SIZE {
             return Err(PrimitiveError::InvalidFormat {
@@ -139,6 +146,7 @@ impl UInt160 {
     }
 
     /// Gets a byte array representation of the UInt160.
+    #[inline]
     pub fn to_array(&self) -> [u8; UINT160_SIZE] {
         let mut result = [0u8; UINT160_SIZE];
 
@@ -154,11 +162,13 @@ impl UInt160 {
     }
 
     /// Gets a span that represents the current value in little-endian.
+    #[inline]
     pub fn get_span(&self) -> [u8; UINT160_SIZE] {
         self.to_array()
     }
 
     /// Parses a UInt160 from a hexadecimal string.
+    #[inline]
     pub fn parse(s: &str) -> PrimitiveResult<Self> {
         let mut result = None;
         if !Self::try_parse(s, &mut result) {
@@ -206,6 +216,7 @@ impl UInt160 {
     }
 
     /// Converts the UInt160 to a hexadecimal string.
+    #[inline]
     pub fn to_hex_string(&self) -> String {
         let mut bytes = self.to_array();
         bytes.reverse();
@@ -376,16 +387,6 @@ impl TryFrom<&[u8]> for UInt160 {
     }
 }
 
-/// **DEPRECATED**: Use `FromStr` trait (via `str::parse()`) instead for proper error handling.
-///
-/// This implementation silently returns zero on parse failure, which can mask errors.
-/// Prefer using `str::parse::<UInt160>()` or `UInt160::parse()` instead.
-impl From<&str> for UInt160 {
-    fn from(s: &str) -> Self {
-        Self::parse(s).unwrap_or_default()
-    }
-}
-
 impl TryFrom<String> for UInt160 {
     type Error = PrimitiveError;
 
@@ -394,13 +395,16 @@ impl TryFrom<String> for UInt160 {
     }
 }
 
-/// **DEPRECATED**: Use `TryFrom<&[u8]>` or `from_bytes()` instead for proper error handling.
-///
-/// This implementation silently returns zero on invalid input, which can mask errors.
-/// Prefer using `UInt160::from_bytes()` or `TryFrom<&[u8]>` instead.
-impl From<Vec<u8>> for UInt160 {
-    fn from(data: Vec<u8>) -> Self {
-        Self::from_bytes(&data).unwrap_or_default()
+impl AsRef<[u8; UINT160_SIZE]> for UInt160 {
+    #[inline]
+    fn as_ref(&self) -> &[u8; UINT160_SIZE] {
+        // SAFETY: UInt160 is repr(C, packed) with three fields that map to 20 bytes.
+        // We can safely reinterpret the struct as a byte array.
+        // This is safe because:
+        // 1. UInt160 is #[derive(Copy, Clone)] and has no padding between fields
+        // 2. We're only reading the bytes, not modifying them
+        // 3. The layout is well-defined as three little-endian fields
+        unsafe { &*((self as *const Self) as *const [u8; UINT160_SIZE]) }
     }
 }
 
@@ -410,6 +414,7 @@ impl From<Vec<u8>> for UInt160 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     #[test]
     fn test_uint160_new() {
@@ -504,5 +509,85 @@ mod tests {
         let script = b"Hello, Neo!";
         let uint = UInt160::from_script(script);
         assert!(!uint.is_zero());
+    }
+
+    // Property-based tests using proptest
+    proptest! {
+        #[test]
+        fn test_roundtrip_from_bytes(bytes in any::<[u8; UINT160_SIZE]>()) {
+            let uint = UInt160::from_bytes(&bytes).unwrap();
+            let result = uint.to_array();
+            prop_assert_eq!(bytes, result);
+        }
+
+        #[test]
+        fn test_parse_hex_string(hex in "[0-9a-fA-F]{40}") {
+            // Test that parsing is deterministic
+            let uint = UInt160::parse(&format!("0x{}", hex)).unwrap();
+            // Converting to hex string and re-parsing should give same Display representation
+            let hex_str = uint.to_hex_string();
+            let uint2 = UInt160::parse(&hex_str).unwrap();
+            prop_assert_eq!(uint, uint2);
+        }
+
+        #[test]
+        fn test_ordering_transitive(
+            a in any::<[u8; UINT160_SIZE]>(),
+            b in any::<[u8; UINT160_SIZE]>(),
+            c in any::<[u8; UINT160_SIZE]>()
+        ) {
+            let a = UInt160::from_bytes(&a).unwrap();
+            let b = UInt160::from_bytes(&b).unwrap();
+            let c = UInt160::from_bytes(&c).unwrap();
+
+            // Test transitivity of ordering
+            if a < b && b < c {
+                prop_assert!(a < c);
+            }
+            if a > b && b > c {
+                prop_assert!(a > c);
+            }
+        }
+
+        #[test]
+        fn test_is_zero_correct(bytes in any::<[u8; UINT160_SIZE]>()) {
+            let uint = UInt160::from_bytes(&bytes).unwrap();
+            let is_zero = bytes.iter().all(|&b| b == 0);
+            prop_assert_eq!(uint.is_zero(), is_zero);
+        }
+
+        #[test]
+        fn test_as_ref_implementation(bytes in any::<[u8; UINT160_SIZE]>()) {
+            let uint = UInt160::from_bytes(&bytes).unwrap();
+            let ref_bytes: &[u8] = uint.as_ref();
+            prop_assert_eq!(&bytes, ref_bytes);
+        }
+
+        #[test]
+        fn test_get_hash_code_deterministic(bytes in any::<[u8; UINT160_SIZE]>()) {
+            let uint = UInt160::from_bytes(&bytes).unwrap();
+            let hash1 = uint.get_hash_code();
+            let hash2 = uint.get_hash_code();
+            prop_assert_eq!(hash1, hash2);
+        }
+
+        #[test]
+        fn test_equals_is_symmetric(
+            a in any::<[u8; UINT160_SIZE]>(),
+            b in any::<[u8; UINT160_SIZE]>()
+        ) {
+            let uint_a = UInt160::from_bytes(&a).unwrap();
+            let uint_b = UInt160::from_bytes(&b).unwrap();
+            prop_assert_eq!(uint_a.equals(Some(&uint_b)), uint_b.equals(Some(&uint_a)));
+        }
+
+        #[test]
+        fn test_from_address_roundtrip(address in "[1-9A-HJ-NP-Za-km-z]{34,34}") {
+            let uint = UInt160::from_address(&address);
+            if let Ok(parsed) = uint {
+                let reconstructed = parsed.to_address();
+                prop_assert_eq!(address, reconstructed);
+            }
+        }
     }
 }
