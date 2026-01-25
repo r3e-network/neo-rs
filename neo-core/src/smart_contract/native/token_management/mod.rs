@@ -591,6 +591,102 @@ impl TokenManagement {
         Ok(())
     }
 
+    fn update_account_balance(
+        &self,
+        context: &StorageContext,
+        engine: &mut ApplicationEngine,
+        account: &UInt160,
+        asset_id: &UInt160,
+        delta: i32,
+    ) -> CoreResult<()> {
+        let account_key = [
+            vec![PREFIX_ACCOUNT_STATE],
+            account.to_bytes().to_vec(),
+            asset_id.to_bytes().to_vec(),
+        ]
+        .concat();
+
+        let mut balance = BigInt::from(0);
+        if let Some(account_data) = engine.get_storage_item(context, &account_key) {
+            if let Some(state) = Self::deserialize_account_state(&account_data) {
+                balance = state.balance;
+            }
+        }
+
+        balance = balance.clone() + delta;
+        if balance.is_zero() {
+            engine.delete_storage_item(context, &account_key)?;
+        } else {
+            let account_state = AccountState::with_balance(balance);
+            self.write_account_state(context, engine, account, asset_id, &account_state)?;
+        }
+        Ok(())
+    }
+
+    fn add_nft_to_asset_index(
+        &self,
+        context: &StorageContext,
+        engine: &mut ApplicationEngine,
+        asset_id: &UInt160,
+        nft_id: &UInt160,
+    ) -> CoreResult<()> {
+        let mut index_key = Vec::with_capacity(1 + 20 + 20);
+        index_key.push(PREFIX_NFT_ASSET_ID_UNIQUE_ID_INDEX);
+        index_key.extend_from_slice(&asset_id.as_bytes());
+        index_key.extend_from_slice(&nft_id.as_bytes());
+        let index_key = StorageKey::new(ID, index_key);
+        engine.put_storage_item(context, &index_key.suffix().to_vec(), &vec![0])?;
+        Ok(())
+    }
+
+    fn remove_nft_from_asset_index(
+        &self,
+        context: &StorageContext,
+        engine: &mut ApplicationEngine,
+        asset_id: &UInt160,
+        nft_id: &UInt160,
+    ) -> CoreResult<()> {
+        let mut index_key = Vec::with_capacity(1 + 20 + 20);
+        index_key.push(PREFIX_NFT_ASSET_ID_UNIQUE_ID_INDEX);
+        index_key.extend_from_slice(&asset_id.as_bytes());
+        index_key.extend_from_slice(&nft_id.as_bytes());
+        let index_key = StorageKey::new(ID, index_key);
+        engine.delete_storage_item(context, &index_key.suffix().to_vec())?;
+        Ok(())
+    }
+
+    fn add_nft_to_owner_index(
+        &self,
+        context: &StorageContext,
+        engine: &mut ApplicationEngine,
+        owner: &UInt160,
+        nft_id: &UInt160,
+    ) -> CoreResult<()> {
+        let mut index_key = Vec::with_capacity(1 + 20 + 20);
+        index_key.push(PREFIX_NFT_OWNER_UNIQUE_ID_INDEX);
+        index_key.extend_from_slice(&owner.as_bytes());
+        index_key.extend_from_slice(&nft_id.as_bytes());
+        let index_key = StorageKey::new(ID, index_key);
+        engine.put_storage_item(context, &index_key.suffix().to_vec(), &vec![0])?;
+        Ok(())
+    }
+
+    fn remove_nft_from_owner_index(
+        &self,
+        context: &StorageContext,
+        engine: &mut ApplicationEngine,
+        owner: &UInt160,
+        nft_id: &UInt160,
+    ) -> CoreResult<()> {
+        let mut index_key = Vec::with_capacity(1 + 20 + 20);
+        index_key.push(PREFIX_NFT_OWNER_UNIQUE_ID_INDEX);
+        index_key.extend_from_slice(&owner.as_bytes());
+        index_key.extend_from_slice(&nft_id.as_bytes());
+        let index_key = StorageKey::new(ID, index_key);
+        engine.delete_storage_item(context, &index_key.suffix().to_vec())?;
+        Ok(())
+    }
+
     fn emit_transfer_event(
         &self,
         engine: &mut ApplicationEngine,
@@ -1138,6 +1234,9 @@ impl TokenManagement {
         let account_state = AccountState::with_balance(account_balance);
         self.write_account_state(&context, engine, &account, &asset_id, &account_state)?;
 
+        self.add_nft_to_asset_index(&context, engine, &asset_id, &unique_id)?;
+        self.add_nft_to_owner_index(&context, engine, &account, &unique_id)?;
+
         self.emit_transfer_event(engine, None, Some(&account), &BigInt::from(1))?;
 
         Ok(unique_id.to_bytes().to_vec())
@@ -1242,6 +1341,9 @@ impl TokenManagement {
 
         engine.delete_storage_item(&context, &nft_key)?;
 
+        self.remove_nft_from_asset_index(&context, engine, &nft_state.asset_id, &nft_id)?;
+        self.remove_nft_from_owner_index(&context, engine, &nft_state.owner, &nft_id)?;
+
         self.emit_transfer_event(engine, Some(&nft_state.owner), None, &BigInt::from(1))?;
 
         Ok(vec![1])
@@ -1314,6 +1416,12 @@ impl TokenManagement {
                 .map_err(CoreError::native_contract)?;
         engine.put_storage_item(&context, &nft_key, &nft_bytes)?;
 
+        self.remove_nft_from_owner_index(&context, engine, &from, &nft_id)?;
+        self.add_nft_to_owner_index(&context, engine, &to, &nft_id)?;
+
+        self.update_account_balance(&context, engine, &from, &nft_state.asset_id, -1)?;
+        self.update_account_balance(&context, engine, &to, &nft_state.asset_id, 1)?;
+
         self.emit_transfer_event(engine, Some(&from), Some(&to), &BigInt::from(1))?;
 
         Ok(vec![1])
@@ -1362,18 +1470,35 @@ impl TokenManagement {
         let prefix = StorageKey::create(ID, PREFIX_NFT_ASSET_ID_UNIQUE_ID_INDEX);
 
         let mut entries_map = std::collections::BTreeMap::new();
+        let mut snapshot_keys: std::collections::HashSet<Vec<u8>> =
+            std::collections::HashSet::new();
 
         for (key, value) in snapshot
             .as_ref()
             .find(Some(&prefix), SeekDirection::Forward)
         {
-            entries_map.insert(key, value);
+            entries_map.insert(key.clone(), value);
+            snapshot_keys.insert(key.suffix().to_vec());
         }
+
+        for (key, trackable) in snapshot.tracked_items() {
+            if key.id != ID {
+                continue;
+            }
+            let suffix = key.suffix();
+            if suffix.len() < 1 || suffix[0] != PREFIX_NFT_ASSET_ID_UNIQUE_ID_INDEX {
+                continue;
+            }
+            snapshot_keys.insert(suffix.to_vec());
+        }
+
         for (key, value) in engine
             .original_snapshot_cache()
             .find(Some(&prefix), SeekDirection::Forward)
         {
-            entries_map.entry(key).or_insert(value);
+            if !snapshot_keys.contains(key.suffix()) {
+                entries_map.entry(key).or_insert(value);
+            }
         }
 
         let mut entries: Vec<(StorageKey, StorageItem)> = entries_map.into_iter().collect();
@@ -1418,18 +1543,35 @@ impl TokenManagement {
         let prefix = StorageKey::create(ID, PREFIX_NFT_OWNER_UNIQUE_ID_INDEX);
 
         let mut entries_map = std::collections::BTreeMap::new();
+        let mut snapshot_keys: std::collections::HashSet<Vec<u8>> =
+            std::collections::HashSet::new();
 
         for (key, value) in snapshot
             .as_ref()
             .find(Some(&prefix), SeekDirection::Forward)
         {
-            entries_map.insert(key, value);
+            entries_map.insert(key.clone(), value);
+            snapshot_keys.insert(key.suffix().to_vec());
         }
+
+        for (key, trackable) in snapshot.tracked_items() {
+            if key.id != ID {
+                continue;
+            }
+            let suffix = key.suffix();
+            if suffix.len() < 1 || suffix[0] != PREFIX_NFT_OWNER_UNIQUE_ID_INDEX {
+                continue;
+            }
+            snapshot_keys.insert(suffix.to_vec());
+        }
+
         for (key, value) in engine
             .original_snapshot_cache()
             .find(Some(&prefix), SeekDirection::Forward)
         {
-            entries_map.entry(key).or_insert(value);
+            if !snapshot_keys.contains(key.suffix()) {
+                entries_map.entry(key).or_insert(value);
+            }
         }
 
         let mut entries: Vec<(StorageKey, StorageItem)> = entries_map.into_iter().collect();
