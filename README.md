@@ -116,6 +116,7 @@ The following C# Neo v3.9.2 features are fully implemented:
 | **NEP-30 Oracle/Notary/Treasury** | ✅ Complete | NEP-30 standard support for native contracts |
 | **TokenManagement Contract** | ✅ Complete | NEP-17/NEP-11 management with `_onTransfer` callbacks |
 | **TokenManagement Methods** | ✅ Complete | create, mint, burn, transfer, balanceOf, getTokenInfo, getAssetsOfOwner |
+| **NEP-11 NFT Methods** | ✅ Complete (9 tests) | mintNFT, burnNFT, transferNFT, getNFTInfo, getNFTs, getNFTsOfOwner, balanceOf |
 | **Fungible Token (NEP-17)** | ✅ Complete | Full implementation with mintable_address validation |
 | **Gas Token (NEP-17)** | ✅ Complete | Mint, burn, transfer with `onNEP17Payment` callback |
 | **Neo Token (NEP-17)** | ✅ Complete | Voting, candidate registration, GAS distribution |
@@ -149,12 +150,13 @@ All native contract hashes match the C# reference implementation:
 ### Test Coverage
 
 ```
-✅ 313 lib tests passed (neo-core)
+✅ 343 lib tests passed (neo-core)
 ✅ 520+ integration tests passed
 ✅ All C# UT_* equivalent tests converted to Rust
 ✅ JSON manifest parity with C# reference (byte-for-byte)
 ✅ Contract hash verification (all 12 native contracts)
 ✅ NEP-17 Transfer/NEP-30 Oracle callbacks tested
+✅ NEP-11 NFT operations (mint, burn, transfer, enumerate)
 ```
 
 ## Prerequisites

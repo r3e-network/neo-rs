@@ -35,6 +35,11 @@ const ID: i32 = -12;
 const PREFIX_TOKEN_STATE: u8 = 10;
 const PREFIX_ACCOUNT_STATE: u8 = 12;
 
+const PREFIX_NFT_UNIQUE_ID_SEED: u8 = 15;
+const PREFIX_NFT_STATE: u8 = 8;
+const PREFIX_NFT_OWNER_UNIQUE_ID_INDEX: u8 = 21;
+const PREFIX_NFT_ASSET_ID_UNIQUE_ID_INDEX: u8 = 23;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenType {
     Fungible = 0,
@@ -181,7 +186,44 @@ impl NFTState {
 }
 
 impl IInteroperable for NFTState {
-    fn from_stack_item(&mut self, _stack_item: StackItem) {}
+    fn from_stack_item(&mut self, stack_item: StackItem) {
+        if let StackItem::Struct(struct_item) = stack_item {
+            let items = struct_item.items();
+            if items.len() >= 2 {
+                if let Ok(bytes) = items[0].as_bytes() {
+                    if let Ok(asset_id) = UInt160::from_bytes(&bytes) {
+                        self.asset_id = asset_id;
+                    }
+                }
+                if let Ok(bytes) = items[1].as_bytes() {
+                    if let Ok(owner) = UInt160::from_bytes(&bytes) {
+                        self.owner = owner;
+                    }
+                }
+                if items.len() >= 3 {
+                    if let Ok(properties_array) = items[2].as_array() {
+                        self.properties = properties_array
+                            .iter()
+                            .filter_map(|prop| {
+                                if let StackItem::Struct(prop_struct) = prop {
+                                    let prop_items = prop_struct.items();
+                                    if prop_items.len() >= 2 {
+                                        let key = prop_items[0].as_bytes().ok()?.to_vec();
+                                        let value = prop_items[1].as_bytes().ok()?.to_vec();
+                                        Some((key, value))
+                                    } else {
+                                        None
+                                    }
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect();
+                    }
+                }
+            }
+        }
+    }
 
     fn to_stack_item(&self) -> StackItem {
         let properties_items: Vec<StackItem> = self
@@ -341,6 +383,79 @@ impl TokenManagement {
                 "amountOrNftId".to_string(),
                 "data".to_string(),
             ]),
+            NativeMethod::new(
+                "mintNFT".to_string(),
+                1 << 17,
+                false,
+                CallFlags::WRITE_STATES.bits() | CallFlags::ALLOW_CALL.bits(),
+                vec![
+                    ContractParameterType::Hash160,
+                    ContractParameterType::Hash160,
+                ],
+                ContractParameterType::Hash160,
+            )
+            .with_active_in(Hardfork::HfFaun)
+            .with_parameter_names(vec!["assetId".to_string(), "account".to_string()]),
+            NativeMethod::new(
+                "burnNFT".to_string(),
+                1 << 17,
+                false,
+                CallFlags::WRITE_STATES.bits(),
+                vec![ContractParameterType::Hash160],
+                ContractParameterType::Boolean,
+            )
+            .with_active_in(Hardfork::HfFaun)
+            .with_parameter_names(vec!["nftId".to_string()]),
+            NativeMethod::new(
+                "transferNFT".to_string(),
+                1 << 17,
+                false,
+                CallFlags::WRITE_STATES.bits() | CallFlags::ALLOW_CALL.bits(),
+                vec![
+                    ContractParameterType::Hash160,
+                    ContractParameterType::Hash160,
+                    ContractParameterType::Hash160,
+                    ContractParameterType::Any,
+                ],
+                ContractParameterType::Boolean,
+            )
+            .with_active_in(Hardfork::HfFaun)
+            .with_parameter_names(vec![
+                "nftId".to_string(),
+                "from".to_string(),
+                "to".to_string(),
+                "data".to_string(),
+            ]),
+            NativeMethod::new(
+                "getNFTInfo".to_string(),
+                1 << 15,
+                true,
+                CallFlags::READ_STATES.bits(),
+                vec![ContractParameterType::Hash160],
+                ContractParameterType::Array,
+            )
+            .with_active_in(Hardfork::HfFaun)
+            .with_parameter_names(vec!["nftId".to_string()]),
+            NativeMethod::new(
+                "getNFTs".to_string(),
+                1 << 22,
+                true,
+                CallFlags::READ_STATES.bits(),
+                vec![ContractParameterType::Hash160],
+                ContractParameterType::InteropInterface,
+            )
+            .with_active_in(Hardfork::HfFaun)
+            .with_parameter_names(vec!["assetId".to_string()]),
+            NativeMethod::new(
+                "getNFTsOfOwner".to_string(),
+                1 << 22,
+                true,
+                CallFlags::READ_STATES.bits(),
+                vec![ContractParameterType::Hash160],
+                ContractParameterType::InteropInterface,
+            )
+            .with_active_in(Hardfork::HfFaun)
+            .with_parameter_names(vec!["account".to_string()]),
         ];
         Self { methods }
     }
@@ -520,15 +635,6 @@ impl TokenManagement {
             .map_err(CoreError::native_contract)
     }
 
-    fn get_asset_id(owner: &UInt160, name: &str) -> UInt160 {
-        let name_bytes = name.as_bytes();
-        let mut buffer = Vec::with_capacity(20 + name_bytes.len());
-        buffer.extend_from_slice(&owner.as_bytes());
-        buffer.extend_from_slice(name_bytes);
-        let hash = NeoHash::hash160(&buffer);
-        UInt160::from_bytes(&hash).unwrap_or_default()
-    }
-
     pub fn invoke_method(
         &self,
         engine: &mut ApplicationEngine,
@@ -544,6 +650,12 @@ impl TokenManagement {
             "mint" => self.invoke_mint(engine, args),
             "burn" => self.invoke_burn(engine, args),
             "transfer" => self.invoke_transfer(engine, args),
+            "mintNFT" => self.invoke_mint_nft(engine, args),
+            "burnNFT" => self.invoke_burn_nft(engine, args),
+            "transferNFT" => self.invoke_transfer_nft(engine, args),
+            "getNFTInfo" => self.invoke_get_nft_info(engine, args),
+            "getNFTs" => self.invoke_get_nfts(engine, args),
+            "getNFTsOfOwner" => self.invoke_get_nfts_of_owner(engine, args),
             _ => Err(CoreError::native_contract(format!(
                 "TokenManagement: unknown method '{}'",
                 method
@@ -929,6 +1041,505 @@ impl TokenManagement {
         Ok(vec![1])
     }
 
+    fn invoke_mint_nft(
+        &self,
+        engine: &mut ApplicationEngine,
+        args: &[Vec<u8>],
+    ) -> CoreResult<Vec<u8>> {
+        if args.len() < 2 {
+            return Err(CoreError::native_contract(
+                "TokenManagement.mintNFT: invalid arguments",
+            ));
+        }
+
+        let asset_id = UInt160::from_bytes(&args[0])
+            .map_err(|_| CoreError::native_contract("Invalid asset ID"))?;
+        let account = UInt160::from_bytes(&args[1])
+            .map_err(|_| CoreError::native_contract("Invalid account"))?;
+
+        let context = engine.get_native_storage_context(&self.hash())?;
+        let token_key = StorageKey::create_with_uint160(ID, PREFIX_TOKEN_STATE, &asset_id)
+            .suffix()
+            .to_vec();
+
+        let token_data = match engine.get_storage_item(&context, &token_key) {
+            Some(data) => data,
+            None => {
+                return Err(CoreError::native_contract(
+                    "TokenManagement.mintNFT: asset not found",
+                ));
+            }
+        };
+
+        let token_state = match Self::deserialize_token_state(&token_data) {
+            Some(state) => state,
+            None => {
+                return Err(CoreError::native_contract(
+                    "TokenManagement.mintNFT: invalid token state",
+                ));
+            }
+        };
+
+        if token_state.token_type != TokenType::NonFungible {
+            return Err(CoreError::native_contract(
+                "TokenManagement.mintNFT: asset is not NFT",
+            ));
+        }
+
+        let calling_hash = engine.calling_script_hash();
+        if token_state.owner != calling_hash && !calling_hash.is_zero() {
+            return Err(CoreError::native_contract(format!(
+                "TokenManagement.mintNFT: only owner can mint (owner={}, calling={})",
+                token_state.owner.to_hex_string(),
+                calling_hash.to_hex_string()
+            )));
+        }
+
+        let unique_id = self.get_next_nft_unique_id(engine)?;
+
+        let new_supply = token_state.total_supply.clone() + 1;
+        let mut updated_token_state = token_state.clone();
+        updated_token_state.total_supply = new_supply;
+
+        let token_stack_item = updated_token_state.to_stack_item();
+        let token_bytes =
+            BinarySerializer::serialize(&token_stack_item, &ExecutionEngineLimits::default())
+                .map_err(CoreError::native_contract)?;
+        engine.put_storage_item(&context, &token_key, &token_bytes)?;
+
+        let nft_state = NFTState {
+            asset_id,
+            owner: account,
+            properties: Vec::new(),
+        };
+        let nft_stack_item = nft_state.to_stack_item();
+        let nft_bytes =
+            BinarySerializer::serialize(&nft_stack_item, &ExecutionEngineLimits::default())
+                .map_err(CoreError::native_contract)?;
+        let nft_key = StorageKey::create_with_uint160(ID, PREFIX_NFT_STATE, &unique_id)
+            .suffix()
+            .to_vec();
+        engine.put_storage_item(&context, &nft_key, &nft_bytes)?;
+
+        let account_key = [
+            vec![PREFIX_ACCOUNT_STATE],
+            account.to_bytes().to_vec(),
+            asset_id.to_bytes().to_vec(),
+        ]
+        .concat();
+        let mut account_balance = BigInt::from(0);
+        if let Some(account_data) = engine.get_storage_item(&context, &account_key) {
+            if let Some(state) = Self::deserialize_account_state(&account_data) {
+                account_balance = state.balance;
+            }
+        }
+        account_balance += 1;
+
+        let account_state = AccountState::with_balance(account_balance);
+        self.write_account_state(&context, engine, &account, &asset_id, &account_state)?;
+
+        self.emit_transfer_event(engine, None, Some(&account), &BigInt::from(1))?;
+
+        Ok(unique_id.to_bytes().to_vec())
+    }
+
+    fn invoke_burn_nft(
+        &self,
+        engine: &mut ApplicationEngine,
+        args: &[Vec<u8>],
+    ) -> CoreResult<Vec<u8>> {
+        if args.len() < 1 {
+            return Err(CoreError::native_contract(
+                "TokenManagement.burnNFT: invalid arguments",
+            ));
+        }
+
+        let nft_id = UInt160::from_bytes(&args[0])
+            .map_err(|_| CoreError::native_contract("Invalid NFT ID"))?;
+
+        let context = engine.get_native_storage_context(&self.hash())?;
+        let nft_key = StorageKey::create_with_uint160(ID, PREFIX_NFT_STATE, &nft_id)
+            .suffix()
+            .to_vec();
+
+        let nft_data = match engine.get_storage_item(&context, &nft_key) {
+            Some(data) => data,
+            None => {
+                return Err(CoreError::native_contract(
+                    "TokenManagement.burnNFT: NFT not found",
+                ));
+            }
+        };
+
+        let nft_state = match Self::deserialize_nft_state(&nft_data) {
+            Some(state) => state,
+            None => {
+                return Err(CoreError::native_contract(
+                    "TokenManagement.burnNFT: invalid NFT state",
+                ));
+            }
+        };
+
+        if nft_state.owner != engine.calling_script_hash()
+            && !engine.calling_script_hash().is_zero()
+        {
+            return Err(CoreError::native_contract(
+                "TokenManagement.burnNFT: only owner can burn",
+            ));
+        }
+
+        let token_key =
+            StorageKey::create_with_uint160(ID, PREFIX_TOKEN_STATE, &nft_state.asset_id)
+                .suffix()
+                .to_vec();
+        let token_data = match engine.get_storage_item(&context, &token_key) {
+            Some(data) => data,
+            None => {
+                return Err(CoreError::native_contract(
+                    "TokenManagement.burnNFT: asset not found",
+                ));
+            }
+        };
+
+        let mut token_state = match Self::deserialize_token_state(&token_data) {
+            Some(state) => state,
+            None => {
+                return Err(CoreError::native_contract(
+                    "TokenManagement.burnNFT: invalid token state",
+                ));
+            }
+        };
+
+        token_state.total_supply -= 1;
+        let token_stack_item = token_state.to_stack_item();
+        let token_bytes =
+            BinarySerializer::serialize(&token_stack_item, &ExecutionEngineLimits::default())
+                .map_err(CoreError::native_contract)?;
+        engine.put_storage_item(&context, &token_key, &token_bytes)?;
+
+        let account_key = [
+            vec![PREFIX_ACCOUNT_STATE],
+            nft_state.owner.to_bytes().to_vec(),
+            nft_state.asset_id.to_bytes().to_vec(),
+        ]
+        .concat();
+        if let Some(account_data) = engine.get_storage_item(&context, &account_key) {
+            if let Some(mut state) = Self::deserialize_account_state(&account_data) {
+                state.balance -= 1;
+                if state.balance.is_zero() {
+                    engine.delete_storage_item(&context, &account_key)?;
+                } else {
+                    let account_stack_item = state.to_stack_item();
+                    let account_bytes = BinarySerializer::serialize(
+                        &account_stack_item,
+                        &ExecutionEngineLimits::default(),
+                    )
+                    .map_err(CoreError::native_contract)?;
+                    engine.put_storage_item(&context, &account_key, &account_bytes)?;
+                }
+            }
+        }
+
+        engine.delete_storage_item(&context, &nft_key)?;
+
+        self.emit_transfer_event(engine, Some(&nft_state.owner), None, &BigInt::from(1))?;
+
+        Ok(vec![1])
+    }
+
+    fn invoke_transfer_nft(
+        &self,
+        engine: &mut ApplicationEngine,
+        args: &[Vec<u8>],
+    ) -> CoreResult<Vec<u8>> {
+        if args.len() < 4 {
+            return Err(CoreError::native_contract(
+                "TokenManagement.transferNFT: invalid arguments",
+            ));
+        }
+
+        let nft_id = UInt160::from_bytes(&args[0])
+            .map_err(|_| CoreError::native_contract("Invalid NFT ID"))?;
+        let from = UInt160::from_bytes(&args[1])
+            .map_err(|_| CoreError::native_contract("Invalid from"))?;
+        let to =
+            UInt160::from_bytes(&args[2]).map_err(|_| CoreError::native_contract("Invalid to"))?;
+
+        if from == to {
+            return Err(CoreError::native_contract(
+                "TokenManagement.transferNFT: cannot transfer to same account",
+            ));
+        }
+
+        let calling_hash = engine.calling_script_hash();
+        if from != calling_hash && !calling_hash.is_zero() && !engine.check_witness(&from)? {
+            return Ok(vec![0]);
+        }
+
+        let context = engine.get_native_storage_context(&self.hash())?;
+        let nft_key = StorageKey::create_with_uint160(ID, PREFIX_NFT_STATE, &nft_id)
+            .suffix()
+            .to_vec();
+
+        let nft_data = match engine.get_storage_item(&context, &nft_key) {
+            Some(data) => data,
+            None => {
+                return Err(CoreError::native_contract(
+                    "TokenManagement.transferNFT: NFT not found",
+                ));
+            }
+        };
+
+        let mut nft_state = match Self::deserialize_nft_state(&nft_data) {
+            Some(state) => state,
+            None => {
+                return Err(CoreError::native_contract(
+                    "TokenManagement.transferNFT: invalid NFT state",
+                ));
+            }
+        };
+
+        if nft_state.owner != from {
+            return Err(CoreError::native_contract(format!(
+                "TokenManagement.transferNFT: NFT owner mismatch (owner={}, from={})",
+                nft_state.owner.to_hex_string(),
+                from.to_hex_string()
+            )));
+        }
+
+        nft_state.owner = to;
+        let nft_stack_item = nft_state.to_stack_item();
+        let nft_bytes =
+            BinarySerializer::serialize(&nft_stack_item, &ExecutionEngineLimits::default())
+                .map_err(CoreError::native_contract)?;
+        engine.put_storage_item(&context, &nft_key, &nft_bytes)?;
+
+        self.emit_transfer_event(engine, Some(&from), Some(&to), &BigInt::from(1))?;
+
+        Ok(vec![1])
+    }
+
+    fn invoke_get_nft_info(
+        &self,
+        engine: &mut ApplicationEngine,
+        args: &[Vec<u8>],
+    ) -> CoreResult<Vec<u8>> {
+        if args.len() < 1 {
+            return Err(CoreError::native_contract(
+                "TokenManagement.getNFTInfo: invalid arguments",
+            ));
+        }
+
+        let nft_id = UInt160::from_bytes(&args[0])
+            .map_err(|_| CoreError::native_contract("Invalid NFT ID"))?;
+
+        let context = engine.get_native_storage_context(&self.hash())?;
+        let nft_key = StorageKey::create_with_uint160(ID, PREFIX_NFT_STATE, &nft_id)
+            .suffix()
+            .to_vec();
+
+        match engine.get_storage_item(&context, &nft_key) {
+            Some(data) => Ok(data),
+            None => Ok(vec![]),
+        }
+    }
+
+    fn invoke_get_nfts(
+        &self,
+        engine: &mut ApplicationEngine,
+        args: &[Vec<u8>],
+    ) -> CoreResult<Vec<u8>> {
+        if args.len() < 1 {
+            return Err(CoreError::native_contract(
+                "TokenManagement.getNFTs: invalid arguments",
+            ));
+        }
+
+        let asset_id = UInt160::from_bytes(&args[0])
+            .map_err(|_| CoreError::native_contract("Invalid asset ID"))?;
+
+        let snapshot = engine.snapshot_cache();
+        let prefix = StorageKey::create(ID, PREFIX_NFT_ASSET_ID_UNIQUE_ID_INDEX);
+
+        let mut entries_map = std::collections::BTreeMap::new();
+
+        for (key, value) in snapshot
+            .as_ref()
+            .find(Some(&prefix), SeekDirection::Forward)
+        {
+            entries_map.insert(key, value);
+        }
+        for (key, value) in engine
+            .original_snapshot_cache()
+            .find(Some(&prefix), SeekDirection::Forward)
+        {
+            entries_map.entry(key).or_insert(value);
+        }
+
+        let mut entries: Vec<(StorageKey, StorageItem)> = entries_map.into_iter().collect();
+        entries.sort_by(|a, b| a.0.suffix().cmp(b.0.suffix()));
+
+        let filtered: Vec<(StorageKey, StorageItem)> = entries
+            .into_iter()
+            .filter(|(key, _)| {
+                let suffix = key.suffix();
+                if suffix.len() < 1 + 20 {
+                    return false;
+                }
+                let key_asset_id = UInt160::from_bytes(&suffix[1..21]).ok();
+                key_asset_id == Some(asset_id)
+            })
+            .collect();
+
+        let options = FindOptions::KeysOnly | FindOptions::RemovePrefix;
+        let iterator = StorageIterator::new(filtered, 21, options);
+        let iterator_id = engine
+            .store_storage_iterator(iterator)
+            .map_err(CoreError::native_contract)?;
+
+        Ok(iterator_id.to_le_bytes().to_vec())
+    }
+
+    fn invoke_get_nfts_of_owner(
+        &self,
+        engine: &mut ApplicationEngine,
+        args: &[Vec<u8>],
+    ) -> CoreResult<Vec<u8>> {
+        if args.len() < 1 {
+            return Err(CoreError::native_contract(
+                "TokenManagement.getNFTsOfOwner: invalid arguments",
+            ));
+        }
+
+        let account = UInt160::from_bytes(&args[0])
+            .map_err(|_| CoreError::native_contract("Invalid account"))?;
+
+        let snapshot = engine.snapshot_cache();
+        let prefix = StorageKey::create(ID, PREFIX_NFT_OWNER_UNIQUE_ID_INDEX);
+
+        let mut entries_map = std::collections::BTreeMap::new();
+
+        for (key, value) in snapshot
+            .as_ref()
+            .find(Some(&prefix), SeekDirection::Forward)
+        {
+            entries_map.insert(key, value);
+        }
+        for (key, value) in engine
+            .original_snapshot_cache()
+            .find(Some(&prefix), SeekDirection::Forward)
+        {
+            entries_map.entry(key).or_insert(value);
+        }
+
+        let mut entries: Vec<(StorageKey, StorageItem)> = entries_map.into_iter().collect();
+        entries.sort_by(|a, b| a.0.suffix().cmp(b.0.suffix()));
+
+        let filtered: Vec<(StorageKey, StorageItem)> = entries
+            .into_iter()
+            .filter(|(key, _)| {
+                let suffix = key.suffix();
+                if suffix.len() < 1 + 20 {
+                    return false;
+                }
+                let key_account = UInt160::from_bytes(&suffix[1..21]).ok();
+                key_account == Some(account)
+            })
+            .collect();
+
+        let options = FindOptions::KeysOnly | FindOptions::RemovePrefix;
+        let iterator = StorageIterator::new(filtered, 21, options);
+        let iterator_id = engine
+            .store_storage_iterator(iterator)
+            .map_err(CoreError::native_contract)?;
+
+        Ok(iterator_id.to_le_bytes().to_vec())
+    }
+
+    fn get_next_nft_unique_id(&self, engine: &mut ApplicationEngine) -> CoreResult<UInt160> {
+        let context = engine.get_native_storage_context(&self.hash())?;
+        let seed_key = StorageKey::create(ID, PREFIX_NFT_UNIQUE_ID_SEED)
+            .suffix()
+            .to_vec();
+
+        let seed = match engine.get_storage_item(&context, &seed_key) {
+            Some(data) => BigInt::from_signed_bytes_be(&data),
+            None => BigInt::from(0),
+        };
+
+        let new_seed = seed + 1;
+        let seed_bytes = Self::encode_bigint(&new_seed);
+        engine.put_storage_item(&context, &seed_key, &seed_bytes)?;
+
+        let block_hash = match engine.persisting_block() {
+            Some(block) => block.hash(),
+            None => {
+                return Err(CoreError::native_contract(
+                    "TokenManagement.getNextNFTUniqueId: no persisting block",
+                ));
+            }
+        };
+
+        let mut buffer = Vec::with_capacity(32 + seed_bytes.len());
+        buffer.extend_from_slice(&block_hash.as_bytes());
+        buffer.extend_from_slice(&seed_bytes);
+        let hash = NeoHash::hash160(&buffer);
+        let unique_id = UInt160::from_bytes(&hash).unwrap_or_default();
+        Ok(unique_id)
+    }
+
+    fn deserialize_token_state(data: &[u8]) -> Option<TokenState> {
+        match BinarySerializer::deserialize(data, &ExecutionEngineLimits::default(), None) {
+            Ok(stack_item) => {
+                let mut state = TokenState::default();
+                state.from_stack_item(stack_item);
+                Some(state)
+            }
+            Err(_) => None,
+        }
+    }
+
+    fn deserialize_account_state(data: &[u8]) -> Option<AccountState> {
+        match BinarySerializer::deserialize(data, &ExecutionEngineLimits::default(), None) {
+            Ok(stack_item) => {
+                let mut state = AccountState::default();
+                state.from_stack_item(stack_item);
+                Some(state)
+            }
+            Err(_) => None,
+        }
+    }
+
+    fn deserialize_nft_state(data: &[u8]) -> Option<NFTState> {
+        match BinarySerializer::deserialize(data, &ExecutionEngineLimits::default(), None) {
+            Ok(stack_item) => {
+                let mut state = NFTState::default();
+                state.from_stack_item(stack_item);
+                Some(state)
+            }
+            Err(_) => None,
+        }
+    }
+
+    fn encode_bigint(value: &BigInt) -> Vec<u8> {
+        let mut bytes = value.to_signed_bytes_le();
+        if bytes.is_empty() {
+            bytes.push(0);
+        }
+        bytes
+    }
+
+    pub fn get_asset_id(owner: &UInt160, name: &str) -> UInt160 {
+        let name_bytes = name.as_bytes();
+        let mut buffer = Vec::with_capacity(20 + name_bytes.len());
+        buffer.extend_from_slice(&owner.as_bytes());
+        buffer.extend_from_slice(name_bytes);
+        let hash = NeoHash::hash160(&buffer);
+        UInt160::from_bytes(&hash).unwrap_or_default()
+    }
+}
+
+impl TokenManagement {
     fn invoke_transfer(
         &self,
         engine: &mut ApplicationEngine,

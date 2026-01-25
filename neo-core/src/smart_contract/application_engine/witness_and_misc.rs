@@ -323,6 +323,13 @@ impl ApplicationEngine {
         self.current_script_hash = hash;
     }
 
+    /// Sets the calling script hash.
+    /// This is primarily used for testing purposes to simulate contract callers.
+    #[doc(hidden)]
+    pub fn set_calling_script_hash(&mut self, hash: Option<UInt160>) {
+        self.calling_script_hash = hash;
+    }
+
     fn allocate_iterator_id(&mut self) -> Result<u32> {
         let id = self.next_iterator_id;
         self.next_iterator_id = self
