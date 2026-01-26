@@ -137,36 +137,36 @@ impl ConsensusService {
             && !commit_sent
             && !self.context.not_accepting_payloads_due_to_view_changing()
         {
-            if !self.context.prepare_request_received {
-                if let Some(ref prep_req) = recovery.prepare_request_message {
-                    let primary_index = self.context.primary_index();
-                    if let Some(primary_prep) = recovery
-                        .preparation_messages
-                        .iter()
-                        .find(|p| p.validator_index == primary_index)
+            if !self.context.prepare_request_received
+                && let Some(ref prep_req) = recovery.prepare_request_message
+            {
+                let primary_index = self.context.primary_index();
+                if let Some(primary_prep) = recovery
+                    .preparation_messages
+                    .iter()
+                    .find(|p| p.validator_index == primary_index)
+                {
+                    if let Some(signature) =
+                        signature_from_invocation_script(&primary_prep.invocation_script)
                     {
-                        if let Some(signature) =
-                            signature_from_invocation_script(&primary_prep.invocation_script)
-                        {
-                            let recovered = ConsensusPayload {
-                                network: self.network,
-                                block_index: prep_req.block_index,
-                                validator_index: prep_req.validator_index,
-                                view_number: prep_req.view_number,
-                                message_type: ConsensusMessageType::PrepareRequest,
-                                data: prep_req.serialize(),
-                                witness: signature,
-                            };
-                            self.reprocess_recovery_payload(recovered);
-                        }
+                        let recovered = ConsensusPayload {
+                            network: self.network,
+                            block_index: prep_req.block_index,
+                            validator_index: prep_req.validator_index,
+                            view_number: prep_req.view_number,
+                            message_type: ConsensusMessageType::PrepareRequest,
+                            data: prep_req.serialize(),
+                            witness: signature,
+                        };
+                        self.reprocess_recovery_payload(recovered);
                     }
                 }
             }
 
-            if self.context.preparation_hash.is_none() {
-                if let Some(hash) = recovery.preparation_hash {
-                    self.context.preparation_hash = Some(hash);
-                }
+            if self.context.preparation_hash.is_none()
+                && let Some(hash) = recovery.preparation_hash
+            {
+                self.context.preparation_hash = Some(hash);
             }
 
             let primary_index = self.context.primary_index();
