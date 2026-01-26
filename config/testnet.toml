@@ -3,15 +3,14 @@
 
 [network]
 network_magic = 0x3554334E  # TestNet magic number
-address_version = 0x35
 
 [storage]
-backend = "rocksdb"
-data_dir = "./data/testnet"
+path = "./data/testnet"
+Engine = "rocksdb"
 read_only = false
 
 [p2p]
-port = 20333
+listen_port = 20333
 max_connections = 50
 min_desired_connections = 5
 seed_nodes = [
@@ -31,18 +30,12 @@ bind_address = "127.0.0.1"
 cors_enabled = true
 auth_enabled = false
 max_gas_invoke = 50000000
-max_iterator_results = 100
+max_iterator_result_items = 100
 disabled_methods = []
 
-[consensus]
+[dbft]
 enabled = false
 auto_start = false
-
-[telemetry]
-[telemetry.metrics]
-enabled = true
-port = 9091
-bind_address = "127.0.0.1"
 
 [logging]
 level = "info"
@@ -53,9 +46,3 @@ max_files = 5
 
 [blockchain]
 block_time = 15000  # 15 seconds in milliseconds
-max_transactions_per_block = 512
-max_free_transactions_per_block = 20
-
-[mempool]
-max_transactions = 25000
-max_transactions_per_sender = 100
