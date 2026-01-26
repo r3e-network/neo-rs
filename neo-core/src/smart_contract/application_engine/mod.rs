@@ -75,6 +75,7 @@ use crate::ledger::Block;
 use crate::neo_config::HASH_SIZE;
 use crate::network::p2p::payloads::{Transaction, TransactionAttribute};
 use crate::persistence::data_cache::DataCache;
+#[allow(unused)]
 use crate::persistence::i_read_only_store::IReadOnlyStoreGeneric;
 use crate::persistence::seek_direction::SeekDirection;
 use crate::protocol_settings::ProtocolSettings;

@@ -195,6 +195,7 @@ impl BatchCommitter {
         );
     }
 
+    #[allow(dead_code)]
     fn should_flush(&self, force: bool) -> bool {
         if !self.config.enabled {
             return false;
@@ -222,6 +223,7 @@ impl BatchCommitter {
         now.saturating_sub(last_flush as u64) >= self.config.max_delay_ms
     }
 
+    #[allow(dead_code)]
     fn flush(&self) -> Option<WriteBatch> {
         if !self.config.enabled {
             return None;
@@ -244,6 +246,7 @@ impl BatchCommitter {
         Some(batch)
     }
 
+    #[allow(dead_code)]
     fn pending_count(&self) -> usize {
         self.pending_operations.load(Ordering::Relaxed)
     }
@@ -348,6 +351,7 @@ impl RocksDbStore {
         })
     }
 
+    #[allow(dead_code)]
     fn fast_write_options() -> WriteOptions {
         let mut opts = WriteOptions::default();
         opts.set_sync(false);
@@ -363,6 +367,7 @@ impl RocksDbStore {
         iterator_from(self.db.as_ref(), None, key_or_prefix, direction)
     }
 
+    #[allow(dead_code)]
     pub fn flush_batch_commits(&self) {
         if let Some(batch) = self.batch_committer.flush() {
             let start = Instant::now();
@@ -375,6 +380,7 @@ impl RocksDbStore {
         }
     }
 
+    #[allow(dead_code)]
     pub fn batch_commit_stats(&self) -> (usize, usize, usize, u64, usize) {
         self.batch_committer.stats.stats()
     }
@@ -667,6 +673,7 @@ impl IStoreSnapshot for RocksDbSnapshot {
 
 impl RocksDbStore {
     /// Enables fast sync mode optimizations (disable WAL, reduce fsync).
+    #[allow(dead_code)]
     pub fn enable_fast_sync_mode(&self) {
         let mut opts = Options::default();
         opts.set_disable_auto_compactions(true);
@@ -677,6 +684,7 @@ impl RocksDbStore {
     }
 
     /// Disables fast sync mode optimizations.
+    #[allow(dead_code)]
     pub fn disable_fast_sync_mode(&self) {
         if let Err(err) = self
             .db
@@ -688,6 +696,7 @@ impl RocksDbStore {
     }
 
     /// Force flush all memtables to disk.
+    #[allow(dead_code)]
     pub fn flush_memtables(&self) {
         if let Err(err) = self.db.flush_wal(true) {
             warn!(target: "neo", error = %err, "failed to flush WAL");
@@ -698,6 +707,7 @@ impl RocksDbStore {
     }
 
     /// Returns memory usage statistics.
+    #[allow(dead_code)]
     pub fn memory_usage(&self) -> Option<(u64, u64)> {
         self.db
             .property_int_value("rocksdb.cur-size-active-mem-table")
@@ -771,8 +781,6 @@ fn build_db_options(config: &StorageConfig) -> Options {
     }
 
     options.set_max_background_jobs(16);
-    options.set_max_background_compactions(8);
-    options.set_max_background_flushes(4);
     options.set_bytes_per_sync(0);
     options.set_optimize_filters_for_hits(false);
 

@@ -7,6 +7,7 @@ use crate::cryptography::NeoHash;
 use crate::error::CoreError;
 use crate::error::CoreResult;
 use crate::hardfork::Hardfork;
+#[allow(unused)]
 use crate::persistence::i_read_only_store::IReadOnlyStoreGeneric;
 use crate::persistence::seek_direction::SeekDirection;
 use crate::protocol_settings::ProtocolSettings;

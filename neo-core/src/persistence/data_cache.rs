@@ -376,7 +376,7 @@ impl DataCache {
         let base_items: Vec<(StorageKey, StorageItem)> = state
             .dictionary
             .iter()
-            .filter(|(k, t)| t.state != TrackState::Deleted && t.state != TrackState::NotFound)
+            .filter(|(_, t)| t.state != TrackState::Deleted && t.state != TrackState::NotFound)
             .filter(|(k, _)| {
                 if let Some(prefix) = &prefix_bytes {
                     k.to_array().starts_with(prefix)
