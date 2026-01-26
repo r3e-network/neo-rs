@@ -205,13 +205,15 @@ fn ledger_get_block_reconstructs_from_trimmed_block_and_states() {
 
     let header = BlockHeader::new(
         0,
-        UInt256::from("0xa400ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff01"),
-        UInt256::from("0xa400ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff02"),
+        UInt256::parse("0xa400ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff01")
+            .unwrap(),
+        UInt256::parse("0xa400ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff02")
+            .unwrap(),
         581990400,
         0,
         1,
         0,
-        UInt160::from("0xa400ff00ff00ff00ff00ff00ff00ff00ff00ff01"),
+        UInt160::parse("0xa400ff00ff00ff00ff00ff00ff00ff00ff00ff01").unwrap(),
         vec![Witness::new_with_scripts(
             Vec::new(),
             vec![OpCode::PUSH1 as u8],
