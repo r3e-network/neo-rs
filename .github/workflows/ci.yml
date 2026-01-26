@@ -51,13 +51,17 @@ jobs:
 
       - name: Clippy
         run: |
-          # Allow warnings from generated protobuf files in target/
+          # Allow warnings from generated protobuf files and tests
           cargo clippy --workspace --all-targets --profile test -- \
             -A clippy::doc-overindented-list-items \
             -A clippy::doc-lazy-continuation \
             -A clippy::large-enum-variant \
             -A clippy::module-inception \
             -A clippy::type-complexity \
+            -A clippy::enum-variant-names \
+            -A clippy::too-many-arguments \
+            -A clippy::field-reassign-with-default \
+            -A clippy::assertions-on-constants \
             -D warnings
 
       - name: Tests

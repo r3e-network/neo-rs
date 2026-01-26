@@ -51,9 +51,7 @@ fn is_hex(value: &str) -> bool {
     if value.is_empty() || value.len() % 2 != 0 {
         return false;
     }
-    value
-        .bytes()
-        .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f' | b'A'..=b'F'))
+    value.bytes().all(|b: u8| b.is_ascii_hexdigit())
 }
 
 pub(crate) fn header_str(headers: &reqwest::header::HeaderMap, name: &str) -> Option<String> {
