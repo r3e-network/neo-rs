@@ -5,7 +5,7 @@
 use anyhow::{bail, Context, Result};
 use neo_core::{
     application_logs::ApplicationLogsSettings,
-    constants::MAX_BLOCK_SIZE,
+    constants::{MAINNET_MAGIC, MAX_BLOCK_SIZE, TESTNET_MAGIC},
     network::p2p::channels_config::ChannelsConfig,
     oracle_service::OracleServiceSettings,
     persistence::storage::{CompressionAlgorithm, StorageConfig},
@@ -561,27 +561,38 @@ impl NodeConfig {
 
     /// Converts the parsed config into `ProtocolSettings`, overriding the defaults.
     pub fn protocol_settings(&self) -> ProtocolSettings {
-        let base_settings = match self
-            .network
-            .network_type
-            .as_deref()
-            .map(|value| value.to_ascii_lowercase())
-        {
-            Some(ref ty) if ty == "testnet" || ty == "test" => ProtocolSettings::testnet(),
-            Some(ref ty) if ty == "privatenet" || ty == "private" => {
-                ProtocolSettings::default_settings()
-            }
-            _ => ProtocolSettings::mainnet(),
-        };
-
-        let mut settings = base_settings;
-
-        if let Some(magic) = self.network.network_magic.or_else(|| {
+        // First, determine base settings from network_type or infer from magic
+        let network_magic = self.network.network_magic.or_else(|| {
             self.network
                 .network_type
                 .as_deref()
                 .and_then(infer_magic_from_type)
-        }) {
+        });
+
+        let base_settings = match network_magic {
+            Some(TESTNET_MAGIC) => ProtocolSettings::testnet(),
+            Some(MAINNET_MAGIC) => ProtocolSettings::mainnet(),
+            _ => {
+                // Fallback to network_type if magic doesn't match known values
+                match self
+                    .network
+                    .network_type
+                    .as_deref()
+                    .map(|value| value.to_ascii_lowercase())
+                {
+                    Some(ref ty) if ty == "testnet" || ty == "test" => ProtocolSettings::testnet(),
+                    Some(ref ty) if ty == "privatenet" || ty == "private" => {
+                        ProtocolSettings::default_settings()
+                    }
+                    _ => ProtocolSettings::mainnet(),
+                }
+            }
+        };
+
+        let mut settings = base_settings;
+
+        // Override with explicit network_magic if provided
+        if let Some(magic) = self.network.network_magic {
             settings.network = magic;
         }
 
