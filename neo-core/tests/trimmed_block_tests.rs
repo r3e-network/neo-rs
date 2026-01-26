@@ -21,13 +21,15 @@ fn sample_witness() -> Witness {
 fn trimmed_block_with_no_transactions() -> TrimmedBlock {
     let header = BlockHeader::new(
         0,
-        UInt256::from("0xa400ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff01"),
-        UInt256::from("0xa400ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff02"),
+        UInt256::parse("0xa400ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff01")
+            .unwrap(),
+        UInt256::parse("0xa400ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff02")
+            .unwrap(),
         sample_timestamp(),
         0,
         1,
         0,
-        UInt160::from("0xa400ff00ff00ff00ff00ff00ff00ff00ff00ff01"),
+        UInt160::parse("0xa400ff00ff00ff00ff00ff00ff00ff00ff00ff01").unwrap(),
         vec![sample_witness()],
     );
     TrimmedBlock::create(header, Vec::new())
@@ -44,11 +46,13 @@ fn trimmed_block_header_fields_match() {
     let block = trimmed_block_with_no_transactions();
     assert_eq!(
         block.header.previous_hash,
-        UInt256::from("0xa400ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff01")
+        UInt256::parse("0xa400ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff01")
+            .unwrap()
     );
     assert_eq!(
         block.header.merkle_root,
-        UInt256::from("0xa400ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff02")
+        UInt256::parse("0xa400ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff02")
+            .unwrap()
     );
     assert_eq!(block.index(), 1);
 }
@@ -56,18 +60,22 @@ fn trimmed_block_header_fields_match() {
 #[test]
 fn trimmed_block_size_matches_reference() {
     let mut block = trimmed_block_with_no_transactions();
-    block.hashes = vec![UInt256::from(
-        "0x33d3b8965712d1c1d9edb1e9f5bdc8dfeadfde7d572bea3522eef19aef2da56d",
-    )];
+    block.hashes =
+        vec![
+            UInt256::parse("0x33d3b8965712d1c1d9edb1e9f5bdc8dfeadfde7d572bea3522eef19aef2da56d")
+                .unwrap(),
+        ];
     assert_eq!(block.size(), 146);
 }
 
 #[test]
 fn trimmed_block_clone_produces_independent_copy() {
     let mut original = trimmed_block_with_no_transactions();
-    original.hashes = vec![UInt256::from(
-        "0x22d3b8965712d1c1d9edb1e9f5bdc8dfeadfde7d572bea3522eef19aef2da56c",
-    )];
+    original.hashes =
+        vec![
+            UInt256::parse("0x22d3b8965712d1c1d9edb1e9f5bdc8dfeadfde7d572bea3522eef19aef2da56c")
+                .unwrap(),
+        ];
 
     let mut clone = original.clone();
     clone.header.index += 1;
@@ -87,9 +95,11 @@ fn trimmed_block_clone_produces_independent_copy() {
 #[test]
 fn trimmed_block_serialization_roundtrips() {
     let mut block = trimmed_block_with_no_transactions();
-    block.hashes = vec![UInt256::from(
-        "0x1111111111111111111111111111111111111111111111111111111111111111",
-    )];
+    block.hashes =
+        vec![
+            UInt256::parse("0x1111111111111111111111111111111111111111111111111111111111111111")
+                .unwrap(),
+        ];
 
     let mut writer = BinaryWriter::new();
     block.serialize(&mut writer).expect("serialize block");
@@ -110,13 +120,15 @@ fn trimmed_block_serialization_roundtrips() {
 fn trimmed_block_from_block_collects_transaction_hashes() {
     let header = BlockHeader::new(
         0,
-        UInt256::from("0x1000000000000000000000000000000000000000000000000000000000000000"),
-        UInt256::from("0x2000000000000000000000000000000000000000000000000000000000000000"),
+        UInt256::parse("0x1000000000000000000000000000000000000000000000000000000000000000")
+            .unwrap(),
+        UInt256::parse("0x2000000000000000000000000000000000000000000000000000000000000000")
+            .unwrap(),
         sample_timestamp(),
         0,
         42,
         3,
-        UInt160::from("0xa400ff00ff00ff00ff00ff00ff00ff00ff00ff01"),
+        UInt160::parse("0xa400ff00ff00ff00ff00ff00ff00ff00ff00ff01").unwrap(),
         vec![sample_witness()],
     );
 
