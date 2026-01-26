@@ -52,6 +52,7 @@
 
 use parking_lot::{Mutex, RwLock};
 use std::any::Any;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
@@ -284,6 +285,7 @@ impl NeoSystem {
             log_handlers: Arc::new(RwLock::new(Vec::new())),
             logging_handlers: Arc::new(RwLock::new(Vec::new())),
             notify_handlers: Arc::new(RwLock::new(Vec::new())),
+            fast_sync_mode: Arc::new(AtomicBool::new(true)),
         });
 
         if state_service_enabled {

@@ -62,7 +62,7 @@ use super::payloads::{
     block::Block,
     get_block_by_index_payload::GetBlockByIndexPayload,
     header::Header,
-    inv_payload::{InvPayload, MAX_HASHES_COUNT},
+    inv_payload::{InvPayload, HEADER_PREFETCH_COUNT, MAX_HASHES_COUNT},
     InventoryType, VersionPayload,
 };
 use super::task_session::TaskSession;
@@ -81,11 +81,12 @@ use std::sync::Arc;
 use std::time::Duration;
 use tracing::{trace, warn};
 
-/// Interval for task manager housekeeping (matches C# `TimerInterval`).
-const TIMER_INTERVAL: Duration = Duration::from_secs(30);
-/// Timeout applied to in-flight inventory requests (matches C# `TaskTimeout`).
-const TASK_TIMEOUT: Duration = Duration::from_secs(60);
-const MAX_CONCURRENT_TASKS: u32 = 3;
+/// Interval for task manager housekeeping (optimized for faster sync).
+const TIMER_INTERVAL: Duration = Duration::from_secs(3);
+/// Timeout applied to in-flight inventory requests (reduced for faster recovery).
+const TASK_TIMEOUT: Duration = Duration::from_secs(30);
+/// Maximum concurrent tasks per peer (significantly increased for faster sync).
+const MAX_CONCURRENT_TASKS: u32 = 30;
 const HEADER_TASK_HASH: UInt256 = UInt256 {
     value1: 0,
     value2: 0,
@@ -116,14 +117,14 @@ impl TaskManager {
     pub fn new() -> Self {
         Self {
             system: None,
-            sessions: HashMap::new(),
-            known_hashes: HashSet::new(),
-            known_hash_order: VecDeque::new(),
+            sessions: HashMap::with_capacity(32),
+            known_hashes: HashSet::with_capacity(4096),
+            known_hash_order: VecDeque::with_capacity(4096),
             known_hash_capacity: 1024,
             event_stream: None,
             last_seen_persisted_index: 0,
-            global_inv_tasks: HashMap::new(),
-            global_index_tasks: HashMap::new(),
+            global_inv_tasks: HashMap::with_capacity(256),
+            global_index_tasks: HashMap::with_capacity(256),
             timer_interval: TIMER_INTERVAL,
             task_timeout: TASK_TIMEOUT,
         }
@@ -356,7 +357,7 @@ impl TaskManager {
             && self.increment_inv_task(HEADER_TASK_HASH)
         {
             session.register_inv_task(HEADER_TASK_HASH);
-            let payload = GetBlockByIndexPayload::create(header_height + 1, -1);
+            let payload = GetBlockByIndexPayload::create(header_height + 1, HEADER_PREFETCH_COUNT);
             let message = NetworkMessage::new(ProtocolMessage::GetHeaders(payload));
             if let Err(error) = actor.tell(RemoteNodeCommand::Send(message)) {
                 warn!(

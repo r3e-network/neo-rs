@@ -71,6 +71,9 @@ zeroize = { version = "1.7", features = ["zeroize_derive"] }
 # Actor framework removed (Phase 2 refactoring)
 ractor = { workspace = true, optional = true }
 
+# Parallel processing for bulk sync
+rayon = { version = "1.10", optional = true }
+
 # Internal dependencies
 chrono.workspace = true
 futures.workspace = true
@@ -113,7 +116,9 @@ monitoring = ["dep:prometheus", "dep:sysinfo", "dep:reqwest"]
 oracle = ["dep:reqwest"]
 # NeoFS gRPC support (optional, for parity with C#)
 neofs-grpc = ["dep:tonic", "dep:prost", "oracle"]
+# Parallel processing for bulk sync
+parallel = ["dep:rayon"]
 # All optional features for full functionality
-full = ["rocksdb", "upnp", "monitoring", "oracle", "neofs-grpc"]
+full = ["rocksdb", "upnp", "monitoring", "oracle", "neofs-grpc", "parallel"]
 runtime = ["dep:ractor"]
 performance-tests = []

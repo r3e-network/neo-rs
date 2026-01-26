@@ -119,15 +119,16 @@ impl IInteroperable for TokenState {
     }
 
     fn to_stack_item(&self) -> StackItem {
-        let mut items = Vec::new();
-        items.push(StackItem::from_int(self.token_type as i32));
-        items.push(StackItem::from_byte_string(self.owner.to_bytes()));
-        items.push(StackItem::from_byte_string(self.name.as_bytes().to_vec()));
-        items.push(StackItem::from_byte_string(self.symbol.as_bytes().to_vec()));
-        items.push(StackItem::from_int(self.decimals as i32));
-        items.push(StackItem::from_int(self.total_supply.clone()));
-        items.push(StackItem::from_int(self.max_supply.clone()));
-        items.push(StackItem::from_bool(self.mintable_address.is_some()));
+        let items = vec![
+            StackItem::from_int(self.token_type as i32),
+            StackItem::from_byte_string(self.owner.to_bytes()),
+            StackItem::from_byte_string(self.name.as_bytes()),
+            StackItem::from_byte_string(self.symbol.as_bytes()),
+            StackItem::from_int(self.decimals as i32),
+            StackItem::from_int(self.total_supply.clone()),
+            StackItem::from_int(self.max_supply.clone()),
+            StackItem::from_bool(self.mintable_address.is_some()),
+        ];
         StackItem::from_struct(items)
     }
 
@@ -583,12 +584,12 @@ impl TokenManagement {
         .concat();
         let key = StorageKey::new(ID, key);
         if state.balance.is_zero() {
-            engine.delete_storage_item(context, &key.suffix().to_vec())?;
+            engine.delete_storage_item(context, key.suffix())?;
         } else {
             let stack_item = state.to_stack_item();
             let bytes = BinarySerializer::serialize(&stack_item, &ExecutionEngineLimits::default())
                 .map_err(CoreError::native_contract)?;
-            engine.put_storage_item(context, &key.suffix().to_vec(), &bytes)?;
+            engine.put_storage_item(context, key.suffix(), &bytes)?;
         }
         Ok(())
     }
@@ -644,9 +645,9 @@ impl TokenManagement {
         index_key.extend_from_slice(&nft_id.as_bytes());
         let index_key = StorageKey::new(ID, index_key);
         if is_add {
-            engine.put_storage_item(context, &index_key.suffix().to_vec(), &vec![0])?;
+            engine.put_storage_item(context, index_key.suffix(), &[0])?;
         } else {
-            engine.delete_storage_item(context, &index_key.suffix().to_vec())?;
+            engine.delete_storage_item(context, index_key.suffix())?;
         }
         Ok(())
     }
@@ -796,7 +797,7 @@ impl TokenManagement {
         engine: &mut ApplicationEngine,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
-        if args.len() < 1 {
+        if args.is_empty() {
             return Err(CoreError::native_contract(
                 "TokenManagement.getTokenInfo: invalid arguments",
             ));
@@ -846,7 +847,7 @@ impl TokenManagement {
         engine: &mut ApplicationEngine,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
-        if args.len() < 1 {
+        if args.is_empty() {
             return Err(CoreError::native_contract(
                 "TokenManagement.getAssetsOfOwner: invalid arguments",
             ));
@@ -1279,7 +1280,7 @@ impl TokenManagement {
         engine: &mut ApplicationEngine,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
-        if args.len() < 1 {
+        if args.is_empty() {
             return Err(CoreError::native_contract(
                 "TokenManagement.burnNFT: invalid arguments",
             ));
@@ -1443,7 +1444,7 @@ impl TokenManagement {
         engine: &mut ApplicationEngine,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
-        if args.len() < 1 {
+        if args.is_empty() {
             return Err(CoreError::native_contract(
                 "TokenManagement.getNFTInfo: invalid arguments",
             ));
@@ -1468,7 +1469,7 @@ impl TokenManagement {
         engine: &mut ApplicationEngine,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
-        if args.len() < 1 {
+        if args.is_empty() {
             return Err(CoreError::native_contract(
                 "TokenManagement.getNFTs: invalid arguments",
             ));
@@ -1497,7 +1498,7 @@ impl TokenManagement {
                 continue;
             }
             let suffix = key.suffix();
-            if suffix.len() < 1 || suffix[0] != PREFIX_NFT_ASSET_ID_UNIQUE_ID_INDEX {
+            if suffix.is_empty() || suffix[0] != PREFIX_NFT_ASSET_ID_UNIQUE_ID_INDEX {
                 continue;
             }
             snapshot_keys.insert(suffix.to_vec());
@@ -1541,7 +1542,7 @@ impl TokenManagement {
         engine: &mut ApplicationEngine,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
-        if args.len() < 1 {
+        if args.is_empty() {
             return Err(CoreError::native_contract(
                 "TokenManagement.getNFTsOfOwner: invalid arguments",
             ));
@@ -1570,7 +1571,7 @@ impl TokenManagement {
                 continue;
             }
             let suffix = key.suffix();
-            if suffix.len() < 1 || suffix[0] != PREFIX_NFT_OWNER_UNIQUE_ID_INDEX {
+            if suffix.is_empty() || suffix[0] != PREFIX_NFT_OWNER_UNIQUE_ID_INDEX {
                 continue;
             }
             snapshot_keys.insert(suffix.to_vec());

@@ -25,6 +25,7 @@ pub const MAX_CAPABILITIES: usize = 32;
 /// Sent when a connection is established.
 /// Matches C# VersionPayload exactly
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct VersionPayload {
     /// The magic number of the network.
     pub network: u32,
@@ -69,18 +70,6 @@ impl VersionPayload {
     }
 }
 
-impl Default for VersionPayload {
-    fn default() -> Self {
-        Self {
-            network: 0,
-            version: 0,
-            timestamp: 0,
-            nonce: 0,
-            user_agent: String::new(),
-            capabilities: Vec::new(),
-        }
-    }
-}
 
 impl Serializable for VersionPayload {
     fn size(&self) -> usize {

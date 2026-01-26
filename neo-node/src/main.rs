@@ -55,8 +55,19 @@ use tokio::sync::RwLock;
 use tracing::{error, info, warn};
 use wallet_provider::NodeWalletProvider;
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(num_cpus::get().max(4))
+        .max_blocking_threads(32)
+        .enable_all()
+        .thread_name("neo-node")
+        .thread_stack_size(2 * 1024 * 1024)
+        .build()?;
+
+    rt.block_on(inner_main())
+}
+
+async fn inner_main() -> Result<()> {
     let cli = NodeCli::parse();
     let mut node_config = NodeConfig::load(&cli.config)?;
 

@@ -150,27 +150,27 @@ impl ExecutionEngine {
             unsafe { (*host_ptr).pre_execute_instruction(self, &context_snapshot, &instruction)? };
         }
 
-        // Execute the instruction
-        // We need to avoid borrowing conflicts by extracting the jump table temporarily
-        // But we must preserve the custom handlers that were set up
-        let jump_table = std::mem::take(&mut self.jump_table);
-        let result = jump_table.execute(self, &instruction);
+        // Execute the instruction - access jump_table by reference to avoid ownership transfer
+        let opcode = instruction.opcode();
+        let handler = self.jump_table.get_handler(opcode);
+        let result = match handler {
+            Some(h) => h(self, &instruction),
+            None => Err(VmError::unsupported_operation_msg(format!(
+                "Unsupported opcode: {:?}",
+                opcode
+            ))),
+        };
 
         match result {
-            Ok(()) => {
-                self.jump_table = jump_table;
-            }
+            Ok(()) => {}
             Err(err) => {
                 if self.limits.catch_engine_exceptions {
                     if let VmError::CatchableException { message } = &err {
-                        self.jump_table = jump_table;
                         let exception = StackItem::from_byte_string(message.clone().into_bytes());
                         self.execute_throw(Some(exception))?;
                         return Ok(());
                     }
                 }
-
-                self.jump_table = jump_table;
                 return Err(err);
             }
         }

@@ -255,10 +255,11 @@ num_cpus = "1.16"
 # Profiles
 [profile.release]
 opt-level = 3
-lto = true
+lto = "fat"
 codegen-units = 1
 panic = "abort"
 strip = true
+incremental = false
 
 [profile.dev]
 opt-level = 0
@@ -274,7 +275,7 @@ lto = false
 [profile.bench]
 opt-level = 3
 debug = false
-lto = true
+lto = "fat"
 codegen-units = 1
 
 # Custom profile for production
@@ -284,3 +285,5 @@ debug = false
 strip = true
 panic = "abort"
 lto = "fat"
+codegen-units = 1
+incremental = false

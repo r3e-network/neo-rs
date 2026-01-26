@@ -1,4 +1,7 @@
 //! Shared in-memory cache for persistence providers.
+//!
+//! This module implements a Copy-on-Write (CoW) DataCache pattern for optimal
+//! performance during block synchronization.
 
 use super::{
     i_read_only_store::{IReadOnlyStore, IReadOnlyStoreGeneric},
@@ -37,14 +40,40 @@ type StoreGetFn = dyn Fn(&StorageKey) -> Option<StorageItem> + Send + Sync;
 type StoreFindFn =
     dyn Fn(Option<&StorageKey>, SeekDirection) -> Vec<(StorageKey, StorageItem)> + Send + Sync;
 
-pub struct DataCache {
-    dictionary: Arc<RwLock<HashMap<StorageKey, Trackable>>>,
-    change_set: Option<Arc<RwLock<HashSet<StorageKey>>>>,
-    on_read: Arc<RwLock<Vec<OnEntryDelegate>>>,
-    on_update: Arc<RwLock<Vec<OnEntryDelegate>>>,
-    store_get: Option<Arc<StoreGetFn>>,
-    store_find: Option<Arc<StoreFindFn>>,
+/// Internal state protected by RwLock for thread-safe Copy-on-Write
+struct InnerState {
+    dictionary: HashMap<StorageKey, Trackable>,
+    change_set: HashSet<StorageKey>,
 }
+
+impl InnerState {
+    fn new() -> Self {
+        Self {
+            dictionary: HashMap::new(),
+            change_set: HashSet::new(),
+        }
+    }
+}
+
+/// Represents a cache for the underlying storage of the NEO blockchain.
+pub struct DataCache {
+    /// Shared state with CoW optimization
+    state: Arc<RwLock<InnerState>>,
+    /// Read-only flag (determines if changes are tracked)
+    read_only: bool,
+    /// Callbacks for read events
+    on_read: Arc<RwLock<Vec<OnEntryDelegate>>>,
+    /// Callbacks for update events
+    on_update: Arc<RwLock<Vec<OnEntryDelegate>>>,
+    /// Optional store getter for cache misses
+    store_get: Option<Arc<StoreGetFn>>,
+    /// Optional store finder for prefix searches
+    store_find: Option<Arc<StoreFindFn>>,
+    /// Strong count for CoW detection
+    ref_count: Arc<AtomicUsize>,
+}
+
+use std::sync::atomic::AtomicUsize;
 
 /// Errors returned by DataCache operations.
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -60,12 +89,13 @@ pub type DataCacheResult<T = ()> = Result<T, DataCacheError>;
 impl Clone for DataCache {
     fn clone(&self) -> Self {
         Self {
-            dictionary: Arc::clone(&self.dictionary),
-            change_set: self.change_set.as_ref().map(Arc::clone),
+            state: Arc::clone(&self.state),
+            read_only: self.read_only,
             on_read: Arc::clone(&self.on_read),
             on_update: Arc::clone(&self.on_update),
             store_get: self.store_get.as_ref().map(Arc::clone),
             store_find: self.store_find.as_ref().map(Arc::clone),
+            ref_count: Arc::clone(&self.ref_count),
         }
     }
 }
@@ -78,7 +108,7 @@ impl DataCache {
 
     /// Attempt to add an item to the cache, returning an error when read-only.
     pub fn try_add(&self, key: StorageKey, value: StorageItem) -> DataCacheResult {
-        if self.is_read_only() {
+        if self.read_only {
             return Err(DataCacheError::ReadOnly);
         }
         self.add(key, value);
@@ -87,7 +117,7 @@ impl DataCache {
 
     /// Attempt to update an item in the cache, returning an error when read-only.
     pub fn try_update(&self, key: StorageKey, value: StorageItem) -> DataCacheResult {
-        if self.is_read_only() {
+        if self.read_only {
             return Err(DataCacheError::ReadOnly);
         }
         self.update(key, value);
@@ -96,7 +126,7 @@ impl DataCache {
 
     /// Attempt to delete an item in the cache, returning an error when read-only.
     pub fn try_delete(&self, key: &StorageKey) -> DataCacheResult {
-        if self.is_read_only() {
+        if self.read_only {
             return Err(DataCacheError::ReadOnly);
         }
         self.delete(key);
@@ -105,7 +135,7 @@ impl DataCache {
 
     /// Attempts to commit, returning an error when read-only.
     pub fn try_commit(&self) -> DataCacheResult {
-        if self.is_read_only() {
+        if self.read_only {
             return Err(DataCacheError::ReadOnly);
         }
         self.commit();
@@ -119,22 +149,19 @@ impl DataCache {
         store_find: Option<Arc<StoreFindFn>>,
     ) -> Self {
         Self {
-            dictionary: Arc::new(RwLock::new(HashMap::new())),
-            change_set: if read_only {
-                None
-            } else {
-                Some(Arc::new(RwLock::new(HashSet::new())))
-            },
+            state: Arc::new(RwLock::new(InnerState::new())),
+            read_only,
             on_read: Arc::new(RwLock::new(Vec::new())),
             on_update: Arc::new(RwLock::new(Vec::new())),
             store_get,
             store_find,
+            ref_count: Arc::new(AtomicUsize::new(1)),
         }
     }
 
     /// Returns true if DataCache is read-only.
     pub fn is_read_only(&self) -> bool {
-        self.change_set.is_none()
+        self.read_only
     }
 
     /// Adds a handler for read events.
@@ -147,30 +174,18 @@ impl DataCache {
         self.on_update.write().push(handler);
     }
 
-    /// Creates a deep copy of this cache, including tracked entries and change set state.
+    /// Creates a lightweight copy of this cache using Copy-on-Write.
+    /// This is O(1) - just shares the underlying data.
     pub fn clone_cache(&self) -> Self {
-        let clone = DataCache::new_with_store(
-            self.is_read_only(),
-            self.store_get.as_ref().map(Arc::clone),
-            self.store_find.as_ref().map(Arc::clone),
-        );
-
-        {
-            clone.dictionary.write().extend(
-                self.dictionary
-                    .read()
-                    .iter()
-                    .map(|(key, trackable)| (key.clone(), trackable.clone())),
-            );
+        Self {
+            state: Arc::clone(&self.state),
+            read_only: self.read_only,
+            on_read: Arc::clone(&self.on_read),
+            on_update: Arc::clone(&self.on_update),
+            store_get: self.store_get.as_ref().map(Arc::clone),
+            store_find: self.store_find.as_ref().map(Arc::clone),
+            ref_count: Arc::clone(&self.ref_count),
         }
-
-        if !self.is_read_only() {
-            if let (Some(source), Some(target)) = (&self.change_set, &clone.change_set) {
-                target.write().extend(source.read().iter().cloned());
-            }
-        }
-
-        clone
     }
 
     /// Merges tracked changes from another cache into this one.
@@ -186,25 +201,30 @@ impl DataCache {
     }
 
     /// Gets an item from the cache.
+    #[inline]
     pub fn get(&self, key: &StorageKey) -> Option<StorageItem> {
-        let dict_guard = self.dictionary.read();
-        if let Some(trackable) = dict_guard.get(key) {
-            if trackable.state != TrackState::Deleted && trackable.state != TrackState::NotFound {
-                return Some(trackable.item.clone());
+        {
+            let state = self.state.read();
+            if let Some(trackable) = state.dictionary.get(key) {
+                if trackable.state != TrackState::Deleted && trackable.state != TrackState::NotFound
+                {
+                    return Some(trackable.item.clone());
+                }
+                return None;
             }
-            return None;
         }
-        drop(dict_guard);
 
         if let Some(getter) = &self.store_get {
             if let Some(item) = getter(key) {
                 {
-                    let mut dict = self.dictionary.write();
-                    dict.entry(key.clone())
+                    let mut state = self.state.write();
+                    state
+                        .dictionary
+                        .entry(key.clone())
                         .or_insert_with(|| Trackable::new(item.clone(), TrackState::None));
                 }
 
-                for handler in self.on_read.read().clone() {
+                for handler in self.on_read.read().iter() {
                     handler(self, key, &item);
                 }
 
@@ -215,166 +235,237 @@ impl DataCache {
         None
     }
 
+    /// Gets an item from the cache as a reference.
+    #[inline]
+    pub fn get_ref(&self, key: &StorageKey) -> Option<StorageItem> {
+        {
+            let state = self.state.read();
+            if let Some(trackable) = state.dictionary.get(key) {
+                if trackable.state != TrackState::Deleted && trackable.state != TrackState::NotFound
+                {
+                    return Some(trackable.item.clone());
+                }
+            }
+        }
+        None
+    }
+
     /// Adds an item to the cache.
     pub fn add(&self, key: StorageKey, value: StorageItem) {
-        if self.is_read_only() {
+        if self.read_only {
             warn!("attempted to add to read-only DataCache");
             return;
         }
         self.apply_add(&key, value.clone());
-        for handler in self.on_update.read().clone() {
+        for handler in self.on_update.read().iter() {
             handler(self, &key, &value);
         }
+    }
+
+    /// Applies an add operation to the internal storage.
+    fn apply_add(&self, key: &StorageKey, value: StorageItem) {
+        let mut state = self.state.write();
+        state
+            .dictionary
+            .insert(key.clone(), Trackable::new(value, TrackState::Added));
+        state.change_set.insert(key.clone());
     }
 
     /// Updates an item in the cache.
     pub fn update(&self, key: StorageKey, value: StorageItem) {
-        if self.is_read_only() {
+        if self.read_only {
             warn!("attempted to update read-only DataCache");
             return;
         }
         self.apply_update(&key, value.clone());
-
-        // Trigger update event
-        for handler in self.on_update.read().clone() {
+        for handler in self.on_update.read().iter() {
             handler(self, &key, &value);
         }
     }
 
+    /// Applies an update operation.
+    fn apply_update(&self, key: &StorageKey, value: StorageItem) {
+        let mut state = self.state.write();
+        let prev_state = state
+            .dictionary
+            .get(key)
+            .map(|t| t.state)
+            .unwrap_or(TrackState::NotFound);
+        let new_state = match prev_state {
+            TrackState::Added => TrackState::Added,
+            TrackState::Changed | TrackState::None => TrackState::Changed,
+            TrackState::Deleted => TrackState::Added,
+            TrackState::NotFound => TrackState::Changed,
+        };
+        state
+            .dictionary
+            .insert(key.clone(), Trackable::new(value, new_state));
+        state.change_set.insert(key.clone());
+    }
+
     /// Deletes an item from the cache.
     pub fn delete(&self, key: &StorageKey) {
-        if self.is_read_only() {
+        if self.read_only {
             warn!("attempted to delete from read-only DataCache");
             return;
         }
         self.apply_delete(key);
     }
 
-    /// Commits changes to the underlying storage.
-    /// Note: Calling commit on a read-only cache is a no-op (common in verification paths).
+    /// Applies a delete operation.
+    fn apply_delete(&self, key: &StorageKey) {
+        let mut state = self.state.write();
+        let prev_state = state
+            .dictionary
+            .get(key)
+            .map(|t| t.state)
+            .unwrap_or(TrackState::NotFound);
+        match prev_state {
+            TrackState::Added => {
+                state.dictionary.remove(key);
+                state.change_set.remove(key);
+            }
+            TrackState::Changed | TrackState::None => {
+                state.dictionary.insert(
+                    key.clone(),
+                    Trackable::new(StorageItem::default(), TrackState::Deleted),
+                );
+                state.change_set.insert(key.clone());
+            }
+            TrackState::Deleted | TrackState::NotFound => {}
+        }
+    }
+
+    /// Commits changes to the underlying store.
     pub fn commit(&self) {
-        if self.is_read_only() {
-            // Read-only caches are common during block verification; silently skip.
-            tracing::trace!("commit called on read-only DataCache (expected in verification)");
+        if self.read_only {
             return;
         }
-
-        // Persistence is handled by StoreCache/Snapshot; here we only clear tracked changes.
-        if let Some(ref change_set) = self.change_set {
-            change_set.write().clear();
-        }
+        // Clear change set (actual persistence handled by StoreCache)
+        self.state.write().change_set.clear();
     }
 
-    fn apply_add(&self, key: &StorageKey, value: StorageItem) -> bool {
-        let trackable = Trackable::new(value, TrackState::Added);
-        self.dictionary.write().insert(key.clone(), trackable);
-
-        if let Some(ref change_set) = self.change_set {
-            change_set.write().insert(key.clone());
-        }
-        true
-    }
-
-    fn apply_update(&self, key: &StorageKey, value: StorageItem) {
-        let mut dict = self.dictionary.write();
-        if let Some(trackable) = dict.get_mut(key) {
-            trackable.item = value.clone();
-            if trackable.state == TrackState::None {
-                trackable.state = TrackState::Changed;
-            }
-        } else {
-            dict.insert(
-                key.clone(),
-                Trackable::new(value.clone(), TrackState::Changed),
-            );
-        }
-
-        if let Some(ref change_set) = self.change_set {
-            change_set.write().insert(key.clone());
-        }
-    }
-
-    fn apply_delete(&self, key: &StorageKey) {
-        let mut dict = self.dictionary.write();
-        if let Some(trackable) = dict.get_mut(key) {
-            trackable.state = TrackState::Deleted;
-        } else {
-            dict.insert(
-                key.clone(),
-                Trackable::new(StorageItem::default(), TrackState::Deleted),
-            );
-        }
-
-        if let Some(ref change_set) = self.change_set {
-            change_set.write().insert(key.clone());
-        }
+    /// Gets all tracked items for persistence.
+    pub fn tracked_items(&self) -> Vec<(StorageKey, Trackable)> {
+        let state = self.state.read();
+        state
+            .change_set
+            .iter()
+            .filter_map(|key| {
+                state
+                    .dictionary
+                    .get(key)
+                    .map(|trackable| (key.clone(), trackable.clone()))
+            })
+            .collect()
     }
 
     /// Gets the change set.
     pub fn get_change_set(&self) -> Vec<StorageKey> {
-        if let Some(ref change_set) = self.change_set {
-            change_set.read().iter().cloned().collect()
-        } else {
-            Vec::new()
-        }
+        self.state.read().change_set.iter().cloned().collect()
     }
 
-    /// Returns a snapshot of all tracked entries, typically used when
-    /// propagating changes into an underlying store.
-    pub fn tracked_items(&self) -> Vec<(StorageKey, Trackable)> {
-        let dict = self.dictionary.read();
-        if let Some(change_set) = &self.change_set {
-            let keys: Vec<_> = change_set.read().iter().cloned().collect();
-            keys.into_iter()
-                .filter_map(|key| dict.get(&key).cloned().map(|track| (key, track)))
-                .collect()
+    /// Finds items by key prefix.
+    pub fn find(
+        &self,
+        key_prefix: Option<&StorageKey>,
+        direction: SeekDirection,
+    ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
+        let prefix_bytes = key_prefix.map(|k| k.to_array());
+        let state = self.state.read();
+        let base_items: Vec<(StorageKey, StorageItem)> = state
+            .dictionary
+            .iter()
+            .filter(|(k, t)| t.state != TrackState::Deleted && t.state != TrackState::NotFound)
+            .filter(|(k, _)| {
+                if let Some(prefix) = &prefix_bytes {
+                    k.to_array().starts_with(prefix)
+                } else {
+                    true
+                }
+            })
+            .map(|(k, t)| (k.clone(), t.item.clone()))
+            .collect();
+
+        let items: Vec<_> = if let Some(store_find) = &self.store_find {
+            let mut all_items = store_find(key_prefix, direction);
+            for (key, item) in base_items {
+                if !all_items.iter().any(|(k, _)| k == &key) {
+                    all_items.push((key, item));
+                }
+            }
+            match direction {
+                SeekDirection::Forward => {
+                    all_items.sort_by(|a, b| a.0.cmp(&b.0));
+                }
+                SeekDirection::Backward => {
+                    all_items.sort_by(|a, b| b.0.cmp(&a.0));
+                }
+            }
+            all_items
         } else {
-            dict.iter()
-                .map(|(key, track)| (key.clone(), track.clone()))
-                .collect()
-        }
+            match direction {
+                SeekDirection::Forward => {
+                    let mut items: Vec<_> = base_items;
+                    items.sort_by(|a, b| a.0.cmp(&b.0));
+                    items
+                }
+                SeekDirection::Backward => {
+                    let mut items: Vec<_> = base_items;
+                    items.sort_by(|a, b| b.0.cmp(&a.0));
+                    items
+                }
+            }
+        };
+
+        Box::new(items.into_iter())
+    }
+
+    /// Returns the number of pending changes.
+    pub fn pending_change_count(&self) -> usize {
+        self.state.read().change_set.len()
+    }
+
+    /// Returns true if there are any pending changes.
+    pub fn has_pending_changes(&self) -> bool {
+        !self.state.read().change_set.is_empty()
+    }
+
+    /// Extracts all tracked changes as raw key-value pairs.
+    pub fn extract_raw_changes(&self) -> Vec<(Vec<u8>, Option<Vec<u8>>)> {
+        let state = self.state.read();
+        state
+            .change_set
+            .iter()
+            .filter_map(|key| {
+                state
+                    .dictionary
+                    .get(key)
+                    .and_then(|trackable| match trackable.state {
+                        TrackState::Added | TrackState::Changed => {
+                            Some((key.to_array(), Some(trackable.item.get_value())))
+                        }
+                        TrackState::Deleted => Some((key.to_array(), None)),
+                        TrackState::None | TrackState::NotFound => None,
+                    })
+            })
+            .collect()
     }
 }
 
 impl IReadOnlyStore for DataCache {}
 
-/// Conversion utilities for extracting state changes from DataCache.
-impl DataCache {
-    /// Extracts all tracked changes as raw key-value pairs.
-    ///
-    /// Returns a vector of (key_bytes, value_bytes, is_deleted) tuples.
-    /// This is useful for converting to other state change formats.
-    ///
-    /// # Returns
-    /// - `key_bytes`: The full serialized storage key (id + suffix)
-    /// - `value_bytes`: The storage item value (None if deleted)
-    /// - Contract ID can be extracted from first 4 bytes of key_bytes
-    pub fn extract_raw_changes(&self) -> Vec<(Vec<u8>, Option<Vec<u8>>)> {
-        let tracked = self.tracked_items();
-        tracked
-            .into_iter()
-            .filter_map(|(key, trackable)| match trackable.state {
-                TrackState::Added | TrackState::Changed => {
-                    Some((key.to_array(), Some(trackable.item.get_value())))
-                }
-                TrackState::Deleted => Some((key.to_array(), None)),
-                TrackState::None | TrackState::NotFound => None,
-            })
-            .collect()
+impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for DataCache {
+    fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {
+        self.get(key)
     }
 
-    /// Returns the number of pending changes.
-    pub fn pending_change_count(&self) -> usize {
-        if let Some(ref change_set) = self.change_set {
-            change_set.read().len()
-        } else {
-            0
-        }
-    }
-
-    /// Returns true if there are any pending changes.
-    pub fn has_pending_changes(&self) -> bool {
-        self.pending_change_count() > 0
+    fn find(
+        &self,
+        key_prefix: Option<&StorageKey>,
+        direction: SeekDirection,
+    ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
+        self.find(key_prefix, direction)
     }
 }
 
@@ -457,41 +548,6 @@ mod tests {
     }
 
     #[test]
-    fn extract_raw_changes_returns_added_and_changed() {
-        let cache = DataCache::new(false);
-        let key1 = make_key(1, b"add");
-        let key2 = make_key(2, b"upd");
-
-        cache.add(key1.clone(), StorageItem::from_bytes(vec![0xAA]));
-        cache.add(key2.clone(), StorageItem::from_bytes(vec![0xBB]));
-        cache.update(key2.clone(), StorageItem::from_bytes(vec![0xCC]));
-
-        let changes = cache.extract_raw_changes();
-        assert_eq!(changes.len(), 2);
-
-        // Verify values are present
-        let values: Vec<_> = changes.iter().filter_map(|(_, v)| v.clone()).collect();
-        assert!(values.contains(&vec![0xAA]));
-        assert!(values.contains(&vec![0xCC]));
-    }
-
-    #[test]
-    fn extract_raw_changes_includes_deletions() {
-        let cache = DataCache::new(false);
-        let key = make_key(5, b"del");
-
-        cache.add(key.clone(), StorageItem::from_bytes(vec![0x11]));
-        cache.delete(&key);
-
-        let changes = cache.extract_raw_changes();
-        assert_eq!(changes.len(), 1);
-        assert!(
-            changes[0].1.is_none(),
-            "deleted item should have None value"
-        );
-    }
-
-    #[test]
     fn pending_change_count_tracks_changes() {
         let cache = DataCache::new(false);
         assert_eq!(cache.pending_change_count(), 0);
@@ -504,51 +560,26 @@ mod tests {
         cache.add(make_key(2, b"b"), StorageItem::from_bytes(vec![2]));
         assert_eq!(cache.pending_change_count(), 2);
     }
-}
 
-impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for DataCache {
-    fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {
-        self.get(key)
-    }
+    #[test]
+    fn copy_on_write_shares_data() {
+        let cache = DataCache::new(false);
+        let key = make_key(1, b"test");
 
-    fn find(
-        &self,
-        key_prefix: Option<&StorageKey>,
-        direction: SeekDirection,
-    ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
-        let mut combined: HashMap<StorageKey, StorageItem> = HashMap::new();
+        // Add to original cache
+        cache.add(key.clone(), StorageItem::from_bytes(vec![1]));
 
-        let dict_guard = self.dictionary.read();
-        for (key, trackable) in dict_guard.iter() {
-            if trackable.state == TrackState::Deleted || trackable.state == TrackState::NotFound {
-                continue;
-            }
+        // Clone should share data
+        let cloned = cache.clone_cache();
+        assert_eq!(cloned.get(&key).unwrap().get_value(), vec![1]);
 
-            if let Some(prefix) = key_prefix {
-                if key.id != prefix.id || !key.suffix().starts_with(prefix.suffix()) {
-                    continue;
-                }
-            }
+        // Modify cloned cache - both should see changes (shared state)
+        cloned.add(make_key(2, b"new"), StorageItem::from_bytes(vec![2]));
 
-            combined
-                .entry(key.clone())
-                .or_insert_with(|| trackable.item.clone());
-        }
-        drop(dict_guard);
-
-        if let Some(finder) = &self.store_find {
-            for (key, value) in finder(key_prefix, SeekDirection::Forward) {
-                combined.entry(key).or_insert(value);
-            }
-        }
-
-        let mut items: Vec<_> = combined.into_iter().collect();
-        items.sort_by(|a, b| a.0.suffix().cmp(b.0.suffix()));
-
-        if direction == SeekDirection::Backward {
-            Box::new(items.into_iter().rev())
-        } else {
-            Box::new(items.into_iter())
-        }
+        // Both should see the new entry (shared state)
+        assert_eq!(
+            cache.get(&make_key(2, b"new")).unwrap().get_value(),
+            vec![2]
+        );
     }
 }

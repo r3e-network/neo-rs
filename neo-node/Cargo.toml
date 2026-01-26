@@ -31,8 +31,8 @@ hsm-ledger = ["hsm", "neo-hsm/ledger"]
 hsm-pkcs11 = ["hsm", "neo-hsm/pkcs11"]
 
 [dependencies]
-# Enable full neo-core features for production node (rocksdb, upnp, monitoring)
-neo-core = { path = "../neo-core", features = ["full", "runtime"] }
+# Enable full neo-core features for production node (rocksdb, upnp, monitoring, parallel)
+neo-core = { path = "../neo-core", features = ["full", "runtime", "parallel"] }
 neo-state = { path = "../neo-state" }
 neo-chain = { path = "../neo-chain" }
 neo-mempool = { path = "../neo-mempool" }
@@ -81,6 +81,7 @@ chrono.workspace = true
 sysinfo.workspace = true
 rand = "0.8"
 url = { workspace = true }
+num_cpus = "1.10"
 
 [dev-dependencies]
 tempfile.workspace = true

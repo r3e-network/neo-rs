@@ -17,19 +17,262 @@ use rocksdb::{
     BlockBasedOptions, Cache, DBIteratorWithThreadMode, Direction, IteratorMode, Options,
     ReadOptions, Snapshot as DbSnapshot, WriteBatch, WriteOptions, DB,
 };
-use std::{fs, mem, path::PathBuf, sync::Arc};
-use tracing::error;
-use tracing::warn;
+use std::{
+    fs, mem,
+    path::PathBuf,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+    time::Instant,
+};
+use tracing::{debug, error, warn};
+
+/// Batch commit statistics for monitoring.
+#[derive(Debug, Default)]
+pub struct BatchCommitStats {
+    pub total_commits: AtomicUsize,
+    pub total_batches: AtomicUsize,
+    pub total_operations: AtomicUsize,
+    pub total_duration_ms: AtomicUsize,
+    pub max_batch_size: AtomicUsize,
+}
+
+impl BatchCommitStats {
+    pub fn new() -> Self {
+        Self {
+            total_commits: AtomicUsize::new(0),
+            total_batches: AtomicUsize::new(0),
+            total_operations: AtomicUsize::new(0),
+            total_duration_ms: AtomicUsize::new(0),
+            max_batch_size: AtomicUsize::new(0),
+        }
+    }
+
+    pub fn record_commit(&self, operations: usize, duration_ms: u64) {
+        self.total_commits.fetch_add(1, Ordering::Relaxed);
+        self.total_operations
+            .fetch_add(operations, Ordering::Relaxed);
+        self.total_duration_ms
+            .fetch_add(duration_ms as usize, Ordering::Relaxed);
+
+        loop {
+            let current_max = self.max_batch_size.load(Ordering::Relaxed);
+            if operations <= current_max {
+                break;
+            }
+            if self
+                .max_batch_size
+                .compare_exchange(
+                    current_max,
+                    operations,
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                )
+                .is_ok()
+            {
+                break;
+            }
+        }
+    }
+
+    pub fn record_batch(&self) {
+        self.total_batches.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn stats(&self) -> (usize, usize, usize, u64, usize) {
+        (
+            self.total_commits.load(Ordering::Relaxed),
+            self.total_batches.load(Ordering::Relaxed),
+            self.total_operations.load(Ordering::Relaxed),
+            self.total_duration_ms.load(Ordering::Relaxed) as u64,
+            self.max_batch_size.load(Ordering::Relaxed),
+        )
+    }
+}
+
+/// Batch commit configuration.
+#[derive(Debug, Clone)]
+pub struct BatchCommitConfig {
+    pub enabled: bool,
+    pub max_batch_size: usize,
+    pub max_delay_ms: u64,
+    pub min_operations: usize,
+}
+
+impl Default for BatchCommitConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_batch_size: 100,
+            max_delay_ms: 50,
+            min_operations: 10,
+        }
+    }
+}
+
+/// Batch commit accumulator for fast sync mode.
+struct BatchCommitter {
+    config: BatchCommitConfig,
+    stats: Arc<BatchCommitStats>,
+    pending_batch: Mutex<WriteBatch>,
+    last_flush: AtomicUsize,
+    pending_operations: AtomicUsize,
+}
+
+impl BatchCommitter {
+    fn new(config: BatchCommitConfig, stats: Arc<BatchCommitStats>) -> Self {
+        Self {
+            config,
+            stats,
+            pending_batch: Mutex::new(WriteBatch::default()),
+            last_flush: AtomicUsize::new(0),
+            pending_operations: AtomicUsize::new(0),
+        }
+    }
+
+    fn try_add(&self, batch: &mut WriteBatch) -> usize {
+        let count = batch.len();
+        if count == 0 {
+            return 0;
+        }
+
+        if !self.config.enabled {
+            return count;
+        }
+
+        let mut pending = self.pending_batch.lock();
+        let pending_ops = self.pending_operations.load(Ordering::Relaxed);
+        let total = pending_ops + count;
+
+        if total >= self.config.max_batch_size {
+            self.flush_locked(&mut pending);
+            let remaining = self.config.max_batch_size.saturating_sub(count);
+            if remaining > 0 && count <= remaining {
+                Self::merge_batches(&mut pending, batch);
+                self.pending_operations.store(count, Ordering::Relaxed);
+                return 0;
+            }
+        }
+
+        Self::merge_batches(&mut pending, batch);
+        self.pending_operations.store(total, Ordering::Relaxed);
+        count
+    }
+
+    fn merge_batches(dest: &mut WriteBatch, src: &WriteBatch) {
+        struct BatchIterator<'a> {
+            dest: &'a mut WriteBatch,
+        }
+
+        impl<'a> rocksdb::WriteBatchIterator for BatchIterator<'a> {
+            fn put(&mut self, key: Box<[u8]>, value: Box<[u8]>) {
+                self.dest.put(&key, &value);
+            }
+
+            fn delete(&mut self, key: Box<[u8]>) {
+                self.dest.delete(&key);
+            }
+        }
+
+        let mut iter = BatchIterator { dest };
+        src.iterate(&mut iter);
+    }
+
+    fn flush_locked(&self, pending: &mut WriteBatch) {
+        if pending.is_empty() {
+            return;
+        }
+        self.stats.record_batch();
+        *pending = WriteBatch::default();
+        self.pending_operations.store(0, Ordering::Relaxed);
+        self.last_flush.store(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as usize,
+            Ordering::Relaxed,
+        );
+    }
+
+    fn should_flush(&self, force: bool) -> bool {
+        if !self.config.enabled {
+            return false;
+        }
+
+        if force {
+            return !self.pending_operations.load(Ordering::Relaxed) == 0;
+        }
+
+        let ops = self.pending_operations.load(Ordering::Relaxed);
+        if ops < self.config.min_operations {
+            return false;
+        }
+
+        let last_flush = self.last_flush.load(Ordering::Relaxed);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+
+        if last_flush == 0 {
+            return true;
+        }
+
+        now.saturating_sub(last_flush as u64) >= self.config.max_delay_ms
+    }
+
+    fn flush(&self) -> Option<WriteBatch> {
+        if !self.config.enabled {
+            return None;
+        }
+
+        let mut pending = self.pending_batch.lock();
+        if pending.is_empty() {
+            return None;
+        }
+
+        let batch = std::mem::replace(&mut *pending, WriteBatch::default());
+        self.pending_operations.store(0, Ordering::Relaxed);
+        self.last_flush.store(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as usize,
+            Ordering::Relaxed,
+        );
+        Some(batch)
+    }
+
+    fn pending_count(&self) -> usize {
+        self.pending_operations.load(Ordering::Relaxed)
+    }
+}
 
 /// RocksDB-backed store provider compatible with Neo's `IStore`.
 #[derive(Debug, Clone)]
 pub struct RocksDBStoreProvider {
     base_config: StorageConfig,
+    batch_config: BatchCommitConfig,
+    batch_stats: Arc<BatchCommitStats>,
 }
 
 impl RocksDBStoreProvider {
     pub fn new(base_config: StorageConfig) -> Self {
-        Self { base_config }
+        Self {
+            base_config,
+            batch_config: BatchCommitConfig::default(),
+            batch_stats: Arc::new(BatchCommitStats::new()),
+        }
+    }
+
+    pub fn with_batch_config(mut self, config: BatchCommitConfig) -> Self {
+        self.batch_config = config;
+        self
+    }
+
+    pub fn batch_stats(&self) -> Arc<BatchCommitStats> {
+        Arc::clone(&self.batch_stats)
     }
 
     fn resolved_path(&self, override_path: &str) -> PathBuf {
@@ -65,6 +308,8 @@ impl IStoreProvider for RocksDBStoreProvider {
 struct RocksDbStore {
     db: Arc<DB>,
     on_new_snapshot: Arc<RwLock<Vec<OnNewSnapshotDelegate>>>,
+    batch_committer: Arc<BatchCommitter>,
+    batch_config: BatchCommitConfig,
 }
 
 impl RocksDbStore {
@@ -89,10 +334,25 @@ impl RocksDbStore {
             Arc::new(DB::open(&options, &config.path)?)
         };
 
+        let batch_stats = Arc::new(BatchCommitStats::new());
+        let batch_committer = Arc::new(BatchCommitter::new(
+            BatchCommitConfig::default(),
+            Arc::clone(&batch_stats),
+        ));
+
         Ok(Self {
             db,
             on_new_snapshot: Arc::new(RwLock::new(Vec::new())),
+            batch_committer,
+            batch_config: BatchCommitConfig::default(),
         })
+    }
+
+    fn fast_write_options() -> WriteOptions {
+        let mut opts = WriteOptions::default();
+        opts.set_sync(false);
+        opts.disable_wal(true);
+        opts
     }
 
     fn iterator_from(
@@ -101,6 +361,22 @@ impl RocksDbStore {
         direction: SeekDirection,
     ) -> DBIteratorWithThreadMode<'_, DB> {
         iterator_from(self.db.as_ref(), None, key_or_prefix, direction)
+    }
+
+    pub fn flush_batch_commits(&self) {
+        if let Some(batch) = self.batch_committer.flush() {
+            let start = Instant::now();
+            if let Err(err) = self.db.write(batch) {
+                error!(target: "neo", error = %err, "rocksdb batch flush failed");
+            } else {
+                let duration_ms = start.elapsed().as_millis() as u64;
+                debug!(target: "neo", duration_ms, "rocksdb batch flush completed");
+            }
+        }
+    }
+
+    pub fn batch_commit_stats(&self) -> (usize, usize, usize, u64, usize) {
+        self.batch_committer.stats.stats()
     }
 }
 
@@ -213,6 +489,8 @@ impl Clone for RocksDbStore {
         Self {
             db: self.db.clone(),
             on_new_snapshot: Arc::new(RwLock::new(Vec::new())),
+            batch_committer: Arc::clone(&self.batch_committer),
+            batch_config: self.batch_config.clone(),
         }
     }
 }
@@ -222,17 +500,23 @@ struct RocksDbSnapshot {
     db: Arc<DB>,
     snapshot: DbSnapshot<'static>,
     write_batch: Mutex<WriteBatch>,
+    batch_committer: Arc<BatchCommitter>,
+    use_batch_commit: bool,
 }
 
 impl RocksDbSnapshot {
     fn new(db: Arc<DB>, store: Arc<RocksDbStore>) -> Self {
         let snapshot = Self::create_snapshot(&db);
+        let batch_committer = Arc::clone(&store.batch_committer);
+        let use_batch_commit = store.batch_config.enabled && store.batch_config.max_batch_size > 1;
 
         Self {
             store,
             db,
             snapshot,
             write_batch: Mutex::new(WriteBatch::default()),
+            batch_committer,
+            use_batch_commit,
         }
     }
 
@@ -352,16 +636,82 @@ impl IStoreSnapshot for RocksDbSnapshot {
             return Ok(());
         }
 
+        let ops = batch_guard.len();
+        let start = Instant::now();
+
+        if self.use_batch_commit {
+            self.batch_committer.try_add(&mut *batch_guard);
+            let duration_ms = start.elapsed().as_millis() as u64;
+            self.batch_committer.stats.record_commit(ops, duration_ms);
+            return Ok(());
+        }
+
         let mut batch = WriteBatch::default();
         mem::swap(&mut *batch_guard, &mut batch);
         drop(batch_guard);
 
-        self.db.write(batch).map_err(|err| {
+        let mut write_opts = WriteOptions::default();
+        if ops > 10 {
+            write_opts.set_sync(false);
+            write_opts.disable_wal(true);
+        }
+
+        self.db.write_opt(batch, &write_opts).map_err(|err| {
             error!(target: "neo", error = %err, "rocksdb snapshot commit failed");
             StorageError::CommitFailed(format!("RocksDB write failed: {}", err))
         })?;
 
         Ok(())
+    }
+}
+
+impl RocksDbStore {
+    /// Enables fast sync mode optimizations (disable WAL, reduce fsync).
+    pub fn enable_fast_sync_mode(&self) {
+        let mut opts = Options::default();
+        opts.set_disable_auto_compactions(true);
+        if let Err(err) = self.db.set_options(&[("disable_auto_compactions", "true")]) {
+            warn!(target: "neo", error = %err, "failed to disable auto compactions");
+        }
+        debug!(target: "neo", "enabled fast sync mode optimizations");
+    }
+
+    /// Disables fast sync mode optimizations.
+    pub fn disable_fast_sync_mode(&self) {
+        if let Err(err) = self
+            .db
+            .set_options(&[("disable_auto_compactions", "false")])
+        {
+            warn!(target: "neo", error = %err, "failed to enable auto compactions");
+        }
+        debug!(target: "neo", "disabled fast sync mode optimizations");
+    }
+
+    /// Force flush all memtables to disk.
+    pub fn flush_memtables(&self) {
+        if let Err(err) = self.db.flush_wal(true) {
+            warn!(target: "neo", error = %err, "failed to flush WAL");
+        }
+        if let Err(err) = self.db.flush_opt(&rocksdb::FlushOptions::default()) {
+            warn!(target: "neo", error = %err, "failed to flush memtables");
+        }
+    }
+
+    /// Returns memory usage statistics.
+    pub fn memory_usage(&self) -> Option<(u64, u64)> {
+        self.db
+            .property_int_value("rocksdb.cur-size-active-mem-table")
+            .ok()
+            .flatten()
+            .map(|active| {
+                let total = self
+                    .db
+                    .property_int_value("rocksdb.cur-size-all-mem-tables")
+                    .ok()
+                    .flatten()
+                    .unwrap_or(0);
+                (active, total)
+            })
     }
 }
 
@@ -416,14 +766,31 @@ fn build_db_options(config: &StorageConfig) -> Options {
 
     if let Some(max_open) = config.max_open_files {
         options.set_max_open_files(max_open as i32);
+    } else {
+        options.set_max_open_files(4000);
     }
+
+    options.set_max_background_jobs(16);
+    options.set_max_background_compactions(8);
+    options.set_max_background_flushes(4);
+    options.set_bytes_per_sync(0);
+    options.set_optimize_filters_for_hits(false);
 
     if let Some(write_buffer) = config.write_buffer_size {
         options.set_write_buffer_size(write_buffer);
+    } else {
+        options.set_write_buffer_size(64 * 1024 * 1024);
     }
+    options.set_max_write_buffer_number(4);
+    options.set_min_write_buffer_number_to_merge(2);
 
     if let Some(cache_size) = config.cache_size {
         let cache = Cache::new_lru_cache(cache_size);
+        let mut table_options = BlockBasedOptions::default();
+        table_options.set_block_cache(&cache);
+        options.set_block_based_table_factory(&table_options);
+    } else {
+        let cache = Cache::new_lru_cache(256 * 1024 * 1024);
         let mut table_options = BlockBasedOptions::default();
         table_options.set_block_cache(&cache);
         options.set_block_based_table_factory(&table_options);

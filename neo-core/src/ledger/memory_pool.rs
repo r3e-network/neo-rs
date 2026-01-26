@@ -95,14 +95,32 @@ impl MemoryPool {
             transaction_relay: None,
             _max_milliseconds_to_reverify_tx: time_per_block_ms / 3.0,
             _max_milliseconds_to_reverify_tx_per_idle: time_per_block_ms / 15.0,
-            verified_transactions: HashMap::new(),
+            verified_transactions: HashMap::with_capacity(capacity),
             verified_sorted: BTreeSet::new(),
-            unverified_transactions: HashMap::new(),
+            unverified_transactions: HashMap::with_capacity(capacity / 4),
             unverified_sorted: BTreeSet::new(),
-            conflicts: HashMap::new(),
+            conflicts: HashMap::with_capacity(capacity / 2),
             verification_context: TransactionVerificationContext::new(),
             capacity,
         }
+    }
+
+    /// Pre-allocates capacity for expected number of verified transactions.
+    /// Call this during initial sync to reduce memory reallocations.
+    pub fn reserve_verified(&mut self, additional: usize) {
+        let new_capacity = self.verified_transactions.len().saturating_add(additional);
+        self.verified_transactions
+            .reserve(new_capacity.min(self.capacity));
+    }
+
+    /// Pre-allocates capacity for expected number of unverified transactions.
+    pub fn reserve_unverified(&mut self, additional: usize) {
+        let new_capacity = self
+            .unverified_transactions
+            .len()
+            .saturating_add(additional);
+        self.unverified_transactions
+            .reserve(new_capacity.min(self.capacity / 4));
     }
 
     /// private int RebroadcastMultiplierThreshold => Capacity / 10;

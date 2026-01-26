@@ -142,7 +142,7 @@ impl RpcServerConfig {
     }
 
     const fn default_max_concurrent_connections() -> usize {
-        40
+        100
     }
 
     const fn default_max_request_body_size() -> usize {

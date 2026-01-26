@@ -119,11 +119,11 @@ impl Blockchain {
         Self {
             ledger,
             system_context: None,
-            _block_cache: Arc::new(RwLock::new(HashMap::new())),
-            _block_cache_unverified: Arc::new(RwLock::new(HashMap::new())),
+            _block_cache: Arc::new(RwLock::new(HashMap::with_capacity(1024))),
+            _block_cache_unverified: Arc::new(RwLock::new(HashMap::with_capacity(256))),
             _extensible_witness_white_list: Arc::new(RwLock::new(HashSet::new())),
-            _inventory_cache: Arc::new(RwLock::new(HashMap::new())),
-            _inventory_cache_order: Arc::new(RwLock::new(VecDeque::new())),
+            _inventory_cache: Arc::new(RwLock::new(HashMap::with_capacity(2048))),
+            _inventory_cache_order: Arc::new(RwLock::new(VecDeque::with_capacity(2048))),
         }
     }
 
@@ -131,26 +131,40 @@ impl Blockchain {
         Props::new(move || Self::new(ledger.clone()))
     }
 
-    fn persist_block_via_system(&self, block: &Block) {
+    fn persist_block_via_system(&self, block: &Block) -> bool {
         let Some(context) = &self.system_context else {
-            return;
+            return false;
         };
 
         let Some(system) = context.neo_system() else {
-            return;
+            return false;
         };
 
         let mut block_for_hash = block.clone();
         let hash = block_for_hash.hash();
 
-        if let Err(error) = system.persist_block(block.clone()) {
-            tracing::warn!(
-                target: "neo",
-                %error,
-                index = block.index(),
-                hash = %hash,
-                "failed to persist block via NeoSystem"
-            );
+        match system.persist_block(block.clone()) {
+            Ok(_) => {
+                tracing::debug!(
+                    target: "neo",
+                    index = block.index(),
+                    hash = %hash,
+                    "persisted block successfully"
+                );
+                true
+            }
+            Err(error) => {
+                tracing::warn!(
+                    target: "neo",
+                    %error,
+                    index = block.index(),
+                    hash = %hash,
+                    "failed to persist block via NeoSystem"
+                );
+                // In fast sync mode, we continue even if blocks fail
+                // The block might fail due to gas/balance issues but we can still sync
+                false
+            }
         }
     }
 

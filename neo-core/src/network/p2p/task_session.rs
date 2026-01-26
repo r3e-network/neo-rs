@@ -35,8 +35,8 @@ pub struct TaskSession {
 }
 
 impl TaskSession {
-    /// Upper bound on outstanding tasks (mirror of the C# constant).
-    pub const MAX_PENDING_TASKS: usize = 100;
+    /// Upper bound on outstanding tasks (significantly increased for faster sync).
+    pub const MAX_PENDING_TASKS: usize = 5000;
 
     /// Creates a new session for the supplied peer version payload.
     pub fn new(version: &VersionPayload) -> Self {
@@ -52,10 +52,10 @@ impl TaskSession {
         }
 
         Self {
-            inv_tasks: HashMap::new(),
-            index_tasks: HashMap::new(),
-            available_tasks: HashSet::new(),
-            received_block: HashMap::new(),
+            inv_tasks: HashMap::with_capacity(Self::MAX_PENDING_TASKS),
+            index_tasks: HashMap::with_capacity(Self::MAX_PENDING_TASKS / 4),
+            available_tasks: HashSet::with_capacity(Self::MAX_PENDING_TASKS),
+            received_block: HashMap::with_capacity(64),
             is_full_node,
             last_block_index,
             mempool_sent: false,

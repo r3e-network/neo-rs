@@ -43,9 +43,11 @@ impl NeoSystem {
 
         on_persist_engine.native_on_persist()?;
         let on_persist_exec = ApplicationExecuted::new(&mut on_persist_engine);
-        self.actor_system()
-            .event_stream()
-            .publish(on_persist_exec.clone());
+        if !self.context().is_fast_sync_mode() {
+            self.actor_system()
+                .event_stream()
+                .publish(on_persist_exec.clone());
+        }
 
         let mut executed = Vec::with_capacity(ledger_block.transactions.len() + 2);
         executed.push(on_persist_exec);
@@ -77,9 +79,11 @@ impl NeoSystem {
             let tx_hash = tx.hash();
 
             let executed_tx = ApplicationExecuted::new(&mut tx_engine);
-            self.actor_system()
-                .event_stream()
-                .publish(executed_tx.clone());
+            if !self.context().is_fast_sync_mode() {
+                self.actor_system()
+                    .event_stream()
+                    .publish(executed_tx.clone());
+            }
             tx_states = tx_engine
                 .take_state::<LedgerTransactionStates>()
                 .unwrap_or_else(|| {
@@ -110,12 +114,17 @@ impl NeoSystem {
         post_persist_engine.set_state(tx_states);
         post_persist_engine.native_post_persist()?;
         let post_persist_exec = ApplicationExecuted::new(&mut post_persist_engine);
-        self.actor_system()
-            .event_stream()
-            .publish(post_persist_exec.clone());
+        if !self.context().is_fast_sync_mode() {
+            self.actor_system()
+                .event_stream()
+                .publish(post_persist_exec.clone());
+        }
         executed.push(post_persist_exec);
 
-        self.invoke_committing(&ledger_block, base_snapshot.as_ref(), &executed);
+        // Skip expensive handler calls during fast sync
+        if !self.context().is_fast_sync_mode() {
+            self.invoke_committing(&ledger_block, base_snapshot.as_ref(), &executed);
+        }
 
         crate::persistence::transaction::apply_tracked_items(
             tx.cache_mut(),
@@ -132,16 +141,19 @@ impl NeoSystem {
         // Update in-memory caches with the payload block so networking queries can respond immediately.
         self.context().record_block(block.clone());
 
-        // Notify plugins that a block has been persisted, matching the C# event ordering.
-        let block_hash = ledger_block.hash().to_string();
-        let block_height = ledger_block.index();
-        self.context()
-            .broadcast_plugin_event(PluginEvent::BlockReceived {
-                block_hash,
-                block_height,
-            });
+        // Skip expensive plugin events during fast sync
+        if !self.context().is_fast_sync_mode() {
+            // Notify plugins that a block has been persisted, matching the C# event ordering.
+            let block_hash = ledger_block.hash().to_string();
+            let block_height = ledger_block.index();
+            self.context()
+                .broadcast_plugin_event(PluginEvent::BlockReceived {
+                    block_hash,
+                    block_height,
+                });
 
-        self.invoke_committed(&ledger_block);
+            self.invoke_committed(&ledger_block);
+        }
 
         Ok(executed)
     }

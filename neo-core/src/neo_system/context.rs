@@ -8,6 +8,7 @@
 use parking_lot::{Mutex, RwLock};
 use std::any::Any;
 use std::fmt;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 use std::thread;
 
@@ -93,6 +94,8 @@ pub struct NeoSystemContext {
     pub(crate) log_handlers: Arc<RwLock<Vec<Arc<dyn ILogHandler + Send + Sync>>>>,
     pub(crate) logging_handlers: Arc<RwLock<Vec<Arc<dyn ILoggingHandler + Send + Sync>>>>,
     pub(crate) notify_handlers: Arc<RwLock<Vec<Arc<dyn INotifyHandler + Send + Sync>>>>,
+    /// Fast sync mode - disables expensive event publishing during initial sync
+    pub(crate) fast_sync_mode: Arc<AtomicBool>,
 }
 
 impl fmt::Debug for NeoSystemContext {
@@ -213,6 +216,21 @@ impl NeoSystemContext {
             return Ok(Some(service));
         }
         Ok(Some(self.local_node_state.clone()))
+    }
+
+    /// Check if fast sync mode is enabled (skips expensive event publishing).
+    pub fn is_fast_sync_mode(&self) -> bool {
+        self.fast_sync_mode.load(Ordering::Relaxed)
+    }
+
+    /// Enable fast sync mode for initial chain synchronization.
+    pub fn enable_fast_sync_mode(&self) {
+        self.fast_sync_mode.store(true, Ordering::Relaxed);
+    }
+
+    /// Disable fast sync mode (e.g., after initial sync complete).
+    pub fn disable_fast_sync_mode(&self) {
+        self.fast_sync_mode.store(false, Ordering::Relaxed);
     }
 
     /// Typed peer manager view.

@@ -3,8 +3,8 @@ use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::collections::VecDeque;
 use std::iter::FromIterator;
 
-/// Maximum number of headers retained in the cache. Matches the C# constant.
-pub const MAX_HEADERS: usize = 10_000;
+/// Maximum number of headers retained in the cache. Increased for faster sync.
+pub const MAX_HEADERS: usize = 50_000;
 
 /// Thread-safe cache that stores headers which have arrived before their
 /// corresponding blocks. Mirrors the behaviour of the C# `HeaderCache`.
@@ -16,26 +16,30 @@ pub struct HeaderCache {
 impl HeaderCache {
     pub fn new() -> Self {
         Self {
-            headers: RwLock::new(VecDeque::new()),
+            headers: RwLock::new(VecDeque::with_capacity(MAX_HEADERS)),
         }
     }
 
     /// Returns the number of headers currently buffered.
+    #[inline]
     pub fn count(&self) -> usize {
         self.read().len()
     }
 
     /// Returns true when the cache reached `MAX_HEADERS` entries.
+    #[inline]
     pub fn full(&self) -> bool {
         self.count() >= MAX_HEADERS
     }
 
     /// Returns the latest header stored in the cache, if any.
+    #[inline]
     pub fn last(&self) -> Option<Header> {
         self.read().back().cloned()
     }
 
     /// Returns the first header index stored in the cache.
+    #[inline]
     pub fn first_index(&self) -> Option<u32> {
         self.read().front().map(|header| header.index())
     }
@@ -49,6 +53,7 @@ impl HeaderCache {
     }
 
     /// Retrieves a header by its blockchain index if present in the cache.
+    #[inline]
     pub fn get(&self, index: u32) -> Option<Header> {
         let headers = self.read();
         let first = headers.front()?;

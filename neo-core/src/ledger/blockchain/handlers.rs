@@ -40,24 +40,29 @@ impl Blockchain {
             let snapshot = store_cache.data_cache();
             let settings = context.settings();
             let header_backlog_present = context.header_cache().count() > 0;
-            context
-                .memory_pool()
-                .lock()
-                .update_pool_for_block_persisted(
-                    &block,
-                    snapshot,
-                    settings.as_ref(),
-                    header_backlog_present,
-                );
+            // Skip mempool updates during fast sync for better performance
+            if !context.is_fast_sync_mode() {
+                context
+                    .memory_pool()
+                    .lock()
+                    .update_pool_for_block_persisted(
+                        &block,
+                        snapshot,
+                        settings.as_ref(),
+                        header_backlog_present,
+                    );
+            }
         }
 
         if let Some(context) = &self.system_context {
-            context
-                .actor_system
-                .event_stream()
-                .publish(PersistCompleted {
-                    block: block.clone(),
-                });
+            if !context.is_fast_sync_mode() {
+                context
+                    .actor_system
+                    .event_stream()
+                    .publish(PersistCompleted {
+                        block: block.clone(),
+                    });
+            }
         }
 
         {
@@ -289,7 +294,12 @@ impl Blockchain {
         let hash = block.hash();
         let index = block.index();
 
-        let result = self.on_new_block(&block, true).await;
+        let verify = !self
+            .system_context
+            .as_ref()
+            .map(|c| c.is_fast_sync_mode())
+            .unwrap_or(true);
+        let result = self.on_new_block(&block, verify).await;
 
         if let Some(context) = &self.system_context {
             let inventory = if relay && result == VerifyResult::Succeed {

@@ -1,7 +1,6 @@
 //! Storage configuration helpers and shared enums.
 
 use crate::error::{CoreError, CoreResult};
-use crate::neo_config::MAX_SCRIPT_SIZE;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -48,8 +47,8 @@ impl Default for StorageConfig {
             compression_algorithm: CompressionAlgorithm::Lz4,
             compaction_strategy: CompactionStrategy::Level,
             max_open_files: Some(1000),
-            cache_size: Some(64 * MAX_SCRIPT_SIZE * MAX_SCRIPT_SIZE),
-            write_buffer_size: Some(16 * MAX_SCRIPT_SIZE * MAX_SCRIPT_SIZE),
+            cache_size: Some(64 * 1024 * 1024),
+            write_buffer_size: Some(16 * 1024 * 1024),
             enable_statistics: false,
             read_only: false,
         }
