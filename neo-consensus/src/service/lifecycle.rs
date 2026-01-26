@@ -111,6 +111,7 @@ impl ConsensusService {
             .update_last_seen_message(payload.validator_index, payload.block_index);
 
         // Validate view number (ChangeView and Recovery messages can be for other views).
+        #[allow(clippy::collapsible_if)]
         if !matches!(
             payload.message_type,
             ConsensusMessageType::ChangeView

@@ -137,7 +137,7 @@ impl ConsensusService {
             && !commit_sent
             && !self.context.not_accepting_payloads_due_to_view_changing()
         {
-            #[allow(clippy::suspicious_else_group_style)]
+            #[allow(clippy::collapsible_if)]
             if !self.context.prepare_request_received {
                 if let Some(ref prep_req) = recovery.prepare_request_message {
                     let primary_index = self.context.primary_index();
@@ -164,7 +164,7 @@ impl ConsensusService {
                 }
             }
 
-            #[allow(clippy::suspicious_else_group_style)]
+            #[allow(clippy::collapsible_if)]
             if self.context.preparation_hash.is_none() {
                 if let Some(hash) = recovery.preparation_hash {
                     self.context.preparation_hash = Some(hash);
