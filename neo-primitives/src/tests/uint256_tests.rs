@@ -1,13 +1,13 @@
 // Converted from C# Neo.UnitTests.UT_UInt256
-use crate::{PrimitiveError, UInt256};
+use crate::UInt256;
 
 #[cfg(test)]
-mod uint256_tests {
+mod tests {
     use super::*;
 
     #[test]
     fn test_fail() {
-        let result = UInt256::from_bytes(&vec![0u8; UInt256::LENGTH + 1]);
+        let result = UInt256::from_bytes(&[0u8; UInt256::LENGTH + 1]);
         assert!(result.is_err());
     }
 

@@ -1,13 +1,13 @@
 // Converted from C# Neo.UnitTests.UT_UInt160
-use crate::{PrimitiveError, UInt160};
+use crate::UInt160;
 
 #[cfg(test)]
-mod uint160_tests {
+mod tests {
     use super::*;
 
     #[test]
     fn test_fail() {
-        let result = UInt160::from_bytes(&vec![0u8; UInt160::LENGTH + 1]);
+        let result = UInt160::from_bytes(&[0u8; UInt160::LENGTH + 1]);
         assert!(result.is_err());
     }
 
