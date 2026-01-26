@@ -4,11 +4,11 @@ use neo_core::smart_contract::storage_key::StorageKey;
 use neo_core::{ECCurve, ECPoint, UInt160, UInt256};
 
 fn sample_uint160() -> UInt160 {
-    UInt160::from("2d3b96ae1bcc5a585e075e3b81920210dec16302")
+    UInt160::parse("2d3b96ae1bcc5a585e075e3b81920210dec16302").unwrap()
 }
 
 fn sample_uint256() -> UInt256 {
-    UInt256::from("0x761a9bb72ca2a63984db0cc43f943a2a25e464f62d1a91114c2b6fbbfd24b51d")
+    UInt256::parse("0x761a9bb72ca2a63984db0cc43f943a2a25e464f62d1a91114c2b6fbbfd24b51d").unwrap()
 }
 
 #[test]
