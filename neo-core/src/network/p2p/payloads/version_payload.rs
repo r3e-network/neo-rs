@@ -24,8 +24,7 @@ pub const MAX_CAPABILITIES: usize = 32;
 
 /// Sent when a connection is established.
 /// Matches C# VersionPayload exactly
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct VersionPayload {
     /// The magic number of the network.
     pub network: u32,
@@ -70,7 +69,6 @@ impl VersionPayload {
     }
 }
 
-
 impl Serializable for VersionPayload {
     fn size(&self) -> usize {
         4 + // Network
@@ -78,7 +76,8 @@ impl Serializable for VersionPayload {
         4 + // Timestamp
         4 + // Nonce
         get_var_size(self.user_agent.len() as u64) + self.user_agent.len() + // UserAgent
-        get_var_size(self.capabilities.len() as u64) + self.capabilities.iter().map(|c| c.size()).sum::<usize>() // Capabilities
+        get_var_size(self.capabilities.len() as u64) + self.capabilities.iter().map(|c| c.size()).sum::<usize>()
+        // Capabilities
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
