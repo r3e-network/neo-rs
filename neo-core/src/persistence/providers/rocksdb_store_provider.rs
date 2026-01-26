@@ -234,7 +234,7 @@ impl BatchCommitter {
             return None;
         }
 
-        let batch = std::mem::replace(&mut *pending, WriteBatch::default());
+        let batch = std::mem::take(&mut *pending);
         self.pending_operations.store(0, Ordering::Relaxed);
         self.last_flush.store(
             std::time::SystemTime::now()
@@ -646,7 +646,7 @@ impl IStoreSnapshot for RocksDbSnapshot {
         let start = Instant::now();
 
         if self.use_batch_commit {
-            self.batch_committer.try_add(&mut *batch_guard);
+            self.batch_committer.try_add(&mut batch_guard);
             let duration_ms = start.elapsed().as_millis() as u64;
             self.batch_committer.stats.record_commit(ops, duration_ms);
             return Ok(());

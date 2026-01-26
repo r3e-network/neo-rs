@@ -25,6 +25,7 @@ pub struct LocalNode {
     /// User agent advertised during version handshake.
     pub user_agent: String,
     /// Node identity key pair for P2P authentication (C# v3.9.2+).
+    #[allow(dead_code)]
     node_key: Arc<KeyPair>,
     /// Listening port for inbound connections.
     port: RwLock<u16>,

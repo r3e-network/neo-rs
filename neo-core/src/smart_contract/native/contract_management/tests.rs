@@ -2,7 +2,7 @@ use super::*;
 use crate::neo_io::BinaryWriter;
 use crate::network::p2p::payloads::signer::Signer;
 use crate::network::p2p::payloads::transaction::Transaction;
-use crate::persistence::{DataCache, IReadOnlyStoreGeneric, SeekDirection, StorageItem};
+use crate::persistence::{DataCache, SeekDirection, StorageItem};
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::contract_state::NefFile;

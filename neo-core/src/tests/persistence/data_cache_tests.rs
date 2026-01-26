@@ -9,20 +9,20 @@ mod data_cache_tests {
 
     #[test]
     fn test_data_cache_new_is_empty() {
-        let cache = DataCache::new(false);
+        let _cache = DataCache::new(false);
         // New cache should be empty
         assert!(true, "DataCache::new creates empty cache");
     }
 
     #[test]
     fn test_storage_key_creation() {
-        let key = StorageKey::new(0, vec![0x01, 0x02, 0x03]);
+        let _key = StorageKey::new(0, vec![0x01, 0x02, 0x03]);
         assert!(true, "StorageKey can be created with id and data");
     }
 
     #[test]
     fn test_storage_item_creation() {
-        let item = StorageItem::from_bytes(vec![0x01, 0x02, 0x03]);
+        let _item = StorageItem::from_bytes(vec![0x01, 0x02, 0x03]);
         assert!(true, "StorageItem can be created from bytes");
     }
 
@@ -50,33 +50,33 @@ mod data_cache_tests {
     #[test]
     fn test_data_cache_snapshot() {
         let cache = DataCache::new(false);
-        let snapshot = cache.clone();
+        let _snapshot = cache.clone();
         assert!(true, "DataCache can be cloned for snapshot");
     }
 
     #[test]
     fn test_storage_key_with_uint256() {
         let hash = UInt256::from([1u8; 32]);
-        let key = StorageKey::create_with_uint256(0, 12, &hash);
+        let _key = StorageKey::create_with_uint256(0, 12, &hash);
         assert!(true, "StorageKey can be created with uint256 prefix");
     }
 
     #[test]
     fn test_storage_key_with_uint160() {
         let hash = crate::UInt160::from([1u8; 20]);
-        let key = StorageKey::create_with_uint160(0, 12, &hash);
+        let _key = StorageKey::create_with_uint160(0, 12, &hash);
         assert!(true, "StorageKey can be created with uint160 prefix");
     }
 
     #[test]
     fn test_storage_key_with_byte() {
-        let key = StorageKey::create_with_byte(0, 12, 0xFF);
+        let _key = StorageKey::create_with_byte(0, 12, 0xFF);
         assert!(true, "StorageKey can be created with byte prefix");
     }
 
     #[test]
     fn test_storage_item_default() {
-        let item = StorageItem::default();
+        let _item = StorageItem::default();
         assert!(true, "StorageItem has default constructor");
     }
 }

@@ -10,7 +10,6 @@ use super::*;
 mod tests {
     use super::*;
     use crate::network::p2p::payloads::extensible_payload::ExtensiblePayload;
-    use crate::wallets::KeyPair;
     use std::sync::Arc;
 
     #[test]

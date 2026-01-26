@@ -468,9 +468,7 @@ impl StateVerificationActor {
     ) -> Option<ExtensiblePayload> {
         let state_store = self.state_store.as_ref()?;
         let state_root = context.load_state_root(state_store)?;
-        if state_root.witness.is_none() {
-            return None;
-        }
+        state_root.witness.as_ref()?;
 
         let mut writer = BinaryWriter::new();
         state_root.serialize(&mut writer).ok()?;
