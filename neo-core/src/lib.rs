@@ -181,18 +181,6 @@ pub use wallets::{KeyPair, Wallet};
 pub use witness::Witness;
 pub use witness_rule::{WitnessCondition, WitnessConditionType, WitnessRule, WitnessRuleAction};
 
-// Compatibility re-export moved to neo-node crate
-// pub mod system {
-//     pub use crate::neo_system::*;
-// }
-
-// NOTE: Global blockchain and store singletons will be implemented
-// when the proper types are available in their respective modules.
-// The C# implementation has:
-// - Blockchain.Singleton
-// - Store.Singleton
-// These will be properly typed once all dependencies are in place.
-
 /// Trait for verifiable blockchain objects.
 ///
 /// This trait defines the interface for objects that can be cryptographically

@@ -85,9 +85,3 @@ pub use traits::{
     Broadcaster, DataRequester, P2PConfig, P2PEvent, P2PEventSubscriber, P2PService, PeerInfo,
     PeerManager,
 };
-
-// Additional P2P modules can be added here as needed
-// pub mod local_node;
-// pub mod remote_node;
-// pub mod message;
-// pub mod payloads;
