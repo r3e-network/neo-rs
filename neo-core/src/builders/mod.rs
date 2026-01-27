@@ -227,14 +227,15 @@ impl TransactionAttributesBuilder {
         }
     }
 
+    /// Adds a HighPriority attribute to the transaction.
+    /// 
+    /// # Panics
+    /// Panics if a HighPriority attribute already exists (only one allowed per transaction).
     pub fn add_high_priority(&mut self) -> &mut Self {
-        if self
-            .attributes
-            .iter()
-            .any(|attr| matches!(attr, TransactionAttribute::HighPriority))
-        {
-            panic!("HighPriority attribute already exists in the transaction attributes. Only one HighPriority attribute is allowed per transaction.");
-        }
+        assert!(
+            !self.attributes.iter().any(|attr| matches!(attr, TransactionAttribute::HighPriority)),
+            "HighPriority attribute already exists. Only one allowed per transaction."
+        );
         self.attributes.push(TransactionAttribute::HighPriority);
         self
     }
@@ -261,16 +262,15 @@ impl TransactionAttributesBuilder {
         self
     }
 
+    /// Adds a NotValidBefore attribute to the transaction.
+    /// 
+    /// # Panics
+    /// Panics if a NotValidBefore attribute for the same height already exists.
     pub fn add_not_valid_before(&mut self, height: u32) -> &mut Self {
-        if self.attributes.iter().any(|attr| match attr {
-            TransactionAttribute::NotValidBefore(existing) => existing.height == height,
-            _ => false,
-        }) {
-            panic!(
-                "NotValidBefore attribute for block {} already exists in the transaction attributes. Each block height can only be specified once.",
-                height
-            );
-        }
+        assert!(
+            !self.attributes.iter().any(|attr| matches!(attr, TransactionAttribute::NotValidBefore(existing) if existing.height == height)),
+            "NotValidBefore attribute for block {} already exists", height
+        );
         self.attributes
             .push(TransactionAttribute::NotValidBefore(NotValidBefore::new(
                 height,
