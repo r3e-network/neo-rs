@@ -1,1 +1,1 @@
-pub mod mempool_tests;
+// Tests module - placeholder tests removed

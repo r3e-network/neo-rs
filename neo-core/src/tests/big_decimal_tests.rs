@@ -38,9 +38,4 @@ mod big_decimal_tests {
         assert_eq!(&BigInt::from(-10), value.value());
         assert_eq!(0, value.decimals());
     }
-
-    #[test]
-    fn test_placeholder() {
-        assert!(true);
-    }
 }

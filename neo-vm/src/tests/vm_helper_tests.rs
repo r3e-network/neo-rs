@@ -83,10 +83,4 @@ mod vm_helper_tests {
         assert!(!result.is_empty());
         assert_eq!(result[0], OpCode::JMP as u8);
     }
-
-    #[test]
-    fn test_placeholder() {
-        // Placeholder for additional VM helper tests
-        assert!(true);
-    }
 }
