@@ -1,1 +1,1 @@
-pub mod cryptography_comprehensive;
+// Tests module - placeholder tests removed
