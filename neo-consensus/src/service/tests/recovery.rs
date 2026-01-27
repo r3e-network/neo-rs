@@ -306,7 +306,7 @@ async fn recovery_message_ignores_invalid_prepare_response_signature() {
     recovery.preparation_hash = Some(UInt256::zero());
     recovery.preparation_messages = vec![PreparationPayloadCompact {
         validator_index: 1,
-        invocation_script: invocation_script(&vec![0xAB; 64]),
+        invocation_script: invocation_script(&[0xAB; 64]),
     }];
 
     let mut payload = ConsensusPayload::new(
@@ -340,19 +340,19 @@ async fn recovery_message_ignores_invalid_commit_signature() {
             view_number: 0,
             validator_index: 0,
             signature: vec![0x42; 64],
-            invocation_script: invocation_script(&vec![0xAA; 64]),
+            invocation_script: invocation_script(&[0xAA; 64]),
         },
         CommitPayloadCompact {
             view_number: 0,
             validator_index: 1,
             signature: vec![0x42; 64],
-            invocation_script: invocation_script(&vec![0xAA; 64]),
+            invocation_script: invocation_script(&[0xAA; 64]),
         },
         CommitPayloadCompact {
             view_number: 0,
             validator_index: 2,
             signature: vec![0x42; 64],
-            invocation_script: invocation_script(&vec![0xAA; 64]),
+            invocation_script: invocation_script(&[0xAA; 64]),
         },
     ];
 
@@ -559,7 +559,7 @@ async fn recovery_response_includes_compact_payloads() {
     service
         .context
         .change_view_invocations
-        .insert(1, invocation_script(&vec![0xAA; 64]));
+        .insert(1, invocation_script(&[0xAA; 64]));
 
     service.context.prepare_request_received = true;
     service.context.version = 0;
@@ -567,13 +567,13 @@ async fn recovery_response_includes_compact_payloads() {
     service.context.proposed_timestamp = 2_222;
     service.context.nonce = 7;
     service.context.proposed_tx_hashes = vec![UInt256::from([0x01; 32])];
-    service.context.prepare_request_invocation = Some(invocation_script(&vec![0xBB; 64]));
+    service.context.prepare_request_invocation = Some(invocation_script(&[0xBB; 64]));
 
     service
         .context
         .add_prepare_response(
             2,
-            invocation_script(&vec![0xCC; 64]),
+            invocation_script(&[0xCC; 64]),
             Some(UInt256::from([0x10; 32])),
         )
         .unwrap();
@@ -582,12 +582,12 @@ async fn recovery_response_includes_compact_payloads() {
     service
         .context
         .commit_invocations
-        .insert(0, invocation_script(&vec![0x12; 64]));
+        .insert(0, invocation_script(&[0x12; 64]));
     service.context.add_commit(3, 0, vec![0xDD; 64]).unwrap();
     service
         .context
         .commit_invocations
-        .insert(3, invocation_script(&vec![0xEE; 64]));
+        .insert(3, invocation_script(&[0xEE; 64]));
 
     let recovery = service.build_recovery_message().unwrap();
 
@@ -601,7 +601,7 @@ async fn recovery_response_includes_compact_payloads() {
     assert_eq!(change_view.timestamp, 1_111);
     assert_eq!(
         change_view.invocation_script,
-        invocation_script(&vec![0xAA; 64])
+        invocation_script(&[0xAA; 64])
     );
 
     assert!(recovery
@@ -619,5 +619,5 @@ async fn recovery_response_includes_compact_payloads() {
         .find(|msg| msg.validator_index == 3)
         .expect("commit");
     assert_eq!(commit.signature, vec![0xDD; 64]);
-    assert_eq!(commit.invocation_script, invocation_script(&vec![0xEE; 64]));
+    assert_eq!(commit.invocation_script, invocation_script(&[0xEE; 64]));
 }
