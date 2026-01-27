@@ -210,8 +210,8 @@ mod tests {
 
         // Check that the handler was registered
         assert_eq!(
-            jump_table.get(OpCode::NOP).ok_or("Index out of bounds")? as usize,
-            custom_handler as usize
+            jump_table.get(OpCode::NOP).ok_or("Index out of bounds")? as *const () as usize,
+            custom_handler as *const () as usize
         );
         Ok(())
     }
@@ -233,8 +233,8 @@ mod tests {
 
         // Check that the handler was set
         assert_eq!(
-            jump_table.get(OpCode::NOP).ok_or("Index out of bounds")? as usize,
-            custom_handler as usize
+            jump_table.get(OpCode::NOP).ok_or("Index out of bounds")? as *const () as usize,
+            custom_handler as *const () as usize
         );
         Ok(())
     }
