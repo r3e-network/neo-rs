@@ -11,17 +11,19 @@ use std::sync::Arc;
 use sysinfo::{DiskExt, System, SystemExt};
 
 fn register_gauge_best_effort(name: &str, help: &str) -> Gauge {
-    let gauge = Gauge::new(name, help)
-        .unwrap_or_else(|_| Gauge::new("neo_invalid_metric", "Invalid")
-            .expect("fallback gauge creation should never fail"));
+    let gauge = Gauge::new(name, help).unwrap_or_else(|_| {
+        Gauge::new("neo_invalid_metric", "Invalid")
+            .expect("fallback gauge creation should never fail")
+    });
     let _ = prometheus::register(Box::new(gauge.clone()));
     gauge
 }
 
 fn register_counter_best_effort(name: &str, help: &str) -> Counter {
-    let counter = Counter::new(name, help)
-        .unwrap_or_else(|_| Counter::new("neo_invalid_counter", "Invalid")
-            .expect("fallback counter creation should never fail"));
+    let counter = Counter::new(name, help).unwrap_or_else(|_| {
+        Counter::new("neo_invalid_counter", "Invalid")
+            .expect("fallback counter creation should never fail")
+    });
     let _ = prometheus::register(Box::new(counter.clone()));
     counter
 }

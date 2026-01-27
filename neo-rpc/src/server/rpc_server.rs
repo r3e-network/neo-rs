@@ -65,18 +65,21 @@ impl RpcHandler {
 }
 
 pub static RPC_REQ_TOTAL: Lazy<Counter> = Lazy::new(|| {
-    let counter = Counter::new("neo_rpc_requests_total", "Total RPC requests")
-        .unwrap_or_else(|_| Counter::new("neo_rpc_requests_total_invalid", "Invalid")
-            .expect("fallback counter creation should never fail"));
+    let counter =
+        Counter::new("neo_rpc_requests_total", "Total RPC requests").unwrap_or_else(|_| {
+            Counter::new("neo_rpc_requests_total_invalid", "Invalid")
+                .expect("fallback counter creation should never fail")
+        });
     if let Err(err) = prometheus::register(Box::new(counter.clone())) {
         warn!("Failed to register neo_rpc_requests_total: {}", err);
     }
     counter
 });
 pub static RPC_ERR_TOTAL: Lazy<Counter> = Lazy::new(|| {
-    let counter = Counter::new("neo_rpc_errors_total", "Total RPC errors")
-        .unwrap_or_else(|_| Counter::new("neo_rpc_errors_total_invalid", "Invalid")
-            .expect("fallback counter creation should never fail"));
+    let counter = Counter::new("neo_rpc_errors_total", "Total RPC errors").unwrap_or_else(|_| {
+        Counter::new("neo_rpc_errors_total_invalid", "Invalid")
+            .expect("fallback counter creation should never fail")
+    });
     if let Err(err) = prometheus::register(Box::new(counter.clone())) {
         warn!("Failed to register neo_rpc_errors_total: {}", err);
     }

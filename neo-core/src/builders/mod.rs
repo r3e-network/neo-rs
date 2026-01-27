@@ -228,12 +228,15 @@ impl TransactionAttributesBuilder {
     }
 
     /// Adds a HighPriority attribute to the transaction.
-    /// 
+    ///
     /// # Panics
     /// Panics if a HighPriority attribute already exists (only one allowed per transaction).
     pub fn add_high_priority(&mut self) -> &mut Self {
         assert!(
-            !self.attributes.iter().any(|attr| matches!(attr, TransactionAttribute::HighPriority)),
+            !self
+                .attributes
+                .iter()
+                .any(|attr| matches!(attr, TransactionAttribute::HighPriority)),
             "HighPriority attribute already exists. Only one allowed per transaction."
         );
         self.attributes.push(TransactionAttribute::HighPriority);
@@ -263,7 +266,7 @@ impl TransactionAttributesBuilder {
     }
 
     /// Adds a NotValidBefore attribute to the transaction.
-    /// 
+    ///
     /// # Panics
     /// Panics if a NotValidBefore attribute for the same height already exists.
     pub fn add_not_valid_before(&mut self, height: u32) -> &mut Self {
