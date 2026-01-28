@@ -67,8 +67,10 @@ NEO_NETWORK=testnet NEO_DATA_DIR=./data/testnet ./target/release/neo-node
 
 | Document | Description |
 |----------|-------------|
-| [Architecture](./docs/ARCHITECTURE.md) | Neo system architecture and crate boundaries |
+| [Architecture](./ARCHITECTURE.md) | Comprehensive architecture guide with diagrams, dependency rules, and design principles |
+| [Architecture Details](./docs/ARCHITECTURE.md) | Layering and service boundaries |
 | [Architecture Comparison](./docs/ARCHITECTURE_COMPARISON.md) | C# vs Rust implementation differences |
+| [Style Guide](./docs/STYLE.md) | Code organization, naming conventions, and standards |
 | [Plugin System](./docs/PLUGIN_SYSTEM.md) | Plugin architecture and adding new services |
 | [CLI Architecture](./docs/CLI_ARCHITECTURE.md) | CLI design and wallet operation model |
 | [Deployment](./docs/DEPLOYMENT.md) | Production deployment guide |

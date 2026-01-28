@@ -1,5 +1,9 @@
 # neo-rs Architecture
 
+> **Note**: For comprehensive architectural documentation including detailed dependency rules,
+> API design principles, error handling strategy, and module organization guidelines,
+> see the main [`ARCHITECTURE.md`](../ARCHITECTURE.md) at the project root.
+
 This document captures the current layering and service boundaries so new changes stay coherent.
 
 ## Layered Architecture

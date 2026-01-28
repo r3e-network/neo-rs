@@ -159,6 +159,7 @@ toml = "0.8"
 # Error handling
 thiserror = "1.0"
 anyhow = "1.0"
+zeroize = { version = "1.8", features = ["derive"] }
 
 # Logging and tracing
 tracing = "0.1"
@@ -251,6 +252,9 @@ sysinfo = "0.29"
 
 # Additional shared deps not previously centralized
 num_cpus = "1.16"
+murmur3 = "0.5"
+subtle = "2.5"
+byteorder = "1.5"
 
 # Profiles
 [profile.release]

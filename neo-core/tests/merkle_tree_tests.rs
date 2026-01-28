@@ -1,5 +1,5 @@
-use neo_core::neo_crypto;
-use neo_core::neo_cryptography::MerkleTree;
+use neo_core::cryptography::Crypto;
+use neo_core::cryptography::MerkleTree;
 use neo_core::network::p2p::payloads::{
     block::Block, merkle_block_payload::MerkleBlockPayload, transaction::Transaction,
 };
@@ -15,7 +15,7 @@ fn hash_pair(left: &UInt256, right: &UInt256) -> UInt256 {
     let mut buffer = [0u8; 64];
     buffer[..32].copy_from_slice(&left.to_array());
     buffer[32..].copy_from_slice(&right.to_array());
-    UInt256::from(neo_crypto::hash256(&buffer))
+    UInt256::from(Crypto::hash256(&buffer))
 }
 
 fn manual_merkle_root(leaves: &[UInt256]) -> Option<UInt256> {

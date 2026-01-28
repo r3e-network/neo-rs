@@ -10,7 +10,7 @@
 // modifications are permitted.
 
 use super::{block::Block, header::Header};
-use crate::neo_cryptography::MerkleTree;
+use crate::cryptography::MerkleTree;
 use crate::neo_io::serializable::helper::get_var_size;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use neo_primitives::{UInt256, UINT256_SIZE};

@@ -57,4 +57,6 @@ pub use mpt_trie::{
 pub use named_curve_hash::NamedCurveHash;
 
 #[cfg(test)]
-mod tests;
+mod tests {
+    // Tests are inline within source files
+}

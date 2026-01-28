@@ -1,8 +1,10 @@
 //! Logging initialization and configuration
+//!
+//! This module provides basic logging initialization.
+//! For node-specific logging with file support, use `node_logging` module.
 
+use crate::config::{LogFormat, LoggingConfig};
 use crate::{TelemetryError, TelemetryResult};
-use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use tracing_subscriber::{
     fmt::{self, format::FmtSpan},
     layer::SubscriberExt,
@@ -10,71 +12,24 @@ use tracing_subscriber::{
     EnvFilter,
 };
 
-/// Logging configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LogConfig {
-    /// Log level (trace, debug, info, warn, error)
-    pub level: String,
-
-    /// Log format (json, text, compact)
-    pub format: LogFormat,
-
-    /// Log file path (None for stdout only)
-    pub file: Option<PathBuf>,
-
-    /// Enable ANSI colors
-    pub color: bool,
-
-    /// Include target in log output
-    pub include_target: bool,
-
-    /// Include file location in log output
-    pub include_location: bool,
-
-    /// Include span events
-    pub span_events: bool,
-}
-
-/// Log output format
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum LogFormat {
-    /// Human-readable text format
-    #[default]
-    Text,
-    /// Compact single-line format
-    Compact,
-    /// JSON format for machine parsing
-    Json,
-}
-
-impl Default for LogConfig {
-    fn default() -> Self {
-        Self {
-            level: "info".to_string(),
-            format: LogFormat::Text,
-            file: None,
-            color: true,
-            include_target: true,
-            include_location: false,
-            span_events: false,
-        }
-    }
-}
-
 /// Initialize the logging system
-pub fn init_logging(config: &LogConfig) -> TelemetryResult<()> {
+///
+/// This is the basic logging initialization. For node daemon logging
+/// with file support and daemon mode, use `init_node_logging` from
+/// the `node_logging` module.
+pub fn init_logging(config: &LoggingConfig) -> TelemetryResult<()> {
     let filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&config.level));
 
-    let span_events = if config.span_events {
+    let span_events = if config.include_location {
+        // Reuse include_location flag for span events in basic logging
         FmtSpan::NEW | FmtSpan::CLOSE
     } else {
         FmtSpan::NONE
     };
 
     match config.format {
-        LogFormat::Text => {
+        LogFormat::Text | LogFormat::Pretty => {
             let layer = fmt::layer()
                 .with_ansi(config.color)
                 .with_target(config.include_target)
@@ -124,10 +79,11 @@ pub fn init_logging(config: &LogConfig) -> TelemetryResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::LoggingConfig;
 
     #[test]
     fn test_default_config() {
-        let config = LogConfig::default();
+        let config = LoggingConfig::default();
         assert_eq!(config.level, "info");
         assert_eq!(config.format, LogFormat::Text);
         assert!(config.color);

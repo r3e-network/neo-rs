@@ -30,7 +30,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 hex = { workspace = true }
 bs58 = { workspace = true }
-zeroize = { version = "1.8", features = ["derive"] }
+zeroize = { workspace = true }
 parking_lot = { workspace = true }
 async-trait = { workspace = true }
 tokio = { workspace = true }

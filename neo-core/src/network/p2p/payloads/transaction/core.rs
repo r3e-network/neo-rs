@@ -205,7 +205,7 @@ impl Transaction {
             tracing::error!("Transaction serialization failed: {:?}", e);
             return UInt256::zero();
         }
-        let hash = UInt256::from(sha256(&writer.into_bytes()));
+        let hash = UInt256::from(Crypto::sha256(&writer.into_bytes()));
         *hash_guard = Some(hash);
         hash
     }

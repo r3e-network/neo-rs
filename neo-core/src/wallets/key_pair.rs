@@ -136,9 +136,9 @@ impl KeyPair {
     }
 
     /// Gets the public key as an ECPoint.
-    pub fn get_public_key_point(&self) -> Result<crate::neo_cryptography::ECPoint> {
-        crate::neo_cryptography::ECPoint::decode_compressed_with_curve(
-            crate::neo_cryptography::ECCurve::secp256r1(),
+    pub fn get_public_key_point(&self) -> Result<crate::cryptography::ECPoint> {
+        crate::cryptography::ECPoint::decode_compressed_with_curve(
+            crate::cryptography::ECCurve::secp256r1(),
             &self.compressed_public_key,
         )
         .map_err(|e| Error::Other {
@@ -200,7 +200,7 @@ impl KeyPair {
         }
 
         let (data, checksum) = decoded.split_at(decoded.len() - 4);
-        let computed_checksum = &crate::neo_cryptography::hash::hash256(data)[0..4];
+        let computed_checksum = &crate::cryptography::Crypto::hash256(data)[0..4];
         if checksum != computed_checksum {
             return Err(Error::InvalidWif);
         }
@@ -232,7 +232,7 @@ impl KeyPair {
         data.push(0x01); // Compressed flag
 
         // Add checksum manually
-        let checksum = &crate::neo_cryptography::hash::hash256(&data)[0..4];
+        let checksum = &crate::cryptography::Crypto::hash256(&data)[0..4];
         data.extend_from_slice(checksum);
 
         bs58::encode(data).into_string()
@@ -253,7 +253,7 @@ impl KeyPair {
         let script_hash =
             UInt160::from_script(&Self::try_get_verification_script_for_key(private_key)?);
         let address = WalletHelper::to_address(&script_hash, address_version);
-        let address_hash_full = crate::neo_cryptography::hash::hash256(address.as_bytes());
+        let address_hash_full = crate::cryptography::Crypto::hash256(address.as_bytes());
         let mut address_hash = [0u8; 4];
         address_hash.copy_from_slice(&address_hash_full[0..4]);
 
@@ -380,7 +380,7 @@ impl KeyPair {
         let verification_script = Self::try_get_verification_script_for_key(&private_key)?;
         let script_hash = UInt160::from_script(&verification_script);
         let address = WalletHelper::to_address(&script_hash, address_version);
-        let computed_hash_full = crate::neo_cryptography::hash::hash256(address.as_bytes());
+        let computed_hash_full = crate::cryptography::Crypto::hash256(address.as_bytes());
         let computed_hash = &computed_hash_full[0..4];
 
         if computed_hash != address_hash {

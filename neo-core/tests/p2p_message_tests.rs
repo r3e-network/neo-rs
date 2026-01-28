@@ -11,7 +11,6 @@ use neo_core::network::p2p::payloads::ping_payload::PingPayload;
 use neo_core::network::p2p::payloads::InventoryType;
 use neo_core::network::p2p::payloads::VersionPayload;
 use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::wallets::KeyPair;
 use neo_core::UInt256;
 
 /// Tests Message payload max size constant (32 MiB)

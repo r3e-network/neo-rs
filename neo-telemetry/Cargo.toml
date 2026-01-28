@@ -27,6 +27,7 @@ sysinfo = { workspace = true }
 
 # Error handling
 thiserror = { workspace = true }
+anyhow = { workspace = true }
 
 # Async
 tokio = { workspace = true }
@@ -35,8 +36,14 @@ tokio = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 
-# Configuration
-neo-config = { path = "../neo-config" }
+# HTTP server (for health endpoint)
+hyper = { workspace = true }
+
+# Time
+chrono = { workspace = true }
+
+# Utilities
+lazy_static = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

@@ -105,7 +105,7 @@ impl Block {
         }
         let payload_hashes: Vec<UInt256> =
             self.transactions.iter_mut().map(|tx| tx.hash()).collect();
-        if let Some(root) = crate::neo_cryptography::MerkleTree::compute_root(&payload_hashes) {
+        if let Some(root) = crate::cryptography::MerkleTree::compute_root(&payload_hashes) {
             self.header.set_merkle_root(root);
         }
     }
@@ -185,7 +185,7 @@ impl Block {
         // so we can call it on &self without cloning.
         let tx_hashes: Vec<UInt256> = self.transactions.iter().map(|tx| tx.hash()).collect();
 
-        match crate::neo_cryptography::MerkleTree::compute_root(&tx_hashes) {
+        match crate::cryptography::MerkleTree::compute_root(&tx_hashes) {
             Some(computed_root) => computed_root == *self.header.merkle_root(),
             None => false, // Should not happen with non-empty transactions
         }

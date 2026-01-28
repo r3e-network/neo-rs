@@ -2508,7 +2508,7 @@ dependencies = [
  "sgx-isa",
  "sha2",
  "tempfile",
- "thiserror 2.0.17",
+ "thiserror 1.0.69",
  "tokio",
  "tracing",
  "zeroize",
@@ -2518,7 +2518,10 @@ dependencies = [
 name = "neo-telemetry"
 version = "0.7.0"
 dependencies = [
- "neo-config",
+ "anyhow",
+ "chrono",
+ "hyper 0.14.32",
+ "lazy_static",
  "prometheus",
  "serde",
  "serde_json",

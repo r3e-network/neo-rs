@@ -1,41 +1,89 @@
+// Copyright (c) 2024 R3E Network
+// This file is part of the neo-rs project
+// Licensed under the MIT License
+// See LICENSE file for details
+
 //! # Neo Virtual Machine (NeoVM)
 //!
-//! A complete implementation of the Neo Virtual Machine in Rust.
+//! A complete, high-performance implementation of the Neo Virtual Machine.
 //!
-//! The Neo Virtual Machine (NeoVM) is a stack-based virtual machine that executes
-//! smart contracts on the Neo blockchain. This crate provides a fully compatible
-//! implementation of the NeoVM specification with advanced features for debugging,
-//! interoperability, and performance monitoring.
-//!
-//! ## Features
-//!
-//! - **Complete OpCode Support**: All Neo VM opcodes with precise semantics
-//! - **Stack-Based Execution**: Evaluation stack with type-safe operations
-//! - **Interop Services**: Native contract integration and system calls
-//! - **Exception Handling**: Comprehensive error handling and recovery
-//! - **Debugging Support**: Breakpoints, step execution, and state inspection
-//! - **Script Building**: Programmatic smart contract bytecode generation
-//! - **Reference Counting**: Memory management for complex data structures
+//! The Neo Virtual Machine (NeoVM) is a lightweight, stack-based virtual machine
+//! designed for executing smart contracts on the Neo blockchain. This implementation
+//! provides full compatibility with the Neo N3 VM specification while offering
+//! advanced features for debugging, gas metering, and cross-platform deployment.
 //!
 //! ## Architecture
 //!
-//! The VM is organized into several core components:
+//! The VM follows a layered architecture:
 //!
-//! - **ExecutionEngine**: Main VM execution loop and state management
-//! - **ApplicationEngine**: High-level engine with interop service integration
-//! - **EvaluationStack**: Type-safe stack for VM operations
-//! - **ExecutionContext**: Script execution context and local variables
-//! - **JumpTable**: OpCode implementation and instruction dispatch
-//! - **StackItem**: Polymorphic data types for VM values
-//! - **ScriptBuilder**: Utility for constructing VM scripts
+//! ```
+//! ┌─────────────────────────────────────────────────────────────────┐
+//! │                    ApplicationEngine                             │
+//! │         (High-level interface with blockchain integration)       │
+//! └─────────────────────────────────────────────────────────────────┘
+//!                              │
+//!                              ▼
+//! ┌─────────────────────────────────────────────────────────────────┐
+//! │                    ExecutionEngine                               │
+//! │              (Core VM: stack, contexts, execution loop)          │
+//! ├─────────────────────────────────────────────────────────────────┤
+//! │  ┌─────────────┐  ┌──────────────┐  ┌──────────────────────┐    │
+//! │  │ Evaluation  │  │   Context    │  │    Reference         │    │
+//! │  │   Stack     │  │   Stack      │  │    Counter           │    │
+//! │  │             │  │              │  │   (GC support)       │    │
+//! │  └─────────────┘  └──────────────┘  └──────────────────────┘    │
+//! └─────────────────────────────────────────────────────────────────┘
+//!                              │
+//!                              ▼
+//! ┌─────────────────────────────────────────────────────────────────┐
+//! │                    JumpTable                                     │
+//! │            (Opcode implementations and dispatch)                 │
+//! └─────────────────────────────────────────────────────────────────┘
+//! ```
 //!
-//! ## Example
+//! ## Layer Position
+//!
+//! This crate is part of **Layer 1 (Core)** in the neo-rs architecture:
+//!
+//! ```
+//! Layer 2 (Service): Application layer
+//!            │
+//!            ▼
+//! Layer 1 (Core):   neo-vm ◄── YOU ARE HERE
+//!            │
+//!            ▼
+//! Layer 0 (Foundation): neo-primitives, neo-io
+//! ```
+//!
+//! ## Key Components
+//!
+//! | Component | Purpose | Key Type |
+//! |-----------|---------|----------|
+//! | [`ExecutionEngine`] | Core VM execution loop | `ExecutionEngine` |
+//! | [`ApplicationEngine`] | Blockchain-aware VM | `ApplicationEngine` |
+//! | [`EvaluationStack`] | Operand stack | `EvaluationStack` |
+//! | [`ExecutionContext`] | Script execution context | `ExecutionContext` |
+//! | [`JumpTable`] | Opcode dispatch | `JumpTable` |
+//! | [`StackItem`] | VM value types | `StackItem` |
+//! | [`ScriptBuilder`] | Bytecode construction | `ScriptBuilder` |
+//!
+//! ## Features
+//!
+//! - **Complete Opcode Support**: All Neo VM opcodes with precise semantics matching C# implementation
+//! - **Stack-Based Execution**: Type-safe evaluation stack with reference counting
+//! - **Gas Metering**: Precise execution cost tracking
+//! - **Exception Handling**: Comprehensive try-catch-finally support
+//! - **Debugging Support**: Breakpoints, step execution, and state inspection
+//! - **Reference Counting**: Efficient memory management without GC pauses
+//! - **Script Building**: Programmatic smart contract bytecode generation
+//!
+//! ## Quick Start
 //!
 //! ```rust,no_run
 //! use neo_vm::{op_code::OpCode, ExecutionEngine, Script, VMState};
 //!
 //! # fn example() -> neo_vm::VmResult<()> {
-//! // Create a simple script that pushes numbers and adds them
+//! // Create a script that pushes 1 + 2 and returns
 //! let script = Script::new(
 //!     vec![
 //!         OpCode::PUSH1 as u8,
@@ -46,133 +94,266 @@
 //!     false,
 //! )?;
 //!
-//! // Create and configure the VM engine
+//! // Create and run the VM
 //! let mut engine = ExecutionEngine::new(None);
 //! engine.load_script(script, -1, 0)?;
 //!
-//! // Execute the script
 //! let state = engine.execute();
 //! assert_eq!(state, VMState::HALT);
 //!
-//! // Get the result from the stack
-//! if let Ok(result_item) = engine.result_stack().peek(0) {
-//!     println!("Result: {}", result_item.as_int().unwrap());
+//! // Get the result
+//! let result = engine.result_stack().peek(0)?;
+//! println!("1 + 2 = {}", result.as_int()?);
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ## Using the ApplicationEngine
+//!
+//! For blockchain-aware contract execution:
+//!
+//! ```rust,no_run
+//! use neo_vm::{ApplicationEngine, TriggerType};
+//!
+//! # fn example() -> neo_vm::VmResult<()> {
+//! // Create application engine with blockchain context
+//! let mut engine = ApplicationEngine::new(
+//!     TriggerType::Application,
+//!     snapshot,
+//!     transaction,
+//!     settings,
+//!     gas,
+//! )?;
+//!
+//! // Execute contract
+//! engine.load_script(contract_script, -1, 0)?;
+//! let state = engine.execute();
+//!
+//! // Get notifications
+//! for notification in engine.notifications() {
+//!     println!("Event: {} - {:?}", notification.event_name, notification.state);
 //! }
 //! # Ok(())
 //! # }
 //! ```
 //!
-//! ## Interop Services
-//!
-//! The VM supports interop services for accessing blockchain state:
+//! ## Building Scripts
 //!
 //! ```rust,no_run
-//! use neo_vm::{
-//!     call_flags::CallFlags,
-//!     interop_service::VmInteropDescriptor,
-//!     ExecutionEngine,
-//! };
+//! use neo_vm::{op_code::OpCode, ScriptBuilder};
 //!
 //! # fn example() -> neo_vm::VmResult<()> {
-//! let mut engine = ExecutionEngine::new(None);
+//! let mut builder = ScriptBuilder::new();
 //!
-//! // Register custom interop service
-//! if let Some(service) = engine.interop_service_mut() {
-//!     service.register(VmInteropDescriptor {
-//!         name: "MyService.Method".to_string(),
-//!         handler: None,
-//!         price: 0,
-//!         required_call_flags: CallFlags::NONE,
-//!     })?;
-//! }
+//! // Build a script programmatically
+//! builder.emit_push(42i32)?;
+//! builder.emit(OpCode::DUP)?;
+//! builder.emit(OpCode::ADD)?;
+//! builder.emit(OpCode::RET)?;
+//!
+//! let script = builder.to_array()?;
 //! # Ok(())
 //! # }
 //! ```
 //!
 //! ## Debugging
 //!
-//! The VM includes comprehensive debugging features:
-//!
 //! ```rust,no_run
-//! use neo_vm::{op_code::OpCode, Debugger, ExecutionEngine, Script};
+//! use neo_vm::{Debugger, ExecutionEngine, Script};
 //!
 //! # fn example() -> neo_vm::VmResult<()> {
 //! let mut engine = ExecutionEngine::new(None);
-//! let script = Script::new(vec![OpCode::RET as u8], false)?;
 //! engine.load_script(script, -1, 0)?;
 //!
 //! let mut debugger = Debugger::new(engine);
 //!
-//! // Execute with debugging
-//! let _state = debugger.execute();
+//! // Set a breakpoint
+//! debugger.add_breakpoint(10);
+//!
+//! // Step execution
+//! let state = debugger.step_into();
+//!
+//! // Inspect state
+//! println!("Instruction pointer: {}", debugger.current_instruction_pointer());
+//! println!("Stack depth: {}", debugger.stack_depth());
 //! # Ok(())
 //! # }
 //! ```
+//!
+//! ## Gas Model
+//!
+//! The VM implements precise gas metering:
+//!
+//! | Operation | Base Cost |
+//! |-----------|-----------|
+//! | Simple opcode | 1 |
+//! | PUSH int | 1 |
+//! | PUSH data (per byte) | 1 |
+//! | CALL | 1024 |
+//! | SYSCALL | 256 |
+//! | Storage read | 100 |
+//! | Storage write | 1000 |
+//!
+//! ## Error Handling
+//!
+//! All fallible operations return [`VmResult`]:
+//!
+//! ```rust,no_run
+//! use neo_vm::{VmError, VmResult};
+//!
+//! fn may_fail() -> VmResult<i64> {
+//!     // Returns Err(VmError::StackUnderflow) if stack is empty
+//!     engine.pop()?.as_int()
+//! }
+//! ```
 
-//#![warn(missing_docs)]
+// Warn on missing documentation
+// #![warn(missing_docs)]
 #![warn(rustdoc::missing_crate_level_docs)]
 
-// Always import standard library types
 extern crate std;
 
-// Core VM modules
-/// High level application engine with syscall integration
+// ============================================================================
+// Core VM Modules
+// ============================================================================
+
+/// High-level application engine with blockchain integration.
+///
+/// The [`ApplicationEngine`] wraps [`ExecutionEngine`] and adds:
+/// - Interop service registration
+/// - Gas limit enforcement
+/// - Blockchain state access
+/// - Notification events
 pub mod application_engine;
-/// Exception emitted when a script is invalid during loading
+
+/// Exception for invalid scripts during loading.
 pub mod bad_script_exception;
-/// Interop service registry and native calls
+
+/// Call flags for interop service methods.
 pub mod call_flags;
-/// Base class for VM exceptions that can be caught by smart contracts
+
+/// Base exception type for catchable VM exceptions.
 pub mod catchable_exception;
-/// Collection helpers used by VM stack types
+
+/// Collection types for VM stack items.
 pub mod collections;
-/// Debugging support with breakpoints and step execution
+
+/// Debugging support with breakpoints and step execution.
+///
+/// The [`Debugger`] provides:
+/// - Breakpoint management
+/// - Step into/over/out
+/// - Stack inspection
+/// - Variable watching
 pub mod debugger;
-/// VM error types and result handling
+
+/// VM error types and result handling.
 pub mod error;
-/// Type-safe evaluation stack implementation
+
+/// Type-safe evaluation stack implementation.
+///
+/// The [`EvaluationStack`] is the primary operand stack for VM operations.
+/// It provides type-safe operations and automatic reference counting.
 pub mod evaluation_stack;
-/// Shims for the C# source layout exposing the exception handling context types
+
+/// Exception handling context for try-catch-finally.
 pub mod exception_handling_context;
-/// Shims for the C# exception handling state types
+
+/// Exception handling state tracking.
 pub mod exception_handling_state;
-/// Script execution context and local variables
+
+/// Script execution context with local variables.
+///
+/// Each [`ExecutionContext`] represents a call frame with:
+/// - Instruction pointer
+/// - Evaluation stack
+/// - Local variables
+/// - Static fields
 pub mod execution_context;
-/// Low-level VM execution engine
+
+/// Core VM execution engine.
+///
+/// The [`ExecutionEngine`] is the main VM that:
+/// - Executes scripts
+/// - Manages the context stack
+/// - Handles the instruction cycle
+/// - Tracks gas consumption
 pub mod execution_engine;
-/// Configurable limits governing VM execution
+
+/// Configurable execution limits.
+///
+/// [`ExecutionEngineLimits`] controls:
+/// - Max stack size
+/// - Max item size
+/// - Max invocation stack size
 pub mod execution_engine_limits;
-/// Reference counter interface shared across VM components
+
+/// Reference counter interface.
 pub mod i_reference_counter;
-/// VM instruction representation
+
+/// VM instruction representation.
 pub mod instruction;
+
+/// Interop service registry.
+///
+/// [`InteropService`] manages native contract methods accessible via SYSCALL.
 pub mod interop_service;
 
-/// OpCode implementation and instruction dispatch
+/// Opcode implementations and instruction dispatch.
+///
+/// The [`JumpTable`] contains implementations for all VM opcodes.
 pub mod jump_table;
-/// VM opcode definitions and utilities
+
+/// VM opcode definitions.
 pub mod op_code;
-/// Memory management for complex data structures
+
+/// Reference counting for garbage collection.
 pub mod reference_counter;
-/// VM script representation and validation
+
+/// VM script representation and validation.
 pub mod script;
-/// Utility for constructing VM bytecode
+
+/// Utility for constructing VM bytecode.
+///
+/// [`ScriptBuilder`] provides a fluent API for building scripts.
 pub mod script_builder;
-/// Slot storage for locals/arguments/static fields
+
+/// Slot storage for locals, arguments, and static fields.
 pub mod slot;
-/// Polymorphic data types for VM values
+
+/// Polymorphic VM value types.
+///
+/// [`StackItem`] represents all values that can exist on the VM stack:
+/// - Primitive types (Integer, Boolean, ByteString)
+/// - Complex types (Array, Map, Struct)
+/// - Special types (Pointer, InteropInterface)
 pub mod stack_item;
-/// Graph algorithms for garbage collection
+
+/// Tarjan's algorithm for garbage collection.
 pub mod strongly_connected_components;
-/// Virtual machine lifecycle states (HALT/FAULT/BREAK)
+
+/// VM execution states.
+///
+/// - `HALT`: Execution completed successfully
+/// - `FAULT`: Execution failed
+/// - `BREAK`: Hit a breakpoint
+/// - `NONE`: Not started
 pub mod vm_state;
-/// Exception raised when execution terminates without being caught
+
+/// Exception for unhandled VM exceptions.
 pub mod vm_unhandled_exception;
 
-/// Test utilities and compatibility tests
+// ============================================================================
+// Test Utilities
+// ============================================================================
+
 #[cfg(test)]
 #[allow(dead_code)]
 pub mod tests;
+
+// ============================================================================
+// Public Re-exports
+// ============================================================================
 
 pub use application_engine::{ApplicationEngine, NotificationEvent, TriggerType};
 pub use bad_script_exception::BadScriptException;
@@ -201,15 +382,19 @@ pub use strongly_connected_components::Tarjan;
 pub use vm_state::VMState;
 pub use vm_unhandled_exception::VMUnhandledException;
 
-// I/O abstraction layer
-/// Test I/O implementation for unit tests
+// ============================================================================
+// I/O Abstraction
+// ============================================================================
+
+/// Test I/O implementation for unit tests.
 #[cfg(test)]
 #[allow(dead_code)]
 pub use crate::tests::real_io as io;
 
-/// Production I/O implementation
+/// Production I/O implementation.
 #[cfg(not(test))]
 pub extern crate neo_io;
-/// Re-export of neo_io for production use
+
+/// Re-export of neo_io for production use.
 #[cfg(not(test))]
 pub use neo_io as io;

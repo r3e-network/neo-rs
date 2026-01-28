@@ -45,7 +45,7 @@ thiserror = { workspace = true }
 
 # Constant-time operations and secure memory handling
 subtle = "2.5"
-zeroize = { version = "1.7", features = ["zeroize_derive"] }
+zeroize = { workspace = true }
 parking_lot = { workspace = true }
 tracing = { workspace = true }
 

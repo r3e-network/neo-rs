@@ -20,6 +20,16 @@ pub enum TelemetryError {
     /// IO error
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+
+    /// Other error
+    #[error("{0}")]
+    Other(String),
+}
+
+impl From<anyhow::Error> for TelemetryError {
+    fn from(e: anyhow::Error) -> Self {
+        TelemetryError::Other(e.to_string())
+    }
 }
 
 /// Result type for telemetry operations

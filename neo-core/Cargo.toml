@@ -16,57 +16,57 @@ build = "build.rs"
 
 [dependencies]
 # External dependencies
-num-bigint = "0.4"
-num-traits = "0.2"
+num-bigint = { workspace = true }
+num-traits = { workspace = true }
 num-integer = "0.1"
-thiserror = "1.0"
-derive_more = "0.99"
-hex = "0.4"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-lazy_static = "1.4"
+thiserror = { workspace = true }
+derive_more = { workspace = true }
+hex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+lazy_static = { workspace = true }
 byteorder = "1.4"
-bytes = "1.4"
-log = "0.4"
+bytes = { workspace = true }
+log = { workspace = true }
 # tokio kept for monitoring and persistence/backup modules
 # Consider moving these to neo-node in future refactoring
-tokio = { version = "1.28", features = ["sync", "time", "fs", "io-util", "rt"] }
-async-trait = "0.1"
-rand = "0.8"
-sha2 = "0.10"
+tokio = { workspace = true, features = ["sync", "time", "fs", "io-util", "rt"] }
+async-trait = { workspace = true }
+rand = { workspace = true }
+sha2 = { workspace = true }
 # sha3, blake2 removed - use neo-crypto instead
-ripemd = "0.1"
-bs58 = "0.5"
+ripemd = { workspace = true }
+bs58 = { workspace = true }
 # secp256k1, ed25519-dalek removed - use neo-crypto instead
-p256 = { version = "0.13", features = ["ecdsa", "sha256"] }
-k256 = { version = "0.13", features = ["ecdsa", "sha256"] }
-blst = "0.3"
-once_cell = "1.19"
-tracing = "0.1"
-prometheus = { version = "0.14", optional = true }
-sysinfo = { version = "0.29", optional = true }
+p256 = { workspace = true }
+k256 = { workspace = true }
+blst = { workspace = true }
+once_cell = { workspace = true }
+tracing = { workspace = true }
+prometheus = { workspace = true, optional = true }
+sysinfo = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true }
 tonic = { version = "0.11", features = ["transport", "tls", "tls-roots"], optional = true }
 prost = { version = "0.12", optional = true }
 quick-xml = { version = "0.31", features = ["serialize"], optional = true }
-uuid = { version = "1.0", features = ["v4"] }
-base64 = "0.21"
+uuid = { workspace = true }
+base64 = { workspace = true }
 hmac = "0.12"
 murmur3 = "0.5"
 zstd = "0.13"
 rocksdb = { workspace = true, optional = true }
-url = "2.4"
+url = { workspace = true }
 percent-encoding = "2.3"
-bincode = "1.3"
+bincode = { workspace = true }
 scrypt = "0.11"
-parking_lot = "0.12"
-lz4_flex.workspace = true
+parking_lot = { workspace = true }
+lz4_flex = { workspace = true }
 if-addrs = "0.10"
 bitflags = "2.4"
 aes = "0.8"
 cbc = "0.1"
 cipher = "0.4"
-zeroize = { version = "1.7", features = ["zeroize_derive"] }
+zeroize = { workspace = true }
 
 # Actor framework removed (Phase 2 refactoring)
 ractor = { workspace = true, optional = true }
@@ -94,11 +94,11 @@ xxhash-rust = { version = "0.8.15", features = ["xxh3"] }
 unicode-segmentation = "1.10"
 
 [dev-dependencies]
-criterion = { version = "0.5", features = ["html_reports"] }
-tempfile = "3.5"
+criterion = { workspace = true }
+tempfile = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 # For cryptography tests that need direct secp256k1 access
-secp256k1 = { version = "0.28", features = ["recovery"] }
+secp256k1 = { workspace = true }
 
 [build-dependencies]
 tonic-build = "0.11"

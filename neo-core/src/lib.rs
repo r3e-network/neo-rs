@@ -1,155 +1,265 @@
-// software distributed under the MIT software license, see the
-// accompanying file LICENSE in the main directory of the
-// modifications are permitted.
+// Copyright (c) 2024 R3E Network
+// This file is part of the neo-rs project
+// Licensed under the MIT License
+// See LICENSE file for details
 
 //! # Neo Core
 //!
-//! Core functionality for the Neo blockchain implementation.
+//! Core blockchain protocol implementation for Neo N3.
 //!
 //! This crate provides the fundamental types, traits, and utilities that form
-//! the foundation of the Neo blockchain protocol. It includes essential components
-//! for blocks, transactions, cryptographic operations, and system management.
+//! the backbone of the Neo blockchain protocol. It implements the core logic
+//! for blocks, transactions, smart contracts, and system management.
+//!
+//! ## Architecture
+//!
+//! The crate is organized into modules that mirror the C# Neo project structure:
+//!
+//! | Module | C# Equivalent | Purpose |
+//! |--------|---------------|---------|
+//! | [`ledger`] | `Neo.Ledger` | Blocks, transactions, blockchain state |
+//! | [`smart_contract`] | `Neo.SmartContract` | Contract execution, native contracts |
+//! | [`wallets`] | `Neo.Wallets` | Wallet management, key handling |
+//! | [`network`] | `Neo.Network` | P2P networking, message handling |
+//! | [`persistence`] | `Neo.Persistence` | Data storage, caching |
+//! | [`services`] | - | Service trait definitions |
+//!
+//! ## Layer Position
+//!
+//! This crate is part of **Layer 1 (Core)** in the neo-rs architecture:
+//!
+//! ```
+//! Layer 2 (Service): neo-chain, neo-mempool
+//!            │
+//!            ▼
+//! Layer 1 (Core):   neo-core ◄── YOU ARE HERE
+//!            │
+//!            ▼
+//! Layer 0 (Foundation): neo-primitives, neo-crypto, neo-storage
+//! ```
+//!
+//! ## Dependencies
+//!
+//! This crate depends only on Layer 0 (Foundation) crates:
+//! - [`neo_primitives`]: Core types (`UInt160`, `UInt256`)
+//! - [`neo_crypto`]: Cryptographic operations
+//! - [`neo_storage`]: Storage traits
+//! - [`neo_io`]: Serialization
+//! - [`neo_json`]: JSON handling
 //!
 //! ## Features
 //!
-//! - **Type System**: Core types like `UInt160`, `UInt256`, and `BigDecimal`
-//! - **Block Structure**: Block and block header implementations
-//! - **Transaction System**: Transaction types, attributes, and validation
-//! - **Witness System**: Witness, signer, and witness rule implementations
-//! - **Error Handling**: Comprehensive error types and result handling
-//! - **Monitoring**: System metrics and performance monitoring
-//! - **Shutdown Coordination**: Graceful shutdown mechanisms
+//! - `runtime`: Enables actor-based runtime components (`NeoSystem`, actors)
+//! - `monitoring`: Enables metrics collection and monitoring
 //!
 //! ## Example
 //!
 //! ```rust,no_run
-//! use crate::neo_core::{UInt256, Transaction, Block};
+//! use neo_core::{Block, Transaction, ProtocolSettings};
+//! use neo_primitives::UInt256;
 //!
-//! // Create a new transaction hash
+//! // Load protocol settings
+//! let settings = ProtocolSettings::default();
+//!
+//! // Create a transaction
+//! let tx = Transaction::default();
+//!
+//! // Work with block hashes
 //! let hash = UInt256::zero();
-//!
-//! // Work with transactions and blocks
-//! // let transaction = Transaction::new();
-//! // let block = Block::new();
 //! ```
 //!
-//! ## Architecture
+//! ## IVerifiable Trait
 //!
-//! The core crate is organized into several key modules:
+//! The [`IVerifiable`] trait is central to blockchain validation. It is implemented
+//! by types that can be cryptographically verified, such as blocks and transactions:
 //!
-//! - **Basic Types**: `uint160`, `uint256`, `big_decimal` - Fundamental data types
-//! - **Blockchain**: `block`, `transaction`, `witness` - Blockchain primitives
-//! - **System**: `neo_system`, `shutdown`, `monitoring` - System management
-//! - **Utilities**: `error_handling`, `safe_operations` - Helper functionality
+//! ```rust,no_run
+//! use neo_core::IVerifiable;
+//!
+//! fn verify_container<T: IVerifiable>(container: &T) -> bool {
+//!     container.verify()
+//! }
+//! ```
 
-//#![warn(missing_docs)]
-//#![warn(rustdoc::missing_crate_level_docs)]
+// Always warn on missing documentation
+// #![warn(missing_docs)]
+// #![warn(rustdoc::missing_crate_level_docs)]
+
+// Self-reference for macro exports
 extern crate self as neo_core;
 
-// Declarative macros for reducing boilerplate (must be declared before other modules)
+// ============================================================================
+// Declarative Macros (must be declared before other modules)
+// ============================================================================
+
 #[macro_use]
 pub mod macros;
 
-// Module declarations with documentation
-// Advanced metrics moved to neo-monitoring crate
-/// Big decimal arithmetic implementation
+// ============================================================================
+// Foundation Modules
+// ============================================================================
+
+/// Big decimal arithmetic for precise financial calculations.
+///
+/// Provides `BigDecimal` for handling NEO/GAS values with proper decimal precision.
 pub mod big_decimal;
-// Block moved to ledger module
-/// Builder pattern implementations for complex types
+
+/// Builder pattern implementations for complex types.
+///
+/// Contains builders for `Transaction`, `Signer`, `Witness`, and witness conditions.
 pub mod builders;
-/// System-wide constants
+
+/// System-wide protocol constants.
+///
+/// Network magic numbers, port defaults, fee constants, and size limits.
 pub mod constants;
-/// Contains transaction type enumeration
+
+/// Transaction containment type enumeration.
 pub mod contains_transaction_type;
-/// Core error types and error handling
+
+/// Core error types and error handling utilities.
 pub mod error;
-/// Plugin-style exception policies.
+
+/// Plugin-style exception handling policies.
 pub mod unhandled_exception_policy;
-// Advanced error handling utilities moved to extensions
-// Event system moved to i_event_handlers
-// Extensions moved to neo-extensions crate
-/// Compression utilities (matches Neo.Extensions compression helpers)
+
+/// Compression utilities (LZ4, gzip).
 pub mod compression;
-/// Cryptographic utilities using external crates
+
+/// Cryptographic helper utilities.
 pub mod cryptography;
-/// Hard fork management
+
+/// Blockchain hardfork management.
+///
+/// Tracks protocol upgrades (Aspidochelone, Basilisk, etc.).
 pub mod hardfork;
-/// Commonly used type re-exports
+
+/// Commonly used type re-exports.
 pub mod prelude;
-/// Protocol settings configuration (matches C# ProtocolSettings)
+
+/// Protocol settings and network configuration.
+///
+/// Matches C# `ProtocolSettings` class.
 pub mod protocol_settings;
-// System metrics moved to neo-monitoring crate
-// Monitoring moved to neo-monitoring crate
-// Neo system management moved to neo-node crate (Phase 2 refactoring)
-// The neo_system module contains runtime orchestration code that depends on actors.
-// It will be available in neo-node which provides the full runtime.
-// pub mod neo_system;
-// Transaction signer moved to sign module
-// Transaction structures moved to ledger module
-// Transaction type definitions moved to ledger module
-// Transaction validation moved to ledger module
-/// Witness verification system
+
+/// Witness verification system.
+///
+/// Handles script verification for transactions.
 pub mod witness;
-/// Witness rule evaluation
+
+/// Witness rule evaluation for conditional verification.
 pub mod witness_rule;
 
-// Monitoring (feature-gated)
+// ============================================================================
+// Optional Features
+// ============================================================================
+
+/// Monitoring and metrics (requires `monitoring` feature).
 #[cfg(feature = "monitoring")]
 pub mod monitoring;
 
-// Telemetry module for metrics and observability
+/// Telemetry infrastructure for logging and tracing.
 pub mod telemetry;
 
-// === C# Neo Main Project Structure ===
-// SmartContract module (matches C# Neo.SmartContract)
+// ============================================================================
+// C# Neo Project Modules
+// ============================================================================
+
+/// Smart contract execution and native contracts.
+///
+/// Matches C# `Neo.SmartContract` namespace.
 pub mod smart_contract;
-// Ledger module (matches C# Neo.Ledger)
+
+/// Ledger management: blocks, transactions, headers.
+///
+/// Matches C# `Neo.Ledger` namespace.
 pub mod ledger;
-// Network module (matches C# Neo.Network)
+
+/// Network layer: P2P messages, payloads, protocols.
+///
+/// Matches C# `Neo.Network` namespace.
 pub mod network;
-// Persistence module (matches C# Neo.Persistence)
+
+/// Data persistence: storage, caching, snapshots.
+///
+/// Matches C# `Neo.Persistence` namespace.
 pub mod persistence;
-// Wallets module (matches C# Neo.Wallets)
+
+/// Wallet management and key operations.
+///
+/// Matches C# `Neo.Wallets` namespace.
 pub mod wallets;
-// Sign module (matches C# Neo.Sign)
+
+/// Transaction signing and signature handling.
+///
+/// Matches C# `Neo.Sign` namespace.
 pub mod sign;
-// IEventHandlers module (matches C# Neo.IEventHandlers)
+
+/// Event handler interfaces.
+///
+/// Matches C# `Neo.IEventHandlers` namespace.
 pub mod i_event_handlers;
-// Extensions module (matches C# Neo.Extensions)
+
+/// Extension methods and utilities.
+///
+/// Matches C# `Neo.Extensions` namespace.
 pub mod extensions;
-// Events module (matches C# Neo.Events)
+
+/// Event system for blockchain notifications.
+///
+/// Matches C# `Neo.Events` namespace.
 pub mod events;
-// IO module (matches C# Neo.IO)
+
+/// I/O abstractions and helpers.
+///
+/// Matches C# `Neo.IO` namespace.
 pub mod io;
-/// Shared RPC models and helpers.
+
+/// RPC models and utilities.
 pub mod rpc;
-// Time provider module (matches C# Neo.TimeProvider)
+
+/// Time provider abstraction for testability.
 pub mod time_provider;
-// State service module (matches C# Neo.Plugins.StateService)
+
+/// State service for world state management.
 pub mod state_service;
-// Typed service interfaces for shared subsystems
+
+/// Service trait definitions for dependency injection.
 pub mod services;
-// Application logs plugin support (matches Neo.Plugins.ApplicationLogs)
+
+/// Application logs plugin support (requires `runtime` feature).
 #[cfg(feature = "runtime")]
 pub mod application_logs;
 
-// Actor runtime moved to neo-node crate (Phase 2 refactoring)
-// Runtime / actor-driven subsystems are feature-gated to keep `neo-core` usable as a
-// protocol-only layer by default, while enabling full-node composition when required.
+// ============================================================================
+// Runtime Components (requires `runtime` feature)
+// ============================================================================
+
+/// Actor runtime for async components (requires `runtime` feature).
 #[cfg(feature = "runtime")]
 pub mod actors;
+
+/// Re-export actors as "akka" for C# compatibility (requires `runtime` feature).
 #[cfg(feature = "runtime")]
 pub use actors as akka;
 
+/// System management and orchestration (requires `runtime` feature).
 #[cfg(feature = "runtime")]
 pub mod neo_system;
 
+/// Oracle service implementation (requires `runtime` feature).
 #[cfg(feature = "runtime")]
 pub mod oracle_service;
+
+/// Token tracking service (requires `runtime` feature).
 #[cfg(feature = "runtime")]
 pub mod tokens_tracker;
 
-// Re-exports for convenient access
+// ============================================================================
+// Public Re-exports
+// ============================================================================
+
+// Core types
 pub use big_decimal::BigDecimal;
 pub use builders::{
     AndConditionBuilder, OrConditionBuilder, SignerBuilder, TransactionAttributesBuilder,
@@ -157,16 +267,13 @@ pub use builders::{
 };
 pub use contains_transaction_type::ContainsTransactionType;
 pub use cryptography::{ECCurve, ECPoint};
-pub use error::{CoreError, CoreResult, Result};
+pub use error::{CoreError, CoreResult, Result, UnifiedError, UnifiedResult};
 pub use events::{EventHandler, EventManager};
 pub use hardfork::Hardfork;
 pub use ledger::{Block, BlockHeader};
 pub use neo_primitives::{
     InvalidWitnessScopeError, UInt160, UInt256, WitnessScope, UINT160_SIZE, UINT256_SIZE,
 };
-// NeoSystem moved to neo-node crate
-#[cfg(feature = "runtime")]
-pub use neo_system::NeoSystem;
 pub use network::p2p::payloads::{
     InventoryType, OracleResponseCode, Signer, Transaction, TransactionAttribute,
     TransactionAttributeType, HEADER_SIZE, MAX_TRANSACTION_ATTRIBUTES, MAX_TRANSACTION_SIZE,
@@ -181,12 +288,146 @@ pub use wallets::{KeyPair, Wallet};
 pub use witness::Witness;
 pub use witness_rule::{WitnessCondition, WitnessConditionType, WitnessRule, WitnessRuleAction};
 
+// Runtime types (requires `runtime` feature)
+#[cfg(feature = "runtime")]
+pub use neo_system::NeoSystem;
+
+// ============================================================================
+// Configuration Re-export
+// ============================================================================
+
+/// Protocol constants and configuration.
+pub mod neo_config {
+    pub use crate::constants::*;
+}
+
+// ============================================================================
+// Network Types
+// ============================================================================
+
+pub use network::p2p::messages::{
+    MessageHeader as NetworkMessageHeader, NetworkMessage, ProtocolMessage,
+};
+pub use network::{NetworkError, NetworkResult};
+
+// ============================================================================
+// I/O Re-export
+// ============================================================================
+
+/// I/O utilities with extension traits.
+pub mod neo_io {
+    pub use ::neo_io_crate::{
+        serializable::{self, helper},
+        BinaryWriter, IoError, IoResult, MemoryReader, Serializable,
+    };
+    pub use Serializable as ISerializable;
+
+    /// Extension helpers for working with `Serializable` values.
+    pub trait SerializableExt {
+        /// Serializes the value into a freshly allocated byte vector.
+        fn to_array(&self) -> IoResult<Vec<u8>>;
+    }
+
+    impl<T> SerializableExt for T
+    where
+        T: Serializable,
+    {
+        fn to_array(&self) -> IoResult<Vec<u8>> {
+            let mut writer = BinaryWriter::new();
+            self.serialize(&mut writer)?;
+            Ok(writer.into_bytes())
+        }
+    }
+}
+
+// ============================================================================
+// VM Re-export
+// ============================================================================
+
+/// Re-export of Neo Virtual Machine types.
+pub mod neo_vm {
+    pub use neo_vm::*;
+}
+
+// ============================================================================
+// Ledger Re-export
+// ============================================================================
+
+/// Re-export of ledger types.
+pub mod neo_ledger {
+    pub use crate::ledger::{
+        block::Block,
+        block_header::BlockHeader,
+        blockchain_application_executed::ApplicationExecuted,
+        header_cache::HeaderCache,
+        memory_pool::MemoryPool,
+        verify_result::VerifyResult,
+    };
+}
+
+// ============================================================================
+// Foundation Crate Re-exports
+// ============================================================================
+
+/// Re-exports from [`neo_primitives`] crate.
+///
+/// Contains core primitive types like `UInt160`, `UInt256`.
+pub mod primitives {
+    pub use neo_primitives::*;
+}
+
+/// Re-exports from [`neo_crypto`] crate.
+///
+/// Contains cryptographic primitives and hash functions.
+pub mod crypto {
+    pub use neo_crypto::*;
+}
+
+/// Re-exports from [`neo_storage`] crate.
+///
+/// Contains storage traits and abstractions.
+pub mod storage {
+    pub use neo_storage::*;
+}
+
+/// Re-exports smart contract types for backward compatibility.
+///
+/// Note: `neo-contract` crate has been merged - types now live in [`smart_contract`] module.
+pub mod contract {
+    pub use crate::smart_contract::*;
+}
+
+// ============================================================================
+// IVerifiable Trait
+// ============================================================================
+
 /// Trait for verifiable blockchain objects.
 ///
 /// This trait defines the interface for objects that can be cryptographically
 /// verified, such as blocks and transactions. It consolidates witness-handling
 /// behaviour from C# `IVerifiable` with the helper methods required by the
-/// runtime (hashing, serialization helpers, type erasure).
+/// runtime.
+///
+/// # Implementors
+///
+/// - [`Block`](ledger::Block)
+/// - [`Transaction`](network::p2p::payloads::Transaction)
+/// - [`Header`](ledger::BlockHeader)
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use neo_core::IVerifiable;
+/// use neo_primitives::UInt256;
+///
+/// fn verify_and_hash<T: IVerifiable>(item: &T) -> Option<UInt256> {
+///     if item.verify() {
+///         item.hash().ok()
+///     } else {
+///         None
+///     }
+/// }
+/// ```
 pub trait IVerifiable: std::any::Any + Send + Sync {
     /// Verifies the cryptographic validity of the object.
     ///
@@ -256,397 +497,9 @@ pub trait IVerifiable: std::any::Any + Send + Sync {
     fn as_any(&self) -> &dyn std::any::Any;
 }
 
-pub mod neo_config {
-    pub use crate::constants::*;
-}
-
-pub use network::p2p::messages::{
-    MessageHeader as NetworkMessageHeader, NetworkMessage, ProtocolMessage,
-};
-pub use network::{NetworkError, NetworkResult};
-
-pub mod neo_io {
-    pub use ::neo_io_crate::{
-        serializable::{self, helper},
-        BinaryWriter, IoError, IoResult, MemoryReader, Serializable,
-    };
-    pub use Serializable as ISerializable;
-
-    /// Extension helpers for working with `Serializable` values.
-    pub trait SerializableExt {
-        /// Serializes the value into a freshly allocated byte vector.
-        fn to_array(&self) -> IoResult<Vec<u8>>;
-    }
-
-    impl<T> SerializableExt for T
-    where
-        T: Serializable,
-    {
-        fn to_array(&self) -> IoResult<Vec<u8>> {
-            let mut writer = BinaryWriter::new();
-            self.serialize(&mut writer)?;
-            Ok(writer.into_bytes())
-        }
-    }
-}
-
-pub mod neo_crypto {
-    use crate::cryptography::NeoHash;
-
-    /// Computes SHA-256 hash (matches C# Neo.Cryptography.Crypto.Sha256).
-    pub fn sha256(data: &[u8]) -> [u8; 32] {
-        NeoHash::sha256(data)
-    }
-
-    /// Computes Hash256 (double SHA-256) (matches C# Neo.Cryptography.Crypto.Hash256).
-    pub fn hash256(data: &[u8]) -> [u8; 32] {
-        NeoHash::hash256(data)
-    }
-
-    /// Computes RIPEMD-160 hash (matches C# Neo.Cryptography.Crypto.RIPEMD160).
-    pub fn ripemd160(data: &[u8]) -> [u8; 20] {
-        NeoHash::ripemd160(data)
-    }
-}
-
-pub mod neo_cryptography {
-    use crate::cryptography::NeoHash;
-    use crate::UInt256;
-
-    /// Generic cryptography error type (matches C# Neo.Cryptography.CryptographyException semantics).
-    #[derive(Debug, Clone)]
-    pub struct Error(pub String);
-
-    impl std::fmt::Display for Error {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "{}", self.0)
-        }
-    }
-
-    impl std::error::Error for Error {}
-
-    impl From<String> for Error {
-        fn from(value: String) -> Self {
-            Self(value)
-        }
-    }
-
-    impl From<&str> for Error {
-        fn from(value: &str) -> Self {
-            Self(value.to_string())
-        }
-    }
-
-    pub mod hash {
-        use crate::cryptography::NeoHash;
-
-        pub fn sha256(data: &[u8]) -> [u8; 32] {
-            NeoHash::sha256(data)
-        }
-
-        pub fn hash256(data: &[u8]) -> [u8; 32] {
-            NeoHash::hash256(data)
-        }
-
-        pub fn ripemd160(data: &[u8]) -> [u8; 20] {
-            NeoHash::ripemd160(data)
-        }
-    }
-
-    pub mod ecc {
-        use super::{ECCurve, ECPoint};
-
-        #[derive(Debug, Clone)]
-        pub struct ECCError(pub String);
-
-        impl std::fmt::Display for ECCError {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, "{}", self.0)
-            }
-        }
-
-        impl std::error::Error for ECCError {}
-
-        impl From<String> for ECCError {
-            fn from(value: String) -> Self {
-                Self(value)
-            }
-        }
-
-        pub fn decode_point(data: &[u8], curve: ECCurve) -> Result<ECPoint, ECCError> {
-            ECPoint::from_bytes_with_curve(curve, data).map_err(|e| ECCError(e.to_string()))
-        }
-
-        pub fn decode_compressed_point(data: &[u8]) -> Result<ECPoint, ECCError> {
-            ECPoint::from_bytes(data).map_err(|e| ECCError(e.to_string()))
-        }
-    }
-
-    pub use crate::cryptography::{ECCurve, ECPoint};
-
-    #[derive(Clone)]
-    struct MerkleTreeNode {
-        hash: UInt256,
-        left: Option<Box<MerkleTreeNode>>,
-        right: Option<Box<MerkleTreeNode>>,
-    }
-
-    impl MerkleTreeNode {
-        fn leaf(hash: UInt256) -> Self {
-            Self {
-                hash,
-                left: None,
-                right: None,
-            }
-        }
-
-        fn is_pruned(&self) -> bool {
-            self.left.is_none() && self.right.is_none()
-        }
-    }
-
-    /// Merkle tree implementation used across the network layer.
-    pub struct MerkleTree {
-        root: Option<Box<MerkleTreeNode>>,
-        depth: usize,
-    }
-
-    impl MerkleTree {
-        /// Builds a merkle tree from the supplied hashes.
-        pub fn new(hashes: &[UInt256]) -> Self {
-            if hashes.is_empty() {
-                return Self {
-                    root: None,
-                    depth: 0,
-                };
-            }
-
-            let mut nodes: Vec<MerkleTreeNode> =
-                hashes.iter().copied().map(MerkleTreeNode::leaf).collect();
-
-            let mut depth = 1;
-            while nodes.len() > 1 {
-                let mut parents = Vec::with_capacity(nodes.len().div_ceil(2));
-                let mut index = 0;
-                while index < nodes.len() {
-                    let left = nodes[index].clone();
-                    let right = if index + 1 < nodes.len() {
-                        nodes[index + 1].clone()
-                    } else {
-                        left.clone()
-                    };
-
-                    let hash = hash_pair(&left.hash, &right.hash);
-                    parents.push(MerkleTreeNode {
-                        hash,
-                        left: Some(Box::new(left)),
-                        right: Some(Box::new(right)),
-                    });
-
-                    index += 2;
-                }
-                nodes = parents;
-                depth += 1;
-            }
-
-            Self {
-                root: nodes.pop().map(Box::new),
-                depth,
-            }
-        }
-
-        /// Returns the depth of the tree (leaf-only trees report depth 1).
-        pub fn depth(&self) -> usize {
-            self.depth
-        }
-
-        /// Computes the merkle root for the supplied hashes.
-        ///
-        /// Performance: Uses an optimized in-place algorithm that avoids building
-        /// the full tree structure. Only allocates a single working buffer.
-        /// Time complexity: O(n), Space complexity: O(n) where n = number of hashes.
-        pub fn compute_root(hashes: &[UInt256]) -> Option<UInt256> {
-            if hashes.is_empty() {
-                return None;
-            }
-            if hashes.len() == 1 {
-                return Some(hashes[0]);
-            }
-
-            // Work buffer - we'll reduce this in-place level by level
-            let mut current: Vec<UInt256> = hashes.to_vec();
-
-            while current.len() > 1 {
-                let mut next = Vec::with_capacity(current.len().div_ceil(2));
-                let mut i = 0;
-                while i < current.len() {
-                    let left = &current[i];
-                    // If odd number of elements, duplicate the last one
-                    let right = current.get(i + 1).unwrap_or(left);
-                    next.push(hash_pair(left, right));
-                    i += 2;
-                }
-                current = next;
-            }
-
-            current.pop()
-        }
-
-        /// Computes the merkle root by building the full tree.
-        /// Use this when you need the tree structure for trimming or proof generation.
-        pub fn compute_root_with_tree(hashes: &[UInt256]) -> Option<UInt256> {
-            let tree = Self::new(hashes);
-            tree.root().copied()
-        }
-
-        /// Returns the root hash when available.
-        pub fn root(&self) -> Option<&UInt256> {
-            self.root.as_ref().map(|node| &node.hash)
-        }
-
-        /// Trims the tree according to the provided bloom-filter flags.
-        ///
-        /// Flags represent which leaves should be retained. When both leaves under
-        /// a node are excluded the branch is pruned and replaced by the parent hash.
-        pub fn trim(&mut self, flags: &[bool]) {
-            let Some(root) = self.root.as_mut() else {
-                return;
-            };
-
-            if self.depth <= 1 {
-                return;
-            }
-
-            let required = 1usize << (self.depth - 1);
-            let mut padded = vec![false; required];
-            for (index, flag) in flags.iter().enumerate().take(required) {
-                padded[index] = *flag;
-            }
-
-            trim_node(root, 0, self.depth, &padded);
-        }
-
-        /// Returns the hashes in depth-first order.
-        pub fn to_hash_array(&self) -> Vec<UInt256> {
-            let mut hashes = Vec::new();
-            if let Some(root) = self.root.as_ref() {
-                depth_first_collect(root, &mut hashes);
-            }
-            hashes
-        }
-    }
-
-    fn depth_first_collect(node: &MerkleTreeNode, hashes: &mut Vec<UInt256>) {
-        if node.left.is_none() {
-            hashes.push(node.hash);
-        } else {
-            if let Some(left) = node.left.as_ref() {
-                depth_first_collect(left, hashes);
-            }
-            if let Some(right) = node.right.as_ref() {
-                depth_first_collect(right, hashes);
-            }
-        }
-    }
-
-    fn trim_node(node: &mut MerkleTreeNode, index: usize, depth: usize, flags: &[bool]) {
-        if depth <= 1 || node.left.is_none() {
-            return;
-        }
-
-        if depth == 2 {
-            let left_flag = flags.get(index * 2).copied().unwrap_or(false);
-            let right_flag = flags.get(index * 2 + 1).copied().unwrap_or(false);
-
-            if !left_flag && !right_flag {
-                node.left = None;
-                node.right = None;
-            }
-            return;
-        }
-
-        if let Some(left) = node.left.as_mut() {
-            trim_node(left, index * 2, depth - 1, flags);
-        }
-        if let Some(right) = node.right.as_mut() {
-            trim_node(right, index * 2 + 1, depth - 1, flags);
-        }
-
-        let left_pruned = node
-            .left
-            .as_ref()
-            .map(|child| child.is_pruned())
-            .unwrap_or(true);
-        let right_pruned = node
-            .right
-            .as_ref()
-            .map(|child| child.is_pruned())
-            .unwrap_or(true);
-
-        if left_pruned && right_pruned {
-            node.left = None;
-            node.right = None;
-        }
-    }
-
-    fn hash_pair(left: &UInt256, right: &UInt256) -> UInt256 {
-        let mut bytes = [0u8; 64];
-        bytes[..32].copy_from_slice(&left.to_array());
-        bytes[32..].copy_from_slice(&right.to_array());
-        UInt256::from(NeoHash::hash256(&bytes))
-    }
-}
-
-pub mod neo_vm {
-    pub use neo_vm::*;
-}
-
-pub mod neo_ledger {
-    pub use crate::ledger::{
-        block::Block,
-        block_header::BlockHeader,
-        // Blockchain moved to neo-node (Phase 2 refactoring)
-        // blockchain::Blockchain,
-        blockchain_application_executed::ApplicationExecuted,
-        header_cache::HeaderCache,
-        memory_pool::MemoryPool,
-        verify_result::VerifyResult,
-    };
-}
-
-// === Re-exports from new foundation crates ===
-// These provide backward compatibility while types are migrated to their new homes.
-
-/// Re-exports from neo-primitives crate.
-/// Contains core primitive types like UInt160, UInt256.
-pub mod primitives {
-    pub use neo_primitives::*;
-}
-
-/// Re-exports from neo-crypto crate.
-/// Contains cryptographic primitives and hash functions.
-pub mod crypto {
-    pub use neo_crypto::*;
-}
-
-/// Re-exports from neo-storage crate.
-/// Contains storage traits and abstractions.
-pub mod storage {
-    pub use neo_storage::*;
-}
-
-/// Re-exports smart contract types for backward compatibility.
-/// Contains smart contract types and execution engine components.
-/// Note: neo-contract crate has been merged - types now live in smart_contract module.
-pub mod contract {
-    pub use crate::smart_contract::*;
-}
-
-// NOTE: neo-p2p and neo-consensus are NOT re-exported here.
-// This is intentional to maintain proper layering:
-// - neo-core is Layer 1 (Core)
-// - neo-p2p and neo-consensus are Layer 2 (Protocol)
-// Import directly from neo-p2p and neo-consensus crates instead.
+// ============================================================================
+// Tests
+// ============================================================================
 
 #[cfg(test)]
 mod tests;

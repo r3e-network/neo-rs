@@ -11,6 +11,10 @@ pub use neo_crypto::{
     Secp256r1Crypto, ECC,
 };
 
+// Merkle tree implementation (moved from neo_cryptography module)
+pub mod merkle_tree;
+pub use merkle_tree::MerkleTree;
+
 pub mod bloom_filter {
     pub use neo_crypto::bloom_filter::*;
 }

@@ -477,6 +477,67 @@ impl From<std::str::Utf8Error> for CoreError {
 
 // Removed neo-cryptography dependency - using external crypto crates directly
 
+/// Unified error type that can hold any error from the Neo stack.
+///
+/// This provides a common error type for cross-crate error handling.
+/// For crate-internal errors, use the specific error type (e.g., `CoreError`).
+#[derive(Debug)]
+pub enum UnifiedError {
+    /// Core crate errors
+    Core(CoreError),
+    /// Standard I/O errors
+    Io(std::io::Error),
+    /// Generic string errors
+    Message(String),
+}
+
+impl std::fmt::Display for UnifiedError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Core(e) => write!(f, "{e}"),
+            Self::Io(e) => write!(f, "I/O error: {e}"),
+            Self::Message(e) => write!(f, "{e}"),
+        }
+    }
+}
+
+impl std::error::Error for UnifiedError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Core(e) => Some(e),
+            Self::Io(e) => Some(e),
+            Self::Message(_) => None,
+        }
+    }
+}
+
+impl From<CoreError> for UnifiedError {
+    fn from(e: CoreError) -> Self {
+        Self::Core(e)
+    }
+}
+
+impl From<std::io::Error> for UnifiedError {
+    fn from(e: std::io::Error) -> Self {
+        Self::Io(e)
+    }
+}
+
+impl From<String> for UnifiedError {
+    fn from(e: String) -> Self {
+        Self::Message(e)
+    }
+}
+
+impl From<&str> for UnifiedError {
+    fn from(e: &str) -> Self {
+        Self::Message(e.to_string())
+    }
+}
+
+/// Result type using UnifiedError
+pub type UnifiedResult<T> = std::result::Result<T, UnifiedError>;
+
 #[cfg(test)]
 #[allow(dead_code)]
 mod tests {

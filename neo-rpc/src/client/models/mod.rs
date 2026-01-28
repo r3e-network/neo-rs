@@ -31,6 +31,9 @@ mod vm_state_utils;
 pub mod rpc_request;
 pub mod rpc_response;
 
+// Generic response wrapper (new)
+pub mod rpc_response_wrapper;
+
 // Block and transaction types
 pub mod rpc_block;
 pub mod rpc_block_header;
@@ -100,6 +103,7 @@ pub use rpc_plugin::RpcPlugin;
 pub use rpc_raw_mem_pool::RpcRawMemPool;
 pub use rpc_request::RpcRequest;
 pub use rpc_response::{RpcResponse, RpcResponseError};
+pub use rpc_response_wrapper::RpcResponse as RpcResponseWrapper;
 pub use rpc_state_root::RpcStateRoot;
 pub use rpc_transaction::RpcTransaction;
 pub use rpc_transfer_out::RpcTransferOut;

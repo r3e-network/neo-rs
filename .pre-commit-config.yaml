@@ -32,13 +32,13 @@ repos:
     hooks:
       - id: check-unwrap
         name: Check Unwrap Usage
-        entry: bash -c 'COUNT=$(grep -r "\.unwrap()" --include="*.rs" crates/ | wc -l); echo "Unwrap count: $COUNT"; if [ "$COUNT" -gt "3000" ]; then echo "Too many unwraps!"; exit 1; fi'
+        entry: bash -c 'COUNT=$(grep -r "\.unwrap()" --include="*.rs" neo-*/src | wc -l); echo "Unwrap count: $COUNT"; if [ "$COUNT" -gt "3000" ]; then echo "Too many unwraps!"; exit 1; fi'
         language: system
         pass_filenames: false
         
       - id: check-unsafe
         name: Check Unsafe Code
-        entry: bash -c 'if grep -r "unsafe {" --include="*.rs" crates/; then echo "Warning: Unsafe code detected"; fi'
+        entry: bash -c 'if grep -r "unsafe {" --include="*.rs" neo-*/src; then echo "Warning: Unsafe code detected"; fi'
         language: system
         pass_filenames: false
 

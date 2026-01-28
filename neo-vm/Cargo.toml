@@ -14,18 +14,18 @@ readme.workspace = true
 description = "Virtual machine implementation for the Neo blockchain"
 
 [dependencies]
-# External dependencies
-log = "0.4"
-num-bigint = "0.4"
-num-traits = "0.2"
-thiserror = "1.0"
+# External dependencies - using workspace dependencies for consistency
+log = { workspace = true }
+num-bigint = { workspace = true }
+num-traits = { workspace = true }
+thiserror = { workspace = true }
 bitflags = "2.4"
-derive_more = "0.99"
-hashbrown = "0.14"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = { version = "1.0" }
-lazy_static = "1.4"
-once_cell = "1.19"
+derive_more = { workspace = true }
+hashbrown = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+lazy_static = { workspace = true }
+once_cell = { workspace = true }
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 parking_lot = { workspace = true }
 
@@ -33,8 +33,8 @@ parking_lot = { workspace = true }
 neo-io = { path = "../neo-io" }
 
 # Cryptography dependencies for script hash calculation
-sha2 = "0.10"
-ripemd = "0.1"
+sha2 = { workspace = true }
+ripemd = { workspace = true }
 murmur3 = "0.5"
 
 [dev-dependencies]

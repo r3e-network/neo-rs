@@ -74,7 +74,7 @@ regex = { version = "1.10", optional = true }
 # Cryptography (server feature)
 rand = { workspace = true, optional = true }
 sha2 = { workspace = true, optional = true }
-zeroize = { version = "1.7", optional = true }
+zeroize = { workspace = true, optional = true }
 subtle = { version = "2.5", optional = true }
 
 [dev-dependencies]

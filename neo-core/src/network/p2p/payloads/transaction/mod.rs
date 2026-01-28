@@ -13,9 +13,8 @@ use super::{
     i_inventory::IInventory, signer::Signer, transaction_attribute::TransactionAttribute,
     witness::Witness, InventoryType, TransactionAttributeType,
 };
-use crate::cryptography::Secp256r1Crypto;
+use crate::cryptography::{Crypto, Secp256r1Crypto};
 use crate::hardfork::Hardfork;
-use crate::neo_crypto::sha256;
 use crate::neo_io::serializable::helper::get_var_size;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::network::p2p::helper;
