@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+
 #[cfg(feature = "neofs-grpc")]
 mod v1;
 #[cfg(feature = "neofs-grpc")]
