@@ -98,8 +98,6 @@ impl Default for LoggingConfig {
     }
 }
 
-
-
 /// Log output format
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]

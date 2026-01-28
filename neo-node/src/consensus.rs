@@ -6,11 +6,11 @@ use neo_consensus::{
     ConsensusPayload, ConsensusService, ConsensusSigner, ValidatorInfo,
 };
 use neo_core::akka::{Actor, ActorContext, ActorRef, ActorResult, Cancelable, Props};
+use neo_core::cryptography::MerkleTree;
 use neo_core::i_event_handlers::IMessageReceivedHandler;
 use neo_core::ledger::{
     PersistCompleted, RelayResult, TransactionVerificationContext, VerifyResult,
 };
-use neo_core::cryptography::MerkleTree;
 use neo_core::neo_io::MemoryReader;
 use neo_core::network::p2p::local_node::RelayInventory;
 use neo_core::network::p2p::payloads::{

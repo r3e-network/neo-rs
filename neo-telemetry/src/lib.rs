@@ -46,9 +46,7 @@ mod node_metrics;
 mod system;
 
 // Public exports - Config
-pub use config::{
-    LogFormat, LoggingConfig, TelemetryAndLoggingConfig, TelemetryConfig,
-};
+pub use config::{LogFormat, LoggingConfig, TelemetryAndLoggingConfig, TelemetryConfig};
 
 // Public exports - Error
 pub use error::{TelemetryError, TelemetryResult};

@@ -6,7 +6,7 @@
 //! - Multiple output formats (JSON, text, pretty)
 //! - Log level filtering
 
-use crate::{LoggingConfig, LogFormat, TelemetryResult};
+use crate::{LogFormat, LoggingConfig, TelemetryResult};
 use anyhow::{Context, Result as AnyhowResult};
 use chrono::Local;
 use std::{
@@ -50,7 +50,10 @@ impl LoggingGuard {
 /// # Returns
 ///
 /// Returns a `LoggingGuard` that must be kept alive for the duration of the application.
-pub fn init_node_logging(config: &LoggingConfig, daemon_mode: bool) -> TelemetryResult<LoggingGuard> {
+pub fn init_node_logging(
+    config: &LoggingConfig,
+    daemon_mode: bool,
+) -> TelemetryResult<LoggingGuard> {
     use tracing_subscriber::fmt::writer::{BoxMakeWriter, MakeWriterExt};
 
     let level = &config.level;
@@ -160,10 +163,10 @@ mod tests {
     fn test_create_file_writer() {
         let temp_dir = TempDir::new().unwrap();
         let path = temp_dir.path().join("test.log");
-        
+
         let result = create_file_writer(&path.to_string_lossy());
         assert!(result.is_ok());
-        
+
         // Verify file was created
         assert!(path.exists());
     }

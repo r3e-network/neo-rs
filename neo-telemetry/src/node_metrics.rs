@@ -294,14 +294,14 @@ mod tests {
     #[test]
     fn test_update_node_metrics() {
         update_node_metrics(
-            100,                    // block_height
-            105,                    // header_height
-            50,                     // mempool_size
-            10,                     // peer_count
-            Some(100),              // state_local_root
-            Some(95),               // state_validated_root
-            1000,                   // state_root_accepted
-            10,                     // state_root_rejected
+            100,       // block_height
+            105,       // header_height
+            50,        // mempool_size
+            10,        // peer_count
+            Some(100), // state_local_root
+            Some(95),  // state_validated_root
+            1000,      // state_root_accepted
+            10,        // state_root_rejected
         );
 
         assert_eq!(BLOCK_HEIGHT.get(), 100.0);

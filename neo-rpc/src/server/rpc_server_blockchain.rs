@@ -974,8 +974,7 @@ mod tests {
             UInt256::zero()
         } else {
             let hashes: Vec<UInt256> = transactions.iter().map(|tx| tx.hash()).collect();
-            neo_core::cryptography::MerkleTree::compute_root(&hashes)
-                .unwrap_or_else(UInt256::zero)
+            neo_core::cryptography::MerkleTree::compute_root(&hashes).unwrap_or_else(UInt256::zero)
         };
 
         let header = LedgerBlockHeader {

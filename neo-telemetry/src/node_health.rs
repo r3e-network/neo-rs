@@ -158,8 +158,7 @@ async fn handle_request(
                 header_lag,
             };
 
-            let json =
-                serde_json::to_string(&body).unwrap_or_else(|_| r#"{"status":"ok"}"#.into());
+            let json = serde_json::to_string(&body).unwrap_or_else(|_| r#"{"status":"ok"}"#.into());
             let mut resp = Response::new(Body::from(json));
             if !is_healthy {
                 *resp.status_mut() = StatusCode::SERVICE_UNAVAILABLE;

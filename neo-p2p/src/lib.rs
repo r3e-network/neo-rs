@@ -213,9 +213,7 @@ pub use witness_condition_type::WitnessConditionType;
 pub use witness_rule_action::WitnessRuleAction;
 
 // Re-exports from neo-primitives
-pub use neo_primitives::{
-    InvalidWitnessScopeError, TransactionAttributeType, WitnessScope,
-};
+pub use neo_primitives::{InvalidWitnessScopeError, TransactionAttributeType, WitnessScope};
 
 // P2P traits for implementing network services
 pub use traits::{
