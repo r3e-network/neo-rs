@@ -21,6 +21,27 @@ impl ConsensusService {
             "Received RecoveryRequest"
         );
 
+        // SECURITY: Verify the requestor's signature
+        if payload.witness.is_empty() {
+            warn!(
+                validator = payload.validator_index,
+                "RecoveryRequest missing witness"
+            );
+            return Err(ConsensusError::signature_failed(
+                "RecoveryRequest missing witness",
+            ));
+        }
+        let sign_data = self.dbft_sign_data(payload)?;
+        if !self.verify_signature(&sign_data, &payload.witness, payload.validator_index) {
+            warn!(
+                validator = payload.validator_index,
+                "RecoveryRequest signature verification failed"
+            );
+            return Err(ConsensusError::signature_failed(
+                "RecoveryRequest signature invalid",
+            ));
+        }
+
         if !self.should_send_recovery_response(payload.validator_index)? {
             return Ok(());
         }
@@ -40,11 +61,19 @@ impl ConsensusService {
         &mut self,
         payload: &ConsensusPayload,
     ) -> ConsensusResult<()> {
-        // Verify the payload signature (security fix: matches C# DBFTPlugin)
+        // Verify the payload signature
+        // SECURITY: Require non-empty witness and valid signature
+        if payload.witness.is_empty() {
+            warn!(
+                validator = payload.validator_index,
+                "RecoveryMessage missing witness"
+            );
+            return Err(ConsensusError::signature_failed(
+                "RecoveryMessage missing witness",
+            ));
+        }
         let sign_data = self.dbft_sign_data(payload)?;
-        if !payload.witness.is_empty()
-            && !self.verify_signature(&sign_data, &payload.witness, payload.validator_index)
-        {
+        if !self.verify_signature(&sign_data, &payload.witness, payload.validator_index) {
             warn!(
                 validator = payload.validator_index,
                 "RecoveryMessage signature verification failed"

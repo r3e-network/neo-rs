@@ -55,10 +55,18 @@ impl ConsensusService {
             block_sign_data.extend_from_slice(&block_hash.as_bytes());
 
             // Verify ExtensiblePayload witness signature (authenticity).
+            // SECURITY: Require non-empty witness and valid signature
+            if payload.witness.is_empty() {
+                warn!(
+                    validator = payload.validator_index,
+                    "Commit missing witness"
+                );
+                return Err(ConsensusError::signature_failed(
+                    "Commit missing witness",
+                ));
+            }
             let sign_data = self.dbft_sign_data(payload)?;
-            if !payload.witness.is_empty()
-                && !self.verify_signature(&sign_data, &payload.witness, payload.validator_index)
-            {
+            if !self.verify_signature(&sign_data, &payload.witness, payload.validator_index) {
                 warn!(
                     validator = payload.validator_index,
                     "Commit witness signature verification failed"

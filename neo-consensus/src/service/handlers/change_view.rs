@@ -11,11 +11,19 @@ impl ConsensusService {
         &mut self,
         payload: &ConsensusPayload,
     ) -> ConsensusResult<()> {
-        // Verify the payload signature (security fix: matches C# DBFTPlugin)
+        // Verify the payload signature
+        // SECURITY: Require non-empty witness and valid signature
+        if payload.witness.is_empty() {
+            warn!(
+                validator = payload.validator_index,
+                "ChangeView missing witness"
+            );
+            return Err(crate::ConsensusError::signature_failed(
+                "ChangeView missing witness",
+            ));
+        }
         let sign_data = self.dbft_sign_data(payload)?;
-        if !payload.witness.is_empty()
-            && !self.verify_signature(&sign_data, &payload.witness, payload.validator_index)
-        {
+        if !self.verify_signature(&sign_data, &payload.witness, payload.validator_index) {
             warn!(
                 validator = payload.validator_index,
                 "ChangeView signature verification failed"

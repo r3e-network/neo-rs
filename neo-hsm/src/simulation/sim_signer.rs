@@ -50,12 +50,13 @@ impl SimulationSigner {
     /// Generate a new key pair
     pub fn generate_key(&self, key_id: &str, label: Option<&str>) -> HsmResult<HsmKeyInfo> {
         use neo_crypto::Secp256r1Crypto;
-
+        use rand::rngs::OsRng;
         use rand::RngCore;
 
-        // Generate random private key
+        // Generate random private key using cryptographically secure RNG
+        // SECURITY: Must use OsRng, not thread_rng(), for key generation
         let mut private_key = [0u8; 32];
-        rand::thread_rng().fill_bytes(&mut private_key);
+        OsRng.fill_bytes(&mut private_key);
 
         // Derive public key
         let public_key = Secp256r1Crypto::derive_public_key(&private_key)

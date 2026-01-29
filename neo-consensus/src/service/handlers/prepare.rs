@@ -29,11 +29,19 @@ impl ConsensusService {
             });
         }
 
-        // Verify the primary's signature (security fix: matches C# DBFTPlugin)
+        // Verify the primary's signature
+        // SECURITY: Require non-empty witness and valid signature
+        if payload.witness.is_empty() {
+            warn!(
+                validator = payload.validator_index,
+                "PrepareRequest missing witness"
+            );
+            return Err(ConsensusError::signature_failed(
+                "PrepareRequest missing witness",
+            ));
+        }
         let sign_data = self.dbft_sign_data(payload)?;
-        if !payload.witness.is_empty()
-            && !self.verify_signature(&sign_data, &payload.witness, payload.validator_index)
-        {
+        if !self.verify_signature(&sign_data, &payload.witness, payload.validator_index) {
             warn!(
                 validator = payload.validator_index,
                 "PrepareRequest signature verification failed"
@@ -136,10 +144,18 @@ impl ConsensusService {
         );
 
         // Verify the payload signature
+        // SECURITY: Require non-empty witness and valid signature
+        if payload.witness.is_empty() {
+            warn!(
+                validator = payload.validator_index,
+                "PrepareResponse missing witness"
+            );
+            return Err(ConsensusError::signature_failed(
+                "PrepareResponse missing witness",
+            ));
+        }
         let sign_data = self.dbft_sign_data(payload)?;
-        if !payload.witness.is_empty()
-            && !self.verify_signature(&sign_data, &payload.witness, payload.validator_index)
-        {
+        if !self.verify_signature(&sign_data, &payload.witness, payload.validator_index) {
             warn!(
                 validator = payload.validator_index,
                 "PrepareResponse signature verification failed"

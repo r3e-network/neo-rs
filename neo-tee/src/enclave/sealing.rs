@@ -9,6 +9,8 @@ use aes_gcm::{
     aead::{Aead, KeyInit},
     Aes256Gcm, Nonce,
 };
+use rand::rngs::OsRng;
+use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
@@ -49,8 +51,10 @@ pub fn seal_data(
     aad: &[u8],
     counter: u64,
 ) -> TeeResult<SealedData> {
-    // Generate random nonce
-    let nonce_bytes: [u8; 12] = rand::random();
+    // Generate random nonce using cryptographically secure RNG
+    // SECURITY: Must use OsRng for AES-GCM nonce generation
+    let mut nonce_bytes = [0u8; 12];
+    OsRng.fill_bytes(&mut nonce_bytes);
     let nonce = Nonce::from_slice(&nonce_bytes);
 
     // Create cipher
