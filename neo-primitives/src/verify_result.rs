@@ -1,34 +1,34 @@
-//! VerifyResult - matches C# Neo.Ledger.VerifyResult exactly.
+//! `VerifyResult` - matches C# Neo.Ledger.VerifyResult exactly.
 //!
-//! This is the single source of truth for VerifyResult enum. Both neo-core::ledger
+//! This is the single source of truth for `VerifyResult` enum. Both `neo-core::ledger`
 //! and neo-p2p re-export this type for backward compatibility.
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
 
-/// Represents a verifying result of IInventory.
+/// Represents a verifying result of `IInventory`.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum VerifyResult {
     /// Indicates that the verification was successful.
     Succeed = 0,
-    /// Indicates that an IInventory with the same hash already exists.
+    /// Indicates that an `IInventory` with the same hash already exists.
     AlreadyExists = 1,
-    /// Indicates that an IInventory with the same hash already exists in the memory pool.
+    /// Indicates that an `IInventory` with the same hash already exists in the memory pool.
     AlreadyInPool = 2,
-    /// Indicates that the MemoryPool is full and the transaction cannot be verified.
+    /// Indicates that the `MemoryPool` is full and the transaction cannot be verified.
     OutOfMemory = 3,
     /// Indicates that the previous block of the current block has not been received.
     UnableToVerify = 4,
-    /// Indicates that the IInventory is invalid.
+    /// Indicates that the `IInventory` is invalid.
     Invalid = 5,
     /// Indicates that the Transaction has an invalid script.
     InvalidScript = 6,
     /// Indicates that the Transaction has an invalid attribute.
     InvalidAttribute = 7,
-    /// Indicates that the IInventory has an invalid signature.
+    /// Indicates that the `IInventory` has an invalid signature.
     InvalidSignature = 8,
-    /// Indicates that the size of the IInventory is not allowed.
+    /// Indicates that the size of the `IInventory` is not allowed.
     OverSize = 9,
     /// Indicates that the Transaction has expired.
     Expired = 10,
@@ -38,7 +38,7 @@ pub enum VerifyResult {
     PolicyFail = 12,
     /// Indicates that the Transaction failed to verify because it conflicts with on-chain or mempooled transactions.
     HasConflicts = 13,
-    /// Indicates that the IInventory failed to verify due to other reasons.
+    /// Indicates that the `IInventory` failed to verify due to other reasons.
     #[default]
     Unknown = 14,
 }
@@ -46,11 +46,13 @@ pub enum VerifyResult {
 impl VerifyResult {
     /// Converts to byte representation.
     #[inline]
+    #[must_use]
     pub fn to_byte(self) -> u8 {
         self as u8
     }
 
     /// Creates from byte representation.
+    #[must_use]
     pub fn from_byte(value: u8) -> Option<Self> {
         match value {
             0 => Some(Self::Succeed),
@@ -73,6 +75,7 @@ impl VerifyResult {
     }
 
     /// Returns the string representation.
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Succeed => "Succeed",
@@ -95,12 +98,14 @@ impl VerifyResult {
 
     /// Returns true if the verification was successful.
     #[inline]
+    #[must_use]
     pub fn is_success(self) -> bool {
         matches!(self, Self::Succeed)
     }
 
     /// Returns true if the result indicates a failure.
     #[inline]
+    #[must_use]
     pub fn is_failure(self) -> bool {
         !self.is_success()
     }

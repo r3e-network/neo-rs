@@ -1,9 +1,9 @@
-//! ContractParameterType - matches C# Neo.SmartContract.ContractParameterType exactly
+//! `ContractParameterType` - matches C# Neo.SmartContract.ContractParameterType exactly
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::str::FromStr;
 
-/// Represents the type of ContractParameter (matches C# ContractParameterType)
+/// Represents the type of `ContractParameter` (matches C# `ContractParameterType`)
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum ContractParameterType {
@@ -50,6 +50,7 @@ pub enum ContractParameterType {
 
 impl ContractParameterType {
     /// Returns the canonical manifest name for this parameter type (matches C# enum names).
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             ContractParameterType::Any => "Any",
@@ -69,6 +70,10 @@ impl ContractParameterType {
     }
 
     /// Parse from string (case-insensitive)
+    ///
+    /// # Errors
+    ///
+    /// Returns `String` error if the input string does not match any known parameter type.
     pub fn from_string(s: &str) -> Result<Self, String> {
         match s.to_lowercase().as_str() {
             "any" => Ok(ContractParameterType::Any),
@@ -89,6 +94,7 @@ impl ContractParameterType {
     }
 
     /// Try to convert from u8 value
+    #[must_use]
     pub fn try_from_u8(value: u8) -> Option<Self> {
         match value {
             0x00 => Some(ContractParameterType::Any),

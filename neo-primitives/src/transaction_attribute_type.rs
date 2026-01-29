@@ -1,9 +1,9 @@
-//! TransactionAttributeType - matches C# Neo.Network.P2P.Payloads.TransactionAttributeType exactly.
+//! `TransactionAttributeType` - matches C# Neo.Network.P2P.Payloads.TransactionAttributeType exactly.
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
 
-/// Represents the type of a TransactionAttribute.
+/// Represents the type of a `TransactionAttribute`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum TransactionAttributeType {
@@ -21,11 +21,13 @@ pub enum TransactionAttributeType {
 
 impl TransactionAttributeType {
     /// Converts to byte representation.
+    #[must_use]
     pub fn to_byte(self) -> u8 {
         self as u8
     }
 
     /// Creates from byte representation.
+    #[must_use]
     pub fn from_byte(value: u8) -> Option<Self> {
         match value {
             0x01 => Some(Self::HighPriority),
@@ -38,6 +40,7 @@ impl TransactionAttributeType {
     }
 
     /// Returns the string representation.
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::HighPriority => "HighPriority",
@@ -49,6 +52,7 @@ impl TransactionAttributeType {
     }
 
     /// Returns true if this attribute type allows multiple instances per transaction.
+    #[must_use]
     pub fn allows_multiple(self) -> bool {
         matches!(self, Self::Conflicts | Self::NotaryAssisted)
     }

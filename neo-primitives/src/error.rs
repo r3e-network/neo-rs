@@ -56,6 +56,7 @@ impl PrimitiveError {
     }
 
     /// Create a new buffer overflow error.
+    #[must_use]
     pub fn buffer_overflow(requested: usize, available: usize) -> Self {
         Self::BufferOverflow {
             requested,

@@ -15,12 +15,13 @@ pub enum InventoryType {
     /// Indicates that the inventory is a consensus payload.
     Consensus = 0x2d,
 
-    /// Indicates that the inventory is an ExtensiblePayload.
+    /// Indicates that the inventory is an `ExtensiblePayload`.
     Extensible = 0x2e,
 }
 
 impl InventoryType {
     /// Convert from byte value.
+    #[must_use]
     pub fn from_byte(value: u8) -> Option<Self> {
         match value {
             0x2b => Some(Self::Transaction),
@@ -32,11 +33,13 @@ impl InventoryType {
     }
 
     /// Convert to byte value.
+    #[must_use]
     pub fn to_byte(self) -> u8 {
         self as u8
     }
 
     /// Returns the string representation.
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Transaction => "TX",

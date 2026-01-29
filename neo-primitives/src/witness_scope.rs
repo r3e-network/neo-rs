@@ -1,4 +1,4 @@
-//! Implementation of WitnessScope, representing the scope of a witness.
+//! Implementation of `WitnessScope`, representing the scope of a witness.
 //!
 //! Matches C# `Neo.Network.P2P.Payloads.WitnessScope` exactly.
 
@@ -7,7 +7,7 @@ use std::fmt;
 use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not};
 use std::str::FromStr;
 
-/// Represents the scope of a witness (matches C# WitnessScope [Flags] enum exactly).
+/// Represents the scope of a witness (matches C# `WitnessScope` [Flags] enum exactly).
 ///
 /// This is a flags enum that defines the different scopes that can be applied to a witness,
 /// controlling which contracts and operations the witness can authorize.
@@ -49,6 +49,7 @@ impl WitnessScope {
     pub const WitnessRules: WitnessScope = WitnessScope::WITNESS_RULES;
 
     /// Checks if this scope has the specified flag.
+    #[must_use]
     pub fn has_flag(self, flag: WitnessScope) -> bool {
         if flag.0 == 0 {
             return self.0 == 0;
@@ -56,32 +57,38 @@ impl WitnessScope {
         (self.0 & flag.0) == flag.0
     }
 
-    /// Checks if this scope contains the specified flag (alias for has_flag).
+    /// Checks if this scope contains the specified flag (alias for `has_flag`).
+    #[must_use]
     pub fn contains(self, flag: WitnessScope) -> bool {
         self.has_flag(flag)
     }
 
     /// Combines this scope with another scope using bitwise OR.
+    #[must_use]
     pub fn combine(self, other: WitnessScope) -> Self {
         WitnessScope(self.0 | other.0)
     }
 
     /// Returns the raw bit representation of the scope.
+    #[must_use]
     pub fn bits(self) -> u8 {
         self.0
     }
 
     /// Creates a scope from a raw bit representation.
+    #[must_use]
     pub fn from_bits(bits: u8) -> Option<Self> {
         Self::from_byte(bits)
     }
 
     /// Returns true if the scope shares any flags with `other`.
+    #[must_use]
     pub fn intersects(self, other: WitnessScope) -> bool {
         self.0 & other.0 != 0
     }
 
-    /// Creates a WitnessScope from a byte value.
+    /// Creates a `WitnessScope` from a byte value.
+    #[must_use]
     pub fn from_byte(value: u8) -> Option<Self> {
         match value {
             0x00 => Some(WitnessScope::NONE),
@@ -105,12 +112,14 @@ impl WitnessScope {
         }
     }
 
-    /// Converts the WitnessScope to a byte value.
+    /// Converts the `WitnessScope` to a byte value.
+    #[must_use]
     pub fn to_byte(self) -> u8 {
         self.0
     }
 
     /// Validates that the scope combination is valid.
+    #[must_use]
     pub fn is_valid(self) -> bool {
         let value = self.0;
 
@@ -147,7 +156,7 @@ impl FromStr for WitnessScope {
         let mut has_parts = false;
         for part in trimmed
             .split(['|', ','])
-            .map(|p| p.trim())
+            .map(str::trim)
             .filter(|p| !p.is_empty())
         {
             has_parts = true;
@@ -254,7 +263,7 @@ impl Not for WitnessScope {
     }
 }
 
-/// Error type for invalid WitnessScope conversion.
+/// Error type for invalid `WitnessScope` conversion.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InvalidWitnessScopeError(pub u8);
 
@@ -273,7 +282,7 @@ impl std::error::Error for InvalidWitnessScopeError {}
 impl TryFrom<u8> for WitnessScope {
     type Error = InvalidWitnessScopeError;
 
-    /// Converts a byte to WitnessScope, returning an error for invalid values.
+    /// Converts a byte to `WitnessScope`, returning an error for invalid values.
     ///
     /// # Security Note
     /// This method properly rejects invalid scope bytes instead of silently
@@ -284,7 +293,7 @@ impl TryFrom<u8> for WitnessScope {
 }
 
 impl WitnessScope {
-    /// Converts a byte to WitnessScope, falling back to NONE for invalid values.
+    /// Converts a byte to `WitnessScope`, falling back to NONE for invalid values.
     ///
     /// # Security Warning
     /// This method silently converts invalid values to NONE, which could bypass
@@ -296,6 +305,7 @@ impl WitnessScope {
         since = "0.7.1",
         note = "Use TryFrom<u8> or from_byte() instead. This method silently converts invalid values to NONE, which is a security risk."
     )]
+    #[must_use]
     pub fn from_u8_lossy(value: u8) -> Self {
         Self::from_byte(value).unwrap_or_else(|| {
             tracing::warn!(

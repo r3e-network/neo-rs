@@ -30,6 +30,7 @@ pub enum Hardfork {
 
 impl Hardfork {
     /// Returns all known hardforks in declaration order.
+    #[must_use]
     pub const fn all() -> [Hardfork; 7] {
         [
             Hardfork::HfAspidochelone,
@@ -43,11 +44,13 @@ impl Hardfork {
     }
 
     /// Returns the number of known hardforks.
+    #[must_use]
     pub const fn count() -> usize {
         7
     }
 
     /// Returns the hardfork name as a string.
+    #[must_use]
     pub const fn name(&self) -> &'static str {
         match self {
             Hardfork::HfAspidochelone => "HF_Aspidochelone",
@@ -61,11 +64,13 @@ impl Hardfork {
     }
 
     /// Returns the hardfork index (0-based).
+    #[must_use]
     pub const fn index(&self) -> u8 {
         *self as u8
     }
 
     /// Creates a hardfork from its index.
+    #[must_use]
     pub const fn from_index(index: u8) -> Option<Self> {
         match index {
             0 => Some(Hardfork::HfAspidochelone),

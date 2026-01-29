@@ -2,7 +2,7 @@
 //!
 //! This module provides traits for transaction and block verification,
 //! breaking the circular dependency between neo-p2p and neo-core
-//! (Chain 2: Transaction → ApplicationEngine).
+//! (Chain 2: Transaction → `ApplicationEngine`).
 //!
 //! # Design
 //!
@@ -80,6 +80,7 @@ impl VerificationError {
     }
 
     /// Create a gas limit exceeded error.
+    #[must_use]
     pub fn gas_limit_exceeded(consumed: i64, max: i64) -> Self {
         Self::GasLimitExceeded { consumed, max }
     }
@@ -99,9 +100,10 @@ impl VerificationError {
     }
 
     /// Create a missing witness error.
+    #[must_use]
     pub fn missing_witness(hash: &UInt160) -> Self {
         Self::MissingWitness {
-            hash: format!("{:?}", hash),
+            hash: format!("{hash:?}"),
         }
     }
 }
@@ -124,7 +126,7 @@ pub trait IWitness: Send + Sync {
 /// Context for verifying transactions and blocks.
 ///
 /// This trait allows payloads (Transaction, Block) to verify themselves
-/// without depending on the concrete ApplicationEngine implementation.
+/// without depending on the concrete `ApplicationEngine` implementation.
 ///
 /// # Design Rationale
 ///
@@ -154,6 +156,11 @@ pub trait IVerificationContext: Send + Sync {
     /// - `Ok(true)` if verification succeeds
     /// - `Ok(false)` if signature is invalid
     /// - `Err(VerificationError)` if verification cannot complete
+    ///
+    /// # Errors
+    ///
+    /// Returns `VerificationError` if gas limit is exceeded, the script is invalid,
+    /// the signature is invalid, or the witness is missing.
     fn verify_witness(&self, hash: &UInt160, witness: &dyn IWitness) -> VerificationResult<bool>;
 
     /// Returns the total gas consumed during verification so far.

@@ -2,7 +2,7 @@
 //!
 //! This module provides traits for blockchain access and peer management,
 //! breaking the circular dependency between neo-p2p and neo-core
-//! (Chain 3: LocalNode → Blockchain ↔ PeerManagerService).
+//! (Chain 3: `LocalNode` → Blockchain ↔ `PeerManagerService`).
 //!
 //! # Design
 //!
@@ -84,9 +84,10 @@ impl RelayError {
     }
 
     /// Create an already exists error.
+    #[must_use]
     pub fn already_exists(hash: &UInt256) -> Self {
         Self::AlreadyExists {
-            hash: format!("{:?}", hash),
+            hash: format!("{hash:?}"),
         }
     }
 
@@ -98,11 +99,13 @@ impl RelayError {
     }
 
     /// Create a mempool full error.
+    #[must_use]
     pub fn mempool_full(current: usize, max: usize) -> Self {
         Self::MempoolFull { current, max }
     }
 
     /// Create an invalid height error.
+    #[must_use]
     pub fn invalid_height(expected: u32, got: u32) -> Self {
         Self::InvalidHeight { expected, got }
     }
@@ -142,16 +145,19 @@ pub enum SendError {
 
 impl SendError {
     /// Create a peer not found error.
+    #[must_use]
     pub fn peer_not_found(id: u64) -> Self {
         Self::PeerNotFound { id }
     }
 
     /// Create a disconnected error.
+    #[must_use]
     pub fn disconnected(id: u64) -> Self {
         Self::Disconnected { id }
     }
 
     /// Create a queue full error.
+    #[must_use]
     pub fn queue_full(id: u64) -> Self {
         Self::QueueFull { id }
     }
@@ -178,11 +184,13 @@ pub struct PeerId(pub u64);
 
 impl PeerId {
     /// Create a new peer ID.
+    #[must_use]
     pub fn new(id: u64) -> Self {
         Self(id)
     }
 
     /// Get the inner ID value.
+    #[must_use]
     pub fn inner(&self) -> u64 {
         self.0
     }
@@ -213,6 +221,7 @@ pub struct PeerInfo {
 
 impl PeerInfo {
     /// Create new peer info.
+    #[must_use]
     pub fn new(
         id: PeerId,
         address: String,
@@ -358,6 +367,11 @@ pub trait BlockchainProvider: Send + Sync + 'static {
     ///
     /// - `Ok(())` if the block was accepted
     /// - `Err(RelayError)` if the block was rejected
+    ///
+    /// # Errors
+    ///
+    /// Returns `RelayError` if the block validation fails, the block already exists,
+    /// or the block height is invalid.
     fn relay_block(&self, block: Self::Block) -> RelayResult<()>;
 
     /// Relays a transaction to the memory pool.
@@ -366,6 +380,10 @@ pub trait BlockchainProvider: Send + Sync + 'static {
     ///
     /// - `Ok(())` if the transaction was accepted
     /// - `Err(RelayError)` if the transaction was rejected
+    ///
+    /// # Errors
+    ///
+    /// Returns `RelayError` if the transaction is invalid or the mempool is full.
     fn relay_transaction(&self, tx: Self::Transaction) -> RelayResult<()>;
 
     /// Checks if a block exists in the blockchain.
@@ -396,6 +414,10 @@ pub trait PeerRegistry: Send + Sync + 'static {
     fn broadcast_except(&self, message: &dyn IMessage, except: &[PeerId]);
 
     /// Sends a message to a specific peer.
+    ///
+    /// # Errors
+    ///
+    /// Returns `SendError` if the peer is not found, disconnected, or the send queue is full.
     fn send_to(&self, peer_id: PeerId, message: &dyn IMessage) -> SendResult<()>;
 
     /// Gets information about all connected peers.

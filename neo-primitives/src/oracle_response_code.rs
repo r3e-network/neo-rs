@@ -1,4 +1,4 @@
-//! OracleResponseCode - matches C# Neo.Network.P2P.Payloads.OracleResponseCode exactly.
+//! `OracleResponseCode` - matches C# Neo.Network.P2P.Payloads.OracleResponseCode exactly.
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
@@ -31,11 +31,13 @@ pub enum OracleResponseCode {
 
 impl OracleResponseCode {
     /// Converts to byte representation.
+    #[must_use]
     pub fn to_byte(self) -> u8 {
         self as u8
     }
 
     /// Creates from byte representation.
+    #[must_use]
     pub fn from_byte(value: u8) -> Option<Self> {
         match value {
             0x00 => Some(Self::Success),
@@ -53,6 +55,7 @@ impl OracleResponseCode {
     }
 
     /// Returns the string representation.
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Success => "Success",
@@ -69,11 +72,13 @@ impl OracleResponseCode {
     }
 
     /// Returns true if this response code indicates success.
+    #[must_use]
     pub fn is_success(self) -> bool {
         matches!(self, Self::Success)
     }
 
     /// Returns true if this response code indicates an error.
+    #[must_use]
     pub fn is_error(self) -> bool {
         !self.is_success()
     }

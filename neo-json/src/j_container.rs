@@ -1,10 +1,10 @@
-//! JContainer - matches C# Neo.Json.JContainer exactly
+//! `JContainer` - matches C# Neo.Json.JContainer exactly
 
 use crate::j_array::JArray;
 use crate::j_object::JObject;
 use crate::j_token::JToken;
 
-/// Abstract container for JSON arrays and objects (matches C# JContainer)
+/// Abstract container for JSON arrays and objects (matches C# `JContainer`)
 pub trait JContainer {
     /// Gets child at index
     fn get_child_at(&self, index: usize) -> Option<&JToken>;

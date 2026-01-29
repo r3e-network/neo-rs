@@ -1,4 +1,4 @@
-//! JArray - Rust port of Neo.Json.JArray
+//! `JArray` - Rust port of Neo.Json.JArray
 
 use std::fmt;
 use std::iter::FromIterator;
@@ -14,36 +14,46 @@ pub struct JArray {
 
 impl JArray {
     /// Creates an empty array.
+    #[must_use]
     pub fn new() -> Self {
         Self { items: Vec::new() }
     }
 
     /// Creates an array from the provided items.
+    #[must_use]
     pub fn from_vec(items: Vec<Option<JToken>>) -> Self {
         Self { items }
     }
 
     /// Number of elements in the array.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.items.len()
     }
 
     /// Returns `true` when the array has no elements.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
 
     /// Alias for `len()` to preserve C# API naming.
+    #[must_use]
     pub fn count(&self) -> usize {
         self.len()
     }
 
     /// Returns the element at `index` without bounds checking.
+    #[must_use]
     pub fn get(&self, index: usize) -> Option<&JToken> {
         self.items.get(index).and_then(|value| value.as_ref())
     }
 
     /// Returns the element at `index` while enforcing bounds checking.
+    ///
+    /// # Errors
+    ///
+    /// Returns `JsonError::IndexOutOfRange` if the index is out of bounds.
     pub fn get_checked(&self, index: usize) -> Result<Option<&JToken>, JsonError> {
         if index >= self.items.len() {
             return Err(JsonError::IndexOutOfRange(index));
@@ -52,6 +62,10 @@ impl JArray {
     }
 
     /// Replaces the element at `index`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `JsonError::IndexOutOfRange` if the index is out of bounds.
     pub fn set(&mut self, index: usize, value: Option<JToken>) -> Result<(), JsonError> {
         if index >= self.items.len() {
             return Err(JsonError::IndexOutOfRange(index));
@@ -61,6 +75,7 @@ impl JArray {
     }
 
     /// Returns a slice of the underlying storage.
+    #[must_use]
     pub fn children(&self) -> &[Option<JToken>] {
         &self.items
     }
@@ -76,6 +91,10 @@ impl JArray {
     }
 
     /// Inserts a new element at the specified position.
+    ///
+    /// # Errors
+    ///
+    /// Returns `JsonError::IndexOutOfRange` if the index is out of bounds.
     pub fn insert(&mut self, index: usize, item: Option<JToken>) -> Result<(), JsonError> {
         if index > self.items.len() {
             return Err(JsonError::IndexOutOfRange(index));
@@ -95,6 +114,10 @@ impl JArray {
     }
 
     /// Removes the element at `index`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `JsonError::IndexOutOfRange` if the index is out of bounds.
     pub fn remove_at(&mut self, index: usize) -> Result<(), JsonError> {
         if index >= self.items.len() {
             return Err(JsonError::IndexOutOfRange(index));
@@ -109,11 +132,13 @@ impl JArray {
     }
 
     /// Returns `true` if the array contains `item`.
+    #[must_use]
     pub fn contains(&self, item: &Option<JToken>) -> bool {
         self.items.iter().any(|candidate| candidate == item)
     }
 
     /// Returns the index of `item` or `None` when not found.
+    #[must_use]
     pub fn index_of(&self, item: &Option<JToken>) -> Option<usize> {
         self.items.iter().position(|candidate| candidate == item)
     }
@@ -156,7 +181,7 @@ impl fmt::Display for JArray {
                 f.write_str(",")?;
             }
             match item {
-                Some(token) => write!(f, "{}", token)?,
+                Some(token) => write!(f, "{token}")?,
                 None => f.write_str("null")?,
             }
         }

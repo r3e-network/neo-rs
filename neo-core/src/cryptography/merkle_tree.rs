@@ -7,7 +7,7 @@ use neo_crypto::NeoHash;
 use neo_primitives::UInt256;
 
 /// A node in the Merkle tree.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct MerkleTreeNode {
     hash: UInt256,
     left: Option<Box<MerkleTreeNode>>,
@@ -29,6 +29,7 @@ impl MerkleTreeNode {
 }
 
 /// Merkle tree implementation used across the network layer.
+#[derive(Debug)]
 pub struct MerkleTree {
     root: Option<Box<MerkleTreeNode>>,
     depth: usize,

@@ -1,4 +1,4 @@
-//! Implementation of UInt160, a 160-bit unsigned integer.
+//! Implementation of `UInt160`, a 160-bit unsigned integer.
 
 use crate::constants::ADDRESS_SIZE;
 use crate::error::{PrimitiveError, PrimitiveResult};
@@ -10,7 +10,7 @@ use std::fmt;
 use std::str::FromStr;
 use tracing::error;
 
-/// The length of UInt160 values in bytes.
+/// The length of `UInt160` values in bytes.
 pub const UINT160_SIZE: usize = ADDRESS_SIZE;
 
 /// Represents a 160-bit unsigned integer.
@@ -18,15 +18,15 @@ pub const UINT160_SIZE: usize = ADDRESS_SIZE;
 /// This is implemented as a reference type to match the C# implementation.
 #[derive(Clone, Copy, Default, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct UInt160 {
-    /// First 8 bytes of the UInt160 (least significant).
+    /// First 8 bytes of the `UInt160` (least significant).
     pub value1: u64,
-    /// Next 8 bytes of the UInt160.
+    /// Next 8 bytes of the `UInt160`.
     pub value2: u64,
-    /// Last 4 bytes of the UInt160 (most significant).
+    /// Last 4 bytes of the `UInt160` (most significant).
     pub value3: u32,
 }
 
-/// Zero value for UInt160.
+/// Zero value for `UInt160`.
 pub static ZERO: UInt160 = UInt160 {
     value1: 0,
     value2: 0,
@@ -37,32 +37,37 @@ impl UInt160 {
     /// Alias matching C# `UInt160.Length`.
     pub const LENGTH: usize = UINT160_SIZE;
 
-    /// Creates a new UInt160 instance.
+    /// Creates a new `UInt160` instance.
     #[inline]
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Returns a zero UInt160.
+    /// Returns a zero `UInt160`.
     #[inline]
+    #[must_use]
     pub fn zero() -> Self {
         Self::default()
     }
 
-    /// Checks if this UInt160 is zero (matches C# IsZero property).
+    /// Checks if this `UInt160` is zero (matches C# `IsZero` property).
     #[inline]
+    #[must_use]
     pub fn is_zero(&self) -> bool {
         self.value1 == 0 && self.value2 == 0 && self.value3 == 0
     }
 
-    /// Returns the bytes representation of this UInt160.
+    /// Returns the bytes representation of this `UInt160`.
     #[inline]
+    #[must_use]
     pub fn as_bytes(&self) -> [u8; ADDRESS_SIZE] {
         self.to_array()
     }
 
     /// Returns the bytes as a Vec<u8>
     #[inline]
+    #[must_use]
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(ADDRESS_SIZE);
         bytes.extend_from_slice(&self.value1.to_le_bytes());
@@ -71,8 +76,9 @@ impl UInt160 {
         bytes
     }
 
-    /// Determines whether this instance and another specified UInt160 object have the same value.
+    /// Determines whether this instance and another specified `UInt160` object have the same value.
     #[inline]
+    #[must_use]
     pub fn equals(&self, other: Option<&Self>) -> bool {
         if let Some(other) = other {
             self.value1 == other.value1
@@ -83,7 +89,11 @@ impl UInt160 {
         }
     }
 
-    /// Creates a new UInt160 from a byte array.
+    /// Creates a new `UInt160` from a byte array.
+    ///
+    /// # Errors
+    ///
+    /// Returns `PrimitiveError::InvalidFormat` if the input length is not exactly 20 bytes.
     #[inline]
     pub fn from_bytes(value: &[u8]) -> PrimitiveResult<Self> {
         if value.len() != UINT160_SIZE {
@@ -109,7 +119,7 @@ impl UInt160 {
         Ok(result)
     }
 
-    /// Creates a new UInt160 from a byte span with proper error handling.
+    /// Creates a new `UInt160` from a byte span with proper error handling.
     ///
     /// # Errors
     /// Returns `PrimitiveError::InvalidFormat` if the input length is not exactly 20 bytes.
@@ -125,7 +135,7 @@ impl UInt160 {
         Self::from_bytes(value)
     }
 
-    /// Creates a new UInt160 from a byte span (returns zero on invalid input).
+    /// Creates a new `UInt160` from a byte span (returns zero on invalid input).
     ///
     /// # Deprecated
     /// This method silently returns zero on invalid input, which can mask errors
@@ -145,8 +155,9 @@ impl UInt160 {
         }
     }
 
-    /// Gets a byte array representation of the UInt160.
+    /// Gets a byte array representation of the `UInt160`.
     #[inline]
+    #[must_use]
     pub fn to_array(&self) -> [u8; UINT160_SIZE] {
         let mut result = [0u8; UINT160_SIZE];
 
@@ -163,11 +174,17 @@ impl UInt160 {
 
     /// Gets a span that represents the current value in little-endian.
     #[inline]
+    #[must_use]
     pub fn get_span(&self) -> [u8; UINT160_SIZE] {
         self.to_array()
     }
 
-    /// Parses a UInt160 from a hexadecimal string.
+    /// Parses a `UInt160` from a hexadecimal string.
+    ///
+    /// # Errors
+    ///
+    /// Returns `PrimitiveError::InvalidFormat` if the input string is not a valid
+    /// 40-character hexadecimal string.
     #[inline]
     pub fn parse(s: &str) -> PrimitiveResult<Self> {
         let mut result = None;
@@ -185,7 +202,7 @@ impl UInt160 {
         }
     }
 
-    /// Tries to parse a UInt160 from a hexadecimal string.
+    /// Tries to parse a `UInt160` from a hexadecimal string.
     pub fn try_parse(s: &str, result: &mut Option<Self>) -> bool {
         let s = s
             .strip_prefix("0x")
@@ -215,20 +232,24 @@ impl UInt160 {
         }
     }
 
-    /// Converts the UInt160 to a hexadecimal string.
+    /// Converts the `UInt160` to a hexadecimal string.
     #[inline]
+    #[must_use]
     pub fn to_hex_string(&self) -> String {
         let mut bytes = self.to_array();
         bytes.reverse();
         format!("0x{}", hex::encode(bytes))
     }
 
-    /// Gets a hash code for the current UInt160 instance.
+    /// Gets a hash code for the current `UInt160` instance.
     ///
     /// # Implementation Note
-    /// This method properly combines all 160 bits by XORing the high and low
+    /// This method properly combines all 160 bits by `XORing` the high and low
     /// 32-bit parts of each u64 field before combining. This prevents hash
     /// collisions that would occur from simple truncation.
+    #[allow(clippy::cast_possible_truncation)]
+    #[allow(clippy::cast_possible_wrap)]
+    #[must_use]
     pub fn get_hash_code(&self) -> i32 {
         // XOR high and low 32-bit parts of each u64 to preserve all bits
         let v1_hash = (self.value1 as i32) ^ ((self.value1 >> 32) as i32);
@@ -243,7 +264,8 @@ impl UInt160 {
         hash
     }
 
-    /// Creates a UInt160 from a script by computing its hash.
+    /// Creates a `UInt160` from a script by computing its hash.
+    #[must_use]
     pub fn from_script(script: &[u8]) -> Self {
         let mut sha256_hasher = Sha256::new();
         sha256_hasher.update(script);
@@ -256,7 +278,8 @@ impl UInt160 {
         Self::from_bytes(&hash160).unwrap_or_default()
     }
 
-    /// Converts this UInt160 to a Neo address string.
+    /// Converts this `UInt160` to a Neo address string.
+    #[must_use]
     pub fn to_address(&self) -> String {
         let version_byte = crate::constants::ADDRESS_VERSION;
         let mut data = Vec::with_capacity(21);
@@ -277,7 +300,12 @@ impl UInt160 {
         bs58::encode(data).into_string()
     }
 
-    /// Parses a Neo address string to a UInt160.
+    /// Parses a Neo address string to a `UInt160`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `PrimitiveError::InvalidFormat` if the address is not valid Base58,
+    /// has an incorrect length, has an invalid version byte, or has an invalid checksum.
     pub fn from_address(address: &str) -> PrimitiveResult<Self> {
         let decoded =
             bs58::decode(address)
@@ -404,7 +432,7 @@ impl AsRef<[u8; UINT160_SIZE]> for UInt160 {
         // 1. UInt160 is #[derive(Copy, Clone)] and has no padding between fields
         // 2. We're only reading the bytes, not modifying them
         // 3. The layout is well-defined as three little-endian fields
-        unsafe { &*((self as *const Self) as *const [u8; UINT160_SIZE]) }
+        unsafe { &*(self as *const Self).cast::<[u8; UINT160_SIZE]>() }
     }
 }
 

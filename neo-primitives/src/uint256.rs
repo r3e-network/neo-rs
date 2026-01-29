@@ -1,4 +1,4 @@
-//! Implementation of UInt256, a 256-bit unsigned integer.
+//! Implementation of `UInt256`, a 256-bit unsigned integer.
 
 use crate::constants::HASH_SIZE;
 use crate::error::{PrimitiveError, PrimitiveResult};
@@ -8,7 +8,7 @@ use std::fmt;
 use std::str::FromStr;
 use tracing::error;
 
-/// The length of UInt256 values in bytes.
+/// The length of `UInt256` values in bytes.
 pub const UINT256_SIZE: usize = HASH_SIZE;
 
 /// Represents a 256-bit unsigned integer.
@@ -16,17 +16,17 @@ pub const UINT256_SIZE: usize = HASH_SIZE;
 /// This is implemented as a reference type to match the C# implementation.
 #[derive(Clone, Copy, Default, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct UInt256 {
-    /// First 8 bytes of the UInt256 (least significant).
+    /// First 8 bytes of the `UInt256` (least significant).
     pub value1: u64,
-    /// Next 8 bytes of the UInt256.
+    /// Next 8 bytes of the `UInt256`.
     pub value2: u64,
-    /// Next 8 bytes of the UInt256.
+    /// Next 8 bytes of the `UInt256`.
     pub value3: u64,
-    /// Last 8 bytes of the UInt256 (most significant).
+    /// Last 8 bytes of the `UInt256` (most significant).
     pub value4: u64,
 }
 
-/// Zero value for UInt256.
+/// Zero value for `UInt256`.
 pub static ZERO: UInt256 = UInt256 {
     value1: 0,
     value2: 0,
@@ -38,32 +38,37 @@ impl UInt256 {
     /// Alias matching C# `UInt256.Length`.
     pub const LENGTH: usize = UINT256_SIZE;
 
-    /// Creates a new UInt256 instance.
+    /// Creates a new `UInt256` instance.
     #[inline]
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Returns a zero UInt256.
+    /// Returns a zero `UInt256`.
     #[inline]
+    #[must_use]
     pub fn zero() -> Self {
         Self::default()
     }
 
-    /// Checks if this UInt256 is zero.
+    /// Checks if this `UInt256` is zero.
     #[inline]
+    #[must_use]
     pub fn is_zero(&self) -> bool {
         self.value1 == 0 && self.value2 == 0 && self.value3 == 0 && self.value4 == 0
     }
 
-    /// Returns the bytes representation of this UInt256.
+    /// Returns the bytes representation of this `UInt256`.
     #[inline]
+    #[must_use]
     pub fn as_bytes(&self) -> [u8; HASH_SIZE] {
         self.to_array()
     }
 
     /// Returns the bytes as a Vec<u8>
     #[inline]
+    #[must_use]
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(HASH_SIZE);
         bytes.extend_from_slice(&self.value1.to_le_bytes());
@@ -73,8 +78,9 @@ impl UInt256 {
         bytes
     }
 
-    /// Determines whether this instance and another specified UInt256 object have the same value.
+    /// Determines whether this instance and another specified `UInt256` object have the same value.
     #[inline]
+    #[must_use]
     pub fn equals(&self, other: Option<&Self>) -> bool {
         if let Some(other) = other {
             self.value1 == other.value1
@@ -86,7 +92,11 @@ impl UInt256 {
         }
     }
 
-    /// Creates a new UInt256 from a byte array.
+    /// Creates a new `UInt256` from a byte array.
+    ///
+    /// # Errors
+    ///
+    /// Returns `PrimitiveError::InvalidFormat` if the input length is not exactly 32 bytes.
     #[inline]
     pub fn from_bytes(value: &[u8]) -> PrimitiveResult<Self> {
         if value.len() != UINT256_SIZE {
@@ -115,7 +125,7 @@ impl UInt256 {
         Ok(result)
     }
 
-    /// Creates a new UInt256 from a byte span with proper error handling.
+    /// Creates a new `UInt256` from a byte span with proper error handling.
     ///
     /// # Errors
     /// Returns `PrimitiveError::InvalidFormat` if the input length is not exactly 32 bytes.
@@ -131,7 +141,7 @@ impl UInt256 {
         Self::from_bytes(value)
     }
 
-    /// Creates a new UInt256 from a byte span (returns zero on invalid input).
+    /// Creates a new `UInt256` from a byte span (returns zero on invalid input).
     ///
     /// # Deprecated
     /// This method silently returns zero on invalid input, which can mask errors
@@ -151,8 +161,9 @@ impl UInt256 {
         }
     }
 
-    /// Gets a byte array representation of the UInt256.
+    /// Gets a byte array representation of the `UInt256`.
     #[inline]
+    #[must_use]
     pub fn to_array(&self) -> [u8; UINT256_SIZE] {
         let mut result = [0u8; UINT256_SIZE];
 
@@ -171,11 +182,17 @@ impl UInt256 {
 
     /// Gets a span that represents the current value in little-endian.
     #[inline]
+    #[must_use]
     pub fn get_span(&self) -> [u8; UINT256_SIZE] {
         self.to_array()
     }
 
-    /// Parses a UInt256 from a hexadecimal string.
+    /// Parses a `UInt256` from a hexadecimal string.
+    ///
+    /// # Errors
+    ///
+    /// Returns `PrimitiveError::InvalidFormat` if the input string is not a valid
+    /// 64-character hexadecimal string.
     #[inline]
     pub fn parse(s: &str) -> PrimitiveResult<Self> {
         let mut result = None;
@@ -193,7 +210,7 @@ impl UInt256 {
         }
     }
 
-    /// Tries to parse a UInt256 from a hexadecimal string.
+    /// Tries to parse a `UInt256` from a hexadecimal string.
     pub fn try_parse(s: &str, result: &mut Option<Self>) -> bool {
         let s = s
             .strip_prefix("0x")
@@ -237,19 +254,22 @@ impl UInt256 {
         }
     }
 
-    /// Converts the UInt256 to a hexadecimal string.
+    /// Converts the `UInt256` to a hexadecimal string.
+    #[must_use]
     pub fn to_hex_string(&self) -> String {
         let mut bytes = self.to_array();
         bytes.reverse();
         format!("0x{}", hex::encode(bytes))
     }
 
-    /// Gets a hash code for the current UInt256 instance.
+    /// Gets a hash code for the current `UInt256` instance.
     ///
     /// # Implementation Note
-    /// This method properly combines all 256 bits by XORing the high and low
+    /// This method properly combines all 256 bits by `XORing` the high and low
     /// 32-bit parts of each u64 field. This prevents hash collisions that would
     /// occur from only using the lowest 32 bits of value1.
+    #[allow(clippy::cast_possible_truncation)]
+    #[must_use]
     pub fn get_hash_code(&self) -> i32 {
         // XOR high and low 32-bit parts of each u64 to preserve all bits
         let v1_hash = (self.value1 as i32) ^ ((self.value1 >> 32) as i32);
@@ -340,7 +360,7 @@ impl AsRef<[u8; UINT256_SIZE]> for UInt256 {
         // 1. UInt256 is #[derive(Copy, Clone)] and has no padding between fields
         // 2. We're only reading the bytes, not modifying them
         // 3. The layout is well-defined as four little-endian fields
-        unsafe { &*((self as *const Self) as *const [u8; UINT256_SIZE]) }
+        unsafe { &*(self as *const Self).cast::<[u8; UINT256_SIZE]>() }
     }
 }
 

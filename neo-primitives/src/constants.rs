@@ -44,7 +44,7 @@ pub const MAX_COSIGNERS: usize = 16;
 /// Maximum size of a script in bytes (1 MB).
 pub const MAX_SCRIPT_SIZE: usize = 1_048_576;
 
-/// Maximum size of a script in bytes (alias for MAX_SCRIPT_SIZE).
+/// Maximum size of a script in bytes (alias for `MAX_SCRIPT_SIZE`).
 pub const MAX_SCRIPT_LENGTH: usize = MAX_SCRIPT_SIZE;
 
 // === Time Constants ===
@@ -122,7 +122,7 @@ pub const WRITE_BUFFER_SIZE_MB: usize = 64;
 /// Maximum number of open files for database.
 pub const MAX_OPEN_FILES: i32 = 1000;
 
-/// Whether to enable compression for RocksDB.
+/// Whether to enable compression for `RocksDB`.
 pub const ROCKSDB_COMPRESSION_ENABLED: bool = true;
 
 /// Maximum size of a storage key in bytes.
@@ -169,22 +169,22 @@ pub const MAX_RETRY_ATTEMPTS: u32 = 3;
 
 // === Network Magic Numbers ===
 
-/// Magic number for TestNet network identification.
-pub const TESTNET_MAGIC: u32 = 0x3554334E;
+/// Magic number for `TestNet` network identification.
+pub const TESTNET_MAGIC: u32 = 0x3554_334E;
 
-/// Default RPC port for TestNet.
+/// Default RPC port for `TestNet`.
 pub const TESTNET_RPC_PORT: u16 = 20332;
 
-/// Default P2P port for TestNet.
+/// Default P2P port for `TestNet`.
 pub const TESTNET_P2P_PORT: u16 = 20333;
 
-/// Magic number for MainNet network identification (matches C# config.mainnet.json).
-pub const MAINNET_MAGIC: u32 = 0x334F454E;
+/// Magic number for `MainNet` network identification (matches C# config.mainnet.json).
+pub const MAINNET_MAGIC: u32 = 0x334F_454E;
 
-/// Default RPC port for MainNet.
+/// Default RPC port for `MainNet`.
 pub const MAINNET_RPC_PORT: u16 = 10332;
 
-/// Default P2P port for MainNet.
+/// Default P2P port for `MainNet`.
 pub const MAINNET_P2P_PORT: u16 = 10333;
 
 /// Default RPC port for private networks.
@@ -228,8 +228,8 @@ mod tests {
 
     #[test]
     fn test_network_magic() {
-        assert_eq!(TESTNET_MAGIC, 0x3554334E);
-        assert_eq!(MAINNET_MAGIC, 0x334F454E);
+        assert_eq!(TESTNET_MAGIC, 0x3554_334E);
+        assert_eq!(MAINNET_MAGIC, 0x334F_454E);
     }
 
     #[test]

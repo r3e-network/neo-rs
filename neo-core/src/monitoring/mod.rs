@@ -16,7 +16,7 @@ use tokio::sync::RwLock;
 use tokio::time::sleep;
 
 /// Errors produced by the monitoring subsystem.
-#[derive(Error)]
+#[derive(Error, Debug)]
 pub enum MonitoringError {
     #[error("Unsupported export format: {0}")]
     UnsupportedFormat(String),
@@ -24,12 +24,6 @@ pub enum MonitoringError {
     MetricNotFound(String),
     #[error("Exporter error: {0}")]
     Exporter(String),
-}
-
-impl std::fmt::Debug for MonitoringError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self)
-    }
 }
 
 pub type MonitoringResult<T> = Result<T, MonitoringError>;
