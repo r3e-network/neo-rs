@@ -176,6 +176,7 @@ impl WriteBatchConfig {
 }
 
 /// Buffered write batch for RocksDB.
+#[cfg(feature = "rocksdb")]
 pub struct WriteBatchBuffer {
     config: WriteBatchConfig,
     stats: Arc<WriteBatchStats>,
@@ -187,6 +188,7 @@ pub struct WriteBatchBuffer {
     last_flush_time_ms: AtomicU64,
 }
 
+#[cfg(feature = "rocksdb")]
 impl WriteBatchBuffer {
     /// Creates a new write batch buffer.
     pub fn new(db: Arc<DB>, config: WriteBatchConfig) -> Self {
@@ -411,10 +413,12 @@ impl WriteBatchBuffer {
 }
 
 /// Auto-flushing write batch buffer with background timer.
+#[cfg(feature = "rocksdb")]
 pub struct AutoFlushBatchBuffer {
     inner: Arc<WriteBatchBuffer>,
 }
 
+#[cfg(feature = "rocksdb")]
 impl AutoFlushBatchBuffer {
     /// Creates a new auto-flushing batch buffer.
     pub fn new(db: Arc<DB>, config: WriteBatchConfig) -> Self {
@@ -466,7 +470,7 @@ impl AutoFlushBatchBuffer {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "rocksdb"))]
 mod tests {
     use super::*;
     use tempfile::TempDir;

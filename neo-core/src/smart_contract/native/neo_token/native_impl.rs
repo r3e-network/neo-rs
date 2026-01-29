@@ -3,6 +3,7 @@
 //
 
 use super::*;
+use crate::smart_contract::native::security_fixes::{SafeArithmetic, StateValidator};
 
 /// NeoAccountState helper methods
 impl NeoAccountState {
@@ -309,8 +310,13 @@ impl NativeContract for NeoToken {
         let gas_per_block =
             self.get_gas_per_block_internal(snapshot.as_ref(), current_index.saturating_add(1));
 
-        let committee_reward =
-            &gas_per_block * BigInt::from(Self::COMMITTEE_REWARD_RATIO) / BigInt::from(100i64);
+        // Use safe arithmetic for committee reward calculation
+        let committee_reward = SafeArithmetic::safe_mul(
+            &gas_per_block,
+            &BigInt::from(Self::COMMITTEE_REWARD_RATIO)
+        )?;
+        let committee_reward = SafeArithmetic::safe_div(&committee_reward, &BigInt::from(100i64))?;
+        
         if !committee_reward.is_zero() {
             let pubkey = &committee[reward_index].0;
             let account = Contract::create_signature_contract(pubkey.clone()).script_hash();
@@ -320,21 +326,34 @@ impl NativeContract for NeoToken {
         if Self::should_refresh_committee(block.index(), committee_count) {
             let m = committee_count as i64;
             let n = validators_count as i64;
-            let voter_reward_each = &gas_per_block
-                * BigInt::from(Self::VOTER_REWARD_RATIO)
-                * BigInt::from(Self::DATOSHI_FACTOR)
-                * BigInt::from(m)
-                / BigInt::from(m + n)
-                / BigInt::from(100i64);
+            
+            // Use safe arithmetic for reward calculation
+            let mut voter_reward_each = SafeArithmetic::safe_mul(
+                &gas_per_block,
+                &BigInt::from(Self::VOTER_REWARD_RATIO)
+            )?;
+            voter_reward_each = SafeArithmetic::safe_mul(&voter_reward_each, &BigInt::from(Self::DATOSHI_FACTOR))?;
+            voter_reward_each = SafeArithmetic::safe_mul(&voter_reward_each, &BigInt::from(m))?;
+            voter_reward_each = SafeArithmetic::safe_div(&voter_reward_each, &BigInt::from(m + n))?;
+            voter_reward_each = SafeArithmetic::safe_div(&voter_reward_each, &BigInt::from(100i64))?;
 
             let context = engine.get_native_storage_context(&self.hash())?;
 
             for (idx, (pubkey, votes)) in committee.iter().enumerate() {
+                // Validate votes
                 if votes.is_zero() || votes.is_negative() {
                     continue;
                 }
+                
                 let factor = if idx < validators_count { 2i64 } else { 1i64 };
-                let voter_sum_reward_per_neo = BigInt::from(factor) * &voter_reward_each / votes;
+                
+                // Use safe arithmetic
+                let mut voter_sum_reward_per_neo = SafeArithmetic::safe_mul(
+                    &BigInt::from(factor),
+                    &voter_reward_each
+                )?;
+                voter_sum_reward_per_neo = SafeArithmetic::safe_div(&voter_sum_reward_per_neo, votes)?;
+                
                 let reward_key = StorageKey::create_with_bytes(
                     Self::ID,
                     Self::PREFIX_VOTER_REWARD_PER_COMMITTEE,
@@ -345,7 +364,13 @@ impl NativeContract for NeoToken {
                     .try_get(&reward_key)
                     .map(|item| item.to_bigint())
                     .unwrap_or_else(BigInt::zero);
-                let updated = current_reward + voter_sum_reward_per_neo;
+                
+                // Use safe arithmetic
+                let updated = SafeArithmetic::safe_add(&current_reward, &voter_sum_reward_per_neo)?;
+                
+                // Validate the reward amount
+                StateValidator::validate_account_state(&updated, 0, u32::MAX)?;
+                
                 engine.put_storage_item(
                     &context,
                     reward_key.suffix(),

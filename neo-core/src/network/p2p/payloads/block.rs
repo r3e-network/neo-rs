@@ -13,8 +13,13 @@ use super::{
     header::Header, i_inventory::IInventory, transaction::Transaction, witness::Witness,
     InventoryType,
 };
+use crate::constants::{MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK};
 use crate::ledger::{HeaderCache, TransactionVerificationContext, VerifyResult};
 use crate::neo_io::serializable::helper::get_var_size;
+use crate::validation::{
+    validate_block_size, validate_timestamp_bounds, validate_transaction_count,
+    validate_witness_scripts,
+};
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::persistence::{DataCache, StoreCache};
 use crate::protocol_settings::ProtocolSettings;
@@ -110,35 +115,93 @@ impl Block {
         }
     }
 
-    /// Verifies the block using persisted state.
+    /// Verifies the block using persisted state with comprehensive security checks.
     ///
     /// Performs the following validations (matches C# Block.Verify):
-    /// 1. Header validation (timestamp, consensus, witness, etc.)
-    /// 2. Merkle root validation - ensures transactions haven't been tampered
-    /// 3. Transaction uniqueness - no duplicate transaction hashes
-    /// 4. Per-transaction validation (structural + state-dependent) against ledger snapshot
+    /// 1. Block size validation (max 4 MB)
+    /// 2. Transaction count validation (max 65535)
+    /// 3. Timestamp bounds validation (within 15 minutes of current time)
+    /// 4. Header validation (timestamp, consensus, witness, etc.)
+    /// 5. Witness script validation
+    /// 6. Merkle root validation - ensures transactions haven't been tampered
+    /// 7. Transaction uniqueness - no duplicate transaction hashes
+    /// 8. Per-transaction validation (structural + state-dependent) against ledger snapshot
     ///
     /// # Security Note
-    /// This method now includes per-transaction validation to prevent blocks with
-    /// invalid transactions from being accepted. Previously, only header/merkle/duplicate
-    /// checks were performed, allowing malformed transactions to pass verification.
+    /// This method includes comprehensive validation to prevent blocks with
+    /// invalid transactions, oversized data, or malicious timestamps from being accepted.
     pub fn verify(&self, settings: &ProtocolSettings, store_cache: &StoreCache) -> bool {
-        // Step 1: Verify header first
+        // Step 1: Validate block size
+        if validate_block_size(self).is_err() {
+            tracing::warn!(
+                target: "neo::block",
+                block_index = self.header.index(),
+                block_size = self.size(),
+                max_size = MAX_BLOCK_SIZE,
+                "Block size validation failed"
+            );
+            return false;
+        }
+
+        // Step 2: Validate transaction count
+        if validate_transaction_count(self).is_err() {
+            tracing::warn!(
+                target: "neo::block",
+                block_index = self.header.index(),
+                tx_count = self.transactions.len(),
+                max_count = MAX_TRANSACTIONS_PER_BLOCK,
+                "Transaction count validation failed"
+            );
+            return false;
+        }
+
+        // Step 3: Validate timestamp bounds
+        if validate_timestamp_bounds(self.timestamp()).is_err() {
+            tracing::warn!(
+                target: "neo::block",
+                block_index = self.header.index(),
+                timestamp = self.timestamp(),
+                "Timestamp bounds validation failed"
+            );
+            return false;
+        }
+
+        // Step 4: Verify header first
         if !self.header.verify(settings, store_cache) {
             return false;
         }
 
-        // Step 2: Verify Merkle Root matches transactions
+        // Step 5: Validate witness scripts
+        if validate_witness_scripts(&self.header).is_err() {
+            tracing::warn!(
+                target: "neo::block",
+                block_index = self.header.index(),
+                "Witness script validation failed"
+            );
+            return false;
+        }
+
+        // Step 6: Verify Merkle Root matches transactions
         if !self.verify_merkle_root() {
+            tracing::warn!(
+                target: "neo::block",
+                block_index = self.header.index(),
+                "Merkle root validation failed"
+            );
             return false;
         }
 
-        // Step 3: Verify no duplicate transactions
+        // Step 7: Verify no duplicate transactions
         if !self.verify_no_duplicate_transactions() {
+            tracing::warn!(
+                target: "neo::block",
+                block_index = self.header.index(),
+                "Duplicate transaction check failed"
+            );
             return false;
         }
 
-        // Step 4: SECURITY FIX - Fully verify each transaction using persisted state
+        // Step 8: SECURITY FIX - Fully verify each transaction using persisted state
         if !self.verify_transactions(settings, store_cache) {
             return false;
         }
@@ -215,7 +278,42 @@ impl Block {
         store_cache: &StoreCache,
         header_cache: &HeaderCache,
     ) -> bool {
-        // Step 1: Verify header with cache
+        // Step 1: Validate block size
+        if validate_block_size(self).is_err() {
+            tracing::warn!(
+                target: "neo::block",
+                block_index = self.header.index(),
+                block_size = self.size(),
+                max_size = MAX_BLOCK_SIZE,
+                "Block size validation failed (cached)"
+            );
+            return false;
+        }
+
+        // Step 2: Validate transaction count
+        if validate_transaction_count(self).is_err() {
+            tracing::warn!(
+                target: "neo::block",
+                block_index = self.header.index(),
+                tx_count = self.transactions.len(),
+                max_count = MAX_TRANSACTIONS_PER_BLOCK,
+                "Transaction count validation failed (cached)"
+            );
+            return false;
+        }
+
+        // Step 3: Validate timestamp bounds
+        if validate_timestamp_bounds(self.timestamp()).is_err() {
+            tracing::warn!(
+                target: "neo::block",
+                block_index = self.header.index(),
+                timestamp = self.timestamp(),
+                "Timestamp bounds validation failed (cached)"
+            );
+            return false;
+        }
+
+        // Step 4: Verify header with cache
         if !self
             .header
             .verify_with_cache(settings, store_cache, header_cache)
@@ -223,22 +321,52 @@ impl Block {
             return false;
         }
 
-        // Step 2: Verify Merkle Root matches transactions
+        // Step 5: Validate witness scripts
+        if validate_witness_scripts(&self.header).is_err() {
+            tracing::warn!(
+                target: "neo::block",
+                block_index = self.header.index(),
+                "Witness script validation failed (cached)"
+            );
+            return false;
+        }
+
+        // Step 6: Verify Merkle Root matches transactions
         if !self.verify_merkle_root() {
+            tracing::warn!(
+                target: "neo::block",
+                block_index = self.header.index(),
+                "Merkle root validation failed (cached)"
+            );
             return false;
         }
 
-        // Step 3: Verify no duplicate transactions
+        // Step 7: Verify no duplicate transactions
         if !self.verify_no_duplicate_transactions() {
+            tracing::warn!(
+                target: "neo::block",
+                block_index = self.header.index(),
+                "Duplicate transaction check failed (cached)"
+            );
             return false;
         }
 
-        // Step 4: SECURITY FIX - Fully verify each transaction using persisted state
+        // Step 8: SECURITY FIX - Fully verify each transaction using persisted state
         if !self.verify_transactions(settings, store_cache) {
             return false;
         }
 
         true
+    }
+}
+
+impl crate::validation::BlockLike for Block {
+    fn size(&self) -> usize {
+        <Self as Serializable>::size(self)
+    }
+
+    fn transaction_count(&self) -> usize {
+        self.transactions.len()
     }
 }
 
@@ -339,23 +467,26 @@ impl Serializable for Block {
     }
 
     fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
-        use crate::constants::MAX_BLOCK_SIZE;
-
         let header = <Header as Serializable>::deserialize(reader)?;
         let header_size = header.size();
 
         // Read transaction count
-        const MAX_TRANSACTIONS: u64 = u16::MAX as u64;
-        let tx_count = reader.read_var_int(MAX_TRANSACTIONS)? as usize;
-        if tx_count as u64 > MAX_TRANSACTIONS {
-            return Err(IoError::invalid_data("Too many transactions"));
+        let tx_count = reader.read_var_int(MAX_TRANSACTIONS_PER_BLOCK as u64)? as usize;
+        if tx_count > MAX_TRANSACTIONS_PER_BLOCK {
+            return Err(IoError::invalid_data(format!(
+                "Too many transactions: {} exceeds maximum {}",
+                tx_count, MAX_TRANSACTIONS_PER_BLOCK
+            )));
         }
 
         // Track cumulative size to prevent DoS attacks
-        // MAX_BLOCK_SIZE is 2MB (2,097,152 bytes)
+        // MAX_BLOCK_SIZE is 4MB (4,194,304 bytes)
         let mut cumulative_size = header_size + get_var_size(tx_count as u64);
         if cumulative_size > MAX_BLOCK_SIZE {
-            return Err(IoError::invalid_data("Block size exceeds maximum"));
+            return Err(IoError::invalid_data(format!(
+                "Block size {} exceeds maximum {}",
+                cumulative_size, MAX_BLOCK_SIZE
+            )));
         }
 
         let mut transactions = Vec::with_capacity(tx_count.min(512)); // Cap initial capacity
@@ -365,7 +496,10 @@ impl Serializable for Block {
 
             // Check cumulative size before accepting transaction
             if cumulative_size > MAX_BLOCK_SIZE {
-                return Err(IoError::invalid_data("Block size exceeds maximum"));
+                return Err(IoError::invalid_data(format!(
+                    "Block size {} exceeds maximum {}",
+                    cumulative_size, MAX_BLOCK_SIZE
+                )));
             }
 
             transactions.push(tx);

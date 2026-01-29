@@ -45,12 +45,12 @@ pub mod named_curve_hash;
 // Re-exports
 pub use bloom_filter::BloomFilter;
 pub use crypto_utils::{
-    Base58, Bls12381Crypto, ECDsa, Ed25519Crypto, Hex, NeoHash, Secp256k1Crypto, Secp256r1Crypto,
-    ECC,
+    Base58, Bls12381Crypto, ConstantTime, ECDsa, Ed25519Crypto, Hex, NeoHash, Secp256k1Crypto,
+    Secp256r1Crypto, ECC,
 };
 pub use ecc::{ECCurve, ECPoint};
 pub use error::{CryptoError, CryptoResult};
-pub use hash::{Crypto, HashAlgorithm};
+pub use hash::{ct_hash_eq, ct_hash_slice_eq, Crypto, HashAlgorithm};
 pub use mpt_trie::{
     Cache, MptCache, MptError, MptResult, MptStoreSnapshot, Node, NodeType, Trie, TrieEntry,
 };

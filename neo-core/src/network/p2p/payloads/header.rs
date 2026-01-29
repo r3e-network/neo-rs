@@ -12,6 +12,10 @@
 use super::witness::Witness;
 use crate::error::CoreResult;
 use crate::ledger::HeaderCache;
+use crate::validation::{
+    validate_primary_index, validate_timestamp_bounds, validate_timestamp_progression,
+    validate_witness_scripts,
+};
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::persistence::{DataCache, StoreCache};
 use crate::protocol_settings::ProtocolSettings;
@@ -195,6 +199,7 @@ impl Header {
         prev_hash: &UInt256,
         prev_timestamp: u64,
     ) -> Result<(), &'static str> {
+        // Validate primary index is within valid range
         if self.primary_index as i32 >= settings.validators_count {
             return Err("primary index exceeds validators count");
         }
@@ -211,7 +216,16 @@ impl Header {
             return Err("previous hash mismatch");
         }
 
-        if prev_timestamp >= self.timestamp {
+        // Validate timestamp progression using validation module
+        if let Err(e) = validate_timestamp_progression(self.timestamp, prev_timestamp) {
+            tracing::debug!(
+                target: "neo::header",
+                index = self.index,
+                timestamp = self.timestamp,
+                prev_timestamp = prev_timestamp,
+                error = %e,
+                "Timestamp progression validation failed"
+            );
             return Err("non-increasing timestamp");
         }
 
@@ -435,7 +449,51 @@ impl Header {
 
 impl Header {
     /// Verifies the header using the provided store cache.
+    ///
+    /// Performs comprehensive validation including:
+    /// - Timestamp bounds (within 15 minutes of current time)
+    /// - Primary index validation
+    /// - Witness script validation
+    /// - Chain continuity checks
+    /// - Witness verification against consensus
     pub fn verify(&self, settings: &ProtocolSettings, store_cache: &StoreCache) -> bool {
+        // Step 1: Validate timestamp bounds
+        if let Err(e) = validate_timestamp_bounds(self.timestamp) {
+            debug!(
+                target: "neo",
+                index = self.index,
+                timestamp = self.timestamp,
+                error = %e,
+                "Header timestamp bounds validation failed"
+            );
+            return false;
+        }
+
+        // Step 2: Validate primary index
+        if let Err(e) = validate_primary_index(self.primary_index, settings.validators_count) {
+            debug!(
+                target: "neo",
+                index = self.index,
+                primary_index = self.primary_index,
+                validators_count = settings.validators_count,
+                error = %e,
+                "Header primary index validation failed"
+            );
+            return false;
+        }
+
+        // Step 3: Validate witness scripts
+        if let Err(e) = validate_witness_scripts(self) {
+            debug!(
+                target: "neo",
+                index = self.index,
+                error = %e,
+                "Header witness script validation failed"
+            );
+            return false;
+        }
+
+        // Step 4: Get previous block for chain validation
         let ledger = LedgerContract::new();
         let prev_trimmed = match ledger.get_trimmed_block(store_cache, &self.prev_hash) {
             Ok(Some(block)) => block,
@@ -466,6 +524,7 @@ impl Header {
         let prev_timestamp = prev_header.timestamp;
         let script_hash = prev_header.next_consensus;
 
+        // Step 5: Validate against previous block
         if let Err(reason) =
             self.validate_against_previous(settings, prev_index, &prev_hash, prev_timestamp)
         {
@@ -480,6 +539,7 @@ impl Header {
             return false;
         }
 
+        // Step 6: Verify witness against consensus script hash
         let snapshot = store_cache.data_cache();
         let verified = self.verify_witness_against_hash(
             settings,
@@ -504,12 +564,51 @@ impl Header {
     }
 
     /// Verifies the header using persisted state and cached headers.
+    ///
+    /// Performs the same validations as `verify` but uses the header cache for efficiency.
     pub fn verify_with_cache(
         &self,
         settings: &ProtocolSettings,
         store_cache: &StoreCache,
         header_cache: &HeaderCache,
     ) -> bool {
+        // Step 1: Validate timestamp bounds
+        if let Err(e) = validate_timestamp_bounds(self.timestamp) {
+            debug!(
+                target: "neo",
+                index = self.index,
+                timestamp = self.timestamp,
+                error = %e,
+                "Header timestamp bounds validation failed (cached)"
+            );
+            return false;
+        }
+
+        // Step 2: Validate primary index
+        if let Err(e) = validate_primary_index(self.primary_index, settings.validators_count) {
+            debug!(
+                target: "neo",
+                index = self.index,
+                primary_index = self.primary_index,
+                validators_count = settings.validators_count,
+                error = %e,
+                "Header primary index validation failed (cached)"
+            );
+            return false;
+        }
+
+        // Step 3: Validate witness scripts
+        if let Err(e) = validate_witness_scripts(self) {
+            debug!(
+                target: "neo",
+                index = self.index,
+                error = %e,
+                "Header witness script validation failed (cached)"
+            );
+            return false;
+        }
+
+        // Step 4: Use cache for previous header if available
         if let Some(mut prev_header) = header_cache.last() {
             let prev_hash = prev_header.hash();
             let prev_index = prev_header.index();
@@ -579,6 +678,7 @@ impl Header {
             return verified;
         }
 
+        // Fall back to full verification if cache is empty
         self.verify(settings, store_cache)
     }
 }
@@ -765,10 +865,12 @@ mod tests {
 
     #[test]
     fn verify_with_cache_succeeds_for_sequential_header() {
+        use crate::validation::MIN_TIMESTAMP_MS;
+
         let mut prev_header = Header::new();
         prev_header.set_version(0);
         prev_header.set_index(0);
-        prev_header.set_timestamp(1_000);
+        prev_header.set_timestamp(MIN_TIMESTAMP_MS + 1_000);
         prev_header.set_primary_index(0);
 
         let deterministic_witness =
@@ -787,7 +889,7 @@ mod tests {
         header.set_version(0);
         header.set_prev_hash(prev_hash);
         header.set_index(1);
-        header.set_timestamp(2_000);
+        header.set_timestamp(MIN_TIMESTAMP_MS + 2_000);
         header.set_primary_index(0);
         header.witness = deterministic_witness;
 
@@ -800,10 +902,12 @@ mod tests {
 
     #[test]
     fn verify_with_cache_rejects_when_timestamp_not_increasing() {
+        use crate::validation::MIN_TIMESTAMP_MS;
+
         let mut prev_header = Header::new();
         prev_header.set_version(0);
         prev_header.set_index(10);
-        prev_header.set_timestamp(5_000);
+        prev_header.set_timestamp(MIN_TIMESTAMP_MS + 5_000);
         prev_header.set_primary_index(0);
 
         let prev_witness = sample_witness();
@@ -821,7 +925,7 @@ mod tests {
         header.set_version(0);
         header.set_prev_hash(prev_hash);
         header.set_index(11);
-        header.set_timestamp(5_000); // not strictly greater
+        header.set_timestamp(MIN_TIMESTAMP_MS + 5_000); // not strictly greater
         header.set_primary_index(0);
         header.witness = sample_witness();
 
@@ -834,10 +938,12 @@ mod tests {
 
     #[test]
     fn verify_uses_persisted_state_when_cache_empty() {
+        use crate::validation::MIN_TIMESTAMP_MS;
+
         let mut prev_header = Header::new();
         prev_header.set_version(0);
         prev_header.set_index(20);
-        prev_header.set_timestamp(7_500);
+        prev_header.set_timestamp(MIN_TIMESTAMP_MS + 7_500);
         prev_header.set_primary_index(0);
 
         let prev_witness = sample_witness();
@@ -852,7 +958,7 @@ mod tests {
         header.set_version(0);
         header.set_prev_hash(prev_hash);
         header.set_index(21);
-        header.set_timestamp(8_000);
+        header.set_timestamp(MIN_TIMESTAMP_MS + 8_000);
         header.set_primary_index(0);
         header.witness = sample_witness();
 

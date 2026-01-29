@@ -9,12 +9,12 @@
 pub const ADDRESS_SIZE: usize = 20;
 pub const ADDRESS_VERSION: u8 = 0x35;
 pub const HASH_SIZE: usize = 32;
-pub const MAX_BLOCK_SIZE: usize = 2_097_152; // 2 MB
+pub const MAX_BLOCK_SIZE: usize = 4_194_304; // 4 MB
 pub const MAX_SCRIPT_LENGTH: usize = 1_048_576; // 1 MB
 pub const MAX_SCRIPT_SIZE: usize = MAX_SCRIPT_LENGTH;
 pub const MAX_TRACEABLE_BLOCKS: u32 = 2_102_400; // 2_102_400 blocks (per ProtocolSettings.Default)
-/// Maximum transactions allowed per block
-pub const MAX_TRANSACTIONS_PER_BLOCK: usize = 512;
+/// Maximum transactions allowed per block (matches Neo N3 protocol limit)
+pub const MAX_TRANSACTIONS_PER_BLOCK: usize = 65_535; // u16::MAX
 /// Maximum number of transactions retained in the mempool (ProtocolSettings.Default)
 pub const MEMORY_POOL_MAX_TRANSACTIONS: usize = 50_000;
 pub const MAX_TRANSACTION_SIZE: usize = 102_400; // 100 KB
@@ -138,7 +138,7 @@ mod tests {
     }
     #[test]
     fn test_size_constants() {
-        assert_eq!(MAX_BLOCK_SIZE, 2_097_152); // 2MB as defined in neo-config
+        assert_eq!(MAX_BLOCK_SIZE, 4_194_304); // 4MB as defined in neo-config
         assert_eq!(MAX_TRANSACTION_SIZE, 102_400); // 100KB as defined in neo-config
     }
 }

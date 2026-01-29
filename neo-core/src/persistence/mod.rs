@@ -66,4 +66,6 @@ pub use store_factory::StoreFactory;
 pub use track_state::TrackState;
 pub use transaction::StoreTransaction;
 pub use read_cache::{ReadCache, ReadCacheConfig, ReadCacheStats, ReadCacheStatsSnapshot, StorageReadCache, PrefetchHint};
-pub use write_batch_buffer::{WriteBatchBuffer, WriteBatchConfig, WriteBatchStats, WriteBatchStatsSnapshot, AutoFlushBatchBuffer};
+pub use write_batch_buffer::{WriteBatchConfig, WriteBatchStats, WriteBatchStatsSnapshot};
+#[cfg(feature = "rocksdb")]
+pub use write_batch_buffer::{WriteBatchBuffer, AutoFlushBatchBuffer};

@@ -3,6 +3,7 @@
 //
 
 use super::*;
+use crate::smart_contract::native::security_fixes::{PermissionValidator, ReentrancyGuardType, SafeArithmetic, SecurityContext, StateValidator};
 
 /// NEP-17 and governance method implementations
 impl NeoToken {
@@ -63,6 +64,9 @@ impl NeoToken {
         engine: &mut ApplicationEngine,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
+        // Enter reentrancy guard
+        let _guard = SecurityContext::enter_guard(ReentrancyGuardType::NeoTransfer)?;
+
         if args.len() != 4 {
             return Err(CoreError::native_contract(
                 "transfer expects from, to, amount, data arguments".to_string(),
@@ -79,11 +83,8 @@ impl NeoToken {
             StackItem::from_byte_string(data_bytes)
         };
 
-        if amount.is_negative() {
-            return Err(CoreError::native_contract(
-                "Amount cannot be negative".to_string(),
-            ));
-        }
+        // Validate amount is non-negative
+        PermissionValidator::validate_non_negative(&amount, "Transfer amount")?;
 
         let caller = engine.calling_script_hash();
         if from != caller && !engine.check_witness_hash(&from)? {
@@ -100,6 +101,13 @@ impl NeoToken {
 
         if amount.is_zero() {
             if let Some(mut state_from) = from_state_opt {
+                // Validate state before modification
+                StateValidator::validate_account_state(
+                    &state_from.balance,
+                    state_from.balance_height,
+                    engine.current_block_index()
+                )?;
+                
                 if let Some(reward) = self.on_balance_changing(
                     engine,
                     &from,
@@ -117,9 +125,17 @@ impl NeoToken {
                 None => return Ok(vec![0]),
             };
 
+            // Validate balance is sufficient
             if state_from.balance < amount {
                 return Ok(vec![0]);
             }
+
+            // Validate state before modification
+            StateValidator::validate_account_state(
+                &state_from.balance,
+                state_from.balance_height,
+                engine.current_block_index()
+            )?;
 
             if from == to {
                 if let Some(reward) = self.on_balance_changing(
@@ -140,7 +156,8 @@ impl NeoToken {
                     gas_distributions.push((from, reward));
                 }
 
-                state_from.balance -= &amount;
+                // Use safe arithmetic
+                state_from.balance = SafeArithmetic::safe_sub(&state_from.balance, &amount)?;
                 if state_from.balance.is_zero() {
                     self.delete_account_state(&context, engine, &from)?;
                 } else {
@@ -150,13 +167,30 @@ impl NeoToken {
                 let mut state_to = self
                     .get_account_state(snapshot_ref, &to)?
                     .unwrap_or_default();
+                
+                // Validate state before modification
+                StateValidator::validate_account_state(
+                    &state_to.balance,
+                    state_to.balance_height,
+                    engine.current_block_index()
+                )?;
+                
                 if let Some(reward) =
                     self.on_balance_changing(engine, &to, &mut state_to, &amount, &context)?
                 {
                     gas_distributions.push((to, reward));
                 }
-                state_to.balance += &amount;
+                
+                // Use safe arithmetic
+                state_to.balance = SafeArithmetic::safe_add(&state_to.balance, &amount)?;
                 self.write_account_state(&context, engine, &to, &state_to)?;
+                
+                // Validate final state
+                StateValidator::validate_account_state(
+                    &state_to.balance,
+                    state_to.balance_height,
+                    engine.current_block_index()
+                )?;
             }
         }
 

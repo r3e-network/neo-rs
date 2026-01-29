@@ -8,6 +8,7 @@ pub mod contract_management;
 pub mod crypto_lib;
 pub mod fungible_token;
 pub mod gas_token;
+pub mod security_fixes;
 // Removed governance_types - not in C# structure
 pub mod hash_index_state;
 pub mod helpers;
@@ -34,6 +35,7 @@ pub use crypto_lib::CryptoLib;
 pub use fungible_token::{DefaultTokenAccountState, FungibleToken, TokenAccountState};
 pub use gas_token::GasToken;
 pub use helpers::NativeHelpers;
+pub use security_fixes::{Guard, PermissionValidator, ReentrancyGuardType, SafeArithmetic, SecurityContext, StateValidator};
 pub use i_hardfork_activable::IHardforkActivable;
 pub use ledger_contract::{LedgerContract, LedgerTransactionStates};
 pub use native_contract::{is_active_for, NativeContract, NativeContractsCache, NativeMethod};

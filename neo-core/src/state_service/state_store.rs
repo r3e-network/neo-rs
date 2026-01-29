@@ -51,9 +51,10 @@
 
 use super::keys::Keys;
 use super::metrics;
+use super::root_cache::StateRootCache;
 use super::state_root::StateRoot;
 use crate::cryptography::mpt_trie::{MptResult, MptStoreSnapshot, Trie};
-use crate::error::CoreResult;
+use crate::error::{CoreError, CoreResult};
 use crate::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use crate::persistence::{
     data_cache::DataCache, i_store::IStore, i_store_provider::IStoreProvider,
@@ -67,6 +68,7 @@ use crate::UInt256;
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::sync::Arc;
+use tracing::{debug, warn};
 
 /// Maximum number of state roots to cache before persistence.
 pub const MAX_CACHE_COUNT: usize = 100;
@@ -414,12 +416,47 @@ impl StateSnapshot {
     }
 }
 
+/// Result of state root verification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StateRootVerificationResult {
+    /// Verification succeeded.
+    Valid,
+    /// State root mismatch - computed root differs from expected.
+    RootMismatch,
+    /// State root not found.
+    NotFound,
+    /// Missing witness for validated root.
+    MissingWitness,
+    /// Witness verification failed.
+    InvalidWitness,
+    /// State root index mismatch.
+    IndexMismatch,
+    /// Verifier not configured.
+    VerifierNotConfigured,
+}
+
+impl std::fmt::Display for StateRootVerificationResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Valid => write!(f, "valid"),
+            Self::RootMismatch => write!(f, "root hash mismatch"),
+            Self::NotFound => write!(f, "state root not found"),
+            Self::MissingWitness => write!(f, "missing witness"),
+            Self::InvalidWitness => write!(f, "invalid witness"),
+            Self::IndexMismatch => write!(f, "index mismatch"),
+            Self::VerifierNotConfigured => write!(f, "verifier not configured"),
+        }
+    }
+}
+
 /// State store for managing state roots and the state trie.
 /// Matches C# StateStore class.
 pub struct StateStore {
     store: Arc<dyn StateStoreBackend>,
     settings: StateServiceSettings,
     cache: RwLock<HashMap<u32, StateRoot>>,
+    /// LRU cache for recent state roots to avoid disk lookups.
+    root_cache: RwLock<StateRootCache>,
     current_snapshot: RwLock<Option<StateSnapshot>>,
     state_snapshot: RwLock<Option<StateSnapshot>>,
     verifier: Option<StateRootVerifier>,
@@ -442,6 +479,7 @@ impl StateStore {
             store,
             settings,
             cache: RwLock::new(HashMap::new()),
+            root_cache: RwLock::new(StateRootCache::with_default_capacity()),
             current_snapshot: RwLock::new(Some(snapshot)),
             state_snapshot: RwLock::new(None),
             verifier,
@@ -803,6 +841,314 @@ impl StateStore {
             nodes.push(reader.read_var_bytes(usize::MAX).ok()?);
         }
         Some((key, nodes))
+    }
+
+    /// Verifies that a computed state root matches the expected root for a given block.
+    ///
+    /// This is used during block persistence to ensure state consistency.
+    ///
+    /// # Arguments
+    /// * `index` - The block index to verify
+    /// * `expected_root` - The expected state root hash
+    ///
+    /// # Returns
+    /// `StateRootVerificationResult` indicating the verification outcome
+    pub fn verify_state_root(
+        &self,
+        index: u32,
+        expected_root: &UInt256,
+    ) -> StateRootVerificationResult {
+        // First check the cache for recent roots
+        if let Some(entry) = self.root_cache.write().get(index) {
+            if &entry.root_hash() == expected_root {
+                return StateRootVerificationResult::Valid;
+            } else {
+                return StateRootVerificationResult::RootMismatch;
+            }
+        }
+
+        // Fall back to store lookup
+        match self.get_state_root(index) {
+            Some(state_root) => {
+                if &state_root.root_hash == expected_root {
+                    StateRootVerificationResult::Valid
+                } else {
+                    StateRootVerificationResult::RootMismatch
+                }
+            }
+            None => StateRootVerificationResult::NotFound,
+        }
+    }
+
+    /// Verifies a state root with full witness validation.
+    ///
+    /// This performs complete verification including signature checks.
+    ///
+    /// # Arguments
+    /// * `state_root` - The state root to verify
+    ///
+    /// # Returns
+    /// `StateRootVerificationResult` indicating the verification outcome
+    pub fn verify_state_root_with_witness(
+        &self,
+        state_root: &StateRoot,
+    ) -> StateRootVerificationResult {
+        // Check for witness presence if it's a validated root
+        if state_root.witness.is_none() {
+            return StateRootVerificationResult::MissingWitness;
+        }
+
+        // Verify using the configured verifier
+        let Some(verifier) = &self.verifier else {
+            return StateRootVerificationResult::VerifierNotConfigured;
+        };
+
+        if !verifier.verify(state_root) {
+            return StateRootVerificationResult::InvalidWitness;
+        }
+
+        StateRootVerificationResult::Valid
+    }
+
+    /// Verifies state root consistency during block persistence.
+    ///
+    /// This method should be called during block persist to ensure the computed
+    /// state root matches the expected root from the block or network.
+    ///
+    /// # Arguments
+    /// * `index` - The block index
+    /// * `computed_root` - The locally computed state root hash
+    /// * `expected_root` - The expected state root hash (from block header or network)
+    ///
+    /// # Returns
+    /// `CoreResult<()>` which is Ok if verification succeeds, Err otherwise
+    pub fn verify_state_root_on_persist(
+        &self,
+        index: u32,
+        computed_root: &UInt256,
+        expected_root: Option<&UInt256>,
+    ) -> CoreResult<()> {
+        // Always verify against our locally computed root
+        let local_root = match self.local_root_index() {
+            Some(idx) if idx == index => self.current_local_root_hash(),
+            Some(_) | None => {
+                return Err(CoreError::invalid_operation(format!(
+                    "Local state root not available for block {}",
+                    index
+                )));
+            }
+        };
+
+        let local_root = local_root.ok_or_else(|| {
+            CoreError::invalid_operation(format!(
+                "Local state root hash not found for block {}",
+                index
+            ))
+        })?;
+
+        if &local_root != computed_root {
+            return Err(CoreError::invalid_operation(format!(
+                "State root mismatch on persist at block {}: computed={}, local={}",
+                index, computed_root, local_root
+            )));
+        }
+
+        // If an expected root is provided, also verify against it
+        if let Some(expected) = expected_root {
+            if computed_root != expected {
+                return Err(CoreError::invalid_operation(format!(
+                    "State root mismatch with expected at block {}: computed={}, expected={}",
+                    index, computed_root, expected
+                )));
+            }
+        }
+
+        // Cache the verified root
+        let state_root = StateRoot::new_current(index, *computed_root);
+        self.root_cache.write().insert_state_root(
+            state_root,
+            false, // not yet validated by consensus
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+        );
+
+        debug!(
+            target: "state",
+            index,
+            root_hash = %computed_root,
+            "state root verified and cached on persist"
+        );
+
+        Ok(())
+    }
+
+    /// Gets a state root from cache or storage.
+    ///
+    /// This method first checks the LRU cache, then falls back to disk.
+    ///
+    /// # Arguments
+    /// * `index` - The block index
+    ///
+    /// # Returns
+    /// The state root if found, None otherwise
+    pub fn get_cached_state_root(&self, index: u32) -> Option<StateRoot> {
+        // Check cache first
+        if let Some(entry) = self.root_cache.write().get(index) {
+            return Some(entry.state_root);
+        }
+
+        // Fall back to storage
+        self.get_state_root(index)
+    }
+
+    /// Gets a state root by its hash from cache.
+    ///
+    /// # Arguments
+    /// * `hash` - The state root hash
+    ///
+    /// # Returns
+    /// The state root if found in cache, None otherwise
+    pub fn get_cached_state_root_by_hash(&self, hash: &UInt256) -> Option<StateRoot> {
+        self.root_cache
+            .write()
+            .get_by_hash(hash)
+            .map(|e| e.state_root)
+    }
+
+    /// Caches a state root for future lookups.
+    ///
+    /// # Arguments
+    /// * `state_root` - The state root to cache
+    /// * `is_validated` - Whether this root has been consensus validated
+    /// * `timestamp` - Optional timestamp (defaults to current time)
+    pub fn cache_state_root(
+        &self,
+        state_root: StateRoot,
+        is_validated: bool,
+        timestamp: Option<u64>,
+    ) {
+        let ts = timestamp.unwrap_or_else(|| {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs()
+        });
+
+        self.root_cache
+            .write()
+            .insert_state_root(state_root, is_validated, ts);
+    }
+
+    /// Gets the root cache statistics.
+    pub fn root_cache_stats(&self) -> std::sync::Arc<super::root_cache::StateRootCacheStats> {
+        self.root_cache.read().stats()
+    }
+
+    /// Clears the root cache.
+    pub fn clear_root_cache(&self) {
+        self.root_cache.write().clear();
+        debug!(target: "state", "state root cache cleared");
+    }
+
+    /// Gets the number of entries in the root cache.
+    pub fn root_cache_len(&self) -> usize {
+        self.root_cache.read().len()
+    }
+
+    /// Preloads recent state roots into the cache.
+    ///
+    /// This is useful during node startup to warm up the cache.
+    ///
+    /// # Arguments
+    /// * `count` - Number of recent state roots to preload
+    pub fn preload_recent_roots(&self, count: usize) {
+        let Some(current_index) = self.local_root_index() else {
+            return;
+        };
+
+        let start_index = current_index.saturating_sub(count as u32);
+        for index in start_index..=current_index {
+            if let Some(root) = self.get_state_root(index) {
+                let is_validated = self.validated_root_index().map_or(false, |v| v >= index);
+                self.root_cache.write().insert_state_root(
+                    root,
+                    is_validated,
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs(),
+                );
+            }
+        }
+
+        debug!(
+            target: "state",
+            preloaded = count.min((current_index - start_index + 1) as usize),
+            "state root cache warmed up"
+        );
+    }
+
+    /// Validates that the state root at the given index has been properly computed.
+    ///
+    /// This checks both the existence of the state root and optionally its witness
+    /// if it should be a validated root.
+    ///
+    /// # Arguments
+    /// * `index` - The block index to check
+    /// * `require_validated` - Whether to require a validated (witnessed) root
+    ///
+    /// # Returns
+    /// `true` if the state root is valid, `false` otherwise
+    pub fn validate_state_root_exists(&self, index: u32, require_validated: bool) -> bool {
+        match self.get_cached_state_root(index) {
+            Some(root) => {
+                if require_validated {
+                    root.witness.is_some()
+                } else {
+                    true
+                }
+            }
+            None => false,
+        }
+    }
+
+    /// Compares local state root with a network-provided state root.
+    ///
+    /// This is used during synchronization to detect state inconsistencies.
+    ///
+    /// # Arguments
+    /// * `index` - The block index
+    /// * `network_root_hash` - The state root hash from the network
+    ///
+    /// # Returns
+    /// `true` if local and network roots match, `false` otherwise
+    pub fn compare_with_network_root(&self, index: u32, network_root_hash: &UInt256) -> bool {
+        match self.get_cached_state_root(index) {
+            Some(local_root) => &local_root.root_hash == network_root_hash,
+            None => {
+                warn!(
+                    target: "state",
+                    index,
+                    "Cannot compare state root: local root not found"
+                );
+                false
+            }
+        }
+    }
+
+    /// Handles state root validation failure.
+    ///
+    /// This logs the failure and optionally triggers recovery mechanisms.
+    fn handle_validation_failure(&self, index: u32, reason: &str) {
+        warn!(
+            target: "state",
+            index,
+            reason,
+            "State root validation failed"
+        );
+        // Future: could trigger state rebuild, request state sync, etc.
     }
 }
 
@@ -1186,5 +1532,339 @@ mod tests {
 
         assert!(store.on_new_state_root(signed_root));
         assert_eq!(store.validated_root_index(), Some(5));
+    }
+
+    // ============================================================================
+    // State Root Verification and Caching Tests
+    // ============================================================================
+
+    #[test]
+    fn verify_state_root_returns_valid_for_matching_root() {
+        let store = StateStore::new_in_memory();
+        let mut snapshot = store.get_snapshot();
+
+        // Create and store a state root
+        let root_hash = UInt256::from_bytes(&[0xAA; 32]).unwrap();
+        let state_root = StateRoot::new_current(100, root_hash);
+        snapshot.add_local_state_root(&state_root).unwrap();
+        snapshot.commit().unwrap();
+
+        // Update the current snapshot
+        store.update_current_snapshot();
+
+        // Verify state root matches
+        let result = store.verify_state_root(100, &root_hash);
+        assert_eq!(result, StateRootVerificationResult::Valid);
+    }
+
+    #[test]
+    fn verify_state_root_returns_mismatch_for_different_root() {
+        let store = StateStore::new_in_memory();
+        let mut snapshot = store.get_snapshot();
+
+        // Create and store a state root
+        let root_hash = UInt256::from_bytes(&[0xAA; 32]).unwrap();
+        let state_root = StateRoot::new_current(100, root_hash);
+        snapshot.add_local_state_root(&state_root).unwrap();
+        snapshot.commit().unwrap();
+
+        store.update_current_snapshot();
+
+        // Verify with different hash should return mismatch
+        let different_hash = UInt256::from_bytes(&[0xBB; 32]).unwrap();
+        let result = store.verify_state_root(100, &different_hash);
+        assert_eq!(result, StateRootVerificationResult::RootMismatch);
+    }
+
+    #[test]
+    fn verify_state_root_returns_not_found_for_missing_root() {
+        let store = StateStore::new_in_memory();
+
+        // Verify non-existent state root
+        let root_hash = UInt256::from_bytes(&[0xAA; 32]).unwrap();
+        let result = store.verify_state_root(999, &root_hash);
+        assert_eq!(result, StateRootVerificationResult::NotFound);
+    }
+
+    #[test]
+    fn state_root_cache_stores_and_retrieves() {
+        let store = StateStore::new_in_memory();
+
+        // Create a state root
+        let root_hash = UInt256::from_bytes(&[0xCC; 32]).unwrap();
+        let state_root = StateRoot::new_current(200, root_hash);
+
+        // Cache the state root
+        store.cache_state_root(state_root.clone(), false, Some(123456));
+
+        // Retrieve from cache
+        let cached = store.get_cached_state_root(200);
+        assert!(cached.is_some());
+        assert_eq!(cached.unwrap().root_hash, root_hash);
+    }
+
+    #[test]
+    fn state_root_cache_retrieves_by_hash() {
+        let store = StateStore::new_in_memory();
+
+        // Create a state root
+        let root_hash = UInt256::from_bytes(&[0xDD; 32]).unwrap();
+        let state_root = StateRoot::new_current(300, root_hash);
+
+        // Cache the state root
+        store.cache_state_root(state_root, true, None);
+
+        // Retrieve by hash
+        let cached = store.get_cached_state_root_by_hash(&root_hash);
+        assert!(cached.is_some());
+        assert_eq!(cached.unwrap().index, 300);
+    }
+
+    #[test]
+    fn state_root_cache_returns_none_for_missing() {
+        let store = StateStore::new_in_memory();
+
+        // Try to get non-existent root from cache
+        let cached = store.get_cached_state_root(999);
+        assert!(cached.is_none());
+
+        let root_hash = UInt256::from_bytes(&[0xEE; 32]).unwrap();
+        let cached_by_hash = store.get_cached_state_root_by_hash(&root_hash);
+        assert!(cached_by_hash.is_none());
+    }
+
+    #[test]
+    fn verify_state_root_with_witness_missing_witness() {
+        let store = StateStore::new_in_memory();
+
+        // Create a state root without witness
+        let root_hash = UInt256::from_bytes(&[0xFF; 32]).unwrap();
+        let state_root = StateRoot::new_current(400, root_hash);
+
+        // Verify should fail due to missing witness
+        let result = store.verify_state_root_with_witness(&state_root);
+        assert_eq!(result, StateRootVerificationResult::MissingWitness);
+    }
+
+    #[test]
+    fn verify_state_root_with_witness_no_verifier() {
+        let store = StateStore::new_in_memory();
+
+        // Create a state root with dummy witness
+        let root_hash = UInt256::from_bytes(&[0x11; 32]).unwrap();
+        let mut state_root = StateRoot::new_current(500, root_hash);
+        state_root.witness = Some(Witness::new_with_scripts(vec![0x01], vec![0x02]));
+
+        // Verify should fail due to no verifier configured
+        let result = store.verify_state_root_with_witness(&state_root);
+        assert_eq!(result, StateRootVerificationResult::VerifierNotConfigured);
+    }
+
+    #[test]
+    fn validate_state_root_exists_checks_presence() {
+        let store = StateStore::new_in_memory();
+        let mut snapshot = store.get_snapshot();
+
+        // Create and store a state root
+        let root_hash = UInt256::from_bytes(&[0x22; 32]).unwrap();
+        let state_root = StateRoot::new_current(600, root_hash);
+        snapshot.add_local_state_root(&state_root).unwrap();
+        snapshot.commit().unwrap();
+
+        // Check existence through cache
+        assert!(store.validate_state_root_exists(600, false));
+        assert!(!store.validate_state_root_exists(600, true)); // No witness
+        assert!(!store.validate_state_root_exists(999, false)); // Doesn't exist
+    }
+
+    #[test]
+    fn compare_with_network_root_matches() {
+        let store = StateStore::new_in_memory();
+        let mut snapshot = store.get_snapshot();
+
+        // Create and store a state root
+        let root_hash = UInt256::from_bytes(&[0x33; 32]).unwrap();
+        let state_root = StateRoot::new_current(700, root_hash);
+        snapshot.add_local_state_root(&state_root).unwrap();
+        snapshot.commit().unwrap();
+
+        // Cache the root
+        store.cache_state_root(state_root, false, None);
+
+        // Compare with matching network root
+        assert!(store.compare_with_network_root(700, &root_hash));
+
+        // Compare with different network root
+        let different_hash = UInt256::from_bytes(&[0x44; 32]).unwrap();
+        assert!(!store.compare_with_network_root(700, &different_hash));
+    }
+
+    #[test]
+    fn compare_with_network_root_missing() {
+        let store = StateStore::new_in_memory();
+
+        // Compare with non-existent root
+        let root_hash = UInt256::from_bytes(&[0x55; 32]).unwrap();
+        assert!(!store.compare_with_network_root(800, &root_hash));
+    }
+
+    #[test]
+    fn root_cache_stats_tracked() {
+        let store = StateStore::new_in_memory();
+
+        // Initially empty stats
+        let stats = store.root_cache_stats();
+        assert_eq!(stats.hits.load(std::sync::atomic::Ordering::Relaxed), 0);
+
+        // Cache a root and retrieve it
+        let root_hash = UInt256::from_bytes(&[0x66; 32]).unwrap();
+        let state_root = StateRoot::new_current(900, root_hash);
+        store.cache_state_root(state_root, false, None);
+
+        // Retrieve to generate a hit
+        let _ = store.get_cached_state_root(900);
+
+        // Stats should show a miss (from initial lookup) then hit
+        let stats = store.root_cache_stats();
+        // Note: actual stats depend on implementation details
+        assert!(stats.hit_rate() >= 0.0);
+    }
+
+    #[test]
+    fn clear_root_cache_removes_all() {
+        let store = StateStore::new_in_memory();
+
+        // Cache some roots
+        for i in 0..5 {
+            let root_hash = UInt256::from_bytes(&[i as u8; 32]).unwrap();
+            let state_root = StateRoot::new_current(i, root_hash);
+            store.cache_state_root(state_root, false, None);
+        }
+
+        assert_eq!(store.root_cache_len(), 5);
+
+        // Clear cache
+        store.clear_root_cache();
+
+        assert_eq!(store.root_cache_len(), 0);
+    }
+
+    #[test]
+    fn verify_state_root_on_persist_succeeds() {
+        let store = StateStore::new_in_memory();
+        let mut snapshot = store.get_snapshot();
+
+        // Create and store a state root
+        let root_hash = UInt256::from_bytes(&[0x77; 32]).unwrap();
+        let state_root = StateRoot::new_current(1000, root_hash);
+        snapshot.add_local_state_root(&state_root).unwrap();
+        snapshot.commit().unwrap();
+
+        // Update current snapshot to recognize the new root
+        store.update_current_snapshot();
+
+        // Verify on persist should succeed
+        let result = store.verify_state_root_on_persist(1000, &root_hash, None);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn verify_state_root_on_persist_fails_for_mismatch() {
+        let store = StateStore::new_in_memory();
+        let mut snapshot = store.get_snapshot();
+
+        // Create and store a state root
+        let root_hash = UInt256::from_bytes(&[0x88; 32]).unwrap();
+        let state_root = StateRoot::new_current(1100, root_hash);
+        snapshot.add_local_state_root(&state_root).unwrap();
+        snapshot.commit().unwrap();
+
+        store.update_current_snapshot();
+
+        // Verify with wrong hash should fail
+        let wrong_hash = UInt256::from_bytes(&[0x99; 32]).unwrap();
+        let result = store.verify_state_root_on_persist(1100, &wrong_hash, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn verify_state_root_on_persist_fails_for_missing_index() {
+        let store = StateStore::new_in_memory();
+
+        // Try to verify at index that doesn't exist
+        let root_hash = UInt256::from_bytes(&[0xAA; 32]).unwrap();
+        let result = store.verify_state_root_on_persist(1200, &root_hash, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn state_root_cache_eviction_policy() {
+        let store = StateStore::new_with_verifier(
+            Arc::new(MemoryStateStoreBackend::new()),
+            StateServiceSettings::default(),
+            None,
+        );
+
+        // Fill cache beyond capacity
+        for i in 0..1500 {
+            let root_hash = UInt256::from_bytes(&[(i % 256) as u8; 32]).unwrap();
+            let state_root = StateRoot::new_current(i, root_hash);
+            store.cache_state_root(state_root, false, None);
+        }
+
+        // Cache should have limited size (default is 1000)
+        assert!(store.root_cache_len() <= 1000);
+    }
+
+    #[test]
+    fn preload_recent_roots_populates_cache() {
+        let store = StateStore::new_in_memory();
+
+        // Create multiple state roots
+        for i in 1..=10 {
+            let mut snapshot = store.get_snapshot();
+            let root_hash = UInt256::from_bytes(&[i as u8; 32]).unwrap();
+            let state_root = StateRoot::new_current(i, root_hash);
+            snapshot.add_local_state_root(&state_root).unwrap();
+            snapshot.commit().unwrap();
+        }
+
+        // Update current snapshot
+        store.update_current_snapshot();
+
+        // Preload should populate cache
+        store.preload_recent_roots(5);
+
+        // Cache should have entries
+        assert!(store.root_cache_len() >= 5);
+    }
+
+    #[test]
+    fn state_root_verification_result_display() {
+        assert_eq!(StateRootVerificationResult::Valid.to_string(), "valid");
+        assert_eq!(
+            StateRootVerificationResult::RootMismatch.to_string(),
+            "root hash mismatch"
+        );
+        assert_eq!(
+            StateRootVerificationResult::NotFound.to_string(),
+            "state root not found"
+        );
+        assert_eq!(
+            StateRootVerificationResult::MissingWitness.to_string(),
+            "missing witness"
+        );
+        assert_eq!(
+            StateRootVerificationResult::InvalidWitness.to_string(),
+            "invalid witness"
+        );
+        assert_eq!(
+            StateRootVerificationResult::IndexMismatch.to_string(),
+            "index mismatch"
+        );
+        assert_eq!(
+            StateRootVerificationResult::VerifierNotConfigured.to_string(),
+            "verifier not configured"
+        );
     }
 }

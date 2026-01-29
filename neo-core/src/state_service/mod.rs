@@ -7,6 +7,7 @@ pub(crate) mod commit_handlers;
 pub mod keys;
 pub mod message_type;
 pub mod metrics;
+pub mod root_cache;
 pub mod state_root;
 pub mod state_store;
 #[cfg(feature = "runtime")]
@@ -19,6 +20,9 @@ pub const STATE_SERVICE_CATEGORY: &str = "StateService";
 pub use keys::Keys;
 pub use message_type::MessageType;
 pub use metrics::StateRootIngestStats;
+pub use root_cache::{
+    StateRootCache, StateRootCacheEntry, StateRootCacheStats, DEFAULT_ROOT_CACHE_CAPACITY,
+};
 pub use state_root::StateRoot;
 pub use state_store::{StateStore, StateStoreTransaction};
 pub use vote::Vote;

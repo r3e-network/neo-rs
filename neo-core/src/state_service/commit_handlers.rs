@@ -82,6 +82,47 @@ impl ICommittingHandler for StateServiceCommitHandlers {
     }
 }
 
+/// Extended handlers with state root verification support.
+pub struct StateServiceVerificationHandlers {
+    inner: StateServiceCommitHandlers,
+}
+
+impl StateServiceVerificationHandlers {
+    /// Creates a new handler with verification support.
+    pub fn new(state_store: Arc<StateStore>) -> Self {
+        Self {
+            inner: StateServiceCommitHandlers::new(state_store),
+        }
+    }
+
+    /// Verifies the state root after block persistence.
+    fn verify_state_root(&self, block: &Block) -> Result<(), String> {
+        let height = block.index();
+
+        // Get the locally computed root
+        let local_root = self
+            .inner
+            .state_store
+            .current_local_root_hash()
+            .ok_or_else(|| format!("No local state root found for block {}", height))?;
+
+        // Verify state root consistency
+        self.inner
+            .state_store
+            .verify_state_root_on_persist(height, &local_root, None)
+            .map_err(|e| format!("State root verification failed for block {}: {}", height, e))?;
+
+        tracing::debug!(
+            target: "state",
+            height,
+            root_hash = %local_root,
+            "State root verified on persist"
+        );
+
+        Ok(())
+    }
+}
+
 impl ICommittedHandler for StateServiceCommitHandlers {
     fn blockchain_committed_handler(&self, _system: &dyn Any, block: &Block) {
         if self.disabled.load(Ordering::Relaxed) {

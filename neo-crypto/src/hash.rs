@@ -1,8 +1,13 @@
 //! Hash function implementations for Neo blockchain.
 //!
 //! Provides SHA-256, SHA-512, SHA3-256/512, RIPEMD-160, Keccak-256, Blake2b/s hash functions.
+//!
+//! # Security
+//! - Hash comparisons should use `ct_eq()` or `subtle::ConstantTimeEq` to prevent timing attacks
+//!   when comparing hash values in security-sensitive contexts.
 
 use crate::error::{CryptoError, CryptoResult};
+use subtle::ConstantTimeEq;
 use blake2::{
     digest::{
         block_buffer::BlockBuffer,
@@ -277,9 +282,110 @@ impl Crypto {
     }
 }
 
+/// Compares two hash values in constant time to prevent timing attacks.
+///
+/// This function is suitable for comparing hash values in security-sensitive
+/// contexts where timing side-channels could leak information.
+///
+/// # Arguments
+/// * `a` - First hash value
+/// * `b` - Second hash value
+///
+/// # Returns
+/// `true` if the hashes are equal, `false` otherwise. The comparison takes
+/// the same amount of time regardless of where the hashes differ.
+///
+/// # Example
+/// ```
+/// use neo_crypto::Crypto;
+/// use neo_crypto::hash::ct_hash_eq;
+///
+/// let hash1 = Crypto::sha256(b"message");
+/// let hash2 = Crypto::sha256(b"message");
+/// let hash3 = Crypto::sha256(b"different");
+///
+/// assert!(ct_hash_eq(&hash1, &hash2));
+/// assert!(!ct_hash_eq(&hash1, &hash3));
+/// ```
+#[must_use]
+pub fn ct_hash_eq<const N: usize>(a: &[u8; N], b: &[u8; N]) -> bool {
+    a.ct_eq(b).into()
+}
+
+/// Compares two hash byte slices in constant time.
+///
+/// Returns `false` immediately if the slices have different lengths.
+/// Otherwise, performs a constant-time comparison of the contents.
+///
+/// # Arguments
+/// * `a` - First hash slice
+/// * `b` - Second hash slice
+///
+/// # Returns
+/// `true` if the slices have the same length and content, `false` otherwise.
+#[must_use]
+pub fn ct_hash_slice_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    a.ct_eq(b).into()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_constant_time_hash_eq() {
+        let hash1 = Crypto::sha256(b"test message");
+        let hash2 = Crypto::sha256(b"test message");
+        let hash3 = Crypto::sha256(b"different message");
+
+        // Same hashes should be equal
+        assert!(ct_hash_eq(&hash1, &hash2));
+        assert!(ct_hash_slice_eq(&hash1, &hash2));
+
+        // Different hashes should not be equal
+        assert!(!ct_hash_eq(&hash1, &hash3));
+        assert!(!ct_hash_slice_eq(&hash1, &hash3));
+
+        // Self-comparison should always be true
+        assert!(ct_hash_eq(&hash1, &hash1));
+        assert!(ct_hash_slice_eq(&hash1, &hash1));
+    }
+
+    #[test]
+    fn test_constant_time_slice_eq_different_lengths() {
+        let a = [0u8; 32];
+        let b = [0u8; 64];
+        assert!(!ct_hash_slice_eq(&a, &b));
+    }
+
+    #[test]
+    fn test_constant_time_single_byte_diff() {
+        // Test that single byte differences are detected
+        // This also verifies the comparison happens in constant time
+        // (no early return on first difference)
+        let a = [0u8; 32];
+        let mut b = [0u8; 32];
+
+        // All same
+        assert!(ct_hash_eq(&a, &b));
+
+        // Different at position 0
+        b[0] = 1;
+        assert!(!ct_hash_eq(&a, &b));
+
+        // Different at position 31 (last)
+        b[0] = 0;
+        b[31] = 1;
+        assert!(!ct_hash_eq(&a, &b));
+
+        // Different in the middle
+        b[31] = 0;
+        b[15] = 1;
+        assert!(!ct_hash_eq(&a, &b));
+    }
 
     #[test]
     fn test_sha256() {

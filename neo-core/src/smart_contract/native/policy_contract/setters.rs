@@ -3,6 +3,7 @@
 //
 
 use super::*;
+use crate::smart_contract::native::security_fixes::{PermissionValidator, ReentrancyGuardType, SecurityContext};
 
 impl PolicyContract {
     pub(super) fn set_fee_per_byte(
@@ -10,6 +11,9 @@ impl PolicyContract {
         engine: &mut ApplicationEngine,
         args: &[Vec<u8>],
     ) -> Result<Vec<u8>> {
+        // Enter reentrancy guard
+        let _guard = SecurityContext::enter_guard(ReentrancyGuardType::PolicyUpdate)?;
+
         if args.len() != 1 {
             return Err(Error::native_contract(
                 "setFeePerByte requires value argument".to_string(),
@@ -17,11 +21,10 @@ impl PolicyContract {
         }
 
         let value = Self::parse_i64_argument(&args[0], "value")?;
-        if !(0..=100_000_000).contains(&value) {
-            return Err(Error::invalid_operation(format!(
-                "FeePerByte must be between [0, 100000000], got {value}"
-            )));
-        }
+        
+        // Validate range using security validator
+        PermissionValidator::validate_range(value, 0, 100_000_000, "FeePerByte")
+            .map_err(|e| Error::invalid_operation(e.to_string()))?;
 
         Self::assert_committee(engine)?;
 

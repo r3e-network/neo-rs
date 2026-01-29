@@ -178,6 +178,11 @@ where
         self.data.is_empty()
     }
 
+    /// Gets the cache capacity
+    pub fn capacity(&self) -> usize {
+        self.capacity
+    }
+
     /// Moves a key to the front of the access order
     fn move_to_front(&mut self, key: &K) {
         // Remove from current position

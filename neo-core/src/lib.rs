@@ -221,6 +221,16 @@ pub mod rpc;
 /// Time provider abstraction for testability.
 pub mod time_provider;
 
+/// Block and transaction validation utilities.
+///
+/// Provides comprehensive security checks for blocks including:
+/// - Size limits (4 MB max)
+/// - Transaction count limits (65535 max)
+/// - Timestamp bounds (within 15 minutes of current time)
+/// - Merkle root verification
+/// - Witness script validation
+pub mod validation;
+
 /// State service for world state management.
 pub mod state_service;
 

@@ -4,6 +4,7 @@ use super::helpers::NativeHelpers;
 use super::native_contract::{NativeContract, NativeMethod};
 use super::neo_token::NeoToken;
 use super::policy_contract::PolicyContract;
+use super::security_fixes::{PermissionValidator, ReentrancyGuardType, SafeArithmetic, SecurityContext, StateValidator};
 use super::AccountState;
 use crate::error::{CoreError, CoreResult};
 use crate::network::p2p::payloads::{Transaction, TransactionAttribute, TransactionAttributeType};
@@ -150,6 +151,9 @@ impl GasToken {
     }
 
     fn transfer(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
+        // Enter reentrancy guard
+        let _guard = SecurityContext::enter_guard(ReentrancyGuardType::GasTransfer)?;
+
         if args.len() != 4 {
             return Err(CoreError::native_contract(
                 "transfer expects from, to, amount, data".to_string(),
@@ -164,11 +168,9 @@ impl GasToken {
         } else {
             StackItem::from_byte_string(data_bytes)
         };
-        if amount.is_negative() {
-            return Err(CoreError::native_contract(
-                "Amount cannot be negative".to_string(),
-            ));
-        }
+        
+        // Validate amount is non-negative
+        PermissionValidator::validate_non_negative(&amount, "Transfer amount")?;
 
         let caller = engine.calling_script_hash();
         if from != caller && !engine.check_witness_hash(&from)? {
@@ -198,10 +200,18 @@ impl GasToken {
 
         let snapshot = engine.snapshot_cache();
         let snapshot_ref = snapshot.as_ref();
-        let mut from_balance = self.balance_of_snapshot(snapshot_ref, &from);
+        let from_balance = self.balance_of_snapshot(snapshot_ref, &from);
+        
+        // Validate balance is sufficient
         if from_balance < amount {
             return Ok(vec![0]);
         }
+        
+        // Use safe arithmetic for balance updates
+        let new_from_balance = SafeArithmetic::safe_sub(&from_balance, &amount)?;
+        let to_balance = self.balance_of_snapshot(snapshot_ref, &to);
+        let new_to_balance = SafeArithmetic::safe_add(&to_balance, &amount)?;
+
         if from == to {
             self.emit_transfer_event(engine, Some(&from), Some(&to), &amount)?;
             if ContractManagement::get_contract_from_snapshot(snapshot_ref, &to)
@@ -221,14 +231,18 @@ impl GasToken {
             }
             return Ok(vec![1]);
         }
-        from_balance -= &amount;
-        let mut to_balance = self.balance_of_snapshot(snapshot_ref, &to);
-        to_balance += &amount;
 
         let context = engine.get_native_storage_context(&self.hash())?;
-        self.write_account_balance(&context, engine, &from, &from_balance)?;
-        self.write_account_balance(&context, engine, &to, &to_balance)?;
+        self.write_account_balance(&context, engine, &from, &new_from_balance)?;
+        self.write_account_balance(&context, engine, &to, &new_to_balance)?;
         self.emit_transfer_event(engine, Some(&from), Some(&to), &amount)?;
+        
+        // Validate state consistency after transfer
+        let final_from_balance = self.balance_of_snapshot(snapshot_ref, &from);
+        let final_to_balance = self.balance_of_snapshot(snapshot_ref, &to);
+        StateValidator::validate_account_state(&final_from_balance, 0, u32::MAX)?;
+        StateValidator::validate_account_state(&final_to_balance, 0, u32::MAX)?;
+        
         if ContractManagement::get_contract_from_snapshot(snapshot_ref, &to)
             .map_err(|e| CoreError::native_contract(e.to_string()))?
             .is_some()
@@ -401,23 +415,30 @@ impl GasToken {
         amount: &BigInt,
         call_on_payment: bool,
     ) -> CoreResult<()> {
+        // Enter reentrancy guard
+        let _guard = SecurityContext::enter_guard(ReentrancyGuardType::GasMint)?;
+
         if amount.is_zero() {
             return Ok(());
         }
-        if amount.is_negative() {
-            return Err(CoreError::native_contract(
-                "Mint amount cannot be negative".to_string(),
-            ));
-        }
+        
+        // Validate amount is non-negative
+        PermissionValidator::validate_non_negative(amount, "Mint amount")?;
 
         let context = engine.get_native_storage_context(&self.hash())?;
         let snapshot = engine.snapshot_cache();
         let snapshot_ref = snapshot.as_ref();
-        let mut balance = self.balance_of_snapshot(snapshot_ref, account);
-        balance += amount;
-        self.write_account_balance(&context, engine, account, &balance)?;
+        let balance = self.balance_of_snapshot(snapshot_ref, account);
+        
+        // Use safe arithmetic
+        let new_balance = SafeArithmetic::safe_add(&balance, amount)?;
+        self.write_account_balance(&context, engine, account, &new_balance)?;
         self.adjust_total_supply(&context, engine, amount)?;
         self.emit_transfer_event(engine, None, Some(account), amount)?;
+        
+        // Validate state consistency
+        StateValidator::validate_account_state(&new_balance, 0, u32::MAX)?;
+        
         if call_on_payment {
             let snapshot = engine.snapshot_cache();
             if ContractManagement::get_contract_from_snapshot(snapshot.as_ref(), account)
@@ -446,30 +467,39 @@ impl GasToken {
         account: &UInt160,
         amount: &BigInt,
     ) -> CoreResult<()> {
+        // Enter reentrancy guard
+        let _guard = SecurityContext::enter_guard(ReentrancyGuardType::GasBurn)?;
+
         if amount.is_zero() {
             return Ok(());
         }
-        if amount.is_negative() {
-            return Err(CoreError::native_contract(
-                "Burn amount cannot be negative".to_string(),
-            ));
-        }
+        
+        // Validate amount is non-negative
+        PermissionValidator::validate_non_negative(amount, "Burn amount")?;
 
         let snapshot = engine.snapshot_cache();
         let snapshot_ref = snapshot.as_ref();
-        let mut balance = self.balance_of_snapshot(snapshot_ref, account);
+        let balance = self.balance_of_snapshot(snapshot_ref, account);
+        
+        // Validate balance is sufficient
         if balance < *amount {
             return Err(CoreError::native_contract(
                 "Insufficient balance for burn".to_string(),
             ));
         }
-        balance -= amount;
+        
+        // Use safe arithmetic
+        let new_balance = SafeArithmetic::safe_sub(&balance, amount)?;
 
         let context = engine.get_native_storage_context(&self.hash())?;
-        self.write_account_balance(&context, engine, account, &balance)?;
+        self.write_account_balance(&context, engine, account, &new_balance)?;
         let negative = -amount;
         self.adjust_total_supply(&context, engine, &negative)?;
         self.emit_transfer_event(engine, Some(account), None, amount)?;
+        
+        // Validate state consistency
+        StateValidator::validate_account_state(&new_balance, 0, u32::MAX)?;
+        
         Ok(())
     }
 
