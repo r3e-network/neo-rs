@@ -14,7 +14,7 @@ use num_bigint::BigInt;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
-/// Validator information matching C# RpcValidator
+/// Validator information matching C# `RpcValidator`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcValidator {
     /// Validator's public key
@@ -26,7 +26,8 @@ pub struct RpcValidator {
 
 impl RpcValidator {
     /// Converts to JSON
-    /// Matches C# ToJson
+    /// Matches C# `ToJson`
+    #[must_use] 
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
         json.insert(
@@ -38,13 +39,13 @@ impl RpcValidator {
     }
 
     /// Creates from JSON
-    /// Matches C# FromJson
+    /// Matches C# `FromJson`
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let public_key = json
             .get("publickey")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .ok_or("Missing or invalid 'publickey' field")?
-            .to_string();
+            ;
 
         let votes_token = json
             .get("votes")

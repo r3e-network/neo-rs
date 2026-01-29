@@ -29,6 +29,7 @@ where
     T: Eq + Hash + Clone,
 {
     /// Creates a new Tarjan algorithm instance.
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             graph: HashMap::new(),
@@ -41,7 +42,8 @@ where
         }
     }
 
-    /// Default implementation delegates to new()
+    /// Default implementation delegates to `new()`
+    #[must_use] 
     pub fn default_instance() -> Self {
         Self::new()
     }
@@ -94,22 +96,22 @@ where
                     self.strong_connect(successor.clone());
 
                     // Update lowlink of vertex
-                    let vertex_lowlink = self.lowlink.get(&vertex).cloned().unwrap_or(0);
-                    let successor_lowlink = self.lowlink.get(&successor).cloned().unwrap_or(0);
+                    let vertex_lowlink = self.lowlink.get(&vertex).copied().unwrap_or(0);
+                    let successor_lowlink = self.lowlink.get(&successor).copied().unwrap_or(0);
                     let new_lowlink = vertex_lowlink.min(successor_lowlink);
                     self.lowlink.insert(vertex.clone(), new_lowlink);
                 } else if self.on_stack.contains(&successor) {
                     // Successor is in stack and hence in the current SCC
-                    let vertex_lowlink = self.lowlink.get(&vertex).cloned().unwrap_or(0);
-                    let successor_index = self.index.get(&successor).cloned().unwrap_or(0);
+                    let vertex_lowlink = self.lowlink.get(&vertex).copied().unwrap_or(0);
+                    let successor_index = self.index.get(&successor).copied().unwrap_or(0);
                     let new_lowlink = vertex_lowlink.min(successor_index);
                     self.lowlink.insert(vertex.clone(), new_lowlink);
                 }
             }
         }
 
-        let vertex_index = self.index.get(&vertex).cloned().unwrap_or(0);
-        let vertex_lowlink = self.lowlink.get(&vertex).cloned().unwrap_or(0);
+        let vertex_index = self.index.get(&vertex).copied().unwrap_or(0);
+        let vertex_lowlink = self.lowlink.get(&vertex).copied().unwrap_or(0);
 
         if vertex_index == vertex_lowlink {
             let mut component = Vec::new();

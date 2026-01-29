@@ -23,7 +23,7 @@ use parking_lot::RwLock;
 /// Trait for world state operations.
 ///
 /// This trait abstracts over the underlying storage backend, allowing
-/// different implementations (in-memory, RocksDB, etc.) to be used
+/// different implementations (in-memory, `RocksDB`, etc.) to be used
 /// interchangeably.
 pub trait WorldState: Send + Sync {
     /// Gets an account by script hash.
@@ -96,33 +96,37 @@ pub struct StateChanges {
 
 impl StateChanges {
     /// Creates an empty change set.
+    #[must_use] 
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Returns true if there are no changes.
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.accounts.is_empty() && self.storage.is_empty()
     }
 
     /// Merges another change set into this one.
-    pub fn merge(&mut self, other: StateChanges) {
+    pub fn merge(&mut self, other: Self) {
         self.accounts.extend(other.accounts);
         self.storage.extend(other.storage);
     }
 
     /// Returns the number of account changes.
+    #[must_use] 
     pub fn account_count(&self) -> usize {
         self.accounts.len()
     }
 
     /// Returns the number of storage changes.
+    #[must_use] 
     pub fn storage_count(&self) -> usize {
         self.storage.len()
     }
 }
 
-/// In-memory implementation of WorldState for testing.
+/// In-memory implementation of `WorldState` for testing.
 #[derive(Debug, Default)]
 pub struct MemoryWorldState {
     /// Account states.
@@ -135,11 +139,13 @@ pub struct MemoryWorldState {
 
 impl MemoryWorldState {
     /// Creates a new empty in-memory world state.
+    #[must_use] 
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Creates a world state with initial accounts.
+    #[must_use] 
     pub fn with_accounts(accounts: HashMap<UInt160, AccountState>) -> Self {
         Self {
             accounts: RwLock::new(accounts),
@@ -246,6 +252,7 @@ pub struct MutableStateView {
 
 impl MutableStateView {
     /// Creates a new mutable state view.
+    #[must_use] 
     pub fn new(
         accounts: HashMap<UInt160, AccountState>,
         storage: HashMap<StorageKey, StorageItem>,

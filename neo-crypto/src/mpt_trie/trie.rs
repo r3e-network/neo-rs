@@ -39,7 +39,7 @@ where
     }
 
     /// Returns a reference to the current root node.
-    pub fn root(&self) -> &Node {
+    pub const fn root(&self) -> &Node {
         &self.root
     }
 
@@ -142,7 +142,7 @@ where
         Self::traverse(
             &mut self.cache,
             start,
-            resolved_path.clone(),
+            resolved_path,
             from_path.as_deref().unwrap_or(&[]),
             offset,
             &mut results,
@@ -347,12 +347,12 @@ where
 
                 cache.put_node(child_branch.clone())?;
 
-                if !prefix.is_empty() {
+                if prefix.is_empty() {
+                    *node = child_branch;
+                } else {
                     let ext = Node::new_extension(prefix, child_branch)?;
                     cache.put_node(ext.clone())?;
                     *node = ext;
-                } else {
-                    *node = child_branch;
                 }
             }
             NodeType::BranchNode => {
@@ -442,7 +442,7 @@ where
                     if !full_state {
                         cache.delete_node(old_hash)?;
                     }
-                    if node.next.as_ref().map(|n| n.is_empty()).unwrap_or(true) {
+                    if node.next.as_ref().map_or(true, |n| n.is_empty()) {
                         let next = node.next.take().map(|n| *n).unwrap_or_default();
                         *node = next;
                         return Ok(true);
@@ -508,26 +508,23 @@ where
                         MptError::storage("unable to resolve hash during trie delete")
                     })?;
                 }
-                match last_child.node_type {
-                    NodeType::ExtensionNode => {
-                        if !full_state {
-                            let child_hash = last_child.try_hash()?;
-                            cache.delete_node(child_hash)?;
-                        }
-                        let mut key = vec![last_index];
-                        key.extend_from_slice(&last_child.key);
-                        last_child.key = key;
-                        last_child.set_dirty();
-                        cache.put_node(last_child.clone())?;
-                        *node = last_child;
-                        Ok(true)
+                if last_child.node_type == NodeType::ExtensionNode {
+                    if !full_state {
+                        let child_hash = last_child.try_hash()?;
+                        cache.delete_node(child_hash)?;
                     }
-                    _ => {
-                        let ext = Node::new_extension(vec![last_index], last_child)?;
-                        cache.put_node(ext.clone())?;
-                        *node = ext;
-                        Ok(true)
-                    }
+                    let mut key = vec![last_index];
+                    key.extend_from_slice(&last_child.key);
+                    last_child.key = key;
+                    last_child.set_dirty();
+                    cache.put_node(last_child.clone())?;
+                    *node = last_child;
+                    Ok(true)
+                } else {
+                    let ext = Node::new_extension(vec![last_index], last_child)?;
+                    cache.put_node(ext.clone())?;
+                    *node = ext;
+                    Ok(true)
                 }
             }
             NodeType::Empty => Ok(false),
@@ -668,7 +665,7 @@ where
                     let key = Self::from_nibbles(&path)?;
                     results.push(TrieEntry {
                         key,
-                        value: node.value.clone(),
+                        value: node.value,
                     });
                 }
             }
@@ -735,7 +732,7 @@ where
                 }
             }
             NodeType::ExtensionNode => {
-                let mut new_path = path.clone();
+                let mut new_path = path;
                 new_path.extend_from_slice(&node.key);
                 if offset < from.len() && from[offset..].starts_with(&node.key) {
                     Self::traverse(

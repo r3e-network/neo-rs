@@ -1,9 +1,9 @@
-//! IndexedQueue - matches C# Neo.IO.Caching.IndexedQueue exactly
+//! `IndexedQueue` - matches C# Neo.IO.Caching.IndexedQueue exactly
 
 use crate::{IoError, IoResult};
 use std::collections::VecDeque;
 
-/// Represents a queue with indexed access to the items (matches C# IndexedQueue<T>).
+/// Represents a queue with indexed access to the items (matches C# `IndexedQueue<T>`).
 #[derive(Debug, Clone)]
 pub struct IndexedQueue<T> {
     items: VecDeque<T>,
@@ -15,6 +15,7 @@ impl<T> IndexedQueue<T> {
     const TRIM_THRESHOLD: f32 = 0.9;
 
     /// Creates a queue with the default capacity.
+    #[must_use] 
     pub fn new() -> Self {
         Self::with_capacity(Self::DEFAULT_CAPACITY)
     }
@@ -22,7 +23,7 @@ impl<T> IndexedQueue<T> {
     /// Creates a queue with the specified capacity.
     ///
     /// # Arguments
-    /// * `capacity` - The initial capacity. If zero, uses DEFAULT_CAPACITY instead.
+    /// * `capacity` - The initial capacity. If zero, uses `DEFAULT_CAPACITY` instead.
     ///
     /// # Note
     /// Zero capacity is handled gracefully by using the default capacity.
@@ -62,16 +63,19 @@ impl<T> IndexedQueue<T> {
     }
 
     /// Gets the number of items in the queue (C# Count property).
+    #[must_use] 
     pub fn count(&self) -> usize {
         self.items.len()
     }
 
     /// Indicates whether the queue is empty.
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
 
     /// Gets the value at the index (C# this[int index]).
+    #[must_use] 
     pub fn get(&self, index: usize) -> Option<&T> {
         self.items.get(index)
     }
@@ -100,11 +104,13 @@ impl<T> IndexedQueue<T> {
         since = "0.7.1",
         note = "Use try_peek() instead. This method panics on empty queue."
     )]
+    #[must_use] 
     pub fn peek(&self) -> &T {
         self.items.front().expect("queue is empty")
     }
 
-    /// Attempts to return an item from the front of the queue without removing it (C# TryPeek).
+    /// Attempts to return an item from the front of the queue without removing it (C# `TryPeek`).
+    #[must_use] 
     pub fn try_peek(&self) -> Option<&T> {
         self.items.front()
     }
@@ -124,7 +130,7 @@ impl<T> IndexedQueue<T> {
         self.items.pop_front().expect("queue is empty")
     }
 
-    /// Attempts to remove an item from the front of the queue (C# TryDequeue).
+    /// Attempts to remove an item from the front of the queue (C# `TryDequeue`).
     pub fn try_dequeue(&mut self) -> Option<T> {
         self.items.pop_front()
     }
@@ -134,7 +140,7 @@ impl<T> IndexedQueue<T> {
         self.items.clear();
     }
 
-    /// Trims the extra capacity that isn't being used (C# TrimExcess).
+    /// Trims the extra capacity that isn't being used (C# `TrimExcess`).
     pub fn trim_excess(&mut self) {
         if self.items.is_empty() {
             self.items = VecDeque::with_capacity(Self::DEFAULT_CAPACITY);
@@ -149,7 +155,7 @@ impl<T> IndexedQueue<T> {
         }
     }
 
-    /// Copy the queue's items to a destination slice (C# CopyTo).
+    /// Copy the queue's items to a destination slice (C# `CopyTo`).
     pub fn copy_to(&self, destination: &mut [T], array_index: usize) -> IoResult<()>
     where
         T: Clone,
@@ -171,7 +177,8 @@ impl<T> IndexedQueue<T> {
         Ok(())
     }
 
-    /// Returns an array of the items in the queue (C# ToArray).
+    /// Returns an array of the items in the queue (C# `ToArray`).
+    #[must_use] 
     pub fn to_vec(&self) -> Vec<T>
     where
         T: Clone,
@@ -179,12 +186,13 @@ impl<T> IndexedQueue<T> {
         self.items.iter().cloned().collect()
     }
 
-    /// Returns an iterator over the queue (C# GetEnumerator).
+    /// Returns an iterator over the queue (C# `GetEnumerator`).
     pub fn iter(&self) -> impl Iterator<Item = &T> {
         self.items.iter()
     }
 
     /// Returns the last item if present (matches C# Last property usage).
+    #[must_use] 
     pub fn last(&self) -> Option<&T> {
         self.items.back()
     }
@@ -221,7 +229,7 @@ impl<T> FromIterator<T> for IndexedQueue<T> {
 }
 
 impl<T> IndexedQueue<T> {
-    /// Creates a queue filled with the specified items (C# constructor from IEnumerable).
+    /// Creates a queue filled with the specified items (C# constructor from `IEnumerable`).
     pub fn from_iterable<I>(iter: I) -> Self
     where
         I: IntoIterator<Item = T>,

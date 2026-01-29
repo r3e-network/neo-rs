@@ -17,7 +17,7 @@ use num_traits::cast::ToPrimitive;
 use std::sync::Arc;
 
 /// Get Policy info by RPC API
-/// Matches C# PolicyAPI
+/// Matches C# `PolicyAPI`
 pub struct PolicyApi {
     /// Base contract client functionality
     contract_client: ContractClient,
@@ -26,8 +26,9 @@ pub struct PolicyApi {
 }
 
 impl PolicyApi {
-    /// PolicyAPI Constructor
+    /// `PolicyAPI` Constructor
     /// Matches C# constructor
+    #[must_use] 
     pub fn new(rpc_client: Arc<RpcClient>) -> Self {
         Self {
             contract_client: ContractClient::new(rpc_client),
@@ -36,7 +37,7 @@ impl PolicyApi {
     }
 
     /// Get Fee Factor
-    /// Matches C# GetExecFeeFactorAsync
+    /// Matches C# `GetExecFeeFactorAsync`
     pub async fn get_exec_fee_factor(&self) -> Result<u32, Box<dyn std::error::Error>> {
         let result = self
             .contract_client
@@ -50,7 +51,7 @@ impl PolicyApi {
     }
 
     /// Get Storage Price
-    /// Matches C# GetStoragePriceAsync
+    /// Matches C# `GetStoragePriceAsync`
     pub async fn get_storage_price(&self) -> Result<u32, Box<dyn std::error::Error>> {
         let result = self
             .contract_client
@@ -64,7 +65,7 @@ impl PolicyApi {
     }
 
     /// Get Network Fee Per Byte
-    /// Matches C# GetFeePerByteAsync
+    /// Matches C# `GetFeePerByteAsync`
     pub async fn get_fee_per_byte(&self) -> Result<i64, Box<dyn std::error::Error>> {
         let result = self
             .contract_client
@@ -78,7 +79,7 @@ impl PolicyApi {
     }
 
     /// Get Policy Blocked Accounts
-    /// Matches C# IsBlockedAsync
+    /// Matches C# `IsBlockedAsync`
     pub async fn is_blocked(&self, account: &UInt160) -> Result<bool, Box<dyn std::error::Error>> {
         let result = self
             .contract_client

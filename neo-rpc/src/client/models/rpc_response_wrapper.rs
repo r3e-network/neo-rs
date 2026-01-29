@@ -14,7 +14,7 @@
 //! This module provides a generic wrapper type for RPC responses that include
 //! blockchain context (block hash, confirmations, etc.) along with the actual data.
 //!
-//! This replaces the need for separate RpcTransaction, RpcBlock, etc. types
+//! This replaces the need for separate `RpcTransaction`, `RpcBlock`, etc. types
 //! with a single generic type.
 
 use neo_primitives::UInt256;
@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// This type wraps any blockchain data with additional context about
 /// where and when it was confirmed.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RpcResponse<T> {
     /// The actual data payload
     #[serde(flatten)]
@@ -43,14 +43,14 @@ pub struct RpcResponse<T> {
     pub block_time: Option<u64>,
 
     /// VM execution state as string (for transactions)
-    /// Stored as string since VMState doesn't implement Serialize
+    /// Stored as string since `VMState` doesn't implement Serialize
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vm_state: Option<String>,
 }
 
 impl<T> RpcResponse<T> {
     /// Create a new unconfirmed response (just the data)
-    pub fn unconfirmed(data: T) -> Self {
+    pub const fn unconfirmed(data: T) -> Self {
         Self {
             data,
             block_hash: None,
@@ -61,7 +61,7 @@ impl<T> RpcResponse<T> {
     }
 
     /// Create a confirmed response with full context
-    pub fn confirmed(data: T, block_hash: UInt256, confirmations: u32, block_time: u64) -> Self {
+    pub const fn confirmed(data: T, block_hash: UInt256, confirmations: u32, block_time: u64) -> Self {
         Self {
             data,
             block_hash: Some(block_hash),
@@ -78,7 +78,7 @@ impl<T> RpcResponse<T> {
     }
 
     /// Check if the item is confirmed
-    pub fn is_confirmed(&self) -> bool {
+    pub const fn is_confirmed(&self) -> bool {
         self.confirmations.is_some()
     }
 
@@ -107,7 +107,7 @@ impl<T> RpcResponse<T> {
     }
 
     /// Get a reference to the inner data
-    pub fn data(&self) -> &T {
+    pub const fn data(&self) -> &T {
         &self.data
     }
 }

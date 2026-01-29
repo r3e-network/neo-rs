@@ -20,18 +20,18 @@ pub enum ValidationResult {
 
 impl ValidationResult {
     /// Check if validation passed
-    pub fn is_valid(&self) -> bool {
-        matches!(self, ValidationResult::Valid)
+    #[must_use] 
+    pub const fn is_valid(&self) -> bool {
+        matches!(self, Self::Valid)
     }
 
     /// Convert to Result
     pub fn into_result(self) -> ChainResult<()> {
         match self {
-            ValidationResult::Valid => Ok(()),
-            ValidationResult::Invalid(reason) => Err(ChainError::ValidationError(reason)),
-            ValidationResult::Incomplete(reason) => Err(ChainError::ValidationError(format!(
-                "Incomplete validation: {}",
-                reason
+            Self::Valid => Ok(()),
+            Self::Invalid(reason) => Err(ChainError::ValidationError(reason)),
+            Self::Incomplete(reason) => Err(ChainError::ValidationError(format!(
+                "Incomplete validation: {reason}"
             ))),
         }
     }
@@ -83,7 +83,8 @@ pub struct BlockValidator {
 
 impl BlockValidator {
     /// Create a new block validator with default settings
-    pub fn new() -> Self {
+    #[must_use] 
+    pub const fn new() -> Self {
         Self {
             max_block_size: MAX_BLOCK_SIZE,
             max_transactions_per_block: MAX_TRANSACTIONS_PER_BLOCK,
@@ -92,7 +93,8 @@ impl BlockValidator {
     }
 
     /// Create with custom settings
-    pub fn with_settings(
+    #[must_use] 
+    pub const fn with_settings(
         max_block_size: usize,
         max_transactions_per_block: usize,
         expected_block_time_ms: u64,
@@ -117,6 +119,7 @@ impl BlockValidator {
     }
 
     /// Perform basic validation (stateless)
+    #[must_use] 
     pub fn validate_basic(&self, block: &BlockData) -> ValidationResult {
         // Check block size
         if block.size > self.max_block_size {
@@ -221,6 +224,7 @@ impl BlockValidator {
     }
 
     /// Validate genesis block
+    #[must_use] 
     pub fn validate_genesis(&self, block: &BlockData) -> ValidationResult {
         // Genesis must be height 0
         if block.height != 0 {

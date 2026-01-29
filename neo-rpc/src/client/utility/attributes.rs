@@ -13,7 +13,7 @@ use neo_primitives::UInt256;
 pub fn attribute_from_json(json: &JObject) -> Result<TransactionAttribute, String> {
     let attr_type = json
         .get("type")
-        .and_then(|v| v.as_string())
+        .and_then(neo_json::JToken::as_string)
         .ok_or("Transaction attribute missing 'type' field")?;
 
     match attr_type.as_str() {
@@ -30,7 +30,7 @@ pub fn attribute_from_json(json: &JObject) -> Result<TransactionAttribute, Strin
         "Conflicts" => {
             let hash_str = json
                 .get("hash")
-                .and_then(|v| v.as_string())
+                .and_then(neo_json::JToken::as_string)
                 .ok_or("Conflicts attribute missing 'hash' field")?;
             let hash = UInt256::parse(&hash_str)
                 .map_err(|err| format!("Invalid conflicts hash: {err}"))?;

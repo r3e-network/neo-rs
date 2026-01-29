@@ -1,4 +1,4 @@
-//! ECPointCache - aligns with C# Neo.IO.Caching.ECPointCache
+//! `ECPointCache` - aligns with C# Neo.IO.Caching.ECPointCache
 
 use super::fifo_cache::FIFOCache;
 use std::hash::Hash;
@@ -23,6 +23,7 @@ where
     TPoint: EncodablePoint + Eq + Hash,
 {
     /// Creates a new cache with the provided maximum capacity (same semantics as C# constructor).
+    #[must_use] 
     pub fn new(max_capacity: usize) -> Self {
         Self {
             inner: FIFOCache::new(max_capacity, |point: &TPoint| {

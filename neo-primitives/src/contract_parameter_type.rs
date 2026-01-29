@@ -51,21 +51,21 @@ pub enum ContractParameterType {
 impl ContractParameterType {
     /// Returns the canonical manifest name for this parameter type (matches C# enum names).
     #[must_use]
-    pub fn as_str(&self) -> &'static str {
+    pub const fn as_str(&self) -> &'static str {
         match self {
-            ContractParameterType::Any => "Any",
-            ContractParameterType::Boolean => "Boolean",
-            ContractParameterType::Integer => "Integer",
-            ContractParameterType::ByteArray => "ByteArray",
-            ContractParameterType::String => "String",
-            ContractParameterType::Hash160 => "Hash160",
-            ContractParameterType::Hash256 => "Hash256",
-            ContractParameterType::PublicKey => "PublicKey",
-            ContractParameterType::Signature => "Signature",
-            ContractParameterType::Array => "Array",
-            ContractParameterType::Map => "Map",
-            ContractParameterType::InteropInterface => "InteropInterface",
-            ContractParameterType::Void => "Void",
+            Self::Any => "Any",
+            Self::Boolean => "Boolean",
+            Self::Integer => "Integer",
+            Self::ByteArray => "ByteArray",
+            Self::String => "String",
+            Self::Hash160 => "Hash160",
+            Self::Hash256 => "Hash256",
+            Self::PublicKey => "PublicKey",
+            Self::Signature => "Signature",
+            Self::Array => "Array",
+            Self::Map => "Map",
+            Self::InteropInterface => "InteropInterface",
+            Self::Void => "Void",
         }
     }
 
@@ -76,40 +76,40 @@ impl ContractParameterType {
     /// Returns `String` error if the input string does not match any known parameter type.
     pub fn from_string(s: &str) -> Result<Self, String> {
         match s.to_lowercase().as_str() {
-            "any" => Ok(ContractParameterType::Any),
-            "boolean" | "bool" => Ok(ContractParameterType::Boolean),
-            "integer" | "int" => Ok(ContractParameterType::Integer),
-            "bytearray" | "bytes" => Ok(ContractParameterType::ByteArray),
-            "string" => Ok(ContractParameterType::String),
-            "hash160" => Ok(ContractParameterType::Hash160),
-            "hash256" => Ok(ContractParameterType::Hash256),
-            "publickey" => Ok(ContractParameterType::PublicKey),
-            "signature" => Ok(ContractParameterType::Signature),
-            "array" => Ok(ContractParameterType::Array),
-            "map" => Ok(ContractParameterType::Map),
-            "interopinterface" => Ok(ContractParameterType::InteropInterface),
-            "void" => Ok(ContractParameterType::Void),
+            "any" => Ok(Self::Any),
+            "boolean" | "bool" => Ok(Self::Boolean),
+            "integer" | "int" => Ok(Self::Integer),
+            "bytearray" | "bytes" => Ok(Self::ByteArray),
+            "string" => Ok(Self::String),
+            "hash160" => Ok(Self::Hash160),
+            "hash256" => Ok(Self::Hash256),
+            "publickey" => Ok(Self::PublicKey),
+            "signature" => Ok(Self::Signature),
+            "array" => Ok(Self::Array),
+            "map" => Ok(Self::Map),
+            "interopinterface" => Ok(Self::InteropInterface),
+            "void" => Ok(Self::Void),
             _ => Err(format!("unknown contract parameter type: {s}")),
         }
     }
 
     /// Try to convert from u8 value
     #[must_use]
-    pub fn try_from_u8(value: u8) -> Option<Self> {
+    pub const fn try_from_u8(value: u8) -> Option<Self> {
         match value {
-            0x00 => Some(ContractParameterType::Any),
-            0x10 => Some(ContractParameterType::Boolean),
-            0x11 => Some(ContractParameterType::Integer),
-            0x12 => Some(ContractParameterType::ByteArray),
-            0x13 => Some(ContractParameterType::String),
-            0x14 => Some(ContractParameterType::Hash160),
-            0x15 => Some(ContractParameterType::Hash256),
-            0x16 => Some(ContractParameterType::PublicKey),
-            0x17 => Some(ContractParameterType::Signature),
-            0x20 => Some(ContractParameterType::Array),
-            0x22 => Some(ContractParameterType::Map),
-            0x30 => Some(ContractParameterType::InteropInterface),
-            0xff => Some(ContractParameterType::Void),
+            0x00 => Some(Self::Any),
+            0x10 => Some(Self::Boolean),
+            0x11 => Some(Self::Integer),
+            0x12 => Some(Self::ByteArray),
+            0x13 => Some(Self::String),
+            0x14 => Some(Self::Hash160),
+            0x15 => Some(Self::Hash256),
+            0x16 => Some(Self::PublicKey),
+            0x17 => Some(Self::Signature),
+            0x20 => Some(Self::Array),
+            0x22 => Some(Self::Map),
+            0x30 => Some(Self::InteropInterface),
+            0xff => Some(Self::Void),
             _ => None,
         }
     }
@@ -144,7 +144,7 @@ impl<'de> Deserialize<'de> for ContractParameterType {
         D: Deserializer<'de>,
     {
         let value = String::deserialize(deserializer)?;
-        ContractParameterType::from_string(&value).map_err(serde::de::Error::custom)
+        Self::from_string(&value).map_err(serde::de::Error::custom)
     }
 }
 

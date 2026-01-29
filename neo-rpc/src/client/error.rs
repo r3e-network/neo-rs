@@ -43,16 +43,19 @@ impl ClientRpcError {
     }
 
     /// Error code (matches JSON-RPC `code` field).
-    pub fn code(&self) -> i32 {
+    #[must_use] 
+    pub const fn code(&self) -> i32 {
         self.code
     }
 
     /// Human-readable message (matches JSON-RPC `message` field).
+    #[must_use] 
     pub fn message(&self) -> &str {
         &self.message
     }
 
     /// Optional JSON-RPC `data` payload if provided.
+    #[must_use] 
     pub fn data(&self) -> Option<&str> {
         self.data.as_deref()
     }

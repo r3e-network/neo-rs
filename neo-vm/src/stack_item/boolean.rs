@@ -14,31 +14,37 @@ pub struct Boolean {
 
 impl Boolean {
     /// The singleton True value.
-    pub fn true_value() -> Self {
+    #[must_use] 
+    pub const fn true_value() -> Self {
         Self { value: true }
     }
 
     /// The singleton False value.
-    pub fn false_value() -> Self {
+    #[must_use] 
+    pub const fn false_value() -> Self {
         Self { value: false }
     }
 
     /// Creates a new boolean with the specified value.
-    pub fn new(value: bool) -> Self {
+    #[must_use] 
+    pub const fn new(value: bool) -> Self {
         Self { value }
     }
 
     /// Gets the boolean value.
-    pub fn value(&self) -> bool {
+    #[must_use] 
+    pub const fn value(&self) -> bool {
         self.value
     }
 
     /// Gets the type of the stack item.
-    pub fn stack_item_type(&self) -> StackItemType {
+    #[must_use] 
+    pub const fn stack_item_type(&self) -> StackItemType {
         StackItemType::Boolean
     }
 
     /// Converts the boolean to an integer.
+    #[must_use] 
     pub fn to_integer(&self) -> BigInt {
         if self.value {
             BigInt::from(1)
@@ -48,6 +54,7 @@ impl Boolean {
     }
 
     /// Converts the boolean to a byte array.
+    #[must_use] 
     pub fn to_bytes(&self) -> Vec<u8> {
         if self.value {
             vec![1]

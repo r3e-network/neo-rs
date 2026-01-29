@@ -1,6 +1,6 @@
-//! InteropInterface stack item implementation for the Neo Virtual Machine.
+//! `InteropInterface` stack item implementation for the Neo Virtual Machine.
 //!
-//! This module provides the InteropInterface stack item implementation used in the Neo VM.
+//! This module provides the `InteropInterface` stack item implementation used in the Neo VM.
 
 use super::stack_item::InteropInterface;
 use crate::error::{VmError, VmResult};
@@ -23,16 +23,19 @@ impl InteropInterfaceItem {
     }
 
     /// Gets the wrapped interop interface.
+    #[must_use] 
     pub fn interface(&self) -> &Arc<dyn InteropInterface> {
         &self.interface
     }
 
     /// Gets the type of the stack item.
-    pub fn stack_item_type(&self) -> StackItemType {
+    #[must_use] 
+    pub const fn stack_item_type(&self) -> StackItemType {
         StackItemType::InteropInterface
     }
 
     /// Gets the interface type.
+    #[must_use] 
     pub fn interface_type(&self) -> &str {
         self.interface.interface_type()
     }
@@ -53,11 +56,13 @@ impl InteropInterfaceItem {
     }
 
     /// Converts the interop interface to a boolean.
-    pub fn to_boolean(&self) -> bool {
+    #[must_use] 
+    pub const fn to_boolean(&self) -> bool {
         true
     }
 
     /// Creates a deep copy of the interop interface.
+    #[must_use] 
     pub fn deep_copy(&self) -> Self {
         Self {
             interface: self.interface.clone(),
@@ -73,7 +78,7 @@ impl PartialEq for InteropInterfaceItem {
 
 impl Eq for InteropInterfaceItem {}
 
-/// A simple implementation of InteropInterface for testing.
+/// A simple implementation of `InteropInterface` for testing.
 #[derive(Debug, Clone)]
 pub struct TestInteropInterface {
     /// The interface type.
@@ -84,6 +89,7 @@ pub struct TestInteropInterface {
 
 impl TestInteropInterface {
     /// Creates a new test interop interface.
+    #[must_use] 
     pub fn new(interface_type: &str, data: &str) -> Self {
         Self {
             interface_type: interface_type.to_string(),
@@ -92,6 +98,7 @@ impl TestInteropInterface {
     }
 
     /// Gets the test data.
+    #[must_use] 
     pub fn data(&self) -> &str {
         &self.data
     }

@@ -25,7 +25,7 @@ pub struct ExecutionEngineLimits {
 
 impl ExecutionEngineLimits {
     /// Default execution limits matching the C# implementation exactly.
-    /// In C#: MaxItemSize = ushort.MaxValue = 65535
+    /// In C#: `MaxItemSize` = ushort.MaxValue = 65535
     pub const DEFAULT: Self = Self {
         max_shift: 256,
         max_stack_size: 2 * 1024,             // C#: 2 * 1024

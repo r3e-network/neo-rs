@@ -28,7 +28,7 @@ use warp::Filter;
 const MAX_PARAMS_DEPTH: usize = 32;
 
 #[derive(Clone)]
-pub(crate) struct BasicAuth {
+pub struct BasicAuth {
     user: Vec<u8>,
     pass: Vec<u8>,
 }
@@ -63,12 +63,9 @@ impl CorsConfig {
         let origins = settings
             .allow_origins
             .iter()
-            .filter_map(|origin| match HeaderValue::from_str(origin) {
-                Ok(value) => Some(value),
-                Err(_) => {
-                    invalid_origins += 1;
-                    None
-                }
+            .filter_map(|origin| if let Ok(value) = HeaderValue::from_str(origin) { Some(value) } else {
+                invalid_origins += 1;
+                None
             })
             .collect::<Vec<_>>();
 
@@ -133,7 +130,7 @@ struct RpcQueryParams {
     params: Option<String>,
 }
 
-pub(crate) fn build_rpc_routes(
+pub fn build_rpc_routes(
     handle: Weak<RwLock<RpcServer>>,
     disabled: Arc<HashSet<String>>,
     auth: Arc<Option<BasicAuth>>,
@@ -185,7 +182,7 @@ pub(crate) fn build_rpc_routes(
 
     let options_route = warp::path::end()
         .and(warp::options())
-        .and(with_filters(filters.clone()))
+        .and(with_filters(filters))
         .and(warp::header::optional::<HeaderValue>("origin"))
         .map(|filters: RpcFilters, origin: Option<HeaderValue>| {
             let mut response = HttpResponse::new(Vec::new().into());
@@ -201,7 +198,7 @@ pub(crate) fn build_rpc_routes(
 ///
 /// This is separate from `build_rpc_routes` because WebSocket requires
 /// an event broadcast channel which may not always be available.
-pub(crate) fn build_ws_route(
+pub fn build_ws_route(
     event_tx: tokio::sync::broadcast::Sender<super::ws::WsEvent>,
     subscription_mgr: std::sync::Arc<super::ws::SubscriptionManager>,
 ) -> impl Filter<Extract = (HttpResponse,), Error = warp::Rejection> + Clone {
@@ -376,21 +373,15 @@ fn process_object(
     }
 
     let method_value = obj.remove("method");
-    let method = match method_value.and_then(|value| value.as_str().map(|s| s.to_string())) {
-        Some(value) => value,
-        None => {
-            RPC_ERR_TOTAL.inc();
-            return RequestOutcome::error(error_response(id, RpcError::invalid_request()), false);
-        }
+    let method = if let Some(value) = method_value.and_then(|value| value.as_str().map(std::string::ToString::to_string)) { value } else {
+        RPC_ERR_TOTAL.inc();
+        return RequestOutcome::error(error_response(id, RpcError::invalid_request()), false);
     };
 
     let params_value = obj.remove("params").unwrap_or(Value::Array(Vec::new()));
-    let params = match params_value {
-        Value::Array(values) => values,
-        _ => {
-            RPC_ERR_TOTAL.inc();
-            return RequestOutcome::error(error_response(id, RpcError::invalid_request()), false);
-        }
+    let params = if let Value::Array(values) = params_value { values } else {
+        RPC_ERR_TOTAL.inc();
+        return RequestOutcome::error(error_response(id, RpcError::invalid_request()), false);
     };
 
     let method_key = method.to_ascii_lowercase();
@@ -530,7 +521,7 @@ fn constant_time_equals(left: &[u8], right: &[u8]) -> bool {
 
 fn panic_message(payload: &Box<dyn std::any::Any + Send>) -> String {
     if let Some(message) = payload.downcast_ref::<&str>() {
-        message.to_string()
+        (*message).to_string()
     } else if let Some(message) = payload.downcast_ref::<String>() {
         message.clone()
     } else {
@@ -642,21 +633,21 @@ fn exceeds_max_depth(value: &Value, max_depth: usize) -> bool {
 }
 
 impl RequestOutcome {
-    fn response(value: Value) -> Self {
+    const fn response(value: Value) -> Self {
         Self {
             response: Some(value),
             unauthorized: false,
         }
     }
 
-    fn error(value: Value, unauthorized: bool) -> Self {
+    const fn error(value: Value, unauthorized: bool) -> Self {
         Self {
             response: Some(value),
             unauthorized,
         }
     }
 
-    fn notification() -> Self {
+    const fn notification() -> Self {
         Self {
             response: None,
             unauthorized: false,

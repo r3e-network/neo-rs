@@ -14,22 +14,23 @@ use neo_core::{Signer, Transaction, TransactionAttribute};
 use rand::Rng;
 use std::sync::Arc;
 
-/// Factory for creating TransactionManager instances
-/// Matches C# TransactionManagerFactory
+/// Factory for creating `TransactionManager` instances
+/// Matches C# `TransactionManagerFactory`
 pub struct TransactionManagerFactory {
     /// The RPC client instance
     rpc_client: Arc<RpcClient>,
 }
 
 impl TransactionManagerFactory {
-    /// TransactionManagerFactory Constructor
+    /// `TransactionManagerFactory` Constructor
     /// Matches C# constructor
-    pub fn new(rpc_client: Arc<RpcClient>) -> Self {
+    #[must_use] 
+    pub const fn new(rpc_client: Arc<RpcClient>) -> Self {
         Self { rpc_client }
     }
 
     /// Create an unsigned Transaction object with given parameters
-    /// Matches C# MakeTransactionAsync
+    /// Matches C# `MakeTransactionAsync`
     pub async fn make_transaction(
         &self,
         script: &[u8],
@@ -46,7 +47,7 @@ impl TransactionManagerFactory {
     }
 
     /// Create an unsigned Transaction object with given parameters and attributes
-    /// Matches C# MakeTransactionAsync with attributes
+    /// Matches C# `MakeTransactionAsync` with attributes
     pub async fn make_transaction_with_attributes(
         &self,
         script: &[u8],
@@ -64,7 +65,7 @@ impl TransactionManagerFactory {
     }
 
     /// Create an unsigned Transaction object with given parameters and system fee
-    /// Matches C# MakeTransactionAsync with systemFee parameter
+    /// Matches C# `MakeTransactionAsync` with systemFee parameter
     pub async fn make_transaction_with_fee(
         &self,
         script: &[u8],

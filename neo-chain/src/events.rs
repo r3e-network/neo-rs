@@ -56,6 +56,7 @@ pub struct ChainEventSubscriber {
 
 impl ChainEventSubscriber {
     /// Create a new chain event subscriber
+    #[must_use] 
     pub fn new(capacity: usize) -> Self {
         let (sender, _) = broadcast::channel(capacity);
         Self {
@@ -65,6 +66,7 @@ impl ChainEventSubscriber {
     }
 
     /// Subscribe to chain events
+    #[must_use] 
     pub fn subscribe(&self) -> broadcast::Receiver<ChainEvent> {
         *self.subscriber_count.write() += 1;
         self.sender.subscribe()
@@ -77,6 +79,7 @@ impl ChainEventSubscriber {
     }
 
     /// Get the number of active subscribers
+    #[must_use] 
     pub fn subscriber_count(&self) -> usize {
         *self.subscriber_count.read()
     }

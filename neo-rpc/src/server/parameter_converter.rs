@@ -23,7 +23,7 @@ pub struct ConversionContext {
 }
 
 impl ConversionContext {
-    pub fn new(address_version: u8) -> Self {
+    pub const fn new(address_version: u8) -> Self {
         Self { address_version }
     }
 }
@@ -119,11 +119,11 @@ impl RpcConvertible for Address {
 impl RpcConvertible for Vec<Address> {
     fn from_token(token: &JToken, ctx: &ConversionContext) -> Result<Self, RpcException> {
         let array = expect_array(token)?;
-        let mut result = Vec::with_capacity(array.count());
+        let mut result = Self::with_capacity(array.count());
         for (index, item) in array.children().iter().enumerate() {
             let token = item
                 .as_ref()
-                .ok_or_else(|| invalid_params(format!("Null address entry at index {}", index)))?;
+                .ok_or_else(|| invalid_params(format!("Null address entry at index {index}")))?;
             result.push(<Address as RpcConvertible>::from_token(token, ctx)?);
         }
         Ok(result)
@@ -147,16 +147,16 @@ impl RpcConvertible for BlockHashOrIndex {
                         token.to_string_value()
                     )));
                 }
-                if rounded < 0.0 || rounded > u32::MAX as f64 {
+                if rounded < 0.0 || rounded > f64::from(u32::MAX) {
                     return Err(invalid_params(format!(
                         "Invalid block index value: {}",
                         token.to_string_value()
                     )));
                 }
-                Ok(BlockHashOrIndex::from_index(rounded as u32))
+                Ok(Self::from_index(rounded as u32))
             }
-            JToken::String(text) => BlockHashOrIndex::try_parse(text)
-                .ok_or_else(|| invalid_params(format!("Invalid block hash or index: {}", text))),
+            JToken::String(text) => Self::try_parse(text)
+                .ok_or_else(|| invalid_params(format!("Invalid block hash or index: {text}"))),
             _ => Err(invalid_params("Expected block hash or index string")),
         }
     }
@@ -179,16 +179,16 @@ impl RpcConvertible for ContractNameOrHashOrId {
                         token.to_string_value()
                     )));
                 }
-                if rounded < i32::MIN as f64 || rounded > i32::MAX as f64 {
+                if rounded < f64::from(i32::MIN) || rounded > f64::from(i32::MAX) {
                     return Err(invalid_params(format!(
                         "Invalid contract identifier: {}",
                         token.to_string_value()
                     )));
                 }
-                Ok(ContractNameOrHashOrId::from_id(rounded as i32))
+                Ok(Self::from_id(rounded as i32))
             }
-            JToken::String(text) => ContractNameOrHashOrId::try_parse(text)
-                .ok_or_else(|| invalid_params(format!("Invalid contract identifier: {}", text))),
+            JToken::String(text) => Self::try_parse(text)
+                .ok_or_else(|| invalid_params(format!("Invalid contract identifier: {text}"))),
             _ => Err(invalid_params("Expected contract identifier string")),
         }
     }
@@ -197,7 +197,7 @@ impl RpcConvertible for ContractNameOrHashOrId {
 impl RpcConvertible for Uuid {
     fn from_token(token: &JToken, _ctx: &ConversionContext) -> Result<Self, RpcException> {
         let text = expect_string(token, "Expected UUID string")?;
-        Uuid::from_str(text.trim()).map_err(|_| invalid_params(format!("Invalid UUID: {}", text)))
+        Self::from_str(text.trim()).map_err(|_| invalid_params(format!("Invalid UUID: {text}")))
     }
 }
 
@@ -213,7 +213,7 @@ impl RpcConvertible for SignersAndWitnesses {
 
         for (index, entry) in array.children().iter().enumerate() {
             let token = entry.as_ref().ok_or_else(|| {
-                invalid_params(format!("Invalid signer entry at index {}", index))
+                invalid_params(format!("Invalid signer entry at index {index}"))
             })?;
             let obj = expect_object(token)?;
 
@@ -232,23 +232,22 @@ impl RpcConvertible for SignersAndWitnesses {
             }
         }
 
-        Ok(SignersAndWitnesses::new(signers, witnesses))
+        Ok(Self::new(signers, witnesses))
     }
 }
 
 impl RpcConvertible for Vec<ContractParameter> {
     fn from_token(token: &JToken, _ctx: &ConversionContext) -> Result<Self, RpcException> {
         let array = expect_array(token)?;
-        let mut parameters = Vec::with_capacity(array.count());
+        let mut parameters = Self::with_capacity(array.count());
         for (index, item) in array.children().iter().enumerate() {
             let token = item.as_ref().ok_or_else(|| {
-                invalid_params(format!("Invalid contract parameter at index {}", index))
+                invalid_params(format!("Invalid contract parameter at index {index}"))
             })?;
             let value = jtoken_to_serde(token);
             let parameter = ContractParameter::from_json(&value).map_err(|e| {
                 invalid_params(format!(
-                    "Invalid contract parameter at index {}: {}",
-                    index, e
+                    "Invalid contract parameter at index {index}: {e}"
                 ))
             })?;
             parameters.push(parameter);
@@ -263,16 +262,14 @@ fn jtoken_to_serde(token: &JToken) -> serde_json::Value {
         JToken::Null => serde_json::Value::Null,
         JToken::Boolean(b) => serde_json::Value::Bool(*b),
         JToken::Number(n) => serde_json::Number::from_f64(*n)
-            .map(serde_json::Value::Number)
-            .unwrap_or(serde_json::Value::Null),
+            .map_or(serde_json::Value::Null, serde_json::Value::Number),
         JToken::String(s) => serde_json::Value::String(s.clone()),
         JToken::Array(arr) => serde_json::Value::Array(
             arr.children()
                 .iter()
                 .map(|item| {
                     item.as_ref()
-                        .map(jtoken_to_serde)
-                        .unwrap_or(serde_json::Value::Null)
+                        .map_or(serde_json::Value::Null, jtoken_to_serde)
                 })
                 .collect(),
         ),
@@ -283,8 +280,7 @@ fn jtoken_to_serde(token: &JToken) -> serde_json::Value {
                     key.clone(),
                     value
                         .as_ref()
-                        .map(jtoken_to_serde)
-                        .unwrap_or(serde_json::Value::Null),
+                        .map_or(serde_json::Value::Null, jtoken_to_serde),
                 );
             }
             serde_json::Value::Object(map)
@@ -301,7 +297,7 @@ fn parse_address(text: &str, address_version: u8) -> Result<Address, RpcExceptio
 
     WalletHelper::to_script_hash(text, address_version)
         .map(|hash| Address::new(hash, address_version))
-        .map_err(|_| invalid_params(format!("Invalid address: {}", text)))
+        .map_err(|_| invalid_params(format!("Invalid address: {text}")))
 }
 
 fn parse_uint160(text: &str) -> Result<UInt160, RpcException> {
@@ -311,7 +307,7 @@ fn parse_uint160(text: &str) -> Result<UInt160, RpcException> {
             return Ok(value);
         }
     }
-    Err(invalid_params(format!("Invalid UInt160 value: {}", text)))
+    Err(invalid_params(format!("Invalid UInt160 value: {text}")))
 }
 
 fn parse_signer(token: &JToken, ctx: &ConversionContext) -> Result<Signer, RpcException> {
@@ -369,7 +365,7 @@ fn parse_signer(token: &JToken, ctx: &ConversionContext) -> Result<Signer, RpcEx
                         .map_err(|_| invalid_params("Invalid ECPoint"))?;
                     // Neo N3 uses secp256r1 (NIST P-256) curve for public keys
                     ECPoint::new(ECCurve::Secp256r1, bytes)
-                        .map_err(|e| invalid_params(format!("Invalid ECPoint: {}", e)))
+                        .map_err(|e| invalid_params(format!("Invalid ECPoint: {e}")))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
         }
@@ -387,7 +383,7 @@ fn parse_signer(token: &JToken, ctx: &ConversionContext) -> Result<Signer, RpcEx
                         .ok_or_else(|| invalid_params("Null witness rule"))?;
                     let json = jtoken_to_serde(value);
                     WitnessRule::from_json(&json)
-                        .map_err(|e| invalid_params(format!("Invalid witness rule: {}", e)))
+                        .map_err(|e| invalid_params(format!("Invalid witness rule: {e}")))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
         }
@@ -442,7 +438,7 @@ fn parse_witness_scope(text: &str) -> Result<WitnessScope, RpcException> {
             "CustomGroups" => WitnessScope::CUSTOM_GROUPS.bits(),
             "WitnessRules" => WitnessScope::WITNESS_RULES.bits(),
             "Global" => WitnessScope::GLOBAL.bits(),
-            other => return Err(invalid_params(format!("Unknown witness scope: {}", other))),
+            other => return Err(invalid_params(format!("Unknown witness scope: {other}"))),
         };
 
         if flag == WitnessScope::GLOBAL.bits() && value != 0 {
@@ -454,7 +450,7 @@ fn parse_witness_scope(text: &str) -> Result<WitnessScope, RpcException> {
     }
 
     WitnessScope::from_byte(value)
-        .ok_or_else(|| invalid_params(format!("Invalid witness scope combination: {}", text)))
+        .ok_or_else(|| invalid_params(format!("Invalid witness scope combination: {text}")))
 }
 
 fn expect_array(token: &JToken) -> Result<&JArray, RpcException> {

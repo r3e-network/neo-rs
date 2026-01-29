@@ -10,14 +10,21 @@ pub(in crate::service) fn invocation_script_from_signature(signature: &[u8]) -> 
     builder.to_array()
 }
 
-pub(in crate::service) fn signature_from_invocation_script(invocation: &[u8]) -> Option<Vec<u8>> {
+/// Extracts signature from invocation script.
+/// 
+/// Returns `Option<&[u8]>` to avoid unnecessary allocation.
+/// The signature slice is a reference into the input invocation script,
+/// valid for the lifetime of the input.
+pub(in crate::service) fn signature_from_invocation_script(invocation: &[u8]) -> Option<&[u8]> {
     if invocation.len() != 66 {
         return None;
     }
     if invocation[0] != OpCode::PUSHDATA1 as u8 || invocation[1] != 0x40 {
         return None;
     }
-    Some(invocation[2..66].to_vec())
+    // Return a slice instead of allocating a new Vec.
+    // The caller can call .to_vec() if they need an owned copy.
+    Some(&invocation[2..66])
 }
 
 impl ConsensusService {

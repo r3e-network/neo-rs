@@ -15,7 +15,7 @@ pub const BLOCK_TIME_MS: u64 = 15_000;
 pub const MAX_VALIDATORS: usize = 21;
 
 /// Maximum size of message hash cache (LRU limit for memory protection)
-/// Matches C# DBFTPlugin's message caching behavior
+/// Matches C# `DBFTPlugin`'s message caching behavior
 pub const MAX_MESSAGE_CACHE_SIZE: usize = 10_000;
 
 /// Consensus state enumeration
@@ -53,9 +53,9 @@ struct PersistedConsensusState {
     block_index: u32,
     /// Current view number (increments on view change)
     view_number: u8,
-    /// Proposed block hash (from PrepareRequest)
+    /// Proposed block hash (from `PrepareRequest`)
     proposed_block_hash: Option<UInt256>,
-    /// Hash of the primary PrepareRequest payload (ExtensiblePayload.Hash)
+    /// Hash of the primary `PrepareRequest` payload (ExtensiblePayload.Hash)
     #[serde(default)]
     preparation_hash: Option<UInt256>,
     /// Proposed block timestamp
@@ -64,27 +64,27 @@ struct PersistedConsensusState {
     proposed_tx_hashes: Vec<UInt256>,
     /// Nonce for the block
     nonce: u64,
-    /// PrepareRequest received from primary
+    /// `PrepareRequest` received from primary
     prepare_request_received: bool,
-    /// PrepareResponse signatures (validator_index -> signature)
+    /// `PrepareResponse` signatures (`validator_index` -> signature)
     prepare_responses: HashMap<u8, Vec<u8>>,
-    /// PrepareResponse hashes (validator_index -> preparation_hash)
+    /// `PrepareResponse` hashes (`validator_index` -> `preparation_hash`)
     #[serde(default)]
     prepare_response_hashes: HashMap<u8, UInt256>,
-    /// Commit signatures (validator_index -> signature)
+    /// Commit signatures (`validator_index` -> signature)
     commits: HashMap<u8, Vec<u8>>,
-    /// Commit view numbers (validator_index -> view_number)
+    /// Commit view numbers (`validator_index` -> `view_number`)
     #[serde(default)]
     commit_view_numbers: HashMap<u8, u8>,
-    /// ChangeView requests (validator_index -> (new_view, reason))
+    /// `ChangeView` requests (`validator_index` -> (`new_view`, reason))
     change_views: HashMap<u8, (u8, ChangeViewReason)>,
-    /// Primary PrepareRequest invocation script (payload witness).
+    /// Primary `PrepareRequest` invocation script (payload witness).
     #[serde(default)]
     prepare_request_invocation: Option<Vec<u8>>,
-    /// ChangeView invocation script per validator (payload witness).
+    /// `ChangeView` invocation script per validator (payload witness).
     #[serde(default)]
     change_view_invocations: HashMap<u8, Vec<u8>>,
-    /// ChangeView timestamp per validator.
+    /// `ChangeView` timestamp per validator.
     #[serde(default)]
     change_view_timestamps: HashMap<u8, u64>,
     /// Commit invocation script per validator (payload witness).
@@ -115,11 +115,11 @@ pub struct ConsensusContext {
     pub version: u32,
     /// Previous block hash for the proposed block.
     pub prev_hash: UInt256,
-    /// Proposed block hash (from PrepareRequest)
+    /// Proposed block hash (from `PrepareRequest`)
     pub proposed_block_hash: Option<UInt256>,
-    /// Hash of the primary's PrepareRequest extensible payload (ExtensiblePayload.Hash).
+    /// Hash of the primary's `PrepareRequest` extensible payload (ExtensiblePayload.Hash).
     ///
-    /// In Neo N3 DBFTPlugin this is used as `PrepareResponse.PreparationHash`.
+    /// In Neo N3 `DBFTPlugin` this is used as `PrepareResponse.PreparationHash`.
     pub preparation_hash: Option<UInt256>,
     /// Proposed block timestamp
     pub proposed_timestamp: u64,
@@ -129,21 +129,21 @@ pub struct ConsensusContext {
     pub nonce: u64,
 
     // Signature tracking
-    /// PrepareRequest received from primary
+    /// `PrepareRequest` received from primary
     pub prepare_request_received: bool,
-    /// PrepareResponse signatures (validator_index -> signature)
+    /// `PrepareResponse` signatures (`validator_index` -> signature)
     pub prepare_responses: HashMap<u8, Vec<u8>>,
-    /// PrepareResponse hashes (validator_index -> preparation_hash)
+    /// `PrepareResponse` hashes (`validator_index` -> `preparation_hash`)
     pub prepare_response_hashes: HashMap<u8, UInt256>,
-    /// Commit signatures (validator_index -> signature)
+    /// Commit signatures (`validator_index` -> signature)
     pub commits: HashMap<u8, Vec<u8>>,
-    /// Commit view numbers (validator_index -> view_number)
+    /// Commit view numbers (`validator_index` -> `view_number`)
     pub commit_view_numbers: HashMap<u8, u8>,
-    /// ChangeView requests (validator_index -> (new_view, reason))
+    /// `ChangeView` requests (`validator_index` -> (`new_view`, reason))
     pub change_views: HashMap<u8, (u8, ChangeViewReason)>,
-    /// Primary PrepareRequest invocation script (payload witness).
+    /// Primary `PrepareRequest` invocation script (payload witness).
     pub prepare_request_invocation: Option<Vec<u8>>,
-    /// ChangeView invocation script per validator (payload witness).
+    /// `ChangeView` invocation script per validator (payload witness).
     pub change_view_invocations: HashMap<u8, Vec<u8>>,
     /// Commit invocation script per validator (payload witness).
     pub commit_invocations: HashMap<u8, Vec<u8>>,
@@ -161,6 +161,7 @@ pub struct ConsensusContext {
 
 impl ConsensusContext {
     /// Creates a new consensus context
+    #[must_use] 
     pub fn new(block_index: u32, validators: Vec<ValidatorInfo>, my_index: Option<u8>) -> Self {
         Self {
             block_index,
@@ -193,21 +194,25 @@ impl ConsensusContext {
     }
 
     /// Returns the number of validators
+    #[must_use] 
     pub fn validator_count(&self) -> usize {
         self.validators.len()
     }
 
     /// Returns the number of faulty nodes tolerated: f = (n-1)/3
+    #[must_use] 
     pub fn f(&self) -> usize {
         (self.validator_count() - 1) / 3
     }
 
     /// Returns the number of nodes required for consensus: M = n - f
+    #[must_use] 
     pub fn m(&self) -> usize {
         self.validator_count() - self.f()
     }
 
     /// Returns the primary (speaker) index for the current view
+    #[must_use] 
     pub fn primary_index(&self) -> u8 {
         // Matches C# DBFTPlugin:
         // `p = ((Block.Index - viewNumber) % Validators.Length + Validators.Length) % Validators.Length`.
@@ -215,16 +220,18 @@ impl ConsensusContext {
         if n == 0 {
             return 0;
         }
-        let p = (self.block_index as i64 - self.view_number as i64).rem_euclid(n);
+        let p = (i64::from(self.block_index) - i64::from(self.view_number)).rem_euclid(n);
         p as u8
     }
 
     /// Returns true if this node is the primary for the current view
+    #[must_use] 
     pub fn is_primary(&self) -> bool {
         self.my_index == Some(self.primary_index())
     }
 
     /// Returns true if this node is a backup (non-primary validator)
+    #[must_use] 
     pub fn is_backup(&self) -> bool {
         match self.my_index {
             Some(idx) => idx != self.primary_index(),
@@ -233,14 +240,16 @@ impl ConsensusContext {
     }
 
     /// Returns true if we have enough prepare responses (M signatures)
+    #[must_use] 
     pub fn has_enough_prepare_responses(&self) -> bool {
         // Count: primary's implicit response + explicit responses
         let count =
-            if self.prepare_request_received { 1 } else { 0 } + self.prepare_responses.len();
+            usize::from(self.prepare_request_received) + self.prepare_responses.len();
         count >= self.m()
     }
 
     /// Returns true if we have enough commits (M signatures)
+    #[must_use] 
     pub fn has_enough_commits(&self) -> bool {
         let count = self
             .commits
@@ -257,7 +266,8 @@ impl ConsensusContext {
     }
 
     /// Returns true if we have enough change view requests (M requests).
-    /// Matches C# DBFTPlugin's `CheckExpectedView` logic: counts NewViewNumber >= requested view.
+    /// Matches C# `DBFTPlugin`'s `CheckExpectedView` logic: counts `NewViewNumber` >= requested view.
+    #[must_use] 
     pub fn has_enough_change_views(&self, new_view: u8) -> bool {
         let count = self
             .change_views
@@ -380,6 +390,7 @@ impl ConsensusContext {
     }
 
     /// Gets the timeout duration for the current view
+    #[must_use] 
     pub fn get_timeout(&self) -> u64 {
         // Base timeout + exponential backoff for view changes.
         // Use configured expected_block_time when provided (mirrors C# TimePerBlock overrides).
@@ -392,11 +403,13 @@ impl ConsensusContext {
     }
 
     /// Checks if the current view has timed out
+    #[must_use] 
     pub fn is_timed_out(&self, current_time: u64) -> bool {
         current_time > self.view_start_time + self.get_timeout()
     }
 
     /// Collects all commit signatures for block finalization
+    #[must_use] 
     pub fn collect_commit_signatures(&self) -> Vec<(u8, Vec<u8>)> {
         self.commits
             .iter()
@@ -427,6 +440,7 @@ impl ConsensusContext {
     /// # Returns
     /// * `true` if the message has been seen before
     /// * `false` if this is a new message
+    #[must_use] 
     pub fn has_seen_message(&self, hash: &UInt256) -> bool {
         self.seen_message_hashes.contains(hash)
     }
@@ -436,9 +450,9 @@ impl ConsensusContext {
     /// This method adds the message hash to the cache to prevent duplicate processing.
     /// The cache is automatically cleared when starting a new block via `reset_for_new_block()`.
     ///
-    /// Security: Implements LRU-style cache limit (MAX_MESSAGE_CACHE_SIZE) to prevent
+    /// Security: Implements LRU-style cache limit (`MAX_MESSAGE_CACHE_SIZE`) to prevent
     /// memory exhaustion attacks. When the cache is full, it is cleared to make room
-    /// for new messages. This matches C# DBFTPlugin's memory protection behavior.
+    /// for new messages. This matches C# `DBFTPlugin`'s memory protection behavior.
     ///
     /// # Arguments
     /// * `hash` - The message hash to mark as seen
@@ -455,6 +469,7 @@ impl ConsensusContext {
     }
 
     /// Returns the number of validators that have committed (sent Commit messages)
+    #[must_use] 
     pub fn count_committed(&self) -> usize {
         self.commits.len()
     }
@@ -462,13 +477,14 @@ impl ConsensusContext {
     /// Returns the number of validators that have failed or are lost
     ///
     /// A validator is considered failed if:
-    /// - We have no record of messages from them (not in last_seen_messages), OR
-    /// - Their last seen message was for an old block (< current block_index - 1)
+    /// - We have no record of messages from them (not in `last_seen_messages`), OR
+    /// - Their last seen message was for an old block (< current `block_index` - 1)
     ///
-    /// This matches C# DBFTPlugin's CountFailed logic:
+    /// This matches C# `DBFTPlugin`'s `CountFailed` logic:
     /// ```csharp
     /// Validators.Count(p => !LastSeenMessage.TryGetValue(p, out var value) || value < (Block.Index - 1))
     /// ```
+    #[must_use] 
     pub fn count_failed(&self) -> usize {
         if self.last_seen_messages.is_empty() {
             return 0;
@@ -489,38 +505,40 @@ impl ConsensusContext {
     /// Returns true if more than F nodes have committed or are lost
     ///
     /// This is a critical check for deciding between recovery and view change.
-    /// When (CountCommitted + CountFailed) > F, it means:
+    /// When (`CountCommitted` + `CountFailed`) > F, it means:
     /// - Either enough nodes have already committed, OR
     /// - Enough nodes have failed that we need recovery to sync state
     ///
     /// In this case, we should request recovery instead of change view to avoid
     /// splitting the network across different views.
     ///
-    /// Matches C# DBFTPlugin's MoreThanFNodesCommittedOrLost:
+    /// Matches C# `DBFTPlugin`'s `MoreThanFNodesCommittedOrLost`:
     /// ```csharp
     /// public bool MoreThanFNodesCommittedOrLost => (CountCommitted + CountFailed) > F;
     /// ```
+    #[must_use] 
     pub fn more_than_f_nodes_committed_or_lost(&self) -> bool {
         (self.count_committed() + self.count_failed()) > self.f()
     }
 
     /// Returns true if this node has requested a view change.
     ///
-    /// Mirrors C# DBFTPlugin `ViewChanging`:
+    /// Mirrors C# `DBFTPlugin` `ViewChanging`:
     /// `!WatchOnly && ChangeViewPayloads[MyIndex]?.NewViewNumber > ViewNumber`.
+    #[must_use] 
     pub fn view_changing(&self) -> bool {
         let Some(my_index) = self.my_index else {
             return false;
         };
         self.change_views
             .get(&my_index)
-            .map(|(new_view, _)| *new_view > self.view_number)
-            .unwrap_or(false)
+            .is_some_and(|(new_view, _)| *new_view > self.view_number)
     }
 
     /// Returns true when we should not accept certain payloads due to an ongoing view change.
     ///
-    /// Mirrors C# DBFTPlugin `NotAcceptingPayloadsDueToViewChanging`.
+    /// Mirrors C# `DBFTPlugin` `NotAcceptingPayloadsDueToViewChanging`.
+    #[must_use] 
     pub fn not_accepting_payloads_due_to_view_changing(&self) -> bool {
         self.view_changing() && !self.more_than_f_nodes_committed_or_lost()
     }

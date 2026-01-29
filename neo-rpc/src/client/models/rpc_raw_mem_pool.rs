@@ -13,7 +13,7 @@ use neo_json::{JArray, JObject, JToken};
 use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};
 
-/// Raw memory pool information matching C# RpcRawMemPool
+/// Raw memory pool information matching C# `RpcRawMemPool`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcRawMemPool {
     /// Current block height
@@ -28,10 +28,11 @@ pub struct RpcRawMemPool {
 
 impl RpcRawMemPool {
     /// Converts to JSON
-    /// Matches C# ToJson
+    /// Matches C# `ToJson`
+    #[must_use] 
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
-        json.insert("height".to_string(), JToken::Number(self.height as f64));
+        json.insert("height".to_string(), JToken::Number(f64::from(self.height)));
 
         let verified_array: Vec<JToken> = self
             .verified
@@ -57,14 +58,14 @@ impl RpcRawMemPool {
     }
 
     /// Creates from JSON
-    /// Matches C# FromJson
+    /// Matches C# `FromJson`
     pub fn from_json(json: &JObject) -> Result<Self, String> {
-        let height = if let Some(text) = json.get("height").and_then(|v| v.as_string()) {
+        let height = if let Some(text) = json.get("height").and_then(neo_json::JToken::as_string) {
             text.parse::<u32>()
-                .map_err(|_| format!("Invalid height value: {}", text))?
+                .map_err(|_| format!("Invalid height value: {text}"))?
         } else {
             json.get("height")
-                .and_then(|v| v.as_number())
+                .and_then(neo_json::JToken::as_number)
                 .ok_or("Missing or invalid 'height' field")? as u32
         };
 
@@ -74,7 +75,7 @@ impl RpcRawMemPool {
             .map(|arr| {
                 arr.iter()
                     .filter_map(|item| item.as_ref())
-                    .filter_map(|token| token.as_string())
+                    .filter_map(neo_json::JToken::as_string)
                     .filter_map(|s| UInt256::parse(&s).ok())
                     .collect()
             })
@@ -86,7 +87,7 @@ impl RpcRawMemPool {
             .map(|arr| {
                 arr.iter()
                     .filter_map(|item| item.as_ref())
-                    .filter_map(|token| token.as_string())
+                    .filter_map(neo_json::JToken::as_string)
                     .filter_map(|s| UInt256::parse(&s).ok())
                     .collect()
             })

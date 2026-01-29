@@ -17,7 +17,7 @@ use neo_core::smart_contract::TriggerType;
 use neo_json::{JArray, JObject, JToken};
 use neo_primitives::{UInt160, UInt256};
 use neo_vm::{StackItem, VMState};
-/// Application log information matching C# RpcApplicationLog
+/// Application log information matching C# `RpcApplicationLog`
 #[derive(Debug, Clone)]
 pub struct RpcApplicationLog {
     /// Transaction ID
@@ -32,16 +32,16 @@ pub struct RpcApplicationLog {
 
 impl RpcApplicationLog {
     /// Creates from JSON
-    /// Matches C# FromJson
+    /// Matches C# `FromJson`
     pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
         let tx_id = json
             .get("txid")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .and_then(|s| UInt256::parse(&s).ok());
 
         let block_hash = json
             .get("blockhash")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .and_then(|s| UInt256::parse(&s).ok());
 
         let executions = json
@@ -64,7 +64,8 @@ impl RpcApplicationLog {
     }
 
     /// Converts to JSON
-    /// Matches C# ToJson
+    /// Matches C# `ToJson`
+    #[must_use] 
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
         if let Some(tx_id) = &self.tx_id {
@@ -113,34 +114,33 @@ pub struct Execution {
 
 impl Execution {
     /// Creates from JSON
-    /// Matches C# FromJson
+    /// Matches C# `FromJson`
     pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
         let trigger_str = json
             .get("trigger")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .ok_or("Missing or invalid 'trigger' field")?;
         let trigger = TriggerType::from_str(&trigger_str)
-            .map_err(|_| format!("Invalid trigger type: {}", trigger_str))?;
+            .map_err(|_| format!("Invalid trigger type: {trigger_str}"))?;
 
         let vm_state_str = json
             .get("vmstate")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .ok_or("Missing or invalid 'vmstate' field")?;
         let vm_state = vm_state_from_str(&vm_state_str)
-            .ok_or_else(|| format!("Invalid VM state: {}", vm_state_str))?;
+            .ok_or_else(|| format!("Invalid VM state: {vm_state_str}"))?;
 
         let gas_consumed_str = json
             .get("gasconsumed")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .ok_or("Missing or invalid 'gasconsumed' field")?;
         let gas_consumed = gas_consumed_str
             .parse::<i64>()
-            .map_err(|_| format!("Invalid gas consumed value: {}", gas_consumed_str))?;
+            .map_err(|_| format!("Invalid gas consumed value: {gas_consumed_str}"))?;
 
         let exception_message = json
             .get("exception")
-            .and_then(|v| v.as_string())
-            .map(|s| s.to_string());
+            .and_then(neo_json::JToken::as_string);
 
         let stack = json
             .get("stack")
@@ -177,7 +177,7 @@ impl Execution {
     }
 
     /// Converts to JSON
-    /// Matches C# ToJson
+    /// Matches C# `ToJson`
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
         json.insert(
@@ -196,8 +196,7 @@ impl Execution {
             "exception".to_string(),
             self.exception_message
                 .as_ref()
-                .map(|value| JToken::String(value.clone()))
-                .unwrap_or(JToken::Null),
+                .map_or(JToken::Null, |value| JToken::String(value.clone())),
         );
         let stack = self
             .stack
@@ -222,7 +221,7 @@ impl Execution {
     }
 }
 
-/// Notification event arguments matching C# RpcNotifyEventArgs
+/// Notification event arguments matching C# `RpcNotifyEventArgs`
 #[derive(Debug, Clone)]
 pub struct RpcNotifyEventArgs {
     /// Contract that emitted the notification
@@ -237,22 +236,22 @@ pub struct RpcNotifyEventArgs {
 
 impl RpcNotifyEventArgs {
     /// Creates from JSON
-    /// Matches C# FromJson
+    /// Matches C# `FromJson`
     pub fn from_json(
         json: &JObject,
         _protocol_settings: &ProtocolSettings,
     ) -> Result<Self, String> {
         let contract = json
             .get("contract")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .and_then(|s| UInt160::parse(&s).ok())
             .ok_or("Missing or invalid 'contract' field")?;
 
         let event_name = json
             .get("eventname")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .ok_or("Missing or invalid 'eventname' field")?
-            .to_string();
+            ;
 
         let state_json = json
             .get("state")
@@ -268,7 +267,8 @@ impl RpcNotifyEventArgs {
     }
 
     /// Converts to JSON
-    /// Matches C# ToJson
+    /// Matches C# `ToJson`
+    #[must_use] 
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
         json.insert(
@@ -304,7 +304,7 @@ fn trigger_type_to_string(trigger: TriggerType) -> String {
     } else if trigger == TriggerType::ALL {
         "All".to_string()
     } else {
-        format!("{:?}", trigger)
+        format!("{trigger:?}")
     }
 }
 

@@ -12,20 +12,21 @@ use crate::stack_item::StackItem;
 use std::error::Error;
 use std::fmt;
 
-/// namespace Neo.VM -> public class VMUnhandledException : Exception
+/// namespace Neo.VM -> public class `VMUnhandledException` : Exception
 /// Represents an unhandled exception in the VM.
 /// Thrown when there is an exception in the VM that is not caught by any script.
 #[derive(Debug, Clone)]
 pub struct VMUnhandledException {
     /// The unhandled exception in the VM.
-    /// public StackItem ExceptionObject { get; }
+    /// public `StackItem` `ExceptionObject` { get; }
     pub exception_object: StackItem,
     message: String,
 }
 
 impl VMUnhandledException {
-    /// Initializes a new instance of the VMUnhandledException class.
+    /// Initializes a new instance of the `VMUnhandledException` class.
     /// public VMUnhandledException(StackItem ex) : base(GetExceptionMessage(ex))
+    #[must_use] 
     pub fn new(ex: StackItem) -> Self {
         let message = Self::get_exception_message(&ex);
         Self {

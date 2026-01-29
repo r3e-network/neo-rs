@@ -30,7 +30,7 @@ pub(super) fn invoke_contract_verify(
 ) -> Result<Value, RpcException> {
     let script_hash = super::helpers::expect_string_param(params, 0, "invokecontractverify")?;
     let script_hash = UInt160::from_str(&script_hash)
-        .map_err(|err| invalid_params(format!("invalid script hash: {}", err)))?;
+        .map_err(|err| invalid_params(format!("invalid script hash: {err}")))?;
 
     let parameters = parse_contract_parameters(params.get(1))?;
     let (signers, witnesses) = parse_signers_and_witnesses(server, params.get(2))?;
@@ -116,8 +116,7 @@ pub(super) fn invoke_contract_verify(
     let state = engine.state();
     let mut exception = engine
         .fault_exception()
-        .map(|message| Value::String(message.to_string()))
-        .unwrap_or(Value::Null);
+        .map_or(Value::Null, |message| Value::String(message.to_string()));
 
     let mut stack_items = Vec::new();
     let mut stack_error: Option<RpcException> = None;

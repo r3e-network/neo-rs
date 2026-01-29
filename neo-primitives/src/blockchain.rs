@@ -100,13 +100,13 @@ impl RelayError {
 
     /// Create a mempool full error.
     #[must_use]
-    pub fn mempool_full(current: usize, max: usize) -> Self {
+    pub const fn mempool_full(current: usize, max: usize) -> Self {
         Self::MempoolFull { current, max }
     }
 
     /// Create an invalid height error.
     #[must_use]
-    pub fn invalid_height(expected: u32, got: u32) -> Self {
+    pub const fn invalid_height(expected: u32, got: u32) -> Self {
         Self::InvalidHeight { expected, got }
     }
 }
@@ -146,19 +146,19 @@ pub enum SendError {
 impl SendError {
     /// Create a peer not found error.
     #[must_use]
-    pub fn peer_not_found(id: u64) -> Self {
+    pub const fn peer_not_found(id: u64) -> Self {
         Self::PeerNotFound { id }
     }
 
     /// Create a disconnected error.
     #[must_use]
-    pub fn disconnected(id: u64) -> Self {
+    pub const fn disconnected(id: u64) -> Self {
         Self::Disconnected { id }
     }
 
     /// Create a queue full error.
     #[must_use]
-    pub fn queue_full(id: u64) -> Self {
+    pub const fn queue_full(id: u64) -> Self {
         Self::QueueFull { id }
     }
 
@@ -185,13 +185,13 @@ pub struct PeerId(pub u64);
 impl PeerId {
     /// Create a new peer ID.
     #[must_use]
-    pub fn new(id: u64) -> Self {
+    pub const fn new(id: u64) -> Self {
         Self(id)
     }
 
     /// Get the inner ID value.
     #[must_use]
-    pub fn inner(&self) -> u64 {
+    pub const fn inner(&self) -> u64 {
         self.0
     }
 }
@@ -222,7 +222,7 @@ pub struct PeerInfo {
 impl PeerInfo {
     /// Create new peer info.
     #[must_use]
-    pub fn new(
+    pub const fn new(
         id: PeerId,
         address: String,
         version: u32,

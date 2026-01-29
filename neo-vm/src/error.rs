@@ -178,7 +178,8 @@ impl VmError {
     }
 
     /// Create a new invalid opcode error
-    pub fn invalid_opcode(opcode: u8) -> Self {
+    #[must_use] 
+    pub const fn invalid_opcode(opcode: u8) -> Self {
         Self::InvalidOpCode { opcode }
     }
 
@@ -217,7 +218,7 @@ impl VmError {
     pub fn invalid_operation_simple<S: Into<String>>(message: S) -> Self {
         let msg = message.into();
         Self::InvalidOperation {
-            operation: msg.clone(),
+            operation: msg,
             reason: String::new(),
         }
     }
@@ -238,7 +239,8 @@ impl VmError {
     }
 
     /// Create a new stack underflow error
-    pub fn stack_underflow(requested: usize, available: usize) -> Self {
+    #[must_use] 
+    pub const fn stack_underflow(requested: usize, available: usize) -> Self {
         Self::StackUnderflow {
             requested,
             available,
@@ -246,7 +248,8 @@ impl VmError {
     }
 
     /// Create a new stack overflow error
-    pub fn stack_overflow(max_size: usize) -> Self {
+    #[must_use] 
+    pub const fn stack_overflow(max_size: usize) -> Self {
         Self::StackOverflow { max_size }
     }
 
@@ -272,7 +275,8 @@ impl VmError {
     }
 
     /// Create a new insufficient stack items error
-    pub fn insufficient_stack_items(required: usize, available: usize) -> Self {
+    #[must_use] 
+    pub const fn insufficient_stack_items(required: usize, available: usize) -> Self {
         Self::InsufficientStackItems {
             required,
             available,
@@ -291,7 +295,7 @@ impl VmError {
     pub fn invalid_type_simple<S: Into<String>>(message: S) -> Self {
         let msg = message.into();
         Self::InvalidType {
-            from: msg.clone(),
+            from: msg,
             to: String::new(),
         }
     }
@@ -319,22 +323,26 @@ impl VmError {
     }
 
     /// Create a new memory limit exceeded error
-    pub fn memory_limit_exceeded(used: usize, limit: usize) -> Self {
+    #[must_use] 
+    pub const fn memory_limit_exceeded(used: usize, limit: usize) -> Self {
         Self::MemoryLimitExceeded { used, limit }
     }
 
     /// Create a new instruction limit exceeded error
-    pub fn instruction_limit_exceeded(executed: u64, limit: u64) -> Self {
+    #[must_use] 
+    pub const fn instruction_limit_exceeded(executed: u64, limit: u64) -> Self {
         Self::InstructionLimitExceeded { executed, limit }
     }
 
     /// Create a new call depth limit exceeded error
-    pub fn call_depth_limit_exceeded(depth: usize, limit: usize) -> Self {
+    #[must_use] 
+    pub const fn call_depth_limit_exceeded(depth: usize, limit: usize) -> Self {
         Self::CallDepthLimitExceeded { depth, limit }
     }
 
     /// Create a new gas exhausted error
-    pub fn gas_exhausted(used: u64, limit: u64) -> Self {
+    #[must_use] 
+    pub const fn gas_exhausted(used: u64, limit: u64) -> Self {
         Self::GasExhausted { used, limit }
     }
 
@@ -348,100 +356,105 @@ impl VmError {
     }
 
     /// Check if this error is retryable
-    pub fn is_retryable(&self) -> bool {
+    #[must_use] 
+    pub const fn is_retryable(&self) -> bool {
         matches!(
             self,
-            VmError::Io { .. } | VmError::ExecutionTimeout { .. } | VmError::InteropService { .. }
+            Self::Io { .. } | Self::ExecutionTimeout { .. } | Self::InteropService { .. }
         )
     }
 
     /// Check if this error is a resource limit error
-    pub fn is_resource_limit(&self) -> bool {
+    #[must_use] 
+    pub const fn is_resource_limit(&self) -> bool {
         matches!(
             self,
-            VmError::MemoryLimitExceeded { .. }
-                | VmError::InstructionLimitExceeded { .. }
-                | VmError::CallDepthLimitExceeded { .. }
-                | VmError::GasExhausted { .. }
-                | VmError::StackOverflow { .. }
+            Self::MemoryLimitExceeded { .. }
+                | Self::InstructionLimitExceeded { .. }
+                | Self::CallDepthLimitExceeded { .. }
+                | Self::GasExhausted { .. }
+                | Self::StackOverflow { .. }
         )
     }
 
     /// Check if this error is a user error (vs system error)
-    pub fn is_user_error(&self) -> bool {
+    #[must_use] 
+    pub const fn is_user_error(&self) -> bool {
         matches!(
             self,
-            VmError::Parse { .. }
-                | VmError::InvalidInstruction { .. }
-                | VmError::InvalidOpCode { .. }
-                | VmError::CatchableException { .. }
-                | VmError::InvalidOperation { .. }
-                | VmError::InvalidOperand { .. }
-                | VmError::InvalidScript { .. }
-                | VmError::InvalidType { .. }
-                | VmError::InvalidParameters { .. }
-                | VmError::InvalidWitness { .. }
-                | VmError::VerificationFailed { .. }
+            Self::Parse { .. }
+                | Self::InvalidInstruction { .. }
+                | Self::InvalidOpCode { .. }
+                | Self::CatchableException { .. }
+                | Self::InvalidOperation { .. }
+                | Self::InvalidOperand { .. }
+                | Self::InvalidScript { .. }
+                | Self::InvalidType { .. }
+                | Self::InvalidParameters { .. }
+                | Self::InvalidWitness { .. }
+                | Self::VerificationFailed { .. }
         )
     }
 
     /// Check if this error should cause a VM fault
-    pub fn should_fault(&self) -> bool {
+    #[must_use] 
+    pub const fn should_fault(&self) -> bool {
         matches!(
             self,
-            VmError::StackUnderflow { .. }
-                | VmError::StackOverflow { .. }
-                | VmError::Overflow { .. }
-                | VmError::Underflow { .. }
-                | VmError::DivisionByZero { .. }
-                | VmError::InvalidType { .. }
-                | VmError::VmFault { .. }
-                | VmError::MemoryLimitExceeded { .. }
-                | VmError::InstructionLimitExceeded { .. }
-                | VmError::CallDepthLimitExceeded { .. }
-                | VmError::GasExhausted { .. }
-                | VmError::InvalidJump(_)
-                | VmError::UnhandledException(_)
-                | VmError::MaxTryNestingDepthExceeded
-                | VmError::Abort
-                | VmError::AssertFailed
+            Self::StackUnderflow { .. }
+                | Self::StackOverflow { .. }
+                | Self::Overflow { .. }
+                | Self::Underflow { .. }
+                | Self::DivisionByZero { .. }
+                | Self::InvalidType { .. }
+                | Self::VmFault { .. }
+                | Self::MemoryLimitExceeded { .. }
+                | Self::InstructionLimitExceeded { .. }
+                | Self::CallDepthLimitExceeded { .. }
+                | Self::GasExhausted { .. }
+                | Self::InvalidJump(_)
+                | Self::UnhandledException(_)
+                | Self::MaxTryNestingDepthExceeded
+                | Self::Abort
+                | Self::AssertFailed
         )
     }
 
     /// Get error category for logging/metrics
-    pub fn category(&self) -> &'static str {
+    #[must_use] 
+    pub const fn category(&self) -> &'static str {
         match self {
-            VmError::Parse { .. } => "parse",
-            VmError::InvalidInstruction { .. } | VmError::InvalidOpCode { .. } => "instruction",
-            VmError::UnsupportedOperation { .. }
-            | VmError::CatchableException { .. }
-            | VmError::InvalidOperation { .. } => "operation",
-            VmError::InvalidOperand { .. } | VmError::InvalidParameters { .. } => "operand",
-            VmError::InvalidScript { .. } => "script",
-            VmError::StackUnderflow { .. }
-            | VmError::StackOverflow { .. }
-            | VmError::InsufficientStackItems { .. } => "stack",
-            VmError::Overflow { .. }
-            | VmError::Underflow { .. }
-            | VmError::DivisionByZero { .. } => "arithmetic",
-            VmError::InvalidType { .. } => "type",
-            VmError::ExecutionHalted { .. } | VmError::VmFault { .. } => "execution",
-            VmError::Io { .. } => "io",
-            VmError::MemoryLimitExceeded { .. }
-            | VmError::InstructionLimitExceeded { .. }
-            | VmError::CallDepthLimitExceeded { .. }
-            | VmError::GasExhausted { .. } => "resource",
-            VmError::InvalidContractState { .. }
-            | VmError::ContractNotFound { .. }
-            | VmError::MethodNotFound { .. } => "contract",
-            VmError::InteropService { .. } => "interop",
-            VmError::ExecutionTimeout { .. } => "timeout",
-            VmError::InvalidScriptHash { .. } => "hash",
-            VmError::InvalidWitness { .. } | VmError::VerificationFailed { .. } => "verification",
-            VmError::InvalidJump(_) => "control",
-            VmError::UnhandledException(_) => "exception",
-            VmError::MaxTryNestingDepthExceeded => "resource",
-            VmError::Abort | VmError::AssertFailed => "control",
+            Self::Parse { .. } => "parse",
+            Self::InvalidInstruction { .. } | Self::InvalidOpCode { .. } => "instruction",
+            Self::UnsupportedOperation { .. }
+            | Self::CatchableException { .. }
+            | Self::InvalidOperation { .. } => "operation",
+            Self::InvalidOperand { .. } | Self::InvalidParameters { .. } => "operand",
+            Self::InvalidScript { .. } => "script",
+            Self::StackUnderflow { .. }
+            | Self::StackOverflow { .. }
+            | Self::InsufficientStackItems { .. } => "stack",
+            Self::Overflow { .. }
+            | Self::Underflow { .. }
+            | Self::DivisionByZero { .. } => "arithmetic",
+            Self::InvalidType { .. } => "type",
+            Self::ExecutionHalted { .. } | Self::VmFault { .. } => "execution",
+            Self::Io { .. } => "io",
+            Self::MemoryLimitExceeded { .. }
+            | Self::InstructionLimitExceeded { .. }
+            | Self::CallDepthLimitExceeded { .. }
+            | Self::GasExhausted { .. } => "resource",
+            Self::InvalidContractState { .. }
+            | Self::ContractNotFound { .. }
+            | Self::MethodNotFound { .. } => "contract",
+            Self::InteropService { .. } => "interop",
+            Self::ExecutionTimeout { .. } => "timeout",
+            Self::InvalidScriptHash { .. } => "hash",
+            Self::InvalidWitness { .. } | Self::VerificationFailed { .. } => "verification",
+            Self::InvalidJump(_) => "control",
+            Self::UnhandledException(_) => "exception",
+            Self::MaxTryNestingDepthExceeded => "resource",
+            Self::Abort | Self::AssertFailed => "control",
             #[cfg(test)]
             #[allow(dead_code)]
             VmError::MockIo { .. } => "real_io",
@@ -458,25 +471,25 @@ pub type Result<T, E = VmError> = std::result::Result<T, E>;
 // Standard library error conversions
 impl From<std::io::Error> for VmError {
     fn from(_error: std::io::Error) -> Self {
-        VmError::io(_error.to_string())
+        Self::io(_error.to_string())
     }
 }
 
 impl From<std::fmt::Error> for VmError {
     fn from(error: std::fmt::Error) -> Self {
-        VmError::parse(error.to_string())
+        Self::parse(error.to_string())
     }
 }
 
 impl From<std::num::ParseIntError> for VmError {
     fn from(_error: std::num::ParseIntError) -> Self {
-        VmError::invalid_type("string", "integer")
+        Self::invalid_type("string", "integer")
     }
 }
 
 impl From<std::num::ParseFloatError> for VmError {
     fn from(_error: std::num::ParseFloatError) -> Self {
-        VmError::invalid_type("string", "float")
+        Self::invalid_type("string", "float")
     }
 }
 
@@ -484,12 +497,12 @@ impl From<std::num::ParseFloatError> for VmError {
 impl From<neo_io::IoError> for VmError {
     fn from(error: neo_io::IoError) -> Self {
         match error {
-            neo_io::IoError::Format => VmError::parse("format error"),
-            neo_io::IoError::InvalidUtf8 => VmError::parse("invalid utf-8 data"),
+            neo_io::IoError::Format => Self::parse("format error"),
+            neo_io::IoError::InvalidUtf8 => Self::parse("invalid utf-8 data"),
             neo_io::IoError::InvalidData { context, value } => {
-                VmError::parse(format!("{context}: {value}"))
+                Self::parse(format!("{context}: {value}"))
             }
-            neo_io::IoError::Io(inner) => VmError::io(inner.to_string()),
+            neo_io::IoError::Io(inner) => Self::io(inner.to_string()),
         }
     }
 }
@@ -497,7 +510,7 @@ impl From<neo_io::IoError> for VmError {
 // Test-specific error conversions for comprehensive testing
 
 impl VmError {
-    /// Create InvalidInstruction from a single message
+    /// Create `InvalidInstruction` from a single message
     pub fn invalid_instruction_msg<S: Into<String>>(message: S) -> Self {
         Self::InvalidInstruction {
             opcode: 0,
@@ -505,53 +518,55 @@ impl VmError {
         }
     }
 
-    /// Create InvalidOperand from a single message
+    /// Create `InvalidOperand` from a single message
     pub fn invalid_operand_msg<S: Into<String>>(message: S) -> Self {
         let msg = message.into();
         Self::InvalidOperand {
-            expected: msg.clone(),
-            actual: "".to_string(),
+            expected: msg,
+            actual: String::new(),
         }
     }
 
-    /// Create ExecutionHalted from a single message
+    /// Create `ExecutionHalted` from a single message
     pub fn execution_halted_msg<S: Into<String>>(message: S) -> Self {
         Self::ExecutionHalted {
             reason: message.into(),
         }
     }
 
-    /// Create UnsupportedOperation from a single message
+    /// Create `UnsupportedOperation` from a single message
     pub fn unsupported_operation_msg<S: Into<String>>(message: S) -> Self {
         Self::UnsupportedOperation {
             operation: message.into(),
         }
     }
 
-    /// Create InvalidScript from a single message
+    /// Create `InvalidScript` from a single message
     pub fn invalid_script_msg<S: Into<String>>(message: S) -> Self {
         Self::InvalidScript {
             reason: message.into(),
         }
     }
 
-    /// Create StackUnderflow from parameters
-    pub fn stack_underflow_msg(requested: usize, available: usize) -> Self {
+    /// Create `StackUnderflow` from parameters
+    #[must_use] 
+    pub const fn stack_underflow_msg(requested: usize, available: usize) -> Self {
         Self::StackUnderflow {
             requested,
             available,
         }
     }
 
-    /// Create InsufficientStackItems from parameters
-    pub fn insufficient_stack_items_msg(required: usize, available: usize) -> Self {
+    /// Create `InsufficientStackItems` from parameters
+    #[must_use] 
+    pub const fn insufficient_stack_items_msg(required: usize, available: usize) -> Self {
         Self::InsufficientStackItems {
             required,
             available,
         }
     }
 
-    /// Create DivisionByZero from operation
+    /// Create `DivisionByZero` from operation
     pub fn division_by_zero_msg<S: Into<String>>(operation: S) -> Self {
         Self::DivisionByZero {
             operation: operation.into(),

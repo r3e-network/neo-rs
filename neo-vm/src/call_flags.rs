@@ -23,13 +23,13 @@ bitflags! {
 
 impl CallFlags {
     /// Combination of `READ_STATES` and `WRITE_STATES` permissions.
-    pub const STATES: CallFlags = CallFlags::READ_STATES.union(CallFlags::WRITE_STATES);
+    pub const STATES: Self = Self::READ_STATES.union(Self::WRITE_STATES);
     /// Combination of `READ_STATES` and `ALLOW_CALL` permissions.
-    pub const READ_ONLY: CallFlags = CallFlags::READ_STATES.union(CallFlags::ALLOW_CALL);
+    pub const READ_ONLY: Self = Self::READ_STATES.union(Self::ALLOW_CALL);
     /// All available permissions.
-    pub const ALL: CallFlags = CallFlags::STATES
-        .union(CallFlags::ALLOW_CALL)
-        .union(CallFlags::ALLOW_NOTIFY);
+    pub const ALL: Self = Self::STATES
+        .union(Self::ALLOW_CALL)
+        .union(Self::ALLOW_NOTIFY);
 }
 
 impl Serialize for CallFlags {
@@ -47,7 +47,7 @@ impl<'de> Deserialize<'de> for CallFlags {
         D: Deserializer<'de>,
     {
         let value = u8::deserialize(deserializer)?;
-        CallFlags::from_bits(value)
+        Self::from_bits(value)
             .ok_or_else(|| serde::de::Error::custom(format!("Invalid CallFlags value: {value}")))
     }
 }

@@ -12,7 +12,7 @@
 use neo_json::{JArray, JObject, JToken};
 use serde::{Deserialize, Serialize};
 
-/// Peers information matching C# RpcPeers
+/// Peers information matching C# `RpcPeers`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcPeers {
     /// Unconnected peers
@@ -27,7 +27,8 @@ pub struct RpcPeers {
 
 impl RpcPeers {
     /// Converts to JSON
-    /// Matches C# ToJson
+    /// Matches C# `ToJson`
+    #[must_use] 
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
 
@@ -62,7 +63,7 @@ impl RpcPeers {
     }
 
     /// Creates from JSON
-    /// Matches C# FromJson
+    /// Matches C# `FromJson`
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let unconnected = parse_peer_list(json, "unconnected")?;
         let bad = parse_peer_list(json, "bad")?;
@@ -76,7 +77,7 @@ impl RpcPeers {
     }
 }
 
-/// Individual peer information matching C# RpcPeer
+/// Individual peer information matching C# `RpcPeer`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcPeer {
     /// Peer address
@@ -88,29 +89,30 @@ pub struct RpcPeer {
 
 impl RpcPeer {
     /// Converts to JSON
-    /// Matches C# ToJson
+    /// Matches C# `ToJson`
+    #[must_use] 
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
         json.insert("address".to_string(), JToken::String(self.address.clone()));
-        json.insert("port".to_string(), JToken::Number(self.port as f64));
+        json.insert("port".to_string(), JToken::Number(f64::from(self.port)));
         json
     }
 
     /// Creates from JSON
-    /// Matches C# FromJson
+    /// Matches C# `FromJson`
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let address = json
             .get("address")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .ok_or("Missing or invalid 'address' field")?
-            .to_string();
+            ;
 
         let port_token = json.get("port").ok_or("Missing or invalid 'port' field")?;
         let port = if let Some(number) = port_token.as_number() {
             number as i32
         } else if let Some(text) = port_token.as_string() {
             text.parse::<i32>()
-                .map_err(|_| format!("Invalid port value: {}", text))?
+                .map_err(|_| format!("Invalid port value: {text}"))?
         } else {
             return Err("Invalid 'port' field type".to_string());
         };

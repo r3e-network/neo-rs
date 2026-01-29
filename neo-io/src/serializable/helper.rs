@@ -5,7 +5,8 @@ use crate::{BinaryWriter, IoError, IoResult, MemoryReader};
 
 /// Returns the number of bytes required to encode `value` using Neo variable-length encoding.
 #[inline]
-pub fn get_var_size(value: u64) -> usize {
+#[must_use] 
+pub const fn get_var_size(value: u64) -> usize {
     if value < 0xFD {
         1
     } else if value <= 0xFFFF {
@@ -19,18 +20,21 @@ pub fn get_var_size(value: u64) -> usize {
 
 /// Convenience wrapper for `usize` inputs.
 #[inline]
+#[must_use] 
 pub fn get_var_size_usize(value: usize) -> usize {
     get_var_size(value as u64)
 }
 
 /// Returns the size contribution for a byte slice encoded with `write_var_bytes`.
 #[inline]
+#[must_use] 
 pub fn get_var_size_bytes(bytes: &[u8]) -> usize {
     get_var_size_usize(bytes.len()) + bytes.len()
 }
 
 /// Returns the size contribution for a UTF-8 string encoded with `write_var_string`.
 #[inline]
+#[must_use] 
 pub fn get_var_size_str(value: &str) -> usize {
     get_var_size_bytes(value.as_bytes())
 }

@@ -12,6 +12,7 @@ use neo_vm::{op_code::OpCode, script_builder::ScriptBuilder};
 
 /// Convenience builder for constructing transactions in tests.
 #[derive(Default)]
+#[must_use]
 pub struct TransactionBuilder {
     inner: Transaction,
 }
@@ -142,6 +143,7 @@ impl TransactionBuilder {
 /// Builder for `Signer` instances. Provides a fluent API matching the
 /// expectations of the converted C# tests.
 #[derive(Clone)]
+#[must_use]
 pub struct SignerBuilder {
     account: UInt160,
     scopes: WitnessScope,
@@ -216,6 +218,7 @@ impl SignerBuilder {
 }
 
 /// Builder for transaction attributes.
+#[must_use]
 pub struct TransactionAttributesBuilder {
     attributes: Vec<TransactionAttribute>,
 }
@@ -287,6 +290,7 @@ impl TransactionAttributesBuilder {
 }
 
 /// Builder for witness conditions.
+#[must_use]
 pub struct WitnessConditionBuilder {
     condition: Option<WitnessCondition>,
 }
@@ -374,6 +378,7 @@ impl WitnessConditionBuilder {
 }
 
 /// Builder for witness rules.
+#[must_use]
 pub struct WitnessRuleBuilder {
     action: WitnessRuleAction,
     condition: Option<WitnessCondition>,
@@ -408,6 +413,7 @@ impl WitnessRuleBuilder {
 }
 
 /// Builder for `And` witness conditions.
+#[must_use]
 pub struct AndConditionBuilder {
     conditions: Vec<WitnessCondition>,
 }
@@ -482,6 +488,7 @@ impl AndConditionBuilder {
 }
 
 /// Builder for `Or` witness conditions.
+#[must_use]
 pub struct OrConditionBuilder {
     conditions: Vec<WitnessCondition>,
 }
@@ -557,6 +564,7 @@ impl OrConditionBuilder {
 
 /// Builder for `Witness` instances.
 #[derive(Default)]
+#[must_use]
 pub struct WitnessBuilder {
     invocation: Vec<u8>,
     verification: Vec<u8>,

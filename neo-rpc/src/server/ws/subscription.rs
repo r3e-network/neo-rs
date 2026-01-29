@@ -18,6 +18,7 @@ pub struct SubscriptionManager {
 
 impl SubscriptionManager {
     /// Create a new subscription manager
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             next_id: AtomicU64::new(1),
@@ -68,15 +69,14 @@ impl SubscriptionManager {
     pub fn is_subscribed(&self, id: SubscriptionId, event_type: WsEventType) -> bool {
         self.subscriptions
             .get(&id)
-            .map(|types| types.contains(&event_type))
-            .unwrap_or(false)
+            .is_some_and(|types| types.contains(&event_type))
     }
 
     /// Get all event types for a subscription
     pub fn get_subscribed_events(&self, id: SubscriptionId) -> Option<Vec<WsEventType>> {
         self.subscriptions
             .get(&id)
-            .map(|types| types.iter().cloned().collect())
+            .map(|types| types.iter().copied().collect())
     }
 
     /// Get total number of active subscriptions

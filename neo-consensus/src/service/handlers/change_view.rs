@@ -6,7 +6,7 @@ use crate::{ChangeViewReason, ConsensusMessageType, ConsensusResult};
 use tracing::{debug, info, warn};
 
 impl ConsensusService {
-    /// Handles ChangeView message
+    /// Handles `ChangeView` message
     pub(in crate::service) fn on_change_view(
         &mut self,
         payload: &ConsensusPayload,
@@ -87,9 +87,9 @@ impl ConsensusService {
 
     /// Requests a view change
     ///
-    /// This method implements the critical logic from C# DBFTPlugin:
+    /// This method implements the critical logic from C# `DBFTPlugin`:
     /// - If more than F nodes have committed or are lost, request recovery instead
-    /// - Otherwise, send a normal ChangeView message
+    /// - Otherwise, send a normal `ChangeView` message
     ///
     /// This prevents network splits when nodes are already committed or failed.
     pub fn request_change_view(
@@ -156,7 +156,7 @@ impl ConsensusService {
     /// Requests recovery from other nodes
     ///
     /// This is called instead of change view when more than F nodes have
-    /// committed or are lost. It broadcasts a RecoveryRequest to get the
+    /// committed or are lost. It broadcasts a `RecoveryRequest` to get the
     /// current consensus state from other nodes.
     pub fn request_recovery(&mut self) -> ConsensusResult<()> {
         let timestamp = current_timestamp();

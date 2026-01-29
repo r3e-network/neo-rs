@@ -22,13 +22,13 @@ pub enum TransactionAttributeType {
 impl TransactionAttributeType {
     /// Converts to byte representation.
     #[must_use]
-    pub fn to_byte(self) -> u8 {
+    pub const fn to_byte(self) -> u8 {
         self as u8
     }
 
     /// Creates from byte representation.
     #[must_use]
-    pub fn from_byte(value: u8) -> Option<Self> {
+    pub const fn from_byte(value: u8) -> Option<Self> {
         match value {
             0x01 => Some(Self::HighPriority),
             0x11 => Some(Self::OracleResponse),
@@ -41,7 +41,7 @@ impl TransactionAttributeType {
 
     /// Returns the string representation.
     #[must_use]
-    pub fn as_str(self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::HighPriority => "HighPriority",
             Self::OracleResponse => "OracleResponse",
@@ -53,7 +53,7 @@ impl TransactionAttributeType {
 
     /// Returns true if this attribute type allows multiple instances per transaction.
     #[must_use]
-    pub fn allows_multiple(self) -> bool {
+    pub const fn allows_multiple(self) -> bool {
         matches!(self, Self::Conflicts | Self::NotaryAssisted)
     }
 }
@@ -79,7 +79,7 @@ impl<'de> Deserialize<'de> for TransactionAttributeType {
         D: Deserializer<'de>,
     {
         let byte = u8::deserialize(deserializer)?;
-        TransactionAttributeType::from_byte(byte).ok_or_else(|| {
+        Self::from_byte(byte).ok_or_else(|| {
             serde::de::Error::custom(format!("Invalid transaction attribute type byte: {byte}"))
         })
     }

@@ -36,7 +36,7 @@ impl JNumber {
 
     /// Gets the number value
     #[must_use]
-    pub fn as_number(&self) -> f64 {
+    pub const fn as_number(&self) -> f64 {
         self.value
     }
 
@@ -48,7 +48,7 @@ impl JNumber {
 
     /// Gets the number value
     #[must_use]
-    pub fn get_number(&self) -> f64 {
+    pub const fn get_number(&self) -> f64 {
         self.value
     }
 
@@ -66,7 +66,7 @@ impl TryFrom<f64> for JNumber {
     type Error = String;
 
     fn try_from(value: f64) -> Result<Self, Self::Error> {
-        JNumber::new(value)
+        Self::new(value)
     }
 }
 
@@ -74,7 +74,7 @@ impl TryFrom<i64> for JNumber {
     type Error = String;
 
     fn try_from(value: i64) -> Result<Self, Self::Error> {
-        JNumber::new(value as f64)
+        Self::new(value as f64)
     }
 }
 

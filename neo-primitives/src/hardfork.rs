@@ -31,15 +31,15 @@ pub enum Hardfork {
 impl Hardfork {
     /// Returns all known hardforks in declaration order.
     #[must_use]
-    pub const fn all() -> [Hardfork; 7] {
+    pub const fn all() -> [Self; 7] {
         [
-            Hardfork::HfAspidochelone,
-            Hardfork::HfBasilisk,
-            Hardfork::HfCockatrice,
-            Hardfork::HfDomovoi,
-            Hardfork::HfEchidna,
-            Hardfork::HfFaun,
-            Hardfork::HfGorgon,
+            Self::HfAspidochelone,
+            Self::HfBasilisk,
+            Self::HfCockatrice,
+            Self::HfDomovoi,
+            Self::HfEchidna,
+            Self::HfFaun,
+            Self::HfGorgon,
         ]
     }
 
@@ -53,13 +53,13 @@ impl Hardfork {
     #[must_use]
     pub const fn name(&self) -> &'static str {
         match self {
-            Hardfork::HfAspidochelone => "HF_Aspidochelone",
-            Hardfork::HfBasilisk => "HF_Basilisk",
-            Hardfork::HfCockatrice => "HF_Cockatrice",
-            Hardfork::HfDomovoi => "HF_Domovoi",
-            Hardfork::HfEchidna => "HF_Echidna",
-            Hardfork::HfFaun => "HF_Faun",
-            Hardfork::HfGorgon => "HF_Gorgon",
+            Self::HfAspidochelone => "HF_Aspidochelone",
+            Self::HfBasilisk => "HF_Basilisk",
+            Self::HfCockatrice => "HF_Cockatrice",
+            Self::HfDomovoi => "HF_Domovoi",
+            Self::HfEchidna => "HF_Echidna",
+            Self::HfFaun => "HF_Faun",
+            Self::HfGorgon => "HF_Gorgon",
         }
     }
 
@@ -73,13 +73,13 @@ impl Hardfork {
     #[must_use]
     pub const fn from_index(index: u8) -> Option<Self> {
         match index {
-            0 => Some(Hardfork::HfAspidochelone),
-            1 => Some(Hardfork::HfBasilisk),
-            2 => Some(Hardfork::HfCockatrice),
-            3 => Some(Hardfork::HfDomovoi),
-            4 => Some(Hardfork::HfEchidna),
-            5 => Some(Hardfork::HfFaun),
-            6 => Some(Hardfork::HfGorgon),
+            0 => Some(Self::HfAspidochelone),
+            1 => Some(Self::HfBasilisk),
+            2 => Some(Self::HfCockatrice),
+            3 => Some(Self::HfDomovoi),
+            4 => Some(Self::HfEchidna),
+            5 => Some(Self::HfFaun),
+            6 => Some(Self::HfGorgon),
             _ => None,
         }
     }
@@ -97,13 +97,13 @@ impl FromStr for Hardfork {
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         let normalized = value.trim().to_ascii_uppercase();
         match normalized.as_str() {
-            "HF_ASPIDOCHELONE" | "ASPIDOCHELONE" | "ASP" => Ok(Hardfork::HfAspidochelone),
-            "HF_BASILISK" | "BASILISK" => Ok(Hardfork::HfBasilisk),
-            "HF_COCKATRICE" | "COCKATRICE" => Ok(Hardfork::HfCockatrice),
-            "HF_DOMOVOI" | "DOMOVOI" => Ok(Hardfork::HfDomovoi),
-            "HF_ECHIDNA" | "ECHIDNA" => Ok(Hardfork::HfEchidna),
-            "HF_FAUN" | "FAUN" => Ok(Hardfork::HfFaun),
-            "HF_GORGON" | "GORGON" => Ok(Hardfork::HfGorgon),
+            "HF_ASPIDOCHELONE" | "ASPIDOCHELONE" | "ASP" => Ok(Self::HfAspidochelone),
+            "HF_BASILISK" | "BASILISK" => Ok(Self::HfBasilisk),
+            "HF_COCKATRICE" | "COCKATRICE" => Ok(Self::HfCockatrice),
+            "HF_DOMOVOI" | "DOMOVOI" => Ok(Self::HfDomovoi),
+            "HF_ECHIDNA" | "ECHIDNA" => Ok(Self::HfEchidna),
+            "HF_FAUN" | "FAUN" => Ok(Self::HfFaun),
+            "HF_GORGON" | "GORGON" => Ok(Self::HfGorgon),
             _ => Err(HardforkParseError(value.to_string())),
         }
     }
@@ -113,7 +113,7 @@ impl TryFrom<u8> for Hardfork {
     type Error = HardforkParseError;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
-        Hardfork::from_index(value).ok_or_else(|| HardforkParseError(value.to_string()))
+        Self::from_index(value).ok_or_else(|| HardforkParseError(value.to_string()))
     }
 }
 

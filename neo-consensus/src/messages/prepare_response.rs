@@ -1,10 +1,10 @@
-//! PrepareResponse message - sent by validators to acknowledge a proposal.
+//! `PrepareResponse` message - sent by validators to acknowledge a proposal.
 
 use crate::{ConsensusMessageType, ConsensusResult};
 use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};
 
-/// PrepareResponse message sent by validators to acknowledge a PrepareRequest.
+/// `PrepareResponse` message sent by validators to acknowledge a `PrepareRequest`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PrepareResponseMessage {
     /// Block index
@@ -18,8 +18,9 @@ pub struct PrepareResponseMessage {
 }
 
 impl PrepareResponseMessage {
-    /// Creates a new PrepareResponse message
-    pub fn new(
+    /// Creates a new `PrepareResponse` message
+    #[must_use] 
+    pub const fn new(
         block_index: u32,
         view_number: u8,
         validator_index: u8,
@@ -34,11 +35,13 @@ impl PrepareResponseMessage {
     }
 
     /// Returns the message type
-    pub fn message_type(&self) -> ConsensusMessageType {
+    #[must_use] 
+    pub const fn message_type(&self) -> ConsensusMessageType {
         ConsensusMessageType::PrepareResponse
     }
 
     /// Serializes the message to bytes
+    #[must_use] 
     pub fn serialize(&self) -> Vec<u8> {
         self.preparation_hash.as_bytes().to_vec()
     }

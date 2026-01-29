@@ -90,7 +90,7 @@ fn new_array(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
     Ok(())
 }
 
-/// Implements the NewarrayT operation.
+/// Implements the `NewarrayT` operation.
 fn new_array_t(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = engine
@@ -586,11 +586,11 @@ fn pick_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
         StackItem::Map(map) => map.get(&key)?,
         StackItem::ByteString(bytes) => {
             let idx = normalize_index("PrimitiveType", &key.get_integer()?, bytes.len())?;
-            StackItem::from_int(bytes[idx] as i64)
+            StackItem::from_int(i64::from(bytes[idx]))
         }
         StackItem::Buffer(buffer) => {
             let idx = normalize_index("Buffer", &key.get_integer()?, buffer.len())?;
-            StackItem::from_int(buffer.get(idx)? as i64)
+            StackItem::from_int(i64::from(buffer.get(idx)?))
         }
         _ => {
             return Err(VmError::invalid_type_simple(
@@ -650,7 +650,7 @@ fn set_item(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult
                     instruction.opcode()
                 ))
             })?;
-            if byte < i8::MIN as i32 || byte > u8::MAX as i32 {
+            if byte < i32::from(i8::MIN) || byte > i32::from(u8::MAX) {
                 return Err(VmError::invalid_operation_msg(format!(
                     "Overflow in {:?}, {byte} is not a byte type.",
                     instruction.opcode()

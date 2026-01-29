@@ -100,17 +100,16 @@ pub trait InteropHost {
     /// * `token_id` - The method token index from the instruction operand
     ///
     /// # Returns
-    /// Default implementation returns an error indicating CALLT requires ApplicationEngine.
+    /// Default implementation returns an error indicating CALLT requires `ApplicationEngine`.
     fn on_callt(&mut self, _engine: &mut ExecutionEngine, token_id: u16) -> VmResult<()> {
         Err(VmError::invalid_operation_msg(format!(
-            "CALLT (token {}) requires ApplicationEngine context. \
-             This opcode cannot be executed in standalone VM mode.",
-            token_id
+            "CALLT (token {token_id}) requires ApplicationEngine context. \
+             This opcode cannot be executed in standalone VM mode."
         )))
     }
 }
 
-/// InteropService manages syscall descriptors and dispatches them just like the C# implementation.
+/// `InteropService` manages syscall descriptors and dispatches them just like the C# implementation.
 #[derive(Default)]
 pub struct InteropService {
     descriptors: HashMap<u32, RegisteredDescriptor>,
@@ -119,6 +118,7 @@ pub struct InteropService {
 impl InteropService {
     /// Creates a new, empty interop service. Descriptors must be registered explicitly
     /// by the host (mirroring the static registration that happens in C#).
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             descriptors: HashMap::new(),
@@ -157,6 +157,7 @@ impl InteropService {
     }
 
     /// Retrieves a descriptor by name (ASCII byte slice).
+    #[must_use] 
     pub fn get_method(&self, name: &[u8]) -> Option<&VmInteropDescriptor> {
         let name_str = str::from_utf8(name).ok()?;
         let hash = ScriptBuilder::hash_syscall(name_str).ok()?;
@@ -164,8 +165,9 @@ impl InteropService {
     }
 
     /// Returns the fixed price for a syscall by name. Returns 0 if not found.
+    #[must_use] 
     pub fn get_price(&self, name: &[u8]) -> i64 {
-        self.get_method(name).map(|d| d.price).unwrap_or(0)
+        self.get_method(name).map_or(0, |d| d.price)
     }
 
     /// Invokes a syscall linked to an instruction.
@@ -194,8 +196,7 @@ impl InteropService {
 
         if !engine.has_call_flags(required_call_flags) {
             return Err(VmError::invalid_operation_msg(format!(
-                "Missing required call flags: {:?}",
-                required_call_flags
+                "Missing required call flags: {required_call_flags:?}"
             )));
         }
 
@@ -209,18 +210,19 @@ impl InteropService {
             unsafe { (*host_ptr).invoke_syscall(engine, hash) }
         } else {
             Err(VmError::invalid_operation_msg(format!(
-                "Syscall {} requires an interop host",
-                name
+                "Syscall {name} requires an interop host"
             )))
         }
     }
 
     /// Returns the number of registered descriptors (useful for diagnostics/tests).
+    #[must_use] 
     pub fn len(&self) -> usize {
         self.descriptors.len()
     }
 
     /// Returns whether the service has no registered descriptors.
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.descriptors.is_empty()
     }

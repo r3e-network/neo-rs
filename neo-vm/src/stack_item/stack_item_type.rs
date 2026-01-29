@@ -38,8 +38,9 @@ pub enum StackItemType {
 }
 
 impl StackItemType {
-    /// Converts a byte to a StackItemType.
-    pub fn from_byte(b: u8) -> Option<Self> {
+    /// Converts a byte to a `StackItemType`.
+    #[must_use] 
+    pub const fn from_byte(b: u8) -> Option<Self> {
         match b {
             0x00 => Some(Self::Any),
             0x10 => Some(Self::Pointer),
@@ -55,8 +56,9 @@ impl StackItemType {
         }
     }
 
-    /// Converts a StackItemType to a byte.
-    pub fn to_byte(self) -> u8 {
+    /// Converts a `StackItemType` to a byte.
+    #[must_use] 
+    pub const fn to_byte(self) -> u8 {
         self as u8
     }
 }

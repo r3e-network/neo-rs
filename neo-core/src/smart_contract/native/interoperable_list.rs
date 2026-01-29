@@ -4,7 +4,7 @@ use crate::smart_contract::i_interoperable::IInteroperable;
 use neo_vm::StackItem;
 use std::ops::{Deref, DerefMut};
 
-/// A list that can be converted to/from StackItem (matches C# InteroperableList<T>)
+/// A list that can be converted to/from StackItem (matches C# InteroperableList\<T>)
 #[derive(Clone, Debug)]
 pub struct InteroperableList<T: IInteroperable + Clone> {
     items: Vec<T>,

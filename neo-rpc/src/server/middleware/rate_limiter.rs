@@ -1,6 +1,6 @@
 //! Per-IP rate limiting using Token Bucket algorithm
 //!
-//! Lock-free implementation using DashMap for concurrent per-IP rate limiting.
+//! Lock-free implementation using `DashMap` for concurrent per-IP rate limiting.
 
 use dashmap::DashMap;
 use std::{
@@ -34,7 +34,7 @@ struct TokenBucket {
     last_refill: Instant,
 }
 
-/// Lock-free per-IP rate limiter using DashMap
+/// Lock-free per-IP rate limiter using `DashMap`
 ///
 /// Uses token bucket algorithm with automatic cleanup of stale entries.
 pub struct GovernorRateLimiter {
@@ -44,6 +44,7 @@ pub struct GovernorRateLimiter {
 
 impl GovernorRateLimiter {
     /// Create a new rate limiter with the given configuration
+    #[must_use] 
     pub fn new(config: RateLimitConfig) -> Self {
         Self {
             config,
@@ -54,6 +55,7 @@ impl GovernorRateLimiter {
     /// Check if a request from the given IP should be allowed
     ///
     /// Returns `true` if the request is allowed, `false` if rate limited.
+    #[must_use] 
     pub fn check(&self, ip: IpAddr) -> bool {
         // Disabled if max_rps is 0
         if self.config.max_rps == 0 {
@@ -64,11 +66,11 @@ impl GovernorRateLimiter {
         self.cleanup_stale_entries();
 
         let now = Instant::now();
-        let max_rps = self.config.max_rps as f64;
+        let max_rps = f64::from(self.config.max_rps);
         let burst = if self.config.burst == 0 {
-            self.config.max_rps.max(1) as f64
+            f64::from(self.config.max_rps.max(1))
         } else {
-            self.config.burst.max(1) as f64
+            f64::from(self.config.burst.max(1))
         };
 
         // Get or create bucket for this IP
@@ -80,7 +82,7 @@ impl GovernorRateLimiter {
         // Refill tokens based on elapsed time
         let elapsed = now.duration_since(entry.last_refill).as_secs_f64();
         if elapsed > 0.0 {
-            entry.tokens = (entry.tokens + elapsed * max_rps).min(burst);
+            entry.tokens = elapsed.mul_add(max_rps, entry.tokens).min(burst);
             entry.last_refill = now;
         }
 
@@ -109,6 +111,7 @@ impl GovernorRateLimiter {
 
     /// Get current number of tracked IPs
     #[allow(dead_code)]
+    #[must_use] 
     pub fn tracked_ips(&self) -> usize {
         self.buckets.len()
     }

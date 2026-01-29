@@ -36,6 +36,6 @@ impl JsonError {
 
 impl From<JsonError> for fmt::Error {
     fn from(_: JsonError) -> Self {
-        fmt::Error
+        Self
     }
 }

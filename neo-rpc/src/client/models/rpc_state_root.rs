@@ -14,7 +14,7 @@ use neo_json::{JArray, JObject, JToken};
 use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};
 
-/// State root information matching C# RpcStateRoot
+/// State root information matching C# `RpcStateRoot`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcStateRoot {
     /// Version
@@ -32,21 +32,21 @@ pub struct RpcStateRoot {
 
 impl RpcStateRoot {
     /// Creates from JSON
-    /// Matches C# FromJson
+    /// Matches C# `FromJson`
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let version = json
             .get("version")
-            .and_then(|v| v.as_number())
+            .and_then(neo_json::JToken::as_number)
             .ok_or("Missing or invalid 'version' field")? as u8;
 
         let index = json
             .get("index")
-            .and_then(|v| v.as_number())
+            .and_then(neo_json::JToken::as_number)
             .ok_or("Missing or invalid 'index' field")? as u32;
 
         let root_hash = json
             .get("roothash")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .and_then(|s| UInt256::parse(&s).ok())
             .ok_or("Missing or invalid 'roothash' field")?;
 
@@ -67,11 +67,11 @@ impl RpcStateRoot {
     }
 
     /// Converts to JSON
-    /// Matches C# ToJson
+    /// Matches C# `ToJson`
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
-        json.insert("version".to_string(), JToken::Number(self.version as f64));
-        json.insert("index".to_string(), JToken::Number(self.index as f64));
+        json.insert("version".to_string(), JToken::Number(f64::from(self.version)));
+        json.insert("index".to_string(), JToken::Number(f64::from(self.index)));
         json.insert(
             "roothash".to_string(),
             JToken::String(self.root_hash.to_string()),

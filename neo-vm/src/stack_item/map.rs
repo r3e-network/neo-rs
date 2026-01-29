@@ -27,7 +27,7 @@ struct MapInner {
     items: VmOrderedDictionary<StackItem, StackItem>,
     /// Unique identifier mirroring reference equality semantics.
     id: usize,
-    /// Reference counter shared with the VM (mirrors C# CompoundType semantics).
+    /// Reference counter shared with the VM (mirrors C# `CompoundType` semantics).
     reference_counter: Option<ReferenceCounter>,
     /// Indicates whether the map is read-only.
     is_read_only: bool,
@@ -71,16 +71,19 @@ impl Map {
     }
 
     /// Returns the reference counter assigned by the reference counter, if any.
+    #[must_use] 
     pub fn reference_counter(&self) -> Option<ReferenceCounter> {
         self.inner.lock().reference_counter.clone()
     }
 
     /// Returns the unique identifier for this map (used for reference equality).
+    #[must_use] 
     pub fn id(&self) -> usize {
         self.inner.lock().id
     }
 
     /// Returns whether the map is marked as read-only.
+    #[must_use] 
     pub fn is_read_only(&self) -> bool {
         self.inner.lock().is_read_only
     }
@@ -91,6 +94,7 @@ impl Map {
     }
 
     /// Gets the items in the map.
+    #[must_use] 
     pub fn items(&self) -> VmOrderedDictionary<StackItem, StackItem> {
         self.inner.lock().items.clone()
     }
@@ -99,7 +103,7 @@ impl Map {
     pub fn get(&self, key: &StackItem) -> VmResult<StackItem> {
         self.validate_key(key)?;
         self.inner.lock().items.get(key).cloned().ok_or_else(|| {
-            VmError::catchable_exception_msg(format!("Key {:?} not found in Map.", key))
+            VmError::catchable_exception_msg(format!("Key {key:?} not found in Map."))
         })
     }
 
@@ -147,11 +151,13 @@ impl Map {
     }
 
     /// Gets the number of items in the map.
+    #[must_use] 
     pub fn len(&self) -> usize {
         self.inner.lock().items.len()
     }
 
     /// Returns true if the map is empty.
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.inner.lock().items.is_empty()
     }
@@ -178,11 +184,13 @@ impl Map {
     }
 
     /// Consumes the map and returns the underlying entries.
+    #[must_use] 
     pub fn into_map(self) -> VmOrderedDictionary<StackItem, StackItem> {
         self.items()
     }
 
     /// Returns an iterator over the key/value pairs.
+    #[must_use] 
     pub fn iter(&self) -> std::vec::IntoIter<(StackItem, StackItem)> {
         self.items()
             .iter()
@@ -203,7 +211,8 @@ impl Map {
     }
 
     /// Gets the type of the stack item.
-    pub fn stack_item_type(&self) -> StackItemType {
+    #[must_use] 
+    pub const fn stack_item_type(&self) -> StackItemType {
         StackItemType::Map
     }
 

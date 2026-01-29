@@ -2,7 +2,7 @@
 // drop.rs - Drop implementation for ExecutionEngine
 //
 
-use super::*;
+use super::ExecutionEngine;
 
 impl Drop for ExecutionEngine {
     fn drop(&mut self) {

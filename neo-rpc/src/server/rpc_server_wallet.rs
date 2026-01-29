@@ -98,7 +98,7 @@ impl RpcServerWallet {
         })?;
         if !account.has_key() {
             return Err(RpcException::from(
-                RpcError::unknown_account().with_data(format!("{} is watch-only", script_hash)),
+                RpcError::unknown_account().with_data(format!("{script_hash} is watch-only")),
             ));
         }
         let wif = account.export_wif().map_err(|err| {
@@ -192,10 +192,10 @@ impl RpcServerWallet {
     fn import_priv_key(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
         let privkey = Self::expect_string_param(params, 0, "importprivkey")?;
         KeyPair::from_wif(&privkey)
-            .map_err(|err| Self::invalid_params(format!("invalid WIF: {}", err)))?;
+            .map_err(|err| Self::invalid_params(format!("invalid WIF: {err}")))?;
         let wallet = Self::require_wallet(server)?;
         let wallet_clone = Arc::clone(&wallet);
-        let privkey_value = privkey.clone();
+        let privkey_value = privkey;
         let account = Self::await_wallet_future(Box::pin(async move {
             wallet_clone.import_wif(&privkey_value).await
         }))?;
@@ -252,7 +252,7 @@ impl RpcServerWallet {
         })?;
         let transaction = Transaction::from_bytes(&raw).map_err(|err| {
             RpcException::from(
-                RpcError::invalid_params().with_data(format!("Invalid transaction: {}", err)),
+                RpcError::invalid_params().with_data(format!("Invalid transaction: {err}")),
             )
         })?;
         let system = server.system();
@@ -358,7 +358,7 @@ impl RpcServerWallet {
 
         let outputs_value = params.get(index).cloned().unwrap_or(Value::Null);
         let outputs_array = outputs_value.as_array().ok_or_else(|| {
-            Self::invalid_params(format!("Invalid 'to' parameter: {}", outputs_value))
+            Self::invalid_params(format!("Invalid 'to' parameter: {outputs_value}"))
         })?;
         if outputs_array.is_empty() {
             return Err(Self::invalid_params("Argument 'to' can't be empty."));
@@ -379,32 +379,30 @@ impl RpcServerWallet {
         for (i, entry) in outputs_array.iter().enumerate() {
             let obj = entry
                 .as_object()
-                .ok_or_else(|| Self::invalid_params(format!("Invalid 'to' parameter at {}.", i)))?;
+                .ok_or_else(|| Self::invalid_params(format!("Invalid 'to' parameter at {i}.")))?;
             let asset_str = obj.get("asset").and_then(|v| v.as_str()).ok_or_else(|| {
-                Self::invalid_params(format!("no 'asset' parameter at 'to[{}]'.", i))
+                Self::invalid_params(format!("no 'asset' parameter at 'to[{i}]'."))
             })?;
             let asset = UInt160::from_str(asset_str)
-                .map_err(|e| Self::invalid_params(format!("invalid asset {}: {}", asset_str, e)))?;
+                .map_err(|e| Self::invalid_params(format!("invalid asset {asset_str}: {e}")))?;
             let descriptor =
-                descriptor_cache(&asset).map_err(|e| Self::invalid_params(e.to_string()))?;
+                descriptor_cache(&asset).map_err(Self::invalid_params)?;
             let value_str = obj.get("value").and_then(|v| v.as_str()).ok_or_else(|| {
-                Self::invalid_params(format!("no 'value' parameter at 'to[{}]'.", i))
+                Self::invalid_params(format!("no 'value' parameter at 'to[{i}]'."))
             })?;
             let (ok, value) = BigDecimal::try_parse(value_str, descriptor.decimals);
             if !ok {
                 return Err(Self::invalid_params(format!(
-                    "Invalid 'to' parameter at {}.",
-                    i
+                    "Invalid 'to' parameter at {i}."
                 )));
             }
             if value.sign() <= 0 {
                 return Err(Self::invalid_params(format!(
-                    "Amount of '{}' can't be negative.",
-                    asset
+                    "Amount of '{asset}' can't be negative."
                 )));
             }
             let address_str = obj.get("address").and_then(|v| v.as_str()).ok_or_else(|| {
-                Self::invalid_params(format!("no 'address' parameter at 'to[{}]'.", i))
+                Self::invalid_params(format!("no 'address' parameter at 'to[{i}]'."))
             })?;
             let to_hash = Self::parse_script_hash(server, address_str)?;
             transfers.push(TransferOutput {
@@ -540,7 +538,7 @@ impl RpcServerWallet {
         UInt160::from_str(&text).map_err(|err| {
             RpcException::from(
                 RpcError::invalid_params()
-                    .with_data(format!("invalid UInt160 '{}': {}", text, err)),
+                    .with_data(format!("invalid UInt160 '{text}': {err}")),
             )
         })
     }
@@ -554,7 +552,7 @@ impl RpcServerWallet {
         UInt256::from_str(&text).map_err(|err| {
             RpcException::from(
                 RpcError::invalid_params()
-                    .with_data(format!("invalid UInt256 '{}': {}", text, err)),
+                    .with_data(format!("invalid UInt256 '{text}': {err}")),
             )
         })
     }
@@ -567,7 +565,7 @@ impl RpcServerWallet {
         params
             .get(index)
             .and_then(|value| value.as_str())
-            .map(|value| value.to_string())
+            .map(std::string::ToString::to_string)
             .ok_or_else(|| {
                 RpcException::from(RpcError::invalid_params().with_data(format!(
                     "{} expects string parameter {}",
@@ -616,7 +614,7 @@ impl RpcServerWallet {
                 RpcException::from(RpcError::wallet_not_found().with_data(path))
             }
             WalletError::AccountNotFound(hash) => {
-                RpcException::from(RpcError::unknown_account().with_data(format!("{}", hash)))
+                RpcException::from(RpcError::unknown_account().with_data(format!("{hash}")))
             }
             WalletError::InsufficientFunds => {
                 RpcException::from(RpcError::insufficient_funds_wallet())
@@ -639,8 +637,7 @@ impl RpcServerWallet {
             "label".to_string(),
             account
                 .label()
-                .map(|label| Value::String(label.to_string()))
-                .unwrap_or(Value::Null),
+                .map_or(Value::Null, |label| Value::String(label.to_string())),
         );
         map.insert("watchonly".to_string(), Value::Bool(!has_key));
         Value::Object(map)
@@ -737,7 +734,7 @@ impl RpcServerWallet {
             builder.emit_opcode(OpCode::PACK);
         }
 
-        builder.emit_push_int(flags.bits() as i64);
+        builder.emit_push_int(i64::from(flags.bits()));
         builder.emit_push(method.as_bytes());
         let hash_bytes = contract.to_bytes();
         builder.emit_push(&hash_bytes);
@@ -857,17 +854,14 @@ impl RpcServerWallet {
                             let _ = context.add_signature(contract.clone(), pub_key, signature);
                         }
                     } else if account.has_key() && !account.is_locked() {
-                        let sign_data = match sign_data.as_ref() {
-                            Some(data) => data.clone(),
-                            None => {
-                                let data = neo_core::network::p2p::helper::get_sign_data_vec(
-                                    &tx,
-                                    server.system().settings().network,
-                                )
-                                .map_err(|err| Self::internal_error(err.to_string()))?;
-                                sign_data = Some(data.clone());
-                                data
-                            }
+                        let sign_data = if let Some(data) = sign_data.as_ref() { data.clone() } else {
+                            let data = neo_core::network::p2p::helper::get_sign_data_vec(
+                                &tx,
+                                server.system().settings().network,
+                            )
+                            .map_err(|err| Self::internal_error(err.to_string()))?;
+                            sign_data = Some(data.clone());
+                            data
                         };
                         let wallet_clone = Arc::clone(wallet);
                         let signature = Self::await_wallet_future(Box::pin(async move {
@@ -900,7 +894,7 @@ impl RpcServerWallet {
             let policy = PolicyContract::new();
             let fee_per_byte = policy
                 .get_fee_per_byte_snapshot(snapshot_arc.as_ref())
-                .unwrap_or(PolicyContract::DEFAULT_FEE_PER_BYTE as i64);
+                .unwrap_or(i64::from(PolicyContract::DEFAULT_FEE_PER_BYTE));
             let cal_fee = tx.size() as i64 * fee_per_byte + 100_000;
             if tx.network_fee() < cal_fee {
                 tx.set_network_fee(cal_fee);
@@ -930,7 +924,7 @@ impl RpcServerWallet {
             Err(err) => {
                 // Preverify failure: surface unsigned context
                 let mut context = ContractParametersContext::new_with_type(
-                    snapshot_arc.clone(),
+                    snapshot_arc,
                     tx.clone(),
                     server.system().settings().network,
                     Some("Neo.Network.P2P.Payloads.Transaction".to_string()),
@@ -1032,7 +1026,7 @@ impl RpcServerWallet {
             .actor_of(props, format!("relay_responder_{}", Uuid::new_v4()))
             .map_err(|err| Self::internal_error(err.to_string()))?;
 
-        send(actor_ref.clone())?;
+        send(actor_ref)?;
 
         let result = rx
             .recv()

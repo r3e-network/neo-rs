@@ -20,8 +20,7 @@ pub(super) fn traverse_iterator(
     let count = expect_u32_param(params, 2, "traverseiterator")?;
     if (count as usize) > server.settings().max_iterator_result_items {
         return Err(invalid_params(format!(
-            "Invalid iterator items count {}",
-            count
+            "Invalid iterator items count {count}"
         )));
     }
     server.purge_expired_sessions();

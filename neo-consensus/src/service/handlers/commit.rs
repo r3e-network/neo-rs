@@ -134,7 +134,7 @@ impl ConsensusService {
 
     /// Prepares block data for assembly by upper layers.
     ///
-    /// This matches C# DBFTPlugin's CreateBlock() preparation logic:
+    /// This matches C# `DBFTPlugin`'s `CreateBlock()` preparation logic:
     /// 1. Collect M commit signatures from validators
     /// 2. Gather all metadata needed for block construction
     /// 3. Return structured data for upper layer to build Block + multi-sig witness

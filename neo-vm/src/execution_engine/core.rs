@@ -2,10 +2,11 @@
 // core.rs - ExecutionEngine constructor, state management, and basic getters/setters
 //
 
-use super::*;
+use super::{ExecutionEngine, JumpTable, ReferenceCounter, ExecutionEngineLimits, VMState, InteropService, CallFlags, EvaluationStack, VmError, StackItem, ExecutionContext};
 
 impl ExecutionEngine {
     /// Creates a new execution engine with the specified jump table.
+    #[must_use] 
     pub fn new(jump_table: Option<JumpTable>) -> Self {
         let reference_counter = ReferenceCounter::new();
         Self::new_with_limits(
@@ -38,7 +39,8 @@ impl ExecutionEngine {
 
     /// Returns the current state of the VM.
     #[inline]
-    pub fn state(&self) -> VMState {
+    #[must_use] 
+    pub const fn state(&self) -> VMState {
         self.state
     }
 
@@ -58,7 +60,7 @@ impl ExecutionEngine {
     /// Called when an exception causes the VM to enter the FAULT state.
     pub(super) fn on_fault(&mut self, err: VmError) {
         #[cfg(debug_assertions)]
-        println!("ExecutionEngine fault: {:?}", err);
+        println!("ExecutionEngine fault: {err:?}");
         if self.uncaught_exception.is_none() {
             let message = match &err {
                 VmError::CatchableException { message } => message.clone(),
@@ -71,18 +73,21 @@ impl ExecutionEngine {
 
     /// Returns the reference counter.
     #[inline]
-    pub fn reference_counter(&self) -> &ReferenceCounter {
+    #[must_use] 
+    pub const fn reference_counter(&self) -> &ReferenceCounter {
         &self.reference_counter
     }
 
     /// Returns the execution limits configured for this engine.
     #[inline]
-    pub fn limits(&self) -> &ExecutionEngineLimits {
+    #[must_use] 
+    pub const fn limits(&self) -> &ExecutionEngineLimits {
         &self.limits
     }
 
     /// Returns the invocation stack.
     #[inline]
+    #[must_use] 
     pub fn invocation_stack(&self) -> &[ExecutionContext] {
         &self.invocation_stack
     }
@@ -95,6 +100,7 @@ impl ExecutionEngine {
 
     /// Returns the current context, if any.
     #[inline]
+    #[must_use] 
     pub fn current_context(&self) -> Option<&ExecutionContext> {
         self.invocation_stack.last()
     }
@@ -107,13 +113,15 @@ impl ExecutionEngine {
 
     /// Returns the entry context, if any.
     #[inline]
+    #[must_use] 
     pub fn entry_context(&self) -> Option<&ExecutionContext> {
         self.invocation_stack.first()
     }
 
     /// Returns the result stack.
     #[inline]
-    pub fn result_stack(&self) -> &EvaluationStack {
+    #[must_use] 
+    pub const fn result_stack(&self) -> &EvaluationStack {
         &self.result_stack
     }
 
@@ -125,7 +133,8 @@ impl ExecutionEngine {
 
     /// Returns the uncaught exception, if any.
     #[inline]
-    pub fn uncaught_exception(&self) -> Option<&StackItem> {
+    #[must_use] 
+    pub const fn uncaught_exception(&self) -> Option<&StackItem> {
         self.uncaught_exception.as_ref()
     }
 
@@ -135,9 +144,10 @@ impl ExecutionEngine {
         self.uncaught_exception = exception;
     }
 
-    /// Gets the uncaught exception (matches C# UncaughtException property exactly).
+    /// Gets the uncaught exception (matches C# `UncaughtException` property exactly).
     #[inline]
-    pub fn get_uncaught_exception(&self) -> Option<&StackItem> {
+    #[must_use] 
+    pub const fn get_uncaught_exception(&self) -> Option<&StackItem> {
         self.uncaught_exception.as_ref()
     }
 
@@ -154,7 +164,8 @@ impl ExecutionEngine {
     }
 
     /// Returns the effective call flags for this engine.
-    pub fn call_flags(&self) -> CallFlags {
+    #[must_use] 
+    pub const fn call_flags(&self) -> CallFlags {
         self.call_flags
     }
 
@@ -164,12 +175,14 @@ impl ExecutionEngine {
     }
 
     /// Checks whether the required call flags are satisfied.
-    pub fn has_call_flags(&self, required: CallFlags) -> bool {
+    #[must_use] 
+    pub const fn has_call_flags(&self, required: CallFlags) -> bool {
         required.is_empty() || self.call_flags.contains(required)
     }
 
     /// Returns the jump table.
-    pub fn jump_table(&self) -> &JumpTable {
+    #[must_use] 
+    pub const fn jump_table(&self) -> &JumpTable {
         &self.jump_table
     }
 

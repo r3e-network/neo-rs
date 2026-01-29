@@ -20,13 +20,13 @@ pub struct Script {
     /// The script data
     script: Vec<u8>,
 
-    /// Cached instructions (wrapped in Arc<Mutex> for safe mutable access)
+    /// Cached instructions (wrapped in `Arc<Mutex>` for safe mutable access)
     instructions: Arc<Mutex<HashMap<usize, Instruction>>>,
 
     /// Whether strict mode is enabled
     strict_mode: bool,
 
-    /// Cached hash code (wrapped in Arc<Mutex> for safe mutable access)
+    /// Cached hash code (wrapped in `Arc<Mutex>` for safe mutable access)
     hash_code: Arc<Mutex<Option<u64>>>,
 }
 
@@ -40,7 +40,7 @@ impl Eq for Script {}
 
 impl Hash for Script {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        (self as *const Script).hash(state);
+        (self as *const Self).hash(state);
     }
 }
 
@@ -91,13 +91,14 @@ impl Script {
     }
 
     /// Creates a new script with default settings (non-strict mode).
-    /// This provides backward compatibility for code expecting Script::new(script).
+    /// This provides backward compatibility for code expecting `Script::new(script)`.
     pub fn from(script: Vec<u8>) -> VmResult<Self> {
         Self::new(script, false)
     }
 
     /// Creates a new script without validation - backward compatibility with C# API
     /// This matches the C# Script(byte[] script) constructor exactly
+    #[must_use] 
     pub fn new_from_bytes(script: Vec<u8>) -> Self {
         Self {
             script,
@@ -108,6 +109,7 @@ impl Script {
     }
 
     /// Creates a new script without validation.
+    #[must_use] 
     pub fn new_relaxed(script: Vec<u8>) -> Self {
         Self {
             script,
@@ -176,7 +178,7 @@ impl Script {
                     let offset = instruction.operand_as::<i8>()?;
                     // Jump offsets are relative to the next instruction
                     let next_ip = ip + instruction.size();
-                    let target = (next_ip as i32 + offset as i32) as usize;
+                    let target = (next_ip as i32 + i32::from(offset)) as usize;
                     if !instructions.contains_key(&target) {
                         return Err(VmError::invalid_script_msg(format!(
                             "Invalid jump target at position {}: {:?}",
@@ -215,8 +217,8 @@ impl Script {
 
                     // Jump offsets are relative to the next instruction
                     let next_ip = ip + instruction.size();
-                    let catch_target = (next_ip as i32 + catch_offset as i32) as usize;
-                    let finally_target = (next_ip as i32 + finally_offset as i32) as usize;
+                    let catch_target = (next_ip as i32 + i32::from(catch_offset)) as usize;
+                    let finally_target = (next_ip as i32 + i32::from(finally_offset)) as usize;
 
                     if !instructions.contains_key(&catch_target) {
                         return Err(VmError::invalid_script_msg(format!(
@@ -346,28 +348,33 @@ impl Script {
     }
 
     /// Returns the script as a byte array.
+    #[must_use] 
     pub fn to_array(&self) -> Vec<u8> {
         self.script.clone()
     }
 
     /// Returns the script as a byte slice.
-    /// This matches the C# implementation's ToArray() behavior exactly.
+    /// This matches the C# implementation's `ToArray()` behavior exactly.
+    #[must_use] 
     pub fn as_bytes(&self) -> &[u8] {
         &self.script
     }
 
     /// Returns the length of the script.
+    #[must_use] 
     pub fn len(&self) -> usize {
         self.script.len()
     }
 
     /// Returns the length of the script - C# API compatibility
     /// This matches the C# Script.Length property exactly
+    #[must_use] 
     pub fn length(&self) -> usize {
         self.script.len()
     }
 
     /// Returns true if the script is empty.
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.script.is_empty()
     }
@@ -377,7 +384,8 @@ impl Script {
     /// # Returns
     ///
     /// An iterator over the instructions in the script
-    pub fn instructions(&self) -> InstructionIterator<'_> {
+    #[must_use] 
+    pub const fn instructions(&self) -> InstructionIterator<'_> {
         InstructionIterator {
             script: self,
             position: 0,
@@ -409,6 +417,7 @@ impl Script {
     /// # Returns
     ///
     /// The hash of the script as a byte array
+    #[must_use] 
     pub fn hash(&self) -> Vec<u8> {
         {
             let hash_code = self.hash_code.lock();
@@ -433,6 +442,7 @@ impl Script {
     }
 
     /// Gets the hash code of the script.
+    #[must_use] 
     pub fn hash_code(&self) -> u64 {
         {
             let hash_code = self.hash_code.lock();
@@ -472,7 +482,7 @@ impl Script {
             OpCode::JMP | OpCode::JMPIF | OpCode::JMPIFNOT | OpCode::CALL => {
                 // 1-byte offset
                 let offset = instruction.operand_as::<i8>()?;
-                self.get_jump_offset(position, offset as i32)
+                self.get_jump_offset(position, i32::from(offset))
             }
             OpCode::JMP_L | OpCode::JMPIF_L | OpCode::JMPIFNOT_L | OpCode::CALL_L => {
                 // 4-byte offset
@@ -487,7 +497,7 @@ impl Script {
             | OpCode::JMPLE => {
                 // 1-byte offset
                 let offset = instruction.operand_as::<i8>()?;
-                self.get_jump_offset(position, offset as i32)
+                self.get_jump_offset(position, i32::from(offset))
             }
             OpCode::JMPEQ_L
             | OpCode::JMPNE_L
@@ -513,7 +523,7 @@ impl Script {
     ///
     /// # Returns
     ///
-    /// A tuple of (catch_offset, finally_offset) as absolute positions
+    /// A tuple of (`catch_offset`, `finally_offset`) as absolute positions
     pub fn get_try_offsets(&self, instruction: &Instruction) -> VmResult<(usize, usize)> {
         let opcode = instruction.opcode();
         let position = instruction.pointer();
@@ -526,13 +536,12 @@ impl Script {
 
         // Get the catch and finally offsets (signed 16-bit values)
         let operand = instruction.operand();
-        let catch_offset = i16::from_le_bytes([
+        let catch_offset = i32::from(i16::from_le_bytes([
             *operand.first().unwrap_or(&0),
             *operand.get(1).unwrap_or(&0),
-        ]) as i32;
+        ]));
         let finally_offset =
-            i16::from_le_bytes([*operand.get(2).unwrap_or(&0), *operand.get(3).unwrap_or(&0)])
-                as i32;
+            i32::from(i16::from_le_bytes([*operand.get(2).unwrap_or(&0), *operand.get(3).unwrap_or(&0)]));
 
         // Calculate the absolute positions
         let catch_position = self.get_jump_offset(position, catch_offset)?;
@@ -549,7 +558,7 @@ impl Script {
     ///
     /// # Returns
     ///
-    /// A tuple of (instruction, next_position)
+    /// A tuple of (instruction, `next_position`)
     pub fn get_next_instruction(&self, position: usize) -> VmResult<(Instruction, usize)> {
         let instruction = self.get_instruction(position)?;
         let next_position = position + instruction.size();

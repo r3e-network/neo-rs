@@ -14,7 +14,8 @@ pub struct OperandSizePrefix(pub u8);
 
 impl OperandSizePrefix {
     /// Returns the size of the operand in bytes.
-    pub fn size(&self) -> usize {
+    #[must_use] 
+    pub const fn size(&self) -> usize {
         match self.0 {
             0 => 0,
             1 => 1,
@@ -156,6 +157,7 @@ impl Instruction {
 
     /// Creates a new instruction with the given opcode and operand.
     /// This is primarily used for testing.
+    #[must_use] 
     pub fn new(opcode: OpCode, operand: &[u8]) -> Self {
         Self {
             pointer: 0,
@@ -164,7 +166,7 @@ impl Instruction {
         }
     }
 
-    /// Parses an instruction from a neo-io MemoryReader.
+    /// Parses an instruction from a neo-io `MemoryReader`.
     pub fn parse_from_neo_io_reader(reader: &mut neo_io::MemoryReader) -> VmResult<Self> {
         let pointer = reader.position();
 
@@ -221,7 +223,7 @@ impl Instruction {
         } else {
             let operand_size = Self::get_operand_size(opcode);
             if operand_size.size() > 0 {
-                reader.read_bytes(operand_size.size())?.to_vec()
+                reader.read_bytes(operand_size.size())?.clone()
             } else {
                 Vec::new()
             }
@@ -291,7 +293,7 @@ impl Instruction {
         } else {
             let operand_size = Self::get_operand_size(opcode);
             if operand_size.size() > 0 {
-                reader.read_bytes(operand_size.size())?.to_vec()
+                reader.read_bytes(operand_size.size())?.clone()
             } else {
                 Vec::new()
             }
@@ -305,16 +307,19 @@ impl Instruction {
     }
 
     /// Returns the opcode of the instruction.
-    pub fn opcode(&self) -> OpCode {
+    #[must_use] 
+    pub const fn opcode(&self) -> OpCode {
         self.opcode
     }
 
     /// Returns the position of the instruction in the script.
-    pub fn pointer(&self) -> usize {
+    #[must_use] 
+    pub const fn pointer(&self) -> usize {
         self.pointer
     }
 
     /// Returns the operand data.
+    #[must_use] 
     pub fn operand_data(&self) -> &[u8] {
         &self.operand
     }
@@ -325,6 +330,7 @@ impl Instruction {
     }
 
     /// Returns the operand data as a slice.
+    #[must_use] 
     pub fn operand(&self) -> &[u8] {
         &self.operand
     }
@@ -355,6 +361,7 @@ impl Instruction {
     }
 
     /// Returns the size of the instruction in bytes.
+    #[must_use] 
     pub fn size(&self) -> usize {
         match self.opcode {
             OpCode::PUSHDATA1 => 1 + 1 + self.operand.len(),
@@ -367,7 +374,7 @@ impl Instruction {
     }
 
     /// Returns the operand size for the given opcode.
-    fn get_operand_size(opcode: OpCode) -> OperandSizePrefix {
+    const fn get_operand_size(opcode: OpCode) -> OperandSizePrefix {
         match opcode {
             // PUSH instructions with fixed operand sizes
             OpCode::PUSHINT8 => OperandSizePrefix(1),
@@ -423,21 +430,25 @@ impl Instruction {
     }
 
     /// Creates a RET instruction.
+    #[must_use] 
     pub fn token_i8(&self) -> i8 {
         self.operand.first().copied().unwrap_or(0) as i8
     }
 
     /// Returns the second signed byte operand (used by TRY instructions).
+    #[must_use] 
     pub fn token_i8_1(&self) -> i8 {
         self.operand.get(1).copied().unwrap_or(0) as i8
     }
 
     /// Returns the first 32-bit signed operand.
+    #[must_use] 
     pub fn token_i32(&self) -> i32 {
         self.token_u32() as i32
     }
 
     /// Returns the second 32-bit signed operand.
+    #[must_use] 
     pub fn token_i32_1(&self) -> i32 {
         let mut bytes = [0u8; 4];
         for (idx, slot) in bytes.iter_mut().enumerate() {
@@ -447,6 +458,7 @@ impl Instruction {
     }
 
     /// Returns the first 16-bit unsigned operand.
+    #[must_use] 
     pub fn token_u16(&self) -> u16 {
         let mut bytes = [0u8; 2];
         for (idx, slot) in bytes.iter_mut().enumerate() {
@@ -456,6 +468,7 @@ impl Instruction {
     }
 
     /// Returns the first 32-bit unsigned operand.
+    #[must_use] 
     pub fn token_u32(&self) -> u32 {
         let mut bytes = [0u8; 4];
         for (idx, slot) in bytes.iter_mut().enumerate() {
@@ -465,7 +478,8 @@ impl Instruction {
     }
 
     /// Creates a RET instruction.
-    pub fn ret() -> Self {
+    #[must_use] 
+    pub const fn ret() -> Self {
         Self {
             pointer: 0,
             opcode: OpCode::RET,
@@ -485,7 +499,7 @@ impl FromOperand for i8 {
         if operand.is_empty() {
             return Err(VmError::invalid_operand_msg("Empty operand for i8"));
         }
-        Ok(operand[0] as i8)
+        Ok(operand[0] as Self)
     }
 }
 
@@ -503,7 +517,7 @@ impl FromOperand for i16 {
         if operand.len() < 2 {
             return Err(VmError::invalid_operand_msg("Operand too small for i16"));
         }
-        Ok(i16::from_le_bytes([operand[0], operand[1]]))
+        Ok(Self::from_le_bytes([operand[0], operand[1]]))
     }
 }
 
@@ -512,7 +526,7 @@ impl FromOperand for u16 {
         if operand.len() < 2 {
             return Err(VmError::invalid_operand_msg("Operand too small for u16"));
         }
-        Ok(u16::from_le_bytes([operand[0], operand[1]]))
+        Ok(Self::from_le_bytes([operand[0], operand[1]]))
     }
 }
 
@@ -521,7 +535,7 @@ impl FromOperand for i32 {
         if operand.len() < 4 {
             return Err(VmError::invalid_operand_msg("Operand too small for i32"));
         }
-        Ok(i32::from_le_bytes([
+        Ok(Self::from_le_bytes([
             operand[0], operand[1], operand[2], operand[3],
         ]))
     }
@@ -532,7 +546,7 @@ impl FromOperand for u32 {
         if operand.len() < 4 {
             return Err(VmError::invalid_operand_msg("Operand too small for u32"));
         }
-        Ok(u32::from_le_bytes([
+        Ok(Self::from_le_bytes([
             operand[0], operand[1], operand[2], operand[3],
         ]))
     }
@@ -543,7 +557,7 @@ impl FromOperand for i64 {
         if operand.len() < 8 {
             return Err(VmError::invalid_operand_msg("Operand too small for i64"));
         }
-        Ok(i64::from_le_bytes([
+        Ok(Self::from_le_bytes([
             operand[0], operand[1], operand[2], operand[3], operand[4], operand[5], operand[6],
             operand[7],
         ]))
@@ -555,7 +569,7 @@ impl FromOperand for u64 {
         if operand.len() < 8 {
             return Err(VmError::invalid_operand_msg("Operand too small for u64"));
         }
-        Ok(u64::from_le_bytes([
+        Ok(Self::from_le_bytes([
             operand[0], operand[1], operand[2], operand[3], operand[4], operand[5], operand[6],
             operand[7],
         ]))

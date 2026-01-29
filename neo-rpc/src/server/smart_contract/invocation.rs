@@ -45,14 +45,14 @@ struct PendingSignatureItem {
 pub(super) fn invoke_function(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
     let script_hash = expect_string_param(params, 0, "invokefunction")?;
     let script_hash = UInt160::from_str(&script_hash)
-        .map_err(|err| invalid_params(format!("invalid script hash: {}", err)))?;
+        .map_err(|err| invalid_params(format!("invalid script hash: {err}")))?;
 
     let operation = expect_string_param(params, 1, "invokefunction")?;
     let parameters = parse_contract_parameters(params.get(2))?;
     let (signers, witnesses) = parse_signers_and_witnesses(server, params.get(3))?;
     let use_diagnostic = params
         .get(4)
-        .and_then(|value| value.as_bool())
+        .and_then(serde_json::Value::as_bool)
         .unwrap_or(false);
 
     let script = build_dynamic_call_script(script_hash, &operation, &parameters)?;
@@ -67,7 +67,7 @@ pub(super) fn invoke_script(server: &RpcServer, params: &[Value]) -> Result<Valu
     let (signers, witnesses) = parse_signers_and_witnesses(server, params.get(1))?;
     let use_diagnostic = params
         .get(2)
-        .and_then(|value| value.as_bool())
+        .and_then(serde_json::Value::as_bool)
         .unwrap_or(false);
 
     execute_script(server, script, signers, witnesses, use_diagnostic)
@@ -106,12 +106,11 @@ fn execute_script(
     ) = {
         let engine = session.engine();
         let vm_state = engine.state();
-        let engine_state = format!("{:?}", vm_state);
+        let engine_state = format!("{vm_state:?}");
         let system_fee = engine.fee_consumed();
         let exception_value = engine
             .fault_exception()
-            .map(|msg| Value::String(normalize_fault_message(msg)))
-            .unwrap_or(Value::Null);
+            .map_or(Value::Null, |msg| Value::String(normalize_fault_message(msg)));
         let notifications_snapshot = engine.notifications().to_vec();
         let stack_snapshot: Vec<StackItem> = engine.result_stack().iter().cloned().collect();
         let diagnostics_snapshot = session.diagnostic().map(|diag| {
@@ -143,7 +142,7 @@ fn execute_script(
     let notifications = {
         let mut session_ref = Some(&mut session);
         let mut entries = Vec::new();
-        for notification in notifications_snapshot.iter() {
+        for notification in &notifications_snapshot {
             entries.push(notification_to_json(
                 notification,
                 session_ref.as_deref_mut(),
@@ -156,7 +155,7 @@ fn execute_script(
     let stack_items = {
         let mut session_ref = Some(&mut session);
         let mut entries = Vec::new();
-        for item in stack_snapshot.iter() {
+        for item in &stack_snapshot {
             match stack_item_to_json(item, session_ref.as_deref_mut()) {
                 Ok(value) => entries.push(value),
                 Err(err) => entries.push(Value::String(format!("error: {err}"))),
@@ -333,8 +332,7 @@ fn build_pending_context(
             "script".to_string(),
             entry
                 .script
-                .map(|bytes| Value::String(BASE64_STANDARD.encode(bytes)))
-                .unwrap_or(Value::Null),
+                .map_or(Value::Null, |bytes| Value::String(BASE64_STANDARD.encode(bytes))),
         );
 
         let parameters = entry

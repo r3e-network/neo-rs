@@ -12,7 +12,7 @@
 use neo_json::{JObject, JToken};
 use serde::{Deserialize, Serialize};
 
-/// Account information matching C# RpcAccount
+/// Account information matching C# `RpcAccount`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcAccount {
     /// Account address
@@ -30,7 +30,8 @@ pub struct RpcAccount {
 
 impl RpcAccount {
     /// Converts to JSON
-    /// Matches C# ToJson
+    /// Matches C# `ToJson`
+    #[must_use] 
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
         json.insert("address".to_string(), JToken::String(self.address.clone()));
@@ -50,27 +51,26 @@ impl RpcAccount {
     }
 
     /// Creates from JSON
-    /// Matches C# FromJson
+    /// Matches C# `FromJson`
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let address = json
             .get("address")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .ok_or("Missing or invalid 'address' field")?
-            .to_string();
+            ;
 
         let has_key = json
             .get("haskey")
-            .map(|v| v.as_boolean())
+            .map(neo_json::JToken::as_boolean)
             .ok_or("Missing or invalid 'haskey' field")?;
 
         let label = json
             .get("label")
-            .and_then(|v| v.as_string())
-            .map(|s| s.to_string());
+            .and_then(neo_json::JToken::as_string);
 
         let watch_only = json
             .get("watchonly")
-            .map(|v| v.as_boolean())
+            .map(neo_json::JToken::as_boolean)
             .ok_or("Missing or invalid 'watchonly' field")?;
 
         Ok(Self {

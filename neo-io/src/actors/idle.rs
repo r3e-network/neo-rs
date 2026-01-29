@@ -10,8 +10,8 @@ pub type Idle = ActorIdle;
 
 impl ActorIdle {
     /// Gets the singleton instance (matches C# Instance property)
-    pub fn instance() -> &'static Idle {
+    pub fn instance() -> &'static Self {
         static INSTANCE: OnceLock<ActorIdle> = OnceLock::new();
-        INSTANCE.get_or_init(|| ActorIdle)
+        INSTANCE.get_or_init(|| Self)
     }
 }

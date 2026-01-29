@@ -3,11 +3,11 @@
 // Licensed under the MIT License
 // See LICENSE file for details
 
-//! # Neo Virtual Machine (NeoVM)
+//! # Neo Virtual Machine (`NeoVM`)
 //!
 //! A complete, high-performance implementation of the Neo Virtual Machine.
 //!
-//! The Neo Virtual Machine (NeoVM) is a lightweight, stack-based virtual machine
+//! The Neo Virtual Machine (`NeoVM`) is a lightweight, stack-based virtual machine
 //! designed for executing smart contracts on the Neo blockchain. This implementation
 //! provides full compatibility with the Neo N3 VM specification while offering
 //! advanced features for debugging, gas metering, and cross-platform deployment.
@@ -16,7 +16,7 @@
 //!
 //! The VM follows a layered architecture:
 //!
-//! ```
+//! ```text
 //! ┌─────────────────────────────────────────────────────────────────┐
 //! │                    ApplicationEngine                             │
 //! │         (High-level interface with blockchain integration)       │
@@ -45,7 +45,7 @@
 //!
 //! This crate is part of **Layer 1 (Core)** in the neo-rs architecture:
 //!
-//! ```
+//! ```text
 //! Layer 2 (Service): Application layer
 //!            │
 //!            ▼
@@ -108,7 +108,7 @@
 //! # }
 //! ```
 //!
-//! ## Using the ApplicationEngine
+//! ## Using the `ApplicationEngine`
 //!
 //! For blockchain-aware contract execution:
 //!
@@ -395,6 +395,6 @@ pub use crate::tests::real_io as io;
 #[cfg(not(test))]
 pub extern crate neo_io;
 
-/// Re-export of neo_io for production use.
+/// Re-export of `neo_io` for production use.
 #[cfg(not(test))]
 pub use neo_io as io;

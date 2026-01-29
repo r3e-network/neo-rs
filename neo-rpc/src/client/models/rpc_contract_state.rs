@@ -15,7 +15,7 @@ use neo_json::{JObject, JToken};
 use neo_primitives::UInt160;
 use serde_json::{Number as JsonNumber, Value as JsonValue};
 
-/// RPC contract state information matching C# RpcContractState
+/// RPC contract state information matching C# `RpcContractState`
 #[derive(Debug, Clone)]
 pub struct RpcContractState {
     /// The contract state
@@ -24,21 +24,21 @@ pub struct RpcContractState {
 
 impl RpcContractState {
     /// Creates from JSON
-    /// Matches C# FromJson
+    /// Matches C# `FromJson`
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let id = json
             .get("id")
-            .and_then(|v| v.as_number())
+            .and_then(neo_json::JToken::as_number)
             .ok_or("Missing or invalid 'id' field")? as i32;
 
         let update_counter = json
             .get("updatecounter")
-            .and_then(|v| v.as_number())
+            .and_then(neo_json::JToken::as_number)
             .ok_or("Missing or invalid 'updatecounter' field")? as u16;
 
         let hash = json
             .get("hash")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .and_then(|s| UInt160::parse(&s).ok())
             .ok_or("Missing or invalid 'hash' field")?;
 
@@ -70,16 +70,16 @@ impl RpcContractState {
     }
 
     /// Converts to JSON
-    /// Matches C# ToJson
+    /// Matches C# `ToJson`
     pub fn to_json(&self) -> Result<JObject, String> {
         let mut json = JObject::new();
         json.insert(
             "id".to_string(),
-            JToken::Number(self.contract_state.id as f64),
+            JToken::Number(f64::from(self.contract_state.id)),
         );
         json.insert(
             "updatecounter".to_string(),
-            JToken::Number(self.contract_state.update_counter as f64),
+            JToken::Number(f64::from(self.contract_state.update_counter)),
         );
         json.insert(
             "hash".to_string(),

@@ -32,7 +32,7 @@ struct SignItem {
 }
 
 /// This class helps to create transaction with RPC API
-/// Matches C# TransactionManager
+/// Matches C# `TransactionManager`
 pub struct TransactionManager {
     /// The RPC client instance
     _rpc_client: Arc<RpcClient>,
@@ -48,7 +48,7 @@ pub struct TransactionManager {
 }
 
 impl TransactionManager {
-    /// TransactionManager Constructor
+    /// `TransactionManager` Constructor
     /// Matches C# constructor
     pub fn new(tx: Transaction, rpc_client: Arc<RpcClient>) -> Self {
         let snapshot = std::sync::Arc::new(neo_core::persistence::DataCache::new(true));
@@ -67,33 +67,33 @@ impl TransactionManager {
     }
 
     /// Get the managed transaction
-    pub fn tx(&self) -> &Transaction {
+    pub const fn tx(&self) -> &Transaction {
         &self.tx
     }
 
-    /// Helper function for one-off TransactionManager creation
-    /// Matches C# MakeTransactionAsync
+    /// Helper function for one-off `TransactionManager` creation
+    /// Matches C# `MakeTransactionAsync`
     pub async fn make_transaction(
         rpc_client: Arc<RpcClient>,
         script: &[u8],
         signers: Option<Vec<Signer>>,
         _attributes: Option<Vec<TransactionAttribute>>,
-    ) -> Result<TransactionManager, Box<dyn std::error::Error>> {
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let factory = TransactionManagerFactory::new(rpc_client);
         factory
             .make_transaction(script, &signers.unwrap_or_default())
             .await
     }
 
-    /// Helper function for one-off TransactionManager creation with system fee
-    /// Matches C# MakeTransactionAsync with systemFee parameter
+    /// Helper function for one-off `TransactionManager` creation with system fee
+    /// Matches C# `MakeTransactionAsync` with systemFee parameter
     pub async fn make_transaction_with_fee(
         rpc_client: Arc<RpcClient>,
         script: &[u8],
         system_fee: i64,
         signers: Option<Vec<Signer>>,
         attributes: Option<Vec<TransactionAttribute>>,
-    ) -> Result<TransactionManager, Box<dyn std::error::Error>> {
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let factory = TransactionManagerFactory::new(rpc_client);
         let mut manager = factory
             .make_transaction(script, &signers.unwrap_or_default())
@@ -108,7 +108,7 @@ impl TransactionManager {
     }
 
     /// Add Signature
-    /// Matches C# AddSignature
+    /// Matches C# `AddSignature`
     pub fn add_signature(
         &mut self,
         key: &KeyPair,
@@ -120,7 +120,7 @@ impl TransactionManager {
     }
 
     /// Add Multi-Signature
-    /// Matches C# AddMultiSig with KeyPair
+    /// Matches C# `AddMultiSig` with `KeyPair`
     pub fn add_multi_sig(
         &mut self,
         key: &KeyPair,
@@ -133,7 +133,7 @@ impl TransactionManager {
     }
 
     /// Add Multi-Signature with multiple keys
-    /// Matches C# AddMultiSig with KeyPair array
+    /// Matches C# `AddMultiSig` with `KeyPair` array
     pub fn add_multi_sig_with_keys(
         &mut self,
         keys: Vec<KeyPair>,
@@ -150,7 +150,7 @@ impl TransactionManager {
     }
 
     /// Add witness with contract
-    /// Matches C# AddWitness
+    /// Matches C# `AddWitness`
     pub fn add_witness(
         &mut self,
         contract: Contract,
@@ -162,7 +162,7 @@ impl TransactionManager {
     }
 
     /// Add witness with script hash
-    /// Matches C# AddWitness with UInt160.
+    /// Matches C# `AddWitness` with `UInt160`.
     ///
     /// Note: Contract lookup requires an RPC call; use [`Self::add_witness_with_hash_async`].
     pub fn add_witness_with_hash(
@@ -183,7 +183,7 @@ impl TransactionManager {
     }
 
     /// Sign the transaction
-    /// Matches C# SignAsync
+    /// Matches C# `SignAsync`
     pub async fn sign(&mut self) -> Result<Transaction, Box<dyn std::error::Error>> {
         let script_hashes = self
             .tx

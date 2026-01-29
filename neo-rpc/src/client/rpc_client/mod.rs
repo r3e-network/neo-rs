@@ -32,7 +32,7 @@ const MAX_JSON_NESTING: usize = 128;
 const DEFAULT_HTTP_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// The RPC client to call NEO RPC methods
-/// Matches C# RpcClient
+/// Matches C# `RpcClient`
 #[derive(Clone)]
 pub struct RpcClient {
     base_address: Url,

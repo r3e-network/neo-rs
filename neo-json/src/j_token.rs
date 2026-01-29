@@ -29,9 +29,9 @@ impl Serialize for JToken {
         S: Serializer,
     {
         match self {
-            JToken::Null => serializer.serialize_unit(),
-            JToken::Boolean(value) => serializer.serialize_bool(*value),
-            JToken::Number(value) => {
+            Self::Null => serializer.serialize_unit(),
+            Self::Boolean(value) => serializer.serialize_bool(*value),
+            Self::Number(value) => {
                 if value.is_finite()
                     && value.fract() == 0.0
                     && *value >= i64::MIN as f64
@@ -42,8 +42,8 @@ impl Serialize for JToken {
                     serializer.serialize_f64(*value)
                 }
             }
-            JToken::String(value) => serializer.serialize_str(value),
-            JToken::Array(value) => {
+            Self::String(value) => serializer.serialize_str(value),
+            Self::Array(value) => {
                 let mut seq = serializer.serialize_seq(Some(value.len()))?;
                 for element in value.children() {
                     match element {
@@ -53,7 +53,7 @@ impl Serialize for JToken {
                 }
                 seq.end()
             }
-            JToken::Object(value) => {
+            Self::Object(value) => {
                 let mut map = serializer.serialize_map(Some(value.len()))?;
                 for (key, element) in value.iter() {
                     match element {
@@ -69,37 +69,40 @@ impl Serialize for JToken {
 
 impl JToken {
     /// Helper constructor for JSON objects from ordered dictionaries.
-    pub fn from_object(properties: OrderedDictionary<String, Option<JToken>>) -> Self {
-        JToken::Object(JObject::from(properties))
+    #[must_use] 
+    pub fn from_object(properties: OrderedDictionary<String, Option<Self>>) -> Self {
+        Self::Object(JObject::from(properties))
     }
 
     /// Helper constructor for JSON arrays from optional token vectors.
-    pub fn from_array(items: Vec<Option<JToken>>) -> Self {
-        JToken::Array(JArray::from(items))
+    #[must_use] 
+    pub fn from_array(items: Vec<Option<Self>>) -> Self {
+        Self::Array(JArray::from(items))
     }
 
     /// Helper constructor for JSON arrays from token vectors.
-    pub fn from_array_tokens(items: Vec<JToken>) -> Self {
-        JToken::Array(JArray::from(items))
+    #[must_use] 
+    pub fn from_array_tokens(items: Vec<Self>) -> Self {
+        Self::Array(JArray::from(items))
     }
 
-    pub fn get_index(&self, index: usize) -> Result<Option<&JToken>, JsonError> {
+    pub fn get_index(&self, index: usize) -> Result<Option<&Self>, JsonError> {
         match self {
-            JToken::Array(array) => array.get_checked(index),
+            Self::Array(array) => array.get_checked(index),
             _ => Err(JsonError::NotSupported("Indexing not supported for token")),
         }
     }
 
-    pub fn set_index(&mut self, index: usize, value: Option<JToken>) -> Result<(), JsonError> {
+    pub fn set_index(&mut self, index: usize, value: Option<Self>) -> Result<(), JsonError> {
         match self {
-            JToken::Array(array) => array.set(index, value),
+            Self::Array(array) => array.set(index, value),
             _ => Err(JsonError::NotSupported("Indexing not supported for token")),
         }
     }
 
-    pub fn get_property(&self, key: &str) -> Result<Option<&JToken>, JsonError> {
+    pub fn get_property(&self, key: &str) -> Result<Option<&Self>, JsonError> {
         match self {
-            JToken::Object(object) => Ok(object.get(key)),
+            Self::Object(object) => Ok(object.get(key)),
             _ => Err(JsonError::NotSupported("Property access not supported")),
         }
     }
@@ -107,10 +110,10 @@ impl JToken {
     pub fn set_property(
         &mut self,
         key: impl Into<String>,
-        value: Option<JToken>,
+        value: Option<Self>,
     ) -> Result<(), JsonError> {
         match self {
-            JToken::Object(object) => {
+            Self::Object(object) => {
                 object.set(key.into(), value);
                 Ok(())
             }
@@ -119,84 +122,90 @@ impl JToken {
     }
 
     /// Attempts to view this token as a JSON array.
-    pub fn as_array(&self) -> Option<&JArray> {
+    #[must_use] 
+    pub const fn as_array(&self) -> Option<&JArray> {
         match self {
-            JToken::Array(array) => Some(array),
+            Self::Array(array) => Some(array),
             _ => None,
         }
     }
 
     /// Attempts to view this token as a JSON object.
-    pub fn as_object(&self) -> Option<&JObject> {
+    #[must_use] 
+    pub const fn as_object(&self) -> Option<&JObject> {
         match self {
-            JToken::Object(object) => Some(object),
+            Self::Object(object) => Some(object),
             _ => None,
         }
     }
 
+    #[must_use] 
     pub fn as_boolean(&self) -> bool {
         match self {
-            JToken::Null => false,
-            JToken::Boolean(value) => *value,
-            JToken::Number(value) => *value != 0.0,
-            JToken::String(value) => !value.is_empty(),
-            JToken::Array(array) => !array.is_empty(),
-            JToken::Object(object) => !object.is_empty(),
+            Self::Null => false,
+            Self::Boolean(value) => *value,
+            Self::Number(value) => *value != 0.0,
+            Self::String(value) => !value.is_empty(),
+            Self::Array(array) => !array.is_empty(),
+            Self::Object(object) => !object.is_empty(),
         }
     }
 
+    #[must_use] 
     pub fn as_number(&self) -> Option<f64> {
         match self {
-            JToken::Boolean(value) => {
+            Self::Boolean(value) => {
                 if *value {
                     Some(1.0)
                 } else {
                     Some(0.0)
                 }
             }
-            JToken::Number(value) => Some(*value),
-            JToken::String(value) => value.parse::<f64>().ok(),
+            Self::Number(value) => Some(*value),
+            Self::String(value) => value.parse::<f64>().ok(),
             _ => None,
         }
     }
 
     /// Returns the underlying string value if the token represents a JSON string.
+    #[must_use] 
     pub fn as_string(&self) -> Option<String> {
         match self {
-            JToken::String(value) => Some(value.clone()),
+            Self::String(value) => Some(value.clone()),
             _ => None,
         }
     }
 
     /// Converts the token to a string representation (used for diagnostics/logging).
+    #[must_use] 
     pub fn to_string_value(&self) -> String {
         match self {
-            JToken::Null => "null".to_string(),
-            JToken::Boolean(value) => value.to_string(),
-            JToken::Number(value) => value.to_string(),
-            JToken::String(value) => value.clone(),
-            JToken::Array(array) => array.to_string(),
-            JToken::Object(object) => object.to_string(),
+            Self::Null => "null".to_string(),
+            Self::Boolean(value) => value.to_string(),
+            Self::Number(value) => value.to_string(),
+            Self::String(value) => value.clone(),
+            Self::Array(array) => array.to_string(),
+            Self::Object(object) => object.to_string(),
         }
     }
 
-    pub fn get_boolean(&self) -> Result<bool, JsonError> {
+    pub const fn get_boolean(&self) -> Result<bool, JsonError> {
         match self {
-            JToken::Boolean(value) => Ok(*value),
+            Self::Boolean(value) => Ok(*value),
             _ => Err(JsonError::InvalidCast("Expected boolean token")),
         }
     }
 
-    pub fn get_number(&self) -> Result<f64, JsonError> {
+    pub const fn get_number(&self) -> Result<f64, JsonError> {
         match self {
-            JToken::Number(value) => Ok(*value),
+            Self::Number(value) => Ok(*value),
             _ => Err(JsonError::InvalidCast("Expected number token")),
         }
     }
 
     pub fn get_string(&self) -> Result<String, JsonError> {
         match self {
-            JToken::String(value) => Ok(value.clone()),
+            Self::String(value) => Ok(value.clone()),
             _ => Err(JsonError::InvalidCast("Expected string token")),
         }
     }
@@ -206,17 +215,17 @@ impl JToken {
         if number.fract() != 0.0 {
             return Err(JsonError::InvalidCast("Number is not integral"));
         }
-        if number < i32::MIN as f64 || number > i32::MAX as f64 {
+        if number < f64::from(i32::MIN) || number > f64::from(i32::MAX) {
             return Err(JsonError::Overflow("Number out of range for i32"));
         }
         Ok(number as i32)
     }
 
-    pub fn parse(value: &str, max_nest: usize) -> Result<JToken, JsonError> {
+    pub fn parse(value: &str, max_nest: usize) -> Result<Self, JsonError> {
         Self::parse_bytes(value.as_bytes(), max_nest)
     }
 
-    pub fn parse_bytes(bytes: &[u8], max_nest: usize) -> Result<JToken, JsonError> {
+    pub fn parse_bytes(bytes: &[u8], max_nest: usize) -> Result<Self, JsonError> {
         let mut deserializer = serde_json::Deserializer::from_slice(bytes);
         let seed = TokenSeed {
             remaining_depth: max_nest,
@@ -224,7 +233,7 @@ impl JToken {
         };
         let token = seed.deserialize(&mut deserializer)?;
         deserializer.end()?;
-        Ok(token.unwrap_or(JToken::Null))
+        Ok(token.unwrap_or(Self::Null))
     }
 
     pub fn to_byte_array(&self, indented: bool) -> Result<Vec<u8>, JsonError> {
@@ -274,42 +283,42 @@ impl JToken {
 
 impl From<bool> for JToken {
     fn from(value: bool) -> Self {
-        JToken::Boolean(value)
+        Self::Boolean(value)
     }
 }
 
 impl From<f64> for JToken {
     fn from(value: f64) -> Self {
-        JToken::Number(value)
+        Self::Number(value)
     }
 }
 
 impl From<String> for JToken {
     fn from(value: String) -> Self {
-        JToken::String(value)
+        Self::String(value)
     }
 }
 
 impl From<&str> for JToken {
     fn from(value: &str) -> Self {
-        JToken::String(value.to_string())
+        Self::String(value.to_string())
     }
 }
 
 impl From<JArray> for JToken {
     fn from(value: JArray) -> Self {
-        JToken::Array(value)
+        Self::Array(value)
     }
 }
 impl From<JObject> for JToken {
     fn from(value: JObject) -> Self {
-        JToken::Object(value)
+        Self::Object(value)
     }
 }
 
-impl From<Vec<Option<JToken>>> for JToken {
-    fn from(value: Vec<Option<JToken>>) -> Self {
-        JToken::Array(JArray::from_vec(value))
+impl From<Vec<Option<Self>>> for JToken {
+    fn from(value: Vec<Option<Self>>) -> Self {
+        Self::Array(JArray::from_vec(value))
     }
 }
 
@@ -332,7 +341,7 @@ impl<'de> serde::Deserialize<'de> for JToken {
             max_depth: usize::MAX,
         };
         seed.deserialize(deserializer)
-            .map(|value| value.unwrap_or(JToken::Null))
+            .map(|value| value.unwrap_or(Self::Null))
     }
 }
 

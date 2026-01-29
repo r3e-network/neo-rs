@@ -23,7 +23,7 @@
 //!
 //! ## Architecture
 //!
-//! ```
+//! ```text
 //! ┌─────────────────────────────────────────────────────────────────┐
 //! │                     ConsensusService                             │
 //! │              (Main state machine for dBFT 2.0)                   │
@@ -50,7 +50,7 @@
 //!
 //! This crate is part of **Layer 1 (Core)** in the neo-rs architecture:
 //!
-//! ```
+//! ```text
 //! Layer 2 (Service): neo-chain
 //!            │
 //!            ▼
@@ -106,7 +106,7 @@
 //! | [`Commit`](CommitMessage) | Agree to commit block | Any validator |
 //! | [`ChangeView`](ChangeViewMessage) | Request view change | Any validator |
 //! | [`RecoveryRequest`](RecoveryRequestMessage) | Request state sync | Any validator |
-//! | [`RecoveryMessage`](RecoveryMessage) | Provide state for sync | Any validator |
+//! | [`RecoveryMessage`] | Provide state for sync | Any validator |
 //!
 //! ## View Change
 //!
@@ -128,7 +128,7 @@
 //!
 //! | Reason | Description |
 //! |--------|-------------|
-//! | `Timeout` | Speaker didn't send PrepareRequest in time |
+//! | `Timeout` | Speaker didn't send `PrepareRequest` in time |
 //! | `TxNotFound` | Transaction referenced in block not found |
 //! | `TxRejectedByPolicy` | Transaction failed policy check |
 //! | `TxInvalid` | Transaction failed verification |
@@ -203,8 +203,8 @@
 //! | Parameter | Default | Description |
 //! |-----------|---------|-------------|
 //! | `BlockTime` | 15s | Target block interval |
-//! | `PrepareRequestTimeout` | 4s | Wait for PrepareRequest |
-//! | `PrepareResponseTimeout` | 4s | Wait for PrepareResponses |
+//! | `PrepareRequestTimeout` | 4s | Wait for `PrepareRequest` |
+//! | `PrepareResponseTimeout` | 4s | Wait for `PrepareResponses` |
 //! | `CommitTimeout` | 4s | Wait for Commits |
 //! | `ViewChangeTimeout` | 4s | Wait for view changes |
 //!

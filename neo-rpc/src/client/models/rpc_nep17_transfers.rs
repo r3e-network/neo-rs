@@ -17,7 +17,7 @@ use num_bigint::BigInt;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
-/// NEP17 transfers for an address matching C# RpcNep17Transfers
+/// NEP17 transfers for an address matching C# `RpcNep17Transfers`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcNep17Transfers {
     /// User script hash
@@ -32,7 +32,8 @@ pub struct RpcNep17Transfers {
 
 impl RpcNep17Transfers {
     /// Converts to JSON
-    /// Matches C# ToJson
+    /// Matches C# `ToJson`
+    #[must_use] 
     pub fn to_json(&self, protocol_settings: &ProtocolSettings) -> JObject {
         let mut json = JObject::new();
 
@@ -65,7 +66,7 @@ impl RpcNep17Transfers {
     }
 
     /// Creates from JSON
-    /// Matches C# FromJson
+    /// Matches C# `FromJson`
     pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
         let sent = json
             .get("sent")
@@ -95,11 +96,11 @@ impl RpcNep17Transfers {
 
         let address = json
             .get("address")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .ok_or("Missing or invalid 'address' field")?;
 
         let user_script_hash = if address.starts_with("0x") {
-            UInt160::parse(&address).map_err(|_| format!("Invalid address: {}", address))?
+            UInt160::parse(&address).map_err(|_| format!("Invalid address: {address}"))?
         } else {
             WalletHelper::to_script_hash(&address, protocol_settings.address_version)
                 .map_err(|err| format!("Invalid address: {err}"))?
@@ -113,7 +114,7 @@ impl RpcNep17Transfers {
     }
 }
 
-/// Individual NEP17 transfer entry matching C# RpcNep17Transfer
+/// Individual NEP17 transfer entry matching C# `RpcNep17Transfer`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcNep17Transfer {
     /// Timestamp in milliseconds
@@ -140,7 +141,8 @@ pub struct RpcNep17Transfer {
 
 impl RpcNep17Transfer {
     /// Converts to JSON
-    /// Matches C# ToJson
+    /// Matches C# `ToJson`
+    #[must_use] 
     pub fn to_json(&self, _protocol_settings: &ProtocolSettings) -> JObject {
         let mut json = JObject::new();
         json.insert(
@@ -170,11 +172,11 @@ impl RpcNep17Transfer {
         );
         json.insert(
             "blockindex".to_string(),
-            JToken::Number(self.block_index as f64),
+            JToken::Number(f64::from(self.block_index)),
         );
         json.insert(
             "transfernotifyindex".to_string(),
-            JToken::Number(self.transfer_notify_index as f64),
+            JToken::Number(f64::from(self.transfer_notify_index)),
         );
         json.insert(
             "txhash".to_string(),
@@ -184,19 +186,19 @@ impl RpcNep17Transfer {
     }
 
     /// Creates from JSON
-    /// Matches C# FromJson
+    /// Matches C# `FromJson`
     pub fn from_json(
         json: &JObject,
         _protocol_settings: &ProtocolSettings,
     ) -> Result<Self, String> {
         let timestamp_ms = json
             .get("timestamp")
-            .and_then(|v| v.as_number())
+            .and_then(neo_json::JToken::as_number)
             .ok_or("Missing or invalid 'timestamp' field")? as u64;
 
         let asset_hash_str = json
             .get("assethash")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .ok_or("Missing or invalid 'assethash' field")?;
 
         let asset_hash = if asset_hash_str.starts_with("0x") {
@@ -204,11 +206,11 @@ impl RpcNep17Transfer {
         } else {
             UInt160::from_address(&asset_hash_str)
         }
-        .map_err(|_| format!("Invalid asset hash: {}", asset_hash_str))?;
+        .map_err(|_| format!("Invalid asset hash: {asset_hash_str}"))?;
 
         let user_script_hash = json
             .get("transferaddress")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .and_then(|addr| {
                 if addr.starts_with("0x") {
                     UInt160::parse(&addr).ok()
@@ -219,24 +221,24 @@ impl RpcNep17Transfer {
 
         let amount_str = json
             .get("amount")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .ok_or("Missing or invalid 'amount' field")?;
         let amount =
-            BigInt::from_str(&amount_str).map_err(|_| format!("Invalid amount: {}", amount_str))?;
+            BigInt::from_str(&amount_str).map_err(|_| format!("Invalid amount: {amount_str}"))?;
 
         let block_index = json
             .get("blockindex")
-            .and_then(|v| v.as_number())
+            .and_then(neo_json::JToken::as_number)
             .ok_or("Missing or invalid 'blockindex' field")? as u32;
 
         let transfer_notify_index =
             json.get("transfernotifyindex")
-                .and_then(|v| v.as_number())
+                .and_then(neo_json::JToken::as_number)
                 .ok_or("Missing or invalid 'transfernotifyindex' field")? as u16;
 
         let tx_hash = json
             .get("txhash")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .and_then(|s| UInt256::parse(&s).ok())
             .ok_or("Missing or invalid 'txhash' field")?;
 

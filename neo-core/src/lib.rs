@@ -28,7 +28,7 @@
 //!
 //! This crate is part of **Layer 1 (Core)** in the neo-rs architecture:
 //!
-//! ```
+//! ```text
 //! Layer 2 (Service): neo-chain, neo-mempool
 //!            │
 //!            ▼
@@ -44,7 +44,7 @@
 //! - [`neo_primitives`]: Core types (`UInt160`, `UInt256`)
 //! - [`neo_crypto`]: Cryptographic operations
 //! - [`neo_storage`]: Storage traits
-//! - [`neo_io`]: Serialization
+//! - [`neo_io`]: I/O operations
 //! - [`neo_json`]: JSON handling
 //!
 //! ## Features
@@ -407,8 +407,8 @@ pub mod contract {
 ///
 /// # Implementors
 ///
-/// - [`Block`](ledger::Block)
-/// - [`Transaction`](network::p2p::payloads::Transaction)
+/// - [`Block`]
+/// - [`Transaction`]
 /// - [`Header`](ledger::BlockHeader)
 ///
 /// # Example

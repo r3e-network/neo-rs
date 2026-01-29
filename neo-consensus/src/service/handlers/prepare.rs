@@ -11,7 +11,7 @@ use crate::{ConsensusError, ConsensusMessageType, ConsensusResult};
 use tracing::{debug, info, warn};
 
 impl ConsensusService {
-    /// Handles PrepareRequest message
+    /// Handles `PrepareRequest` message
     pub(in crate::service) fn on_prepare_request(
         &mut self,
         payload: &ConsensusPayload,
@@ -75,7 +75,7 @@ impl ConsensusService {
         self.context.prev_hash = prepare_request.prev_hash;
         self.context.proposed_timestamp = prepare_request.timestamp;
         self.context.nonce = prepare_request.nonce;
-        self.context.proposed_tx_hashes = prepare_request.transaction_hashes.clone();
+        self.context.proposed_tx_hashes = prepare_request.transaction_hashes;
 
         // Cache PrepareRequest payload hash (ExtensiblePayload.Hash) for PrepareResponse.
         self.context.preparation_hash = Some(self.dbft_payload_hash(payload)?);
@@ -111,7 +111,7 @@ impl ConsensusService {
         Ok(())
     }
 
-    /// Handles PrepareResponse message
+    /// Handles `PrepareResponse` message
     pub(in crate::service) fn on_prepare_response(
         &mut self,
         payload: &ConsensusPayload,
@@ -174,7 +174,7 @@ impl ConsensusService {
         Ok(())
     }
 
-    /// Sends our PrepareResponse if needed and not already sent.
+    /// Sends our `PrepareResponse` if needed and not already sent.
     pub(in crate::service) fn send_prepare_response(&mut self) -> ConsensusResult<()> {
         if self.context.is_primary() {
             return Ok(());

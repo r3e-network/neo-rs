@@ -28,7 +28,7 @@
 //!
 //! ### 2. Full Networking (neo-core)
 //!
-//! For full P2P node functionality, use [`neo_core::network::p2p`](neo_core::network::p2p):
+//! For full P2P node functionality, use `neo_core::network::p2p`:
 //!
 //! ```rust,no_run
 //! use neo_core::network::p2p::LocalNode;
@@ -41,7 +41,7 @@
 //!
 //! This crate is part of **Layer 1 (Core)** in the neo-rs architecture:
 //!
-//! ```
+//! ```text
 //! Layer 2 (Service): neo-chain, neo-mempool
 //!            │
 //!            ▼
@@ -110,7 +110,7 @@
 //!
 //! Neo uses a custom P2P protocol over TCP. Messages follow this structure:
 //!
-//! ```
+//! ```text
 //! ┌──────────┬──────────┬──────────┬──────────┐
 //! │  Magic   │ Command  │  Length  │ Payload  │
 //! │ (4 bytes)│ (12 bytes│ (4 bytes)│  (var)   │

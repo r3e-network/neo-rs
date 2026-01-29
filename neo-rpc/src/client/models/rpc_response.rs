@@ -12,7 +12,7 @@
 use neo_json::{JObject, JToken};
 use serde::{Deserialize, Serialize};
 
-/// RPC response structure matching C# RpcResponse
+/// RPC response structure matching C# `RpcResponse`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcResponse {
     /// Response ID
@@ -37,15 +37,15 @@ pub struct RpcResponse {
 
 impl RpcResponse {
     /// Creates an RPC response from JSON
-    /// Matches C# FromJson
+    /// Matches C# `FromJson`
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let id = json.get("id").ok_or("Missing 'id' field")?.clone();
 
         let json_rpc = json
             .get("jsonrpc")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .ok_or("Missing or invalid 'jsonrpc' field")?
-            .to_string();
+            ;
 
         let result = json.get("result").cloned();
 
@@ -64,7 +64,8 @@ impl RpcResponse {
     }
 
     /// Converts to JSON
-    /// Matches C# ToJson
+    /// Matches C# `ToJson`
+    #[must_use] 
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
         json.insert("id".to_string(), self.id.clone());
@@ -73,8 +74,7 @@ impl RpcResponse {
         let error = self
             .error
             .as_ref()
-            .map(|value| JToken::Object(value.to_json()))
-            .unwrap_or(JToken::Null);
+            .map_or(JToken::Null, |value| JToken::Object(value.to_json()));
         json.insert("error".to_string(), error);
 
         let result = self.result.clone().unwrap_or(JToken::Null);
@@ -84,7 +84,7 @@ impl RpcResponse {
     }
 }
 
-/// RPC response error structure matching C# RpcResponseError
+/// RPC response error structure matching C# `RpcResponseError`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcResponseError {
     /// Error code
@@ -100,18 +100,18 @@ pub struct RpcResponseError {
 
 impl RpcResponseError {
     /// Creates an RPC response error from JSON
-    /// Matches C# FromJson
+    /// Matches C# `FromJson`
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let code = json
             .get("code")
-            .and_then(|v| v.as_number())
+            .and_then(neo_json::JToken::as_number)
             .ok_or("Missing or invalid 'code' field")? as i32;
 
         let message = json
             .get("message")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .ok_or("Missing or invalid 'message' field")?
-            .to_string();
+            ;
 
         let data = json.get("data").cloned();
 
@@ -123,10 +123,11 @@ impl RpcResponseError {
     }
 
     /// Converts to JSON
-    /// Matches C# ToJson
+    /// Matches C# `ToJson`
+    #[must_use] 
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
-        json.insert("code".to_string(), JToken::Number(self.code as f64));
+        json.insert("code".to_string(), JToken::Number(f64::from(self.code)));
         json.insert("message".to_string(), JToken::String(self.message.clone()));
 
         let data = self.data.clone().unwrap_or(JToken::Null);

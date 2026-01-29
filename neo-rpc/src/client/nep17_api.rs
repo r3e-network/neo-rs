@@ -22,7 +22,7 @@ use num_traits::cast::ToPrimitive;
 use std::sync::Arc;
 
 /// Call NEP17 methods with RPC API
-/// Matches C# Nep17API
+/// Matches C# `Nep17API`
 pub struct Nep17Api {
     /// Base contract client functionality
     contract_client: ContractClient,
@@ -31,8 +31,9 @@ pub struct Nep17Api {
 }
 
 impl Nep17Api {
-    /// Nep17API Constructor
+    /// `Nep17API` Constructor
     /// Matches C# constructor
+    #[must_use] 
     pub fn new(rpc_client: Arc<RpcClient>) -> Self {
         Self {
             contract_client: ContractClient::new(rpc_client.clone()),
@@ -41,12 +42,13 @@ impl Nep17Api {
     }
 
     /// Exposes the underlying contract client for advanced scenarios.
-    pub fn contract_client(&self) -> &ContractClient {
+    #[must_use] 
+    pub const fn contract_client(&self) -> &ContractClient {
         &self.contract_client
     }
 
     /// Get balance of NEP17 token
-    /// Matches C# BalanceOfAsync
+    /// Matches C# `BalanceOfAsync`
     pub async fn balance_of(
         &self,
         script_hash: &UInt160,
@@ -68,7 +70,7 @@ impl Nep17Api {
     }
 
     /// Get symbol of NEP17 token
-    /// Matches C# SymbolAsync
+    /// Matches C# `SymbolAsync`
     pub async fn symbol(
         &self,
         script_hash: &UInt160,
@@ -84,7 +86,7 @@ impl Nep17Api {
     }
 
     /// Get decimals of NEP17 token
-    /// Matches C# DecimalsAsync
+    /// Matches C# `DecimalsAsync`
     pub async fn decimals(&self, script_hash: &UInt160) -> Result<u8, Box<dyn std::error::Error>> {
         let result = self
             .contract_client
@@ -98,7 +100,7 @@ impl Nep17Api {
     }
 
     /// Get total supply of NEP17 token
-    /// Matches C# TotalSupplyAsync
+    /// Matches C# `TotalSupplyAsync`
     pub async fn total_supply(
         &self,
         script_hash: &UInt160,
@@ -114,7 +116,7 @@ impl Nep17Api {
     }
 
     /// Get token information in one rpc call
-    /// Matches C# GetTokenInfoAsync
+    /// Matches C# `GetTokenInfoAsync`
     pub async fn get_token_info(
         &self,
         script_hash: &UInt160,
@@ -144,7 +146,7 @@ impl Nep17Api {
     }
 
     /// Get token information in one rpc call, including address info
-    /// Matches C# GetTokenInfoAsync with address parameter
+    /// Matches C# `GetTokenInfoAsync` with address parameter
     pub async fn get_token_info_with_balance(
         &self,
         address: &str,
@@ -168,7 +170,7 @@ impl Nep17Api {
     }
 
     /// Create NEP17 token transfer transaction
-    /// Matches C# CreateTransferTxAsync
+    /// Matches C# `CreateTransferTxAsync`
     pub async fn create_transfer_tx(
         &self,
         script_hash: &UInt160,
@@ -182,7 +184,7 @@ impl Nep17Api {
     }
 
     /// Create NEP17 token transfer transaction with specific from address
-    /// Matches C# CreateTransferTxAsync with from parameter
+    /// Matches C# `CreateTransferTxAsync` with from parameter
     pub async fn create_transfer_tx_with_from(
         &self,
         script_hash: &UInt160,
@@ -263,7 +265,7 @@ impl Nep17Api {
 
     #[allow(clippy::too_many_arguments)]
     /// Create NEP17 token transfer transaction from multi-sig account.
-    /// Matches C# CreateTransferTxAsync with multi-sig overload.
+    /// Matches C# `CreateTransferTxAsync` with multi-sig overload.
     pub async fn create_transfer_tx_multi_sig(
         &self,
         script_hash: &UInt160,
@@ -325,7 +327,7 @@ impl Nep17Api {
     }
 
     /// Get NEP17 token transfers
-    /// Matches C# GetNep17TransfersAsync
+    /// Matches C# `GetNep17TransfersAsync`
     pub async fn get_nep17_transfers(
         &self,
         address: &str,
@@ -339,7 +341,7 @@ impl Nep17Api {
     }
 
     /// Get NEP17 token balances for an address
-    /// Matches C# GetNep17BalancesAsync
+    /// Matches C# `GetNep17BalancesAsync`
     pub async fn get_nep17_balances(
         &self,
         address: &str,
@@ -380,7 +382,7 @@ impl Nep17Api {
         sb.emit_push(&to.to_array());
         sb.emit_push(&from.to_array());
         sb.emit_push_int(4);
-        sb.emit_push_int(CallFlags::ALL.bits() as i64);
+        sb.emit_push_int(i64::from(CallFlags::ALL.bits()));
         sb.emit_push(b"transfer");
         sb.emit_push(&script_hash.to_array());
         sb.emit_syscall("System.Contract.Call")?;
@@ -445,7 +447,7 @@ impl Nep17Api {
             sb.emit_pack();
         }
 
-        sb.emit_push_int(CallFlags::ALL.bits() as i64);
+        sb.emit_push_int(i64::from(CallFlags::ALL.bits()));
         sb.emit_push(operation.as_bytes());
         sb.emit_push(&script_hash.to_array());
         sb.emit_syscall("System.Contract.Call")?;

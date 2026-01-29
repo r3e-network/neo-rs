@@ -12,19 +12,18 @@ use crate::stack_item::StackItem;
 use num_bigint::BigInt;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 
-/// Maximum size for BigInt results in bytes (256 bits = 32 bytes)
+/// Maximum size for `BigInt` results in bytes (256 bits = 32 bytes)
 /// This matches the C# Neo VM behavior to prevent memory exhaustion attacks.
 const MAX_BIGINT_SIZE: usize = 32;
 
-/// Checks if a BigInt value exceeds the maximum allowed size.
+/// Checks if a `BigInt` value exceeds the maximum allowed size.
 /// Returns an error if the value is too large.
 #[inline]
 fn check_bigint_size(value: &BigInt) -> VmResult<()> {
     let byte_len = value.to_signed_bytes_le().len();
     if byte_len > MAX_BIGINT_SIZE {
         return Err(VmError::invalid_operation_msg(format!(
-            "BigInt size {} bytes exceeds maximum {} bytes",
-            byte_len, MAX_BIGINT_SIZE
+            "BigInt size {byte_len} bytes exceeds maximum {MAX_BIGINT_SIZE} bytes"
         )));
     }
     Ok(())
@@ -188,7 +187,7 @@ fn add(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
             StackItem::from_int(sum)
         }
         (StackItem::ByteString(a), StackItem::ByteString(b)) => {
-            let mut result = a.clone();
+            let mut result = a;
             result.extend_from_slice(&b);
             StackItem::from_byte_string(result)
         }
@@ -640,14 +639,14 @@ fn numequal(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResul
         (StackItem::Boolean(a_bool), StackItem::Boolean(b_bool)) => a_bool == b_bool,
         (StackItem::Boolean(a_bool), _) => {
             // Convert boolean to integer and compare
-            let a_int = if *a_bool { 1 } else { 0 };
+            let a_int = i32::from(*a_bool);
             let b_int = b.as_int()?;
             num_bigint::BigInt::from(a_int) == b_int
         }
         (_, StackItem::Boolean(b_bool)) => {
             // Convert boolean to integer and compare
             let a_int = a.as_int()?;
-            let b_int = if *b_bool { 1 } else { 0 };
+            let b_int = i32::from(*b_bool);
             a_int == num_bigint::BigInt::from(b_int)
         }
         _ => {
@@ -685,14 +684,14 @@ fn numnotequal(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRe
         (StackItem::Boolean(a_bool), StackItem::Boolean(b_bool)) => a_bool != b_bool, // boolean != boolean
         (StackItem::Boolean(a_bool), _) => {
             // Convert boolean to integer and compare
-            let a_int = if *a_bool { 1 } else { 0 };
+            let a_int = i32::from(*a_bool);
             let b_int = b.as_int()?;
             num_bigint::BigInt::from(a_int) != b_int
         }
         (_, StackItem::Boolean(b_bool)) => {
             // Convert boolean to integer and compare
             let a_int = a.as_int()?;
-            let b_int = if *b_bool { 1 } else { 0 };
+            let b_int = i32::from(*b_bool);
             a_int != num_bigint::BigInt::from(b_int)
         }
         _ => {

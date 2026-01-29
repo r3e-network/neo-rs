@@ -14,7 +14,8 @@ impl ConsensusService {
     }
 
     /// Returns the current context (for testing/debugging)
-    pub fn context(&self) -> &ConsensusContext {
+    #[must_use] 
+    pub const fn context(&self) -> &ConsensusContext {
         &self.context
     }
 
@@ -45,12 +46,14 @@ impl ConsensusService {
     }
 
     /// Returns the network magic number this service is configured for.
-    pub fn network(&self) -> u32 {
+    #[must_use] 
+    pub const fn network(&self) -> u32 {
         self.network
     }
 
     /// Returns whether the service is running
-    pub fn is_running(&self) -> bool {
+    #[must_use] 
+    pub const fn is_running(&self) -> bool {
         self.running
     }
 }

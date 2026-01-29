@@ -1,4 +1,4 @@
-//! JumpTable Control operations implementation matching C# Neo.VM.JumpTable.Control
+//! `JumpTable` Control operations implementation matching C# Neo.VM.JumpTable.Control
 
 use crate::error::{VmError, VmResult};
 use crate::execution_engine::ExecutionEngine;
@@ -8,7 +8,7 @@ use crate::vm_state::VMState;
 
 /// Register all control handlers
 pub fn register_handlers(jump_table: &mut crate::jump_table::JumpTable) {
-    use OpCode::*;
+    use OpCode::{NOP, JMP, JMP_L, JMPIF, JMPIF_L, JMPIFNOT, JMPIFNOT_L, JMPEQ, JMPEQ_L, JMPNE, JMPNE_L, JMPGT, JMPGT_L, JMPGE, JMPGE_L, JMPLT, JMPLT_L, JMPLE, JMPLE_L, CALL, CALL_L, CALLA, CALLT, ABORT, ABORTMSG, ASSERT, ASSERTMSG, THROW, TRY, TRY_L, ENDTRY, ENDTRY_L, ENDFINALLY, RET, SYSCALL};
 
     jump_table.register(NOP, nop);
     jump_table.register(JMP, jmp);
@@ -54,11 +54,11 @@ pub fn nop(_engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResul
 
 /// JMP - Jump with signed byte offset
 pub fn jmp(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    let offset = instruction.token_i8() as i32;
+    let offset = i32::from(instruction.token_i8());
     engine.execute_jump_offset(offset)
 }
 
-/// JMP_L - Jump with 32-bit offset
+/// `JMP_L` - Jump with 32-bit offset
 pub fn jmp_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let offset = instruction.token_i32();
     engine.execute_jump_offset(offset)
@@ -67,13 +67,13 @@ pub fn jmp_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
 /// JMPIF - Jump if true
 pub fn jmpif(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     if engine.pop()?.get_boolean()? {
-        let offset = instruction.token_i8() as i32;
+        let offset = i32::from(instruction.token_i8());
         engine.execute_jump_offset(offset)?;
     }
     Ok(())
 }
 
-/// JMPIF_L - Jump if true (32-bit)
+/// `JMPIF_L` - Jump if true (32-bit)
 pub fn jmpif_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     if engine.pop()?.get_boolean()? {
         let offset = instruction.token_i32();
@@ -85,13 +85,13 @@ pub fn jmpif_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
 /// JMPIFNOT - Jump if false
 pub fn jmpifnot(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     if !engine.pop()?.get_boolean()? {
-        let offset = instruction.token_i8() as i32;
+        let offset = i32::from(instruction.token_i8());
         engine.execute_jump_offset(offset)?;
     }
     Ok(())
 }
 
-/// JMPIFNOT_L - Jump if false (32-bit)
+/// `JMPIFNOT_L` - Jump if false (32-bit)
 pub fn jmpifnot_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     if !engine.pop()?.get_boolean()? {
         let offset = instruction.token_i32();
@@ -105,13 +105,13 @@ pub fn jmpeq(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
     let b = engine.pop()?;
     let a = engine.pop()?;
     if a.equals_with_limits(&b, engine.limits())? {
-        let offset = instruction.token_i8() as i32;
+        let offset = i32::from(instruction.token_i8());
         engine.execute_jump_offset(offset)?;
     }
     Ok(())
 }
 
-/// JMPEQ_L - Jump if equal (32-bit)
+/// `JMPEQ_L` - Jump if equal (32-bit)
 pub fn jmpeq_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let b = engine.pop()?;
     let a = engine.pop()?;
@@ -127,13 +127,13 @@ pub fn jmpne(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
     let b = engine.pop()?;
     let a = engine.pop()?;
     if !a.equals_with_limits(&b, engine.limits())? {
-        let offset = instruction.token_i8() as i32;
+        let offset = i32::from(instruction.token_i8());
         engine.execute_jump_offset(offset)?;
     }
     Ok(())
 }
 
-/// JMPNE_L - Jump if not equal (32-bit)
+/// `JMPNE_L` - Jump if not equal (32-bit)
 pub fn jmpne_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let b = engine.pop()?;
     let a = engine.pop()?;
@@ -151,13 +151,13 @@ pub fn jmpgt(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
     let a_int = a.get_integer()?;
     let b_int = b.get_integer()?;
     if a_int > b_int {
-        let offset = instruction.token_i8() as i32;
+        let offset = i32::from(instruction.token_i8());
         engine.execute_jump_offset(offset)?;
     }
     Ok(())
 }
 
-/// JMPGT_L - Jump if greater than (32-bit)
+/// `JMPGT_L` - Jump if greater than (32-bit)
 pub fn jmpgt_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let b = engine.pop()?;
     let a = engine.pop()?;
@@ -177,13 +177,13 @@ pub fn jmpge(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
     let a_int = a.get_integer()?;
     let b_int = b.get_integer()?;
     if a_int >= b_int {
-        let offset = instruction.token_i8() as i32;
+        let offset = i32::from(instruction.token_i8());
         engine.execute_jump_offset(offset)?;
     }
     Ok(())
 }
 
-/// JMPGE_L - Jump if greater or equal (32-bit)
+/// `JMPGE_L` - Jump if greater or equal (32-bit)
 pub fn jmpge_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let b = engine.pop()?;
     let a = engine.pop()?;
@@ -203,13 +203,13 @@ pub fn jmplt(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
     let a_int = a.get_integer()?;
     let b_int = b.get_integer()?;
     if a_int < b_int {
-        let offset = instruction.token_i8() as i32;
+        let offset = i32::from(instruction.token_i8());
         engine.execute_jump_offset(offset)?;
     }
     Ok(())
 }
 
-/// JMPLT_L - Jump if less than (32-bit)
+/// `JMPLT_L` - Jump if less than (32-bit)
 pub fn jmplt_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let b = engine.pop()?;
     let a = engine.pop()?;
@@ -229,13 +229,13 @@ pub fn jmple(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
     let a_int = a.get_integer()?;
     let b_int = b.get_integer()?;
     if a_int <= b_int {
-        let offset = instruction.token_i8() as i32;
+        let offset = i32::from(instruction.token_i8());
         engine.execute_jump_offset(offset)?;
     }
     Ok(())
 }
 
-/// JMPLE_L - Jump if less or equal (32-bit)
+/// `JMPLE_L` - Jump if less or equal (32-bit)
 pub fn jmple_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let b = engine.pop()?;
     let a = engine.pop()?;
@@ -261,7 +261,7 @@ pub fn call(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult
     engine.execute_call(position)
 }
 
-/// CALL_L - Call function (32-bit)
+/// `CALL_L` - Call function (32-bit)
 pub fn call_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let offset = instruction.token_i32() as isize;
     let context = engine
@@ -292,8 +292,8 @@ pub fn calla(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
 
 /// CALLT - Call function with token
 ///
-/// This opcode delegates to the InteropHost's `on_callt` method, which is expected
-/// to be implemented by ApplicationEngine to resolve method tokens and perform
+/// This opcode delegates to the `InteropHost`'s `on_callt` method, which is expected
+/// to be implemented by `ApplicationEngine` to resolve method tokens and perform
 /// cross-contract calls.
 pub fn callt(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let token_id = instruction.token_u16();
@@ -334,16 +334,16 @@ pub fn throw(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
 /// TRY - Begin try block
 pub fn r#try(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let operand = instruction.operand();
-    let catch_offset = i16::from_le_bytes([
+    let catch_offset = i32::from(i16::from_le_bytes([
         *operand.first().unwrap_or(&0),
         *operand.get(1).unwrap_or(&0),
-    ]) as i32;
+    ]));
     let finally_offset =
-        i16::from_le_bytes([*operand.get(2).unwrap_or(&0), *operand.get(3).unwrap_or(&0)]) as i32;
+        i32::from(i16::from_le_bytes([*operand.get(2).unwrap_or(&0), *operand.get(3).unwrap_or(&0)]));
     engine.execute_try(catch_offset, finally_offset)
 }
 
-/// TRY_L - Begin try block (32-bit)
+/// `TRY_L` - Begin try block (32-bit)
 pub fn try_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let catch_offset = instruction.token_i32();
     let finally_offset = instruction.token_i32_1();
@@ -352,11 +352,11 @@ pub fn try_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
 
 /// ENDTRY - End try block
 pub fn endtry(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    let end_offset = instruction.token_i8() as i32;
+    let end_offset = i32::from(instruction.token_i8());
     engine.execute_end_try(end_offset)
 }
 
-/// ENDTRY_L - End try block (32-bit)
+/// `ENDTRY_L` - End try block (32-bit)
 pub fn endtry_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let end_offset = instruction.token_i32();
     engine.execute_end_try(end_offset)

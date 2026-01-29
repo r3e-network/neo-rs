@@ -97,7 +97,7 @@ pub fn parse_oracle_response_code(
 }
 
 /// Converts an oracle response code to its RPC string representation.
-pub fn oracle_response_code_to_str(code: OracleResponseCode) -> &'static str {
+pub const fn oracle_response_code_to_str(code: OracleResponseCode) -> &'static str {
     match code {
         OracleResponseCode::Success => "Success",
         OracleResponseCode::ProtocolNotSupported => "ProtocolNotSupported",

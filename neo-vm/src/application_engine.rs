@@ -59,6 +59,7 @@ pub struct VmApplicationEngine {
 
 impl VmApplicationEngine {
     /// Creates a new application engine for the specified trigger and gas limit.
+    #[must_use] 
     pub fn new(trigger: TriggerType, gas_limit: u64) -> Self {
         let engine = ExecutionEngine::new(None);
         let mut app = Self {
@@ -79,7 +80,7 @@ impl VmApplicationEngine {
     }
 
     fn attach_host(&mut self) {
-        let host_ptr: *mut VmApplicationEngine = self;
+        let host_ptr: *mut Self = self;
         self.engine
             .set_interop_host(host_ptr as *mut dyn InteropHost);
     }
@@ -147,7 +148,7 @@ impl VmApplicationEngine {
             .interop_service_mut()
             .register_host_descriptor(name, price, flags)?;
         #[cfg(debug_assertions)]
-        println!("Registered syscall {} with hash 0x{:08x}", name, hash);
+        println!("Registered syscall {name} with hash 0x{hash:08x}");
         self.syscall_map.insert(hash, syscall);
         Ok(())
     }
@@ -157,7 +158,7 @@ impl VmApplicationEngine {
         self.attach_host();
 
         let script_cost = script.len() as u64;
-        if self.engine.load_script(script.clone(), -1, 0).is_err() {
+        if self.engine.load_script(script, -1, 0).is_err() {
             let _ = self.consume_gas(script_cost);
             self.engine.set_state(VMState::FAULT);
             return VMState::FAULT;
@@ -177,7 +178,7 @@ impl VmApplicationEngine {
         );
         #[cfg(debug_assertions)]
         if let Some(err) = self.engine.uncaught_exception() {
-            println!("Uncaught exception: {:?}", err);
+            println!("Uncaught exception: {err:?}");
         }
         state
     }
@@ -193,17 +194,20 @@ impl VmApplicationEngine {
     }
 
     /// Returns total gas consumed.
-    pub fn gas_consumed(&self) -> u64 {
+    #[must_use] 
+    pub const fn gas_consumed(&self) -> u64 {
         self.gas_consumed
     }
 
     /// Returns configured gas limit.
-    pub fn gas_limit(&self) -> u64 {
+    #[must_use] 
+    pub const fn gas_limit(&self) -> u64 {
         self.gas_limit
     }
 
     /// Returns current trigger.
-    pub fn trigger(&self) -> TriggerType {
+    #[must_use] 
+    pub const fn trigger(&self) -> TriggerType {
         self.trigger
     }
 
@@ -213,6 +217,7 @@ impl VmApplicationEngine {
     }
 
     /// Returns collected notifications.
+    #[must_use] 
     pub fn notifications(&self) -> &[NotificationEvent] {
         &self.notifications
     }
@@ -223,21 +228,25 @@ impl VmApplicationEngine {
     }
 
     /// Retrieves a snapshot by key.
+    #[must_use] 
     pub fn get_snapshot(&self, key: &[u8]) -> Option<&[u8]> {
-        self.snapshots.get(key).map(|value| value.as_slice())
+        self.snapshots.get(key).map(std::vec::Vec::as_slice)
     }
 
     /// Returns a reference to the execution engine's result stack.
+    #[must_use] 
     pub fn result_stack(&self) -> &crate::evaluation_stack::EvaluationStack {
         self.engine.result_stack()
     }
 
     /// Returns the current execution context.
+    #[must_use] 
     pub fn current_context(&self) -> Option<&crate::execution_context::ExecutionContext> {
         self.engine.current_context()
     }
 
     /// Returns the effective call flags for this engine.
+    #[must_use] 
     pub fn call_flags(&self) -> CallFlags {
         self.engine.call_flags()
     }
@@ -247,7 +256,7 @@ impl InteropHost for VmApplicationEngine {
     fn invoke_syscall(&mut self, engine: &mut ExecutionEngine, hash: u32) -> VmResult<()> {
         let syscall = self.syscall_map.get(&hash).copied().ok_or_else(|| {
             #[cfg(debug_assertions)]
-            println!("Unknown syscall hash: 0x{:08x}", hash);
+            println!("Unknown syscall hash: 0x{hash:08x}");
             VmError::invalid_operation_msg("Unknown syscall")
         })?;
 
@@ -312,8 +321,8 @@ impl InteropHost for VmApplicationEngine {
                 let key = context.evaluation_stack_mut().pop()?;
                 let _context = context.evaluation_stack_mut().pop()?;
 
-                let key_bytes = key.as_bytes()?.to_vec();
-                let value_bytes = value.as_bytes()?.to_vec();
+                let key_bytes = key.as_bytes()?.clone();
+                let value_bytes = value.as_bytes()?.clone();
                 self.storage.insert(key_bytes, value_bytes);
                 let _ = self.consume_gas(1);
                 Ok(())
@@ -326,7 +335,7 @@ impl InteropHost for VmApplicationEngine {
                     .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
                 let key = context.evaluation_stack_mut().pop()?;
                 let _context = context.evaluation_stack_mut().pop()?;
-                let key_bytes = key.as_bytes()?.to_vec();
+                let key_bytes = key.as_bytes()?.clone();
 
                 if let Some(value) = self.storage.get(&key_bytes) {
                     context.push(StackItem::from_byte_string(value.clone()))?;

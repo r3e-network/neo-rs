@@ -15,15 +15,15 @@ use super::parsing::{jobject_to_serde, parse_base64_token, parse_u32_token};
 pub fn stack_item_from_json(json: &JObject) -> Result<StackItem, String> {
     let item_type = json
         .get("type")
-        .and_then(|v| v.as_string())
+        .and_then(neo_json::JToken::as_string)
         .ok_or("StackItem entry missing 'type' field")?;
 
     match item_type.as_str() {
         "Any" => {
             let value = json.get("value");
             let text = value
-                .and_then(|token| token.as_string().map(|s| s.to_string()))
-                .or_else(|| value.map(|token| token.to_string()));
+                .and_then(|token| token.as_string())
+                .or_else(|| value.map(std::string::ToString::to_string));
             if let Some(text) = text {
                 Ok(StackItem::from_byte_string(text.into_bytes()))
             } else {
@@ -33,7 +33,7 @@ pub fn stack_item_from_json(json: &JObject) -> Result<StackItem, String> {
         "Boolean" => {
             let value = json
                 .get("value")
-                .map(|token| token.as_boolean())
+                .map(neo_json::JToken::as_boolean)
                 .ok_or("Boolean stack item missing 'value' field")?;
             Ok(StackItem::from_bool(value))
         }
@@ -129,8 +129,8 @@ pub fn stack_item_from_json(json: &JObject) -> Result<StackItem, String> {
         _other => {
             let value = json.get("value");
             let text = value
-                .and_then(|token| token.as_string().map(|s| s.to_string()))
-                .or_else(|| value.map(|token| token.to_string()));
+                .and_then(|token| token.as_string())
+                .or_else(|| value.map(std::string::ToString::to_string));
 
             if let Some(text) = text {
                 Ok(StackItem::from_byte_string(text.into_bytes()))
@@ -245,13 +245,13 @@ struct JsonInteropInterface {
 }
 
 impl JsonInteropInterface {
-    fn new(payload: JsonValue) -> Self {
+    const fn new(payload: JsonValue) -> Self {
         Self { _payload: payload }
     }
 }
 
 impl InteropInterface for JsonInteropInterface {
-    fn interface_type(&self) -> &str {
+    fn interface_type(&self) -> &'static str {
         "json"
     }
 

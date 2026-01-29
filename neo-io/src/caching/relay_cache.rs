@@ -1,4 +1,4 @@
-//! RelayCache - aligns with C# Neo.IO.Caching.RelayCache
+//! `RelayCache` - aligns with C# Neo.IO.Caching.RelayCache
 
 use super::fifo_cache::FIFOCache;
 use std::hash::Hash;
@@ -28,6 +28,7 @@ where
     TInventory: InventoryHash<TKey> + Clone,
 {
     /// Creates a new relay cache with the specified capacity.
+    #[must_use] 
     pub fn new(max_capacity: usize) -> Self {
         Self {
             inner: FIFOCache::new(max_capacity, |item: &TInventory| {

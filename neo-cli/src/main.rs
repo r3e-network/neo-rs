@@ -3,13 +3,13 @@
 //! This CLI tool communicates with a Neo node via JSON-RPC.
 //!
 //! Usage:
-//!   neo-cli [OPTIONS] <COMMAND> [ARGS]
+//!   neo-cli \[OPTIONS] \<COMMAND> \[ARGS]
 //!
 //! Examples:
 //!   neo-cli version                          # Get node version
 //!   neo-cli state                            # Show node state
 //!   neo-cli block 1000                       # Get block by index
-//!   neo-cli tx <hash>                        # Get transaction
+//!   neo-cli tx \<hash>                        # Get transaction
 //!   neo-cli --rpc-url http://localhost:10332 state
 
 use anyhow::{Context, Result};

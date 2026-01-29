@@ -61,7 +61,7 @@ pub struct RpcServerConfig {
         alias = "MaxRequestsPerSecond"
     )]
     pub max_requests_per_second: u32,
-    /// Burst capacity for the per-IP rate limiter (0 uses max_requests_per_second).
+    /// Burst capacity for the per-IP rate limiter (0 uses `max_requests_per_second`).
     #[serde(
         default = "RpcServerConfig::default_rate_limit_burst",
         alias = "RateLimitBurst"
@@ -133,7 +133,7 @@ impl RpcServerConfig {
         5_195_086
     }
 
-    fn default_bind_address() -> IpAddr {
+    const fn default_bind_address() -> IpAddr {
         IpAddr::V4(Ipv4Addr::LOCALHOST)
     }
 
@@ -197,11 +197,13 @@ impl RpcServerConfig {
         50
     }
 
-    pub fn request_headers_timeout_duration(&self) -> Duration {
+    #[must_use] 
+    pub const fn request_headers_timeout_duration(&self) -> Duration {
         Duration::from_secs(self.request_headers_timeout)
     }
 
-    pub fn keep_alive_timeout_duration(&self) -> Option<Duration> {
+    #[must_use] 
+    pub const fn keep_alive_timeout_duration(&self) -> Option<Duration> {
         if self.keep_alive_timeout < 0 {
             None
         } else {
@@ -346,7 +348,7 @@ impl RpcServerSettings {
                 .get("UnhandledExceptionPolicy")
                 .and_then(|policy| serde_json::from_value(policy.clone()).ok())
                 .unwrap_or_default();
-            RpcServerSettings {
+            Self {
                 servers: if servers.is_empty() {
                     vec![RpcServerConfig::default()]
                 } else {
@@ -355,7 +357,7 @@ impl RpcServerSettings {
                 exception_policy,
             }
         } else {
-            RpcServerSettings::default()
+            Self::default()
         };
 
         // Validate settings early to fail fast on unsupported or insecure combos.
@@ -372,18 +374,21 @@ impl RpcServerSettings {
         Ok(())
     }
 
-    pub fn current() -> RpcServerSettings {
+    pub fn current() -> Self {
         CURRENT_SETTINGS.read().clone()
     }
 
+    #[must_use] 
     pub fn servers(&self) -> &[RpcServerConfig] {
         &self.servers
     }
 
-    pub fn exception_policy(&self) -> UnhandledExceptionPolicy {
+    #[must_use] 
+    pub const fn exception_policy(&self) -> UnhandledExceptionPolicy {
         self.exception_policy
     }
 
+    #[must_use] 
     pub fn server_for_network(&self, network: u32) -> Option<RpcServerConfig> {
         self.servers
             .iter()

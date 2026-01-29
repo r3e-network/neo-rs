@@ -8,7 +8,7 @@
 use std::error::Error;
 use std::fmt;
 
-/// namespace Neo.VM -> public class BadScriptException : Exception
+/// namespace Neo.VM -> public class `BadScriptException` : Exception
 /// Represents the exception thrown when the bad script is parsed.
 #[derive(Debug, Clone)]
 pub struct BadScriptException {
@@ -16,17 +16,19 @@ pub struct BadScriptException {
 }
 
 impl BadScriptException {
-    /// Initializes a new instance of the BadScriptException class.
-    /// public BadScriptException() { }
-    pub fn new() -> Self {
+    /// Initializes a new instance of the `BadScriptException` class.
+    /// public `BadScriptException()` { }
+    #[must_use] 
+    pub const fn new() -> Self {
         Self {
             message: String::new(),
         }
     }
 
-    /// Initializes a new instance of the BadScriptException class with a specified error message.
+    /// Initializes a new instance of the `BadScriptException` class with a specified error message.
     /// public BadScriptException(string message) : base(message) { }
-    pub fn with_message(message: String) -> Self {
+    #[must_use] 
+    pub const fn with_message(message: String) -> Self {
         Self { message }
     }
 }

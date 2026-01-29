@@ -2,7 +2,7 @@
 // execution.rs - Main execution loop and instruction execution
 //
 
-use super::*;
+use super::{ExecutionEngine, VMState, VmResult, VmError, InteropHost, StackItem, Instruction};
 
 impl ExecutionEngine {
     /// Starts execution of the VM.
@@ -102,13 +102,13 @@ impl ExecutionEngine {
     }
 
     /// Executes the next instruction - C# API compatibility
-    /// This matches the C# ExecutionEngine.ExecuteNextInstruction() method exactly
+    /// This matches the C# `ExecutionEngine.ExecuteNextInstruction()` method exactly
     pub fn execute_next_instruction(&mut self) -> VmResult<()> {
         self.execute_next()
     }
 
     /// Executes the next instruction in step mode (for debugging/testing).
-    /// This matches C# ExecuteNext behavior for step-by-step execution.
+    /// This matches C# `ExecuteNext` behavior for step-by-step execution.
     pub fn step_next(&mut self) -> VMState {
         if self.invocation_stack.is_empty() {
             self.set_state(VMState::HALT);
@@ -117,7 +117,7 @@ impl ExecutionEngine {
 
         // Try to execute the next instruction
         match self.execute_next_internal() {
-            Ok(_) => {
+            Ok(()) => {
                 // unless we're already in HALT or FAULT state
                 if self.state != VMState::HALT && self.state != VMState::FAULT {
                     self.set_state(VMState::BREAK);
@@ -131,7 +131,7 @@ impl ExecutionEngine {
         }
     }
 
-    /// Internal implementation of execute_next.
+    /// Internal implementation of `execute_next`.
     fn execute_next_internal(&mut self) -> VmResult<()> {
         // Get the current context
         let context = self
@@ -156,8 +156,7 @@ impl ExecutionEngine {
         let result = match handler {
             Some(h) => h(self, &instruction),
             None => Err(VmError::unsupported_operation_msg(format!(
-                "Unsupported opcode: {:?}",
-                opcode
+                "Unsupported opcode: {opcode:?}"
             ))),
         };
 

@@ -38,7 +38,7 @@ struct WsError {
 }
 
 impl WsResponse {
-    fn success(id: Option<serde_json::Value>, result: serde_json::Value) -> Self {
+    const fn success(id: Option<serde_json::Value>, result: serde_json::Value) -> Self {
         Self {
             jsonrpc: "2.0",
             id,
@@ -88,7 +88,7 @@ pub async fn ws_handler(
                     Some(Ok(msg)) if msg.is_text() => {
                         let text = match msg.to_str() {
                             Ok(t) => t,
-                            Err(_) => continue,
+                            Err(()) => continue,
                         };
 
                         match serde_json::from_str::<WsRequest>(text) {
@@ -100,7 +100,7 @@ pub async fn ws_handler(
                                 }
                             }
                             Err(e) => {
-                                let response = WsResponse::error(None, -32700, &format!("Parse error: {}", e));
+                                let response = WsResponse::error(None, -32700, &format!("Parse error: {e}"));
                                 if let Err(e) = tx.send(Message::text(response.to_json())).await {
                                     warn!("Failed to send WebSocket error: {}", e);
                                     break;
@@ -213,12 +213,12 @@ fn handle_subscribe(
 
     // If already subscribed, add to existing subscription
     if let Some(id) = *current_subscription {
-        subscription_mgr.add_events(id, event_types.clone());
+        subscription_mgr.add_events(id, event_types);
         let subscribed: Vec<String> = subscription_mgr
             .get_subscribed_events(id)
             .unwrap_or_default()
             .iter()
-            .map(|e| format!("{:?}", e).to_lowercase())
+            .map(|e| format!("{e:?}").to_lowercase())
             .collect();
         return WsResponse::success(
             req.id.clone(),
@@ -235,7 +235,7 @@ fn handle_subscribe(
 
     let subscribed: Vec<String> = event_types
         .iter()
-        .map(|e| format!("{:?}", e).to_lowercase())
+        .map(|e| format!("{e:?}").to_lowercase())
         .collect();
 
     WsResponse::success(
@@ -269,7 +269,7 @@ fn handle_unsubscribe(
 
                 // Check if any events remain
                 let remaining = subscription_mgr.get_subscribed_events(id);
-                if remaining.as_ref().map(|v| v.is_empty()).unwrap_or(true) {
+                if remaining.as_ref().map_or(true, std::vec::Vec::is_empty) {
                     subscription_mgr.unsubscribe(id);
                     *current_subscription = None;
                     return WsResponse::success(
@@ -281,12 +281,12 @@ fn handle_unsubscribe(
                 let remaining_names: Vec<String> = remaining
                     .unwrap_or_default()
                     .iter()
-                    .map(|e| format!("{:?}", e).to_lowercase())
+                    .map(|e| format!("{e:?}").to_lowercase())
                     .collect();
                 return WsResponse::success(
                     req.id.clone(),
                     serde_json::json!({
-                        "unsubscribed": event_types.iter().map(|e| format!("{:?}", e).to_lowercase()).collect::<Vec<_>>(),
+                        "unsubscribed": event_types.iter().map(|e| format!("{e:?}").to_lowercase()).collect::<Vec<_>>(),
                         "remaining": remaining_names,
                     }),
                 );

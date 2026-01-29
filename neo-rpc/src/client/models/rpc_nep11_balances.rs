@@ -17,7 +17,7 @@ use num_bigint::BigInt;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
-/// NEP11 balances for an address matching C# RpcNep11Balances.
+/// NEP11 balances for an address matching C# `RpcNep11Balances`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcNep11Balances {
     /// User script hash.
@@ -28,6 +28,7 @@ pub struct RpcNep11Balances {
 
 impl RpcNep11Balances {
     /// Converts to JSON.
+    #[must_use] 
     pub fn to_json(&self, protocol_settings: &ProtocolSettings) -> JObject {
         let mut json = JObject::new();
 
@@ -68,11 +69,11 @@ impl RpcNep11Balances {
 
         let address = json
             .get("address")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .ok_or("Missing or invalid 'address' field")?;
 
         let user_script_hash = if address.starts_with("0x") {
-            UInt160::parse(&address).map_err(|_| format!("Invalid address: {}", address))?
+            UInt160::parse(&address).map_err(|_| format!("Invalid address: {address}"))?
         } else {
             WalletHelper::to_script_hash(&address, protocol_settings.address_version)
                 .map_err(|err| format!("Invalid address: {err}"))?
@@ -101,6 +102,7 @@ pub struct RpcNep11Balance {
 }
 
 impl RpcNep11Balance {
+    #[must_use] 
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
         json.insert(
@@ -128,29 +130,28 @@ impl RpcNep11Balance {
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let asset_hash_str = json
             .get("assethash")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .ok_or("Missing or invalid 'assethash' field")?;
         let asset_hash = UInt160::parse(&asset_hash_str)
-            .map_err(|_| format!("Invalid asset hash: {}", asset_hash_str))?;
+            .map_err(|_| format!("Invalid asset hash: {asset_hash_str}"))?;
 
         let name = json
             .get("name")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .unwrap_or_default()
-            .to_string();
+            ;
         let symbol = json
             .get("symbol")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .unwrap_or_default()
-            .to_string();
+            ;
 
         let decimals_token = json.get("decimals");
-        let decimals = match decimals_token.and_then(|v| v.as_string()) {
+        let decimals = match decimals_token.and_then(neo_json::JToken::as_string) {
             Some(text) => text.parse::<u8>().unwrap_or(0),
             None => decimals_token
-                .and_then(|v| v.as_number())
-                .map(|n| n as u8)
-                .unwrap_or(0),
+                .and_then(neo_json::JToken::as_number)
+                .map_or(0, |n| n as u8),
         };
 
         let tokens = json
@@ -187,6 +188,7 @@ pub struct RpcNep11TokenBalance {
 }
 
 impl RpcNep11TokenBalance {
+    #[must_use] 
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
         json.insert(
@@ -199,7 +201,7 @@ impl RpcNep11TokenBalance {
         );
         json.insert(
             "lastupdatedblock".to_string(),
-            JToken::Number(self.last_updated_block as f64),
+            JToken::Number(f64::from(self.last_updated_block)),
         );
         json
     }
@@ -207,21 +209,21 @@ impl RpcNep11TokenBalance {
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let token_id_str = json
             .get("tokenid")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .ok_or("Missing or invalid 'tokenid' field")?;
         let token_id = hex::decode(token_id_str.trim_start_matches("0x"))
-            .map_err(|_| format!("Invalid tokenid: {}", token_id_str))?;
+            .map_err(|_| format!("Invalid tokenid: {token_id_str}"))?;
 
         let amount_str = json
             .get("amount")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .ok_or("Missing or invalid 'amount' field")?;
         let amount =
-            BigInt::from_str(&amount_str).map_err(|_| format!("Invalid amount: {}", amount_str))?;
+            BigInt::from_str(&amount_str).map_err(|_| format!("Invalid amount: {amount_str}"))?;
 
         let last_updated_block =
             json.get("lastupdatedblock")
-                .and_then(|v| v.as_number())
+                .and_then(neo_json::JToken::as_number)
                 .ok_or("Missing or invalid 'lastupdatedblock' field")? as u32;
 
         Ok(Self {

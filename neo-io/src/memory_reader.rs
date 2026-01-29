@@ -1,4 +1,4 @@
-//! MemoryReader - matches C# Neo.IO.MemoryReader exactly
+//! `MemoryReader` - matches C# Neo.IO.MemoryReader exactly
 
 use std::io;
 use std::str;
@@ -33,8 +33,9 @@ pub struct MemoryReader<'a> {
 }
 
 impl<'a> MemoryReader<'a> {
-    /// Creates a new MemoryReader (C# constructor)
-    pub fn new(buffer: &'a [u8]) -> Self {
+    /// Creates a new `MemoryReader` (C# constructor)
+    #[must_use] 
+    pub const fn new(buffer: &'a [u8]) -> Self {
         Self {
             buffer,
             position: 0,
@@ -42,7 +43,8 @@ impl<'a> MemoryReader<'a> {
     }
 
     /// Gets the current position (C# Position property)
-    pub fn position(&self) -> usize {
+    #[must_use] 
+    pub const fn position(&self) -> usize {
         self.position
     }
 
@@ -57,22 +59,25 @@ impl<'a> MemoryReader<'a> {
     }
 
     /// Returns the total length of the backing buffer
-    pub fn len(&self) -> usize {
+    #[must_use] 
+    pub const fn len(&self) -> usize {
         self.buffer.len()
     }
 
     /// Returns true when the backing buffer contains zero bytes.
-    pub fn is_empty(&self) -> bool {
+    #[must_use] 
+    pub const fn is_empty(&self) -> bool {
         self.buffer.is_empty()
     }
 
     /// Returns the number of unread bytes remaining in the buffer.
     #[inline]
-    pub fn remaining(&self) -> usize {
+    #[must_use] 
+    pub const fn remaining(&self) -> usize {
         self.buffer.len().saturating_sub(self.position)
     }
     #[inline]
-    fn ensure_available(&self, required: usize) -> IoResult<()> {
+    const fn ensure_available(&self, required: usize) -> IoResult<()> {
         if self.position.saturating_add(required) > self.buffer.len() {
             Err(IoError::Format)
         } else {
@@ -111,7 +116,7 @@ impl<'a> MemoryReader<'a> {
         Ok(self.buffer[self.position])
     }
 
-    /// Reads a boolean (C# ReadBoolean)
+    /// Reads a boolean (C# `ReadBoolean`)
     #[inline]
     pub fn read_boolean(&mut self) -> IoResult<bool> {
         match self.read_byte()? {
@@ -127,25 +132,25 @@ impl<'a> MemoryReader<'a> {
         self.read_boolean()
     }
 
-    /// Reads a signed byte (C# ReadSByte)
+    /// Reads a signed byte (C# `ReadSByte`)
     #[inline]
     pub fn read_sbyte(&mut self) -> IoResult<i8> {
         Ok(self.read_byte()? as i8)
     }
 
-    /// Reads an unsigned byte (C# ReadByte)
+    /// Reads an unsigned byte (C# `ReadByte`)
     #[inline]
     pub fn read_byte(&mut self) -> IoResult<u8> {
         Ok(self.read_array::<1>()?[0])
     }
 
-    /// Alias for `read_byte` (C# ReadByte vs ReadUInt8 naming differences).
+    /// Alias for `read_byte` (C# `ReadByte` vs `ReadUInt8` naming differences).
     #[inline]
     pub fn read_u8(&mut self) -> IoResult<u8> {
         self.read_byte()
     }
 
-    /// Reads a 16-bit signed integer in little-endian (C# ReadInt16)
+    /// Reads a 16-bit signed integer in little-endian (C# `ReadInt16`)
     #[inline]
     pub fn read_int16(&mut self) -> IoResult<i16> {
         Ok(i16::from_le_bytes(self.read_array::<2>()?))
@@ -157,13 +162,13 @@ impl<'a> MemoryReader<'a> {
         self.read_int16()
     }
 
-    /// Reads a 16-bit signed integer in big-endian (C# ReadInt16BigEndian)
+    /// Reads a 16-bit signed integer in big-endian (C# `ReadInt16BigEndian`)
     #[inline]
     pub fn read_int16_big_endian(&mut self) -> IoResult<i16> {
         Ok(i16::from_be_bytes(self.read_array::<2>()?))
     }
 
-    /// Reads a 16-bit unsigned integer in little-endian (C# ReadUInt16)
+    /// Reads a 16-bit unsigned integer in little-endian (C# `ReadUInt16`)
     #[inline]
     pub fn read_uint16(&mut self) -> IoResult<u16> {
         Ok(u16::from_le_bytes(self.read_array::<2>()?))
@@ -175,13 +180,13 @@ impl<'a> MemoryReader<'a> {
         self.read_uint16()
     }
 
-    /// Reads a 16-bit unsigned integer in big-endian (C# ReadUInt16BigEndian)
+    /// Reads a 16-bit unsigned integer in big-endian (C# `ReadUInt16BigEndian`)
     #[inline]
     pub fn read_uint16_big_endian(&mut self) -> IoResult<u16> {
         Ok(u16::from_be_bytes(self.read_array::<2>()?))
     }
 
-    /// Reads a 32-bit signed integer in little-endian (C# ReadInt32)
+    /// Reads a 32-bit signed integer in little-endian (C# `ReadInt32`)
     #[inline]
     pub fn read_int32(&mut self) -> IoResult<i32> {
         Ok(i32::from_le_bytes(self.read_array::<4>()?))
@@ -193,13 +198,13 @@ impl<'a> MemoryReader<'a> {
         self.read_int32()
     }
 
-    /// Reads a 32-bit signed integer in big-endian (C# ReadInt32BigEndian)
+    /// Reads a 32-bit signed integer in big-endian (C# `ReadInt32BigEndian`)
     #[inline]
     pub fn read_int32_big_endian(&mut self) -> IoResult<i32> {
         Ok(i32::from_be_bytes(self.read_array::<4>()?))
     }
 
-    /// Reads a 32-bit unsigned integer in little-endian (C# ReadUInt32)
+    /// Reads a 32-bit unsigned integer in little-endian (C# `ReadUInt32`)
     #[inline]
     pub fn read_uint32(&mut self) -> IoResult<u32> {
         Ok(u32::from_le_bytes(self.read_array::<4>()?))
@@ -211,13 +216,13 @@ impl<'a> MemoryReader<'a> {
         self.read_uint32()
     }
 
-    /// Reads a 32-bit unsigned integer in big-endian (C# ReadUInt32BigEndian)
+    /// Reads a 32-bit unsigned integer in big-endian (C# `ReadUInt32BigEndian`)
     #[inline]
     pub fn read_uint32_big_endian(&mut self) -> IoResult<u32> {
         Ok(u32::from_be_bytes(self.read_array::<4>()?))
     }
 
-    /// Reads a 64-bit signed integer in little-endian (C# ReadInt64)
+    /// Reads a 64-bit signed integer in little-endian (C# `ReadInt64`)
     #[inline]
     pub fn read_int64(&mut self) -> IoResult<i64> {
         Ok(i64::from_le_bytes(self.read_array::<8>()?))
@@ -229,13 +234,13 @@ impl<'a> MemoryReader<'a> {
         self.read_int64()
     }
 
-    /// Reads a 64-bit signed integer in big-endian (C# ReadInt64BigEndian)
+    /// Reads a 64-bit signed integer in big-endian (C# `ReadInt64BigEndian`)
     #[inline]
     pub fn read_int64_big_endian(&mut self) -> IoResult<i64> {
         Ok(i64::from_be_bytes(self.read_array::<8>()?))
     }
 
-    /// Reads a 64-bit unsigned integer in little-endian (C# ReadUInt64)
+    /// Reads a 64-bit unsigned integer in little-endian (C# `ReadUInt64`)
     #[inline]
     pub fn read_uint64(&mut self) -> IoResult<u64> {
         Ok(u64::from_le_bytes(self.read_array::<8>()?))
@@ -247,21 +252,21 @@ impl<'a> MemoryReader<'a> {
         self.read_uint64()
     }
 
-    /// Reads a 64-bit unsigned integer in big-endian (C# ReadUInt64BigEndian)
+    /// Reads a 64-bit unsigned integer in big-endian (C# `ReadUInt64BigEndian`)
     #[inline]
     pub fn read_uint64_big_endian(&mut self) -> IoResult<u64> {
         Ok(u64::from_be_bytes(self.read_array::<8>()?))
     }
 
-    /// Reads a variable-length integer (C# ReadVarInt)
+    /// Reads a variable-length integer (C# `ReadVarInt`)
     #[inline]
     pub fn read_var_int(&mut self, max: u64) -> IoResult<u64> {
         let prefix = self.read_byte()?;
         let value = match prefix {
-            0xfd => self.read_uint16()? as u64,
-            0xfe => self.read_uint32()? as u64,
+            0xfd => u64::from(self.read_uint16()?),
+            0xfe => u64::from(self.read_uint32()?),
             0xff => self.read_uint64()?,
-            _ => prefix as u64,
+            _ => u64::from(prefix),
         };
         if value > max {
             return Err(IoError::Format);
@@ -269,13 +274,13 @@ impl<'a> MemoryReader<'a> {
         Ok(value)
     }
 
-    /// Reads a variable-length integer with no upper bound (alias for C# ReadVarInt without `max`).
+    /// Reads a variable-length integer with no upper bound (alias for C# `ReadVarInt` without `max`).
     #[inline]
     pub fn read_var_uint(&mut self) -> IoResult<u64> {
         self.read_var_int(u64::MAX)
     }
 
-    /// Reads a fixed-length string (C# ReadFixedString)
+    /// Reads a fixed-length string (C# `ReadFixedString`)
     #[inline]
     pub fn read_fixed_string(&mut self, length: usize) -> IoResult<String> {
         let slice = self.read_slice(length)?;
@@ -292,7 +297,7 @@ impl<'a> MemoryReader<'a> {
         Ok(text.to_string())
     }
 
-    /// Reads a variable-length string (C# ReadVarString)
+    /// Reads a variable-length string (C# `ReadVarString`)
     #[inline]
     pub fn read_var_string(&mut self, max: usize) -> IoResult<String> {
         let length = self.read_var_int(max as u64)? as usize;
@@ -301,20 +306,20 @@ impl<'a> MemoryReader<'a> {
         Ok(text.to_string())
     }
 
-    /// Reads memory (C# ReadMemory)
+    /// Reads memory (C# `ReadMemory`)
     #[inline]
     pub fn read_memory(&mut self, count: usize) -> IoResult<&'a [u8]> {
         self.read_slice(count)
     }
 
-    /// Reads variable-length memory (C# ReadVarMemory)
+    /// Reads variable-length memory (C# `ReadVarMemory`)
     #[inline]
     pub fn read_var_memory(&mut self, max: usize) -> IoResult<&'a [u8]> {
         let count = self.read_var_int(max as u64)? as usize;
         self.read_slice(count)
     }
 
-    /// Reads variable-length memory and returns an owned buffer (C# ReadVarBytes)
+    /// Reads variable-length memory and returns an owned buffer (C# `ReadVarBytes`)
     #[inline]
     pub fn read_var_bytes(&mut self, max: usize) -> IoResult<Vec<u8>> {
         Ok(self.read_var_memory(max)?.to_vec())
@@ -326,7 +331,7 @@ impl<'a> MemoryReader<'a> {
         self.read_var_bytes(max)
     }
 
-    /// Reads to end (C# ReadToEnd)
+    /// Reads to end (C# `ReadToEnd`)
     #[inline]
     pub fn read_to_end(&mut self) -> IoResult<&'a [u8]> {
         let remaining = self.buffer.len().saturating_sub(self.position);
@@ -336,14 +341,14 @@ impl<'a> MemoryReader<'a> {
 
 impl From<str::Utf8Error> for IoError {
     fn from(_: str::Utf8Error) -> Self {
-        IoError::InvalidUtf8
+        Self::InvalidUtf8
     }
 }
 
 impl IoError {
     /// Helper for creating `InvalidData` errors with a default context.
     pub fn invalid_data(message: impl Into<String>) -> Self {
-        IoError::InvalidData {
+        Self::InvalidData {
             context: "invalid data".to_string(),
             value: message.into(),
         }
@@ -351,7 +356,7 @@ impl IoError {
 
     /// Helper for creating `InvalidData` errors with explicit context/value pairs.
     pub fn invalid_data_with_context(context: impl Into<String>, value: impl Into<String>) -> Self {
-        IoError::InvalidData {
+        Self::InvalidData {
             context: context.into(),
             value: value.into(),
         }

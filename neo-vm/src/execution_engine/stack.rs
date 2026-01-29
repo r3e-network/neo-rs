@@ -2,7 +2,7 @@
 // stack.rs - Stack operations (peek, pop, push)
 //
 
-use super::*;
+use super::{ExecutionEngine, VmResult, StackItem, VmError};
 
 impl ExecutionEngine {
     /// Returns the item at the specified index from the top of the current stack without removing it.
@@ -30,7 +30,7 @@ impl ExecutionEngine {
     }
 
     /// Adds gas consumed (integrated with gas calculator)
-    /// ApplicationEngine overrides this with additional gas tracking
+    /// `ApplicationEngine` overrides this with additional gas tracking
     pub fn add_gas_consumed(&mut self, _gas: i64) -> VmResult<()> {
         // Gas tracking disabled - no C# counterpart
         Ok(())

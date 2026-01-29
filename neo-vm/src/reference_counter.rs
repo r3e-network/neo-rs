@@ -25,6 +25,7 @@ pub struct ReferenceCounter {
 
 impl ReferenceCounter {
     /// Creates a new reference counter.
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             inner: Arc::new(Mutex::new(ReferenceCounterInner::default())),
@@ -32,6 +33,7 @@ impl ReferenceCounter {
     }
 
     /// Returns the total number of references currently tracked.
+    #[must_use] 
     pub fn count(&self) -> usize {
         self.inner.lock().references_count
     }
@@ -68,6 +70,7 @@ impl ReferenceCounter {
     }
 
     /// Processes zero-referred items, matching the behaviour of the C# counter.
+    #[must_use] 
     pub fn check_zero_referred(&self) -> usize {
         self.check_zero_referred_internal()
     }
@@ -83,6 +86,7 @@ impl ReferenceCounter {
     }
 
     /// Returns true when both counters share the same underlying state.
+    #[must_use] 
     pub fn ptr_eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.inner, &other.inner)
     }
@@ -173,7 +177,10 @@ impl ReferenceCounter {
             }
         }
 
-        let mut components_to_remove: Vec<Vec<ItemId>> = Vec::new();
+        // OPTIMIZATION: Pre-allocate based on candidate_filter size since we only keep components
+        // that contain at least one candidate from zero_referred. This avoids reallocations
+        // during the filtering phase of strongly connected components.
+        let mut components_to_remove: Vec<Vec<ItemId>> = Vec::with_capacity(candidate_filter.len());
         for component in tarjan.find_components().iter().cloned() {
             if !component.iter().any(|id| candidate_filter.contains(id)) {
                 continue;
@@ -208,8 +215,11 @@ impl ReferenceCounter {
         for component in components_to_remove {
             let component_set: HashSet<ItemId> = component.iter().copied().collect();
             let mut released_internal = 0usize;
-            let mut external_parent_updates: Vec<(ItemId, ItemId, usize)> = Vec::new();
-            let mut external_child_updates: Vec<(ItemId, ItemId, usize)> = Vec::new();
+            // OPTIMIZATION: Each component may have edges to external parents/children.
+            // Using component.len() as a heuristic since external edges are typically
+            // proportional to component size in reference graphs.
+            let mut external_parent_updates: Vec<(ItemId, ItemId, usize)> = Vec::with_capacity(component.len());
+            let mut external_child_updates: Vec<(ItemId, ItemId, usize)> = Vec::with_capacity(component.len());
 
             for id in &component {
                 if let Some(record) = inner.tracked_items.get(id) {
@@ -315,7 +325,7 @@ impl Default for ReferenceCounter {
 
 impl IReferenceCounter for ReferenceCounter {
     fn count(&self) -> usize {
-        ReferenceCounter::count(self)
+        Self::count(self)
     }
 
     fn add_zero_referred(&self, item: &StackItem) {
@@ -388,10 +398,10 @@ impl ItemId {
 impl From<CompoundParent> for ItemId {
     fn from(parent: CompoundParent) -> Self {
         match parent {
-            CompoundParent::Array(id) => ItemId::Array(id),
-            CompoundParent::Struct(id) => ItemId::Struct(id),
-            CompoundParent::Map(id) => ItemId::Map(id),
-            CompoundParent::Buffer(id) => ItemId::Buffer(id),
+            CompoundParent::Array(id) => Self::Array(id),
+            CompoundParent::Struct(id) => Self::Struct(id),
+            CompoundParent::Map(id) => Self::Map(id),
+            CompoundParent::Buffer(id) => Self::Buffer(id),
         }
     }
 }
@@ -400,10 +410,10 @@ impl PartialEq for ItemId {
     fn eq(&self, other: &Self) -> bool {
         matches!(
             (self, other),
-            (ItemId::Array(a), ItemId::Array(b))
-                | (ItemId::Struct(a), ItemId::Struct(b))
-                | (ItemId::Map(a), ItemId::Map(b))
-                | (ItemId::Buffer(a), ItemId::Buffer(b))
+            (Self::Array(a), Self::Array(b))
+                | (Self::Struct(a), Self::Struct(b))
+                | (Self::Map(a), Self::Map(b))
+                | (Self::Buffer(a), Self::Buffer(b))
                 if a == b
         )
     }
@@ -412,19 +422,19 @@ impl PartialEq for ItemId {
 impl Hash for ItemId {
     fn hash<H: Hasher>(&self, state: &mut H) {
         match self {
-            ItemId::Array(id) => {
+            Self::Array(id) => {
                 0u8.hash(state);
                 id.hash(state);
             }
-            ItemId::Struct(id) => {
+            Self::Struct(id) => {
                 1u8.hash(state);
                 id.hash(state);
             }
-            ItemId::Map(id) => {
+            Self::Map(id) => {
                 2u8.hash(state);
                 id.hash(state);
             }
-            ItemId::Buffer(id) => {
+            Self::Buffer(id) => {
                 3u8.hash(state);
                 id.hash(state);
             }

@@ -8,7 +8,7 @@
 use std::error::Error;
 use std::fmt;
 
-/// namespace Neo.VM -> public class CatchableException : Exception
+/// namespace Neo.VM -> public class `CatchableException` : Exception
 
 #[derive(Debug, Clone)]
 pub struct CatchableException {
@@ -17,7 +17,8 @@ pub struct CatchableException {
 
 impl CatchableException {
     /// public CatchableException(string message) : base(message)
-    pub fn new(message: String) -> Self {
+    #[must_use] 
+    pub const fn new(message: String) -> Self {
         Self { message }
     }
 }

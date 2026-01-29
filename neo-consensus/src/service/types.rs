@@ -14,7 +14,7 @@ pub struct BlockData {
     pub primary_index: u8,
     /// Transaction hashes included in the block
     pub transaction_hashes: Vec<UInt256>,
-    /// Commit signatures from validators (validator_index, signature)
+    /// Commit signatures from validators (`validator_index`, signature)
     pub signatures: Vec<(u8, Vec<u8>)>,
     /// Validator public keys for multi-sig witness construction
     pub validator_pubkeys: Vec<neo_crypto::ECPoint>,

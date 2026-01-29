@@ -1,6 +1,6 @@
-//! ByteString stack item implementation for the Neo Virtual Machine.
+//! `ByteString` stack item implementation for the Neo Virtual Machine.
 //!
-//! This module provides the ByteString stack item implementation used in the Neo VM.
+//! This module provides the `ByteString` stack item implementation used in the Neo VM.
 
 use crate::error::VmError;
 use crate::error::VmResult;
@@ -16,11 +16,13 @@ pub struct ByteString {
 
 impl ByteString {
     /// Creates a new byte string with the specified data.
-    pub fn new(data: Vec<u8>) -> Self {
+    #[must_use] 
+    pub const fn new(data: Vec<u8>) -> Self {
         Self { data }
     }
 
     /// Creates a new byte string from a string.
+    #[must_use] 
     pub fn from_string(s: &str) -> Self {
         Self {
             data: s.as_bytes().to_vec(),
@@ -28,21 +30,25 @@ impl ByteString {
     }
 
     /// Gets the byte string data.
+    #[must_use] 
     pub fn data(&self) -> &[u8] {
         &self.data
     }
 
     /// Gets the type of the stack item.
-    pub fn stack_item_type(&self) -> StackItemType {
+    #[must_use] 
+    pub const fn stack_item_type(&self) -> StackItemType {
         StackItemType::ByteString
     }
 
     /// Gets the length of the byte string.
+    #[must_use] 
     pub fn len(&self) -> usize {
         self.data.len()
     }
 
     /// Returns true if the byte string is empty.
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
     }
@@ -59,7 +65,7 @@ impl ByteString {
     ///
     /// This matches the C# Neo implementation exactly:
     /// - Uses little-endian byte order (no reversal needed)
-    /// - Handles negative numbers using .NET BigInteger format (not two's complement)
+    /// - Handles negative numbers using .NET `BigInteger` format (not two's complement)
     pub fn to_integer(&self) -> VmResult<BigInt> {
         if self.data.is_empty() {
             return Ok(BigInt::from(0));
@@ -73,7 +79,7 @@ impl ByteString {
 
         if is_negative {
             // The magnitude is stored in the bytes with the sign bit cleared
-            let mut magnitude_bytes = bytes.to_vec();
+            let mut magnitude_bytes = bytes.clone();
             let len = magnitude_bytes.len();
             magnitude_bytes[len - 1] &= 0x7F; // Clear the sign bit
 
@@ -88,6 +94,7 @@ impl ByteString {
     }
 
     /// Converts the byte string to a boolean.
+    #[must_use] 
     pub fn to_boolean(&self) -> bool {
         if self.data.is_empty() {
             return false;
@@ -104,6 +111,7 @@ impl ByteString {
     }
 
     /// Creates a deep copy of the byte string.
+    #[must_use] 
     pub fn deep_copy(&self) -> Self {
         Self::new(self.data.clone())
     }

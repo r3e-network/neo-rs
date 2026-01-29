@@ -59,7 +59,8 @@ pub struct ConsensusPayload {
 
 impl ConsensusPayload {
     /// Creates a new consensus payload
-    pub fn new(
+    #[must_use] 
+    pub const fn new(
         network: u32,
         block_index: u32,
         validator_index: u8,
@@ -79,6 +80,7 @@ impl ConsensusPayload {
     }
 
     /// Computes the hash of this payload for signing
+    #[must_use] 
     pub fn get_sign_data(&self) -> Vec<u8> {
         let mut data = Vec::new();
         data.extend_from_slice(&self.network.to_le_bytes());
@@ -90,10 +92,11 @@ impl ConsensusPayload {
         data
     }
 
-    /// Serializes this consensus message using the Neo N3 DBFTPlugin on-wire format:
+    /// Serializes this consensus message using the Neo N3 `DBFTPlugin` on-wire format:
     /// `[type:1][block_index:4][validator_index:1][view_number:1][body...]`.
     ///
     /// This is the byte array stored in `ExtensiblePayload.Data` for category `"dBFT"`.
+    #[must_use] 
     pub fn to_message_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(1 + 4 + 1 + 1 + self.data.len());
         bytes.push(self.message_type.to_byte());
@@ -104,7 +107,7 @@ impl ConsensusPayload {
         bytes
     }
 
-    /// Parses a consensus message from DBFTPlugin on-wire bytes.
+    /// Parses a consensus message from `DBFTPlugin` on-wire bytes.
     pub fn from_message_bytes(
         network: u32,
         message_bytes: &[u8],
@@ -141,7 +144,7 @@ impl ConsensusPayload {
     }
 }
 
-/// Builds DBFTPlugin consensus message bytes:
+/// Builds `DBFTPlugin` consensus message bytes:
 /// `[type:1][block_index:4][validator_index:1][view_number:1][body...]`.
 pub(crate) fn consensus_message_bytes(
     message_type: crate::ConsensusMessageType,

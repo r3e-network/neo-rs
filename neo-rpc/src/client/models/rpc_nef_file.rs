@@ -14,7 +14,7 @@ use base64::{engine::general_purpose, Engine as _};
 use neo_core::smart_contract::NefFile;
 use neo_json::JObject;
 
-/// RPC NEF file helper matching C# RpcNefFile
+/// RPC NEF file helper matching C# `RpcNefFile`
 pub struct RpcNefFile {
     /// The NEF file
     pub nef_file: NefFile,
@@ -22,24 +22,25 @@ pub struct RpcNefFile {
 
 impl RpcNefFile {
     /// Creates a new wrapper from a NEF file
-    pub fn new(nef_file: NefFile) -> Self {
+    #[must_use] 
+    pub const fn new(nef_file: NefFile) -> Self {
         Self { nef_file }
     }
 
     /// Creates from JSON
-    /// Matches C# FromJson
+    /// Matches C# `FromJson`
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let compiler = json
             .get("compiler")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .ok_or("Missing or invalid 'compiler' field")?
-            .to_string();
+            ;
 
         let source = json
             .get("source")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .ok_or("Missing or invalid 'source' field")?
-            .to_string();
+            ;
 
         let tokens = json
             .get("tokens")
@@ -55,13 +56,13 @@ impl RpcNefFile {
 
         let script = json
             .get("script")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .and_then(|s| general_purpose::STANDARD.decode(s).ok())
             .ok_or("Missing or invalid 'script' field")?;
 
         let checksum = json
             .get("checksum")
-            .and_then(|v| v.as_number())
+            .and_then(neo_json::JToken::as_number)
             .ok_or("Missing or invalid 'checksum' field")? as u32;
 
         Ok(Self {
@@ -76,12 +77,13 @@ impl RpcNefFile {
     }
 
     /// Converts to JSON
-    /// Matches C# ToJson
+    /// Matches C# `ToJson`
+    #[must_use] 
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
         json.insert(
             "magic".to_string(),
-            neo_json::JToken::Number(NefFile::MAGIC as f64),
+            neo_json::JToken::Number(f64::from(NefFile::MAGIC)),
         );
         json.insert(
             "compiler".to_string(),
@@ -112,7 +114,7 @@ impl RpcNefFile {
         );
         json.insert(
             "checksum".to_string(),
-            neo_json::JToken::Number(self.nef_file.checksum as f64),
+            neo_json::JToken::Number(f64::from(self.nef_file.checksum)),
         );
         json
     }

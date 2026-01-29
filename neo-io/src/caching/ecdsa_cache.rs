@@ -1,4 +1,4 @@
-//! ECDsaCache - aligns with C# Neo.IO.Caching.ECDsaCache
+//! `ECDsaCache` - aligns with C# Neo.IO.Caching.ECDsaCache
 
 use super::fifo_cache::FIFOCache;
 use std::hash::Hash;
@@ -23,7 +23,7 @@ where
     TSigner: Clone,
 {
     /// Creates a new cache item with the provided key/value pair.
-    pub fn new(key: TPoint, value: TSigner) -> Self {
+    pub const fn new(key: TPoint, value: TSigner) -> Self {
         Self { key, value }
     }
 }
@@ -42,10 +42,11 @@ where
     TPoint: Eq + Hash + Clone,
     TSigner: Clone,
 {
-    /// Default maximum number of cached signer instances, matching the C# constant (20_000 entries).
+    /// Default maximum number of cached signer instances, matching the C# constant (`20_000` entries).
     pub const DEFAULT_CAPACITY: usize = 20_000;
 
     /// Creates a cache with the specified maximum capacity.
+    #[must_use] 
     pub fn new(max_capacity: usize) -> Self {
         Self {
             inner: FIFOCache::new(max_capacity, |item: &ECDsaCacheItem<TPoint, TSigner>| {

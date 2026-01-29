@@ -72,6 +72,7 @@ impl Crypto {
     /// let hash = Crypto::sha256(b"Hello, Neo!");
     /// assert_eq!(hash.len(), 32);
     /// ```
+    #[must_use] 
     pub fn sha256(data: &[u8]) -> [u8; 32] {
         let mut hasher = Sha256::new();
         Digest::update(&mut hasher, data);
@@ -85,6 +86,7 @@ impl Crypto {
     ///
     /// # Returns
     /// 64-byte SHA-512 hash
+    #[must_use] 
     pub fn sha512(data: &[u8]) -> [u8; 64] {
         let mut hasher = Sha512::new();
         Digest::update(&mut hasher, data);
@@ -100,6 +102,7 @@ impl Crypto {
     ///
     /// # Returns
     /// 32-byte Keccak-256 hash
+    #[must_use] 
     pub fn keccak256(data: &[u8]) -> [u8; 32] {
         let mut hasher = Keccak256::new();
         Digest::update(&mut hasher, data);
@@ -107,6 +110,7 @@ impl Crypto {
     }
 
     /// Computes SHA3-256 hash of the input data.
+    #[must_use] 
     pub fn sha3_256(data: &[u8]) -> [u8; 32] {
         let mut hasher = Sha3_256::new();
         Digest::update(&mut hasher, data);
@@ -114,6 +118,7 @@ impl Crypto {
     }
 
     /// Computes SHA3-512 hash of the input data.
+    #[must_use] 
     pub fn sha3_512(data: &[u8]) -> [u8; 64] {
         let mut hasher = Sha3_512::new();
         Digest::update(&mut hasher, data);
@@ -127,6 +132,7 @@ impl Crypto {
     ///
     /// # Returns
     /// 20-byte RIPEMD-160 hash
+    #[must_use] 
     pub fn ripemd160(data: &[u8]) -> [u8; 20] {
         let mut hasher = Ripemd160::new();
         Digest::update(&mut hasher, data);
@@ -139,7 +145,8 @@ impl Crypto {
     /// * `data` - Input bytes to hash
     ///
     /// # Returns
-    /// 64-byte BLAKE2b hash
+    /// 64-byte `BLAKE2b` hash
+    #[must_use] 
     pub fn blake2b(data: &[u8]) -> [u8; 64] {
         Self::blake2b_512(data, None).expect("blake2b_512 without salt cannot fail")
     }
@@ -196,6 +203,7 @@ impl Crypto {
     ///
     /// # Returns
     /// 32-byte BLAKE2s hash
+    #[must_use] 
     pub fn blake2s(data: &[u8]) -> [u8; 32] {
         let mut hasher = Blake2s256::new();
         Digest::update(&mut hasher, data);
@@ -219,6 +227,7 @@ impl Crypto {
     /// let script_hash = Crypto::hash160(b"contract script");
     /// assert_eq!(script_hash.len(), 20);
     /// ```
+    #[must_use] 
     pub fn hash160(data: &[u8]) -> [u8; 20] {
         let sha256_hash = Self::sha256(data);
         Self::ripemd160(&sha256_hash)
@@ -241,6 +250,7 @@ impl Crypto {
     /// let tx_hash = Crypto::hash256(b"transaction data");
     /// assert_eq!(tx_hash.len(), 32);
     /// ```
+    #[must_use] 
     pub fn hash256(data: &[u8]) -> [u8; 32] {
         let first_hash = Self::sha256(data);
         Self::sha256(&first_hash)
@@ -253,7 +263,8 @@ impl Crypto {
     /// * `data` - Input bytes to hash
     ///
     /// # Returns
-    /// Hash result as a Vec<u8> (length depends on algorithm)
+    /// Hash result as a `Vec<u8>` (length depends on algorithm)
+    #[must_use] 
     pub fn hash(algorithm: HashAlgorithm, data: &[u8]) -> Vec<u8> {
         match algorithm {
             HashAlgorithm::Sha256 => Self::sha256(data).to_vec(),

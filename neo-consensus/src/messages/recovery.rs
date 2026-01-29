@@ -6,10 +6,10 @@ use neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};
 
-/// Maximum invocation script size accepted by DBFTPlugin compact payloads (bytes).
+/// Maximum invocation script size accepted by `DBFTPlugin` compact payloads (bytes).
 const MAX_INVOCATION_SCRIPT: usize = 1024;
 
-/// RecoveryRequest message sent when a validator needs to recover consensus state.
+/// `RecoveryRequest` message sent when a validator needs to recover consensus state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecoveryRequestMessage {
     /// Block index
@@ -23,8 +23,9 @@ pub struct RecoveryRequestMessage {
 }
 
 impl RecoveryRequestMessage {
-    /// Creates a new RecoveryRequest message.
-    pub fn new(block_index: u32, view_number: u8, validator_index: u8, timestamp: u64) -> Self {
+    /// Creates a new `RecoveryRequest` message.
+    #[must_use] 
+    pub const fn new(block_index: u32, view_number: u8, validator_index: u8, timestamp: u64) -> Self {
         Self {
             block_index,
             view_number,
@@ -34,19 +35,21 @@ impl RecoveryRequestMessage {
     }
 
     /// Returns the message type.
-    pub fn message_type(&self) -> ConsensusMessageType {
+    #[must_use] 
+    pub const fn message_type(&self) -> ConsensusMessageType {
         ConsensusMessageType::RecoveryRequest
     }
 
     /// Serializes the message body to bytes (excluding the common header).
     ///
-    /// Neo N3 DBFTPlugin format: `timestamp (8)`.
+    /// Neo N3 `DBFTPlugin` format: `timestamp (8)`.
+    #[must_use] 
     pub fn serialize(&self) -> Vec<u8> {
         self.timestamp.to_le_bytes().to_vec()
     }
 }
 
-/// Compact representation of a ChangeView payload (RecoveryMessage).
+/// Compact representation of a `ChangeView` payload (`RecoveryMessage`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChangeViewPayloadCompact {
     pub validator_index: u8,
@@ -82,7 +85,7 @@ impl Serializable for ChangeViewPayloadCompact {
     }
 }
 
-/// Compact representation of a PrepareResponse payload (RecoveryMessage).
+/// Compact representation of a `PrepareResponse` payload (`RecoveryMessage`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PreparationPayloadCompact {
     pub validator_index: u8,
@@ -110,7 +113,7 @@ impl Serializable for PreparationPayloadCompact {
     }
 }
 
-/// Compact representation of a Commit payload (RecoveryMessage).
+/// Compact representation of a Commit payload (`RecoveryMessage`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommitPayloadCompact {
     pub view_number: u8,
@@ -152,9 +155,9 @@ impl Serializable for CommitPayloadCompact {
     }
 }
 
-/// RecoveryMessage sent in response to a RecoveryRequest.
+/// `RecoveryMessage` sent in response to a `RecoveryRequest`.
 ///
-/// This struct models the Neo N3 DBFTPlugin on-wire format (message body only).
+/// This struct models the Neo N3 `DBFTPlugin` on-wire format (message body only).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecoveryMessage {
     pub block_index: u32,
@@ -163,10 +166,10 @@ pub struct RecoveryMessage {
 
     pub change_view_messages: Vec<ChangeViewPayloadCompact>,
 
-    /// Embedded PrepareRequest message (including its common header) when available.
+    /// Embedded `PrepareRequest` message (including its common header) when available.
     pub prepare_request_message: Option<super::PrepareRequestMessage>,
 
-    /// PreparationHash (ExtensiblePayload.Hash of the primary PrepareRequest) when PrepareRequest is missing.
+    /// `PreparationHash` (ExtensiblePayload.Hash of the primary `PrepareRequest`) when `PrepareRequest` is missing.
     pub preparation_hash: Option<UInt256>,
 
     pub preparation_messages: Vec<PreparationPayloadCompact>,
@@ -174,8 +177,9 @@ pub struct RecoveryMessage {
 }
 
 impl RecoveryMessage {
-    /// Creates a new empty RecoveryMessage.
-    pub fn new(block_index: u32, view_number: u8, validator_index: u8) -> Self {
+    /// Creates a new empty `RecoveryMessage`.
+    #[must_use] 
+    pub const fn new(block_index: u32, view_number: u8, validator_index: u8) -> Self {
         Self {
             block_index,
             view_number,
@@ -189,11 +193,13 @@ impl RecoveryMessage {
     }
 
     /// Returns the message type.
-    pub fn message_type(&self) -> ConsensusMessageType {
+    #[must_use] 
+    pub const fn message_type(&self) -> ConsensusMessageType {
         ConsensusMessageType::RecoveryMessage
     }
 
     /// Serializes the message body to bytes (excluding the common header).
+    #[must_use] 
     pub fn serialize(&self) -> Vec<u8> {
         let mut writer = BinaryWriter::new();
 
@@ -234,7 +240,7 @@ impl RecoveryMessage {
         writer.into_bytes()
     }
 
-    /// Deserializes a RecoveryMessage from bytes (body only, excluding the common header).
+    /// Deserializes a `RecoveryMessage` from bytes (body only, excluding the common header).
     pub fn deserialize(
         data: &[u8],
         block_index: u32,

@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Consensus message type enum matching C# ConsensusMessageType exactly
+/// Consensus message type enum matching C# `ConsensusMessageType` exactly
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum ConsensusMessageType {
@@ -22,7 +22,8 @@ pub enum ConsensusMessageType {
 
 impl ConsensusMessageType {
     /// Converts from byte value
-    pub fn from_byte(value: u8) -> Option<Self> {
+    #[must_use] 
+    pub const fn from_byte(value: u8) -> Option<Self> {
         match value {
             0x00 => Some(Self::ChangeView),
             0x20 => Some(Self::PrepareRequest),
@@ -35,12 +36,14 @@ impl ConsensusMessageType {
     }
 
     /// Converts to byte value
-    pub fn to_byte(self) -> u8 {
+    #[must_use] 
+    pub const fn to_byte(self) -> u8 {
         self as u8
     }
 
     /// Returns the string representation
-    pub fn as_str(self) -> &'static str {
+    #[must_use] 
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::ChangeView => "ChangeView",
             Self::PrepareRequest => "PrepareRequest",

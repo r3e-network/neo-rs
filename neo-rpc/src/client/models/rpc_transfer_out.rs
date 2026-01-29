@@ -15,7 +15,7 @@ use neo_json::{JObject, JToken};
 use neo_primitives::UInt160;
 use serde::{Deserialize, Serialize};
 
-/// Transfer output information matching C# RpcTransferOut
+/// Transfer output information matching C# `RpcTransferOut`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcTransferOut {
     /// Asset hash
@@ -30,7 +30,8 @@ pub struct RpcTransferOut {
 
 impl RpcTransferOut {
     /// Converts to JSON
-    /// Matches C# ToJson
+    /// Matches C# `ToJson`
+    #[must_use] 
     pub fn to_json(&self, protocol_settings: &ProtocolSettings) -> JObject {
         let mut json = JObject::new();
         json.insert("asset".to_string(), JToken::String(self.asset.to_string()));
@@ -46,38 +47,38 @@ impl RpcTransferOut {
     }
 
     /// Creates from JSON
-    /// Matches C# FromJson
+    /// Matches C# `FromJson`
     pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
         let asset_str = json
             .get("asset")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .ok_or("Missing or invalid 'asset' field")?;
 
         let asset = if asset_str.starts_with("0x") || asset_str.len() == 40 {
-            UInt160::parse(&asset_str).map_err(|_| format!("Invalid asset: {}", asset_str))?
+            UInt160::parse(&asset_str).map_err(|_| format!("Invalid asset: {asset_str}"))?
         } else {
             WalletHelper::to_script_hash(&asset_str, protocol_settings.address_version)
-                .map_err(|_| format!("Invalid asset: {}", asset_str))?
+                .map_err(|_| format!("Invalid asset: {asset_str}"))?
         };
 
         let value = json
             .get("value")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .ok_or("Missing or invalid 'value' field")?
-            .to_string();
+            ;
 
         let address = json
             .get("address")
-            .and_then(|v| v.as_string())
-            .or_else(|| json.get("scripthash").and_then(|v| v.as_string()))
+            .and_then(neo_json::JToken::as_string)
+            .or_else(|| json.get("scripthash").and_then(neo_json::JToken::as_string))
             .ok_or("Missing or invalid 'address' field")?;
 
         let script_hash = if address.len() == 40 || address.starts_with("0x") {
             UInt160::parse(&address)
-                .map_err(|_| format!("Invalid address or scripthash: {}", address))?
+                .map_err(|_| format!("Invalid address or scripthash: {address}"))?
         } else {
             WalletHelper::to_script_hash(&address, protocol_settings.address_version)
-                .map_err(|_| format!("Invalid address or scripthash: {}", address))?
+                .map_err(|_| format!("Invalid address or scripthash: {address}"))?
         };
 
         Ok(Self {

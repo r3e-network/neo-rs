@@ -81,11 +81,13 @@ impl PartialOrd for PriorityEntry {
 
 impl Mempool {
     /// Create a new mempool with default configuration
+    #[must_use] 
     pub fn new() -> Self {
         Self::with_config(MempoolConfig::default())
     }
 
     /// Create a new mempool with custom configuration
+    #[must_use] 
     pub fn with_config(config: MempoolConfig) -> Self {
         Self {
             config,
@@ -215,7 +217,7 @@ impl Mempool {
 
     /// Get all transaction hashes
     pub fn hashes(&self) -> Vec<UInt256> {
-        self.transactions.read().keys().cloned().collect()
+        self.transactions.read().keys().copied().collect()
     }
 
     /// Get top N transactions by priority
@@ -283,7 +285,7 @@ impl Mempool {
         let txs = self.transactions.read();
 
         // Find lowest priority transaction
-        let lowest = txs.values().max_by(|a, b| a.cmp(b));
+        let lowest = txs.values().max_by(std::cmp::Ord::cmp);
 
         if let Some(lowest) = lowest {
             // Only evict if new transaction has higher priority
@@ -312,7 +314,7 @@ impl Mempool {
         let txs = self.transactions.read();
         let by_sender = self.by_sender.read();
 
-        let total_fees: i64 = txs.values().map(|e| e.total_fee()).sum();
+        let total_fees: i64 = txs.values().map(super::transaction_entry::TransactionEntry::total_fee).sum();
         let total_size: usize = txs.values().map(|e| e.size).sum();
 
         MempoolStats {

@@ -175,7 +175,7 @@ impl RpcServerBlockchain {
             .map_err(Self::internal_error)?
             .ok_or_else(|| RpcException::from(RpcError::unknown_block()))?;
 
-        let system_fee: i64 = block.transactions.iter().map(|tx| tx.system_fee()).sum();
+        let system_fee: i64 = block.transactions.iter().map(neo_core::Transaction::system_fee).sum();
         Ok(Value::String(system_fee.to_string()))
     }
 
@@ -307,7 +307,7 @@ impl RpcServerBlockchain {
         let key_bytes = BASE64_STANDARD.decode(key).map_err(|_| {
             RpcException::from(
                 RpcError::invalid_params()
-                    .with_data(format!("invalid Base64 storage key: {}", key)),
+                    .with_data(format!("invalid Base64 storage key: {key}")),
             )
         })?;
 
@@ -331,7 +331,7 @@ impl RpcServerBlockchain {
         let prefix_bytes = BASE64_STANDARD.decode(prefix).map_err(|_| {
             RpcException::from(
                 RpcError::invalid_params()
-                    .with_data(format!("invalid Base64 storage prefix: {}", prefix)),
+                    .with_data(format!("invalid Base64 storage prefix: {prefix}")),
             )
         })?;
         let start = match params.get(2) {
@@ -524,8 +524,7 @@ impl RpcServerBlockchain {
             }
             Value::String(text) => RpcBlockHashOrIndex::try_parse(text).ok_or_else(|| {
                 RpcException::from(RpcError::invalid_params().with_data(format!(
-                    "{} expects block hash or index, got '{}'",
-                    method, text
+                    "{method} expects block hash or index, got '{text}'"
                 )))
             }),
             _ => Err(RpcException::from(RpcError::invalid_params().with_data(
@@ -730,7 +729,7 @@ impl RpcServerBlockchain {
                 UInt256::from_str(text).map_err(|err| {
                     RpcException::from(
                         RpcError::invalid_params()
-                            .with_data(format!("invalid hash '{}': {}", text, err)),
+                            .with_data(format!("invalid hash '{text}': {err}")),
                     )
                 })
             })
@@ -763,7 +762,7 @@ impl RpcServerBlockchain {
             Value::String(text) => ContractNameOrHashOrId::try_parse(text).ok_or_else(|| {
                 RpcException::from(
                     RpcError::invalid_params()
-                        .with_data(format!("invalid contract identifier '{}'", text)),
+                        .with_data(format!("invalid contract identifier '{text}'")),
                 )
             }),
             _ => Err(RpcException::from(RpcError::invalid_params().with_data(
@@ -801,7 +800,7 @@ impl RpcServerBlockchain {
         UInt160::from_str(name).map_err(|err| {
             RpcException::from(
                 RpcError::invalid_params()
-                    .with_data(format!("invalid contract identifier '{}': {}", name, err)),
+                    .with_data(format!("invalid contract identifier '{name}': {err}")),
             )
         })
     }
@@ -810,19 +809,16 @@ impl RpcServerBlockchain {
         store: &neo_core::persistence::StoreCache,
         identifier: &ContractNameOrHashOrId,
     ) -> Result<i32, RpcException> {
-        match identifier {
-            ContractNameOrHashOrId::Id(id) => {
-                let state = ContractManagement::get_contract_by_id_from_store_cache(store, *id)
-                    .map_err(Self::internal_error)?;
-                state
-                    .map(|contract| contract.id)
-                    .ok_or_else(|| RpcException::from(RpcError::unknown_contract()))
-            }
-            _ => {
-                let contract = Self::load_contract_state(store, identifier)?
-                    .ok_or_else(|| RpcException::from(RpcError::unknown_contract()))?;
-                Ok(contract.id)
-            }
+        if let ContractNameOrHashOrId::Id(id) = identifier {
+            let state = ContractManagement::get_contract_by_id_from_store_cache(store, *id)
+                .map_err(Self::internal_error)?;
+            state
+                .map(|contract| contract.id)
+                .ok_or_else(|| RpcException::from(RpcError::unknown_contract()))
+        } else {
+            let contract = Self::load_contract_state(store, identifier)?
+                .ok_or_else(|| RpcException::from(RpcError::unknown_contract()))?;
+            Ok(contract.id)
         }
     }
 

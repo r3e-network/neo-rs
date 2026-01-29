@@ -419,7 +419,11 @@ impl WalletAccount for HsmWalletAccount {
     fn create_witness(&self, transaction: &Transaction) -> WalletResult<Witness> {
         let sign_data = get_sign_data_vec(transaction, self.protocol_settings.network)
             .map_err(|err| WalletError::SigningFailed(err.to_string()))?;
-        let signature = futures::executor::block_on(self.sign_data(&sign_data))?;
+        // Use block_in_place to avoid blocking the async runtime.
+        // SAFETY: This is safe because block_in_place moves the task to a blocking thread pool.
+        let signature = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(self.sign_data(&sign_data))
+        })?;
         let invocation = signature_invocation(&signature)?;
         Ok(Witness::new_with_scripts(
             invocation,

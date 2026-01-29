@@ -15,7 +15,7 @@
 //!
 //! ## Core Components
 //!
-//! - [`IReadOnlyStore`]: Read-only storage operations (try_get, contains)
+//! - [`IReadOnlyStore`]: Read-only storage operations (`try_get`, contains)
 //! - [`IWriteStore`]: Write operations (put, delete)
 //! - [`IStore`]: Combined read/write interface
 //! - [`ISnapshot`]: Point-in-time snapshot with seek/find operations
@@ -23,7 +23,7 @@
 //! - [`StorageItem`]: Storage value with constant flag support
 //! - [`DataCache`]: In-memory cache with change tracking
 //! - [`SeekDirection`]: Forward/Backward iteration direction
-//! - [`TrackState`]: Cache tracking states (None, Added, Changed, Deleted, NotFound)
+//! - [`TrackState`]: Cache tracking states (None, Added, Changed, Deleted, `NotFound`)
 //!
 //! ## Example
 //!

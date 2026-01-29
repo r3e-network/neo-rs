@@ -49,8 +49,8 @@ impl RpcUtility {
         REGISTRY.get_or_init(NativeRegistry::new)
     }
 
-    /// Converts a JToken to a script hash
-    /// Matches C# ToScriptHash extension
+    /// Converts a `JToken` to a script hash
+    /// Matches C# `ToScriptHash` extension
     pub fn to_script_hash(
         value: &JToken,
         protocol_settings: &ProtocolSettings,
@@ -59,14 +59,14 @@ impl RpcUtility {
 
         if address_or_script_hash.len() < 40 && !address_or_script_hash.starts_with("0x") {
             WalletHelper::to_script_hash(&address_or_script_hash, protocol_settings.address_version)
-                .map_err(|e| e.to_string())
         } else {
             UInt160::parse(&address_or_script_hash).map_err(|e| e.to_string())
         }
     }
 
     /// Converts an address or script hash string to script hash string
-    /// Matches C# AsScriptHash extension
+    /// Matches C# `AsScriptHash` extension
+    #[must_use] 
     pub fn as_script_hash(address_or_script_hash: &str) -> String {
         for contract in Self::native_registry().contracts() {
             if address_or_script_hash.eq_ignore_ascii_case(contract.name())
@@ -86,8 +86,8 @@ impl RpcUtility {
         }
     }
 
-    /// Parse WIF or private key hex string to KeyPair
-    /// Matches C# GetKeyPair
+    /// Parse WIF or private key hex string to `KeyPair`
+    /// Matches C# `GetKeyPair`
     pub fn get_key_pair(key: &str) -> Result<KeyPair, String> {
         if key.is_empty() {
             return Err("Key cannot be empty".to_string());
@@ -109,8 +109,8 @@ impl RpcUtility {
         }
     }
 
-    /// Parse address, scripthash or public key string to UInt160
-    /// Matches C# GetScriptHash
+    /// Parse address, scripthash or public key string to `UInt160`
+    /// Matches C# `GetScriptHash`
     pub fn get_script_hash(
         account: &str,
         protocol_settings: &ProtocolSettings,
@@ -125,7 +125,6 @@ impl RpcUtility {
             34 => {
                 // Address
                 WalletHelper::to_script_hash(account, protocol_settings.address_version)
-                    .map_err(|e| e.to_string())
             }
             40 => {
                 // Script hash
@@ -145,6 +144,7 @@ impl RpcUtility {
     }
 
     /// Converts a block to JSON representation.
+    #[must_use] 
     pub fn block_to_json(block: &Block, protocol_settings: &ProtocolSettings) -> JObject {
         tx_json::block_to_json(block, protocol_settings)
     }
@@ -156,24 +156,24 @@ impl RpcUtility {
     ) -> Result<BlockHeader, String> {
         let version = json
             .get("version")
-            .and_then(|v| v.as_number())
+            .and_then(neo_json::JToken::as_number)
             .ok_or("Missing or invalid 'version' field")? as u32;
 
         let previous_hash = json
             .get("previousblockhash")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .and_then(|value| UInt256::parse(&value).ok())
             .ok_or("Missing or invalid 'previousblockhash' field")?;
 
         let merkle_root = json
             .get("merkleroot")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .and_then(|value| UInt256::parse(&value).ok())
             .ok_or("Missing or invalid 'merkleroot' field")?;
 
         let timestamp = json
             .get("time")
-            .and_then(|v| v.as_number())
+            .and_then(neo_json::JToken::as_number)
             .ok_or("Missing or invalid 'time' field")? as u64;
 
         let nonce_token = json
@@ -183,17 +183,17 @@ impl RpcUtility {
 
         let index = json
             .get("index")
-            .and_then(|v| v.as_number())
+            .and_then(neo_json::JToken::as_number)
             .ok_or("Missing or invalid 'index' field")? as u32;
 
         let primary_index = json
             .get("primary")
-            .and_then(|v| v.as_number())
+            .and_then(neo_json::JToken::as_number)
             .ok_or("Missing or invalid 'primary' field")? as u8;
 
         let next_consensus_text = json
             .get("nextconsensus")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .ok_or("Missing or invalid 'nextconsensus' field")?;
         let next_consensus = Self::get_script_hash(&next_consensus_text, protocol_settings)
             .map_err(|err| format!("Invalid 'nextconsensus' field in block header: {err}"))?;
@@ -230,7 +230,7 @@ impl RpcUtility {
     }
 
     /// Converts JSON to a block
-    /// Matches C# BlockFromJson
+    /// Matches C# `BlockFromJson`
     pub fn block_from_json(
         json: &JObject,
         protocol_settings: &ProtocolSettings,
@@ -239,13 +239,13 @@ impl RpcUtility {
     }
 
     /// Converts a transaction to JSON
-    /// Matches C# TransactionToJson
+    /// Matches C# `TransactionToJson`
     pub fn transaction_to_json(tx: &Transaction, protocol_settings: &ProtocolSettings) -> JObject {
         tx_json::transaction_to_json(tx, protocol_settings)
     }
 
     /// Converts JSON to a transaction
-    /// Matches C# TransactionFromJson
+    /// Matches C# `TransactionFromJson`
     pub fn transaction_from_json(
         json: &JObject,
         protocol_settings: &ProtocolSettings,

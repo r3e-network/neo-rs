@@ -58,6 +58,7 @@ impl BloomFilter {
         }
     }
 
+    #[must_use] 
     pub fn check(&self, element: &[u8]) -> bool {
         for seed in &self.seeds {
             let mut cursor = Cursor::new(element);
@@ -69,18 +70,22 @@ impl BloomFilter {
         true
     }
 
-    pub fn bit_size(&self) -> usize {
+    #[must_use] 
+    pub const fn bit_size(&self) -> usize {
         self.bit_size
     }
 
+    #[must_use] 
     pub fn hash_functions(&self) -> usize {
         self.seeds.len()
     }
 
-    pub fn tweak(&self) -> u32 {
+    #[must_use] 
+    pub const fn tweak(&self) -> u32 {
         self.tweak
     }
 
+    #[must_use] 
     pub fn bits(&self) -> Vec<u8> {
         self.bits.clone()
     }

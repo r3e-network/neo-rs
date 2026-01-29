@@ -15,7 +15,7 @@ use neo_json::JObject;
 use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};
 
-/// RPC block information matching C# RpcBlock
+/// RPC block information matching C# `RpcBlock`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcBlock {
     /// The block data
@@ -30,12 +30,13 @@ pub struct RpcBlock {
 
 impl RpcBlock {
     /// Converts to JSON
-    /// Matches C# ToJson
+    /// Matches C# `ToJson`
+    #[must_use] 
     pub fn to_json(&self, protocol_settings: &ProtocolSettings) -> JObject {
         let mut json = super::super::utility::block_to_json(&self.block, protocol_settings);
         json.insert(
             "confirmations".to_string(),
-            neo_json::JToken::Number(self.confirmations as f64),
+            neo_json::JToken::Number(f64::from(self.confirmations)),
         );
 
         if let Some(hash) = self.next_block_hash {
@@ -51,18 +52,18 @@ impl RpcBlock {
     }
 
     /// Creates from JSON
-    /// Matches C# FromJson
+    /// Matches C# `FromJson`
     pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
         let block = super::super::utility::block_from_json(json, protocol_settings)?;
 
         let confirmations = json
             .get("confirmations")
-            .and_then(|v| v.as_number())
+            .and_then(neo_json::JToken::as_number)
             .ok_or("Missing or invalid 'confirmations' field")? as u32;
 
         let next_block_hash = json
             .get("nextblockhash")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .and_then(|s| UInt256::parse(&s).ok());
 
         Ok(Self {

@@ -13,7 +13,7 @@ use base64::{engine::general_purpose, Engine as _};
 use neo_json::JObject;
 use serde::{Deserialize, Serialize};
 
-/// Found states result matching C# RpcFoundStates
+/// Found states result matching C# `RpcFoundStates`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcFoundStates {
     /// Whether results were truncated
@@ -31,11 +31,11 @@ pub struct RpcFoundStates {
 
 impl RpcFoundStates {
     /// Creates from JSON
-    /// Matches C# FromJson
+    /// Matches C# `FromJson`
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let truncated = json
             .get("truncated")
-            .map(|v| v.as_boolean())
+            .map(neo_json::JToken::as_boolean)
             .ok_or("Missing or invalid 'truncated' field")?;
 
         let results = json
@@ -48,11 +48,11 @@ impl RpcFoundStates {
                     .filter_map(|obj| {
                         let key = obj
                             .get("key")
-                            .and_then(|v| v.as_string())
+                            .and_then(neo_json::JToken::as_string)
                             .and_then(|s| general_purpose::STANDARD.decode(s).ok())?;
                         let value = obj
                             .get("value")
-                            .and_then(|v| v.as_string())
+                            .and_then(neo_json::JToken::as_string)
                             .and_then(|s| general_purpose::STANDARD.decode(s).ok())?;
                         Some((key, value))
                     })
@@ -62,12 +62,12 @@ impl RpcFoundStates {
 
         let first_proof = json
             .get("firstProof")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .and_then(|s| general_purpose::STANDARD.decode(s).ok());
 
         let last_proof = json
             .get("lastProof")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .and_then(|s| general_purpose::STANDARD.decode(s).ok());
 
         Ok(Self {
@@ -79,7 +79,8 @@ impl RpcFoundStates {
     }
 
     /// Converts to JSON
-    /// Matches C# ToJson
+    /// Matches C# `ToJson`
+    #[must_use] 
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
         json.insert(

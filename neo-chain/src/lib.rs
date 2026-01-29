@@ -3,7 +3,7 @@
 //! Standalone blockchain state machine and chain management for Neo N3.
 //!
 //! **IMPORTANT**: This crate provides a **standalone chain state machine** without neo-core dependency.
-//! For the full C# parity implementation with actor system and NeoSystem integration,
+//! For the full C# parity implementation with actor system and `NeoSystem` integration,
 //! use `neo_core::ledger::blockchain` instead.
 //!
 //! ## When to use this crate
@@ -13,12 +13,12 @@
 //! - **Alternative implementations**: Custom chain orchestration strategies
 //! - **Lightweight clients**: Chain state without smart contract execution
 //!
-//! ## When to use neo-core::ledger::blockchain
+//! ## When to use `neo-core::ledger::blockchain`
 //!
 //! - **Full node operation**: C# parity with actor-based block processing
 //! - **Plugin integration**: OnPersist/OnCommit events for plugins
 //! - **P2P relay**: Block relay to connected peers
-//! - **MemoryPool integration**: Transaction verification context
+//! - **`MemoryPool` integration**: Transaction verification context
 //!
 //! ## Features
 //!

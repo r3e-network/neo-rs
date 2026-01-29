@@ -17,6 +17,7 @@ pub struct CompoundType<'a> {
 
 impl<'a> CompoundType<'a> {
     /// Attempts to wrap the supplied stack item.
+    #[must_use] 
     pub fn new(item: &'a StackItem) -> Option<Self> {
         matches!(
             item.stack_item_type(),
@@ -26,6 +27,7 @@ impl<'a> CompoundType<'a> {
     }
 
     /// Returns the number of elements contained in the compound item.
+    #[must_use] 
     pub fn count(&self) -> usize {
         match self.item {
             StackItem::Array(array) => array.len(),
@@ -37,6 +39,7 @@ impl<'a> CompoundType<'a> {
 
     /// Enumerates the child stack items. For maps this yields the values, matching the
     /// semantics used by the C# implementation when tracking references.
+    #[must_use] 
     pub fn sub_items(&self) -> Vec<StackItem> {
         match self.item {
             StackItem::Array(array) => array.iter().collect(),
@@ -48,12 +51,14 @@ impl<'a> CompoundType<'a> {
 
     /// Indicates whether the compound item is read-only. The Neo VM treats raw
     /// `Array`, `Struct` and `Map` stack items as mutable by default.
-    pub fn is_read_only(&self) -> bool {
+    #[must_use] 
+    pub const fn is_read_only(&self) -> bool {
         false
     }
 
     /// Returns the underlying stack item.
-    pub fn as_item(&self) -> &'a StackItem {
+    #[must_use] 
+    pub const fn as_item(&self) -> &'a StackItem {
         self.item
     }
 }

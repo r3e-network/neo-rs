@@ -12,7 +12,7 @@
 use neo_json::{JObject, JToken};
 use serde::{Deserialize, Serialize};
 
-/// Address validation result matching C# RpcValidateAddressResult
+/// Address validation result matching C# `RpcValidateAddressResult`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcValidateAddressResult {
     /// The address that was validated
@@ -24,7 +24,8 @@ pub struct RpcValidateAddressResult {
 
 impl RpcValidateAddressResult {
     /// Converts to JSON
-    /// Matches C# ToJson
+    /// Matches C# `ToJson`
+    #[must_use] 
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
         json.insert("address".to_string(), JToken::String(self.address.clone()));
@@ -33,17 +34,17 @@ impl RpcValidateAddressResult {
     }
 
     /// Creates from JSON
-    /// Matches C# FromJson
+    /// Matches C# `FromJson`
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let address = json
             .get("address")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .ok_or("Missing or invalid 'address' field")?
-            .to_string();
+            ;
 
         let is_valid = json
             .get("isvalid")
-            .map(|v| v.as_boolean())
+            .map(neo_json::JToken::as_boolean)
             .ok_or("Missing or invalid 'isvalid' field")?;
 
         Ok(Self { address, is_valid })

@@ -33,6 +33,7 @@ pub struct MemoryMptStore {
 
 impl MemoryMptStore {
     /// Creates a new in-memory MPT store.
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             data: Mutex::new(HashMap::new()),
@@ -68,7 +69,7 @@ impl MptStoreSnapshot for MemoryMptStore {
 
 /// Manages the state trie for calculating state roots.
 ///
-/// The StateTrieManager maintains an MPT trie that tracks all state changes
+/// The `StateTrieManager` maintains an MPT trie that tracks all state changes
 /// and provides the root hash for state root calculation.
 pub struct StateTrieManager {
     /// The underlying MPT trie.
@@ -80,7 +81,8 @@ pub struct StateTrieManager {
 }
 
 impl StateTrieManager {
-    /// Creates a new StateTrieManager with an empty trie.
+    /// Creates a new `StateTrieManager` with an empty trie.
+    #[must_use] 
     pub fn new(full_state: bool) -> Self {
         let store = Arc::new(MemoryMptStore::new());
         let trie = Trie::new(store, None, full_state);
@@ -91,7 +93,8 @@ impl StateTrieManager {
         }
     }
 
-    /// Creates a StateTrieManager with an existing root hash.
+    /// Creates a `StateTrieManager` with an existing root hash.
+    #[must_use] 
     pub fn with_root(root_hash: UInt256, full_state: bool) -> Self {
         let store = Arc::new(MemoryMptStore::new());
         let trie = Trie::new(store, Some(root_hash), full_state);
@@ -110,7 +113,7 @@ impl StateTrieManager {
     }
 
     /// Returns the current block index.
-    pub fn current_index(&self) -> u32 {
+    pub const fn current_index(&self) -> u32 {
         self.current_index
     }
 
@@ -132,30 +135,27 @@ impl StateTrieManager {
         for (key, value) in &changes.storage {
             let trie_key = Self::storage_key_to_trie_key(key);
 
-            match value {
-                Some(item) => {
-                    // Insert or update
-                    self.trie
-                        .put(&trie_key, item.as_bytes())
-                        .map_err(|e| StateError::TrieError(e.to_string()))?;
-                    debug!(
-                        target: "neo::state",
-                        key_len = trie_key.len(),
-                        value_len = item.as_bytes().len(),
-                        "trie put"
-                    );
-                }
-                None => {
-                    // Delete
-                    self.trie
-                        .delete(&trie_key)
-                        .map_err(|e| StateError::TrieError(e.to_string()))?;
-                    debug!(
-                        target: "neo::state",
-                        key_len = trie_key.len(),
-                        "trie delete"
-                    );
-                }
+            if let Some(item) = value {
+                // Insert or update
+                self.trie
+                    .put(&trie_key, item.as_bytes())
+                    .map_err(|e| StateError::TrieError(e.to_string()))?;
+                debug!(
+                    target: "neo::state",
+                    key_len = trie_key.len(),
+                    value_len = item.as_bytes().len(),
+                    "trie put"
+                );
+            } else {
+                // Delete
+                self.trie
+                    .delete(&trie_key)
+                    .map_err(|e| StateError::TrieError(e.to_string()))?;
+                debug!(
+                    target: "neo::state",
+                    key_len = trie_key.len(),
+                    "trie delete"
+                );
             }
         }
 
@@ -163,29 +163,26 @@ impl StateTrieManager {
         for (hash, account) in &changes.accounts {
             let trie_key = Self::account_key_to_trie_key(hash);
 
-            match account {
-                Some(acc) => {
-                    // Serialize account state as simple binary format
-                    let value = Self::serialize_account(acc);
-                    self.trie
-                        .put(&trie_key, &value)
-                        .map_err(|e| StateError::TrieError(e.to_string()))?;
-                    debug!(
-                        target: "neo::state",
-                        account = %hash,
-                        "trie put account"
-                    );
-                }
-                None => {
-                    self.trie
-                        .delete(&trie_key)
-                        .map_err(|e| StateError::TrieError(e.to_string()))?;
-                    debug!(
-                        target: "neo::state",
-                        account = %hash,
-                        "trie delete account"
-                    );
-                }
+            if let Some(acc) = account {
+                // Serialize account state as simple binary format
+                let value = Self::serialize_account(acc);
+                self.trie
+                    .put(&trie_key, &value)
+                    .map_err(|e| StateError::TrieError(e.to_string()))?;
+                debug!(
+                    target: "neo::state",
+                    account = %hash,
+                    "trie put account"
+                );
+            } else {
+                self.trie
+                    .delete(&trie_key)
+                    .map_err(|e| StateError::TrieError(e.to_string()))?;
+                debug!(
+                    target: "neo::state",
+                    account = %hash,
+                    "trie delete account"
+                );
             }
         }
 
@@ -209,9 +206,9 @@ impl StateTrieManager {
         Ok(root_hash)
     }
 
-    /// Converts a StorageKey to a trie key.
+    /// Converts a `StorageKey` to a trie key.
     ///
-    /// Format: contract_hash (20 bytes) + key_bytes
+    /// Format: `contract_hash` (20 bytes) + `key_bytes`
     fn storage_key_to_trie_key(key: &StorageKey) -> Vec<u8> {
         let mut trie_key = Vec::with_capacity(20 + key.key.len());
         trie_key.extend_from_slice(&key.contract_hash.to_array());
@@ -221,7 +218,7 @@ impl StateTrieManager {
 
     /// Converts an account hash to a trie key.
     ///
-    /// Format: 0x14 (account prefix) + account_hash (20 bytes)
+    /// Format: 0x14 (account prefix) + `account_hash` (20 bytes)
     fn account_key_to_trie_key(hash: &neo_primitives::UInt160) -> Vec<u8> {
         let mut trie_key = Vec::with_capacity(21);
         trie_key.push(0x14); // Account prefix
@@ -229,7 +226,7 @@ impl StateTrieManager {
         trie_key
     }
 
-    /// Serializes an AccountState to bytes for trie storage.
+    /// Serializes an `AccountState` to bytes for trie storage.
     fn serialize_account(acc: &crate::AccountState) -> Vec<u8> {
         // Simple binary format: neo_balance (8) + gas_balance (8) + balance_height (4)
         let mut value = Vec::with_capacity(20);

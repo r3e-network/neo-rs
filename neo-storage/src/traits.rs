@@ -18,7 +18,7 @@ pub trait IReadOnlyStore {
     /// Gets a value by key, returning an error if not found.
     fn get(&self, key: &StorageKey) -> StorageResult<StorageItem> {
         self.try_get(key)
-            .ok_or_else(|| crate::error::StorageError::key_not_found(format!("{:?}", key)))
+            .ok_or_else(|| crate::error::StorageError::key_not_found(format!("{key:?}")))
     }
 
     /// Checks if a key exists in storage.

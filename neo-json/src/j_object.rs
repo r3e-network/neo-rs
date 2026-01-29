@@ -1,4 +1,4 @@
-//! JObject - Rust port of Neo.Json.JObject
+//! `JObject` - Rust port of Neo.Json.JObject
 
 use std::fmt;
 use std::iter::FromIterator;
@@ -14,17 +14,20 @@ pub struct JObject {
 
 impl JObject {
     /// Creates an empty object.
+    #[must_use] 
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Builds an object from an ordered dictionary of properties.
-    pub fn from_properties(properties: OrderedDictionary<String, Option<JToken>>) -> Self {
+    #[must_use] 
+    pub const fn from_properties(properties: OrderedDictionary<String, Option<JToken>>) -> Self {
         Self { properties }
     }
 
     /// Returns the underlying ordered dictionary.
-    pub fn properties(&self) -> &OrderedDictionary<String, Option<JToken>> {
+    #[must_use] 
+    pub const fn properties(&self) -> &OrderedDictionary<String, Option<JToken>> {
         &self.properties
     }
 
@@ -34,6 +37,7 @@ impl JObject {
     }
 
     /// Returns a property value by name.
+    #[must_use] 
     pub fn get(&self, name: &str) -> Option<&JToken> {
         self.properties.get(name).and_then(|value| value.as_ref())
     }
@@ -49,18 +53,21 @@ impl JObject {
     }
 
     /// Number of stored properties.
+    #[must_use] 
     pub fn len(&self) -> usize {
         self.properties.count()
     }
 
     /// Returns `true` when the object has no properties.
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
     /// Returns the values in insertion order.
+    #[must_use] 
     pub fn children(&self) -> Vec<&Option<JToken>> {
-        self.properties.values()
+        self.properties.values().collect()
     }
 
     /// Returns an iterator over the `(key, value)` pairs.
@@ -69,6 +76,7 @@ impl JObject {
     }
 
     /// Returns `true` if the object contains a property with the supplied name.
+    #[must_use] 
     pub fn contains_property(&self, key: &str) -> bool {
         self.properties.contains_key(key)
     }
@@ -86,9 +94,9 @@ impl fmt::Display for JObject {
             if index > 0 {
                 f.write_str(",")?;
             }
-            write!(f, "\"{}\":", key)?;
+            write!(f, "\"{key}\":")?;
             match value {
-                Some(token) => write!(f, "{}", token)?,
+                Some(token) => write!(f, "{token}")?,
                 None => f.write_str("null")?,
             }
         }

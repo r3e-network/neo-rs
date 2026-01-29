@@ -12,7 +12,7 @@
 use neo_json::{JArray, JObject, JToken};
 use serde::{Deserialize, Serialize};
 
-/// Plugin information matching C# RpcPlugin
+/// Plugin information matching C# `RpcPlugin`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcPlugin {
     /// Plugin name
@@ -31,7 +31,8 @@ pub struct RpcPlugin {
 
 impl RpcPlugin {
     /// Converts to JSON
-    /// Matches C# ToJson
+    /// Matches C# `ToJson`
+    #[must_use] 
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
         json.insert("name".to_string(), JToken::String(self.name.clone()));
@@ -54,19 +55,19 @@ impl RpcPlugin {
     }
 
     /// Creates from JSON
-    /// Matches C# FromJson
+    /// Matches C# `FromJson`
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let name = json
             .get("name")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .ok_or("Missing or invalid 'name' field")?
-            .to_string();
+            ;
 
         let version = json
             .get("version")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .ok_or("Missing or invalid 'version' field")?
-            .to_string();
+            ;
 
         let interfaces = json
             .get("interfaces")
@@ -75,8 +76,7 @@ impl RpcPlugin {
                 arr.iter()
                     .map(|item| {
                         item.as_ref()
-                            .and_then(|token| token.as_string())
-                            .map(|s| s.to_string())
+                            .and_then(neo_json::JToken::as_string)
                             .ok_or_else(|| "Interface entry must be a string".to_string())
                     })
                     .collect::<Result<Vec<_>, _>>()
@@ -85,8 +85,7 @@ impl RpcPlugin {
 
         let category = json
             .get("category")
-            .and_then(|v| v.as_string())
-            .map(|s| s.to_string());
+            .and_then(neo_json::JToken::as_string);
 
         Ok(Self {
             name,

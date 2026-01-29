@@ -54,13 +54,10 @@ impl RpcServerNode {
         // If a consumer added peers via `add_unconnected_peers`, they will appear here.
         let unconnected_endpoints = {
             let fut = system.unconnected_peers();
-            match Handle::try_current() {
-                Ok(handle) => block_in_place(|| handle.block_on(fut)),
-                Err(_) => {
-                    let runtime =
-                        Runtime::new().map_err(|err| Self::internal_error(err.to_string()))?;
-                    runtime.block_on(fut)
-                }
+            if let Ok(handle) = Handle::try_current() { block_in_place(|| handle.block_on(fut)) } else {
+                let runtime =
+                    Runtime::new().map_err(|err| Self::internal_error(err.to_string()))?;
+                runtime.block_on(fut)
             }
         }
         .map_err(|err| Self::internal_error(err.to_string()))?;
@@ -193,7 +190,7 @@ impl RpcServerNode {
             .decode(payload.trim())
             .map_err(|_| Self::invalid_params("Invalid transaction payload"))?;
         let transaction = Transaction::from_bytes(&raw)
-            .map_err(|err| Self::invalid_params(format!("Invalid transaction: {}", err)))?;
+            .map_err(|err| Self::invalid_params(format!("Invalid transaction: {err}")))?;
         let relay_result = Self::with_relay_responder(server, |sender| {
             server
                 .system()
@@ -217,7 +214,7 @@ impl RpcServerNode {
             .map_err(|_| Self::invalid_params("Invalid block payload"))?;
         let mut reader = MemoryReader::new(&raw);
         let block = <Block as Serializable>::deserialize(&mut reader)
-            .map_err(|err| Self::invalid_params(format!("Invalid block: {}", err)))?;
+            .map_err(|err| Self::invalid_params(format!("Invalid block: {err}")))?;
         let relay_result = Self::with_relay_responder(server, |sender| {
             server
                 .system()
@@ -250,19 +247,16 @@ impl RpcServerNode {
         }
 
         let fut = system.local_node_state();
-        let result = match Handle::try_current() {
-            Ok(handle) => block_in_place(|| handle.block_on(fut)),
-            Err(_) => {
-                let runtime =
-                    Runtime::new().map_err(|err| Self::internal_error(err.to_string()))?;
-                runtime.block_on(fut)
-            }
+        let result = if let Ok(handle) = Handle::try_current() { block_in_place(|| handle.block_on(fut)) } else {
+            let runtime =
+                Runtime::new().map_err(|err| Self::internal_error(err.to_string()))?;
+            runtime.block_on(fut)
         };
         result.map_err(|err| Self::internal_error(err.to_string()))
     }
 
     fn format_hardfork(fork: Hardfork) -> String {
-        format!("{:?}", fork).trim_start_matches("Hf").to_string()
+        format!("{fork:?}").trim_start_matches("Hf").to_string()
     }
 
     fn format_public_key(bytes: &[u8]) -> String {
@@ -302,7 +296,7 @@ impl RpcServerNode {
         params
             .get(index)
             .and_then(|value| value.as_str())
-            .map(|value| value.to_string())
+            .map(std::string::ToString::to_string)
             .ok_or_else(|| {
                 RpcException::from(RpcError::invalid_params().with_data(format!(
                     "{} expects string parameter {}",
@@ -374,7 +368,7 @@ impl RpcServerNode {
         let (tx, rx) = oneshot::channel();
         let completion = Arc::new(Mutex::new(Some(tx)));
         let props = {
-            let completion = completion.clone();
+            let completion = completion;
             Props::new(move || RelayResultResponder {
                 completion: completion.clone(),
             })

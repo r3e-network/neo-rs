@@ -5,7 +5,7 @@
 //! This crate provides:
 //! - Node settings (network, storage, logging)
 //! - Protocol parameters (block time, validators, fees)
-//! - Network configuration (MainNet, TestNet, private networks)
+//! - Network configuration (`MainNet`, `TestNet`, private networks)
 //! - Genesis block configuration
 //!
 //! ## Example

@@ -66,39 +66,39 @@ pub struct ProtocolSettings {
 /// Native contract activation heights
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct NativeActivationHeights {
-    /// ContractManagement activation
+    /// `ContractManagement` activation
     #[serde(default)]
     pub contract_management: u32,
 
-    /// StdLib activation
+    /// `StdLib` activation
     #[serde(default)]
     pub std_lib: u32,
 
-    /// CryptoLib activation
+    /// `CryptoLib` activation
     #[serde(default)]
     pub crypto_lib: u32,
 
-    /// LedgerContract activation
+    /// `LedgerContract` activation
     #[serde(default)]
     pub ledger: u32,
 
-    /// NeoToken activation
+    /// `NeoToken` activation
     #[serde(default)]
     pub neo_token: u32,
 
-    /// GasToken activation
+    /// `GasToken` activation
     #[serde(default)]
     pub gas_token: u32,
 
-    /// PolicyContract activation
+    /// `PolicyContract` activation
     #[serde(default)]
     pub policy: u32,
 
-    /// RoleManagement activation
+    /// `RoleManagement` activation
     #[serde(default)]
     pub role_management: u32,
 
-    /// OracleContract activation
+    /// `OracleContract` activation
     #[serde(default)]
     pub oracle: u32,
 }
@@ -106,65 +106,65 @@ pub struct NativeActivationHeights {
 /// Hardfork activation heights
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct HardforkHeights {
-    /// HF_Aspidochelone (pre-N3 GA)
+    /// `HF_Aspidochelone` (pre-N3 GA)
     #[serde(default)]
     pub hf_aspidochelone: Option<u32>,
 
-    /// HF_Basilisk
+    /// `HF_Basilisk`
     #[serde(default)]
     pub hf_basilisk: Option<u32>,
 
-    /// HF_Cockatrice
+    /// `HF_Cockatrice`
     #[serde(default)]
     pub hf_cockatrice: Option<u32>,
 
-    /// HF_Domovoi
+    /// `HF_Domovoi`
     #[serde(default)]
     pub hf_domovoi: Option<u32>,
 
-    /// HF_Echidna
+    /// `HF_Echidna`
     #[serde(default)]
     pub hf_echidna: Option<u32>,
 
-    /// HF_Faun
+    /// `HF_Faun`
     #[serde(default)]
     pub hf_faun: Option<u32>,
 
-    /// HF_Gorgon
+    /// `HF_Gorgon`
     #[serde(default)]
     pub hf_gorgon: Option<u32>,
 }
 
 // Default value functions
-fn default_address_version() -> u8 {
+const fn default_address_version() -> u8 {
     0x35 // 'N' prefix for Neo addresses
 }
 
-fn default_ms_per_block() -> u64 {
+const fn default_ms_per_block() -> u64 {
     15000 // 15 seconds
 }
 
-fn default_max_valid_until_block_increment() -> u32 {
+const fn default_max_valid_until_block_increment() -> u32 {
     5760 // ~24 hours at 15 sec/block
 }
 
-fn default_validators_count() -> u32 {
+const fn default_validators_count() -> u32 {
     7
 }
 
-fn default_max_transactions_per_block() -> u32 {
+const fn default_max_transactions_per_block() -> u32 {
     512
 }
 
-fn default_memory_pool_max_transactions() -> u32 {
+const fn default_memory_pool_max_transactions() -> u32 {
     50000
 }
 
-fn default_max_traceable_blocks() -> u32 {
+const fn default_max_traceable_blocks() -> u32 {
     2_102_400
 }
 
-fn default_initial_gas_distribution() -> i64 {
+const fn default_initial_gas_distribution() -> i64 {
     5_200_000_000_000_000 // 52 million GAS in datoshi
 }
 
@@ -178,14 +178,16 @@ impl ProtocolSettings {
     /// Default settings (alias for mainnet, useful for testing)
     ///
     /// This provides a convenient default configuration that matches
-    /// the Neo N3 MainNet settings. For production code, prefer using
+    /// the Neo N3 `MainNet` settings. For production code, prefer using
     /// `mainnet()`, `testnet()`, or `private()` explicitly.
     #[inline]
+    #[must_use] 
     pub fn default_settings() -> Self {
         Self::mainnet()
     }
 
-    /// MainNet protocol settings
+    /// `MainNet` protocol settings
+    #[must_use] 
     pub fn mainnet() -> Self {
         Self {
             network: 860833102,
@@ -240,7 +242,8 @@ impl ProtocolSettings {
         }
     }
 
-    /// TestNet protocol settings
+    /// `TestNet` protocol settings
+    #[must_use] 
     pub fn testnet() -> Self {
         Self {
             network: 894710606,
@@ -296,6 +299,7 @@ impl ProtocolSettings {
     }
 
     /// Private network protocol settings
+    #[must_use] 
     pub fn private(network_magic: u32) -> Self {
         Self {
             network: network_magic,
@@ -315,6 +319,7 @@ impl ProtocolSettings {
     }
 
     /// Check if a hardfork is enabled at the given height
+    #[must_use] 
     pub fn is_hardfork_enabled(&self, hardfork: &str, height: u32) -> bool {
         match hardfork.to_lowercase().as_str() {
             "aspidochelone" | "hf_aspidochelone" => {
@@ -333,12 +338,14 @@ impl ProtocolSettings {
     }
 
     /// Get the number of committee members (21 for Neo N3)
+    #[must_use] 
     pub fn committee_count(&self) -> u32 {
         21.max(self.validators_count)
     }
 
     /// Calculate time span for a given number of blocks
-    pub fn time_per_block(&self) -> std::time::Duration {
+    #[must_use] 
+    pub const fn time_per_block(&self) -> std::time::Duration {
         std::time::Duration::from_millis(self.ms_per_block)
     }
 }

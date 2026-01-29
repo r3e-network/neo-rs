@@ -1,4 +1,4 @@
-//! KeyBuilder - matches C# Neo.SmartContract.KeyBuilder exactly.
+//! `KeyBuilder` - matches C# Neo.SmartContract.KeyBuilder exactly.
 //!
 //! This module provides a builder for constructing storage keys used by native contracts.
 
@@ -6,10 +6,10 @@ use crate::types::StorageKey;
 use neo_primitives::{UInt160, UInt256};
 use std::fmt;
 
-/// Error type for KeyBuilder operations.
+/// Error type for `KeyBuilder` operations.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KeyBuilderError {
-    /// The max_length parameter was zero.
+    /// The `max_length` parameter was zero.
     InvalidMaxLength,
     /// The input data exceeds the maximum key length.
     DataTooLarge {
@@ -42,7 +42,7 @@ impl fmt::Display for KeyBuilderError {
 
 impl std::error::Error for KeyBuilderError {}
 
-/// Used to build storage keys for native contracts (matches C# KeyBuilder).
+/// Used to build storage keys for native contracts (matches C# `KeyBuilder`).
 pub struct KeyBuilder {
     cache_data: Vec<u8>,
     key_length: usize,
@@ -77,12 +77,14 @@ impl KeyBuilder {
 
     /// Initializes a new instance (panics on invalid input).
     #[inline]
+    #[must_use] 
     pub fn new(id: i32, prefix: u8, max_length: usize) -> Self {
         Self::try_new(id, prefix, max_length).expect("max_length must be greater than zero")
     }
 
     /// Creates with default max length.
     #[inline]
+    #[must_use] 
     pub fn new_with_default(id: i32, prefix: u8) -> Self {
         Self::new(id, prefix, Self::DEFAULT_MAX_LENGTH)
     }
@@ -127,13 +129,13 @@ impl KeyBuilder {
         self.try_add(key).expect("Input data too large")
     }
 
-    /// Adds a UInt160 to the key.
+    /// Adds a `UInt160` to the key.
     #[inline]
     pub fn add_uint160(&mut self, key: &UInt160) -> &mut Self {
         self.add(&key.to_bytes())
     }
 
-    /// Adds a UInt256 to the key.
+    /// Adds a `UInt256` to the key.
     #[inline]
     pub fn add_uint256(&mut self, key: &UInt256) -> &mut Self {
         self.add(&key.to_bytes())
@@ -151,27 +153,31 @@ impl KeyBuilder {
         self.add(&value.to_be_bytes())
     }
 
-    /// Converts to StorageKey.
+    /// Converts to `StorageKey`.
     #[inline]
+    #[must_use] 
     pub fn to_storage_key(&self) -> StorageKey {
         StorageKey::from_bytes(&self.cache_data[..self.key_length])
     }
 
     /// Gets the built key as bytes.
     #[inline]
+    #[must_use] 
     pub fn to_bytes(&self) -> Vec<u8> {
         self.cache_data[..self.key_length].to_vec()
     }
 
     /// Gets the current key length.
     #[inline]
-    pub fn len(&self) -> usize {
+    #[must_use] 
+    pub const fn len(&self) -> usize {
         self.key_length
     }
 
     /// Returns true if the key is empty (only has prefix).
     #[inline]
-    pub fn is_empty(&self) -> bool {
+    #[must_use] 
+    pub const fn is_empty(&self) -> bool {
         self.key_length == Self::PREFIX_LENGTH
     }
 }

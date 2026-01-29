@@ -17,37 +17,38 @@ use neo_primitives::{UInt160, UInt256};
 use std::sync::Arc;
 
 /// State service API
-/// Matches C# StateAPI
+/// Matches C# `StateAPI`
 pub struct StateApi {
     /// The RPC client instance
     rpc_client: Arc<RpcClient>,
 }
 
 impl StateApi {
-    /// StateAPI Constructor
+    /// `StateAPI` Constructor
     /// Matches C# constructor
-    pub fn new(rpc_client: Arc<RpcClient>) -> Self {
+    #[must_use] 
+    pub const fn new(rpc_client: Arc<RpcClient>) -> Self {
         Self { rpc_client }
     }
 
     /// Get state root by index
-    /// Matches C# GetStateRootAsync
+    /// Matches C# `GetStateRootAsync`
     pub async fn get_state_root(
         &self,
         index: u32,
     ) -> Result<RpcStateRoot, Box<dyn std::error::Error>> {
         let result = self
             .rpc_client
-            .rpc_send_async("getstateroot", vec![JToken::Number(index as f64)])
+            .rpc_send_async("getstateroot", vec![JToken::Number(f64::from(index))])
             .await?;
 
         let obj = result.as_object().ok_or("Invalid response format")?;
 
-        RpcStateRoot::from_json(obj).map_err(|e| e.into())
+        RpcStateRoot::from_json(obj).map_err(std::convert::Into::into)
     }
 
     /// Get proof for a storage key
-    /// Matches C# GetProofAsync
+    /// Matches C# `GetProofAsync`
     pub async fn get_proof(
         &self,
         root_hash: &UInt256,
@@ -70,11 +71,11 @@ impl StateApi {
 
         general_purpose::STANDARD
             .decode(proof_str)
-            .map_err(|e| e.into())
+            .map_err(std::convert::Into::into)
     }
 
     /// Verify a proof
-    /// Matches C# VerifyProofAsync
+    /// Matches C# `VerifyProofAsync`
     pub async fn verify_proof(
         &self,
         root_hash: &UInt256,
@@ -95,11 +96,11 @@ impl StateApi {
 
         general_purpose::STANDARD
             .decode(value_str)
-            .map_err(|e| e.into())
+            .map_err(std::convert::Into::into)
     }
 
     /// Get state height information
-    /// Matches C# GetStateHeightAsync
+    /// Matches C# `GetStateHeightAsync`
     pub async fn get_state_height(
         &self,
     ) -> Result<(Option<u32>, Option<u32>), Box<dyn std::error::Error>> {
@@ -112,19 +113,20 @@ impl StateApi {
 
         let local_root_index = obj
             .get("localrootindex")
-            .and_then(|v| v.as_number())
+            .and_then(neo_json::JToken::as_number)
             .map(|n| n as u32);
 
         let validated_root_index = obj
             .get("validatedrootindex")
-            .and_then(|v| v.as_number())
+            .and_then(neo_json::JToken::as_number)
             .map(|n| n as u32);
 
         Ok((local_root_index, validated_root_index))
     }
 
     /// Make parameters for find states call
-    /// Matches C# MakeFindStatesParams
+    /// Matches C# `MakeFindStatesParams`
+    #[must_use] 
     pub fn make_find_states_params(
         root_hash: &UInt256,
         script_hash: &UInt160,
@@ -140,14 +142,14 @@ impl StateApi {
         ];
 
         if let Some(c) = count {
-            params.push(JToken::Number(c as f64));
+            params.push(JToken::Number(f64::from(c)));
         }
 
         params
     }
 
     /// Find states with prefix
-    /// Matches C# FindStatesAsync
+    /// Matches C# `FindStatesAsync`
     pub async fn find_states(
         &self,
         root_hash: &UInt256,
@@ -162,11 +164,11 @@ impl StateApi {
 
         let obj = result.as_object().ok_or("Invalid response format")?;
 
-        RpcFoundStates::from_json(obj).map_err(|e| e.into())
+        RpcFoundStates::from_json(obj).map_err(std::convert::Into::into)
     }
 
     /// Get state value
-    /// Matches C# GetStateAsync
+    /// Matches C# `GetStateAsync`
     pub async fn get_state(
         &self,
         root_hash: &UInt256,
@@ -189,7 +191,7 @@ impl StateApi {
 
         general_purpose::STANDARD
             .decode(value_str)
-            .map_err(|e| e.into())
+            .map_err(std::convert::Into::into)
     }
 }
 

@@ -60,7 +60,7 @@
 //!
 //! ## Design Principles
 //!
-//! 1. **Storage Agnostic**: No direct dependency on RocksDB or other backends
+//! 1. **Storage Agnostic**: No direct dependency on `RocksDB` or other backends
 //! 2. **Snapshot Isolation**: Changes are isolated until explicitly committed
 //! 3. **Atomic Operations**: All-or-nothing commit semantics
 //! 4. **Thread Safety**: All types are `Send + Sync`

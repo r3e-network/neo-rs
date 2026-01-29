@@ -15,13 +15,13 @@ pub struct JArray {
 impl JArray {
     /// Creates an empty array.
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self { items: Vec::new() }
     }
 
     /// Creates an array from the provided items.
     #[must_use]
-    pub fn from_vec(items: Vec<Option<JToken>>) -> Self {
+    pub const fn from_vec(items: Vec<Option<JToken>>) -> Self {
         Self { items }
     }
 

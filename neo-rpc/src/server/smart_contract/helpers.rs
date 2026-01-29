@@ -96,7 +96,7 @@ pub(super) fn build_dynamic_call_script(
         builder.emit_opcode(neo_vm::op_code::OpCode::PACK);
     }
 
-    builder.emit_push_int(CallFlags::ALL.bits() as i64);
+    builder.emit_push_int(i64::from(CallFlags::ALL.bits()));
     builder.emit_push(operation.as_bytes());
     builder.emit_push(script_hash.to_bytes().as_ref());
     builder
@@ -114,7 +114,7 @@ pub(super) fn contract_parameter_to_stack_item(
         ContractParameterValue::Boolean(value) => Ok(StackItem::from_bool(*value)),
         ContractParameterValue::Integer(value) => Ok(StackItem::from_int(value.clone())),
         ContractParameterValue::Hash160(value) => {
-            Ok(StackItem::from_byte_string(value.to_bytes().to_vec()))
+            Ok(StackItem::from_byte_string(value.to_bytes()))
         }
         ContractParameterValue::Hash256(value) => {
             Ok(StackItem::from_byte_string(value.to_array().to_vec()))
@@ -302,7 +302,7 @@ fn stack_item_to_json_inner(
     Ok(Value::Object(obj))
 }
 
-fn stack_item_type_name(item: &StackItem) -> &'static str {
+const fn stack_item_type_name(item: &StackItem) -> &'static str {
     match item {
         StackItem::Null => "Any",
         StackItem::Boolean(_) => "Boolean",
@@ -326,7 +326,7 @@ pub(super) fn notification_to_json(
     mut session: Option<&mut Session>,
 ) -> Result<Value, RpcException> {
     let mut state = Vec::new();
-    for entry in notification.state.iter() {
+    for entry in &notification.state {
         state.push(stack_item_to_json(entry, session.as_deref_mut())?);
     }
     Ok(json!({
@@ -380,7 +380,7 @@ pub(super) fn expect_string_param(
     params
         .get(index)
         .and_then(|value| value.as_str())
-        .map(|value| value.to_string())
+        .map(std::string::ToString::to_string)
         .ok_or_else(|| {
             RpcException::from(RpcError::invalid_params().with_data(format!(
                 "{} expects string parameter {}",
@@ -403,7 +403,7 @@ pub(super) fn expect_u32_param(
         )))
     })?;
     if let Some(number) = value.as_u64() {
-        if number <= u32::MAX as u64 {
+        if u32::try_from(number).is_ok() {
             return Ok(number as u32);
         }
     }

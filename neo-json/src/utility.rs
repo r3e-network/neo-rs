@@ -11,6 +11,7 @@ impl JsonUtility {
     }
 
     /// Strict UTF-8 encoding
+    #[must_use] 
     pub fn strict_utf8_encode(s: &str) -> Vec<u8> {
         s.as_bytes().to_vec()
     }

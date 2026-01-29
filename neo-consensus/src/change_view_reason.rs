@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Change view reason enum matching C# ChangeViewReason exactly
+/// Change view reason enum matching C# `ChangeViewReason` exactly
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[repr(u8)]
 pub enum ChangeViewReason {
@@ -23,7 +23,8 @@ pub enum ChangeViewReason {
 
 impl ChangeViewReason {
     /// Converts from byte value
-    pub fn from_byte(value: u8) -> Option<Self> {
+    #[must_use] 
+    pub const fn from_byte(value: u8) -> Option<Self> {
         match value {
             0x0 => Some(Self::Timeout),
             0x1 => Some(Self::ChangeAgreement),
@@ -36,12 +37,14 @@ impl ChangeViewReason {
     }
 
     /// Converts to byte value
-    pub fn to_byte(self) -> u8 {
+    #[must_use] 
+    pub const fn to_byte(self) -> u8 {
         self as u8
     }
 
     /// Returns the string representation
-    pub fn as_str(self) -> &'static str {
+    #[must_use] 
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::Timeout => "Timeout",
             Self::ChangeAgreement => "ChangeAgreement",

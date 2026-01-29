@@ -32,13 +32,13 @@ pub enum OracleResponseCode {
 impl OracleResponseCode {
     /// Converts to byte representation.
     #[must_use]
-    pub fn to_byte(self) -> u8 {
+    pub const fn to_byte(self) -> u8 {
         self as u8
     }
 
     /// Creates from byte representation.
     #[must_use]
-    pub fn from_byte(value: u8) -> Option<Self> {
+    pub const fn from_byte(value: u8) -> Option<Self> {
         match value {
             0x00 => Some(Self::Success),
             0x10 => Some(Self::ProtocolNotSupported),
@@ -56,7 +56,7 @@ impl OracleResponseCode {
 
     /// Returns the string representation.
     #[must_use]
-    pub fn as_str(self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::Success => "Success",
             Self::ProtocolNotSupported => "ProtocolNotSupported",
@@ -73,7 +73,7 @@ impl OracleResponseCode {
 
     /// Returns true if this response code indicates success.
     #[must_use]
-    pub fn is_success(self) -> bool {
+    pub const fn is_success(self) -> bool {
         matches!(self, Self::Success)
     }
 
@@ -105,7 +105,7 @@ impl<'de> Deserialize<'de> for OracleResponseCode {
         D: Deserializer<'de>,
     {
         let byte = u8::deserialize(deserializer)?;
-        OracleResponseCode::from_byte(byte).ok_or_else(|| {
+        Self::from_byte(byte).ok_or_else(|| {
             serde::de::Error::custom(format!("Invalid oracle response code byte: {byte}"))
         })
     }

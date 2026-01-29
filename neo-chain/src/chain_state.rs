@@ -41,6 +41,7 @@ pub struct ChainState {
 
 impl ChainState {
     /// Create a new chain state
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             index: Arc::new(BlockIndex::new()),
@@ -99,7 +100,7 @@ impl ChainState {
 
     /// Get current height
     pub fn height(&self) -> u32 {
-        self.tip.read().as_ref().map(|t| t.height).unwrap_or(0)
+        self.tip.read().as_ref().map_or(0, |t| t.height)
     }
 
     /// Get current hash
@@ -192,8 +193,7 @@ impl ChainState {
             .tip
             .read()
             .as_ref()
-            .map(|t| t.total_transactions)
-            .unwrap_or(0);
+            .map_or(0, |t| t.total_transactions);
 
         *self.tip.write() = Some(ChainStateSnapshot {
             height: block.height,

@@ -13,18 +13,21 @@ pub const DEFAULT_XX_HASH3_SEED: i64 = 40343;
 
 /// Returns the default xxhash3 seed.
 #[inline]
+#[must_use] 
 pub const fn default_xx_hash3_seed() -> i64 {
     DEFAULT_XX_HASH3_SEED
 }
 
 /// Computes the 32-bit hash value for the specified byte array using the xxhash3 algorithm.
-/// Matches C# XxHash3_32 method.
+/// Matches C# `XxHash3_32` method.
+#[must_use] 
 pub fn xx_hash3_32(data: &[u8], seed: i64) -> i32 {
     let hash64 = xxh3_64_with_seed(data, seed as u64);
     hash_code_from_u64(hash64)
 }
 
 /// Matches `System.HashCode.Combine(int, int)` from C#.
+#[must_use] 
 pub fn hash_code_combine_i32(a: i32, b: i32) -> i32 {
     hash_code_combine_internal(&[a as u32, b as u32])
 }
@@ -48,23 +51,23 @@ fn hash_code_combine_internal(components: &[u32]) -> i32 {
     mix_final(hash) as i32
 }
 
-fn hash_component_from_u64(value: u64) -> u32 {
+const fn hash_component_from_u64(value: u64) -> u32 {
     let lower = value as u32;
     let upper = (value >> 32) as u32;
     lower ^ upper
 }
 
-fn mix_empty_state(seed: u32) -> u32 {
+const fn mix_empty_state(seed: u32) -> u32 {
     seed.wrapping_add(PRIME5)
 }
 
-fn queue_round(hash: u32, queued_value: u32) -> u32 {
+const fn queue_round(hash: u32, queued_value: u32) -> u32 {
     hash.wrapping_add(queued_value.wrapping_mul(PRIME3))
         .rotate_left(17)
         .wrapping_mul(PRIME4)
 }
 
-fn mix_final(hash: u32) -> u32 {
+const fn mix_final(hash: u32) -> u32 {
     let mut value = hash;
     value ^= value >> 15;
     value = value.wrapping_mul(PRIME2);

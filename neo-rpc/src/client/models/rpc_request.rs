@@ -12,7 +12,7 @@
 use neo_json::{JArray, JObject, JToken};
 use serde::{Deserialize, Serialize};
 
-/// RPC request structure matching C# RpcRequest
+/// RPC request structure matching C# `RpcRequest`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcRequest {
     /// Request ID
@@ -31,6 +31,7 @@ pub struct RpcRequest {
 
 impl RpcRequest {
     /// Creates a new RPC request
+    #[must_use] 
     pub fn new(id: JToken, method: String, params: Vec<JToken>) -> Self {
         Self {
             id,
@@ -41,28 +42,28 @@ impl RpcRequest {
     }
 
     /// Creates an RPC request from JSON
-    /// Matches C# FromJson
+    /// Matches C# `FromJson`
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let id = json.get("id").ok_or("Missing 'id' field")?.clone();
 
         let json_rpc = json
             .get("jsonrpc")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .ok_or("Missing or invalid 'jsonrpc' field")?
-            .to_string();
+            ;
 
         let method = json
             .get("method")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .ok_or("Missing or invalid 'method' field")?
-            .to_string();
+            ;
 
         let params = json
             .get("params")
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
-                    .filter_map(|item| item.clone())
+                    .filter_map(std::clone::Clone::clone)
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
@@ -76,7 +77,8 @@ impl RpcRequest {
     }
 
     /// Converts to JSON
-    /// Matches C# ToJson
+    /// Matches C# `ToJson`
+    #[must_use] 
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
         json.insert("id".to_string(), self.id.clone());

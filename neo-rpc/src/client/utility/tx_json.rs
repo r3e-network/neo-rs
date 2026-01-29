@@ -18,9 +18,9 @@ pub fn block_to_json(block: &Block, protocol_settings: &ProtocolSettings) -> JOb
     json.insert("hash".to_string(), JToken::String(block.hash().to_string()));
     let block_size = header.size()
         + get_var_size(block.transactions.len() as u64)
-        + block.transactions.iter().map(|tx| tx.size()).sum::<usize>();
+        + block.transactions.iter().map(neo_io::Serializable::size).sum::<usize>();
     json.insert("size".to_string(), JToken::Number(block_size as f64));
-    json.insert("version".to_string(), JToken::Number(header.version as f64));
+    json.insert("version".to_string(), JToken::Number(f64::from(header.version)));
     json.insert(
         "previousblockhash".to_string(),
         JToken::String(header.previous_hash.to_string()),
@@ -34,10 +34,10 @@ pub fn block_to_json(block: &Block, protocol_settings: &ProtocolSettings) -> JOb
         "nonce".to_string(),
         JToken::String(format!("{:016X}", header.nonce)),
     );
-    json.insert("index".to_string(), JToken::Number(header.index as f64));
+    json.insert("index".to_string(), JToken::Number(f64::from(header.index)));
     json.insert(
         "primary".to_string(),
-        JToken::Number(header.primary_index as f64),
+        JToken::Number(f64::from(header.primary_index)),
     );
     json.insert(
         "nextconsensus".to_string(),
@@ -71,7 +71,7 @@ pub fn block_to_json(block: &Block, protocol_settings: &ProtocolSettings) -> JOb
 }
 
 /// Converts JSON to a block
-/// Matches C# BlockFromJson
+/// Matches C# `BlockFromJson`
 pub fn block_from_json(
     json: &JObject,
     protocol_settings: &ProtocolSettings,
@@ -101,24 +101,23 @@ pub fn block_from_json(
 }
 
 /// Converts a transaction to JSON
-/// Matches C# TransactionToJson
+/// Matches C# `TransactionToJson`
 pub fn transaction_to_json(tx: &Transaction, protocol_settings: &ProtocolSettings) -> JObject {
     let mut json = JObject::new();
 
     json.insert("hash".to_string(), JToken::String(tx.hash().to_string()));
     json.insert("size".to_string(), JToken::Number(tx.size() as f64));
-    json.insert("version".to_string(), JToken::Number(tx.version() as f64));
-    json.insert("nonce".to_string(), JToken::Number(tx.nonce() as f64));
+    json.insert("version".to_string(), JToken::Number(f64::from(tx.version())));
+    json.insert("nonce".to_string(), JToken::Number(f64::from(tx.nonce())));
     json.insert(
         "sender".to_string(),
         tx.sender()
-            .map(|sender| {
+            .map_or(JToken::Null, |sender| {
                 JToken::String(WalletHelper::to_address(
                     &sender,
                     protocol_settings.address_version,
                 ))
-            })
-            .unwrap_or(JToken::Null),
+            }),
     );
     json.insert(
         "sysfee".to_string(),
@@ -130,7 +129,7 @@ pub fn transaction_to_json(tx: &Transaction, protocol_settings: &ProtocolSetting
     );
     json.insert(
         "validuntilblock".to_string(),
-        JToken::Number(tx.valid_until_block() as f64),
+        JToken::Number(f64::from(tx.valid_until_block())),
     );
 
     // Add signers
@@ -176,14 +175,14 @@ pub fn transaction_to_json(tx: &Transaction, protocol_settings: &ProtocolSetting
 }
 
 /// Converts JSON to a transaction
-/// Matches C# TransactionFromJson
+/// Matches C# `TransactionFromJson`
 pub fn transaction_from_json(
     json: &JObject,
     _protocol_settings: &ProtocolSettings,
 ) -> Result<Transaction, String> {
     let mut tx = Transaction::new();
 
-    if let Some(version) = json.get("version").and_then(|v| v.as_number()) {
+    if let Some(version) = json.get("version").and_then(neo_json::JToken::as_number) {
         tx.set_version(version as u8);
     }
 
@@ -332,7 +331,7 @@ fn attribute_to_json(attr: &neo_core::TransactionAttribute) -> JObject {
         TA::NotValidBefore(not_valid_before) => {
             json.insert(
                 "height".to_string(),
-                JToken::Number(not_valid_before.height as f64),
+                JToken::Number(f64::from(not_valid_before.height)),
             );
         }
         TA::Conflicts(conflicts) => {
@@ -342,7 +341,7 @@ fn attribute_to_json(attr: &neo_core::TransactionAttribute) -> JObject {
             );
         }
         TA::NotaryAssisted(notary) => {
-            json.insert("nkeys".to_string(), JToken::Number(notary.nkeys as f64));
+            json.insert("nkeys".to_string(), JToken::Number(f64::from(notary.nkeys)));
         }
         TA::OracleResponse(response) => {
             json.insert("id".to_string(), JToken::Number(response.id as f64));
@@ -355,7 +354,7 @@ fn attribute_to_json(attr: &neo_core::TransactionAttribute) -> JObject {
                 JToken::String(general_purpose::STANDARD.encode(&response.result)),
             );
         }
-    };
+    }
     json
 }
 

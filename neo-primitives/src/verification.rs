@@ -81,7 +81,7 @@ impl VerificationError {
 
     /// Create a gas limit exceeded error.
     #[must_use]
-    pub fn gas_limit_exceeded(consumed: i64, max: i64) -> Self {
+    pub const fn gas_limit_exceeded(consumed: i64, max: i64) -> Self {
         Self::GasLimitExceeded { consumed, max }
     }
 

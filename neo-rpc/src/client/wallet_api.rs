@@ -21,7 +21,7 @@ use num_traits::cast::ToPrimitive;
 use std::sync::Arc;
 
 /// Wallet Common APIs
-/// Matches C# WalletAPI
+/// Matches C# `WalletAPI`
 pub struct WalletApi {
     /// The RPC client instance
     rpc_client: Arc<RpcClient>,
@@ -30,8 +30,9 @@ pub struct WalletApi {
 }
 
 impl WalletApi {
-    /// WalletAPI Constructor
+    /// `WalletAPI` Constructor
     /// Matches C# constructor
+    #[must_use] 
     pub fn new(rpc_client: Arc<RpcClient>) -> Self {
         Self {
             nep17_api: Nep17Api::new(rpc_client.clone()),
@@ -40,7 +41,7 @@ impl WalletApi {
     }
 
     /// Get unclaimed gas with address, scripthash or public key string
-    /// Matches C# GetUnclaimedGasAsync with string parameter
+    /// Matches C# `GetUnclaimedGasAsync` with string parameter
     pub async fn get_unclaimed_gas(
         &self,
         account: &str,
@@ -51,7 +52,7 @@ impl WalletApi {
     }
 
     /// Get unclaimed gas
-    /// Matches C# GetUnclaimedGasAsync with UInt160 parameter
+    /// Matches C# `GetUnclaimedGasAsync` with `UInt160` parameter
     pub async fn get_unclaimed_gas_from_hash(
         &self,
         account: &UInt160,
@@ -81,7 +82,7 @@ impl WalletApi {
     }
 
     /// Get Neo Balance
-    /// Matches C# GetNeoBalanceAsync
+    /// Matches C# `GetNeoBalanceAsync`
     pub async fn get_neo_balance(&self, account: &str) -> Result<u32, Box<dyn std::error::Error>> {
         let balance = self
             .get_token_balance(&neo_hash().to_string(), account)
@@ -90,7 +91,7 @@ impl WalletApi {
     }
 
     /// Get Gas Balance
-    /// Matches C# GetGasBalanceAsync
+    /// Matches C# `GetGasBalanceAsync`
     pub async fn get_gas_balance(&self, account: &str) -> Result<f64, Box<dyn std::error::Error>> {
         let balance = self
             .get_token_balance(&gas_hash().to_string(), account)
@@ -100,7 +101,7 @@ impl WalletApi {
     }
 
     /// Get token balance with string parameters
-    /// Matches C# GetTokenBalanceAsync
+    /// Matches C# `GetTokenBalanceAsync`
     pub async fn get_token_balance(
         &self,
         token_hash: &str,
@@ -117,7 +118,7 @@ impl WalletApi {
     }
 
     /// Claim GAS from NEO
-    /// Matches C# ClaimGasAsync
+    /// Matches C# `ClaimGasAsync`
     pub async fn claim_gas(
         &self,
         key: &KeyPair,
@@ -158,7 +159,7 @@ impl WalletApi {
     }
 
     /// Claim GAS from specific account
-    /// Matches C# ClaimGasAsync with account parameter
+    /// Matches C# `ClaimGasAsync` with account parameter
     pub async fn claim_gas_from_account(
         &self,
         account: &UInt160,
@@ -200,7 +201,7 @@ impl WalletApi {
     }
 
     /// Transfer NEP17 token
-    /// Matches C# TransferAsync
+    /// Matches C# `TransferAsync`
     pub async fn transfer(
         &self,
         token_hash: &str,
@@ -320,7 +321,7 @@ impl WalletApi {
 
     #[allow(clippy::too_many_arguments)]
     /// Transfer NEP17 token from multi-sig account.
-    /// Matches C# TransferAsync multi-sig overload.
+    /// Matches C# `TransferAsync` multi-sig overload.
     pub async fn transfer_multi_sig(
         &self,
         token_hash: &str,
@@ -354,7 +355,7 @@ impl WalletApi {
     }
 
     /// Wait for a transaction to be confirmed.
-    /// Matches C# WaitTransactionAsync
+    /// Matches C# `WaitTransactionAsync`
     pub async fn wait_transaction(
         &self,
         tx: &Transaction,
@@ -377,15 +378,12 @@ impl WalletApi {
 
         while std::time::Instant::now() < deadline {
             // Check if transaction is in a block
-            match self.rpc_client.get_transaction(&tx_hash.to_string()).await {
-                Ok(rpc_tx) => {
-                    if rpc_tx.confirmations.is_some() {
-                        return Ok(rpc_tx);
-                    }
+            if let Ok(rpc_tx) = self.rpc_client.get_transaction(&tx_hash.to_string()).await {
+                if rpc_tx.confirmations.is_some() {
+                    return Ok(rpc_tx);
                 }
-                Err(_) => {
-                    // Transaction not found yet, continue waiting
-                }
+            } else {
+                // Transaction not found yet, continue waiting
             }
 
             tokio::time::sleep(poll_duration).await;
@@ -398,7 +396,7 @@ impl WalletApi {
     }
 
     /// Get account state including balances
-    /// Matches C# GetAccountStateAsync
+    /// Matches C# `GetAccountStateAsync`
     pub async fn get_account_state(
         &self,
         account: &str,
@@ -440,7 +438,7 @@ fn gas_hash() -> UInt160 {
 }
 
 fn gas_factor() -> u64 {
-    10u64.saturating_pow(GasToken::new().decimals() as u32)
+    10u64.saturating_pow(u32::from(GasToken::new().decimals()))
 }
 
 /// Lightweight account snapshot returned by wallet RPC helpers

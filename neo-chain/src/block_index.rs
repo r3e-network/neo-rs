@@ -55,6 +55,7 @@ pub struct BlockIndex {
 
 impl BlockIndex {
     /// Create a new empty block index
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             by_hash: RwLock::new(HashMap::new()),
@@ -84,7 +85,7 @@ impl BlockIndex {
 
     /// Get block hash by height (main chain only)
     pub fn get_hash_by_height(&self, height: u32) -> Option<UInt256> {
-        self.by_height.read().get(&height).cloned()
+        self.by_height.read().get(&height).copied()
     }
 
     /// Get block entry by height (main chain only)

@@ -17,6 +17,7 @@ pub struct PrimitiveType<'a> {
 
 impl<'a> PrimitiveType<'a> {
     /// Attempts to wrap the provided stack item, returning `None` if it is not a primitive type.
+    #[must_use] 
     pub fn new(item: &'a StackItem) -> Option<Self> {
         matches!(
             item.stack_item_type(),
@@ -56,14 +57,14 @@ impl<'a> PrimitiveType<'a> {
             | StackItemType::ByteString
             | StackItemType::Buffer => self.item.convert_to(target),
             _ => Err(VmError::invalid_type_simple(format!(
-                "Cannot convert primitive to {:?}",
-                target
+                "Cannot convert primitive to {target:?}"
             ))),
         }
     }
 
     /// Returns the underlying stack item.
-    pub fn as_item(&self) -> &'a StackItem {
+    #[must_use] 
+    pub const fn as_item(&self) -> &'a StackItem {
         self.item
     }
 }

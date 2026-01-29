@@ -12,7 +12,7 @@
 use neo_json::{JArray, JObject, JToken};
 use std::collections::HashMap;
 
-/// RPC version information matching C# RpcVersion
+/// RPC version information matching C# `RpcVersion`
 #[derive(Debug, Clone)]
 pub struct RpcVersion {
     /// TCP port
@@ -30,15 +30,16 @@ pub struct RpcVersion {
 
 impl RpcVersion {
     /// Converts to JSON
-    /// Matches C# ToJson
+    /// Matches C# `ToJson`
+    #[must_use] 
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
         json.insert(
             "network".to_string(),
-            JToken::Number(self.protocol.network as f64),
+            JToken::Number(f64::from(self.protocol.network)),
         ); // Obsolete
-        json.insert("tcpport".to_string(), JToken::Number(self.tcp_port as f64));
-        json.insert("nonce".to_string(), JToken::Number(self.nonce as f64));
+        json.insert("tcpport".to_string(), JToken::Number(f64::from(self.tcp_port)));
+        json.insert("nonce".to_string(), JToken::Number(f64::from(self.nonce)));
         json.insert(
             "useragent".to_string(),
             JToken::String(self.user_agent.clone()),
@@ -51,23 +52,23 @@ impl RpcVersion {
     }
 
     /// Creates from JSON
-    /// Matches C# FromJson
+    /// Matches C# `FromJson`
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let tcp_port = json
             .get("tcpport")
-            .and_then(|v| v.as_number())
+            .and_then(neo_json::JToken::as_number)
             .ok_or("Missing or invalid 'tcpport' field")? as i32;
 
         let nonce = json
             .get("nonce")
-            .and_then(|v| v.as_number())
+            .and_then(neo_json::JToken::as_number)
             .ok_or("Missing or invalid 'nonce' field")? as u32;
 
         let user_agent = json
             .get("useragent")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .ok_or("Missing or invalid 'useragent' field")?
-            .to_string();
+            ;
 
         let protocol_json = json
             .get("protocol")
@@ -84,7 +85,7 @@ impl RpcVersion {
     }
 }
 
-/// RPC protocol information matching C# RpcProtocol
+/// RPC protocol information matching C# `RpcProtocol`
 #[derive(Debug, Clone)]
 pub struct RpcProtocol {
     /// Network ID
@@ -126,37 +127,38 @@ pub struct RpcProtocol {
 
 impl RpcProtocol {
     /// Converts to JSON
-    /// Matches C# ToJson
+    /// Matches C# `ToJson`
+    #[must_use] 
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
-        json.insert("network".to_string(), JToken::Number(self.network as f64));
+        json.insert("network".to_string(), JToken::Number(f64::from(self.network)));
         json.insert(
             "validatorscount".to_string(),
-            JToken::Number(self.validators_count as f64),
+            JToken::Number(f64::from(self.validators_count)),
         );
         json.insert(
             "msperblock".to_string(),
-            JToken::Number(self.milliseconds_per_block as f64),
+            JToken::Number(f64::from(self.milliseconds_per_block)),
         );
         json.insert(
             "maxvaliduntilblockincrement".to_string(),
-            JToken::Number(self.max_valid_until_block_increment as f64),
+            JToken::Number(f64::from(self.max_valid_until_block_increment)),
         );
         json.insert(
             "maxtraceableblocks".to_string(),
-            JToken::Number(self.max_traceable_blocks as f64),
+            JToken::Number(f64::from(self.max_traceable_blocks)),
         );
         json.insert(
             "addressversion".to_string(),
-            JToken::Number(self.address_version as f64),
+            JToken::Number(f64::from(self.address_version)),
         );
         json.insert(
             "maxtransactionsperblock".to_string(),
-            JToken::Number(self.max_transactions_per_block as f64),
+            JToken::Number(f64::from(self.max_transactions_per_block)),
         );
         json.insert(
             "memorypoolmaxtransactions".to_string(),
-            JToken::Number(self.memory_pool_max_transactions as f64),
+            JToken::Number(f64::from(self.memory_pool_max_transactions)),
         );
         json.insert(
             "initialgasdistribution".to_string(),
@@ -170,7 +172,7 @@ impl RpcProtocol {
             .map(|(name, height)| {
                 let mut obj = JObject::new();
                 obj.insert("name".to_string(), JToken::String(name.clone()));
-                obj.insert("blockheight".to_string(), JToken::Number(*height as f64));
+                obj.insert("blockheight".to_string(), JToken::Number(f64::from(*height)));
                 JToken::Object(obj)
             })
             .collect();
@@ -205,52 +207,52 @@ impl RpcProtocol {
     }
 
     /// Creates from JSON
-    /// Matches C# FromJson
+    /// Matches C# `FromJson`
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let network = json
             .get("network")
-            .and_then(|v| v.as_number())
+            .and_then(neo_json::JToken::as_number)
             .ok_or("Missing or invalid 'network' field")? as u32;
 
         let validators_count =
             json.get("validatorscount")
-                .and_then(|v| v.as_number())
+                .and_then(neo_json::JToken::as_number)
                 .ok_or("Missing or invalid 'validatorscount' field")? as i32;
 
         let milliseconds_per_block =
             json.get("msperblock")
-                .and_then(|v| v.as_number())
+                .and_then(neo_json::JToken::as_number)
                 .ok_or("Missing or invalid 'msperblock' field")? as u32;
 
         let max_valid_until_block_increment = json
             .get("maxvaliduntilblockincrement")
-            .and_then(|v| v.as_number())
+            .and_then(neo_json::JToken::as_number)
             .ok_or("Missing or invalid 'maxvaliduntilblockincrement' field")?
             as u32;
 
         let max_traceable_blocks =
             json.get("maxtraceableblocks")
-                .and_then(|v| v.as_number())
+                .and_then(neo_json::JToken::as_number)
                 .ok_or("Missing or invalid 'maxtraceableblocks' field")? as u32;
 
         let address_version =
             json.get("addressversion")
-                .and_then(|v| v.as_number())
+                .and_then(neo_json::JToken::as_number)
                 .ok_or("Missing or invalid 'addressversion' field")? as u8;
 
         let max_transactions_per_block =
             json.get("maxtransactionsperblock")
-                .and_then(|v| v.as_number())
+                .and_then(neo_json::JToken::as_number)
                 .ok_or("Missing or invalid 'maxtransactionsperblock' field")? as u32;
 
         let memory_pool_max_transactions =
             json.get("memorypoolmaxtransactions")
-                .and_then(|v| v.as_number())
+                .and_then(neo_json::JToken::as_number)
                 .ok_or("Missing or invalid 'memorypoolmaxtransactions' field")? as i32;
 
         let initial_gas_distribution =
             json.get("initialgasdistribution")
-                .and_then(|v| v.as_number())
+                .and_then(neo_json::JToken::as_number)
                 .ok_or("Missing or invalid 'initialgasdistribution' field")? as u64;
 
         // Parse hardforks
@@ -277,8 +279,7 @@ impl RpcProtocol {
             .map(|arr| {
                 arr.iter()
                     .filter_map(|item| item.as_ref())
-                    .filter_map(|token| token.as_string())
-                    .map(|s| s.to_string())
+                    .filter_map(neo_json::JToken::as_string)
                     .collect()
             })
             .unwrap_or_default();
@@ -290,7 +291,7 @@ impl RpcProtocol {
             .map(|arr| {
                 arr.iter()
                     .filter_map(|item| item.as_ref())
-                    .filter_map(|token| token.as_string())
+                    .filter_map(neo_json::JToken::as_string)
                     .collect()
             })
             .unwrap_or_default();

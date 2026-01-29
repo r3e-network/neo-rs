@@ -55,7 +55,7 @@ impl UInt256 {
     /// Checks if this `UInt256` is zero.
     #[inline]
     #[must_use]
-    pub fn is_zero(&self) -> bool {
+    pub const fn is_zero(&self) -> bool {
         self.value1 == 0 && self.value2 == 0 && self.value3 == 0 && self.value4 == 0
     }
 
@@ -66,7 +66,7 @@ impl UInt256 {
         self.to_array()
     }
 
-    /// Returns the bytes as a Vec<u8>
+    /// Returns the bytes as a `Vec<u8>`
     #[inline]
     #[must_use]
     pub fn to_bytes(&self) -> Vec<u8> {
@@ -81,7 +81,7 @@ impl UInt256 {
     /// Determines whether this instance and another specified `UInt256` object have the same value.
     #[inline]
     #[must_use]
-    pub fn equals(&self, other: Option<&Self>) -> bool {
+    pub const fn equals(&self, other: Option<&Self>) -> bool {
         if let Some(other) = other {
             self.value1 == other.value1
                 && self.value2 == other.value2
@@ -270,7 +270,7 @@ impl UInt256 {
     /// occur from only using the lowest 32 bits of value1.
     #[allow(clippy::cast_possible_truncation)]
     #[must_use]
-    pub fn get_hash_code(&self) -> i32 {
+    pub const fn get_hash_code(&self) -> i32 {
         // XOR high and low 32-bit parts of each u64 to preserve all bits
         let v1_hash = (self.value1 as i32) ^ ((self.value1 >> 32) as i32);
         let v2_hash = (self.value2 as i32) ^ ((self.value2 >> 32) as i32);

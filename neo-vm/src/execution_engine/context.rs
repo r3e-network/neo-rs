@@ -2,7 +2,7 @@
 // context.rs - Context management (load, unload, remove, create)
 //
 
-use super::*;
+use super::{ExecutionEngine, ExecutionContext, VmResult, VmError, InteropHost, VMState, Script};
 
 impl ExecutionEngine {
     /// Loads a context into the invocation stack.
@@ -93,6 +93,7 @@ impl ExecutionEngine {
     }
 
     /// Creates a new context with the specified script.
+    #[must_use] 
     pub fn create_context(
         &self,
         script: Script,

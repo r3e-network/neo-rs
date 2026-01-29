@@ -20,6 +20,7 @@ pub struct EvaluationStack {
 impl EvaluationStack {
     /// Creates a new evaluation stack with the specified reference counter.
     #[inline]
+    #[must_use] 
     pub fn new(reference_counter: ReferenceCounter) -> Self {
         Self {
             stack: Vec::with_capacity(32), // Pre-allocate for typical stack usage
@@ -29,18 +30,21 @@ impl EvaluationStack {
 
     /// Returns the reference counter for this evaluation stack.
     #[inline]
-    pub fn reference_counter(&self) -> &ReferenceCounter {
+    #[must_use] 
+    pub const fn reference_counter(&self) -> &ReferenceCounter {
         &self.reference_counter
     }
 
     /// Returns the number of items on the stack.
     #[inline]
+    #[must_use] 
     pub fn len(&self) -> usize {
         self.stack.len()
     }
 
     /// Indicates whether the stack is empty.
     #[inline]
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.stack.is_empty()
     }
@@ -127,7 +131,7 @@ impl EvaluationStack {
 
     /// Copies `count` items (default: all) from the top of this stack to the
     /// target stack without removing them from the source stack.
-    pub fn copy_to(&self, target: &mut EvaluationStack, count: Option<usize>) -> VmResult<()> {
+    pub fn copy_to(&self, target: &mut Self, count: Option<usize>) -> VmResult<()> {
         let count = count.unwrap_or(self.stack.len());
         if count > self.stack.len() {
             return Err(VmError::invalid_operation_msg("Copy count out of range"));
@@ -148,7 +152,7 @@ impl EvaluationStack {
 
     /// Moves `count` items (default: all) from the top of this stack to the
     /// target stack.
-    pub fn move_to(&mut self, target: &mut EvaluationStack, count: Option<usize>) -> VmResult<()> {
+    pub fn move_to(&mut self, target: &mut Self, count: Option<usize>) -> VmResult<()> {
         let count = count.unwrap_or(self.stack.len());
         if count > self.stack.len() {
             return Err(VmError::invalid_operation_msg("Move count out of range"));
@@ -192,6 +196,7 @@ impl EvaluationStack {
     }
 
     /// Returns a cloned vector of the stack contents in bottom-to-top order.
+    #[must_use] 
     pub fn to_vec(&self) -> Vec<StackItem> {
         self.stack.clone()
     }

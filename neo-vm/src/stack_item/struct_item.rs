@@ -23,7 +23,7 @@ struct StructInner {
     items: Vec<StackItem>,
     /// Unique identifier mirroring reference equality semantics.
     id: usize,
-    /// Reference counter shared with the VM (mirrors C# CompoundType semantics).
+    /// Reference counter shared with the VM (mirrors C# `CompoundType` semantics).
     reference_counter: Option<ReferenceCounter>,
     /// Indicates whether the struct is read-only.
     is_read_only: bool,
@@ -52,6 +52,7 @@ impl Struct {
     }
 
     /// Creates a struct without a reference counter.
+    #[must_use] 
     pub fn new_untracked(items: Vec<StackItem>) -> Self {
         Self {
             inner: Arc::new(Mutex::new(StructInner {
@@ -64,16 +65,19 @@ impl Struct {
     }
 
     /// Returns the unique identifier for this struct (used for reference equality).
+    #[must_use] 
     pub fn id(&self) -> usize {
         self.inner.lock().id
     }
 
     /// Returns the reference counter assigned by the reference counter, if any.
+    #[must_use] 
     pub fn reference_counter(&self) -> Option<ReferenceCounter> {
         self.inner.lock().reference_counter.clone()
     }
 
     /// Returns whether the struct is marked as read-only.
+    #[must_use] 
     pub fn is_read_only(&self) -> bool {
         self.inner.lock().is_read_only
     }
@@ -84,11 +88,13 @@ impl Struct {
     }
 
     /// Gets the items in the struct.
+    #[must_use] 
     pub fn items(&self) -> Vec<StackItem> {
         self.inner.lock().items.clone()
     }
 
     /// Returns a stable pointer used for identity tracking.
+    #[must_use] 
     pub fn as_ptr(&self) -> *const StackItem {
         self.inner.lock().items.as_ptr()
     }
@@ -172,11 +178,13 @@ impl Struct {
     }
 
     /// Gets the number of items in the struct.
+    #[must_use] 
     pub fn len(&self) -> usize {
         self.inner.lock().items.len()
     }
 
     /// Returns true if the struct is empty.
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.inner.lock().items.is_empty()
     }
@@ -196,6 +204,7 @@ impl Struct {
     }
 
     /// Returns an iterator over the items.
+    #[must_use] 
     pub fn iter(&self) -> std::vec::IntoIter<StackItem> {
         self.items().into_iter()
     }
@@ -218,7 +227,7 @@ impl Struct {
         &self,
         limits: &crate::execution_engine_limits::ExecutionEngineLimits,
     ) -> VmResult<Self> {
-        let mut remaining = (limits.max_stack_size as i64) - 1;
+        let mut remaining = i64::from(limits.max_stack_size) - 1;
         let mut visited = HashSet::new();
         self.clone_with_remaining(&mut remaining, &mut visited)
     }
@@ -235,7 +244,7 @@ impl Struct {
             ));
         }
 
-        let clone = Struct::new(Vec::new(), self.reference_counter())?;
+        let clone = Self::new(Vec::new(), self.reference_counter())?;
 
         for item in self.items() {
             *remaining -= 1;
@@ -261,7 +270,8 @@ impl Struct {
     }
 
     /// Gets the type of the stack item.
-    pub fn stack_item_type(&self) -> StackItemType {
+    #[must_use] 
+    pub const fn stack_item_type(&self) -> StackItemType {
         StackItemType::Struct
     }
 

@@ -2,7 +2,7 @@
 //!
 //! This module defines canonical service traits and provides implementations
 //! for the concrete types that live inside the core crate (`LedgerContext`,
-//! `StateStore`, `MemoryPool`, etc.).
+//! `StateStore`, `MemoryPool`, etc).
 //!
 //! Note: Service traits were migrated from the `neo-services` crate and are
 //! now defined locally in the `traits` module.

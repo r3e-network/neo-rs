@@ -19,7 +19,7 @@ where
     fn on_access(entries: &mut LinkedHashMap<TKey, TValue>, key: &TKey);
 }
 
-/// FIFO cache policy (matches C# FIFOCache behaviour where OnAccess is a no-op).
+/// FIFO cache policy (matches C# `FIFOCache` behaviour where `OnAccess` is a no-op).
 ///
 /// Entries are evicted in the order they were added, regardless of access patterns.
 #[derive(Debug, Default, Clone, Copy)]
@@ -33,7 +33,7 @@ where
     fn on_access(_: &mut LinkedHashMap<TKey, TValue>, _: &TKey) {}
 }
 
-/// LRU cache policy (matches C# LRUCache behaviour moving entries to the head on access).
+/// LRU cache policy (matches C# `LRUCache` behaviour moving entries to the head on access).
 ///
 /// Recently accessed entries are moved to the end, making them less likely to be evicted.
 #[derive(Debug, Default, Clone, Copy)]
@@ -72,7 +72,7 @@ where
     }
 }
 
-/// Abstract cache base class matching C# Cache<TKey, TValue>.
+/// Abstract cache base class matching C# Cache<`TKey`, `TValue`>.
 ///
 /// This is a thread-safe cache implementation that supports configurable eviction
 /// policies through the `Policy` type parameter.
@@ -134,7 +134,7 @@ where
         self.inner.lock().entries.len()
     }
 
-    /// Indicates whether the cache is empty (C# IsEmpty helper via ICollection).
+    /// Indicates whether the cache is empty (C# `IsEmpty` helper via `ICollection`).
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.inner.lock().entries.is_empty()
@@ -167,7 +167,7 @@ where
         guard.entries.insert(key, item);
     }
 
-    /// Adds a range of items to the cache (C# AddRange).
+    /// Adds a range of items to the cache (C# `AddRange`).
     pub fn add_range<I>(&self, items: I)
     where
         I: IntoIterator<Item = TValue>,
@@ -208,7 +208,7 @@ where
         result
     }
 
-    /// Copies cache contents to the provided slice (C# CopyTo).
+    /// Copies cache contents to the provided slice (C# `CopyTo`).
     ///
     /// # Arguments
     ///
@@ -268,20 +268,20 @@ where
         self.remove_key(&key)
     }
 
-    /// Attempts to retrieve an item by key (C# TryGet).
+    /// Attempts to retrieve an item by key (C# `TryGet`).
     #[inline]
     pub fn try_get(&self, key: &TKey) -> Option<TValue> {
         self.get(key)
     }
 
-    /// Returns a snapshot of the cache values preserving access order (C# GetEnumerator).
+    /// Returns a snapshot of the cache values preserving access order (C# `GetEnumerator`).
     pub fn values(&self) -> Vec<TValue> {
         self.inner.lock().entries.values().cloned().collect()
     }
 
     /// Maximum number of elements allowed in the cache.
     #[inline]
-    pub fn max_capacity(&self) -> usize {
+    pub const fn max_capacity(&self) -> usize {
         self.max_capacity
     }
 }

@@ -1,4 +1,4 @@
-//! ApplicationLogs RPC endpoints (`ApplicationLogs` plugin).
+//! `ApplicationLogs` RPC endpoints (`ApplicationLogs` plugin).
 
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
@@ -70,8 +70,7 @@ impl RpcServerApplicationLogs {
                             entry
                                 .get("trigger")
                                 .and_then(Value::as_str)
-                                .map(|value| value.eq_ignore_ascii_case(&filter))
-                                .unwrap_or(false)
+                                .is_some_and(|value| value.eq_ignore_ascii_case(&filter))
                         });
                     }
                 }
@@ -109,7 +108,7 @@ fn expect_hash_param(
             UInt256::from_str(text).map_err(|err| {
                 RpcException::from(
                     RpcError::invalid_params()
-                        .with_data(format!("invalid hash '{}': {}", text, err)),
+                        .with_data(format!("invalid hash '{text}': {err}")),
                 )
             })
         })

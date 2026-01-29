@@ -1,8 +1,8 @@
-//! JString - matches C# Neo.Json.JString exactly
+//! `JString` - matches C# Neo.Json.JString exactly
 
 use std::io::Write;
 
-/// Represents a JSON string (matches C# JString)
+/// Represents a JSON string (matches C# `JString`)
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct JString {
     /// The value of the JSON token
@@ -11,16 +11,19 @@ pub struct JString {
 
 impl JString {
     /// Initializes a new instance with the specified value
-    pub fn new(value: String) -> Self {
+    #[must_use] 
+    pub const fn new(value: String) -> Self {
         Self { value }
     }
 
     /// Converts to boolean (true if not empty)
+    #[must_use] 
     pub fn as_boolean(&self) -> bool {
         !self.value.is_empty()
     }
 
     /// Converts to number
+    #[must_use] 
     pub fn as_number(&self) -> f64 {
         if self.value.is_empty() {
             return 0.0;
@@ -29,11 +32,13 @@ impl JString {
     }
 
     /// Gets the string value
+    #[must_use] 
     pub fn as_string(&self) -> String {
         self.value.clone()
     }
 
     /// Gets the string value
+    #[must_use] 
     pub fn get_string(&self) -> String {
         self.value.clone()
     }
@@ -55,7 +60,7 @@ impl JString {
                     write!(writer, "\\u{:04x}", c as u32)?;
                 }
                 c => {
-                    write!(writer, "{}", c)?;
+                    write!(writer, "{c}")?;
                 }
             }
         }
@@ -66,13 +71,13 @@ impl JString {
 
 impl From<String> for JString {
     fn from(value: String) -> Self {
-        JString::new(value)
+        Self::new(value)
     }
 }
 
 impl From<&str> for JString {
     fn from(value: &str) -> Self {
-        JString::new(value.to_string())
+        Self::new(value.to_string())
     }
 }
 

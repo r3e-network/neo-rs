@@ -2,7 +2,7 @@
 // interop.rs - Interop service and host methods
 //
 
-use super::*;
+use super::{ExecutionEngine, InteropService, InteropHost, VmResult, VmError};
 
 impl ExecutionEngine {
     /// Sets the interop service used for syscall dispatch.
@@ -16,7 +16,8 @@ impl ExecutionEngine {
     }
 
     /// Returns a reference to the configured interop service, if any.
-    pub fn interop_service(&self) -> Option<&InteropService> {
+    #[must_use] 
+    pub const fn interop_service(&self) -> Option<&InteropService> {
         self.interop_service.as_ref()
     }
 
@@ -41,6 +42,7 @@ impl ExecutionEngine {
     }
 
     /// Returns the raw pointer to the configured interop host, if any.
+    #[must_use] 
     pub fn interop_host_ptr(&self) -> Option<*mut dyn InteropHost> {
         self.interop_host
     }
@@ -48,7 +50,7 @@ impl ExecutionEngine {
     /// Invokes the CALLT opcode by delegating to the interop host.
     ///
     /// This method is called by the CALLT instruction handler to resolve method tokens
-    /// and perform cross-contract calls via the ApplicationEngine.
+    /// and perform cross-contract calls via the `ApplicationEngine`.
     pub fn invoke_callt(&mut self, token_id: u16) -> VmResult<()> {
         if let Some(host_ptr) = self.interop_host {
             // SAFETY: The host pointer is managed by the caller (ApplicationEngine)
@@ -57,9 +59,8 @@ impl ExecutionEngine {
             host.on_callt(self, token_id)
         } else {
             Err(VmError::invalid_operation_msg(format!(
-                "CALLT (token {}) requires ApplicationEngine context. \
-                 No interop host configured.",
-                token_id
+                "CALLT (token {token_id}) requires ApplicationEngine context. \
+                 No interop host configured."
             )))
         }
     }

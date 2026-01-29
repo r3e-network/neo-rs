@@ -18,7 +18,8 @@ pub struct ScriptBuilder {
 impl ScriptBuilder {
     /// Creates a new script builder.
     #[inline]
-    pub fn new() -> Self {
+    #[must_use] 
+    pub const fn new() -> Self {
         Self { script: Vec::new() }
     }
 
@@ -295,14 +296,13 @@ impl ScriptBuilder {
         let opcode_value = opcode as u8;
         if opcode_value < OpCode::JMP as u8 || opcode_value > OpCode::JMPLE_L as u8 {
             return Err(VmError::invalid_operation_msg(format!(
-                "Invalid jump operation: {:?}",
-                opcode
+                "Invalid jump operation: {opcode:?}"
             )));
         }
 
         let is_short = opcode_value % 2 == 0;
         if is_short {
-            if offset < i8::MIN as i32 || offset > i8::MAX as i32 {
+            if offset < i32::from(i8::MIN) || offset > i32::from(i8::MAX) {
                 opcode = OpCode::try_from(opcode_value + 1)
                     .map_err(|_| VmError::invalid_operation_msg("Invalid long jump opcode"))?;
                 self.emit_instruction(opcode, &offset.to_le_bytes());
@@ -319,7 +319,7 @@ impl ScriptBuilder {
 
     /// Emits a call operation.
     pub fn emit_call(&mut self, offset: i32) -> VmResult<&mut Self> {
-        if offset < i8::MIN as i32 || offset > i8::MAX as i32 {
+        if offset < i32::from(i8::MIN) || offset > i32::from(i8::MAX) {
             self.emit_instruction(OpCode::CALL_L, &offset.to_le_bytes());
         } else {
             let short = (offset as i8) as u8;
@@ -370,24 +370,28 @@ impl ScriptBuilder {
 
     /// Converts the builder to a script.
     #[inline]
+    #[must_use] 
     pub fn to_script(&self) -> Script {
         Script::new_relaxed(self.script.clone())
     }
 
     /// Converts the builder to a byte array.
     #[inline]
+    #[must_use] 
     pub fn to_array(&self) -> Vec<u8> {
         self.script.clone()
     }
 
     /// Returns the current script length.
     #[inline]
+    #[must_use] 
     pub fn len(&self) -> usize {
         self.script.len()
     }
 
     /// Returns true when no opcodes have been emitted.
     #[inline]
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.script.is_empty()
     }

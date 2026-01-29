@@ -12,7 +12,7 @@
 use num_bigint::BigInt;
 use serde::{Deserialize, Serialize};
 
-/// NEP17 token information matching C# RpcNep17TokenInfo
+/// NEP17 token information matching C# `RpcNep17TokenInfo`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcNep17TokenInfo {
     /// Token name

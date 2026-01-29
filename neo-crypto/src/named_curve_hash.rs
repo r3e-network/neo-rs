@@ -1,11 +1,11 @@
-//! NamedCurveHash - matches C# Neo.SmartContract.Native.NamedCurveHash exactly.
+//! `NamedCurveHash` - matches C# Neo.SmartContract.Native.NamedCurveHash exactly.
 
 use crate::ecc::ECCurve;
 use crate::hash::HashAlgorithm;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
 
-/// Named curve and hash algorithm combination (matches C# NamedCurveHash).
+/// Named curve and hash algorithm combination (matches C# `NamedCurveHash`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum NamedCurveHash {
@@ -21,52 +21,57 @@ pub enum NamedCurveHash {
 
 impl NamedCurveHash {
     /// Converts to byte representation.
-    pub fn to_byte(self) -> u8 {
+    #[must_use] 
+    pub const fn to_byte(self) -> u8 {
         self as u8
     }
 
     /// Creates from byte value.
-    pub fn from_byte(value: u8) -> Option<Self> {
+    #[must_use] 
+    pub const fn from_byte(value: u8) -> Option<Self> {
         match value {
-            0x16 => Some(NamedCurveHash::Secp256k1SHA256),
-            0x17 => Some(NamedCurveHash::Secp256r1SHA256),
-            0x18 => Some(NamedCurveHash::Secp256k1Keccak256),
-            0x19 => Some(NamedCurveHash::Secp256r1Keccak256),
+            0x16 => Some(Self::Secp256k1SHA256),
+            0x17 => Some(Self::Secp256r1SHA256),
+            0x18 => Some(Self::Secp256k1Keccak256),
+            0x19 => Some(Self::Secp256r1Keccak256),
             _ => None,
         }
     }
 
     /// Gets the curve type.
-    pub fn curve(self) -> ECCurve {
+    #[must_use] 
+    pub const fn curve(self) -> ECCurve {
         match self {
-            NamedCurveHash::Secp256k1SHA256 | NamedCurveHash::Secp256k1Keccak256 => {
+            Self::Secp256k1SHA256 | Self::Secp256k1Keccak256 => {
                 ECCurve::Secp256k1
             }
-            NamedCurveHash::Secp256r1SHA256 | NamedCurveHash::Secp256r1Keccak256 => {
+            Self::Secp256r1SHA256 | Self::Secp256r1Keccak256 => {
                 ECCurve::Secp256r1
             }
         }
     }
 
     /// Gets the hash algorithm.
-    pub fn hash_algorithm(self) -> HashAlgorithm {
+    #[must_use] 
+    pub const fn hash_algorithm(self) -> HashAlgorithm {
         match self {
-            NamedCurveHash::Secp256k1SHA256 | NamedCurveHash::Secp256r1SHA256 => {
+            Self::Secp256k1SHA256 | Self::Secp256r1SHA256 => {
                 HashAlgorithm::Sha256
             }
-            NamedCurveHash::Secp256k1Keccak256 | NamedCurveHash::Secp256r1Keccak256 => {
+            Self::Secp256k1Keccak256 | Self::Secp256r1Keccak256 => {
                 HashAlgorithm::Keccak256
             }
         }
     }
 
     /// Returns the string representation.
-    pub fn as_str(self) -> &'static str {
+    #[must_use] 
+    pub const fn as_str(self) -> &'static str {
         match self {
-            NamedCurveHash::Secp256k1SHA256 => "secp256k1SHA256",
-            NamedCurveHash::Secp256r1SHA256 => "secp256r1SHA256",
-            NamedCurveHash::Secp256k1Keccak256 => "secp256k1Keccak256",
-            NamedCurveHash::Secp256r1Keccak256 => "secp256r1Keccak256",
+            Self::Secp256k1SHA256 => "secp256k1SHA256",
+            Self::Secp256r1SHA256 => "secp256r1SHA256",
+            Self::Secp256k1Keccak256 => "secp256k1Keccak256",
+            Self::Secp256r1Keccak256 => "secp256r1Keccak256",
         }
     }
 }
@@ -92,7 +97,7 @@ impl<'de> Deserialize<'de> for NamedCurveHash {
         D: Deserializer<'de>,
     {
         let byte = u8::deserialize(deserializer)?;
-        NamedCurveHash::from_byte(byte).ok_or_else(|| {
+        Self::from_byte(byte).ok_or_else(|| {
             serde::de::Error::custom(format!("Invalid named curve hash byte: {byte}"))
         })
     }

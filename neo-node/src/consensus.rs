@@ -184,7 +184,12 @@ impl ConsensusSigner for WalletConsensusSigner {
     }
 
     fn sign(&self, data: &[u8], script_hash: &UInt160) -> neo_consensus::ConsensusResult<Vec<u8>> {
-        futures::executor::block_on(self.wallet.sign(data, script_hash)).map_err(|err| {
+        // Use block_in_place to avoid blocking the async runtime.
+        // SAFETY: This is safe because block_in_place moves the task to a blocking thread pool.
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(self.wallet.sign(data, script_hash))
+        })
+        .map_err(|err| {
             neo_consensus::ConsensusError::state_error(format!("Wallet signing failed: {err}"))
         })
     }

@@ -12,7 +12,7 @@
 use neo_json::{JObject, JToken};
 use serde::{Deserialize, Serialize};
 
-/// Unclaimed GAS information matching C# RpcUnclaimedGas
+/// Unclaimed GAS information matching C# `RpcUnclaimedGas`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcUnclaimedGas {
     /// Amount of unclaimed GAS
@@ -24,7 +24,8 @@ pub struct RpcUnclaimedGas {
 
 impl RpcUnclaimedGas {
     /// Converts to JSON
-    /// Matches C# ToJson
+    /// Matches C# `ToJson`
+    #[must_use] 
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
         json.insert(
@@ -36,14 +37,14 @@ impl RpcUnclaimedGas {
     }
 
     /// Creates from JSON
-    /// Matches C# FromJson
+    /// Matches C# `FromJson`
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let unclaimed_token = json
             .get("unclaimed")
             .ok_or("Missing or invalid 'unclaimed' field")?;
         let unclaimed = if let Some(text) = unclaimed_token.as_string() {
             text.parse::<i64>()
-                .map_err(|_| format!("Invalid unclaimed value: {}", text))?
+                .map_err(|_| format!("Invalid unclaimed value: {text}"))?
         } else if let Some(num) = unclaimed_token.as_number() {
             num as i64
         } else {
@@ -52,9 +53,9 @@ impl RpcUnclaimedGas {
 
         let address = json
             .get("address")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .ok_or("Missing or invalid 'address' field")?
-            .to_string();
+            ;
 
         Ok(Self { unclaimed, address })
     }

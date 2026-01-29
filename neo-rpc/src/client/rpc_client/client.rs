@@ -41,6 +41,7 @@ use super::{RpcClient, RpcClientHooks, MAX_JSON_NESTING, RPC_NAME_REGEX};
 
 impl RpcClient {
     /// Creates a configurable builder for the RPC client.
+    #[must_use] 
     pub fn builder(url: Url) -> RpcClientBuilder {
         RpcClientBuilder::new(url)
     }
@@ -61,6 +62,7 @@ impl RpcClient {
 
     /// Creates a new RPC client with an existing HTTP client
     /// Matches C# constructor
+    #[must_use] 
     pub fn with_client(
         client: Client,
         url: Url,
@@ -76,6 +78,7 @@ impl RpcClient {
     }
 
     /// Creates a new RPC client with an existing HTTP client and hook/timeout configuration.
+    #[must_use] 
     pub fn with_client_config(
         client: Client,
         url: Url,
@@ -93,7 +96,7 @@ impl RpcClient {
     }
 
     /// Creates an RPC request
-    /// Matches C# AsRpcRequest
+    /// Matches C# `AsRpcRequest`
     fn as_rpc_request(method: &str, params: Vec<JToken>) -> RpcRequest {
         RpcRequest {
             id: JToken::Number(1.0),
@@ -104,10 +107,10 @@ impl RpcClient {
     }
 
     /// Processes an RPC response
-    /// Matches C# AsRpcResponse
+    /// Matches C# `AsRpcResponse`
     fn as_rpc_response(content: &str, throw_on_error: bool) -> Result<RpcResponse, ClientRpcError> {
         let json = JToken::parse(content, MAX_JSON_NESTING)
-            .map_err(|e| ClientRpcError::new(-32700, format!("Parse error: {}", e)))?;
+            .map_err(|e| ClientRpcError::new(-32700, format!("Parse error: {e}")))?;
         let response_obj = match json {
             JToken::Object(obj) => obj,
             _ => {
@@ -119,7 +122,7 @@ impl RpcClient {
         };
 
         let mut response = RpcResponse::from_json(&response_obj)
-            .map_err(|e| ClientRpcError::new(-32700, format!("Invalid response: {}", e)))?;
+            .map_err(|e| ClientRpcError::new(-32700, format!("Invalid response: {e}")))?;
 
         response.raw_response = Some(content.to_string());
 
@@ -146,7 +149,7 @@ impl RpcClient {
     }
 
     /// Sends an asynchronous RPC request
-    /// Matches C# SendAsync
+    /// Matches C# `SendAsync`
     pub async fn send_async(
         &self,
         request: RpcRequest,
@@ -165,10 +168,10 @@ impl RpcClient {
                 .body(request_json)
                 .send()
                 .await
-                .map_err(|e| ClientRpcError::new(-32603, format!("HTTP error: {}", e)))?;
+                .map_err(|e| ClientRpcError::new(-32603, format!("HTTP error: {e}")))?;
 
             let content = response.text().await.map_err(|e| {
-                ClientRpcError::new(-32603, format!("Failed to read response: {}", e))
+                ClientRpcError::new(-32603, format!("Failed to read response: {e}"))
             })?;
 
             Self::as_rpc_response(&content, throw_on_error)
@@ -200,7 +203,7 @@ impl RpcClient {
     }
 
     /// Sends an RPC request and returns the result
-    /// Matches C# RpcSend
+    /// Matches C# `RpcSend`
     pub fn rpc_send(&self, method: &str, params: Vec<JToken>) -> Result<JToken, ClientRpcError> {
         let request = Self::as_rpc_request(method, params);
         let response = self.send(request, true)?;
@@ -210,7 +213,7 @@ impl RpcClient {
     }
 
     /// Sends an async RPC request and returns the result
-    /// Matches C# RpcSendAsync
+    /// Matches C# `RpcSendAsync`
     pub async fn rpc_send_async(
         &self,
         method: &str,
@@ -224,7 +227,7 @@ impl RpcClient {
     }
 
     /// Gets the RPC method name from a function name
-    /// Matches C# GetRpcName
+    /// Matches C# `GetRpcName`
     pub fn get_rpc_name(method_name: &str) -> String {
         let regex = RPC_NAME_REGEX.get_or_init(|| Regex::new(r"(.*?)(Hex|Both)?(Async)?").unwrap());
 
@@ -240,14 +243,14 @@ impl RpcClient {
     // Blockchain methods
 
     /// Returns the hash of the tallest block in the main chain
-    /// Matches C# GetBestBlockHashAsync
+    /// Matches C# `GetBestBlockHashAsync`
     pub async fn get_best_block_hash(&self) -> Result<String, ClientRpcError> {
         let result = self.rpc_send_async("getbestblockhash", vec![]).await?;
         token_as_string(result, "getbestblockhash")
     }
 
     /// Internal helper for sending requests by hash or index
-    /// Matches C# RpcSendByHashOrIndexAsync
+    /// Matches C# `RpcSendByHashOrIndexAsync`
     async fn rpc_send_by_hash_or_index(
         &self,
         rpc_name: &str,
@@ -257,7 +260,7 @@ impl RpcClient {
         let mut params = vec![];
 
         if let Ok(index) = hash_or_index.trim().parse::<i32>() {
-            params.push(JToken::Number(index as f64));
+            params.push(JToken::Number(f64::from(index)));
         } else {
             params.push(JToken::String(hash_or_index.to_string()));
         }
@@ -358,23 +361,23 @@ impl RpcClient {
     }
 
     /// Gets a block count
-    /// Matches C# GetBlockCountAsync
+    /// Matches C# `GetBlockCountAsync`
     pub async fn get_block_count(&self) -> Result<u32, ClientRpcError> {
         let result = self.rpc_send_async("getblockcount", vec![]).await?;
         token_as_number(result, "getblockcount").map(|n| n as u32)
     }
 
     /// Gets a block hash by index.
-    /// Matches C# GetBlockHashAsync
+    /// Matches C# `GetBlockHashAsync`
     pub async fn get_block_hash(&self, index: u32) -> Result<String, ClientRpcError> {
         let result = self
-            .rpc_send_async("getblockhash", vec![JToken::Number(index as f64)])
+            .rpc_send_async("getblockhash", vec![JToken::Number(f64::from(index))])
             .await?;
         token_as_string(result, "getblockhash")
     }
 
     /// Gets a block header count.
-    /// Matches C# GetBlockHeaderCountAsync
+    /// Matches C# `GetBlockHeaderCountAsync`
     pub async fn get_block_header_count(&self) -> Result<u32, ClientRpcError> {
         let result = self.rpc_send_async("getblockheadercount", vec![]).await?;
         token_as_number(result, "getblockheadercount").map(|n| n as u32)
@@ -383,7 +386,7 @@ impl RpcClient {
     /// Gets the system fee amount for a block.
     pub async fn get_block_sys_fee(&self, height: u32) -> Result<BigInt, ClientRpcError> {
         let result = self
-            .rpc_send_async("getblocksysfee", vec![JToken::Number(height as f64)])
+            .rpc_send_async("getblocksysfee", vec![JToken::Number(f64::from(height))])
             .await?;
         match result {
             JToken::String(value) => BigInt::from_str(&value)
@@ -436,14 +439,14 @@ impl RpcClient {
     }
 
     /// Obtains the number of connections for the node.
-    /// Matches C# GetConnectionCountAsync
+    /// Matches C# `GetConnectionCountAsync`
     pub async fn get_connection_count(&self) -> Result<u32, ClientRpcError> {
         let result = self.rpc_send_async("getconnectioncount", vec![]).await?;
         token_as_number(result, "getconnectioncount").map(|n| n as u32)
     }
 
     /// Returns the currently connected peers.
-    /// Matches C# GetPeersAsync
+    /// Matches C# `GetPeersAsync`
     pub async fn get_peers(&self) -> Result<RpcPeers, ClientRpcError> {
         let result = self.rpc_send_async("getpeers", vec![]).await?;
         let obj = token_as_object(result, "getpeers")?;
@@ -451,7 +454,7 @@ impl RpcClient {
     }
 
     /// Returns the node version details.
-    /// Matches C# GetVersionAsync
+    /// Matches C# `GetVersionAsync`
     pub async fn get_version(&self) -> Result<RpcVersion, ClientRpcError> {
         let result = self.rpc_send_async("getversion", vec![]).await?;
         let obj = token_as_object(result, "getversion")?;
@@ -459,7 +462,7 @@ impl RpcClient {
     }
 
     /// Returns the current committee members.
-    /// Matches C# GetCommitteeAsync
+    /// Matches C# `GetCommitteeAsync`
     pub async fn get_committee(&self) -> Result<Vec<String>, ClientRpcError> {
         let result = self.rpc_send_async("getcommittee", vec![]).await?;
         let array = result
@@ -479,7 +482,7 @@ impl RpcClient {
     }
 
     /// Returns the next block validators.
-    /// Matches C# GetNextBlockValidatorsAsync
+    /// Matches C# `GetNextBlockValidatorsAsync`
     pub async fn get_next_block_validators(&self) -> Result<Vec<RpcValidator>, ClientRpcError> {
         let result = self
             .rpc_send_async("getnextblockvalidators", vec![])
@@ -503,7 +506,7 @@ impl RpcClient {
     }
 
     /// Gets a storage item by contract hash and key.
-    /// Matches C# GetStorageAsync
+    /// Matches C# `GetStorageAsync`
     pub async fn get_storage(&self, hash: &str, key: &str) -> Result<String, ClientRpcError> {
         let result = self
             .rpc_send_by_hash_or_index("getstorage", hash, vec![JToken::String(key.to_string())])
@@ -516,14 +519,14 @@ impl RpcClient {
         let result = self
             .rpc_send_async(
                 "getstorage",
-                vec![JToken::Number(id as f64), JToken::String(key.to_string())],
+                vec![JToken::Number(f64::from(id)), JToken::String(key.to_string())],
             )
             .await?;
         token_as_string(result, "getstorage")
     }
 
     /// Returns the block index in which the transaction is found.
-    /// Matches C# GetTransactionHeightAsync
+    /// Matches C# `GetTransactionHeightAsync`
     pub async fn get_transaction_height(&self, tx_hash: &str) -> Result<u32, ClientRpcError> {
         let result = self
             .rpc_send_async(
@@ -538,7 +541,7 @@ impl RpcClient {
     }
 
     /// Returns the list of native contracts.
-    /// Matches C# GetNativeContractsAsync
+    /// Matches C# `GetNativeContractsAsync`
     pub async fn get_native_contracts(&self) -> Result<Vec<RpcContractState>, ClientRpcError> {
         let result = self.rpc_send_async("getnativecontracts", vec![]).await?;
         let array = result
@@ -560,14 +563,14 @@ impl RpcClient {
     }
 
     /// Close the wallet opened by RPC.
-    /// Matches C# CloseWalletAsync
+    /// Matches C# `CloseWalletAsync`
     pub async fn close_wallet(&self) -> Result<bool, ClientRpcError> {
         let result = self.rpc_send_async("closewallet", vec![]).await?;
         token_as_boolean(result, "closewallet")
     }
 
     /// Exports the private key of the specified address.
-    /// Matches C# DumpPrivKeyAsync
+    /// Matches C# `DumpPrivKeyAsync`
     pub async fn dump_priv_key(&self, address: &str) -> Result<String, ClientRpcError> {
         let result = self
             .rpc_send_async("dumpprivkey", vec![JToken::String(address.to_string())])
@@ -576,7 +579,7 @@ impl RpcClient {
     }
 
     /// Imports a WIF private key into the wallet opened by RPC.
-    /// Matches C# ImportPrivKeyAsync
+    /// Matches C# `ImportPrivKeyAsync`
     pub async fn import_priv_key(&self, wif: &str) -> Result<RpcAccount, ClientRpcError> {
         let result = self
             .rpc_send_async("importprivkey", vec![JToken::String(wif.to_string())])
@@ -586,7 +589,7 @@ impl RpcClient {
     }
 
     /// Validates a wallet address.
-    /// Matches C# ValidateAddressAsync
+    /// Matches C# `ValidateAddressAsync`
     pub async fn validate_address(
         &self,
         address: &str,
@@ -599,14 +602,14 @@ impl RpcClient {
     }
 
     /// Creates a new account in the wallet opened by RPC.
-    /// Matches C# GetNewAddressAsync
+    /// Matches C# `GetNewAddressAsync`
     pub async fn get_new_address(&self) -> Result<String, ClientRpcError> {
         let result = self.rpc_send_async("getnewaddress", vec![]).await?;
         token_as_string(result, "getnewaddress")
     }
 
     /// Returns the balance of the specified asset in the wallet.
-    /// Matches C# GetWalletBalanceAsync
+    /// Matches C# `GetWalletBalanceAsync`
     pub async fn get_wallet_balance(&self, asset_id: &str) -> Result<BigDecimal, ClientRpcError> {
         let result = self
             .rpc_send_async(
@@ -617,7 +620,7 @@ impl RpcClient {
         let obj = token_as_object(result, "getwalletbalance")?;
         let balance_str = obj
             .get("balance")
-            .and_then(|value| value.as_string())
+            .and_then(neo_json::JToken::as_string)
             .ok_or_else(|| ClientRpcError::new(-32603, "Missing balance in getwalletbalance"))?;
         let balance = BigInt::from_str(&balance_str).map_err(|_| {
             ClientRpcError::new(-32603, format!("Invalid balance value: {balance_str}"))
@@ -633,7 +636,7 @@ impl RpcClient {
     }
 
     /// Gets the amount of unclaimed GAS for an address.
-    /// Matches C# GetUnclaimedGasAsync
+    /// Matches C# `GetUnclaimedGasAsync`
     pub async fn get_unclaimed_gas(
         &self,
         address: &str,
@@ -646,7 +649,7 @@ impl RpcClient {
     }
 
     /// Gets the amount of unclaimed GAS in the wallet.
-    /// Matches C# GetWalletUnclaimedGasAsync
+    /// Matches C# `GetWalletUnclaimedGasAsync`
     pub async fn get_wallet_unclaimed_gas(&self) -> Result<BigDecimal, ClientRpcError> {
         let result = self.rpc_send_async("getwalletunclaimedgas", vec![]).await?;
         let value = token_as_string(result, "getwalletunclaimedgas")?;
@@ -657,7 +660,7 @@ impl RpcClient {
     }
 
     /// Lists all the accounts in the current wallet.
-    /// Matches C# ListAddressAsync
+    /// Matches C# `ListAddressAsync`
     pub async fn list_address(&self) -> Result<Vec<RpcAccount>, ClientRpcError> {
         let result = self.rpc_send_async("listaddress", vec![]).await?;
         let array = result
@@ -678,7 +681,7 @@ impl RpcClient {
     }
 
     /// Open wallet file in the provider's machine.
-    /// Matches C# OpenWalletAsync
+    /// Matches C# `OpenWalletAsync`
     pub async fn open_wallet(&self, path: &str, password: &str) -> Result<bool, ClientRpcError> {
         let result = self
             .rpc_send_async(
@@ -693,7 +696,7 @@ impl RpcClient {
     }
 
     /// Transfer from the specified address to the destination address.
-    /// Matches C# SendFromAsync
+    /// Matches C# `SendFromAsync`
     pub async fn send_from(
         &self,
         asset_id: &str,
@@ -712,7 +715,7 @@ impl RpcClient {
     }
 
     /// Bulk transfer order, optionally specifying a sender address.
-    /// Matches C# SendManyAsync
+    /// Matches C# `SendManyAsync`
     pub async fn send_many(
         &self,
         from_address: &str,
@@ -732,7 +735,7 @@ impl RpcClient {
     }
 
     /// Transfer asset from the wallet to the destination address.
-    /// Matches C# SendToAddressAsync
+    /// Matches C# `SendToAddressAsync`
     pub async fn send_to_address(
         &self,
         asset_id: &str,
@@ -749,7 +752,7 @@ impl RpcClient {
     }
 
     /// Obtains the list of unconfirmed transactions in memory.
-    /// Matches C# GetRawMempoolAsync
+    /// Matches C# `GetRawMempoolAsync`
     pub async fn get_raw_mempool(&self) -> Result<Vec<String>, ClientRpcError> {
         let result = self.rpc_send_async("getrawmempool", vec![]).await?;
         let array = result
@@ -769,7 +772,7 @@ impl RpcClient {
     }
 
     /// Obtains the list of unconfirmed transactions in memory (verified + unverified).
-    /// Matches C# GetRawMempoolBothAsync
+    /// Matches C# `GetRawMempoolBothAsync`
     pub async fn get_raw_mempool_both(&self) -> Result<RpcRawMemPool, ClientRpcError> {
         let result = self
             .rpc_send_async("getrawmempool", vec![JToken::Boolean(true)])
@@ -862,7 +865,7 @@ impl RpcClient {
         id: i32,
     ) -> Result<RpcContractState, ClientRpcError> {
         let result = self
-            .rpc_send_async("getcontractstate", vec![JToken::Number(id as f64)])
+            .rpc_send_async("getcontractstate", vec![JToken::Number(f64::from(id))])
             .await?;
         let obj = token_as_object(result, "getcontractstate")?;
         RpcContractState::from_json(&obj).map_err(|err| ClientRpcError::new(-32603, err))
@@ -897,7 +900,7 @@ impl RpcClient {
     }
 
     /// Retrieves the application log for a block or transaction hash.
-    /// Matches C# GetApplicationLogAsync
+    /// Matches C# `GetApplicationLogAsync`
     pub async fn get_application_log(
         &self,
         hash: &str,
@@ -911,7 +914,7 @@ impl RpcClient {
     }
 
     /// Retrieves the application log for a block or transaction hash with trigger filtering.
-    /// Matches C# GetApplicationLogAsync with trigger parameter
+    /// Matches C# `GetApplicationLogAsync` with trigger parameter
     pub async fn get_application_log_with_trigger(
         &self,
         hash: &str,
@@ -928,7 +931,7 @@ impl RpcClient {
     }
 
     /// Retrieves a transaction by hash as raw hex.
-    /// Matches C# GetRawTransactionHexAsync
+    /// Matches C# `GetRawTransactionHexAsync`
     pub async fn get_raw_transaction_hex(&self, hash: &str) -> Result<String, ClientRpcError> {
         let result = self
             .rpc_send_async("getrawtransaction", vec![JToken::String(hash.to_string())])
@@ -937,7 +940,7 @@ impl RpcClient {
     }
 
     /// Calculates the network fee for a transaction.
-    /// Matches C# CalculateNetworkFeeAsync
+    /// Matches C# `CalculateNetworkFeeAsync`
     pub async fn calculate_network_fee(&self, tx: &Transaction) -> Result<i64, ClientRpcError> {
         let mut writer = BinaryWriter::new();
         tx.serialize(&mut writer)
@@ -973,7 +976,7 @@ impl RpcClient {
         let obj = token_as_object(result, "sendrawtransaction")?;
         let hash = obj
             .get("hash")
-            .and_then(|value| value.as_string())
+            .and_then(neo_json::JToken::as_string)
             .ok_or_else(|| ClientRpcError::new(-32603, "Missing hash in sendrawtransaction"))?;
         UInt256::parse(&hash)
             .map_err(|err| ClientRpcError::new(-32603, format!("Invalid tx hash: {err}")))
@@ -993,7 +996,7 @@ impl RpcClient {
         let obj = token_as_object(result, "submitblock")?;
         let hash = obj
             .get("hash")
-            .and_then(|value| value.as_string())
+            .and_then(neo_json::JToken::as_string)
             .ok_or_else(|| ClientRpcError::new(-32603, "Missing hash in submitblock"))?;
         UInt256::parse(&hash)
             .map_err(|err| ClientRpcError::new(-32603, format!("Invalid block hash: {err}")))

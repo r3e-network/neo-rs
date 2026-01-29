@@ -29,7 +29,7 @@ use crate::{UInt160, UInt256};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::{Duration, Instant, SystemTime};
 
-/// namespace Neo.Ledger -> public class MemoryPool : IReadOnlyCollection<Transaction>
+/// namespace Neo.Ledger -> public class MemoryPool : IReadOnlyCollection<`Transaction`>
 /// Allow a reverified transaction to be rebroadcast if it has been this many block times since last broadcast.
 const _BLOCKS_TILL_REBROADCAST: i32 = 10;
 
@@ -334,10 +334,15 @@ impl MemoryPool {
             Err(result) => return result,
         };
 
+        // OPTIMIZATION: Pre-allocate with exact capacity since we know the number of
+        // conflicting transactions upfront. This avoids reallocations during the map operation.
         let conflict_transactions: Vec<Transaction> = conflicts_to_remove
             .iter()
             .map(|item| item.transaction.clone())
-            .collect();
+            .fold(Vec::with_capacity(conflicts_to_remove.len()), |mut acc, tx| {
+                acc.push(tx);
+                acc
+            });
 
         // State-dependent validation (requires blockchain state)
         let result = tx.verify_state_dependent(

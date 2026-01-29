@@ -4,7 +4,7 @@ use neo_vm::StackItem;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-/// A list that supports wildcard (matches C# WildcardContainer<T>)
+/// A list that supports wildcard (matches C# WildcardContainer\<T>)
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum WildCardContainer<T> {

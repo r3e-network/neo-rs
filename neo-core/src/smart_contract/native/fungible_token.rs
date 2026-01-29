@@ -1,7 +1,7 @@
 //! Fungible token base trait implementation.
 //!
 //! This module provides the base trait for NEP-17 compatible tokens,
-//! equivalent to the C# FungibleToken<TState> abstract class.
+//! equivalent to the C# FungibleToken\<TState> abstract class.
 
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
@@ -18,7 +18,7 @@ pub const PREFIX_TOTAL_SUPPLY: u8 = 11;
 pub const PREFIX_ACCOUNT: u8 = 20;
 
 /// Base trait for fungible tokens compatible with NEP-17.
-/// Equivalent to C# FungibleToken<TState> abstract class.
+/// Equivalent to C# FungibleToken\<TState> abstract class.
 pub trait FungibleToken: NativeContract {
     /// The symbol of the token.
     fn symbol(&self) -> &str;

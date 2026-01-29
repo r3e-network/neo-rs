@@ -12,7 +12,7 @@
 use neo_core::smart_contract::{method_token::MethodToken, CallFlags};
 use neo_json::JObject;
 use neo_primitives::UInt160;
-/// RPC method token helper matching C# RpcMethodToken
+/// RPC method token helper matching C# `RpcMethodToken`
 pub struct RpcMethodToken {
     /// The method token
     pub method_token: MethodToken,
@@ -20,25 +20,25 @@ pub struct RpcMethodToken {
 
 impl RpcMethodToken {
     /// Creates from JSON
-    /// Matches C# FromJson
+    /// Matches C# `FromJson`
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let hash = json
             .get("hash")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .and_then(|s| UInt160::parse(&s).ok())
             .ok_or("Missing or invalid 'hash' field")?;
 
         let method = json
             .get("method")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .ok_or("Missing or invalid 'method' field")?
-            .to_string();
+            ;
 
         let parameters_count = parse_u16_field(json, "paramcount")?;
 
         let has_return_value = json
             .get("hasreturnvalue")
-            .map(|v| v.as_boolean())
+            .map(neo_json::JToken::as_boolean)
             .ok_or("Missing or invalid 'hasreturnvalue' field")?;
 
         let call_flags_token = json
@@ -65,7 +65,8 @@ impl RpcMethodToken {
     }
 
     /// Converts to JSON
-    /// Matches C# ToJson
+    /// Matches C# `ToJson`
+    #[must_use] 
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
         json.insert(
@@ -78,7 +79,7 @@ impl RpcMethodToken {
         );
         json.insert(
             "paramcount".to_string(),
-            neo_json::JToken::Number(self.method_token.parameters_count as f64),
+            neo_json::JToken::Number(f64::from(self.method_token.parameters_count)),
         );
         json.insert(
             "hasreturnvalue".to_string(),

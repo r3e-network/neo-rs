@@ -124,8 +124,8 @@ fn memcpy(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
 /// Implements the CAT operation.
 ///
 /// # Security Note
-/// This operation enforces MaxItemSize limits after concatenation to prevent
-/// memory exhaustion attacks via incremental ByteString building.
+/// This operation enforces `MaxItemSize` limits after concatenation to prevent
+/// memory exhaustion attacks via incremental `ByteString` building.
 fn cat(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // SECURITY FIX (M-2): Get max_item_size limit before borrowing context mutably
     let max_item_size = engine.limits().max_item_size as usize;

@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use thiserror::Error;
 
-/// Errors returned by DataCache operations.
+/// Errors returned by `DataCache` operations.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum DataCacheError {
     /// Cache is read-only and cannot be modified.
@@ -26,7 +26,7 @@ pub enum DataCacheError {
     KeyNotFound,
 }
 
-/// Result type for DataCache operations.
+/// Result type for `DataCache` operations.
 pub type DataCacheResult<T = ()> = Result<T, DataCacheError>;
 
 /// Function type for store get operations.
@@ -42,7 +42,7 @@ pub type StoreFindFn =
 /// - State tracking for batch commits
 /// - Optional backing store delegation
 /// - Read-only mode support
-/// - Concurrent access via RwLock
+/// - Concurrent access via `RwLock`
 ///
 /// # Example
 ///
@@ -89,6 +89,7 @@ impl DataCache {
     /// # Arguments
     ///
     /// * `read_only` - If true, the cache will reject write operations.
+    #[must_use] 
     pub fn new(read_only: bool) -> Self {
         Self::new_with_store(read_only, None, None)
     }
@@ -100,6 +101,7 @@ impl DataCache {
     /// * `read_only` - If true, the cache will reject write operations.
     /// * `store_get` - Optional function to fetch from backing store.
     /// * `store_find` - Optional function to search backing store.
+    #[must_use] 
     pub fn new_with_store(
         read_only: bool,
         store_get: Option<Arc<StoreGetFn>>,
@@ -119,11 +121,13 @@ impl DataCache {
     }
 
     /// Returns whether this cache is read-only.
-    pub fn is_read_only(&self) -> bool {
+    #[must_use] 
+    pub const fn is_read_only(&self) -> bool {
         self.read_only
     }
 
     /// Gets an item from the cache or backing store.
+    #[must_use] 
     pub fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {
         // First check in-memory cache
         {
@@ -164,6 +168,7 @@ impl DataCache {
     }
 
     /// Checks if a key exists in the cache or backing store.
+    #[must_use] 
     pub fn contains(&self, key: &StorageKey) -> bool {
         self.try_get(key).is_some()
     }
@@ -248,6 +253,7 @@ impl DataCache {
     }
 
     /// Returns all items that have been modified.
+    #[must_use] 
     pub fn tracked_items(&self) -> Vec<(StorageKey, Trackable)> {
         self.dictionary
             .read()
@@ -286,11 +292,13 @@ impl DataCache {
     }
 
     /// Returns the number of items in the cache (including deleted/not-found markers).
+    #[must_use] 
     pub fn len(&self) -> usize {
         self.dictionary.read().len()
     }
 
     /// Returns whether the cache is empty.
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.dictionary.read().is_empty()
     }
@@ -304,6 +312,7 @@ impl DataCache {
     }
 
     /// Returns the number of modified items.
+    #[must_use] 
     pub fn modified_count(&self) -> usize {
         self.dictionary
             .read()
@@ -313,6 +322,7 @@ impl DataCache {
     }
 
     /// Finds items matching a prefix in the cache and backing store.
+    #[must_use] 
     pub fn find(
         &self,
         prefix: Option<&StorageKey>,

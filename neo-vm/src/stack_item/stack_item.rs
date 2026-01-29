@@ -37,7 +37,7 @@ fn compound_identity(item: &StackItem) -> Option<CompoundIdentity> {
     }
 }
 
-/// A trait for interop interfaces that can be wrapped by a stack_item.
+/// A trait for interop interfaces that can be wrapped by a `stack_item`.
 pub trait InteropInterface: fmt::Debug + Send + Sync {
     /// Gets the type of the interop interface.
     fn interface_type(&self) -> &str;
@@ -82,63 +82,68 @@ pub enum StackItem {
 
 impl StackItem {
     /// The singleton True value.
-    pub fn true_value() -> Self {
-        StackItem::Boolean(true)
+    #[must_use] 
+    pub const fn true_value() -> Self {
+        Self::Boolean(true)
     }
 
     /// The singleton False value.
-    pub fn false_value() -> Self {
-        StackItem::Boolean(false)
+    #[must_use] 
+    pub const fn false_value() -> Self {
+        Self::Boolean(false)
     }
 
     /// The singleton Null value.
-    pub fn null() -> Self {
-        StackItem::Null
+    #[must_use] 
+    pub const fn null() -> Self {
+        Self::Null
     }
 
     /// Creates a boolean stack item.
-    pub fn from_bool(value: bool) -> Self {
-        StackItem::Boolean(value)
+    #[must_use] 
+    pub const fn from_bool(value: bool) -> Self {
+        Self::Boolean(value)
     }
 
     /// Creates an integer stack item.
     pub fn from_int<T: Into<BigInt>>(value: T) -> Self {
-        StackItem::Integer(value.into())
+        Self::Integer(value.into())
     }
 
     /// Creates a byte string stack item.
     pub fn from_byte_string<T: Into<Vec<u8>>>(value: T) -> Self {
-        StackItem::ByteString(value.into())
+        Self::ByteString(value.into())
     }
 
     /// Creates a buffer stack item.
     pub fn from_buffer<T: Into<Vec<u8>>>(value: T) -> Self {
-        StackItem::Buffer(BufferItem::new(value.into()))
+        Self::Buffer(BufferItem::new(value.into()))
     }
 
     /// Creates an array stack item.
-    pub fn from_array<T: Into<Vec<StackItem>>>(value: T) -> Self {
-        StackItem::Array(ArrayItem::new_untracked(value.into()))
+    pub fn from_array<T: Into<Vec<Self>>>(value: T) -> Self {
+        Self::Array(ArrayItem::new_untracked(value.into()))
     }
 
     /// Creates a struct stack item.
-    pub fn from_struct<T: Into<Vec<StackItem>>>(value: T) -> Self {
-        StackItem::Struct(StructItem::new_untracked(value.into()))
+    pub fn from_struct<T: Into<Vec<Self>>>(value: T) -> Self {
+        Self::Struct(StructItem::new_untracked(value.into()))
     }
 
     /// Creates a map stack item.
-    pub fn from_map<T: Into<VmOrderedDictionary<StackItem, StackItem>>>(value: T) -> Self {
-        StackItem::Map(MapItem::new_untracked(value.into()))
+    pub fn from_map<T: Into<VmOrderedDictionary<Self, Self>>>(value: T) -> Self {
+        Self::Map(MapItem::new_untracked(value.into()))
     }
 
     /// Creates a pointer stack item.
+    #[must_use] 
     pub fn from_pointer(script: Arc<Script>, position: usize) -> Self {
-        StackItem::Pointer(PointerItem::new(script, position))
+        Self::Pointer(PointerItem::new(script, position))
     }
 
     /// Creates an interop interface stack item.
     pub fn from_interface<T: InteropInterface + 'static>(value: T) -> Self {
-        StackItem::InteropInterface(Arc::new(value))
+        Self::InteropInterface(Arc::new(value))
     }
 
     /// Ensures any compound stack items share the provided reference counter.
@@ -148,41 +153,43 @@ impl StackItem {
     /// be constructed without a counter and are attached when they enter the VM.
     pub fn attach_reference_counter(&mut self, rc: &ReferenceCounter) -> VmResult<()> {
         match self {
-            StackItem::Array(array) => array.attach_reference_counter(rc),
-            StackItem::Struct(structure) => structure.attach_reference_counter(rc),
-            StackItem::Map(map) => map.attach_reference_counter(rc),
+            Self::Array(array) => array.attach_reference_counter(rc),
+            Self::Struct(structure) => structure.attach_reference_counter(rc),
+            Self::Map(map) => map.attach_reference_counter(rc),
             _ => Ok(()),
         }
     }
 
     /// Returns the type of the stack item.
-    pub fn stack_item_type(&self) -> StackItemType {
+    #[must_use] 
+    pub const fn stack_item_type(&self) -> StackItemType {
         match self {
-            StackItem::Null => StackItemType::Any,
-            StackItem::Boolean(_) => StackItemType::Boolean,
-            StackItem::Integer(_) => StackItemType::Integer,
-            StackItem::ByteString(_) => StackItemType::ByteString,
-            StackItem::Buffer(_) => StackItemType::Buffer,
-            StackItem::Array(_) => StackItemType::Array,
-            StackItem::Struct(_) => StackItemType::Struct,
-            StackItem::Map(_) => StackItemType::Map,
-            StackItem::Pointer(_) => StackItemType::Pointer,
-            StackItem::InteropInterface(_) => StackItemType::InteropInterface,
+            Self::Null => StackItemType::Any,
+            Self::Boolean(_) => StackItemType::Boolean,
+            Self::Integer(_) => StackItemType::Integer,
+            Self::ByteString(_) => StackItemType::ByteString,
+            Self::Buffer(_) => StackItemType::Buffer,
+            Self::Array(_) => StackItemType::Array,
+            Self::Struct(_) => StackItemType::Struct,
+            Self::Map(_) => StackItemType::Map,
+            Self::Pointer(_) => StackItemType::Pointer,
+            Self::InteropInterface(_) => StackItemType::InteropInterface,
         }
     }
 
     /// Returns true if the stack item is null.
-    pub fn is_null(&self) -> bool {
-        matches!(self, StackItem::Null)
+    #[must_use] 
+    pub const fn is_null(&self) -> bool {
+        matches!(self, Self::Null)
     }
 
     /// Converts the stack item to a boolean.
     pub fn as_bool(&self) -> VmResult<bool> {
         match self {
-            StackItem::Null => Ok(false),
-            StackItem::Boolean(b) => Ok(*b),
-            StackItem::Integer(i) => Ok(!i.is_zero()),
-            StackItem::ByteString(b) => {
+            Self::Null => Ok(false),
+            Self::Boolean(b) => Ok(*b),
+            Self::Integer(i) => Ok(!i.is_zero()),
+            Self::ByteString(b) => {
                 if b.len() > crate::stack_item::integer::Integer::MAX_SIZE {
                     return Err(VmError::invalid_type_simple(
                         "Cannot convert ByteString to Boolean",
@@ -190,24 +197,24 @@ impl StackItem {
                 }
                 Ok(b.iter().any(|&byte| byte != 0))
             }
-            StackItem::Buffer(_b) => Ok(true),
-            StackItem::Array(_a) => Ok(true),
-            StackItem::Struct(_s) => Ok(true),
-            StackItem::Map(_m) => Ok(true),
-            StackItem::Pointer(_pointer) => Ok(true),
-            StackItem::InteropInterface(_i) => Ok(true),
+            Self::Buffer(_b) => Ok(true),
+            Self::Array(_a) => Ok(true),
+            Self::Struct(_s) => Ok(true),
+            Self::Map(_m) => Ok(true),
+            Self::Pointer(_pointer) => Ok(true),
+            Self::InteropInterface(_i) => Ok(true),
         }
     }
 
     /// Converts the stack item to an integer.
     pub fn as_int(&self) -> VmResult<BigInt> {
         match self {
-            StackItem::Null => Err(VmError::invalid_type_simple(
+            Self::Null => Err(VmError::invalid_type_simple(
                 "Cannot convert Null to Integer",
             )),
-            StackItem::Boolean(b) => Ok(BigInt::from(if *b { 1 } else { 0 })),
-            StackItem::Integer(i) => Ok(i.clone()),
-            StackItem::ByteString(b) => {
+            Self::Boolean(b) => Ok(BigInt::from(i32::from(*b))),
+            Self::Integer(i) => Ok(i.clone()),
+            Self::ByteString(b) => {
                 if b.len() > crate::stack_item::integer::Integer::MAX_SIZE {
                     return Err(VmError::invalid_type_simple(
                         "Cannot convert ByteString to Integer",
@@ -220,7 +227,7 @@ impl StackItem {
                 let bytes = b.clone();
                 let is_negative = (bytes[bytes.len() - 1] & 0x80) != 0;
                 if is_negative {
-                    let mut bytes_copy = bytes.clone();
+                    let mut bytes_copy = bytes;
                     let len = bytes_copy.len();
                     bytes_copy[len - 1] &= 0x7F;
                     let positive_value = BigInt::from_bytes_le(num_bigint::Sign::Plus, &bytes_copy);
@@ -230,7 +237,7 @@ impl StackItem {
                     Ok(BigInt::from_bytes_le(num_bigint::Sign::Plus, &bytes))
                 }
             }
-            StackItem::Buffer(b) => {
+            Self::Buffer(b) => {
                 if b.len() > crate::stack_item::integer::Integer::MAX_SIZE {
                     return Err(VmError::invalid_type_simple(
                         "Cannot convert Buffer to Integer",
@@ -243,7 +250,7 @@ impl StackItem {
                 let bytes = b.data();
                 let is_negative = (bytes[bytes.len() - 1] & 0x80) != 0;
                 if is_negative {
-                    let mut bytes_copy = bytes.clone();
+                    let mut bytes_copy = bytes;
                     let len = bytes_copy.len();
                     bytes_copy[len - 1] &= 0x7F;
                     let positive_value = BigInt::from_bytes_le(num_bigint::Sign::Plus, &bytes_copy);
@@ -270,7 +277,7 @@ impl StackItem {
     /// Returns the pointer represented by the stack item.
     pub fn get_pointer(&self) -> VmResult<PointerItem> {
         match self {
-            StackItem::Pointer(pointer) => Ok(pointer.clone()),
+            Self::Pointer(pointer) => Ok(pointer.clone()),
             _ => Err(VmError::invalid_type_simple(
                 "Cannot convert stack item to pointer",
             )),
@@ -280,28 +287,28 @@ impl StackItem {
     /// Converts the stack item to a byte array.
     pub fn as_bytes(&self) -> VmResult<Vec<u8>> {
         match self {
-            StackItem::Null => Ok(vec![]),
-            StackItem::Boolean(b) => Ok(vec![if *b { 1 } else { 0 }]),
-            StackItem::Integer(i) => Ok(normalize_bigint_bytes(i)),
-            StackItem::ByteString(b) => Ok(b.clone()),
-            StackItem::Buffer(b) => Ok(b.data()),
+            Self::Null => Ok(vec![]),
+            Self::Boolean(b) => Ok(vec![u8::from(*b)]),
+            Self::Integer(i) => Ok(normalize_bigint_bytes(i)),
+            Self::ByteString(b) => Ok(b.clone()),
+            Self::Buffer(b) => Ok(b.data()),
             _ => Err(VmError::invalid_type_simple("Cannot convert to ByteArray")),
         }
     }
 
     /// Converts the stack item to an array.
-    pub fn as_array(&self) -> VmResult<Vec<StackItem>> {
+    pub fn as_array(&self) -> VmResult<Vec<Self>> {
         match self {
-            StackItem::Array(a) => Ok(a.items()),
-            StackItem::Struct(s) => Ok(s.items()),
+            Self::Array(a) => Ok(a.items()),
+            Self::Struct(s) => Ok(s.items()),
             _ => Err(VmError::invalid_type_simple("Cannot convert to Array")),
         }
     }
 
     /// Converts the stack item to a map.
-    pub fn as_map(&self) -> VmResult<VmOrderedDictionary<StackItem, StackItem>> {
+    pub fn as_map(&self) -> VmResult<VmOrderedDictionary<Self, Self>> {
         match self {
-            StackItem::Map(m) => Ok(m.items()),
+            Self::Map(m) => Ok(m.items()),
             _ => Err(VmError::invalid_type_simple("Cannot convert to Map")),
         }
     }
@@ -310,7 +317,7 @@ impl StackItem {
     /// Production implementation with proper type downcasting for C# compatibility.
     pub fn as_interface<T: InteropInterface + 'static>(&self) -> VmResult<&T> {
         match self {
-            StackItem::InteropInterface(i) => {
+            Self::InteropInterface(i) => {
                 // Use Any trait for runtime type checking (matches C# reflection pattern)
                 let interface_any = i.as_any();
 
@@ -329,6 +336,7 @@ impl StackItem {
     }
 
     /// Creates a deep clone of the stack item.
+    #[must_use] 
     pub fn deep_clone(&self) -> Self {
         self.deep_clone_with_refs(&mut std::collections::HashMap::new())
     }
@@ -336,17 +344,17 @@ impl StackItem {
     /// Creates a deep copy respecting execution limits (mirrors C# behaviour).
     pub fn deep_copy(&self, limits: &ExecutionEngineLimits) -> VmResult<Self> {
         match self {
-            StackItem::Struct(structure) => {
+            Self::Struct(structure) => {
                 let cloned = structure.clone_with_limits(limits)?;
-                Ok(StackItem::Struct(cloned))
+                Ok(Self::Struct(cloned))
             }
-            StackItem::Array(array) => {
+            Self::Array(array) => {
                 let copy = array.deep_copy(array.reference_counter())?;
-                Ok(StackItem::Array(copy))
+                Ok(Self::Array(copy))
             }
-            StackItem::Map(map) => {
+            Self::Map(map) => {
                 let copy = map.deep_copy(map.reference_counter())?;
-                Ok(StackItem::Map(copy))
+                Ok(Self::Map(copy))
             }
             _ => Ok(self.deep_clone()),
         }
@@ -355,7 +363,7 @@ impl StackItem {
     /// Creates a deep clone of the stack item with reference tracking to handle cycles.
     fn deep_clone_with_refs(
         &self,
-        refs: &mut std::collections::HashMap<CompoundIdentity, StackItem>,
+        refs: &mut std::collections::HashMap<CompoundIdentity, Self>,
     ) -> Self {
         if let Some(self_id) = compound_identity(self) {
             if let Some(cloned) = refs.get(&self_id) {
@@ -365,17 +373,17 @@ impl StackItem {
 
         // Clone the item based on its type
         let result = match self {
-            StackItem::Null => StackItem::Null,
-            StackItem::Boolean(b) => StackItem::Boolean(*b),
-            StackItem::Integer(i) => StackItem::Integer(i.clone()),
-            StackItem::ByteString(b) => StackItem::ByteString(b.clone()),
-            StackItem::Buffer(b) => StackItem::Buffer(BufferItem::new(b.data())),
-            StackItem::Pointer(p) => StackItem::Pointer(p.clone()),
-            StackItem::InteropInterface(i) => StackItem::InteropInterface(i.clone()),
+            Self::Null => Self::Null,
+            Self::Boolean(b) => Self::Boolean(*b),
+            Self::Integer(i) => Self::Integer(i.clone()),
+            Self::ByteString(b) => Self::ByteString(b.clone()),
+            Self::Buffer(b) => Self::Buffer(BufferItem::new(b.data())),
+            Self::Pointer(p) => Self::Pointer(p.clone()),
+            Self::InteropInterface(i) => Self::InteropInterface(i.clone()),
 
-            StackItem::Array(a) => {
+            Self::Array(a) => {
                 let cloned_array = ArrayItem::new_untracked(Vec::new());
-                let cloned_item = StackItem::Array(cloned_array.clone());
+                let cloned_item = Self::Array(cloned_array.clone());
                 if let Some(self_id) = compound_identity(self) {
                     refs.insert(self_id, cloned_item.clone());
                 }
@@ -385,9 +393,9 @@ impl StackItem {
                 }
                 cloned_item
             }
-            StackItem::Struct(s) => {
+            Self::Struct(s) => {
                 let cloned_struct = StructItem::new_untracked(Vec::new());
-                let cloned_item = StackItem::Struct(cloned_struct.clone());
+                let cloned_item = Self::Struct(cloned_struct.clone());
                 if let Some(self_id) = compound_identity(self) {
                     refs.insert(self_id, cloned_item.clone());
                 }
@@ -397,9 +405,9 @@ impl StackItem {
                 }
                 cloned_item
             }
-            StackItem::Map(m) => {
+            Self::Map(m) => {
                 let cloned_map = MapItem::new_untracked(VmOrderedDictionary::new());
-                let cloned_item = StackItem::Map(cloned_map.clone());
+                let cloned_item = Self::Map(cloned_map.clone());
                 if let Some(self_id) = compound_identity(self) {
                     refs.insert(self_id, cloned_item.clone());
                 }
@@ -422,13 +430,13 @@ impl StackItem {
     /// Clears all references to other stack items.
     pub fn clear_references(&mut self) {
         match self {
-            StackItem::Array(array) => {
+            Self::Array(array) => {
                 let _ = array.clear();
             }
-            StackItem::Struct(structure) => {
+            Self::Struct(structure) => {
                 let _ = structure.clear();
             }
-            StackItem::Map(map) => {
+            Self::Map(map) => {
                 let _ = map.clear();
             }
             _ => {}
@@ -436,34 +444,31 @@ impl StackItem {
     }
 
     /// Computes a deterministic hash code compatible with the C# implementation.
+    #[must_use] 
     pub fn get_hash_code(&self) -> i32 {
         match self {
-            StackItem::Null => 0,
-            StackItem::Boolean(b) => {
-                if *b {
-                    1
-                } else {
-                    0
-                }
+            Self::Null => 0,
+            Self::Boolean(b) => {
+                i32::from(*b)
             }
-            StackItem::Integer(i) => hash_bytes(&i.to_signed_bytes_le()),
-            StackItem::ByteString(b) => hash_bytes(b),
-            StackItem::Buffer(b) => hash_bytes(&b.data()),
-            StackItem::Array(array) => {
+            Self::Integer(i) => hash_bytes(&i.to_signed_bytes_le()),
+            Self::ByteString(b) => hash_bytes(b),
+            Self::Buffer(b) => hash_bytes(&b.data()),
+            Self::Array(array) => {
                 let mut hash = combine_hash(17, array.len() as i32);
-                for item in array.iter() {
+                for item in array {
                     hash = combine_hash(hash, item.get_hash_code());
                 }
                 hash
             }
-            StackItem::Struct(structure) => {
+            Self::Struct(structure) => {
                 let mut hash = combine_hash(17, structure.len() as i32);
                 for item in structure.items() {
                     hash = combine_hash(hash, item.get_hash_code());
                 }
                 hash
             }
-            StackItem::Map(map) => {
+            Self::Map(map) => {
                 let mut hash = combine_hash(17, map.len() as i32);
                 for (key, value) in map.items().iter() {
                     hash = combine_hash(hash, key.get_hash_code());
@@ -471,7 +476,7 @@ impl StackItem {
                 }
                 hash
             }
-            StackItem::Pointer(pointer) => {
+            Self::Pointer(pointer) => {
                 let script_ptr = pointer.script() as *const Script as usize as u64;
                 let mut hash = 17;
                 hash = combine_hash(hash, (script_ptr & 0xFFFF_FFFF) as i32);
@@ -479,8 +484,8 @@ impl StackItem {
                 hash = combine_hash(hash, pointer.position() as i32);
                 hash
             }
-            StackItem::InteropInterface(interface) => {
-                let addr = Arc::as_ptr(interface) as *const () as usize as u64;
+            Self::InteropInterface(interface) => {
+                let addr = Arc::as_ptr(interface).cast::<()>() as usize as u64;
                 let mut hash = 17;
                 hash = combine_hash(hash, (addr & 0xFFFF_FFFF) as i32);
                 hash = combine_hash(hash, ((addr >> 32) & 0xFFFF_FFFF) as i32);
@@ -490,16 +495,16 @@ impl StackItem {
     }
 
     /// Converts the stack item to the specified type.
-    pub fn convert_to(&self, item_type: StackItemType) -> VmResult<StackItem> {
+    pub fn convert_to(&self, item_type: StackItemType) -> VmResult<Self> {
         if self.stack_item_type() == item_type {
             return Ok(self.clone());
         }
 
         match item_type {
-            StackItemType::Boolean => Ok(StackItem::Boolean(self.as_bool()?)),
-            StackItemType::Integer => Ok(StackItem::Integer(self.as_int()?)),
-            StackItemType::ByteString => Ok(StackItem::ByteString(self.as_bytes()?)),
-            StackItemType::Buffer => Ok(StackItem::Buffer(BufferItem::new(self.as_bytes()?))),
+            StackItemType::Boolean => Ok(Self::Boolean(self.as_bool()?)),
+            StackItemType::Integer => Ok(Self::Integer(self.as_int()?)),
+            StackItemType::ByteString => Ok(Self::ByteString(self.as_bytes()?)),
+            StackItemType::Buffer => Ok(Self::Buffer(BufferItem::new(self.as_bytes()?))),
             _ => Err(VmError::invalid_type_simple(format!(
                 "Cannot convert to {item_type:?}"
             ))),
@@ -507,14 +512,14 @@ impl StackItem {
     }
 
     /// Checks if two stack items are equal.
-    pub fn equals(&self, other: &StackItem) -> VmResult<bool> {
+    pub fn equals(&self, other: &Self) -> VmResult<bool> {
         self.equals_with_refs(other, &mut std::collections::HashSet::new())
     }
 
     /// Checks if two stack items are equal with execution limits (aligns with C# API).
     pub fn equals_with_limits(
         &self,
-        other: &StackItem,
+        other: &Self,
         _limits: &ExecutionEngineLimits,
     ) -> VmResult<bool> {
         self.equals(other)
@@ -523,7 +528,7 @@ impl StackItem {
     /// Checks if two stack items are equal with reference tracking to handle cycles.
     fn equals_with_refs(
         &self,
-        other: &StackItem,
+        other: &Self,
         visited: &mut std::collections::HashSet<(CompoundIdentity, CompoundIdentity)>,
     ) -> VmResult<bool> {
         let mut visited_key = None;
@@ -538,22 +543,22 @@ impl StackItem {
         }
 
         let result = match (self, other) {
-            (StackItem::Null, StackItem::Null) => Ok(true),
-            (StackItem::Boolean(a), StackItem::Boolean(b)) => Ok(a == b),
-            (StackItem::Integer(a), StackItem::Integer(b)) => Ok(a == b),
-            (StackItem::ByteString(a), StackItem::ByteString(b)) => Ok(a == b),
-            (StackItem::Buffer(a), StackItem::Buffer(b)) => Ok(a == b),
-            (StackItem::ByteString(a), StackItem::Buffer(b)) => {
+            (Self::Null, Self::Null) => Ok(true),
+            (Self::Boolean(a), Self::Boolean(b)) => Ok(a == b),
+            (Self::Integer(a), Self::Integer(b)) => Ok(a == b),
+            (Self::ByteString(a), Self::ByteString(b)) => Ok(a == b),
+            (Self::Buffer(a), Self::Buffer(b)) => Ok(a == b),
+            (Self::ByteString(a), Self::Buffer(b)) => {
                 Ok(a.as_slice() == b.data().as_slice())
             }
-            (StackItem::Buffer(a), StackItem::ByteString(b)) => {
+            (Self::Buffer(a), Self::ByteString(b)) => {
                 Ok(a.data().as_slice() == b.as_slice())
             }
-            (StackItem::Pointer(a), StackItem::Pointer(b)) => Ok(a == b),
-            (StackItem::InteropInterface(a), StackItem::InteropInterface(b)) => {
+            (Self::Pointer(a), Self::Pointer(b)) => Ok(a == b),
+            (Self::InteropInterface(a), Self::InteropInterface(b)) => {
                 Ok(Arc::ptr_eq(a, b))
             }
-            (StackItem::Array(a), StackItem::Array(b)) => {
+            (Self::Array(a), Self::Array(b)) => {
                 if a.len() != b.len() {
                     return Ok(false);
                 }
@@ -566,7 +571,7 @@ impl StackItem {
 
                 Ok(true)
             }
-            (StackItem::Struct(a), StackItem::Struct(b)) => {
+            (Self::Struct(a), Self::Struct(b)) => {
                 if a.len() != b.len() {
                     return Ok(false);
                 }
@@ -579,7 +584,7 @@ impl StackItem {
 
                 Ok(true)
             }
-            (StackItem::Map(a), StackItem::Map(b)) => {
+            (Self::Map(a), Self::Map(b)) => {
                 if a.len() != b.len() {
                     return Ok(false);
                 }
@@ -657,19 +662,19 @@ impl Ord for StackItem {
 
         // 2. Compare values within the same type
         match (self, other) {
-            (StackItem::Null, StackItem::Null) => std::cmp::Ordering::Equal,
-            (StackItem::Boolean(a), StackItem::Boolean(b)) => a.cmp(b),
-            (StackItem::Integer(a), StackItem::Integer(b)) => a.cmp(b),
-            (StackItem::ByteString(a), StackItem::ByteString(b)) => a.cmp(b),
-            (StackItem::Buffer(a), StackItem::Buffer(b)) => a.cmp(b),
-            (StackItem::ByteString(a), StackItem::Buffer(b)) => {
+            (Self::Null, Self::Null) => std::cmp::Ordering::Equal,
+            (Self::Boolean(a), Self::Boolean(b)) => a.cmp(b),
+            (Self::Integer(a), Self::Integer(b)) => a.cmp(b),
+            (Self::ByteString(a), Self::ByteString(b)) => a.cmp(b),
+            (Self::Buffer(a), Self::Buffer(b)) => a.cmp(b),
+            (Self::ByteString(a), Self::Buffer(b)) => {
                 a.as_slice().cmp(b.data().as_slice())
             }
-            (StackItem::Buffer(a), StackItem::ByteString(b)) => {
+            (Self::Buffer(a), Self::ByteString(b)) => {
                 a.data().as_slice().cmp(b.as_slice())
             }
-            (StackItem::Pointer(a), StackItem::Pointer(b)) => a.cmp(b),
-            (StackItem::Array(a), StackItem::Array(b)) => {
+            (Self::Pointer(a), Self::Pointer(b)) => a.cmp(b),
+            (Self::Array(a), Self::Array(b)) => {
                 let len_cmp = a.len().cmp(&b.len());
                 if len_cmp != std::cmp::Ordering::Equal {
                     return len_cmp;
@@ -682,7 +687,7 @@ impl Ord for StackItem {
                 }
                 std::cmp::Ordering::Equal
             }
-            (StackItem::Struct(a), StackItem::Struct(b)) => {
+            (Self::Struct(a), Self::Struct(b)) => {
                 let len_cmp = a.len().cmp(&b.len());
                 if len_cmp != std::cmp::Ordering::Equal {
                     return len_cmp;
@@ -695,7 +700,7 @@ impl Ord for StackItem {
                 }
                 std::cmp::Ordering::Equal
             }
-            (StackItem::Map(a), StackItem::Map(b)) => {
+            (Self::Map(a), Self::Map(b)) => {
                 // Compare maps by size first, then by sorted key-value pairs
                 let len_cmp = a.len().cmp(&b.len());
                 if len_cmp != std::cmp::Ordering::Equal {
@@ -726,16 +731,16 @@ impl Ord for StackItem {
                 let _other_discriminant = std::mem::discriminant(other);
                 // based on the variant order in the enum
                 match (self, other) {
-                    (StackItem::Null, _) => std::cmp::Ordering::Less,
-                    (_, StackItem::Null) => std::cmp::Ordering::Greater,
-                    (StackItem::Boolean(_), StackItem::Integer(_)) => std::cmp::Ordering::Less,
-                    (StackItem::Integer(_), StackItem::Boolean(_)) => std::cmp::Ordering::Greater,
-                    (StackItem::Boolean(_), StackItem::ByteString(_)) => std::cmp::Ordering::Less,
-                    (StackItem::ByteString(_), StackItem::Boolean(_)) => {
+                    (Self::Null, _) => std::cmp::Ordering::Less,
+                    (_, Self::Null) => std::cmp::Ordering::Greater,
+                    (Self::Boolean(_), Self::Integer(_)) => std::cmp::Ordering::Less,
+                    (Self::Integer(_), Self::Boolean(_)) => std::cmp::Ordering::Greater,
+                    (Self::Boolean(_), Self::ByteString(_)) => std::cmp::Ordering::Less,
+                    (Self::ByteString(_), Self::Boolean(_)) => {
                         std::cmp::Ordering::Greater
                     }
-                    (StackItem::Integer(_), StackItem::ByteString(_)) => std::cmp::Ordering::Less,
-                    (StackItem::ByteString(_), StackItem::Integer(_)) => {
+                    (Self::Integer(_), Self::ByteString(_)) => std::cmp::Ordering::Less,
+                    (Self::ByteString(_), Self::Integer(_)) => {
                         std::cmp::Ordering::Greater
                     }
                     _ => std::cmp::Ordering::Equal, // Same types that we haven't handled above
@@ -745,14 +750,14 @@ impl Ord for StackItem {
     }
 }
 
-fn combine_hash(current: i32, value: i32) -> i32 {
+const fn combine_hash(current: i32, value: i32) -> i32 {
     current.wrapping_mul(397).wrapping_add(value)
 }
 
 fn hash_bytes(bytes: &[u8]) -> i32 {
     bytes
         .iter()
-        .fold(17, |hash, byte| combine_hash(hash, *byte as i32))
+        .fold(17, |hash, byte| combine_hash(hash, i32::from(*byte)))
 }
 
 #[cfg(test)]

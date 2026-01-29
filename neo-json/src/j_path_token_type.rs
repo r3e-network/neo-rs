@@ -1,6 +1,6 @@
-//! JPathTokenType - matches C# Neo.Json.JPathTokenType exactly
+//! `JPathTokenType` - matches C# Neo.Json.JPathTokenType exactly
 
-/// JSON path token types (matches C# JPathTokenType enum)
+/// JSON path token types (matches C# `JPathTokenType` enum)
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum JPathTokenType {

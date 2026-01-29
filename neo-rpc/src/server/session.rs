@@ -73,7 +73,7 @@ struct StorageSessionIterator {
 }
 
 impl StorageSessionIterator {
-    fn new(iterator: StorageIterator) -> Self {
+    const fn new(iterator: StorageIterator) -> Self {
         Self { iterator }
     }
 }
@@ -125,7 +125,7 @@ impl Session {
             Arc::new(tx) as Arc<dyn IVerifiable>
         });
 
-        let diagnostic_box = diagnostic.as_ref().cloned().map(|diag| {
+        let diagnostic_box = diagnostic.clone().map(|diag| {
             Box::new(diag) as Box<dyn neo_core::smart_contract::i_diagnostic::IDiagnostic>
         });
 
@@ -172,7 +172,7 @@ impl Session {
         self.diagnostic.lock().clone()
     }
 
-    pub fn snapshot(&self) -> &StoreCache {
+    pub const fn snapshot(&self) -> &StoreCache {
         &self.snapshot
     }
 

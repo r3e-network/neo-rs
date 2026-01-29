@@ -1,4 +1,4 @@
-//! State service RPC endpoints (parity with C# StateService RPC plugin).
+//! State service RPC endpoints (parity with C# `StateService` RPC plugin).
 
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
@@ -172,7 +172,7 @@ impl RpcServerState {
 
         let mut truncated = false;
         let mut results = Vec::new();
-        for entry in entries.into_iter() {
+        for entry in entries {
             if results.len() >= count {
                 truncated = true;
                 break;
@@ -233,9 +233,7 @@ impl RpcServerState {
             return Err(RpcException::from(RpcError::unsupported_state().with_data(
                 format!(
                     "fullState:false,current:{},rootHash:{}",
-                    current
-                        .map(|h| h.to_string())
-                        .unwrap_or_else(|| "<none>".to_string()),
+                    current.map_or_else(|| "<none>".to_string(), |h| h.to_string()),
                     root_hash
                 ),
             )));

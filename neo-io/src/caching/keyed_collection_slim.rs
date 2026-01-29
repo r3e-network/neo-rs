@@ -1,4 +1,4 @@
-//! KeyedCollectionSlim - faithful port of Neo.IO.Caching.KeyedCollectionSlim
+//! `KeyedCollectionSlim` - faithful port of Neo.IO.Caching.KeyedCollectionSlim
 
 use indexmap::IndexMap;
 use std::hash::Hash;
@@ -38,12 +38,14 @@ where
 
     /// Total number of items stored in the collection (C# `Count`).
     #[inline]
+    #[must_use] 
     pub fn count(&self) -> usize {
         self.items.len()
     }
 
     /// Returns the first item or `None` if the collection is empty (C# `FirstOrDefault`).
     #[inline]
+    #[must_use] 
     pub fn first_or_default(&self) -> Option<&TItem> {
         self.items.first().map(|(_, value)| value)
     }

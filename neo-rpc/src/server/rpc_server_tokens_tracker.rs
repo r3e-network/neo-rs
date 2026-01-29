@@ -60,7 +60,7 @@ impl RpcServerTokensTracker {
 
         let balances =
             find_prefix::<Nep11BalanceKey, TokenBalance>(service.store().as_ref(), &prefix)
-                .map_err(|err| internal_error(err))?;
+                .map_err(internal_error)?;
 
         let store_cache = server.system().store_cache();
         let snapshot = Arc::new(store_cache.data_cache().clone());
@@ -69,7 +69,7 @@ impl RpcServerTokensTracker {
         let mut grouped: HashMap<UInt160, Vec<(String, TokenBalance)>> = HashMap::new();
         let mut count = 0usize;
 
-        for (key, value) in balances.into_iter() {
+        for (key, value) in balances {
             if count >= max_results {
                 break;
             }
@@ -288,14 +288,14 @@ impl RpcServerTokensTracker {
 
         let balances =
             find_prefix::<Nep17BalanceKey, TokenBalance>(service.store().as_ref(), &prefix)
-                .map_err(|err| internal_error(err))?;
+                .map_err(internal_error)?;
 
         let store_cache = server.system().store_cache();
         let snapshot = Arc::new(store_cache.data_cache().clone());
         let mut results = Vec::new();
         let max_results = service.settings().max_results as usize;
 
-        for (key, value) in balances.into_iter() {
+        for (key, value) in balances {
             if results.len() >= max_results {
                 break;
             }
@@ -411,7 +411,7 @@ fn parse_address_param(
     }
 
     WalletHelper::to_script_hash(text, address_version)
-        .map_err(|_| invalid_params(format!("Invalid address: {}", text)))
+        .map_err(|_| invalid_params(format!("Invalid address: {text}")))
 }
 
 fn parse_optional_u64(value: Option<&Value>) -> Result<u64, RpcException> {
@@ -460,7 +460,7 @@ fn collect_transfers(
     let end_key = [prefix_bytes.as_slice(), &end.to_be_bytes()].concat();
 
     let pairs = find_range::<Nep17TransferKey, TokenTransfer>(store, &start_key, &end_key)
-        .map_err(|err| internal_error(err))?;
+        .map_err(internal_error)?;
 
     let mut limited = pairs
         .into_iter()
@@ -516,7 +516,7 @@ fn collect_nep11_transfers(
     let end_key = [prefix_bytes.as_slice(), &end.to_be_bytes()].concat();
 
     let pairs = find_range::<Nep11TransferKey, TokenTransfer>(store, &start_key, &end_key)
-        .map_err(|err| internal_error(err))?;
+        .map_err(internal_error)?;
 
     let mut limited = pairs
         .into_iter()
@@ -601,7 +601,7 @@ fn emit_contract_call(
 ) -> Result<(), RpcException> {
     builder.emit_opcode(OpCode::PUSH0);
     builder.emit_opcode(OpCode::NEWARRAY);
-    builder.emit_push_int(CallFlags::ALL.bits() as i64);
+    builder.emit_push_int(i64::from(CallFlags::ALL.bits()));
     builder.emit_push_string(method);
     builder.emit_push_byte_array(&contract.to_bytes());
     builder
@@ -620,7 +620,7 @@ fn emit_contract_call_with_arg(
     builder.emit_push_byte_array(arg);
     builder.emit_push_int(1);
     builder.emit_opcode(OpCode::PACK);
-    builder.emit_push_int(call_flags.bits() as i64);
+    builder.emit_push_int(i64::from(call_flags.bits()));
     builder.emit_push_string(method);
     builder.emit_push_byte_array(&contract.to_bytes());
     builder

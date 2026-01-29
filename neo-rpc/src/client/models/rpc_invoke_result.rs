@@ -13,7 +13,7 @@ use super::vm_state_utils::{vm_state_from_str, vm_state_to_string};
 use neo_json::{JArray, JObject, JToken};
 use neo_vm::{StackItem, VMState};
 
-/// RPC invoke result matching C# RpcInvokeResult
+/// RPC invoke result matching C# `RpcInvokeResult`
 #[derive(Debug, Clone)]
 pub struct RpcInvokeResult {
     /// The script that was invoked
@@ -40,43 +40,40 @@ pub struct RpcInvokeResult {
 
 impl RpcInvokeResult {
     /// Creates from JSON
-    /// Matches C# FromJson
+    /// Matches C# `FromJson`
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let script = json
             .get("script")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .ok_or("Missing or invalid 'script' field")?
-            .to_string();
+            ;
 
         let state_str = json
             .get("state")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .ok_or("Missing or invalid 'state' field")?;
         let state = vm_state_from_str(&state_str)
-            .ok_or_else(|| format!("Invalid VM state: {}", state_str))?;
+            .ok_or_else(|| format!("Invalid VM state: {state_str}"))?;
 
         let gas_consumed_str = json
             .get("gasconsumed")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .ok_or("Missing or invalid 'gasconsumed' field")?;
         let gas_consumed = gas_consumed_str
             .parse::<i64>()
-            .map_err(|_| format!("Invalid gas consumed value: {}", gas_consumed_str))?;
+            .map_err(|_| format!("Invalid gas consumed value: {gas_consumed_str}"))?;
 
         let exception = json
             .get("exception")
-            .and_then(|v| v.as_string())
-            .map(|s| s.to_string());
+            .and_then(neo_json::JToken::as_string);
 
         let session = json
             .get("session")
-            .and_then(|v| v.as_string())
-            .map(|s| s.to_string());
+            .and_then(neo_json::JToken::as_string);
 
         let tx = json
             .get("tx")
-            .and_then(|v| v.as_string())
-            .map(|s| s.to_string());
+            .and_then(neo_json::JToken::as_string);
 
         // Try to parse stack items
         let stack = json
@@ -103,7 +100,7 @@ impl RpcInvokeResult {
     }
 
     /// Converts to JSON
-    /// Matches C# ToJson
+    /// Matches C# `ToJson`
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
         json.insert("script".to_string(), JToken::String(self.script.clone()));
@@ -144,7 +141,7 @@ impl RpcInvokeResult {
     }
 }
 
-/// RPC stack item representation matching C# RpcStack
+/// RPC stack item representation matching C# `RpcStack`
 #[derive(Debug, Clone)]
 pub struct RpcStack {
     /// Stack item type
@@ -156,13 +153,13 @@ pub struct RpcStack {
 
 impl RpcStack {
     /// Creates from JSON
-    /// Matches C# FromJson
+    /// Matches C# `FromJson`
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let item_type = json
             .get("type")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .ok_or("Missing or invalid 'type' field")?
-            .to_string();
+            ;
 
         let value = json.get("value").ok_or("Missing 'value' field")?.clone();
 
@@ -170,7 +167,8 @@ impl RpcStack {
     }
 
     /// Converts to JSON
-    /// Matches C# ToJson
+    /// Matches C# `ToJson`
+    #[must_use] 
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
         json.insert("type".to_string(), JToken::String(self.item_type.clone()));

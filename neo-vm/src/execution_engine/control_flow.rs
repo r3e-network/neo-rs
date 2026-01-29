@@ -2,7 +2,7 @@
 // control_flow.rs - Jump, call, and syscall operations
 //
 
-use super::*;
+use super::{ExecutionEngine, VmResult, VmError};
 
 impl ExecutionEngine {
     pub fn execute_jump(&mut self, position: i32) -> VmResult<()> {
@@ -26,14 +26,14 @@ impl ExecutionEngine {
     pub fn execute_jump_offset(&mut self, offset: i32) -> VmResult<()> {
         let current_ip = self
             .current_context()
-            .map(|ctx| ctx.instruction_pointer())
+            .map(super::super::execution_context::ExecutionContext::instruction_pointer)
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
         let new_position = (current_ip as i64)
-            .checked_add(offset as i64)
+            .checked_add(i64::from(offset))
             .ok_or_else(|| VmError::InvalidJump(offset))?;
 
-        if new_position < 0 || new_position > i32::MAX as i64 {
+        if new_position < 0 || new_position > i64::from(i32::MAX) {
             return Err(VmError::InvalidJump(offset));
         }
 

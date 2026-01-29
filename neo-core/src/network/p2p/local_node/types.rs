@@ -69,7 +69,7 @@ impl RelayInventory {
     }
 }
 
-/// Message types accepted by [`LocalNodeActor`].
+/// Message types accepted by `LocalNodeActor`.
 #[derive(Debug)]
 pub enum LocalNodeCommand {
     AddPeer {

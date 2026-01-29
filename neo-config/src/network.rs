@@ -6,10 +6,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum NetworkType {
-    /// Neo MainNet (network magic: 860833102)
+    /// Neo `MainNet` (network magic: 860833102)
     #[default]
     MainNet,
-    /// Neo TestNet T5 (network magic: 894710606)
+    /// Neo `TestNet` T5 (network magic: 894710606)
     TestNet,
     /// Private/local network
     Private,
@@ -17,41 +17,44 @@ pub enum NetworkType {
 
 impl NetworkType {
     /// Get the network magic number
-    pub fn magic(&self) -> u32 {
+    #[must_use] 
+    pub const fn magic(&self) -> u32 {
         match self {
-            NetworkType::MainNet => 860833102,  // 0x334F454E "NEO3" LE
-            NetworkType::TestNet => 894710606,  // T5 testnet
-            NetworkType::Private => 0x01020304, // Default private
+            Self::MainNet => 860833102,  // 0x334F454E "NEO3" LE
+            Self::TestNet => 894710606,  // T5 testnet
+            Self::Private => 0x01020304, // Default private
         }
     }
 
     /// Get the address version byte
-    pub fn address_version(&self) -> u8 {
+    #[must_use] 
+    pub const fn address_version(&self) -> u8 {
         match self {
-            NetworkType::MainNet => 0x35, // 'N'
-            NetworkType::TestNet => 0x35, // Same as mainnet
-            NetworkType::Private => 0x35, // Same as mainnet
+            Self::MainNet => 0x35, // 'N'
+            Self::TestNet => 0x35, // Same as mainnet
+            Self::Private => 0x35, // Same as mainnet
         }
     }
 
     /// Get default seed nodes
+    #[must_use] 
     pub fn seed_nodes(&self) -> Vec<String> {
         match self {
-            NetworkType::MainNet => vec![
+            Self::MainNet => vec![
                 "seed1.neo.org:10333".to_string(),
                 "seed2.neo.org:10333".to_string(),
                 "seed3.neo.org:10333".to_string(),
                 "seed4.neo.org:10333".to_string(),
                 "seed5.neo.org:10333".to_string(),
             ],
-            NetworkType::TestNet => vec![
+            Self::TestNet => vec![
                 "seed1t5.neo.org:20333".to_string(),
                 "seed2t5.neo.org:20333".to_string(),
                 "seed3t5.neo.org:20333".to_string(),
                 "seed4t5.neo.org:20333".to_string(),
                 "seed5t5.neo.org:20333".to_string(),
             ],
-            NetworkType::Private => vec![],
+            Self::Private => vec![],
         }
     }
 }
@@ -61,9 +64,9 @@ impl std::str::FromStr for NetworkType {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "mainnet" | "main" => Ok(NetworkType::MainNet),
-            "testnet" | "test" => Ok(NetworkType::TestNet),
-            "private" | "local" => Ok(NetworkType::Private),
+            "mainnet" | "main" => Ok(Self::MainNet),
+            "testnet" | "test" => Ok(Self::TestNet),
+            "private" | "local" => Ok(Self::Private),
             _ => Err(()),
         }
     }
@@ -72,9 +75,9 @@ impl std::str::FromStr for NetworkType {
 impl std::fmt::Display for NetworkType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            NetworkType::MainNet => write!(f, "mainnet"),
-            NetworkType::TestNet => write!(f, "testnet"),
-            NetworkType::Private => write!(f, "private"),
+            Self::MainNet => write!(f, "mainnet"),
+            Self::TestNet => write!(f, "testnet"),
+            Self::Private => write!(f, "private"),
         }
     }
 }
@@ -107,15 +110,15 @@ pub struct NetworkConfig {
     pub connection_timeout_ms: u64,
 }
 
-fn default_max_peers() -> usize {
+const fn default_max_peers() -> usize {
     50
 }
 
-fn default_min_peers() -> usize {
+const fn default_min_peers() -> usize {
     10
 }
 
-fn default_connection_timeout() -> u64 {
+const fn default_connection_timeout() -> u64 {
     5000
 }
 
@@ -127,6 +130,7 @@ impl Default for NetworkConfig {
 
 impl NetworkConfig {
     /// Create configuration for a specific network type
+    #[must_use] 
     pub fn for_network(network_type: NetworkType) -> Self {
         Self {
             network_type,
@@ -140,11 +144,13 @@ impl NetworkConfig {
     }
 
     /// Get the effective network magic
+    #[must_use] 
     pub fn effective_magic(&self) -> u32 {
         self.magic.unwrap_or_else(|| self.network_type.magic())
     }
 
     /// Get the effective address version
+    #[must_use] 
     pub fn effective_address_version(&self) -> u8 {
         self.address_version
             .unwrap_or_else(|| self.network_type.address_version())

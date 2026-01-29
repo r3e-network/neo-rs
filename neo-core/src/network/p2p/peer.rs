@@ -4,7 +4,7 @@
 //! base class.  The original implementation exposes a rich set of utilities for
 //! tracking connected nodes, coordinating outbound connection attempts and
 //! handling timer driven maintenance.  The Rust port below follows the same
-//! design so higher level actors (such as [`LocalNodeActor`]) can delegate all
+//! design so higher level actors (such as `LocalNodeActor`) can delegate all
 //! bookkeeping to this component while preserving Akka semantics.
 
 use super::{

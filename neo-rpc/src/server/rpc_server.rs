@@ -55,10 +55,12 @@ impl RpcHandler {
         }
     }
 
-    pub fn descriptor(&self) -> &RpcMethodDescriptor {
+    #[must_use] 
+    pub const fn descriptor(&self) -> &RpcMethodDescriptor {
         &self.descriptor
     }
 
+    #[must_use] 
     pub fn callback(&self) -> Arc<RpcCallback> {
         Arc::clone(&self.callback)
     }
@@ -93,7 +95,7 @@ pub struct RpcServer {
     started: bool,
     wallet: Arc<RwLock<Option<Arc<dyn Wallet>>>>,
     wallet_change_callback: Option<Arc<dyn Fn(Option<Arc<dyn Wallet>>) + Send + Sync>>,
-    /// Session storage using Mutex instead of RwLock to enforce exclusive access.
+    /// Session storage using Mutex instead of `RwLock` to enforce exclusive access.
     ///
     /// # Security Note
     /// Sessions contain `ApplicationEngine` which wraps `ExecutionEngine` with a raw pointer
@@ -104,7 +106,7 @@ pub struct RpcServer {
     shutdown_signal: Option<oneshot::Sender<()>>,
     session_purge_task: Option<JoinHandle<()>>,
     session_purge_shutdown: Option<oneshot::Sender<()>>,
-    self_handle: Option<Weak<RwLock<RpcServer>>>,
+    self_handle: Option<Weak<RwLock<Self>>>,
     /// WebSocket event bridge for real-time subscriptions
     ws_bridge: Option<Arc<super::ws::WsEventBridge>>,
     /// WebSocket subscription manager
@@ -131,7 +133,8 @@ impl RpcServer {
         }
     }
 
-    pub fn settings(&self) -> &RpcServerConfig {
+    #[must_use] 
+    pub const fn settings(&self) -> &RpcServerConfig {
         &self.settings
     }
 
@@ -139,6 +142,7 @@ impl RpcServer {
         self.settings = settings;
     }
 
+    #[must_use] 
     pub fn system(&self) -> Arc<NeoSystem> {
         Arc::clone(&self.system)
     }
@@ -162,16 +166,18 @@ impl RpcServer {
     }
 
     /// Get the WebSocket event bridge if enabled
+    #[must_use] 
     pub fn ws_bridge(&self) -> Option<Arc<super::ws::WsEventBridge>> {
         self.ws_bridge.clone()
     }
 
     /// Check if WebSocket is enabled
-    pub fn is_websocket_enabled(&self) -> bool {
+    #[must_use] 
+    pub const fn is_websocket_enabled(&self) -> bool {
         self.ws_bridge.is_some()
     }
 
-    pub fn start_rpc_server(&mut self, handle: Weak<RwLock<RpcServer>>) {
+    pub fn start_rpc_server(&mut self, handle: Weak<RwLock<Self>>) {
         if self.started {
             return;
         }
@@ -217,7 +223,7 @@ impl RpcServer {
         let rpc_routes = build_rpc_routes(
             handle.clone(),
             disabled_methods,
-            auth.clone(),
+            auth,
             self.settings.clone(),
         )
         .with(compression::gzip())
@@ -281,15 +287,12 @@ impl RpcServer {
                         match listener.accept().await {
                             Ok((stream, remote_addr)) => {
                                 apply_tcp_keepalive(&stream, keepalive);
-                                let permit = match connection_limiter.clone().try_acquire_owned() {
-                                    Ok(permit) => permit,
-                                    Err(_) => {
-                                        debug!(
-                                            "RPC max concurrent connections reached; dropping {}",
-                                            remote_addr
-                                        );
-                                        continue;
-                                    }
+                                let permit = if let Ok(permit) = connection_limiter.clone().try_acquire_owned() { permit } else {
+                                    debug!(
+                                        "RPC max concurrent connections reached; dropping {}",
+                                        remote_addr
+                                    );
+                                    continue;
                                 };
                                 match tls_acceptor.accept(stream).await {
                                     Ok(tls_stream) => {
@@ -322,7 +325,7 @@ impl RpcServer {
                 }
             });
             let incoming = from_stream(incoming);
-            let svc = svc.clone();
+            let svc = svc;
             let make_svc = make_service_fn(move |conn: &TlsConnection| {
                 let remote_addr = conn.remote_addr();
                 let svc = svc.clone();
@@ -353,7 +356,7 @@ impl RpcServer {
             });
             (task, bound_addr)
         } else {
-            let svc = svc.clone();
+            let svc = svc;
             let std_listener = match std::net::TcpListener::bind(address) {
                 Ok(listener) => listener,
                 Err(err) => {
@@ -388,15 +391,12 @@ impl RpcServer {
                         match listener.accept().await {
                             Ok((stream, remote_addr)) => {
                                 apply_tcp_keepalive(&stream, keepalive);
-                                let permit = match connection_limiter.clone().try_acquire_owned() {
-                                    Ok(permit) => permit,
-                                    Err(_) => {
-                                        debug!(
-                                            "RPC max concurrent connections reached; dropping {}",
-                                            remote_addr
-                                        );
-                                        continue;
-                                    }
+                                let permit = if let Ok(permit) = connection_limiter.clone().try_acquire_owned() { permit } else {
+                                    debug!(
+                                        "RPC max concurrent connections reached; dropping {}",
+                                        remote_addr
+                                    );
+                                    continue;
                                 };
                                 let conn = PlainConnection {
                                     stream,
@@ -457,11 +457,11 @@ impl RpcServer {
             let interval_secs = self.settings.session_expiration_time.max(1) / 2;
             let interval = Duration::from_secs(interval_secs.max(5));
             let (purge_tx, mut purge_rx) = oneshot::channel();
-            let purge_handle = handle.clone();
+            let purge_handle = handle;
             let purge_task = tokio::spawn(async move {
                 loop {
                     tokio::select! {
-                        _ = sleep(interval) => {
+                        () = sleep(interval) => {
                             if let Some(server_arc) = purge_handle.upgrade() {
                                 if let Some(server) = server_arc.try_read() {
                                     server.purge_expired_sessions();
@@ -528,7 +528,8 @@ impl RpcServer {
         }
     }
 
-    pub fn is_started(&self) -> bool {
+    #[must_use] 
+    pub const fn is_started(&self) -> bool {
         self.started
     }
 
@@ -546,6 +547,7 @@ impl RpcServer {
         }
     }
 
+    #[must_use] 
     pub fn wallet(&self) -> Option<Arc<dyn Wallet>> {
         self.wallet.read().clone()
     }
@@ -557,11 +559,12 @@ impl RpcServer {
         self.wallet_change_callback = callback;
     }
 
-    fn session_expiration(&self) -> Duration {
+    const fn session_expiration(&self) -> Duration {
         Duration::from_secs(self.settings.session_expiration_time)
     }
 
-    pub fn session_enabled(&self) -> bool {
+    #[must_use] 
+    pub const fn session_enabled(&self) -> bool {
         self.settings.session_enabled
     }
 
@@ -588,6 +591,7 @@ impl RpcServer {
         guard.get_mut(id).map(func)
     }
 
+    #[must_use] 
     pub fn terminate_session(&self, id: &Uuid) -> bool {
         self.sessions.lock().remove(id).is_some()
     }
@@ -610,7 +614,7 @@ struct TlsConnection {
 }
 
 impl TlsConnection {
-    fn remote_addr(&self) -> SocketAddr {
+    const fn remote_addr(&self) -> SocketAddr {
         self.remote_addr
     }
 }
@@ -650,7 +654,7 @@ struct PlainConnection {
 }
 
 impl PlainConnection {
-    fn remote_addr(&self) -> SocketAddr {
+    const fn remote_addr(&self) -> SocketAddr {
         self.remote_addr
     }
 }
@@ -696,13 +700,12 @@ fn build_tls_config(settings: &RpcServerConfig) -> Result<Option<Arc<ServerConfi
     }
 
     let cert_bytes = std::fs::read(cert_path)
-        .map_err(|err| format!("failed to read TLS certificate {}: {}", cert_path, err))?;
+        .map_err(|err| format!("failed to read TLS certificate {cert_path}: {err}"))?;
     let pfx = PFX::parse(&cert_bytes)
-        .map_err(|err| format!("invalid PKCS#12 {}: {:?}", cert_path, err))?;
+        .map_err(|err| format!("invalid PKCS#12 {cert_path}: {err:?}"))?;
     if !pfx.verify_mac(settings.ssl_cert_password.as_str()) {
         return Err(format!(
-            "invalid TLS certificate password for {}",
-            cert_path
+            "invalid TLS certificate password for {cert_path}"
         ));
     }
 
@@ -710,12 +713,11 @@ fn build_tls_config(settings: &RpcServerConfig) -> Result<Option<Arc<ServerConfi
         .cert_x509_bags(settings.ssl_cert_password.as_str())
         .map_err(|err| {
             format!(
-                "failed to read TLS certificate chain from {}: {:?}",
-                cert_path, err
+                "failed to read TLS certificate chain from {cert_path}: {err:?}"
             )
         })?;
     if certs_der.is_empty() {
-        return Err(format!("no TLS certificates found in {}", cert_path));
+        return Err(format!("no TLS certificates found in {cert_path}"));
     }
     let certs = certs_der.into_iter().map(Certificate).collect::<Vec<_>>();
 
@@ -723,13 +725,12 @@ fn build_tls_config(settings: &RpcServerConfig) -> Result<Option<Arc<ServerConfi
         .key_bags(settings.ssl_cert_password.as_str())
         .map_err(|err| {
             format!(
-                "failed to read TLS private key from {}: {:?}",
-                cert_path, err
+                "failed to read TLS private key from {cert_path}: {err:?}"
             )
         })?;
     let key_der = keys
         .pop()
-        .ok_or_else(|| format!("no TLS private key found in {}", cert_path))?;
+        .ok_or_else(|| format!("no TLS private key found in {cert_path}"))?;
     let key = PrivateKey(key_der);
 
     let builder = ServerConfig::builder().with_safe_defaults();
@@ -741,7 +742,7 @@ fn build_tls_config(settings: &RpcServerConfig) -> Result<Option<Arc<ServerConfi
     };
     let config = builder
         .with_single_cert(certs, key)
-        .map_err(|err| format!("failed to configure TLS for {}: {}", cert_path, err))?;
+        .map_err(|err| format!("failed to configure TLS for {cert_path}: {err}"))?;
 
     Ok(Some(Arc::new(config)))
 }
@@ -753,7 +754,7 @@ fn load_trusted_authorities(thumbprints: &[String]) -> Result<RootCertStore, Str
         .filter(|value| !value.is_empty())
         .collect();
     let native_certs = rustls_native_certs::load_native_certs()
-        .map_err(|err| format!("failed to load native TLS roots: {:?}", err))?;
+        .map_err(|err| format!("failed to load native TLS roots: {err:?}"))?;
 
     let mut roots = RootCertStore::empty();
     let mut matched = 0usize;
@@ -763,7 +764,7 @@ fn load_trusted_authorities(thumbprints: &[String]) -> Result<RootCertStore, Str
         if allowed.contains(&thumbprint) {
             let rustls_cert = Certificate(cert_der);
             roots.add(&rustls_cert).map_err(|err| {
-                format!("failed to add trusted authority {}: {}", thumbprint, err)
+                format!("failed to add trusted authority {thumbprint}: {err}")
             })?;
             matched += 1;
         }

@@ -13,7 +13,7 @@
 //!
 //! ## Architecture
 //!
-//! ```
+//! ```text
 //! ┌─────────────────────────────────────────────────────────────────┐
 //! │                         RPC Layer                                │
 //! ├─────────────────────────────────────────────────────────────────┤
@@ -39,7 +39,7 @@
 //!
 //! This crate is part of **Layer 1 (Core)** in the neo-rs architecture:
 //!
-//! ```
+//! ```text
 //! Layer 2 (Service): neo-chain, neo-mempool
 //!            │
 //!            ▼
@@ -197,7 +197,7 @@
 //! - Always use HTTPS/TLS in production
 //! - Enable authentication for wallet operations
 //! - Restrict CORS origins appropriately
-//! - Rate-limit requests to prevent DoS
+//! - Rate-limit requests to prevent `DoS`
 //! - Validate all input parameters
 //! - Don't expose `openwallet` on public nodes
 

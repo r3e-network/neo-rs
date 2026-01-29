@@ -1,4 +1,4 @@
-//! HashSetCache - faithful port of Neo.IO.Caching.HashSetCache
+//! `HashSetCache` - faithful port of Neo.IO.Caching.HashSetCache
 
 use super::keyed_collection_slim::KeyedCollectionSlim;
 use crate::{IoError, IoResult};
@@ -22,7 +22,7 @@ where
     /// Initializes a new instance with the given maximum capacity.
     ///
     /// # Arguments
-    /// * `capacity` - The maximum capacity. If zero, uses DEFAULT_CAPACITY instead.
+    /// * `capacity` - The maximum capacity. If zero, uses `DEFAULT_CAPACITY` instead.
     ///
     /// # Note
     /// Zero capacity is handled gracefully by using the default capacity.
@@ -69,6 +69,7 @@ where
 
     /// Number of items currently in the cache (C# `Count`).
     #[inline]
+    #[must_use] 
     pub fn count(&self) -> usize {
         self.items.count()
     }

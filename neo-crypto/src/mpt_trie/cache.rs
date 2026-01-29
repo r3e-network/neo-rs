@@ -38,7 +38,7 @@ struct MptTrackable {
 }
 
 impl MptTrackable {
-    fn new(node: Option<Node>) -> Self {
+    const fn new(node: Option<Node>) -> Self {
         Self {
             node,
             state: TrackState::None,
@@ -83,17 +83,14 @@ where
         let hash = node.try_hash()?;
         let entry = self.resolve_internal(&hash)?;
 
-        match entry.node {
-            Some(ref mut existing) => {
-                existing.reference = existing.reference.saturating_add(1);
-                entry.state = TrackState::Changed;
-            }
-            None => {
-                let mut stored = node.clone();
-                stored.reference = 1;
-                entry.node = Some(stored);
-                entry.state = TrackState::Added;
-            }
+        if let Some(ref mut existing) = entry.node {
+            existing.reference = existing.reference.saturating_add(1);
+            entry.state = TrackState::Changed;
+        } else {
+            let mut stored = node;
+            stored.reference = 1;
+            entry.node = Some(stored);
+            entry.state = TrackState::Added;
         }
         Ok(())
     }
@@ -117,7 +114,7 @@ where
 
     /// Flushes the pending changes to the underlying store.
     pub fn commit(&mut self) -> MptResult<()> {
-        for (hash, entry) in self.entries.iter() {
+        for (hash, entry) in &self.entries {
             match entry.state {
                 TrackState::None => {}
                 TrackState::Added | TrackState::Changed => {

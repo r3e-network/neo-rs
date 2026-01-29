@@ -16,14 +16,14 @@
 //! ## Elliptic Curve Cryptography
 //! - **secp256r1 (P-256/NIST)**: Primary curve for Neo N3 signatures
 //! - **secp256k1**: Bitcoin/Ethereum compatibility
-//! - **Ed25519**: EdDSA signatures
+//! - **Ed25519**: `EdDSA` signatures
 //!
 //! # Key Types
 //!
 //! - [`NeoHash`]: Hash function implementations (hash160, hash256, sha256, etc.)
 //! - [`Secp256r1Crypto`]: P-256 key generation, signing, verification
 //! - [`Secp256k1Crypto`]: secp256k1 operations for compatibility
-//! - [`Ed25519Crypto`]: EdDSA operations
+//! - [`Ed25519Crypto`]: `EdDSA` operations
 //!
 //! # Neo-Specific Functions
 //!
@@ -70,42 +70,49 @@ pub struct NeoHash;
 impl NeoHash {
     /// Computes SHA-256 hash of the input data
     #[inline]
+    #[must_use] 
     pub fn sha256(data: &[u8]) -> [u8; 32] {
         Crypto::sha256(data)
     }
 
     /// Computes SHA-512 hash of the input data
     #[inline]
+    #[must_use] 
     pub fn sha512(data: &[u8]) -> [u8; 64] {
         Crypto::sha512(data)
     }
 
     /// Computes Keccak-256 hash of the input data
     #[inline]
+    #[must_use] 
     pub fn keccak256(data: &[u8]) -> [u8; 32] {
         Crypto::keccak256(data)
     }
 
     /// Computes SHA3-256 hash of the input data
     #[inline]
+    #[must_use] 
     pub fn sha3_256(data: &[u8]) -> [u8; 32] {
         Crypto::sha3_256(data)
     }
 
     /// Computes SHA3-512 hash of the input data
     #[inline]
+    #[must_use] 
     pub fn sha3_512(data: &[u8]) -> [u8; 64] {
         Crypto::sha3_512(data)
     }
 
     /// Computes RIPEMD-160 hash of the input data
     #[inline]
+    #[must_use] 
     pub fn ripemd160(data: &[u8]) -> [u8; 20] {
         Crypto::ripemd160(data)
     }
 
-    /// Computes BLAKE2b hash of the input data
+    /// Computes `BLAKE2b` hash of the input data
     #[inline]
+    #[must_use] 
     pub fn blake2b(data: &[u8]) -> [u8; 64] {
         Crypto::blake2b(data)
     }
@@ -124,24 +131,28 @@ impl NeoHash {
 
     /// Computes BLAKE2s hash of the input data
     #[inline]
+    #[must_use] 
     pub fn blake2s(data: &[u8]) -> [u8; 32] {
         Crypto::blake2s(data)
     }
 
     /// Computes Hash160 (RIPEMD-160 of SHA-256) - commonly used for Neo addresses
     #[inline]
+    #[must_use] 
     pub fn hash160(data: &[u8]) -> [u8; 20] {
         Crypto::hash160(data)
     }
 
     /// Computes Hash256 (double SHA-256) - commonly used for Neo transaction and block hashes
     #[inline]
+    #[must_use] 
     pub fn hash256(data: &[u8]) -> [u8; 32] {
         Crypto::hash256(data)
     }
 
     /// Computes Murmur128 hash (x64 variant) used by Neo runtime.
     /// This is Neo-specific and not available in [`Crypto`].
+    #[must_use] 
     pub fn murmur128(data: &[u8], seed: u32) -> [u8; 16] {
         murmur::murmur128(data, seed)
     }
@@ -169,8 +180,7 @@ impl Secp256k1Crypto {
             }
         }
         Err(format!(
-            "Failed to generate valid secp256k1 private key after {} attempts - RNG may be broken",
-            MAX_KEY_GEN_ATTEMPTS
+            "Failed to generate valid secp256k1 private key after {MAX_KEY_GEN_ATTEMPTS} attempts - RNG may be broken"
         ))
     }
 
@@ -178,7 +188,7 @@ impl Secp256k1Crypto {
     pub fn derive_public_key(private_key: &[u8; 32]) -> Result<[u8; 33], String> {
         let secp = Secp256k1::new();
         let secret_key = Secp256k1SecretKey::from_slice(private_key)
-            .map_err(|e| format!("Invalid private key: {}", e))?;
+            .map_err(|e| format!("Invalid private key: {e}"))?;
         let public_key = Secp256k1PublicKey::from_secret_key(&secp, &secret_key);
         Ok(public_key.serialize())
     }
@@ -187,11 +197,11 @@ impl Secp256k1Crypto {
     pub fn sign(message: &[u8], private_key: &[u8; 32]) -> Result<[u8; 64], String> {
         let secp = Secp256k1::new();
         let secret_key = Secp256k1SecretKey::from_slice(private_key)
-            .map_err(|e| format!("Invalid private key: {}", e))?;
+            .map_err(|e| format!("Invalid private key: {e}"))?;
 
         let message_hash = Sha256::digest(message);
         let message = Message::from_digest_slice(&message_hash)
-            .map_err(|e| format!("Invalid message: {}", e))?;
+            .map_err(|e| format!("Invalid message: {e}"))?;
 
         let signature = secp.sign_ecdsa(&message, &secret_key);
         Ok(signature.serialize_compact())
@@ -205,14 +215,14 @@ impl Secp256k1Crypto {
     ) -> Result<bool, String> {
         let secp = Secp256k1::verification_only();
         let public_key = Secp256k1PublicKey::from_slice(public_key)
-            .map_err(|e| format!("Invalid public key: {}", e))?;
+            .map_err(|e| format!("Invalid public key: {e}"))?;
 
         let message_hash = Sha256::digest(message);
         let message = Message::from_digest_slice(&message_hash)
-            .map_err(|e| format!("Invalid message: {}", e))?;
+            .map_err(|e| format!("Invalid message: {e}"))?;
 
         let signature = secp256k1::ecdsa::Signature::from_compact(signature)
-            .map_err(|e| format!("Invalid signature: {}", e))?;
+            .map_err(|e| format!("Invalid signature: {e}"))?;
 
         Ok(secp.verify_ecdsa(&message, &signature, &public_key).is_ok())
     }
@@ -228,7 +238,7 @@ impl Secp256k1Crypto {
         }
 
         let msg = Message::from_digest_slice(message_hash)
-            .map_err(|e| format!("Invalid message hash: {}", e))?;
+            .map_err(|e| format!("Invalid message hash: {e}"))?;
 
         let (rec_id, sig_bytes) = if signature.len() == 65 {
             let rec = signature[64];
@@ -241,19 +251,19 @@ impl Secp256k1Crypto {
             let mut sig = signature.to_vec();
             let y_parity = (sig[32] & 0x80) != 0;
             sig[32] &= 0x7f;
-            let rec_id = if y_parity { 1 } else { 0 };
+            let rec_id = u8::from(y_parity);
             (rec_id, sig)
         };
 
-        let rec_id = RecoveryId::from_i32(rec_id as i32)
-            .map_err(|e| format!("Invalid recovery id: {}", e))?;
+        let rec_id = RecoveryId::from_i32(i32::from(rec_id))
+            .map_err(|e| format!("Invalid recovery id: {e}"))?;
         let recoverable = RecoverableSignature::from_compact(&sig_bytes, rec_id)
-            .map_err(|e| format!("Invalid recoverable signature: {}", e))?;
+            .map_err(|e| format!("Invalid recoverable signature: {e}"))?;
 
         let secp = Secp256k1::new();
         let public_key = secp
             .recover_ecdsa(&msg, &recoverable)
-            .map_err(|e| format!("Failed to recover public key: {}", e))?;
+            .map_err(|e| format!("Failed to recover public key: {e}"))?;
 
         Ok(public_key.serialize().to_vec())
     }
@@ -275,7 +285,7 @@ impl Secp256r1Crypto {
     /// Derives public key from private key
     pub fn derive_public_key(private_key: &[u8; 32]) -> Result<Vec<u8>, String> {
         let signing_key = SigningKey::try_from(private_key.as_slice())
-            .map_err(|e| format!("Invalid private key: {}", e))?;
+            .map_err(|e| format!("Invalid private key: {e}"))?;
         let verifying_key = VerifyingKey::from(&signing_key);
         Ok(verifying_key.to_encoded_point(true).as_bytes().to_vec())
     }
@@ -283,7 +293,7 @@ impl Secp256r1Crypto {
     /// Signs a message with secp256r1
     pub fn sign(message: &[u8], private_key: &[u8; 32]) -> Result<[u8; 64], String> {
         let signing_key = SigningKey::try_from(private_key.as_slice())
-            .map_err(|e| format!("Invalid private key: {}", e))?;
+            .map_err(|e| format!("Invalid private key: {e}"))?;
         let signature: Signature = signing_key.sign(message);
         let bytes: [u8; 64] = signature.to_bytes().into();
         Ok(bytes)
@@ -292,11 +302,11 @@ impl Secp256r1Crypto {
     /// Verifies a secp256r1 signature
     pub fn verify(message: &[u8], signature: &[u8; 64], public_key: &[u8]) -> Result<bool, String> {
         let public_key = P256PublicKey::from_sec1_bytes(public_key)
-            .map_err(|e| format!("Invalid public key: {}", e))?;
+            .map_err(|e| format!("Invalid public key: {e}"))?;
         let verifying_key = VerifyingKey::from(public_key);
 
         let signature = Signature::try_from(signature.as_slice())
-            .map_err(|e| format!("Invalid signature: {}", e))?;
+            .map_err(|e| format!("Invalid signature: {e}"))?;
 
         Ok(verifying_key.verify(message, &signature).is_ok())
     }
@@ -315,14 +325,14 @@ impl Ed25519Crypto {
     /// Derives public key from private key
     pub fn derive_public_key(private_key: &[u8; 32]) -> Result<[u8; 32], String> {
         let signing_key = Ed25519SigningKey::try_from(private_key.as_slice())
-            .map_err(|e| format!("Invalid private key: {}", e))?;
+            .map_err(|e| format!("Invalid private key: {e}"))?;
         Ok(signing_key.verifying_key().to_bytes())
     }
 
     /// Signs a message with Ed25519
     pub fn sign(message: &[u8], private_key: &[u8; 32]) -> Result<[u8; 64], String> {
         let signing_key = Ed25519SigningKey::try_from(private_key.as_slice())
-            .map_err(|e| format!("Invalid private key: {}", e))?;
+            .map_err(|e| format!("Invalid private key: {e}"))?;
         let signature = signing_key.sign(message);
         Ok(signature.to_bytes())
     }
@@ -334,9 +344,9 @@ impl Ed25519Crypto {
         public_key: &[u8; 32],
     ) -> Result<bool, String> {
         let verifying_key = Ed25519VerifyingKey::from_bytes(public_key)
-            .map_err(|e| format!("Invalid public key: {}", e))?;
+            .map_err(|e| format!("Invalid public key: {e}"))?;
         let signature = Ed25519Signature::try_from(signature.as_slice())
-            .map_err(|e| format!("Invalid signature: {}", e))?;
+            .map_err(|e| format!("Invalid signature: {e}"))?;
 
         Ok(verifying_key.verify_strict(message, &signature).is_ok())
     }
@@ -347,6 +357,7 @@ pub struct Base58;
 
 impl Base58 {
     /// Encodes data to Base58 string
+    #[must_use] 
     pub fn encode(data: &[u8]) -> String {
         bs58::encode(data).into_string()
     }
@@ -355,10 +366,11 @@ impl Base58 {
     pub fn decode(s: &str) -> Result<Vec<u8>, String> {
         bs58::decode(s)
             .into_vec()
-            .map_err(|e| format!("Base58 decode error: {}", e))
+            .map_err(|e| format!("Base58 decode error: {e}"))
     }
 
-    /// Encodes data to Base58Check string (Base58 with 4-byte checksum).
+    /// Encodes data to `Base58Check` string (Base58 with 4-byte checksum).
+    #[must_use] 
     pub fn encode_check(data: &[u8]) -> String {
         let mut payload = Vec::with_capacity(data.len() + 4);
         payload.extend_from_slice(data);
@@ -367,11 +379,11 @@ impl Base58 {
         bs58::encode(payload).into_string()
     }
 
-    /// Decodes Base58Check string back to bytes, verifying the checksum.
+    /// Decodes `Base58Check` string back to bytes, verifying the checksum.
     pub fn decode_check(s: &str) -> Result<Vec<u8>, String> {
         let bytes = bs58::decode(s)
             .into_vec()
-            .map_err(|e| format!("Base58 decode error: {}", e))?;
+            .map_err(|e| format!("Base58 decode error: {e}"))?;
 
         if bytes.len() < 4 {
             return Err("Invalid Base58Check payload: too short".to_string());
@@ -392,13 +404,14 @@ pub struct Hex;
 
 impl Hex {
     /// Encodes data to hex string
+    #[must_use] 
     pub fn encode(data: &[u8]) -> String {
         hex::encode(data)
     }
 
     /// Decodes hex string to bytes
     pub fn decode(s: &str) -> Result<Vec<u8>, String> {
-        hex::decode(s).map_err(|e| format!("Hex decode error: {}", e))
+        hex::decode(s).map_err(|e| format!("Hex decode error: {e}"))
     }
 }
 
@@ -490,15 +503,18 @@ impl ECC {
 
 impl Crypto {
     /// Verifies ECDSA signature with secp256r1
+    #[must_use] 
     pub fn verify_signature_secp256r1(data: &[u8], signature: &[u8], public_key: &[u8]) -> bool {
         ECDsa::verify(data, signature, public_key, ECCurve::Secp256r1).unwrap_or(false)
     }
 
     /// Verifies ECDSA signature with secp256k1
+    #[must_use] 
     pub fn verify_signature_secp256k1(data: &[u8], signature: &[u8], public_key: &[u8]) -> bool {
         ECDsa::verify(data, signature, public_key, ECCurve::Secp256k1).unwrap_or(false)
     }
 
+    #[must_use] 
     pub fn verify_signature_with_curve(
         data: &[u8],
         signature: &[u8],
@@ -519,7 +535,7 @@ impl Crypto {
                     Ok(key) => key,
                     Err(_) => return false,
                 };
-                let hash = Crypto::keccak256(data);
+                let hash = Self::keccak256(data);
                 let msg = match Message::from_digest_slice(&hash) {
                     Ok(msg) => msg,
                     Err(_) => return false,
@@ -541,7 +557,7 @@ impl Crypto {
                     Ok(sig) => sig,
                     Err(_) => return false,
                 };
-                let hash = Crypto::keccak256(data);
+                let hash = Self::keccak256(data);
                 verifying_key.verify_prehash(&hash, &signature).is_ok()
             }
             _ => ECDsa::verify(data, signature, public_key, *curve).unwrap_or(false),
@@ -549,6 +565,7 @@ impl Crypto {
     }
 
     /// Verifies a signature against the supplied public key, inferring the curve where possible.
+    #[must_use] 
     pub fn verify_signature_bytes(message: &[u8], signature: &[u8], public_key: &[u8]) -> bool {
         if signature.len() != 64 {
             return false;
@@ -566,13 +583,13 @@ impl Crypto {
             33 => {
                 let mut pk = [0u8; 33];
                 pk.copy_from_slice(public_key);
-                if let Ok(true) = Secp256k1Crypto::verify(message, &sig, &pk) {
+                if Secp256k1Crypto::verify(message, &sig, &pk) == Ok(true) {
                     return true;
                 }
                 Secp256r1Crypto::verify(message, &sig, public_key).unwrap_or(false)
             }
             64 | 65 => {
-                if let Ok(true) = Secp256r1Crypto::verify(message, &sig, public_key) {
+                if Secp256r1Crypto::verify(message, &sig, public_key) == Ok(true) {
                     return true;
                 }
 
@@ -619,6 +636,7 @@ impl Bls12381Crypto {
     }
 
     /// Generates a new random private key using cryptographically secure RNG
+    #[must_use] 
     pub fn generate_private_key() -> [u8; 32] {
         let mut bytes = [0u8; 32];
         OsRng.fill_bytes(&mut bytes);
@@ -679,7 +697,7 @@ impl Bls12381Crypto {
 
     /// Verifies a BLS12-381 signature
     /// signature: 48-byte compressed G1 point
-    /// public_key: 96-byte compressed G2 point
+    /// `public_key`: 96-byte compressed G2 point
     pub fn verify(
         message: &[u8],
         signature: &[u8; 48],
@@ -851,6 +869,7 @@ impl Bls12381Crypto {
 pub mod base58 {
     use super::Base58;
 
+    #[must_use] 
     pub fn encode(data: &[u8]) -> String {
         Base58::encode(data)
     }
@@ -859,6 +878,7 @@ pub mod base58 {
         Base58::decode(s)
     }
 
+    #[must_use] 
     pub fn encode_check(data: &[u8]) -> String {
         Base58::encode_check(data)
     }
@@ -871,26 +891,32 @@ pub mod base58 {
 pub mod hash {
     use super::NeoHash;
 
+    #[must_use] 
     pub fn sha256(data: &[u8]) -> [u8; 32] {
         NeoHash::sha256(data)
     }
 
+    #[must_use] 
     pub fn sha512(data: &[u8]) -> [u8; 64] {
         NeoHash::sha512(data)
     }
 
+    #[must_use] 
     pub fn keccak256(data: &[u8]) -> [u8; 32] {
         NeoHash::keccak256(data)
     }
 
+    #[must_use] 
     pub fn ripemd160(data: &[u8]) -> [u8; 20] {
         NeoHash::ripemd160(data)
     }
 
+    #[must_use] 
     pub fn hash160(data: &[u8]) -> [u8; 20] {
         NeoHash::hash160(data)
     }
 
+    #[must_use] 
     pub fn hash256(data: &[u8]) -> [u8; 32] {
         NeoHash::hash256(data)
     }
@@ -901,10 +927,12 @@ pub mod murmur {
     use std::convert::TryInto;
     use std::io::Cursor;
 
+    #[must_use] 
     pub fn murmur32(data: &[u8], seed: u32) -> u32 {
         murmur3_32(&mut Cursor::new(data), seed).expect("murmur32 hashing should not fail")
     }
 
+    #[must_use] 
     pub fn murmur128(data: &[u8], seed: u32) -> [u8; 16] {
         const C1: u64 = 0x87c3_7b91_1142_53d5;
         const C2: u64 = 0x4cf5_ad43_2745_937f;
@@ -914,14 +942,14 @@ pub mod murmur {
         const N1: u64 = 0x52dc_e729;
         const N2: u64 = 0x3849_5ab5;
 
-        fn fmix(mut h: u64) -> u64 {
+        const fn fmix(mut h: u64) -> u64 {
             h = (h ^ (h >> 33)).wrapping_mul(0xff51_afd7_ed55_8ccd);
             h = (h ^ (h >> 33)).wrapping_mul(0xc4ce_b9fe_1a85_ec53);
             h ^ (h >> 33)
         }
 
-        let mut h1 = seed as u64;
-        let mut h2 = seed as u64;
+        let mut h1 = u64::from(seed);
+        let mut h2 = u64::from(seed);
 
         let mut chunks = data.chunks_exact(16);
         for chunk in &mut chunks {

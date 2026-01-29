@@ -1,4 +1,4 @@
-//! Implementation of the OpCode enum for the Neo Virtual Machine.
+//! Implementation of the `OpCode` enum for the Neo Virtual Machine.
 
 use super::operand_size::OperandSize;
 
@@ -230,8 +230,8 @@ pub enum OpCode {
 }
 
 impl OpCode {
-    /// Returns an iterator over all OpCode variants.
-    pub fn iter() -> impl Iterator<Item = OpCode> {
+    /// Returns an iterator over all `OpCode` variants.
+    pub fn iter() -> impl Iterator<Item = Self> {
         // Create a vector of all OpCode variants
         // This matches the C# Neo implementation exactly
         vec![
@@ -437,8 +437,9 @@ impl OpCode {
         .into_iter()
     }
 
-    /// Creates an OpCode from a byte value.
-    pub fn from_byte(byte: u8) -> Option<Self> {
+    /// Creates an `OpCode` from a byte value.
+    #[must_use] 
+    pub const fn from_byte(byte: u8) -> Option<Self> {
         match byte {
             0x00 => Some(Self::PUSHINT8),
             0x01 => Some(Self::PUSHINT16),
@@ -644,6 +645,7 @@ impl OpCode {
     }
 
     /// Returns the operand size for this opcode.
+    #[must_use] 
     pub fn operand_size(&self) -> OperandSize {
         match self {
             Self::PUSHINT8 => OperandSize::fixed(1),

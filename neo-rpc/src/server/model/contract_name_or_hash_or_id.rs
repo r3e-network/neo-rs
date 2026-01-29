@@ -10,11 +10,13 @@ pub enum ContractNameOrHashOrId {
 }
 
 impl ContractNameOrHashOrId {
-    pub fn from_id(id: i32) -> Self {
+    #[must_use] 
+    pub const fn from_id(id: i32) -> Self {
         Self::Id(id)
     }
 
-    pub fn from_hash(hash: UInt160) -> Self {
+    #[must_use] 
+    pub const fn from_hash(hash: UInt160) -> Self {
         Self::Hash(hash)
     }
 
@@ -22,18 +24,22 @@ impl ContractNameOrHashOrId {
         Self::Name(name.into())
     }
 
-    pub fn is_id(&self) -> bool {
+    #[must_use] 
+    pub const fn is_id(&self) -> bool {
         matches!(self, Self::Id(_))
     }
 
-    pub fn is_hash(&self) -> bool {
+    #[must_use] 
+    pub const fn is_hash(&self) -> bool {
         matches!(self, Self::Hash(_))
     }
 
-    pub fn is_name(&self) -> bool {
+    #[must_use] 
+    pub const fn is_name(&self) -> bool {
         matches!(self, Self::Name(_))
     }
 
+    #[must_use] 
     pub fn try_parse(value: &str) -> Option<Self> {
         if let Ok(id) = value.parse::<i32>() {
             return Some(Self::Id(id));

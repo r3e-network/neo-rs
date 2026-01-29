@@ -22,17 +22,18 @@ impl NodeType {
     /// Convert from byte representation
     pub fn from_byte(b: u8) -> Result<Self, String> {
         match b {
-            0x00 => Ok(NodeType::BranchNode),
-            0x01 => Ok(NodeType::ExtensionNode),
-            0x02 => Ok(NodeType::LeafNode),
-            0x03 => Ok(NodeType::HashNode),
-            0x04 => Ok(NodeType::Empty),
-            _ => Err(format!("Invalid NodeType byte: {}", b)),
+            0x00 => Ok(Self::BranchNode),
+            0x01 => Ok(Self::ExtensionNode),
+            0x02 => Ok(Self::LeafNode),
+            0x03 => Ok(Self::HashNode),
+            0x04 => Ok(Self::Empty),
+            _ => Err(format!("Invalid NodeType byte: {b}")),
         }
     }
 
     /// Convert to byte representation
-    pub fn to_byte(self) -> u8 {
+    #[must_use] 
+    pub const fn to_byte(self) -> u8 {
         self as u8
     }
 }

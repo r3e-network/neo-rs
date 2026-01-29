@@ -28,7 +28,7 @@ pub type InstructionHandler = fn(&mut ExecutionEngine, &Instruction) -> VmResult
 pub struct JumpTable {
     /// The handlers for each opcode.
     /// Uses a fixed-size array of 256 entries (one for each possible byte value)
-    /// exactly matching the C# implementation which uses DelAction[] Table = new DelAction[byte.MaxValue]
+    /// exactly matching the C# implementation which uses `DelAction`[] Table = new `DelAction`[byte.MaxValue]
     handlers: [Option<InstructionHandler>; 256],
 }
 
@@ -45,6 +45,7 @@ static DEFAULT: OnceLock<JumpTable> = OnceLock::new();
 
 impl JumpTable {
     /// Creates a new jump table.
+    #[must_use] 
     pub fn new() -> Self {
         let mut jump_table = Self {
             handlers: [None; 256],
@@ -69,12 +70,14 @@ impl JumpTable {
     }
 
     /// Gets the handler for an opcode.
+    #[must_use] 
     pub fn get(&self, opcode: OpCode) -> Option<InstructionHandler> {
         self.get_handler(opcode)
     }
 
     /// Gets the handler for an opcode.
     /// This matches the C# implementation's indexer get accessor.
+    #[must_use] 
     pub fn get_handler(&self, opcode: OpCode) -> Option<InstructionHandler> {
         self.handlers[opcode as usize]
     }
@@ -86,7 +89,7 @@ impl JumpTable {
     }
 
     /// Sets the handler for an opcode.
-    /// Alias for set_handler for convenience.
+    /// Alias for `set_handler` for convenience.
     pub fn set(&mut self, opcode: OpCode, handler: InstructionHandler) {
         self.set_handler(opcode, handler);
     }

@@ -4,7 +4,7 @@
 //!
 //! ## MemoryPool
 //!
-//! The [`MemoryPool`] in this module is the **canonical, C# parity implementation**.
+//! The [`MemoryPool`](crate::ledger::MemoryPool) in this module is the **canonical, C# parity implementation**.
 //! It includes:
 //! - Transaction verification context (sender fee tracking, oracle responses)
 //! - Conflict attribute detection and resolution

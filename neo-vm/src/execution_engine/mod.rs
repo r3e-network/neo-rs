@@ -99,7 +99,7 @@ pub struct ExecutionEngine {
     /// Optional interop service used for handling syscalls
     pub(crate) interop_service: Option<InteropService>,
 
-    /// Host responsible for advanced syscall execution (ApplicationEngine).
+    /// Host responsible for advanced syscall execution (`ApplicationEngine`).
     ///
     /// # Safety Warning (H-3)
     ///

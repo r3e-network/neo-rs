@@ -1,10 +1,10 @@
-//! LRUCache - matches C# Neo.IO.Caching.LRUCache exactly
+//! `LRUCache` - matches C# Neo.IO.Caching.LRUCache exactly
 
 use super::cache::{Cache, LruPolicy};
 use std::hash::Hash;
 use std::ops::{Deref, DerefMut};
 
-/// LRU cache matching C# LRUCache<TKey, TValue>.
+/// LRU cache matching C# `LRUCache`<`TKey`, `TValue`>.
 pub struct LRUCache<TKey, TValue>
 where
     TKey: Eq + Hash + Clone,

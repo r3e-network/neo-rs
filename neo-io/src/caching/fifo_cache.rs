@@ -1,10 +1,10 @@
-//! FIFOCache - matches C# Neo.IO.Caching.FIFOCache exactly
+//! `FIFOCache` - matches C# Neo.IO.Caching.FIFOCache exactly
 
 use super::cache::{Cache, FifoPolicy};
 use std::hash::Hash;
 use std::ops::{Deref, DerefMut};
 
-/// FIFO cache matching C# FIFOCache<TKey, TValue>.
+/// FIFO cache matching C# `FIFOCache`<`TKey`, `TValue`>.
 pub struct FIFOCache<TKey, TValue>
 where
     TKey: Eq + Hash + Clone,

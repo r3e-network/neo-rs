@@ -3,7 +3,7 @@
 use crate::{ConsensusMessageType, ConsensusResult};
 use serde::{Deserialize, Serialize};
 
-/// Commit message sent when a validator has received enough PrepareResponses
+/// Commit message sent when a validator has received enough `PrepareResponses`
 /// and is ready to commit the block.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommitMessage {
@@ -19,7 +19,8 @@ pub struct CommitMessage {
 
 impl CommitMessage {
     /// Creates a new Commit message
-    pub fn new(block_index: u32, view_number: u8, validator_index: u8, signature: Vec<u8>) -> Self {
+    #[must_use] 
+    pub const fn new(block_index: u32, view_number: u8, validator_index: u8, signature: Vec<u8>) -> Self {
         Self {
             block_index,
             view_number,
@@ -29,11 +30,13 @@ impl CommitMessage {
     }
 
     /// Returns the message type
-    pub fn message_type(&self) -> ConsensusMessageType {
+    #[must_use] 
+    pub const fn message_type(&self) -> ConsensusMessageType {
         ConsensusMessageType::Commit
     }
 
     /// Serializes the message to bytes
+    #[must_use] 
     pub fn serialize(&self) -> Vec<u8> {
         self.signature.clone()
     }

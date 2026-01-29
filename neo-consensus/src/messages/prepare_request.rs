@@ -1,11 +1,11 @@
-//! PrepareRequest message - sent by the primary to propose a block.
+//! `PrepareRequest` message - sent by the primary to propose a block.
 
 use crate::{ConsensusMessageType, ConsensusResult};
 use neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};
 
-/// PrepareRequest message sent by the primary (speaker) to propose a new block.
+/// `PrepareRequest` message sent by the primary (speaker) to propose a new block.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PrepareRequestMessage {
     /// Block index being proposed
@@ -27,9 +27,10 @@ pub struct PrepareRequestMessage {
 }
 
 impl PrepareRequestMessage {
-    /// Creates a new PrepareRequest message
+    /// Creates a new `PrepareRequest` message
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    #[must_use] 
+    pub const fn new(
         block_index: u32,
         view_number: u8,
         validator_index: u8,
@@ -52,11 +53,13 @@ impl PrepareRequestMessage {
     }
 
     /// Returns the message type
-    pub fn message_type(&self) -> ConsensusMessageType {
+    #[must_use] 
+    pub const fn message_type(&self) -> ConsensusMessageType {
         ConsensusMessageType::PrepareRequest
     }
 
     /// Serializes the message to bytes
+    #[must_use] 
     pub fn serialize(&self) -> Vec<u8> {
         // Matches C# DBFTPlugin PrepareRequest.Serialize (after the common message header):
         // `Version:u32, PrevHash:UInt256, Timestamp:u64, Nonce:u64, TransactionHashes: UInt256[] (varint count)`.
@@ -122,9 +125,9 @@ impl PrepareRequestMessage {
         })
     }
 
-    /// Deserializes a full PrepareRequest message from a `MemoryReader`, including the common header.
+    /// Deserializes a full `PrepareRequest` message from a `MemoryReader`, including the common header.
     ///
-    /// This is used by RecoveryMessage which embeds an entire PrepareRequest message.
+    /// This is used by `RecoveryMessage` which embeds an entire `PrepareRequest` message.
     pub fn deserialize_from_reader(reader: &mut MemoryReader) -> ConsensusResult<Self> {
         let ty = reader
             .read_u8()

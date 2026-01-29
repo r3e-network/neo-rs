@@ -6,15 +6,34 @@ pub struct BinaryWriter {
 }
 
 impl BinaryWriter {
-    pub fn new() -> Self {
+    #[must_use] 
+    pub const fn new() -> Self {
         Self { buffer: Vec::new() }
     }
 
+    /// Creates a new binary writer with the specified initial capacity.
+    ///
+    /// # Arguments
+    /// * `capacity` - The initial capacity to allocate for the internal buffer.
+    ///
+    /// # Optimization
+    /// Using this constructor when the expected size of the serialized data is known
+    /// upfront avoids repeated reallocations as the buffer grows, improving performance
+    /// for large or predictable serialization tasks.
+    #[must_use]
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            buffer: Vec::with_capacity(capacity),
+        }
+    }
+
+    #[must_use] 
     pub fn len(&self) -> usize {
         self.buffer.len()
     }
 
     /// Returns true when the writer contains zero bytes.
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.buffer.is_empty()
     }
@@ -31,7 +50,7 @@ impl BinaryWriter {
     }
 
     pub fn write_bool(&mut self, value: bool) -> IoResult<()> {
-        self.write_u8(if value { 1 } else { 0 })
+        self.write_u8(u8::from(value))
     }
 
     pub fn write_u16(&mut self, value: u16) -> IoResult<()> {
@@ -99,10 +118,12 @@ impl BinaryWriter {
         self.write_var_bytes(value.as_bytes())
     }
 
+    #[must_use] 
     pub fn to_bytes(&self) -> Vec<u8> {
         self.buffer.clone()
     }
 
+    #[must_use] 
     pub fn into_bytes(self) -> Vec<u8> {
         self.buffer
     }

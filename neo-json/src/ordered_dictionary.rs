@@ -1,9 +1,9 @@
-//! OrderedDictionary - matches C# Neo.Json.OrderedDictionary exactly
+//! `OrderedDictionary` - matches C# Neo.Json.OrderedDictionary exactly
 
 use std::collections::HashMap;
 
-/// Ordered dictionary that maintains insertion order (matches C# OrderedDictionary<TKey, TValue>)
-#[derive(Clone, Debug, PartialEq)]
+/// Ordered dictionary that maintains insertion order (matches C# `OrderedDictionary`<`TKey`, `TValue`>)
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OrderedDictionary<K: Clone + Eq + std::hash::Hash, V> {
     pub(crate) items: Vec<(K, V)>,
     index_map: HashMap<K, usize>,
@@ -11,6 +11,7 @@ pub struct OrderedDictionary<K: Clone + Eq + std::hash::Hash, V> {
 
 impl<K: Clone + Eq + std::hash::Hash, V> OrderedDictionary<K, V> {
     /// Creates a new ordered dictionary
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             items: Vec::new(),
@@ -19,18 +20,27 @@ impl<K: Clone + Eq + std::hash::Hash, V> OrderedDictionary<K, V> {
     }
 
     /// Gets count
+    #[must_use] 
     pub fn count(&self) -> usize {
         self.items.len()
     }
 
-    /// Gets keys
-    pub fn keys(&self) -> Vec<&K> {
-        self.items.iter().map(|(k, _)| k).collect()
+    /// Gets keys as an iterator.
+    /// 
+    /// Returns `impl Iterator` to avoid unnecessary Vec allocation.
+    /// Caller can call `.collect()` if they need a Vec.
+    #[must_use] 
+    pub fn keys(&self) -> impl Iterator<Item = &K> + '_ {
+        self.items.iter().map(|(k, _)| k)
     }
 
-    /// Gets values
-    pub fn values(&self) -> Vec<&V> {
-        self.items.iter().map(|(_, v)| v).collect()
+    /// Gets values as an iterator.
+    /// 
+    /// Returns `impl Iterator` to avoid unnecessary Vec allocation.
+    /// Caller can call `.collect()` if they need a Vec.
+    #[must_use] 
+    pub fn values(&self) -> impl Iterator<Item = &V> + '_ {
+        self.items.iter().map(|(_, v)| v)
     }
 
     /// Gets value by key
@@ -52,6 +62,7 @@ impl<K: Clone + Eq + std::hash::Hash, V> OrderedDictionary<K, V> {
     }
 
     /// Gets value by index
+    #[must_use] 
     pub fn get_at(&self, index: usize) -> Option<&V> {
         self.items.get(index).map(|(_, v)| v)
     }

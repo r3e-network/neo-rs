@@ -4,7 +4,7 @@
 //!
 //! **IMPORTANT**: This crate provides a **lightweight, standalone** mempool implementation.
 //! For full C# Neo parity (including transaction verification context, conflict detection,
-//! and reverification logic), use [`neo_core::ledger::MemoryPool`] instead.
+//! and reverification logic), use `neo_core::ledger::MemoryPool` instead.
 //!
 //! ## When to use this crate
 //!
@@ -12,7 +12,7 @@
 //! - **Standalone tools**: CLI tools that only need basic mempool tracking
 //! - **Custom implementations**: Building alternative mempool strategies
 //!
-//! ## When to use neo-core's MemoryPool
+//! ## When to use neo-core's `MemoryPool`
 //!
 //! - **Full node operation**: Production nodes requiring C# Neo compatibility
 //! - **Consensus participation**: When transaction verification context is needed

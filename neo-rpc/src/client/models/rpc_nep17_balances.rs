@@ -17,7 +17,7 @@ use num_bigint::BigInt;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
-/// NEP17 balances for an address matching C# RpcNep17Balances
+/// NEP17 balances for an address matching C# `RpcNep17Balances`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcNep17Balances {
     /// User script hash
@@ -29,7 +29,8 @@ pub struct RpcNep17Balances {
 
 impl RpcNep17Balances {
     /// Converts to JSON
-    /// Matches C# ToJson
+    /// Matches C# `ToJson`
+    #[must_use] 
     pub fn to_json(&self, _protocol_settings: &ProtocolSettings) -> JObject {
         let mut json = JObject::new();
 
@@ -55,7 +56,7 @@ impl RpcNep17Balances {
     }
 
     /// Creates from JSON
-    /// Matches C# FromJson
+    /// Matches C# `FromJson`
     pub fn from_json(
         json: &JObject,
         _protocol_settings: &ProtocolSettings,
@@ -74,11 +75,11 @@ impl RpcNep17Balances {
 
         let address = json
             .get("address")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .ok_or("Missing or invalid 'address' field")?;
 
         let user_script_hash = if address.starts_with("0x") {
-            UInt160::parse(&address).map_err(|_| format!("Invalid address: {}", address))?
+            UInt160::parse(&address).map_err(|_| format!("Invalid address: {address}"))?
         } else {
             WalletHelper::to_script_hash(&address, _protocol_settings.address_version)
                 .map_err(|err| format!("Invalid address: {err}"))?
@@ -91,7 +92,7 @@ impl RpcNep17Balances {
     }
 }
 
-/// Individual NEP17 balance entry matching C# RpcNep17Balance
+/// Individual NEP17 balance entry matching C# `RpcNep17Balance`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcNep17Balance {
     /// Asset hash
@@ -106,7 +107,8 @@ pub struct RpcNep17Balance {
 
 impl RpcNep17Balance {
     /// Converts to JSON
-    /// Matches C# ToJson
+    /// Matches C# `ToJson`
+    #[must_use] 
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
         json.insert(
@@ -119,20 +121,20 @@ impl RpcNep17Balance {
         );
         json.insert(
             "lastupdatedblock".to_string(),
-            JToken::Number(self.last_updated_block as f64),
+            JToken::Number(f64::from(self.last_updated_block)),
         );
         json
     }
 
     /// Creates from JSON
-    /// Matches C# FromJson
+    /// Matches C# `FromJson`
     pub fn from_json(
         json: &JObject,
         _protocol_settings: &ProtocolSettings,
     ) -> Result<Self, String> {
         let asset_hash_str = json
             .get("assethash")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .ok_or("Missing or invalid 'assethash' field")?;
 
         let asset_hash = if asset_hash_str.starts_with("0x") {
@@ -140,18 +142,18 @@ impl RpcNep17Balance {
         } else {
             UInt160::from_address(&asset_hash_str)
         }
-        .map_err(|_| format!("Invalid asset hash: {}", asset_hash_str))?;
+        .map_err(|_| format!("Invalid asset hash: {asset_hash_str}"))?;
 
         let amount_str = json
             .get("amount")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .ok_or("Missing or invalid 'amount' field")?;
         let amount =
-            BigInt::from_str(&amount_str).map_err(|_| format!("Invalid amount: {}", amount_str))?;
+            BigInt::from_str(&amount_str).map_err(|_| format!("Invalid amount: {amount_str}"))?;
 
         let last_updated_block =
             json.get("lastupdatedblock")
-                .and_then(|v| v.as_number())
+                .and_then(neo_json::JToken::as_number)
                 .ok_or("Missing or invalid 'lastupdatedblock' field")? as u32;
 
         Ok(Self {

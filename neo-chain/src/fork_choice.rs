@@ -24,24 +24,28 @@ pub struct ForkChoice {
 
 impl ForkChoice {
     /// Create a new fork choice with the given strategy
-    pub fn new(strategy: ForkChoiceStrategy) -> Self {
+    #[must_use] 
+    pub const fn new(strategy: ForkChoiceStrategy) -> Self {
         Self { strategy }
     }
 
     /// Create with default hybrid strategy
+    #[must_use] 
     pub fn default_strategy() -> Self {
         Self::new(ForkChoiceStrategy::Hybrid)
     }
 
     /// Get the current strategy
-    pub fn strategy(&self) -> ForkChoiceStrategy {
+    #[must_use] 
+    pub const fn strategy(&self) -> ForkChoiceStrategy {
         self.strategy
     }
 
     /// Compare two blocks and determine which should be the chain tip
     ///
     /// Returns true if `candidate` should become the new tip over `current`
-    pub fn should_switch(&self, current: &BlockIndexEntry, candidate: &BlockIndexEntry) -> bool {
+    #[must_use] 
+    pub const fn should_switch(&self, current: &BlockIndexEntry, candidate: &BlockIndexEntry) -> bool {
         match self.strategy {
             ForkChoiceStrategy::LongestChain => candidate.height > current.height,
             ForkChoiceStrategy::HeaviestChain => {
@@ -60,6 +64,7 @@ impl ForkChoice {
     }
 
     /// Find the best block among multiple candidates
+    #[must_use] 
     pub fn find_best<'a>(&self, candidates: &'a [BlockIndexEntry]) -> Option<&'a BlockIndexEntry> {
         candidates.iter().reduce(|best, candidate| {
             if self.should_switch(best, candidate) {
@@ -97,7 +102,7 @@ impl ForkChoice {
 
     /// Calculate reorg path from current tip to new tip
     ///
-    /// Returns (blocks_to_disconnect, blocks_to_connect)
+    /// Returns (`blocks_to_disconnect`, `blocks_to_connect`)
     pub fn calculate_reorg_path(
         index: &BlockIndex,
         current_tip: &UInt256,
@@ -131,14 +136,15 @@ impl ForkChoice {
     }
 
     /// Check if a reorganization is needed
+    #[must_use] 
     pub fn needs_reorg(&self, current_tip: &BlockIndexEntry, new_block: &BlockIndexEntry) -> bool {
         // If new block doesn't extend current tip, we might need a reorg
-        if new_block.prev_hash != current_tip.hash {
-            // Only reorg if the new chain would be better
-            self.should_switch(current_tip, new_block)
-        } else {
+        if new_block.prev_hash == current_tip.hash {
             // Direct extension, no reorg needed
             false
+        } else {
+            // Only reorg if the new chain would be better
+            self.should_switch(current_tip, new_block)
         }
     }
 }

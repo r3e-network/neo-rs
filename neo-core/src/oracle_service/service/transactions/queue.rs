@@ -24,7 +24,7 @@ impl OracleService {
         backup_sign: Option<Vec<u8>>,
     ) -> Result<(), OracleServiceError> {
         let mut queue = self.pending_queue.lock();
-        if !queue.contains_key(&request_id) {
+        if let std::collections::hash_map::Entry::Vacant(e) = queue.entry(request_id) {
             let request = OracleContract::new()
                 .get_request(snapshot, request_id)
                 .map_err(|err| OracleServiceError::Processing(err.to_string()))?
@@ -34,16 +34,13 @@ impl OracleService {
                 .get_transaction_state(snapshot, &request.original_tx_id)
                 .map_err(|err| OracleServiceError::Processing(err.to_string()))?
                 .ok_or(OracleServiceError::RequestTransactionNotFound)?;
-            queue.insert(
-                request_id,
-                OracleTask {
+            e.insert(OracleTask {
                     tx: None,
                     backup_tx: None,
                     signs: BTreeMap::new(),
                     backup_signs: BTreeMap::new(),
                     timestamp: SystemTime::now(),
-                },
-            );
+                });
         }
         let task = queue.get_mut(&request_id).expect("oracle task inserted");
 

@@ -13,7 +13,7 @@ use crate::network::p2p::payloads::Transaction;
 /// Represents the event data of MemoryPool.TransactionRemoved.
 pub struct TransactionRemovedEventArgs {
     /// The Transactions that is being removed.
-    /// public IReadOnlyCollection<Transaction> Transactions { get; init; }
+    /// public IReadOnlyCollection\<Transaction> Transactions { get; init; }
     pub transactions: Vec<Transaction>,
 
     /// The reason a transaction was removed.

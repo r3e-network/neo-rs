@@ -63,7 +63,8 @@ impl StorageKey {
     pub const PREFIX_LENGTH: usize = std::mem::size_of::<i32>() + std::mem::size_of::<u8>();
 
     /// Creates a new storage key.
-    pub fn new(id: i32, key: Vec<u8>) -> Self {
+    #[must_use] 
+    pub const fn new(id: i32, key: Vec<u8>) -> Self {
         Self {
             id,
             key,
@@ -81,6 +82,7 @@ impl StorageKey {
     }
 
     /// Returns the total length of the serialized key.
+    #[must_use] 
     pub fn length(&self) -> usize {
         if let Some(ref cache) = self.cache {
             cache.len()
@@ -90,73 +92,88 @@ impl StorageKey {
     }
 
     /// Creates a storage key with a single-byte prefix.
+    #[must_use] 
     pub fn create(id: i32, prefix: u8) -> Self {
         let key = Self::storage_key(prefix, &[]);
         Self::new(id, key)
     }
 
     /// Creates a storage key with prefix and single byte content.
+    #[must_use] 
     pub fn create_with_byte(id: i32, prefix: u8, content: u8) -> Self {
         let key = Self::storage_key(prefix, &[content]);
         Self::new(id, key)
     }
 
-    /// Creates a storage key with prefix and UInt160 hash.
+    /// Creates a storage key with prefix and `UInt160` hash.
+    #[must_use] 
     pub fn create_with_uint160(id: i32, prefix: u8, hash: &UInt160) -> Self {
         let key = Self::storage_key(prefix, &hash.as_bytes());
         Self::new(id, key)
     }
 
-    /// Creates a storage key with prefix and UInt256 hash.
+    /// Creates a storage key with prefix and `UInt256` hash.
+    #[must_use] 
     pub fn create_with_uint256(id: i32, prefix: u8, hash: &UInt256) -> Self {
         let key = Self::storage_key(prefix, &hash.as_bytes());
         Self::new(id, key)
     }
 
-    /// Creates a storage key with prefix, UInt256 hash, and UInt160 signer.
+    /// Creates a storage key with prefix, `UInt256` hash, and `UInt160` signer.
+    #[must_use] 
     pub fn create_with_uint256_uint160(
         id: i32,
         prefix: u8,
         hash: &UInt256,
         signer: &UInt160,
     ) -> Self {
-        let mut suffix = hash.as_bytes().to_vec();
+        // OPTIMIZATION: Use Vec::with_capacity() to pre-allocate exact size
+        // instead of to_vec() + extend which causes reallocation.
+        // UInt256 is 32 bytes, UInt160 is 20 bytes = 52 bytes total.
+        let mut suffix = Vec::with_capacity(32 + 20);
+        suffix.extend_from_slice(&hash.as_bytes());
         suffix.extend_from_slice(&signer.as_bytes());
         let key = Self::storage_key(prefix, &suffix);
         Self::new(id, key)
     }
 
     /// Creates a storage key with prefix and i32 value (big endian).
+    #[must_use] 
     pub fn create_with_int32(id: i32, prefix: u8, big_endian: i32) -> Self {
         let key = Self::storage_key(prefix, &big_endian.to_be_bytes());
         Self::new(id, key)
     }
 
     /// Creates a storage key with prefix and u32 value (big endian).
+    #[must_use] 
     pub fn create_with_uint32(id: i32, prefix: u8, big_endian: u32) -> Self {
         let key = Self::storage_key(prefix, &big_endian.to_be_bytes());
         Self::new(id, key)
     }
 
     /// Creates a storage key with prefix and i64 value (big endian).
+    #[must_use] 
     pub fn create_with_int64(id: i32, prefix: u8, big_endian: i64) -> Self {
         let key = Self::storage_key(prefix, &big_endian.to_be_bytes());
         Self::new(id, key)
     }
 
     /// Creates a storage key with prefix and u64 value (big endian).
+    #[must_use] 
     pub fn create_with_uint64(id: i32, prefix: u8, big_endian: u64) -> Self {
         let key = Self::storage_key(prefix, &big_endian.to_be_bytes());
         Self::new(id, key)
     }
 
     /// Creates a storage key with prefix and byte content.
+    #[must_use] 
     pub fn create_with_bytes(id: i32, prefix: u8, content: &[u8]) -> Self {
         let key = Self::storage_key(prefix, content);
         Self::new(id, key)
     }
 
     /// Creates a search prefix for iterating contract storage.
+    #[must_use] 
     pub fn create_search_prefix(id: i32, prefix: &[u8]) -> Vec<u8> {
         let mut buffer = vec![0u8; std::mem::size_of::<i32>() + prefix.len()];
         buffer[..4].copy_from_slice(&id.to_le_bytes());
@@ -165,21 +182,25 @@ impl StorageKey {
     }
 
     /// Returns the contract ID.
-    pub fn id(&self) -> i32 {
+    #[must_use] 
+    pub const fn id(&self) -> i32 {
         self.id
     }
 
     /// Returns the key suffix.
+    #[must_use] 
     pub fn key(&self) -> &[u8] {
         &self.key
     }
 
-    /// Alias for key() - returns the suffix portion (excluding contract ID).
+    /// Alias for `key()` - returns the suffix portion (excluding contract ID).
+    #[must_use] 
     pub fn suffix(&self) -> &[u8] {
         &self.key
     }
 
     /// Converts the storage key to a byte array for storage.
+    #[must_use] 
     pub fn to_array(&self) -> Vec<u8> {
         if let Some(ref cache) = self.cache {
             cache.clone()
@@ -189,6 +210,7 @@ impl StorageKey {
     }
 
     /// Returns the hash code using the same algorithm as the C# implementation.
+    #[must_use] 
     pub fn get_hash_code(&self) -> i32 {
         let seed = default_xx_hash3_seed();
         let suffix_hash = xx_hash3_32(&self.key, seed);
@@ -204,6 +226,7 @@ impl StorageKey {
     }
 
     /// Creates a storage key from raw bytes.
+    #[must_use] 
     pub fn from_bytes(cache: &[u8]) -> Self {
         if cache.len() < 4 {
             return Self {
@@ -261,7 +284,7 @@ impl fmt::Display for StorageKey {
                 self.key[0],
                 self.key[1..]
                     .iter()
-                    .map(|b| format!("0x{:02x}", b))
+                    .map(|b| format!("0x{b:02x}"))
                     .collect::<Vec<_>>()
                     .join(", ")
             )
@@ -282,7 +305,8 @@ pub struct StorageItem {
 
 impl StorageItem {
     /// Creates a new storage item.
-    pub fn new(value: Vec<u8>) -> Self {
+    #[must_use] 
+    pub const fn new(value: Vec<u8>) -> Self {
         Self {
             value,
             is_constant: false,
@@ -290,12 +314,14 @@ impl StorageItem {
     }
 
     /// Creates a storage item from bytes.
+    #[must_use] 
     pub fn from_bytes(value: Vec<u8>) -> Self {
         Self::new(value)
     }
 
     /// Creates a constant storage item.
-    pub fn constant(value: Vec<u8>) -> Self {
+    #[must_use] 
+    pub const fn constant(value: Vec<u8>) -> Self {
         Self {
             value,
             is_constant: true,
@@ -303,11 +329,13 @@ impl StorageItem {
     }
 
     /// Returns a clone of the stored value.
+    #[must_use] 
     pub fn get_value(&self) -> Vec<u8> {
         self.value.clone()
     }
 
     /// Returns a reference to the stored value.
+    #[must_use] 
     pub fn value(&self) -> &[u8] {
         &self.value
     }
@@ -318,11 +346,13 @@ impl StorageItem {
     }
 
     /// Returns whether this item is constant.
-    pub fn is_constant(&self) -> bool {
+    #[must_use] 
+    pub const fn is_constant(&self) -> bool {
         self.is_constant
     }
 
     /// Returns the size of the stored value.
+    #[must_use] 
     pub fn size(&self) -> usize {
         self.value.len()
     }
@@ -364,7 +394,7 @@ impl From<&[u8]> for StorageItem {
 impl IStorageValue for StorageItem {
     fn to_storage_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(1 + self.value.len());
-        bytes.push(if self.is_constant { 0x01 } else { 0x00 });
+        bytes.push(u8::from(self.is_constant));
         bytes.extend_from_slice(&self.value);
         bytes
     }

@@ -10,7 +10,7 @@ use crate::{ChangeViewReason, ConsensusError, ConsensusMessageType, ConsensusRes
 use tracing::{debug, info, warn};
 
 impl ConsensusService {
-    /// Handles RecoveryRequest message
+    /// Handles `RecoveryRequest` message
     pub(in crate::service) fn on_recovery_request(
         &mut self,
         payload: &ConsensusPayload,
@@ -35,7 +35,7 @@ impl ConsensusService {
         Ok(())
     }
 
-    /// Handles RecoveryMessage
+    /// Handles `RecoveryMessage`
     pub(in crate::service) fn on_recovery_message(
         &mut self,
         payload: &ConsensusPayload,
@@ -125,7 +125,7 @@ impl ConsensusService {
                     view_number: cv.original_view_number,
                     message_type: ConsensusMessageType::ChangeView,
                     data: msg.serialize(),
-                    witness: signature,
+                    witness: signature.to_vec(),
                 };
                 self.reprocess_recovery_payload(recovered);
             }
@@ -156,7 +156,7 @@ impl ConsensusService {
                                 view_number: prep_req.view_number,
                                 message_type: ConsensusMessageType::PrepareRequest,
                                 data: prep_req.serialize(),
-                                witness: signature,
+                                witness: signature.to_vec(),
                             };
                             self.reprocess_recovery_payload(recovered);
                         }
@@ -199,7 +199,7 @@ impl ConsensusService {
                         view_number: message_view,
                         message_type: ConsensusMessageType::PrepareResponse,
                         data: msg.serialize(),
-                        witness: signature,
+                        witness: signature.to_vec(),
                     };
                     self.reprocess_recovery_payload(recovered);
                 }
@@ -228,7 +228,7 @@ impl ConsensusService {
                     view_number: commit.view_number,
                     message_type: ConsensusMessageType::Commit,
                     data: msg.serialize(),
-                    witness: signature,
+                    witness: signature.to_vec(),
                 };
                 self.reprocess_recovery_payload(recovered);
             }
@@ -300,9 +300,9 @@ impl ConsensusService {
         }
     }
 
-    /// Determines whether this node should respond with a RecoveryMessage.
+    /// Determines whether this node should respond with a `RecoveryMessage`.
     ///
-    /// Mirrors C# DBFTPlugin behavior:
+    /// Mirrors C# `DBFTPlugin` behavior:
     /// - If we've already sent a commit, always respond.
     /// - Otherwise, only `f + 1` nodes respond, selected by validator index rotation.
     pub(in crate::service) fn should_send_recovery_response(
@@ -394,8 +394,7 @@ impl ConsensusService {
             .context
             .prepare_request_invocation
             .as_ref()
-            .map(|inv| !inv.is_empty())
-            .unwrap_or(false);
+            .is_some_and(|inv| !inv.is_empty());
         let include_prepare_request =
             self.context.prepare_request_received && has_prepare_request_invocation;
 

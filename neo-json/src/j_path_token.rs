@@ -1,10 +1,10 @@
-//! JPathToken - matches C# Neo.Json.JPathToken exactly
+//! `JPathToken` - matches C# Neo.Json.JPathToken exactly
 
 use crate::error::JsonError;
 use crate::j_path_token_type::JPathTokenType;
 use crate::j_token::JToken;
 
-/// JSON path token (matches C# JPathToken)
+/// JSON path token (matches C# `JPathToken`)
 #[derive(Clone, Debug)]
 pub struct JPathToken {
     pub token_type: JPathTokenType,
@@ -12,12 +12,13 @@ pub struct JPathToken {
 }
 
 impl JPathToken {
-    pub fn is_root(&self) -> bool {
+    #[must_use] 
+    pub const fn is_root(&self) -> bool {
         matches!(self.token_type, JPathTokenType::Root)
     }
 
     /// Parse JSON path expression into tokens
-    pub fn parse(expr: &str) -> Result<Vec<JPathToken>, JsonError> {
+    pub fn parse(expr: &str) -> Result<Vec<Self>, JsonError> {
         if expr.is_empty() {
             return Err(JsonError::format("JSONPath expression cannot be empty"));
         }
@@ -27,7 +28,7 @@ impl JPathToken {
         let mut i = 0;
 
         while i < chars.len() {
-            let mut token = JPathToken {
+            let mut token = Self {
                 token_type: JPathTokenType::Root,
                 content: None,
             };
@@ -60,8 +61,7 @@ impl JPathToken {
                 }
                 ch => {
                     return Err(JsonError::format(format!(
-                        "Invalid character '{}' at position {}",
-                        ch, i
+                        "Invalid character '{ch}' at position {i}"
                     )));
                 }
             }
@@ -109,7 +109,7 @@ impl JPathToken {
 
     /// Process JSON path on objects
     pub fn evaluate<'a>(
-        tokens: &'a [JPathToken],
+        tokens: &'a [Self],
         root: &'a JToken,
     ) -> Result<Vec<&'a JToken>, JsonError> {
         if tokens.is_empty() {

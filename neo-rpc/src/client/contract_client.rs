@@ -22,21 +22,22 @@ use neo_vm::ScriptBuilder;
 use std::sync::Arc;
 
 /// Contract related operations through RPC API
-/// Matches C# ContractClient
+/// Matches C# `ContractClient`
 pub struct ContractClient {
     /// The RPC client instance
     rpc_client: Arc<RpcClient>,
 }
 
 impl ContractClient {
-    /// ContractClient Constructor
+    /// `ContractClient` Constructor
     /// Matches C# constructor
-    pub fn new(rpc_client: Arc<RpcClient>) -> Self {
+    #[must_use] 
+    pub const fn new(rpc_client: Arc<RpcClient>) -> Self {
         Self { rpc_client }
     }
 
     /// Use RPC method to test invoke operation
-    /// Matches C# TestInvokeAsync
+    /// Matches C# `TestInvokeAsync`
     pub async fn test_invoke(
         &self,
         script_hash: &UInt160,
@@ -55,7 +56,7 @@ impl ContractClient {
     }
 
     /// Deploy Contract, return signed transaction
-    /// Matches C# CreateDeployContractTxAsync
+    /// Matches C# `CreateDeployContractTxAsync`
     pub async fn create_deploy_contract_tx(
         &self,
         nef_file: &[u8],
@@ -95,7 +96,7 @@ impl ContractClient {
         }
 
         // EmitPush(flags), EmitPush(method), EmitPush(scriptHash), SYSCALL System.Contract.Call
-        sb.emit_push_int(call_flags.bits() as i64);
+        sb.emit_push_int(i64::from(call_flags.bits()));
         sb.emit_push(method.as_bytes());
         sb.emit_push(&script_hash.to_array());
         sb.emit_syscall("System.Contract.Call")?;
@@ -118,9 +119,9 @@ impl ContractClient {
         sb.emit_push_int(2);
         sb.emit_pack();
         // EmitPush(flags)
-        sb.emit_push_int(call_flags.bits() as i64);
+        sb.emit_push_int(i64::from(call_flags.bits()));
         // EmitPush(method)
-        sb.emit_push("deploy".as_bytes());
+        sb.emit_push(b"deploy");
         // EmitPush(scriptHash)
         sb.emit_push(&ContractManagement::contract_hash().to_array());
         // Syscall

@@ -22,7 +22,7 @@ pub enum InventoryType {
 impl InventoryType {
     /// Convert from byte value.
     #[must_use]
-    pub fn from_byte(value: u8) -> Option<Self> {
+    pub const fn from_byte(value: u8) -> Option<Self> {
         match value {
             0x2b => Some(Self::Transaction),
             0x2c => Some(Self::Block),
@@ -34,13 +34,13 @@ impl InventoryType {
 
     /// Convert to byte value.
     #[must_use]
-    pub fn to_byte(self) -> u8 {
+    pub const fn to_byte(self) -> u8 {
         self as u8
     }
 
     /// Returns the string representation.
     #[must_use]
-    pub fn as_str(self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::Transaction => "TX",
             Self::Block => "Block",

@@ -69,7 +69,7 @@ pub enum StateError {
 
 impl From<neo_storage::StorageError> for StateError {
     fn from(err: neo_storage::StorageError) -> Self {
-        StateError::Storage(err.to_string())
+        Self::Storage(err.to_string())
     }
 }
 

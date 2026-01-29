@@ -40,7 +40,8 @@ impl RpcMethodDescriptor {
     }
 
     /// Returns whether this method requires authentication.
-    pub fn requires_auth(&self) -> bool {
+    #[must_use] 
+    pub const fn requires_auth(&self) -> bool {
         self.requires_auth
     }
 }

@@ -73,11 +73,11 @@ pub struct StorageSettings {
     #[serde(default = "default_data_path")]
     pub path: PathBuf,
 
-    /// RocksDB cache size in MB
+    /// `RocksDB` cache size in MB
     #[serde(default = "default_cache_size")]
     pub cache_size_mb: usize,
 
-    /// Maximum open files for RocksDB
+    /// Maximum open files for `RocksDB`
     #[serde(default = "default_max_open_files")]
     pub max_open_files: i32,
 
@@ -185,7 +185,7 @@ fn default_listen_address() -> String {
     "0.0.0.0".to_string()
 }
 
-fn default_p2p_port() -> u16 {
+const fn default_p2p_port() -> u16 {
     10333
 }
 
@@ -199,19 +199,19 @@ fn default_data_path() -> PathBuf {
         .join("neo-rs")
 }
 
-fn default_cache_size() -> usize {
+const fn default_cache_size() -> usize {
     256
 }
 
-fn default_max_open_files() -> i32 {
+const fn default_max_open_files() -> i32 {
     1000
 }
 
-fn default_compression() -> bool {
+const fn default_compression() -> bool {
     true
 }
 
-fn default_rpc_enabled() -> bool {
+const fn default_rpc_enabled() -> bool {
     true
 }
 
@@ -219,23 +219,23 @@ fn default_rpc_address() -> String {
     "127.0.0.1".to_string()
 }
 
-fn default_rpc_port() -> u16 {
+const fn default_rpc_port() -> u16 {
     10332
 }
 
-fn default_max_concurrent() -> usize {
+const fn default_max_concurrent() -> usize {
     100
 }
 
-fn default_request_timeout() -> u64 {
+const fn default_request_timeout() -> u64 {
     30
 }
 
-fn default_max_sessions() -> usize {
+const fn default_max_sessions() -> usize {
     100
 }
 
-fn default_timeout_multiplier() -> f64 {
+const fn default_timeout_multiplier() -> f64 {
     1.0
 }
 
@@ -247,7 +247,7 @@ fn default_log_format() -> String {
     "text".to_string()
 }
 
-fn default_color_enabled() -> bool {
+const fn default_color_enabled() -> bool {
     true
 }
 
@@ -255,11 +255,11 @@ fn default_metrics_address() -> String {
     "127.0.0.1".to_string()
 }
 
-fn default_metrics_port() -> u16 {
+const fn default_metrics_port() -> u16 {
     9090
 }
 
-fn default_health_enabled() -> bool {
+const fn default_health_enabled() -> bool {
     true
 }
 
@@ -341,6 +341,7 @@ impl Default for Settings {
 
 impl Settings {
     /// Create settings for a specific network
+    #[must_use] 
     pub fn for_network(network_type: NetworkType) -> Self {
         let (protocol, genesis, network) = match network_type {
             NetworkType::MainNet => (
@@ -452,16 +453,19 @@ impl Settings {
     }
 
     /// Get the effective network magic
+    #[must_use] 
     pub fn network_magic(&self) -> u32 {
         self.network.effective_magic()
     }
 
     /// Get the effective address version
+    #[must_use] 
     pub fn address_version(&self) -> u8 {
         self.network.effective_address_version()
     }
 
     /// Get P2P socket address
+    #[must_use] 
     pub fn p2p_socket_addr(&self) -> std::net::SocketAddr {
         format!("{}:{}", self.node.listen_address, self.node.p2p_port)
             .parse()
@@ -469,6 +473,7 @@ impl Settings {
     }
 
     /// Get RPC socket address
+    #[must_use] 
     pub fn rpc_socket_addr(&self) -> std::net::SocketAddr {
         format!("{}:{}", self.rpc.address, self.rpc.port)
             .parse()

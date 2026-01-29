@@ -73,7 +73,7 @@ fn expect_base64_param(
 fn expect_u64_param(params: &[Value], index: usize, method: &str) -> Result<u64, RpcException> {
     params
         .get(index)
-        .and_then(|value| value.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .ok_or_else(|| {
             RpcException::from(
                 RpcError::invalid_params()

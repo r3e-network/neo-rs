@@ -62,7 +62,7 @@ impl StorageValueError {
 
     /// Create a data too large error.
     #[must_use]
-    pub fn data_too_large(size: usize, max: usize) -> Self {
+    pub const fn data_too_large(size: usize, max: usize) -> Self {
         Self::DataTooLarge { size, max }
     }
 }

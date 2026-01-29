@@ -16,9 +16,9 @@ const MAX_STORAGE_VALUE_SIZE: usize = u16::MAX as usize;
 pub const BRANCH_CHILD_COUNT: usize = 17;
 /// Index used by branch nodes to store their value.
 pub const BRANCH_VALUE_INDEX: usize = BRANCH_CHILD_COUNT - 1;
-/// Maximum key length when expressed as nibbles (matches C# ApplicationEngine constraints).
+/// Maximum key length when expressed as nibbles (matches C# `ApplicationEngine` constraints).
 pub const MAX_KEY_LENGTH: usize = (MAX_STORAGE_KEY_SIZE + mem::size_of::<i32>()) * 2;
-/// Maximum value length supported by the trie (matches ApplicationEngine limits).
+/// Maximum value length supported by the trie (matches `ApplicationEngine` limits).
 pub const MAX_VALUE_LENGTH: usize = 3 + MAX_STORAGE_VALUE_SIZE + mem::size_of::<bool>();
 
 /// Merkle Patricia trie node.
@@ -30,9 +30,9 @@ pub struct Node {
     pub node_type: NodeType,
     pub reference: u32,
     hash: RwLock<Option<UInt256>>,
-    pub children: Vec<Node>,
+    pub children: Vec<Self>,
     pub key: Vec<u8>,
-    pub next: Option<Box<Node>>,
+    pub next: Option<Box<Self>>,
     pub value: Vec<u8>,
 }
 
@@ -65,7 +65,7 @@ impl Clone for Node {
 
         match self.node_type {
             NodeType::BranchNode => {
-                node.children = self.children.iter().map(Node::clone_as_child).collect();
+                node.children = self.children.iter().map(Self::clone_as_child).collect();
             }
             NodeType::ExtensionNode => {
                 node.next = self
@@ -85,17 +85,19 @@ impl Clone for Node {
 
 impl Node {
     /// Creates an empty node.
+    #[must_use] 
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Creates a new branch node with default children.
+    #[must_use] 
     pub fn new_branch() -> Self {
         Self {
             node_type: NodeType::BranchNode,
             reference: 1,
             hash: RwLock::new(None),
-            children: (0..BRANCH_CHILD_COUNT).map(|_| Node::new()).collect(),
+            children: (0..BRANCH_CHILD_COUNT).map(|_| Self::new()).collect(),
             key: Vec::new(),
             next: None,
             value: Vec::new(),
@@ -103,7 +105,7 @@ impl Node {
     }
 
     /// Creates a new extension node with the given path and child.
-    pub fn new_extension(key: Vec<u8>, next: Node) -> MptResult<Self> {
+    pub fn new_extension(key: Vec<u8>, next: Self) -> MptResult<Self> {
         if key.is_empty() {
             return Err(MptError::invalid("extension node requires non-empty key"));
         }
@@ -120,7 +122,8 @@ impl Node {
     }
 
     /// Creates a new leaf node with the supplied value.
-    pub fn new_leaf(value: Vec<u8>) -> Self {
+    #[must_use] 
+    pub const fn new_leaf(value: Vec<u8>) -> Self {
         Self {
             node_type: NodeType::LeafNode,
             reference: 1,
@@ -133,7 +136,8 @@ impl Node {
     }
 
     /// Creates a new hash-only node.
-    pub fn new_hash(hash: UInt256) -> Self {
+    #[must_use] 
+    pub const fn new_hash(hash: UInt256) -> Self {
         Self {
             node_type: NodeType::HashNode,
             reference: 0,
@@ -185,15 +189,15 @@ impl Node {
         match self.node_type {
             NodeType::BranchNode => {
                 size += self.branch_size();
-                size += get_var_size(self.reference as u64);
+                size += get_var_size(u64::from(self.reference));
             }
             NodeType::ExtensionNode => {
                 size += self.extension_size();
-                size += get_var_size(self.reference as u64);
+                size += get_var_size(u64::from(self.reference));
             }
             NodeType::LeafNode => {
                 size += self.leaf_size();
-                size += get_var_size(self.reference as u64);
+                size += get_var_size(u64::from(self.reference));
             }
             NodeType::HashNode => {
                 size += self.hash_size();
@@ -207,7 +211,7 @@ impl Node {
     pub fn byte_size_as_child(&self) -> usize {
         match self.node_type {
             NodeType::BranchNode | NodeType::ExtensionNode | NodeType::LeafNode => {
-                Node::new_hash(self.hash()).byte_size()
+                Self::new_hash(self.hash()).byte_size()
             }
             NodeType::HashNode | NodeType::Empty => self.byte_size(),
         }
@@ -224,7 +228,7 @@ impl Node {
     pub fn serialize_as_child(&self, writer: &mut BinaryWriter) -> MptResult<()> {
         match self.node_type {
             NodeType::BranchNode | NodeType::ExtensionNode | NodeType::LeafNode => {
-                let hashed = Node::new_hash(self.hash());
+                let hashed = Self::new_hash(self.hash());
                 Serializable::serialize(&hashed, writer).map_err(MptError::from)
             }
             NodeType::HashNode | NodeType::Empty => {
@@ -234,17 +238,17 @@ impl Node {
     }
 
     /// Clones the node into the representation used while embedded inside another node.
-    pub fn clone_as_child(&self) -> Node {
+    pub fn clone_as_child(&self) -> Self {
         match self.node_type {
             NodeType::BranchNode | NodeType::ExtensionNode | NodeType::LeafNode => {
-                Node::new_hash(self.hash())
+                Self::new_hash(self.hash())
             }
             NodeType::HashNode | NodeType::Empty => self.clone(),
         }
     }
 
     fn branch_size(&self) -> usize {
-        self.children.iter().map(Node::byte_size_as_child).sum()
+        self.children.iter().map(Self::byte_size_as_child).sum()
     }
 
     fn extension_size(&self) -> usize {
@@ -265,7 +269,7 @@ impl Node {
         get_var_size(self.value.len() as u64) + self.value.len()
     }
 
-    fn hash_size(&self) -> usize {
+    const fn hash_size(&self) -> usize {
         UINT256_SIZE
     }
 
@@ -312,17 +316,17 @@ impl Node {
         writer.write_bytes(&hash.to_bytes())
     }
 
-    fn deserialize_branch(reader: &mut MemoryReader) -> IoResult<Vec<Node>> {
+    fn deserialize_branch(reader: &mut MemoryReader) -> IoResult<Vec<Self>> {
         let mut children = Vec::with_capacity(BRANCH_CHILD_COUNT);
         for _ in 0..BRANCH_CHILD_COUNT {
-            children.push(Node::deserialize(reader)?);
+            children.push(Self::deserialize(reader)?);
         }
         Ok(children)
     }
 
-    fn deserialize_extension(reader: &mut MemoryReader) -> IoResult<(Vec<u8>, Node)> {
+    fn deserialize_extension(reader: &mut MemoryReader) -> IoResult<(Vec<u8>, Self)> {
         let key = reader.read_var_bytes(MAX_KEY_LENGTH)?;
-        let next = Node::deserialize(reader)?;
+        let next = Self::deserialize(reader)?;
         Ok((key, next))
     }
 
@@ -391,7 +395,7 @@ impl Serializable for Node {
                     value: Vec::new(),
                 })
             }
-            NodeType::Empty => Ok(Node::default()),
+            NodeType::Empty => Ok(Self::default()),
         }
     }
 
@@ -399,7 +403,7 @@ impl Serializable for Node {
         self.serialize_without_reference(writer)?;
         match self.node_type {
             NodeType::BranchNode | NodeType::ExtensionNode | NodeType::LeafNode => {
-                writer.write_var_uint(self.reference as u64)?;
+                writer.write_var_uint(u64::from(self.reference))?;
             }
             NodeType::HashNode | NodeType::Empty => {}
         }
