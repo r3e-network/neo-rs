@@ -2,7 +2,7 @@
 // execution.rs - Main execution loop and instruction execution
 //
 
-use super::{ExecutionEngine, VMState, VmResult, VmError, InteropHost, StackItem, Instruction};
+use super::{ExecutionEngine, VMState, VmResult, VmError, StackItem, Instruction};
 
 impl ExecutionEngine {
     /// Starts execution of the VM.

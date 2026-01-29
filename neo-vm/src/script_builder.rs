@@ -210,7 +210,10 @@ impl ScriptBuilder {
             8 => OpCode::PUSHINT64,
             16 => OpCode::PUSHINT128,
             32 => OpCode::PUSHINT256,
-            _ => unreachable!(),
+            _ => return Err(VmError::invalid_operation(
+                "emit_push_bigint",
+                &format!("Invalid integer size for push: {target_len}")
+            )),
         };
 
         self.emit_instruction(opcode, &padded);

@@ -2,7 +2,7 @@
 // context.rs - Context management (load, unload, remove, create)
 //
 
-use super::{ExecutionEngine, ExecutionContext, VmResult, VmError, InteropHost, VMState, Script};
+use super::{ExecutionEngine, ExecutionContext, VmResult, VmError, VMState, Script};
 
 impl ExecutionEngine {
     /// Loads a context into the invocation stack.
@@ -87,7 +87,9 @@ impl ExecutionEngine {
         // Unload the context
         self.unload_context(&mut context)?;
 
-        self.reference_counter.check_zero_referred();
+        // Check for zero-referenced items and clean them up. The return value is the count
+        // of items checked, which is informational and doesn't require handling.
+        let _ = self.reference_counter.check_zero_referred();
 
         Ok(context)
     }

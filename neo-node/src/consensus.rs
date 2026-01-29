@@ -1138,12 +1138,8 @@ impl Actor for ConsensusActor {
 }
 
 fn resolve_recovery_path(value: &str) -> PathBuf {
-    let candidate = PathBuf::from(value);
-    if candidate.is_absolute() {
-        candidate
-    } else {
-        candidate
-    }
+    // Return the path as-is - PathBuf handles both absolute and relative paths
+    PathBuf::from(value)
 }
 
 fn open_recovery_store(
