@@ -76,7 +76,7 @@ impl Clone for Node {
         match self.node_type {
             NodeType::BranchNode => {
                 // Structural sharing: clone the Arc pointers, not the nodes
-                node.children = self.children.iter().map(|c| Arc::clone(c)).collect();
+                node.children = self.children.iter().map(Arc::clone).collect();
             }
             NodeType::ExtensionNode => {
                 // Structural sharing: clone the Arc pointer, not the node
@@ -273,7 +273,7 @@ impl Node {
     ///
     /// This implements copy-on-write semantics for efficient updates.
     pub fn get_next_mut(&mut self) -> Option<&mut Self> {
-        self.next.as_mut().map(|arc| Arc::make_mut(arc))
+        self.next.as_mut().map(Arc::make_mut)
     }
 
     /// Sets a child node at the given index.

@@ -449,7 +449,7 @@ where
                     let should_merge = node
                         .next
                         .as_ref()
-                        .map_or(false, |n| n.node_type == NodeType::ExtensionNode);
+                        .is_some_and(|n| n.node_type == NodeType::ExtensionNode);
 
                     if should_merge {
                         if !full_state {

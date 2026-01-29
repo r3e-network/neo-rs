@@ -1,39 +1,6 @@
-// Copyright (c) 2024 R3E Network
-// This file is part of the neo-rs project
-// Licensed under the MIT License
-// See LICENSE file for details
-
 //! # Neo Crypto
 //!
 //! Cryptographic utilities for the Neo blockchain implementation.
-
-#![warn(missing_docs)]
-#![warn(rustdoc::missing_crate_level_docs)]
-//!
-//! This crate provides cryptographic primitives required by Neo N3, including
-//! hash functions, elliptic curve operations, and utility types.
-//!
-//! ## Module Overview
-//!
-//! | Module | Purpose |
-//! |--------|---------|
-//! | [`crypto_utils`] | Main cryptographic utilities (hash, sign, verify) |
-//! | [`ecc`] | Elliptic curve cryptography (secp256r1, secp256k1) |
-//! | [`hash`] | Hash algorithms (SHA-256, RIPEMD-160, Keccak) |
-//! | [`bloom_filter`] | Bloom filter for efficient set membership |
-//! | [`mpt_trie`] | Merkle Patricia Trie for state storage |
-//!
-//! ## Quick Start
-//!
-//! ```rust,no_run
-//! use neo_crypto::{Crypto, HashAlgorithm};
-//!
-//! // Compute SHA-256 hash
-//! let hash = Crypto::sha256(b"Hello, Neo!");
-//!
-//! // Compute Hash160 (RIPEMD160(SHA256(data)))
-//! let script_hash = Crypto::hash160(b"contract script");
-//! ```
 //!
 //! This crate provides cryptographic primitives required by Neo N3:
 //!
