@@ -111,10 +111,12 @@ pub enum WitnessRuleAction {
 }
 
 impl WitnessRuleAction {
+    /// Converts the action to its wire-format byte.
     pub fn to_byte(self) -> u8 {
         self as u8
     }
 
+    /// Creates an action from its wire-format byte.
     pub fn from_byte(value: u8) -> Option<Self> {
         match value {
             0 => Some(Self::Deny),

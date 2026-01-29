@@ -1,231 +1,431 @@
 //! Implementation of the `OpCode` enum for the Neo Virtual Machine.
+//!
+//! This module defines all opcodes supported by the Neo N3 Virtual Machine,
+//! matching the C# Neo implementation exactly.
 
 use super::operand_size::OperandSize;
 
 const HASH_SIZE: usize = 32;
 
 /// Represents the opcode of an instruction in the Neo Virtual Machine.
+///
+/// Each opcode corresponds to a specific operation that the VM can execute.
+/// The opcodes are organized into categories: constants, flow control, stack,
+/// slot, splice, bitwise, numeric, compound types, and type operations.
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum OpCode {
-    // Constants
+    // ==================== Constants ====================
+    /// Push a signed 8-bit integer onto the stack.
     PUSHINT8 = 0x00,
+    /// Push a signed 16-bit integer onto the stack.
     PUSHINT16 = 0x01,
+    /// Push a signed 32-bit integer onto the stack.
     PUSHINT32 = 0x02,
+    /// Push a signed 64-bit integer onto the stack.
     PUSHINT64 = 0x03,
+    /// Push a signed 128-bit integer onto the stack.
     PUSHINT128 = 0x04,
+    /// Push a signed 256-bit integer onto the stack.
     PUSHINT256 = 0x05,
+    /// Push the boolean value `true` onto the stack.
     PUSHT = 0x08,
+    /// Push the boolean value `false` onto the stack.
     PUSHF = 0x09,
+    /// Push a pointer (script offset) onto the stack.
     PUSHA = 0x0A,
+    /// Push a null reference onto the stack.
     PUSHNULL = 0x0B,
+    /// Push data with 1-byte length prefix onto the stack.
     PUSHDATA1 = 0x0C,
+    /// Push data with 2-byte length prefix onto the stack.
     PUSHDATA2 = 0x0D,
+    /// Push data with 4-byte length prefix onto the stack.
     PUSHDATA4 = 0x0E,
+    /// Push the integer -1 onto the stack.
     PUSHM1 = 0x0F,
+    /// Push the integer 0 onto the stack.
     PUSH0 = 0x10,
+    /// Push the integer 1 onto the stack.
     PUSH1 = 0x11,
+    /// Push the integer 2 onto the stack.
     PUSH2 = 0x12,
+    /// Push the integer 3 onto the stack.
     PUSH3 = 0x13,
+    /// Push the integer 4 onto the stack.
     PUSH4 = 0x14,
+    /// Push the integer 5 onto the stack.
     PUSH5 = 0x15,
+    /// Push the integer 6 onto the stack.
     PUSH6 = 0x16,
+    /// Push the integer 7 onto the stack.
     PUSH7 = 0x17,
+    /// Push the integer 8 onto the stack.
     PUSH8 = 0x18,
+    /// Push the integer 9 onto the stack.
     PUSH9 = 0x19,
+    /// Push the integer 10 onto the stack.
     PUSH10 = 0x1A,
+    /// Push the integer 11 onto the stack.
     PUSH11 = 0x1B,
+    /// Push the integer 12 onto the stack.
     PUSH12 = 0x1C,
+    /// Push the integer 13 onto the stack.
     PUSH13 = 0x1D,
+    /// Push the integer 14 onto the stack.
     PUSH14 = 0x1E,
+    /// Push the integer 15 onto the stack.
     PUSH15 = 0x1F,
+    /// Push the integer 16 onto the stack.
     PUSH16 = 0x20,
 
-    // Flow control
+    // ==================== Flow Control ====================
+    /// No operation. Does nothing.
     NOP = 0x21,
+    /// Unconditional jump with 1-byte offset.
     JMP = 0x22,
+    /// Unconditional jump with 4-byte offset.
     JMP_L = 0x23,
+    /// Jump if top of stack is true (1-byte offset).
     JMPIF = 0x24,
+    /// Jump if top of stack is true (4-byte offset).
     JMPIF_L = 0x25,
+    /// Jump if top of stack is false (1-byte offset).
     JMPIFNOT = 0x26,
+    /// Jump if top of stack is false (4-byte offset).
     JMPIFNOT_L = 0x27,
+    /// Jump if two values are equal (1-byte offset).
     JMPEQ = 0x28,
+    /// Jump if two values are equal (4-byte offset).
     JMPEQ_L = 0x29,
+    /// Jump if two values are not equal (1-byte offset).
     JMPNE = 0x2A,
+    /// Jump if two values are not equal (4-byte offset).
     JMPNE_L = 0x2B,
+    /// Jump if first value is greater than second (1-byte offset).
     JMPGT = 0x2C,
+    /// Jump if first value is greater than second (4-byte offset).
     JMPGT_L = 0x2D,
+    /// Jump if first value is greater than or equal to second (1-byte offset).
     JMPGE = 0x2E,
+    /// Jump if first value is greater than or equal to second (4-byte offset).
     JMPGE_L = 0x2F,
+    /// Jump if first value is less than second (1-byte offset).
     JMPLT = 0x30,
+    /// Jump if first value is less than second (4-byte offset).
     JMPLT_L = 0x31,
+    /// Jump if first value is less than or equal to second (1-byte offset).
     JMPLE = 0x32,
+    /// Jump if first value is less than or equal to second (4-byte offset).
     JMPLE_L = 0x33,
+    /// Call a function with 1-byte offset.
     CALL = 0x34,
+    /// Call a function with 4-byte offset.
     CALL_L = 0x35,
+    /// Call a function pointer from the stack.
     CALLA = 0x36,
+    /// Call a token (contract method).
     CALLT = 0x37,
+    /// Abort execution unconditionally.
     ABORT = 0x38,
+    /// Assert that top of stack is true, abort if false.
     ASSERT = 0x39,
+    /// Throw an exception.
     THROW = 0x3A,
+    /// Begin a try block with 1-byte offsets.
     TRY = 0x3B,
+    /// Begin a try block with 4-byte offsets.
     TRY_L = 0x3C,
+    /// End a try block with 1-byte offset.
     ENDTRY = 0x3D,
+    /// End a try block with 4-byte offset.
     ENDTRY_L = 0x3E,
+    /// End a finally block.
     ENDFINALLY = 0x3F,
+    /// Return from the current function.
     RET = 0x40,
+    /// Make a system call.
     SYSCALL = 0x41,
 
-    // Stack
+    // ==================== Stack Operations ====================
+    /// Get the number of items on the stack.
     DEPTH = 0x43,
+    /// Remove the top item from the stack.
     DROP = 0x45,
+    /// Remove the second item from the stack.
     NIP = 0x46,
+    /// Remove the item at index n from the stack.
     XDROP = 0x48,
+    /// Clear all items from the stack.
     CLEAR = 0x49,
+    /// Duplicate the top item on the stack.
     DUP = 0x4A,
+    /// Copy the second item to the top of the stack.
     OVER = 0x4B,
-    // 0x4C TOALTSTACK not in C# Neo
+    /// Copy the item at index n to the top of the stack.
     PICK = 0x4D,
+    /// Copy the top item and insert it before the second item.
     TUCK = 0x4E,
-    // 0x4F FROMALTSTACK not in C# Neo
+    /// Swap the top two items on the stack.
     SWAP = 0x50,
+    /// Rotate the top three items on the stack.
     ROT = 0x51,
+    /// Move the item at index n to the top of the stack.
     ROLL = 0x52,
+    /// Reverse the order of the top 3 items on the stack.
     REVERSE3 = 0x53,
+    /// Reverse the order of the top 4 items on the stack.
     REVERSE4 = 0x54,
+    /// Reverse the order of the top n items on the stack.
     REVERSEN = 0x55,
 
-    // Slot
+    // ==================== Slot Operations ====================
+    /// Initialize static field slots.
     INITSSLOT = 0x56,
+    /// Initialize local variable and argument slots.
     INITSLOT = 0x57,
+    /// Load static field 0 onto the stack.
     LDSFLD0 = 0x58,
+    /// Load static field 1 onto the stack.
     LDSFLD1 = 0x59,
+    /// Load static field 2 onto the stack.
     LDSFLD2 = 0x5A,
+    /// Load static field 3 onto the stack.
     LDSFLD3 = 0x5B,
+    /// Load static field 4 onto the stack.
     LDSFLD4 = 0x5C,
+    /// Load static field 5 onto the stack.
     LDSFLD5 = 0x5D,
+    /// Load static field 6 onto the stack.
     LDSFLD6 = 0x5E,
+    /// Load static field at index onto the stack.
     LDSFLD = 0x5F,
+    /// Store value into static field 0.
     STSFLD0 = 0x60,
+    /// Store value into static field 1.
     STSFLD1 = 0x61,
+    /// Store value into static field 2.
     STSFLD2 = 0x62,
+    /// Store value into static field 3.
     STSFLD3 = 0x63,
+    /// Store value into static field 4.
     STSFLD4 = 0x64,
+    /// Store value into static field 5.
     STSFLD5 = 0x65,
+    /// Store value into static field 6.
     STSFLD6 = 0x66,
+    /// Store value into static field at index.
     STSFLD = 0x67,
+    /// Load local variable 0 onto the stack.
     LDLOC0 = 0x68,
+    /// Load local variable 1 onto the stack.
     LDLOC1 = 0x69,
+    /// Load local variable 2 onto the stack.
     LDLOC2 = 0x6A,
+    /// Load local variable 3 onto the stack.
     LDLOC3 = 0x6B,
+    /// Load local variable 4 onto the stack.
     LDLOC4 = 0x6C,
+    /// Load local variable 5 onto the stack.
     LDLOC5 = 0x6D,
+    /// Load local variable 6 onto the stack.
     LDLOC6 = 0x6E,
+    /// Load local variable at index onto the stack.
     LDLOC = 0x6F,
+    /// Store value into local variable 0.
     STLOC0 = 0x70,
+    /// Store value into local variable 1.
     STLOC1 = 0x71,
+    /// Store value into local variable 2.
     STLOC2 = 0x72,
+    /// Store value into local variable 3.
     STLOC3 = 0x73,
+    /// Store value into local variable 4.
     STLOC4 = 0x74,
+    /// Store value into local variable 5.
     STLOC5 = 0x75,
+    /// Store value into local variable 6.
     STLOC6 = 0x76,
+    /// Store value into local variable at index.
     STLOC = 0x77,
+    /// Load argument 0 onto the stack.
     LDARG0 = 0x78,
+    /// Load argument 1 onto the stack.
     LDARG1 = 0x79,
+    /// Load argument 2 onto the stack.
     LDARG2 = 0x7A,
+    /// Load argument 3 onto the stack.
     LDARG3 = 0x7B,
+    /// Load argument 4 onto the stack.
     LDARG4 = 0x7C,
+    /// Load argument 5 onto the stack.
     LDARG5 = 0x7D,
+    /// Load argument 6 onto the stack.
     LDARG6 = 0x7E,
+    /// Load argument at index onto the stack.
     LDARG = 0x7F,
+    /// Store value into argument 0.
     STARG0 = 0x80,
+    /// Store value into argument 1.
     STARG1 = 0x81,
+    /// Store value into argument 2.
     STARG2 = 0x82,
+    /// Store value into argument 3.
     STARG3 = 0x83,
+    /// Store value into argument 4.
     STARG4 = 0x84,
+    /// Store value into argument 5.
     STARG5 = 0x85,
+    /// Store value into argument 6.
     STARG6 = 0x86,
+    /// Store value into argument at index.
     STARG = 0x87,
 
-    // Splice
+    // ==================== Splice Operations ====================
+    /// Create a new buffer of specified size.
     NEWBUFFER = 0x88,
+    /// Copy memory from one buffer to another.
     MEMCPY = 0x89,
-    // 0x8A is not used in C# Neo
+    /// Concatenate two byte arrays.
     CAT = 0x8B,
+    /// Extract a substring from a byte array.
     SUBSTR = 0x8C,
+    /// Extract the left part of a byte array.
     LEFT = 0x8D,
+    /// Extract the right part of a byte array.
     RIGHT = 0x8E,
 
-    // Bitwise
+    // ==================== Bitwise Operations ====================
+    /// Bitwise NOT (invert all bits).
     INVERT = 0x90,
+    /// Bitwise AND of two integers.
     AND = 0x91,
+    /// Bitwise OR of two integers.
     OR = 0x92,
+    /// Bitwise XOR of two integers.
     XOR = 0x93,
+    /// Check if two items are equal.
     EQUAL = 0x97,
+    /// Check if two items are not equal.
     NOTEQUAL = 0x98,
 
-    // Numeric
+    // ==================== Numeric Operations ====================
+    /// Get the sign of an integer (-1, 0, or 1).
     SIGN = 0x99,
+    /// Get the absolute value of an integer.
     ABS = 0x9A,
+    /// Negate an integer.
     NEGATE = 0x9B,
+    /// Increment an integer by 1.
     INC = 0x9C,
+    /// Decrement an integer by 1.
     DEC = 0x9D,
+    /// Add two integers.
     ADD = 0x9E,
+    /// Subtract two integers.
     SUB = 0x9F,
+    /// Multiply two integers.
     MUL = 0xA0,
+    /// Divide two integers.
     DIV = 0xA1,
+    /// Get the remainder of integer division.
     MOD = 0xA2,
+    /// Raise an integer to a power.
     POW = 0xA3,
+    /// Get the square root of an integer.
     SQRT = 0xA4,
+    /// Modular multiplication: (a * b) % modulus.
     MODMUL = 0xA5,
+    /// Modular exponentiation: (base ^ exp) % modulus.
     MODPOW = 0xA6,
+    /// Shift left by n bits.
     SHL = 0xA8,
+    /// Shift right by n bits.
     SHR = 0xA9,
+    /// Logical NOT (boolean negation).
     NOT = 0xAA,
+    /// Logical AND of two booleans.
     BOOLAND = 0xAB,
+    /// Logical OR of two booleans.
     BOOLOR = 0xAC,
+    /// Check if value is non-zero.
     NZ = 0xB1,
+    /// Check if two integers are equal.
     NUMEQUAL = 0xB3,
+    /// Check if two integers are not equal.
     NUMNOTEQUAL = 0xB4,
+    /// Check if first integer is less than second.
     LT = 0xB5,
+    /// Check if first integer is less than or equal to second.
     LE = 0xB6,
+    /// Check if first integer is greater than second.
     GT = 0xB7,
+    /// Check if first integer is greater than or equal to second.
     GE = 0xB8,
+    /// Get the minimum of two integers.
     MIN = 0xB9,
+    /// Get the maximum of two integers.
     MAX = 0xBA,
+    /// Check if value is within range [min, max).
     WITHIN = 0xBB,
 
-    // Compound
+    // ==================== Compound Type Operations ====================
+    /// Pack key-value pairs into a map.
     PACKMAP = 0xBE,
+    /// Pack items into a struct.
     PACKSTRUCT = 0xBF,
+    /// Pack items into an array.
     PACK = 0xC0,
+    /// Unpack an array onto the stack.
     UNPACK = 0xC1,
+    /// Create an empty array.
     NEWARRAY0 = 0xC2,
+    /// Create an array with specified size.
     NEWARRAY = 0xC3,
+    /// Create a typed array with specified size.
     NEWARRAY_T = 0xC4,
+    /// Create an empty struct.
     NEWSTRUCT0 = 0xC5,
+    /// Create a struct with specified size.
     NEWSTRUCT = 0xC6,
+    /// Create an empty map.
     NEWMAP = 0xC8,
+    /// Get the size of an array, map, or buffer.
     SIZE = 0xCA,
+    /// Check if a key exists in a map or array.
     HASKEY = 0xCB,
+    /// Get all keys from a map.
     KEYS = 0xCC,
+    /// Get all values from a map or array.
     VALUES = 0xCD,
+    /// Get an item from an array or map by index/key.
     PICKITEM = 0xCE,
+    /// Append an item to an array.
     APPEND = 0xCF,
+    /// Set an item in an array or map.
     SETITEM = 0xD0,
+    /// Reverse the items in an array.
     REVERSEITEMS = 0xD1,
+    /// Remove an item from an array or map.
     REMOVE = 0xD2,
+    /// Clear all items from an array or map.
     CLEARITEMS = 0xD3,
+    /// Pop the last item from an array.
     POPITEM = 0xD4,
 
-    // Types
+    // ==================== Type Operations ====================
+    /// Check if the top item is null.
     ISNULL = 0xD8,
+    /// Check if the top item is of a specific type.
     ISTYPE = 0xD9,
+    /// Convert the top item to a specific type.
     CONVERT = 0xDB,
 
-    // Extensions
+    // ==================== Extension Operations ====================
+    /// Abort execution with a custom message.
     ABORTMSG = 0xE0,
+    /// Assert with a custom message on failure.
     ASSERTMSG = 0xE1,
 }
 

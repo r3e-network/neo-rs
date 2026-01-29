@@ -7,28 +7,51 @@ use std::{fmt, net::SocketAddr, str::FromStr};
 /// Neo message command (single-byte discriminator).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MessageCommand {
+    /// Version handshake message.
     Version,
+    /// Version acknowledgment message.
     Verack,
+    /// Request for peer addresses.
     GetAddr,
+    /// Response with peer addresses.
     Addr,
+    /// Ping message for keepalive.
     Ping,
+    /// Pong response to ping.
     Pong,
+    /// Request for block headers.
     GetHeaders,
+    /// Response with block headers.
     Headers,
+    /// Request for block hashes.
     GetBlocks,
+    /// Request for mempool transactions.
     Mempool,
+    /// Inventory announcement.
     Inv,
+    /// Request for specific data.
     GetData,
+    /// Request block by index.
     GetBlockByIndex,
+    /// Data not found response.
     NotFound,
+    /// Transaction payload.
     Transaction,
+    /// Block payload.
     Block,
+    /// Extensible message payload.
     Extensible,
+    /// Rejection message.
     Reject,
+    /// Load bloom filter.
     FilterLoad,
+    /// Add to bloom filter.
     FilterAdd,
+    /// Clear bloom filter.
     FilterClear,
+    /// Merkle block for SPV.
     MerkleBlock,
+    /// Alert message.
     Alert,
     /// Command value that is not recognised by this implementation.
     Unknown(u8),

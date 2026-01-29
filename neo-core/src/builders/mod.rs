@@ -165,39 +165,47 @@ impl SignerBuilder {
         }
     }
 
+    /// Sets the account for this signer.
     pub fn account(&mut self, account: UInt160) -> &mut Self {
         self.account = account;
         self
     }
 
+    /// Sets the witness scope for this signer.
     pub fn scope(&mut self, scope: WitnessScope) -> &mut Self {
         self.scopes = scope;
         self
     }
 
+    /// Adds a contract to the allowed contracts list.
     pub fn with_allowed_contract(&mut self, contract: UInt160) -> &mut Self {
         self.allowed_contracts.push(contract);
         self
     }
 
+    /// Adds a group to the allowed groups list.
     pub fn with_allowed_group(&mut self, group: ECPoint) -> &mut Self {
         self.allowed_groups.push(group);
         self
     }
 
+    /// Alias for `with_allowed_contract`.
     pub fn allow_contract(&mut self, contract: UInt160) -> &mut Self {
         self.with_allowed_contract(contract)
     }
 
+    /// Alias for `with_allowed_group`.
     pub fn allow_group(&mut self, group: ECPoint) -> &mut Self {
         self.with_allowed_group(group)
     }
 
+    /// Adds a witness scope flag to the existing scopes.
     pub fn add_witness_scope(&mut self, scope: WitnessScope) -> &mut Self {
         self.scopes |= scope;
         self
     }
 
+    /// Adds a witness rule with the specified action.
     pub fn add_witness_rule<F>(&mut self, action: WitnessRuleAction, config: F) -> &mut Self
     where
         F: FnOnce(&mut WitnessRuleBuilder),
@@ -208,6 +216,7 @@ impl SignerBuilder {
         self
     }
 
+    /// Builds and returns the configured Signer.
     pub fn build(&self) -> Signer {
         let mut signer = Signer::new(self.account, self.scopes);
         signer.allowed_contracts = self.allowed_contracts.clone();
@@ -246,6 +255,7 @@ impl TransactionAttributesBuilder {
         self
     }
 
+    /// Adds a Conflicts attribute to the transaction.
     pub fn add_conflict<F>(&mut self, config: F) -> &mut Self
     where
         F: FnOnce(&mut Conflicts),
@@ -257,6 +267,7 @@ impl TransactionAttributesBuilder {
         self
     }
 
+    /// Adds an OracleResponse attribute to the transaction.
     pub fn add_oracle_response<F>(&mut self, config: F) -> &mut Self
     where
         F: FnOnce(&mut OracleResponse),
@@ -284,6 +295,7 @@ impl TransactionAttributesBuilder {
         self
     }
 
+    /// Builds and returns the configured attributes.
     pub fn build(&self) -> Vec<TransactionAttribute> {
         self.attributes.clone()
     }
@@ -296,14 +308,17 @@ pub struct WitnessConditionBuilder {
 }
 
 impl WitnessConditionBuilder {
+    /// Creates a new empty witness condition builder.
     pub fn create() -> Self {
         Self { condition: None }
     }
 
+    /// Alias for `create`.
     pub fn create_empty() -> Self {
         Self::create()
     }
 
+    /// Adds an AND condition.
     pub fn and<F>(&mut self, config: F) -> &mut Self
     where
         F: FnOnce(&mut AndConditionBuilder),
@@ -314,6 +329,7 @@ impl WitnessConditionBuilder {
         self
     }
 
+    /// Adds an OR condition.
     pub fn or<F>(&mut self, config: F) -> &mut Self
     where
         F: FnOnce(&mut OrConditionBuilder),
@@ -324,21 +340,25 @@ impl WitnessConditionBuilder {
         self
     }
 
+    /// Sets a boolean condition.
     pub fn boolean(&mut self, value: bool) -> &mut Self {
         self.condition = Some(WitnessCondition::Boolean { value });
         self
     }
 
+    /// Sets a CalledByContract condition.
     pub fn called_by_contract(&mut self, hash: UInt160) -> &mut Self {
         self.condition = Some(WitnessCondition::CalledByContract { hash });
         self
     }
 
+    /// Sets a CalledByEntry condition.
     pub fn called_by_entry(&mut self) -> &mut Self {
         self.condition = Some(WitnessCondition::CalledByEntry);
         self
     }
 
+    /// Sets a CalledByGroup condition.
     pub fn called_by_group(&mut self, group: ECPoint) -> &mut Self {
         self.condition = Some(WitnessCondition::CalledByGroup {
             group: group.as_bytes().to_vec(),
@@ -346,6 +366,7 @@ impl WitnessConditionBuilder {
         self
     }
 
+    /// Sets a Group condition.
     pub fn group(&mut self, group: ECPoint) -> &mut Self {
         self.condition = Some(WitnessCondition::Group {
             group: group.as_bytes().to_vec(),
@@ -353,6 +374,7 @@ impl WitnessConditionBuilder {
         self
     }
 
+    /// Adds a NOT condition wrapper.
     pub fn not<F>(&mut self, config: F) -> &mut Self
     where
         F: FnOnce(&mut WitnessConditionBuilder),
@@ -365,11 +387,13 @@ impl WitnessConditionBuilder {
         self
     }
 
+    /// Sets a ScriptHash condition.
     pub fn script_hash(&mut self, hash: UInt160) -> &mut Self {
         self.condition = Some(WitnessCondition::ScriptHash { hash });
         self
     }
 
+    /// Builds and returns the configured condition.
     pub fn build(&self) -> WitnessCondition {
         self.condition
             .clone()
@@ -385,6 +409,7 @@ pub struct WitnessRuleBuilder {
 }
 
 impl WitnessRuleBuilder {
+    /// Creates a new witness rule builder with the specified action.
     pub fn create(action: WitnessRuleAction) -> Self {
         Self {
             action,
@@ -392,6 +417,7 @@ impl WitnessRuleBuilder {
         }
     }
 
+    /// Adds a condition to the witness rule.
     pub fn add_condition<F>(&mut self, config: F) -> &mut Self
     where
         F: FnOnce(&mut WitnessConditionBuilder),
@@ -402,6 +428,7 @@ impl WitnessRuleBuilder {
         self
     }
 
+    /// Builds and returns the configured witness rule.
     pub fn build(&self) -> WitnessRule {
         WitnessRule::new(
             self.action,
@@ -419,12 +446,14 @@ pub struct AndConditionBuilder {
 }
 
 impl AndConditionBuilder {
+    /// Creates a new empty AND condition builder.
     pub fn create_empty() -> Self {
         Self {
             conditions: Vec::new(),
         }
     }
 
+    /// Adds a nested AND condition.
     pub fn and<F>(&mut self, config: F) -> &mut Self
     where
         F: FnOnce(&mut AndConditionBuilder),
@@ -435,6 +464,7 @@ impl AndConditionBuilder {
         self
     }
 
+    /// Adds a nested OR condition.
     pub fn or<F>(&mut self, config: F) -> &mut Self
     where
         F: FnOnce(&mut OrConditionBuilder),
@@ -445,22 +475,26 @@ impl AndConditionBuilder {
         self
     }
 
+    /// Adds a boolean condition.
     pub fn boolean(&mut self, value: bool) -> &mut Self {
         self.conditions.push(WitnessCondition::Boolean { value });
         self
     }
 
+    /// Adds a CalledByContract condition.
     pub fn called_by_contract(&mut self, hash: UInt160) -> &mut Self {
         self.conditions
             .push(WitnessCondition::CalledByContract { hash });
         self
     }
 
+    /// Adds a CalledByEntry condition.
     pub fn called_by_entry(&mut self) -> &mut Self {
         self.conditions.push(WitnessCondition::CalledByEntry);
         self
     }
 
+    /// Adds a CalledByGroup condition.
     pub fn called_by_group(&mut self, group: ECPoint) -> &mut Self {
         self.conditions.push(WitnessCondition::CalledByGroup {
             group: group.as_bytes().to_vec(),
@@ -468,6 +502,7 @@ impl AndConditionBuilder {
         self
     }
 
+    /// Adds a Group condition.
     pub fn group(&mut self, group: ECPoint) -> &mut Self {
         self.conditions.push(WitnessCondition::Group {
             group: group.as_bytes().to_vec(),
@@ -475,11 +510,13 @@ impl AndConditionBuilder {
         self
     }
 
+    /// Adds a ScriptHash condition.
     pub fn script_hash(&mut self, hash: UInt160) -> &mut Self {
         self.conditions.push(WitnessCondition::ScriptHash { hash });
         self
     }
 
+    /// Builds and returns the AND condition.
     pub fn build(self) -> WitnessCondition {
         WitnessCondition::And {
             conditions: self.conditions,
@@ -494,12 +531,14 @@ pub struct OrConditionBuilder {
 }
 
 impl OrConditionBuilder {
+    /// Creates a new empty OR condition builder.
     pub fn create_empty() -> Self {
         Self {
             conditions: Vec::new(),
         }
     }
 
+    /// Adds a nested AND condition.
     pub fn and<F>(&mut self, config: F) -> &mut Self
     where
         F: FnOnce(&mut AndConditionBuilder),
@@ -510,6 +549,7 @@ impl OrConditionBuilder {
         self
     }
 
+    /// Adds a nested OR condition.
     pub fn or<F>(&mut self, config: F) -> &mut Self
     where
         F: FnOnce(&mut OrConditionBuilder),
@@ -520,22 +560,26 @@ impl OrConditionBuilder {
         self
     }
 
+    /// Adds a boolean condition.
     pub fn boolean(&mut self, value: bool) -> &mut Self {
         self.conditions.push(WitnessCondition::Boolean { value });
         self
     }
 
+    /// Adds a CalledByContract condition.
     pub fn called_by_contract(&mut self, hash: UInt160) -> &mut Self {
         self.conditions
             .push(WitnessCondition::CalledByContract { hash });
         self
     }
 
+    /// Adds a CalledByEntry condition.
     pub fn called_by_entry(&mut self) -> &mut Self {
         self.conditions.push(WitnessCondition::CalledByEntry);
         self
     }
 
+    /// Adds a CalledByGroup condition.
     pub fn called_by_group(&mut self, group: ECPoint) -> &mut Self {
         self.conditions.push(WitnessCondition::CalledByGroup {
             group: group.as_bytes().to_vec(),
@@ -543,6 +587,7 @@ impl OrConditionBuilder {
         self
     }
 
+    /// Adds a Group condition.
     pub fn group(&mut self, group: ECPoint) -> &mut Self {
         self.conditions.push(WitnessCondition::Group {
             group: group.as_bytes().to_vec(),
@@ -550,6 +595,7 @@ impl OrConditionBuilder {
         self
     }
 
+    /// Adds a ScriptHash condition.
     pub fn script_hash(&mut self, hash: UInt160) -> &mut Self {
         self.conditions.push(WitnessCondition::ScriptHash { hash });
         self
@@ -571,20 +617,24 @@ pub struct WitnessBuilder {
 }
 
 impl WitnessBuilder {
+    /// Creates a new empty witness builder.
     pub fn create_empty() -> Self {
         Self::default()
     }
 
+    /// Sets the invocation script (consuming builder).
     pub fn invocation_script(mut self, script: Vec<u8>) -> Self {
         self.invocation = script;
         self
     }
 
+    /// Sets the verification script (consuming builder).
     pub fn verification_script(mut self, script: Vec<u8>) -> Self {
         self.verification = script;
         self
     }
 
+    /// Adds an invocation script (mutable reference).
     pub fn add_invocation(&mut self, script: Vec<u8>) -> &mut Self {
         if !self.invocation.is_empty() {
             panic!(
@@ -595,6 +645,7 @@ impl WitnessBuilder {
         self
     }
 
+    /// Adds a verification script (mutable reference).
     pub fn add_verification(&mut self, script: Vec<u8>) -> &mut Self {
         if !self.verification.is_empty() {
             panic!(

@@ -465,7 +465,7 @@ mod tests {
             max_rps: 100,
             burst: 100,
         };
-        let limiter = GovernorRateLimiter::new(config);
+        let limiter = GovernorRateLimiter::new(config.clone());
         let ip: IpAddr = "127.0.0.1".parse().unwrap();
 
         // Expensive method should have lower limits
@@ -490,8 +490,8 @@ mod tests {
             max_rps: 50,
             burst: 50,
         };
-        let limiter = GovernorRateLimiter::new(config);
-        let ip: IpAddr = "127.0.0.1".parse().unwrap();
+        let limiter = GovernorRateLimiter::new(config.clone());
+        let _ip: IpAddr = "127.0.0.1".parse().unwrap();
 
         // Cheap method should have higher limits
         let cheap_config = limiter.tier_config(RateLimitTier::Cheap).unwrap();

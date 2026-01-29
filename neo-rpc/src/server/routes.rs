@@ -719,6 +719,7 @@ impl RequestOutcome {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::server::middleware::RateLimitCheckResult;
     use crate::server::rcp_server_settings::RpcServerConfig;
     use crate::server::rpc_method_attribute::RpcMethodDescriptor;
     use crate::server::rpc_server::RpcHandler;
@@ -775,7 +776,7 @@ mod tests {
             max_rps: 100,
             burst: 100,
         };
-        let limiter = Arc::new(GovernorRateLimiter::new(config));
+        let limiter = Arc::new(GovernorRateLimiter::new(config.clone()));
         let ip: IpAddr = "127.0.0.1".parse().unwrap();
 
         // Should categorize methods correctly
@@ -976,7 +977,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn process_body_rejects_malformed_json() {
         let (_server, filters) = build_filters_with_handlers();
-        let (response, unauthorized) = process_body(&filters, None, b"{ invalid json");
+        let (response, unauthorized) = process_body(&filters, None, b"{ invalid json", None);
         assert!(!unauthorized);
 
         let response = response.expect("response");
@@ -991,7 +992,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn process_body_rejects_empty_batch() {
         let (_server, filters) = build_filters_with_handlers();
-        let (response, unauthorized) = process_body(&filters, None, b"[]");
+        let (response, unauthorized) = process_body(&filters, None, b"[]", None);
         assert!(!unauthorized);
 
         let response = response.expect("response");
@@ -1013,7 +1014,7 @@ mod tests {
             {"jsonrpc": "2.0", "method": "getversion", "id": 4}
         ]"#;
 
-        let (response, unauthorized) = process_body(&filters, None, body);
+        let (response, unauthorized) = process_body(&filters, None, body, None);
         assert!(!unauthorized);
 
         let response = response.expect("response");
@@ -1071,7 +1072,7 @@ mod tests {
         });
         let body = serde_json::to_vec(&request).expect("serialize body");
         let (response, unauthorized) =
-            tokio::task::block_in_place(|| process_body(&filters, None, &body));
+            tokio::task::block_in_place(|| process_body(&filters, None, &body, None));
         assert!(!unauthorized);
 
         let response = response.expect("response");
@@ -1151,7 +1152,7 @@ mod tests {
         let (_server, filters) = build_filters_with_auth(Arc::new(None), true);
         let body = br#"{"jsonrpc": "2.0", "method": "getnewaddress", "params": [], "id": 1}"#;
 
-        let (response, unauthorized) = process_body(&filters, None, body);
+        let (response, unauthorized) = process_body(&filters, None, body, None);
         assert!(!unauthorized);
 
         let response = response.expect("response");
@@ -1175,7 +1176,7 @@ mod tests {
         let body = br#"{"jsonrpc": "2.0", "method": "getblockcount", "params": [], "id": 1}"#;
 
         let header = format!("Basic {}", BASE64_STANDARD.encode("testuser:wrongpass"));
-        let (response, unauthorized) = process_body(&filters, Some(&header), body);
+        let (response, unauthorized) = process_body(&filters, Some(&header), body, None);
         assert!(!unauthorized);
 
         let response = response.expect("response");
@@ -1198,7 +1199,7 @@ mod tests {
         let (_server, filters) = build_filters_with_auth(auth, false);
         let body = br#"{"jsonrpc": "2.0", "method": "getblockcount", "params": [], "id": 1}"#;
 
-        let (response, unauthorized) = process_body(&filters, None, body);
+        let (response, unauthorized) = process_body(&filters, None, body, None);
         assert!(unauthorized);
 
         let response = response.expect("response");
@@ -1222,7 +1223,7 @@ mod tests {
         let body = br#"{"jsonrpc": "2.0", "method": "getblockcount", "params": [], "id": 1}"#;
 
         let header = format!("Basic {}", BASE64_STANDARD.encode("testuser:testpass"));
-        let (response, unauthorized) = process_body(&filters, Some(&header), body);
+        let (response, unauthorized) = process_body(&filters, Some(&header), body, None);
         assert!(!unauthorized);
 
         let response = response.expect("response");
@@ -1237,7 +1238,7 @@ mod tests {
         let (_server, filters) = build_filters_with_panic_handler();
         let body = br#"{"jsonrpc": "2.0", "method": "panic", "params": [], "id": 1}"#;
 
-        let (response, unauthorized) = process_body(&filters, None, body);
+        let (response, unauthorized) = process_body(&filters, None, body, None);
         assert!(!unauthorized);
 
         let response = response.expect("response");

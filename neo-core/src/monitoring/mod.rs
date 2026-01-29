@@ -173,16 +173,22 @@ pub async fn init_monitoring(version: String) -> MonitoringResult<MonitoringSyst
 /// Report returned by [`MonitoringSystem::get_status`].
 #[derive(Debug, Clone, Serialize)]
 pub struct MonitoringStatus {
+    /// Current health report.
     pub health: HealthReport,
+    /// Performance statistics for all metrics.
     pub performance: HashMap<String, PerformanceStats>,
+    /// Alias for performance metrics.
     pub metrics: HashMap<String, PerformanceStats>,
 }
 
 /// High-level health status for a component or the system.
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 pub enum HealthStatus {
+    /// Component is functioning normally.
     Healthy,
+    /// Component is experiencing issues but still operational.
     Degraded,
+    /// Component is not functioning properly.
     Unhealthy,
 }
 
@@ -207,18 +213,26 @@ impl HealthStatus {
 /// Per-component health status.
 #[derive(Debug, Clone, Serialize)]
 pub struct HealthComponentStatus {
+    /// Name of the component being monitored.
     pub component: String,
+    /// Current health status of the component.
     pub status: HealthStatus,
+    /// Time taken to perform the health check.
     pub duration: Duration,
+    /// Optional message providing additional context.
     pub message: Option<String>,
 }
 
 /// Aggregated health report.
 #[derive(Debug, Clone, Serialize)]
 pub struct HealthReport {
+    /// Version of the node being monitored.
     pub version: String,
+    /// Overall health status of the system.
     pub status: HealthStatus,
+    /// Health status of individual components.
     pub components: Vec<HealthComponentStatus>,
+    /// Time since the node started.
     pub uptime: Duration,
 }
 
@@ -292,43 +306,61 @@ impl HealthMonitor {
 /// Alert severity.
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 pub enum AlertLevel {
+    /// Non-critical issue that should be monitored.
     Warning,
+    /// Severe issue requiring immediate attention.
     Critical,
 }
 
 /// Alert details emitted when a threshold is crossed.
 #[derive(Debug, Clone, Serialize)]
 pub struct Alert {
+    /// Severity level of the alert.
     pub level: AlertLevel,
+    /// Name of the metric that triggered the alert.
     pub metric: String,
+    /// Current value of the metric.
     pub value: f64,
+    /// Threshold configuration that was exceeded.
     pub threshold: PerformanceThreshold,
 }
 
 /// Threshold evaluation mode.
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 pub enum ThresholdType {
+    /// Alert when value exceeds threshold.
     Max,
+    /// Alert when value falls below threshold.
     Min,
 }
 
 /// Threshold configuration for a metric.
 #[derive(Debug, Clone, Serialize)]
 pub struct PerformanceThreshold {
+    /// Name of the metric being monitored.
     pub metric: String,
+    /// Value at which a warning alert is triggered.
     pub warning: f64,
+    /// Value at which a critical alert is triggered.
     pub critical: f64,
+    /// Type of threshold evaluation (max or min).
     pub threshold_type: ThresholdType,
 }
 
 /// Aggregated statistics for a single metric.
 #[derive(Debug, Clone, Serialize)]
 pub struct PerformanceStats {
+    /// Total number of recorded values.
     pub count: u64,
+    /// Minimum recorded value.
     pub min: f64,
+    /// Maximum recorded value.
     pub max: f64,
+    /// Average of all recorded values.
     pub avg: f64,
+    /// Most recently recorded value.
     pub current: f64,
+    /// Sum of all recorded values (internal use).
     sum: f64,
 }
 
