@@ -38,3 +38,9 @@ ripemd = { workspace = true }
 murmur3 = "0.5"
 
 [dev-dependencies]
+proptest = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "vm_execution"
+harness = false

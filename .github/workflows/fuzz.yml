@@ -1,0 +1,223 @@
+name: Fuzzing
+
+"on":
+  push:
+    branches: [main, master]
+    paths:
+      - 'neo-core/**'
+      - 'neo-vm/**'
+      - 'neo-io/**'
+      - 'neo-p2p/**'
+      - 'neo-primitives/**'
+      - 'fuzz/**'
+      - '.github/workflows/fuzz.yml'
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'neo-core/**'
+      - 'neo-vm/**'
+      - 'neo-io/**'
+      - 'neo-p2p/**'
+      - 'neo-primitives/**'
+      - 'fuzz/**'
+      - '.github/workflows/fuzz.yml'
+  schedule:
+    # Run fuzzing nightly at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: 'Fuzzing duration in seconds per target'
+        required: false
+        default: '300'
+        type: string
+
+env:
+  CARGO_INCREMENTAL: 0
+  RUST_BACKTRACE: 1
+
+jobs:
+  fuzz-transaction:
+    name: Fuzz Transaction Parsing
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            clang \
+            libclang-dev \
+            llvm-dev \
+            liblz4-dev \
+            librocksdb-dev \
+            libssl-dev \
+            pkg-config
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: fuzz-transaction
+
+      - name: Run fuzz_transaction_parse
+        run: |
+          cd fuzz
+          cargo fuzz run fuzz_transaction_parse \
+            --release \
+            -- -max_total_time=${{ github.event.inputs.duration || 300 }} -print_final_stats=1
+
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: transaction-crashes
+          path: fuzz/artifacts/fuzz_transaction_parse/
+          retention-days: 7
+
+  fuzz-script:
+    name: Fuzz Script Parsing
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            clang \
+            libclang-dev \
+            llvm-dev \
+            liblz4-dev \
+            librocksdb-dev \
+            libssl-dev \
+            pkg-config
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: fuzz-script
+
+      - name: Run fuzz_script_parse
+        run: |
+          cd fuzz
+          cargo fuzz run fuzz_script_parse \
+            --release \
+            -- -max_total_time=${{ github.event.inputs.duration || 300 }} -print_final_stats=1
+
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: script-crashes
+          path: fuzz/artifacts/fuzz_script_parse/
+          retention-days: 7
+
+  fuzz-message:
+    name: Fuzz Message Parsing
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            clang \
+            libclang-dev \
+            llvm-dev \
+            liblz4-dev \
+            librocksdb-dev \
+            libssl-dev \
+            pkg-config
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: fuzz-message
+
+      - name: Run fuzz_message_parse
+        run: |
+          cd fuzz
+          cargo fuzz run fuzz_message_parse \
+            --release \
+            -- -max_total_time=${{ github.event.inputs.duration || 300 }} -print_final_stats=1
+
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: message-crashes
+          path: fuzz/artifacts/fuzz_message_parse/
+          retention-days: 7
+
+  # Quick smoke test for PRs - runs for shorter duration
+  fuzz-smoke-test:
+    name: Fuzz Smoke Test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            clang \
+            libclang-dev \
+            llvm-dev \
+            liblz4-dev \
+            librocksdb-dev \
+            libssl-dev \
+            pkg-config
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: fuzz-smoke
+
+      - name: Run smoke tests (30 seconds each)
+        run: |
+          cd fuzz
+          echo "=== Transaction Fuzzing ==="
+          cargo fuzz run fuzz_transaction_parse --release -- -max_total_time=30
+          echo "=== Script Fuzzing ==="
+          cargo fuzz run fuzz_script_parse --release -- -max_total_time=30
+          echo "=== Message Fuzzing ==="
+          cargo fuzz run fuzz_message_parse --release -- -max_total_time=30

@@ -101,6 +101,14 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 # For cryptography tests that need direct secp256k1 access
 secp256k1 = { workspace = true }
 
+[[bench]]
+name = "serialization"
+harness = false
+
+#[[bench]]
+#name = "storage"
+#harness = false
+
 [build-dependencies]
 tonic-build = "0.11"
 protoc-bin-vendored = "3.0"

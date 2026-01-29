@@ -1,0 +1,47 @@
+[package]
+name = "neo-rs-fuzz"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+authors = ["R3E Network <jimmy@r3e.network>"]
+license = "MIT"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+neo-core = { path = "../neo-core", version = "0.7.0" }
+neo-vm = { path = "../neo-vm", version = "0.7.0" }
+neo-io = { path = "../neo-io", version = "0.7.0" }
+neo-primitives = { path = "../neo-primitives", version = "0.7.0" }
+neo-p2p = { path = "../neo-p2p", version = "0.7.0" }
+
+
+[[bin]]
+name = "fuzz_transaction_parse"
+path = "fuzz_targets/fuzz_transaction_parse.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_script_parse"
+path = "fuzz_targets/fuzz_script_parse.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_message_parse"
+path = "fuzz_targets/fuzz_message_parse.rs"
+test = false
+doc = false
+
+[profile.release]
+debug = true
+opt-level = 3
+lto = "thin"
+
+[profile.dev]
+opt-level = 1
+debug = true

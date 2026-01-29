@@ -21,6 +21,8 @@ neo-crypto = { path = "../neo-crypto" }
 # Layer 2 - Protocol
 neo-consensus = { path = "../neo-consensus" }
 neo-core = { path = "../neo-core" }
+neo-vm = { path = "../neo-vm" }
+neo-p2p = { path = "../neo-p2p" }
 
 # Layer 3 - State
 neo-state = { path = "../neo-state" }
@@ -63,7 +65,24 @@ path = "tests/end_to_end_tests.rs"
 name = "chaos_tests"
 path = "tests/chaos_tests.rs"
 
+[[test]]
+name = "e2e_transaction_flow"
+path = "tests/e2e_transaction_flow.rs"
+
+[[test]]
+name = "block_persistence"
+path = "tests/block_persistence.rs"
+
+[[test]]
+name = "p2p_message_exchange"
+path = "tests/p2p_message_exchange.rs"
+
+[[test]]
+name = "contract_execution"
+path = "tests/contract_execution.rs"
+
 [[bench]]
 name = "performance_benchmarks"
 path = "benches/performance_benchmarks.rs"
 harness = false
+

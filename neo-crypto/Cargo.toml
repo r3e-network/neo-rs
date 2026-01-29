@@ -50,6 +50,12 @@ parking_lot = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+criterion = { workspace = true }
+proptest = { workspace = true }
+
+[[bench]]
+name = "crypto_ops"
+harness = false
 
 [features]
 default = []
