@@ -24,19 +24,19 @@ pub struct ForkChoice {
 
 impl ForkChoice {
     /// Create a new fork choice with the given strategy
-    #[must_use] 
+    #[must_use]
     pub const fn new(strategy: ForkChoiceStrategy) -> Self {
         Self { strategy }
     }
 
     /// Create with default hybrid strategy
-    #[must_use] 
+    #[must_use]
     pub fn default_strategy() -> Self {
         Self::new(ForkChoiceStrategy::Hybrid)
     }
 
     /// Get the current strategy
-    #[must_use] 
+    #[must_use]
     pub const fn strategy(&self) -> ForkChoiceStrategy {
         self.strategy
     }
@@ -44,8 +44,12 @@ impl ForkChoice {
     /// Compare two blocks and determine which should be the chain tip
     ///
     /// Returns true if `candidate` should become the new tip over `current`
-    #[must_use] 
-    pub const fn should_switch(&self, current: &BlockIndexEntry, candidate: &BlockIndexEntry) -> bool {
+    #[must_use]
+    pub const fn should_switch(
+        &self,
+        current: &BlockIndexEntry,
+        candidate: &BlockIndexEntry,
+    ) -> bool {
         match self.strategy {
             ForkChoiceStrategy::LongestChain => candidate.height > current.height,
             ForkChoiceStrategy::HeaviestChain => {
@@ -64,7 +68,7 @@ impl ForkChoice {
     }
 
     /// Find the best block among multiple candidates
-    #[must_use] 
+    #[must_use]
     pub fn find_best<'a>(&self, candidates: &'a [BlockIndexEntry]) -> Option<&'a BlockIndexEntry> {
         candidates.iter().reduce(|best, candidate| {
             if self.should_switch(best, candidate) {
@@ -136,7 +140,7 @@ impl ForkChoice {
     }
 
     /// Check if a reorganization is needed
-    #[must_use] 
+    #[must_use]
     pub fn needs_reorg(&self, current_tip: &BlockIndexEntry, new_block: &BlockIndexEntry) -> bool {
         // If new block doesn't extend current tip, we might need a reorg
         if new_block.prev_hash == current_tip.hash {

@@ -11,7 +11,7 @@ pub struct OrderedDictionary<K: Clone + Eq + std::hash::Hash, V> {
 
 impl<K: Clone + Eq + std::hash::Hash, V> OrderedDictionary<K, V> {
     /// Creates a new ordered dictionary
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             items: Vec::new(),
@@ -20,25 +20,25 @@ impl<K: Clone + Eq + std::hash::Hash, V> OrderedDictionary<K, V> {
     }
 
     /// Gets count
-    #[must_use] 
+    #[must_use]
     pub fn count(&self) -> usize {
         self.items.len()
     }
 
     /// Gets keys as an iterator.
-    /// 
+    ///
     /// Returns `impl Iterator` to avoid unnecessary Vec allocation.
     /// Caller can call `.collect()` if they need a Vec.
-    #[must_use] 
+    #[must_use]
     pub fn keys(&self) -> impl Iterator<Item = &K> + '_ {
         self.items.iter().map(|(k, _)| k)
     }
 
     /// Gets values as an iterator.
-    /// 
+    ///
     /// Returns `impl Iterator` to avoid unnecessary Vec allocation.
     /// Caller can call `.collect()` if they need a Vec.
-    #[must_use] 
+    #[must_use]
     pub fn values(&self) -> impl Iterator<Item = &V> + '_ {
         self.items.iter().map(|(_, v)| v)
     }
@@ -62,7 +62,7 @@ impl<K: Clone + Eq + std::hash::Hash, V> OrderedDictionary<K, V> {
     }
 
     /// Gets value by index
-    #[must_use] 
+    #[must_use]
     pub fn get_at(&self, index: usize) -> Option<&V> {
         self.items.get(index).map(|(_, v)| v)
     }

@@ -2,7 +2,7 @@
 // stack.rs - Stack operations (peek, pop, push) and gas tracking
 //
 
-use super::{ExecutionEngine, VmResult, StackItem, VmError, DEFAULT_GAS_LIMIT};
+use super::{ExecutionEngine, StackItem, VmError, VmResult, DEFAULT_GAS_LIMIT};
 
 impl ExecutionEngine {
     /// Returns the item at the specified index from the top of the current stack without removing it.
@@ -31,7 +31,7 @@ impl ExecutionEngine {
 
     /// Adds gas consumed and checks if the limit has been exceeded.
     /// Returns `VmError::GasExhausted` if the gas limit is exceeded.
-    /// 
+    ///
     /// # Arguments
     /// * `gas` - Amount of gas to add (can be negative for refunds, though refunds are clamped to 0)
     pub fn add_gas_consumed(&mut self, gas: i64) -> VmResult<()> {
@@ -65,7 +65,7 @@ impl ExecutionEngine {
     }
 
     /// Sets the gas limit for this execution.
-    /// 
+    ///
     /// # Note
     /// This should typically be set before execution begins. Changing the limit
     /// during execution may cause unexpected behavior.
@@ -88,7 +88,7 @@ impl ExecutionEngine {
     }
 
     /// Resets the gas consumed to 0.
-    /// 
+    ///
     /// # Note
     /// This should typically only be used when resetting the engine for a new execution.
     pub fn reset_gas_consumed(&mut self) {

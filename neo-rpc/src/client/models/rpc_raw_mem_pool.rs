@@ -29,7 +29,7 @@ pub struct RpcRawMemPool {
 impl RpcRawMemPool {
     /// Converts to JSON
     /// Matches C# `ToJson`
-    #[must_use] 
+    #[must_use]
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
         json.insert("height".to_string(), JToken::Number(f64::from(self.height)));

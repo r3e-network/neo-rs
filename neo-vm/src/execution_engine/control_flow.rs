@@ -2,7 +2,7 @@
 // control_flow.rs - Jump, call, and syscall operations
 //
 
-use super::{ExecutionEngine, VmResult, VmError};
+use super::{ExecutionEngine, VmError, VmResult};
 
 impl ExecutionEngine {
     pub fn execute_jump(&mut self, position: i32) -> VmResult<()> {

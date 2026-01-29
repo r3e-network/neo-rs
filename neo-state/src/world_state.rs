@@ -96,13 +96,13 @@ pub struct StateChanges {
 
 impl StateChanges {
     /// Creates an empty change set.
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Returns true if there are no changes.
-    #[must_use] 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.accounts.is_empty() && self.storage.is_empty()
     }
@@ -114,13 +114,13 @@ impl StateChanges {
     }
 
     /// Returns the number of account changes.
-    #[must_use] 
+    #[must_use]
     pub fn account_count(&self) -> usize {
         self.accounts.len()
     }
 
     /// Returns the number of storage changes.
-    #[must_use] 
+    #[must_use]
     pub fn storage_count(&self) -> usize {
         self.storage.len()
     }
@@ -139,13 +139,13 @@ pub struct MemoryWorldState {
 
 impl MemoryWorldState {
     /// Creates a new empty in-memory world state.
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Creates a world state with initial accounts.
-    #[must_use] 
+    #[must_use]
     pub fn with_accounts(accounts: HashMap<UInt160, AccountState>) -> Self {
         Self {
             accounts: RwLock::new(accounts),
@@ -252,7 +252,7 @@ pub struct MutableStateView {
 
 impl MutableStateView {
     /// Creates a new mutable state view.
-    #[must_use] 
+    #[must_use]
     pub fn new(
         accounts: HashMap<UInt160, AccountState>,
         storage: HashMap<StorageKey, StorageItem>,

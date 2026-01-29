@@ -14,19 +14,19 @@ pub struct JObject {
 
 impl JObject {
     /// Creates an empty object.
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Builds an object from an ordered dictionary of properties.
-    #[must_use] 
+    #[must_use]
     pub const fn from_properties(properties: OrderedDictionary<String, Option<JToken>>) -> Self {
         Self { properties }
     }
 
     /// Returns the underlying ordered dictionary.
-    #[must_use] 
+    #[must_use]
     pub const fn properties(&self) -> &OrderedDictionary<String, Option<JToken>> {
         &self.properties
     }
@@ -37,7 +37,7 @@ impl JObject {
     }
 
     /// Returns a property value by name.
-    #[must_use] 
+    #[must_use]
     pub fn get(&self, name: &str) -> Option<&JToken> {
         self.properties.get(name).and_then(|value| value.as_ref())
     }
@@ -53,19 +53,19 @@ impl JObject {
     }
 
     /// Number of stored properties.
-    #[must_use] 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.properties.count()
     }
 
     /// Returns `true` when the object has no properties.
-    #[must_use] 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
     /// Returns the values in insertion order.
-    #[must_use] 
+    #[must_use]
     pub fn children(&self) -> Vec<&Option<JToken>> {
         self.properties.values().collect()
     }
@@ -76,7 +76,7 @@ impl JObject {
     }
 
     /// Returns `true` if the object contains a property with the supplied name.
-    #[must_use] 
+    #[must_use]
     pub fn contains_property(&self, key: &str) -> bool {
         self.properties.contains_key(key)
     }

@@ -8,7 +8,12 @@ use crate::vm_state::VMState;
 
 /// Register all control handlers
 pub fn register_handlers(jump_table: &mut crate::jump_table::JumpTable) {
-    use OpCode::{NOP, JMP, JMP_L, JMPIF, JMPIF_L, JMPIFNOT, JMPIFNOT_L, JMPEQ, JMPEQ_L, JMPNE, JMPNE_L, JMPGT, JMPGT_L, JMPGE, JMPGE_L, JMPLT, JMPLT_L, JMPLE, JMPLE_L, CALL, CALL_L, CALLA, CALLT, ABORT, ABORTMSG, ASSERT, ASSERTMSG, THROW, TRY, TRY_L, ENDTRY, ENDTRY_L, ENDFINALLY, RET, SYSCALL};
+    use OpCode::{
+        ABORT, ABORTMSG, ASSERT, ASSERTMSG, CALL, CALLA, CALLT, CALL_L, ENDFINALLY, ENDTRY,
+        ENDTRY_L, JMP, JMPEQ, JMPEQ_L, JMPGE, JMPGE_L, JMPGT, JMPGT_L, JMPIF, JMPIFNOT, JMPIFNOT_L,
+        JMPIF_L, JMPLE, JMPLE_L, JMPLT, JMPLT_L, JMPNE, JMPNE_L, JMP_L, NOP, RET, SYSCALL, THROW,
+        TRY, TRY_L,
+    };
 
     jump_table.register(NOP, nop);
     jump_table.register(JMP, jmp);
@@ -338,8 +343,10 @@ pub fn r#try(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
         *operand.first().unwrap_or(&0),
         *operand.get(1).unwrap_or(&0),
     ]));
-    let finally_offset =
-        i32::from(i16::from_le_bytes([*operand.get(2).unwrap_or(&0), *operand.get(3).unwrap_or(&0)]));
+    let finally_offset = i32::from(i16::from_le_bytes([
+        *operand.get(2).unwrap_or(&0),
+        *operand.get(3).unwrap_or(&0),
+    ]));
     engine.execute_try(catch_offset, finally_offset)
 }
 

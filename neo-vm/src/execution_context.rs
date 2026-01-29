@@ -44,7 +44,7 @@ impl std::fmt::Debug for SharedStates {
 }
 
 impl SharedStates {
-    #[must_use] 
+    #[must_use]
     pub fn new(script: crate::script::Script, reference_counter: ReferenceCounter) -> Self {
         let script = Arc::new(script);
         Self {
@@ -58,22 +58,22 @@ impl SharedStates {
         }
     }
 
-    #[must_use] 
+    #[must_use]
     pub const fn reference_counter(&self) -> &ReferenceCounter {
         &self.reference_counter
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn script(&self) -> &crate::script::Script {
         self.script.as_ref()
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn script_arc(&self) -> Arc<crate::script::Script> {
         Arc::clone(&self.script)
     }
 
-    #[must_use] 
+    #[must_use]
     pub const fn evaluation_stack(&self) -> &crate::evaluation_stack::EvaluationStack {
         &self.evaluation_stack
     }
@@ -82,7 +82,7 @@ impl SharedStates {
         &mut self.evaluation_stack
     }
 
-    #[must_use] 
+    #[must_use]
     pub const fn static_fields(&self) -> Option<&Slot> {
         self.static_fields.as_ref()
     }
@@ -163,7 +163,7 @@ pub struct ExecutionContext {
 impl ExecutionContext {
     /// Creates a new execution context.
     /// This matches the C# implementation's constructor pattern.
-    #[must_use] 
+    #[must_use]
     pub fn new(script: Script, rvcount: i32, reference_counter: &ReferenceCounter) -> Self {
         Self {
             shared_states: SharedStates::new(script, reference_counter.clone()),
@@ -177,26 +177,26 @@ impl ExecutionContext {
 
     /// Returns the script for this context.
     /// This matches the C# implementation's Script property.
-    #[must_use] 
+    #[must_use]
     pub fn script(&self) -> &Script {
         self.shared_states.script()
     }
 
     /// Returns the script as an Arc for identity-sensitive operations (matches C# reference semantics).
-    #[must_use] 
+    #[must_use]
     pub fn script_arc(&self) -> Arc<Script> {
         self.shared_states.script_arc()
     }
 
     /// Returns the reference counter associated with this context.
-    #[must_use] 
+    #[must_use]
     pub fn reference_counter(&self) -> &ReferenceCounter {
         self.shared_states.reference_counter()
     }
 
     /// Returns the script hash for this context as a 20-byte array.
     /// This mirrors the C# `Script.ToScriptHash()` behaviour (Hash160).
-    #[must_use] 
+    #[must_use]
     pub fn script_hash(&self) -> [u8; 20] {
         #[allow(unused_imports)]
         use ripemd::{Digest as _, Ripemd160};
@@ -221,7 +221,7 @@ impl ExecutionContext {
     }
 
     /// Returns the current instruction pointer.
-    #[must_use] 
+    #[must_use]
     pub const fn instruction_pointer(&self) -> usize {
         self.instruction_pointer
     }
@@ -259,7 +259,7 @@ impl ExecutionContext {
     }
 
     /// Returns the number of values to return when the context is unloaded (-1 for all).
-    #[must_use] 
+    #[must_use]
     pub const fn rvcount(&self) -> i32 {
         self.rvcount
     }
@@ -271,7 +271,7 @@ impl ExecutionContext {
 
     /// Returns the evaluation stack for this context.
     /// This matches the C# implementation's `EvaluationStack` property.
-    #[must_use] 
+    #[must_use]
     pub fn evaluation_stack(&self) -> &EvaluationStack {
         self.shared_states.evaluation_stack()
     }
@@ -284,7 +284,7 @@ impl ExecutionContext {
 
     /// Returns the static fields for this context.
     /// This matches the C# implementation's `StaticFields` property getter.
-    #[must_use] 
+    #[must_use]
     pub fn static_fields(&self) -> Option<&Slot> {
         self.shared_states.static_fields()
     }
@@ -301,7 +301,7 @@ impl ExecutionContext {
     }
 
     /// Returns the local variables for this context.
-    #[must_use] 
+    #[must_use]
     pub const fn local_variables(&self) -> Option<&Slot> {
         self.local_variables.as_ref()
     }
@@ -317,7 +317,7 @@ impl ExecutionContext {
     }
 
     /// Returns the arguments for this context.
-    #[must_use] 
+    #[must_use]
     pub const fn arguments(&self) -> Option<&Slot> {
         self.arguments.as_ref()
     }
@@ -333,7 +333,7 @@ impl ExecutionContext {
     }
 
     /// Returns the try stack for this context.
-    #[must_use] 
+    #[must_use]
     pub const fn try_stack(&self) -> Option<&Vec<ExceptionHandlingContext>> {
         self.try_stack.as_ref()
     }
@@ -349,15 +349,13 @@ impl ExecutionContext {
     }
 
     /// Returns the number of nested try contexts currently tracked.
-    #[must_use] 
+    #[must_use]
     pub fn try_stack_len(&self) -> usize {
-        self.try_stack
-            .as_ref()
-            .map_or(0, std::vec::Vec::len)
+        self.try_stack.as_ref().map_or(0, std::vec::Vec::len)
     }
 
     /// Returns true when at least one try context is active.
-    #[must_use] 
+    #[must_use]
     pub fn has_try_context(&self) -> bool {
         self.try_stack_len() > 0
     }
@@ -373,7 +371,7 @@ impl ExecutionContext {
     }
 
     /// Returns the current try context if one exists.
-    #[must_use] 
+    #[must_use]
     pub fn try_stack_last(&self) -> Option<&ExceptionHandlingContext> {
         self.try_stack.as_ref().and_then(|stack| stack.last())
     }
@@ -399,7 +397,7 @@ impl ExecutionContext {
 
     /// Gets a state value for the specified type, creating it if it doesn't exist.
     /// Mirrors the C# ExecutionContext.GetState\<T>() helper.
-    #[must_use] 
+    #[must_use]
     pub fn get_state<T: 'static + Default + Send + Sync>(&self) -> Arc<Mutex<T>> {
         self.shared_states.get_state::<T>()
     }
@@ -464,7 +462,7 @@ impl ExecutionContext {
 
     /// Clones the context so that they share the same script, stack, and static fields.
     /// This matches the C# implementation's Clone(int) method.
-    #[must_use] 
+    #[must_use]
     pub fn clone_with_position(&self, position: usize) -> Self {
         Self {
             shared_states: self.shared_states.clone(),
@@ -478,7 +476,7 @@ impl ExecutionContext {
 
     /// Gets a shared state by type, creating it if it doesn't exist.
     /// Mirrors the C# ExecutionContext.GetState\<T>() helper for shared state access.
-    #[must_use] 
+    #[must_use]
     pub fn get_shared_state<T: 'static + Default + Send + Sync>(&self) -> Arc<Mutex<T>> {
         self.shared_states.get_state::<T>()
     }

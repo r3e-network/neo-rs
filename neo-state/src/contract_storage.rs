@@ -21,13 +21,13 @@ pub struct StorageKey {
 
 impl StorageKey {
     /// Creates a new storage key.
-    #[must_use] 
+    #[must_use]
     pub const fn new(contract_hash: UInt160, key: Vec<u8>) -> Self {
         Self { contract_hash, key }
     }
 
     /// Creates a storage key from raw bytes.
-    #[must_use] 
+    #[must_use]
     pub fn from_bytes(contract_hash: UInt160, key: &[u8]) -> Self {
         Self {
             contract_hash,
@@ -36,7 +36,7 @@ impl StorageKey {
     }
 
     /// Returns the serialized form of this key.
-    #[must_use] 
+    #[must_use]
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut result = Vec::with_capacity(20 + self.key.len());
         result.extend_from_slice(&self.contract_hash.to_array());
@@ -56,7 +56,7 @@ pub struct StorageItem {
 
 impl StorageItem {
     /// Creates a new storage item.
-    #[must_use] 
+    #[must_use]
     pub const fn new(value: Vec<u8>) -> Self {
         Self {
             value,
@@ -65,7 +65,7 @@ impl StorageItem {
     }
 
     /// Creates a constant storage item.
-    #[must_use] 
+    #[must_use]
     pub const fn constant(value: Vec<u8>) -> Self {
         Self {
             value,
@@ -74,13 +74,13 @@ impl StorageItem {
     }
 
     /// Returns the value as bytes.
-    #[must_use] 
+    #[must_use]
     pub fn as_bytes(&self) -> &[u8] {
         &self.value
     }
 
     /// Returns true if this item is constant.
-    #[must_use] 
+    #[must_use]
     pub const fn is_constant(&self) -> bool {
         self.is_constant
     }
@@ -117,7 +117,7 @@ pub struct ContractStorage {
 
 impl ContractStorage {
     /// Creates a new empty contract storage.
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             cache: HashMap::new(),
@@ -126,7 +126,7 @@ impl ContractStorage {
     }
 
     /// Gets a storage item by key.
-    #[must_use] 
+    #[must_use]
     pub fn get(&self, key: &StorageKey) -> Option<&StorageItem> {
         self.cache.get(key).and_then(|opt| opt.as_ref())
     }
@@ -170,7 +170,7 @@ impl ContractStorage {
     }
 
     /// Returns true if the key exists in storage.
-    #[must_use] 
+    #[must_use]
     pub fn contains(&self, key: &StorageKey) -> bool {
         self.cache
             .get(key)
@@ -178,7 +178,7 @@ impl ContractStorage {
     }
 
     /// Returns all changes since last commit.
-    #[must_use] 
+    #[must_use]
     pub const fn changes(&self) -> &HashMap<StorageKey, StorageChange> {
         &self.changes
     }
@@ -189,13 +189,13 @@ impl ContractStorage {
     }
 
     /// Returns the number of cached items.
-    #[must_use] 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.cache.values().filter(|v| v.is_some()).count()
     }
 
     /// Returns true if the cache is empty.
-    #[must_use] 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }

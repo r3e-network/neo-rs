@@ -54,22 +54,22 @@ pub(crate) fn is_internal_ip(ip: IpAddr) -> bool {
             }
             let octets = ip.octets();
             match octets[0] {
-                0 => true,      // 0.0.0.0/8 (current network)
-                10 => true,     // 10.0.0.0/8 (private)
-                127 => true,    // 127.0.0.0/8 (loopback)
-                169 if octets[1] == 254 => true, // 169.254.0.0/16 (link-local)
+                0 => true,                                    // 0.0.0.0/8 (current network)
+                10 => true,                                   // 10.0.0.0/8 (private)
+                127 => true,                                  // 127.0.0.0/8 (loopback)
+                169 if octets[1] == 254 => true,              // 169.254.0.0/16 (link-local)
                 172 if (16..32).contains(&octets[1]) => true, // 172.16.0.0/12 (private)
                 192 => match octets[1] {
                     0 if octets[2] == 0 || octets[2] == 2 => true, // 192.0.0.0/24, 192.0.2.0/24 (test)
-                    88 if octets[2] == 99 => true, // 192.88.99.0/24 (6to4 relay)
-                    168 => true, // 192.168.0.0/16 (private)
+                    88 if octets[2] == 99 => true,                 // 192.88.99.0/24 (6to4 relay)
+                    168 => true,                                   // 192.168.0.0/16 (private)
                     _ => false,
                 },
                 198 if octets[1] == 18 => true, // 198.18.0.0/15 (benchmark)
                 198 if (51..=100).contains(&octets[1]) => true, // 198.51.100.0/24, 203.0.113.0/24 (test)
                 203 if octets[1] == 0 && octets[2] == 113 => true, // 203.0.113.0/24 (test)
-                224..=239 => true, // 224.0.0.0/4 (multicast)
-                240..=255 => true, // 240.0.0.0/4 (reserved)
+                224..=239 => true,                              // 224.0.0.0/4 (multicast)
+                240..=255 => true,                              // 240.0.0.0/4 (reserved)
                 _ => false,
             }
         }
@@ -113,8 +113,10 @@ pub fn validate_url_for_ssrf(url: &str) -> Result<(), String> {
             return Err("Invalid port number".to_string());
         }
         // Block common internal service ports
-        if matches!(port, 22 | 23 | 25 | 53 | 110 | 143 | 993 | 995 | 3306 | 5432 | 6379 | 27017 | 9200 | 9300)
-        {
+        if matches!(
+            port,
+            22 | 23 | 25 | 53 | 110 | 143 | 993 | 995 | 3306 | 5432 | 6379 | 27017 | 9200 | 9300
+        ) {
             return Err("Port not allowed for security reasons".to_string());
         }
     }

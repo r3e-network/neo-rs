@@ -29,7 +29,7 @@ where
     T: Eq + Hash + Clone,
 {
     /// Creates a new Tarjan algorithm instance.
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             graph: HashMap::new(),
@@ -43,7 +43,7 @@ where
     }
 
     /// Default implementation delegates to `new()`
-    #[must_use] 
+    #[must_use]
     pub fn default_instance() -> Self {
         Self::new()
     }

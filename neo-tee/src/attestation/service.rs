@@ -2,7 +2,9 @@
 
 #[allow(unused_imports)]
 use crate::attestation::report::ReportType;
-use crate::attestation::report::{AttestationReport, Quote, QuoteValidationOptions, QuoteValidationResult};
+use crate::attestation::report::{
+    AttestationReport, Quote, QuoteValidationOptions, QuoteValidationResult,
+};
 use crate::enclave::TeeEnclave;
 use crate::error::{TeeError, TeeResult};
 use sha2::{Digest, Sha256};
@@ -110,7 +112,10 @@ impl AttestationService {
             return Err(TeeError::EnclaveNotInitialized);
         }
 
-        Ok(Self { _enclave: enclave, config })
+        Ok(Self {
+            _enclave: enclave,
+            config,
+        })
     }
 
     /// Get the attestation configuration
@@ -195,7 +200,10 @@ impl AttestationService {
         let result = report.validate(&options);
 
         if result != QuoteValidationResult::Valid {
-            warn!("Attestation report validation failed: {}", result.description());
+            warn!(
+                "Attestation report validation failed: {}",
+                result.description()
+            );
             return Ok(false);
         }
 
@@ -244,7 +252,7 @@ impl AttestationService {
             Some(q) => q,
             None => {
                 return Err(TeeError::InvalidAttestationReport(
-                    "Failed to parse quote from bytes".to_string()
+                    "Failed to parse quote from bytes".to_string(),
                 ));
             }
         };
@@ -263,7 +271,7 @@ impl AttestationService {
             Some(q) => q,
             None => {
                 return Err(TeeError::InvalidAttestationReport(
-                    "Failed to parse quote from bytes".to_string()
+                    "Failed to parse quote from bytes".to_string(),
                 ));
             }
         };
@@ -293,7 +301,7 @@ impl AttestationService {
     }
 
     /// Compute MRENCLAVE from enclave binary
-    /// 
+    ///
     /// In production, this would hash the actual enclave binary.
     /// For now, returns a deterministic value based on version.
     pub fn compute_mrenclave(&self, enclave_binary: &[u8]) -> [u8; 32] {
@@ -307,7 +315,11 @@ impl AttestationService {
     }
 
     /// Verify MRENCLAVE against a known good value
-    pub fn verify_mrenclave(&self, report: &AttestationReport, expected: &[u8; 32]) -> TeeResult<()> {
+    pub fn verify_mrenclave(
+        &self,
+        report: &AttestationReport,
+        expected: &[u8; 32],
+    ) -> TeeResult<()> {
         if !report.verify_mrenclave(expected) {
             Err(TeeError::mrenclave_mismatch(expected, &report.mrenclave))
         } else {
@@ -316,7 +328,11 @@ impl AttestationService {
     }
 
     /// Verify MRSIGNER against a known good value
-    pub fn verify_mrsigner(&self, report: &AttestationReport, expected: &[u8; 32]) -> TeeResult<()> {
+    pub fn verify_mrsigner(
+        &self,
+        report: &AttestationReport,
+        expected: &[u8; 32],
+    ) -> TeeResult<()> {
         if !report.verify_mrsigner(expected) {
             Err(TeeError::mrsigner_mismatch(expected, &report.mrsigner))
         } else {
@@ -398,7 +414,9 @@ mod tests {
         (temp, service)
     }
 
-    fn setup_service_with_config(config: AttestationConfig) -> (tempfile::TempDir, AttestationService) {
+    fn setup_service_with_config(
+        config: AttestationConfig,
+    ) -> (tempfile::TempDir, AttestationService) {
         let temp = tempdir().unwrap();
         let enclave_config = EnclaveConfig {
             sealed_data_path: temp.path().to_path_buf(),
@@ -452,7 +470,7 @@ mod tests {
 
         let wrong_mrenclave = [0xFFu8; 32];
         let result = service.verify_mrenclave(&report, &wrong_mrenclave);
-        
+
         assert!(result.is_err());
         match result.unwrap_err() {
             TeeError::MrEnclaveMismatch { expected, actual } => {
@@ -471,7 +489,7 @@ mod tests {
 
         let wrong_mrsigner = [0xFFu8; 32];
         let result = service.verify_mrsigner(&report, &wrong_mrsigner);
-        
+
         assert!(result.is_err());
         match result.unwrap_err() {
             TeeError::MrSignerMismatch { expected, actual } => {
@@ -488,10 +506,10 @@ mod tests {
         let (_temp, service) = setup_service_with_config(config);
 
         let report = service.generate_report(b"test").unwrap();
-        
+
         // Should fail because simulated reports are not allowed in production config
         assert!(!service.verify_report(&report).unwrap());
-        
+
         // Detailed check should return InvalidSignature
         let result = service.verify_report_detailed(&report);
         assert_eq!(result, QuoteValidationResult::InvalidSignature);
@@ -500,23 +518,22 @@ mod tests {
     #[test]
     fn test_config_with_mrenclave() {
         let expected_mrenclave = [0x42u8; 32];
-        let config = AttestationConfig::testing()
-            .with_mrenclave(expected_mrenclave);
-        
+        let config = AttestationConfig::testing().with_mrenclave(expected_mrenclave);
+
         assert_eq!(config.expected_mrenclave, Some(expected_mrenclave));
     }
 
     #[test]
     fn test_compute_mrenclave() {
         let (_temp, service) = setup_service();
-        
+
         let binary = b"test enclave binary";
         let mrenclave1 = service.compute_mrenclave(binary);
         let mrenclave2 = service.compute_mrenclave(binary);
-        
+
         // Same binary should produce same MRENCLAVE
         assert_eq!(mrenclave1, mrenclave2);
-        
+
         // Different binary should produce different MRENCLAVE
         let different_binary = b"different binary";
         let mrenclave3 = service.compute_mrenclave(different_binary);
@@ -526,25 +543,25 @@ mod tests {
     #[test]
     fn test_verify_quote_with_invalid_bytes() {
         let (_temp, service) = setup_service();
-        
+
         let invalid_quote = vec![0u8; 100]; // Too short
         let result = service.verify_quote(&invalid_quote);
-        
+
         assert!(result.is_err());
     }
 
     #[test]
     fn test_batch_verification() {
         let (_temp, service) = setup_service();
-        
+
         let reports = vec![
             service.generate_report(b"test1").unwrap(),
             service.generate_report(b"test2").unwrap(),
             service.generate_report(b"test3").unwrap(),
         ];
-        
+
         let results = service.verify_reports_batch(&reports);
-        
+
         assert_eq!(results.len(), 3);
         for (_, result) in results {
             assert_eq!(result, QuoteValidationResult::Valid);
@@ -571,7 +588,7 @@ mod tests {
     fn test_config_conversions() {
         let config = AttestationConfig::default();
         let options = config.to_quote_options();
-        
+
         assert_eq!(options.min_isv_svn, config.min_isv_svn);
         assert_eq!(options.max_age, config.max_report_age);
         assert_eq!(options.require_non_debug, config.require_non_debug);

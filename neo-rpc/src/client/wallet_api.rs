@@ -32,7 +32,7 @@ pub struct WalletApi {
 impl WalletApi {
     /// `WalletAPI` Constructor
     /// Matches C# constructor
-    #[must_use] 
+    #[must_use]
     pub fn new(rpc_client: Arc<RpcClient>) -> Self {
         Self {
             nep17_api: Nep17Api::new(rpc_client.clone()),

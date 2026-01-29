@@ -27,7 +27,7 @@ pub struct RpcValidator {
 impl RpcValidator {
     /// Converts to JSON
     /// Matches C# `ToJson`
-    #[must_use] 
+    #[must_use]
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
         json.insert(
@@ -44,8 +44,7 @@ impl RpcValidator {
         let public_key = json
             .get("publickey")
             .and_then(neo_json::JToken::as_string)
-            .ok_or("Missing or invalid 'publickey' field")?
-            ;
+            .ok_or("Missing or invalid 'publickey' field")?;
 
         let votes_token = json
             .get("votes")

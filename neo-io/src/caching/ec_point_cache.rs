@@ -23,7 +23,7 @@ where
     TPoint: EncodablePoint + Eq + Hash,
 {
     /// Creates a new cache with the provided maximum capacity (same semantics as C# constructor).
-    #[must_use] 
+    #[must_use]
     pub fn new(max_capacity: usize) -> Self {
         Self {
             inner: FIFOCache::new(max_capacity, |point: &TPoint| {

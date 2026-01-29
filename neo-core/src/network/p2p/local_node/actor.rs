@@ -113,14 +113,14 @@ impl LocalNodeActor {
                         snapshot.services,
                         snapshot.last_block_index,
                     );
-                    
+
                     // SECURITY: Record successful handshake in reputation tracker
                     let tracker = self.state.reputation_tracker();
                     let ip = snapshot.remote_address.ip();
                     tokio::spawn(async move {
                         tracker.record_contribution(ip, "handshake_success").await;
                     });
-                    
+
                     let _ = reply.send(true);
                 } else {
                     debug!(
@@ -139,14 +139,14 @@ impl LocalNodeActor {
                 let was_pending = self.state.is_pending(&endpoint);
                 self.peer.connection_failed(endpoint);
                 self.state.clear_pending(&endpoint);
-                
+
                 // SECURITY: Record connection failure in reputation tracker
                 let tracker = self.state.reputation_tracker();
                 let ip = endpoint.ip();
                 tokio::spawn(async move {
                     tracker.record_violation(ip, "handshake_failure").await;
                 });
-                
+
                 if was_pending {
                     self.requeue_endpoint(endpoint);
                 }

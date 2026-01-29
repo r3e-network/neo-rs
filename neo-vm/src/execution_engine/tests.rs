@@ -197,7 +197,7 @@ mod execution_engine_tests {
 
         // Initial gas consumed should be 0
         assert_eq!(engine.gas_consumed(), 0);
-        
+
         // Default gas limit should be 20 GAS
         assert_eq!(engine.gas_limit(), DEFAULT_GAS_LIMIT);
         assert_eq!(engine.gas_limit(), 20_0000_0000);

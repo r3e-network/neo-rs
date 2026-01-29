@@ -38,14 +38,14 @@ where
 
     /// Total number of items stored in the collection (C# `Count`).
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn count(&self) -> usize {
         self.items.len()
     }
 
     /// Returns the first item or `None` if the collection is empty (C# `FirstOrDefault`).
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn first_or_default(&self) -> Option<&TItem> {
         self.items.first().map(|(_, value)| value)
     }

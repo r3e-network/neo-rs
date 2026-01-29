@@ -20,50 +20,50 @@ pub struct Pointer {
 
 impl Pointer {
     /// Creates a new pointer associated with the given script and position.
-    #[must_use] 
+    #[must_use]
     pub const fn new(script: Arc<Script>, position: usize) -> Self {
         Self { script, position }
     }
 
     /// Returns the script that owns this pointer.
-    #[must_use] 
+    #[must_use]
     pub fn script(&self) -> &Script {
         self.script.as_ref()
     }
 
     /// Returns an `Arc` clone of the script reference.
-    #[must_use] 
+    #[must_use]
     pub fn script_arc(&self) -> Arc<Script> {
         Arc::clone(&self.script)
     }
 
     /// Returns the instruction position inside the script.
-    #[must_use] 
+    #[must_use]
     pub const fn position(&self) -> usize {
         self.position
     }
 
     /// Returns the stack item type.
-    #[must_use] 
+    #[must_use]
     pub const fn stack_item_type(&self) -> StackItemType {
         StackItemType::Pointer
     }
 
     /// Pointers are always truthy in Neo VM.
-    #[must_use] 
+    #[must_use]
     pub const fn to_boolean(&self) -> bool {
         true
     }
 
     /// Returns the pointer position as an integer (used by tests/helpers).
-    #[must_use] 
+    #[must_use]
     pub fn to_integer(&self) -> BigInt {
         BigInt::from(self.position)
     }
 
     /// Creates a deep copy. Since pointers are immutable and reference-counted,
     /// this simply clones the underlying `Arc`.
-    #[must_use] 
+    #[must_use]
     pub fn deep_copy(&self) -> Self {
         self.clone()
     }

@@ -331,12 +331,12 @@ impl DataCache {
             warn!("attempted to add to read-only DataCache");
             return;
         }
-        
+
         // Invalidate read cache for this key
         if let Some(ref cache) = self.read_cache {
             cache.remove(&key);
         }
-        
+
         self.apply_add(&key, value.clone());
         for handler in self.on_update.read().iter() {
             handler(self, &key, &value);
@@ -358,13 +358,13 @@ impl DataCache {
             warn!("attempted to update read-only DataCache");
             return;
         }
-        
+
         // Update read cache with new value
         if let Some(ref cache) = self.read_cache {
             let size = value.get_value().len() + std::mem::size_of::<StorageKey>();
             cache.put(key.clone(), value.clone(), size);
         }
-        
+
         self.apply_update(&key, value.clone());
         for handler in self.on_update.read().iter() {
             handler(self, &key, &value);
@@ -397,12 +397,12 @@ impl DataCache {
             warn!("attempted to delete from read-only DataCache");
             return;
         }
-        
+
         // Invalidate read cache for this key
         if let Some(ref cache) = self.read_cache {
             cache.remove(key);
         }
-        
+
         self.apply_delete(key);
     }
 
@@ -437,8 +437,8 @@ impl DataCache {
         }
         // Clear change set (actual persistence handled by StoreCache)
         self.state.write().change_set.clear();
-        
-        // Note: We don't clear the read cache on commit - 
+
+        // Note: We don't clear the read cache on commit -
         // it contains valid data that may be useful for future reads
     }
 

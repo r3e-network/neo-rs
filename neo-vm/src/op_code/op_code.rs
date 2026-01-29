@@ -438,7 +438,7 @@ impl OpCode {
     }
 
     /// Creates an `OpCode` from a byte value.
-    #[must_use] 
+    #[must_use]
     pub const fn from_byte(byte: u8) -> Option<Self> {
         match byte {
             0x00 => Some(Self::PUSHINT8),
@@ -645,7 +645,7 @@ impl OpCode {
     }
 
     /// Returns the operand size for this opcode.
-    #[must_use] 
+    #[must_use]
     pub fn operand_size(&self) -> OperandSize {
         match self {
             Self::PUSHINT8 => OperandSize::fixed(1),

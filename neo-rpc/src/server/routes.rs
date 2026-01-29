@@ -65,9 +65,13 @@ impl CorsConfig {
         let origins = settings
             .allow_origins
             .iter()
-            .filter_map(|origin| if let Ok(value) = HeaderValue::from_str(origin) { Some(value) } else {
-                invalid_origins += 1;
-                None
+            .filter_map(|origin| {
+                if let Ok(value) = HeaderValue::from_str(origin) {
+                    Some(value)
+                } else {
+                    invalid_origins += 1;
+                    None
+                }
             })
             .collect::<Vec<_>>();
 
@@ -251,8 +255,12 @@ async fn handle_post_request(
     }
 
     // Process body and apply per-method rate limiting
-    let (response, unauthorized) =
-        process_body(&filters, auth_header.as_deref(), body.as_ref(), Some(client_ip));
+    let (response, unauthorized) = process_body(
+        &filters,
+        auth_header.as_deref(),
+        body.as_ref(),
+        Some(client_ip),
+    );
 
     let challenge = unauthorized && filters.auth.as_ref().is_some();
     let mut http_response = build_http_response(response, unauthorized, challenge);
@@ -315,7 +323,8 @@ async fn handle_get_request(
                 (Some(error_response(None, RpcError::bad_request())), false)
             }
             Some(Value::Object(obj)) => {
-                let outcome = process_object(obj, &filters, auth_header.as_deref(), Some(client_ip));
+                let outcome =
+                    process_object(obj, &filters, auth_header.as_deref(), Some(client_ip));
                 (outcome.response, outcome.unauthorized)
             }
             Some(_) => (
@@ -412,7 +421,11 @@ fn process_object(
     }
 
     let method_value = obj.remove("method");
-    let method = if let Some(value) = method_value.and_then(|value| value.as_str().map(std::string::ToString::to_string)) { value } else {
+    let method = if let Some(value) =
+        method_value.and_then(|value| value.as_str().map(std::string::ToString::to_string))
+    {
+        value
+    } else {
         RPC_ERR_TOTAL.inc();
         return RequestOutcome::error(error_response(id, RpcError::invalid_request()), false);
     };
@@ -427,7 +440,9 @@ fn process_object(
     }
 
     let params_value = obj.remove("params").unwrap_or(Value::Array(Vec::new()));
-    let params = if let Value::Array(values) = params_value { values } else {
+    let params = if let Value::Array(values) = params_value {
+        values
+    } else {
         RPC_ERR_TOTAL.inc();
         return RequestOutcome::error(error_response(id, RpcError::invalid_request()), false);
     };
@@ -766,9 +781,18 @@ mod tests {
         let ip: IpAddr = "127.0.0.1".parse().unwrap();
 
         // Should categorize methods correctly
-        assert_eq!(RateLimitTier::from_method("invokefunction"), RateLimitTier::Expensive);
-        assert_eq!(RateLimitTier::from_method("sendrawtransaction"), RateLimitTier::Write);
-        assert_eq!(RateLimitTier::from_method("getblockcount"), RateLimitTier::Cheap);
+        assert_eq!(
+            RateLimitTier::from_method("invokefunction"),
+            RateLimitTier::Expensive
+        );
+        assert_eq!(
+            RateLimitTier::from_method("sendrawtransaction"),
+            RateLimitTier::Write
+        );
+        assert_eq!(
+            RateLimitTier::from_method("getblockcount"),
+            RateLimitTier::Cheap
+        );
 
         // Expensive methods should have their own rate limit bucket
         let expensive_config = limiter.tier_config(RateLimitTier::Expensive).unwrap();

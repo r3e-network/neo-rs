@@ -345,10 +345,13 @@ impl MemoryPool {
         let conflict_transactions: Vec<Transaction> = conflicts_to_remove
             .iter()
             .map(|item| item.transaction.as_ref().clone())
-            .fold(Vec::with_capacity(conflicts_to_remove.len()), |mut acc, tx| {
-                acc.push(tx);
-                acc
-            });
+            .fold(
+                Vec::with_capacity(conflicts_to_remove.len()),
+                |mut acc, tx| {
+                    acc.push(tx);
+                    acc
+                },
+            );
 
         // State-dependent validation (requires blockchain state)
         let result = tx.verify_state_dependent(
@@ -374,7 +377,7 @@ impl MemoryPool {
                 if let Some(item) = self.try_remove_verified(removed_hash) {
                     // Extract Arc<Transaction> directly without cloning
                     removed_conflicts.push(
-                        Arc::try_unwrap(item.transaction).unwrap_or_else(|arc| (*arc).clone())
+                        Arc::try_unwrap(item.transaction).unwrap_or_else(|arc| (*arc).clone()),
                     );
                 }
             }
@@ -475,21 +478,31 @@ impl MemoryPool {
     pub fn all_transactions_vec(&self) -> Vec<Arc<Transaction>> {
         let total_len = self.verified_transactions.len() + self.unverified_transactions.len();
         let mut transactions = Vec::with_capacity(total_len);
-        transactions.extend(self.verified_transactions.values().map(|item| Arc::clone(&item.transaction)));
-        transactions.extend(self.unverified_transactions.values().map(|item| Arc::clone(&item.transaction)));
+        transactions.extend(
+            self.verified_transactions
+                .values()
+                .map(|item| Arc::clone(&item.transaction)),
+        );
+        transactions.extend(
+            self.unverified_transactions
+                .values()
+                .map(|item| Arc::clone(&item.transaction)),
+        );
         transactions
     }
 
     /// Returns verified and unverified transactions as separate vectors,
     /// sorted in descending priority order.
     /// Uses Arc<Transaction> to avoid expensive cloning.
-    pub fn verified_and_unverified_transactions(&self) -> (Vec<Arc<Transaction>>, Vec<Arc<Transaction>>) {
+    pub fn verified_and_unverified_transactions(
+        &self,
+    ) -> (Vec<Arc<Transaction>>, Vec<Arc<Transaction>>) {
         let verified_capacity = self.verified_sorted.len();
         let unverified_capacity = self.unverified_sorted.len();
-        
+
         let mut verified = Vec::with_capacity(verified_capacity);
         let mut unverified = Vec::with_capacity(unverified_capacity);
-        
+
         verified.extend(
             self.verified_sorted
                 .iter()
@@ -724,7 +737,8 @@ impl MemoryPool {
                     self.unverified_transactions.remove(&hash);
                     self.unverified_sorted.take(&item);
                     invalidated.push(
-                        Arc::try_unwrap(item.transaction.clone()).unwrap_or_else(|arc| (*arc).clone())
+                        Arc::try_unwrap(item.transaction.clone())
+                            .unwrap_or_else(|arc| (*arc).clone()),
                     );
                     continue;
                 }
@@ -759,7 +773,8 @@ impl MemoryPool {
                     if let Some(removed) = self.try_remove_verified(conflict_hash) {
                         // Extract Transaction for the event handler
                         invalidated.push(
-                            Arc::try_unwrap(removed.transaction).unwrap_or_else(|arc| (*arc).clone())
+                            Arc::try_unwrap(removed.transaction)
+                                .unwrap_or_else(|arc| (*arc).clone()),
                         );
                     }
                 }
@@ -769,7 +784,7 @@ impl MemoryPool {
                 self.unverified_transactions.remove(&hash);
                 self.unverified_sorted.take(&item);
                 invalidated.push(
-                    Arc::try_unwrap(item.transaction.clone()).unwrap_or_else(|arc| (*arc).clone())
+                    Arc::try_unwrap(item.transaction.clone()).unwrap_or_else(|arc| (*arc).clone()),
                 );
             }
         }
@@ -892,12 +907,13 @@ impl MemoryPool {
                         .remove_transaction(&removed_item.transaction);
                     // Extract Transaction from Arc if possible, otherwise clone
                     removed.push(
-                        Arc::try_unwrap(removed_item.transaction).unwrap_or_else(|arc| (*arc).clone())
+                        Arc::try_unwrap(removed_item.transaction)
+                            .unwrap_or_else(|arc| (*arc).clone()),
                     );
                 }
             } else if let Some(removed_item) = self.try_remove_unverified(hash) {
                 removed.push(
-                    Arc::try_unwrap(removed_item.transaction).unwrap_or_else(|arc| (*arc).clone())
+                    Arc::try_unwrap(removed_item.transaction).unwrap_or_else(|arc| (*arc).clone()),
                 );
             }
         }

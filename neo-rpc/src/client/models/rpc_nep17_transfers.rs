@@ -33,7 +33,7 @@ pub struct RpcNep17Transfers {
 impl RpcNep17Transfers {
     /// Converts to JSON
     /// Matches C# `ToJson`
-    #[must_use] 
+    #[must_use]
     pub fn to_json(&self, protocol_settings: &ProtocolSettings) -> JObject {
         let mut json = JObject::new();
 
@@ -142,7 +142,7 @@ pub struct RpcNep17Transfer {
 impl RpcNep17Transfer {
     /// Converts to JSON
     /// Matches C# `ToJson`
-    #[must_use] 
+    #[must_use]
     pub fn to_json(&self, _protocol_settings: &ProtocolSettings) -> JObject {
         let mut json = JObject::new();
         json.insert(

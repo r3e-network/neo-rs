@@ -69,19 +69,19 @@ impl Serialize for JToken {
 
 impl JToken {
     /// Helper constructor for JSON objects from ordered dictionaries.
-    #[must_use] 
+    #[must_use]
     pub fn from_object(properties: OrderedDictionary<String, Option<Self>>) -> Self {
         Self::Object(JObject::from(properties))
     }
 
     /// Helper constructor for JSON arrays from optional token vectors.
-    #[must_use] 
+    #[must_use]
     pub fn from_array(items: Vec<Option<Self>>) -> Self {
         Self::Array(JArray::from(items))
     }
 
     /// Helper constructor for JSON arrays from token vectors.
-    #[must_use] 
+    #[must_use]
     pub fn from_array_tokens(items: Vec<Self>) -> Self {
         Self::Array(JArray::from(items))
     }
@@ -122,7 +122,7 @@ impl JToken {
     }
 
     /// Attempts to view this token as a JSON array.
-    #[must_use] 
+    #[must_use]
     pub const fn as_array(&self) -> Option<&JArray> {
         match self {
             Self::Array(array) => Some(array),
@@ -131,7 +131,7 @@ impl JToken {
     }
 
     /// Attempts to view this token as a JSON object.
-    #[must_use] 
+    #[must_use]
     pub const fn as_object(&self) -> Option<&JObject> {
         match self {
             Self::Object(object) => Some(object),
@@ -139,7 +139,7 @@ impl JToken {
         }
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn as_boolean(&self) -> bool {
         match self {
             Self::Null => false,
@@ -151,7 +151,7 @@ impl JToken {
         }
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn as_number(&self) -> Option<f64> {
         match self {
             Self::Boolean(value) => {
@@ -168,7 +168,7 @@ impl JToken {
     }
 
     /// Returns the underlying string value if the token represents a JSON string.
-    #[must_use] 
+    #[must_use]
     pub fn as_string(&self) -> Option<String> {
         match self {
             Self::String(value) => Some(value.clone()),
@@ -177,7 +177,7 @@ impl JToken {
     }
 
     /// Converts the token to a string representation (used for diagnostics/logging).
-    #[must_use] 
+    #[must_use]
     pub fn to_string_value(&self) -> String {
         match self {
             Self::Null => "null".to_string(),

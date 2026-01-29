@@ -9,17 +9,17 @@ pub struct SignersAndWitnesses {
 }
 
 impl SignersAndWitnesses {
-    #[must_use] 
+    #[must_use]
     pub const fn new(signers: Vec<Signer>, witnesses: Vec<Witness>) -> Self {
         Self { signers, witnesses }
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn signers(&self) -> &[Signer] {
         &self.signers
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn witnesses(&self) -> &[Witness] {
         &self.witnesses
     }

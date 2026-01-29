@@ -5,7 +5,9 @@
 use super::*;
 use crate::smart_contract::find_options::FindOptions;
 use crate::smart_contract::iterators::StorageIterator;
-use crate::smart_contract::native::security_fixes::{ReentrancyGuardType, SafeArithmetic, SecurityContext, StateValidator};
+use crate::smart_contract::native::security_fixes::{
+    ReentrancyGuardType, SafeArithmetic, SecurityContext, StateValidator,
+};
 
 impl NeoToken {
     /// unclaimedGas invoke wrapper
@@ -589,7 +591,7 @@ impl NeoToken {
             Some(state) => state,
             None => return Ok(false),
         };
-        
+
         // Validate account state
         if state_account.balance.is_zero() {
             return Ok(false);
@@ -597,7 +599,7 @@ impl NeoToken {
         StateValidator::validate_account_state(
             &state_account.balance,
             state_account.balance_height,
-            engine.current_block_index()
+            engine.current_block_index(),
         )?;
 
         let mut validator_new: Option<CandidateState> = None;
@@ -619,22 +621,22 @@ impl NeoToken {
                 .try_get(&voters_key)
                 .map(|item| item.to_bigint())
                 .unwrap_or_else(BigInt::zero);
-            
+
             // Validate voters count
             StateValidator::validate_voters_count(&current_voters, &current_voters)?;
-            
+
             let delta = if state_account.vote_to.is_none() {
                 state_account.balance.clone()
             } else {
                 -state_account.balance.clone()
             };
-            
+
             // Use safe arithmetic
             let updated_voters = SafeArithmetic::safe_add(&current_voters, &delta)?;
-            
+
             // Validate updated voters count
             StateValidator::validate_voters_count(&updated_voters, &updated_voters)?;
-            
+
             engine.put_storage_item(
                 &context,
                 voters_key.suffix(),
@@ -649,10 +651,10 @@ impl NeoToken {
             let mut old_state = self
                 .get_candidate_state(snapshot_ref, &old_vote)?
                 .unwrap_or_default();
-            
+
             // Validate state before modification
             StateValidator::validate_candidate_state(old_state.registered, &old_state.votes)?;
-            
+
             // Use safe arithmetic
             old_state.votes = SafeArithmetic::safe_sub(&old_state.votes, &state_account.balance)?;
             self.write_candidate_state(&context, engine, &old_vote, &old_state)?;
@@ -672,10 +674,10 @@ impl NeoToken {
         if let Some(mut new_state) = validator_new {
             // Use safe arithmetic
             new_state.votes = SafeArithmetic::safe_add(&new_state.votes, &state_account.balance)?;
-            
+
             // Validate final state
             StateValidator::validate_candidate_state(new_state.registered, &new_state.votes)?;
-            
+
             self.write_candidate_state(&context, engine, vote_to.as_ref().unwrap(), &new_state)?;
         } else {
             state_account.last_gas_per_vote = BigInt::zero();

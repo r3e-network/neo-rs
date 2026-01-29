@@ -10,7 +10,7 @@ pub struct Address {
 }
 
 impl Address {
-    #[must_use] 
+    #[must_use]
     pub const fn new(script_hash: UInt160, address_version: u8) -> Self {
         Self {
             script_hash,
@@ -18,12 +18,12 @@ impl Address {
         }
     }
 
-    #[must_use] 
+    #[must_use]
     pub const fn script_hash(&self) -> &UInt160 {
         &self.script_hash
     }
 
-    #[must_use] 
+    #[must_use]
     pub const fn address_version(&self) -> u8 {
         self.address_version
     }

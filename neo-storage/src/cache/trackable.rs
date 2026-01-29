@@ -18,37 +18,37 @@ pub struct Trackable {
 
 impl Trackable {
     /// Creates a new trackable entry.
-    #[must_use] 
+    #[must_use]
     pub const fn new(item: StorageItem, state: TrackState) -> Self {
         Self { item, state }
     }
 
     /// Creates a trackable entry with `TrackState::None`.
-    #[must_use] 
+    #[must_use]
     pub fn unchanged(item: StorageItem) -> Self {
         Self::new(item, TrackState::None)
     }
 
     /// Creates a trackable entry with `TrackState::Added`.
-    #[must_use] 
+    #[must_use]
     pub fn added(item: StorageItem) -> Self {
         Self::new(item, TrackState::Added)
     }
 
     /// Creates a trackable entry with `TrackState::Changed`.
-    #[must_use] 
+    #[must_use]
     pub fn changed(item: StorageItem) -> Self {
         Self::new(item, TrackState::Changed)
     }
 
     /// Creates a trackable entry with `TrackState::Deleted`.
-    #[must_use] 
+    #[must_use]
     pub fn deleted() -> Self {
         Self::new(StorageItem::default(), TrackState::Deleted)
     }
 
     /// Returns whether this entry has been modified (added, changed, or deleted).
-    #[must_use] 
+    #[must_use]
     pub const fn is_modified(&self) -> bool {
         matches!(
             self.state,
@@ -57,13 +57,13 @@ impl Trackable {
     }
 
     /// Returns whether this entry should be persisted on commit.
-    #[must_use] 
+    #[must_use]
     pub const fn should_persist(&self) -> bool {
         matches!(self.state, TrackState::Added | TrackState::Changed)
     }
 
     /// Returns whether this entry should be removed on commit.
-    #[must_use] 
+    #[must_use]
     pub const fn should_delete(&self) -> bool {
         matches!(self.state, TrackState::Deleted)
     }

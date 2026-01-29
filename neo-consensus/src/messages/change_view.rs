@@ -20,7 +20,7 @@ pub struct ChangeViewMessage {
 
 impl ChangeViewMessage {
     /// Creates a new `ChangeView` message
-    #[must_use] 
+    #[must_use]
     pub const fn new(
         block_index: u32,
         view_number: u8,
@@ -45,14 +45,14 @@ impl ChangeViewMessage {
     }
 
     /// Returns the message type
-    #[must_use] 
+    #[must_use]
     pub const fn message_type(&self) -> ConsensusMessageType {
         ConsensusMessageType::ChangeView
     }
 
     /// Serializes the message to bytes
     /// Neo N3 `DBFTPlugin` format: `timestamp (8) + reason (1)`.
-    #[must_use] 
+    #[must_use]
     pub fn serialize(&self) -> Vec<u8> {
         let mut data = Vec::new();
         data.extend_from_slice(&self.timestamp.to_le_bytes());

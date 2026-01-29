@@ -33,7 +33,7 @@ pub struct RpcClientBuilder {
 }
 
 impl RpcClientBuilder {
-    #[must_use] 
+    #[must_use]
     pub fn new(base_address: Url) -> Self {
         Self {
             base_address,
@@ -63,21 +63,21 @@ impl RpcClientBuilder {
     }
 
     /// Overrides the protocol settings used for serialisation.
-    #[must_use] 
+    #[must_use]
     pub fn protocol_settings(mut self, settings: ProtocolSettings) -> Self {
         self.protocol_settings = Some(settings);
         self
     }
 
     /// Configures the HTTP client timeout.
-    #[must_use] 
+    #[must_use]
     pub const fn timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self
     }
 
     /// Registers hooks for logging/metrics.
-    #[must_use] 
+    #[must_use]
     pub fn hooks(mut self, hooks: RpcClientHooks) -> Self {
         self.hooks = hooks;
         self

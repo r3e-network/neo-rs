@@ -12,7 +12,7 @@ pub struct JPathToken {
 }
 
 impl JPathToken {
-    #[must_use] 
+    #[must_use]
     pub const fn is_root(&self) -> bool {
         matches!(self.token_type, JPathTokenType::Root)
     }

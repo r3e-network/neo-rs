@@ -26,7 +26,7 @@ pub struct VMUnhandledException {
 impl VMUnhandledException {
     /// Initializes a new instance of the `VMUnhandledException` class.
     /// public VMUnhandledException(StackItem ex) : base(GetExceptionMessage(ex))
-    #[must_use] 
+    #[must_use]
     pub fn new(ex: StackItem) -> Self {
         let message = Self::get_exception_message(&ex);
         Self {

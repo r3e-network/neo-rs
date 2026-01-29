@@ -19,10 +19,7 @@ impl<T> TreeNode<T> {
     }
 
     pub fn add_child(parent: &Arc<Mutex<Self>>, item: T) -> Arc<Mutex<Self>> {
-        let child = Arc::new(Mutex::new(Self::new(
-            item,
-            Some(Arc::downgrade(parent)),
-        )));
+        let child = Arc::new(Mutex::new(Self::new(item, Some(Arc::downgrade(parent)))));
         parent.lock().children.push(child.clone());
         child
     }

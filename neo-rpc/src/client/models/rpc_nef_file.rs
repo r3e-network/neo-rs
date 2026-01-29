@@ -22,7 +22,7 @@ pub struct RpcNefFile {
 
 impl RpcNefFile {
     /// Creates a new wrapper from a NEF file
-    #[must_use] 
+    #[must_use]
     pub const fn new(nef_file: NefFile) -> Self {
         Self { nef_file }
     }
@@ -33,14 +33,12 @@ impl RpcNefFile {
         let compiler = json
             .get("compiler")
             .and_then(neo_json::JToken::as_string)
-            .ok_or("Missing or invalid 'compiler' field")?
-            ;
+            .ok_or("Missing or invalid 'compiler' field")?;
 
         let source = json
             .get("source")
             .and_then(neo_json::JToken::as_string)
-            .ok_or("Missing or invalid 'source' field")?
-            ;
+            .ok_or("Missing or invalid 'source' field")?;
 
         let tokens = json
             .get("tokens")
@@ -78,7 +76,7 @@ impl RpcNefFile {
 
     /// Converts to JSON
     /// Matches C# `ToJson`
-    #[must_use] 
+    #[must_use]
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
         json.insert(

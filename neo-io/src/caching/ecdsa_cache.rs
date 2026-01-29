@@ -46,7 +46,7 @@ where
     pub const DEFAULT_CAPACITY: usize = 20_000;
 
     /// Creates a cache with the specified maximum capacity.
-    #[must_use] 
+    #[must_use]
     pub fn new(max_capacity: usize) -> Self {
         Self {
             inner: FIFOCache::new(max_capacity, |item: &ECDsaCacheItem<TPoint, TSigner>| {

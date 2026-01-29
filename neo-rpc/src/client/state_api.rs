@@ -26,7 +26,7 @@ pub struct StateApi {
 impl StateApi {
     /// `StateAPI` Constructor
     /// Matches C# constructor
-    #[must_use] 
+    #[must_use]
     pub const fn new(rpc_client: Arc<RpcClient>) -> Self {
         Self { rpc_client }
     }
@@ -126,7 +126,7 @@ impl StateApi {
 
     /// Make parameters for find states call
     /// Matches C# `MakeFindStatesParams`
-    #[must_use] 
+    #[must_use]
     pub fn make_find_states_params(
         root_hash: &UInt256,
         script_hash: &UInt160,

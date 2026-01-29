@@ -70,7 +70,10 @@ impl RpcStateRoot {
     /// Matches C# `ToJson`
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
-        json.insert("version".to_string(), JToken::Number(f64::from(self.version)));
+        json.insert(
+            "version".to_string(),
+            JToken::Number(f64::from(self.version)),
+        );
         json.insert("index".to_string(), JToken::Number(f64::from(self.index)));
         json.insert(
             "roothash".to_string(),

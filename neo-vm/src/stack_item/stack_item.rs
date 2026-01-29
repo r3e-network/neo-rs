@@ -82,25 +82,25 @@ pub enum StackItem {
 
 impl StackItem {
     /// The singleton True value.
-    #[must_use] 
+    #[must_use]
     pub const fn true_value() -> Self {
         Self::Boolean(true)
     }
 
     /// The singleton False value.
-    #[must_use] 
+    #[must_use]
     pub const fn false_value() -> Self {
         Self::Boolean(false)
     }
 
     /// The singleton Null value.
-    #[must_use] 
+    #[must_use]
     pub const fn null() -> Self {
         Self::Null
     }
 
     /// Creates a boolean stack item.
-    #[must_use] 
+    #[must_use]
     pub const fn from_bool(value: bool) -> Self {
         Self::Boolean(value)
     }
@@ -136,7 +136,7 @@ impl StackItem {
     }
 
     /// Creates a pointer stack item.
-    #[must_use] 
+    #[must_use]
     pub fn from_pointer(script: Arc<Script>, position: usize) -> Self {
         Self::Pointer(PointerItem::new(script, position))
     }
@@ -161,7 +161,7 @@ impl StackItem {
     }
 
     /// Returns the type of the stack item.
-    #[must_use] 
+    #[must_use]
     pub const fn stack_item_type(&self) -> StackItemType {
         match self {
             Self::Null => StackItemType::Any,
@@ -178,7 +178,7 @@ impl StackItem {
     }
 
     /// Returns true if the stack item is null.
-    #[must_use] 
+    #[must_use]
     pub const fn is_null(&self) -> bool {
         matches!(self, Self::Null)
     }
@@ -336,7 +336,7 @@ impl StackItem {
     }
 
     /// Creates a deep clone of the stack item.
-    #[must_use] 
+    #[must_use]
     pub fn deep_clone(&self) -> Self {
         self.deep_clone_with_refs(&mut std::collections::HashMap::new())
     }
@@ -444,13 +444,11 @@ impl StackItem {
     }
 
     /// Computes a deterministic hash code compatible with the C# implementation.
-    #[must_use] 
+    #[must_use]
     pub fn get_hash_code(&self) -> i32 {
         match self {
             Self::Null => 0,
-            Self::Boolean(b) => {
-                i32::from(*b)
-            }
+            Self::Boolean(b) => i32::from(*b),
             Self::Integer(i) => hash_bytes(&i.to_signed_bytes_le()),
             Self::ByteString(b) => hash_bytes(b),
             Self::Buffer(b) => hash_bytes(&b.data()),
@@ -548,16 +546,10 @@ impl StackItem {
             (Self::Integer(a), Self::Integer(b)) => Ok(a == b),
             (Self::ByteString(a), Self::ByteString(b)) => Ok(a == b),
             (Self::Buffer(a), Self::Buffer(b)) => Ok(a == b),
-            (Self::ByteString(a), Self::Buffer(b)) => {
-                Ok(a.as_slice() == b.data().as_slice())
-            }
-            (Self::Buffer(a), Self::ByteString(b)) => {
-                Ok(a.data().as_slice() == b.as_slice())
-            }
+            (Self::ByteString(a), Self::Buffer(b)) => Ok(a.as_slice() == b.data().as_slice()),
+            (Self::Buffer(a), Self::ByteString(b)) => Ok(a.data().as_slice() == b.as_slice()),
             (Self::Pointer(a), Self::Pointer(b)) => Ok(a == b),
-            (Self::InteropInterface(a), Self::InteropInterface(b)) => {
-                Ok(Arc::ptr_eq(a, b))
-            }
+            (Self::InteropInterface(a), Self::InteropInterface(b)) => Ok(Arc::ptr_eq(a, b)),
             (Self::Array(a), Self::Array(b)) => {
                 if a.len() != b.len() {
                     return Ok(false);
@@ -667,12 +659,8 @@ impl Ord for StackItem {
             (Self::Integer(a), Self::Integer(b)) => a.cmp(b),
             (Self::ByteString(a), Self::ByteString(b)) => a.cmp(b),
             (Self::Buffer(a), Self::Buffer(b)) => a.cmp(b),
-            (Self::ByteString(a), Self::Buffer(b)) => {
-                a.as_slice().cmp(b.data().as_slice())
-            }
-            (Self::Buffer(a), Self::ByteString(b)) => {
-                a.data().as_slice().cmp(b.as_slice())
-            }
+            (Self::ByteString(a), Self::Buffer(b)) => a.as_slice().cmp(b.data().as_slice()),
+            (Self::Buffer(a), Self::ByteString(b)) => a.data().as_slice().cmp(b.as_slice()),
             (Self::Pointer(a), Self::Pointer(b)) => a.cmp(b),
             (Self::Array(a), Self::Array(b)) => {
                 let len_cmp = a.len().cmp(&b.len());
@@ -736,13 +724,9 @@ impl Ord for StackItem {
                     (Self::Boolean(_), Self::Integer(_)) => std::cmp::Ordering::Less,
                     (Self::Integer(_), Self::Boolean(_)) => std::cmp::Ordering::Greater,
                     (Self::Boolean(_), Self::ByteString(_)) => std::cmp::Ordering::Less,
-                    (Self::ByteString(_), Self::Boolean(_)) => {
-                        std::cmp::Ordering::Greater
-                    }
+                    (Self::ByteString(_), Self::Boolean(_)) => std::cmp::Ordering::Greater,
                     (Self::Integer(_), Self::ByteString(_)) => std::cmp::Ordering::Less,
-                    (Self::ByteString(_), Self::Integer(_)) => {
-                        std::cmp::Ordering::Greater
-                    }
+                    (Self::ByteString(_), Self::Integer(_)) => std::cmp::Ordering::Greater,
                     _ => std::cmp::Ordering::Equal, // Same types that we haven't handled above
                 }
             }

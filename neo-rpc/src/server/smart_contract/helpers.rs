@@ -113,9 +113,7 @@ pub(super) fn contract_parameter_to_stack_item(
         ContractParameterValue::Any | ContractParameterValue::Void => Ok(StackItem::Null),
         ContractParameterValue::Boolean(value) => Ok(StackItem::from_bool(*value)),
         ContractParameterValue::Integer(value) => Ok(StackItem::from_int(value.clone())),
-        ContractParameterValue::Hash160(value) => {
-            Ok(StackItem::from_byte_string(value.to_bytes()))
-        }
+        ContractParameterValue::Hash160(value) => Ok(StackItem::from_byte_string(value.to_bytes())),
         ContractParameterValue::Hash256(value) => {
             Ok(StackItem::from_byte_string(value.to_array().to_vec()))
         }

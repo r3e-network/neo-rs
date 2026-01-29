@@ -45,7 +45,7 @@ static DEFAULT: OnceLock<JumpTable> = OnceLock::new();
 
 impl JumpTable {
     /// Creates a new jump table.
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         let mut jump_table = Self {
             handlers: [None; 256],
@@ -70,14 +70,14 @@ impl JumpTable {
     }
 
     /// Gets the handler for an opcode.
-    #[must_use] 
+    #[must_use]
     pub fn get(&self, opcode: OpCode) -> Option<InstructionHandler> {
         self.get_handler(opcode)
     }
 
     /// Gets the handler for an opcode.
     /// This matches the C# implementation's indexer get accessor.
-    #[must_use] 
+    #[must_use]
     pub fn get_handler(&self, opcode: OpCode) -> Option<InstructionHandler> {
         self.handlers[opcode as usize]
     }

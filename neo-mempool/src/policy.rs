@@ -37,7 +37,7 @@ impl FeePolicy {
     /// Calculate priority score for a transaction
     ///
     /// Higher score = higher priority
-    #[must_use] 
+    #[must_use]
     pub fn calculate_priority(&self, network_fee: i64, size: usize) -> i64 {
         if size == 0 {
             return 0;
@@ -60,7 +60,7 @@ impl FeePolicy {
     }
 
     /// Check if a fee is acceptable
-    #[must_use] 
+    #[must_use]
     pub fn is_fee_acceptable(&self, network_fee: i64, size: usize) -> bool {
         if size == 0 {
             return false;
@@ -71,7 +71,7 @@ impl FeePolicy {
     }
 
     /// Get minimum required fee for a transaction of given size
-    #[must_use] 
+    #[must_use]
     pub fn minimum_fee(&self, size: usize) -> i64 {
         (size as f64 * self.min_fee_per_byte as f64 * self.congestion_factor) as i64
     }

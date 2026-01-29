@@ -32,7 +32,7 @@ pub struct RpcPlugin {
 impl RpcPlugin {
     /// Converts to JSON
     /// Matches C# `ToJson`
-    #[must_use] 
+    #[must_use]
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
         json.insert("name".to_string(), JToken::String(self.name.clone()));
@@ -60,14 +60,12 @@ impl RpcPlugin {
         let name = json
             .get("name")
             .and_then(neo_json::JToken::as_string)
-            .ok_or("Missing or invalid 'name' field")?
-            ;
+            .ok_or("Missing or invalid 'name' field")?;
 
         let version = json
             .get("version")
             .and_then(neo_json::JToken::as_string)
-            .ok_or("Missing or invalid 'version' field")?
-            ;
+            .ok_or("Missing or invalid 'version' field")?;
 
         let interfaces = json
             .get("interfaces")
@@ -83,9 +81,7 @@ impl RpcPlugin {
             })
             .unwrap_or_else(|| Ok(Vec::new()))?;
 
-        let category = json
-            .get("category")
-            .and_then(neo_json::JToken::as_string);
+        let category = json.get("category").and_then(neo_json::JToken::as_string);
 
         Ok(Self {
             name,

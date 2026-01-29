@@ -13,21 +13,21 @@ pub const DEFAULT_XX_HASH3_SEED: i64 = 40343;
 
 /// Returns the default xxhash3 seed.
 #[inline]
-#[must_use] 
+#[must_use]
 pub const fn default_xx_hash3_seed() -> i64 {
     DEFAULT_XX_HASH3_SEED
 }
 
 /// Computes the 32-bit hash value for the specified byte array using the xxhash3 algorithm.
 /// Matches C# `XxHash3_32` method.
-#[must_use] 
+#[must_use]
 pub fn xx_hash3_32(data: &[u8], seed: i64) -> i32 {
     let hash64 = xxh3_64_with_seed(data, seed as u64);
     hash_code_from_u64(hash64)
 }
 
 /// Matches `System.HashCode.Combine(int, int)` from C#.
-#[must_use] 
+#[must_use]
 pub fn hash_code_combine_i32(a: i32, b: i32) -> i32 {
     hash_code_combine_internal(&[a as u32, b as u32])
 }

@@ -65,7 +65,7 @@ impl RpcApplicationLog {
 
     /// Converts to JSON
     /// Matches C# `ToJson`
-    #[must_use] 
+    #[must_use]
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
         if let Some(tx_id) = &self.tx_id {
@@ -138,9 +138,7 @@ impl Execution {
             .parse::<i64>()
             .map_err(|_| format!("Invalid gas consumed value: {gas_consumed_str}"))?;
 
-        let exception_message = json
-            .get("exception")
-            .and_then(neo_json::JToken::as_string);
+        let exception_message = json.get("exception").and_then(neo_json::JToken::as_string);
 
         let stack = json
             .get("stack")
@@ -250,8 +248,7 @@ impl RpcNotifyEventArgs {
         let event_name = json
             .get("eventname")
             .and_then(neo_json::JToken::as_string)
-            .ok_or("Missing or invalid 'eventname' field")?
-            ;
+            .ok_or("Missing or invalid 'eventname' field")?;
 
         let state_json = json
             .get("state")
@@ -268,7 +265,7 @@ impl RpcNotifyEventArgs {
 
     /// Converts to JSON
     /// Matches C# `ToJson`
-    #[must_use] 
+    #[must_use]
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
         json.insert(

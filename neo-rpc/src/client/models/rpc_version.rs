@@ -31,14 +31,17 @@ pub struct RpcVersion {
 impl RpcVersion {
     /// Converts to JSON
     /// Matches C# `ToJson`
-    #[must_use] 
+    #[must_use]
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
         json.insert(
             "network".to_string(),
             JToken::Number(f64::from(self.protocol.network)),
         ); // Obsolete
-        json.insert("tcpport".to_string(), JToken::Number(f64::from(self.tcp_port)));
+        json.insert(
+            "tcpport".to_string(),
+            JToken::Number(f64::from(self.tcp_port)),
+        );
         json.insert("nonce".to_string(), JToken::Number(f64::from(self.nonce)));
         json.insert(
             "useragent".to_string(),
@@ -67,8 +70,7 @@ impl RpcVersion {
         let user_agent = json
             .get("useragent")
             .and_then(neo_json::JToken::as_string)
-            .ok_or("Missing or invalid 'useragent' field")?
-            ;
+            .ok_or("Missing or invalid 'useragent' field")?;
 
         let protocol_json = json
             .get("protocol")
@@ -128,10 +130,13 @@ pub struct RpcProtocol {
 impl RpcProtocol {
     /// Converts to JSON
     /// Matches C# `ToJson`
-    #[must_use] 
+    #[must_use]
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
-        json.insert("network".to_string(), JToken::Number(f64::from(self.network)));
+        json.insert(
+            "network".to_string(),
+            JToken::Number(f64::from(self.network)),
+        );
         json.insert(
             "validatorscount".to_string(),
             JToken::Number(f64::from(self.validators_count)),
@@ -172,7 +177,10 @@ impl RpcProtocol {
             .map(|(name, height)| {
                 let mut obj = JObject::new();
                 obj.insert("name".to_string(), JToken::String(name.clone()));
-                obj.insert("blockheight".to_string(), JToken::Number(f64::from(*height)));
+                obj.insert(
+                    "blockheight".to_string(),
+                    JToken::Number(f64::from(*height)),
+                );
                 JToken::Object(obj)
             })
             .collect();

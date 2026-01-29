@@ -30,7 +30,7 @@ pub struct RpcNep11Transfers {
 
 impl RpcNep11Transfers {
     /// Converts to JSON.
-    #[must_use] 
+    #[must_use]
     pub fn to_json(&self, protocol_settings: &ProtocolSettings) -> JObject {
         let mut json = JObject::new();
 
@@ -133,7 +133,7 @@ pub struct RpcNep11Transfer {
 
 impl RpcNep11Transfer {
     /// Converts to JSON.
-    #[must_use] 
+    #[must_use]
     pub fn to_json(&self, protocol_settings: &ProtocolSettings) -> JObject {
         let mut json = JObject::new();
         json.insert(

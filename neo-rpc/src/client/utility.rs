@@ -66,7 +66,7 @@ impl RpcUtility {
 
     /// Converts an address or script hash string to script hash string
     /// Matches C# `AsScriptHash` extension
-    #[must_use] 
+    #[must_use]
     pub fn as_script_hash(address_or_script_hash: &str) -> String {
         for contract in Self::native_registry().contracts() {
             if address_or_script_hash.eq_ignore_ascii_case(contract.name())
@@ -144,7 +144,7 @@ impl RpcUtility {
     }
 
     /// Converts a block to JSON representation.
-    #[must_use] 
+    #[must_use]
     pub fn block_to_json(block: &Block, protocol_settings: &ProtocolSettings) -> JObject {
         tx_json::block_to_json(block, protocol_settings)
     }

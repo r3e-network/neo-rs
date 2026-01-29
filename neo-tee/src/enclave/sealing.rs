@@ -66,13 +66,13 @@ pub struct KeyDerivationParams<'a> {
 /// different uses of the same base key.
 pub fn derive_key_hkdf(params: KeyDerivationParams) -> TeeResult<[u8; 32]> {
     let salt = params.salt.unwrap_or(b"neo-tee-hkdf-salt-v1");
-    
+
     let hkdf = Hkdf::<Sha256>::new(Some(salt), params.base_key);
-    
+
     let mut derived_key = [0u8; 32];
     hkdf.expand(params.context.as_bytes(), &mut derived_key)
         .map_err(|e| TeeError::KeyDerivationFailed(format!("HKDF expansion failed: {}", e)))?;
-    
+
     Ok(derived_key)
 }
 
@@ -80,16 +80,13 @@ pub fn derive_key_hkdf(params: KeyDerivationParams) -> TeeResult<[u8; 32]> {
 ///
 /// Uses HKDF to derive a unique key for each sealing context,
 /// preventing key reuse across different data types.
-pub fn derive_sealing_key(
-    base_sealing_key: &[u8; 32],
-    context: &str,
-) -> TeeResult<[u8; 32]> {
+pub fn derive_sealing_key(base_sealing_key: &[u8; 32], context: &str) -> TeeResult<[u8; 32]> {
     let params = KeyDerivationParams {
         base_key: base_sealing_key,
         context: &format!("neo-tee-sealing:{}", context),
         salt: Some(b"neo-tee-sealing-salt"),
     };
-    
+
     derive_key_hkdf(params)
 }
 
@@ -117,7 +114,7 @@ pub fn seal_data_with_context(
 ) -> TeeResult<SealedData> {
     // Derive context-specific key using HKDF
     let derived_key = derive_sealing_key(sealing_key, context)?;
-    
+
     // Generate random nonce using cryptographically secure RNG
     // SECURITY: Must use OsRng for AES-GCM nonce generation
     let mut nonce_bytes = [0u8; 12];
@@ -178,7 +175,7 @@ pub fn unseal_data(
 
     // Determine key derivation context
     let context = sealed.context.as_deref().unwrap_or("default");
-    
+
     // Derive the same context-specific key used for sealing
     let derived_key = derive_sealing_key(sealing_key, context)?;
 
@@ -221,7 +218,7 @@ impl SecureKey {
     pub fn as_bytes(&self) -> &[u8; 32] {
         &self.key
     }
-    
+
     /// Derive a new key using HKDF with the given context
     pub fn derive_subkey(&self, context: &str) -> TeeResult<Self> {
         let params = KeyDerivationParams {
@@ -293,7 +290,7 @@ mod tests {
         // Each should only decrypt with correct implicit context
         let unsealed1 = unseal_data(&sealed1, &key, None).unwrap();
         let unsealed2 = unseal_data(&sealed2, &key, None).unwrap();
-        
+
         assert_eq!(unsealed1, plaintext);
         assert_eq!(unsealed2, plaintext);
     }
@@ -301,7 +298,7 @@ mod tests {
     #[test]
     fn test_hkdf_key_derivation() {
         let base_key: [u8; 32] = rand::random();
-        
+
         // Derive two keys with different contexts
         let params1 = KeyDerivationParams {
             base_key: &base_key,
@@ -309,19 +306,19 @@ mod tests {
             salt: None,
         };
         let key1 = derive_key_hkdf(params1).unwrap();
-        
+
         let params2 = KeyDerivationParams {
             base_key: &base_key,
             context: "authentication",
             salt: None,
         };
         let key2 = derive_key_hkdf(params2).unwrap();
-        
+
         // Derived keys should be different
         assert_ne!(key1, key2);
         assert_ne!(key1, base_key);
         assert_ne!(key2, base_key);
-        
+
         // Same parameters should produce same key
         let params3 = KeyDerivationParams {
             base_key: &base_key,
@@ -335,7 +332,7 @@ mod tests {
     #[test]
     fn test_hkdf_salt_domain_separation() {
         let base_key: [u8; 32] = rand::random();
-        
+
         // Same context, different salts should produce different keys
         let params1 = KeyDerivationParams {
             base_key: &base_key,
@@ -343,14 +340,14 @@ mod tests {
             salt: Some(b"salt1"),
         };
         let key1 = derive_key_hkdf(params1).unwrap();
-        
+
         let params2 = KeyDerivationParams {
             base_key: &base_key,
             context: "test",
             salt: Some(b"salt2"),
         };
         let key2 = derive_key_hkdf(params2).unwrap();
-        
+
         assert_ne!(key1, key2);
     }
 
@@ -402,11 +399,11 @@ mod tests {
     fn test_secure_key_zeroize() {
         let key_bytes: [u8; 32] = rand::random();
         let key = SecureKey::new(key_bytes);
-        
+
         // Clone and verify
         let key_clone = key.clone();
         assert_eq!(key_clone.as_bytes(), key.as_bytes());
-        
+
         // Derive subkey
         let subkey = key.derive_subkey("test-context").unwrap();
         assert_ne!(subkey.as_bytes(), key.as_bytes());

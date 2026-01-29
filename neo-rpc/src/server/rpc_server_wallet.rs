@@ -385,8 +385,7 @@ impl RpcServerWallet {
             })?;
             let asset = UInt160::from_str(asset_str)
                 .map_err(|e| Self::invalid_params(format!("invalid asset {asset_str}: {e}")))?;
-            let descriptor =
-                descriptor_cache(&asset).map_err(Self::invalid_params)?;
+            let descriptor = descriptor_cache(&asset).map_err(Self::invalid_params)?;
             let value_str = obj.get("value").and_then(|v| v.as_str()).ok_or_else(|| {
                 Self::invalid_params(format!("no 'value' parameter at 'to[{i}]'."))
             })?;
@@ -537,8 +536,7 @@ impl RpcServerWallet {
         let text = Self::expect_string_param(params, index, method)?;
         UInt160::from_str(&text).map_err(|err| {
             RpcException::from(
-                RpcError::invalid_params()
-                    .with_data(format!("invalid UInt160 '{text}': {err}")),
+                RpcError::invalid_params().with_data(format!("invalid UInt160 '{text}': {err}")),
             )
         })
     }
@@ -551,8 +549,7 @@ impl RpcServerWallet {
         let text = Self::expect_string_param(params, index, method)?;
         UInt256::from_str(&text).map_err(|err| {
             RpcException::from(
-                RpcError::invalid_params()
-                    .with_data(format!("invalid UInt256 '{text}': {err}")),
+                RpcError::invalid_params().with_data(format!("invalid UInt256 '{text}': {err}")),
             )
         })
     }
@@ -854,7 +851,9 @@ impl RpcServerWallet {
                             let _ = context.add_signature(contract.clone(), pub_key, signature);
                         }
                     } else if account.has_key() && !account.is_locked() {
-                        let sign_data = if let Some(data) = sign_data.as_ref() { data.clone() } else {
+                        let sign_data = if let Some(data) = sign_data.as_ref() {
+                            data.clone()
+                        } else {
                             let data = neo_core::network::p2p::helper::get_sign_data_vec(
                                 &tx,
                                 server.system().settings().network,

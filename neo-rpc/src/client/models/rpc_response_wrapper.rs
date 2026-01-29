@@ -61,7 +61,12 @@ impl<T> RpcResponse<T> {
     }
 
     /// Create a confirmed response with full context
-    pub const fn confirmed(data: T, block_hash: UInt256, confirmations: u32, block_time: u64) -> Self {
+    pub const fn confirmed(
+        data: T,
+        block_hash: UInt256,
+        confirmations: u32,
+        block_time: u64,
+    ) -> Self {
         Self {
             data,
             block_hash: Some(block_hash),

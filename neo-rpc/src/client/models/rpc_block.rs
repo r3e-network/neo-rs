@@ -31,7 +31,7 @@ pub struct RpcBlock {
 impl RpcBlock {
     /// Converts to JSON
     /// Matches C# `ToJson`
-    #[must_use] 
+    #[must_use]
     pub fn to_json(&self, protocol_settings: &ProtocolSettings) -> JObject {
         let mut json = super::super::utility::block_to_json(&self.block, protocol_settings);
         json.insert(

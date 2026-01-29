@@ -46,7 +46,7 @@ impl RpcServerUtilities {
 
 impl RpcServer {
     /// List plugins - returns built-in services for API compatibility.
-    #[must_use] 
+    #[must_use]
     pub fn list_plugins(&self) -> Value {
         let compat = list_plugins_compat();
         let version = plugin_version(compat);
@@ -113,7 +113,7 @@ impl RpcServer {
         Value::Array(plugins)
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn validate_address(&self, address: &str) -> Value {
         let address_version = self.system().settings().address_version;
         let is_valid = parse_address_with_version(address, address_version).is_ok();

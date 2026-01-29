@@ -42,7 +42,7 @@ impl ClonedCache {
     ///
     /// The clone inherits all entries from the original cache but
     /// modifications are isolated.
-    #[must_use] 
+    #[must_use]
     pub fn new(cache: &DataCache) -> Self {
         Self {
             inner: cache.clone(),
@@ -57,7 +57,7 @@ impl ClonedCache {
     }
 
     /// Borrows the cloned cache immutably.
-    #[must_use] 
+    #[must_use]
     pub const fn cache_ref(&self) -> &DataCache {
         &self.inner
     }
@@ -65,19 +65,19 @@ impl ClonedCache {
     /// Consumes the wrapper and returns the inner cache.
     ///
     /// Use this to transfer ownership of the modified cache.
-    #[must_use] 
+    #[must_use]
     pub fn into_inner(self) -> DataCache {
         self.inner
     }
 
     /// Returns the number of items in the cloned cache.
-    #[must_use] 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.inner.len()
     }
 
     /// Returns whether the cloned cache is empty.
-    #[must_use] 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }

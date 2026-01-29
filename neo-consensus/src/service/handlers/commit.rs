@@ -61,9 +61,7 @@ impl ConsensusService {
                     validator = payload.validator_index,
                     "Commit missing witness"
                 );
-                return Err(ConsensusError::signature_failed(
-                    "Commit missing witness",
-                ));
+                return Err(ConsensusError::signature_failed("Commit missing witness"));
             }
             let sign_data = self.dbft_sign_data(payload)?;
             if !self.verify_signature(&sign_data, &payload.witness, payload.validator_index) {

@@ -16,13 +16,13 @@ use super::{
 use crate::constants::{MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK};
 use crate::ledger::{HeaderCache, TransactionVerificationContext, VerifyResult};
 use crate::neo_io::serializable::helper::get_var_size;
+use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use crate::persistence::{DataCache, StoreCache};
+use crate::protocol_settings::ProtocolSettings;
 use crate::validation::{
     validate_block_size, validate_timestamp_bounds, validate_transaction_count,
     validate_witness_scripts,
 };
-use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use crate::persistence::{DataCache, StoreCache};
-use crate::protocol_settings::ProtocolSettings;
 use crate::{CoreResult, UInt160, UInt256};
 use serde::{Deserialize, Serialize};
 use std::any::Any;

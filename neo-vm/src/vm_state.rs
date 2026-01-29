@@ -22,31 +22,31 @@ pub enum VMState {
 
 impl VMState {
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub const fn contains(self, flag: Self) -> bool {
         (self as u8 & flag as u8) != 0
     }
 
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn is_none(self) -> bool {
         self == Self::NONE
     }
 
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn is_halt(self) -> bool {
         self.contains(Self::HALT)
     }
 
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn is_fault(self) -> bool {
         self.contains(Self::FAULT)
     }
 
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn is_break(self) -> bool {
         self.contains(Self::BREAK)
     }

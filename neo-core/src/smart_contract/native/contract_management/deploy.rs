@@ -6,7 +6,9 @@ use super::*;
 use crate::hardfork::Hardfork;
 use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::manifest::contract_manifest::MAX_MANIFEST_LENGTH;
-use crate::smart_contract::native::security_fixes::{PermissionValidator, ReentrancyGuardType, SafeArithmetic, SecurityContext};
+use crate::smart_contract::native::security_fixes::{
+    PermissionValidator, ReentrancyGuardType, SafeArithmetic, SecurityContext,
+};
 use neo_vm::Script;
 
 impl ContractManagement {
@@ -36,7 +38,7 @@ impl ContractManagement {
                 "Manifest exceeds maximum allowed length".to_string(),
             ));
         }
-        
+
         // Validate payload sizes don't overflow
         let nef_len = nef_file.len();
         let manifest_len = manifest_bytes.len();
@@ -117,24 +119,21 @@ impl ContractManagement {
 
         // Deduct the larger of storage fee and minimum deployment fee
         let payload_size = nef_file.len().saturating_add(manifest_size);
-        
+
         // Use safe arithmetic for fee calculation
-        let storage_fee = SafeArithmetic::check_mul_overflow(
-            engine.storage_price() as u64,
-            payload_size as u64
-        ).map_err(|e| Error::invalid_argument(format!("Storage fee calculation overflow: {}", e)))?;
-        
+        let storage_fee =
+            SafeArithmetic::check_mul_overflow(engine.storage_price() as u64, payload_size as u64)
+                .map_err(|e| {
+                    Error::invalid_argument(format!("Storage fee calculation overflow: {}", e))
+                })?;
+
         let minimum_fee = deployment_fee.max(0) as u64;
         let fee_to_charge = storage_fee.max(minimum_fee);
-        
+
         // Validate fee is reasonable
-        PermissionValidator::validate_range(
-            fee_to_charge,
-            0,
-            u64::MAX / 2,
-            "Deployment fee"
-        ).map_err(|e| Error::invalid_argument(format!("Invalid deployment fee: {}", e)))?;
-        
+        PermissionValidator::validate_range(fee_to_charge, 0, u64::MAX / 2, "Deployment fee")
+            .map_err(|e| Error::invalid_argument(format!("Invalid deployment fee: {}", e)))?;
+
         if fee_to_charge > 0 {
             engine.charge_execution_fee(fee_to_charge)?;
         }

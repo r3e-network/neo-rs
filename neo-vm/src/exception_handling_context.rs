@@ -23,7 +23,7 @@ impl ExceptionHandlingContext {
     ///   block, or `-1` when no catch block exists.
     /// * `finally_pointer` – the relative position of the associated `finally`
     ///   block, or `-1` when no finally block exists.
-    #[must_use] 
+    #[must_use]
     pub const fn new(catch_pointer: i32, finally_pointer: i32) -> Self {
         Self {
             catch_pointer,
@@ -34,19 +34,19 @@ impl ExceptionHandlingContext {
     }
 
     /// Returns the position of the `catch` block. `-1` means no catch block.
-    #[must_use] 
+    #[must_use]
     pub const fn catch_pointer(&self) -> i32 {
         self.catch_pointer
     }
 
     /// Returns the position of the `finally` block. `-1` means no finally block.
-    #[must_use] 
+    #[must_use]
     pub const fn finally_pointer(&self) -> i32 {
         self.finally_pointer
     }
 
     /// Returns the position to jump to once the current handler is finished.
-    #[must_use] 
+    #[must_use]
     pub const fn end_pointer(&self) -> i32 {
         self.end_pointer
     }
@@ -57,7 +57,7 @@ impl ExceptionHandlingContext {
     }
 
     /// Returns the current handler state.
-    #[must_use] 
+    #[must_use]
     pub const fn state(&self) -> ExceptionHandlingState {
         self.state
     }
@@ -68,20 +68,20 @@ impl ExceptionHandlingContext {
     }
 
     /// Returns `true` when this context includes a `catch` block.
-    #[must_use] 
+    #[must_use]
     pub const fn has_catch(&self) -> bool {
         self.catch_pointer >= 0
     }
 
     /// Returns `true` when this context includes a `finally` block.
-    #[must_use] 
+    #[must_use]
     pub const fn has_finally(&self) -> bool {
         self.finally_pointer >= 0
     }
 
     /// Indicates whether the VM is currently executing the exception handler
     /// (either `catch` or `finally`).
-    #[must_use] 
+    #[must_use]
     pub const fn is_in_exception(&self) -> bool {
         matches!(
             self.state,

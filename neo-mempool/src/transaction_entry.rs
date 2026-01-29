@@ -51,7 +51,7 @@ pub struct TransactionEntryParams {
 
 impl TransactionEntry {
     /// Create a new transaction entry
-    #[must_use] 
+    #[must_use]
     pub fn new(params: TransactionEntryParams) -> Self {
         Self {
             hash: params.hash,
@@ -68,13 +68,13 @@ impl TransactionEntry {
     }
 
     /// Get total fee (system + network)
-    #[must_use] 
+    #[must_use]
     pub const fn total_fee(&self) -> i64 {
         self.system_fee.saturating_add(self.network_fee)
     }
 
     /// Get fee per byte
-    #[must_use] 
+    #[must_use]
     pub const fn fee_per_byte(&self) -> i64 {
         if self.size == 0 {
             0
@@ -84,13 +84,13 @@ impl TransactionEntry {
     }
 
     /// Check if transaction is expired at given block height
-    #[must_use] 
+    #[must_use]
     pub const fn is_expired(&self, current_height: u32) -> bool {
         self.valid_until_block <= current_height
     }
 
     /// Get age in seconds
-    #[must_use] 
+    #[must_use]
     pub fn age_secs(&self) -> u64 {
         self.added_at.elapsed().as_secs()
     }

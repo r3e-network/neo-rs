@@ -10,31 +10,31 @@ pub struct Null;
 
 impl Null {
     /// Creates a new null value.
-    #[must_use] 
+    #[must_use]
     pub const fn new() -> Self {
         Self
     }
 
     /// Gets the type of the stack item.
-    #[must_use] 
+    #[must_use]
     pub const fn stack_item_type(&self) -> StackItemType {
         StackItemType::Any
     }
 
     /// Converts the null to a boolean.
-    #[must_use] 
+    #[must_use]
     pub const fn to_boolean(&self) -> bool {
         false
     }
 
     /// Converts the null to a byte array.
-    #[must_use] 
+    #[must_use]
     pub const fn to_bytes(&self) -> Vec<u8> {
         Vec::new()
     }
 
     /// Creates a deep copy of the null.
-    #[must_use] 
+    #[must_use]
     pub const fn deep_copy(&self) -> Self {
         Self
     }

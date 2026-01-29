@@ -12,10 +12,6 @@
 use super::witness::Witness;
 use crate::error::CoreResult;
 use crate::ledger::HeaderCache;
-use crate::validation::{
-    validate_primary_index, validate_timestamp_bounds, validate_timestamp_progression,
-    validate_witness_scripts,
-};
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::persistence::{DataCache, StoreCache};
 use crate::protocol_settings::ProtocolSettings;
@@ -25,6 +21,10 @@ use crate::smart_contract::helper::Helper;
 use crate::smart_contract::native::{ContractManagement, LedgerContract};
 use crate::smart_contract::trigger_type::TriggerType;
 use crate::smart_contract::{ContractBasicMethod, ContractParameterType};
+use crate::validation::{
+    validate_primary_index, validate_timestamp_bounds, validate_timestamp_progression,
+    validate_witness_scripts,
+};
 use crate::{UInt160, UInt256};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;

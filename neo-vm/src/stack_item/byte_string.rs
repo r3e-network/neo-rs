@@ -16,13 +16,13 @@ pub struct ByteString {
 
 impl ByteString {
     /// Creates a new byte string with the specified data.
-    #[must_use] 
+    #[must_use]
     pub const fn new(data: Vec<u8>) -> Self {
         Self { data }
     }
 
     /// Creates a new byte string from a string.
-    #[must_use] 
+    #[must_use]
     pub fn from_string(s: &str) -> Self {
         Self {
             data: s.as_bytes().to_vec(),
@@ -30,25 +30,25 @@ impl ByteString {
     }
 
     /// Gets the byte string data.
-    #[must_use] 
+    #[must_use]
     pub fn data(&self) -> &[u8] {
         &self.data
     }
 
     /// Gets the type of the stack item.
-    #[must_use] 
+    #[must_use]
     pub const fn stack_item_type(&self) -> StackItemType {
         StackItemType::ByteString
     }
 
     /// Gets the length of the byte string.
-    #[must_use] 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.data.len()
     }
 
     /// Returns true if the byte string is empty.
-    #[must_use] 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
     }
@@ -94,7 +94,7 @@ impl ByteString {
     }
 
     /// Converts the byte string to a boolean.
-    #[must_use] 
+    #[must_use]
     pub fn to_boolean(&self) -> bool {
         if self.data.is_empty() {
             return false;
@@ -111,7 +111,7 @@ impl ByteString {
     }
 
     /// Creates a deep copy of the byte string.
-    #[must_use] 
+    #[must_use]
     pub fn deep_copy(&self) -> Self {
         Self::new(self.data.clone())
     }

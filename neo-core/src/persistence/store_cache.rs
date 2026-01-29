@@ -45,7 +45,12 @@ impl StoreCache {
                 .collect::<Vec<(StorageKey, StorageItem)>>()
         });
         Self {
-            data_cache: DataCache::new_with_config(read_only, Some(store_get), Some(store_find), config),
+            data_cache: DataCache::new_with_config(
+                read_only,
+                Some(store_get),
+                Some(store_find),
+                config,
+            ),
             store: Some(store),
             snapshot: None,
         }

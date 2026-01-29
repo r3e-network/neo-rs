@@ -3,7 +3,9 @@
 //
 
 use super::*;
-use crate::smart_contract::native::security_fixes::{PermissionValidator, ReentrancyGuardType, SecurityContext};
+use crate::smart_contract::native::security_fixes::{
+    PermissionValidator, ReentrancyGuardType, SecurityContext,
+};
 
 impl PolicyContract {
     pub(super) fn set_fee_per_byte(
@@ -21,7 +23,7 @@ impl PolicyContract {
         }
 
         let value = Self::parse_i64_argument(&args[0], "value")?;
-        
+
         // Validate range using security validator
         PermissionValidator::validate_range(value, 0, 100_000_000, "FeePerByte")
             .map_err(|e| Error::invalid_operation(e.to_string()))?;

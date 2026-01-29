@@ -2,7 +2,7 @@
 // interop.rs - Interop service and host methods
 //
 
-use super::{ExecutionEngine, InteropService, InteropHost, VmResult, VmError};
+use super::{ExecutionEngine, InteropHost, InteropService, VmError, VmResult};
 
 impl ExecutionEngine {
     /// Sets the interop service used for syscall dispatch.
@@ -16,7 +16,7 @@ impl ExecutionEngine {
     }
 
     /// Returns a reference to the configured interop service, if any.
-    #[must_use] 
+    #[must_use]
     pub const fn interop_service(&self) -> Option<&InteropService> {
         self.interop_service.as_ref()
     }
@@ -42,7 +42,7 @@ impl ExecutionEngine {
     }
 
     /// Returns the raw pointer to the configured interop host, if any.
-    #[must_use] 
+    #[must_use]
     pub fn interop_host_ptr(&self) -> Option<*mut dyn InteropHost> {
         self.interop_host
     }

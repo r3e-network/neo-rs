@@ -6,8 +6,8 @@ mod tests {
     use crate::mpt_trie::{MptCache, MptResult, MptStoreSnapshot, Node, NodeType, Trie};
     use neo_io::{BinaryWriter, MemoryReader, Serializable};
     use neo_primitives::UInt256;
-    use std::collections::HashMap;
     use parking_lot::Mutex;
+    use std::collections::HashMap;
     use std::sync::Arc;
 
     /// Helper trait to provide to_array method for serialization

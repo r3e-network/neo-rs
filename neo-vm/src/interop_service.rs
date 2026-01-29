@@ -118,7 +118,7 @@ pub struct InteropService {
 impl InteropService {
     /// Creates a new, empty interop service. Descriptors must be registered explicitly
     /// by the host (mirroring the static registration that happens in C#).
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             descriptors: HashMap::new(),
@@ -157,7 +157,7 @@ impl InteropService {
     }
 
     /// Retrieves a descriptor by name (ASCII byte slice).
-    #[must_use] 
+    #[must_use]
     pub fn get_method(&self, name: &[u8]) -> Option<&VmInteropDescriptor> {
         let name_str = str::from_utf8(name).ok()?;
         let hash = ScriptBuilder::hash_syscall(name_str).ok()?;
@@ -165,7 +165,7 @@ impl InteropService {
     }
 
     /// Returns the fixed price for a syscall by name. Returns 0 if not found.
-    #[must_use] 
+    #[must_use]
     pub fn get_price(&self, name: &[u8]) -> i64 {
         self.get_method(name).map_or(0, |d| d.price)
     }
@@ -216,13 +216,13 @@ impl InteropService {
     }
 
     /// Returns the number of registered descriptors (useful for diagnostics/tests).
-    #[must_use] 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.descriptors.len()
     }
 
     /// Returns whether the service has no registered descriptors.
-    #[must_use] 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.descriptors.is_empty()
     }

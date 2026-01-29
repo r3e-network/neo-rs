@@ -36,7 +36,7 @@ impl ExecutionEngineLimits {
         max_invocation_stack_size: 1_024,     // C#: 1024
         max_try_nesting_depth: 16,            // C#: 16
         catch_engine_exceptions: true,
-        max_instructions: 1_000_000,          // Default: 1 million instructions
+        max_instructions: 1_000_000, // Default: 1 million instructions
     };
 
     /// Ensures the provided item size does not exceed the configured limit.

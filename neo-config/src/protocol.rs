@@ -181,13 +181,13 @@ impl ProtocolSettings {
     /// the Neo N3 `MainNet` settings. For production code, prefer using
     /// `mainnet()`, `testnet()`, or `private()` explicitly.
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn default_settings() -> Self {
         Self::mainnet()
     }
 
     /// `MainNet` protocol settings
-    #[must_use] 
+    #[must_use]
     pub fn mainnet() -> Self {
         Self {
             network: 860833102,
@@ -243,7 +243,7 @@ impl ProtocolSettings {
     }
 
     /// `TestNet` protocol settings
-    #[must_use] 
+    #[must_use]
     pub fn testnet() -> Self {
         Self {
             network: 894710606,
@@ -299,7 +299,7 @@ impl ProtocolSettings {
     }
 
     /// Private network protocol settings
-    #[must_use] 
+    #[must_use]
     pub fn private(network_magic: u32) -> Self {
         Self {
             network: network_magic,
@@ -319,7 +319,7 @@ impl ProtocolSettings {
     }
 
     /// Check if a hardfork is enabled at the given height
-    #[must_use] 
+    #[must_use]
     pub fn is_hardfork_enabled(&self, hardfork: &str, height: u32) -> bool {
         match hardfork.to_lowercase().as_str() {
             "aspidochelone" | "hf_aspidochelone" => {
@@ -338,13 +338,13 @@ impl ProtocolSettings {
     }
 
     /// Get the number of committee members (21 for Neo N3)
-    #[must_use] 
+    #[must_use]
     pub fn committee_count(&self) -> u32 {
         21.max(self.validators_count)
     }
 
     /// Calculate time span for a given number of blocks
-    #[must_use] 
+    #[must_use]
     pub const fn time_per_block(&self) -> std::time::Duration {
         std::time::Duration::from_millis(self.ms_per_block)
     }

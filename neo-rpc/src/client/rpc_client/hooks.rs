@@ -32,7 +32,7 @@ pub struct RpcClientHooks {
 
 impl RpcClientHooks {
     /// Returns a hook collection without observers (falls back to tracing debug logs).
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }

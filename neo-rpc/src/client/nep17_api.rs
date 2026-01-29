@@ -33,7 +33,7 @@ pub struct Nep17Api {
 impl Nep17Api {
     /// `Nep17API` Constructor
     /// Matches C# constructor
-    #[must_use] 
+    #[must_use]
     pub fn new(rpc_client: Arc<RpcClient>) -> Self {
         Self {
             contract_client: ContractClient::new(rpc_client.clone()),
@@ -42,7 +42,7 @@ impl Nep17Api {
     }
 
     /// Exposes the underlying contract client for advanced scenarios.
-    #[must_use] 
+    #[must_use]
     pub const fn contract_client(&self) -> &ContractClient {
         &self.contract_client
     }

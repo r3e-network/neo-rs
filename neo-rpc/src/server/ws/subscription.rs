@@ -18,7 +18,7 @@ pub struct SubscriptionManager {
 
 impl SubscriptionManager {
     /// Create a new subscription manager
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             next_id: AtomicU64::new(1),

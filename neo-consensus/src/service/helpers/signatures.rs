@@ -11,7 +11,7 @@ pub(in crate::service) fn invocation_script_from_signature(signature: &[u8]) -> 
 }
 
 /// Extracts signature from invocation script.
-/// 
+///
 /// Returns `Option<&[u8]>` to avoid unnecessary allocation.
 /// The signature slice is a reference into the input invocation script,
 /// valid for the lifetime of the input.

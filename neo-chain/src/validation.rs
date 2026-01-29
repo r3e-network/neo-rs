@@ -20,7 +20,7 @@ pub enum ValidationResult {
 
 impl ValidationResult {
     /// Check if validation passed
-    #[must_use] 
+    #[must_use]
     pub const fn is_valid(&self) -> bool {
         matches!(self, Self::Valid)
     }
@@ -83,7 +83,7 @@ pub struct BlockValidator {
 
 impl BlockValidator {
     /// Create a new block validator with default settings
-    #[must_use] 
+    #[must_use]
     pub const fn new() -> Self {
         Self {
             max_block_size: MAX_BLOCK_SIZE,
@@ -93,7 +93,7 @@ impl BlockValidator {
     }
 
     /// Create with custom settings
-    #[must_use] 
+    #[must_use]
     pub const fn with_settings(
         max_block_size: usize,
         max_transactions_per_block: usize,
@@ -119,7 +119,7 @@ impl BlockValidator {
     }
 
     /// Perform basic validation (stateless)
-    #[must_use] 
+    #[must_use]
     pub fn validate_basic(&self, block: &BlockData) -> ValidationResult {
         // Check block size
         if block.size > self.max_block_size {
@@ -224,7 +224,7 @@ impl BlockValidator {
     }
 
     /// Validate genesis block
-    #[must_use] 
+    #[must_use]
     pub fn validate_genesis(&self, block: &BlockData) -> ValidationResult {
         // Genesis must be height 0
         if block.height != 0 {

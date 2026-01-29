@@ -31,7 +31,7 @@ pub struct RpcTransferOut {
 impl RpcTransferOut {
     /// Converts to JSON
     /// Matches C# `ToJson`
-    #[must_use] 
+    #[must_use]
     pub fn to_json(&self, protocol_settings: &ProtocolSettings) -> JObject {
         let mut json = JObject::new();
         json.insert("asset".to_string(), JToken::String(self.asset.to_string()));
@@ -64,8 +64,7 @@ impl RpcTransferOut {
         let value = json
             .get("value")
             .and_then(neo_json::JToken::as_string)
-            .ok_or("Missing or invalid 'value' field")?
-            ;
+            .ok_or("Missing or invalid 'value' field")?;
 
         let address = json
             .get("address")

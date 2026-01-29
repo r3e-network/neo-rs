@@ -36,19 +36,19 @@ impl RpcError {
     }
 
     /// Returns the JSON-RPC error code.
-    #[must_use] 
+    #[must_use]
     pub const fn code(&self) -> i32 {
         self.code
     }
 
     /// Returns the human readable error message.
-    #[must_use] 
+    #[must_use]
     pub fn message(&self) -> &str {
         &self.message
     }
 
     /// Returns any additional error data when available.
-    #[must_use] 
+    #[must_use]
     pub fn data(&self) -> Option<&str> {
         self.data.as_deref()
     }
@@ -70,7 +70,7 @@ impl RpcError {
     }
 
     /// Returns the formatted error message used for exceptions/logging.
-    #[must_use] 
+    #[must_use]
     pub fn error_message(&self) -> String {
         match &self.data {
             Some(data) => format!("{} - {}", self.message, data),
@@ -79,10 +79,13 @@ impl RpcError {
     }
 
     /// Serialises the error into a Neo JSON token (matches C# `ToJson`).
-    #[must_use] 
+    #[must_use]
     pub fn to_json(&self) -> JToken {
         let mut obj = JObject::new();
-        obj.set("code".to_string(), Some(JToken::Number(f64::from(self.code))));
+        obj.set(
+            "code".to_string(),
+            Some(JToken::Number(f64::from(self.code))),
+        );
         obj.set(
             "message".to_string(),
             Some(JToken::String(self.error_message())),
@@ -99,25 +102,25 @@ impl RpcError {
     }
 
     /// Invalid JSON-RPC request (spec defined).
-    #[must_use] 
+    #[must_use]
     pub fn invalid_request() -> Self {
         Self::simple(-32600, "Invalid request")
     }
 
     /// Unknown RPC method.
-    #[must_use] 
+    #[must_use]
     pub fn method_not_found() -> Self {
         Self::simple(-32601, "Method not found")
     }
 
     /// Invalid method parameters.
-    #[must_use] 
+    #[must_use]
     pub fn invalid_params() -> Self {
         Self::simple(-32602, "Invalid params")
     }
 
     /// Internal JSON-RPC error.
-    #[must_use] 
+    #[must_use]
     pub fn internal_server_error() -> Self {
         Self::simple(-32603, "Internal server RpcError")
     }
@@ -125,79 +128,79 @@ impl RpcError {
     /// Server-side rate limiting triggered.
     ///
     /// Uses the JSON-RPC server error range (-32000..-32099).
-    #[must_use] 
+    #[must_use]
     pub fn too_many_requests() -> Self {
         Self::simple(-32001, "Too many requests")
     }
 
     /// Malformed JSON payload.
-    #[must_use] 
+    #[must_use]
     pub fn bad_request() -> Self {
         Self::simple(-32700, "Bad request")
     }
 
     /// Unknown block referenced in the request.
-    #[must_use] 
+    #[must_use]
     pub fn unknown_block() -> Self {
         Self::simple(-101, "Unknown block")
     }
 
     /// Unknown contract referenced in the request.
-    #[must_use] 
+    #[must_use]
     pub fn unknown_contract() -> Self {
         Self::simple(-102, "Unknown contract")
     }
 
     /// Unknown transaction referenced in the request.
-    #[must_use] 
+    #[must_use]
     pub fn unknown_transaction() -> Self {
         Self::simple(-103, "Unknown transaction")
     }
 
     /// Unknown storage item referenced in the request.
-    #[must_use] 
+    #[must_use]
     pub fn unknown_storage_item() -> Self {
         Self::simple(-104, "Unknown storage item")
     }
 
     /// Unknown script container referenced in the request.
-    #[must_use] 
+    #[must_use]
     pub fn unknown_script_container() -> Self {
         Self::simple(-105, "Unknown script container")
     }
 
     /// Unknown state root referenced in the request.
-    #[must_use] 
+    #[must_use]
     pub fn unknown_state_root() -> Self {
         Self::simple(-106, "Unknown state root")
     }
 
     /// Unknown iterator identifier.
-    #[must_use] 
+    #[must_use]
     pub fn unknown_iterator() -> Self {
         Self::simple(-108, "Unknown iterator")
     }
 
     /// Unknown iterator session identifier.
-    #[must_use] 
+    #[must_use]
     pub fn unknown_session() -> Self {
         Self::simple(-107, "Unknown session")
     }
 
     /// Unknown block height.
-    #[must_use] 
+    #[must_use]
     pub fn unknown_height() -> Self {
         Self::simple(-109, "Unknown height")
     }
 
     /// Insufficient funds inside a wallet context.
-    #[must_use] 
+    #[must_use]
     pub fn insufficient_funds_wallet() -> Self {
         Self::simple(-300, "Insufficient funds in wallet")
     }
 
     /// Wallet fee limit exceeded.
-    #[must_use] 
+    #[must_use]
     pub fn wallet_fee_limit() -> Self {
         Self::new(
             -301,
@@ -207,157 +210,157 @@ impl RpcError {
     }
 
     /// No wallet opened.
-    #[must_use] 
+    #[must_use]
     pub fn no_opened_wallet() -> Self {
         Self::simple(-302, "No opened wallet")
     }
 
     /// Wallet not found.
-    #[must_use] 
+    #[must_use]
     pub fn wallet_not_found() -> Self {
         Self::simple(-303, "Wallet not found")
     }
 
     /// Wallet type not supported.
-    #[must_use] 
+    #[must_use]
     pub fn wallet_not_supported() -> Self {
         Self::simple(-304, "Wallet not supported")
     }
 
     /// Unknown account referenced in request.
-    #[must_use] 
+    #[must_use]
     pub fn unknown_account() -> Self {
         Self::simple(-305, "Unknown account")
     }
 
     /// Inventory verification failed.
-    #[must_use] 
+    #[must_use]
     pub fn verification_failed() -> Self {
         Self::simple(-500, "Inventory verification failed")
     }
 
     /// Inventory already exists.
-    #[must_use] 
+    #[must_use]
     pub fn already_exists() -> Self {
         Self::simple(-501, "Inventory already exists")
     }
 
     /// Mempool capacity reached.
-    #[must_use] 
+    #[must_use]
     pub fn mempool_cap_reached() -> Self {
         Self::simple(-502, "Memory pool capacity reached")
     }
 
     /// Inventory already present in pool.
-    #[must_use] 
+    #[must_use]
     pub fn already_in_pool() -> Self {
         Self::simple(-503, "Already in pool")
     }
 
     /// Insufficient network fee supplied.
-    #[must_use] 
+    #[must_use]
     pub fn insufficient_network_fee() -> Self {
         Self::simple(-504, "Insufficient network fee")
     }
 
     /// Policy check failed.
-    #[must_use] 
+    #[must_use]
     pub fn policy_failed() -> Self {
         Self::simple(-505, "Policy check failed")
     }
 
     /// Transaction script invalid.
-    #[must_use] 
+    #[must_use]
     pub fn invalid_script() -> Self {
         Self::simple(-506, "Invalid transaction script")
     }
 
     /// Invalid transaction attribute.
-    #[must_use] 
+    #[must_use]
     pub fn invalid_attribute() -> Self {
         Self::simple(-507, "Invalid transaction attribute")
     }
 
     /// Invalid signature detected.
-    #[must_use] 
+    #[must_use]
     pub fn invalid_signature() -> Self {
         Self::simple(-508, "Invalid signature")
     }
 
     /// Inventory payload size invalid.
-    #[must_use] 
+    #[must_use]
     pub fn invalid_size() -> Self {
         Self::simple(-509, "Invalid inventory size")
     }
 
     /// Transaction expired.
-    #[must_use] 
+    #[must_use]
     pub fn expired_transaction() -> Self {
         Self::simple(-510, "Expired transaction")
     }
 
     /// Insufficient funds to cover fees.
-    #[must_use] 
+    #[must_use]
     pub fn insufficient_funds() -> Self {
         Self::simple(-511, "Insufficient funds for fee")
     }
 
     /// Contract verification routine invalid.
-    #[must_use] 
+    #[must_use]
     pub fn invalid_contract_verification() -> Self {
         Self::simple(-512, "Invalid contract verification function")
     }
 
     /// Access denied for the requested operation.
-    #[must_use] 
+    #[must_use]
     pub fn access_denied() -> Self {
         Self::simple(-600, "Access denied")
     }
 
     /// Iterator session feature disabled.
-    #[must_use] 
+    #[must_use]
     pub fn sessions_disabled() -> Self {
         Self::simple(-601, "State iterator sessions disabled")
     }
 
     /// Oracle service disabled.
-    #[must_use] 
+    #[must_use]
     pub fn oracle_disabled() -> Self {
         Self::simple(-602, "Oracle service disabled")
     }
 
     /// Oracle request already finished.
-    #[must_use] 
+    #[must_use]
     pub fn oracle_request_finished() -> Self {
         Self::simple(-603, "Oracle request already finished")
     }
 
     /// Oracle request not found.
-    #[must_use] 
+    #[must_use]
     pub fn oracle_request_not_found() -> Self {
         Self::simple(-604, "Oracle request not found")
     }
 
     /// Node is not designated oracle node.
-    #[must_use] 
+    #[must_use]
     pub fn oracle_not_designated_node() -> Self {
         Self::simple(-605, "Not a designated oracle node")
     }
 
     /// Requested state is not supported (old state).
-    #[must_use] 
+    #[must_use]
     pub fn unsupported_state() -> Self {
         Self::simple(-606, "Old state not supported")
     }
 
     /// Invalid state proof supplied.
-    #[must_use] 
+    #[must_use]
     pub fn invalid_proof() -> Self {
         Self::simple(-607, "Invalid state proof")
     }
 
     /// Contract execution failed.
-    #[must_use] 
+    #[must_use]
     pub fn execution_failed() -> Self {
         Self::simple(-608, "Contract execution failed")
     }

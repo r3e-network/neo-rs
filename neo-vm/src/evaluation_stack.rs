@@ -20,7 +20,7 @@ pub struct EvaluationStack {
 impl EvaluationStack {
     /// Creates a new evaluation stack with the specified reference counter.
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn new(reference_counter: ReferenceCounter) -> Self {
         Self {
             stack: Vec::with_capacity(32), // Pre-allocate for typical stack usage
@@ -30,21 +30,21 @@ impl EvaluationStack {
 
     /// Returns the reference counter for this evaluation stack.
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub const fn reference_counter(&self) -> &ReferenceCounter {
         &self.reference_counter
     }
 
     /// Returns the number of items on the stack.
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.stack.len()
     }
 
     /// Indicates whether the stack is empty.
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.stack.is_empty()
     }
@@ -196,7 +196,7 @@ impl EvaluationStack {
     }
 
     /// Returns a cloned vector of the stack contents in bottom-to-top order.
-    #[must_use] 
+    #[must_use]
     pub fn to_vec(&self) -> Vec<StackItem> {
         self.stack.clone()
     }

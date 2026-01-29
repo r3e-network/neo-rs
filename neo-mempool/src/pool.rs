@@ -81,13 +81,13 @@ impl PartialOrd for PriorityEntry {
 
 impl Mempool {
     /// Create a new mempool with default configuration
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self::with_config(MempoolConfig::default())
     }
 
     /// Create a new mempool with custom configuration
-    #[must_use] 
+    #[must_use]
     pub fn with_config(config: MempoolConfig) -> Self {
         Self {
             config,
@@ -314,7 +314,10 @@ impl Mempool {
         let txs = self.transactions.read();
         let by_sender = self.by_sender.read();
 
-        let total_fees: i64 = txs.values().map(super::transaction_entry::TransactionEntry::total_fee).sum();
+        let total_fees: i64 = txs
+            .values()
+            .map(super::transaction_entry::TransactionEntry::total_fee)
+            .sum();
         let total_size: usize = txs.values().map(|e| e.size).sum();
 
         MempoolStats {

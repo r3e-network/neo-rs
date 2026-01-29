@@ -27,7 +27,7 @@ pub struct Slot {
 impl Slot {
     /// Creates a slot containing the specified items.
     /// public Slot(StackItem[] items, `IReferenceCounter` referenceCounter)
-    #[must_use] 
+    #[must_use]
     pub fn with_items(items: Vec<StackItem>, reference_counter: ReferenceCounter) -> Self {
         for item in &items {
             reference_counter.add_stack_reference(item, 1);
@@ -40,14 +40,14 @@ impl Slot {
     }
 
     /// Convenience constructor matching the C# signature `new Slot(items, referenceCounter)`.
-    #[must_use] 
+    #[must_use]
     pub fn new_with_items(items: Vec<StackItem>, reference_counter: ReferenceCounter) -> Self {
         Self::with_items(items, reference_counter)
     }
 
     /// Create a slot of the specified size.
     /// public Slot(int count, `IReferenceCounter` referenceCounter)
-    #[must_use] 
+    #[must_use]
     pub fn new(count: usize, reference_counter: ReferenceCounter) -> Self {
         let items = vec![StackItem::Null; count];
 
@@ -63,7 +63,7 @@ impl Slot {
 
     /// Gets the item at the specified index in the slot.
     /// public `StackItem` this[int index] { get }
-    #[must_use] 
+    #[must_use]
     pub fn get(&self, index: usize) -> Option<&StackItem> {
         self.items.get(index)
     }
@@ -95,19 +95,19 @@ impl Slot {
 
     /// Gets the number of items in the slot.
     /// public int Count => _items.Length;
-    #[must_use] 
+    #[must_use]
     pub fn count(&self) -> usize {
         self.items.len()
     }
 
     /// Returns the number of items in the slot (Rust-style).
-    #[must_use] 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.items.len()
     }
 
     /// Returns true when the slot holds zero items.
-    #[must_use] 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
@@ -132,7 +132,7 @@ impl Slot {
     }
 
     /// Returns a copy of the underlying items as a Vec (matching C# Slot.ToArray semantics).
-    #[must_use] 
+    #[must_use]
     pub fn to_vec(&self) -> Vec<StackItem> {
         self.items.clone()
     }
@@ -151,7 +151,7 @@ impl Slot {
     }
 
     /// Consumes the slot and returns the underlying items.
-    #[must_use] 
+    #[must_use]
     pub fn into_vec(self) -> Vec<StackItem> {
         self.items
     }

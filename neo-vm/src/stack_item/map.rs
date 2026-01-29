@@ -71,19 +71,19 @@ impl Map {
     }
 
     /// Returns the reference counter assigned by the reference counter, if any.
-    #[must_use] 
+    #[must_use]
     pub fn reference_counter(&self) -> Option<ReferenceCounter> {
         self.inner.lock().reference_counter.clone()
     }
 
     /// Returns the unique identifier for this map (used for reference equality).
-    #[must_use] 
+    #[must_use]
     pub fn id(&self) -> usize {
         self.inner.lock().id
     }
 
     /// Returns whether the map is marked as read-only.
-    #[must_use] 
+    #[must_use]
     pub fn is_read_only(&self) -> bool {
         self.inner.lock().is_read_only
     }
@@ -94,7 +94,7 @@ impl Map {
     }
 
     /// Gets the items in the map.
-    #[must_use] 
+    #[must_use]
     pub fn items(&self) -> VmOrderedDictionary<StackItem, StackItem> {
         self.inner.lock().items.clone()
     }
@@ -151,13 +151,13 @@ impl Map {
     }
 
     /// Gets the number of items in the map.
-    #[must_use] 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.inner.lock().items.len()
     }
 
     /// Returns true if the map is empty.
-    #[must_use] 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.inner.lock().items.is_empty()
     }
@@ -184,13 +184,13 @@ impl Map {
     }
 
     /// Consumes the map and returns the underlying entries.
-    #[must_use] 
+    #[must_use]
     pub fn into_map(self) -> VmOrderedDictionary<StackItem, StackItem> {
         self.items()
     }
 
     /// Returns an iterator over the key/value pairs.
-    #[must_use] 
+    #[must_use]
     pub fn iter(&self) -> std::vec::IntoIter<(StackItem, StackItem)> {
         self.items()
             .iter()
@@ -211,7 +211,7 @@ impl Map {
     }
 
     /// Gets the type of the stack item.
-    #[must_use] 
+    #[must_use]
     pub const fn stack_item_type(&self) -> StackItemType {
         StackItemType::Map
     }

@@ -17,7 +17,7 @@ pub struct PrimitiveType<'a> {
 
 impl<'a> PrimitiveType<'a> {
     /// Attempts to wrap the provided stack item, returning `None` if it is not a primitive type.
-    #[must_use] 
+    #[must_use]
     pub fn new(item: &'a StackItem) -> Option<Self> {
         matches!(
             item.stack_item_type(),
@@ -63,7 +63,7 @@ impl<'a> PrimitiveType<'a> {
     }
 
     /// Returns the underlying stack item.
-    #[must_use] 
+    #[must_use]
     pub const fn as_item(&self) -> &'a StackItem {
         self.item
     }

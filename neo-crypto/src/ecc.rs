@@ -50,25 +50,25 @@ pub enum ECCurve {
 
 impl ECCurve {
     /// Returns the secp256r1 curve (Neo's default).
-    #[must_use] 
+    #[must_use]
     pub const fn secp256r1() -> Self {
         Self::Secp256r1
     }
 
     /// Returns the secp256k1 curve.
-    #[must_use] 
+    #[must_use]
     pub const fn secp256k1() -> Self {
         Self::Secp256k1
     }
 
     /// Returns the Ed25519 curve.
-    #[must_use] 
+    #[must_use]
     pub const fn ed25519() -> Self {
         Self::Ed25519
     }
 
     /// Returns the compressed public key size for this curve.
-    #[must_use] 
+    #[must_use]
     pub const fn compressed_size(&self) -> usize {
         match self {
             Self::Secp256r1 | Self::Secp256k1 => 33,
@@ -77,7 +77,7 @@ impl ECCurve {
     }
 
     /// Returns the uncompressed public key size for this curve.
-    #[must_use] 
+    #[must_use]
     pub const fn uncompressed_size(&self) -> usize {
         match self {
             Self::Secp256r1 | Self::Secp256k1 => 65,
@@ -265,13 +265,13 @@ impl ECPoint {
     }
 
     /// Returns the curve this point belongs to.
-    #[must_use] 
+    #[must_use]
     pub const fn curve(&self) -> ECCurve {
         self.curve
     }
 
     /// Returns the raw bytes of this point.
-    #[must_use] 
+    #[must_use]
     pub fn as_bytes(&self) -> &[u8] {
         &self.data
     }
@@ -281,13 +281,13 @@ impl ECPoint {
     /// Neo's Rust codebase historically used an `ECPoint` wrapper that exposed `to_bytes()`.
     /// The canonical representation in this crate is always compressed (except the internal
     /// infinity representation), so this returns the stored bytes.
-    #[must_use] 
+    #[must_use]
     pub fn to_bytes(&self) -> Vec<u8> {
         self.as_bytes().to_vec()
     }
 
     /// Backward-compatible alias returning the encoded bytes as an owned `Vec<u8>`.
-    #[must_use] 
+    #[must_use]
     pub fn encoded(&self) -> Vec<u8> {
         self.as_bytes().to_vec()
     }
@@ -296,7 +296,7 @@ impl ECPoint {
     ///
     /// Note: this crate stores points in compressed form for secp256r1/k1 and as raw 32-byte
     /// keys for Ed25519.
-    #[must_use] 
+    #[must_use]
     pub fn is_compressed(&self) -> bool {
         match self.curve {
             ECCurve::Secp256r1 | ECCurve::Secp256k1 => {
@@ -307,7 +307,7 @@ impl ECPoint {
     }
 
     /// Backward-compatible helper mirroring the legacy `is_valid()` API.
-    #[must_use] 
+    #[must_use]
     pub fn is_valid(&self) -> bool {
         self.is_on_curve()
     }
@@ -348,7 +348,7 @@ impl ECPoint {
     ///
     /// This is a special internal representation and should not be serialized
     /// as a regular public key.
-    #[must_use] 
+    #[must_use]
     pub fn infinity(curve: ECCurve) -> Self {
         let data = match curve {
             // SEC1 encoding for point at infinity is a single 0x00 byte
@@ -363,7 +363,7 @@ impl ECPoint {
     ///
     /// # Returns
     /// `true` if this is the point at infinity, `false` otherwise.
-    #[must_use] 
+    #[must_use]
     pub fn is_infinity(&self) -> bool {
         match self.curve {
             ECCurve::Secp256r1 | ECCurve::Secp256k1 => {
@@ -378,7 +378,7 @@ impl ECPoint {
     }
 
     /// Returns true if the point is on the declared curve.
-    #[must_use] 
+    #[must_use]
     pub fn is_on_curve(&self) -> bool {
         Self::validate_on_curve(self.curve, &self.data).is_ok()
     }
@@ -615,9 +615,7 @@ pub fn verify_signature_secp256r1(
 
     let sig = P256Signature::from_der(signature)
         .or_else(|_| P256Signature::from_slice(signature))
-        .map_err(|e| {
-            CryptoError::invalid_signature(format!("Invalid secp256r1 signature: {e}"))
-        })?;
+        .map_err(|e| CryptoError::invalid_signature(format!("Invalid secp256r1 signature: {e}")))?;
 
     Ok(verifying_key.verify(message, &sig).is_ok())
 }
@@ -633,9 +631,7 @@ pub fn verify_signature_secp256k1(
 
     let sig = K256Signature::from_der(signature)
         .or_else(|_| K256Signature::from_slice(signature))
-        .map_err(|e| {
-            CryptoError::invalid_signature(format!("Invalid secp256k1 signature: {e}"))
-        })?;
+        .map_err(|e| CryptoError::invalid_signature(format!("Invalid secp256k1 signature: {e}")))?;
 
     Ok(verifying_key.verify(message, &sig).is_ok())
 }

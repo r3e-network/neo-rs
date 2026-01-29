@@ -6,7 +6,7 @@ pub struct BinaryWriter {
 }
 
 impl BinaryWriter {
-    #[must_use] 
+    #[must_use]
     pub const fn new() -> Self {
         Self { buffer: Vec::new() }
     }
@@ -27,13 +27,13 @@ impl BinaryWriter {
         }
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.buffer.len()
     }
 
     /// Returns true when the writer contains zero bytes.
-    #[must_use] 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.buffer.is_empty()
     }
@@ -119,7 +119,7 @@ impl BinaryWriter {
     }
 
     /// Returns a reference to the internal buffer without cloning (zero-copy).
-    /// 
+    ///
     /// Use this when you only need to read the serialized bytes without taking ownership.
     /// For an owned copy, use `to_bytes()`; to take ownership, use `into_bytes()`.
     #[must_use]
@@ -127,12 +127,12 @@ impl BinaryWriter {
         &self.buffer
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn to_bytes(&self) -> Vec<u8> {
         self.buffer.clone()
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn into_bytes(self) -> Vec<u8> {
         self.buffer
     }

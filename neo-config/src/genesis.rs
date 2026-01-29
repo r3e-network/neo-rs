@@ -80,7 +80,7 @@ impl Default for GenesisConfig {
 
 impl GenesisConfig {
     /// `MainNet` genesis configuration
-    #[must_use] 
+    #[must_use]
     pub fn mainnet() -> Self {
         Self {
             // Neo N3 MainNet genesis timestamp: 2021-03-20T15:00:00Z
@@ -158,7 +158,7 @@ impl GenesisConfig {
     }
 
     /// `TestNet` genesis configuration
-    #[must_use] 
+    #[must_use]
     pub fn testnet() -> Self {
         Self {
             timestamp: 1616245200000,
@@ -235,7 +235,7 @@ impl GenesisConfig {
     }
 
     /// Create a private network genesis with single validator
-    #[must_use] 
+    #[must_use]
     pub fn private(validator_pubkey: &str) -> Self {
         Self {
             timestamp: std::time::SystemTime::now()

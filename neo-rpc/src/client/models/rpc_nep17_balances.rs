@@ -30,7 +30,7 @@ pub struct RpcNep17Balances {
 impl RpcNep17Balances {
     /// Converts to JSON
     /// Matches C# `ToJson`
-    #[must_use] 
+    #[must_use]
     pub fn to_json(&self, _protocol_settings: &ProtocolSettings) -> JObject {
         let mut json = JObject::new();
 
@@ -108,7 +108,7 @@ pub struct RpcNep17Balance {
 impl RpcNep17Balance {
     /// Converts to JSON
     /// Matches C# `ToJson`
-    #[must_use] 
+    #[must_use]
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
         json.insert(

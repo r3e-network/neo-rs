@@ -56,13 +56,8 @@ impl RateLimitTier {
         let method_lower = method.to_ascii_lowercase();
         match method_lower.as_str() {
             // Cheap operations - simple state lookups
-            "getblockcount"
-            | "getconnectioncount"
-            | "getrawmempool"
-            | "getversion"
-            | "getcommittee"
-            | "getvalidators"
-            | "ping" => Self::Cheap,
+            "getblockcount" | "getconnectioncount" | "getrawmempool" | "getversion"
+            | "getcommittee" | "getvalidators" | "ping" => Self::Cheap,
 
             // Expensive operations - VM execution, complex queries
             "invokefunction"
@@ -150,7 +145,11 @@ impl IpRateLimitState {
         }
     }
 
-    fn get_or_create_bucket(&mut self, tier: RateLimitTier, config: &RateLimitConfig) -> &mut TokenBucket {
+    fn get_or_create_bucket(
+        &mut self,
+        tier: RateLimitTier,
+        config: &RateLimitConfig,
+    ) -> &mut TokenBucket {
         self.buckets.entry(tier).or_insert_with(|| TokenBucket {
             tokens: config.burst as f64,
             last_refill: Instant::now(),
@@ -176,15 +175,20 @@ impl GovernorRateLimiter {
     pub fn new(config: RateLimitConfig) -> Self {
         let enabled = config.max_rps > 0;
         let mut tier_configs = HashMap::new();
-        
+
         // Initialize tier configs based on default, scaled relative to the default config
         let scale_factor = if config.max_rps > 0 {
             config.max_rps as f64 / 100.0 // 100 is the default standard RPS
         } else {
             1.0
         };
-        
-        for tier in [RateLimitTier::Cheap, RateLimitTier::Standard, RateLimitTier::Expensive, RateLimitTier::Write] {
+
+        for tier in [
+            RateLimitTier::Cheap,
+            RateLimitTier::Standard,
+            RateLimitTier::Expensive,
+            RateLimitTier::Write,
+        ] {
             let default_tier_config = tier.default_config();
             let tier_config = RateLimitConfig {
                 max_rps: ((default_tier_config.max_rps as f64) * scale_factor) as u32,
@@ -192,7 +196,7 @@ impl GovernorRateLimiter {
             };
             tier_configs.insert(tier, tier_config);
         }
-        
+
         Self {
             default_config: config,
             tier_configs,
@@ -272,7 +276,7 @@ impl GovernorRateLimiter {
 
         // Get or create state for this IP
         let mut entry = self.states.entry(ip).or_insert_with(IpRateLimitState::new);
-        
+
         // Update last access time
         entry.last_access = Instant::now();
 
@@ -495,19 +499,46 @@ mod tests {
         assert!(cheap_config.max_rps >= config.max_rps);
 
         // Verify cheap method is categorized correctly
-        assert_eq!(RateLimitTier::from_method("getblockcount"), RateLimitTier::Cheap);
-        assert_eq!(RateLimitTier::from_method("getversion"), RateLimitTier::Cheap);
+        assert_eq!(
+            RateLimitTier::from_method("getblockcount"),
+            RateLimitTier::Cheap
+        );
+        assert_eq!(
+            RateLimitTier::from_method("getversion"),
+            RateLimitTier::Cheap
+        );
     }
 
     #[test]
     fn test_rate_limit_tier_categorization() {
-        assert_eq!(RateLimitTier::from_method("getblockcount"), RateLimitTier::Cheap);
-        assert_eq!(RateLimitTier::from_method("getversion"), RateLimitTier::Cheap);
-        assert_eq!(RateLimitTier::from_method("invokefunction"), RateLimitTier::Expensive);
-        assert_eq!(RateLimitTier::from_method("invokescript"), RateLimitTier::Expensive);
-        assert_eq!(RateLimitTier::from_method("sendrawtransaction"), RateLimitTier::Write);
-        assert_eq!(RateLimitTier::from_method("getblock"), RateLimitTier::Standard);
-        assert_eq!(RateLimitTier::from_method("gettransaction"), RateLimitTier::Standard);
+        assert_eq!(
+            RateLimitTier::from_method("getblockcount"),
+            RateLimitTier::Cheap
+        );
+        assert_eq!(
+            RateLimitTier::from_method("getversion"),
+            RateLimitTier::Cheap
+        );
+        assert_eq!(
+            RateLimitTier::from_method("invokefunction"),
+            RateLimitTier::Expensive
+        );
+        assert_eq!(
+            RateLimitTier::from_method("invokescript"),
+            RateLimitTier::Expensive
+        );
+        assert_eq!(
+            RateLimitTier::from_method("sendrawtransaction"),
+            RateLimitTier::Write
+        );
+        assert_eq!(
+            RateLimitTier::from_method("getblock"),
+            RateLimitTier::Standard
+        );
+        assert_eq!(
+            RateLimitTier::from_method("gettransaction"),
+            RateLimitTier::Standard
+        );
     }
 
     #[test]
@@ -547,10 +578,10 @@ mod tests {
     fn test_rate_limit_check_result_methods() {
         assert!(RateLimitCheckResult::Allowed.is_allowed());
         assert!(!RateLimitCheckResult::Allowed.is_blocked());
-        
+
         assert!(!RateLimitCheckResult::Blocked.is_allowed());
         assert!(RateLimitCheckResult::Blocked.is_blocked());
-        
+
         assert!(RateLimitCheckResult::Disabled.is_allowed());
         assert!(!RateLimitCheckResult::Disabled.is_blocked());
     }
@@ -561,10 +592,13 @@ mod tests {
             max_rps: 100,
             burst: 200,
         })
-        .with_tier_config(RateLimitTier::Expensive, RateLimitConfig {
-            max_rps: 5,
-            burst: 10,
-        })
+        .with_tier_config(
+            RateLimitTier::Expensive,
+            RateLimitConfig {
+                max_rps: 5,
+                burst: 10,
+            },
+        )
         .build();
 
         let expensive_config = limiter.tier_config(RateLimitTier::Expensive).unwrap();

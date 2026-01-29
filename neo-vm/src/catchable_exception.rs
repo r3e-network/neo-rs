@@ -17,7 +17,7 @@ pub struct CatchableException {
 
 impl CatchableException {
     /// public CatchableException(string message) : base(message)
-    #[must_use] 
+    #[must_use]
     pub const fn new(message: String) -> Self {
         Self { message }
     }

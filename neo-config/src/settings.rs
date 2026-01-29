@@ -341,7 +341,7 @@ impl Default for Settings {
 
 impl Settings {
     /// Create settings for a specific network
-    #[must_use] 
+    #[must_use]
     pub fn for_network(network_type: NetworkType) -> Self {
         let (protocol, genesis, network) = match network_type {
             NetworkType::MainNet => (
@@ -453,19 +453,19 @@ impl Settings {
     }
 
     /// Get the effective network magic
-    #[must_use] 
+    #[must_use]
     pub fn network_magic(&self) -> u32 {
         self.network.effective_magic()
     }
 
     /// Get the effective address version
-    #[must_use] 
+    #[must_use]
     pub fn address_version(&self) -> u8 {
         self.network.effective_address_version()
     }
 
     /// Get P2P socket address
-    #[must_use] 
+    #[must_use]
     pub fn p2p_socket_addr(&self) -> std::net::SocketAddr {
         format!("{}:{}", self.node.listen_address, self.node.p2p_port)
             .parse()
@@ -473,7 +473,7 @@ impl Settings {
     }
 
     /// Get RPC socket address
-    #[must_use] 
+    #[must_use]
     pub fn rpc_socket_addr(&self) -> std::net::SocketAddr {
         format!("{}:{}", self.rpc.address, self.rpc.port)
             .parse()

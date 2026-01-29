@@ -41,7 +41,7 @@ use super::{RpcClient, RpcClientHooks, MAX_JSON_NESTING, RPC_NAME_REGEX};
 
 impl RpcClient {
     /// Creates a configurable builder for the RPC client.
-    #[must_use] 
+    #[must_use]
     pub fn builder(url: Url) -> RpcClientBuilder {
         RpcClientBuilder::new(url)
     }
@@ -62,7 +62,7 @@ impl RpcClient {
 
     /// Creates a new RPC client with an existing HTTP client
     /// Matches C# constructor
-    #[must_use] 
+    #[must_use]
     pub fn with_client(
         client: Client,
         url: Url,
@@ -78,7 +78,7 @@ impl RpcClient {
     }
 
     /// Creates a new RPC client with an existing HTTP client and hook/timeout configuration.
-    #[must_use] 
+    #[must_use]
     pub fn with_client_config(
         client: Client,
         url: Url,
@@ -519,7 +519,10 @@ impl RpcClient {
         let result = self
             .rpc_send_async(
                 "getstorage",
-                vec![JToken::Number(f64::from(id)), JToken::String(key.to_string())],
+                vec![
+                    JToken::Number(f64::from(id)),
+                    JToken::String(key.to_string()),
+                ],
             )
             .await?;
         token_as_string(result, "getstorage")

@@ -629,7 +629,10 @@ impl NeoSystemContext {
     /// Attempts to retrieve a transaction from the in-memory pool without touching persistence.
     /// Returns the Transaction by cloning from the internal Arc<Transaction>.
     pub fn try_get_transaction_from_mempool(&self, hash: &UInt256) -> Option<Transaction> {
-        self.memory_pool.lock().try_get(hash).map(|arc| (*arc).clone())
+        self.memory_pool
+            .lock()
+            .try_get(hash)
+            .map(|arc| (*arc).clone())
     }
 
     /// Determines whether a transaction exists in the mempool or persisted store.

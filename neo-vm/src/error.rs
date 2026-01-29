@@ -178,7 +178,7 @@ impl VmError {
     }
 
     /// Create a new invalid opcode error
-    #[must_use] 
+    #[must_use]
     pub const fn invalid_opcode(opcode: u8) -> Self {
         Self::InvalidOpCode { opcode }
     }
@@ -239,7 +239,7 @@ impl VmError {
     }
 
     /// Create a new stack underflow error
-    #[must_use] 
+    #[must_use]
     pub const fn stack_underflow(requested: usize, available: usize) -> Self {
         Self::StackUnderflow {
             requested,
@@ -248,7 +248,7 @@ impl VmError {
     }
 
     /// Create a new stack overflow error
-    #[must_use] 
+    #[must_use]
     pub const fn stack_overflow(max_size: usize) -> Self {
         Self::StackOverflow { max_size }
     }
@@ -275,7 +275,7 @@ impl VmError {
     }
 
     /// Create a new insufficient stack items error
-    #[must_use] 
+    #[must_use]
     pub const fn insufficient_stack_items(required: usize, available: usize) -> Self {
         Self::InsufficientStackItems {
             required,
@@ -323,25 +323,25 @@ impl VmError {
     }
 
     /// Create a new memory limit exceeded error
-    #[must_use] 
+    #[must_use]
     pub const fn memory_limit_exceeded(used: usize, limit: usize) -> Self {
         Self::MemoryLimitExceeded { used, limit }
     }
 
     /// Create a new instruction limit exceeded error
-    #[must_use] 
+    #[must_use]
     pub const fn instruction_limit_exceeded(executed: u64, limit: u64) -> Self {
         Self::InstructionLimitExceeded { executed, limit }
     }
 
     /// Create a new call depth limit exceeded error
-    #[must_use] 
+    #[must_use]
     pub const fn call_depth_limit_exceeded(depth: usize, limit: usize) -> Self {
         Self::CallDepthLimitExceeded { depth, limit }
     }
 
     /// Create a new gas exhausted error
-    #[must_use] 
+    #[must_use]
     pub const fn gas_exhausted(used: u64, limit: u64) -> Self {
         Self::GasExhausted { used, limit }
     }
@@ -356,7 +356,7 @@ impl VmError {
     }
 
     /// Check if this error is retryable
-    #[must_use] 
+    #[must_use]
     pub const fn is_retryable(&self) -> bool {
         matches!(
             self,
@@ -365,7 +365,7 @@ impl VmError {
     }
 
     /// Check if this error is a resource limit error
-    #[must_use] 
+    #[must_use]
     pub const fn is_resource_limit(&self) -> bool {
         matches!(
             self,
@@ -378,7 +378,7 @@ impl VmError {
     }
 
     /// Check if this error is a user error (vs system error)
-    #[must_use] 
+    #[must_use]
     pub const fn is_user_error(&self) -> bool {
         matches!(
             self,
@@ -397,7 +397,7 @@ impl VmError {
     }
 
     /// Check if this error should cause a VM fault
-    #[must_use] 
+    #[must_use]
     pub const fn should_fault(&self) -> bool {
         matches!(
             self,
@@ -421,7 +421,7 @@ impl VmError {
     }
 
     /// Get error category for logging/metrics
-    #[must_use] 
+    #[must_use]
     pub const fn category(&self) -> &'static str {
         match self {
             Self::Parse { .. } => "parse",
@@ -434,9 +434,9 @@ impl VmError {
             Self::StackUnderflow { .. }
             | Self::StackOverflow { .. }
             | Self::InsufficientStackItems { .. } => "stack",
-            Self::Overflow { .. }
-            | Self::Underflow { .. }
-            | Self::DivisionByZero { .. } => "arithmetic",
+            Self::Overflow { .. } | Self::Underflow { .. } | Self::DivisionByZero { .. } => {
+                "arithmetic"
+            }
             Self::InvalidType { .. } => "type",
             Self::ExecutionHalted { .. } | Self::VmFault { .. } => "execution",
             Self::Io { .. } => "io",
@@ -549,7 +549,7 @@ impl VmError {
     }
 
     /// Create `StackUnderflow` from parameters
-    #[must_use] 
+    #[must_use]
     pub const fn stack_underflow_msg(requested: usize, available: usize) -> Self {
         Self::StackUnderflow {
             requested,
@@ -558,7 +558,7 @@ impl VmError {
     }
 
     /// Create `InsufficientStackItems` from parameters
-    #[must_use] 
+    #[must_use]
     pub const fn insufficient_stack_items_msg(required: usize, available: usize) -> Self {
         Self::InsufficientStackItems {
             required,

@@ -11,19 +11,19 @@ pub struct JBoolean {
 
 impl JBoolean {
     /// Initializes a new instance with the specified value
-    #[must_use] 
+    #[must_use]
     pub const fn new(value: bool) -> Self {
         Self { value }
     }
 
     /// Converts to boolean
-    #[must_use] 
+    #[must_use]
     pub const fn as_boolean(&self) -> bool {
         self.value
     }
 
     /// Converts to a floating point number (1 if true, 0 if false)
-    #[must_use] 
+    #[must_use]
     pub const fn as_number(&self) -> f64 {
         if self.value {
             1.0
@@ -33,13 +33,13 @@ impl JBoolean {
     }
 
     /// Converts to string
-    #[must_use] 
+    #[must_use]
     pub fn as_string(&self) -> String {
         self.value.to_string().to_lowercase()
     }
 
     /// Gets the boolean value
-    #[must_use] 
+    #[must_use]
     pub const fn get_boolean(&self) -> bool {
         self.value
     }

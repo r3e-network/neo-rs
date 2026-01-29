@@ -44,8 +44,7 @@ impl RpcResponse {
         let json_rpc = json
             .get("jsonrpc")
             .and_then(neo_json::JToken::as_string)
-            .ok_or("Missing or invalid 'jsonrpc' field")?
-            ;
+            .ok_or("Missing or invalid 'jsonrpc' field")?;
 
         let result = json.get("result").cloned();
 
@@ -65,7 +64,7 @@ impl RpcResponse {
 
     /// Converts to JSON
     /// Matches C# `ToJson`
-    #[must_use] 
+    #[must_use]
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
         json.insert("id".to_string(), self.id.clone());
@@ -110,8 +109,7 @@ impl RpcResponseError {
         let message = json
             .get("message")
             .and_then(neo_json::JToken::as_string)
-            .ok_or("Missing or invalid 'message' field")?
-            ;
+            .ok_or("Missing or invalid 'message' field")?;
 
         let data = json.get("data").cloned();
 
@@ -124,7 +122,7 @@ impl RpcResponseError {
 
     /// Converts to JSON
     /// Matches C# `ToJson`
-    #[must_use] 
+    #[must_use]
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
         json.insert("code".to_string(), JToken::Number(f64::from(self.code)));

@@ -28,8 +28,12 @@ impl std::fmt::Display for EnclaveInitError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             EnclaveInitError::AlreadyInitialized => write!(f, "enclave already initialized"),
-            EnclaveInitError::DirectoryCreationFailed => write!(f, "failed to create sealed data directory"),
-            EnclaveInitError::SealingKeyDerivationFailed => write!(f, "failed to derive sealing key"),
+            EnclaveInitError::DirectoryCreationFailed => {
+                write!(f, "failed to create sealed data directory")
+            }
+            EnclaveInitError::SealingKeyDerivationFailed => {
+                write!(f, "failed to derive sealing key")
+            }
             EnclaveInitError::CounterLoadFailed => write!(f, "failed to load monotonic counter"),
             EnclaveInitError::InvalidConfiguration => write!(f, "invalid enclave configuration"),
             EnclaveInitError::HardwareUnavailable => write!(f, "hardware TEE not available"),

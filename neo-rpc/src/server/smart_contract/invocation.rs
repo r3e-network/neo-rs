@@ -108,9 +108,9 @@ fn execute_script(
         let vm_state = engine.state();
         let engine_state = format!("{vm_state:?}");
         let system_fee = engine.fee_consumed();
-        let exception_value = engine
-            .fault_exception()
-            .map_or(Value::Null, |msg| Value::String(normalize_fault_message(msg)));
+        let exception_value = engine.fault_exception().map_or(Value::Null, |msg| {
+            Value::String(normalize_fault_message(msg))
+        });
         let notifications_snapshot = engine.notifications().to_vec();
         let stack_snapshot: Vec<StackItem> = engine.result_stack().iter().cloned().collect();
         let diagnostics_snapshot = session.diagnostic().map(|diag| {
@@ -330,9 +330,9 @@ fn build_pending_context(
         let mut obj = Map::new();
         obj.insert(
             "script".to_string(),
-            entry
-                .script
-                .map_or(Value::Null, |bytes| Value::String(BASE64_STANDARD.encode(bytes))),
+            entry.script.map_or(Value::Null, |bytes| {
+                Value::String(BASE64_STANDARD.encode(bytes))
+            }),
         );
 
         let parameters = entry

@@ -69,7 +69,7 @@ where
 
     /// Number of items currently in the cache (C# `Count`).
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn count(&self) -> usize {
         self.items.count()
     }

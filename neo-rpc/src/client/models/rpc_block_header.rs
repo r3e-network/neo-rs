@@ -125,7 +125,7 @@ impl RpcBlockHeader {
 
     /// Converts to JSON
     /// Matches C# `ToJson`
-    #[must_use] 
+    #[must_use]
     pub fn to_json(&self, protocol_settings: &ProtocolSettings) -> JObject {
         let header = &self.header;
         let mut json = JObject::new();
@@ -134,7 +134,10 @@ impl RpcBlockHeader {
             JToken::String(header.hash().to_string()),
         );
         json.insert("size".to_string(), JToken::Number(header.size() as f64));
-        json.insert("version".to_string(), JToken::Number(f64::from(header.version)));
+        json.insert(
+            "version".to_string(),
+            JToken::Number(f64::from(header.version)),
+        );
         json.insert(
             "previousblockhash".to_string(),
             JToken::String(header.previous_hash.to_string()),

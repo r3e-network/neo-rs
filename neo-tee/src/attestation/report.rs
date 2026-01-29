@@ -475,7 +475,7 @@ impl AttestationReport {
 
 impl Quote {
     /// Parse a raw SGX quote from bytes
-    /// 
+    ///
     /// Supports SGX quote formats (v3, ECDSA quotes)
     pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
         if bytes.len() < 512 {
@@ -485,18 +485,18 @@ impl Quote {
         // Parse quote header (48 bytes)
         let version = u16::from_le_bytes([bytes[0], bytes[1]]);
         let signature_type = u16::from_le_bytes([bytes[2], bytes[3]]);
-        
+
         let mut epid_group_id = [0u8; 4];
         epid_group_id.copy_from_slice(&bytes[4..8]);
-        
+
         let mut qe_svn = [0u8; 2];
         qe_svn.copy_from_slice(&bytes[8..10]);
-        
+
         let mut pce_svn = [0u8; 2];
         pce_svn.copy_from_slice(&bytes[10..12]);
-        
+
         let xeid = u32::from_le_bytes([bytes[12], bytes[13], bytes[14], bytes[15]]);
-        
+
         // Parse timestamp (8 bytes at offset 16)
         let mut timestamp = [0u8; 8];
         timestamp.copy_from_slice(&bytes[16..24]);
@@ -529,14 +529,20 @@ impl Quote {
 
         // Parse ISV Prod ID (2 bytes at offset 256 in report body)
         let isv_prod_id = if bytes.len() >= report_body_offset + 258 {
-            u16::from_le_bytes([bytes[report_body_offset + 256], bytes[report_body_offset + 257]])
+            u16::from_le_bytes([
+                bytes[report_body_offset + 256],
+                bytes[report_body_offset + 257],
+            ])
         } else {
             0
         };
 
         // Parse ISV SVN (2 bytes at offset 258 in report body)
         let isv_svn = if bytes.len() >= report_body_offset + 260 {
-            u16::from_le_bytes([bytes[report_body_offset + 258], bytes[report_body_offset + 259]])
+            u16::from_le_bytes([
+                bytes[report_body_offset + 258],
+                bytes[report_body_offset + 259],
+            ])
         } else {
             0
         };
@@ -550,7 +556,8 @@ impl Quote {
         // Parse report ID MAC (32 bytes at offset 352 in report body)
         let mut report_id_ma = [0u8; 32];
         if bytes.len() >= report_body_offset + 384 {
-            report_id_ma.copy_from_slice(&bytes[report_body_offset + 352..report_body_offset + 384]);
+            report_id_ma
+                .copy_from_slice(&bytes[report_body_offset + 352..report_body_offset + 384]);
         }
 
         // Parse CPU SVN (16 bytes at offset 48)
@@ -664,13 +671,13 @@ mod tests {
     #[test]
     fn test_timestamp_verification() {
         let report = AttestationReport::simulated([0u8; 64]);
-        
+
         // Should be valid within 24 hours
         assert!(report.verify_timestamp(Duration::from_secs(MAX_REPORT_AGE_SECONDS)));
-        
+
         // Should be valid within 1 second (assuming test runs fast)
         assert!(report.verify_timestamp(Duration::from_secs(1)));
-        
+
         // Should be invalid for 0 seconds
         assert!(!report.verify_timestamp(Duration::from_secs(0)));
     }
@@ -679,7 +686,7 @@ mod tests {
     fn test_security_version_verification() {
         let mut report = AttestationReport::simulated([0u8; 64]);
         report.isv_svn = 5;
-        
+
         assert!(report.verify_security_version(1));
         assert!(report.verify_security_version(5));
         assert!(!report.verify_security_version(6));
@@ -689,7 +696,7 @@ mod tests {
     fn test_mrenclave_verification() {
         let expected = [0x42u8; 32];
         let report = AttestationReport::simulated_with_measurements([0u8; 64], expected, [0u8; 32]);
-        
+
         assert!(report.verify_mrenclave(&expected));
         assert!(!report.verify_mrenclave(&[0x00u8; 32]));
     }
@@ -698,7 +705,7 @@ mod tests {
     fn test_mrsigner_verification() {
         let expected = [0x42u8; 32];
         let report = AttestationReport::simulated_with_measurements([0u8; 64], [0u8; 32], expected);
-        
+
         assert!(report.verify_mrsigner(&expected));
         assert!(!report.verify_mrsigner(&[0x00u8; 32]));
     }
@@ -707,9 +714,9 @@ mod tests {
     fn test_full_validation() {
         let mrenclave = [0x42u8; 32];
         let mrsigner = [0x43u8; 32];
-        
+
         let report = AttestationReport::simulated_with_measurements([0u8; 64], mrenclave, mrsigner);
-        
+
         let options = QuoteValidationOptions {
             expected_mrenclave: Some(mrenclave),
             expected_mrsigner: Some(mrsigner),
@@ -717,9 +724,9 @@ mod tests {
             max_age: Duration::from_secs(MAX_REPORT_AGE_SECONDS),
             require_non_debug: false,
         };
-        
+
         assert_eq!(report.validate(&options), QuoteValidationResult::Valid);
-        
+
         // Wrong MRENCLAVE
         let wrong_options = QuoteValidationOptions {
             expected_mrenclave: Some([0x00u8; 32]),
@@ -728,7 +735,10 @@ mod tests {
             max_age: Duration::from_secs(MAX_REPORT_AGE_SECONDS),
             require_non_debug: false,
         };
-        assert_eq!(report.validate(&wrong_options), QuoteValidationResult::InvalidMrEnclave);
+        assert_eq!(
+            report.validate(&wrong_options),
+            QuoteValidationResult::InvalidMrEnclave
+        );
     }
 
     #[test]
@@ -736,9 +746,12 @@ mod tests {
         assert!(QuoteValidationResult::Valid.is_valid());
         assert!(!QuoteValidationResult::Expired.is_valid());
         assert!(!QuoteValidationResult::InvalidMrEnclave.is_valid());
-        
+
         assert_eq!(QuoteValidationResult::Valid.description(), "Quote is valid");
-        assert_eq!(QuoteValidationResult::Expired.description(), "Quote has expired");
+        assert_eq!(
+            QuoteValidationResult::Expired.description(),
+            "Quote has expired"
+        );
     }
 
     #[test]
@@ -751,19 +764,19 @@ mod tests {
     fn test_quote_parse_minimal() {
         // Create a minimal valid quote structure (at least 512 bytes)
         let mut bytes = vec![0u8; 512];
-        
+
         // Set version to 3 (ECDSA)
         bytes[0] = 3;
         bytes[1] = 0;
-        
+
         // Set signature type to ECDSA
         bytes[2] = 2;
         bytes[3] = 0;
-        
+
         // Set ISV SVN to valid value (at offset 48 + 258)
         bytes[48 + 258] = 1;
         bytes[48 + 259] = 0;
-        
+
         let quote = Quote::from_bytes(&bytes).unwrap();
         assert_eq!(quote.version, 3);
         assert_eq!(quote.signature_type, 2);

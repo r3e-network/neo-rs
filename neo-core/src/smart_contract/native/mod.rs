@@ -35,7 +35,6 @@ pub use crypto_lib::CryptoLib;
 pub use fungible_token::{DefaultTokenAccountState, FungibleToken, TokenAccountState};
 pub use gas_token::GasToken;
 pub use helpers::NativeHelpers;
-pub use security_fixes::{Guard, PermissionValidator, ReentrancyGuardType, SafeArithmetic, SecurityContext, StateValidator};
 pub use i_hardfork_activable::IHardforkActivable;
 pub use ledger_contract::{LedgerContract, LedgerTransactionStates};
 pub use native_contract::{is_active_for, NativeContract, NativeContractsCache, NativeMethod};
@@ -45,6 +44,10 @@ pub use oracle_contract::OracleContract;
 pub use policy_contract::PolicyContract;
 pub use role::Role;
 pub use role_management::RoleManagement;
+pub use security_fixes::{
+    Guard, PermissionValidator, ReentrancyGuardType, SafeArithmetic, SecurityContext,
+    StateValidator,
+};
 pub use std_lib::StdLib;
 pub use token_management::{TokenManagement, TokenState, TokenType};
 pub use transaction_state::TransactionState;

@@ -106,7 +106,9 @@ impl Node {
             node_type: NodeType::BranchNode,
             reference: 1,
             hash: RwLock::new(None),
-            children: (0..BRANCH_CHILD_COUNT).map(|_| Arc::new(Self::new())).collect(),
+            children: (0..BRANCH_CHILD_COUNT)
+                .map(|_| Arc::new(Self::new()))
+                .collect(),
             key: Vec::new(),
             next: None,
             value: Vec::new(),
@@ -290,7 +292,10 @@ impl Node {
     }
 
     fn branch_size(&self) -> usize {
-        self.children.iter().map(|c| Self::byte_size_as_child(c)).sum()
+        self.children
+            .iter()
+            .map(|c| Self::byte_size_as_child(c))
+            .sum()
     }
 
     fn extension_size(&self) -> usize {

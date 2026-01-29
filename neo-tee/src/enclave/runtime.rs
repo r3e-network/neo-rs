@@ -55,7 +55,10 @@ impl EnclaveConfig {
         if self.heap_size_mb == 0 || self.heap_size_mb > 4096 {
             return Err(TeeError::enclave_init_error(
                 EnclaveInitError::InvalidConfiguration,
-                format!("Invalid heap_size_mb: {}, must be between 1 and 4096", self.heap_size_mb),
+                format!(
+                    "Invalid heap_size_mb: {}, must be between 1 and 4096",
+                    self.heap_size_mb
+                ),
             ));
         }
 
@@ -63,7 +66,10 @@ impl EnclaveConfig {
         if self.tcs_count == 0 || self.tcs_count > 256 {
             return Err(TeeError::enclave_init_error(
                 EnclaveInitError::InvalidConfiguration,
-                format!("Invalid tcs_count: {}, must be between 1 and 256", self.tcs_count),
+                format!(
+                    "Invalid tcs_count: {}, must be between 1 and 256",
+                    self.tcs_count
+                ),
             ));
         }
 
@@ -148,7 +154,7 @@ impl TeeEnclave {
     /// Initialize the enclave with comprehensive error handling
     pub fn initialize(&self) -> TeeResult<InitResult> {
         let mut state = self.state.write();
-        
+
         // Check if already initialized
         if *state != EnclaveState::Uninitialized {
             return Err(TeeError::EnclaveInitError {
@@ -223,7 +229,7 @@ impl TeeEnclave {
     /// Create the sealed data directory with secure permissions
     fn create_sealed_data_directory(&self) -> TeeResult<()> {
         let path = &self.config.sealed_data_path;
-        
+
         if path.exists() {
             // Verify it's a directory and we have write permissions
             if !path.is_dir() {
@@ -232,7 +238,7 @@ impl TeeEnclave {
                     format!("Path exists but is not a directory: {:?}", path),
                 ));
             }
-            
+
             // Test write permissions
             let test_file = path.join(".write_test");
             match std::fs::File::create(&test_file) {
@@ -246,7 +252,7 @@ impl TeeEnclave {
                     ));
                 }
             }
-            
+
             return Ok(());
         }
 
@@ -405,16 +411,16 @@ impl TeeEnclave {
 
         // Use HKDF-like derivation for better key separation
         let machine_id = self.get_machine_identifier();
-        
+
         let mut hasher = Sha256::new();
         hasher.update(b"neo-tee-sgx-simulation-key-v2");
         hasher.update(&machine_id);
         hasher.update(self.config.sealed_data_path.to_string_lossy().as_bytes());
-        
+
         // Add configuration parameters to key derivation
         hasher.update(&(self.config.heap_size_mb as u64).to_le_bytes());
         hasher.update(&(self.config.tcs_count as u64).to_le_bytes());
-        
+
         let result = hasher.finalize();
 
         let mut sealing_key = [0u8; 32];
@@ -498,12 +504,12 @@ impl TeeEnclave {
     #[cfg(not(feature = "sgx-hw"))]
     fn generate_and_save_machine_id(id_file: &PathBuf) -> Vec<u8> {
         let id: [u8; 32] = rand::random();
-        
+
         // Ensure parent directory exists
         if let Some(parent) = id_file.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
-        
+
         // Write with restrictive permissions (owner read/write only)
         #[cfg(unix)]
         {
@@ -515,7 +521,7 @@ impl TeeEnclave {
                 .mode(0o600)
                 .open(id_file)
                 .and_then(|mut f| std::io::Write::write_all(&mut f, &id));
-            
+
             if let Err(e) = result {
                 warn!("Failed to persist machine_id: {}", e);
             }
@@ -526,7 +532,7 @@ impl TeeEnclave {
                 warn!("Failed to persist machine_id: {}", e);
             }
         }
-        
+
         id.to_vec()
     }
 
@@ -649,7 +655,7 @@ mod tests {
         // Second initialization should fail
         let result = enclave.initialize();
         assert!(result.is_err());
-        
+
         match result.unwrap_err() {
             TeeError::EnclaveInitError { error, .. } => {
                 assert_eq!(error, EnclaveInitError::AlreadyInitialized);
@@ -661,7 +667,7 @@ mod tests {
     #[test]
     fn test_invalid_configuration() {
         let temp = tempdir().unwrap();
-        
+
         // Test invalid heap size
         let config = EnclaveConfig {
             sealed_data_path: temp.path().to_path_buf(),
@@ -688,7 +694,7 @@ mod tests {
     #[test]
     fn test_debug_mode_restriction() {
         let temp = tempdir().unwrap();
-        
+
         let config = EnclaveConfig {
             sealed_data_path: temp.path().to_path_buf(),
             debug_mode: true,
@@ -722,14 +728,14 @@ mod tests {
     fn test_mrenclave_verification() {
         let temp = tempdir().unwrap();
         let expected = [0x42u8; 32];
-        
+
         let config = EnclaveConfig {
             sealed_data_path: temp.path().to_path_buf(),
             simulation: true, // Simulation mode skips verification
             expected_mrenclave: Some(expected),
             ..Default::default()
         };
-        
+
         let enclave = TeeEnclave::new(config);
         enclave.initialize().unwrap();
 
@@ -750,14 +756,14 @@ mod tests {
     fn test_mrsigner_verification() {
         let temp = tempdir().unwrap();
         let expected = [0x42u8; 32];
-        
+
         let config = EnclaveConfig {
             sealed_data_path: temp.path().to_path_buf(),
             simulation: true,
             expected_mrsigner: Some(expected),
             ..Default::default()
         };
-        
+
         let enclave = TeeEnclave::new(config);
         enclave.initialize().unwrap();
 
@@ -782,7 +788,7 @@ mod tests {
             simulation: true,
             ..Default::default()
         };
-        
+
         let enclave = TeeEnclave::new(config);
 
         // Operations should fail before initialization

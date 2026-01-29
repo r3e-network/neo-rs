@@ -165,14 +165,19 @@ impl InboundRateLimiter {
 
     /// Returns the current number of available tokens.
     pub fn available_tokens(&self) -> f64 {
-        let elapsed = Instant::now().duration_since(self.last_update).as_secs_f64();
+        let elapsed = Instant::now()
+            .duration_since(self.last_update)
+            .as_secs_f64();
         (self.tokens + elapsed * self.rate_per_sec).min(self.burst_size)
     }
 }
 
 impl Default for InboundRateLimiter {
     fn default() -> Self {
-        Self::new(DEFAULT_INBOUND_CONNECTION_RATE, DEFAULT_INBOUND_CONNECTION_BURST)
+        Self::new(
+            DEFAULT_INBOUND_CONNECTION_RATE,
+            DEFAULT_INBOUND_CONNECTION_BURST,
+        )
     }
 }
 
@@ -371,10 +376,7 @@ impl PeerReputationTracker {
     /// Adjusts the reputation score for a peer.
     pub async fn adjust_reputation(&self, ip: IpAddr, delta: i32) {
         let mut reputations = self.reputations.write().await;
-        reputations
-            .entry(ip)
-            .or_default()
-            .adjust_score(delta);
+        reputations.entry(ip).or_default().adjust_score(delta);
     }
 
     /// Records a protocol violation for a peer.

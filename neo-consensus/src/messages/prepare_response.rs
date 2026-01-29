@@ -19,7 +19,7 @@ pub struct PrepareResponseMessage {
 
 impl PrepareResponseMessage {
     /// Creates a new `PrepareResponse` message
-    #[must_use] 
+    #[must_use]
     pub const fn new(
         block_index: u32,
         view_number: u8,
@@ -35,13 +35,13 @@ impl PrepareResponseMessage {
     }
 
     /// Returns the message type
-    #[must_use] 
+    #[must_use]
     pub const fn message_type(&self) -> ConsensusMessageType {
         ConsensusMessageType::PrepareResponse
     }
 
     /// Serializes the message to bytes
-    #[must_use] 
+    #[must_use]
     pub fn serialize(&self) -> Vec<u8> {
         self.preparation_hash.as_bytes().to_vec()
     }

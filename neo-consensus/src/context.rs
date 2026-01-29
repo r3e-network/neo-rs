@@ -161,7 +161,7 @@ pub struct ConsensusContext {
 
 impl ConsensusContext {
     /// Creates a new consensus context
-    #[must_use] 
+    #[must_use]
     pub fn new(block_index: u32, validators: Vec<ValidatorInfo>, my_index: Option<u8>) -> Self {
         Self {
             block_index,
@@ -194,25 +194,25 @@ impl ConsensusContext {
     }
 
     /// Returns the number of validators
-    #[must_use] 
+    #[must_use]
     pub fn validator_count(&self) -> usize {
         self.validators.len()
     }
 
     /// Returns the number of faulty nodes tolerated: f = (n-1)/3
-    #[must_use] 
+    #[must_use]
     pub fn f(&self) -> usize {
         (self.validator_count() - 1) / 3
     }
 
     /// Returns the number of nodes required for consensus: M = n - f
-    #[must_use] 
+    #[must_use]
     pub fn m(&self) -> usize {
         self.validator_count() - self.f()
     }
 
     /// Returns the primary (speaker) index for the current view
-    #[must_use] 
+    #[must_use]
     pub fn primary_index(&self) -> u8 {
         // Matches C# DBFTPlugin:
         // `p = ((Block.Index - viewNumber) % Validators.Length + Validators.Length) % Validators.Length`.
@@ -225,13 +225,13 @@ impl ConsensusContext {
     }
 
     /// Returns true if this node is the primary for the current view
-    #[must_use] 
+    #[must_use]
     pub fn is_primary(&self) -> bool {
         self.my_index == Some(self.primary_index())
     }
 
     /// Returns true if this node is a backup (non-primary validator)
-    #[must_use] 
+    #[must_use]
     pub fn is_backup(&self) -> bool {
         match self.my_index {
             Some(idx) => idx != self.primary_index(),
@@ -240,16 +240,15 @@ impl ConsensusContext {
     }
 
     /// Returns true if we have enough prepare responses (M signatures)
-    #[must_use] 
+    #[must_use]
     pub fn has_enough_prepare_responses(&self) -> bool {
         // Count: primary's implicit response + explicit responses
-        let count =
-            usize::from(self.prepare_request_received) + self.prepare_responses.len();
+        let count = usize::from(self.prepare_request_received) + self.prepare_responses.len();
         count >= self.m()
     }
 
     /// Returns true if we have enough commits (M signatures)
-    #[must_use] 
+    #[must_use]
     pub fn has_enough_commits(&self) -> bool {
         let count = self
             .commits
@@ -267,7 +266,7 @@ impl ConsensusContext {
 
     /// Returns true if we have enough change view requests (M requests).
     /// Matches C# `DBFTPlugin`'s `CheckExpectedView` logic: counts `NewViewNumber` >= requested view.
-    #[must_use] 
+    #[must_use]
     pub fn has_enough_change_views(&self, new_view: u8) -> bool {
         let count = self
             .change_views
@@ -390,7 +389,7 @@ impl ConsensusContext {
     }
 
     /// Gets the timeout duration for the current view
-    #[must_use] 
+    #[must_use]
     pub fn get_timeout(&self) -> u64 {
         // Base timeout + exponential backoff for view changes.
         // Use configured expected_block_time when provided (mirrors C# TimePerBlock overrides).
@@ -403,13 +402,13 @@ impl ConsensusContext {
     }
 
     /// Checks if the current view has timed out
-    #[must_use] 
+    #[must_use]
     pub fn is_timed_out(&self, current_time: u64) -> bool {
         current_time > self.view_start_time + self.get_timeout()
     }
 
     /// Collects all commit signatures for block finalization
-    #[must_use] 
+    #[must_use]
     pub fn collect_commit_signatures(&self) -> Vec<(u8, Vec<u8>)> {
         self.commits
             .iter()
@@ -440,7 +439,7 @@ impl ConsensusContext {
     /// # Returns
     /// * `true` if the message has been seen before
     /// * `false` if this is a new message
-    #[must_use] 
+    #[must_use]
     pub fn has_seen_message(&self, hash: &UInt256) -> bool {
         self.seen_message_hashes.contains(hash)
     }
@@ -469,7 +468,7 @@ impl ConsensusContext {
     }
 
     /// Returns the number of validators that have committed (sent Commit messages)
-    #[must_use] 
+    #[must_use]
     pub fn count_committed(&self) -> usize {
         self.commits.len()
     }
@@ -484,7 +483,7 @@ impl ConsensusContext {
     /// ```csharp
     /// Validators.Count(p => !LastSeenMessage.TryGetValue(p, out var value) || value < (Block.Index - 1))
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn count_failed(&self) -> usize {
         if self.last_seen_messages.is_empty() {
             return 0;
@@ -516,7 +515,7 @@ impl ConsensusContext {
     /// ```csharp
     /// public bool MoreThanFNodesCommittedOrLost => (CountCommitted + CountFailed) > F;
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn more_than_f_nodes_committed_or_lost(&self) -> bool {
         (self.count_committed() + self.count_failed()) > self.f()
     }
@@ -525,7 +524,7 @@ impl ConsensusContext {
     ///
     /// Mirrors C# `DBFTPlugin` `ViewChanging`:
     /// `!WatchOnly && ChangeViewPayloads[MyIndex]?.NewViewNumber > ViewNumber`.
-    #[must_use] 
+    #[must_use]
     pub fn view_changing(&self) -> bool {
         let Some(my_index) = self.my_index else {
             return false;
@@ -538,7 +537,7 @@ impl ConsensusContext {
     /// Returns true when we should not accept certain payloads due to an ongoing view change.
     ///
     /// Mirrors C# `DBFTPlugin` `NotAcceptingPayloadsDueToViewChanging`.
-    #[must_use] 
+    #[must_use]
     pub fn not_accepting_payloads_due_to_view_changing(&self) -> bool {
         self.view_changing() && !self.more_than_f_nodes_committed_or_lost()
     }

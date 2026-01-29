@@ -34,7 +34,7 @@ pub struct MemoryReader<'a> {
 
 impl<'a> MemoryReader<'a> {
     /// Creates a new `MemoryReader` (C# constructor)
-    #[must_use] 
+    #[must_use]
     pub const fn new(buffer: &'a [u8]) -> Self {
         Self {
             buffer,
@@ -43,7 +43,7 @@ impl<'a> MemoryReader<'a> {
     }
 
     /// Gets the current position (C# Position property)
-    #[must_use] 
+    #[must_use]
     pub const fn position(&self) -> usize {
         self.position
     }
@@ -59,20 +59,20 @@ impl<'a> MemoryReader<'a> {
     }
 
     /// Returns the total length of the backing buffer
-    #[must_use] 
+    #[must_use]
     pub const fn len(&self) -> usize {
         self.buffer.len()
     }
 
     /// Returns true when the backing buffer contains zero bytes.
-    #[must_use] 
+    #[must_use]
     pub const fn is_empty(&self) -> bool {
         self.buffer.is_empty()
     }
 
     /// Returns the number of unread bytes remaining in the buffer.
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub const fn remaining(&self) -> usize {
         self.buffer.len().saturating_sub(self.position)
     }
@@ -104,7 +104,7 @@ impl<'a> MemoryReader<'a> {
     }
 
     /// Reads a sequence of bytes and returns them as a borrowed slice (zero-copy).
-    /// 
+    ///
     /// This is more efficient than `read_bytes` when you don't need an owned vector.
     #[inline]
     pub fn read_bytes_ref(&mut self, length: usize) -> IoResult<&'a [u8]> {

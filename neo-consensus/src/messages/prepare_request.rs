@@ -29,7 +29,7 @@ pub struct PrepareRequestMessage {
 impl PrepareRequestMessage {
     /// Creates a new `PrepareRequest` message
     #[allow(clippy::too_many_arguments)]
-    #[must_use] 
+    #[must_use]
     pub const fn new(
         block_index: u32,
         view_number: u8,
@@ -53,13 +53,13 @@ impl PrepareRequestMessage {
     }
 
     /// Returns the message type
-    #[must_use] 
+    #[must_use]
     pub const fn message_type(&self) -> ConsensusMessageType {
         ConsensusMessageType::PrepareRequest
     }
 
     /// Serializes the message to bytes
-    #[must_use] 
+    #[must_use]
     pub fn serialize(&self) -> Vec<u8> {
         // Matches C# DBFTPlugin PrepareRequest.Serialize (after the common message header):
         // `Version:u32, PrevHash:UInt256, Timestamp:u64, Nonce:u64, TransactionHashes: UInt256[] (varint count)`.

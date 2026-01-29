@@ -98,7 +98,7 @@ impl Script {
 
     /// Creates a new script without validation - backward compatibility with C# API
     /// This matches the C# Script(byte[] script) constructor exactly
-    #[must_use] 
+    #[must_use]
     pub fn new_from_bytes(script: Vec<u8>) -> Self {
         Self {
             script,
@@ -109,7 +109,7 @@ impl Script {
     }
 
     /// Creates a new script without validation.
-    #[must_use] 
+    #[must_use]
     pub fn new_relaxed(script: Vec<u8>) -> Self {
         Self {
             script,
@@ -348,33 +348,33 @@ impl Script {
     }
 
     /// Returns the script as a byte array.
-    #[must_use] 
+    #[must_use]
     pub fn to_array(&self) -> Vec<u8> {
         self.script.clone()
     }
 
     /// Returns the script as a byte slice.
     /// This matches the C# implementation's `ToArray()` behavior exactly.
-    #[must_use] 
+    #[must_use]
     pub fn as_bytes(&self) -> &[u8] {
         &self.script
     }
 
     /// Returns the length of the script.
-    #[must_use] 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.script.len()
     }
 
     /// Returns the length of the script - C# API compatibility
     /// This matches the C# Script.Length property exactly
-    #[must_use] 
+    #[must_use]
     pub fn length(&self) -> usize {
         self.script.len()
     }
 
     /// Returns true if the script is empty.
-    #[must_use] 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.script.is_empty()
     }
@@ -384,7 +384,7 @@ impl Script {
     /// # Returns
     ///
     /// An iterator over the instructions in the script
-    #[must_use] 
+    #[must_use]
     pub const fn instructions(&self) -> InstructionIterator<'_> {
         InstructionIterator {
             script: self,
@@ -417,7 +417,7 @@ impl Script {
     /// # Returns
     ///
     /// The hash of the script as a byte array
-    #[must_use] 
+    #[must_use]
     pub fn hash(&self) -> Vec<u8> {
         {
             let hash_code = self.hash_code.lock();
@@ -442,7 +442,7 @@ impl Script {
     }
 
     /// Gets the hash code of the script.
-    #[must_use] 
+    #[must_use]
     pub fn hash_code(&self) -> u64 {
         {
             let hash_code = self.hash_code.lock();
@@ -540,8 +540,10 @@ impl Script {
             *operand.first().unwrap_or(&0),
             *operand.get(1).unwrap_or(&0),
         ]));
-        let finally_offset =
-            i32::from(i16::from_le_bytes([*operand.get(2).unwrap_or(&0), *operand.get(3).unwrap_or(&0)]));
+        let finally_offset = i32::from(i16::from_le_bytes([
+            *operand.get(2).unwrap_or(&0),
+            *operand.get(3).unwrap_or(&0),
+        ]));
 
         // Calculate the absolute positions
         let catch_position = self.get_jump_offset(position, catch_offset)?;

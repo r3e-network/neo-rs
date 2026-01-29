@@ -23,19 +23,19 @@ impl InteropInterfaceItem {
     }
 
     /// Gets the wrapped interop interface.
-    #[must_use] 
+    #[must_use]
     pub fn interface(&self) -> &Arc<dyn InteropInterface> {
         &self.interface
     }
 
     /// Gets the type of the stack item.
-    #[must_use] 
+    #[must_use]
     pub const fn stack_item_type(&self) -> StackItemType {
         StackItemType::InteropInterface
     }
 
     /// Gets the interface type.
-    #[must_use] 
+    #[must_use]
     pub fn interface_type(&self) -> &str {
         self.interface.interface_type()
     }
@@ -56,13 +56,13 @@ impl InteropInterfaceItem {
     }
 
     /// Converts the interop interface to a boolean.
-    #[must_use] 
+    #[must_use]
     pub const fn to_boolean(&self) -> bool {
         true
     }
 
     /// Creates a deep copy of the interop interface.
-    #[must_use] 
+    #[must_use]
     pub fn deep_copy(&self) -> Self {
         Self {
             interface: self.interface.clone(),
@@ -89,7 +89,7 @@ pub struct TestInteropInterface {
 
 impl TestInteropInterface {
     /// Creates a new test interop interface.
-    #[must_use] 
+    #[must_use]
     pub fn new(interface_type: &str, data: &str) -> Self {
         Self {
             interface_type: interface_type.to_string(),
@@ -98,7 +98,7 @@ impl TestInteropInterface {
     }
 
     /// Gets the test data.
-    #[must_use] 
+    #[must_use]
     pub fn data(&self) -> &str {
         &self.data
     }

@@ -54,7 +54,9 @@ impl RpcServerNode {
         // If a consumer added peers via `add_unconnected_peers`, they will appear here.
         let unconnected_endpoints = {
             let fut = system.unconnected_peers();
-            if let Ok(handle) = Handle::try_current() { block_in_place(|| handle.block_on(fut)) } else {
+            if let Ok(handle) = Handle::try_current() {
+                block_in_place(|| handle.block_on(fut))
+            } else {
                 let runtime =
                     Runtime::new().map_err(|err| Self::internal_error(err.to_string()))?;
                 runtime.block_on(fut)
@@ -247,9 +249,10 @@ impl RpcServerNode {
         }
 
         let fut = system.local_node_state();
-        let result = if let Ok(handle) = Handle::try_current() { block_in_place(|| handle.block_on(fut)) } else {
-            let runtime =
-                Runtime::new().map_err(|err| Self::internal_error(err.to_string()))?;
+        let result = if let Ok(handle) = Handle::try_current() {
+            block_in_place(|| handle.block_on(fut))
+        } else {
+            let runtime = Runtime::new().map_err(|err| Self::internal_error(err.to_string()))?;
             runtime.block_on(fut)
         };
         result.map_err(|err| Self::internal_error(err.to_string()))

@@ -33,7 +33,7 @@ pub struct MemoryMptStore {
 
 impl MemoryMptStore {
     /// Creates a new in-memory MPT store.
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             data: Mutex::new(HashMap::new()),
@@ -82,7 +82,7 @@ pub struct StateTrieManager {
 
 impl StateTrieManager {
     /// Creates a new `StateTrieManager` with an empty trie.
-    #[must_use] 
+    #[must_use]
     pub fn new(full_state: bool) -> Self {
         let store = Arc::new(MemoryMptStore::new());
         let trie = Trie::new(store, None, full_state);
@@ -94,7 +94,7 @@ impl StateTrieManager {
     }
 
     /// Creates a `StateTrieManager` with an existing root hash.
-    #[must_use] 
+    #[must_use]
     pub fn with_root(root_hash: UInt256, full_state: bool) -> Self {
         let store = Arc::new(MemoryMptStore::new());
         let trie = Trie::new(store, Some(root_hash), full_state);

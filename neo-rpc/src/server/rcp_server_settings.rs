@@ -197,12 +197,12 @@ impl RpcServerConfig {
         50
     }
 
-    #[must_use] 
+    #[must_use]
     pub const fn request_headers_timeout_duration(&self) -> Duration {
         Duration::from_secs(self.request_headers_timeout)
     }
 
-    #[must_use] 
+    #[must_use]
     pub const fn keep_alive_timeout_duration(&self) -> Option<Duration> {
         if self.keep_alive_timeout < 0 {
             None
@@ -378,17 +378,17 @@ impl RpcServerSettings {
         CURRENT_SETTINGS.read().clone()
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn servers(&self) -> &[RpcServerConfig] {
         &self.servers
     }
 
-    #[must_use] 
+    #[must_use]
     pub const fn exception_policy(&self) -> UnhandledExceptionPolicy {
         self.exception_policy
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn server_for_network(&self, network: u32) -> Option<RpcServerConfig> {
         self.servers
             .iter()

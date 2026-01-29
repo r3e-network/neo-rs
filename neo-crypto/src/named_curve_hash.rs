@@ -21,13 +21,13 @@ pub enum NamedCurveHash {
 
 impl NamedCurveHash {
     /// Converts to byte representation.
-    #[must_use] 
+    #[must_use]
     pub const fn to_byte(self) -> u8 {
         self as u8
     }
 
     /// Creates from byte value.
-    #[must_use] 
+    #[must_use]
     pub const fn from_byte(value: u8) -> Option<Self> {
         match value {
             0x16 => Some(Self::Secp256k1SHA256),
@@ -39,33 +39,25 @@ impl NamedCurveHash {
     }
 
     /// Gets the curve type.
-    #[must_use] 
+    #[must_use]
     pub const fn curve(self) -> ECCurve {
         match self {
-            Self::Secp256k1SHA256 | Self::Secp256k1Keccak256 => {
-                ECCurve::Secp256k1
-            }
-            Self::Secp256r1SHA256 | Self::Secp256r1Keccak256 => {
-                ECCurve::Secp256r1
-            }
+            Self::Secp256k1SHA256 | Self::Secp256k1Keccak256 => ECCurve::Secp256k1,
+            Self::Secp256r1SHA256 | Self::Secp256r1Keccak256 => ECCurve::Secp256r1,
         }
     }
 
     /// Gets the hash algorithm.
-    #[must_use] 
+    #[must_use]
     pub const fn hash_algorithm(self) -> HashAlgorithm {
         match self {
-            Self::Secp256k1SHA256 | Self::Secp256r1SHA256 => {
-                HashAlgorithm::Sha256
-            }
-            Self::Secp256k1Keccak256 | Self::Secp256r1Keccak256 => {
-                HashAlgorithm::Keccak256
-            }
+            Self::Secp256k1SHA256 | Self::Secp256r1SHA256 => HashAlgorithm::Sha256,
+            Self::Secp256k1Keccak256 | Self::Secp256r1Keccak256 => HashAlgorithm::Keccak256,
         }
     }
 
     /// Returns the string representation.
-    #[must_use] 
+    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Secp256k1SHA256 => "secp256k1SHA256",

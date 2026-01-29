@@ -9,22 +9,22 @@ pub enum BlockHashOrIndex {
 }
 
 impl BlockHashOrIndex {
-    #[must_use] 
+    #[must_use]
     pub const fn from_index(index: u32) -> Self {
         Self::Index(index)
     }
 
-    #[must_use] 
+    #[must_use]
     pub const fn from_hash(hash: UInt256) -> Self {
         Self::Hash(hash)
     }
 
-    #[must_use] 
+    #[must_use]
     pub const fn is_index(&self) -> bool {
         matches!(self, Self::Index(_))
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn try_parse(value: &str) -> Option<Self> {
         if let Ok(index) = value.parse::<u32>() {
             return Some(Self::Index(index));

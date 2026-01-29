@@ -32,8 +32,6 @@
 pub mod cache;
 pub mod compression;
 pub mod data_cache;
-pub mod read_cache;
-pub mod write_batch_buffer;
 pub mod i_read_only_store;
 pub mod i_store;
 pub mod i_store_provider;
@@ -41,6 +39,7 @@ pub mod i_store_snapshot;
 pub mod i_write_store;
 pub mod index;
 pub mod providers;
+pub mod read_cache;
 pub mod seek_direction;
 pub mod serialization;
 pub mod storage;
@@ -50,6 +49,7 @@ pub mod store_cache;
 pub mod store_factory;
 pub mod track_state;
 pub mod transaction;
+pub mod write_batch_buffer;
 
 pub use data_cache::{DataCache, Trackable};
 pub use i_read_only_store::{IReadOnlyStore, IReadOnlyStoreGeneric};
@@ -57,6 +57,10 @@ pub use i_store::IStore;
 pub use i_store_provider::IStoreProvider;
 pub use i_store_snapshot::IStoreSnapshot;
 pub use i_write_store::IWriteStore;
+pub use read_cache::{
+    PrefetchHint, ReadCache, ReadCacheConfig, ReadCacheStats, ReadCacheStatsSnapshot,
+    StorageReadCache,
+};
 pub use seek_direction::SeekDirection;
 pub use storage::StorageConfig;
 pub use storage_item::StorageItem;
@@ -65,7 +69,6 @@ pub use store_cache::StoreCache;
 pub use store_factory::StoreFactory;
 pub use track_state::TrackState;
 pub use transaction::StoreTransaction;
-pub use read_cache::{ReadCache, ReadCacheConfig, ReadCacheStats, ReadCacheStatsSnapshot, StorageReadCache, PrefetchHint};
-pub use write_batch_buffer::{WriteBatchConfig, WriteBatchStats, WriteBatchStatsSnapshot};
 #[cfg(feature = "rocksdb")]
-pub use write_batch_buffer::{WriteBatchBuffer, AutoFlushBatchBuffer};
+pub use write_batch_buffer::{AutoFlushBatchBuffer, WriteBatchBuffer};
+pub use write_batch_buffer::{WriteBatchConfig, WriteBatchStats, WriteBatchStatsSnapshot};

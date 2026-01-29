@@ -19,7 +19,7 @@ pub enum WsEventType {
 
 impl WsEventType {
     /// Parse event type from string
-    #[must_use] 
+    #[must_use]
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "block_added" => Some(Self::BlockAdded),
@@ -68,7 +68,7 @@ pub enum WsEvent {
 
 impl WsEvent {
     /// Get the event type
-    #[must_use] 
+    #[must_use]
     pub const fn event_type(&self) -> WsEventType {
         match self {
             Self::BlockAdded { .. } => WsEventType::BlockAdded,
@@ -79,7 +79,7 @@ impl WsEvent {
     }
 
     /// Create a block added event
-    #[must_use] 
+    #[must_use]
     pub fn block_added(hash: &UInt256, height: u32) -> Self {
         Self::BlockAdded {
             hash: format!("0x{}", hex::encode(hash.as_bytes())),
@@ -88,7 +88,7 @@ impl WsEvent {
     }
 
     /// Create a transaction added event
-    #[must_use] 
+    #[must_use]
     pub fn transaction_added(hash: &UInt256) -> Self {
         Self::TransactionAdded {
             hash: format!("0x{}", hex::encode(hash.as_bytes())),
@@ -96,7 +96,7 @@ impl WsEvent {
     }
 
     /// Create a transaction removed event
-    #[must_use] 
+    #[must_use]
     pub fn transaction_removed(hashes: &[UInt256], reason: &str) -> Self {
         Self::TransactionRemoved {
             hashes: hashes
@@ -108,7 +108,7 @@ impl WsEvent {
     }
 
     /// Create a notification event
-    #[must_use] 
+    #[must_use]
     pub fn notification(contract: &UInt256, event_name: &str, state: serde_json::Value) -> Self {
         Self::Notification {
             contract: format!("0x{}", hex::encode(contract.as_bytes())),
@@ -131,7 +131,7 @@ pub struct WsNotification {
 
 impl WsNotification {
     /// Create a new notification from an event
-    #[must_use] 
+    #[must_use]
     pub fn from_event(event: &WsEvent) -> Self {
         let method = match event {
             WsEvent::BlockAdded { .. } => "block_added",
@@ -167,7 +167,7 @@ impl WsNotification {
     }
 
     /// Serialize to JSON string
-    #[must_use] 
+    #[must_use]
     pub fn to_json(&self) -> String {
         serde_json::to_string(self).unwrap_or_else(|_| "{}".to_string())
     }

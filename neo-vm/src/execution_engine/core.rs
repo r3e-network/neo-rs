@@ -2,11 +2,14 @@
 // core.rs - ExecutionEngine constructor, state management, and basic getters/setters
 //
 
-use super::{ExecutionEngine, JumpTable, ReferenceCounter, ExecutionEngineLimits, VMState, InteropService, CallFlags, EvaluationStack, VmError, StackItem, ExecutionContext, DEFAULT_GAS_LIMIT};
+use super::{
+    CallFlags, EvaluationStack, ExecutionContext, ExecutionEngine, ExecutionEngineLimits,
+    InteropService, JumpTable, ReferenceCounter, StackItem, VMState, VmError, DEFAULT_GAS_LIMIT,
+};
 
 impl ExecutionEngine {
     /// Creates a new execution engine with the specified jump table.
-    #[must_use] 
+    #[must_use]
     pub fn new(jump_table: Option<JumpTable>) -> Self {
         let reference_counter = ReferenceCounter::new();
         Self::new_with_limits(
@@ -42,7 +45,7 @@ impl ExecutionEngine {
 
     /// Returns the current state of the VM.
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub const fn state(&self) -> VMState {
         self.state
     }
@@ -76,21 +79,21 @@ impl ExecutionEngine {
 
     /// Returns the reference counter.
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub const fn reference_counter(&self) -> &ReferenceCounter {
         &self.reference_counter
     }
 
     /// Returns the execution limits configured for this engine.
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub const fn limits(&self) -> &ExecutionEngineLimits {
         &self.limits
     }
 
     /// Returns the invocation stack.
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn invocation_stack(&self) -> &[ExecutionContext] {
         &self.invocation_stack
     }
@@ -103,7 +106,7 @@ impl ExecutionEngine {
 
     /// Returns the current context, if any.
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn current_context(&self) -> Option<&ExecutionContext> {
         self.invocation_stack.last()
     }
@@ -116,14 +119,14 @@ impl ExecutionEngine {
 
     /// Returns the entry context, if any.
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn entry_context(&self) -> Option<&ExecutionContext> {
         self.invocation_stack.first()
     }
 
     /// Returns the result stack.
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub const fn result_stack(&self) -> &EvaluationStack {
         &self.result_stack
     }
@@ -136,7 +139,7 @@ impl ExecutionEngine {
 
     /// Returns the uncaught exception, if any.
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub const fn uncaught_exception(&self) -> Option<&StackItem> {
         self.uncaught_exception.as_ref()
     }
@@ -149,7 +152,7 @@ impl ExecutionEngine {
 
     /// Gets the uncaught exception (matches C# `UncaughtException` property exactly).
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub const fn get_uncaught_exception(&self) -> Option<&StackItem> {
         self.uncaught_exception.as_ref()
     }
@@ -167,7 +170,7 @@ impl ExecutionEngine {
     }
 
     /// Returns the effective call flags for this engine.
-    #[must_use] 
+    #[must_use]
     pub const fn call_flags(&self) -> CallFlags {
         self.call_flags
     }
@@ -178,13 +181,13 @@ impl ExecutionEngine {
     }
 
     /// Checks whether the required call flags are satisfied.
-    #[must_use] 
+    #[must_use]
     pub const fn has_call_flags(&self, required: CallFlags) -> bool {
         required.is_empty() || self.call_flags.contains(required)
     }
 
     /// Returns the jump table.
-    #[must_use] 
+    #[must_use]
     pub const fn jump_table(&self) -> &JumpTable {
         &self.jump_table
     }

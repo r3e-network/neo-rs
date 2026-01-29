@@ -18,7 +18,7 @@ pub struct BadScriptException {
 impl BadScriptException {
     /// Initializes a new instance of the `BadScriptException` class.
     /// public `BadScriptException()` { }
-    #[must_use] 
+    #[must_use]
     pub const fn new() -> Self {
         Self {
             message: String::new(),
@@ -27,7 +27,7 @@ impl BadScriptException {
 
     /// Initializes a new instance of the `BadScriptException` class with a specified error message.
     /// public BadScriptException(string message) : base(message) { }
-    #[must_use] 
+    #[must_use]
     pub const fn with_message(message: String) -> Self {
         Self { message }
     }

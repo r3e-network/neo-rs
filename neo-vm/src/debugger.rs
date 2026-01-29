@@ -24,7 +24,7 @@ pub struct Debugger {
 impl Debugger {
     /// Create a debugger on the specified `ExecutionEngine`.
     /// public Debugger(ExecutionEngine engine)
-    #[must_use] 
+    #[must_use]
     pub fn new(engine: ExecutionEngine) -> Self {
         Self {
             engine,
@@ -33,7 +33,7 @@ impl Debugger {
     }
 
     /// Returns an immutable reference to the attached engine.
-    #[must_use] 
+    #[must_use]
     pub const fn engine(&self) -> &ExecutionEngine {
         &self.engine
     }
@@ -103,7 +103,7 @@ impl Debugger {
     }
 
     /// Returns true if a breakpoint exists for the given script/position.
-    #[must_use] 
+    #[must_use]
     pub fn has_break_point(&self, script: &Arc<Script>, position: u32) -> bool {
         self.break_points
             .get(script)
@@ -111,9 +111,12 @@ impl Debugger {
     }
 
     /// Returns the total number of registered breakpoints.
-    #[must_use] 
+    #[must_use]
     pub fn break_point_count(&self) -> usize {
-        self.break_points.values().map(std::collections::HashSet::len).sum()
+        self.break_points
+            .values()
+            .map(std::collections::HashSet::len)
+            .sum()
     }
 
     /// Execute the next instruction.

@@ -77,14 +77,14 @@ impl KeyBuilder {
 
     /// Initializes a new instance (panics on invalid input).
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn new(id: i32, prefix: u8, max_length: usize) -> Self {
         Self::try_new(id, prefix, max_length).expect("max_length must be greater than zero")
     }
 
     /// Creates with default max length.
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn new_with_default(id: i32, prefix: u8) -> Self {
         Self::new(id, prefix, Self::DEFAULT_MAX_LENGTH)
     }
@@ -155,28 +155,28 @@ impl KeyBuilder {
 
     /// Converts to `StorageKey`.
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn to_storage_key(&self) -> StorageKey {
         StorageKey::from_bytes(&self.cache_data[..self.key_length])
     }
 
     /// Gets the built key as bytes.
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn to_bytes(&self) -> Vec<u8> {
         self.cache_data[..self.key_length].to_vec()
     }
 
     /// Gets the current key length.
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub const fn len(&self) -> usize {
         self.key_length
     }
 
     /// Returns true if the key is empty (only has prefix).
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub const fn is_empty(&self) -> bool {
         self.key_length == Self::PREFIX_LENGTH
     }

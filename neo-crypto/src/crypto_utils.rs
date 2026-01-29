@@ -71,49 +71,49 @@ pub struct NeoHash;
 impl NeoHash {
     /// Computes SHA-256 hash of the input data
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn sha256(data: &[u8]) -> [u8; 32] {
         Crypto::sha256(data)
     }
 
     /// Computes SHA-512 hash of the input data
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn sha512(data: &[u8]) -> [u8; 64] {
         Crypto::sha512(data)
     }
 
     /// Computes Keccak-256 hash of the input data
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn keccak256(data: &[u8]) -> [u8; 32] {
         Crypto::keccak256(data)
     }
 
     /// Computes SHA3-256 hash of the input data
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn sha3_256(data: &[u8]) -> [u8; 32] {
         Crypto::sha3_256(data)
     }
 
     /// Computes SHA3-512 hash of the input data
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn sha3_512(data: &[u8]) -> [u8; 64] {
         Crypto::sha3_512(data)
     }
 
     /// Computes RIPEMD-160 hash of the input data
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn ripemd160(data: &[u8]) -> [u8; 20] {
         Crypto::ripemd160(data)
     }
 
     /// Computes `BLAKE2b` hash of the input data
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn blake2b(data: &[u8]) -> [u8; 64] {
         Crypto::blake2b(data)
     }
@@ -132,28 +132,28 @@ impl NeoHash {
 
     /// Computes BLAKE2s hash of the input data
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn blake2s(data: &[u8]) -> [u8; 32] {
         Crypto::blake2s(data)
     }
 
     /// Computes Hash160 (RIPEMD-160 of SHA-256) - commonly used for Neo addresses
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn hash160(data: &[u8]) -> [u8; 20] {
         Crypto::hash160(data)
     }
 
     /// Computes Hash256 (double SHA-256) - commonly used for Neo transaction and block hashes
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn hash256(data: &[u8]) -> [u8; 32] {
         Crypto::hash256(data)
     }
 
     /// Computes Murmur128 hash (x64 variant) used by Neo runtime.
     /// This is Neo-specific and not available in [`Crypto`].
-    #[must_use] 
+    #[must_use]
     pub fn murmur128(data: &[u8], seed: u32) -> [u8; 16] {
         murmur::murmur128(data, seed)
     }
@@ -358,7 +358,7 @@ pub struct Base58;
 
 impl Base58 {
     /// Encodes data to Base58 string
-    #[must_use] 
+    #[must_use]
     pub fn encode(data: &[u8]) -> String {
         bs58::encode(data).into_string()
     }
@@ -371,7 +371,7 @@ impl Base58 {
     }
 
     /// Encodes data to `Base58Check` string (Base58 with 4-byte checksum).
-    #[must_use] 
+    #[must_use]
     pub fn encode_check(data: &[u8]) -> String {
         let mut payload = Vec::with_capacity(data.len() + 4);
         payload.extend_from_slice(data);
@@ -405,7 +405,7 @@ pub struct Hex;
 
 impl Hex {
     /// Encodes data to hex string
-    #[must_use] 
+    #[must_use]
     pub fn encode(data: &[u8]) -> String {
         hex::encode(data)
     }
@@ -621,18 +621,18 @@ impl ECC {
 
 impl Crypto {
     /// Verifies ECDSA signature with secp256r1
-    #[must_use] 
+    #[must_use]
     pub fn verify_signature_secp256r1(data: &[u8], signature: &[u8], public_key: &[u8]) -> bool {
         ECDsa::verify(data, signature, public_key, ECCurve::Secp256r1).unwrap_or(false)
     }
 
     /// Verifies ECDSA signature with secp256k1
-    #[must_use] 
+    #[must_use]
     pub fn verify_signature_secp256k1(data: &[u8], signature: &[u8], public_key: &[u8]) -> bool {
         ECDsa::verify(data, signature, public_key, ECCurve::Secp256k1).unwrap_or(false)
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn verify_signature_with_curve(
         data: &[u8],
         signature: &[u8],
@@ -683,7 +683,7 @@ impl Crypto {
     }
 
     /// Verifies a signature against the supplied public key, inferring the curve where possible.
-    #[must_use] 
+    #[must_use]
     pub fn verify_signature_bytes(message: &[u8], signature: &[u8], public_key: &[u8]) -> bool {
         if signature.len() != 64 {
             return false;
@@ -754,7 +754,7 @@ impl Bls12381Crypto {
     }
 
     /// Generates a new random private key using cryptographically secure RNG
-    #[must_use] 
+    #[must_use]
     pub fn generate_private_key() -> Zeroizing<[u8; 32]> {
         let mut bytes = Zeroizing::new([0u8; 32]);
         OsRng.fill_bytes(bytes.as_mut());
@@ -987,7 +987,7 @@ impl Bls12381Crypto {
 pub mod base58 {
     use super::Base58;
 
-    #[must_use] 
+    #[must_use]
     pub fn encode(data: &[u8]) -> String {
         Base58::encode(data)
     }
@@ -996,7 +996,7 @@ pub mod base58 {
         Base58::decode(s)
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn encode_check(data: &[u8]) -> String {
         Base58::encode_check(data)
     }
@@ -1009,32 +1009,32 @@ pub mod base58 {
 pub mod hash {
     use super::NeoHash;
 
-    #[must_use] 
+    #[must_use]
     pub fn sha256(data: &[u8]) -> [u8; 32] {
         NeoHash::sha256(data)
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn sha512(data: &[u8]) -> [u8; 64] {
         NeoHash::sha512(data)
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn keccak256(data: &[u8]) -> [u8; 32] {
         NeoHash::keccak256(data)
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn ripemd160(data: &[u8]) -> [u8; 20] {
         NeoHash::ripemd160(data)
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn hash160(data: &[u8]) -> [u8; 20] {
         NeoHash::hash160(data)
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn hash256(data: &[u8]) -> [u8; 32] {
         NeoHash::hash256(data)
     }
@@ -1045,12 +1045,12 @@ pub mod murmur {
     use std::convert::TryInto;
     use std::io::Cursor;
 
-    #[must_use] 
+    #[must_use]
     pub fn murmur32(data: &[u8], seed: u32) -> u32 {
         murmur3_32(&mut Cursor::new(data), seed).expect("murmur32 hashing should not fail")
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn murmur128(data: &[u8], seed: u32) -> [u8; 16] {
         const C1: u64 = 0x87c3_7b91_1142_53d5;
         const C2: u64 = 0x4cf5_ad43_2745_937f;

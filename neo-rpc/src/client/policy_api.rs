@@ -28,7 +28,7 @@ pub struct PolicyApi {
 impl PolicyApi {
     /// `PolicyAPI` Constructor
     /// Matches C# constructor
-    #[must_use] 
+    #[must_use]
     pub fn new(rpc_client: Arc<RpcClient>) -> Self {
         Self {
             contract_client: ContractClient::new(rpc_client),

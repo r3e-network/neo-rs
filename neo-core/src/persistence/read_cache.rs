@@ -247,7 +247,7 @@ where
     /// Gets a value from the cache.
     pub fn get(&self, key: &K) -> Option<V> {
         let mut data = self.data.write();
-        
+
         if let Some(entry) = data.get_mut(key) {
             // Check TTL
             if let Some(ttl) = self.config.ttl {
@@ -257,35 +257,35 @@ where
                     data.remove(key);
                     self.remove_from_access_order(key);
                     self.stats.record_eviction(size);
-                    
+
                     if self.config.enable_stats {
                         self.stats.record_miss();
                     }
                     return None;
                 }
             }
-            
+
             // Update entry
             entry.record_access();
             let value = entry.value.clone();
-            
+
             // Update access order
             drop(data);
             self.update_access_order(key.clone());
-            
+
             if self.config.enable_stats {
                 self.stats.record_hit();
             }
-            
+
             trace!(target: "neo", "cache hit");
             Some(value)
         } else {
             drop(data);
-            
+
             if self.config.enable_stats {
                 self.stats.record_miss();
             }
-            
+
             trace!(target: "neo", "cache miss");
             None
         }
@@ -294,80 +294,82 @@ where
     /// Puts a value into the cache.
     pub fn put(&self, key: K, value: V, size_bytes: usize) {
         let mut data = self.data.write();
-        
+
         // Check if we need to evict
         while data.len() >= self.config.max_entries {
             self.evict_lru(&mut data);
         }
-        
+
         // Check if adding this would exceed byte limit
         let current_bytes = self.stats.current_bytes.load(Ordering::Relaxed);
         while current_bytes + size_bytes > self.config.max_bytes && !data.is_empty() {
             self.evict_lru(&mut data);
         }
-        
+
         // Insert new entry
         let entry = CacheEntry::new(value, size_bytes);
         data.insert(key.clone(), entry);
         drop(data);
-        
+
         // Update access order
         self.access_order.write().push(key);
-        
+
         if self.config.enable_stats {
             self.stats.record_insert(size_bytes);
         }
-        
+
         trace!(target: "neo", size_bytes, "cache insert");
     }
 
     /// Puts multiple values into the cache (for pre-fetching).
     pub fn put_batch(&self, items: Vec<(K, V, usize)>) {
         let total_bytes: usize = items.iter().map(|(_, _, size)| size).sum();
-        
+
         let mut data = self.data.write();
-        
+
         // Make room for new entries
         while data.len() + items.len() > self.config.max_entries {
             self.evict_lru(&mut data);
         }
-        
+
         let current_bytes = self.stats.current_bytes.load(Ordering::Relaxed);
         while current_bytes + total_bytes > self.config.max_bytes && !data.is_empty() {
             self.evict_lru(&mut data);
         }
-        
+
         let count = items.len();
         let mut access_order = self.access_order.write();
-        
+
         for (key, value, size_bytes) in items {
             let entry = CacheEntry::new(value, size_bytes);
             data.insert(key.clone(), entry);
             access_order.push(key);
         }
-        
+
         drop(data);
         drop(access_order);
-        
+
         if self.config.enable_stats && count > 0 {
             self.stats.record_prefetch(count, total_bytes);
         }
-        
+
         debug!(target: "neo", count, total_bytes, "cache batch insert (prefetch)");
     }
 
     /// Removes a value from the cache.
     pub fn remove(&self, key: &K) -> Option<V> {
         let mut data = self.data.write();
-        
+
         if let Some(entry) = data.remove(key) {
             self.remove_from_access_order(key);
-            
+
             if self.config.enable_stats {
                 self.stats.current_entries.fetch_sub(1, Ordering::Relaxed);
-                self.stats.current_bytes.fetch_sub(entry.size_bytes, Ordering::Relaxed);
+                self.stats
+                    .current_bytes
+                    .fetch_sub(entry.size_bytes, Ordering::Relaxed);
             }
-            
+
             Some(entry.value)
         } else {
             None
@@ -378,15 +380,15 @@ where
     pub fn clear(&self) {
         let mut data = self.data.write();
         let mut access_order = self.access_order.write();
-        
+
         data.clear();
         access_order.clear();
-        
+
         if self.config.enable_stats {
             self.stats.current_entries.store(0, Ordering::Relaxed);
             self.stats.current_bytes.store(0, Ordering::Relaxed);
         }
-        
+
         debug!(target: "neo", "cache cleared");
     }
 
@@ -420,7 +422,7 @@ where
         if !self.config.enable_prefetch {
             return false;
         }
-        
+
         let data = self.data.read();
         if let Some(entry) = data.get(key) {
             entry.access_count >= self.config.prefetch_threshold
@@ -439,18 +441,18 @@ where
     /// Evicts the least recently used entry.
     fn evict_lru(&self, data: &mut parking_lot::RwLockWriteGuard<HashMap<K, CacheEntry<V>>>) {
         let access_order = self.access_order.read();
-        
+
         if let Some(lru_key) = access_order.first() {
             let key = lru_key.clone();
             drop(access_order);
-            
+
             if let Some(entry) = data.remove(&key) {
                 self.remove_from_access_order(&key);
-                
+
                 if self.config.enable_stats {
                     self.stats.record_eviction(entry.size_bytes);
                 }
-                
+
                 trace!(target: "neo", "cache eviction");
             }
         }
@@ -459,12 +461,12 @@ where
     /// Updates the access order for a key.
     fn update_access_order(&self, key: K) {
         let mut access_order = self.access_order.write();
-        
+
         // Remove from current position
         if let Some(pos) = access_order.iter().position(|k| k == &key) {
             access_order.remove(pos);
         }
-        
+
         // Add to end (most recently used)
         access_order.push(key);
     }
@@ -515,12 +517,7 @@ where
     F: Fn(&K) -> Vec<(K, V)>,
 {
     /// Creates a new pre-fetching iterator.
-    pub fn new(
-        inner: I,
-        cache: Arc<ReadCache<K, V>>,
-        prefetch_fn: F,
-        hint: PrefetchHint,
-    ) -> Self {
+    pub fn new(inner: I, cache: Arc<ReadCache<K, V>>, prefetch_fn: F, hint: PrefetchHint) -> Self {
         Self {
             inner,
             prefetch_fn,
@@ -538,7 +535,7 @@ where
         }
 
         let items = (self.prefetch_fn)(key);
-        
+
         if !items.is_empty() {
             let cache_items: Vec<_> = items
                 .into_iter()
@@ -547,7 +544,7 @@ where
                     (k, v, size)
                 })
                 .collect();
-            
+
             self.cache.put_batch(cache_items);
         }
     }
@@ -574,7 +571,7 @@ where
         if let Some((key, value)) = self.inner.next() {
             // Trigger pre-fetch
             self.prefetch(&key);
-            
+
             Some((key, value))
         } else {
             None
@@ -592,14 +589,14 @@ mod tests {
     #[test]
     fn read_cache_put_and_get() {
         let cache = ReadCache::<String, String>::with_defaults();
-        
+
         cache.put("key1".to_string(), "value1".to_string(), 10);
         cache.put("key2".to_string(), "value2".to_string(), 10);
-        
+
         assert_eq!(cache.get(&"key1".to_string()), Some("value1".to_string()));
         assert_eq!(cache.get(&"key2".to_string()), Some("value2".to_string()));
         assert_eq!(cache.get(&"key3".to_string()), None);
-        
+
         let stats = cache.stats();
         assert_eq!(stats.hits, 2);
         assert_eq!(stats.misses, 1);
@@ -616,18 +613,18 @@ mod tests {
             ttl: None,
             enable_stats: true,
         };
-        
+
         let cache = ReadCache::<String, String>::new(config);
-        
+
         cache.put("key1".to_string(), "value1".to_string(), 10);
         cache.put("key2".to_string(), "value2".to_string(), 10);
         cache.put("key3".to_string(), "value3".to_string(), 10); // Should evict key1
-        
+
         assert_eq!(cache.len(), 2);
         assert_eq!(cache.get(&"key1".to_string()), None); // Evicted
         assert!(cache.get(&"key2".to_string()).is_some());
         assert!(cache.get(&"key3".to_string()).is_some());
-        
+
         let stats = cache.stats();
         assert_eq!(stats.evictions, 1);
     }
@@ -643,12 +640,12 @@ mod tests {
             ttl: None,
             enable_stats: true,
         };
-        
+
         let cache = ReadCache::<String, String>::new(config);
-        
+
         cache.put("key1".to_string(), "value1".to_string(), 20);
         cache.put("key2".to_string(), "value2".to_string(), 20); // Should trigger eviction
-        
+
         // Should have evicted to make room
         assert!(cache.len() <= 2);
     }
@@ -664,17 +661,17 @@ mod tests {
             ttl: Some(Duration::from_millis(1)),
             enable_stats: true,
         };
-        
+
         let cache = ReadCache::<String, String>::new(config);
-        
+
         cache.put("key1".to_string(), "value1".to_string(), 10);
-        
+
         // Should be available immediately
         assert!(cache.get(&"key1".to_string()).is_some());
-        
+
         // Wait for expiration
         std::thread::sleep(Duration::from_millis(10));
-        
+
         // Should be expired now
         assert_eq!(cache.get(&"key1".to_string()), None);
     }
@@ -682,9 +679,9 @@ mod tests {
     #[test]
     fn read_cache_remove() {
         let cache = ReadCache::<String, String>::with_defaults();
-        
+
         cache.put("key1".to_string(), "value1".to_string(), 10);
-        
+
         let removed = cache.remove(&"key1".to_string());
         assert_eq!(removed, Some("value1".to_string()));
         assert_eq!(cache.get(&"key1".to_string()), None);
@@ -693,12 +690,12 @@ mod tests {
     #[test]
     fn read_cache_clear() {
         let cache = ReadCache::<String, String>::with_defaults();
-        
+
         cache.put("key1".to_string(), "value1".to_string(), 10);
         cache.put("key2".to_string(), "value2".to_string(), 10);
-        
+
         cache.clear();
-        
+
         assert!(cache.is_empty());
         assert_eq!(cache.get(&"key1".to_string()), None);
     }
@@ -706,17 +703,17 @@ mod tests {
     #[test]
     fn read_cache_put_batch() {
         let cache = ReadCache::<String, String>::with_defaults();
-        
+
         let items = vec![
             ("key1".to_string(), "value1".to_string(), 10),
             ("key2".to_string(), "value2".to_string(), 10),
             ("key3".to_string(), "value3".to_string(), 10),
         ];
-        
+
         cache.put_batch(items);
-        
+
         assert_eq!(cache.len(), 3);
-        
+
         let stats = cache.stats();
         assert_eq!(stats.prefetches, 3);
     }
@@ -728,22 +725,22 @@ mod tests {
             max_bytes: 1000,
             enable_prefetch: true,
             prefetch_count: 5,
-            prefetch_threshold: 2,  // Need 2 accesses to trigger prefetch
+            prefetch_threshold: 2, // Need 2 accesses to trigger prefetch
             ttl: None,
             enable_stats: true,
         };
-        
+
         let cache = ReadCache::<String, String>::new(config);
-        
+
         // put() initializes access_count to 1
         cache.put("key1".to_string(), "value1".to_string(), 10);
-        
+
         // After put, access_count = 1, should not prefetch
         assert!(!cache.should_prefetch(&"key1".to_string()));
-        
+
         // First get increments to 2, now meets threshold
         cache.get(&"key1".to_string());
-        
+
         // After first get, access_count = 2, should prefetch
         assert!(cache.should_prefetch(&"key1".to_string()));
     }
@@ -760,7 +757,7 @@ mod tests {
             current_entries: 0,
             current_bytes: 0,
         };
-        
+
         assert!((stats.hit_rate() - 0.75).abs() < 0.001);
     }
 }

@@ -55,7 +55,7 @@ pub struct BlockIndex {
 
 impl BlockIndex {
     /// Create a new empty block index
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             by_hash: RwLock::new(HashMap::new()),

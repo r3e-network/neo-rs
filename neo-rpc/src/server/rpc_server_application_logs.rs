@@ -107,8 +107,7 @@ fn expect_hash_param(
         .and_then(|text| {
             UInt256::from_str(text).map_err(|err| {
                 RpcException::from(
-                    RpcError::invalid_params()
-                        .with_data(format!("invalid hash '{text}': {err}")),
+                    RpcError::invalid_params().with_data(format!("invalid hash '{text}': {err}")),
                 )
             })
         })

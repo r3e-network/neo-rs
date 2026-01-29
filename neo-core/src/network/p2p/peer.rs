@@ -223,7 +223,7 @@ impl PeerState {
         ctx: &mut ActorContext,
     ) -> bool {
         let remote_endpoint = normalize_endpoint(snapshot.remote_address);
-        
+
         // SECURITY: Validate peer endpoint
         if validate_peer_endpoint(&remote_endpoint).is_err() {
             trace!(
@@ -233,7 +233,7 @@ impl PeerState {
             );
             return false;
         }
-        
+
         self.connecting_peers.remove(&remote_endpoint);
 
         if !is_trusted && self.connected_peers.len() >= self.config.max_connections {

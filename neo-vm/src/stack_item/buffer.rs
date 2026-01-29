@@ -34,7 +34,7 @@ impl Eq for Buffer {}
 
 impl Buffer {
     /// Creates a new buffer with the specified data.
-    #[must_use] 
+    #[must_use]
     pub fn new(data: Vec<u8>) -> Self {
         Self {
             inner: Arc::new(Mutex::new(BufferInner {
@@ -45,13 +45,13 @@ impl Buffer {
     }
 
     /// Returns the identity assigned to this buffer.
-    #[must_use] 
+    #[must_use]
     pub fn id(&self) -> usize {
         self.inner.lock().id
     }
 
     /// Gets the buffer data.
-    #[must_use] 
+    #[must_use]
     pub fn data(&self) -> Vec<u8> {
         self.inner.lock().data.clone()
     }
@@ -63,25 +63,25 @@ impl Buffer {
     }
 
     /// Returns a stable pointer to the underlying storage for identity tracking.
-    #[must_use] 
+    #[must_use]
     pub fn as_ptr(&self) -> *const u8 {
         self.inner.lock().data.as_ptr()
     }
 
     /// Gets the type of the stack item.
-    #[must_use] 
+    #[must_use]
     pub const fn stack_item_type(&self) -> StackItemType {
         StackItemType::Buffer
     }
 
     /// Gets the length of the buffer.
-    #[must_use] 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.inner.lock().data.len()
     }
 
     /// Returns true if the buffer is empty.
-    #[must_use] 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.inner.lock().data.is_empty()
     }
@@ -131,13 +131,13 @@ impl Buffer {
     }
 
     /// Converts the buffer to a boolean.
-    #[must_use] 
+    #[must_use]
     pub fn to_boolean(&self) -> bool {
         self.inner.lock().data.iter().any(|&byte| byte != 0)
     }
 
     /// Creates a deep copy of the buffer.
-    #[must_use] 
+    #[must_use]
     pub fn deep_copy(&self) -> Self {
         Self::new(self.data())
     }
@@ -148,7 +148,7 @@ impl Buffer {
     }
 
     /// Consumes the buffer and returns the underlying bytes.
-    #[must_use] 
+    #[must_use]
     pub fn into_vec(self) -> Vec<u8> {
         self.data()
     }

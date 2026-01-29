@@ -25,7 +25,7 @@ pub struct ReferenceCounter {
 
 impl ReferenceCounter {
     /// Creates a new reference counter.
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             inner: Arc::new(Mutex::new(ReferenceCounterInner::default())),
@@ -33,7 +33,7 @@ impl ReferenceCounter {
     }
 
     /// Returns the total number of references currently tracked.
-    #[must_use] 
+    #[must_use]
     pub fn count(&self) -> usize {
         self.inner.lock().references_count
     }
@@ -70,7 +70,7 @@ impl ReferenceCounter {
     }
 
     /// Processes zero-referred items, matching the behaviour of the C# counter.
-    #[must_use] 
+    #[must_use]
     pub fn check_zero_referred(&self) -> usize {
         self.check_zero_referred_internal()
     }
@@ -86,7 +86,7 @@ impl ReferenceCounter {
     }
 
     /// Returns true when both counters share the same underlying state.
-    #[must_use] 
+    #[must_use]
     pub fn ptr_eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.inner, &other.inner)
     }
@@ -218,8 +218,10 @@ impl ReferenceCounter {
             // OPTIMIZATION: Each component may have edges to external parents/children.
             // Using component.len() as a heuristic since external edges are typically
             // proportional to component size in reference graphs.
-            let mut external_parent_updates: Vec<(ItemId, ItemId, usize)> = Vec::with_capacity(component.len());
-            let mut external_child_updates: Vec<(ItemId, ItemId, usize)> = Vec::with_capacity(component.len());
+            let mut external_parent_updates: Vec<(ItemId, ItemId, usize)> =
+                Vec::with_capacity(component.len());
+            let mut external_child_updates: Vec<(ItemId, ItemId, usize)> =
+                Vec::with_capacity(component.len());
 
             for id in &component {
                 if let Some(record) = inner.tracked_items.get(id) {

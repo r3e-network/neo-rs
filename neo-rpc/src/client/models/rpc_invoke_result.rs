@@ -45,8 +45,7 @@ impl RpcInvokeResult {
         let script = json
             .get("script")
             .and_then(neo_json::JToken::as_string)
-            .ok_or("Missing or invalid 'script' field")?
-            ;
+            .ok_or("Missing or invalid 'script' field")?;
 
         let state_str = json
             .get("state")
@@ -63,17 +62,11 @@ impl RpcInvokeResult {
             .parse::<i64>()
             .map_err(|_| format!("Invalid gas consumed value: {gas_consumed_str}"))?;
 
-        let exception = json
-            .get("exception")
-            .and_then(neo_json::JToken::as_string);
+        let exception = json.get("exception").and_then(neo_json::JToken::as_string);
 
-        let session = json
-            .get("session")
-            .and_then(neo_json::JToken::as_string);
+        let session = json.get("session").and_then(neo_json::JToken::as_string);
 
-        let tx = json
-            .get("tx")
-            .and_then(neo_json::JToken::as_string);
+        let tx = json.get("tx").and_then(neo_json::JToken::as_string);
 
         // Try to parse stack items
         let stack = json
@@ -158,8 +151,7 @@ impl RpcStack {
         let item_type = json
             .get("type")
             .and_then(neo_json::JToken::as_string)
-            .ok_or("Missing or invalid 'type' field")?
-            ;
+            .ok_or("Missing or invalid 'type' field")?;
 
         let value = json.get("value").ok_or("Missing 'value' field")?.clone();
 
@@ -168,7 +160,7 @@ impl RpcStack {
 
     /// Converts to JSON
     /// Matches C# `ToJson`
-    #[must_use] 
+    #[must_use]
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
         json.insert("type".to_string(), JToken::String(self.item_type.clone()));

@@ -11,19 +11,19 @@ pub struct JString {
 
 impl JString {
     /// Initializes a new instance with the specified value
-    #[must_use] 
+    #[must_use]
     pub const fn new(value: String) -> Self {
         Self { value }
     }
 
     /// Converts to boolean (true if not empty)
-    #[must_use] 
+    #[must_use]
     pub fn as_boolean(&self) -> bool {
         !self.value.is_empty()
     }
 
     /// Converts to number
-    #[must_use] 
+    #[must_use]
     pub fn as_number(&self) -> f64 {
         if self.value.is_empty() {
             return 0.0;
@@ -32,13 +32,13 @@ impl JString {
     }
 
     /// Gets the string value
-    #[must_use] 
+    #[must_use]
     pub fn as_string(&self) -> String {
         self.value.clone()
     }
 
     /// Gets the string value
-    #[must_use] 
+    #[must_use]
     pub fn get_string(&self) -> String {
         self.value.clone()
     }

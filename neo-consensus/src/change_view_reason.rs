@@ -23,7 +23,7 @@ pub enum ChangeViewReason {
 
 impl ChangeViewReason {
     /// Converts from byte value
-    #[must_use] 
+    #[must_use]
     pub const fn from_byte(value: u8) -> Option<Self> {
         match value {
             0x0 => Some(Self::Timeout),
@@ -37,13 +37,13 @@ impl ChangeViewReason {
     }
 
     /// Converts to byte value
-    #[must_use] 
+    #[must_use]
     pub const fn to_byte(self) -> u8 {
         self as u8
     }
 
     /// Returns the string representation
-    #[must_use] 
+    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Timeout => "Timeout",

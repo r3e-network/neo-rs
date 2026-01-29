@@ -28,7 +28,7 @@ pub struct RpcPeers {
 impl RpcPeers {
     /// Converts to JSON
     /// Matches C# `ToJson`
-    #[must_use] 
+    #[must_use]
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
 
@@ -90,7 +90,7 @@ pub struct RpcPeer {
 impl RpcPeer {
     /// Converts to JSON
     /// Matches C# `ToJson`
-    #[must_use] 
+    #[must_use]
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
         json.insert("address".to_string(), JToken::String(self.address.clone()));
@@ -104,8 +104,7 @@ impl RpcPeer {
         let address = json
             .get("address")
             .and_then(neo_json::JToken::as_string)
-            .ok_or("Missing or invalid 'address' field")?
-            ;
+            .ok_or("Missing or invalid 'address' field")?;
 
         let port_token = json.get("port").ok_or("Missing or invalid 'port' field")?;
         let port = if let Some(number) = port_token.as_number() {

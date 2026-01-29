@@ -18,9 +18,16 @@ pub fn block_to_json(block: &Block, protocol_settings: &ProtocolSettings) -> JOb
     json.insert("hash".to_string(), JToken::String(block.hash().to_string()));
     let block_size = header.size()
         + get_var_size(block.transactions.len() as u64)
-        + block.transactions.iter().map(neo_io::Serializable::size).sum::<usize>();
+        + block
+            .transactions
+            .iter()
+            .map(neo_io::Serializable::size)
+            .sum::<usize>();
     json.insert("size".to_string(), JToken::Number(block_size as f64));
-    json.insert("version".to_string(), JToken::Number(f64::from(header.version)));
+    json.insert(
+        "version".to_string(),
+        JToken::Number(f64::from(header.version)),
+    );
     json.insert(
         "previousblockhash".to_string(),
         JToken::String(header.previous_hash.to_string()),
@@ -107,17 +114,19 @@ pub fn transaction_to_json(tx: &Transaction, protocol_settings: &ProtocolSetting
 
     json.insert("hash".to_string(), JToken::String(tx.hash().to_string()));
     json.insert("size".to_string(), JToken::Number(tx.size() as f64));
-    json.insert("version".to_string(), JToken::Number(f64::from(tx.version())));
+    json.insert(
+        "version".to_string(),
+        JToken::Number(f64::from(tx.version())),
+    );
     json.insert("nonce".to_string(), JToken::Number(f64::from(tx.nonce())));
     json.insert(
         "sender".to_string(),
-        tx.sender()
-            .map_or(JToken::Null, |sender| {
-                JToken::String(WalletHelper::to_address(
-                    &sender,
-                    protocol_settings.address_version,
-                ))
-            }),
+        tx.sender().map_or(JToken::Null, |sender| {
+            JToken::String(WalletHelper::to_address(
+                &sender,
+                protocol_settings.address_version,
+            ))
+        }),
     );
     json.insert(
         "sysfee".to_string(),

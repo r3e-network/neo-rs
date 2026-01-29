@@ -15,7 +15,7 @@ impl<T> IndexedQueue<T> {
     const TRIM_THRESHOLD: f32 = 0.9;
 
     /// Creates a queue with the default capacity.
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self::with_capacity(Self::DEFAULT_CAPACITY)
     }
@@ -63,19 +63,19 @@ impl<T> IndexedQueue<T> {
     }
 
     /// Gets the number of items in the queue (C# Count property).
-    #[must_use] 
+    #[must_use]
     pub fn count(&self) -> usize {
         self.items.len()
     }
 
     /// Indicates whether the queue is empty.
-    #[must_use] 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
 
     /// Gets the value at the index (C# this[int index]).
-    #[must_use] 
+    #[must_use]
     pub fn get(&self, index: usize) -> Option<&T> {
         self.items.get(index)
     }
@@ -104,13 +104,13 @@ impl<T> IndexedQueue<T> {
         since = "0.7.1",
         note = "Use try_peek() instead. This method panics on empty queue."
     )]
-    #[must_use] 
+    #[must_use]
     pub fn peek(&self) -> &T {
         self.items.front().expect("queue is empty")
     }
 
     /// Attempts to return an item from the front of the queue without removing it (C# `TryPeek`).
-    #[must_use] 
+    #[must_use]
     pub fn try_peek(&self) -> Option<&T> {
         self.items.front()
     }
@@ -178,7 +178,7 @@ impl<T> IndexedQueue<T> {
     }
 
     /// Returns an array of the items in the queue (C# `ToArray`).
-    #[must_use] 
+    #[must_use]
     pub fn to_vec(&self) -> Vec<T>
     where
         T: Clone,
@@ -192,7 +192,7 @@ impl<T> IndexedQueue<T> {
     }
 
     /// Returns the last item if present (matches C# Last property usage).
-    #[must_use] 
+    #[must_use]
     pub fn last(&self) -> Option<&T> {
         self.items.back()
     }

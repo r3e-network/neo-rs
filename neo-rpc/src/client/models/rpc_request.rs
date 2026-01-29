@@ -31,7 +31,7 @@ pub struct RpcRequest {
 
 impl RpcRequest {
     /// Creates a new RPC request
-    #[must_use] 
+    #[must_use]
     pub fn new(id: JToken, method: String, params: Vec<JToken>) -> Self {
         Self {
             id,
@@ -49,14 +49,12 @@ impl RpcRequest {
         let json_rpc = json
             .get("jsonrpc")
             .and_then(neo_json::JToken::as_string)
-            .ok_or("Missing or invalid 'jsonrpc' field")?
-            ;
+            .ok_or("Missing or invalid 'jsonrpc' field")?;
 
         let method = json
             .get("method")
             .and_then(neo_json::JToken::as_string)
-            .ok_or("Missing or invalid 'method' field")?
-            ;
+            .ok_or("Missing or invalid 'method' field")?;
 
         let params = json
             .get("params")
@@ -78,7 +76,7 @@ impl RpcRequest {
 
     /// Converts to JSON
     /// Matches C# `ToJson`
-    #[must_use] 
+    #[must_use]
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
         json.insert("id".to_string(), self.id.clone());

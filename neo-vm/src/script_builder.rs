@@ -18,7 +18,7 @@ pub struct ScriptBuilder {
 impl ScriptBuilder {
     /// Creates a new script builder.
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub const fn new() -> Self {
         Self { script: Vec::new() }
     }
@@ -210,10 +210,12 @@ impl ScriptBuilder {
             8 => OpCode::PUSHINT64,
             16 => OpCode::PUSHINT128,
             32 => OpCode::PUSHINT256,
-            _ => return Err(VmError::invalid_operation(
-                "emit_push_bigint",
-                &format!("Invalid integer size for push: {target_len}")
-            )),
+            _ => {
+                return Err(VmError::invalid_operation(
+                    "emit_push_bigint",
+                    &format!("Invalid integer size for push: {target_len}"),
+                ))
+            }
         };
 
         self.emit_instruction(opcode, &padded);
@@ -373,28 +375,28 @@ impl ScriptBuilder {
 
     /// Converts the builder to a script.
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn to_script(&self) -> Script {
         Script::new_relaxed(self.script.clone())
     }
 
     /// Converts the builder to a byte array.
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn to_array(&self) -> Vec<u8> {
         self.script.clone()
     }
 
     /// Returns the current script length.
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.script.len()
     }
 
     /// Returns true when no opcodes have been emitted.
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.script.is_empty()
     }

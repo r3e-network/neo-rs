@@ -32,7 +32,7 @@ impl NodeType {
     }
 
     /// Convert to byte representation
-    #[must_use] 
+    #[must_use]
     pub const fn to_byte(self) -> u8 {
         self as u8
     }

@@ -92,7 +92,10 @@ impl OracleServiceSettings {
 
         // If whitelist is not empty, URL must match at least one pattern
         if !self.url_whitelist.is_empty() {
-            return self.url_whitelist.iter().any(|allowed| url.contains(allowed));
+            return self
+                .url_whitelist
+                .iter()
+                .any(|allowed| url.contains(allowed));
         }
 
         true

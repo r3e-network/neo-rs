@@ -212,9 +212,9 @@ impl RpcConvertible for SignersAndWitnesses {
         let mut witnesses = Vec::new();
 
         for (index, entry) in array.children().iter().enumerate() {
-            let token = entry.as_ref().ok_or_else(|| {
-                invalid_params(format!("Invalid signer entry at index {index}"))
-            })?;
+            let token = entry
+                .as_ref()
+                .ok_or_else(|| invalid_params(format!("Invalid signer entry at index {index}")))?;
             let obj = expect_object(token)?;
 
             let signer_token = obj.get("signer").unwrap_or(token);
@@ -246,9 +246,7 @@ impl RpcConvertible for Vec<ContractParameter> {
             })?;
             let value = jtoken_to_serde(token);
             let parameter = ContractParameter::from_json(&value).map_err(|e| {
-                invalid_params(format!(
-                    "Invalid contract parameter at index {index}: {e}"
-                ))
+                invalid_params(format!("Invalid contract parameter at index {index}: {e}"))
             })?;
             parameters.push(parameter);
         }

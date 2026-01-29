@@ -40,7 +40,7 @@ pub struct AccountState {
 
 impl AccountState {
     /// Creates a new empty account state.
-    #[must_use] 
+    #[must_use]
     pub const fn new(script_hash: UInt160) -> Self {
         Self {
             script_hash,
@@ -53,7 +53,7 @@ impl AccountState {
     }
 
     /// Creates an account state with initial balances.
-    #[must_use] 
+    #[must_use]
     pub const fn with_balances(script_hash: UInt160, neo: u64, gas: u64) -> Self {
         Self {
             script_hash,
@@ -66,25 +66,25 @@ impl AccountState {
     }
 
     /// Returns true if this account has no balance and no vote.
-    #[must_use] 
+    #[must_use]
     pub const fn is_empty(&self) -> bool {
         self.neo_balance == 0 && self.gas_balance == 0 && self.vote_to.is_none()
     }
 
     /// Returns the NEO balance.
-    #[must_use] 
+    #[must_use]
     pub const fn neo_balance(&self) -> u64 {
         self.neo_balance
     }
 
     /// Returns the GAS balance as a fixed-point value (8 decimals).
-    #[must_use] 
+    #[must_use]
     pub const fn gas_balance(&self) -> u64 {
         self.gas_balance
     }
 
     /// Returns the GAS balance as a floating-point value.
-    #[must_use] 
+    #[must_use]
     pub fn gas_balance_f64(&self) -> f64 {
         self.gas_balance as f64 / 100_000_000.0
     }
@@ -128,7 +128,7 @@ impl AccountState {
     }
 
     /// Returns the vote target public key.
-    #[must_use] 
+    #[must_use]
     pub fn vote_to(&self) -> Option<&[u8]> {
         self.vote_to.as_deref()
     }

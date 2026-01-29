@@ -24,8 +24,13 @@ pub struct RecoveryRequestMessage {
 
 impl RecoveryRequestMessage {
     /// Creates a new `RecoveryRequest` message.
-    #[must_use] 
-    pub const fn new(block_index: u32, view_number: u8, validator_index: u8, timestamp: u64) -> Self {
+    #[must_use]
+    pub const fn new(
+        block_index: u32,
+        view_number: u8,
+        validator_index: u8,
+        timestamp: u64,
+    ) -> Self {
         Self {
             block_index,
             view_number,
@@ -35,7 +40,7 @@ impl RecoveryRequestMessage {
     }
 
     /// Returns the message type.
-    #[must_use] 
+    #[must_use]
     pub const fn message_type(&self) -> ConsensusMessageType {
         ConsensusMessageType::RecoveryRequest
     }
@@ -43,7 +48,7 @@ impl RecoveryRequestMessage {
     /// Serializes the message body to bytes (excluding the common header).
     ///
     /// Neo N3 `DBFTPlugin` format: `timestamp (8)`.
-    #[must_use] 
+    #[must_use]
     pub fn serialize(&self) -> Vec<u8> {
         self.timestamp.to_le_bytes().to_vec()
     }
@@ -178,7 +183,7 @@ pub struct RecoveryMessage {
 
 impl RecoveryMessage {
     /// Creates a new empty `RecoveryMessage`.
-    #[must_use] 
+    #[must_use]
     pub const fn new(block_index: u32, view_number: u8, validator_index: u8) -> Self {
         Self {
             block_index,
@@ -193,13 +198,13 @@ impl RecoveryMessage {
     }
 
     /// Returns the message type.
-    #[must_use] 
+    #[must_use]
     pub const fn message_type(&self) -> ConsensusMessageType {
         ConsensusMessageType::RecoveryMessage
     }
 
     /// Serializes the message body to bytes (excluding the common header).
-    #[must_use] 
+    #[must_use]
     pub fn serialize(&self) -> Vec<u8> {
         let mut writer = BinaryWriter::new();
 

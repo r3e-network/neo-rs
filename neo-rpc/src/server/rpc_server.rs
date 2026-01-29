@@ -55,12 +55,12 @@ impl RpcHandler {
         }
     }
 
-    #[must_use] 
+    #[must_use]
     pub const fn descriptor(&self) -> &RpcMethodDescriptor {
         &self.descriptor
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn callback(&self) -> Arc<RpcCallback> {
         Arc::clone(&self.callback)
     }
@@ -133,7 +133,7 @@ impl RpcServer {
         }
     }
 
-    #[must_use] 
+    #[must_use]
     pub const fn settings(&self) -> &RpcServerConfig {
         &self.settings
     }
@@ -142,7 +142,7 @@ impl RpcServer {
         self.settings = settings;
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn system(&self) -> Arc<NeoSystem> {
         Arc::clone(&self.system)
     }
@@ -166,13 +166,13 @@ impl RpcServer {
     }
 
     /// Get the WebSocket event bridge if enabled
-    #[must_use] 
+    #[must_use]
     pub fn ws_bridge(&self) -> Option<Arc<super::ws::WsEventBridge>> {
         self.ws_bridge.clone()
     }
 
     /// Check if WebSocket is enabled
-    #[must_use] 
+    #[must_use]
     pub const fn is_websocket_enabled(&self) -> bool {
         self.ws_bridge.is_some()
     }
@@ -287,7 +287,11 @@ impl RpcServer {
                         match listener.accept().await {
                             Ok((stream, remote_addr)) => {
                                 apply_tcp_keepalive(&stream, keepalive);
-                                let permit = if let Ok(permit) = connection_limiter.clone().try_acquire_owned() { permit } else {
+                                let permit = if let Ok(permit) =
+                                    connection_limiter.clone().try_acquire_owned()
+                                {
+                                    permit
+                                } else {
                                     debug!(
                                         "RPC max concurrent connections reached; dropping {}",
                                         remote_addr
@@ -391,7 +395,11 @@ impl RpcServer {
                         match listener.accept().await {
                             Ok((stream, remote_addr)) => {
                                 apply_tcp_keepalive(&stream, keepalive);
-                                let permit = if let Ok(permit) = connection_limiter.clone().try_acquire_owned() { permit } else {
+                                let permit = if let Ok(permit) =
+                                    connection_limiter.clone().try_acquire_owned()
+                                {
+                                    permit
+                                } else {
                                     debug!(
                                         "RPC max concurrent connections reached; dropping {}",
                                         remote_addr
@@ -528,7 +536,7 @@ impl RpcServer {
         }
     }
 
-    #[must_use] 
+    #[must_use]
     pub const fn is_started(&self) -> bool {
         self.started
     }
@@ -547,7 +555,7 @@ impl RpcServer {
         }
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn wallet(&self) -> Option<Arc<dyn Wallet>> {
         self.wallet.read().clone()
     }
@@ -563,7 +571,7 @@ impl RpcServer {
         Duration::from_secs(self.settings.session_expiration_time)
     }
 
-    #[must_use] 
+    #[must_use]
     pub const fn session_enabled(&self) -> bool {
         self.settings.session_enabled
     }
@@ -591,7 +599,7 @@ impl RpcServer {
         guard.get_mut(id).map(func)
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn terminate_session(&self, id: &Uuid) -> bool {
         self.sessions.lock().remove(id).is_some()
     }
@@ -701,21 +709,15 @@ fn build_tls_config(settings: &RpcServerConfig) -> Result<Option<Arc<ServerConfi
 
     let cert_bytes = std::fs::read(cert_path)
         .map_err(|err| format!("failed to read TLS certificate {cert_path}: {err}"))?;
-    let pfx = PFX::parse(&cert_bytes)
-        .map_err(|err| format!("invalid PKCS#12 {cert_path}: {err:?}"))?;
+    let pfx =
+        PFX::parse(&cert_bytes).map_err(|err| format!("invalid PKCS#12 {cert_path}: {err:?}"))?;
     if !pfx.verify_mac(settings.ssl_cert_password.as_str()) {
-        return Err(format!(
-            "invalid TLS certificate password for {cert_path}"
-        ));
+        return Err(format!("invalid TLS certificate password for {cert_path}"));
     }
 
     let certs_der = pfx
         .cert_x509_bags(settings.ssl_cert_password.as_str())
-        .map_err(|err| {
-            format!(
-                "failed to read TLS certificate chain from {cert_path}: {err:?}"
-            )
-        })?;
+        .map_err(|err| format!("failed to read TLS certificate chain from {cert_path}: {err:?}"))?;
     if certs_der.is_empty() {
         return Err(format!("no TLS certificates found in {cert_path}"));
     }
@@ -723,11 +725,7 @@ fn build_tls_config(settings: &RpcServerConfig) -> Result<Option<Arc<ServerConfi
 
     let mut keys = pfx
         .key_bags(settings.ssl_cert_password.as_str())
-        .map_err(|err| {
-            format!(
-                "failed to read TLS private key from {cert_path}: {err:?}"
-            )
-        })?;
+        .map_err(|err| format!("failed to read TLS private key from {cert_path}: {err:?}"))?;
     let key_der = keys
         .pop()
         .ok_or_else(|| format!("no TLS private key found in {cert_path}"))?;
@@ -763,9 +761,9 @@ fn load_trusted_authorities(thumbprints: &[String]) -> Result<RootCertStore, Str
         let thumbprint = thumbprint_hex(&cert_der);
         if allowed.contains(&thumbprint) {
             let rustls_cert = Certificate(cert_der);
-            roots.add(&rustls_cert).map_err(|err| {
-                format!("failed to add trusted authority {thumbprint}: {err}")
-            })?;
+            roots
+                .add(&rustls_cert)
+                .map_err(|err| format!("failed to add trusted authority {thumbprint}: {err}"))?;
             matched += 1;
         }
     }

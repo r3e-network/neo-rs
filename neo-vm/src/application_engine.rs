@@ -59,7 +59,7 @@ pub struct VmApplicationEngine {
 
 impl VmApplicationEngine {
     /// Creates a new application engine for the specified trigger and gas limit.
-    #[must_use] 
+    #[must_use]
     pub fn new(trigger: TriggerType, gas_limit: u64) -> Self {
         let engine = ExecutionEngine::new(None);
         let mut app = Self {
@@ -194,19 +194,19 @@ impl VmApplicationEngine {
     }
 
     /// Returns total gas consumed.
-    #[must_use] 
+    #[must_use]
     pub const fn gas_consumed(&self) -> u64 {
         self.gas_consumed
     }
 
     /// Returns configured gas limit.
-    #[must_use] 
+    #[must_use]
     pub const fn gas_limit(&self) -> u64 {
         self.gas_limit
     }
 
     /// Returns current trigger.
-    #[must_use] 
+    #[must_use]
     pub const fn trigger(&self) -> TriggerType {
         self.trigger
     }
@@ -217,7 +217,7 @@ impl VmApplicationEngine {
     }
 
     /// Returns collected notifications.
-    #[must_use] 
+    #[must_use]
     pub fn notifications(&self) -> &[NotificationEvent] {
         &self.notifications
     }
@@ -228,25 +228,25 @@ impl VmApplicationEngine {
     }
 
     /// Retrieves a snapshot by key.
-    #[must_use] 
+    #[must_use]
     pub fn get_snapshot(&self, key: &[u8]) -> Option<&[u8]> {
         self.snapshots.get(key).map(std::vec::Vec::as_slice)
     }
 
     /// Returns a reference to the execution engine's result stack.
-    #[must_use] 
+    #[must_use]
     pub fn result_stack(&self) -> &crate::evaluation_stack::EvaluationStack {
         self.engine.result_stack()
     }
 
     /// Returns the current execution context.
-    #[must_use] 
+    #[must_use]
     pub fn current_context(&self) -> Option<&crate::execution_context::ExecutionContext> {
         self.engine.current_context()
     }
 
     /// Returns the effective call flags for this engine.
-    #[must_use] 
+    #[must_use]
     pub fn call_flags(&self) -> CallFlags {
         self.engine.call_flags()
     }

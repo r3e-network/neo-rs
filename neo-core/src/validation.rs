@@ -45,7 +45,10 @@ pub enum BlockValidationError {
     /// Timestamp is not strictly increasing from previous
     TimestampNotIncreasing { timestamp: u64, prev_timestamp: u64 },
     /// Merkle root does not match computed root
-    InvalidMerkleRoot { expected: UInt256, computed: UInt256 },
+    InvalidMerkleRoot {
+        expected: UInt256,
+        computed: UInt256,
+    },
     /// Duplicate transaction hashes found
     DuplicateTransactions,
     /// Transaction verification failed
@@ -69,7 +72,11 @@ impl std::fmt::Display for BlockValidationError {
                 write!(f, "Block size {} exceeds maximum {}", size, max_size)
             }
             BlockValidationError::TooManyTransactions { count, max_count } => {
-                write!(f, "Transaction count {} exceeds maximum {}", count, max_count)
+                write!(
+                    f,
+                    "Transaction count {} exceeds maximum {}",
+                    count, max_count
+                )
             }
             BlockValidationError::TimestampTooFarInFuture { timestamp, current } => {
                 write!(
@@ -81,7 +88,10 @@ impl std::fmt::Display for BlockValidationError {
             BlockValidationError::TimestampTooOld { timestamp, min } => {
                 write!(f, "Timestamp {} is before minimum {}", timestamp, min)
             }
-            BlockValidationError::TimestampNotIncreasing { timestamp, prev_timestamp } => {
+            BlockValidationError::TimestampNotIncreasing {
+                timestamp,
+                prev_timestamp,
+            } => {
                 write!(
                     f,
                     "Timestamp {} must be greater than previous {}",
@@ -422,7 +432,6 @@ pub fn validate_primary_index(
 mod tests {
     use super::*;
     use crate::network::p2p::payloads::witness::Witness;
-
 
     #[test]
     fn validate_block_version_accepts_version_0() {

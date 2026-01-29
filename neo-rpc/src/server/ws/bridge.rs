@@ -23,20 +23,20 @@ impl WsEventBridge {
     ///
     /// # Arguments
     /// * `capacity` - Buffer capacity for the WebSocket broadcast channel
-    #[must_use] 
+    #[must_use]
     pub fn new(capacity: usize) -> Self {
         let (ws_sender, _) = broadcast::channel(capacity);
         Self { ws_sender }
     }
 
     /// Get a receiver for WebSocket events
-    #[must_use] 
+    #[must_use]
     pub fn subscribe(&self) -> broadcast::Receiver<WsEvent> {
         self.ws_sender.subscribe()
     }
 
     /// Get the sender for direct event publishing
-    #[must_use] 
+    #[must_use]
     pub fn sender(&self) -> broadcast::Sender<WsEvent> {
         self.ws_sender.clone()
     }
@@ -79,7 +79,7 @@ impl WsEventBridge {
     }
 
     /// Get the number of active WebSocket receivers
-    #[must_use] 
+    #[must_use]
     pub fn receiver_count(&self) -> usize {
         self.ws_sender.receiver_count()
     }

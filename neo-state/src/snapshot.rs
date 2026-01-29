@@ -48,7 +48,7 @@ pub struct StateSnapshot {
 
 impl StateSnapshot {
     /// Creates a new root snapshot.
-    #[must_use] 
+    #[must_use]
     pub fn new(id: u64) -> Self {
         Self {
             id,
@@ -78,31 +78,31 @@ impl StateSnapshot {
     }
 
     /// Returns the snapshot ID.
-    #[must_use] 
+    #[must_use]
     pub const fn id(&self) -> u64 {
         self.id
     }
 
     /// Returns the parent snapshot ID.
-    #[must_use] 
+    #[must_use]
     pub const fn parent_id(&self) -> Option<u64> {
         self.parent_id
     }
 
     /// Returns the current state.
-    #[must_use] 
+    #[must_use]
     pub const fn state(&self) -> SnapshotState {
         self.state
     }
 
     /// Returns the depth of this snapshot.
-    #[must_use] 
+    #[must_use]
     pub const fn depth(&self) -> usize {
         self.depth
     }
 
     /// Returns true if this snapshot is active.
-    #[must_use] 
+    #[must_use]
     pub fn is_active(&self) -> bool {
         self.state == SnapshotState::Active
     }
@@ -138,13 +138,13 @@ impl StateSnapshot {
     }
 
     /// Returns all account changes.
-    #[must_use] 
+    #[must_use]
     pub const fn account_changes(&self) -> &HashMap<UInt160, Option<AccountState>> {
         &self.account_changes
     }
 
     /// Returns all storage changes.
-    #[must_use] 
+    #[must_use]
     pub const fn storage_changes(&self) -> &HashMap<StorageKey, StorageChange> {
         &self.storage_changes
     }
@@ -168,7 +168,7 @@ impl StateSnapshot {
     }
 
     /// Returns true if this snapshot has changes.
-    #[must_use] 
+    #[must_use]
     pub fn has_changes(&self) -> bool {
         !self.account_changes.is_empty() || !self.storage_changes.is_empty()
     }
@@ -193,7 +193,7 @@ pub struct SnapshotManager {
 
 impl SnapshotManager {
     /// Creates a new snapshot manager.
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             next_id: 1,
@@ -223,7 +223,7 @@ impl SnapshotManager {
     }
 
     /// Gets a snapshot by ID.
-    #[must_use] 
+    #[must_use]
     pub fn get(&self, id: u64) -> Option<&StateSnapshot> {
         self.snapshots.get(&id)
     }
@@ -234,13 +234,13 @@ impl SnapshotManager {
     }
 
     /// Returns the current snapshot ID.
-    #[must_use] 
+    #[must_use]
     pub const fn current_id(&self) -> Option<u64> {
         self.current_id
     }
 
     /// Returns the current snapshot.
-    #[must_use] 
+    #[must_use]
     pub fn current(&self) -> Option<&StateSnapshot> {
         self.current_id.and_then(|id| self.snapshots.get(&id))
     }
@@ -285,7 +285,7 @@ impl SnapshotManager {
     }
 
     /// Returns the number of active snapshots.
-    #[must_use] 
+    #[must_use]
     pub fn snapshot_count(&self) -> usize {
         self.snapshots.len()
     }

@@ -3,7 +3,7 @@ use std::io::{Error, ErrorKind, Read, Result};
 /// Extension helpers for [`Read`] mirroring `Neo.Extensions.IO.BinaryReaderExtensions`.
 pub trait BinaryReaderExtensions: Read {
     /// Reads exactly `N` bytes and returns them as a fixed-size array.
-    /// 
+    ///
     /// This is more efficient than `read_fixed_bytes` when the size is known at compile time.
     fn read_array<const N: usize>(&mut self) -> Result<[u8; N]>;
 

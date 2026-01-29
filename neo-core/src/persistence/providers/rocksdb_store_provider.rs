@@ -19,19 +19,13 @@ use rocksdb::{
     BlockBasedOptions, Cache, DBIteratorWithThreadMode, Direction, IteratorMode, Options,
     ReadOptions, Snapshot as DbSnapshot, WriteBatch, WriteOptions, DB,
 };
-use std::{
-    fs, mem,
-    path::PathBuf,
-    sync::Arc,
-    time::Instant,
-};
+use std::{fs, mem, path::PathBuf, sync::Arc, time::Instant};
 use tracing::{debug, error, warn};
 
 /// Re-export batch commit types from write_batch_buffer for backward compatibility.
 pub use crate::persistence::write_batch_buffer::{
-    WriteBatchConfig as BatchCommitConfig, 
-    WriteBatchStats as BatchCommitStats, 
-    WriteBatchStatsSnapshot as BatchCommitStatsSnapshot
+    WriteBatchConfig as BatchCommitConfig, WriteBatchStats as BatchCommitStats,
+    WriteBatchStatsSnapshot as BatchCommitStatsSnapshot,
 };
 
 /// Enhanced batch committer using WriteBatchBuffer.
@@ -42,7 +36,7 @@ struct BatchCommitter {
 impl BatchCommitter {
     fn new(db: Arc<DB>, config: WriteBatchConfig) -> Self {
         let buffer = WriteBatchBuffer::new(db, config);
-        
+
         Self { buffer }
     }
 
@@ -67,9 +61,11 @@ impl BatchCommitter {
             }
         }
 
-        let mut iter = BatchIterator { buffer: &self.buffer };
+        let mut iter = BatchIterator {
+            buffer: &self.buffer,
+        };
         batch.iterate(&mut iter);
-        
+
         count
     }
 
@@ -82,7 +78,6 @@ impl BatchCommitter {
         }
         None
     }
-
 }
 
 /// RocksDB-backed store provider compatible with Neo's `IStore`.
@@ -210,7 +205,6 @@ impl RocksDbStore {
             }
         }
     }
-
 }
 
 impl IReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbStore {
@@ -245,16 +239,16 @@ impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbStore {
                 return Some(item);
             }
         }
-        
+
         let raw = key.to_array();
         let result = self.db.get(raw).ok().flatten().map(StorageItem::from_bytes);
-        
+
         // Cache the result if found
         if let (Some(ref cache), Some(ref item)) = (&self.read_cache, &result) {
             let size = item.get_value().len() + std::mem::size_of::<StorageKey>();
             cache.put(key.clone(), item.clone(), size);
         }
-        
+
         result
     }
 
@@ -427,20 +421,21 @@ impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbSnapshot {
                 return Some(item);
             }
         }
-        
+
         let raw = key.to_array();
-        let result = self.db
+        let result = self
+            .db
             .get_opt(&raw, &self.read_options())
             .ok()
             .flatten()
             .map(StorageItem::from_bytes);
-        
+
         // Cache the result if found and cache is configured
         if let (Some(ref cache), Some(ref item)) = (&self.read_cache, &result) {
             let size = item.get_value().len() + std::mem::size_of::<StorageKey>();
             cache.put(key.clone(), item.clone(), size);
         }
-        
+
         result
     }
 
@@ -602,7 +597,9 @@ impl RocksDbStore {
 
     /// Gets read cache statistics if caching is enabled.
     #[allow(dead_code)]
-    pub fn read_cache_stats(&self) -> Option<crate::persistence::read_cache::ReadCacheStatsSnapshot> {
+    pub fn read_cache_stats(
+        &self,
+    ) -> Option<crate::persistence::read_cache::ReadCacheStatsSnapshot> {
         self.read_cache.as_ref().map(|c| c.stats())
     }
 

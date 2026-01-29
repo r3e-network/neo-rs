@@ -2,7 +2,7 @@
 // exception.rs - Exception handling (try, catch, finally, throw)
 //
 
-use super::{ExecutionEngine, VmResult, VmError, TryFrom, StackItem, VMState};
+use super::{ExecutionEngine, StackItem, TryFrom, VMState, VmError, VmResult};
 
 impl ExecutionEngine {
     /// Executes a try block

@@ -51,7 +51,7 @@ impl Array {
     }
 
     /// Creates a new array without a reference counter.
-    #[must_use] 
+    #[must_use]
     pub fn new_untracked(items: Vec<StackItem>) -> Self {
         Self {
             inner: Arc::new(Mutex::new(ArrayInner {
@@ -64,19 +64,19 @@ impl Array {
     }
 
     /// Returns the reference counter associated with this array, if any.
-    #[must_use] 
+    #[must_use]
     pub fn reference_counter(&self) -> Option<ReferenceCounter> {
         self.inner.lock().reference_counter.clone()
     }
 
     /// Returns the unique identifier for this array.
-    #[must_use] 
+    #[must_use]
     pub fn id(&self) -> usize {
         self.inner.lock().id
     }
 
     /// Returns whether the array is marked as read-only.
-    #[must_use] 
+    #[must_use]
     pub fn is_read_only(&self) -> bool {
         self.inner.lock().is_read_only
     }
@@ -87,19 +87,19 @@ impl Array {
     }
 
     /// Gets the items in the array.
-    #[must_use] 
+    #[must_use]
     pub fn items(&self) -> Vec<StackItem> {
         self.inner.lock().items.clone()
     }
 
     /// Returns a stable pointer used for identity tracking.
-    #[must_use] 
+    #[must_use]
     pub fn as_ptr(&self) -> *const StackItem {
         self.inner.lock().items.as_ptr()
     }
 
     /// Gets the item at the specified index.
-    #[must_use] 
+    #[must_use]
     pub fn get(&self, index: usize) -> Option<StackItem> {
         self.inner.lock().items.get(index).cloned()
     }
@@ -157,13 +157,13 @@ impl Array {
     }
 
     /// Gets the number of items in the array.
-    #[must_use] 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.inner.lock().items.len()
     }
 
     /// Returns true if the array is empty.
-    #[must_use] 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.inner.lock().items.is_empty()
     }
@@ -195,7 +195,7 @@ impl Array {
     }
 
     /// Gets the type of the stack item.
-    #[must_use] 
+    #[must_use]
     pub const fn stack_item_type(&self) -> StackItemType {
         StackItemType::Array
     }
@@ -240,7 +240,7 @@ impl Array {
     }
 
     /// Returns an iterator over the items.
-    #[must_use] 
+    #[must_use]
     pub fn iter(&self) -> std::vec::IntoIter<StackItem> {
         self.items().into_iter()
     }

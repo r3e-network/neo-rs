@@ -23,7 +23,7 @@ pub struct ConsensusService {
 
 impl ConsensusService {
     /// Creates a new consensus service
-    #[must_use] 
+    #[must_use]
     pub fn new(
         network: u32,
         validators: Vec<ValidatorInfo>,
@@ -42,7 +42,7 @@ impl ConsensusService {
     }
 
     /// Creates a consensus service from a pre-loaded context (recovery logs).
-    #[must_use] 
+    #[must_use]
     pub fn with_context(
         network: u32,
         context: ConsensusContext,

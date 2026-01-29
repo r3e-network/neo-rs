@@ -25,25 +25,25 @@ impl Integer {
     }
 
     /// Gets the integer value.
-    #[must_use] 
+    #[must_use]
     pub const fn value(&self) -> &BigInt {
         &self.value
     }
 
     /// Gets the type of the stack item.
-    #[must_use] 
+    #[must_use]
     pub const fn stack_item_type(&self) -> StackItemType {
         StackItemType::Integer
     }
 
     /// Converts the integer to a boolean.
-    #[must_use] 
+    #[must_use]
     pub fn to_boolean(&self) -> bool {
         !self.value.is_zero()
     }
 
     /// Converts the integer to a byte array.
-    #[must_use] 
+    #[must_use]
     pub fn to_bytes(&self) -> Vec<u8> {
         // Convert BigInt to little-endian byte array
         let (sign, mut bytes) = self.value.to_bytes_le();
@@ -59,7 +59,7 @@ impl Integer {
     }
 
     /// Creates a deep copy of the integer.
-    #[must_use] 
+    #[must_use]
     pub fn deep_copy(&self) -> Self {
         Self::new(self.value.clone())
     }

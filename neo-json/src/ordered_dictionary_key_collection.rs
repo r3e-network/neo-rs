@@ -7,19 +7,19 @@ pub struct KeyCollection<'a, K: Clone + Eq + std::hash::Hash, V> {
 
 impl<'a, K: Clone + Eq + std::hash::Hash, V> KeyCollection<'a, K, V> {
     /// Creates a new key collection
-    #[must_use] 
+    #[must_use]
     pub const fn new(dict: &'a crate::ordered_dictionary::OrderedDictionary<K, V>) -> Self {
         Self { dict }
     }
 
     /// Gets count
-    #[must_use] 
+    #[must_use]
     pub fn count(&self) -> usize {
         self.dict.count()
     }
 
     /// Gets key at index
-    #[must_use] 
+    #[must_use]
     pub fn get(&self, index: usize) -> Option<&K> {
         self.dict.items.get(index).map(|(k, _)| k)
     }

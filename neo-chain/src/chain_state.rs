@@ -41,7 +41,7 @@ pub struct ChainState {
 
 impl ChainState {
     /// Create a new chain state
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             index: Arc::new(BlockIndex::new()),
@@ -189,11 +189,7 @@ impl ChainState {
         }
 
         // Update tip
-        let total_tx = self
-            .tip
-            .read()
-            .as_ref()
-            .map_or(0, |t| t.total_transactions);
+        let total_tx = self.tip.read().as_ref().map_or(0, |t| t.total_transactions);
 
         *self.tip.write() = Some(ChainStateSnapshot {
             height: block.height,

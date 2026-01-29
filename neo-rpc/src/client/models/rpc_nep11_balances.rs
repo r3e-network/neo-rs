@@ -28,7 +28,7 @@ pub struct RpcNep11Balances {
 
 impl RpcNep11Balances {
     /// Converts to JSON.
-    #[must_use] 
+    #[must_use]
     pub fn to_json(&self, protocol_settings: &ProtocolSettings) -> JObject {
         let mut json = JObject::new();
 
@@ -102,7 +102,7 @@ pub struct RpcNep11Balance {
 }
 
 impl RpcNep11Balance {
-    #[must_use] 
+    #[must_use]
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
         json.insert(
@@ -138,13 +138,11 @@ impl RpcNep11Balance {
         let name = json
             .get("name")
             .and_then(neo_json::JToken::as_string)
-            .unwrap_or_default()
-            ;
+            .unwrap_or_default();
         let symbol = json
             .get("symbol")
             .and_then(neo_json::JToken::as_string)
-            .unwrap_or_default()
-            ;
+            .unwrap_or_default();
 
         let decimals_token = json.get("decimals");
         let decimals = match decimals_token.and_then(neo_json::JToken::as_string) {
@@ -188,7 +186,7 @@ pub struct RpcNep11TokenBalance {
 }
 
 impl RpcNep11TokenBalance {
-    #[must_use] 
+    #[must_use]
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
         json.insert(

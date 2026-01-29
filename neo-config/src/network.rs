@@ -17,7 +17,7 @@ pub enum NetworkType {
 
 impl NetworkType {
     /// Get the network magic number
-    #[must_use] 
+    #[must_use]
     pub const fn magic(&self) -> u32 {
         match self {
             Self::MainNet => 860833102,  // 0x334F454E "NEO3" LE
@@ -27,7 +27,7 @@ impl NetworkType {
     }
 
     /// Get the address version byte
-    #[must_use] 
+    #[must_use]
     pub const fn address_version(&self) -> u8 {
         match self {
             Self::MainNet => 0x35, // 'N'
@@ -37,7 +37,7 @@ impl NetworkType {
     }
 
     /// Get default seed nodes
-    #[must_use] 
+    #[must_use]
     pub fn seed_nodes(&self) -> Vec<String> {
         match self {
             Self::MainNet => vec![
@@ -130,7 +130,7 @@ impl Default for NetworkConfig {
 
 impl NetworkConfig {
     /// Create configuration for a specific network type
-    #[must_use] 
+    #[must_use]
     pub fn for_network(network_type: NetworkType) -> Self {
         Self {
             network_type,
@@ -144,13 +144,13 @@ impl NetworkConfig {
     }
 
     /// Get the effective network magic
-    #[must_use] 
+    #[must_use]
     pub fn effective_magic(&self) -> u32 {
         self.magic.unwrap_or_else(|| self.network_type.magic())
     }
 
     /// Get the effective address version
-    #[must_use] 
+    #[must_use]
     pub fn effective_address_version(&self) -> u8 {
         self.address_version
             .unwrap_or_else(|| self.network_type.address_version())

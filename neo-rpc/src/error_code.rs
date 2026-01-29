@@ -86,13 +86,13 @@ pub enum RpcErrorCode {
 
 impl RpcErrorCode {
     /// Returns the numeric error code.
-    #[must_use] 
+    #[must_use]
     pub const fn code(self) -> i32 {
         self as i32
     }
 
     /// Creates an error code from a numeric value.
-    #[must_use] 
+    #[must_use]
     pub const fn from_code(code: i32) -> Option<Self> {
         match code {
             -32700 => Some(Self::ParseError),
@@ -134,7 +134,7 @@ impl RpcErrorCode {
     }
 
     /// Returns the default message for this error code.
-    #[must_use] 
+    #[must_use]
     pub const fn message(self) -> &'static str {
         match self {
             Self::ParseError => "Parse error",
@@ -175,7 +175,7 @@ impl RpcErrorCode {
     }
 
     /// Returns true if this is a standard JSON-RPC error code.
-    #[must_use] 
+    #[must_use]
     pub const fn is_standard(self) -> bool {
         matches!(
             self,

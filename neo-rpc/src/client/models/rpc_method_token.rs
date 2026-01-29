@@ -31,8 +31,7 @@ impl RpcMethodToken {
         let method = json
             .get("method")
             .and_then(neo_json::JToken::as_string)
-            .ok_or("Missing or invalid 'method' field")?
-            ;
+            .ok_or("Missing or invalid 'method' field")?;
 
         let parameters_count = parse_u16_field(json, "paramcount")?;
 
@@ -66,7 +65,7 @@ impl RpcMethodToken {
 
     /// Converts to JSON
     /// Matches C# `ToJson`
-    #[must_use] 
+    #[must_use]
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
         json.insert(

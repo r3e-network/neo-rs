@@ -175,7 +175,11 @@ impl RpcServerBlockchain {
             .map_err(Self::internal_error)?
             .ok_or_else(|| RpcException::from(RpcError::unknown_block()))?;
 
-        let system_fee: i64 = block.transactions.iter().map(neo_core::Transaction::system_fee).sum();
+        let system_fee: i64 = block
+            .transactions
+            .iter()
+            .map(neo_core::Transaction::system_fee)
+            .sum();
         Ok(Value::String(system_fee.to_string()))
     }
 
@@ -309,8 +313,7 @@ impl RpcServerBlockchain {
         })?;
         let key_bytes = BASE64_STANDARD.decode(key).map_err(|_| {
             RpcException::from(
-                RpcError::invalid_params()
-                    .with_data(format!("invalid Base64 storage key: {key}")),
+                RpcError::invalid_params().with_data(format!("invalid Base64 storage key: {key}")),
             )
         })?;
 

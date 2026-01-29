@@ -28,7 +28,7 @@ where
     TInventory: InventoryHash<TKey> + Clone,
 {
     /// Creates a new relay cache with the specified capacity.
-    #[must_use] 
+    #[must_use]
     pub fn new(max_capacity: usize) -> Self {
         Self {
             inner: FIFOCache::new(max_capacity, |item: &TInventory| {

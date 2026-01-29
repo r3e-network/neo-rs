@@ -4,10 +4,10 @@
 //! and flushes them periodically based on size or time thresholds.
 
 use crate::error::{CoreError, CoreResult};
+use parking_lot::Mutex;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use parking_lot::Mutex;
 use tracing::{debug, error, trace};
 
 #[cfg(feature = "rocksdb")]
@@ -39,9 +39,12 @@ impl WriteBatchStats {
     /// Records a flush operation.
     pub fn record_flush(&self, operations: usize, bytes: usize, duration_ms: u64) {
         self.batches_flushed.fetch_add(1, Ordering::Relaxed);
-        self.operations_written.fetch_add(operations as u64, Ordering::Relaxed);
-        self.bytes_written.fetch_add(bytes as u64, Ordering::Relaxed);
-        self.total_flush_duration_ms.fetch_add(duration_ms, Ordering::Relaxed);
+        self.operations_written
+            .fetch_add(operations as u64, Ordering::Relaxed);
+        self.bytes_written
+            .fetch_add(bytes as u64, Ordering::Relaxed);
+        self.total_flush_duration_ms
+            .fetch_add(duration_ms, Ordering::Relaxed);
     }
 
     /// Records a flush timeout.
@@ -229,17 +232,21 @@ impl WriteBatchBuffer {
     pub fn put(&self, key: &[u8], value: &[u8]) {
         let key_len = key.len();
         let value_len = value.len();
-        
+
         {
             let mut batch = self.batch.lock();
             batch.put(key, value);
         }
-        
+
         let new_count = self.pending_count.fetch_add(1, Ordering::Relaxed) + 1;
-        let new_bytes = self.pending_bytes.fetch_add(key_len + value_len, Ordering::Relaxed) + key_len + value_len;
-        
+        let new_bytes = self
+            .pending_bytes
+            .fetch_add(key_len + value_len, Ordering::Relaxed)
+            + key_len
+            + value_len;
+
         self.stats.set_pending(new_count);
-        
+
         trace!(
             target: "neo",
             key_len,
@@ -248,7 +255,7 @@ impl WriteBatchBuffer {
             pending_bytes = new_bytes,
             "write batch put"
         );
-        
+
         // Check if we should flush
         if self.should_flush(new_count, new_bytes) {
             let _ = self.flush();
@@ -258,17 +265,17 @@ impl WriteBatchBuffer {
     /// Adds a delete operation to the batch.
     pub fn delete(&self, key: &[u8]) {
         let key_len = key.len();
-        
+
         {
             let mut batch = self.batch.lock();
             batch.delete(key);
         }
-        
+
         let new_count = self.pending_count.fetch_add(1, Ordering::Relaxed) + 1;
         let new_bytes = self.pending_bytes.fetch_add(key_len, Ordering::Relaxed) + key_len;
-        
+
         self.stats.set_pending(new_count);
-        
+
         trace!(
             target: "neo",
             key_len,
@@ -276,7 +283,7 @@ impl WriteBatchBuffer {
             pending_bytes = new_bytes,
             "write batch delete"
         );
-        
+
         // Check if we should flush
         if self.should_flush(new_count, new_bytes) {
             let _ = self.flush();
@@ -289,68 +296,69 @@ impl WriteBatchBuffer {
         if pending_count >= self.config.max_batch_size {
             return true;
         }
-        
+
         // Check bytes-based flush
         if pending_bytes >= self.config.max_batch_bytes {
             return true;
         }
-        
+
         // Check time-based flush (only if we have minimum operations)
         if pending_count >= self.config.min_operations {
             let last_flush = self.last_flush.lock();
             let elapsed = last_flush.elapsed();
             drop(last_flush);
-            
+
             if elapsed.as_millis() as u64 >= self.config.max_delay_ms {
                 return true;
             }
         }
-        
+
         false
     }
 
     /// Flushes the batch to the database.
     pub fn flush(&self) -> CoreResult<()> {
         let mut batch = self.batch.lock();
-        
+
         if batch.is_empty() {
             return Ok(());
         }
-        
+
         let count = self.pending_count.load(Ordering::Relaxed);
         let bytes = self.pending_bytes.load(Ordering::Relaxed);
-        
+
         let start = Instant::now();
-        
+
         // Build write options
         let mut write_opts = WriteOptions::default();
         write_opts.set_sync(self.config.sync_on_flush);
         if self.config.disable_wal {
             write_opts.disable_wal(true);
         }
-        
+
         // Take ownership of the batch and create a new one
         let batch_to_write = std::mem::take(&mut *batch);
-        
+
         // Write the batch
         match self.db.write_opt(batch_to_write, &write_opts) {
             Ok(()) => {
                 let duration = start.elapsed();
                 let duration_ms = duration.as_millis() as u64;
-                
+
                 // Reset counters
                 self.pending_count.store(0, Ordering::Relaxed);
                 self.pending_bytes.store(0, Ordering::Relaxed);
-                
+
                 // Update last flush time
                 *self.last_flush.lock() = Instant::now();
-                self.last_flush_time_ms.store(duration_ms, Ordering::Relaxed);
-                
+                self.last_flush_time_ms
+                    .store(duration_ms, Ordering::Relaxed);
+
                 // Update statistics
                 self.stats.record_flush(count, bytes, duration_ms);
-                
+
                 self.stats.set_pending(0);
-                
+
                 debug!(
                     target: "neo",
                     operations = count,
@@ -358,7 +366,7 @@ impl WriteBatchBuffer {
                     duration_ms,
                     "write batch flushed"
                 );
-                
+
                 Ok(())
             }
             Err(e) => {
@@ -423,23 +431,23 @@ impl AutoFlushBatchBuffer {
     /// Creates a new auto-flushing batch buffer.
     pub fn new(db: Arc<DB>, config: WriteBatchConfig) -> Self {
         let inner = Arc::new(WriteBatchBuffer::new(db, config));
-        
+
         // Start background flush task
         let inner_clone = Arc::clone(&inner);
         std::thread::spawn(move || {
             Self::flush_loop(inner_clone, config.max_delay_ms);
         });
-        
+
         Self { inner }
     }
 
     /// Background flush loop.
     fn flush_loop(inner: Arc<WriteBatchBuffer>, interval_ms: u64) {
         let interval = Duration::from_millis(interval_ms);
-        
+
         loop {
             std::thread::sleep(interval);
-            
+
             // Check if we should flush based on time
             if inner.has_pending() && inner.time_since_flush() >= interval {
                 if let Err(e) = inner.flush() {
@@ -478,10 +486,10 @@ mod tests {
     fn create_test_db() -> (Arc<DB>, TempDir) {
         let tmp = TempDir::new().unwrap();
         let path = tmp.path().join("test_db");
-        
+
         let mut opts = rocksdb::Options::default();
         opts.create_if_missing(true);
-        
+
         let db = Arc::new(DB::open(&opts, &path).unwrap());
         (db, tmp)
     }
@@ -490,16 +498,16 @@ mod tests {
     fn write_batch_buffer_put_and_flush() {
         let (db, _tmp) = create_test_db();
         let buffer = WriteBatchBuffer::with_defaults(db);
-        
+
         buffer.put(b"key1", b"value1");
         buffer.put(b"key2", b"value2");
-        
+
         assert_eq!(buffer.pending_count(), 2);
-        
+
         buffer.flush().unwrap();
-        
+
         assert_eq!(buffer.pending_count(), 0);
-        
+
         let stats = buffer.stats_snapshot();
         assert_eq!(stats.batches_flushed, 1);
         assert_eq!(stats.operations_written, 2);
@@ -509,15 +517,15 @@ mod tests {
     fn write_batch_buffer_delete() {
         let (db, _tmp) = create_test_db();
         let buffer = WriteBatchBuffer::with_defaults(db.clone());
-        
+
         // First put a value
         buffer.put(b"key1", b"value1");
         buffer.flush().unwrap();
-        
+
         // Then delete it
         buffer.delete(b"key1");
         buffer.flush().unwrap();
-        
+
         // Verify it's gone
         let result = db.get(b"key1").unwrap();
         assert!(result.is_none());
@@ -534,22 +542,22 @@ mod tests {
             sync_on_flush: false,
             disable_wal: true,
         };
-        
+
         let buffer = WriteBatchBuffer::new(db, config);
-        
+
         // Add 4 items - should not flush yet
         for i in 0..4 {
             buffer.put(format!("key{}", i).as_bytes(), b"value");
         }
-        
+
         assert_eq!(buffer.pending_count(), 4);
-        
+
         // Add 5th item - should trigger auto-flush
         buffer.put(b"key5", b"value");
-        
+
         // May need a small delay for the flush to complete
         std::thread::sleep(Duration::from_millis(10));
-        
+
         // Should be flushed or very close to it
         assert!(buffer.pending_count() < 5);
     }
@@ -558,31 +566,31 @@ mod tests {
     fn write_batch_buffer_clear() {
         let (db, _tmp) = create_test_db();
         let buffer = WriteBatchBuffer::with_defaults(db);
-        
+
         buffer.put(b"key1", b"value1");
         buffer.put(b"key2", b"value2");
-        
+
         assert_eq!(buffer.pending_count(), 2);
-        
+
         buffer.clear();
-        
+
         assert_eq!(buffer.pending_count(), 0);
     }
 
     #[test]
     fn write_batch_stats_snapshot() {
         let stats = WriteBatchStats::new();
-        
+
         stats.record_flush(10, 1000, 5);
         stats.record_flush(20, 2000, 10);
-        
+
         let snapshot = stats.snapshot();
-        
+
         assert_eq!(snapshot.batches_flushed, 2);
         assert_eq!(snapshot.operations_written, 30);
         assert_eq!(snapshot.bytes_written, 3000);
         assert_eq!(snapshot.total_flush_duration_ms, 15);
-        
+
         assert_eq!(snapshot.avg_ops_per_flush(), 15.0);
         assert_eq!(snapshot.avg_bytes_per_flush(), 1500.0);
         assert_eq!(snapshot.avg_flush_duration_ms(), 7.5);
@@ -593,12 +601,12 @@ mod tests {
         let high_throughput = WriteBatchConfig::high_throughput();
         assert_eq!(high_throughput.max_batch_size, 5000);
         assert!(high_throughput.disable_wal);
-        
+
         let durable = WriteBatchConfig::durable();
         assert_eq!(durable.max_batch_size, 100);
         assert!(durable.sync_on_flush);
         assert!(!durable.disable_wal);
-        
+
         let balanced = WriteBatchConfig::balanced();
         assert_eq!(balanced.max_batch_size, 500);
     }

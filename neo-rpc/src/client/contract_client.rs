@@ -31,7 +31,7 @@ pub struct ContractClient {
 impl ContractClient {
     /// `ContractClient` Constructor
     /// Matches C# constructor
-    #[must_use] 
+    #[must_use]
     pub const fn new(rpc_client: Arc<RpcClient>) -> Self {
         Self { rpc_client }
     }

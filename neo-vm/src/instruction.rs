@@ -14,7 +14,7 @@ pub struct OperandSizePrefix(pub u8);
 
 impl OperandSizePrefix {
     /// Returns the size of the operand in bytes.
-    #[must_use] 
+    #[must_use]
     pub const fn size(&self) -> usize {
         match self.0 {
             0 => 0,
@@ -157,7 +157,7 @@ impl Instruction {
 
     /// Creates a new instruction with the given opcode and operand.
     /// This is primarily used for testing.
-    #[must_use] 
+    #[must_use]
     pub fn new(opcode: OpCode, operand: &[u8]) -> Self {
         Self {
             pointer: 0,
@@ -307,19 +307,19 @@ impl Instruction {
     }
 
     /// Returns the opcode of the instruction.
-    #[must_use] 
+    #[must_use]
     pub const fn opcode(&self) -> OpCode {
         self.opcode
     }
 
     /// Returns the position of the instruction in the script.
-    #[must_use] 
+    #[must_use]
     pub const fn pointer(&self) -> usize {
         self.pointer
     }
 
     /// Returns the operand data.
-    #[must_use] 
+    #[must_use]
     pub fn operand_data(&self) -> &[u8] {
         &self.operand
     }
@@ -330,7 +330,7 @@ impl Instruction {
     }
 
     /// Returns the operand data as a slice.
-    #[must_use] 
+    #[must_use]
     pub fn operand(&self) -> &[u8] {
         &self.operand
     }
@@ -361,7 +361,7 @@ impl Instruction {
     }
 
     /// Returns the size of the instruction in bytes.
-    #[must_use] 
+    #[must_use]
     pub fn size(&self) -> usize {
         match self.opcode {
             OpCode::PUSHDATA1 => 1 + 1 + self.operand.len(),
@@ -430,25 +430,25 @@ impl Instruction {
     }
 
     /// Creates a RET instruction.
-    #[must_use] 
+    #[must_use]
     pub fn token_i8(&self) -> i8 {
         self.operand.first().copied().unwrap_or(0) as i8
     }
 
     /// Returns the second signed byte operand (used by TRY instructions).
-    #[must_use] 
+    #[must_use]
     pub fn token_i8_1(&self) -> i8 {
         self.operand.get(1).copied().unwrap_or(0) as i8
     }
 
     /// Returns the first 32-bit signed operand.
-    #[must_use] 
+    #[must_use]
     pub fn token_i32(&self) -> i32 {
         self.token_u32() as i32
     }
 
     /// Returns the second 32-bit signed operand.
-    #[must_use] 
+    #[must_use]
     pub fn token_i32_1(&self) -> i32 {
         let mut bytes = [0u8; 4];
         for (idx, slot) in bytes.iter_mut().enumerate() {
@@ -458,7 +458,7 @@ impl Instruction {
     }
 
     /// Returns the first 16-bit unsigned operand.
-    #[must_use] 
+    #[must_use]
     pub fn token_u16(&self) -> u16 {
         let mut bytes = [0u8; 2];
         for (idx, slot) in bytes.iter_mut().enumerate() {
@@ -468,7 +468,7 @@ impl Instruction {
     }
 
     /// Returns the first 32-bit unsigned operand.
-    #[must_use] 
+    #[must_use]
     pub fn token_u32(&self) -> u32 {
         let mut bytes = [0u8; 4];
         for (idx, slot) in bytes.iter_mut().enumerate() {
@@ -478,7 +478,7 @@ impl Instruction {
     }
 
     /// Creates a RET instruction.
-    #[must_use] 
+    #[must_use]
     pub const fn ret() -> Self {
         Self {
             pointer: 0,

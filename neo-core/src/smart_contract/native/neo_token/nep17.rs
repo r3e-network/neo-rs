@@ -3,7 +3,9 @@
 //
 
 use super::*;
-use crate::smart_contract::native::security_fixes::{PermissionValidator, ReentrancyGuardType, SafeArithmetic, SecurityContext, StateValidator};
+use crate::smart_contract::native::security_fixes::{
+    PermissionValidator, ReentrancyGuardType, SafeArithmetic, SecurityContext, StateValidator,
+};
 
 /// NEP-17 and governance method implementations
 impl NeoToken {
@@ -105,9 +107,9 @@ impl NeoToken {
                 StateValidator::validate_account_state(
                     &state_from.balance,
                     state_from.balance_height,
-                    engine.current_block_index()
+                    engine.current_block_index(),
                 )?;
-                
+
                 if let Some(reward) = self.on_balance_changing(
                     engine,
                     &from,
@@ -134,7 +136,7 @@ impl NeoToken {
             StateValidator::validate_account_state(
                 &state_from.balance,
                 state_from.balance_height,
-                engine.current_block_index()
+                engine.current_block_index(),
             )?;
 
             if from == to {
@@ -167,29 +169,29 @@ impl NeoToken {
                 let mut state_to = self
                     .get_account_state(snapshot_ref, &to)?
                     .unwrap_or_default();
-                
+
                 // Validate state before modification
                 StateValidator::validate_account_state(
                     &state_to.balance,
                     state_to.balance_height,
-                    engine.current_block_index()
+                    engine.current_block_index(),
                 )?;
-                
+
                 if let Some(reward) =
                     self.on_balance_changing(engine, &to, &mut state_to, &amount, &context)?
                 {
                     gas_distributions.push((to, reward));
                 }
-                
+
                 // Use safe arithmetic
                 state_to.balance = SafeArithmetic::safe_add(&state_to.balance, &amount)?;
                 self.write_account_state(&context, engine, &to, &state_to)?;
-                
+
                 // Validate final state
                 StateValidator::validate_account_state(
                     &state_to.balance,
                     state_to.balance_height,
-                    engine.current_block_index()
+                    engine.current_block_index(),
                 )?;
             }
         }
