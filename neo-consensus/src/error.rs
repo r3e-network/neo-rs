@@ -1,4 +1,29 @@
 //! Error types for consensus operations.
+//!
+//! This module defines the error types for dBFT consensus failures.
+//!
+//! ## Error Categories
+//!
+//! | Error | Description |
+//! |-------|-------------|
+//! | `InvalidView` | View number mismatch |
+//! | `InvalidProposal` | Invalid block proposal |
+//! | `SignatureVerificationFailed` | Signature check failed |
+//! | `HashMismatch` | Block hash mismatch |
+//! | `Timeout` | Consensus phase timeout |
+//! | `InsufficientSignatures` | Not enough signatures for block |
+//!
+//! ## Example
+//!
+//! ```rust
+//! use neo_consensus::error::ConsensusError;
+//!
+//! // Create an invalid proposal error
+//! let err = ConsensusError::invalid_proposal("invalid timestamp");
+//!
+//! // Convert to string
+//! assert!(err.to_string().contains("Invalid block proposal"));
+//! ```
 
 use neo_primitives::UInt256;
 use thiserror::Error;

@@ -1,4 +1,33 @@
-//! Change view reason identifiers (mirrors `Neo.Consensus.ChangeViewReason`).
+//! Change view reason - Why validators request a view change.
+//!
+//! This module provides the `ChangeViewReason` enum, which indicates why a
+//! validator is requesting a view change in the dBFT consensus protocol.
+//!
+//! ## Overview
+//!
+//! When the primary (speaker) fails or misbehaves, validators trigger a view
+//! change to select a new primary. The reason helps diagnose consensus issues.
+//!
+//! ## Reasons
+//!
+//! | Reason | Description |
+//! |--------|-------------|
+//! | `Timeout` | No `PrepareRequest` received in time |
+//! | `ChangeAgreement` | Agreed with other validators to change |
+//! | `TxNotFound` | Required transaction not found |
+//! | `TxRejectedByPolicy` | Transaction violates policy |
+//! | `TxInvalid` | Transaction failed validation |
+//! | `BlockRejectedByPolicy` | Block violates policy rules |
+//!
+//! ## Example
+//!
+//! ```rust
+//! use neo_consensus::ChangeViewReason;
+//!
+//! let reason = ChangeViewReason::Timeout;
+//! assert_eq!(reason.to_byte(), 0x0);
+//! assert_eq!(reason.to_string(), "Timeout");
+//! ```
 
 use serde::{Deserialize, Serialize};
 

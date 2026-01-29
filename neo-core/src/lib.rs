@@ -82,8 +82,8 @@
 //! ```
 
 // Always warn on missing documentation
-// #![warn(missing_docs)]
-// #![warn(rustdoc::missing_crate_level_docs)]
+#![warn(missing_docs)]
+#![warn(rustdoc::missing_crate_level_docs)]
 
 // Self-reference for macro exports
 extern crate self as neo_core;
@@ -115,18 +115,34 @@ pub mod builders;
 pub mod constants;
 
 /// Transaction containment type enumeration.
+/// Transaction type containment checking.
+///
+/// Provides utilities for checking if a transaction contains specific types.
 pub mod contains_transaction_type;
 
 /// Core error types and error handling utilities.
+/// Core error types and error handling utilities.
+///
+/// This module provides comprehensive error handling for Neo core operations,
+/// including serialization errors, validation failures, and system errors.
 pub mod error;
 
 /// Plugin-style exception handling policies.
+/// Plugin-style exception handling policies.
+///
+/// Defines how unhandled exceptions should be processed by the system.
 pub mod unhandled_exception_policy;
 
 /// Compression utilities (LZ4, gzip).
+/// Compression utilities for data serialization.
+///
+/// Supports LZ4 and gzip compression algorithms for efficient data storage.
 pub mod compression;
 
 /// Cryptographic helper utilities.
+/// Cryptographic helper utilities.
+///
+/// Provides ECC operations, signature verification, and key derivation helpers.
 pub mod cryptography;
 
 /// Blockchain hardfork management.

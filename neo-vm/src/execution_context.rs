@@ -25,9 +25,13 @@ pub type Slot = crate::slot::Slot;
 /// This matches the C# implementation's `SharedStates` class exactly.
 #[derive(Clone)]
 pub struct SharedStates {
+    /// Script being executed
     script: Arc<Script>,
+    /// Evaluation stack for this context
     pub evaluation_stack: crate::evaluation_stack::EvaluationStack,
+    /// Static fields shared across all clones
     pub static_fields: Option<Slot>,
+    /// Reference counter for garbage collection
     pub reference_counter: ReferenceCounter,
     /// State map matching C# Dictionary<Type, object>
     states: Arc<RwLock<HashMap<TypeId, Box<dyn Any + Send + Sync>>>>,
@@ -44,6 +48,7 @@ impl std::fmt::Debug for SharedStates {
 }
 
 impl SharedStates {
+    /// Creates a new shared states instance.
     #[must_use]
     pub fn new(script: crate::script::Script, reference_counter: ReferenceCounter) -> Self {
         let script = Arc::new(script);
@@ -58,39 +63,47 @@ impl SharedStates {
         }
     }
 
+    /// Returns the reference counter for this context.
     #[must_use]
     pub const fn reference_counter(&self) -> &ReferenceCounter {
         &self.reference_counter
     }
 
+    /// Returns the script being executed.
     #[must_use]
     pub fn script(&self) -> &crate::script::Script {
         self.script.as_ref()
     }
 
+    /// Returns the script as an `Arc` for cloning.
     #[must_use]
     pub fn script_arc(&self) -> Arc<crate::script::Script> {
         Arc::clone(&self.script)
     }
 
+    /// Returns the evaluation stack.
     #[must_use]
     pub const fn evaluation_stack(&self) -> &crate::evaluation_stack::EvaluationStack {
         &self.evaluation_stack
     }
 
+    /// Returns a mutable reference to the evaluation stack.
     pub fn evaluation_stack_mut(&mut self) -> &mut crate::evaluation_stack::EvaluationStack {
         &mut self.evaluation_stack
     }
 
+    /// Returns the static fields if initialized.
     #[must_use]
     pub const fn static_fields(&self) -> Option<&Slot> {
         self.static_fields.as_ref()
     }
 
+    /// Returns a mutable reference to the static fields option.
     pub fn static_fields_mut(&mut self) -> &mut Option<Slot> {
         &mut self.static_fields
     }
 
+    /// Sets the static fields.
     pub fn set_static_fields(&mut self, static_fields: Option<Slot>) {
         self.static_fields = static_fields;
     }

@@ -1,10 +1,32 @@
-// software distributed under the MIT software license, see the
-// accompanying file LICENSE in the main directory of the
-// modifications are permitted.
+// Copyright (c) 2024 R3E Network
+// This file is part of the neo-rs project
+// Licensed under the MIT License
+// See LICENSE file for details
 
 //! # Neo Constants
 //!
-//! Global constants used throughout the Neo blockchain implementation
+//! Global constants used throughout the Neo blockchain implementation.
+//!
+//! This module defines protocol-level constants including block size limits,
+//! network magic numbers, port numbers, and timing parameters.
+//!
+//! ## Categories
+//!
+//! - **Address**: Address format constants (`ADDRESS_SIZE`, `ADDRESS_VERSION`)
+//! - **Block**: Block limits (`MAX_BLOCK_SIZE`, `MAX_TRANSACTIONS_PER_BLOCK`)
+//! - **Network**: Network identification (`MAINNET_MAGIC`, `TESTNET_MAGIC`)
+//! - **Timing**: Block timing (`MILLISECONDS_PER_BLOCK`, `SECONDS_PER_BLOCK`)
+//! - **VM**: VM execution limits (`MAX_STACK_SIZE`, `MAX_ITEM_SIZE`)
+//!
+//! ## Example
+//!
+//! ```rust
+//! use neo_core::constants::{MAX_BLOCK_SIZE, MAINNET_MAGIC, MILLISECONDS_PER_BLOCK};
+//!
+//! assert_eq!(MAX_BLOCK_SIZE, 4_194_304); // 4 MB
+//! assert_eq!(MAINNET_MAGIC, 0x334F454E);
+//! assert_eq!(MILLISECONDS_PER_BLOCK, 15_000); // 15 seconds
+//! ```
 
 pub const ADDRESS_SIZE: usize = 20;
 pub const ADDRESS_VERSION: u8 = 0x35;

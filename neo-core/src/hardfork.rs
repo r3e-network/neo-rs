@@ -1,8 +1,36 @@
-// software distributed under the MIT software license, see the
-// accompanying file LICENSE in the main directory of the
-// modifications are permitted.
+// Copyright (c) 2024 R3E Network
+// This file is part of the neo-rs project
+// Licensed under the MIT License
+// See LICENSE file for details
 
-//! Hardfork configuration and detection for Neo blockchain.
+//! Hardfork configuration and management for Neo N3.
+//!
+//! This module provides hardfork activation tracking and management, matching
+//! the C# Neo implementation's `ProtocolSettings.Hardforks` behavior.
+//!
+//! ## Hardforks
+//!
+//! Neo N3 uses named hardforks for protocol upgrades:
+//!
+//! | Hardfork | Description |
+//! |----------|-------------|
+//! | `HfAspidochelone` | First hardfork - basic improvements |
+//! | `HfBasilisk` | Second hardfork - enhanced features |
+//! | `HfCockatrice` | Third hardfork - protocol optimizations |
+//! | `HfDomovoi` | Fourth hardfork - consensus improvements |
+//! | `HfEchidna` | Fifth hardfork - VM upgrades |
+//! | `HfFaun` | Sixth hardfork - additional features |
+//! | `HfGorgon` | Seventh hardfork - latest protocol |
+//!
+//! ## Usage
+//!
+//! ```rust,no_run
+//! use neo_core::hardfork::{Hardfork, HardforkManager};
+//!
+//! // Check if a hardfork is enabled at a specific block height
+//! let manager = HardforkManager::mainnet();
+//! let is_enabled = manager.is_enabled(Hardfork::HfBasilisk, 4_200_000);
+//! ```
 //!
 //! The `Hardfork` enum is defined in [`neo_primitives`] and re-exported here.
 //! This module provides the `HardforkManager` for managing hardfork activation heights.

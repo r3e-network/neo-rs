@@ -6,6 +6,14 @@
 
 This document describes the architecture of the neo-rs project, a professional Rust implementation of the Neo N3 blockchain node.
 
+📖 **For comprehensive architecture documentation, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** which includes:
+- Detailed system overview with architecture diagrams
+- Complete core component documentation (VM, Storage, P2P, Consensus)
+- Data flow diagrams (Transaction lifecycle, Block processing, State management)
+- Module structure and dependency graphs
+- Security architecture (Cryptography, Verification pipelines)
+- Native contract reference and glossary
+
 ## Table of Contents
 
 - [Architecture Overview](#architecture-overview)

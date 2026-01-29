@@ -18,42 +18,66 @@ use std::collections::HashMap;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum TriggerType {
+    /// Triggered when the block is being persisted
     OnPersist = 0x01,
+    /// Triggered after the block has been persisted
     PostPersist = 0x02,
+    /// Triggered during transaction verification
     Verification = 0x20,
+    /// Triggered during normal contract execution
     Application = 0x40,
+    /// System-level trigger
     System = 0x03,
+    /// All trigger types combined
     All = 0x63,
 }
 
 /// Notification event emitted by smart contracts.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NotificationEvent {
+    /// Script hash of the contract that emitted the notification
     pub script_hash: Vec<u8>,
+    /// Event name
     pub name: String,
+    /// Event arguments as stack items
     pub arguments: Vec<StackItem>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum ApplicationSyscall {
+    /// Get the platform name
     RuntimePlatform,
+    /// Get the current trigger type
     RuntimeGetTrigger,
+    /// Get the current blockchain time
     RuntimeGetTime,
+    /// Log a message
     RuntimeLog,
+    /// Get storage context for the current contract
     StorageGetContext,
+    /// Store data in contract storage
     StoragePut,
+    /// Retrieve data from contract storage
     StorageGet,
 }
 
 /// High level application engine wrapper used for standalone VM testing.
 pub struct VmApplicationEngine {
+    /// Underlying execution engine
     engine: ExecutionEngine,
+    /// Current trigger type
     trigger: TriggerType,
+    /// Maximum gas allowed for execution
     gas_limit: u64,
+    /// Gas consumed so far
     gas_consumed: u64,
+    /// Notifications emitted during execution
     notifications: Vec<NotificationEvent>,
+    /// Storage snapshots for rollback support
     snapshots: HashMap<Vec<u8>, Vec<u8>>,
+    /// Current contract storage
     storage: HashMap<Vec<u8>, Vec<u8>>,
+    /// Mapping of syscall hashes to syscall types
     syscall_map: HashMap<u32, ApplicationSyscall>,
 }
 

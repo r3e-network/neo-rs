@@ -208,7 +208,7 @@
 //! ```
 
 // Warn on missing documentation
-// #![warn(missing_docs)]
+#![warn(missing_docs)]
 #![warn(rustdoc::missing_crate_level_docs)]
 
 extern crate std;

@@ -1,6 +1,36 @@
-//! VM state implementation.
+//! VM state - Execution status of the Neo Virtual Machine.
 //!
-//! This module provides the VMState functionality exactly matching C# Neo.VM.VMState.
+//! This module provides the `VMState` enum which tracks the execution status
+//! of the Neo VM, matching the C# Neo.VM.VMState implementation.
+//!
+//! ## States
+//!
+//! | State | Description |
+//! |-------|-------------|
+//! | `NONE` | Execution has not started or is in progress |
+//! | `HALT` | Execution completed successfully |
+//! | `FAULT` | Execution failed with an uncaught exception |
+//! | `BREAK` | Execution paused at a breakpoint |
+//!
+//! ## State Combinations
+//!
+//! States can be combined using bitwise operations:
+//! - `HALT | FAULT` - Both halt and fault conditions
+//! - `HALT | BREAK` - Halted at a breakpoint
+//!
+//! ## Example
+//!
+//! ```rust
+//! use neo_vm::VMState;
+//!
+//! // Check execution result
+//! let state = VMState::HALT;
+//! assert!(state.is_halt());
+//! assert!(!state.is_fault());
+//!
+//! // Check for any completion state
+//! let completed = state.contains(VMState::HALT);
+//! ```
 
 /// namespace Neo.VM -> public enum `VMState` : byte
 /// Indicates the status of the VM.

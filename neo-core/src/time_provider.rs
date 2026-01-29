@@ -9,7 +9,28 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-//! Time provider utilities matching the behaviour of the C# Neo `TimeProvider`.
+//! Time provider abstraction for testable time-based operations.
+//!
+//! This module provides a pluggable time source that can be overridden for testing
+//! purposes, matching the C# Neo `TimeProvider` behavior.
+//!
+//! ## Overview
+//!
+//! The `TimeProvider` allows code to get the current time without directly
+//! accessing the system clock, enabling deterministic testing of time-based logic.
+//!
+//! ## Usage
+//!
+//! ```rust,no_run
+//! use neo_core::time_provider::{TimeProvider, TimeSource};
+//! use chrono::Utc;
+//!
+//! // Get current time
+//! let now = TimeProvider::current().utc_now();
+//!
+//! // For testing, you can override with a fixed time source
+//! // TimeProvider::set_current(Arc::new(MyFixedTimeSource));
+//! ```
 
 use chrono::{DateTime, Utc};
 use once_cell::sync::Lazy;

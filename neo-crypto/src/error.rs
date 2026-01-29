@@ -1,4 +1,30 @@
 //! Error types for cryptographic operations.
+//!
+//! This module defines the error types used throughout the crypto crate for
+//! handling failures in cryptographic operations.
+//!
+//! ## Error Types
+//!
+//! | Error | Description |
+//! |-------|-------------|
+//! | `InvalidArgument` | Invalid input parameters |
+//! | `InvalidKey` | Malformed or invalid key |
+//! | `InvalidSignature` | Invalid signature format or verification failure |
+//! | `InvalidPoint` | Invalid elliptic curve point |
+//! | `HashError` | Hash computation failure |
+//! | `EncodingError` | Base58, hex, or other encoding errors |
+//!
+//! ## Example
+//!
+//! ```rust
+//! use neo_crypto::error::CryptoError;
+//!
+//! // Create an error
+//! let err = CryptoError::invalid_key("key too short");
+//!
+//! // Convert to string
+//! assert!(err.to_string().contains("Invalid key"));
+//! ```
 
 use thiserror::Error;
 

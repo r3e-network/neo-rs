@@ -1,5 +1,39 @@
-//! CallFlags bitflags mirroring Neo.SmartContract.CallFlags from the C# codebase.
-//! These flags describe the permissions granted to a contract call.
+//! CallFlags - Permission flags for contract invocations.
+//!
+//! This module provides the `CallFlags` type, which defines the permissions
+//! granted when one contract calls another, matching the C# Neo implementation.
+//!
+//! ## Flags
+//!
+//! | Flag | Value | Description |
+//! |------|-------|-------------|
+//! | `NONE` | 0x00 | No permissions granted |
+//! | `READ_STATES` | 0x01 | Allowed to read contract states |
+//! | `WRITE_STATES` | 0x02 | Allowed to write contract states |
+//! | `ALLOW_CALL` | 0x04 | Allowed to call other contracts |
+//! | `ALLOW_NOTIFY` | 0x08 | Allowed to emit notifications |
+//!
+//! ## Common Combinations
+//!
+//! | Combination | Flags |
+//! |-------------|-------|
+//! | `STATES` | `READ_STATES \| WRITE_STATES` |
+//! | `READ_ONLY` | `READ_STATES \| ALLOW_CALL` |
+//! | `ALL` | All flags combined |
+//!
+//! ## Example
+//!
+//! ```rust
+//! use neo_vm::CallFlags;
+//!
+//! // Check if read permission is granted
+//! let flags = CallFlags::READ_STATES | CallFlags::ALLOW_CALL;
+//! assert!(flags.contains(CallFlags::READ_STATES));
+//! assert!(!flags.contains(CallFlags::WRITE_STATES));
+//!
+//! // Use predefined combinations
+//! let read_only = CallFlags::READ_ONLY;
+//! ```
 
 use bitflags::bitflags;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};

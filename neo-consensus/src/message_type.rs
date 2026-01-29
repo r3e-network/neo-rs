@@ -1,4 +1,37 @@
-//! Consensus message type identifiers (mirrors `Neo.Consensus.ConsensusMessageType`).
+//! Consensus message types - dBFT protocol message identifiers.
+//!
+//! This module provides the `ConsensusMessageType` enum for identifying
+//! different message types in the dBFT consensus protocol.
+//!
+//! ## Message Types
+//!
+//! | Type | Value | Description |
+//! |------|-------|-------------|
+//! | `ChangeView` | 0x00 | Request view change |
+//! | `PrepareRequest` | 0x20 | Primary proposes block |
+//! | `PrepareResponse` | 0x21 | Validator acknowledges proposal |
+//! | `Commit` | 0x30 | Validator agrees to commit |
+//! | `RecoveryRequest` | 0x40 | Request state recovery |
+//! | `RecoveryMessage` | 0x41 | Provide state for recovery |
+//!
+//! ## Protocol Flow
+//!
+//! ```text
+//! 1. Primary sends PrepareRequest
+//! 2. Validators send PrepareResponse
+//! 3. Validators send Commit (after M responses)
+//! 4. If timeout: ChangeView to select new primary
+//! ```
+//!
+//! ## Example
+//!
+//! ```rust
+//! use neo_consensus::ConsensusMessageType;
+//!
+//! let msg_type = ConsensusMessageType::PrepareRequest;
+//! assert_eq!(msg_type.to_byte(), 0x20);
+//! assert_eq!(msg_type.to_string(), "PrepareRequest");
+//! ```
 
 use serde::{Deserialize, Serialize};
 

@@ -1,7 +1,32 @@
-//! Error types for the Neo Core crate
+//! Error types for the Neo Core crate.
 //!
 //! This module provides comprehensive error handling for core Neo operations,
 //! including type conversions, serialization, and system-level errors.
+//!
+//! ## Error Categories
+//!
+//! | Category | Description |
+//! |----------|-------------|
+//! | `validation` | Invalid format, data, or operation |
+//! | `io` | I/O and network errors |
+//! | `serialization` | Serialization/deserialization errors |
+//! | `cryptography` | Cryptographic operation failures |
+//! | `resource` | Gas, memory, or buffer limits exceeded |
+//!
+//! ## Example
+//!
+//! ```rust
+//! use neo_core::error::CoreError;
+//!
+//! // Create an error
+//! let err = CoreError::invalid_format("invalid address");
+//!
+//! // Check error category
+//! assert_eq!(err.category(), "validation");
+//!
+//! // Check if retryable
+//! assert!(!err.is_retryable());
+//! ```
 
 use neo_primitives::PrimitiveError;
 use thiserror::Error;

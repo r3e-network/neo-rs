@@ -1,6 +1,35 @@
-//! Script module for the Neo Virtual Machine.
+//! Script - Neo VM bytecode representation.
 //!
-//! This module provides script representation and parsing functionality.
+//! This module provides the `Script` type for representing and parsing
+//! Neo Virtual Machine bytecode.
+//!
+//! ## Overview
+//!
+//! A `Script` wraps bytecode and provides:
+//! - Instruction parsing and caching
+//! - Bounds checking and validation
+//! - Hash code caching for performance
+//!
+//! ## Strict vs Relaxed Mode
+//!
+//! - **Strict mode**: Validates all instructions on load (default)
+//! - **Relaxed mode**: Allows lazy validation (useful for testing)
+//!
+//! ## Example
+//!
+//! ```rust,no_run
+//! use neo_vm::{Script, OpCode};
+//!
+//! // Create a script from bytecode
+//! let bytecode = vec![OpCode::PUSH1 as u8, OpCode::RET as u8];
+//! let script = Script::new(bytecode, false)?;
+//!
+//! // Iterate over instructions
+//! for result in script.iter() {
+//!     let (position, instruction) = result?;
+//!     println!("{}: {:?}", position, instruction.opcode());
+//! }
+//! ```
 
 use crate::error::VmError;
 use crate::error::VmResult;

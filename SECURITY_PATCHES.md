@@ -1,8 +1,52 @@
 # Neo-RS Security Patches Guide
 
 **Generated**: 2025-12-09
+**Last Updated**: 2026-01-28
 **Version**: v0.7.0
 **Priority**: CRITICAL - Must fix before production deployment
+
+---
+
+## Recent Security Fixes Summary (2026-01)
+
+This section provides a quick reference to recently applied security fixes. For detailed fix instructions, see the sections below.
+
+| ID | Severity | Component | Issue | Status |
+|----|----------|-----------|-------|--------|
+| C-1 | **CRITICAL** | Crypto | Insecure RNG for key generation | ✅ Fixed |
+| C-2 | **CRITICAL** | VM | BigInt unbounded growth allowing DoS | ✅ Fixed |
+| C-3 | **CRITICAL** | Consensus | Missing signature verification on PrepareResponse | ✅ Fixed |
+| C-4 | **CRITICAL** | P2P | Memory exhaustion from unbounded message allocation | ✅ Fixed |
+| C-5 | **CRITICAL** | Crypto | Private key material not zeroized on failed generation | ✅ Fixed |
+| H-1 | **HIGH** | RPC | Missing rate limiting on RPC endpoints | ✅ Fixed |
+| H-2 | **HIGH** | Storage | Silent storage commit failures | ✅ Fixed |
+| M-1 | **MEDIUM** | Consensus | Unbounded consensus message cache | ✅ Fixed |
+| M-2 | **MEDIUM** | P2P | Inefficient connection limiting (O(n) scan) | ✅ Fixed |
+
+### Key Security Improvements
+
+1. **Cryptographic Hardening**: All key generation now uses `OsRng` (CSPRNG) with automatic zeroization via `Zeroizing<T>` wrapper
+2. **VM Resource Protection**: BigInt operations now enforce 256-bit size limits to prevent memory exhaustion
+3. **Consensus Integrity**: All consensus messages now require strict signature verification before acceptance
+4. **Network DoS Protection**: Per-peer memory quotas (4MB default) prevent resource exhaustion attacks
+5. **RPC Security**: Token bucket rate limiting implemented with configurable burst capacity
+
+### Verification
+
+To verify these fixes are applied in your build:
+
+```bash
+# Run security-focused tests
+cargo test --package neo-vm security_tests
+cargo test --package neo-crypto --lib
+cargo test --package neo-consensus
+
+# Check for secure RNG usage
+grep -r "OsRng" neo-crypto/src/ neo-core/src/
+
+# Verify BigInt size checks
+grep -r "MAX_BIGINT_SIZE\|check_bigint_size" neo-vm/src/
+```
 
 ---
 

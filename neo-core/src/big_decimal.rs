@@ -1,8 +1,40 @@
-// software distributed under the MIT software license, see the
-// accompanying file LICENSE in the main directory of the
-// modifications are permitted.
+// Copyright (c) 2024 R3E Network
+// This file is part of the neo-rs project
+// Licensed under the MIT License
+// See LICENSE file for details
 
-//! Implementation of BigDecimal, a fixed-point number of arbitrary precision.
+//! BigDecimal - Fixed-point decimal arithmetic for Neo N3.
+//!
+//! This module provides `BigDecimal`, a fixed-point number type with arbitrary
+//! precision for handling NEO and GAS token amounts accurately.
+//!
+//! ## Overview
+//!
+//! Neo N3 uses 8 decimal places for NEO and GAS token amounts. The `BigDecimal`
+//! type ensures precise arithmetic operations without floating-point errors.
+//!
+//! ## Features
+//!
+//! - Arbitrary precision integer arithmetic
+//! - Fixed decimal place support
+//! - Scientific notation parsing
+//! - Comparison and ordering
+//! - Serialization support
+//!
+//! ## Example
+//!
+//! ```rust
+//! use neo_core::BigDecimal;
+//! use num_bigint::BigInt;
+//!
+//! // Create a BigDecimal with 8 decimal places
+//! let amount = BigDecimal::new(BigInt::from(100000000), 8);
+//! assert_eq!(amount.to_string(), "1");
+//!
+//! // Parse from string
+//! let parsed = BigDecimal::parse("123.456", 8).unwrap();
+//! assert_eq!(parsed.to_string(), "123.456");
+//! ```
 
 use crate::error::{CoreError, CoreResult};
 use num_bigint::BigInt;

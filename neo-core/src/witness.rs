@@ -1,8 +1,37 @@
-// software distributed under the MIT software license, see the
-// accompanying file LICENSE in the main directory of the
-// modifications are permitted.
+// Copyright (c) 2024 R3E Network
+// This file is part of the neo-rs project
+// Licensed under the MIT License
+// See LICENSE file for details
 
-//! Implementation of Witness for Neo blockchain.
+//! Witness - Transaction signature verification for Neo N3.
+//!
+//! This module provides the `Witness` struct, which contains the scripts needed
+//! to verify transaction signatures on the Neo blockchain.
+//!
+//! ## Overview
+//!
+//! A witness consists of two parts:
+//! - **Invocation Script**: Provides the arguments (signatures) for verification
+//! - **Verification Script**: The contract code that verifies the signature
+//!
+//! ## Script Hash Computation
+//!
+//! The script hash is computed as: `RIPEMD160(SHA256(verification_script))`
+//!
+//! ## Example
+//!
+//! ```rust,no_run
+//! use neo_core::Witness;
+//!
+//! // Create a witness from scripts
+//! let witness = Witness::new_with_scripts(
+//!     invocation_script,  // Contains signatures
+//!     verification_script, // Contains public key check
+//! );
+//!
+//! // Get the script hash
+//! let script_hash = witness.script_hash();
+//! ```
 
 use crate::error::{CoreError, CoreResult};
 use crate::neo_config::ADDRESS_SIZE;

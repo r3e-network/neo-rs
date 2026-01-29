@@ -1,8 +1,49 @@
-// software distributed under the MIT software license, see the
-// accompanying file LICENSE in the main directory of the
-// modifications are permitted.
+// Copyright (c) 2024 R3E Network
+// This file is part of the neo-rs project
+// Licensed under the MIT License
+// See LICENSE file for details
 
-//! Implementation of WitnessRule (matches C# WitnessRule exactly).
+//! WitnessRule - Conditional witness validation for Neo N3.
+//!
+//! This module provides witness rule evaluation for conditional transaction
+//! verification, matching the C# Neo implementation exactly.
+//!
+//! ## Overview
+//!
+//! Witness rules allow fine-grained control over when witnesses are accepted:
+//! - **Action**: `Allow` or `Deny` the witness
+//! - **Condition**: Logical conditions evaluated against the execution context
+//!
+//! ## Condition Types
+//!
+//! | Condition | Description |
+//! |-----------|-------------|
+//! | `Boolean` | Fixed true/false value |
+//! | `Not` | Logical negation |
+//! | `And`/`Or` | Logical combination |
+//! | `ScriptHash` | Match specific contract hash |
+//! | `Group` | Match validator group |
+//! | `CalledByEntry` | Called by entry script |
+//! | `CalledByContract` | Called by specific contract |
+//! | `CalledByGroup` | Called by specific group |
+//!
+//! ## Example
+//!
+//! ```rust,no_run
+//! use neo_core::witness_rule::{WitnessRule, WitnessRuleAction, WitnessCondition};
+//!
+//! // Create a rule that allows if called by entry
+//! let rule = WitnessRule::new(
+//!     WitnessRuleAction::Allow,
+//!     WitnessCondition::CalledByEntry,
+//! );
+//!
+//! // Create a rule that denies if script hash matches
+//! let deny_rule = WitnessRule::new(
+//!     WitnessRuleAction::Deny,
+//!     WitnessCondition::ScriptHash { hash: script_hash },
+//! );
+//! ```
 
 use crate::neo_config::ADDRESS_SIZE;
 use crate::neo_io::serializable::helper::get_var_size;

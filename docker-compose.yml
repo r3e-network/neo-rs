@@ -5,9 +5,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        - BUILDKIT_INLINE_CACHE=1
     image: neo-rust-node:latest
     container_name: neo-rust-node
     restart: unless-stopped
+    
+    # Port mappings for both networks
     ports:
       # TestNet P2P
       - "20333:20333"
@@ -17,8 +21,19 @@ services:
       - "10333:10333"
       # MainNet RPC (when using mainnet)
       - "10332:10332"
+      # Health/metrics port (if enabled via NEO_HEALTH_PORT)
+      - "${NEO_HEALTH_PORT:-8080}:${NEO_HEALTH_PORT:-8080}"
+    
+    # Volume mounts for persistence
     volumes:
+      # Named volume for blockchain data
       - neo-data:/data
+      # Optional: Bind mount for custom configuration
+      - ${NEO_CONFIG_HOST_PATH:-/dev/null}:/config/custom.toml:ro
+      # Optional: Bind mount for logs
+      - ${NEO_LOGS_HOST_PATH:-neo-logs}:/data/Logs
+    
+    # Environment configuration
     environment:
       - NEO_NETWORK=${NEO_NETWORK:-testnet}
       - NEO_CONFIG=${NEO_CONFIG:-}
@@ -27,52 +42,134 @@ services:
       - NEO_PLUGINS_DIR=${NEO_PLUGINS_DIR:-/data/Plugins}
       - NEO_RPC_PORT=${NEO_RPC_PORT:-}
       - NEO_LISTEN_PORT=${NEO_LISTEN_PORT:-}
+      - NEO_HEALTH_PORT=${NEO_HEALTH_PORT:-}
+      - NEO_HEALTH_MAX_HEADER_LAG=${NEO_HEALTH_MAX_HEADER_LAG:-20}
       - RUST_LOG=${RUST_LOG:-info}
+      # Optional: RPC credentials
+      - NEO_RPC_USER=${NEO_RPC_USER:-}
+      - NEO_RPC_PASS=${NEO_RPC_PASS:-}
+    
+    # Health check using JSON-RPC getversion
     healthcheck:
       test:
         [
           "CMD",
           "/bin/sh",
           "-c",
-          "port_file=/tmp/neo_rpc_port; if [ -f \"$port_file\" ]; then port=$(cat \"$port_file\"); else port=${NEO_RPC_PORT:-}; fi; if [ -z \"$port\" ]; then port=20332; case \"${NEO_NETWORK:-testnet}\" in [Mm]ain*) port=10332 ;; esac; fi; curl -sf -X POST -H 'Content-Type: application/json' --data '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"getversion\",\"params\":[]}' http://127.0.0.1:${port}",
+          "port_file=/tmp/neo_rpc_port; if [ -f \"$port_file\" ]; then port=$(cat \"$port_file\"); else port=${NEO_RPC_PORT:-}; fi; if [ -z \"$port\" ]; then port=20332; case \"${NEO_NETWORK:-testnet}\" in [Mm]ain*) port=10332 ;; esac; fi; curl -sf -X POST -H 'Content-Type: application/json' --data '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"getversion\",\"params\":[]}' http://127.0.0.1:$${port}",
         ]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '${NEO_CPU_LIMIT:-4}'
+          memory: ${NEO_MEMORY_LIMIT:-8G}
+        reservations:
+          cpus: '${NEO_CPU_RESERVE:-2}'
+          memory: ${NEO_MEMORY_RESERVE:-4G}
+    
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+    
+    # Read-only root filesystem
+    read_only: true
+    
+    # Temporary filesystems for writable areas
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
+    
+    # User (should match Dockerfile)
+    user: "neo"
+    
+    # Networks
     networks:
       - neo-network
+    
+    # Ulimits for production
     ulimits:
       nofile:
         soft: 65535
         hard: 65535
-      nproc: 8192
+      nproc:
+        soft: 8192
+        hard: 8192
+      memlock:
+        soft: -1
+        hard: -1
+    
+    # Logging configuration
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
+        labels: "service,environment"
+        env: "NEO_NETWORK"
 
-  # Optional: Neo monitoring dashboard
-  neo-monitor:
-    image: grafana/grafana:latest
-    container_name: neo-monitor
+  # Optional: Prometheus for metrics collection
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: neo-prometheus
     restart: unless-stopped
-    profiles: ["monitoring"]
+    profiles:
+      - monitoring
     ports:
-      - "3000:3000"
+      - "9090:9090"
     volumes:
-      - grafana-data:/var/lib/grafana
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
-      - GF_USERS_ALLOW_SIGN_UP=false
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'
     networks:
       - neo-network
     depends_on:
       - neo-node
 
+  # Optional: Grafana dashboard
+  neo-monitor:
+    image: grafana/grafana:latest
+    container_name: neo-monitor
+    restart: unless-stopped
+    profiles:
+      - monitoring
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./config/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./config/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://localhost:3000}
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+    networks:
+      - neo-network
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
 volumes:
   neo-data:
+    driver: local
+  neo-logs:
+    driver: local
+  prometheus-data:
     driver: local
   grafana-data:
     driver: local
@@ -80,3 +177,6 @@ volumes:
 networks:
   neo-network:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
