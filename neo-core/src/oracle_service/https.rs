@@ -2,6 +2,6 @@
 
 mod client;
 mod process;
-mod security;
+pub mod security;
 
 pub(crate) use client::OracleHttpsProtocol;

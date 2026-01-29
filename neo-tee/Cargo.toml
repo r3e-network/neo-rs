@@ -33,6 +33,7 @@ bs58 = "0.5"
 base64 = "0.22"
 rand = "0.8"
 sha2 = "0.10"
+hkdf = "0.12"
 aes-gcm = "0.10"
 zeroize = { workspace = true }
 parking_lot = "0.12"

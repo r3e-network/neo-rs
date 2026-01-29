@@ -12,6 +12,12 @@ use std::collections::BTreeMap;
 use std::time::SystemTime;
 use tracing::{debug, warn};
 
+/// Maximum number of pending requests in the queue.
+const MAX_PENDING_QUEUE_SIZE: usize = 10000;
+
+/// Maximum time a task can be pending before being considered expired (12 hours).
+const MAX_TASK_PENDING_TIME: std::time::Duration = std::time::Duration::from_secs(12 * 60 * 60);
+
 impl OracleService {
     pub(in super::super) fn add_response_tx_sign(
         &self,
@@ -23,6 +29,16 @@ impl OracleService {
         backup_tx: Option<Transaction>,
         backup_sign: Option<Vec<u8>>,
     ) -> Result<(), OracleServiceError> {
+        // Validate queue size to prevent memory exhaustion
+        {
+            let queue = self.pending_queue.lock();
+            if queue.len() >= MAX_PENDING_QUEUE_SIZE && !queue.contains_key(&request_id) {
+                return Err(OracleServiceError::Processing(
+                    "Pending queue is full".to_string(),
+                ));
+            }
+        }
+
         let mut queue = self.pending_queue.lock();
         if let std::collections::hash_map::Entry::Vacant(e) = queue.entry(request_id) {
             let request = OracleContract::new()
@@ -34,17 +50,39 @@ impl OracleService {
                 .get_transaction_state(snapshot, &request.original_tx_id)
                 .map_err(|err| OracleServiceError::Processing(err.to_string()))?
                 .ok_or(OracleServiceError::RequestTransactionNotFound)?;
+
+            // Validate URL before adding to queue
+            if !self.settings.is_url_allowed(&request.url) {
+                return Err(OracleServiceError::UrlBlocked);
+            }
+
             e.insert(OracleTask {
-                    tx: None,
-                    backup_tx: None,
-                    signs: BTreeMap::new(),
-                    backup_signs: BTreeMap::new(),
-                    timestamp: SystemTime::now(),
-                });
+                tx: None,
+                backup_tx: None,
+                signs: BTreeMap::new(),
+                backup_signs: BTreeMap::new(),
+                timestamp: SystemTime::now(),
+            });
         }
         let task = queue.get_mut(&request_id).expect("oracle task inserted");
 
+        // Check if task has been pending for too long
+        if let Ok(elapsed) = SystemTime::now().duration_since(task.timestamp) {
+            if elapsed > MAX_TASK_PENDING_TIME {
+                return Err(OracleServiceError::Processing(
+                    "Task has been pending for too long".to_string(),
+                ));
+            }
+        }
+
         if let Some(tx) = response_tx {
+            // Validate transaction before storing
+            if tx.valid_until_block() <= ledger_height(snapshot) {
+                return Err(OracleServiceError::Processing(
+                    "Transaction has expired".to_string(),
+                ));
+            }
+
             task.tx = Some(tx.clone());
             let data = get_sign_data_vec(&tx, self.system.settings().network)
                 .map_err(|err| OracleServiceError::Processing(err.to_string()))?;
@@ -167,5 +205,15 @@ impl OracleService {
 
         debug!(target: "neo::oracle", tx = %tx.hash(), "oracle response tx relayed");
         true
+    }
+
+    /// Gets the current pending queue size (for monitoring).
+    pub fn pending_queue_size(&self) -> usize {
+        self.pending_queue.lock().len()
+    }
+
+    /// Checks if the pending queue is at capacity.
+    pub fn is_queue_full(&self) -> bool {
+        self.pending_queue.lock().len() >= MAX_PENDING_QUEUE_SIZE
     }
 }

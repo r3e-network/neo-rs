@@ -2,29 +2,120 @@
 
 #[allow(unused_imports)]
 use crate::attestation::report::ReportType;
-use crate::attestation::AttestationReport;
+use crate::attestation::report::{AttestationReport, Quote, QuoteValidationOptions, QuoteValidationResult};
 use crate::enclave::TeeEnclave;
 use crate::error::{TeeError, TeeResult};
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
-use tracing::debug;
+use std::time::Duration;
+use tracing::{debug, warn};
 
 #[cfg(not(feature = "sgx-hw"))]
-use tracing::info;
+use tracing::info as trace_info;
+
+/// Configuration for attestation verification
+#[derive(Debug, Clone)]
+pub struct AttestationConfig {
+    /// Expected MRENCLAVE (if None, skips MRENCLAVE verification)
+    pub expected_mrenclave: Option<[u8; 32]>,
+    /// Expected MRSIGNER (if None, skips MRSIGNER verification)
+    pub expected_mrsigner: Option<[u8; 32]>,
+    /// Minimum acceptable ISV SVN
+    pub min_isv_svn: u16,
+    /// Maximum age of a valid attestation report
+    pub max_report_age: Duration,
+    /// Require non-debug enclaves
+    pub require_non_debug: bool,
+    /// Allow simulated reports (for testing)
+    pub allow_simulated: bool,
+}
+
+impl Default for AttestationConfig {
+    fn default() -> Self {
+        Self {
+            expected_mrenclave: None,
+            expected_mrsigner: None,
+            min_isv_svn: 1,
+            max_report_age: Duration::from_secs(24 * 60 * 60), // 24 hours
+            require_non_debug: false,
+            allow_simulated: cfg!(feature = "simulation"),
+        }
+    }
+}
+
+impl AttestationConfig {
+    /// Create a strict configuration for production use
+    pub fn production() -> Self {
+        Self {
+            expected_mrenclave: None, // Must be set explicitly
+            expected_mrsigner: None,  // Should be set explicitly
+            min_isv_svn: 1,
+            max_report_age: Duration::from_secs(60 * 60), // 1 hour
+            require_non_debug: true,
+            allow_simulated: false,
+        }
+    }
+
+    /// Create a permissive configuration for testing
+    pub fn testing() -> Self {
+        Self {
+            expected_mrenclave: None,
+            expected_mrsigner: None,
+            min_isv_svn: 1,
+            max_report_age: Duration::from_secs(7 * 24 * 60 * 60), // 7 days
+            require_non_debug: false,
+            allow_simulated: true,
+        }
+    }
+
+    /// Set expected MRENCLAVE
+    pub fn with_mrenclave(mut self, mrenclave: [u8; 32]) -> Self {
+        self.expected_mrenclave = Some(mrenclave);
+        self
+    }
+
+    /// Set expected MRSIGNER
+    pub fn with_mrsigner(mut self, mrsigner: [u8; 32]) -> Self {
+        self.expected_mrsigner = Some(mrsigner);
+        self
+    }
+
+    /// Convert to quote validation options
+    fn to_quote_options(&self) -> QuoteValidationOptions {
+        QuoteValidationOptions {
+            expected_mrenclave: self.expected_mrenclave,
+            expected_mrsigner: self.expected_mrsigner,
+            min_isv_svn: self.min_isv_svn,
+            max_age: self.max_report_age,
+            require_non_debug: self.require_non_debug,
+        }
+    }
+}
 
 /// Service for generating and verifying attestation reports
 pub struct AttestationService {
     _enclave: Arc<TeeEnclave>,
+    config: AttestationConfig,
 }
 
 impl AttestationService {
-    /// Create a new attestation service
+    /// Create a new attestation service with default configuration
     pub fn new(enclave: Arc<TeeEnclave>) -> TeeResult<Self> {
+        Self::with_config(enclave, AttestationConfig::default())
+    }
+
+    /// Create a new attestation service with custom configuration
+    pub fn with_config(enclave: Arc<TeeEnclave>, config: AttestationConfig) -> TeeResult<Self> {
         if !enclave.is_ready() {
             return Err(TeeError::EnclaveNotInitialized);
         }
 
-        Ok(Self { _enclave: enclave })
+        Ok(Self { _enclave: enclave, config })
+    }
+
+    /// Get the attestation configuration
+    pub fn config(&self) -> &AttestationConfig {
+        &self.config
     }
 
     /// Generate an attestation report with custom report data
@@ -85,26 +176,42 @@ impl AttestationService {
         self.generate_report(&report_data)
     }
 
-    /// Verify an attestation report
+    /// Verify an attestation report with full validation
     pub fn verify_report(&self, report: &AttestationReport) -> TeeResult<bool> {
+        // Check if simulated reports are allowed
+        if report.report_type == ReportType::Simulated && !self.config.allow_simulated {
+            warn!("Simulated attestation reports are not allowed");
+            return Ok(false);
+        }
+
         // Basic validation
         if report.version == 0 {
+            debug!("Invalid report version: 0");
             return Ok(false);
         }
 
-        // Check timestamp is reasonable (within 24 hours)
-        let now = std::time::SystemTime::now();
-        let age = now
-            .duration_since(report.timestamp)
-            .unwrap_or(std::time::Duration::from_secs(u64::MAX));
+        // Perform full validation with options
+        let options = self.config.to_quote_options();
+        let result = report.validate(&options);
 
-        if age.as_secs() > 24 * 60 * 60 {
-            debug!("Report too old: {:?}", age);
+        if result != QuoteValidationResult::Valid {
+            warn!("Attestation report validation failed: {}", result.description());
             return Ok(false);
         }
 
-        // Verify based on report type
-        Ok(report.verify())
+        debug!("Attestation report verified successfully");
+        Ok(true)
+    }
+
+    /// Verify an attestation report and return detailed result
+    pub fn verify_report_detailed(&self, report: &AttestationReport) -> QuoteValidationResult {
+        // Check if simulated reports are allowed
+        if report.report_type == ReportType::Simulated && !self.config.allow_simulated {
+            return QuoteValidationResult::InvalidSignature;
+        }
+
+        let options = self.config.to_quote_options();
+        report.validate(&options)
     }
 
     /// Verify that a report matches expected enclave measurements
@@ -115,20 +222,62 @@ impl AttestationService {
         expected_mrsigner: Option<&[u8; 32]>,
     ) -> bool {
         if let Some(expected) = expected_mrenclave {
-            if &report.mrenclave != expected {
+            if !report.verify_mrenclave(expected) {
                 debug!("MRENCLAVE mismatch");
                 return false;
             }
         }
 
         if let Some(expected) = expected_mrsigner {
-            if &report.mrsigner != expected {
+            if !report.verify_mrsigner(expected) {
                 debug!("MRSIGNER mismatch");
                 return false;
             }
         }
 
         true
+    }
+
+    /// Verify a quote from raw bytes
+    pub fn verify_quote(&self, quote_bytes: &[u8]) -> TeeResult<QuoteValidationResult> {
+        let quote = match Quote::from_bytes(quote_bytes) {
+            Some(q) => q,
+            None => {
+                return Err(TeeError::InvalidAttestationReport(
+                    "Failed to parse quote from bytes".to_string()
+                ));
+            }
+        };
+
+        let options = self.config.to_quote_options();
+        Ok(quote.validate(&options))
+    }
+
+    /// Verify a quote with detailed validation
+    pub fn verify_quote_detailed(
+        &self,
+        quote_bytes: &[u8],
+        expected_report_data: Option<&[u8; 64]>,
+    ) -> TeeResult<QuoteValidationResult> {
+        let quote = match Quote::from_bytes(quote_bytes) {
+            Some(q) => q,
+            None => {
+                return Err(TeeError::InvalidAttestationReport(
+                    "Failed to parse quote from bytes".to_string()
+                ));
+            }
+        };
+
+        // Verify report data if provided
+        if let Some(expected) = expected_report_data {
+            if &quote.report_data != expected {
+                warn!("Quote report data mismatch");
+                return Ok(QuoteValidationResult::InvalidSignature);
+            }
+        }
+
+        let options = self.config.to_quote_options();
+        Ok(quote.validate(&options))
     }
 
     /// Get the expected MRENCLAVE for this enclave version
@@ -141,6 +290,53 @@ impl AttestationService {
         let mut result = [0u8; 32];
         result.copy_from_slice(&hash);
         result
+    }
+
+    /// Compute MRENCLAVE from enclave binary
+    /// 
+    /// In production, this would hash the actual enclave binary.
+    /// For now, returns a deterministic value based on version.
+    pub fn compute_mrenclave(&self, enclave_binary: &[u8]) -> [u8; 32] {
+        let mut hasher = Sha256::new();
+        hasher.update(b"neo-tee-mrenclave-v1");
+        hasher.update(enclave_binary);
+        let hash = hasher.finalize();
+        let mut result = [0u8; 32];
+        result.copy_from_slice(&hash);
+        result
+    }
+
+    /// Verify MRENCLAVE against a known good value
+    pub fn verify_mrenclave(&self, report: &AttestationReport, expected: &[u8; 32]) -> TeeResult<()> {
+        if !report.verify_mrenclave(expected) {
+            Err(TeeError::mrenclave_mismatch(expected, &report.mrenclave))
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Verify MRSIGNER against a known good value
+    pub fn verify_mrsigner(&self, report: &AttestationReport, expected: &[u8; 32]) -> TeeResult<()> {
+        if !report.verify_mrsigner(expected) {
+            Err(TeeError::mrsigner_mismatch(expected, &report.mrsigner))
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Batch verify multiple attestation reports
+    pub fn verify_reports_batch(
+        &self,
+        reports: &[AttestationReport],
+    ) -> Vec<(usize, QuoteValidationResult)> {
+        reports
+            .iter()
+            .enumerate()
+            .map(|(idx, report)| {
+                let result = self.verify_report_detailed(report);
+                (idx, result)
+            })
+            .collect()
     }
 
     #[cfg(feature = "sgx-hw")]
@@ -176,7 +372,7 @@ impl AttestationService {
 
     #[cfg(not(feature = "sgx-hw"))]
     fn generate_simulated_report(&self, report_data: [u8; 64]) -> TeeResult<AttestationReport> {
-        info!("Generating simulated attestation report");
+        trace_info!("Generating simulated attestation report");
         Ok(AttestationReport::simulated(report_data))
     }
 }
@@ -199,6 +395,21 @@ mod tests {
         enclave.initialize().unwrap();
 
         let service = AttestationService::new(enclave).unwrap();
+        (temp, service)
+    }
+
+    fn setup_service_with_config(config: AttestationConfig) -> (tempfile::TempDir, AttestationService) {
+        let temp = tempdir().unwrap();
+        let enclave_config = EnclaveConfig {
+            sealed_data_path: temp.path().to_path_buf(),
+            simulation: true,
+            ..Default::default()
+        };
+
+        let enclave = Arc::new(TeeEnclave::new(enclave_config));
+        enclave.initialize().unwrap();
+
+        let service = AttestationService::with_config(enclave, config).unwrap();
         (temp, service)
     }
 
@@ -231,5 +442,138 @@ mod tests {
         // Should match expected values for simulation
         let expected_mr = service.expected_mrenclave();
         assert!(service.verify_enclave_identity(&report, Some(&expected_mr), None));
+    }
+
+    #[test]
+    fn test_mrenclave_mismatch() {
+        let (_temp, service) = setup_service();
+
+        let report = service.generate_report(b"test").unwrap();
+
+        let wrong_mrenclave = [0xFFu8; 32];
+        let result = service.verify_mrenclave(&report, &wrong_mrenclave);
+        
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            TeeError::MrEnclaveMismatch { expected, actual } => {
+                assert_eq!(expected, hex::encode(&wrong_mrenclave));
+                assert_eq!(actual, hex::encode(&report.mrenclave));
+            }
+            _ => panic!("Expected MrEnclaveMismatch error"),
+        }
+    }
+
+    #[test]
+    fn test_mrsigner_mismatch() {
+        let (_temp, service) = setup_service();
+
+        let report = service.generate_report(b"test").unwrap();
+
+        let wrong_mrsigner = [0xFFu8; 32];
+        let result = service.verify_mrsigner(&report, &wrong_mrsigner);
+        
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            TeeError::MrSignerMismatch { expected, actual } => {
+                assert_eq!(expected, hex::encode(&wrong_mrsigner));
+                assert_eq!(actual, hex::encode(&report.mrsigner));
+            }
+            _ => panic!("Expected MrSignerMismatch error"),
+        }
+    }
+
+    #[test]
+    fn test_production_config_rejects_simulated() {
+        let config = AttestationConfig::production();
+        let (_temp, service) = setup_service_with_config(config);
+
+        let report = service.generate_report(b"test").unwrap();
+        
+        // Should fail because simulated reports are not allowed in production config
+        assert!(!service.verify_report(&report).unwrap());
+        
+        // Detailed check should return InvalidSignature
+        let result = service.verify_report_detailed(&report);
+        assert_eq!(result, QuoteValidationResult::InvalidSignature);
+    }
+
+    #[test]
+    fn test_config_with_mrenclave() {
+        let expected_mrenclave = [0x42u8; 32];
+        let config = AttestationConfig::testing()
+            .with_mrenclave(expected_mrenclave);
+        
+        assert_eq!(config.expected_mrenclave, Some(expected_mrenclave));
+    }
+
+    #[test]
+    fn test_compute_mrenclave() {
+        let (_temp, service) = setup_service();
+        
+        let binary = b"test enclave binary";
+        let mrenclave1 = service.compute_mrenclave(binary);
+        let mrenclave2 = service.compute_mrenclave(binary);
+        
+        // Same binary should produce same MRENCLAVE
+        assert_eq!(mrenclave1, mrenclave2);
+        
+        // Different binary should produce different MRENCLAVE
+        let different_binary = b"different binary";
+        let mrenclave3 = service.compute_mrenclave(different_binary);
+        assert_ne!(mrenclave1, mrenclave3);
+    }
+
+    #[test]
+    fn test_verify_quote_with_invalid_bytes() {
+        let (_temp, service) = setup_service();
+        
+        let invalid_quote = vec![0u8; 100]; // Too short
+        let result = service.verify_quote(&invalid_quote);
+        
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_batch_verification() {
+        let (_temp, service) = setup_service();
+        
+        let reports = vec![
+            service.generate_report(b"test1").unwrap(),
+            service.generate_report(b"test2").unwrap(),
+            service.generate_report(b"test3").unwrap(),
+        ];
+        
+        let results = service.verify_reports_batch(&reports);
+        
+        assert_eq!(results.len(), 3);
+        for (_, result) in results {
+            assert_eq!(result, QuoteValidationResult::Valid);
+        }
+    }
+
+    #[test]
+    fn test_service_requires_initialized_enclave() {
+        let temp = tempdir().unwrap();
+        let config = EnclaveConfig {
+            sealed_data_path: temp.path().to_path_buf(),
+            simulation: true,
+            ..Default::default()
+        };
+
+        let enclave = Arc::new(TeeEnclave::new(config));
+        // Don't initialize!
+
+        let result = AttestationService::new(enclave);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_config_conversions() {
+        let config = AttestationConfig::default();
+        let options = config.to_quote_options();
+        
+        assert_eq!(options.min_isv_svn, config.min_isv_svn);
+        assert_eq!(options.max_age, config.max_report_age);
+        assert_eq!(options.require_non_debug, config.require_non_debug);
     }
 }

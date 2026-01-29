@@ -5,5 +5,8 @@
 mod report;
 mod service;
 
-pub use report::AttestationReport;
-pub use service::AttestationService;
+pub use report::{
+    AttestationReport, EnclaveAttributes, Quote, QuoteValidationOptions, QuoteValidationResult,
+    ReportType, MAX_REPORT_AGE_SECONDS, MIN_SECURITY_VERSION,
+};
+pub use service::{AttestationConfig, AttestationService};

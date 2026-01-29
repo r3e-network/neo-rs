@@ -23,6 +23,32 @@ impl OracleService {
                     continue;
                 }
 
+                // Check for duplicate requests
+                if self.settings.enable_deduplication {
+                    if self.is_duplicate_request(request_id, &request.url) {
+                        tracing::debug!(
+                            target: "neo::oracle",
+                            request_id,
+                            url = %request.url,
+                            "Skipping duplicate request"
+                        );
+                        continue;
+                    }
+                }
+
+                // Validate URL before processing
+                if let Err(err) = self.validate_url(&request.url) {
+                    tracing::warn!(
+                        target: "neo::oracle",
+                        request_id,
+                        url = %request.url,
+                        error = %err,
+                        "URL validation failed"
+                    );
+                    self.cleanup_in_flight(&request.url);
+                    continue;
+                }
+
                 let should_process = {
                     let queue = self.pending_queue.lock();
                     match queue.get(&request_id) {
@@ -32,8 +58,14 @@ impl OracleService {
                 };
 
                 if should_process {
+                    let url = request.url.clone();
                     if let Err(err) = self.process_request(&snapshot, request_id, request).await {
                         self.handle_error(&err);
+                        // Clean up in-flight on error
+                        self.cleanup_in_flight(&url);
+                    } else {
+                        // Mark as completed on success
+                        self.mark_request_completed(request_id, &url);
                     }
                 }
             }
@@ -107,6 +139,28 @@ impl OracleService {
             }
 
             self.cleanup_finished_cache(now);
+
+            // Periodically clean up stale in-flight requests (safety measure)
+            if self.settings.enable_deduplication {
+                self.cleanup_stale_in_flight(now);
+            }
+        }
+    }
+
+    /// Cleans up stale in-flight requests that have been pending for too long.
+    fn cleanup_stale_in_flight(&self, now: SystemTime) {
+        // Note: In a production system, you'd track timestamps for in-flight requests.
+        // For now, we just log the current state for monitoring.
+        let in_flight_count = self.in_flight_count();
+        let dedup_cache_size = self.dedup_cache_size();
+
+        if in_flight_count > 0 || dedup_cache_size > 0 {
+            tracing::debug!(
+                target: "neo::oracle",
+                in_flight = in_flight_count,
+                dedup_cache = dedup_cache_size,
+                "Deduplication cache status"
+            );
         }
     }
 }

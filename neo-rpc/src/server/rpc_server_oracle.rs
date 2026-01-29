@@ -104,6 +104,12 @@ fn map_oracle_error(err: OracleServiceError) -> RpcException {
         OracleServiceError::Processing(message) => {
             RpcException::from(RpcError::internal_server_error().with_data(message))
         }
+        OracleServiceError::DuplicateRequest => {
+            RpcException::from(RpcError::oracle_request_finished())
+        }
+        OracleServiceError::UrlBlocked => {
+            invalid_params("URL blocked by security policy")
+        }
     }
 }
 

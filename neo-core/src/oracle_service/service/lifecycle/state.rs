@@ -3,7 +3,7 @@ use super::super::{OracleHttpsProtocol, OracleNeoFsProtocol};
 use super::super::{OracleService, OracleServiceError, OracleServiceSettings, OracleStatus};
 use crate::neo_system::NeoSystem;
 use parking_lot::{Mutex, RwLock};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 #[cfg(feature = "oracle")]
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
@@ -24,6 +24,8 @@ impl OracleService {
             wallet: RwLock::new(None),
             pending_queue: Mutex::new(HashMap::new()),
             finished_cache: Mutex::new(HashMap::new()),
+            dedup_cache: Mutex::new(HashMap::new()),
+            in_flight: Mutex::new(HashSet::new()),
             cancel: AtomicBool::new(false),
             request_task: Mutex::new(None),
             timer_task: Mutex::new(None),
