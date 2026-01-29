@@ -177,6 +177,7 @@ impl AccessPatternTracker {
         }
     }
     
+    #[allow(dead_code)]
     fn reset(&mut self) {
         *self = Self::new();
     }

@@ -1141,6 +1141,7 @@ impl StateStore {
     /// Handles state root validation failure.
     ///
     /// This logs the failure and optionally triggers recovery mechanisms.
+    #[allow(dead_code)]
     fn handle_validation_failure(&self, index: u32, reason: &str) {
         warn!(
             target: "state",

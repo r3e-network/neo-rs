@@ -63,6 +63,7 @@ impl BloomFilter {
     
     /// Hash function using double hashing technique
     #[inline]
+    #[allow(dead_code)]
     fn hash_bytes(&self, key: &[u8], seed: usize) -> usize {
         let h1 = xxhash_rust::xxh3::xxh3_64(key);
         let h2 = h1.wrapping_add(seed as u64);
@@ -450,6 +451,7 @@ impl<K: Clone + Eq + Hash> LruTracker<K> {
         self.sequence.store(0, Ordering::Relaxed);
     }
     
+    #[allow(dead_code)]
     fn len(&self) -> usize {
         self.order.len()
     }

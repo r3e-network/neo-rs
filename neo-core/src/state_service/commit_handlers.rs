@@ -83,12 +83,14 @@ impl ICommittingHandler for StateServiceCommitHandlers {
 }
 
 /// Extended handlers with state root verification support.
+#[allow(dead_code)]
 pub struct StateServiceVerificationHandlers {
     inner: StateServiceCommitHandlers,
 }
 
 impl StateServiceVerificationHandlers {
     /// Creates a new handler with verification support.
+    #[allow(dead_code)]
     pub fn new(state_store: Arc<StateStore>) -> Self {
         Self {
             inner: StateServiceCommitHandlers::new(state_store),
@@ -96,6 +98,7 @@ impl StateServiceVerificationHandlers {
     }
 
     /// Verifies the state root after block persistence.
+    #[allow(dead_code)]
     fn verify_state_root(&self, block: &Block) -> Result<(), String> {
         let height = block.index();
 
