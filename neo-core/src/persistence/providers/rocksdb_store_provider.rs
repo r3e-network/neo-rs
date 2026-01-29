@@ -266,6 +266,7 @@ impl RocksDbStore {
         iterator_from(self.db.as_ref(), None, key_or_prefix, direction, &self.read_ahead_config)
     }
 
+    #[allow(dead_code)]
     fn read_options(&self) -> ReadOptions {
         build_read_options(None, &self.read_ahead_config)
     }
@@ -422,7 +423,7 @@ impl Clone for RocksDbStore {
             db: self.db.clone(),
             on_new_snapshot: Arc::new(RwLock::new(Vec::new())),
             batch_committer: Arc::clone(&self.batch_committer),
-            batch_config: self.batch_config.clone(),
+            batch_config: self.batch_config,
             read_cache: self.read_cache.clone(),
             read_ahead_config: self.read_ahead_config,
         }

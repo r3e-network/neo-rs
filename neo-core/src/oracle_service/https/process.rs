@@ -7,6 +7,7 @@ use futures::StreamExt;
 use super::super::OracleServiceSettings;
 
 /// Maximum time to wait for response headers.
+#[allow(dead_code)]
 const HEADER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// Maximum number of redirects to follow.

@@ -24,16 +24,16 @@ impl OracleService {
                 }
 
                 // Check for duplicate requests
-                if self.settings.enable_deduplication {
-                    if self.is_duplicate_request(request_id, &request.url) {
-                        tracing::debug!(
-                            target: "neo::oracle",
-                            request_id,
-                            url = %request.url,
-                            "Skipping duplicate request"
-                        );
-                        continue;
-                    }
+                if self.settings.enable_deduplication
+                    && self.is_duplicate_request(request_id, &request.url)
+                {
+                    tracing::debug!(
+                        target: "neo::oracle",
+                        request_id,
+                        url = %request.url,
+                        "Skipping duplicate request"
+                    );
+                    continue;
                 }
 
                 // Validate URL before processing
@@ -148,7 +148,7 @@ impl OracleService {
     }
 
     /// Cleans up stale in-flight requests that have been pending for too long.
-    fn cleanup_stale_in_flight(&self, now: SystemTime) {
+    fn cleanup_stale_in_flight(&self, _now: SystemTime) {
         // Note: In a production system, you'd track timestamps for in-flight requests.
         // For now, we just log the current state for monitoring.
         let in_flight_count = self.in_flight_count();

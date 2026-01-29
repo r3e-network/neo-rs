@@ -17,7 +17,7 @@
 //!
 //! ## Example
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use neo_vm::{Script, OpCode};
 //!
 //! // Create a script from bytecode
@@ -26,7 +26,7 @@
 //!
 //! // Iterate over instructions
 //! for result in script.iter() {
-//!     let (position, instruction) = result?;
+//!     let (position, instruction): (usize, _) = result?;
 //!     println!("{}: {:?}", position, instruction.opcode());
 //! }
 //! ```

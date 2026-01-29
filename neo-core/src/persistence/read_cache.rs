@@ -49,7 +49,7 @@ impl BloomFilter {
         
         Self {
             bits,
-            num_hashes: num_hashes.max(1).min(7), // Clamp between 1 and 7
+            num_hashes: num_hashes.clamp(1, 7),
             num_bits: num_u64s * 64,
             count: AtomicUsize::new(0),
             capacity,

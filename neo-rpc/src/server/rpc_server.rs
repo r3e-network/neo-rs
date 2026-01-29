@@ -42,6 +42,9 @@ use warp::Filter;
 pub type RpcCallback =
     dyn Fn(&RpcServer, &[Value]) -> Result<Value, RpcException> + Send + Sync + 'static;
 
+/// Type alias for wallet change callback to reduce complexity.
+pub type WalletChangeCallback = Arc<dyn Fn(Option<Arc<dyn Wallet>>) + Send + Sync>;
+
 pub struct RpcHandler {
     descriptor: RpcMethodDescriptor,
     callback: Arc<RpcCallback>,
@@ -94,7 +97,7 @@ pub struct RpcServer {
     handler_lookup: Arc<RwLock<HashMap<String, Arc<RpcHandler>>>>,
     started: bool,
     wallet: Arc<RwLock<Option<Arc<dyn Wallet>>>>,
-    wallet_change_callback: Option<Arc<dyn Fn(Option<Arc<dyn Wallet>>) + Send + Sync>>,
+    wallet_change_callback: Option<WalletChangeCallback>,
     /// Session storage using Mutex instead of `RwLock` to enforce exclusive access.
     ///
     /// # Security Note
@@ -562,7 +565,7 @@ impl RpcServer {
 
     pub fn set_wallet_change_callback(
         &mut self,
-        callback: Option<Arc<dyn Fn(Option<Arc<dyn Wallet>>) + Send + Sync>>,
+        callback: Option<WalletChangeCallback>,
     ) {
         self.wallet_change_callback = callback;
     }

@@ -1,6 +1,4 @@
-use super::middleware::{
-    GovernorRateLimiter, RateLimitCheckResult, RateLimitConfig, RateLimitTier,
-};
+use super::middleware::{GovernorRateLimiter, RateLimitConfig, RateLimitTier};
 use super::rcp_server_settings::{RpcServerConfig, RpcServerSettings, UnhandledExceptionPolicy};
 use super::rpc_error::RpcError;
 use super::rpc_server::{RpcServer, RPC_ERR_TOTAL, RPC_REQ_TOTAL};

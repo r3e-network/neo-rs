@@ -7,7 +7,6 @@ use dashmap::DashMap;
 use std::{
     collections::HashMap,
     net::IpAddr,
-    sync::Arc,
     time::{Duration, Instant},
 };
 

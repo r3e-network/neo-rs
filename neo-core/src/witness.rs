@@ -20,13 +20,15 @@
 //!
 //! ## Example
 //!
-//! ```rust,no_run
+//! ```rust
 //! use neo_core::Witness;
 //!
 //! // Create a witness from scripts
+//! let invocation_script = vec![0x40, 0x01, 0x02]; // Signature data
+//! let verification_script = vec![0x0c, 0x21]; // Public key check
 //! let witness = Witness::new_with_scripts(
-//!     invocation_script,  // Contains signatures
-//!     verification_script, // Contains public key check
+//!     invocation_script,
+//!     verification_script,
 //! );
 //!
 //! // Get the script hash

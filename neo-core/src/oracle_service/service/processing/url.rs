@@ -6,6 +6,7 @@ use crate::wallets::KeyPair;
 const MAX_URL_LENGTH: usize = 2048;
 
 /// Maximum number of redirects allowed.
+#[allow(dead_code)]
 const MAX_REDIRECTS: u8 = 2;
 
 impl OracleService {

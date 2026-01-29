@@ -52,7 +52,7 @@ impl RemoteNode {
         }
         
         drop(connection);
-        self.last_sent = std::time::Instant::now();
+        self.last_sent = Instant::now();
         Ok(())
     }
 

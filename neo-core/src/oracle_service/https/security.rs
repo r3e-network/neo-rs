@@ -109,7 +109,8 @@ pub fn validate_url_for_ssrf(url: &str) -> Result<(), String> {
 
     // Check for non-standard ports
     if let Some(port) = parsed.port() {
-        if port == 0 || port > 65535 {
+        // Note: port is u16, so max is 65535 - only check for 0
+        if port == 0 {
             return Err("Invalid port number".to_string());
         }
         // Block common internal service ports

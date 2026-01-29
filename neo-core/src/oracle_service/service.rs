@@ -99,6 +99,7 @@ struct OracleTask {
 
 /// Entry for request deduplication.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct DedupEntry {
     url: String,
     timestamp: SystemTime,

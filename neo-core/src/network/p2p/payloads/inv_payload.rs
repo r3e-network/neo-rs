@@ -7,7 +7,9 @@ use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};
 
 /// Maximum number of hashes allowed in a single payload (increased for faster sync).
-pub const MAX_HASHES_COUNT: usize = 2000;
+/// Maximum number of hashes in an inventory payload.
+/// Matches C# Neo: `InvPayload.MaxHashesCount = 500`
+pub const MAX_HASHES_COUNT: usize = 500;
 
 /// Maximum number of headers to request in a single batch during fast sync.
 pub const HEADER_PREFETCH_COUNT: i16 = 2000;

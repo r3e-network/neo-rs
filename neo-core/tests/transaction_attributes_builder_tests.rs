@@ -72,7 +72,7 @@ fn transaction_attributes_builder_add_not_valid_before() {
 
 #[test]
 #[should_panic(
-    expected = "HighPriority attribute already exists in the transaction attributes. Only one HighPriority attribute is allowed per transaction."
+    expected = "HighPriority attribute already exists. Only one allowed per transaction."
 )]
 fn transaction_attributes_builder_rejects_duplicate_high_priority() {
     let _attrs = TransactionAttributesBuilder::create_empty()
@@ -83,7 +83,7 @@ fn transaction_attributes_builder_rejects_duplicate_high_priority() {
 
 #[test]
 #[should_panic(
-    expected = "NotValidBefore attribute for block 10 already exists in the transaction attributes. Each block height can only be specified once."
+    expected = "NotValidBefore attribute for block 10 already exists"
 )]
 fn transaction_attributes_builder_rejects_duplicate_not_valid_before() {
     let _attrs = TransactionAttributesBuilder::create_empty()

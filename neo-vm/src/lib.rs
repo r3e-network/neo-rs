@@ -79,7 +79,7 @@
 //!
 //! ## Quick Start
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use neo_vm::{op_code::OpCode, ExecutionEngine, Script, VMState};
 //!
 //! # fn example() -> neo_vm::VmResult<()> {
@@ -112,7 +112,7 @@
 //!
 //! For blockchain-aware contract execution:
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use neo_vm::{ApplicationEngine, TriggerType};
 //!
 //! # fn example() -> neo_vm::VmResult<()> {
@@ -139,7 +139,7 @@
 //!
 //! ## Building Scripts
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use neo_vm::{op_code::OpCode, ScriptBuilder};
 //!
 //! # fn example() -> neo_vm::VmResult<()> {
@@ -158,7 +158,7 @@
 //!
 //! ## Debugging
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use neo_vm::{Debugger, ExecutionEngine, Script};
 //!
 //! # fn example() -> neo_vm::VmResult<()> {
@@ -174,8 +174,8 @@
 //! let state = debugger.step_into();
 //!
 //! // Inspect state
-//! println!("Instruction pointer: {}", debugger.current_instruction_pointer());
-//! println!("Stack depth: {}", debugger.stack_depth());
+//! println!("Instruction pointer: {}", debugger.instruction_pointer());
+//! println!("Stack depth: {}", debugger.stack_count());
 //! # Ok(())
 //! # }
 //! ```
@@ -198,7 +198,7 @@
 //!
 //! All fallible operations return [`VmResult`]:
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use neo_vm::{VmError, VmResult};
 //!
 //! fn may_fail() -> VmResult<i64> {

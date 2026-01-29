@@ -5,11 +5,14 @@ use parking_lot::{Mutex, RwLock};
 use std::any::Any;
 use std::sync::{mpsc, Arc};
 
+/// Type alias for optional wallet reference.
+type OptionalWallet = Option<Arc<dyn Wallet>>;
+
 /// Simple wallet provider that forwards wallet changes through an mpsc channel.
 pub struct NodeWalletProvider {
-    sender: mpsc::Sender<Option<Arc<dyn Wallet>>>,
-    receiver: Mutex<Option<mpsc::Receiver<Option<Arc<dyn Wallet>>>>>,
-    current: RwLock<Option<Arc<dyn Wallet>>>,
+    sender: mpsc::Sender<OptionalWallet>,
+    receiver: Mutex<Option<mpsc::Receiver<OptionalWallet>>>,
+    current: RwLock<OptionalWallet>,
 }
 
 impl NodeWalletProvider {

@@ -29,8 +29,9 @@
 //!
 //! ## Example
 //!
-//! ```rust,no_run
+//! ```rust
 //! use neo_core::witness_rule::{WitnessRule, WitnessRuleAction, WitnessCondition};
+//! use neo_core::UInt160;
 //!
 //! // Create a rule that allows if called by entry
 //! let rule = WitnessRule::new(
@@ -39,6 +40,7 @@
 //! );
 //!
 //! // Create a rule that denies if script hash matches
+//! let script_hash = UInt160::zero();
 //! let deny_rule = WitnessRule::new(
 //!     WitnessRuleAction::Deny,
 //!     WitnessCondition::ScriptHash { hash: script_hash },

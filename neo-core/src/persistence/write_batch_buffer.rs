@@ -4,6 +4,13 @@
 //! and flushes them periodically based on size or time thresholds.
 
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use parking_lot::Mutex;
+use tracing::{debug, error, trace};
+
+use crate::{CoreError, CoreResult};
 
 #[cfg(feature = "rocksdb")]
 use rocksdb::{WriteBatch, WriteOptions, DB};
