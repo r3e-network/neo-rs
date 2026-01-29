@@ -1071,7 +1071,7 @@ impl StateStore {
         let start_index = current_index.saturating_sub(count as u32);
         for index in start_index..=current_index {
             if let Some(root) = self.get_state_root(index) {
-                let is_validated = self.validated_root_index().map_or(false, |v| v >= index);
+                let is_validated = self.validated_root_index().is_some_and(|v| v >= index);
                 self.root_cache.write().insert_state_root(
                     root,
                     is_validated,

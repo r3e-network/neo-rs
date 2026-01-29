@@ -3,12 +3,7 @@
 //! This module provides a write batch buffer that accumulates write operations
 //! and flushes them periodically based on size or time thresholds.
 
-use crate::error::{CoreError, CoreResult};
-use parking_lot::Mutex;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-use tracing::{debug, error, trace};
 
 #[cfg(feature = "rocksdb")]
 use rocksdb::{WriteBatch, WriteOptions, DB};

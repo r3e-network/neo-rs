@@ -295,7 +295,7 @@ impl BanList {
 
     /// Returns true if the IP address is currently banned.
     pub fn is_banned(&self, ip: &IpAddr) -> bool {
-        self.bans.get(ip).map_or(false, |entry| !entry.is_expired())
+        self.bans.get(ip).is_some_and(|entry| !entry.is_expired())
     }
 
     /// Returns the ban entry for an IP if it exists and is active.

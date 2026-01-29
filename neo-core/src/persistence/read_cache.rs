@@ -41,7 +41,7 @@ impl BloomFilter {
         let num_hashes = ((num_bits as f64 / capacity as f64) * 2.0_f64.ln()).ceil() as usize;
         
         // Round up to nearest 64 bits for the bit vector
-        let num_u64s = (num_bits + 63) / 64;
+        let num_u64s = num_bits.div_ceil(64);
         let mut bits = Vec::with_capacity(num_u64s);
         for _ in 0..num_u64s {
             bits.push(AtomicU64::new(0));
