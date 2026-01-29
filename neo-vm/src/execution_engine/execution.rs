@@ -132,12 +132,14 @@ impl ExecutionEngine {
     }
 
     /// Internal implementation of `execute_next`.
+    #[inline(always)]
     fn execute_next_internal(&mut self) -> VmResult<()> {
         // Check instruction limit before executing
-        if self.instructions_executed >= self.limits.max_instructions {
+        let max_instructions = self.limits.max_instructions;
+        if self.instructions_executed >= max_instructions {
             return Err(VmError::instruction_limit_exceeded(
                 self.instructions_executed,
-                self.limits.max_instructions,
+                max_instructions,
             ));
         }
         self.instructions_executed += 1;
@@ -159,9 +161,10 @@ impl ExecutionEngine {
             unsafe { (*host_ptr).pre_execute_instruction(self, &context_snapshot, &instruction)? };
         }
 
-        // Execute the instruction - access jump_table by reference to avoid ownership transfer
+        // Execute the instruction - direct array access for optimal dispatch
         let opcode = instruction.opcode();
-        let handler = self.jump_table.get_handler(opcode);
+        // SAFETY: Opcode is guaranteed to be in range 0-255
+        let handler = unsafe { *self.jump_table.handlers.get_unchecked(opcode as usize) };
         let result = match handler {
             Some(h) => h(self, &instruction),
             None => Err(VmError::unsupported_operation_msg(format!(
@@ -196,6 +199,7 @@ impl ExecutionEngine {
     }
 
     /// Called before executing an instruction.
+    #[inline(always)]
     fn pre_execute_instruction(&mut self, _instruction: &Instruction) -> VmResult<()> {
         // SECURITY FIX (H-4): Pre-execution stack overflow check
         // Check stack size BEFORE executing instructions that could significantly
@@ -235,6 +239,7 @@ impl ExecutionEngine {
     /// This dual-check approach prevents:
     /// - Instructions that create many items from overflowing before post-check
     /// - Malicious scripts from exploiting the execution-to-check gap
+    #[inline(always)]
     fn post_execute_instruction(&mut self, instruction: &Instruction) -> VmResult<()> {
         if self.reference_counter.count() < self.limits.max_stack_size as usize {
             if let Some(host_ptr) = self.interop_host {

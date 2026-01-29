@@ -27,6 +27,7 @@ pub struct Slot {
 impl Slot {
     /// Creates a slot containing the specified items.
     /// public Slot(StackItem[] items, `IReferenceCounter` referenceCounter)
+    #[inline]
     #[must_use]
     pub fn with_items(items: Vec<StackItem>, reference_counter: ReferenceCounter) -> Self {
         for item in &items {
@@ -40,6 +41,7 @@ impl Slot {
     }
 
     /// Convenience constructor matching the C# signature `new Slot(items, referenceCounter)`.
+    #[inline]
     #[must_use]
     pub fn new_with_items(items: Vec<StackItem>, reference_counter: ReferenceCounter) -> Self {
         Self::with_items(items, reference_counter)
@@ -47,6 +49,7 @@ impl Slot {
 
     /// Create a slot of the specified size.
     /// public Slot(int count, `IReferenceCounter` referenceCounter)
+    #[inline]
     #[must_use]
     pub fn new(count: usize, reference_counter: ReferenceCounter) -> Self {
         let items = vec![StackItem::Null; count];
@@ -61,8 +64,27 @@ impl Slot {
         }
     }
 
+    /// Creates a slot with the specified capacity, pre-allocating storage.
+    /// This is more efficient than `new` when the items will be set later.
+    #[inline]
+    #[must_use]
+    pub fn with_capacity(capacity: usize, reference_counter: ReferenceCounter) -> Self {
+        let mut items = Vec::with_capacity(capacity);
+        items.resize(capacity, StackItem::Null);
+
+        for _ in 0..capacity {
+            reference_counter.add_stack_reference(&StackItem::Null, 1);
+        }
+
+        Self {
+            reference_counter,
+            items,
+        }
+    }
+
     /// Gets the item at the specified index in the slot.
     /// public `StackItem` this[int index] { get }
+    #[inline]
     #[must_use]
     pub fn get(&self, index: usize) -> Option<&StackItem> {
         self.items.get(index)
@@ -70,6 +92,7 @@ impl Slot {
 
     /// Sets the item at the specified index in the slot.
     /// public `StackItem` this[int index] { internal set }
+    #[inline]
     pub fn set(&mut self, index: usize, value: StackItem) -> VmResult<()> {
         if index >= self.items.len() {
             return Err(VmError::invalid_operation_msg(format!(
@@ -77,7 +100,8 @@ impl Slot {
             )));
         }
 
-        let slot_item = &mut self.items[index];
+        // SAFETY: Bounds checked above
+        let slot_item = unsafe { self.items.get_unchecked_mut(index) };
         self.reference_counter.remove_stack_reference(slot_item);
         *slot_item = value;
         self.reference_counter.add_stack_reference(slot_item, 1);
@@ -95,18 +119,21 @@ impl Slot {
 
     /// Gets the number of items in the slot.
     /// public int Count => _items.Length;
+    #[inline]
     #[must_use]
     pub fn count(&self) -> usize {
         self.items.len()
     }
 
     /// Returns the number of items in the slot (Rust-style).
+    #[inline]
     #[must_use]
     pub fn len(&self) -> usize {
         self.items.len()
     }
 
     /// Returns true when the slot holds zero items.
+    #[inline]
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()

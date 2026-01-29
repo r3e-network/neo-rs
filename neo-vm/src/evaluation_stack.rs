@@ -50,7 +50,7 @@ impl EvaluationStack {
     }
 
     /// Pushes an item onto the top of the stack.
-    #[inline]
+    #[inline(always)]
     pub fn push(&mut self, mut item: StackItem) -> VmResult<()> {
         item.attach_reference_counter(&self.reference_counter)?;
         self.reference_counter.add_stack_reference(&item, 1);
@@ -59,24 +59,33 @@ impl EvaluationStack {
     }
 
     /// Removes and returns the item at the top of the stack.
-    #[inline]
+    #[inline(always)]
     pub fn pop(&mut self) -> VmResult<StackItem> {
         self.remove_internal(0)
     }
 
     /// Returns the item at the specified index counting from the top of the
     /// stack (0-based) without removing it.
-    #[inline]
+    #[inline(always)]
     pub fn peek(&self, index_from_top: usize) -> VmResult<&StackItem> {
-        let idx = self.resolve_top_index(index_from_top)?;
-        Ok(&self.stack[idx])
+        // Fast path: bounds check and index calculation
+        if index_from_top >= self.stack.len() {
+            return Err(VmError::stack_underflow_msg(0, 0));
+        }
+        // SAFETY: We just verified the index is within bounds
+        unsafe { Ok(self.stack.get_unchecked(self.stack.len() - index_from_top - 1)) }
     }
 
     /// Mutable version of [`Self::peek`].
-    #[inline]
+    #[inline(always)]
     pub fn peek_mut(&mut self, index_from_top: usize) -> VmResult<&mut StackItem> {
-        let idx = self.resolve_top_index(index_from_top)?;
-        Ok(&mut self.stack[idx])
+        // Fast path: bounds check and index calculation
+        if index_from_top >= self.stack.len() {
+            return Err(VmError::stack_underflow_msg(0, 0));
+        }
+        let idx = self.stack.len() - index_from_top - 1;
+        // SAFETY: We just verified the index is within bounds
+        unsafe { Ok(self.stack.get_unchecked_mut(idx)) }
     }
 
     /// Inserts an item at the specified index counting from the top of the
@@ -201,6 +210,7 @@ impl EvaluationStack {
         self.stack.clone()
     }
 
+    #[inline(always)]
     fn resolve_top_index(&self, index_from_top: usize) -> VmResult<usize> {
         if index_from_top >= self.stack.len() {
             return Err(VmError::stack_underflow_msg(0, 0));
@@ -208,6 +218,7 @@ impl EvaluationStack {
         Ok(self.stack.len() - index_from_top - 1)
     }
 
+    #[inline(always)]
     fn remove_internal(&mut self, index_from_top: usize) -> VmResult<StackItem> {
         let idx = self.resolve_top_index(index_from_top)?;
         let item = self.stack.remove(idx);

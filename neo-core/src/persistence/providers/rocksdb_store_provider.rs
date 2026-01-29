@@ -86,6 +86,12 @@ pub struct RocksDBStoreProvider {
     base_config: StorageConfig,
     batch_config: BatchCommitConfig,
     batch_stats: Arc<BatchCommitStats>,
+    /// Read cache configuration
+    read_cache_config: Option<ReadCacheConfig>,
+    /// Enable bloom filters for SST files
+    enable_bloom_filters: bool,
+    /// Enable read-ahead for sequential scans
+    enable_read_ahead: bool,
 }
 
 impl RocksDBStoreProvider {
@@ -94,11 +100,34 @@ impl RocksDBStoreProvider {
             base_config,
             batch_config: BatchCommitConfig::default(),
             batch_stats: Arc::new(BatchCommitStats::new()),
+            read_cache_config: Some(ReadCacheConfig::default()),
+            enable_bloom_filters: true,
+            enable_read_ahead: true,
         }
     }
 
     pub fn with_batch_config(mut self, config: BatchCommitConfig) -> Self {
         self.batch_config = config;
+        self
+    }
+
+    pub fn with_read_cache(mut self, config: ReadCacheConfig) -> Self {
+        self.read_cache_config = Some(config);
+        self
+    }
+
+    pub fn without_read_cache(mut self) -> Self {
+        self.read_cache_config = None;
+        self
+    }
+
+    pub fn with_bloom_filters(mut self, enable: bool) -> Self {
+        self.enable_bloom_filters = enable;
+        self
+    }
+
+    pub fn with_read_ahead(mut self, enable: bool) -> Self {
+        self.enable_read_ahead = enable;
         self
     }
 
@@ -126,13 +155,38 @@ impl IStoreProvider for RocksDBStoreProvider {
             path: resolved,
             ..self.base_config.clone()
         };
-        let store = RocksDbStore::open(&config).map_err(|err| CoreError::Io {
-            message: format!(
-                "failed to open RocksDB store at {}: {err}",
-                config.path.display()
-            ),
-        })?;
+        let store = RocksDbStore::open(&config, &self.read_cache_config, self.enable_bloom_filters, self.enable_read_ahead)
+            .map_err(|err| CoreError::Io {
+                message: format!(
+                    "failed to open RocksDB store at {}: {err}",
+                    config.path.display()
+                ),
+            })?;
         Ok(Arc::new(store))
+    }
+}
+
+/// Read-ahead configuration for sequential scans.
+#[derive(Debug, Clone, Copy)]
+pub struct ReadAheadConfig {
+    /// Enable read-ahead
+    pub enabled: bool,
+    /// Read-ahead size in bytes
+    pub read_ahead_size: usize,
+    /// Verify checksums during iteration
+    pub verify_checksums: bool,
+    /// Fill cache during read-ahead
+    pub fill_cache: bool,
+}
+
+impl Default for ReadAheadConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            read_ahead_size: 256 * 1024, // 256KB
+            verify_checksums: true,
+            fill_cache: true,
+        }
     }
 }
 
@@ -143,10 +197,17 @@ struct RocksDbStore {
     batch_config: WriteBatchConfig,
     /// Optional read cache for frequently accessed keys
     read_cache: Option<Arc<StorageReadCache>>,
+    /// Read-ahead configuration
+    read_ahead_config: ReadAheadConfig,
 }
 
 impl RocksDbStore {
-    fn open(config: &StorageConfig) -> Result<Self, rocksdb::Error> {
+    fn open(
+        config: &StorageConfig,
+        read_cache_config: &Option<ReadCacheConfig>,
+        enable_bloom_filters: bool,
+        enable_read_ahead: bool,
+    ) -> Result<Self, rocksdb::Error> {
         if let Some(parent) = config.path.parent() {
             if !parent.as_os_str().is_empty() {
                 if let Err(err) = fs::create_dir_all(parent) {
@@ -160,7 +221,7 @@ impl RocksDbStore {
             }
         }
 
-        let options = build_db_options(config);
+        let options = build_db_options(config, enable_bloom_filters);
         let db = if config.read_only {
             Arc::new(DB::open_for_read_only(&options, &config.path, false)?)
         } else {
@@ -172,12 +233,20 @@ impl RocksDbStore {
             WriteBatchConfig::default(),
         ));
 
+        let read_cache = read_cache_config.as_ref().map(|cfg| Arc::new(StorageReadCache::new(*cfg)));
+
+        let read_ahead_config = ReadAheadConfig {
+            enabled: enable_read_ahead,
+            ..Default::default()
+        };
+
         Ok(Self {
             db,
             on_new_snapshot: Arc::new(RwLock::new(Vec::new())),
             batch_committer,
             batch_config: WriteBatchConfig::default(),
-            read_cache: None,
+            read_cache,
+            read_ahead_config,
         })
     }
 
@@ -194,7 +263,11 @@ impl RocksDbStore {
         key_or_prefix: &[u8],
         direction: SeekDirection,
     ) -> DBIteratorWithThreadMode<'_, DB> {
-        iterator_from(self.db.as_ref(), None, key_or_prefix, direction)
+        iterator_from(self.db.as_ref(), None, key_or_prefix, direction, &self.read_ahead_config)
+    }
+
+    fn read_options(&self) -> ReadOptions {
+        build_read_options(None, &self.read_ahead_config)
     }
 
     #[allow(dead_code)]
@@ -233,7 +306,7 @@ impl IReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbStore {
 
 impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbStore {
     fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {
-        // Check read cache first
+        // Check read cache first (bloom filter will be checked inside)
         if let Some(ref cache) = self.read_cache {
             if let Some(item) = cache.get(key) {
                 return Some(item);
@@ -260,6 +333,10 @@ impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbStore {
         let prefix_bytes = key_prefix.map(|k| k.to_array());
         let start = prefix_bytes.as_deref().unwrap_or(&[]);
         let iter = self.iterator_from(start, direction);
+        
+        // Create an iterator that also caches results
+        let read_cache = self.read_cache.clone();
+        
         Box::new(iter.filter_map(move |res| {
             let (key, value) = match res {
                 Ok(entry) => entry,
@@ -274,10 +351,16 @@ impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbStore {
                     return None;
                 }
             }
-            Some((
-                StorageKey::from_bytes(&key_vec),
-                StorageItem::from_bytes(value.into()),
-            ))
+            let storage_key = StorageKey::from_bytes(&key_vec);
+            let storage_item = StorageItem::from_bytes(value.into());
+            
+            // Cache the result
+            if let Some(ref cache) = read_cache {
+                let size = storage_item.get_value().len() + std::mem::size_of::<StorageKey>();
+                cache.put(storage_key.clone(), storage_item.clone(), size);
+            }
+            
+            Some((storage_key, storage_item))
         }))
     }
 }
@@ -309,7 +392,12 @@ impl IWriteStore<Vec<u8>, Vec<u8>> for RocksDbStore {
 impl IStore for RocksDbStore {
     fn get_snapshot(&self) -> Arc<dyn IStoreSnapshot> {
         let store_arc = Arc::new(self.clone());
-        let snapshot = Arc::new(RocksDbSnapshot::new(self.db.clone(), store_arc));
+        let snapshot = Arc::new(RocksDbSnapshot::new(
+            self.db.clone(),
+            store_arc,
+            self.read_cache.clone(),
+            self.read_ahead_config,
+        ));
 
         let handlers = self.on_new_snapshot.read();
         for handler in handlers.iter() {
@@ -336,6 +424,7 @@ impl Clone for RocksDbStore {
             batch_committer: Arc::clone(&self.batch_committer),
             batch_config: self.batch_config.clone(),
             read_cache: self.read_cache.clone(),
+            read_ahead_config: self.read_ahead_config,
         }
     }
 }
@@ -349,10 +438,17 @@ struct RocksDbSnapshot {
     use_batch_commit: bool,
     /// Optional read cache for this snapshot
     read_cache: Option<Arc<StorageReadCache>>,
+    /// Read-ahead configuration
+    read_ahead_config: ReadAheadConfig,
 }
 
 impl RocksDbSnapshot {
-    fn new(db: Arc<DB>, store: Arc<RocksDbStore>) -> Self {
+    fn new(
+        db: Arc<DB>,
+        store: Arc<RocksDbStore>,
+        read_cache: Option<Arc<StorageReadCache>>,
+        read_ahead_config: ReadAheadConfig,
+    ) -> Self {
         let snapshot = Self::create_snapshot(&db);
         let batch_committer = Arc::clone(&store.batch_committer);
         let use_batch_commit = store.batch_config.max_batch_size > 1;
@@ -364,7 +460,8 @@ impl RocksDbSnapshot {
             write_batch: Mutex::new(WriteBatch::default()),
             batch_committer,
             use_batch_commit,
-            read_cache: None,
+            read_cache,
+            read_ahead_config,
         }
     }
 
@@ -386,9 +483,21 @@ impl RocksDbSnapshot {
     }
 
     fn read_options(&self) -> ReadOptions {
-        let mut options = ReadOptions::default();
-        options.set_snapshot(&self.snapshot);
-        options
+        build_read_options(Some(&self.snapshot), &self.read_ahead_config)
+    }
+
+    fn iterator_from(
+        &self,
+        key_or_prefix: &[u8],
+        direction: SeekDirection,
+    ) -> DBIteratorWithThreadMode<'_, DB> {
+        iterator_from(
+            self.db.as_ref(),
+            Some(self.read_options()),
+            key_or_prefix,
+            direction,
+            &self.read_ahead_config,
+        )
     }
 }
 
@@ -408,6 +517,7 @@ impl IReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
             Some(self.read_options()),
             start,
             direction,
+            &self.read_ahead_config,
         );
         Box::new(iterator.filter_map(|res| res.ok().map(|(k, v)| (k.to_vec(), v.to_vec()))))
     }
@@ -415,7 +525,7 @@ impl IReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
 
 impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbSnapshot {
     fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {
-        // Check read cache first
+        // Check read cache first (bloom filter will be checked inside)
         if let Some(ref cache) = self.read_cache {
             if let Some(item) = cache.get(key) {
                 return Some(item);
@@ -446,12 +556,11 @@ impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbSnapshot {
     ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
         let prefix_bytes = key_prefix.map(|k| k.to_array());
         let start = prefix_bytes.as_deref().unwrap_or(&[]);
-        let iter = iterator_from(
-            self.db.as_ref(),
-            Some(self.read_options()),
-            start,
-            direction,
-        );
+        let iter = self.iterator_from(start, direction);
+        
+        // Create an iterator that also caches results
+        let read_cache = self.read_cache.clone();
+        
         Box::new(iter.filter_map(move |res| {
             let (key, value) = match res {
                 Ok(entry) => entry,
@@ -466,10 +575,16 @@ impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbSnapshot {
                     return None;
                 }
             }
-            Some((
-                StorageKey::from_bytes(&key_vec),
-                StorageItem::from_bytes(value.into()),
-            ))
+            let storage_key = StorageKey::from_bytes(&key_vec);
+            let storage_item = StorageItem::from_bytes(value.into());
+            
+            // Cache the result
+            if let Some(ref cache) = read_cache {
+                let size = storage_item.get_value().len() + std::mem::size_of::<StorageKey>();
+                cache.put(storage_key.clone(), storage_item.clone(), size);
+            }
+            
+            Some((storage_key, storage_item))
         }))
     }
 }
@@ -581,7 +696,6 @@ impl RocksDbStore {
     }
 
     /// Enables read caching with the specified configuration.
-    /// Enables read caching with the specified configuration.
     #[allow(dead_code)]
     pub fn enable_read_cache(&mut self, config: ReadCacheConfig) {
         self.read_cache = Some(Arc::new(StorageReadCache::new(config)));
@@ -625,11 +739,34 @@ impl RocksDbStore {
     }
 }
 
+/// Build read options with read-ahead configuration.
+fn build_read_options(
+    snapshot: Option<&DbSnapshot>,
+    read_ahead_config: &ReadAheadConfig,
+) -> ReadOptions {
+    let mut options = ReadOptions::default();
+    
+    if let Some(snap) = snapshot {
+        options.set_snapshot(snap);
+    }
+    
+    if read_ahead_config.enabled {
+        // Enable read-ahead for sequential scans
+        options.set_readahead_size(read_ahead_config.read_ahead_size);
+    }
+    
+    options.set_verify_checksums(read_ahead_config.verify_checksums);
+    options.fill_cache(read_ahead_config.fill_cache);
+    
+    options
+}
+
 fn iterator_from<'a>(
     db: &'a DB,
     read_options: Option<ReadOptions>,
     key_or_prefix: &[u8],
     direction: SeekDirection,
+    read_ahead_config: &ReadAheadConfig,
 ) -> DBIteratorWithThreadMode<'a, DB> {
     let mode = match direction {
         SeekDirection::Forward => {
@@ -648,13 +785,11 @@ fn iterator_from<'a>(
         }
     };
 
-    match read_options {
-        Some(opts) => db.iterator_opt(mode, opts),
-        None => db.iterator(mode),
-    }
+    let opts = read_options.unwrap_or_else(|| build_read_options(None, read_ahead_config));
+    db.iterator_opt(mode, opts)
 }
 
-fn build_db_options(config: &StorageConfig) -> Options {
+fn build_db_options(config: &StorageConfig, enable_bloom_filters: bool) -> Options {
     let mut options = Options::default();
     options.create_if_missing(true);
     options.set_error_if_exists(false);
@@ -682,7 +817,9 @@ fn build_db_options(config: &StorageConfig) -> Options {
 
     options.set_max_background_jobs(16);
     options.set_bytes_per_sync(0);
-    options.set_optimize_filters_for_hits(false);
+    // Enable optimize_filters_for_hits when bloom filters are enabled
+    // This reduces filter block size at the cost of slightly more disk seeks on negative lookups
+    options.set_optimize_filters_for_hits(enable_bloom_filters);
 
     if let Some(write_buffer) = config.write_buffer_size {
         options.set_write_buffer_size(write_buffer);
@@ -692,17 +829,21 @@ fn build_db_options(config: &StorageConfig) -> Options {
     options.set_max_write_buffer_number(4);
     options.set_min_write_buffer_number_to_merge(2);
 
-    if let Some(cache_size) = config.cache_size {
-        let cache = Cache::new_lru_cache(cache_size);
-        let mut table_options = BlockBasedOptions::default();
-        table_options.set_block_cache(&cache);
-        options.set_block_based_table_factory(&table_options);
-    } else {
-        let cache = Cache::new_lru_cache(256 * 1024 * 1024);
-        let mut table_options = BlockBasedOptions::default();
-        table_options.set_block_cache(&cache);
-        options.set_block_based_table_factory(&table_options);
+    // Configure block cache and bloom filters
+    let cache_size = config.cache_size.unwrap_or(256 * 1024 * 1024);
+    let cache = Cache::new_lru_cache(cache_size);
+    let mut table_options = BlockBasedOptions::default();
+    table_options.set_block_cache(&cache);
+    
+    if enable_bloom_filters {
+        // Enable bloom filters with 10 bits per key for ~1% false positive rate
+        table_options.set_bloom_filter(10.0, false);
+        // Cache index and filter blocks in block cache
+        table_options.set_cache_index_and_filter_blocks(true);
+        table_options.set_pin_l0_filter_and_index_blocks_in_cache(true);
     }
+    
+    options.set_block_based_table_factory(&table_options);
 
     if config.enable_statistics {
         options.enable_statistics();

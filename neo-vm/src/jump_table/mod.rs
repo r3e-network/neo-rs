@@ -29,7 +29,10 @@ pub struct JumpTable {
     /// The handlers for each opcode.
     /// Uses a fixed-size array of 256 entries (one for each possible byte value)
     /// exactly matching the C# implementation which uses `DelAction`[] Table = new `DelAction`[byte.MaxValue]
-    handlers: [Option<InstructionHandler>; 256],
+    /// 
+    /// This field is public to allow direct access for performance-critical
+    /// instruction dispatch in the execution loop.
+    pub(crate) handlers: [Option<InstructionHandler>; 256],
 }
 
 impl Default for JumpTable {
@@ -77,15 +80,21 @@ impl JumpTable {
 
     /// Gets the handler for an opcode.
     /// This matches the C# implementation's indexer get accessor.
+    #[inline(always)]
     #[must_use]
     pub fn get_handler(&self, opcode: OpCode) -> Option<InstructionHandler> {
-        self.handlers[opcode as usize]
+        // SAFETY: Opcode is guaranteed to be in range 0-255
+        unsafe { *self.handlers.get_unchecked(opcode as usize) }
     }
 
     /// Sets the handler for an opcode.
     /// This matches the C# implementation's indexer set accessor.
+    #[inline]
     pub fn set_handler(&mut self, opcode: OpCode, handler: InstructionHandler) {
-        self.handlers[opcode as usize] = Some(handler);
+        // SAFETY: Opcode is guaranteed to be in range 0-255
+        unsafe {
+            *self.handlers.get_unchecked_mut(opcode as usize) = Some(handler);
+        }
     }
 
     /// Sets the handler for an opcode.
@@ -149,31 +158,42 @@ impl JumpTable {
 impl std::ops::Index<OpCode> for JumpTable {
     type Output = InstructionHandler;
 
+    #[inline]
     fn index(&self, opcode: OpCode) -> &Self::Output {
-        self.handlers[opcode as usize]
-            .as_ref()
-            .expect("Unsupported opcode")
+        // SAFETY: Opcode is guaranteed to be in range 0-255
+        unsafe {
+            self.handlers
+                .get_unchecked(opcode as usize)
+                .as_ref()
+                .expect("Unsupported opcode")
+        }
     }
 }
 
 impl std::ops::IndexMut<OpCode> for JumpTable {
+    #[inline]
     fn index_mut(&mut self, opcode: OpCode) -> &mut Self::Output {
+        let idx = opcode as usize;
         // We need to ensure the handler exists first
-        if self.handlers[opcode as usize].is_none() {
-            self.handlers[opcode as usize] = Some(
-                |_engine: &mut ExecutionEngine, instruction: &Instruction| -> VmResult<()> {
-                    Err(VmError::unsupported_operation_msg(format!(
-                        "Unsupported opcode: {:?}",
-                        instruction.opcode()
-                    )))
-                },
-            );
-        }
+        // SAFETY: Opcode is guaranteed to be in range 0-255
+        unsafe {
+            if self.handlers.get_unchecked(idx).is_none() {
+                *self.handlers.get_unchecked_mut(idx) = Some(
+                    |_engine: &mut ExecutionEngine, instruction: &Instruction| -> VmResult<()> {
+                        Err(VmError::unsupported_operation_msg(format!(
+                            "Unsupported opcode: {:?}",
+                            instruction.opcode()
+                        )))
+                    },
+                );
+            }
 
-        // Now we can safely get a mutable reference
-        self.handlers[opcode as usize]
-            .as_mut()
-            .expect("Unsupported opcode")
+            // Now we can safely get a mutable reference
+            self.handlers
+                .get_unchecked_mut(idx)
+                .as_mut()
+                .expect("Unsupported opcode")
+        }
     }
 }
 

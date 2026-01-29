@@ -105,6 +105,20 @@ impl RemoteNode {
             );
             return Err(crate::akka::AkkaError::system(err.to_string()));
         }
+        
+        // Flush high-priority messages immediately to reduce latency
+        // For other messages, let the buffer batch them
+        if Self::is_high_priority(message.command()) {
+            if let Err(err) = connection.flush().await {
+                tracing::warn!(
+                    target: "neo",
+                    endpoint = %self.endpoint,
+                    error = %err,
+                    "failed to flush high-priority message"
+                );
+            }
+        }
+        
         self.last_sent = std::time::Instant::now();
         let index = message.command().to_byte() as usize;
         if index < self.sent_commands.len() {

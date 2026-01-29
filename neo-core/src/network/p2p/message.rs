@@ -1,4 +1,9 @@
-//! Neo `Message` implementation (mirrors the C# class).
+//! Neo `Message` implementation (mirrors the C# class) with optimized serialization.
+//!
+//! Optimizations:
+//! - Pre-allocated buffer capacity estimation to reduce reallocations
+//! - Efficient serialization path with minimal intermediate allocations
+//! - Reusable buffer support for high-throughput scenarios
 
 use super::{
     message_command::MessageCommand, message_flags::MessageFlags, messages::ProtocolMessage,
@@ -12,6 +17,9 @@ use serde::{Deserialize, Serialize};
 
 /// Maximum payload size (matches `Neo.Network.P2P.Message.PayloadMaxSize`)
 pub const PAYLOAD_MAX_SIZE: usize = 0x0200_0000; // 32 MiB
+
+/// Default buffer capacity for small messages (avoids reallocation for common cases).
+const DEFAULT_MESSAGE_CAPACITY: usize = 256;
 
 /// Neo network message (parity with `Neo.Network.P2P.Message`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -32,6 +40,10 @@ impl Message {
     /// `enable_compression` mirrors the C# behaviour of only attempting
     /// compression when the caller explicitly allows it (e.g. when peers
     /// negotiated compression support).
+    ///
+    /// Optimizations:
+    /// - Estimates buffer capacity upfront to minimize reallocations
+    /// - Avoids intermediate Vec copies where possible
     pub fn create<T>(
         command: MessageCommand,
         payload: Option<&T>,
@@ -40,8 +52,13 @@ impl Message {
     where
         T: Serializable,
     {
+        // Estimate capacity for the BinaryWriter to avoid reallocations
+        let estimated_capacity = payload
+            .map(|p| p.size().max(DEFAULT_MESSAGE_CAPACITY))
+            .unwrap_or(0);
+
         let payload_bytes = if let Some(payload) = payload {
-            let mut writer = BinaryWriter::new();
+            let mut writer = BinaryWriter::with_capacity(estimated_capacity);
             payload.serialize(&mut writer).map_err(|e| {
                 NetworkError::InvalidMessage(format!("Failed to serialize payload: {e}"))
             })?;
@@ -129,17 +146,71 @@ impl Message {
     }
 
     /// Serialises the message to bytes, optionally forcing decompression.
+    ///
+    /// Optimizations:
+    /// - Pre-calculates required capacity to avoid buffer growth
+    /// - Uses single allocation for the output buffer
     pub fn to_bytes(&self, enable_compression: bool) -> IoResult<Vec<u8>> {
-        let mut writer = BinaryWriter::new();
         let (flags, payload) = if enable_compression || !self.is_compressed() {
             (self.flags, self.payload_compressed())
         } else {
             (MessageFlags::NONE, self.payload())
         };
+
+        // Calculate exact size needed to avoid reallocations
+        let total_size = 1 + 1 + Self::get_var_size(payload.len()) + payload.len();
+        let mut writer = BinaryWriter::with_capacity(total_size);
+
         writer.write_u8(flags.to_byte())?;
         writer.write_u8(self.command.to_byte())?;
         writer.write_var_bytes(payload)?;
         Ok(writer.into_bytes())
+    }
+
+    /// Serializes the message into an existing buffer (for buffer reuse).
+    ///
+    /// This is useful for high-throughput scenarios where buffer reuse
+    /// is desired to reduce allocation overhead.
+    ///
+    /// Returns the number of bytes written.
+    pub fn serialize_into(&self, buffer: &mut Vec<u8>, enable_compression: bool) -> IoResult<usize> {
+        let start_len = buffer.len();
+        let (flags, payload) = if enable_compression || !self.is_compressed() {
+            (self.flags, self.payload_compressed())
+        } else {
+            (MessageFlags::NONE, self.payload())
+        };
+
+        // Reserve capacity to avoid reallocations
+        let required = 1 + 1 + Self::get_var_size(payload.len()) + payload.len();
+        buffer.reserve(required);
+
+        buffer.push(flags.to_byte());
+        buffer.push(self.command.to_byte());
+
+        // Write var_bytes manually for efficiency
+        Self::write_var_bytes_to_vec(payload, buffer)?;
+
+        Ok(buffer.len() - start_len)
+    }
+
+    /// Helper: writes var_bytes to a Vec without intermediate allocations.
+    fn write_var_bytes_to_vec(bytes: &[u8], vec: &mut Vec<u8>) -> IoResult<()> {
+        let len = bytes.len();
+        if len < 0xFD {
+            vec.push(len as u8);
+        } else if len <= 0xFFFF {
+            vec.push(0xFD);
+            vec.extend_from_slice(&(len as u16).to_le_bytes());
+        } else if len <= 0xFFFF_FFFF {
+            vec.push(0xFE);
+            vec.extend_from_slice(&(len as u32).to_le_bytes());
+        } else {
+            vec.push(0xFF);
+            vec.extend_from_slice(&(len as u64).to_le_bytes());
+        }
+        vec.extend_from_slice(bytes);
+        Ok(())
     }
 
     /// Decompress payload when needed (matches `DecompressPayload`).
@@ -156,7 +227,7 @@ impl Message {
                 })?;
             self.payload_raw = decompressed;
         } else {
-            self.payload_raw = self.payload_compressed.clone();
+            self.payload_raw.clone_from(&self.payload_compressed);
         }
 
         Ok(())
@@ -168,7 +239,7 @@ impl Message {
     }
 
     /// Calculate the encoded length of a var-size integer.
-    fn get_var_size(value: usize) -> usize {
+    const fn get_var_size(value: usize) -> usize {
         if value < 0xFD {
             1
         } else if value <= 0xFFFF {
@@ -284,5 +355,40 @@ mod tests {
         let mut reader = MemoryReader::new(&compressed);
         let decoded = <Message as Serializable>::deserialize(&mut reader).unwrap();
         assert_eq!(decoded.payload(), data.as_slice());
+    }
+
+    #[test]
+    fn serialize_into_reuses_buffer() {
+        let data = vec![0xAB; 100];
+        let payload = DummyPayload { bytes: data };
+        let message = Message::create(MessageCommand::Ping, Some(&payload), false).unwrap();
+
+        let mut buffer = Vec::with_capacity(1024);
+        let len1 = message.serialize_into(&mut buffer, false).unwrap();
+        let len2 = message.serialize_into(&mut buffer, false).unwrap();
+
+        assert_eq!(len1, len2);
+        assert_eq!(buffer.len(), len1 + len2);
+
+        // Verify both messages can be deserialized correctly using MemoryReader
+        let mut reader1 = MemoryReader::new(&buffer[..len1]);
+        let msg1 = <Message as Serializable>::deserialize(&mut reader1).unwrap();
+        
+        let mut reader2 = MemoryReader::new(&buffer[len1..]);
+        let msg2 = <Message as Serializable>::deserialize(&mut reader2).unwrap();
+        
+        assert_eq!(msg1.command, MessageCommand::Ping);
+        assert_eq!(msg2.command, MessageCommand::Ping);
+    }
+
+    #[test]
+    fn get_var_size_calculation() {
+        assert_eq!(Message::get_var_size(0), 1);
+        assert_eq!(Message::get_var_size(0xFC), 1);
+        assert_eq!(Message::get_var_size(0xFD), 3);
+        assert_eq!(Message::get_var_size(0xFFFF), 3);
+        assert_eq!(Message::get_var_size(0x10000), 5);
+        assert_eq!(Message::get_var_size(0xFFFF_FFFF), 5);
+        assert_eq!(Message::get_var_size(0x1_0000_0000), 9);
     }
 }

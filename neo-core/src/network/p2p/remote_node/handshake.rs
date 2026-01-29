@@ -7,6 +7,7 @@ use crate::network::p2p::messages::{NetworkMessage, ProtocolMessage};
 use crate::network::p2p::timeouts;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::task::yield_now;
 use tracing::{debug, warn};
 
@@ -35,11 +36,23 @@ impl RemoteNode {
         connection.compression_allowed = allow_compression && self.config.enable_compression;
 
         let message = NetworkMessage::new(ProtocolMessage::Version(self.local_version.clone()));
-        drop(connection);
-        if let Err(error) = self.send_wire_message(&message).await {
-            let network_error = NetworkError::ConnectionError(error.to_string());
-            self.fail(ctx, network_error).await?;
+        
+        // Send version message
+        if let Err(err) = connection.send_message(&message).await {
+            drop(connection);
+            let network_error = NetworkError::ConnectionError(err.to_string());
+            return self.fail(ctx, network_error).await;
         }
+        
+        // Flush immediately for handshake messages to ensure timely delivery
+        if let Err(err) = connection.flush().await {
+            drop(connection);
+            let network_error = NetworkError::ConnectionError(format!("Failed to flush version: {}", err));
+            return self.fail(ctx, network_error).await;
+        }
+        
+        drop(connection);
+        self.last_sent = std::time::Instant::now();
         Ok(())
     }
 

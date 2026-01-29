@@ -221,26 +221,30 @@ impl ExecutionContext {
     }
 
     /// Returns the current instruction pointer.
+    #[inline]
     #[must_use]
     pub const fn instruction_pointer(&self) -> usize {
         self.instruction_pointer
     }
 
     /// Sets the instruction pointer.
+    #[inline]
     pub fn set_instruction_pointer(&mut self, position: usize) {
         self.instruction_pointer = position;
     }
 
     /// Returns the current instruction or None if at the end of the script.
     /// This matches the C# implementation's `CurrentInstruction` property.
+    #[inline]
     pub fn current_instruction(&self) -> VmResult<Instruction> {
-        if self.instruction_pointer >= self.script().len() {
+        let ip = self.instruction_pointer;
+        let script = self.script();
+        if ip >= script.len() {
             return Err(VmError::invalid_operation_msg(
                 "Instruction pointer is out of range",
             ));
         }
-
-        self.script().get_instruction(self.instruction_pointer)
+        script.get_instruction(ip)
     }
 
     /// Returns the next instruction or None if at the end of the script.
@@ -418,17 +422,20 @@ impl ExecutionContext {
     }
 
     /// Push an item onto the evaluation stack
+    #[inline(always)]
     pub fn push(&mut self, mut item: crate::stack_item::StackItem) -> VmResult<()> {
         item.attach_reference_counter(self.reference_counter())?;
         self.shared_states.evaluation_stack_mut().push(item)
     }
 
     /// Pop an item from the evaluation stack
+    #[inline(always)]
     pub fn pop(&mut self) -> VmResult<crate::stack_item::StackItem> {
         self.shared_states.evaluation_stack_mut().pop()
     }
 
     /// Peek at an item on the evaluation stack without removing it
+    #[inline(always)]
     pub fn peek(&self, index: usize) -> VmResult<crate::stack_item::StackItem> {
         self.shared_states.evaluation_stack().peek(index).cloned()
     }
@@ -494,13 +501,13 @@ impl ExecutionContext {
         // Initialize local variables
         if local_count > 0 {
             let reference_counter = self.shared_states.reference_counter().clone();
-            self.local_variables = Some(Slot::new(local_count, reference_counter));
+            self.local_variables = Some(Slot::with_capacity(local_count, reference_counter));
         }
 
         // Initialize arguments
         if argument_count > 0 {
             let reference_counter = self.shared_states.reference_counter().clone();
-            self.arguments = Some(Slot::new(argument_count, reference_counter));
+            self.arguments = Some(Slot::with_capacity(argument_count, reference_counter));
         }
 
         Ok(())

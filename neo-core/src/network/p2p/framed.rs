@@ -1,13 +1,19 @@
-//! Tokio-based framing helpers for Neo P2P streams with timeouts and size guards.
+//! Tokio-based framing helpers for Neo P2P streams with timeouts, size guards, and vectored I/O.
 use super::{channels_config::ChannelsConfig, message::PAYLOAD_MAX_SIZE};
 use crate::network::{NetworkError, NetworkResult};
-use tokio::{
-    io::AsyncReadExt,
-    net::TcpStream,
-    time::{timeout, Duration},
-};
+use std::io::IoSlice;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
+use tokio::time::{timeout, Duration};
 
-/// Minimal framed reader that wraps Neo P2P length-prefixing with timeouts and size guards.
+/// Initial buffer capacity for reading small messages.
+const INITIAL_READ_CAPACITY: usize = 256;
+
+/// Buffer size for vectored writes.
+const WRITE_BUFFER_SIZE: usize = 4096;
+
+/// Minimal framed reader/writer that wraps Neo P2P length-prefixing with timeouts,
+/// size guards, and vectored I/O support.
 pub struct FramedSocket<'a> {
     stream: &'a mut TcpStream,
 }
@@ -19,6 +25,10 @@ pub struct FrameConfig {
     pub read_timeout_active: Duration,
     pub write_timeout: Duration,
     pub shutdown_timeout: Duration,
+    /// Enable vectored I/O for writes (reduces syscalls for multi-buffer writes).
+    pub use_vectored_io: bool,
+    /// Buffer small writes to reduce syscall overhead.
+    pub buffer_small_writes: bool,
 }
 
 impl From<&ChannelsConfig> for FrameConfig {
@@ -28,6 +38,8 @@ impl From<&ChannelsConfig> for FrameConfig {
             read_timeout_active: cfg.read_timeout_active,
             write_timeout: cfg.write_timeout,
             shutdown_timeout: cfg.shutdown_timeout,
+            use_vectored_io: true,
+            buffer_small_writes: true,
         }
     }
 }
@@ -41,6 +53,76 @@ impl From<ChannelsConfig> for FrameConfig {
 impl Default for FrameConfig {
     fn default() -> Self {
         FrameConfig::from(&ChannelsConfig::default())
+    }
+}
+
+/// Write buffer for batching small writes.
+#[derive(Debug)]
+pub struct WriteBuffer {
+    buffer: Vec<u8>,
+    /// The threshold at which to flush the buffer.
+    pub threshold: usize,
+}
+
+impl WriteBuffer {
+    /// Creates a new write buffer with the specified threshold.
+    pub fn new(threshold: usize) -> Self {
+        Self {
+            buffer: Vec::with_capacity(threshold),
+            threshold,
+        }
+    }
+
+    /// Returns true if the buffer is empty.
+    pub fn is_empty(&self) -> bool {
+        self.buffer.is_empty()
+    }
+
+    /// Returns the number of bytes in the buffer.
+    pub fn len(&self) -> usize {
+        self.buffer.len()
+    }
+
+    /// Adds data to the buffer. Returns true if all data was buffered, false if buffer is full.
+    /// If the buffer is full, no data is added.
+    pub fn push(&mut self, data: &[u8]) -> bool {
+        let remaining = self.threshold.saturating_sub(self.buffer.len());
+        if remaining < data.len() {
+            return false;
+        }
+        self.buffer.extend_from_slice(data);
+        true
+    }
+
+    /// Returns the remaining capacity in the buffer.
+    pub fn remaining_capacity(&self) -> usize {
+        self.threshold.saturating_sub(self.buffer.len())
+    }
+
+    /// Checks if the buffer should be flushed.
+    pub fn should_flush(&self) -> bool {
+        self.buffer.len() >= self.threshold
+    }
+
+    /// Takes the buffered data, leaving the buffer empty.
+    pub fn take(&mut self) -> Vec<u8> {
+        std::mem::take(&mut self.buffer)
+    }
+
+    /// Clears the buffer.
+    pub fn clear(&mut self) {
+        self.buffer.clear();
+    }
+
+    /// Returns a reference to the buffered data.
+    pub fn as_slice(&self) -> &[u8] {
+        &self.buffer
+    }
+}
+
+impl Default for WriteBuffer {
+    fn default() -> Self {
+        Self::new(WRITE_BUFFER_SIZE)
     }
 }
 
@@ -79,6 +161,8 @@ mod tests {
             read_timeout_active: Duration::from_millis(10),
             write_timeout: Duration::from_secs(1),
             shutdown_timeout: Duration::from_secs(1),
+            use_vectored_io: true,
+            buffer_small_writes: true,
         };
 
         let result = framed.read_frame(&cfg, false).await;
@@ -100,6 +184,8 @@ mod tests {
             read_timeout_active: Duration::from_millis(10),
             write_timeout: Duration::from_secs(1),
             shutdown_timeout: Duration::from_secs(1),
+            use_vectored_io: true,
+            buffer_small_writes: true,
         };
 
         let result = framed.read_frame(&cfg, true).await;
@@ -116,6 +202,63 @@ mod tests {
         let actual = FrameConfig::default();
         assert_eq!(expected, actual);
     }
+
+    #[test]
+    fn write_buffer_basic_operations() {
+        let mut buf = WriteBuffer::new(10);
+        assert!(buf.is_empty());
+
+        // Add data that fits
+        let pushed = buf.push(b"hello");
+        assert!(pushed);
+        assert_eq!(buf.len(), 5);
+        assert!(!buf.should_flush());
+
+        // Add more data
+        let pushed = buf.push(b"world");
+        assert!(pushed);
+        assert_eq!(buf.len(), 10);
+        assert!(buf.should_flush());
+
+        // Add data that doesn't fit
+        let pushed = buf.push(b"!");
+        assert!(!pushed);
+        assert_eq!(buf.len(), 10); // Buffer unchanged
+        
+        // Check remaining capacity
+        assert_eq!(buf.remaining_capacity(), 0);
+    }
+
+    #[test]
+    fn write_buffer_take_clears() {
+        let mut buf = WriteBuffer::new(10);
+        buf.push(b"test");
+        assert_eq!(buf.len(), 4);
+
+        let taken = buf.take();
+        assert_eq!(taken, b"test");
+        assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn write_buffer_empty_push() {
+        let mut buf = WriteBuffer::new(10);
+        let pushed = buf.push(b"");
+        assert!(pushed);
+        assert!(buf.is_empty());
+    }
+    
+    #[test]
+    fn write_buffer_remaining_capacity() {
+        let mut buf = WriteBuffer::new(10);
+        assert_eq!(buf.remaining_capacity(), 10);
+        
+        buf.push(b"hello");
+        assert_eq!(buf.remaining_capacity(), 5);
+        
+        buf.push(b"world");
+        assert_eq!(buf.remaining_capacity(), 0);
+    }
 }
 
 impl<'a> FramedSocket<'a> {
@@ -125,6 +268,10 @@ impl<'a> FramedSocket<'a> {
 
     /// Reads a full P2P message frame (flags + command + var-bytes payload) with a timeout applied to
     /// each underlying read.
+    ///
+    /// Optimizations:
+    /// - Uses a single buffer with pre-calculated capacity to minimize allocations
+    /// - Avoids intermediate Vec appends by reading directly into the target buffer
     pub async fn read_frame(
         &mut self,
         cfg: &FrameConfig,
@@ -136,29 +283,155 @@ impl<'a> FramedSocket<'a> {
             cfg.read_timeout_handshake
         };
 
-        let mut message_bytes = Vec::with_capacity(2);
-
-        let flag_byte = self
-            .read_exact_timeout(&mut [0u8; 1], timeout_duration)
+        // Read header (flags + command)
+        let mut header = [0u8; 2];
+        self.read_exact_slice(&mut header, timeout_duration, "header")
             .await?;
-        message_bytes.push(flag_byte);
 
-        let command_byte = self
-            .read_exact_timeout(&mut [0u8; 1], timeout_duration)
-            .await?;
-        message_bytes.push(command_byte);
+        // Read payload length (var_int)
+        let (payload_length, varint_len) = self.read_var_int_len(timeout_duration).await?;
 
-        let (payload_length, mut length_bytes) = self.read_var_int(timeout_duration).await?;
-        message_bytes.append(&mut length_bytes);
+        // Calculate total message size and pre-allocate buffer
+        let total_len = 2 + varint_len + payload_length as usize;
+        let mut message_bytes = Vec::with_capacity(total_len.max(INITIAL_READ_CAPACITY));
 
-        let mut payload = vec![0u8; payload_length as usize];
+        // Write header
+        message_bytes.extend_from_slice(&header);
+
+        // Write var_int bytes (we need to reconstruct them)
+        Self::write_var_int_to_vec(payload_length, &mut message_bytes);
+
+        // Read payload directly into buffer
         if payload_length > 0 {
-            self.read_exact_slice(&mut payload, timeout_duration, "payload")
-                .await?;
+            let payload_start = message_bytes.len();
+            message_bytes.resize(payload_start + payload_length as usize, 0);
+            self.read_exact_slice(
+                &mut message_bytes[payload_start..],
+                timeout_duration,
+                "payload",
+            )
+            .await?;
         }
-        message_bytes.extend_from_slice(&payload);
 
         Ok(message_bytes)
+    }
+
+    /// Writes a frame using vectored I/O to reduce syscalls.
+    ///
+    /// This is more efficient when writing multiple buffers as it avoids
+    /// copying them into a single buffer first.
+    pub async fn write_frame_vectored(
+        &mut self,
+        cfg: &FrameConfig,
+        buffers: &[&[u8]],
+    ) -> NetworkResult<()> {
+        if buffers.is_empty() {
+            return Ok(());
+        }
+
+        // Use write_all for single buffer (simpler, same efficiency)
+        if buffers.len() == 1 || !cfg.use_vectored_io {
+            for buf in buffers {
+                timeout(cfg.write_timeout, self.stream.write_all(buf))
+                    .await
+                    .map_err(|_| NetworkError::Timeout)?
+                    .map_err(|e| {
+                        NetworkError::ConnectionError(format!("Failed to write frame: {e}"))
+                    })?;
+            }
+            return Ok(());
+        }
+
+        // Use vectored I/O for multiple buffers
+        let io_slices: Vec<IoSlice<'_>> =
+            buffers.iter().map(|buf| IoSlice::new(buf)).collect();
+
+        timeout(cfg.write_timeout, self.stream.write_vectored(&io_slices))
+            .await
+            .map_err(|_| NetworkError::Timeout)?
+            .map_err(|e| {
+                NetworkError::ConnectionError(format!("Failed to write frame (vectored): {e}"))
+            })?;
+
+        Ok(())
+    }
+
+    /// Writes a complete message frame with optional buffering.
+    pub async fn write_frame(
+        &mut self,
+        cfg: &FrameConfig,
+        data: &[u8],
+        write_buffer: &mut WriteBuffer,
+    ) -> NetworkResult<()> {
+        if !cfg.buffer_small_writes || data.len() >= write_buffer.threshold {
+            // Flush any pending buffered data first
+            if !write_buffer.is_empty() {
+                let buffered = write_buffer.take();
+                timeout(cfg.write_timeout, self.stream.write_all(&buffered))
+                    .await
+                    .map_err(|_| NetworkError::Timeout)?
+                    .map_err(|e| {
+                        NetworkError::ConnectionError(format!("Failed to flush buffer: {e}"))
+                    })?;
+            }
+
+            // Write large data directly
+            timeout(cfg.write_timeout, self.stream.write_all(data))
+                .await
+                .map_err(|_| NetworkError::Timeout)?
+                .map_err(|e| {
+                    NetworkError::ConnectionError(format!("Failed to write frame: {e}"))
+                })?;
+        } else if data.len() <= write_buffer.remaining_capacity() {
+            // Data fits in buffer
+            write_buffer.push(data);
+            
+            // Flush if we've reached the threshold
+            if write_buffer.should_flush() {
+                let buffered = write_buffer.take();
+                timeout(cfg.write_timeout, self.stream.write_all(&buffered))
+                    .await
+                    .map_err(|_| NetworkError::Timeout)?
+                    .map_err(|e| {
+                        NetworkError::ConnectionError(format!("Failed to flush buffer: {e}"))
+                    })?;
+            }
+        } else {
+            // Data doesn't fit, flush buffer first then write data directly
+            if !write_buffer.is_empty() {
+                let buffered = write_buffer.take();
+                timeout(cfg.write_timeout, self.stream.write_all(&buffered))
+                    .await
+                    .map_err(|_| NetworkError::Timeout)?
+                    .map_err(|e| {
+                        NetworkError::ConnectionError(format!("Failed to flush buffer: {e}"))
+                    })?;
+            }
+            
+            // Write data directly (it's larger than buffer threshold anyway)
+            timeout(cfg.write_timeout, self.stream.write_all(data))
+                .await
+                .map_err(|_| NetworkError::Timeout)?
+                .map_err(|e| {
+                    NetworkError::ConnectionError(format!("Failed to write frame: {e}"))
+                })?;
+        }
+
+        Ok(())
+    }
+
+    /// Flushes any pending buffered writes.
+    pub async fn flush(&mut self, cfg: &FrameConfig, write_buffer: &mut WriteBuffer) -> NetworkResult<()> {
+        if !write_buffer.is_empty() {
+            let buffered = write_buffer.take();
+            timeout(cfg.write_timeout, self.stream.write_all(&buffered))
+                .await
+                .map_err(|_| NetworkError::Timeout)?
+                .map_err(|e| {
+                    NetworkError::ConnectionError(format!("Failed to flush buffer: {e}"))
+                })?;
+        }
+        Ok(())
     }
 
     async fn read_exact_slice(
@@ -174,53 +447,78 @@ impl<'a> FramedSocket<'a> {
         Ok(())
     }
 
-    async fn read_exact_timeout(
-        &mut self,
-        buf: &mut [u8; 1],
-        timeout_duration: Duration,
-    ) -> NetworkResult<u8> {
-        self.read_exact_slice(buf, timeout_duration, "byte").await?;
-        Ok(buf[0])
-    }
-
-    async fn read_var_int(&mut self, timeout_duration: Duration) -> NetworkResult<(u64, Vec<u8>)> {
+    /// Reads a var_int and returns (value, byte_length) without allocating.
+    async fn read_var_int_len(&mut self, timeout_duration: Duration) -> NetworkResult<(u64, usize)> {
         let mut first = [0u8; 1];
         self.read_exact_slice(&mut first, timeout_duration, "varint prefix")
             .await?;
 
-        let mut bytes = vec![first[0]];
-        let value = match first[0] {
+        match first[0] {
             0xFD => {
                 let mut buffer = [0u8; 2];
                 self.read_exact_slice(&mut buffer, timeout_duration, "varint (u16)")
                     .await?;
-                bytes.extend_from_slice(&buffer);
-                u16::from_le_bytes(buffer) as u64
+                let value = u16::from_le_bytes(buffer) as u64;
+                if value > PAYLOAD_MAX_SIZE as u64 {
+                    return Err(NetworkError::InvalidMessage(format!(
+                        "Payload length {} exceeds maximum {}",
+                        value, PAYLOAD_MAX_SIZE
+                    )));
+                }
+                Ok((value, 3))
             }
             0xFE => {
                 let mut buffer = [0u8; 4];
                 self.read_exact_slice(&mut buffer, timeout_duration, "varint (u32)")
                     .await?;
-                bytes.extend_from_slice(&buffer);
-                u32::from_le_bytes(buffer) as u64
+                let value = u32::from_le_bytes(buffer) as u64;
+                if value > PAYLOAD_MAX_SIZE as u64 {
+                    return Err(NetworkError::InvalidMessage(format!(
+                        "Payload length {} exceeds maximum {}",
+                        value, PAYLOAD_MAX_SIZE
+                    )));
+                }
+                Ok((value, 5))
             }
             0xFF => {
                 let mut buffer = [0u8; 8];
                 self.read_exact_slice(&mut buffer, timeout_duration, "varint (u64)")
                     .await?;
-                bytes.extend_from_slice(&buffer);
-                u64::from_le_bytes(buffer)
+                let value = u64::from_le_bytes(buffer);
+                if value > PAYLOAD_MAX_SIZE as u64 {
+                    return Err(NetworkError::InvalidMessage(format!(
+                        "Payload length {} exceeds maximum {}",
+                        value, PAYLOAD_MAX_SIZE
+                    )));
+                }
+                Ok((value, 9))
             }
-            value => value as u64,
-        };
-
-        if value > PAYLOAD_MAX_SIZE as u64 {
-            return Err(NetworkError::InvalidMessage(format!(
-                "Payload length {} exceeds maximum {}",
-                value, PAYLOAD_MAX_SIZE
-            )));
+            value => {
+                let val = value as u64;
+                if val > PAYLOAD_MAX_SIZE as u64 {
+                    return Err(NetworkError::InvalidMessage(format!(
+                        "Payload length {} exceeds maximum {}",
+                        val, PAYLOAD_MAX_SIZE
+                    )));
+                }
+                Ok((val, 1))
+            }
         }
+    }
 
-        Ok((value, bytes))
+    /// Writes a var_int to a Vec without allocating a separate buffer.
+    fn write_var_int_to_vec(value: u64, vec: &mut Vec<u8>) {
+        if value < 0xFD {
+            vec.push(value as u8);
+        } else if value <= 0xFFFF {
+            vec.push(0xFD);
+            vec.extend_from_slice(&(value as u16).to_le_bytes());
+        } else if value <= 0xFFFF_FFFF {
+            vec.push(0xFE);
+            vec.extend_from_slice(&(value as u32).to_le_bytes());
+        } else {
+            vec.push(0xFF);
+            vec.extend_from_slice(&value.to_le_bytes());
+        }
     }
 }

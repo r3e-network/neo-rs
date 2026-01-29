@@ -33,6 +33,7 @@ pub fn register_handlers(jump_table: &mut JumpTable) {
 }
 
 /// Implements the DUP operation.
+#[inline]
 fn dup(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Peek the top item on the stack and push a copy
     let item = engine.peek(0)?.clone();
@@ -41,6 +42,7 @@ fn dup(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
 }
 
 /// Implements the SWAP operation.
+#[inline]
 fn swap(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Pop the top two items from the stack
     let b = engine.pop()?;
@@ -137,15 +139,10 @@ fn depth(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<(
 }
 
 /// Implements the DROP operation.
+#[inline]
 fn drop(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-
-    // Pop the top item from the stack
-    context.pop()?;
-
+    // Get the current context and pop the top item
+    engine.pop()?;
     Ok(())
 }
 

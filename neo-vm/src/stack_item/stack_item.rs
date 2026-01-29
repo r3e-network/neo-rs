@@ -82,66 +82,78 @@ pub enum StackItem {
 
 impl StackItem {
     /// The singleton True value.
+    #[inline]
     #[must_use]
     pub const fn true_value() -> Self {
         Self::Boolean(true)
     }
 
     /// The singleton False value.
+    #[inline]
     #[must_use]
     pub const fn false_value() -> Self {
         Self::Boolean(false)
     }
 
     /// The singleton Null value.
+    #[inline]
     #[must_use]
     pub const fn null() -> Self {
         Self::Null
     }
 
     /// Creates a boolean stack item.
+    #[inline]
     #[must_use]
     pub const fn from_bool(value: bool) -> Self {
         Self::Boolean(value)
     }
 
     /// Creates an integer stack item.
+    #[inline]
     pub fn from_int<T: Into<BigInt>>(value: T) -> Self {
         Self::Integer(value.into())
     }
 
     /// Creates a byte string stack item.
+    #[inline]
     pub fn from_byte_string<T: Into<Vec<u8>>>(value: T) -> Self {
         Self::ByteString(value.into())
     }
 
     /// Creates a buffer stack item.
+    #[inline]
     pub fn from_buffer<T: Into<Vec<u8>>>(value: T) -> Self {
         Self::Buffer(BufferItem::new(value.into()))
     }
 
     /// Creates an array stack item.
+    #[inline]
     pub fn from_array<T: Into<Vec<Self>>>(value: T) -> Self {
         Self::Array(ArrayItem::new_untracked(value.into()))
     }
 
     /// Creates a struct stack item.
+    #[inline]
     pub fn from_struct<T: Into<Vec<Self>>>(value: T) -> Self {
         Self::Struct(StructItem::new_untracked(value.into()))
     }
 
     /// Creates a map stack item.
+    #[inline]
     pub fn from_map<T: Into<VmOrderedDictionary<Self, Self>>>(value: T) -> Self {
         Self::Map(MapItem::new_untracked(value.into()))
     }
 
     /// Creates a pointer stack item.
+    #[inline]
     #[must_use]
     pub fn from_pointer(script: Arc<Script>, position: usize) -> Self {
         Self::Pointer(PointerItem::new(script, position))
     }
 
     /// Creates an interop interface stack item.
+    #[inline]
     pub fn from_interface<T: InteropInterface + 'static>(value: T) -> Self {
         Self::InteropInterface(Arc::new(value))
     }
@@ -161,6 +173,7 @@ impl StackItem {
     }
 
     /// Returns the type of the stack item.
+    #[inline]
     #[must_use]
     pub const fn stack_item_type(&self) -> StackItemType {
         match self {
@@ -178,12 +191,14 @@ impl StackItem {
     }
 
     /// Returns true if the stack item is null.
+    #[inline]
     #[must_use]
     pub const fn is_null(&self) -> bool {
         matches!(self, Self::Null)
     }
 
     /// Converts the stack item to a boolean.
+    #[inline]
     pub fn as_bool(&self) -> VmResult<bool> {
         match self {
             Self::Null => Ok(false),
@@ -207,6 +222,7 @@ impl StackItem {
     }
 
     /// Converts the stack item to an integer.
+    #[inline]
     pub fn as_int(&self) -> VmResult<BigInt> {
         match self {
             Self::Null => Err(VmError::invalid_type_simple(
@@ -265,11 +281,13 @@ impl StackItem {
     }
 
     /// Returns the boolean value represented by the stack item.
+    #[inline]
     pub fn get_boolean(&self) -> VmResult<bool> {
         self.as_bool()
     }
 
     /// Returns the integer value represented by the stack item.
+    #[inline]
     pub fn get_integer(&self) -> VmResult<BigInt> {
         self.as_int()
     }
@@ -285,9 +303,10 @@ impl StackItem {
     }
 
     /// Converts the stack item to a byte array.
+    #[inline]
     pub fn as_bytes(&self) -> VmResult<Vec<u8>> {
         match self {
-            Self::Null => Ok(vec![]),
+            Self::Null => Ok(Vec::new()),
             Self::Boolean(b) => Ok(vec![u8::from(*b)]),
             Self::Integer(i) => Ok(normalize_bigint_bytes(i)),
             Self::ByteString(b) => Ok(b.clone()),

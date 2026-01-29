@@ -63,8 +63,12 @@ impl NetworkMessage {
     /// `allow_compression` mirrors the C# `Message.ToArray(bool)` behaviour:
     /// when set to `false`, the payload is always emitted uncompressed even if
     /// it would normally satisfy the compression heuristics.
+    ///
+    /// Optimizations:
+    /// - Pre-calculates buffer capacity to minimize reallocations
+    /// - Single allocation for the output buffer
     pub fn to_bytes(&self, allow_compression: bool) -> NetworkResult<Vec<u8>> {
-        let mut payload_bytes = self.payload.serialize()?;
+        let payload_bytes = self.payload.serialize()?;
         if payload_bytes.len() > PAYLOAD_MAX_SIZE {
             return Err(NetworkError::InvalidMessage(format!(
                 "Payload exceeds maximum size ({} > {})",
@@ -77,26 +81,47 @@ impl NetworkMessage {
             && self.payload.should_try_compress()
             && payload_bytes.len() >= COMPRESSION_MIN_SIZE;
 
-        let mut flags = MessageFlags::NONE;
-        if should_compress {
+        let (final_payload, flags) = if should_compress {
             if let Ok(compressed) = compress_lz4(&payload_bytes) {
                 // Honour the threshold check from the C# implementation.
                 if compressed.len() + COMPRESSION_THRESHOLD < payload_bytes.len() {
-                    payload_bytes = compressed;
-                    flags = MessageFlags::COMPRESSED;
+                    (compressed, MessageFlags::COMPRESSED)
+                } else {
+                    (payload_bytes, MessageFlags::NONE)
                 }
+            } else {
+                (payload_bytes, MessageFlags::NONE)
             }
-        }
+        } else {
+            (payload_bytes, MessageFlags::NONE)
+        };
 
-        let mut writer = BinaryWriter::new();
+        // Calculate exact capacity needed: 1 (flags) + 1 (command) + varint + payload
+        let varint_size = Self::calc_varint_size(final_payload.len());
+        let total_size = 1 + 1 + varint_size + final_payload.len();
+        let mut writer = BinaryWriter::with_capacity(total_size);
+
         writer.write_u8(flags.to_byte()).map_err(map_io_error)?;
         writer
             .write_u8(self.header.command.to_byte())
             .map_err(map_io_error)?;
         writer
-            .write_var_bytes(&payload_bytes)
+            .write_var_bytes(&final_payload)
             .map_err(map_io_error)?;
         Ok(writer.into_bytes())
+    }
+
+    /// Calculates the size of a var_int encoding for the given value.
+    const fn calc_varint_size(value: usize) -> usize {
+        if value < 0xFD {
+            1
+        } else if value <= 0xFFFF {
+            3
+        } else if value <= 0xFFFF_FFFF {
+            5
+        } else {
+            9
+        }
     }
 
     /// Decodes a message that was previously produced by [`Self::to_bytes`].

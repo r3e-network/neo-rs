@@ -33,6 +33,7 @@ impl ReferenceCounter {
     }
 
     /// Returns the total number of references currently tracked.
+    #[inline]
     #[must_use]
     pub fn count(&self) -> usize {
         self.inner.lock().references_count
@@ -45,31 +46,40 @@ impl ReferenceCounter {
     }
 
     /// Adds `count` stack references for the supplied item.
+    #[inline]
     pub fn add_stack_reference(&self, item: &StackItem, count: usize) {
+        if count == 0 {
+            return;
+        }
         self.add_stack_reference_internal(item, count);
     }
 
     /// Removes a single stack reference from the supplied item.
+    #[inline]
     pub fn remove_stack_reference(&self, item: &StackItem) {
         self.remove_stack_reference_internal(item);
     }
 
     /// Adds a parent/child reference relationship.
+    #[inline]
     pub fn add_reference(&self, item: &StackItem, parent: &StackItem) {
         self.add_reference_internal(item, parent);
     }
 
     /// Removes a previously tracked parent/child reference.
+    #[inline]
     pub fn remove_reference(&self, item: &StackItem, parent: &StackItem) {
         self.remove_reference_internal(item, parent);
     }
 
     /// Adds an item to the zero-referred set so it can be collected later.
+    #[inline]
     pub fn add_zero_referred(&self, item: &StackItem) {
         self.add_zero_referred_internal(item);
     }
 
     /// Processes zero-referred items, matching the behaviour of the C# counter.
+    #[inline]
     #[must_use]
     pub fn check_zero_referred(&self) -> usize {
         self.check_zero_referred_internal()
@@ -91,11 +101,8 @@ impl ReferenceCounter {
         Arc::ptr_eq(&self.inner, &other.inner)
     }
 
+    #[inline(always)]
     fn add_stack_reference_internal(&self, item: &StackItem, count: usize) {
-        if count == 0 {
-            return;
-        }
-
         let mut inner = self.inner.lock();
         inner.references_count += count;
 
@@ -106,27 +113,20 @@ impl ReferenceCounter {
         }
     }
 
+    #[inline(always)]
     fn remove_stack_reference_internal(&self, item: &StackItem) {
         let mut inner = self.inner.lock();
         inner.references_count = inner.references_count.saturating_sub(1);
 
         if let Some(id) = ItemId::from(item) {
-            let mut enqueue = false;
-            {
-                if let Some(record) = inner.tracked_items.get_mut(&id) {
-                    if record.stack_references > 0 {
-                        record.stack_references -= 1;
-                        if record.stack_references == 0 {
-                            enqueue = true;
-                        }
-                    }
-                    if record.total_references() == 0 {
-                        enqueue = true;
-                    }
+            if let Some(record) = inner.tracked_items.get_mut(&id) {
+                if record.stack_references > 0 {
+                    record.stack_references -= 1;
                 }
-            }
-            if enqueue {
-                inner.zero_referred.insert(id);
+                // Enqueue for zero-referred check if no stack references or no total references
+                if record.stack_references == 0 || record.total_references() == 0 {
+                    inner.zero_referred.insert(id);
+                }
             }
         }
     }
@@ -320,6 +320,7 @@ impl ReferenceCounter {
 }
 
 impl Default for ReferenceCounter {
+    #[inline]
     fn default() -> Self {
         Self::new()
     }
