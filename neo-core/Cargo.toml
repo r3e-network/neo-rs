@@ -67,6 +67,7 @@ aes = "0.8"
 cbc = "0.1"
 cipher = "0.4"
 zeroize = { workspace = true }
+subtle = "2.5"
 
 # Actor framework removed (Phase 2 refactoring)
 ractor = { workspace = true, optional = true }

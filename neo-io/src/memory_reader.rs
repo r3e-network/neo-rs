@@ -86,7 +86,7 @@ impl<'a> MemoryReader<'a> {
     }
 
     #[inline]
-    fn read_array<const N: usize>(&mut self) -> IoResult<[u8; N]> {
+    pub fn read_array<const N: usize>(&mut self) -> IoResult<[u8; N]> {
         self.ensure_available(N)?;
         let end = self.position + N;
         let slice = &self.buffer[self.position..end];
@@ -101,6 +101,14 @@ impl<'a> MemoryReader<'a> {
         let end = start + length;
         self.position = end;
         Ok(&self.buffer[start..end])
+    }
+
+    /// Reads a sequence of bytes and returns them as a borrowed slice (zero-copy).
+    /// 
+    /// This is more efficient than `read_bytes` when you don't need an owned vector.
+    #[inline]
+    pub fn read_bytes_ref(&mut self, length: usize) -> IoResult<&'a [u8]> {
+        self.read_slice(length)
     }
 
     /// Reads a sequence of bytes and returns them as an owned vector.

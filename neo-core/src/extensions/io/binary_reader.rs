@@ -2,6 +2,11 @@ use std::io::{Error, ErrorKind, Read, Result};
 
 /// Extension helpers for [`Read`] mirroring `Neo.Extensions.IO.BinaryReaderExtensions`.
 pub trait BinaryReaderExtensions: Read {
+    /// Reads exactly `N` bytes and returns them as a fixed-size array.
+    /// 
+    /// This is more efficient than `read_fixed_bytes` when the size is known at compile time.
+    fn read_array<const N: usize>(&mut self) -> Result<[u8; N]>;
+
     /// Reads exactly `size` bytes from the underlying stream.
     fn read_fixed_bytes(&mut self, size: usize) -> Result<Vec<u8>>;
 
@@ -13,6 +18,12 @@ pub trait BinaryReaderExtensions: Read {
 }
 
 impl<T: Read> BinaryReaderExtensions for T {
+    fn read_array<const N: usize>(&mut self) -> Result<[u8; N]> {
+        let mut buf = [0u8; N];
+        self.read_exact(&mut buf)?;
+        Ok(buf)
+    }
+
     fn read_fixed_bytes(&mut self, size: usize) -> Result<Vec<u8>> {
         let mut data = vec![0u8; size];
         let mut offset = 0;

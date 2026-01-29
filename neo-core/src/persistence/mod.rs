@@ -32,6 +32,8 @@
 pub mod cache;
 pub mod compression;
 pub mod data_cache;
+pub mod read_cache;
+pub mod write_batch_buffer;
 pub mod i_read_only_store;
 pub mod i_store;
 pub mod i_store_provider;
@@ -63,3 +65,5 @@ pub use store_cache::StoreCache;
 pub use store_factory::StoreFactory;
 pub use track_state::TrackState;
 pub use transaction::StoreTransaction;
+pub use read_cache::{ReadCache, ReadCacheConfig, ReadCacheStats, ReadCacheStatsSnapshot, StorageReadCache, PrefetchHint};
+pub use write_batch_buffer::{WriteBatchBuffer, WriteBatchConfig, WriteBatchStats, WriteBatchStatsSnapshot, AutoFlushBatchBuffer};

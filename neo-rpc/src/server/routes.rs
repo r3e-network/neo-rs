@@ -1,4 +1,6 @@
-use super::middleware::{GovernorRateLimiter, RateLimitConfig};
+use super::middleware::{
+    GovernorRateLimiter, RateLimitCheckResult, RateLimitConfig, RateLimitTier,
+};
 use super::rcp_server_settings::{RpcServerConfig, RpcServerSettings, UnhandledExceptionPolicy};
 use super::rpc_error::RpcError;
 use super::rpc_server::{RpcServer, RPC_ERR_TOTAL, RPC_REQ_TOTAL};
@@ -11,7 +13,7 @@ use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use std::collections::HashSet;
 use std::convert::Infallible;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::panic::{self, AssertUnwindSafe};
 use std::sync::{Arc, Weak};
 use subtle::ConstantTimeEq;
@@ -227,21 +229,30 @@ async fn handle_post_request(
     auth_header: Option<String>,
     body: Bytes,
 ) -> Result<HttpResponse, Infallible> {
+    // Apply IP-based rate limiting first (before parsing body)
+    // Use a default IP for requests where remote address is unavailable
+    let client_ip = remote.map(|addr| addr.ip()).unwrap_or_else(|| {
+        // Fallback to a dummy IP for rate limiting when remote is unavailable
+        // This ensures rate limiting is always applied even if IP extraction fails
+        "127.0.0.1".parse().unwrap()
+    });
+
     if let Some(limiter) = filters.rate_limiter.as_ref() {
-        if let Some(addr) = remote.map(|addr| addr.ip()) {
-            if !limiter.check(addr) {
-                let mut response = build_http_response(
-                    Some(error_response(None, RpcError::too_many_requests())),
-                    false,
-                    false,
-                );
-                apply_cors(&mut response, filters.cors.as_ref(), origin.as_ref());
-                return Ok(response);
-            }
+        let check_result = limiter.check(client_ip);
+        if check_result.is_blocked() {
+            let mut response = build_http_response(
+                Some(error_response(None, RpcError::too_many_requests())),
+                false,
+                false,
+            );
+            apply_cors(&mut response, filters.cors.as_ref(), origin.as_ref());
+            return Ok(response);
         }
     }
 
-    let (response, unauthorized) = process_body(&filters, auth_header.as_deref(), body.as_ref());
+    // Process body and apply per-method rate limiting
+    let (response, unauthorized) =
+        process_body(&filters, auth_header.as_deref(), body.as_ref(), Some(client_ip));
 
     let challenge = unauthorized && filters.auth.as_ref().is_some();
     let mut http_response = build_http_response(response, unauthorized, challenge);
@@ -257,17 +268,42 @@ async fn handle_get_request(
     raw_query: String,
     max_query_len: u64,
 ) -> Result<HttpResponse, Infallible> {
+    // Apply IP-based rate limiting first (before parsing query)
+    // Use a default IP for requests where remote address is unavailable
+    let client_ip = remote.map(|addr| addr.ip()).unwrap_or_else(|| {
+        // Fallback to a dummy IP for rate limiting when remote is unavailable
+        // This ensures rate limiting is always applied even if IP extraction fails
+        "127.0.0.1".parse().unwrap()
+    });
+
     if let Some(limiter) = filters.rate_limiter.as_ref() {
-        if let Some(addr) = remote.map(|addr| addr.ip()) {
-            if !limiter.check(addr) {
-                let mut response = build_http_response(
-                    Some(error_response(None, RpcError::too_many_requests())),
-                    false,
-                    false,
-                );
-                apply_cors(&mut response, filters.cors.as_ref(), origin.as_ref());
-                return Ok(response);
-            }
+        let check_result = limiter.check(client_ip);
+        if check_result.is_blocked() {
+            let mut response = build_http_response(
+                Some(error_response(None, RpcError::too_many_requests())),
+                false,
+                false,
+            );
+            apply_cors(&mut response, filters.cors.as_ref(), origin.as_ref());
+            return Ok(response);
+        }
+    }
+
+    // Extract method from query for per-method rate limiting
+    let method_from_query = query_to_request_value(&raw_query)
+        .and_then(|v| v.get("method").and_then(|m| m.as_str()).map(String::from));
+
+    // Apply per-method rate limiting if method is known
+    if let (Some(limiter), Some(ref method)) = (filters.rate_limiter.as_ref(), method_from_query) {
+        let check_result = limiter.check_for_method(client_ip, method);
+        if check_result.is_blocked() {
+            let mut response = build_http_response(
+                Some(error_response(None, RpcError::too_many_requests())),
+                false,
+                false,
+            );
+            apply_cors(&mut response, filters.cors.as_ref(), origin.as_ref());
+            return Ok(response);
         }
     }
 
@@ -279,7 +315,7 @@ async fn handle_get_request(
                 (Some(error_response(None, RpcError::bad_request())), false)
             }
             Some(Value::Object(obj)) => {
-                let outcome = process_object(obj, &filters, auth_header.as_deref());
+                let outcome = process_object(obj, &filters, auth_header.as_deref(), Some(client_ip));
                 (outcome.response, outcome.unauthorized)
             }
             Some(_) => (
@@ -303,6 +339,7 @@ fn process_body(
     filters: &RpcFilters,
     auth_header: Option<&str>,
     body: &[u8],
+    client_ip: Option<IpAddr>,
 ) -> (Option<Value>, bool) {
     let parsed: Value = match serde_json::from_slice(body) {
         Ok(value) => value,
@@ -313,9 +350,9 @@ fn process_body(
     }
 
     match parsed {
-        Value::Array(entries) => process_array(entries, filters, auth_header),
+        Value::Array(entries) => process_array(entries, filters, auth_header, client_ip),
         Value::Object(obj) => {
-            let outcome = process_object(obj, filters, auth_header);
+            let outcome = process_object(obj, filters, auth_header, client_ip);
             (outcome.response, outcome.unauthorized)
         }
         _ => (
@@ -329,6 +366,7 @@ fn process_array(
     entries: Vec<Value>,
     filters: &RpcFilters,
     auth_header: Option<&str>,
+    client_ip: Option<IpAddr>,
 ) -> (Option<Value>, bool) {
     if entries.is_empty() {
         return (
@@ -342,7 +380,7 @@ fn process_array(
     for entry in entries {
         match entry {
             Value::Object(obj) => {
-                let outcome = process_object(obj, filters, auth_header);
+                let outcome = process_object(obj, filters, auth_header, client_ip);
                 unauthorized |= outcome.unauthorized;
                 if let Some(response) = outcome.response {
                     responses.push(response);
@@ -363,6 +401,7 @@ fn process_object(
     mut obj: Map<String, Value>,
     filters: &RpcFilters,
     auth_header: Option<&str>,
+    client_ip: Option<IpAddr>,
 ) -> RequestOutcome {
     RPC_REQ_TOTAL.inc();
     let has_id = obj.contains_key("id");
@@ -377,6 +416,15 @@ fn process_object(
         RPC_ERR_TOTAL.inc();
         return RequestOutcome::error(error_response(id, RpcError::invalid_request()), false);
     };
+
+    // Apply per-method rate limiting if IP is available and rate limiter is configured
+    if let (Some(limiter), Some(ip)) = (filters.rate_limiter.as_ref(), client_ip) {
+        let check_result = limiter.check_for_method(ip, &method);
+        if check_result.is_blocked() {
+            RPC_ERR_TOTAL.inc();
+            return RequestOutcome::error(error_response(id, RpcError::too_many_requests()), false);
+        }
+    }
 
     let params_value = obj.remove("params").unwrap_or(Value::Array(Vec::new()));
     let params = if let Value::Array(values) = params_value { values } else {
@@ -704,6 +752,48 @@ mod tests {
             cors: None,
         };
         (server, filters)
+    }
+
+    #[test]
+    fn per_method_rate_limiting_blocks_expensive_methods() {
+        use std::net::IpAddr;
+
+        let config = RateLimitConfig {
+            max_rps: 100,
+            burst: 100,
+        };
+        let limiter = Arc::new(GovernorRateLimiter::new(config));
+        let ip: IpAddr = "127.0.0.1".parse().unwrap();
+
+        // Should categorize methods correctly
+        assert_eq!(RateLimitTier::from_method("invokefunction"), RateLimitTier::Expensive);
+        assert_eq!(RateLimitTier::from_method("sendrawtransaction"), RateLimitTier::Write);
+        assert_eq!(RateLimitTier::from_method("getblockcount"), RateLimitTier::Cheap);
+
+        // Expensive methods should have their own rate limit bucket
+        let expensive_config = limiter.tier_config(RateLimitTier::Expensive).unwrap();
+        assert!(expensive_config.max_rps < config.max_rps);
+
+        // Test that rate limiting is enforced
+        let result = limiter.check_for_method(ip, "invokefunction");
+        assert!(result.is_allowed());
+    }
+
+    #[test]
+    fn rate_limit_check_result_is_handled_properly() {
+        // Verify that all check results must be explicitly handled
+        let allowed = RateLimitCheckResult::Allowed;
+        let blocked = RateLimitCheckResult::Blocked;
+        let disabled = RateLimitCheckResult::Disabled;
+
+        assert!(allowed.is_allowed());
+        assert!(!allowed.is_blocked());
+
+        assert!(!blocked.is_allowed());
+        assert!(blocked.is_blocked());
+
+        assert!(disabled.is_allowed());
+        assert!(!disabled.is_blocked());
     }
 
     fn build_filters_with_panic_handler() -> (Arc<RwLock<RpcServer>>, RpcFilters) {

@@ -5,20 +5,6 @@
 use super::{ExecutionEngine, HASH_SIZE, VmResult};
 
 impl ExecutionEngine {
-    /// Gets gas consumed (disabled - no C# counterpart)
-    /// `ApplicationEngine` overrides this with additional gas tracking
-    #[must_use] 
-    pub const fn gas_consumed(&self) -> i64 {
-        0
-    }
-
-    /// Gets gas limit (disabled - no C# counterpart)
-    /// `ApplicationEngine` overrides this with actual gas limit
-    #[must_use] 
-    pub const fn gas_limit(&self) -> i64 {
-        1_000_000_000 // Default gas limit
-    }
-
     /// Returns the current script hash, if the host provides one.
     /// Standalone VM execution has no blockchain context so this returns `None`.
     #[must_use] 

@@ -19,6 +19,7 @@ use rand::rngs::OsRng;
 use rand::RngCore;
 use scrypt::Params;
 use std::fmt;
+use subtle::ConstantTimeEq;
 use zeroize::{Zeroize, Zeroizing};
 
 /// A cryptographic key pair for Neo accounts.
@@ -421,9 +422,15 @@ impl fmt::Display for KeyPair {
     }
 }
 
+impl ConstantTimeEq for KeyPair {
+    fn ct_eq(&self, other: &Self) -> subtle::Choice {
+        self.private_key.ct_eq(&other.private_key)
+    }
+}
+
 impl PartialEq for KeyPair {
     fn eq(&self, other: &Self) -> bool {
-        self.private_key == other.private_key
+        self.ct_eq(other).into()
     }
 }
 

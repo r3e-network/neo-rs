@@ -5,6 +5,8 @@
 use super::helpers::parse_seed_entry;
 use super::state::LocalNode;
 use super::*;
+use crate::network::p2p::validate_peer_endpoint;
+use tokio::time::timeout;
 
 /// Actor responsible for orchestrating peer management, mirroring C# `LocalNode` behaviour.
 pub struct LocalNodeActor {
@@ -69,6 +71,19 @@ impl LocalNodeActor {
                     listen_port = snapshot.listen_tcp_port,
                     "processing connection establishment request"
                 );
+
+                // SECURITY: Validate peer endpoint before allowing connection
+                if let Err(reason) = validate_peer_endpoint(&snapshot.remote_address) {
+                    debug!(
+                        target: "neo",
+                        remote = %snapshot.remote_address,
+                        reason = %reason,
+                        "connection rejected: invalid endpoint"
+                    );
+                    let _ = reply.send(false);
+                    return Ok(());
+                }
+
                 let allowed = self.state.allow_new_connection(&snapshot, &version);
                 if allowed {
                     let registered =
@@ -98,6 +113,14 @@ impl LocalNodeActor {
                         snapshot.services,
                         snapshot.last_block_index,
                     );
+                    
+                    // SECURITY: Record successful handshake in reputation tracker
+                    let tracker = self.state.reputation_tracker();
+                    let ip = snapshot.remote_address.ip();
+                    tokio::spawn(async move {
+                        tracker.record_contribution(ip, "handshake_success").await;
+                    });
+                    
                     let _ = reply.send(true);
                 } else {
                     debug!(
@@ -116,6 +139,14 @@ impl LocalNodeActor {
                 let was_pending = self.state.is_pending(&endpoint);
                 self.peer.connection_failed(endpoint);
                 self.state.clear_pending(&endpoint);
+                
+                // SECURITY: Record connection failure in reputation tracker
+                let tracker = self.state.reputation_tracker();
+                let ip = endpoint.ip();
+                tokio::spawn(async move {
+                    tracker.record_violation(ip, "handshake_failure").await;
+                });
+                
                 if was_pending {
                     self.requeue_endpoint(endpoint);
                 }
@@ -224,6 +255,29 @@ impl LocalNodeActor {
                 remote,
                 local,
             } => {
+                // SECURITY: Validate inbound connection against rate limits and bans
+                if let Err(reason) = self.state.validate_inbound_connection(&remote) {
+                    debug!(
+                        target: "neo",
+                        remote = %remote,
+                        reason = %reason,
+                        "inbound connection rejected by security policy"
+                    );
+                    // Connection will be dropped when stream goes out of scope
+                    return Ok(());
+                }
+
+                // SECURITY: Validate peer endpoint
+                if let Err(reason) = crate::network::p2p::validate_peer_endpoint(&remote) {
+                    debug!(
+                        target: "neo",
+                        remote = %remote,
+                        reason = %reason,
+                        "inbound connection rejected: invalid endpoint"
+                    );
+                    return Ok(());
+                }
+
                 self.spawn_remote(ctx, stream, remote, local, false, true)
                     .await?;
             }
@@ -289,8 +343,8 @@ impl LocalNodeActor {
         endpoint: SocketAddr,
         is_trusted: bool,
     ) -> ActorResult {
-        match TcpStream::connect(endpoint).await {
-            Ok(stream) => {
+        match timeout(TCP_CONNECTION_TIMEOUT, TcpStream::connect(endpoint)).await {
+            Ok(Ok(stream)) => {
                 if let Err(err) = stream.set_nodelay(true) {
                     warn!(target: "neo", endpoint = %endpoint, error = %err, "failed to enable TCP_NODELAY");
                 }
@@ -302,7 +356,7 @@ impl LocalNodeActor {
                 self.spawn_remote(ctx, stream, endpoint, local_endpoint, is_trusted, false)
                     .await
             }
-            Err(error) => {
+            Ok(Err(error)) => {
                 if error.kind() == ErrorKind::PermissionDenied {
                     error!(target: "neo", endpoint = %endpoint, error = %error, "permission denied opening outbound connection; not retrying");
                     self.peer.connection_failed(endpoint);
@@ -313,6 +367,13 @@ impl LocalNodeActor {
                     self.state.clear_pending(&endpoint);
                     self.requeue_endpoint(endpoint);
                 }
+                Ok(())
+            }
+            Err(_) => {
+                warn!(target: "neo", endpoint = %endpoint, timeout_secs = TCP_CONNECTION_TIMEOUT.as_secs(), "connection attempt timed out");
+                self.peer.connection_failed(endpoint);
+                self.state.clear_pending(&endpoint);
+                self.requeue_endpoint(endpoint);
                 Ok(())
             }
         }

@@ -10,6 +10,9 @@ mod node;
 mod node_type;
 mod trie;
 
+#[cfg(test)]
+mod tests;
+
 pub use cache::{MptCache, MptStoreSnapshot};
 pub type Cache<S> = MptCache<S>;
 pub use error::{MptError, MptResult};

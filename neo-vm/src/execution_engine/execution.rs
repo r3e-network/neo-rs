@@ -133,6 +133,15 @@ impl ExecutionEngine {
 
     /// Internal implementation of `execute_next`.
     fn execute_next_internal(&mut self) -> VmResult<()> {
+        // Check instruction limit before executing
+        if self.instructions_executed >= self.limits.max_instructions {
+            return Err(VmError::instruction_limit_exceeded(
+                self.instructions_executed,
+                self.limits.max_instructions,
+            ));
+        }
+        self.instructions_executed += 1;
+
         // Get the current context
         let context = self
             .current_context_mut()

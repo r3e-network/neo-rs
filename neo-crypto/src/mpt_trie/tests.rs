@@ -3,12 +3,23 @@
 
 #[cfg(test)]
 mod tests {
-	use super::{MptCache, MptResult, MptStoreSnapshot, Node, NodeType, Trie};
-	    use crate::neo_io::{BinaryWriter, MemoryReader, SerializableExt};
-	    use crate::UInt256;
-	    use std::collections::HashMap;
-	    use parking_lot::Mutex;
-	    use std::sync::Arc;
+    use crate::mpt_trie::{MptCache, MptResult, MptStoreSnapshot, Node, NodeType, Trie};
+    use neo_io::{BinaryWriter, MemoryReader, Serializable};
+    use neo_primitives::UInt256;
+    use std::collections::HashMap;
+    use parking_lot::Mutex;
+    use std::sync::Arc;
+
+    /// Helper trait to provide to_array method for serialization
+    trait SerializableExt: Serializable {
+        fn to_array(&self) -> neo_io::IoResult<Vec<u8>> {
+            let mut writer = BinaryWriter::new();
+            self.serialize(&mut writer)?;
+            Ok(writer.into_bytes())
+        }
+    }
+
+    impl<T: Serializable> SerializableExt for T {}
 
     /// Mock store for testing - matches C# MemoryStore
     struct MockStore {
@@ -22,26 +33,26 @@ mod tests {
             }
         }
 
-	        fn get_data(&self) -> HashMap<Vec<u8>, Vec<u8>> {
-	            self.data.lock().clone()
-	        }
-	    }
+        fn get_data(&self) -> HashMap<Vec<u8>, Vec<u8>> {
+            self.data.lock().clone()
+        }
+    }
 
-	impl MptStoreSnapshot for MockStore {
-	        fn try_get(&self, key: &[u8]) -> MptResult<Option<Vec<u8>>> {
-	            Ok(self.data.lock().get(key).cloned())
-	        }
+    impl MptStoreSnapshot for MockStore {
+        fn try_get(&self, key: &[u8]) -> MptResult<Option<Vec<u8>>> {
+            Ok(self.data.lock().get(key).cloned())
+        }
 
-	        fn put(&self, key: Vec<u8>, value: Vec<u8>) -> MptResult<()> {
-	            self.data.lock().insert(key, value);
-	            Ok(())
-	        }
+        fn put(&self, key: Vec<u8>, value: Vec<u8>) -> MptResult<()> {
+            self.data.lock().insert(key, value);
+            Ok(())
+        }
 
-	        fn delete(&self, key: Vec<u8>) -> MptResult<()> {
-	            self.data.lock().remove(&key);
-	            Ok(())
-	        }
-	    }
+        fn delete(&self, key: Vec<u8>) -> MptResult<()> {
+            self.data.lock().remove(&key);
+            Ok(())
+        }
+    }
 
     fn serialize_child(node: &Node) -> Vec<u8> {
         let mut writer = BinaryWriter::new();
@@ -65,8 +76,8 @@ mod tests {
 
     fn prepare_mpt_node3() -> Node {
         let mut branch = Node::new_branch();
-        branch.children[1] = prepare_mpt_node1();
-        branch.children[2] = prepare_mpt_node2();
+        branch.set_child(1, prepare_mpt_node1());
+        branch.set_child(2, prepare_mpt_node2());
         branch
     }
 
@@ -646,16 +657,16 @@ mod tests {
         let store = Arc::new(MockStore::new());
         let mut cache = MptCache::new(store, 0xf0);
 
-        let mut branch = Node::new_branch();
+        let branch = Node::new_branch();
         let hash = branch.hash();
         cache.put_node(branch.clone()).unwrap();
 
-        let mut resolved = cache.resolve(&hash).unwrap();
-        resolved.children[0] = Node::new_leaf(vec![1, 2, 3]);
-        cache.put_node(resolved).unwrap();
-
-        let new_hash = cache.resolve(&hash).unwrap().hash();
+        let mut resolved = cache.resolve(&hash).unwrap().unwrap();
+        resolved.set_child(0, Node::new_leaf(vec![1, 2, 3]));
+        // Verify the modified node has a different hash
+        let new_hash = resolved.hash();
         assert_ne!(hash, new_hash);
+        cache.put_node(resolved).unwrap();
     }
 
     #[test]
@@ -668,12 +679,12 @@ mod tests {
         let hash = ext.hash();
         cache.put_node(ext.clone()).unwrap();
 
-        let mut resolved = cache.resolve(&hash).unwrap();
-        resolved.next = Some(Box::new(Node::new_leaf(vec![4, 5, 6])));
-        cache.put_node(resolved).unwrap();
-
-        let new_hash = cache.resolve(&hash).unwrap().hash();
+        let mut resolved = cache.resolve(&hash).unwrap().unwrap();
+        resolved.next = Some(Arc::new(Node::new_leaf(vec![4, 5, 6])));
+        // Verify the modified node has a different hash
+        let new_hash = resolved.hash();
         assert_ne!(hash, new_hash);
+        cache.put_node(resolved).unwrap();
     }
 
     #[test]
@@ -685,13 +696,13 @@ mod tests {
         let hash = leaf.hash();
         cache.put_node(leaf.clone()).unwrap();
 
-        let mut resolved = cache.resolve(&hash).unwrap();
+        let mut resolved = cache.resolve(&hash).unwrap().unwrap();
         resolved.value = vec![4, 5, 6];
         resolved.set_dirty();
-        cache.put_node(resolved).unwrap();
-
-        let new_hash = cache.resolve(&hash).unwrap().hash();
+        // Verify the modified node has a different hash
+        let new_hash = resolved.hash();
         assert_ne!(hash, new_hash);
+        cache.put_node(resolved).unwrap();
     }
 
     #[test]
@@ -700,11 +711,11 @@ mod tests {
         let mut cache = MptCache::new(store, 0xf0);
 
         let mut branch = Node::new_branch();
-        branch.children[0] = Node::new_leaf(vec![1, 2, 3]);
+        branch.set_child(0, Node::new_leaf(vec![1, 2, 3]));
         let hash1 = branch.hash();
         cache.put_node(branch.clone()).unwrap();
 
-        branch.children[1] = Node::new_leaf(vec![4, 5, 6]);
+        branch.set_child(1, Node::new_leaf(vec![4, 5, 6]));
         branch.set_dirty();
         let hash2 = branch.hash();
         cache.put_node(branch).unwrap();

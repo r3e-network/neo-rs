@@ -7,6 +7,7 @@ use neo_primitives::UInt256;
 use neo_primitives::UINT256_SIZE;
 use parking_lot::RwLock;
 use std::mem;
+use std::sync::Arc;
 use tracing::error;
 
 const MAX_STORAGE_KEY_SIZE: usize = 64;
@@ -25,14 +26,19 @@ pub const MAX_VALUE_LENGTH: usize = 3 + MAX_STORAGE_VALUE_SIZE + mem::size_of::<
 ///
 /// This mirrors the behaviour of `Neo.Cryptography.MPTTrie.Node` from the C# reference
 /// implementation and provides identical serialization semantics.
+///
+/// Uses `Arc<Node>` for children to enable structural sharing and reduce cloning overhead.
 #[derive(Debug)]
 pub struct Node {
     pub node_type: NodeType,
     pub reference: u32,
     hash: RwLock<Option<UInt256>>,
-    pub children: Vec<Self>,
+    /// Children for branch nodes - stored as Arc for structural sharing
+    pub children: Vec<Arc<Self>>,
+    /// Key for extension nodes
     pub key: Vec<u8>,
-    pub next: Option<Box<Self>>,
+    /// Next node for extension nodes - stored as Arc for structural sharing
+    pub next: Option<Arc<Self>>,
     pub value: Vec<u8>,
 }
 
@@ -51,6 +57,10 @@ impl Default for Node {
 }
 
 impl Clone for Node {
+    /// Clone the node with structural sharing of subtrees.
+    ///
+    /// Instead of deep-cloning children, this clones the Arc pointers,
+    /// enabling O(1) subtree sharing while the data itself remains immutable.
     fn clone(&self) -> Self {
         let cached_hash = *self.hash.read();
         let mut node = Self {
@@ -65,13 +75,12 @@ impl Clone for Node {
 
         match self.node_type {
             NodeType::BranchNode => {
-                node.children = self.children.iter().map(Self::clone_as_child).collect();
+                // Structural sharing: clone the Arc pointers, not the nodes
+                node.children = self.children.iter().map(|c| Arc::clone(c)).collect();
             }
             NodeType::ExtensionNode => {
-                node.next = self
-                    .next
-                    .as_ref()
-                    .map(|child| Box::new(child.clone_as_child()));
+                // Structural sharing: clone the Arc pointer, not the node
+                node.next = self.next.as_ref().map(Arc::clone);
             }
             NodeType::LeafNode | NodeType::Empty => {}
             NodeType::HashNode => {
@@ -85,19 +94,19 @@ impl Clone for Node {
 
 impl Node {
     /// Creates an empty node.
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Creates a new branch node with default children.
-    #[must_use] 
+    #[must_use]
     pub fn new_branch() -> Self {
         Self {
             node_type: NodeType::BranchNode,
             reference: 1,
             hash: RwLock::new(None),
-            children: (0..BRANCH_CHILD_COUNT).map(|_| Self::new()).collect(),
+            children: (0..BRANCH_CHILD_COUNT).map(|_| Arc::new(Self::new())).collect(),
             key: Vec::new(),
             next: None,
             value: Vec::new(),
@@ -116,13 +125,13 @@ impl Node {
             hash: RwLock::new(None),
             children: Vec::new(),
             key,
-            next: Some(Box::new(next)),
+            next: Some(Arc::new(next)),
             value: Vec::new(),
         })
     }
 
     /// Creates a new leaf node with the supplied value.
-    #[must_use] 
+    #[must_use]
     pub const fn new_leaf(value: Vec<u8>) -> Self {
         Self {
             node_type: NodeType::LeafNode,
@@ -136,7 +145,7 @@ impl Node {
     }
 
     /// Creates a new hash-only node.
-    #[must_use] 
+    #[must_use]
     pub const fn new_hash(hash: UInt256) -> Self {
         Self {
             node_type: NodeType::HashNode,
@@ -247,8 +256,41 @@ impl Node {
         }
     }
 
+    /// Gets a mutable reference to a child node, cloning from Arc if necessary.
+    ///
+    /// This implements copy-on-write semantics for efficient updates.
+    pub fn get_child_mut(&mut self, index: usize) -> Option<&mut Self> {
+        if index >= self.children.len() {
+            return None;
+        }
+        // Arc::make_mut clones the inner data only if the Arc is shared
+        Some(Arc::make_mut(&mut self.children[index]))
+    }
+
+    /// Gets a mutable reference to the next node, cloning from Arc if necessary.
+    ///
+    /// This implements copy-on-write semantics for efficient updates.
+    pub fn get_next_mut(&mut self) -> Option<&mut Self> {
+        self.next.as_mut().map(|arc| Arc::make_mut(arc))
+    }
+
+    /// Sets a child node at the given index.
+    pub fn set_child(&mut self, index: usize, child: Self) {
+        if index < self.children.len() {
+            self.children[index] = Arc::new(child);
+        }
+    }
+
+    /// Takes the next node from an extension node.
+    pub fn take_next(&mut self) -> Option<Self> {
+        self.next.take().map(|arc| match Arc::try_unwrap(arc) {
+            Ok(node) => node,
+            Err(arc) => (*arc).clone(),
+        })
+    }
+
     fn branch_size(&self) -> usize {
-        self.children.iter().map(Self::byte_size_as_child).sum()
+        self.children.iter().map(|c| Self::byte_size_as_child(c)).sum()
     }
 
     fn extension_size(&self) -> usize {
@@ -316,17 +358,17 @@ impl Node {
         writer.write_bytes(&hash.to_bytes())
     }
 
-    fn deserialize_branch(reader: &mut MemoryReader) -> IoResult<Vec<Self>> {
+    fn deserialize_branch(reader: &mut MemoryReader) -> IoResult<Vec<Arc<Self>>> {
         let mut children = Vec::with_capacity(BRANCH_CHILD_COUNT);
         for _ in 0..BRANCH_CHILD_COUNT {
-            children.push(Self::deserialize(reader)?);
+            children.push(Arc::new(Self::deserialize(reader)?));
         }
         Ok(children)
     }
 
-    fn deserialize_extension(reader: &mut MemoryReader) -> IoResult<(Vec<u8>, Self)> {
+    fn deserialize_extension(reader: &mut MemoryReader) -> IoResult<(Vec<u8>, Arc<Self>)> {
         let key = reader.read_var_bytes(MAX_KEY_LENGTH)?;
-        let next = Self::deserialize(reader)?;
+        let next = Arc::new(Self::deserialize(reader)?);
         Ok((key, next))
     }
 
@@ -366,7 +408,7 @@ impl Serializable for Node {
                     hash: RwLock::new(None),
                     children: Vec::new(),
                     key,
-                    next: Some(Box::new(next)),
+                    next: Some(next),
                     value: Vec::new(),
                 })
             }

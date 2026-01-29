@@ -2,7 +2,7 @@
 // core.rs - ExecutionEngine constructor, state management, and basic getters/setters
 //
 
-use super::{ExecutionEngine, JumpTable, ReferenceCounter, ExecutionEngineLimits, VMState, InteropService, CallFlags, EvaluationStack, VmError, StackItem, ExecutionContext};
+use super::{ExecutionEngine, JumpTable, ReferenceCounter, ExecutionEngineLimits, VMState, InteropService, CallFlags, EvaluationStack, VmError, StackItem, ExecutionContext, DEFAULT_GAS_LIMIT};
 
 impl ExecutionEngine {
     /// Creates a new execution engine with the specified jump table.
@@ -34,6 +34,9 @@ impl ExecutionEngine {
             invocation_stack: Vec::new(),
             result_stack: EvaluationStack::new(reference_counter),
             uncaught_exception: None,
+            instructions_executed: 0,
+            gas_consumed: 0,
+            gas_limit: DEFAULT_GAS_LIMIT,
         }
     }
 

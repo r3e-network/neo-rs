@@ -1,10 +1,11 @@
 //! Shared in-memory cache for persistence providers.
 //!
 //! This module implements a Copy-on-Write (CoW) DataCache pattern for optimal
-//! performance during block synchronization.
+//! performance during block synchronization with optional LRU read caching.
 
 use super::{
     i_read_only_store::{IReadOnlyStore, IReadOnlyStoreGeneric},
+    read_cache::{ReadCache, ReadCacheConfig, ReadCacheStatsSnapshot},
     seek_direction::SeekDirection,
     track_state::TrackState,
 };
@@ -13,7 +14,7 @@ use parking_lot::RwLock;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use thiserror::Error;
-use tracing::warn;
+use tracing::{debug, warn};
 
 /// Represents an entry in the cache.
 #[derive(Debug, Clone)]
@@ -46,6 +47,27 @@ struct InnerState {
     change_set: HashSet<StorageKey>,
 }
 
+/// Configuration for DataCache.
+#[derive(Debug, Clone, Copy)]
+pub struct DataCacheConfig {
+    /// Maximum number of entries in the write cache
+    pub max_entries: usize,
+    /// Enable read caching with LRU
+    pub enable_read_cache: bool,
+    /// Read cache configuration
+    pub read_cache_config: ReadCacheConfig,
+}
+
+impl Default for DataCacheConfig {
+    fn default() -> Self {
+        Self {
+            max_entries: 100000,
+            enable_read_cache: true,
+            read_cache_config: ReadCacheConfig::default(),
+        }
+    }
+}
+
 impl InnerState {
     fn new() -> Self {
         Self {
@@ -71,6 +93,10 @@ pub struct DataCache {
     store_find: Option<Arc<StoreFindFn>>,
     /// Strong count for CoW detection
     ref_count: Arc<AtomicUsize>,
+    /// Optional LRU read cache for frequently accessed keys
+    read_cache: Option<Arc<ReadCache<StorageKey, StorageItem>>>,
+    /// Configuration
+    config: DataCacheConfig,
 }
 
 use std::sync::atomic::AtomicUsize;
@@ -96,6 +122,8 @@ impl Clone for DataCache {
             store_get: self.store_get.as_ref().map(Arc::clone),
             store_find: self.store_find.as_ref().map(Arc::clone),
             ref_count: Arc::clone(&self.ref_count),
+            read_cache: self.read_cache.clone(),
+            config: self.config,
         }
     }
 }
@@ -103,7 +131,12 @@ impl Clone for DataCache {
 impl DataCache {
     /// Creates a new DataCache.
     pub fn new(read_only: bool) -> Self {
-        Self::new_with_store(read_only, None, None)
+        Self::new_with_config(read_only, None, None, DataCacheConfig::default())
+    }
+
+    /// Creates a new DataCache with configuration.
+    pub fn with_config(read_only: bool, config: DataCacheConfig) -> Self {
+        Self::new_with_config(read_only, None, None, config)
     }
 
     /// Attempt to add an item to the cache, returning an error when read-only.
@@ -148,6 +181,22 @@ impl DataCache {
         store_get: Option<Arc<StoreGetFn>>,
         store_find: Option<Arc<StoreFindFn>>,
     ) -> Self {
+        Self::new_with_config(read_only, store_get, store_find, DataCacheConfig::default())
+    }
+
+    /// Creates a new DataCache with configuration and optional backing store.
+    pub fn new_with_config(
+        read_only: bool,
+        store_get: Option<Arc<StoreGetFn>>,
+        store_find: Option<Arc<StoreFindFn>>,
+        config: DataCacheConfig,
+    ) -> Self {
+        let read_cache = if config.enable_read_cache {
+            Some(Arc::new(ReadCache::new(config.read_cache_config)))
+        } else {
+            None
+        };
+
         Self {
             state: Arc::new(RwLock::new(InnerState::new())),
             read_only,
@@ -156,6 +205,8 @@ impl DataCache {
             store_get,
             store_find,
             ref_count: Arc::new(AtomicUsize::new(1)),
+            read_cache,
+            config,
         }
     }
 
@@ -185,6 +236,8 @@ impl DataCache {
             store_get: self.store_get.as_ref().map(Arc::clone),
             store_find: self.store_find.as_ref().map(Arc::clone),
             ref_count: Arc::clone(&self.ref_count),
+            read_cache: self.read_cache.clone(),
+            config: self.config,
         }
     }
 
@@ -203,6 +256,7 @@ impl DataCache {
     /// Gets an item from the cache.
     #[inline]
     pub fn get(&self, key: &StorageKey) -> Option<StorageItem> {
+        // First check write cache (for uncommitted changes)
         {
             let state = self.state.read();
             if let Some(trackable) = state.dictionary.get(key) {
@@ -214,14 +268,35 @@ impl DataCache {
             }
         }
 
+        // Check read cache for frequently accessed keys
+        if let Some(ref cache) = self.read_cache {
+            if let Some(item) = cache.get(key) {
+                return Some(item);
+            }
+        }
+
+        // Fall back to store getter
         if let Some(getter) = &self.store_get {
             if let Some(item) = getter(key) {
+                // Cache in read cache for future access
+                if let Some(ref cache) = self.read_cache {
+                    let size = item.get_value().len() + std::mem::size_of::<StorageKey>();
+                    cache.put(key.clone(), item.clone(), size);
+                }
+
+                // Also track in write cache for consistency
                 {
                     let mut state = self.state.write();
-                    state
-                        .dictionary
-                        .entry(key.clone())
-                        .or_insert_with(|| Trackable::new(item.clone(), TrackState::None));
+                    // Check if we're approaching the max entries limit
+                    if state.dictionary.len() >= self.config.max_entries {
+                        // In a real implementation, we might want to evict old entries
+                        // For now, we skip adding to the write cache if full
+                    } else {
+                        state
+                            .dictionary
+                            .entry(key.clone())
+                            .or_insert_with(|| Trackable::new(item.clone(), TrackState::None));
+                    }
                 }
 
                 for handler in self.on_read.read().iter() {
@@ -256,6 +331,12 @@ impl DataCache {
             warn!("attempted to add to read-only DataCache");
             return;
         }
+        
+        // Invalidate read cache for this key
+        if let Some(ref cache) = self.read_cache {
+            cache.remove(&key);
+        }
+        
         self.apply_add(&key, value.clone());
         for handler in self.on_update.read().iter() {
             handler(self, &key, &value);
@@ -277,6 +358,13 @@ impl DataCache {
             warn!("attempted to update read-only DataCache");
             return;
         }
+        
+        // Update read cache with new value
+        if let Some(ref cache) = self.read_cache {
+            let size = value.get_value().len() + std::mem::size_of::<StorageKey>();
+            cache.put(key.clone(), value.clone(), size);
+        }
+        
         self.apply_update(&key, value.clone());
         for handler in self.on_update.read().iter() {
             handler(self, &key, &value);
@@ -309,6 +397,12 @@ impl DataCache {
             warn!("attempted to delete from read-only DataCache");
             return;
         }
+        
+        // Invalidate read cache for this key
+        if let Some(ref cache) = self.read_cache {
+            cache.remove(key);
+        }
+        
         self.apply_delete(key);
     }
 
@@ -343,6 +437,9 @@ impl DataCache {
         }
         // Clear change set (actual persistence handled by StoreCache)
         self.state.write().change_set.clear();
+        
+        // Note: We don't clear the read cache on commit - 
+        // it contains valid data that may be useful for future reads
     }
 
     /// Gets all tracked items for persistence.
@@ -363,6 +460,43 @@ impl DataCache {
     /// Gets the change set.
     pub fn get_change_set(&self) -> Vec<StorageKey> {
         self.state.read().change_set.iter().cloned().collect()
+    }
+
+    /// Gets the configuration.
+    pub fn config(&self) -> &DataCacheConfig {
+        &self.config
+    }
+
+    /// Returns true if read caching is enabled.
+    pub fn has_read_cache(&self) -> bool {
+        self.read_cache.is_some()
+    }
+
+    /// Gets read cache statistics if caching is enabled.
+    pub fn read_cache_stats(&self) -> Option<ReadCacheStatsSnapshot> {
+        self.read_cache.as_ref().map(|c| c.stats())
+    }
+
+    /// Clears the read cache.
+    pub fn clear_read_cache(&self) {
+        if let Some(ref cache) = self.read_cache {
+            cache.clear();
+            debug!(target: "neo", "DataCache read cache cleared");
+        }
+    }
+
+    /// Pre-fetches items into the read cache.
+    pub fn prefetch(&self, items: Vec<(StorageKey, StorageItem)>) {
+        if let Some(ref cache) = self.read_cache {
+            let cache_items: Vec<_> = items
+                .into_iter()
+                .map(|(k, v)| {
+                    let size = v.get_value().len() + std::mem::size_of::<StorageKey>();
+                    (k, v, size)
+                })
+                .collect();
+            cache.put_batch(cache_items);
+        }
     }
 
     /// Finds items by key prefix.

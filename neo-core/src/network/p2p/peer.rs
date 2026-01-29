@@ -9,6 +9,7 @@
 
 use super::{
     channels_config::ChannelsConfig, local_node::RemoteNodeSnapshot, payloads::VersionPayload,
+    validate_peer_endpoint,
 };
 use crate::akka::{ActorContext, ActorRef, Cancelable};
 use if_addrs::get_if_addrs;
@@ -111,6 +112,7 @@ impl PeerState {
 
     /// Inserts new peers into the unconnected pool, applying the same
     /// filtering rules as the C# implementation.
+    /// SECURITY: Also validates peer endpoints to reject invalid addresses.
     pub fn add_unconnected_peers<I>(&mut self, endpoints: I)
     where
         I: IntoIterator<Item = SocketAddr>,
@@ -121,6 +123,16 @@ impl PeerState {
 
         for endpoint in endpoints {
             let endpoint = normalize_endpoint(endpoint);
+
+            // SECURITY: Validate peer endpoint before adding
+            if validate_peer_endpoint(&endpoint).is_err() {
+                trace!(
+                    target: "neo",
+                    endpoint = %endpoint,
+                    "rejecting unconnected peer: invalid endpoint"
+                );
+                continue;
+            }
 
             if (endpoint.port() == self.listener_tcp_port
                 && self.local_addresses.contains(&endpoint.ip()))
@@ -138,8 +150,19 @@ impl PeerState {
 
     /// Marks the specified endpoint as being in the connecting state.  Returns
     /// `true` if the connection attempt should proceed.
+    /// SECURITY: Validates peer endpoints before allowing connections.
     pub fn begin_connect(&mut self, endpoint: SocketAddr, is_trusted: bool) -> bool {
         let endpoint = normalize_endpoint(endpoint);
+
+        // SECURITY: Validate peer endpoint
+        if validate_peer_endpoint(&endpoint).is_err() {
+            trace!(
+                target: "neo",
+                endpoint = %endpoint,
+                "rejecting connection: invalid endpoint"
+            );
+            return false;
+        }
 
         if endpoint.port() == self.listener_tcp_port
             && self.local_addresses.contains(&endpoint.ip())
@@ -191,6 +214,7 @@ impl PeerState {
 
     /// Registers a successful connection and updates per-address counters.  The
     /// caller is responsible for ensuring the connection has been authorised.
+    /// SECURITY: Validates peer endpoints before registering.
     pub fn register_connection(
         &mut self,
         actor: ActorRef,
@@ -199,6 +223,17 @@ impl PeerState {
         ctx: &mut ActorContext,
     ) -> bool {
         let remote_endpoint = normalize_endpoint(snapshot.remote_address);
+        
+        // SECURITY: Validate peer endpoint
+        if validate_peer_endpoint(&remote_endpoint).is_err() {
+            trace!(
+                target: "neo",
+                endpoint = %remote_endpoint,
+                "rejecting registered connection: invalid endpoint"
+            );
+            return false;
+        }
+        
         self.connecting_peers.remove(&remote_endpoint);
 
         if !is_trusted && self.connected_peers.len() >= self.config.max_connections {

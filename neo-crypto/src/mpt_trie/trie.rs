@@ -229,23 +229,20 @@ where
             }
             NodeType::BranchNode => {
                 if path.is_empty() {
-                    Self::try_get_node(
-                        cache,
-                        _full_state,
-                        &mut node.children[BRANCH_VALUE_INDEX],
-                        path,
-                    )
+                    let child = node.get_child_mut(BRANCH_VALUE_INDEX)
+                        .ok_or_else(|| MptError::invalid("branch node missing value child"))?;
+                    Self::try_get_node(cache, _full_state, child, path)
                 } else {
                     let index = path[0] as usize;
-                    Self::try_get_node(cache, _full_state, &mut node.children[index], &path[1..])
+                    let child = node.get_child_mut(index)
+                        .ok_or_else(|| MptError::invalid("branch node child index out of bounds"))?;
+                    Self::try_get_node(cache, _full_state, child, &path[1..])
                 }
             }
             NodeType::ExtensionNode => {
                 if path.starts_with(&node.key) {
                     let consumed = node.key.len();
-                    let next = node
-                        .next
-                        .as_mut()
+                    let next = node.get_next_mut()
                         .ok_or_else(|| MptError::invalid("extension node missing child"))?;
                     Self::try_get_node(cache, _full_state, next, &path[consumed..])
                 } else {
@@ -275,15 +272,14 @@ where
                 }
                 let mut branch = Node::new_branch();
                 let old_leaf = std::mem::replace(node, Node::new());
-                branch.children[BRANCH_VALUE_INDEX] = old_leaf;
+                branch.set_child(BRANCH_VALUE_INDEX, old_leaf);
                 let index = path[0] as usize;
-                Self::put_internal(
-                    cache,
-                    full_state,
-                    &mut branch.children[index],
-                    &path[1..],
-                    val,
-                )?;
+                
+                // Use get_child_mut for copy-on-write semantics
+                let child = branch.get_child_mut(index)
+                    .ok_or_else(|| MptError::invalid("branch child index out of bounds"))?;
+                Self::put_internal(cache, full_state, child, &path[1..], val)?;
+                
                 cache.put_node(branch.clone())?;
                 *node = branch;
             }
@@ -291,11 +287,12 @@ where
                 if path.starts_with(&node.key) {
                     let consumed = node.key.len();
                     let old_hash = node.try_hash()?;
-                    let next = node
-                        .next
-                        .as_mut()
+                    
+                    // Use get_next_mut for copy-on-write semantics
+                    let next = node.get_next_mut()
                         .ok_or_else(|| MptError::invalid("extension node missing child"))?;
                     Self::put_internal(cache, full_state, next, &path[consumed..], val)?;
+                    
                     if !full_state {
                         cache.delete_node(old_hash)?;
                     }
@@ -316,23 +313,21 @@ where
                 let path_remain = path[prefix_len..].to_vec();
 
                 let mut child_branch = Node::new_branch();
-                let next_node = node
-                    .next
-                    .take()
+                let next_node = node.take_next()
                     .ok_or_else(|| MptError::invalid("extension node missing child"))?;
 
                 if key_remain.len() == 1 {
-                    child_branch.children[key_remain[0] as usize] = *next_node;
+                    child_branch.set_child(key_remain[0] as usize, next_node);
                 } else {
-                    let ext_child = Node::new_extension(key_remain[1..].to_vec(), *next_node)?;
+                    let ext_child = Node::new_extension(key_remain[1..].to_vec(), next_node)?;
                     cache.put_node(ext_child.clone())?;
-                    child_branch.children[key_remain[0] as usize] = ext_child;
+                    child_branch.set_child(key_remain[0] as usize, ext_child);
                 }
 
                 if path_remain.is_empty() {
                     let mut value_child = Node::new();
                     Self::put_internal(cache, full_state, &mut value_child, &[], val)?;
-                    child_branch.children[BRANCH_VALUE_INDEX] = value_child;
+                    child_branch.set_child(BRANCH_VALUE_INDEX, value_child);
                 } else {
                     let mut value_child = Node::new();
                     Self::put_internal(
@@ -342,7 +337,7 @@ where
                         &path_remain[1..],
                         val,
                     )?;
-                    child_branch.children[path_remain[0] as usize] = value_child;
+                    child_branch.set_child(path_remain[0] as usize, value_child);
                 }
 
                 cache.put_node(child_branch.clone())?;
@@ -358,22 +353,14 @@ where
             NodeType::BranchNode => {
                 let old_hash = node.try_hash()?;
                 if path.is_empty() {
-                    Self::put_internal(
-                        cache,
-                        full_state,
-                        &mut node.children[BRANCH_VALUE_INDEX],
-                        path,
-                        val,
-                    )?;
+                    let child = node.get_child_mut(BRANCH_VALUE_INDEX)
+                        .ok_or_else(|| MptError::invalid("branch node missing value child"))?;
+                    Self::put_internal(cache, full_state, child, path, val)?;
                 } else {
                     let index = path[0] as usize;
-                    Self::put_internal(
-                        cache,
-                        full_state,
-                        &mut node.children[index],
-                        &path[1..],
-                        val,
-                    )?;
+                    let child = node.get_child_mut(index)
+                        .ok_or_else(|| MptError::invalid("branch child index out of bounds"))?;
+                    Self::put_internal(cache, full_state, child, &path[1..], val)?;
                 }
                 if !full_state {
                     cache.delete_node(old_hash)?;
@@ -430,9 +417,7 @@ where
                     let consumed = node.key.len();
                     let old_hash = node.try_hash()?;
                     let result = {
-                        let next = node
-                            .next
-                            .as_mut()
+                        let next = node.get_next_mut()
                             .ok_or_else(|| MptError::invalid("extension node missing child"))?;
                         Self::try_delete_node(cache, full_state, next, &path[consumed..])?
                     };
@@ -442,23 +427,29 @@ where
                     if !full_state {
                         cache.delete_node(old_hash)?;
                     }
-                    if node.next.as_ref().map_or(true, |n| n.is_empty()) {
-                        let next = node.next.take().map(|n| *n).unwrap_or_default();
+                    
+                    // Check if next is now empty
+                    let next_is_empty = node.next.as_ref().map_or(true, |n| n.is_empty());
+                    if next_is_empty {
+                        let next = node.take_next().unwrap_or_default();
                         *node = next;
                         return Ok(true);
                     }
-                    if let Some(next) = node.next.as_mut() {
-                        if next.node_type == NodeType::ExtensionNode {
-                            if !full_state {
-                                let child_hash = next.try_hash()?;
-                                cache.delete_node(child_hash)?;
-                            }
-                            let mut combined = node.key.clone();
-                            combined.extend_from_slice(&next.key);
-                            node.key = combined;
-                            node.next = next.next.take();
+                    
+                    // Check if next is now an extension node - merge them
+                    let should_merge = node.next.as_ref()
+                        .map_or(false, |n| n.node_type == NodeType::ExtensionNode);
+                    
+                    if should_merge {
+                        if !full_state {
+                            let child_hash = node.next.as_ref().unwrap().hash();
+                            cache.delete_node(child_hash)?;
                         }
+                        let next_node = node.take_next().unwrap();
+                        node.key.extend_from_slice(&next_node.key);
+                        node.next = next_node.next;
                     }
+                    
                     node.set_dirty();
                     cache.put_node(node.clone())?;
                     Ok(true)
@@ -469,15 +460,14 @@ where
             NodeType::BranchNode => {
                 let old_hash = node.try_hash()?;
                 let result = if path.is_empty() {
-                    Self::try_delete_node(
-                        cache,
-                        full_state,
-                        &mut node.children[BRANCH_VALUE_INDEX],
-                        path,
-                    )?
+                    let child = node.get_child_mut(BRANCH_VALUE_INDEX)
+                        .ok_or_else(|| MptError::invalid("branch node missing value child"))?;
+                    Self::try_delete_node(cache, full_state, child, path)?
                 } else {
                     let index = path[0] as usize;
-                    Self::try_delete_node(cache, full_state, &mut node.children[index], &path[1..])?
+                    let child = node.get_child_mut(index)
+                        .ok_or_else(|| MptError::invalid("branch child index out of bounds"))?;
+                    Self::try_delete_node(cache, full_state, child, &path[1..])?
                 };
                 if !result {
                     return Ok(false);
@@ -485,29 +475,49 @@ where
                 if !full_state {
                     cache.delete_node(old_hash)?;
                 }
-                let mut indexes = Vec::new();
+                
+                // Collect non-empty child indexes
+                let mut indexes = Vec::with_capacity(2);
                 for i in 0..BRANCH_CHILD_COUNT {
                     if !node.children[i].is_empty() {
                         indexes.push(i as u8);
+                        if indexes.len() > 1 {
+                            break; // Early exit if more than one child
+                        }
                     }
                 }
+                
                 if indexes.len() > 1 {
                     node.set_dirty();
                     cache.put_node(node.clone())?;
                     return Ok(true);
                 }
+                
                 let last_index = indexes.first().copied().unwrap_or(BRANCH_VALUE_INDEX as u8);
-                let mut last_child =
-                    std::mem::replace(&mut node.children[last_index as usize], Node::new());
+                let last_child_arc = Arc::clone(&node.children[last_index as usize]);
+                
                 if last_index as usize == BRANCH_VALUE_INDEX {
+                    // Only value remains - extract it
+                    let last_child = match Arc::try_unwrap(last_child_arc) {
+                        Ok(node) => node,
+                        Err(arc) => (*arc).clone(),
+                    };
                     *node = last_child;
                     return Ok(true);
                 }
-                if last_child.node_type == NodeType::HashNode {
-                    last_child = cache.resolve(&last_child.hash())?.ok_or_else(|| {
+                
+                // Resolve hash node if necessary
+                let mut last_child = if last_child_arc.node_type == NodeType::HashNode {
+                    cache.resolve(&last_child_arc.hash())?.ok_or_else(|| {
                         MptError::storage("unable to resolve hash during trie delete")
-                    })?;
-                }
+                    })?
+                } else {
+                    match Arc::try_unwrap(last_child_arc) {
+                        Ok(node) => node,
+                        Err(arc) => (*arc).clone(),
+                    }
+                };
+                
                 if last_child.node_type == NodeType::ExtensionNode {
                     if !full_state {
                         let child_hash = last_child.try_hash()?;
@@ -564,19 +574,21 @@ where
             NodeType::BranchNode => {
                 proof.insert(node.to_array_without_reference()?);
                 if path.is_empty() {
-                    Self::get_proof_node(cache, &mut node.children[BRANCH_VALUE_INDEX], path, proof)
+                    let child = node.get_child_mut(BRANCH_VALUE_INDEX)
+                        .ok_or_else(|| MptError::invalid("branch node missing value child"))?;
+                    Self::get_proof_node(cache, child, path, proof)
                 } else {
                     let index = path[0] as usize;
-                    Self::get_proof_node(cache, &mut node.children[index], &path[1..], proof)
+                    let child = node.get_child_mut(index)
+                        .ok_or_else(|| MptError::invalid("branch child index out of bounds"))?;
+                    Self::get_proof_node(cache, child, &path[1..], proof)
                 }
             }
             NodeType::ExtensionNode => {
                 if path.starts_with(&node.key) {
                     proof.insert(node.to_array_without_reference()?);
                     let consumed = node.key.len();
-                    let next = node
-                        .next
-                        .as_mut()
+                    let next = node.get_next_mut()
                         .ok_or_else(|| MptError::invalid("extension node missing child"))?;
                     Self::get_proof_node(cache, next, &path[consumed..], proof)
                 } else {
@@ -612,8 +624,9 @@ where
                     Ok((Vec::new(), Some(node.clone())))
                 } else {
                     let nibble = path[0];
-                    let (mut suffix, start) =
-                        Self::seek_node(cache, &mut node.children[nibble as usize], &path[1..])?;
+                    let child = node.get_child_mut(nibble as usize)
+                        .ok_or_else(|| MptError::invalid("branch child index out of bounds"))?;
+                    let (mut suffix, start) = Self::seek_node(cache, child, &path[1..])?;
                     if start.is_none() && suffix.is_empty() {
                         return Ok((Vec::new(), None));
                     }
@@ -630,9 +643,7 @@ where
                 }
                 if path.starts_with(&node.key) {
                     let consumed = node.key.len();
-                    let next = node
-                        .next
-                        .as_mut()
+                    let next = node.get_next_mut()
                         .ok_or_else(|| MptError::invalid("extension node missing child"))?;
                     let (mut suffix, start) = Self::seek_node(cache, next, &path[consumed..])?;
                     let mut result = node.key.clone();
@@ -684,9 +695,11 @@ where
                             Ordering::Less => {
                                 let mut new_path = path.clone();
                                 new_path.push(nibble);
+                                // Use Arc::clone for efficient structural sharing
+                                let child = node.children[i].as_ref().clone();
                                 Self::traverse(
                                     cache,
-                                    Some(node.children[i].clone()),
+                                    Some(child),
                                     new_path,
                                     from,
                                     from.len(),
@@ -696,9 +709,10 @@ where
                             Ordering::Equal => {
                                 let mut new_path = path.clone();
                                 new_path.push(nibble);
+                                let child = node.children[i].as_ref().clone();
                                 Self::traverse(
                                     cache,
-                                    Some(node.children[i].clone()),
+                                    Some(child),
                                     new_path,
                                     from,
                                     offset + 1,
@@ -709,9 +723,10 @@ where
                         }
                     }
                 } else {
+                    let child = node.children[BRANCH_VALUE_INDEX].as_ref().clone();
                     Self::traverse(
                         cache,
-                        Some(node.children[BRANCH_VALUE_INDEX].clone()),
+                        Some(child),
                         path.clone(),
                         from,
                         offset,
@@ -720,9 +735,10 @@ where
                     for i in 0..(BRANCH_CHILD_COUNT - 1) {
                         let mut new_path = path.clone();
                         new_path.push(i as u8);
+                        let child = node.children[i].as_ref().clone();
                         Self::traverse(
                             cache,
-                            Some(node.children[i].clone()),
+                            Some(child),
                             new_path,
                             from,
                             offset,
@@ -735,9 +751,10 @@ where
                 let mut new_path = path;
                 new_path.extend_from_slice(&node.key);
                 if offset < from.len() && from[offset..].starts_with(&node.key) {
+                    let child = node.next.as_ref().map(|n| (**n).clone());
                     Self::traverse(
                         cache,
-                        node.next.as_ref().map(|n| (**n).clone()),
+                        child,
                         new_path,
                         from,
                         offset + node.key.len(),
@@ -746,9 +763,10 @@ where
                 } else if from.len() <= offset
                     || node.key.as_slice().cmp(&from[offset..]) == Ordering::Greater
                 {
+                    let child = node.next.as_ref().map(|n| (**n).clone());
                     Self::traverse(
                         cache,
-                        node.next.as_ref().map(|n| (**n).clone()),
+                        child,
                         new_path,
                         from,
                         from.len(),
@@ -800,6 +818,7 @@ where
         Ok(())
     }
 
+    /// Optimized nibble conversion with pre-allocated capacity.
     fn to_nibbles(bytes: &[u8]) -> Vec<u8> {
         let mut result = Vec::with_capacity(bytes.len() * 2);
         for byte in bytes {
@@ -829,12 +848,9 @@ where
         buffer
     }
 
+    /// Optimized common prefix length calculation.
     fn common_prefix_len(a: &[u8], b: &[u8]) -> usize {
-        let mut offset = 0;
-        while offset < a.len() && offset < b.len() && a[offset] == b[offset] {
-            offset += 1;
-        }
-        offset
+        a.iter().zip(b.iter()).take_while(|(x, y)| x == y).count()
     }
 }
 

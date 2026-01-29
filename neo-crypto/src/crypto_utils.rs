@@ -637,9 +637,9 @@ impl Bls12381Crypto {
 
     /// Generates a new random private key using cryptographically secure RNG
     #[must_use] 
-    pub fn generate_private_key() -> [u8; 32] {
-        let mut bytes = [0u8; 32];
-        OsRng.fill_bytes(&mut bytes);
+    pub fn generate_private_key() -> Zeroizing<[u8; 32]> {
+        let mut bytes = Zeroizing::new([0u8; 32]);
+        OsRng.fill_bytes(bytes.as_mut());
         bytes
     }
 

@@ -76,6 +76,11 @@ use std::convert::TryFrom;
 
 const HASH_SIZE: usize = 32;
 
+/// Default gas limit for execution (20 GAS)
+/// This is a reasonable default to prevent infinite loops and resource exhaustion
+/// Value is in fractional GAS units where 1 GAS = 100_000_000 (10^8)
+pub const DEFAULT_GAS_LIMIT: u64 = 20_0000_0000; // 20 GAS
+
 pub use crate::execution_engine_limits::ExecutionEngineLimits;
 pub use crate::vm_state::VMState;
 
@@ -146,6 +151,15 @@ pub struct ExecutionEngine {
 
     /// The VM object representing the uncaught exception
     pub(crate) uncaught_exception: Option<StackItem>,
+
+    /// Number of instructions executed during this execution session.
+    pub(crate) instructions_executed: u64,
+
+    /// Total gas consumed during execution (in fractional GAS units, 1 GAS = 10^8)
+    pub(crate) gas_consumed: u64,
+
+    /// Maximum gas allowed for this execution (in fractional GAS units)
+    pub(crate) gas_limit: u64,
 }
 
 mod context;

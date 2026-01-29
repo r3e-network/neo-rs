@@ -1,7 +1,7 @@
 //! Cache facade that fronts an `IStore` or snapshot for smart-contract storage.
 
 use super::{
-    data_cache::{DataCache, DataCacheError, DataCacheResult},
+    data_cache::{DataCache, DataCacheConfig, DataCacheError, DataCacheResult},
     i_read_only_store::{IReadOnlyStore, IReadOnlyStoreGeneric},
     i_store::IStore,
     i_store_snapshot::IStoreSnapshot,
@@ -26,6 +26,15 @@ pub struct StoreCache {
 impl StoreCache {
     /// Initializes a new instance of the StoreCache class with a store.
     pub fn new_from_store(store: Arc<dyn IStore>, read_only: bool) -> Self {
+        Self::new_from_store_with_config(store, read_only, DataCacheConfig::default())
+    }
+
+    /// Initializes a new instance with a store and custom configuration.
+    pub fn new_from_store_with_config(
+        store: Arc<dyn IStore>,
+        read_only: bool,
+        config: DataCacheConfig,
+    ) -> Self {
         let store_for_get = store.clone();
         let store_for_find = store.clone();
         let store_get: Arc<StoreGetFn> =
@@ -36,7 +45,7 @@ impl StoreCache {
                 .collect::<Vec<(StorageKey, StorageItem)>>()
         });
         Self {
-            data_cache: DataCache::new_with_store(read_only, Some(store_get), Some(store_find)),
+            data_cache: DataCache::new_with_config(read_only, Some(store_get), Some(store_find), config),
             store: Some(store),
             snapshot: None,
         }

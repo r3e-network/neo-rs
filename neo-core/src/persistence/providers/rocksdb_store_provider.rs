@@ -7,8 +7,10 @@ use crate::{
         i_store_provider::IStoreProvider,
         i_store_snapshot::IStoreSnapshot,
         i_write_store::IWriteStore,
+        read_cache::{ReadCacheConfig, StorageReadCache},
         seek_direction::SeekDirection,
         storage::{CompactionStrategy, CompressionAlgorithm, StorageConfig},
+        write_batch_buffer::{WriteBatchBuffer, WriteBatchConfig, WriteBatchStatsSnapshot},
     },
     smart_contract::{StorageItem, StorageKey},
 };
@@ -20,115 +22,28 @@ use rocksdb::{
 use std::{
     fs, mem,
     path::PathBuf,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    },
+    sync::Arc,
     time::Instant,
 };
 use tracing::{debug, error, warn};
 
-/// Batch commit statistics for monitoring.
-#[derive(Debug, Default)]
-pub struct BatchCommitStats {
-    pub total_commits: AtomicUsize,
-    pub total_batches: AtomicUsize,
-    pub total_operations: AtomicUsize,
-    pub total_duration_ms: AtomicUsize,
-    pub max_batch_size: AtomicUsize,
-}
+/// Re-export batch commit types from write_batch_buffer for backward compatibility.
+pub use crate::persistence::write_batch_buffer::{
+    WriteBatchConfig as BatchCommitConfig, 
+    WriteBatchStats as BatchCommitStats, 
+    WriteBatchStatsSnapshot as BatchCommitStatsSnapshot
+};
 
-impl BatchCommitStats {
-    pub fn new() -> Self {
-        Self {
-            total_commits: AtomicUsize::new(0),
-            total_batches: AtomicUsize::new(0),
-            total_operations: AtomicUsize::new(0),
-            total_duration_ms: AtomicUsize::new(0),
-            max_batch_size: AtomicUsize::new(0),
-        }
-    }
-
-    pub fn record_commit(&self, operations: usize, duration_ms: u64) {
-        self.total_commits.fetch_add(1, Ordering::Relaxed);
-        self.total_operations
-            .fetch_add(operations, Ordering::Relaxed);
-        self.total_duration_ms
-            .fetch_add(duration_ms as usize, Ordering::Relaxed);
-
-        loop {
-            let current_max = self.max_batch_size.load(Ordering::Relaxed);
-            if operations <= current_max {
-                break;
-            }
-            if self
-                .max_batch_size
-                .compare_exchange(
-                    current_max,
-                    operations,
-                    Ordering::Relaxed,
-                    Ordering::Relaxed,
-                )
-                .is_ok()
-            {
-                break;
-            }
-        }
-    }
-
-    pub fn record_batch(&self) {
-        self.total_batches.fetch_add(1, Ordering::Relaxed);
-    }
-
-    pub fn stats(&self) -> (usize, usize, usize, u64, usize) {
-        (
-            self.total_commits.load(Ordering::Relaxed),
-            self.total_batches.load(Ordering::Relaxed),
-            self.total_operations.load(Ordering::Relaxed),
-            self.total_duration_ms.load(Ordering::Relaxed) as u64,
-            self.max_batch_size.load(Ordering::Relaxed),
-        )
-    }
-}
-
-/// Batch commit configuration.
-#[derive(Debug, Clone)]
-pub struct BatchCommitConfig {
-    pub enabled: bool,
-    pub max_batch_size: usize,
-    pub max_delay_ms: u64,
-    pub min_operations: usize,
-}
-
-impl Default for BatchCommitConfig {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            max_batch_size: 100,
-            max_delay_ms: 50,
-            min_operations: 10,
-        }
-    }
-}
-
-/// Batch commit accumulator for fast sync mode.
+/// Enhanced batch committer using WriteBatchBuffer.
 struct BatchCommitter {
-    config: BatchCommitConfig,
-    stats: Arc<BatchCommitStats>,
-    pending_batch: Mutex<WriteBatch>,
-    last_flush: AtomicUsize,
-    pending_operations: AtomicUsize,
+    buffer: WriteBatchBuffer,
 }
 
 impl BatchCommitter {
-    fn new(config: BatchCommitConfig, stats: Arc<BatchCommitStats>) -> Self {
-        Self {
-            config,
-            stats,
-            pending_batch: Mutex::new(WriteBatch::default()),
-            last_flush: AtomicUsize::new(0),
-            pending_operations: AtomicUsize::new(0),
-        }
+    fn new(db: Arc<DB>, config: WriteBatchConfig) -> Self {
+        let buffer = WriteBatchBuffer::new(db, config);
+        
+        Self { buffer }
     }
 
     fn try_add(&self, batch: &mut WriteBatch) -> usize {
@@ -137,119 +52,37 @@ impl BatchCommitter {
             return 0;
         }
 
-        if !self.config.enabled {
-            return count;
-        }
-
-        let mut pending = self.pending_batch.lock();
-        let pending_ops = self.pending_operations.load(Ordering::Relaxed);
-        let total = pending_ops + count;
-
-        if total >= self.config.max_batch_size {
-            self.flush_locked(&mut pending);
-            let remaining = self.config.max_batch_size.saturating_sub(count);
-            if remaining > 0 && count <= remaining {
-                Self::merge_batches(&mut pending, batch);
-                self.pending_operations.store(count, Ordering::Relaxed);
-                return 0;
-            }
-        }
-
-        Self::merge_batches(&mut pending, batch);
-        self.pending_operations.store(total, Ordering::Relaxed);
-        count
-    }
-
-    fn merge_batches(dest: &mut WriteBatch, src: &WriteBatch) {
+        // Merge the batch into our buffer
         struct BatchIterator<'a> {
-            dest: &'a mut WriteBatch,
+            buffer: &'a WriteBatchBuffer,
         }
 
         impl<'a> rocksdb::WriteBatchIterator for BatchIterator<'a> {
             fn put(&mut self, key: Box<[u8]>, value: Box<[u8]>) {
-                self.dest.put(&key, &value);
+                self.buffer.put(&key, &value);
             }
 
             fn delete(&mut self, key: Box<[u8]>) {
-                self.dest.delete(&key);
+                self.buffer.delete(&key);
             }
         }
 
-        let mut iter = BatchIterator { dest };
-        src.iterate(&mut iter);
+        let mut iter = BatchIterator { buffer: &self.buffer };
+        batch.iterate(&mut iter);
+        
+        count
     }
 
-    fn flush_locked(&self, pending: &mut WriteBatch) {
-        if pending.is_empty() {
-            return;
-        }
-        self.stats.record_batch();
-        *pending = WriteBatch::default();
-        self.pending_operations.store(0, Ordering::Relaxed);
-        self.last_flush.store(
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as usize,
-            Ordering::Relaxed,
-        );
-    }
-
-    #[allow(dead_code)]
-    fn should_flush(&self, force: bool) -> bool {
-        if !self.config.enabled {
-            return false;
-        }
-
-        if force {
-            return !self.pending_operations.load(Ordering::Relaxed) == 0;
-        }
-
-        let ops = self.pending_operations.load(Ordering::Relaxed);
-        if ops < self.config.min_operations {
-            return false;
-        }
-
-        let last_flush = self.last_flush.load(Ordering::Relaxed);
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as u64;
-
-        if last_flush == 0 {
-            return true;
-        }
-
-        now.saturating_sub(last_flush as u64) >= self.config.max_delay_ms
-    }
-
-    #[allow(dead_code)]
     fn flush(&self) -> Option<WriteBatch> {
-        if !self.config.enabled {
-            return None;
+        // The buffer flushes automatically, but we can force it here
+        if self.buffer.has_pending() {
+            if let Err(e) = self.buffer.force_flush() {
+                error!(target: "neo", error = %e, "batch committer flush failed");
+            }
         }
-
-        let mut pending = self.pending_batch.lock();
-        if pending.is_empty() {
-            return None;
-        }
-
-        let batch = std::mem::take(&mut *pending);
-        self.pending_operations.store(0, Ordering::Relaxed);
-        self.last_flush.store(
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as usize,
-            Ordering::Relaxed,
-        );
-        Some(batch)
+        None
     }
 
-    #[allow(dead_code)]
-    fn pending_count(&self) -> usize {
-        self.pending_operations.load(Ordering::Relaxed)
-    }
 }
 
 /// RocksDB-backed store provider compatible with Neo's `IStore`.
@@ -312,7 +145,9 @@ struct RocksDbStore {
     db: Arc<DB>,
     on_new_snapshot: Arc<RwLock<Vec<OnNewSnapshotDelegate>>>,
     batch_committer: Arc<BatchCommitter>,
-    batch_config: BatchCommitConfig,
+    batch_config: WriteBatchConfig,
+    /// Optional read cache for frequently accessed keys
+    read_cache: Option<Arc<StorageReadCache>>,
 }
 
 impl RocksDbStore {
@@ -337,17 +172,17 @@ impl RocksDbStore {
             Arc::new(DB::open(&options, &config.path)?)
         };
 
-        let batch_stats = Arc::new(BatchCommitStats::new());
         let batch_committer = Arc::new(BatchCommitter::new(
-            BatchCommitConfig::default(),
-            Arc::clone(&batch_stats),
+            Arc::clone(&db),
+            WriteBatchConfig::default(),
         ));
 
         Ok(Self {
             db,
             on_new_snapshot: Arc::new(RwLock::new(Vec::new())),
             batch_committer,
-            batch_config: BatchCommitConfig::default(),
+            batch_config: WriteBatchConfig::default(),
+            read_cache: None,
         })
     }
 
@@ -370,24 +205,18 @@ impl RocksDbStore {
     #[allow(dead_code)]
     pub fn flush_batch_commits(&self) {
         if let Some(batch) = self.batch_committer.flush() {
-            let start = Instant::now();
             if let Err(err) = self.db.write(batch) {
                 error!(target: "neo", error = %err, "rocksdb batch flush failed");
-            } else {
-                let duration_ms = start.elapsed().as_millis() as u64;
-                debug!(target: "neo", duration_ms, "rocksdb batch flush completed");
             }
         }
     }
 
-    #[allow(dead_code)]
-    pub fn batch_commit_stats(&self) -> (usize, usize, usize, u64, usize) {
-        self.batch_committer.stats.stats()
-    }
 }
 
 impl IReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbStore {
     fn try_get(&self, key: &Vec<u8>) -> Option<Vec<u8>> {
+        // Check read cache first
+        // Note: Vec<u8> doesn't implement StorageKey, so we skip caching for raw bytes
         match self.db.get(key) {
             Ok(value) => value,
             Err(err) => {
@@ -410,8 +239,23 @@ impl IReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbStore {
 
 impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbStore {
     fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {
+        // Check read cache first
+        if let Some(ref cache) = self.read_cache {
+            if let Some(item) = cache.get(key) {
+                return Some(item);
+            }
+        }
+        
         let raw = key.to_array();
-        self.db.get(raw).ok().flatten().map(StorageItem::from_bytes)
+        let result = self.db.get(raw).ok().flatten().map(StorageItem::from_bytes);
+        
+        // Cache the result if found
+        if let (Some(ref cache), Some(ref item)) = (&self.read_cache, &result) {
+            let size = item.get_value().len() + std::mem::size_of::<StorageKey>();
+            cache.put(key.clone(), item.clone(), size);
+        }
+        
+        result
     }
 
     fn find(
@@ -497,6 +341,7 @@ impl Clone for RocksDbStore {
             on_new_snapshot: Arc::new(RwLock::new(Vec::new())),
             batch_committer: Arc::clone(&self.batch_committer),
             batch_config: self.batch_config.clone(),
+            read_cache: self.read_cache.clone(),
         }
     }
 }
@@ -508,13 +353,15 @@ struct RocksDbSnapshot {
     write_batch: Mutex<WriteBatch>,
     batch_committer: Arc<BatchCommitter>,
     use_batch_commit: bool,
+    /// Optional read cache for this snapshot
+    read_cache: Option<Arc<StorageReadCache>>,
 }
 
 impl RocksDbSnapshot {
     fn new(db: Arc<DB>, store: Arc<RocksDbStore>) -> Self {
         let snapshot = Self::create_snapshot(&db);
         let batch_committer = Arc::clone(&store.batch_committer);
-        let use_batch_commit = store.batch_config.enabled && store.batch_config.max_batch_size > 1;
+        let use_batch_commit = store.batch_config.max_batch_size > 1;
 
         Self {
             store,
@@ -523,6 +370,7 @@ impl RocksDbSnapshot {
             write_batch: Mutex::new(WriteBatch::default()),
             batch_committer,
             use_batch_commit,
+            read_cache: None,
         }
     }
 
@@ -573,12 +421,27 @@ impl IReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
 
 impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbSnapshot {
     fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {
+        // Check read cache first
+        if let Some(ref cache) = self.read_cache {
+            if let Some(item) = cache.get(key) {
+                return Some(item);
+            }
+        }
+        
         let raw = key.to_array();
-        self.db
+        let result = self.db
             .get_opt(&raw, &self.read_options())
             .ok()
             .flatten()
-            .map(StorageItem::from_bytes)
+            .map(StorageItem::from_bytes);
+        
+        // Cache the result if found and cache is configured
+        if let (Some(ref cache), Some(ref item)) = (&self.read_cache, &result) {
+            let size = item.get_value().len() + std::mem::size_of::<StorageKey>();
+            cache.put(key.clone(), item.clone(), size);
+        }
+        
+        result
     }
 
     fn find(
@@ -643,12 +506,10 @@ impl IStoreSnapshot for RocksDbSnapshot {
         }
 
         let ops = batch_guard.len();
-        let start = Instant::now();
+        let _start = Instant::now();
 
         if self.use_batch_commit {
             self.batch_committer.try_add(&mut batch_guard);
-            let duration_ms = start.elapsed().as_millis() as u64;
-            self.batch_committer.stats.record_commit(ops, duration_ms);
             return Ok(());
         }
 
@@ -722,6 +583,48 @@ impl RocksDbStore {
                     .unwrap_or(0);
                 (active, total)
             })
+    }
+
+    /// Enables read caching with the specified configuration.
+    /// Enables read caching with the specified configuration.
+    #[allow(dead_code)]
+    pub fn enable_read_cache(&mut self, config: ReadCacheConfig) {
+        self.read_cache = Some(Arc::new(StorageReadCache::new(config)));
+        debug!(target: "neo", "enabled read cache");
+    }
+
+    /// Disables read caching.
+    #[allow(dead_code)]
+    pub fn disable_read_cache(&mut self) {
+        self.read_cache = None;
+        debug!(target: "neo", "disabled read cache");
+    }
+
+    /// Gets read cache statistics if caching is enabled.
+    #[allow(dead_code)]
+    pub fn read_cache_stats(&self) -> Option<crate::persistence::read_cache::ReadCacheStatsSnapshot> {
+        self.read_cache.as_ref().map(|c| c.stats())
+    }
+
+    /// Clears the read cache.
+    #[allow(dead_code)]
+    pub fn clear_read_cache(&self) {
+        if let Some(ref cache) = self.read_cache {
+            cache.clear();
+            debug!(target: "neo", "read cache cleared");
+        }
+    }
+
+    /// Returns batch commit statistics.
+    #[allow(dead_code)]
+    pub fn batch_commit_stats(&self) -> WriteBatchStatsSnapshot {
+        self.batch_committer.buffer.stats_snapshot()
+    }
+
+    /// Forces a flush of pending batch writes.
+    #[allow(dead_code)]
+    pub fn flush_batch_writes(&self) -> CoreResult<()> {
+        self.batch_committer.buffer.force_flush()
     }
 }
 

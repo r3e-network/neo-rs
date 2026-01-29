@@ -72,12 +72,15 @@ pub(crate) enum MailboxCommand {
     Message(MailboxMessage),
 }
 
+/// Default mailbox capacity for bounded channels.
+const MAILBOX_CAPACITY: usize = 1000;
+
 /// Internal registry entry for an actor.
 ///
 /// Supports both legacy mailbox-based actors and ractor-based actors.
 enum ActorEntry {
-    /// Legacy mailbox channel.
-    Legacy(mpsc::UnboundedSender<MailboxCommand>),
+    /// Legacy mailbox channel (bounded for DoS protection).
+    Legacy(mpsc::Sender<MailboxCommand>),
     /// Ractor-based actor reference.
     Ractor(RactorActorRef<BridgeMessage>),
 }
@@ -215,7 +218,7 @@ impl ActorSystemInner {
         props: Props,
         path: ActorPath,
     ) -> AkkaResult<ActorRef> {
-        let (tx, rx) = mpsc::unbounded_channel();
+        let (tx, rx) = mpsc::channel(MAILBOX_CAPACITY);
 
         {
             let mut registry = self.registry.write();
@@ -348,7 +351,7 @@ struct ActorCell {
     actor: Box<dyn Actor>,
     props: Props,
     mailbox: Box<dyn Mailbox>,
-    commands: mpsc::UnboundedReceiver<MailboxCommand>,
+    commands: mpsc::Receiver<MailboxCommand>,
     self_ref: ActorRef,
     parent: Option<ActorRef>,
     strategy: Option<SupervisorStrategy>,
@@ -362,7 +365,7 @@ impl ActorCell {
         actor: Box<dyn Actor>,
         props: Props,
         mailbox: Box<dyn Mailbox>,
-        commands: mpsc::UnboundedReceiver<MailboxCommand>,
+        commands: mpsc::Receiver<MailboxCommand>,
         self_ref: ActorRef,
         parent: Option<ActorRef>,
     ) -> Self {

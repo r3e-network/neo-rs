@@ -15,8 +15,8 @@ use uuid::Uuid;
 /// and the new ractor-based actors during the transition period.
 #[derive(Clone)]
 enum ActorChannel {
-    /// Legacy mailbox channel (to be deprecated).
-    Legacy(mpsc::UnboundedSender<MailboxCommand>),
+    /// Legacy mailbox channel (bounded for DoS protection).
+    Legacy(mpsc::Sender<MailboxCommand>),
     /// Ractor-based channel.
     Ractor(RactorActorRef<BridgeMessage>),
 }
@@ -33,7 +33,7 @@ impl ActorRef {
     /// Creates a new ActorRef with a legacy mailbox channel.
     pub(crate) fn new(
         path: ActorPath,
-        mailbox: mpsc::UnboundedSender<MailboxCommand>,
+        mailbox: mpsc::Sender<MailboxCommand>,
         system: Weak<ActorSystemInner>,
     ) -> Self {
         Self {
@@ -65,6 +65,7 @@ impl ActorRef {
     }
 
     /// Sends a message to the actor specifying the sender.
+    /// Uses try_send to avoid blocking when the mailbox is full.
     pub fn tell_from<M>(&self, message: M, sender: Option<ActorRef>) -> AkkaResult<()>
     where
         M: Any + Send + 'static,
@@ -72,7 +73,7 @@ impl ActorRef {
         let envelope = Envelope::new(message, sender);
         match &self.channel {
             ActorChannel::Legacy(mailbox) => mailbox
-                .send(MailboxCommand::Message(MailboxMessage::User(envelope)))
+                .try_send(MailboxCommand::Message(MailboxMessage::User(envelope)))
                 .map_err(|e| AkkaError::send(format!("{}", e))),
             ActorChannel::Ractor(ractor_ref) => ractor_ref
                 .cast(BridgeMessage::Mailbox(MailboxMessage::User(envelope)))
@@ -81,10 +82,11 @@ impl ActorRef {
     }
 
     /// Registers `watcher` to receive a [`Terminated`](super::Terminated) message when this actor stops.
+    /// Uses try_send to avoid blocking when the mailbox is full.
     pub fn watch(&self, watcher: ActorRef) -> AkkaResult<()> {
         match &self.channel {
             ActorChannel::Legacy(mailbox) => mailbox
-                .send(MailboxCommand::Message(MailboxMessage::System(
+                .try_send(MailboxCommand::Message(MailboxMessage::System(
                     SystemMessage::Watch(watcher),
                 )))
                 .map_err(|e| AkkaError::send(format!("{}", e))),
@@ -97,10 +99,11 @@ impl ActorRef {
     }
 
     /// Removes `watcher` from the current actor's watch list.
+    /// Uses try_send to avoid blocking when the mailbox is full.
     pub fn unwatch(&self, watcher: ActorRef) -> AkkaResult<()> {
         match &self.channel {
             ActorChannel::Legacy(mailbox) => mailbox
-                .send(MailboxCommand::Message(MailboxMessage::System(
+                .try_send(MailboxCommand::Message(MailboxMessage::System(
                     SystemMessage::Unwatch(watcher),
                 )))
                 .map_err(|e| AkkaError::send(format!("{}", e))),
@@ -126,7 +129,7 @@ impl ActorRef {
         match &self.channel {
             ActorChannel::Legacy(mailbox) => {
                 mailbox
-                    .send(MailboxCommand::Message(MailboxMessage::User(Envelope {
+                    .try_send(MailboxCommand::Message(MailboxMessage::User(Envelope {
                         message,
                         sender: None,
                     })))
@@ -150,10 +153,11 @@ impl ActorRef {
     }
 
     /// Commands the actor to stop. This is asynchronous and returns immediately.
+    /// Uses try_send to avoid blocking when the mailbox is full.
     pub fn stop(&self) -> AkkaResult<()> {
         match &self.channel {
             ActorChannel::Legacy(mailbox) => mailbox
-                .send(MailboxCommand::Message(MailboxMessage::System(
+                .try_send(MailboxCommand::Message(MailboxMessage::System(
                     SystemMessage::Stop,
                 )))
                 .map_err(|e| AkkaError::send(format!("{}", e))),

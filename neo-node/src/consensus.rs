@@ -659,7 +659,11 @@ impl ConsensusActor {
             selected.push(tx);
         }
 
-        self.proposal_transactions = selected.iter().map(|tx| (tx.hash(), tx.clone())).collect();
+        // Convert Arc<Transaction> to Transaction for proposal
+        self.proposal_transactions = selected
+            .iter()
+            .map(|arc_tx| (arc_tx.hash(), (**arc_tx).clone()))
+            .collect();
 
         let hashes = selected.into_iter().map(|tx| tx.hash()).collect();
         if let Err(err) = service.on_transactions_received(hashes) {
@@ -703,12 +707,12 @@ impl ConsensusActor {
         let verified_map: HashMap<UInt256, Transaction> = pool_guard
             .verified_transactions_vec()
             .into_iter()
-            .map(|tx| (tx.hash(), tx))
+            .map(|arc_tx| ((*arc_tx).clone().hash(), (*arc_tx).clone()))
             .collect();
         let unverified_map: HashMap<UInt256, Transaction> = pool_guard
             .unverified_transactions_vec()
             .into_iter()
-            .map(|tx| (tx.hash(), tx))
+            .map(|arc_tx| ((*arc_tx).clone().hash(), (*arc_tx).clone()))
             .collect();
         drop(pool_guard);
 

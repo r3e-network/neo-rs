@@ -4,6 +4,7 @@
 
 use super::helpers::current_unix_timestamp;
 use super::*;
+use crate::network::p2p::{BanList, InboundRateLimiter, PeerReputationTracker};
 use crate::wallets::KeyPair;
 
 #[derive(Debug, Clone)]
@@ -46,6 +47,12 @@ pub struct LocalNode {
     pending_connections: Arc<RwLock<HashSet<SocketAddr>>>,
     /// Shared system context providing access to global actors/services.
     system_context: RwLock<Option<Arc<NeoSystemContext>>>,
+    /// SECURITY: Rate limiter for inbound connections to prevent DoS attacks.
+    inbound_rate_limiter: RwLock<InboundRateLimiter>,
+    /// SECURITY: Ban list for misbehaving peers.
+    ban_list: RwLock<BanList>,
+    /// SECURITY: Peer reputation tracker for identifying good/bad peers.
+    reputation_tracker: Arc<PeerReputationTracker>,
 }
 
 impl PeerManagerService for LocalNode {
@@ -90,6 +97,9 @@ impl LocalNode {
             seed_list: Arc::new(RwLock::new(Vec::new())),
             pending_connections: Arc::new(RwLock::new(HashSet::new())),
             system_context: RwLock::new(None),
+            inbound_rate_limiter: RwLock::new(InboundRateLimiter::default()),
+            ban_list: RwLock::new(BanList::new()),
+            reputation_tracker: Arc::new(PeerReputationTracker::new()),
         }
     }
 
@@ -516,6 +526,78 @@ impl LocalNode {
 
     pub fn is_pending(&self, endpoint: &SocketAddr) -> bool {
         self.pending_connections.read().contains(endpoint)
+    }
+
+    // SECURITY: Rate limiting, ban list, and reputation methods
+
+    /// Checks if an inbound connection should be allowed based on rate limits.
+    /// Returns true if the connection is within the allowed rate.
+    pub fn check_inbound_rate_limit(&self) -> bool {
+        self.inbound_rate_limiter.write().acquire()
+    }
+
+    /// Returns the current number of available tokens in the rate limiter.
+    pub fn inbound_rate_limit_tokens(&self) -> f64 {
+        self.inbound_rate_limiter.read().available_tokens()
+    }
+
+    /// Checks if the given IP address is banned.
+    pub fn is_ip_banned(&self, ip: &IpAddr) -> bool {
+        self.ban_list.read().is_banned(ip)
+    }
+
+    /// Bans a peer for the specified duration with a reason.
+    pub fn ban_peer(&self, ip: IpAddr, duration: Duration, reason: impl Into<String>) {
+        let reason_str: String = reason.into();
+        warn!(target: "neo", ip = %ip, reason = %reason_str, "banning peer");
+        self.ban_list.write().ban(ip, duration, reason_str);
+    }
+
+    /// Unbans a peer and returns true if they were banned.
+    pub fn unban_peer(&self, ip: &IpAddr) -> bool {
+        self.ban_list.write().unban(ip)
+    }
+
+    /// Returns the number of active bans.
+    pub fn active_ban_count(&self) -> usize {
+        self.ban_list.read().active_ban_count()
+    }
+
+    /// Cleans up expired bans and returns the count of removed entries.
+    pub fn cleanup_expired_bans(&self) -> usize {
+        self.ban_list.write().cleanup_expired()
+    }
+
+    /// Returns a reference to the reputation tracker.
+    pub fn reputation_tracker(&self) -> Arc<PeerReputationTracker> {
+        Arc::clone(&self.reputation_tracker)
+    }
+
+    /// Validates if a connection should be accepted based on all security checks.
+    /// Returns Ok(()) if the connection is allowed, Err(reason) if rejected.
+    pub fn validate_inbound_connection(&self, remote: &SocketAddr) -> Result<(), &'static str> {
+        let ip = remote.ip();
+
+        // Check rate limit
+        if !self.check_inbound_rate_limit() {
+            return Err("rate limit exceeded");
+        }
+
+        // Check ban list
+        if self.is_ip_banned(&ip) {
+            return Err("peer is banned");
+        }
+
+        // Check existing connection count against limit
+        let config = self.config();
+        if config.max_connections > 0 {
+            let current = self.connected_peers_count();
+            if current >= config.max_connections {
+                return Err("connection limit reached");
+            }
+        }
+
+        Ok(())
     }
 
     /// Returns actor properties matching the C# `LocalNode.Props` helper.

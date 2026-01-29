@@ -1,10 +1,11 @@
 use crate::network::p2p::payloads::{Transaction, TransactionAttributeType};
 use std::cmp::Ordering;
+use std::sync::Arc;
 use std::time::SystemTime;
 
 #[derive(Clone)]
 pub struct PoolItem {
-    pub transaction: Transaction,
+    pub transaction: Arc<Transaction>,
     pub timestamp: SystemTime,
     pub last_broadcast_timestamp: SystemTime,
 }
@@ -13,7 +14,7 @@ impl PoolItem {
     pub(crate) fn new(tx: Transaction) -> Self {
         let now = SystemTime::now();
         Self {
-            transaction: tx,
+            transaction: Arc::new(tx),
             timestamp: now,
             last_broadcast_timestamp: now,
         }

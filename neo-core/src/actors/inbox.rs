@@ -12,8 +12,11 @@ use tokio::sync::{mpsc, Mutex};
 use tokio::time;
 use uuid::Uuid;
 
+/// Default inbox capacity for bounded channels.
+const INBOX_CAPACITY: usize = 1000;
+
 struct InboxActor {
-    mailbox: mpsc::UnboundedSender<Box<dyn Any + Send>>,
+    mailbox: mpsc::Sender<Box<dyn Any + Send>>,
 }
 
 #[async_trait]
@@ -23,8 +26,9 @@ impl Actor for InboxActor {
         message: Box<dyn Any + Send>,
         _ctx: &mut ActorContext,
     ) -> ActorResult {
+        // Use try_send to avoid blocking when the inbox is full
         self.mailbox
-            .send(message)
+            .try_send(message)
             .map_err(|err| AkkaError::send(format!("{}", err)))?;
         Ok(())
     }
@@ -32,12 +36,12 @@ impl Actor for InboxActor {
 
 pub struct Inbox {
     actor: ActorRef,
-    receiver: Arc<Mutex<mpsc::UnboundedReceiver<Box<dyn Any + Send>>>>,
+    receiver: Arc<Mutex<mpsc::Receiver<Box<dyn Any + Send>>>>,
 }
 
 impl Inbox {
     pub fn create(system: &ActorSystem) -> AkkaResult<Self> {
-        let (tx, rx) = mpsc::unbounded_channel();
+        let (tx, rx) = mpsc::channel(INBOX_CAPACITY);
         let props = Props::new({
             let tx = tx.clone();
             move || InboxActor {

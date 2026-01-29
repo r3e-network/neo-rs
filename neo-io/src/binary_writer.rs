@@ -118,6 +118,15 @@ impl BinaryWriter {
         self.write_var_bytes(value.as_bytes())
     }
 
+    /// Returns a reference to the internal buffer without cloning (zero-copy).
+    /// 
+    /// Use this when you only need to read the serialized bytes without taking ownership.
+    /// For an owned copy, use `to_bytes()`; to take ownership, use `into_bytes()`.
+    #[must_use]
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.buffer
+    }
+
     #[must_use] 
     pub fn to_bytes(&self) -> Vec<u8> {
         self.buffer.clone()

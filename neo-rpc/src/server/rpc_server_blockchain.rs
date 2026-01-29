@@ -253,7 +253,10 @@ impl RpcServerBlockchain {
             .get_transaction_state(&store, &hash)
             .map_err(Self::internal_error)?;
 
-        let transaction = tx_from_pool.or_else(|| state.as_ref().map(|s| s.transaction().clone()));
+        // Convert Arc<Transaction> to Transaction for uniform handling
+        let transaction = tx_from_pool
+            .map(|arc| (*arc).clone())
+            .or_else(|| state.as_ref().map(|s| s.transaction().clone()));
         let tx = transaction.ok_or_else(|| RpcException::from(RpcError::unknown_transaction()))?;
 
         if !verbose {
