@@ -29,7 +29,6 @@ impl<K: Clone + Eq + std::hash::Hash, V> OrderedDictionary<K, V> {
     ///
     /// Returns `impl Iterator` to avoid unnecessary Vec allocation.
     /// Caller can call `.collect()` if they need a Vec.
-    #[must_use]
     pub fn keys(&self) -> impl Iterator<Item = &K> + '_ {
         self.items.iter().map(|(k, _)| k)
     }
@@ -38,7 +37,6 @@ impl<K: Clone + Eq + std::hash::Hash, V> OrderedDictionary<K, V> {
     ///
     /// Returns `impl Iterator` to avoid unnecessary Vec allocation.
     /// Caller can call `.collect()` if they need a Vec.
-    #[must_use]
     pub fn values(&self) -> impl Iterator<Item = &V> + '_ {
         self.items.iter().map(|(_, v)| v)
     }
