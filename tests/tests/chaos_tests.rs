@@ -7,13 +7,13 @@
 //! - Consensus timeout handling
 //! - Chain reorganization stress tests
 
-use neo_core::chain::{BlockIndexEntry, ChainState};
 use neo_consensus::{ConsensusEvent, ConsensusService, ValidatorInfo};
-use neo_crypto::{ECCurve, ECPoint};
-use neo_primitives::{UInt160, UInt256};
+use neo_core::chain::{BlockIndexEntry, ChainState};
 use neo_core::state::{
     MemoryWorldState, StateChanges, StateTrieManager, StorageItem, StorageKey, WorldState,
 };
+use neo_crypto::{ECCurve, ECPoint};
+use neo_primitives::{UInt160, UInt256};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, RwLock};

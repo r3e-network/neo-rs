@@ -1,8 +1,8 @@
 //! Smart Contract Execution Integration Tests
 
 use neo_core::chain::{BlockIndexEntry, ChainState};
-use neo_core::{UInt160, UInt256};
 use neo_core::state::{MemoryWorldState, StateChanges, StorageItem, StorageKey, WorldState};
+use neo_core::{UInt160, UInt256};
 use neo_vm::{op_code::OpCode, ExecutionEngine, Script, VMState};
 
 // Setup test environment

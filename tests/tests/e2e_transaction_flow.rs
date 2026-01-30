@@ -3,11 +3,11 @@
 use neo_core::chain::{BlockIndexEntry, ChainState};
 use neo_core::network::p2p::payloads::{Signer, Transaction, TransactionAttribute, WitnessScope};
 
-use neo_core::{UInt160, UInt256};
 use neo_core::mempool::{Mempool, MempoolConfig};
 use neo_core::state::{
     AccountState, MemoryWorldState, StateChanges, StorageItem, StorageKey, WorldState,
 };
+use neo_core::{UInt160, UInt256};
 use neo_vm::op_code::OpCode;
 
 // Creates a test account with NEO and GAS balances

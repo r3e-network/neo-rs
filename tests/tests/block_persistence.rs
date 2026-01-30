@@ -9,10 +9,10 @@
 //! - Historical block queries
 
 use neo_core::chain::{BlockIndexEntry, ChainState};
-use neo_core::{UInt160, UInt256};
 use neo_core::state::{
     MemoryWorldState, StateChanges, StateTrieManager, StorageItem, StorageKey, WorldState,
 };
+use neo_core::{UInt160, UInt256};
 
 // Creates a test block hash from a seed value
 fn create_block_hash(seed: u8) -> UInt256 {
