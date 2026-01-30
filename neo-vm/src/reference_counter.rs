@@ -359,9 +359,13 @@ impl IReferenceCounter for ReferenceCounter {
 /// Identifies a tracked parent compound item.
 #[derive(Clone, Copy, Debug)]
 pub enum CompoundParent {
+    /// Array parent reference
     Array(usize),
+    /// Struct parent reference
     Struct(usize),
+    /// Map parent reference
     Map(usize),
+    /// Buffer parent reference
     Buffer(usize),
 }
 

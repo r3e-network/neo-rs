@@ -5,6 +5,13 @@
 use super::{ExecutionEngine, VmError, VmResult};
 
 impl ExecutionEngine {
+    /// Executes a jump to the specified absolute position in the current script.
+    ///
+    /// # Arguments
+    /// * `position` - The target instruction pointer position
+    ///
+    /// # Errors
+    /// Returns an error if the position is out of bounds or no context exists.
     pub fn execute_jump(&mut self, position: i32) -> VmResult<()> {
         let script_len = self
             .current_context()
@@ -23,6 +30,13 @@ impl ExecutionEngine {
         Ok(())
     }
 
+    /// Executes a jump by a relative offset from the current instruction pointer.
+    ///
+    /// # Arguments
+    /// * `offset` - The relative offset to jump by
+    ///
+    /// # Errors
+    /// Returns an error if the resulting position is out of bounds.
     pub fn execute_jump_offset(&mut self, offset: i32) -> VmResult<()> {
         let current_ip = self
             .current_context()
@@ -40,6 +54,13 @@ impl ExecutionEngine {
         self.execute_jump(new_position as i32)
     }
 
+    /// Executes a call to the specified position, creating a new execution context.
+    ///
+    /// # Arguments
+    /// * `position` - The target position in the current script
+    ///
+    /// # Errors
+    /// Returns an error if the position is out of bounds or no context exists.
     pub fn execute_call(&mut self, position: usize) -> VmResult<()> {
         let context = self
             .current_context()

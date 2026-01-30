@@ -98,6 +98,12 @@ pub struct NodeConfig {
     pub unlock_wallet: UnlockWalletSection,
     pub contracts: ContractsSection,
     pub plugins: PluginsSection,
+    /// Consensus configuration section
+    pub consensus: Option<ConsensusSection>,
+    /// Telemetry configuration section
+    pub telemetry: Option<TelemetrySection>,
+    /// Mempool configuration section
+    pub mempool: Option<MempoolSection>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -112,7 +118,7 @@ pub struct NetworkSection {
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(default, deny_unknown_fields)]
 pub struct P2PSection {
-    #[serde(alias = "Port")]
+    #[serde(alias = "Port", alias = "port")]
     pub listen_port: Option<u16>,
     #[serde(alias = "MinDesiredConnections")]
     pub min_desired_connections: Option<usize>,
@@ -133,7 +139,7 @@ pub struct P2PSection {
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(default, deny_unknown_fields)]
 pub struct StorageSection {
-    #[serde(alias = "Path")]
+    #[serde(alias = "Path", alias = "data_dir")]
     pub path: Option<String>,
     #[serde(alias = "Engine")]
     pub backend: Option<String>,
@@ -152,7 +158,12 @@ pub struct StorageSection {
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(default, deny_unknown_fields)]
 pub struct BlockchainSection {
+    /// Block time in milliseconds
     pub block_time: Option<u64>,
+    /// Maximum transactions per block
+    pub max_transactions_per_block: Option<u32>,
+    /// Maximum free transactions per block
+    pub max_free_transactions_per_block: Option<u32>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default, Serialize)]
@@ -176,7 +187,7 @@ pub struct RpcSection {
     pub max_gas_invoke: Option<f64>,
     #[serde(alias = "MaxFee")]
     pub max_fee: Option<f64>,
-    #[serde(alias = "MaxIteratorResultItems")]
+    #[serde(alias = "MaxIteratorResultItems", alias = "max_iterator_results")]
     pub max_iterator_result_items: Option<usize>,
     #[serde(alias = "MaxStackSize")]
     pub max_stack_size: Option<usize>,
@@ -419,6 +430,46 @@ impl Default for PluginsSection {
             version: None,
         }
     }
+}
+
+/// Consensus configuration section
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
+pub struct ConsensusSection {
+    /// Whether consensus is enabled
+    pub enabled: bool,
+    /// Whether to auto-start consensus
+    pub auto_start: Option<bool>,
+}
+
+/// Telemetry configuration section
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
+pub struct TelemetrySection {
+    /// Metrics configuration
+    pub metrics: Option<TelemetryMetricsSection>,
+}
+
+/// Telemetry metrics configuration
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
+pub struct TelemetryMetricsSection {
+    /// Whether metrics are enabled
+    pub enabled: bool,
+    /// Metrics port
+    pub port: Option<u16>,
+    /// Metrics bind address
+    pub bind_address: Option<String>,
+}
+
+/// Mempool configuration section
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
+pub struct MempoolSection {
+    /// Maximum transactions in mempool
+    pub max_transactions: Option<usize>,
+    /// Maximum transactions per sender
+    pub max_transactions_per_sender: Option<usize>,
 }
 
 #[derive(Debug, Deserialize, Default)]

@@ -51,30 +51,35 @@ pub enum VMState {
 }
 
 impl VMState {
+    /// Checks if this state contains the specified flag.
     #[inline]
     #[must_use]
     pub const fn contains(self, flag: Self) -> bool {
         (self as u8 & flag as u8) != 0
     }
 
+    /// Returns true if the state is NONE (execution in progress or not started).
     #[inline]
     #[must_use]
     pub fn is_none(self) -> bool {
         self == Self::NONE
     }
 
+    /// Returns true if the state contains HALT (execution completed successfully).
     #[inline]
     #[must_use]
     pub fn is_halt(self) -> bool {
         self.contains(Self::HALT)
     }
 
+    /// Returns true if the state contains FAULT (execution ended with exception).
     #[inline]
     #[must_use]
     pub fn is_fault(self) -> bool {
         self.contains(Self::FAULT)
     }
 
+    /// Returns true if the state contains BREAK (breakpoint hit).
     #[inline]
     #[must_use]
     pub fn is_break(self) -> bool {

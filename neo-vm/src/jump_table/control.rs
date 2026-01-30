@@ -448,26 +448,32 @@ pub mod exception_handling {
     use crate::execution_engine::ExecutionEngine;
     use crate::instruction::Instruction;
 
+    /// Executes the TRY opcode for exception handling.
     pub fn try_op(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
         super::r#try(engine, instruction)
     }
 
+    /// Executes the TRY_L opcode (long form) for exception handling.
     pub fn try_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
         super::try_l(engine, instruction)
     }
 
+    /// Executes the ENDTRY opcode to end a try block.
     pub fn endtry(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
         super::endtry(engine, instruction)
     }
 
+    /// Executes the ENDTRY_L opcode (long form) to end a try block.
     pub fn endtry_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
         super::endtry_l(engine, instruction)
     }
 
+    /// Executes the ENDFINALLY opcode to end a finally block.
     pub fn endfinally(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
         super::endfinally(engine, instruction)
     }
 
+    /// Executes the THROW opcode to throw an exception.
     pub fn throw(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
         super::throw(engine, instruction)
     }

@@ -2,7 +2,7 @@
 # Professional development and testing configuration
 
 [network]
-network_type = "testnet"  # Must be set for correct genesis block
+network_type = "TestNet"  # Must be set for correct genesis block
 network_magic = 0x3554334E  # TestNet magic number
 
 [storage]

@@ -2,6 +2,7 @@
 # Professional production-ready configuration
 
 [network]
+network_type = "MainNet"
 network_magic = 0x334F454E  # MainNet magic number
 
 [storage]

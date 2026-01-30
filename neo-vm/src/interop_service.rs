@@ -57,8 +57,14 @@ impl RegisteredDescriptor {
 /// implementation, syscall security (permissions, container checks, policy rules)
 /// is enforced by the host (`ApplicationEngine` / native contract layer).
 pub trait InteropHost {
+    /// Invokes a system call identified by its hash.
+    ///
+    /// # Arguments
+    /// * `engine` - The execution engine
+    /// * `hash` - The syscall hash identifier
     fn invoke_syscall(&mut self, engine: &mut ExecutionEngine, hash: u32) -> VmResult<()>;
 
+    /// Called when a new execution context is loaded onto the invocation stack.
     fn on_context_loaded(
         &mut self,
         _engine: &mut ExecutionEngine,
@@ -66,6 +72,7 @@ pub trait InteropHost {
     ) -> VmResult<()> {
         Ok(())
     }
+    /// Called when an execution context is unloaded from the invocation stack.
     fn on_context_unloaded(
         &mut self,
         _engine: &mut ExecutionEngine,
@@ -74,6 +81,7 @@ pub trait InteropHost {
         Ok(())
     }
 
+    /// Called before executing an instruction. Allows the host to intercept execution.
     fn pre_execute_instruction(
         &mut self,
         _engine: &mut ExecutionEngine,
@@ -83,6 +91,7 @@ pub trait InteropHost {
         Ok(())
     }
 
+    /// Called after executing an instruction. Allows the host to perform post-processing.
     fn post_execute_instruction(
         &mut self,
         _engine: &mut ExecutionEngine,
