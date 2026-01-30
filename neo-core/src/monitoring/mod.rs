@@ -18,14 +18,18 @@ use tokio::time::sleep;
 /// Errors produced by the monitoring subsystem.
 #[derive(Error, Debug)]
 pub enum MonitoringError {
+    /// The requested export format is not supported.
     #[error("Unsupported export format: {0}")]
     UnsupportedFormat(String),
+    /// The requested metric was not found.
     #[error("Metric not found: {0}")]
     MetricNotFound(String),
+    /// An error occurred in the exporter.
     #[error("Exporter error: {0}")]
     Exporter(String),
 }
 
+/// Result type for monitoring operations.
 pub type MonitoringResult<T> = Result<T, MonitoringError>;
 
 type AlertCallback = dyn Fn(Alert) + Send + Sync;
@@ -34,8 +38,11 @@ type AlertCallbacks = Arc<RwLock<Vec<Arc<AlertCallback>>>>;
 /// Overall monitoring container returned by `init_monitoring`.
 #[derive(Clone)]
 pub struct MonitoringSystem {
+    /// Version string for the monitored system.
     pub version: String,
+    /// Health monitoring component.
     pub health_monitor: HealthMonitor,
+    /// Performance monitoring component.
     pub performance_monitor: Arc<PerformanceMonitor>,
     background_started: Arc<AtomicBool>,
 }

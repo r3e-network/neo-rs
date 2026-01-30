@@ -4,7 +4,6 @@
 [network]
 network_type = "testnet"  # Must be set for correct genesis block
 network_magic = 0x3554334E  # TestNet magic number
-address_version = 0x35
 
 [storage]
 backend = "rocksdb"

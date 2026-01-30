@@ -77,9 +77,9 @@ pub(crate) fn is_internal_ip(ip: IpAddr) -> bool {
             if ip.is_loopback()
                 || ip.is_unspecified()
                 || ip.is_multicast()
-                || ((ip.segments()[0] & 0xfe00) == 0xfc00)
+                || ((ip.segments()[0] & 0xfe00) == 0xfc00) // fc00::/7 (unique local)
+                || ((ip.segments()[0] & 0xffc0) == 0xfe80) // fe80::/10 (link-local)
             {
-                // fc00::/7 (unique local)
                 return true;
             }
             // Check for IPv4-mapped addresses

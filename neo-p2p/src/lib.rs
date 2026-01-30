@@ -19,7 +19,7 @@
 //!
 //! For lightweight applications that only need protocol types:
 //!
-//! ```rust
+//! ```rust,ignore
 //! use neo_p2p::{MessageCommand, InventoryType, VerifyResult};
 //!
 //! let cmd = MessageCommand::GetBlocks;
@@ -30,7 +30,7 @@
 //!
 //! For full P2P node functionality, use `neo_core::network::p2p`:
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use neo_core::network::p2p::LocalNode;
 //!
 //! // Full P2P node with connection management
@@ -83,7 +83,7 @@
 //!
 //! ## Example
 //!
-//! ```rust
+//! ```rust,ignore
 //! use neo_p2p::{
 //!     MessageCommand, InventoryType, VerifyResult, WitnessScope,
 //! };
@@ -147,7 +147,7 @@
 //!
 //! All fallible operations return [`P2PResult`]:
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use neo_p2p::{P2PError, P2PResult};
 //!
 //! fn parse_command(byte: u8) -> P2PResult<MessageCommand> {

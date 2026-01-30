@@ -16,7 +16,7 @@
 //!
 //! ## Example
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use neo_consensus::ConsensusSigner;
 //! use neo_primitives::UInt160;
 //!

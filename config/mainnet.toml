@@ -3,7 +3,6 @@
 
 [network]
 network_magic = 0x334F454E  # MainNet magic number
-address_version = 0x35
 
 [storage]
 backend = "rocksdb"

@@ -3,7 +3,6 @@
 
 [network]
 network_magic = 0x4C4F4341  # "LOCA" in hex
-address_version = 0x35
 
 [storage]
 backend = "memory"

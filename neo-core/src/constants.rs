@@ -28,19 +28,29 @@
 //! assert_eq!(MILLISECONDS_PER_BLOCK, 15_000); // 15 seconds
 //! ```
 
+/// Size of a Neo address in bytes (20 bytes = 160 bits).
 pub const ADDRESS_SIZE: usize = 20;
+/// Version byte for Neo N3 addresses (0x35 = 53).
 pub const ADDRESS_VERSION: u8 = 0x35;
+/// Size of a hash in bytes (32 bytes = 256 bits for SHA256/RIPEMD160).
 pub const HASH_SIZE: usize = 32;
+/// Maximum block size in bytes (4 MB).
 pub const MAX_BLOCK_SIZE: usize = 4_194_304; // 4 MB
+/// Maximum script length in bytes (1 MB).
 pub const MAX_SCRIPT_LENGTH: usize = 1_048_576; // 1 MB
+/// Maximum script size in bytes (alias for MAX_SCRIPT_LENGTH).
 pub const MAX_SCRIPT_SIZE: usize = MAX_SCRIPT_LENGTH;
+/// Maximum number of blocks that can be traced for conflict detection.
 pub const MAX_TRACEABLE_BLOCKS: u32 = 2_102_400; // 2_102_400 blocks (per ProtocolSettings.Default)
 /// Maximum transactions allowed per block (matches Neo N3 protocol limit)
 pub const MAX_TRANSACTIONS_PER_BLOCK: usize = 65_535; // u16::MAX
 /// Maximum number of transactions retained in the mempool (ProtocolSettings.Default)
 pub const MEMORY_POOL_MAX_TRANSACTIONS: usize = 50_000;
+/// Maximum transaction size in bytes (100 KB).
 pub const MAX_TRANSACTION_SIZE: usize = 102_400; // 100 KB
+/// Milliseconds between blocks (15 seconds).
 pub const MILLISECONDS_PER_BLOCK: u64 = 15_000; // 15 seconds
+/// Seconds between blocks.
 pub const SECONDS_PER_BLOCK: u64 = 15;
 /// Total initial GAS distribution (datoshi)
 pub const INITIAL_GAS_DISTRIBUTION: u64 = 5_200_000_000_000_000;

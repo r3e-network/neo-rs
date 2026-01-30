@@ -3,11 +3,10 @@
 
 [network]
 network_magic = 0x334F454E  # MainNet magic number
-address_version = 0x35
 
 [storage]
 backend = "rocksdb"
-data_dir = "./data/mainnet"
+path = "./data/mainnet"
 read_only = false
 
 [p2p]

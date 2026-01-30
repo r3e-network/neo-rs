@@ -367,6 +367,11 @@ async fn test_invalid_export_format() {
 
     if let Err(e) = result {
         let error_msg = format!("{:?}", e);
-        assert!(error_msg.contains("Unsupported export format"));
+        // Debug format outputs variant name, Display format outputs error message
+        assert!(
+            error_msg.contains("UnsupportedFormat") || error_msg.contains("Unsupported export format"),
+            "Expected UnsupportedFormat error, got: {}",
+            error_msg
+        );
     }
 }

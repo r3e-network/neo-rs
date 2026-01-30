@@ -2,19 +2,29 @@
 
 use thiserror::Error;
 
+/// Minimum size in bytes for data to be considered for compression.
 pub const COMPRESSION_MIN_SIZE: usize = 128;
+/// Threshold in bytes below which compression is skipped.
 pub const COMPRESSION_THRESHOLD: usize = 64;
 
+/// Errors that can occur during compression or decompression operations.
 #[derive(Debug, Error)]
 pub enum CompressionError {
+    /// Compression operation failed.
     #[error("Compression failed: {0}")]
     Compression(String),
+    /// Decompression operation failed.
     #[error("Decompression failed: {0}")]
     Decompression(String),
+    /// Decompressed data exceeds the maximum allowed size.
     #[error("Decompressed payload exceeds maximum size ({max} bytes)")]
-    TooLarge { max: usize },
+    TooLarge {
+        /// Maximum allowed size in bytes.
+        max: usize,
+    },
 }
 
+/// Result type for compression operations.
 pub type CompressionResult<T> = Result<T, CompressionError>;
 
 /// Compresses data using LZ4 with the original length prepended.

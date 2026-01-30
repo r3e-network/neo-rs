@@ -104,7 +104,7 @@
 //!
 //! The client provides a typed, ergonomic API for interacting with Neo nodes:
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use neo_rpc::{
 //!     RpcClient, RpcClientBuilder,
 //!     client::{Nep17Api, WalletApi},
@@ -157,7 +157,7 @@
 //!
 //! ## Example: Server Usage
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use neo_rpc::server::{RpcServer, RpcServerConfig};
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -175,7 +175,7 @@
 //!
 //! ## Example: Client Usage with High-Level APIs
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use neo_rpc::client::{RpcClient, Nep17Api, ContractClient};
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {

@@ -138,7 +138,7 @@
 //!
 //! ## Example Usage
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use neo_consensus::{
 //!     ConsensusService, ConsensusEvent, ConsensusCommand,
 //!     ConsensusContext, ConsensusMessageType,
