@@ -1,5 +1,5 @@
 use base64::{engine::general_purpose, Engine as _};
-use neo_config::ProtocolSettings;
+use neo_core::config::ProtocolSettings;
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::{Block, BlockHeader, Signer, Transaction};
 use neo_io::serializable::helper::get_var_size;

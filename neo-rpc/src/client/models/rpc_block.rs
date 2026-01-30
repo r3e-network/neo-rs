@@ -9,7 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use neo_config::ProtocolSettings;
+use neo_core::config::ProtocolSettings;
 use neo_core::Block;
 use neo_json::JObject;
 use neo_primitives::UInt256;

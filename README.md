@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/neo_rust_banner.png" alt="neo-rs banner" width="100%">
+</p>
+
 # neo-rs
 
 Professional Rust implementation of the Neo N3 blockchain node and CLI tools.

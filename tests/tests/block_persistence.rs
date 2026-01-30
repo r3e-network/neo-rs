@@ -8,9 +8,9 @@
 //! - Fork handling
 //! - Historical block queries
 
-use neo_chain::{BlockIndexEntry, ChainState};
+use neo_core::chain::{BlockIndexEntry, ChainState};
 use neo_core::{UInt160, UInt256};
-use neo_state::{
+use neo_core::state::{
     MemoryWorldState, StateChanges, StateTrieManager, StorageItem, StorageKey, WorldState,
 };
 

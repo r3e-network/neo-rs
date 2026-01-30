@@ -30,7 +30,7 @@ pub use witness::{
 #[allow(unused_imports)]
 pub use witness_rule::rule_from_json;
 
-use neo_config::ProtocolSettings;
+use neo_core::config::ProtocolSettings;
 use neo_core::smart_contract::native::NativeRegistry;
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::{Block, BlockHeader, Contract, ECCurve, ECPoint, KeyPair, Transaction, Witness};

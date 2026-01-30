@@ -7,10 +7,10 @@
 //! - RPC server functionality
 //! - Cross-component communication
 
-use neo_chain::{BlockIndexEntry, ChainState};
+use neo_core::chain::{BlockIndexEntry, ChainState};
 use neo_crypto::Crypto;
 use neo_primitives::{UInt160, UInt256};
-use neo_state::{
+use neo_core::state::{
     MemoryWorldState, StateChanges, StateTrieManager, StorageItem, StorageKey, WorldState,
 };
 use std::sync::Arc;

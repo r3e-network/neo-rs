@@ -317,7 +317,7 @@ impl TransactionManager {
 mod tests {
     use super::*;
     use mockito::{Matcher, Server};
-    use neo_config::ProtocolSettings;
+    use neo_core::config::ProtocolSettings;
     use neo_json::{JArray, JObject, JToken};
     use neo_primitives::WitnessScope;
     use reqwest::Url;

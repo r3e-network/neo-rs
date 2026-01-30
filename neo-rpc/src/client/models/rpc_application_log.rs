@@ -12,7 +12,7 @@
 use super::vm_state_utils::{vm_state_from_str, vm_state_to_string};
 use std::str::FromStr;
 
-use neo_config::ProtocolSettings;
+use neo_core::config::ProtocolSettings;
 use neo_core::smart_contract::TriggerType;
 use neo_json::{JArray, JObject, JToken};
 use neo_primitives::{UInt160, UInt256};

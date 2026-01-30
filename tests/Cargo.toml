@@ -24,14 +24,10 @@ neo-core = { path = "../neo-core" }
 neo-vm = { path = "../neo-vm" }
 neo-p2p = { path = "../neo-p2p" }
 
-# Layer 3 - State
-neo-state = { path = "../neo-state" }
-neo-mempool = { path = "../neo-mempool" }
-neo-chain = { path = "../neo-chain" }
+# NOTE: neo-state, neo-mempool, neo-chain, neo-config merged into neo-core
 
 # Layer 4 - Services
 neo-rpc = { path = "../neo-rpc" }
-neo-config = { path = "../neo-config" }
 neo-telemetry = { path = "../neo-telemetry" }
 
 # Utilities

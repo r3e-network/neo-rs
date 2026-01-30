@@ -10,7 +10,7 @@
 // modifications are permitted.
 
 use super::super::utility::{witness_to_json, RpcUtility};
-use neo_config::ProtocolSettings;
+use neo_core::config::ProtocolSettings;
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::BlockHeader;
 use neo_io::Serializable;

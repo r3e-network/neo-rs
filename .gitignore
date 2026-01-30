@@ -69,3 +69,5 @@ neo-node/StateRoot/
 **/target_codex/
 target_codex/
 neo-csharp-latest/
+/neo_csharp/
+/reports/

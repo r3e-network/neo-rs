@@ -51,26 +51,12 @@ members = [
     # Optional feature-gated integration via neo-node (`--features hsm`)
     "neo-hsm",
 
-    # === Configuration ===
-    # Configuration management
-    "neo-config",
-
     # === Telemetry ===
     # Observability stack
     "neo-telemetry",
 
-    # === State Layer ===
-    # World state abstraction
-    "neo-state",
-
-    # === Chain Management ===
-    # Transaction mempool
-    "neo-mempool",
-
-    # Blockchain state and chain management
-    "neo-chain",
-
     # === Application Layer ===
+    # NOTE: neo-config, neo-state, neo-mempool, neo-chain merged into neo-core
     # CLI client
     "neo-cli",
 
@@ -130,15 +116,10 @@ neo-consensus = { path = "neo-consensus", version = "0.7.0" }
 neo-tee = { path = "neo-tee", version = "0.7.0" }
 neo-hsm = { path = "neo-hsm", version = "0.7.0" }
 
-# Configuration
-neo-config = { path = "neo-config", version = "0.7.0" }
-
 # Telemetry
 neo-telemetry = { path = "neo-telemetry", version = "0.7.0" }
 
-# Chain management
-neo-mempool = { path = "neo-mempool", version = "0.7.0" }
-neo-chain = { path = "neo-chain", version = "0.7.0" }
+# NOTE: neo-config, neo-mempool, neo-chain, neo-state merged into neo-core
 
 # Application layer
 neo-cli = { path = "neo-cli", version = "0.7.0" }

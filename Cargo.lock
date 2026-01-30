@@ -2112,22 +2112,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "neo-chain"
-version = "0.7.0"
-dependencies = [
- "async-trait",
- "hashbrown 0.14.5",
- "neo-mempool",
- "neo-primitives",
- "parking_lot",
- "serde",
- "tempfile",
- "thiserror 1.0.69",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "neo-cli"
 version = "0.7.0"
 dependencies = [
@@ -2143,20 +2127,6 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "url",
-]
-
-[[package]]
-name = "neo-config"
-version = "0.7.0"
-dependencies = [
- "dirs",
- "neo-primitives",
- "serde",
- "tempfile",
- "thiserror 1.0.69",
- "toml",
- "tracing",
- "uuid",
 ]
 
 [[package]]
@@ -2342,21 +2312,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "neo-mempool"
-version = "0.7.0"
-dependencies = [
- "async-trait",
- "hashbrown 0.14.5",
- "indexmap 2.12.1",
- "neo-primitives",
- "parking_lot",
- "serde",
- "thiserror 1.0.69",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "neo-node"
 version = "0.7.0"
 dependencies = [
@@ -2367,15 +2322,12 @@ dependencies = [
  "futures",
  "hyper 0.14.32",
  "lazy_static",
- "neo-chain",
  "neo-consensus",
  "neo-core",
  "neo-crypto",
  "neo-hsm",
- "neo-mempool",
  "neo-p2p",
  "neo-rpc",
- "neo-state",
  "neo-tee",
  "neo-vm",
  "num_cpus",
@@ -2443,7 +2395,6 @@ dependencies = [
  "hex",
  "hyper 0.14.32",
  "mockito",
- "neo-config",
  "neo-core",
  "neo-crypto",
  "neo-io",
@@ -2475,22 +2426,6 @@ dependencies = [
  "uuid",
  "warp",
  "zeroize",
-]
-
-[[package]]
-name = "neo-state"
-version = "0.7.0"
-dependencies = [
- "hashbrown 0.14.5",
- "neo-crypto",
- "neo-primitives",
- "neo-storage",
- "parking_lot",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
- "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -2557,18 +2492,14 @@ version = "0.7.0"
 dependencies = [
  "criterion",
  "hex",
- "neo-chain",
- "neo-config",
  "neo-consensus",
  "neo-core",
  "neo-crypto",
  "neo-io",
  "neo-json",
- "neo-mempool",
  "neo-p2p",
  "neo-primitives",
  "neo-rpc",
- "neo-state",
  "neo-storage",
  "neo-telemetry",
  "neo-vm",

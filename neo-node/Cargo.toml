@@ -32,10 +32,8 @@ hsm-pkcs11 = ["hsm", "neo-hsm/pkcs11"]
 
 [dependencies]
 # Enable full neo-core features for production node (rocksdb, upnp, monitoring, parallel)
+# NOTE: neo-state, neo-chain, neo-mempool merged into neo-core
 neo-core = { path = "../neo-core", features = ["full", "runtime", "parallel"] }
-neo-state = { path = "../neo-state" }
-neo-chain = { path = "../neo-chain" }
-neo-mempool = { path = "../neo-mempool" }
 neo-consensus = { path = "../neo-consensus" }
 neo-p2p = { path = "../neo-p2p" }
 neo-crypto = { path = "../neo-crypto" }

@@ -21,7 +21,7 @@ neo-io = { workspace = true }
 neo-core = { path = "../neo-core", optional = true, features = ["runtime"] }
 neo-vm = { path = "../neo-vm", optional = true }
 neo-json = { path = "../neo-json", optional = true }
-neo-config = { path = "../neo-config", optional = true }
+# neo-config merged into neo-core
 
 # Async runtime
 tokio = { workspace = true }
@@ -115,7 +115,6 @@ server = [
     "dep:socket2",
 ]
 client = [
-    "dep:neo-config",
     "dep:neo-core",
     "dep:neo-json",
     "dep:neo-vm",

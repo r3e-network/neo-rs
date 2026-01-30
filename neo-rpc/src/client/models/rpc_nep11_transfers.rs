@@ -9,7 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use neo_config::ProtocolSettings;
+use neo_core::config::ProtocolSettings;
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_json::{JArray, JObject, JToken};
 use neo_primitives::{UInt160, UInt256};
