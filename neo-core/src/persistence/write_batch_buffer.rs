@@ -4,12 +4,18 @@
 //! and flushes them periodically based on size or time thresholds.
 
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+
+#[cfg(feature = "rocksdb")]
 use std::sync::Arc;
+#[cfg(feature = "rocksdb")]
 use std::time::{Duration, Instant};
 
+#[cfg(feature = "rocksdb")]
 use parking_lot::Mutex;
+#[cfg(feature = "rocksdb")]
 use tracing::{debug, error, trace};
 
+#[cfg(feature = "rocksdb")]
 use crate::{CoreError, CoreResult};
 
 #[cfg(feature = "rocksdb")]
