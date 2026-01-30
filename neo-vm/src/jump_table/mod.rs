@@ -29,7 +29,7 @@ pub struct JumpTable {
     /// The handlers for each opcode.
     /// Uses a fixed-size array of 256 entries (one for each possible byte value)
     /// exactly matching the C# implementation which uses `DelAction`[] Table = new `DelAction`[byte.MaxValue]
-    /// 
+    ///
     /// This field is public to allow direct access for performance-critical
     /// instruction dispatch in the execution loop.
     pub(crate) handlers: [Option<InstructionHandler>; 256],

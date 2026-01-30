@@ -161,9 +161,9 @@ impl PolicyContract {
         }
 
         let account = UInt160::from_bytes(&args[0])
-            .map_err(|_| Error::native_contract("Invalid account hash".to_string()))?;
+            .map_err(|_| Error::native_contract("Invalid account hash"))?;
         let token = UInt160::from_bytes(&args[1])
-            .map_err(|_| Error::native_contract("Invalid token hash".to_string()))?;
+            .map_err(|_| Error::native_contract("Invalid token hash"))?;
 
         Self::assert_almost_full_committee(engine)?;
 
@@ -172,7 +172,7 @@ impl PolicyContract {
         let key = Self::blocked_account_suffix(&account);
         let block_data = engine
             .get_storage_item(&context, &key)
-            .ok_or_else(|| Error::invalid_operation("Request not found.".to_string()))?;
+            .ok_or_else(|| Error::invalid_operation("Request not found."))?;
 
         // Parse timestamp from block_data
         let request_time = BigInt::from_signed_bytes_le(&block_data)

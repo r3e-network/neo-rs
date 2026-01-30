@@ -176,9 +176,7 @@ impl ApplicationEngine {
             .engine()
             .current_context()
             .cloned()
-            .ok_or_else(|| {
-                Error::invalid_operation("Failed to load execution context".to_string())
-            })?;
+            .ok_or_else(|| Error::invalid_operation("Failed to load execution context"))?;
 
         self.refresh_context_tracking()?;
 

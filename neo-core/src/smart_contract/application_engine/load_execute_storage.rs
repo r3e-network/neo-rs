@@ -139,7 +139,7 @@ impl ApplicationEngine {
     pub fn add_gas(&mut self, amount: i64) -> Result<()> {
         self.gas_consumed = self.gas_consumed.saturating_add(amount);
         if self.gas_consumed > self.gas_limit {
-            return Err(Error::invalid_operation("Gas limit exceeded".to_string()));
+            return Err(Error::invalid_operation("Gas limit exceeded"));
         }
         Ok(())
     }
@@ -219,7 +219,7 @@ impl ApplicationEngine {
         // 1. Get current contract hash
         let contract_hash = self
             .current_script_hash
-            .ok_or_else(|| Error::invalid_operation("No current contract".to_string()))?;
+            .ok_or_else(|| Error::invalid_operation("No current contract"))?;
 
         // 2. Get contract state to get the ID (matches C# snapshot lookup)
         let contract = ContractManagement::get_contract_from_snapshot(

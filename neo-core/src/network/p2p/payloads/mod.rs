@@ -11,35 +11,62 @@
 
 //! P2P Payloads module matching C# Neo.Network.P2P.Payloads
 
+/// Witness conditions for transaction verification.
 pub mod conditions;
 
+/// Address payload for peer discovery.
 pub mod addr_payload;
+/// Block structure and serialization.
 pub mod block;
+/// Conflicts transaction attribute.
 pub mod conflicts;
+/// Extensible payload for consensus.
 pub mod extensible_payload;
+/// Bloom filter add payload.
 pub mod filter_add_payload;
+/// Bloom filter load payload.
 pub mod filter_load_payload;
+/// Get block by index request payload.
 pub mod get_block_by_index_payload;
+/// Get blocks request payload.
 pub mod get_blocks_payload;
+/// Block header structure.
 pub mod header;
+/// Headers response payload.
 pub mod headers_payload;
+/// High priority transaction attribute.
 pub mod high_priority_attribute;
+/// Inventory interface trait.
 pub mod i_inventory;
+/// Inventory payload for announcements.
 pub mod inv_payload;
+/// Inventory type enumeration.
 pub mod inventory_type;
+/// Merkle block payload for SPV.
 pub mod merkle_block_payload;
+/// Network address with timestamp.
 pub mod network_address_with_time;
+/// Not valid before transaction attribute.
 pub mod not_valid_before;
+/// Notary assisted transaction attribute.
 pub mod notary_assisted;
+/// Oracle response transaction attribute.
 pub mod oracle_response;
+/// Oracle response code enumeration.
 pub mod oracle_response_code;
+/// Ping/pong payload for keepalive.
 pub mod ping_payload;
+/// Transaction signer structure.
 pub mod signer;
+/// Transaction structure and operations.
 pub mod transaction;
+/// Transaction attribute base.
 pub mod transaction_attribute;
-// transaction_attribute_type consolidated to neo-primitives
+/// Version payload for handshake.
 pub mod version_payload;
+/// Witness structure for verification.
 pub mod witness;
+/// Witness scope flags.
 pub mod witness_scope;
 
 // Re-export commonly used types

@@ -78,7 +78,8 @@ pub(crate) fn is_internal_ip(ip: IpAddr) -> bool {
                 || ip.is_unspecified()
                 || ip.is_multicast()
                 || ((ip.segments()[0] & 0xfe00) == 0xfc00) // fc00::/7 (unique local)
-                || ((ip.segments()[0] & 0xffc0) == 0xfe80) // fe80::/10 (link-local)
+                || ((ip.segments()[0] & 0xffc0) == 0xfe80)
+            // fe80::/10 (link-local)
             {
                 return true;
             }

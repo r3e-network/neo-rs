@@ -39,7 +39,12 @@ fn invert(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
 }
 
 /// Helper for binary bitwise operations (AND, OR, XOR)
-fn binary_bitwise<F, G>(engine: &mut ExecutionEngine, op_name: &str, int_op: F, bool_op: G) -> VmResult<()>
+fn binary_bitwise<F, G>(
+    engine: &mut ExecutionEngine,
+    op_name: &str,
+    int_op: F,
+    bool_op: G,
+) -> VmResult<()>
 where
     F: FnOnce(num_bigint::BigInt, num_bigint::BigInt) -> num_bigint::BigInt,
     G: FnOnce(bool, bool) -> bool,
@@ -49,7 +54,9 @@ where
     let a = ctx.pop()?;
 
     let result = match (&a, &b) {
-        (StackItem::Integer(a), StackItem::Integer(b)) => StackItem::from_int(int_op(a.clone(), b.clone())),
+        (StackItem::Integer(a), StackItem::Integer(b)) => {
+            StackItem::from_int(int_op(a.clone(), b.clone()))
+        }
         (StackItem::Boolean(a), StackItem::Boolean(b)) => StackItem::from_bool(bool_op(*a, *b)),
         (StackItem::ByteString(_), StackItem::ByteString(_)) => {
             StackItem::from_int(int_op(a.as_int()?, b.as_int()?))
@@ -57,7 +64,9 @@ where
         _ => {
             return Err(VmError::invalid_operation_msg(format!(
                 "{} operation not supported for types: {:?} and {:?}",
-                op_name, a.stack_item_type(), b.stack_item_type()
+                op_name,
+                a.stack_item_type(),
+                b.stack_item_type()
             )));
         }
     };
@@ -80,7 +89,10 @@ fn equal(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let (a, b) = {
         let ctx = require_context(engine)?;
         if ctx.evaluation_stack().len() < 2 {
-            return Err(VmError::insufficient_stack_items(2, ctx.evaluation_stack().len()));
+            return Err(VmError::insufficient_stack_items(
+                2,
+                ctx.evaluation_stack().len(),
+            ));
         }
         (ctx.pop()?, ctx.pop()?)
     };

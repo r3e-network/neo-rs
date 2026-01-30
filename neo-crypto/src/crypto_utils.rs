@@ -1006,39 +1006,7 @@ pub mod base58 {
     }
 }
 
-pub mod hash {
-    use super::NeoHash;
-
-    #[must_use]
-    pub fn sha256(data: &[u8]) -> [u8; 32] {
-        NeoHash::sha256(data)
-    }
-
-    #[must_use]
-    pub fn sha512(data: &[u8]) -> [u8; 64] {
-        NeoHash::sha512(data)
-    }
-
-    #[must_use]
-    pub fn keccak256(data: &[u8]) -> [u8; 32] {
-        NeoHash::keccak256(data)
-    }
-
-    #[must_use]
-    pub fn ripemd160(data: &[u8]) -> [u8; 20] {
-        NeoHash::ripemd160(data)
-    }
-
-    #[must_use]
-    pub fn hash160(data: &[u8]) -> [u8; 20] {
-        NeoHash::hash160(data)
-    }
-
-    #[must_use]
-    pub fn hash256(data: &[u8]) -> [u8; 32] {
-        NeoHash::hash256(data)
-    }
-}
+// NOTE: Removed duplicate `pub mod hash` - use `crate::hash` or `NeoHash` instead
 
 pub mod murmur {
     use murmur3::murmur3_32;

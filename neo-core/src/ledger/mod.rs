@@ -14,19 +14,32 @@
 //!
 //! For lightweight use cases (testing, standalone tools), see the `neo-mempool` crate.
 
+/// Block structure and operations.
 pub mod block;
+/// Block header structure.
 pub mod block_header;
+/// Blockchain state management.
 #[cfg(feature = "runtime")]
 pub mod blockchain;
+/// Application execution results.
 pub mod blockchain_application_executed;
+/// Genesis block generation.
 pub mod genesis;
+/// Header caching for sync.
 pub mod header_cache;
+/// Ledger context for operations.
 pub mod ledger_context;
+/// Transaction memory pool.
 pub mod memory_pool;
+/// New transaction event arguments.
 pub mod new_transaction_event_args;
+/// Pool item wrapper for transactions.
 pub mod pool_item;
+/// Transaction removal reasons.
 pub mod transaction_removal_reason;
+/// Transaction removed event arguments.
 pub mod transaction_removed_event_args;
+/// Transaction routing logic.
 pub mod transaction_router;
 pub mod transaction_verification_context;
 pub mod verify_result;

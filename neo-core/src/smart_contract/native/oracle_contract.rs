@@ -319,31 +319,31 @@ impl OracleContract {
         }
 
         let url = String::from_utf8(args[0].clone())
-            .map_err(|_| Error::invalid_operation("Invalid URL".to_string()))?;
+            .map_err(|_| Error::invalid_operation("Invalid URL"))?;
         let filter = if args[1].is_empty() {
             None
         } else {
             Some(
                 String::from_utf8(args[1].clone())
-                    .map_err(|_| Error::invalid_operation("Invalid filter".to_string()))?,
+                    .map_err(|_| Error::invalid_operation("Invalid filter"))?,
             )
         };
         let callback = String::from_utf8(args[2].clone())
-            .map_err(|_| Error::invalid_operation("Invalid callback".to_string()))?;
+            .map_err(|_| Error::invalid_operation("Invalid callback"))?;
         let user_data = args[3].clone();
         let gas_for_response = i64::from_le_bytes(
             args[4]
                 .as_slice()
                 .try_into()
-                .map_err(|_| Error::invalid_operation("Invalid gas amount".to_string()))?,
+                .map_err(|_| Error::invalid_operation("Invalid gas amount"))?,
         );
 
         if url.len() > self.config.max_url_length {
-            return Err(Error::invalid_operation("URL too long".to_string()));
+            return Err(Error::invalid_operation("URL too long"));
         }
         if let Some(ref f) = filter {
             if f.len() > self.config.max_filter_length {
-                return Err(Error::invalid_operation("Filter too long".to_string()));
+                return Err(Error::invalid_operation("Filter too long"));
             }
         }
         if callback.is_empty() || callback.len() > self.config.max_callback_length {
@@ -357,12 +357,12 @@ impl OracleContract {
             ));
         }
         if user_data.len() > self.config.max_user_data_length {
-            return Err(Error::invalid_operation("User data too long".to_string()));
+            return Err(Error::invalid_operation("User data too long"));
         }
         if gas_for_response < self.config.min_response_gas
             || gas_for_response > self.config.max_response_gas
         {
-            return Err(Error::invalid_operation("Invalid gas amount".to_string()));
+            return Err(Error::invalid_operation("Invalid gas amount"));
         }
 
         let calling_contract = engine
@@ -423,9 +423,7 @@ impl OracleContract {
                 TransactionAttribute::OracleResponse(attr) => Some(attr.clone()),
                 _ => None,
             })
-            .ok_or_else(|| {
-                Error::invalid_operation("Oracle response attribute missing".to_string())
-            })?;
+            .ok_or_else(|| Error::invalid_operation("Oracle response attribute missing"))?;
 
         let snapshot_arc = engine.snapshot_cache();
         let snapshot = snapshot_arc.as_ref();
@@ -477,7 +475,7 @@ impl OracleContract {
             args[0]
                 .as_slice()
                 .try_into()
-                .map_err(|_| Error::invalid_operation("Invalid price value".to_string()))?,
+                .map_err(|_| Error::invalid_operation("Invalid price value"))?,
         );
 
         if price <= 0 {
@@ -666,10 +664,10 @@ impl OracleContract {
         for element in array.items() {
             let value = element
                 .as_int()
-                .map_err(|_| Error::invalid_data("Invalid URL id entry".to_string()))?;
+                .map_err(|_| Error::invalid_data("Invalid URL id entry"))?;
             let id = value
                 .to_u64()
-                .ok_or_else(|| Error::invalid_data("URL id entry overflow".to_string()))?;
+                .ok_or_else(|| Error::invalid_data("URL id entry overflow"))?;
             ids.push(id);
         }
 
@@ -837,7 +835,7 @@ impl OracleContract {
         }
         let request = self
             .read_request(snapshot, id)?
-            .ok_or_else(|| Error::invalid_operation("Request not found".to_string()))?;
+            .ok_or_else(|| Error::invalid_operation("Request not found"))?;
         let url_hash = self.compute_url_hash(&request.url);
         self.delete_request(snapshot, id);
         self.remove_request_id(snapshot, &url_hash, id)?;

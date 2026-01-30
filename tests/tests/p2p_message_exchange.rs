@@ -3,9 +3,7 @@
 //! Tests for peer-to-peer networking protocol
 
 use neo_core::network::p2p::{
-    message::Message,
-    message_command::MessageCommand,
-    message_flags::MessageFlags,
+    message::Message, message_command::MessageCommand, message_flags::MessageFlags,
     payloads::PingPayload,
 };
 
@@ -19,11 +17,7 @@ fn test_ping_pong_messages() {
         last_block_index: 100,
     };
 
-    let ping_msg = Message::create(
-        MessageCommand::Ping,
-        Some(&ping),
-        false,
-    ).unwrap();
+    let ping_msg = Message::create(MessageCommand::Ping, Some(&ping), false).unwrap();
 
     assert_eq!(ping_msg.command, MessageCommand::Ping);
 
@@ -33,11 +27,7 @@ fn test_ping_pong_messages() {
         last_block_index: 100,
     };
 
-    let pong_msg = Message::create(
-        MessageCommand::Pong,
-        Some(&pong),
-        false,
-    ).unwrap();
+    let pong_msg = Message::create(MessageCommand::Pong, Some(&pong), false).unwrap();
 
     assert_eq!(pong_msg.command, MessageCommand::Pong);
 }
@@ -64,7 +54,12 @@ fn test_message_command_byte_conversion() {
         let byte = cmd.to_byte();
         let restored = MessageCommand::from_byte(byte);
         assert!(restored.is_ok());
-        assert_eq!(restored.unwrap(), cmd, "Command {:?} should round-trip", cmd);
+        assert_eq!(
+            restored.unwrap(),
+            cmd,
+            "Command {:?} should round-trip",
+            cmd
+        );
     }
 }
 
@@ -90,7 +85,12 @@ fn test_verify_result_variants() {
     for result in results {
         let byte = result.to_byte();
         let restored = VerifyResult::from_byte(byte);
-        assert_eq!(restored, Some(result), "VerifyResult {:?} should round-trip", result);
+        assert_eq!(
+            restored,
+            Some(result),
+            "VerifyResult {:?} should round-trip",
+            result
+        );
     }
 }
 
@@ -111,11 +111,7 @@ async fn test_concurrent_message_creation() {
                 last_block_index: i as u32 * 10,
             };
 
-            let msg = Message::create(
-                MessageCommand::Ping,
-                Some(&ping),
-                false,
-            ).unwrap();
+            let msg = Message::create(MessageCommand::Ping, Some(&ping), false).unwrap();
 
             let mut msgs = msgs_clone.lock().await;
             msgs.push(msg);

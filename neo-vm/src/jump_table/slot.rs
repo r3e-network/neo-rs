@@ -84,17 +84,25 @@ fn init_slot(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
     let ctx = require_context(engine)?;
 
     if ctx.local_variables().is_some() || ctx.arguments().is_some() {
-        return Err(VmError::invalid_operation_msg("INITSLOT cannot be executed twice"));
+        return Err(VmError::invalid_operation_msg(
+            "INITSLOT cannot be executed twice",
+        ));
     }
 
     let operand = instruction.operand();
-    let local_count = *operand.first()
-        .ok_or_else(|| VmError::invalid_instruction_msg("Missing local count"))? as usize;
-    let argument_count = *operand.get(1)
-        .ok_or_else(|| VmError::invalid_instruction_msg("Missing argument count"))? as usize;
+    let local_count = *operand
+        .first()
+        .ok_or_else(|| VmError::invalid_instruction_msg("Missing local count"))?
+        as usize;
+    let argument_count = *operand
+        .get(1)
+        .ok_or_else(|| VmError::invalid_instruction_msg("Missing argument count"))?
+        as usize;
 
     if local_count == 0 && argument_count == 0 {
-        return Err(VmError::invalid_operation_msg("The operand is invalid for OpCode.INITSLOT"));
+        return Err(VmError::invalid_operation_msg(
+            "The operand is invalid for OpCode.INITSLOT",
+        ));
     }
 
     if local_count > 0 {
@@ -117,11 +125,16 @@ fn init_slot(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
 fn init_static_slot(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
 
-    let static_count = *instruction.operand().first()
-        .ok_or_else(|| VmError::invalid_instruction_msg("Missing static count"))? as usize;
+    let static_count = *instruction
+        .operand()
+        .first()
+        .ok_or_else(|| VmError::invalid_instruction_msg("Missing static count"))?
+        as usize;
 
     if ctx.static_fields().is_some() {
-        return Err(VmError::invalid_operation_msg("INITSSLOT cannot be executed twice"));
+        return Err(VmError::invalid_operation_msg(
+            "INITSSLOT cannot be executed twice",
+        ));
     }
 
     if static_count > 0 {
@@ -151,13 +164,17 @@ fn store_static_field_n(engine: &mut ExecutionEngine, index: usize) -> VmResult<
 }
 
 fn load_static_field(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    let index = *instruction.operand().first()
+    let index = *instruction
+        .operand()
+        .first()
         .ok_or_else(|| VmError::invalid_instruction_msg("Missing index"))? as usize;
     load_static_field_n(engine, index)
 }
 
 fn store_static_field(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    let index = *instruction.operand().first()
+    let index = *instruction
+        .operand()
+        .first()
         .ok_or_else(|| VmError::invalid_instruction_msg("Missing index"))? as usize;
     store_static_field_n(engine, index)
 }
@@ -181,13 +198,17 @@ fn store_local_n(engine: &mut ExecutionEngine, index: usize) -> VmResult<()> {
 }
 
 fn load_local(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    let index = *instruction.operand().first()
+    let index = *instruction
+        .operand()
+        .first()
         .ok_or_else(|| VmError::invalid_instruction_msg("Missing index"))? as usize;
     load_local_n(engine, index)
 }
 
 fn store_local(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    let index = *instruction.operand().first()
+    let index = *instruction
+        .operand()
+        .first()
         .ok_or_else(|| VmError::invalid_instruction_msg("Missing index"))? as usize;
     store_local_n(engine, index)
 }
@@ -211,13 +232,17 @@ fn store_argument_n(engine: &mut ExecutionEngine, index: usize) -> VmResult<()> 
 }
 
 fn load_argument(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    let index = *instruction.operand().first()
+    let index = *instruction
+        .operand()
+        .first()
         .ok_or_else(|| VmError::invalid_instruction_msg("Missing index"))? as usize;
     load_argument_n(engine, index)
 }
 
 fn store_argument(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    let index = *instruction.operand().first()
+    let index = *instruction
+        .operand()
+        .first()
         .ok_or_else(|| VmError::invalid_instruction_msg("Missing index"))? as usize;
     store_argument_n(engine, index)
 }

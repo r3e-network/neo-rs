@@ -173,7 +173,11 @@ impl Message {
     /// is desired to reduce allocation overhead.
     ///
     /// Returns the number of bytes written.
-    pub fn serialize_into(&self, buffer: &mut Vec<u8>, enable_compression: bool) -> IoResult<usize> {
+    pub fn serialize_into(
+        &self,
+        buffer: &mut Vec<u8>,
+        enable_compression: bool,
+    ) -> IoResult<usize> {
         let start_len = buffer.len();
         let (flags, payload) = if enable_compression || !self.is_compressed() {
             (self.flags, self.payload_compressed())
@@ -373,10 +377,10 @@ mod tests {
         // Verify both messages can be deserialized correctly using MemoryReader
         let mut reader1 = MemoryReader::new(&buffer[..len1]);
         let msg1 = <Message as Serializable>::deserialize(&mut reader1).unwrap();
-        
+
         let mut reader2 = MemoryReader::new(&buffer[len1..]);
         let msg2 = <Message as Serializable>::deserialize(&mut reader2).unwrap();
-        
+
         assert_eq!(msg1.command, MessageCommand::Ping);
         assert_eq!(msg2.command, MessageCommand::Ping);
     }

@@ -61,6 +61,10 @@ bincode = { workspace = true }
 scrypt = "0.11"
 parking_lot = { workspace = true }
 lz4_flex = { workspace = true }
+hashbrown = { workspace = true }
+indexmap = { workspace = true }
+toml = { workspace = true }
+dirs = "5.0"
 if-addrs = "0.10"
 bitflags = "2.4"
 aes = "0.8"

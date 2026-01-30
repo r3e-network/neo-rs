@@ -115,9 +115,8 @@ impl Bls12381Interop {
                 "Invalid BLS12-381 interop payload".to_string(),
             ));
         }
-        let kind = Bls12381Kind::from_tag(data[0]).ok_or_else(|| {
-            Error::native_contract("Invalid BLS12-381 interop payload".to_string())
-        })?;
+        let kind = Bls12381Kind::from_tag(data[0])
+            .ok_or_else(|| Error::native_contract("Invalid BLS12-381 interop payload"))?;
         let bytes = data[1..].to_vec();
         Self::new(kind, bytes)
     }
@@ -348,16 +347,16 @@ impl CryptoLib {
     fn sha256(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         let data = args
             .first()
-            .ok_or_else(|| Error::native_contract("sha256 requires data argument".to_string()))?;
+            .ok_or_else(|| Error::native_contract("sha256 requires data argument"))?;
 
         Ok(Crypto::sha256(data).to_vec())
     }
 
     /// RIPEMD160 hash function backed by the shared cryptography crate.
     fn ripemd160(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
-        let data = args.first().ok_or_else(|| {
-            Error::native_contract("ripemd160 requires data argument".to_string())
-        })?;
+        let data = args
+            .first()
+            .ok_or_else(|| Error::native_contract("ripemd160 requires data argument"))?;
 
         Ok(Crypto::ripemd160(data).to_vec())
     }
@@ -379,9 +378,9 @@ impl CryptoLib {
 
     /// Keccak256 hash function backed by the shared cryptography crate.
     fn keccak256(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
-        let data = args.first().ok_or_else(|| {
-            Error::native_contract("keccak256 requires data argument".to_string())
-        })?;
+        let data = args
+            .first()
+            .ok_or_else(|| Error::native_contract("keccak256 requires data argument"))?;
 
         Ok(Crypto::keccak256(data).to_vec())
     }
@@ -743,7 +742,7 @@ impl CryptoLib {
         unsafe {
             let result = blst::blst_p1_uncompress(&mut point, data.as_ptr());
             if result != BLST_ERROR::BLST_SUCCESS {
-                return Err(Error::native_contract("Invalid G1 point".to_string()));
+                return Err(Error::native_contract("Invalid G1 point"));
             }
             if blst::blst_p1_affine_is_inf(&point) || !blst::blst_p1_affine_in_g1(&point) {
                 return Err(Error::native_contract(
@@ -762,7 +761,7 @@ impl CryptoLib {
         unsafe {
             let result = blst::blst_p2_uncompress(&mut point, data.as_ptr());
             if result != BLST_ERROR::BLST_SUCCESS {
-                return Err(Error::native_contract("Invalid G2 point".to_string()));
+                return Err(Error::native_contract("Invalid G2 point"));
             }
             if blst::blst_p2_affine_is_inf(&point) || !blst::blst_p2_affine_in_g2(&point) {
                 return Err(Error::native_contract(

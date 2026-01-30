@@ -10,7 +10,9 @@
 
 use neo_chain::{BlockIndexEntry, ChainState};
 use neo_core::{UInt160, UInt256};
-use neo_state::{MemoryWorldState, StateChanges, StateTrieManager, StorageItem, StorageKey, WorldState};
+use neo_state::{
+    MemoryWorldState, StateChanges, StateTrieManager, StorageItem, StorageKey, WorldState,
+};
 
 // Creates a test block hash from a seed value
 fn create_block_hash(seed: u8) -> UInt256 {
@@ -185,7 +187,10 @@ fn test_block_parent_validation() {
     };
 
     let result = chain.add_block(block3);
-    assert!(result.is_err(), "Block with wrong parent should be rejected");
+    assert!(
+        result.is_err(),
+        "Block with wrong parent should be rejected"
+    );
 }
 
 #[test]
@@ -199,13 +204,17 @@ fn test_state_trie_with_block_chain() {
 
     let mut changes1 = StateChanges::new();
     let key1 = StorageKey::new(UInt160::from([0x01u8; 20]), vec![0x01]);
-    changes1.storage.insert(key1, Some(StorageItem::new(vec![0x11])));
+    changes1
+        .storage
+        .insert(key1, Some(StorageItem::new(vec![0x11])));
     let root1 = trie.apply_changes(1, &changes1).unwrap();
     world_state.commit(changes1).unwrap();
 
     let mut changes2 = StateChanges::new();
     let key2 = StorageKey::new(UInt160::from([0x02u8; 20]), vec![0x02]);
-    changes2.storage.insert(key2, Some(StorageItem::new(vec![0x22])));
+    changes2
+        .storage
+        .insert(key2, Some(StorageItem::new(vec![0x22])));
     let root2 = trie.apply_changes(2, &changes2).unwrap();
     world_state.commit(changes2).unwrap();
 
@@ -221,13 +230,17 @@ fn test_state_rollback() {
 
     let mut changes1 = StateChanges::new();
     let key = StorageKey::new(UInt160::from([0x01u8; 20]), vec![0x01]);
-    changes1.storage.insert(key.clone(), Some(StorageItem::new(vec![0x11])));
+    changes1
+        .storage
+        .insert(key.clone(), Some(StorageItem::new(vec![0x11])));
     let root1 = trie.apply_changes(1, &changes1).unwrap();
     world_state.commit(changes1).unwrap();
 
     let mut changes2 = StateChanges::new();
     let key2 = StorageKey::new(UInt160::from([0x02u8; 20]), vec![0x02]);
-    changes2.storage.insert(key2, Some(StorageItem::new(vec![0x22])));
+    changes2
+        .storage
+        .insert(key2, Some(StorageItem::new(vec![0x22])));
     let _root2 = trie.apply_changes(2, &changes2).unwrap();
     world_state.commit(changes2).unwrap();
 
@@ -267,13 +280,19 @@ fn test_chain_contains_block() {
     let genesis_hash = chain.current_hash().unwrap();
     let blocks = build_block_chain(&chain, 3);
 
-    assert!(chain.get_block(&genesis_hash).is_some(), "Genesis should exist");
+    assert!(
+        chain.get_block(&genesis_hash).is_some(),
+        "Genesis should exist"
+    );
     for block in &blocks {
         assert!(chain.get_block(&block.hash).is_some(), "Block should exist");
     }
 
     let fake_hash = create_block_hash(255);
-    assert!(chain.get_block(&fake_hash).is_none(), "Non-existent block should return None");
+    assert!(
+        chain.get_block(&fake_hash).is_none(),
+        "Non-existent block should return None"
+    );
 }
 
 #[test]
@@ -363,7 +382,10 @@ fn test_block_with_many_transactions() {
     };
 
     let result = chain.add_block(large_block);
-    assert!(result.is_ok(), "Large block should be valid (for indexing purposes)");
+    assert!(
+        result.is_ok(),
+        "Large block should be valid (for indexing purposes)"
+    );
 }
 
 #[test]
@@ -401,16 +423,22 @@ fn test_minimum_difficulty_chain() {
 #[test]
 fn test_block_chain_height_tracking() {
     let chain = setup_chain_with_genesis();
-    
+
     // Add blocks one by one
     let mut prev_hash = chain.current_hash().unwrap();
     for i in 1..=5 {
         let block = create_block_entry(i, prev_hash, 1468595301000 + (i as u64 * 15000), 10);
         let result = chain.add_block(block.clone());
-        
+
         // Verify the chain height increased
-        assert_eq!(chain.height(), i, "Height should be {} after adding block {}", i, i);
-        
+        assert_eq!(
+            chain.height(),
+            i,
+            "Height should be {} after adding block {}",
+            i,
+            i
+        );
+
         // Update prev_hash for next iteration
         prev_hash = block.hash;
     }

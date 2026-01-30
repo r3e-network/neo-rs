@@ -334,12 +334,12 @@ impl StdLib {
 
         self.ensure_max_input_len(&args[0], "atoi")?;
         let string_data = String::from_utf8(args[0].clone())
-            .map_err(|_| Error::native_contract("Invalid UTF-8 string".to_string()))?;
+            .map_err(|_| Error::native_contract("Invalid UTF-8 string"))?;
         let base = self.parse_optional_base(args, 1, "atoi")?;
         let value = match base {
             10 => string_data
                 .parse::<BigInt>()
-                .map_err(|_| Error::native_contract("Invalid number format".to_string()))?,
+                .map_err(|_| Error::native_contract("Invalid number format"))?,
             16 => self.parse_hex_twos_complement(&string_data)?,
             _ => return Err(Error::native_contract(format!("Invalid base: {}", base))),
         };
@@ -444,12 +444,12 @@ impl StdLib {
 
         self.ensure_max_input_len(&args[0], "base64Decode")?;
         let string_data = String::from_utf8(args[0].clone())
-            .map_err(|_| Error::native_contract("Invalid UTF-8 string".to_string()))?;
+            .map_err(|_| Error::native_contract("Invalid UTF-8 string"))?;
 
         let normalized: String = string_data.chars().filter(|c| !c.is_whitespace()).collect();
         let decoded = general_purpose::STANDARD
             .decode(normalized.as_bytes())
-            .map_err(|_| Error::native_contract("Invalid base64 data".to_string()))?;
+            .map_err(|_| Error::native_contract("Invalid base64 data"))?;
 
         Ok(decoded)
     }
@@ -464,7 +464,7 @@ impl StdLib {
 
         self.ensure_max_input_len(&args[0], "base64UrlEncode")?;
         let string_data = String::from_utf8(args[0].clone())
-            .map_err(|_| Error::native_contract("Invalid UTF-8 string".to_string()))?;
+            .map_err(|_| Error::native_contract("Invalid UTF-8 string"))?;
         let encoded = general_purpose::URL_SAFE_NO_PAD.encode(string_data.as_bytes());
         Ok(encoded.into_bytes())
     }
@@ -479,13 +479,13 @@ impl StdLib {
 
         self.ensure_max_input_len(&args[0], "base64UrlDecode")?;
         let string_data = String::from_utf8(args[0].clone())
-            .map_err(|_| Error::native_contract("Invalid UTF-8 string".to_string()))?;
+            .map_err(|_| Error::native_contract("Invalid UTF-8 string"))?;
         let normalized: String = string_data.chars().filter(|c| !c.is_whitespace()).collect();
         let decoded = general_purpose::URL_SAFE_NO_PAD
             .decode(normalized.as_bytes())
-            .map_err(|_| Error::native_contract("Invalid base64url data".to_string()))?;
+            .map_err(|_| Error::native_contract("Invalid base64url data"))?;
         let decoded_string = String::from_utf8(decoded)
-            .map_err(|_| Error::native_contract("Invalid UTF-8 string".to_string()))?;
+            .map_err(|_| Error::native_contract("Invalid UTF-8 string"))?;
         Ok(decoded_string.into_bytes())
     }
 
@@ -511,7 +511,7 @@ impl StdLib {
 
         self.ensure_max_input_len(&args[0], "base58Decode")?;
         let string_data = String::from_utf8(args[0].clone())
-            .map_err(|_| Error::native_contract("Invalid UTF-8 string".to_string()))?;
+            .map_err(|_| Error::native_contract("Invalid UTF-8 string"))?;
         Base58::decode(&string_data)
             .map_err(|e| Error::native_contract(format!("Invalid base58 data: {e}")))
     }
@@ -538,7 +538,7 @@ impl StdLib {
 
         self.ensure_max_input_len(&args[0], "base58CheckDecode")?;
         let string_data = String::from_utf8(args[0].clone())
-            .map_err(|_| Error::native_contract("Invalid UTF-8 string".to_string()))?;
+            .map_err(|_| Error::native_contract("Invalid UTF-8 string"))?;
         Base58::decode_check(&string_data)
             .map_err(|e| Error::native_contract(format!("Invalid base58check data: {e}")))
     }
@@ -565,7 +565,7 @@ impl StdLib {
 
         self.ensure_max_input_len(&args[0], "hexDecode")?;
         let string_data = String::from_utf8(args[0].clone())
-            .map_err(|_| Error::native_contract("Invalid UTF-8 string".to_string()))?;
+            .map_err(|_| Error::native_contract("Invalid UTF-8 string"))?;
         Hex::decode(&string_data)
             .map_err(|e| Error::native_contract(format!("Invalid hex data: {e}")))
     }
@@ -612,7 +612,7 @@ impl StdLib {
             let start_value = BigInt::from_signed_bytes_le(&args[2]);
             start_value
                 .to_i32()
-                .ok_or_else(|| Error::native_contract("start parameter out of range".to_string()))?
+                .ok_or_else(|| Error::native_contract("start parameter out of range"))?
         } else {
             0
         };
@@ -689,10 +689,10 @@ impl StdLib {
         }
 
         let string_data = String::from_utf8(args[0].clone())
-            .map_err(|_| Error::native_contract("Invalid UTF-8 string".to_string()))?;
+            .map_err(|_| Error::native_contract("Invalid UTF-8 string"))?;
 
         let separator = String::from_utf8(args[1].clone())
-            .map_err(|_| Error::native_contract("Invalid UTF-8 separator".to_string()))?;
+            .map_err(|_| Error::native_contract("Invalid UTF-8 separator"))?;
 
         self.ensure_max_input_len(string_data.as_bytes(), "stringSplit")?;
         self.ensure_max_input_len(separator.as_bytes(), "stringSplit")?;
@@ -739,7 +739,7 @@ impl StdLib {
         }
 
         let string_data = String::from_utf8(args[0].clone())
-            .map_err(|_| Error::native_contract("Invalid UTF-8 string".to_string()))?;
+            .map_err(|_| Error::native_contract("Invalid UTF-8 string"))?;
 
         self.ensure_max_input_len(string_data.as_bytes(), "strLen")?;
 
@@ -783,11 +783,11 @@ impl StdLib {
 
         let normalized = trimmed.to_ascii_lowercase();
         let unsigned = BigInt::from_str_radix(&normalized, 16)
-            .map_err(|_| Error::native_contract("Invalid hex number format".to_string()))?;
+            .map_err(|_| Error::native_contract("Invalid hex number format"))?;
         let bits = trimmed
             .len()
             .checked_mul(4)
-            .ok_or_else(|| Error::native_contract("Hex value too large".to_string()))?;
+            .ok_or_else(|| Error::native_contract("Hex value too large"))?;
         if bits == 0 {
             return Ok(BigInt::from(0));
         }

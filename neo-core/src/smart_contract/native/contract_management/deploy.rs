@@ -74,9 +74,9 @@ impl ContractManagement {
         Self::validate_manifest(&manifest)?;
 
         // Require transaction sender (matches C# behaviour)
-        let sender = engine.get_transaction_sender().ok_or_else(|| {
-            Error::invalid_operation("Deploy must be invoked by a transaction".to_string())
-        })?;
+        let sender = engine
+            .get_transaction_sender()
+            .ok_or_else(|| Error::invalid_operation("Deploy must be invoked by a transaction"))?;
 
         // Calculate contract hash
         let contract_hash = Self::calculate_contract_hash(&sender, nef.checksum, &manifest.name);

@@ -128,9 +128,9 @@ impl ApplicationEngine {
                     ));
                 }
 
-                let current_hash = self.current_script_hash().ok_or_else(|| {
-                    Error::invalid_operation("No current script hash".to_string())
-                })?;
+                let current_hash = self
+                    .current_script_hash()
+                    .ok_or_else(|| Error::invalid_operation("No current script hash"))?;
 
                 let Some(contract) = ContractManagement::get_contract_from_snapshot(
                     self.snapshot_cache.as_ref(),
@@ -459,7 +459,7 @@ impl ApplicationEngine {
         let fee = if self.is_hardfork_enabled(Hardfork::HfAspidochelone) {
             CHECK_SIG_PRICE
                 .checked_mul(public_keys.len() as i64)
-                .ok_or_else(|| Error::invalid_operation("Multisig fee overflow".to_string()))?
+                .ok_or_else(|| Error::invalid_operation("Multisig fee overflow"))?
         } else {
             1 << 8
         };

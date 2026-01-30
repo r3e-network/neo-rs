@@ -5,11 +5,9 @@
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use neo_core::{
-    network::p2p::payloads::{
-        transaction::Transaction, Header, Signer, Witness,
-    },
     extensions::SerializableExtensions,
     io::{BinaryWriter, MemoryReader, Serializable},
+    network::p2p::payloads::{transaction::Transaction, Header, Signer, Witness},
 };
 use neo_primitives::{UInt160, UInt256};
 use rand::{rngs::OsRng, RngCore};
@@ -23,7 +21,7 @@ fn random_bytes(size: usize) -> Vec<u8> {
 
 fn bench_transaction_serialization(c: &mut Criterion) {
     let mut group = c.benchmark_group("serialization_transaction");
-    
+
     // Create transactions of different sizes
     for signer_count in [1, 2, 3].iter() {
         let mut tx = Transaction::new();
@@ -32,7 +30,7 @@ fn bench_transaction_serialization(c: &mut Criterion) {
         tx.set_system_fee(1000000);
         tx.set_network_fee(500000);
         tx.set_valid_until_block(1000);
-        
+
         // Add signers and matching witnesses
         for _ in 0..*signer_count {
             let signer = Signer::new(
@@ -40,14 +38,14 @@ fn bench_transaction_serialization(c: &mut Criterion) {
                 neo_core::network::p2p::payloads::WitnessScope::None,
             );
             tx.add_signer(signer);
-            
+
             let witness = Witness::new_with_scripts(random_bytes(32), random_bytes(32));
             tx.add_witness(witness);
         }
-        
+
         // Add script
         tx.set_script(random_bytes(256));
-        
+
         group.bench_with_input(
             BenchmarkId::new("serialize", signer_count),
             signer_count,
@@ -58,7 +56,7 @@ fn bench_transaction_serialization(c: &mut Criterion) {
                 });
             },
         );
-        
+
         let serialized = tx.to_array().unwrap();
         group.throughput(Throughput::Bytes(serialized.len() as u64));
         group.bench_with_input(
@@ -72,13 +70,13 @@ fn bench_transaction_serialization(c: &mut Criterion) {
             },
         );
     }
-    
+
     group.finish();
 }
 
 fn bench_header_serialization(c: &mut Criterion) {
     let mut group = c.benchmark_group("serialization_header");
-    
+
     let mut header = Header::new();
     header.set_version(0);
     header.set_prev_hash(UInt256::from_bytes(&random_bytes(32)).unwrap());
@@ -86,14 +84,14 @@ fn bench_header_serialization(c: &mut Criterion) {
     header.set_timestamp(1234567890);
     header.set_index(100);
     header.set_primary_index(0);
-    
+
     group.bench_function("serialize", |b| {
         b.iter(|| {
             let result = black_box(&header).to_array().unwrap();
             black_box(result)
         });
     });
-    
+
     let serialized = header.to_array().unwrap();
     group.throughput(Throughput::Bytes(serialized.len() as u64));
     group.bench_function("deserialize", |b| {
@@ -103,13 +101,13 @@ fn bench_header_serialization(c: &mut Criterion) {
             black_box(result)
         });
     });
-    
+
     group.finish();
 }
 
 fn bench_binary_writer(c: &mut Criterion) {
     let mut group = c.benchmark_group("serialization_binary");
-    
+
     // Benchmark writing different data types
     group.bench_function("write_u8", |b| {
         b.iter(|| {
@@ -118,7 +116,7 @@ fn bench_binary_writer(c: &mut Criterion) {
             black_box(writer.into_bytes())
         });
     });
-    
+
     group.bench_function("write_u32", |b| {
         b.iter(|| {
             let mut writer = BinaryWriter::new();
@@ -126,7 +124,7 @@ fn bench_binary_writer(c: &mut Criterion) {
             black_box(writer.into_bytes())
         });
     });
-    
+
     group.bench_function("write_u64", |b| {
         b.iter(|| {
             let mut writer = BinaryWriter::new();
@@ -134,7 +132,7 @@ fn bench_binary_writer(c: &mut Criterion) {
             black_box(writer.into_bytes())
         });
     });
-    
+
     group.bench_function("write_bytes_256", |b| {
         let data = random_bytes(256);
         b.iter(|| {
@@ -143,13 +141,13 @@ fn bench_binary_writer(c: &mut Criterion) {
             black_box(writer.into_bytes())
         });
     });
-    
+
     group.finish();
 }
 
 fn bench_hash_computation(c: &mut Criterion) {
     let mut group = c.benchmark_group("serialization_hash");
-    
+
     // Create a transaction and benchmark its hash computation
     let mut tx = Transaction::new();
     tx.set_version(0);
@@ -157,7 +155,7 @@ fn bench_hash_computation(c: &mut Criterion) {
     tx.set_system_fee(1000000);
     tx.set_network_fee(500000);
     tx.set_valid_until_block(1000);
-    
+
     // Add a signer and matching witness
     let signer = Signer::new(
         UInt160::from_bytes(&random_bytes(20)).unwrap(),
@@ -166,16 +164,16 @@ fn bench_hash_computation(c: &mut Criterion) {
     tx.add_signer(signer);
     let witness = Witness::new_with_scripts(random_bytes(32), random_bytes(32));
     tx.add_witness(witness);
-    
+
     tx.set_script(random_bytes(256));
-    
+
     group.bench_function("transaction_hash", |b| {
         b.iter(|| {
             let result = black_box(&mut tx).hash();
             black_box(result)
         });
     });
-    
+
     // Create a block header and benchmark its hash
     let mut header = Header::new();
     header.set_version(0);
@@ -184,14 +182,14 @@ fn bench_hash_computation(c: &mut Criterion) {
     header.set_timestamp(1234567890);
     header.set_index(100);
     header.set_primary_index(0);
-    
+
     group.bench_function("header_hash", |b| {
         b.iter(|| {
             let result = black_box(&mut header).hash();
             black_box(result)
         });
     });
-    
+
     group.finish();
 }
 

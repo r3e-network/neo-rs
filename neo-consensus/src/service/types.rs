@@ -27,34 +27,55 @@ pub struct BlockData {
 pub enum ConsensusEvent {
     /// Block has been committed with complete data for assembly
     BlockCommitted {
+        /// Index of the committed block.
         block_index: u32,
+        /// Hash of the committed block.
         block_hash: UInt256,
         /// Complete block data for upper layer to assemble the final Block structure
         block_data: BlockData,
     },
     /// View has changed
     ViewChanged {
+        /// Index of the block being processed.
         block_index: u32,
+        /// Previous view number.
         old_view: u8,
+        /// New view number.
         new_view: u8,
     },
     /// Need to broadcast a message
     BroadcastMessage(ConsensusPayload),
     /// Request transactions from mempool
-    RequestTransactions { block_index: u32, max_count: usize },
+    RequestTransactions {
+        /// Index of the block being built.
+        block_index: u32,
+        /// Maximum number of transactions to request.
+        max_count: usize,
+    },
 }
 
 /// Commands that can be sent to the consensus service
 #[derive(Debug)]
 pub enum ConsensusCommand {
     /// Start consensus for a new block
-    Start { block_index: u32, timestamp: u64 },
+    Start {
+        /// Index of the block to start consensus for.
+        block_index: u32,
+        /// Timestamp for the new block.
+        timestamp: u64,
+    },
     /// Process a received consensus message
     ProcessMessage(ConsensusPayload),
     /// Timer tick (for timeout handling)
-    TimerTick { timestamp: u64 },
+    TimerTick {
+        /// Current timestamp.
+        timestamp: u64,
+    },
     /// Transactions received from mempool
-    TransactionsReceived { tx_hashes: Vec<UInt256> },
+    TransactionsReceived {
+        /// Hashes of received transactions.
+        tx_hashes: Vec<UInt256>,
+    },
     /// Stop the consensus service
     Stop,
 }

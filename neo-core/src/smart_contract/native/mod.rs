@@ -3,29 +3,51 @@
 //! This module provides the built-in native contracts for the Neo blockchain,
 //! including NEO, GAS, Policy, Notary, and other system contracts.
 
+/// Account state for native tokens.
 pub mod account_state;
+/// Contract management native contract.
 pub mod contract_management;
+/// Cryptographic library native contract.
 pub mod crypto_lib;
+/// Fungible token base implementation.
 pub mod fungible_token;
+/// GAS token native contract.
 pub mod gas_token;
-pub mod security_fixes;
-// Removed governance_types - not in C# structure
+/// Hash index state for ledger.
 pub mod hash_index_state;
+/// Helper functions for native contracts.
 pub mod helpers;
+/// Hardfork activation interface.
 pub mod i_hardfork_activable;
+/// Ledger native contract.
 pub mod ledger_contract;
+/// Base native contract implementation.
 pub mod native_contract;
+/// NEO token native contract.
 pub mod neo_token;
+/// Notary native contract.
 pub mod notary;
+/// Oracle native contract.
 pub mod oracle_contract;
+/// Oracle request types.
 pub mod oracle_request;
+/// Policy native contract.
 pub mod policy_contract;
+/// Role definitions for role management.
 pub mod role;
+/// Role management native contract.
 pub mod role_management;
+/// Security fixes for native contracts.
+pub mod security_fixes;
+/// Standard library native contract.
 pub mod std_lib;
+/// Token management (NFT) native contract.
 pub mod token_management;
+/// Transaction state for ledger.
 pub mod transaction_state;
+/// Treasury native contract.
 pub mod treasury;
+/// Trimmed block representation.
 pub mod trimmed_block;
 
 pub use self::oracle_request::OracleRequest;

@@ -3,10 +3,7 @@
 use neo_chain::{BlockIndexEntry, ChainState};
 use neo_core::{UInt160, UInt256};
 use neo_state::{MemoryWorldState, StateChanges, StorageItem, StorageKey, WorldState};
-use neo_vm::{
-    op_code::OpCode,
-    ExecutionEngine, Script, VMState,
-};
+use neo_vm::{op_code::OpCode, ExecutionEngine, Script, VMState};
 
 // Setup test environment
 fn setup_test_env() -> (ChainState, MemoryWorldState) {
@@ -165,7 +162,12 @@ fn test_contract_storage_deletion() {
 
 #[test]
 fn test_vm_gas_consumption_basic() {
-    let script = vec![OpCode::PUSH1 as u8, OpCode::PUSH2 as u8, OpCode::ADD as u8, OpCode::RET as u8];
+    let script = vec![
+        OpCode::PUSH1 as u8,
+        OpCode::PUSH2 as u8,
+        OpCode::ADD as u8,
+        OpCode::RET as u8,
+    ];
     let script_obj = Script::new(script, false).unwrap();
 
     let mut engine = ExecutionEngine::new(None);
@@ -251,7 +253,7 @@ fn test_contract_storage_many_keys() {
         let value = StorageItem::new(vec![(i % 256) as u8]);
         changes.storage.insert(key, Some(value));
     }
-    
+
     world_state.commit(changes).unwrap();
 
     for i in [0u32, 100, 500, 999] {

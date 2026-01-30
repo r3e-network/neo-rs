@@ -39,10 +39,7 @@ impl RpcServerState {
     }
 
     fn state_store(server: &RpcServer) -> Result<Arc<StateStore>, RpcException> {
-        let lookup = server
-            .system()
-            .state_store()
-            .map_err(internal_error)?;
+        let lookup = server.system().state_store().map_err(internal_error)?;
         lookup.ok_or_else(|| {
             RpcException::from(
                 RpcError::internal_server_error()

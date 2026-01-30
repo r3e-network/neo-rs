@@ -450,7 +450,7 @@ impl NeoToken {
         if !price.is_zero() {
             let fee = price
                 .to_u64()
-                .ok_or_else(|| CoreError::native_contract("Register price overflow".to_string()))?;
+                .ok_or_else(|| CoreError::native_contract("Register price overflow"))?;
             engine.add_runtime_fee(fee)?;
         }
 

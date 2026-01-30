@@ -10,7 +10,7 @@ impl ContractManagement {
         // Get calling contract hash
         let contract_hash = engine
             .get_calling_script_hash()
-            .ok_or_else(|| Error::invalid_operation("No calling context".to_string()))?;
+            .ok_or_else(|| Error::invalid_operation("No calling context"))?;
 
         // Get contract to destroy
         let contract = {
@@ -20,7 +20,7 @@ impl ContractManagement {
                 .contracts
                 .get(&contract_hash)
                 .cloned()
-                .ok_or_else(|| Error::invalid_operation("Contract not found".to_string()))?
+                .ok_or_else(|| Error::invalid_operation("Contract not found"))?
         };
 
         // Call contract's _destroy method if it exists

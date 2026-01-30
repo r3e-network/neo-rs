@@ -253,6 +253,31 @@ pub mod state_service;
 /// Service trait definitions for dependency injection.
 pub mod services;
 
+// ============================================================================
+// Merged Modules (formerly separate crates)
+// ============================================================================
+
+/// Transaction mempool for pending transactions.
+///
+/// Provides lightweight mempool implementation for transaction management.
+/// For full C# parity, use `ledger::MemoryPool` instead.
+pub mod mempool;
+
+/// Configuration management for Neo N3 blockchain node.
+///
+/// Provides node settings, protocol parameters, and network configuration.
+pub mod config;
+
+/// Blockchain state machine and chain management.
+///
+/// Provides chain state, block indexing, fork choice, and validation.
+pub mod chain;
+
+/// World state abstraction for Neo N3 blockchain.
+///
+/// Provides account state, contract storage, snapshots, and state trie.
+pub mod state;
+
 /// Application logs plugin support (requires `runtime` feature).
 #[cfg(feature = "runtime")]
 pub mod application_logs;
@@ -313,6 +338,27 @@ pub use unhandled_exception_policy::UnhandledExceptionPolicy;
 pub use wallets::{KeyPair, Wallet};
 pub use witness::Witness;
 pub use witness_rule::{WitnessCondition, WitnessConditionType, WitnessRule, WitnessRuleAction};
+
+// Merged module re-exports
+pub use chain::{
+    BlockIndex, BlockIndexEntry, BlockValidator, ChainError, ChainEvent, ChainEventSubscriber,
+    ChainResult, ChainState, ChainStateSnapshot, ForkChoice, ValidationResult,
+};
+pub use config::{
+    ConfigError, ConfigResult, ConsensusSettings, GenesisConfig, GenesisValidator, LoggingSettings,
+    NetworkConfig, NetworkType, NodeSettings, RpcSettings, Settings, StorageSettings,
+    TelemetrySettings, CONFIG_VERSION,
+};
+pub use mempool::{
+    FeePolicy, Mempool, MempoolConfig, MempoolError, MempoolResult, TransactionEntry,
+    TransactionEntryParams, DEFAULT_EXPIRATION_BLOCKS, DEFAULT_MAX_TRANSACTIONS,
+};
+pub use state::{
+    AccountState, ContractStorage, MemoryMptStore, MemoryWorldState, MutableStateView,
+    SnapshotManager, SnapshotState, StateChanges, StateError, StateMut, StateResult, StateSnapshot,
+    StateTrieManager, StateView, StorageChange, StorageItem, StorageKey, WorldState,
+    MAX_SNAPSHOT_DEPTH,
+};
 
 // Runtime types (requires `runtime` feature)
 #[cfg(feature = "runtime")]

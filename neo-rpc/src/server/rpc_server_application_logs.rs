@@ -1,8 +1,8 @@
 //! `ApplicationLogs` RPC endpoints (`ApplicationLogs` plugin).
 
-use crate::server::rpc_helpers::{internal_error, invalid_params};
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
+use crate::server::rpc_helpers::{internal_error, invalid_params};
 use crate::server::rpc_method_attribute::RpcMethodDescriptor;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 use neo_core::application_logs::ApplicationLogsService;
@@ -16,7 +16,10 @@ pub struct RpcServerApplicationLogs;
 
 impl RpcServerApplicationLogs {
     pub fn register_handlers() -> Vec<RpcHandler> {
-        vec![Self::handler("getapplicationlog", Self::get_application_log)]
+        vec![Self::handler(
+            "getapplicationlog",
+            Self::get_application_log,
+        )]
     }
 
     fn handler(
@@ -32,7 +35,11 @@ impl RpcServerApplicationLogs {
             None | Some(Value::Null) => None,
             Some(Value::String(v)) if v.trim().is_empty() => None,
             Some(Value::String(v)) => Some(v.trim().to_string()),
-            _ => return Err(invalid_params("getapplicationlog expects string parameter 2")),
+            _ => {
+                return Err(invalid_params(
+                    "getapplicationlog expects string parameter 2",
+                ))
+            }
         };
 
         let service = server
@@ -45,7 +52,9 @@ impl RpcServerApplicationLogs {
             .get_block_log(&hash)
             .or_else(|| service.get_transaction_log(&hash))
             .ok_or_else(|| {
-                RpcException::from(RpcError::invalid_params().with_data("Unknown transaction/blockhash"))
+                RpcException::from(
+                    RpcError::invalid_params().with_data("Unknown transaction/blockhash"),
+                )
             })?;
 
         if let Some(filter) = trigger_filter {
@@ -69,7 +78,12 @@ impl RpcServerApplicationLogs {
         params
             .get(index)
             .and_then(Value::as_str)
-            .ok_or_else(|| invalid_params(format!("getapplicationlog expects string parameter {}", index + 1)))
+            .ok_or_else(|| {
+                invalid_params(format!(
+                    "getapplicationlog expects string parameter {}",
+                    index + 1
+                ))
+            })
             .and_then(|text| {
                 UInt256::from_str(text)
                     .map_err(|e| invalid_params(format!("invalid hash '{}': {}", text, e)))

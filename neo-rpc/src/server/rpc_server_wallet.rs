@@ -192,8 +192,7 @@ impl RpcServerWallet {
 
     fn import_priv_key(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
         let privkey = Self::expect_string_param(params, 0, "importprivkey")?;
-        KeyPair::from_wif(&privkey)
-            .map_err(|err| invalid_params(format!("invalid WIF: {err}")))?;
+        KeyPair::from_wif(&privkey).map_err(|err| invalid_params(format!("invalid WIF: {err}")))?;
         let wallet = Self::require_wallet(server)?;
         let wallet_clone = Arc::clone(&wallet);
         let privkey_value = privkey;
@@ -343,9 +342,7 @@ impl RpcServerWallet {
     fn send_many(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
         let wallet = Self::require_wallet(server)?;
         if params.is_empty() {
-            return Err(invalid_params(
-                "sendmany requires at least one argument",
-            ));
+            return Err(invalid_params("sendmany requires at least one argument"));
         }
         let mut from: Option<UInt160> = None;
         let mut index = 0;
@@ -358,9 +355,9 @@ impl RpcServerWallet {
         }
 
         let outputs_value = params.get(index).cloned().unwrap_or(Value::Null);
-        let outputs_array = outputs_value.as_array().ok_or_else(|| {
-            invalid_params(format!("Invalid 'to' parameter: {outputs_value}"))
-        })?;
+        let outputs_array = outputs_value
+            .as_array()
+            .ok_or_else(|| invalid_params(format!("Invalid 'to' parameter: {outputs_value}")))?;
         if outputs_array.is_empty() {
             return Err(invalid_params("Argument 'to' can't be empty."));
         }
@@ -381,29 +378,30 @@ impl RpcServerWallet {
             let obj = entry
                 .as_object()
                 .ok_or_else(|| invalid_params(format!("Invalid 'to' parameter at {i}.")))?;
-            let asset_str = obj.get("asset").and_then(|v| v.as_str()).ok_or_else(|| {
-                invalid_params(format!("no 'asset' parameter at 'to[{i}]'."))
-            })?;
+            let asset_str = obj
+                .get("asset")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| invalid_params(format!("no 'asset' parameter at 'to[{i}]'.")))?;
             let asset = UInt160::from_str(asset_str)
                 .map_err(|e| invalid_params(format!("invalid asset {asset_str}: {e}")))?;
             let descriptor = descriptor_cache(&asset).map_err(invalid_params)?;
-            let value_str = obj.get("value").and_then(|v| v.as_str()).ok_or_else(|| {
-                invalid_params(format!("no 'value' parameter at 'to[{i}]'."))
-            })?;
+            let value_str = obj
+                .get("value")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| invalid_params(format!("no 'value' parameter at 'to[{i}]'.")))?;
             let (ok, value) = BigDecimal::try_parse(value_str, descriptor.decimals);
             if !ok {
-                return Err(invalid_params(format!(
-                    "Invalid 'to' parameter at {i}."
-                )));
+                return Err(invalid_params(format!("Invalid 'to' parameter at {i}.")));
             }
             if value.sign() <= 0 {
                 return Err(invalid_params(format!(
                     "Amount of '{asset}' can't be negative."
                 )));
             }
-            let address_str = obj.get("address").and_then(|v| v.as_str()).ok_or_else(|| {
-                invalid_params(format!("no 'address' parameter at 'to[{i}]'."))
-            })?;
+            let address_str = obj
+                .get("address")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| invalid_params(format!("no 'address' parameter at 'to[{i}]'.")))?;
             let to_hash = Self::parse_script_hash(server, address_str)?;
             transfers.push(TransferOutput {
                 asset_id: asset,
@@ -1020,9 +1018,7 @@ impl RpcServerWallet {
 
         send(actor_ref)?;
 
-        let result = rx
-            .recv()
-            .map_err(|err| internal_error(err.to_string()))?;
+        let result = rx.recv().map_err(|err| internal_error(err.to_string()))?;
         Ok(result)
     }
 }

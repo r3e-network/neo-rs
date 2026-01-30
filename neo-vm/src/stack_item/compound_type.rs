@@ -101,7 +101,9 @@ impl<'a> CompoundTypeMut<'a> {
 
 /// Helper extension trait to obtain a compound view.
 pub trait CompoundTypeExt {
+    /// Returns an immutable compound type view of this stack item.
     fn as_compound(&self) -> VmResult<CompoundType<'_>>;
+    /// Returns a mutable compound type view of this stack item.
     fn as_compound_mut(&mut self) -> VmResult<CompoundTypeMut<'_>>;
 }
 

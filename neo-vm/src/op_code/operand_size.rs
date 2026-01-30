@@ -55,7 +55,7 @@ impl OperandSizeAttribute {
     }
 }
 
-// Alias for compatibility
+/// Alias for compatibility with older code.
 pub type OperandSize = OperandSizeAttribute;
 
 impl Default for OperandSizeAttribute {

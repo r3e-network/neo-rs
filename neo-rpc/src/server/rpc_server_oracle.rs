@@ -1,6 +1,6 @@
-use crate::server::rpc_helpers::{internal_error, invalid_params};
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
+use crate::server::rpc_helpers::{internal_error, invalid_params};
 use crate::server::rpc_method_attribute::RpcMethodDescriptor;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
@@ -13,7 +13,10 @@ pub struct RpcServerOracle;
 
 impl RpcServerOracle {
     pub fn register_handlers() -> Vec<RpcHandler> {
-        vec![Self::handler("submitoracleresponse", Self::submit_oracle_response)]
+        vec![Self::handler(
+            "submitoracleresponse",
+            Self::submit_oracle_response,
+        )]
     }
 
     fn handler(
@@ -25,7 +28,8 @@ impl RpcServerOracle {
 
     fn submit_oracle_response(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
         let oracle_pubkey_bytes = expect_base64_param(params, 0, "submitoracleresponse")?;
-        let request_id = crate::server::rpc_helpers::expect_u64_param(params, 1, "submitoracleresponse")?;
+        let request_id =
+            crate::server::rpc_helpers::expect_u64_param(params, 1, "submitoracleresponse")?;
         let tx_sign = expect_base64_param(params, 2, "submitoracleresponse")?;
         let msg_sign = expect_base64_param(params, 3, "submitoracleresponse")?;
 
@@ -50,11 +54,14 @@ fn oracle_service(server: &RpcServer) -> Result<Arc<OracleService>, RpcException
 }
 
 #[inline]
-fn expect_base64_param(params: &[Value], index: usize, method: &str) -> Result<Vec<u8>, RpcException> {
-    let text = params
-        .get(index)
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| invalid_params(format!("{} expects base64 parameter {}", method, index + 1)))?;
+fn expect_base64_param(
+    params: &[Value],
+    index: usize,
+    method: &str,
+) -> Result<Vec<u8>, RpcException> {
+    let text = params.get(index).and_then(|v| v.as_str()).ok_or_else(|| {
+        invalid_params(format!("{} expects base64 parameter {}", method, index + 1))
+    })?;
     BASE64_STANDARD
         .decode(text.trim())
         .map_err(|_| invalid_params("Invalid Base64-encoded bytes"))
@@ -66,7 +73,8 @@ fn map_oracle_error(err: OracleServiceError) -> RpcException {
         OracleServiceError::RequestFinished | OracleServiceError::DuplicateRequest => {
             RpcException::from(RpcError::oracle_request_finished())
         }
-        OracleServiceError::RequestNotFound | OracleServiceError::RequestTransactionNotFound 
+        OracleServiceError::RequestNotFound
+        | OracleServiceError::RequestTransactionNotFound
         | OracleServiceError::BuildFailed(_) => {
             RpcException::from(RpcError::oracle_request_not_found())
         }

@@ -114,7 +114,7 @@ impl ApplicationEngine {
             .engine()
             .current_context()
             .cloned()
-            .ok_or_else(|| Error::invalid_operation("No current execution context".to_string()))?;
+            .ok_or_else(|| Error::invalid_operation("No current execution context"))?;
         let previous_hash = UInt160::from_bytes(&previous_context.script_hash())
             .map_err(|e| Error::invalid_operation(format!("Invalid script hash: {e}")))?;
 
@@ -192,9 +192,9 @@ impl ApplicationEngine {
 
         {
             let engine = self.vm_engine.engine_mut();
-            let context_mut = engine.current_context_mut().ok_or_else(|| {
-                Error::invalid_operation("No current execution context".to_string())
-            })?;
+            let context_mut = engine
+                .current_context_mut()
+                .ok_or_else(|| Error::invalid_operation("No current execution context"))?;
             for arg in args.iter().rev() {
                 context_mut
                     .push(arg.clone())

@@ -57,9 +57,13 @@ impl RecoveryRequestMessage {
 /// Compact representation of a `ChangeView` payload (`RecoveryMessage`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChangeViewPayloadCompact {
+    /// Index of the validator that sent this change view.
     pub validator_index: u8,
+    /// Original view number before the change.
     pub original_view_number: u8,
+    /// Timestamp of the change view request.
     pub timestamp: u64,
+    /// Invocation script for verification.
     pub invocation_script: Vec<u8>,
 }
 
@@ -93,7 +97,9 @@ impl Serializable for ChangeViewPayloadCompact {
 /// Compact representation of a `PrepareResponse` payload (`RecoveryMessage`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PreparationPayloadCompact {
+    /// Index of the validator that sent this preparation.
     pub validator_index: u8,
+    /// Invocation script for verification.
     pub invocation_script: Vec<u8>,
 }
 
@@ -121,9 +127,13 @@ impl Serializable for PreparationPayloadCompact {
 /// Compact representation of a Commit payload (`RecoveryMessage`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommitPayloadCompact {
+    /// View number for this commit.
     pub view_number: u8,
+    /// Index of the validator that sent this commit.
     pub validator_index: u8,
+    /// Signature of the commit.
     pub signature: Vec<u8>,
+    /// Invocation script for verification.
     pub invocation_script: Vec<u8>,
 }
 
@@ -165,10 +175,14 @@ impl Serializable for CommitPayloadCompact {
 /// This struct models the Neo N3 `DBFTPlugin` on-wire format (message body only).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecoveryMessage {
+    /// Block index for this recovery.
     pub block_index: u32,
+    /// Current view number.
     pub view_number: u8,
+    /// Index of the validator sending recovery.
     pub validator_index: u8,
 
+    /// Change view messages collected.
     pub change_view_messages: Vec<ChangeViewPayloadCompact>,
 
     /// Embedded `PrepareRequest` message (including its common header) when available.
@@ -177,7 +191,9 @@ pub struct RecoveryMessage {
     /// `PreparationHash` (ExtensiblePayload.Hash of the primary `PrepareRequest`) when `PrepareRequest` is missing.
     pub preparation_hash: Option<UInt256>,
 
+    /// Preparation messages collected from validators.
     pub preparation_messages: Vec<PreparationPayloadCompact>,
+    /// Commit messages collected from validators.
     pub commit_messages: Vec<CommitPayloadCompact>,
 }
 

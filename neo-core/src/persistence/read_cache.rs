@@ -30,23 +30,23 @@ pub struct BloomFilter {
 
 impl BloomFilter {
     /// Creates a new bloom filter with the specified capacity and false positive rate.
-    /// 
+    ///
     /// Capacity is the expected number of elements.
     /// False positive rate should be between 0 and 1 (e.g., 0.01 for 1%).
     pub fn new(capacity: usize, false_positive_rate: f64) -> Self {
         // Calculate optimal size: m = -n * ln(p) / (ln(2)^2)
-        let num_bits = ((- (capacity as f64) * false_positive_rate.ln()) 
-            / (2.0_f64.ln().powi(2))).ceil() as usize;
+        let num_bits = ((-(capacity as f64) * false_positive_rate.ln()) / (2.0_f64.ln().powi(2)))
+            .ceil() as usize;
         // Calculate optimal number of hash functions: k = m/n * ln(2)
         let num_hashes = ((num_bits as f64 / capacity as f64) * 2.0_f64.ln()).ceil() as usize;
-        
+
         // Round up to nearest 64 bits for the bit vector
         let num_u64s = num_bits.div_ceil(64);
         let mut bits = Vec::with_capacity(num_u64s);
         for _ in 0..num_u64s {
             bits.push(AtomicU64::new(0));
         }
-        
+
         Self {
             bits,
             num_hashes: num_hashes.clamp(1, 7),
@@ -55,12 +55,12 @@ impl BloomFilter {
             capacity,
         }
     }
-    
+
     /// Creates a bloom filter sized for typical storage workloads.
     pub fn for_storage() -> Self {
         Self::new(100_000, 0.01) // 100K entries, 1% FP rate
     }
-    
+
     /// Hash function using double hashing technique
     #[inline]
     #[allow(dead_code)]
@@ -69,14 +69,14 @@ impl BloomFilter {
         let h2 = h1.wrapping_add(seed as u64);
         ((h1.wrapping_add(h2.wrapping_mul(seed as u64))) as usize) % self.num_bits
     }
-    
+
     /// Hash function using pre-computed hash
     #[inline]
     fn hash_with_seed(&self, base_hash: u64, seed: usize) -> usize {
         let h2 = base_hash.wrapping_add(seed as u64);
         ((base_hash.wrapping_add(h2.wrapping_mul(seed as u64))) as usize) % self.num_bits
     }
-    
+
     /// Insert a key into the bloom filter using raw bytes.
     pub fn insert_bytes(&self, key: &[u8]) {
         let base_hash = xxhash_rust::xxh3::xxh3_64(key);
@@ -84,24 +84,24 @@ impl BloomFilter {
             let bit_pos = self.hash_with_seed(base_hash, i);
             let word_idx = bit_pos / 64;
             let bit_idx = bit_pos % 64;
-            
+
             self.bits[word_idx].fetch_or(1u64 << bit_idx, Ordering::Relaxed);
         }
         self.count.fetch_add(1, Ordering::Relaxed);
     }
-    
+
     /// Insert a key into the bloom filter using a pre-computed hash.
     pub fn insert_hash(&self, hash: u64) {
         for i in 0..self.num_hashes {
             let bit_pos = self.hash_with_seed(hash, i);
             let word_idx = bit_pos / 64;
             let bit_idx = bit_pos % 64;
-            
+
             self.bits[word_idx].fetch_or(1u64 << bit_idx, Ordering::Relaxed);
         }
         self.count.fetch_add(1, Ordering::Relaxed);
     }
-    
+
     /// Check if a key might be in the set using raw bytes.
     /// Returns false if the key is definitely not present.
     /// Returns true if the key might be present (with some false positive probability).
@@ -112,7 +112,7 @@ impl BloomFilter {
             let bit_pos = self.hash_with_seed(base_hash, i);
             let word_idx = bit_pos / 64;
             let bit_idx = bit_pos % 64;
-            
+
             let word = self.bits[word_idx].load(Ordering::Relaxed);
             if (word & (1u64 << bit_idx)) == 0 {
                 return false;
@@ -120,7 +120,7 @@ impl BloomFilter {
         }
         true
     }
-    
+
     /// Check if a key might be in the set using a pre-computed hash.
     #[inline]
     pub fn might_contain_hash(&self, hash: u64) -> bool {
@@ -128,7 +128,7 @@ impl BloomFilter {
             let bit_pos = self.hash_with_seed(hash, i);
             let word_idx = bit_pos / 64;
             let bit_idx = bit_pos % 64;
-            
+
             let word = self.bits[word_idx].load(Ordering::Relaxed);
             if (word & (1u64 << bit_idx)) == 0 {
                 return false;
@@ -136,17 +136,17 @@ impl BloomFilter {
         }
         true
     }
-    
+
     /// Returns the approximate number of elements inserted.
     pub fn len(&self) -> usize {
         self.count.load(Ordering::Relaxed)
     }
-    
+
     /// Returns true if no elements have been inserted.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
-    
+
     /// Clears the bloom filter.
     pub fn clear(&self) {
         for word in &self.bits {
@@ -154,7 +154,7 @@ impl BloomFilter {
         }
         self.count.store(0, Ordering::Relaxed);
     }
-    
+
     /// Returns true if the filter is approaching capacity (recommend rebuilding).
     pub fn should_rebuild(&self) -> bool {
         self.count.load(Ordering::Relaxed) >= self.capacity
@@ -249,13 +249,13 @@ impl ReadCacheStats {
         self.current_entries.fetch_add(1, Ordering::Relaxed);
         self.current_bytes.fetch_add(bytes, Ordering::Relaxed);
     }
-    
+
     /// Records a bloom filter negative lookup.
     #[inline]
     pub fn record_bloom_negative(&self) {
         self.bloom_filter_negatives.fetch_add(1, Ordering::Relaxed);
     }
-    
+
     /// Records a bloom filter check.
     #[inline]
     pub fn record_bloom_check(&self) {
@@ -313,7 +313,7 @@ impl ReadCacheStatsSnapshot {
             self.prefetch_hits as f64 / self.prefetches as f64
         }
     }
-    
+
     /// Calculates the bloom filter negative lookup rate.
     pub fn bloom_filter_effectiveness(&self) -> f64 {
         let checks = self.bloom_filter_checks;
@@ -426,31 +426,32 @@ impl<K: Clone + Eq + Hash> LruTracker<K> {
             sequence: AtomicU64::new(0),
         }
     }
-    
+
     /// Record access and return the old sequence number if any
     fn record_access(&mut self, key: K) -> Option<u64> {
         let new_seq = self.sequence.fetch_add(1, Ordering::Relaxed);
         self.order.insert(key, new_seq)
     }
-    
+
     /// Remove a key from tracking
     fn remove(&mut self, key: &K) -> Option<u64> {
         self.order.remove(key)
     }
-    
+
     /// Find the least recently used key
     fn find_lru(&self) -> Option<K> {
-        self.order.iter()
+        self.order
+            .iter()
             .min_by_key(|(_, seq)| *seq)
             .map(|(k, _)| k.clone())
     }
-    
+
     /// Clear all tracking
     fn clear(&mut self) {
         self.order.clear();
         self.sequence.store(0, Ordering::Relaxed);
     }
-    
+
     #[allow(dead_code)]
     fn len(&self) -> usize {
         self.order.len()
@@ -480,7 +481,7 @@ impl BloomFilterKey for StorageKey {
         // Combine id and key bytes for hashing
         let id_bytes = self.id().to_le_bytes();
         let key_bytes = self.key();
-        
+
         // Use xxh3 with a seed for consistent hashing
         let mut hasher = xxhash_rust::xxh3::Xxh3::new();
         hasher.update(&id_bytes);
@@ -517,7 +518,7 @@ where
         } else {
             None
         };
-        
+
         Self {
             config,
             data: RwLock::new(HashMap::new()),
@@ -550,12 +551,13 @@ where
             true // Without bloom filter, assume it might exist
         }
     }
-    
+
     /// Check bloom filter for negative lookup without updating stats.
     /// Used for fast path checks before acquiring locks.
     #[inline]
     pub fn fast_bloom_check(&self, key: &K) -> bool {
-        self.bloom_filter.as_ref()
+        self.bloom_filter
+            .as_ref()
             .map(|b| b.might_contain_hash(key.hash_for_bloom()))
             .unwrap_or(true)
     }
@@ -567,7 +569,7 @@ where
         if self.config.enable_stats {
             self.stats.record_bloom_check();
         }
-        
+
         if !bloom_check {
             if self.config.enable_stats {
                 self.stats.record_bloom_negative();
@@ -575,7 +577,7 @@ where
             }
             return None;
         }
-        
+
         let mut data = self.data.write();
 
         if let Some(entry) = data.get_mut(key) {
@@ -587,7 +589,7 @@ where
                     let key_clone = key.clone();
                     data.remove(key);
                     drop(data);
-                    
+
                     self.lru_tracker.write().remove(&key_clone);
                     self.stats.record_eviction(size);
 
@@ -651,7 +653,7 @@ where
 
         // Update LRU tracker
         self.lru_tracker.write().record_access(key);
-        
+
         // Update bloom filter for new entries
         if is_new {
             if let Some(ref bloom) = self.bloom_filter {
@@ -699,10 +701,10 @@ where
             }
             lru.record_access(key);
         }
-        
+
         drop(data);
         drop(lru);
-        
+
         // Update bloom filter
         if let Some(ref bloom) = self.bloom_filter {
             for key in keys_for_bloom {
@@ -744,7 +746,7 @@ where
 
         data.clear();
         lru.clear();
-        
+
         if let Some(ref bloom) = self.bloom_filter {
             bloom.clear();
         }
@@ -808,7 +810,10 @@ where
     }
 
     /// Evicts the least recently used entry.
-    fn evict_lru(&self, data: &mut parking_lot::RwLockWriteGuard<HashMap<K, CacheEntry<V>>>) -> bool {
+    fn evict_lru(
+        &self,
+        data: &mut parking_lot::RwLockWriteGuard<HashMap<K, CacheEntry<V>>>,
+    ) -> bool {
         let lru = self.lru_tracker.read();
 
         if let Some(lru_key) = lru.find_lru() {
@@ -1123,29 +1128,29 @@ mod tests {
 
         assert!((stats.hit_rate() - 0.75).abs() < 0.001);
     }
-    
+
     #[test]
     fn bloom_filter_basic_operations() {
         let bloom = BloomFilter::new(1000, 0.01);
-        
+
         // Check non-existent key
         assert!(!bloom.might_contain_bytes(b"key1"));
-        
+
         // Insert key
         bloom.insert_bytes(b"key1");
-        
+
         // Should now report might contain
         assert!(bloom.might_contain_bytes(b"key1"));
-        
+
         // Check count
         assert_eq!(bloom.len(), 1);
-        
+
         // Clear and verify
         bloom.clear();
         assert!(!bloom.might_contain_bytes(b"key1"));
         assert!(bloom.is_empty());
     }
-    
+
     #[test]
     fn bloom_filter_negative_lookup_in_cache() {
         let config = ReadCacheConfig {
@@ -1160,38 +1165,41 @@ mod tests {
             bloom_filter_capacity: 1000,
             bloom_filter_fpr: 0.01,
         };
-        
+
         let cache = ReadCache::<String, String>::new(config);
-        
+
         // Insert a key
         cache.put("existing".to_string(), "value".to_string(), 10);
-        
+
         // Check non-existent key - should use bloom filter for fast negative
         let result = cache.get(&"nonexistent".to_string());
         assert!(result.is_none());
-        
+
         // Existing key should work
-        assert_eq!(cache.get(&"existing".to_string()), Some("value".to_string()));
-        
+        assert_eq!(
+            cache.get(&"existing".to_string()),
+            Some("value".to_string())
+        );
+
         let stats = cache.stats();
         assert!(stats.bloom_filter_checks > 0);
     }
-    
+
     #[test]
     fn read_cache_with_storage_key() {
         use crate::smart_contract::StorageKey;
-        
+
         let cache = ReadCache::<StorageKey, String>::with_defaults();
-        
+
         let key1 = StorageKey::new(1, b"test1".to_vec());
         let key2 = StorageKey::new(2, b"test2".to_vec());
-        
+
         cache.put(key1.clone(), "value1".to_string(), 20);
         cache.put(key2.clone(), "value2".to_string(), 20);
-        
+
         assert_eq!(cache.get(&key1), Some("value1".to_string()));
         assert_eq!(cache.get(&key2), Some("value2".to_string()));
-        
+
         let stats = cache.stats();
         assert_eq!(stats.hits, 2);
     }

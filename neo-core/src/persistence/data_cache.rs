@@ -125,13 +125,13 @@ impl AccessPatternTracker {
             sequential_count: 0,
         }
     }
-    
+
     /// Record an access and update pattern detection.
     fn record_access(&mut self, key: &StorageKey, seq: u64) -> PrefetchPattern {
         if let Some(ref last) = self.last_key {
             let key_bytes = key.to_array();
             let last_bytes = last.to_array();
-            
+
             // Check for sequential access patterns
             if key_bytes > last_bytes {
                 // Potential forward sequential
@@ -162,12 +162,12 @@ impl AccessPatternTracker {
                 }
             }
         }
-        
+
         self.last_key = Some(key.clone());
         self.last_seq = seq;
         self.pattern
     }
-    
+
     /// Get the current detected pattern if confidence is high enough.
     fn current_pattern(&self, threshold: u8) -> PrefetchPattern {
         if self.confidence >= threshold {
@@ -176,7 +176,7 @@ impl AccessPatternTracker {
             PrefetchPattern::None
         }
     }
-    
+
     #[allow(dead_code)]
     fn reset(&mut self) {
         *self = Self::new();
@@ -327,23 +327,23 @@ impl DataCache {
             prefetch_window: RwLock::new(HashSet::new()),
         }
     }
-    
+
     /// Records an access pattern for intelligent prefetching.
     fn record_access_pattern(&self, key: &StorageKey) -> PrefetchPattern {
         let seq = self.access_seq.fetch_add(1, Ordering::Relaxed);
         self.pattern_tracker.write().record_access(key, seq)
     }
-    
+
     /// Gets the current detected prefetch pattern.
     pub fn current_prefetch_pattern(&self) -> PrefetchPattern {
         self.pattern_tracker.read().current_pattern(30)
     }
-    
+
     /// Checks if a key is in the prefetch window (recently prefetched).
     pub fn is_recently_prefetched(&self, key: &StorageKey) -> bool {
         self.prefetch_window.read().contains(key)
     }
-    
+
     /// Clears the prefetch window.
     pub fn clear_prefetch_window(&self) {
         self.prefetch_window.write().clear();
@@ -400,7 +400,7 @@ impl DataCache {
     pub fn get(&self, key: &StorageKey) -> Option<StorageItem> {
         // Record access pattern for intelligent prefetching
         let pattern = self.record_access_pattern(key);
-        
+
         // First check write cache (for uncommitted changes) - minimal lock hold
         {
             let state = self.state.read();
@@ -420,12 +420,12 @@ impl DataCache {
                 if self.is_recently_prefetched(key) {
                     cache.record_prefetch_hit();
                 }
-                
+
                 // Trigger prefetching for sequential patterns
                 if pattern != PrefetchPattern::None {
                     self.trigger_prefetch_if_needed(key, pattern);
                 }
-                
+
                 return Some(item);
             }
         }
@@ -452,7 +452,7 @@ impl DataCache {
 
         None
     }
-    
+
     /// Track an item in the write cache without blocking the caller.
     fn track_in_write_cache(&self, key: &StorageKey, item: &StorageItem) {
         let mut state = self.state.write();
@@ -464,13 +464,13 @@ impl DataCache {
                 .or_insert_with(|| Trackable::new(item.clone(), TrackState::None));
         }
     }
-    
+
     /// Trigger prefetching based on detected access pattern.
     fn trigger_prefetch_if_needed(&self, key: &StorageKey, pattern: PrefetchPattern) {
         if !self.config.enable_prefetching {
             return;
         }
-        
+
         match pattern {
             PrefetchPattern::SequentialForward => {
                 // Prefetch next keys in sequence
@@ -483,16 +483,17 @@ impl DataCache {
             _ => {}
         }
     }
-    
+
     /// Prefetch next sequential keys.
     fn prefetch_next_keys(&self, key: &StorageKey, count: usize) {
         if let Some(ref store_find) = self.store_find {
-            let items: Vec<(StorageKey, StorageItem)> = store_find(Some(key), SeekDirection::Forward)
-                .into_iter()
-                .filter(|(k, _)| !self.is_recently_prefetched(k))
-                .take(count)
-                .collect();
-            
+            let items: Vec<(StorageKey, StorageItem)> =
+                store_find(Some(key), SeekDirection::Forward)
+                    .into_iter()
+                    .filter(|(k, _)| !self.is_recently_prefetched(k))
+                    .take(count)
+                    .collect();
+
             if !items.is_empty() {
                 // Mark these as prefetched
                 {
@@ -505,23 +506,24 @@ impl DataCache {
                         window.clear(); // Simple eviction: clear when too large
                     }
                 }
-                
+
                 // Prefetch into read cache
                 self.prefetch(items);
                 trace!(target: "neo", count, "prefetched forward sequential keys");
             }
         }
     }
-    
+
     /// Prefetch previous sequential keys.
     fn prefetch_prev_keys(&self, key: &StorageKey, count: usize) {
         if let Some(ref store_find) = self.store_find {
-            let items: Vec<(StorageKey, StorageItem)> = store_find(Some(key), SeekDirection::Backward)
-                .into_iter()
-                .filter(|(k, _)| !self.is_recently_prefetched(k))
-                .take(count)
-                .collect();
-            
+            let items: Vec<(StorageKey, StorageItem)> =
+                store_find(Some(key), SeekDirection::Backward)
+                    .into_iter()
+                    .filter(|(k, _)| !self.is_recently_prefetched(k))
+                    .take(count)
+                    .collect();
+
             if !items.is_empty() {
                 // Mark these as prefetched
                 {
@@ -533,7 +535,7 @@ impl DataCache {
                         window.clear();
                     }
                 }
-                
+
                 self.prefetch(items);
                 trace!(target: "neo", count, "prefetched backward sequential keys");
             }

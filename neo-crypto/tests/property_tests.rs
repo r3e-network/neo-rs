@@ -5,7 +5,10 @@
 //! - Crypto operations (sign then verify returns true)
 //! - Various hash algorithms
 
-use neo_crypto::{Crypto, HashAlgorithm, crypto_utils::{Secp256k1Crypto, Secp256r1Crypto, Ed25519Crypto, Base58, Hex}};
+use neo_crypto::{
+    crypto_utils::{Base58, Ed25519Crypto, Hex, Secp256k1Crypto, Secp256r1Crypto},
+    Crypto, HashAlgorithm,
+};
 use proptest::prelude::*;
 
 proptest! {
@@ -114,10 +117,10 @@ proptest! {
     fn test_secp256r1_sign_verify(message in any::<Vec<u8>>()) {
         let private_key = Secp256r1Crypto::generate_private_key();
         let public_key = Secp256r1Crypto::derive_public_key(&private_key).unwrap();
-        
+
         let signature = Secp256r1Crypto::sign(&message, &private_key).unwrap();
         let verified = Secp256r1Crypto::verify(&message, &signature, &public_key).unwrap();
-        
+
         prop_assert!(verified);
     }
 
@@ -129,13 +132,13 @@ proptest! {
     ) {
         prop_assume!(!msg1.is_empty() || !msg2.is_empty());
         prop_assume!(msg1 != msg2);
-        
+
         let private_key = Secp256r1Crypto::generate_private_key();
         let public_key = Secp256r1Crypto::derive_public_key(&private_key).unwrap();
-        
+
         let signature = Secp256r1Crypto::sign(&msg1, &private_key).unwrap();
         let verified = Secp256r1Crypto::verify(&msg2, &signature, &public_key).unwrap();
-        
+
         prop_assert!(!verified);
     }
 
@@ -148,10 +151,10 @@ proptest! {
     fn test_ed25519_sign_verify(message in any::<Vec<u8>>()) {
         let private_key = Ed25519Crypto::generate_private_key();
         let public_key = Ed25519Crypto::derive_public_key(&private_key).unwrap();
-        
+
         let signature = Ed25519Crypto::sign(&message, &private_key).unwrap();
         let verified = Ed25519Crypto::verify(&message, &signature, &public_key).unwrap();
-        
+
         prop_assert!(verified);
     }
 
@@ -163,13 +166,13 @@ proptest! {
     ) {
         prop_assume!(!msg1.is_empty() || !msg2.is_empty());
         prop_assume!(msg1 != msg2);
-        
+
         let private_key = Ed25519Crypto::generate_private_key();
         let public_key = Ed25519Crypto::derive_public_key(&private_key).unwrap();
-        
+
         let signature = Ed25519Crypto::sign(&msg1, &private_key).unwrap();
         let verified = Ed25519Crypto::verify(&msg2, &signature, &public_key).unwrap();
-        
+
         prop_assert!(!verified);
     }
 }

@@ -731,9 +731,10 @@ impl NativeContract for LedgerContract {
 
     fn on_persist(&self, engine: &mut ApplicationEngine) -> Result<()> {
         let snapshot = engine.snapshot_cache();
-        let block = engine.persisting_block().cloned().ok_or_else(|| {
-            Error::native_contract("No current block available for persistence".to_string())
-        })?;
+        let block = engine
+            .persisting_block()
+            .cloned()
+            .ok_or_else(|| Error::native_contract("No current block available for persistence"))?;
         let tx_states: Vec<PersistedTransactionState> = block
             .transactions
             .iter()
@@ -774,9 +775,9 @@ impl NativeContract for LedgerContract {
 
     fn post_persist(&self, engine: &mut ApplicationEngine) -> Result<()> {
         let snapshot = engine.snapshot_cache();
-        let block = engine.persisting_block().ok_or_else(|| {
-            Error::native_contract("No current block available for persistence".to_string())
-        })?;
+        let block = engine
+            .persisting_block()
+            .ok_or_else(|| Error::native_contract("No current block available for persistence"))?;
         let block_clone = block.clone();
         let hash = block_clone.hash();
         let index = block_clone.index();

@@ -152,5 +152,5 @@ fn map_bls_error(err: BlsError) -> Error {
 }
 
 fn type_mismatch_error() -> Error {
-    Error::native_contract("BLS12-381 type mismatch".to_string())
+    Error::native_contract("BLS12-381 type mismatch")
 }

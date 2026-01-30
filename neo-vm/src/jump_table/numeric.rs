@@ -131,7 +131,9 @@ fn sqrt(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
     let value = ctx.pop()?.as_int()?;
     if value.is_negative() {
-        return Err(VmError::invalid_operation_msg("Square root of negative number"));
+        return Err(VmError::invalid_operation_msg(
+            "Square root of negative number",
+        ));
     }
     let result = integer_sqrt(&value);
     ctx.push(StackItem::from_int(result))
@@ -309,7 +311,13 @@ fn within(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
 }
 
 /// Helper for comparison operations with null handling
-fn compare_with_null<F>(engine: &mut ExecutionEngine, null_null: bool, null_other: bool, other_null: bool, cmp: F) -> VmResult<()>
+fn compare_with_null<F>(
+    engine: &mut ExecutionEngine,
+    null_null: bool,
+    null_other: bool,
+    other_null: bool,
+    cmp: F,
+) -> VmResult<()>
 where
     F: FnOnce(&BigInt, &BigInt) -> bool,
 {
@@ -434,7 +442,9 @@ fn modpow(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     }
 
     if exponent < -BigInt::one() {
-        return Err(VmError::invalid_operation_msg("Exponent less than -1 not supported"));
+        return Err(VmError::invalid_operation_msg(
+            "Exponent less than -1 not supported",
+        ));
     }
 
     if modulus.is_zero() {
@@ -442,7 +452,9 @@ fn modpow(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     }
 
     if exponent.is_negative() {
-        return Err(VmError::invalid_operation_msg("Negative exponent not supported"));
+        return Err(VmError::invalid_operation_msg(
+            "Negative exponent not supported",
+        ));
     }
 
     let result = base.modpow(&exponent, &modulus);
@@ -473,10 +485,14 @@ fn integer_sqrt(value: &BigInt) -> BigInt {
 /// Computes the modular inverse of `value` modulo `modulus`.
 fn mod_inverse(value: &BigInt, modulus: &BigInt) -> VmResult<BigInt> {
     if value <= &BigInt::zero() {
-        return Err(VmError::invalid_operation_msg("Modular inverse requires positive value"));
+        return Err(VmError::invalid_operation_msg(
+            "Modular inverse requires positive value",
+        ));
     }
     if modulus < &BigInt::from(2u8) {
-        return Err(VmError::invalid_operation_msg("Modular inverse requires modulus >= 2"));
+        return Err(VmError::invalid_operation_msg(
+            "Modular inverse requires modulus >= 2",
+        ));
     }
 
     let mut r = value.clone();
@@ -501,7 +517,9 @@ fn mod_inverse(value: &BigInt, modulus: &BigInt) -> VmResult<BigInt> {
     }
 
     if (value * &result) % modulus != BigInt::one() {
-        return Err(VmError::invalid_operation_msg("No modular inverse exists for the given inputs"));
+        return Err(VmError::invalid_operation_msg(
+            "No modular inverse exists for the given inputs",
+        ));
     }
 
     Ok(result)

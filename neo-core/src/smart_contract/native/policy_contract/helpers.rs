@@ -181,9 +181,7 @@ impl PolicyContract {
         };
         BigInt::from_signed_bytes_le(&bytes)
             .to_u32()
-            .ok_or_else(|| {
-                Error::native_contract("Stored policy value exceeds u32 capacity".to_string())
-            })
+            .ok_or_else(|| Error::native_contract("Stored policy value exceeds u32 capacity"))
     }
 
     pub(super) fn read_i64_setting(
@@ -198,8 +196,6 @@ impl PolicyContract {
         };
         BigInt::from_signed_bytes_le(&bytes)
             .to_i64()
-            .ok_or_else(|| {
-                Error::native_contract("Stored policy value exceeds i64 capacity".to_string())
-            })
+            .ok_or_else(|| Error::native_contract("Stored policy value exceeds i64 capacity"))
     }
 }

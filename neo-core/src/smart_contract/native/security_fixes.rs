@@ -124,7 +124,7 @@ impl SafeArithmetic {
     /// Safely divide two BigInt values
     pub fn safe_div(a: &BigInt, b: &BigInt) -> CoreResult<BigInt> {
         if b.is_zero() {
-            return Err(CoreError::native_contract("Division by zero".to_string()));
+            return Err(CoreError::native_contract("Division by zero"));
         }
         Ok(a / b)
     }

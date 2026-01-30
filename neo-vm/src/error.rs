@@ -47,7 +47,7 @@ pub enum VmError {
     #[error("Parse error: {message}")]
     Parse {
         /// Error message describing the parse failure
-        message: String
+        message: String,
     },
 
     /// Invalid instruction with opcode
@@ -56,28 +56,28 @@ pub enum VmError {
         /// The invalid opcode byte
         opcode: u8,
         /// Reason why the instruction is invalid
-        reason: String
+        reason: String,
     },
 
     /// Invalid opcode
     #[error("Invalid opcode: {opcode:#04x}")]
     InvalidOpCode {
         /// The invalid opcode byte
-        opcode: u8
+        opcode: u8,
     },
 
     /// Unsupported operation
     #[error("Unsupported operation: {operation}")]
     UnsupportedOperation {
         /// Name of the unsupported operation
-        operation: String
+        operation: String,
     },
 
     /// Catchable exception that can be handled by TRY/CATCH blocks
     #[error("Catchable exception: {message}")]
     CatchableException {
         /// Exception message
-        message: String
+        message: String,
     },
 
     /// Invalid operation with context
@@ -86,7 +86,7 @@ pub enum VmError {
         /// The invalid operation attempted
         operation: String,
         /// Reason why the operation is invalid
-        reason: String
+        reason: String,
     },
 
     /// Invalid operand
@@ -95,14 +95,14 @@ pub enum VmError {
         /// Expected operand type or value
         expected: String,
         /// Actual operand type or value received
-        actual: String
+        actual: String,
     },
 
     /// Invalid script
     #[error("Invalid script: {reason}")]
     InvalidScript {
         /// Reason why the script is invalid
-        reason: String
+        reason: String,
     },
 
     /// Stack underflow
@@ -113,35 +113,35 @@ pub enum VmError {
         /// Number of items requested
         requested: usize,
         /// Number of items actually available
-        available: usize
+        available: usize,
     },
 
     /// Stack overflow
     #[error("Stack overflow: maximum stack size {max_size} exceeded")]
     StackOverflow {
         /// Maximum allowed stack size
-        max_size: usize
+        max_size: usize,
     },
 
     /// Arithmetic overflow
     #[error("Arithmetic overflow in operation: {operation}")]
     Overflow {
         /// Operation that caused the overflow
-        operation: String
+        operation: String,
     },
 
     /// Arithmetic underflow
     #[error("Arithmetic underflow in operation: {operation}")]
     Underflow {
         /// Operation that caused the underflow
-        operation: String
+        operation: String,
     },
 
     /// Division by zero
     #[error("Division by zero in operation: {operation}")]
     DivisionByZero {
         /// Operation that attempted division by zero
-        operation: String
+        operation: String,
     },
 
     /// Insufficient stack items
@@ -150,7 +150,7 @@ pub enum VmError {
         /// Number of items required
         required: usize,
         /// Number of items actually available
-        available: usize
+        available: usize,
     },
 
     /// Invalid type conversion
@@ -159,14 +159,14 @@ pub enum VmError {
         /// Source type
         from: String,
         /// Target type
-        to: String
+        to: String,
     },
 
     /// Execution halted
     #[error("Execution halted: {reason}")]
     ExecutionHalted {
         /// Reason why execution was halted
-        reason: String
+        reason: String,
     },
 
     /// VM fault state
@@ -175,14 +175,14 @@ pub enum VmError {
         /// Type of fault that occurred
         fault_type: String,
         /// Detailed fault information
-        details: String
+        details: String,
     },
 
     /// I/O error
     #[error("I/O error: {message}")]
     Io {
         /// Error message
-        message: String
+        message: String,
     },
 
     /// Memory limit exceeded
@@ -191,7 +191,7 @@ pub enum VmError {
         /// Amount of memory used
         used: usize,
         /// Memory limit
-        limit: usize
+        limit: usize,
     },
 
     /// Instruction limit exceeded
@@ -200,7 +200,7 @@ pub enum VmError {
         /// Number of instructions executed
         executed: u64,
         /// Instruction execution limit
-        limit: u64
+        limit: u64,
     },
 
     /// Call depth limit exceeded
@@ -209,7 +209,7 @@ pub enum VmError {
         /// Current call depth
         depth: usize,
         /// Maximum allowed call depth
-        limit: usize
+        limit: usize,
     },
 
     /// Gas exhausted
@@ -218,14 +218,14 @@ pub enum VmError {
         /// Gas used
         used: u64,
         /// Gas limit
-        limit: u64
+        limit: u64,
     },
 
     /// Invalid contract state
     #[error("Invalid contract state: {reason}")]
     InvalidContractState {
         /// Reason why the contract state is invalid
-        reason: String
+        reason: String,
     },
 
     /// Interop service error
@@ -234,28 +234,28 @@ pub enum VmError {
         /// Name of the interop service that failed
         service: String,
         /// Error message from the service
-        error: String
+        error: String,
     },
 
     /// Script execution timeout
     #[error("Script execution timeout: exceeded {timeout_ms}ms")]
     ExecutionTimeout {
         /// Timeout duration in milliseconds
-        timeout_ms: u64
+        timeout_ms: u64,
     },
 
     /// Invalid script hash
     #[error("Invalid script hash: {hash}")]
     InvalidScriptHash {
         /// The invalid script hash
-        hash: String
+        hash: String,
     },
 
     /// Contract not found
     #[error("Contract not found: {hash}")]
     ContractNotFound {
         /// Hash of the contract that was not found
-        hash: String
+        hash: String,
     },
 
     /// Method not found
@@ -264,7 +264,7 @@ pub enum VmError {
         /// Contract hash
         contract: String,
         /// Method name that was not found
-        method: String
+        method: String,
     },
 
     /// Invalid parameters
@@ -273,35 +273,35 @@ pub enum VmError {
         /// Expected parameter description
         expected: String,
         /// Actual parameters received
-        actual: String
+        actual: String,
     },
 
     /// Invalid witness
     #[error("Invalid witness: {reason}")]
     InvalidWitness {
         /// Reason why the witness is invalid
-        reason: String
+        reason: String,
     },
 
     /// Verification failed
     #[error("Verification failed: {reason}")]
     VerificationFailed {
         /// Reason why verification failed
-        reason: String
+        reason: String,
     },
 
     /// Invalid jump
     #[error("Invalid jump: position {0}")]
     InvalidJump(
         /// Jump target position that is invalid
-        i32
+        i32,
     ),
 
     /// Unhandled exception
     #[error("Unhandled exception")]
     UnhandledException(
         /// The unhandled exception stack item
-        crate::stack_item::StackItem
+        crate::stack_item::StackItem,
     ),
 
     /// Max try nesting depth exceeded
@@ -322,7 +322,7 @@ pub enum VmError {
     #[error("Mock I/O error: {message}")]
     MockIo {
         /// Error message
-        message: String
+        message: String,
     },
 }
 

@@ -58,8 +58,7 @@ impl RpcServerNode {
             if let Ok(handle) = Handle::try_current() {
                 block_in_place(|| handle.block_on(fut))
             } else {
-                let runtime =
-                    Runtime::new().map_err(|err| internal_error(err.to_string()))?;
+                let runtime = Runtime::new().map_err(|err| internal_error(err.to_string()))?;
                 runtime.block_on(fut)
             }
         }
@@ -188,7 +187,8 @@ impl RpcServerNode {
     }
 
     fn send_raw_transaction(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        let payload = crate::server::rpc_helpers::expect_string_param(params, 0, "sendrawtransaction")?;
+        let payload =
+            crate::server::rpc_helpers::expect_string_param(params, 0, "sendrawtransaction")?;
         let raw = BASE64_STANDARD
             .decode(payload.trim())
             .map_err(|_| invalid_params("Invalid transaction payload"))?;

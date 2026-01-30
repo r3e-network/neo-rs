@@ -36,21 +36,22 @@ impl RemoteNode {
         connection.compression_allowed = allow_compression && self.config.enable_compression;
 
         let message = NetworkMessage::new(ProtocolMessage::Version(self.local_version.clone()));
-        
+
         // Send version message
         if let Err(err) = connection.send_message(&message).await {
             drop(connection);
             let network_error = NetworkError::ConnectionError(err.to_string());
             return self.fail(ctx, network_error).await;
         }
-        
+
         // Flush immediately for handshake messages to ensure timely delivery
         if let Err(err) = connection.flush().await {
             drop(connection);
-            let network_error = NetworkError::ConnectionError(format!("Failed to flush version: {}", err));
+            let network_error =
+                NetworkError::ConnectionError(format!("Failed to flush version: {}", err));
             return self.fail(ctx, network_error).await;
         }
-        
+
         drop(connection);
         self.last_sent = Instant::now();
         Ok(())

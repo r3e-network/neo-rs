@@ -73,7 +73,11 @@ impl EvaluationStack {
             return Err(VmError::stack_underflow_msg(0, 0));
         }
         // SAFETY: We just verified the index is within bounds
-        unsafe { Ok(self.stack.get_unchecked(self.stack.len() - index_from_top - 1)) }
+        unsafe {
+            Ok(self
+                .stack
+                .get_unchecked(self.stack.len() - index_from_top - 1))
+        }
     }
 
     /// Mutable version of [`Self::peek`].

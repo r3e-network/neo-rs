@@ -288,7 +288,7 @@ impl NativeContract for ContractManagement {
     fn on_persist(&self, engine: &mut ApplicationEngine) -> Result<()> {
         let persisting_block = engine
             .persisting_block()
-            .ok_or_else(|| Error::native_contract("No persisting block available".to_string()))?;
+            .ok_or_else(|| Error::native_contract("No persisting block available"))?;
         let block_height = persisting_block.header.index;
         let settings = engine.protocol_settings().clone();
 

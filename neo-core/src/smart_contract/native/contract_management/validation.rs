@@ -31,7 +31,7 @@ impl ContractManagement {
         let max_item_size = ExecutionEngineLimits::default().max_item_size as usize;
 
         if nef.script.is_empty() {
-            return Err(Error::invalid_data("Script cannot be empty".to_string()));
+            return Err(Error::invalid_data("Script cannot be empty"));
         }
 
         if nef.script.len() > max_item_size {
@@ -46,7 +46,7 @@ impl ContractManagement {
         let mut cloned = nef.clone();
         cloned.update_checksum();
         if cloned.checksum != nef.checksum {
-            return Err(Error::invalid_data("Invalid NEF checksum".to_string()));
+            return Err(Error::invalid_data("Invalid NEF checksum"));
         }
 
         Ok(())
@@ -105,7 +105,7 @@ impl ContractManagement {
         let mut seen_events: HashSet<String> = HashSet::new();
         for event in &abi.events {
             if !seen_events.insert(event.name.clone()) {
-                return Err(Error::invalid_data("Duplicate event name".to_string()));
+                return Err(Error::invalid_data("Duplicate event name"));
             }
         }
 

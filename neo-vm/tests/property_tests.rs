@@ -59,13 +59,13 @@ proptest! {
     fn test_stack_length_bool(b in any::<bool>()) {
         let rc = ReferenceCounter::new();
         let mut stack = EvaluationStack::new(rc);
-        
+
         prop_assert_eq!(stack.len(), 0);
         prop_assert!(stack.is_empty());
-        
+
         stack.push(StackItem::from_bool(b)).unwrap();
         prop_assert_eq!(stack.len(), 1);
-        
+
         let _ = stack.pop().unwrap();
         prop_assert_eq!(stack.len(), 0);
         prop_assert!(stack.is_empty());
@@ -76,10 +76,10 @@ proptest! {
     fn test_stack_length_int(i in any::<i64>()) {
         let rc = ReferenceCounter::new();
         let mut stack = EvaluationStack::new(rc);
-        
+
         stack.push(StackItem::from_int(i)).unwrap();
         prop_assert_eq!(stack.len(), 1);
-        
+
         let _ = stack.pop().unwrap();
         prop_assert!(stack.is_empty());
     }
@@ -89,10 +89,10 @@ proptest! {
     fn test_stack_length_bytes(v in any::<Vec<u8>>()) {
         let rc = ReferenceCounter::new();
         let mut stack = EvaluationStack::new(rc);
-        
+
         stack.push(StackItem::from_byte_string(v)).unwrap();
         prop_assert_eq!(stack.len(), 1);
-        
+
         let _ = stack.pop().unwrap();
         prop_assert!(stack.is_empty());
     }
@@ -197,17 +197,17 @@ proptest! {
         let item = StackItem::from_bool(value);
         let original = item.clone();
         stack.push(item).unwrap();
-        
+
         // Peek multiple times
         let peek1 = stack.peek(0).unwrap().clone();
         let peek2 = stack.peek(0).unwrap().clone();
-        
+
         // Stack should still have the item
         prop_assert_eq!(stack.len(), 1);
-        
+
         // Pop should still work
         let popped = stack.pop().unwrap();
-        
+
         prop_assert!(original.equals(&peek1).unwrap());
         prop_assert!(original.equals(&peek2).unwrap());
         prop_assert!(original.equals(&popped).unwrap());
@@ -221,10 +221,10 @@ proptest! {
         let item = StackItem::from_int(value);
         let original = item.clone();
         stack.push(item).unwrap();
-        
+
         let peek1 = stack.peek(0).unwrap().clone();
         prop_assert_eq!(stack.len(), 1);
-        
+
         let popped = stack.pop().unwrap();
         prop_assert!(original.equals(&peek1).unwrap());
         prop_assert!(original.equals(&popped).unwrap());
@@ -238,10 +238,10 @@ proptest! {
         let item = StackItem::from_byte_string(data);
         let original = item.clone();
         stack.push(item).unwrap();
-        
+
         let peek1 = stack.peek(0).unwrap().clone();
         prop_assert_eq!(stack.len(), 1);
-        
+
         let popped = stack.pop().unwrap();
         prop_assert!(original.equals(&peek1).unwrap());
         prop_assert!(original.equals(&popped).unwrap());
@@ -256,10 +256,10 @@ proptest! {
     fn test_clear_empties_stack_bool(value in any::<bool>()) {
         let rc = ReferenceCounter::new();
         let mut stack = EvaluationStack::new(rc);
-        
+
         stack.push(StackItem::from_bool(value)).unwrap();
         prop_assert!(!stack.is_empty());
-        
+
         stack.clear();
         prop_assert!(stack.is_empty());
         prop_assert_eq!(stack.len(), 0);
@@ -274,12 +274,12 @@ proptest! {
     ) {
         let rc = ReferenceCounter::new();
         let mut stack = EvaluationStack::new(rc);
-        
+
         stack.push(StackItem::from_bool(v1)).unwrap();
         stack.push(StackItem::from_int(v2)).unwrap();
         stack.push(StackItem::from_byte_string(v3)).unwrap();
         prop_assert_eq!(stack.len(), 3);
-        
+
         stack.clear();
         prop_assert!(stack.is_empty());
         prop_assert_eq!(stack.len(), 0);

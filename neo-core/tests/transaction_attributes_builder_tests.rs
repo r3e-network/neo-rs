@@ -82,9 +82,7 @@ fn transaction_attributes_builder_rejects_duplicate_high_priority() {
 }
 
 #[test]
-#[should_panic(
-    expected = "NotValidBefore attribute for block 10 already exists"
-)]
+#[should_panic(expected = "NotValidBefore attribute for block 10 already exists")]
 fn transaction_attributes_builder_rejects_duplicate_not_valid_before() {
     let _attrs = TransactionAttributesBuilder::create_empty()
         .add_not_valid_before(10)

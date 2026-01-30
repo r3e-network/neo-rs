@@ -224,7 +224,7 @@ mod tests {
         let pushed = buf.push(b"!");
         assert!(!pushed);
         assert_eq!(buf.len(), 10); // Buffer unchanged
-        
+
         // Check remaining capacity
         assert_eq!(buf.remaining_capacity(), 0);
     }
@@ -247,15 +247,15 @@ mod tests {
         assert!(pushed);
         assert!(buf.is_empty());
     }
-    
+
     #[test]
     fn write_buffer_remaining_capacity() {
         let mut buf = WriteBuffer::new(10);
         assert_eq!(buf.remaining_capacity(), 10);
-        
+
         buf.push(b"hello");
         assert_eq!(buf.remaining_capacity(), 5);
-        
+
         buf.push(b"world");
         assert_eq!(buf.remaining_capacity(), 0);
     }
@@ -343,8 +343,7 @@ impl<'a> FramedSocket<'a> {
         }
 
         // Use vectored I/O for multiple buffers
-        let io_slices: Vec<IoSlice<'_>> =
-            buffers.iter().map(|buf| IoSlice::new(buf)).collect();
+        let io_slices: Vec<IoSlice<'_>> = buffers.iter().map(|buf| IoSlice::new(buf)).collect();
 
         timeout(cfg.write_timeout, self.stream.write_vectored(&io_slices))
             .await
@@ -385,7 +384,7 @@ impl<'a> FramedSocket<'a> {
         } else if data.len() <= write_buffer.remaining_capacity() {
             // Data fits in buffer
             write_buffer.push(data);
-            
+
             // Flush if we've reached the threshold
             if write_buffer.should_flush() {
                 let buffered = write_buffer.take();
@@ -407,7 +406,7 @@ impl<'a> FramedSocket<'a> {
                         NetworkError::ConnectionError(format!("Failed to flush buffer: {e}"))
                     })?;
             }
-            
+
             // Write data directly (it's larger than buffer threshold anyway)
             timeout(cfg.write_timeout, self.stream.write_all(data))
                 .await
@@ -421,7 +420,11 @@ impl<'a> FramedSocket<'a> {
     }
 
     /// Flushes any pending buffered writes.
-    pub async fn flush(&mut self, cfg: &FrameConfig, write_buffer: &mut WriteBuffer) -> NetworkResult<()> {
+    pub async fn flush(
+        &mut self,
+        cfg: &FrameConfig,
+        write_buffer: &mut WriteBuffer,
+    ) -> NetworkResult<()> {
         if !write_buffer.is_empty() {
             let buffered = write_buffer.take();
             timeout(cfg.write_timeout, self.stream.write_all(&buffered))
@@ -448,7 +451,10 @@ impl<'a> FramedSocket<'a> {
     }
 
     /// Reads a var_int and returns (value, byte_length) without allocating.
-    async fn read_var_int_len(&mut self, timeout_duration: Duration) -> NetworkResult<(u64, usize)> {
+    async fn read_var_int_len(
+        &mut self,
+        timeout_duration: Duration,
+    ) -> NetworkResult<(u64, usize)> {
         let mut first = [0u8; 1];
         self.read_exact_slice(&mut first, timeout_duration, "varint prefix")
             .await?;

@@ -658,9 +658,7 @@ impl RpcServerBlockchain {
 
     fn serialize_header(header: &Header) -> Result<Vec<u8>, RpcException> {
         let mut writer = BinaryWriter::new();
-        header
-            .serialize(&mut writer)
-            .map_err(internal_error)?;
+        header.serialize(&mut writer).map_err(internal_error)?;
         Ok(writer.into_bytes())
     }
 

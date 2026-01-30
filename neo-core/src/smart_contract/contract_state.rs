@@ -418,7 +418,7 @@ impl Serializable for NefFile {
         writer.write_u16(0)?; // reserved
 
         if self.script.is_empty() {
-            return Err(IoError::invalid_data("Script cannot be empty".to_string()));
+            return Err(IoError::invalid_data("Script cannot be empty"));
         }
         let max_item_size = ExecutionEngineLimits::default().max_item_size as usize;
         if self.script.len() > max_item_size {
@@ -452,7 +452,7 @@ impl Serializable for NefFile {
 
         let reserved = reader.read_byte()?;
         if reserved != 0 {
-            return Err(IoError::invalid_data("Reserved byte must be 0".to_string()));
+            return Err(IoError::invalid_data("Reserved byte must be 0"));
         }
 
         let token_count = reader.read_var_int(Self::MAX_TOKENS as u64)? as usize;
@@ -471,7 +471,7 @@ impl Serializable for NefFile {
         let max_item_size = ExecutionEngineLimits::default().max_item_size as usize;
         let script = reader.read_var_bytes(max_item_size)?;
         if script.is_empty() {
-            return Err(IoError::invalid_data("Script cannot be empty".to_string()));
+            return Err(IoError::invalid_data("Script cannot be empty"));
         }
 
         let checksum = reader.read_u32()?;
@@ -486,12 +486,12 @@ impl Serializable for NefFile {
 
         let calculated = Self::compute_checksum(&nef);
         if calculated != checksum {
-            return Err(IoError::invalid_data("CRC verification fail".to_string()));
+            return Err(IoError::invalid_data("CRC verification fail"));
         }
 
         let size = reader.position().saturating_sub(start_position);
         if size > max_item_size {
-            return Err(IoError::invalid_data("Max vm item size exceed".to_string()));
+            return Err(IoError::invalid_data("Max vm item size exceed"));
         }
 
         Ok(nef)
@@ -514,7 +514,7 @@ impl Serializable for MethodToken {
             ));
         }
         if self.method.len() > 32 {
-            return Err(IoError::invalid_data("Method name too long".to_string()));
+            return Err(IoError::invalid_data("Method name too long"));
         }
 
         writer.write_bytes(&self.hash.as_bytes())?;
@@ -539,7 +539,7 @@ impl Serializable for MethodToken {
         let has_return_value = reader.read_boolean()?;
         let call_flags_bits = reader.read_byte()?;
         let call_flags = CallFlags::from_bits(call_flags_bits)
-            .ok_or_else(|| IoError::invalid_data("CallFlags is not valid".to_string()))?;
+            .ok_or_else(|| IoError::invalid_data("CallFlags is not valid"))?;
 
         Ok(MethodToken {
             hash,

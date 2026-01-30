@@ -36,9 +36,7 @@ impl PolicyContract {
         match snapshot.try_get(&key) {
             Some(item) => BigInt::from_signed_bytes_le(&item.get_value())
                 .to_i64()
-                .ok_or_else(|| {
-                    Error::native_contract("FeePerByte exceeds i64 capacity".to_string())
-                }),
+                .ok_or_else(|| Error::native_contract("FeePerByte exceeds i64 capacity")),
             None => Ok(Self::DEFAULT_FEE_PER_BYTE as i64),
         }
     }
@@ -58,9 +56,7 @@ impl PolicyContract {
             Some(item) => {
                 let value = BigInt::from_signed_bytes_le(&item.get_value())
                     .to_u32()
-                    .ok_or_else(|| {
-                        Error::native_contract("ExecFeeFactor exceeds u32 capacity".to_string())
-                    })?;
+                    .ok_or_else(|| Error::native_contract("ExecFeeFactor exceeds u32 capacity"))?;
                 if settings.is_hardfork_enabled(Hardfork::HfFaun, block_height) {
                     Ok(value / crate::smart_contract::application_engine::FEE_FACTOR as u32)
                 } else {
@@ -96,9 +92,7 @@ impl PolicyContract {
         match snapshot.try_get(&key) {
             Some(item) => BigInt::from_signed_bytes_le(&item.get_value())
                 .to_i64()
-                .ok_or_else(|| {
-                    Error::native_contract("AttributeFee exceeds i64 capacity".to_string())
-                }),
+                .ok_or_else(|| Error::native_contract("AttributeFee exceeds i64 capacity")),
             None => Ok(Self::DEFAULT_ATTRIBUTE_FEE as i64),
         }
     }

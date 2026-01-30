@@ -104,7 +104,7 @@ fn serialize_deposit(deposit: &Deposit) -> Vec<u8> {
 /// Deserializes a Deposit from bytes.
 fn deserialize_deposit(data: &[u8]) -> Result<Deposit> {
     if data.is_empty() {
-        return Err(Error::native_contract("Empty deposit data".to_string()));
+        return Err(Error::native_contract("Empty deposit data"));
     }
     let amount_len = data[0] as usize;
     if data.len() < 1 + amount_len + 4 {
@@ -255,17 +255,13 @@ impl Notary {
         default_owner: &UInt160,
     ) -> Result<(UInt160, u32)> {
         let bytes = data.ok_or_else(|| {
-            Error::native_contract("`data` parameter should be an array of 2 elements".to_string())
+            Error::native_contract("`data` parameter should be an array of 2 elements")
         })?;
 
-        let mut item = BinarySerializer::deserialize(
-            bytes,
-            &ExecutionEngineLimits::default(),
-            None,
-        )
-        .map_err(|_| {
-            Error::native_contract("`data` parameter should be an array of 2 elements".to_string())
-        })?;
+        let mut item =
+            BinarySerializer::deserialize(bytes, &ExecutionEngineLimits::default(), None).map_err(
+                |_| Error::native_contract("`data` parameter should be an array of 2 elements"),
+            )?;
 
         if matches!(item, StackItem::ByteString(_) | StackItem::Buffer(_)) {
             let nested_bytes = item.as_bytes().map_err(|err| {
@@ -308,15 +304,15 @@ impl Notary {
                 ));
             }
             UInt160::from_bytes(&bytes)
-                .map_err(|_| Error::native_contract("Invalid deposit recipient".to_string()))?
+                .map_err(|_| Error::native_contract("Invalid deposit recipient"))?
         };
 
         let till_value = items[1].get_integer().map_err(|err| {
             Error::native_contract(format!("Invalid deposit expiration: {}", err))
         })?;
-        let till = till_value.to_u32().ok_or_else(|| {
-            Error::native_contract("Deposit expiration must fit in u32".to_string())
-        })?;
+        let till = till_value
+            .to_u32()
+            .ok_or_else(|| Error::native_contract("Deposit expiration must fit in u32"))?;
 
         Ok((owner, till))
     }
@@ -430,7 +426,7 @@ impl Notary {
         }
 
         let from = UInt160::from_bytes(&args[0])
-            .map_err(|_| Error::native_contract("Invalid from address".to_string()))?;
+            .map_err(|_| Error::native_contract("Invalid from address"))?;
         let amount = BigInt::from_signed_bytes_le(&args[1]);
         if amount.is_negative() {
             return Err(Error::native_contract(
@@ -449,9 +445,7 @@ impl Notary {
             .script_container()
             .and_then(|container| container.as_transaction())
             .and_then(Transaction::sender)
-            .ok_or_else(|| {
-                Error::native_contract("onNEP17Payment requires transaction context".to_string())
-            })?;
+            .ok_or_else(|| Error::native_contract("onNEP17Payment requires transaction context"))?;
         let allowed_change_till = tx_sender == deposit_owner;
 
         if till < current_height.saturating_add(MIN_DEPOSIT_LEAD) {
@@ -520,11 +514,11 @@ impl Notary {
         }
 
         let account = UInt160::from_bytes(&args[0])
-            .map_err(|_| Error::native_contract("Invalid account address".to_string()))?;
+            .map_err(|_| Error::native_contract("Invalid account address"))?;
         let till_value = BigInt::from_signed_bytes_le(&args[1]);
         let till = till_value
             .to_u32()
-            .ok_or_else(|| Error::native_contract("Invalid till argument".to_string()))?;
+            .ok_or_else(|| Error::native_contract("Invalid till argument"))?;
 
         // Verify witness for account
         if !engine.check_witness_hash(&account)? {
@@ -569,12 +563,12 @@ impl Notary {
         }
 
         let from = UInt160::from_bytes(&args[0])
-            .map_err(|_| Error::native_contract("Invalid from address".to_string()))?;
+            .map_err(|_| Error::native_contract("Invalid from address"))?;
         let to = if args[1].is_empty() {
             from
         } else {
             UInt160::from_bytes(&args[1])
-                .map_err(|_| Error::native_contract("Invalid to address".to_string()))?
+                .map_err(|_| Error::native_contract("Invalid to address"))?
         };
 
         // Verify witness for from account
@@ -861,7 +855,7 @@ impl NativeContract for Notary {
         let block = engine
             .persisting_block()
             .cloned()
-            .ok_or_else(|| Error::native_contract("No persisting block available".to_string()))?;
+            .ok_or_else(|| Error::native_contract("No persisting block available"))?;
 
         let snapshot = engine.snapshot_cache();
         let snapshot_ref = snapshot.as_ref();
@@ -920,7 +914,7 @@ impl NativeContract for Notary {
 
         let single_reward = total_fees
             .checked_mul(fee_per_key)
-            .ok_or_else(|| Error::native_contract("Notary reward overflow".to_string()))?
+            .ok_or_else(|| Error::native_contract("Notary reward overflow"))?
             / notaries.len() as i64;
 
         for notary in notaries {
@@ -946,7 +940,7 @@ impl NativeContract for Notary {
                     ));
                 }
                 let account = UInt160::from_bytes(&args[0])
-                    .map_err(|_| Error::native_contract("Invalid account hash".to_string()))?;
+                    .map_err(|_| Error::native_contract("Invalid account hash"))?;
                 let balance = self.balance_of_arc(&snapshot, &account);
                 // Return as integer bytes
                 Ok(balance.to_signed_bytes_le())
@@ -958,7 +952,7 @@ impl NativeContract for Notary {
                     ));
                 }
                 let account = UInt160::from_bytes(&args[0])
-                    .map_err(|_| Error::native_contract("Invalid account hash".to_string()))?;
+                    .map_err(|_| Error::native_contract("Invalid account hash"))?;
                 let expiration = self.expiration_of_arc(&snapshot, &account);
                 Ok(expiration.to_le_bytes().to_vec())
             }

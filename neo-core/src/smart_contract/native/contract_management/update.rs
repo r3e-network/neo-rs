@@ -58,7 +58,7 @@ impl ContractManagement {
         // Get calling contract hash
         let contract_hash = engine
             .get_calling_script_hash()
-            .ok_or_else(|| Error::invalid_operation("No calling context".to_string()))?;
+            .ok_or_else(|| Error::invalid_operation("No calling context"))?;
 
         // Get existing contract
         let mut contract = {
@@ -68,7 +68,7 @@ impl ContractManagement {
                 .contracts
                 .get(&contract_hash)
                 .cloned()
-                .ok_or_else(|| Error::invalid_operation("Contract not found".to_string()))?
+                .ok_or_else(|| Error::invalid_operation("Contract not found"))?
         };
 
         if contract.update_counter == u16::MAX {

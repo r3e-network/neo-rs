@@ -615,9 +615,10 @@ impl NativeContract for GasToken {
     /// OnPersist: Burns system+network fees from senders, mints network fees to primary validator.
     /// Matches C# GasToken.OnPersistAsync exactly.
     fn on_persist(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
-        let block = engine.persisting_block().cloned().ok_or_else(|| {
-            CoreError::native_contract("No persisting block available".to_string())
-        })?;
+        let block = engine
+            .persisting_block()
+            .cloned()
+            .ok_or_else(|| CoreError::native_contract("No persisting block available"))?;
 
         let mut total_network_fee: i64 = 0;
         let snapshot = engine.snapshot_cache();

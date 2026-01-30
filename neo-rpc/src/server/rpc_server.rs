@@ -563,10 +563,7 @@ impl RpcServer {
         self.wallet.read().clone()
     }
 
-    pub fn set_wallet_change_callback(
-        &mut self,
-        callback: Option<WalletChangeCallback>,
-    ) {
+    pub fn set_wallet_change_callback(&mut self, callback: Option<WalletChangeCallback>) {
         self.wallet_change_callback = callback;
     }
 

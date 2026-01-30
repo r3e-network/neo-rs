@@ -263,10 +263,7 @@ impl PeerConnection {
     ///
     /// This is more efficient than sending messages individually when
     /// multiple messages are ready to be sent at once.
-    pub async fn send_messages_batch(
-        &mut self,
-        messages: &[NetworkMessage],
-    ) -> NetworkResult<()> {
+    pub async fn send_messages_batch(&mut self, messages: &[NetworkMessage]) -> NetworkResult<()> {
         if !self.state.is_active() {
             return Err(NetworkError::ConnectionError(
                 "Connection not active".to_string(),
@@ -280,12 +277,13 @@ impl PeerConnection {
         // Flush any pending buffered data first
         if !self.write_buffer.is_empty() {
             let buffered = self.write_buffer.take();
-            tokio::time::timeout(self.frame_config.write_timeout, self.stream.write_all(&buffered))
-                .await
-                .map_err(|_| NetworkError::Timeout)?
-                .map_err(|e| {
-                    NetworkError::ConnectionError(format!("Failed to flush buffer: {e}"))
-                })?;
+            tokio::time::timeout(
+                self.frame_config.write_timeout,
+                self.stream.write_all(&buffered),
+            )
+            .await
+            .map_err(|_| NetworkError::Timeout)?
+            .map_err(|e| NetworkError::ConnectionError(format!("Failed to flush buffer: {e}")))?;
         }
 
         // Serialize all messages
@@ -319,12 +317,13 @@ impl PeerConnection {
     pub async fn flush(&mut self) -> NetworkResult<()> {
         if !self.write_buffer.is_empty() {
             let buffered = self.write_buffer.take();
-            tokio::time::timeout(self.frame_config.write_timeout, self.stream.write_all(&buffered))
-                .await
-                .map_err(|_| NetworkError::Timeout)?
-                .map_err(|e| {
-                    NetworkError::ConnectionError(format!("Failed to flush buffer: {e}"))
-                })?;
+            tokio::time::timeout(
+                self.frame_config.write_timeout,
+                self.stream.write_all(&buffered),
+            )
+            .await
+            .map_err(|_| NetworkError::Timeout)?
+            .map_err(|e| NetworkError::ConnectionError(format!("Failed to flush buffer: {e}")))?;
         }
         Ok(())
     }
@@ -573,7 +572,10 @@ mod tests {
         let _ = connection.send_message(&message).await;
 
         let stats_after_send = connection.stats();
-        assert_eq!(stats_after_send.messages_sent, initial_stats.messages_sent + 1);
+        assert_eq!(
+            stats_after_send.messages_sent,
+            initial_stats.messages_sent + 1
+        );
 
         // Clean up
         drop(connection);

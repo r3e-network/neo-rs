@@ -153,13 +153,13 @@ impl RoleManagement {
         }
         public_keys.sort();
 
-        let persisting_block = engine.persisting_block().ok_or_else(|| {
-            Error::invalid_operation("Persisting block is not available".to_string())
-        })?;
+        let persisting_block = engine
+            .persisting_block()
+            .ok_or_else(|| Error::invalid_operation("Persisting block is not available"))?;
         let persisting_index = persisting_block.header.index;
         let designation_index = persisting_index
             .checked_add(1)
-            .ok_or_else(|| Error::invalid_operation("Block index overflowed".to_string()))?;
+            .ok_or_else(|| Error::invalid_operation("Block index overflowed"))?;
 
         let context = engine.get_native_storage_context(&self.hash)?;
         let key_suffix = Self::role_key_suffix(role, designation_index);
@@ -227,14 +227,14 @@ impl RoleManagement {
 
     fn parse_role_and_index(&self, args: &[Vec<u8>]) -> Result<(Role, u32)> {
         if args.is_empty() {
-            return Err(Error::native_contract("Missing role argument".to_string()));
+            return Err(Error::native_contract("Missing role argument"));
         }
         let role = if let Some(&value) = args[0].first() {
             Role::from_u8(value).ok_or_else(|| {
                 Error::native_contract(format!("Invalid role identifier: {}", value))
             })?
         } else {
-            return Err(Error::native_contract("Invalid role argument".to_string()));
+            return Err(Error::native_contract("Invalid role argument"));
         };
 
         let index = if args.len() >= 2 {
@@ -336,7 +336,7 @@ impl RoleManagement {
         for element in array.items() {
             let bytes = element
                 .as_bytes()
-                .map_err(|_| Error::native_contract("Invalid public key item".to_string()))?;
+                .map_err(|_| Error::native_contract("Invalid public key item"))?;
             let pubkey = ECPoint::decode_compressed_with_curve(ECCurve::secp256r1(), &bytes)
                 .map_err(|e| Error::native_contract(format!("Invalid public key encoding: {e}")))?;
             keys.push(pubkey);

@@ -4,7 +4,7 @@ impl ApplicationEngine {
     pub(crate) fn add_runtime_fee(&mut self, fee: u64) -> Result<()> {
         self.add_fee_datoshi(
             i64::try_from(fee)
-                .map_err(|_| Error::invalid_operation("Fee does not fit into i64".to_string()))?,
+                .map_err(|_| Error::invalid_operation("Fee does not fit into i64"))?,
         )
     }
 
@@ -12,7 +12,7 @@ impl ApplicationEngine {
     pub(crate) fn add_fee_datoshi(&mut self, datoshi: i64) -> Result<()> {
         let pico_gas = datoshi
             .checked_mul(FEE_FACTOR)
-            .ok_or_else(|| Error::invalid_operation("Fee multiplication overflow".to_string()))?;
+            .ok_or_else(|| Error::invalid_operation("Fee multiplication overflow"))?;
         self.add_fee_pico(pico_gas)
     }
 
@@ -33,7 +33,7 @@ impl ApplicationEngine {
         let total = self
             .fee_consumed
             .checked_add(pico_gas)
-            .ok_or_else(|| Error::invalid_operation("Fee addition overflow".to_string()))?;
+            .ok_or_else(|| Error::invalid_operation("Fee addition overflow"))?;
 
         self.fee_consumed = total;
         self.gas_consumed = total;
@@ -60,14 +60,14 @@ impl ApplicationEngine {
 
         let pico_gas = fee_units
             .checked_mul(i64::from(self.exec_fee_factor))
-            .ok_or_else(|| Error::invalid_operation("CPU fee overflow".to_string()))?;
+            .ok_or_else(|| Error::invalid_operation("CPU fee overflow"))?;
         self.add_fee_pico(pico_gas)
     }
 
     pub fn charge_execution_fee(&mut self, fee: u64) -> Result<()> {
         self.add_fee_datoshi(
             i64::try_from(fee)
-                .map_err(|_| Error::invalid_operation("Fee does not fit into i64".to_string()))?,
+                .map_err(|_| Error::invalid_operation("Fee does not fit into i64"))?,
         )
     }
 
@@ -102,17 +102,17 @@ impl ApplicationEngine {
     pub fn emit_event(&mut self, event_name: &str, args: Vec<Vec<u8>>) -> Result<()> {
         // 1. Validate event name length (must not exceed HASH_SIZE bytes)
         if event_name.len() > HASH_SIZE {
-            return Err(Error::invalid_operation("Event name too long".to_string()));
+            return Err(Error::invalid_operation("Event name too long"));
         }
 
         // 2. Validate arguments count (must not exceed 16 arguments)
         if args.len() > 16 {
-            return Err(Error::invalid_operation("Too many arguments".to_string()));
+            return Err(Error::invalid_operation("Too many arguments"));
         }
 
         // 3. Get current contract hash
         let Some(contract_hash) = self.current_script_hash else {
-            return Err(Error::invalid_operation("No current contract".to_string()));
+            return Err(Error::invalid_operation("No current contract"));
         };
 
         let Some(container) = &self.script_container else {
@@ -146,10 +146,10 @@ impl ApplicationEngine {
     pub fn check_gas(&self, required_gas: i64) -> Result<()> {
         let required_pico = required_gas
             .checked_mul(FEE_FACTOR)
-            .ok_or_else(|| Error::invalid_operation("Gas multiplication overflow".to_string()))?;
+            .ok_or_else(|| Error::invalid_operation("Gas multiplication overflow"))?;
 
         if self.gas_consumed + required_pico > self.gas_limit {
-            return Err(Error::invalid_operation("Out of gas".to_string()));
+            return Err(Error::invalid_operation("Out of gas"));
         }
         Ok(())
     }
@@ -236,9 +236,7 @@ impl ApplicationEngine {
                 let storage_fee = method_meta
                     .storage_fee
                     .checked_mul(i64::from(self.storage_price))
-                    .ok_or_else(|| {
-                        Error::invalid_operation("Native storage fee overflow".to_string())
-                    })?;
+                    .ok_or_else(|| Error::invalid_operation("Native storage fee overflow"))?;
                 self.add_fee_datoshi(storage_fee)?;
             }
         }
@@ -309,7 +307,7 @@ impl ApplicationEngine {
 
         let pico_gas = gas
             .checked_mul(FEE_FACTOR)
-            .ok_or_else(|| Error::invalid_operation("Gas multiplication overflow".to_string()))?;
+            .ok_or_else(|| Error::invalid_operation("Gas multiplication overflow"))?;
 
         let Some(total) = self.fee_consumed.checked_add(pico_gas) else {
             return Err(Error::invalid_operation(
@@ -318,7 +316,7 @@ impl ApplicationEngine {
         };
 
         if total > self.fee_amount {
-            return Err(Error::invalid_operation("Out of gas".to_string()));
+            return Err(Error::invalid_operation("Out of gas"));
         }
 
         self.fee_consumed = total;

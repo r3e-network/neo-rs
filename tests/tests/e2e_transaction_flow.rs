@@ -1,13 +1,13 @@
 //! End-to-End Transaction Flow Integration Tests
 
 use neo_chain::{BlockIndexEntry, ChainState};
-use neo_core::network::p2p::payloads::{
-    Signer, Transaction, TransactionAttribute, WitnessScope,
-};
+use neo_core::network::p2p::payloads::{Signer, Transaction, TransactionAttribute, WitnessScope};
 
 use neo_core::{UInt160, UInt256};
 use neo_mempool::{Mempool, MempoolConfig};
-use neo_state::{AccountState, MemoryWorldState, StateChanges, StorageItem, StorageKey, WorldState};
+use neo_state::{
+    AccountState, MemoryWorldState, StateChanges, StorageItem, StorageKey, WorldState,
+};
 use neo_vm::op_code::OpCode;
 
 // Creates a test account with NEO and GAS balances
@@ -90,22 +90,31 @@ fn test_transaction_hash_unique() {
     let signer = Signer::new(sender, WitnessScope::CalledByEntry);
     tx2.add_signer(signer);
 
-    assert_ne!(tx1.hash(), tx2.hash(), "Different nonces should produce different hashes");
+    assert_ne!(
+        tx1.hash(),
+        tx2.hash(),
+        "Different nonces should produce different hashes"
+    );
 }
 
 #[test]
 fn test_transaction_serialization_roundtrip() {
     use neo_core::network::p2p::payloads::Witness;
-    
+
     let (sender, _) = create_test_account(1000, 10000);
-    let script = vec![OpCode::PUSH1 as u8, OpCode::PUSH2 as u8, OpCode::ADD as u8, OpCode::RET as u8];
+    let script = vec![
+        OpCode::PUSH1 as u8,
+        OpCode::PUSH2 as u8,
+        OpCode::ADD as u8,
+        OpCode::RET as u8,
+    ];
 
     let mut original = create_signed_transaction(sender, script, 100, 1000, 500);
-    
+
     // Add an empty witness to satisfy validation
     let witness = Witness::default();
     original.add_witness(witness);
-    
+
     let bytes = original.to_bytes();
     let restored = Transaction::from_bytes(&bytes).unwrap();
 
@@ -122,7 +131,8 @@ fn test_transaction_validation_fees() {
     assert_eq!(tx_no_fees.system_fee(), 0);
     assert_eq!(tx_no_fees.network_fee(), 0);
 
-    let tx_with_fees = create_signed_transaction(sender, vec![OpCode::RET as u8], 100, 1000000, 50000);
+    let tx_with_fees =
+        create_signed_transaction(sender, vec![OpCode::RET as u8], 100, 1000000, 50000);
     assert!(tx_with_fees.system_fee() > 0);
     assert!(tx_with_fees.network_fee() > 0);
 }
@@ -257,7 +267,10 @@ fn test_transaction_fee_calculation() {
     let tx = create_signed_transaction(sender, vec![OpCode::RET as u8], 100, 1_000_000, 500_000);
 
     let total_fees = tx.system_fee() + tx.network_fee();
-    assert_eq!(total_fees, 1_500_000, "Total fees should be sum of system and network fees");
+    assert_eq!(
+        total_fees, 1_500_000,
+        "Total fees should be sum of system and network fees"
+    );
 }
 
 #[test]
