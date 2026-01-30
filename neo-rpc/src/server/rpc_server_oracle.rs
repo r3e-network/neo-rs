@@ -1,3 +1,4 @@
+use crate::server::rpc_helpers::{internal_error, invalid_params};
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_method_attribute::RpcMethodDescriptor;
@@ -12,10 +13,7 @@ pub struct RpcServerOracle;
 
 impl RpcServerOracle {
     pub fn register_handlers() -> Vec<RpcHandler> {
-        vec![Self::handler(
-            "submitoracleresponse",
-            Self::submit_oracle_response,
-        )]
+        vec![Self::handler("submitoracleresponse", Self::submit_oracle_response)]
     }
 
     fn handler(
@@ -27,7 +25,7 @@ impl RpcServerOracle {
 
     fn submit_oracle_response(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
         let oracle_pubkey_bytes = expect_base64_param(params, 0, "submitoracleresponse")?;
-        let request_id = expect_u64_param(params, 1, "submitoracleresponse")?;
+        let request_id = crate::server::rpc_helpers::expect_u64_param(params, 1, "submitoracleresponse")?;
         let tx_sign = expect_base64_param(params, 2, "submitoracleresponse")?;
         let msg_sign = expect_base64_param(params, 3, "submitoracleresponse")?;
 
@@ -44,79 +42,46 @@ impl RpcServerOracle {
 }
 
 fn oracle_service(server: &RpcServer) -> Result<Arc<OracleService>, RpcException> {
-    let service = server
+    server
         .system()
         .get_service::<OracleService>()
-        .map_err(|err| internal_error(err.to_string()))?;
-    service.ok_or_else(|| RpcException::from(RpcError::oracle_disabled()))
+        .map_err(|e| internal_error(e.to_string()))?
+        .ok_or_else(|| RpcException::from(RpcError::oracle_disabled()))
 }
 
-fn expect_base64_param(
-    params: &[Value],
-    index: usize,
-    method: &str,
-) -> Result<Vec<u8>, RpcException> {
+#[inline]
+fn expect_base64_param(params: &[Value], index: usize, method: &str) -> Result<Vec<u8>, RpcException> {
     let text = params
         .get(index)
-        .and_then(|value| value.as_str())
-        .ok_or_else(|| {
-            RpcException::from(
-                RpcError::invalid_params()
-                    .with_data(format!("{method} expects base64 parameter {}", index + 1)),
-            )
-        })?;
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| invalid_params(format!("{} expects base64 parameter {}", method, index + 1)))?;
     BASE64_STANDARD
         .decode(text.trim())
         .map_err(|_| invalid_params("Invalid Base64-encoded bytes"))
 }
 
-fn expect_u64_param(params: &[Value], index: usize, method: &str) -> Result<u64, RpcException> {
-    params
-        .get(index)
-        .and_then(serde_json::Value::as_u64)
-        .ok_or_else(|| {
-            RpcException::from(
-                RpcError::invalid_params()
-                    .with_data(format!("{method} expects integer parameter {}", index + 1)),
-            )
-        })
-}
-
 fn map_oracle_error(err: OracleServiceError) -> RpcException {
     match err {
         OracleServiceError::Disabled => RpcException::from(RpcError::oracle_disabled()),
-        OracleServiceError::RequestFinished => {
+        OracleServiceError::RequestFinished | OracleServiceError::DuplicateRequest => {
             RpcException::from(RpcError::oracle_request_finished())
         }
-        OracleServiceError::RequestNotFound => {
+        OracleServiceError::RequestNotFound | OracleServiceError::RequestTransactionNotFound 
+        | OracleServiceError::BuildFailed(_) => {
             RpcException::from(RpcError::oracle_request_not_found())
         }
-        OracleServiceError::NotDesignated(message) => {
-            RpcException::from(RpcError::oracle_not_designated_node().with_data(message))
+        OracleServiceError::NotDesignated(msg) => {
+            RpcException::from(RpcError::oracle_not_designated_node().with_data(msg))
         }
-        OracleServiceError::InvalidSignature(message) => {
-            RpcException::from(RpcError::invalid_signature().with_data(message))
+        OracleServiceError::InvalidSignature(msg) => {
+            RpcException::from(RpcError::invalid_signature().with_data(msg))
         }
         OracleServiceError::InvalidOraclePublicKey => invalid_params("Invalid oracle public key"),
-        OracleServiceError::RequestTransactionNotFound | OracleServiceError::BuildFailed(_) => {
-            RpcException::from(RpcError::oracle_request_not_found())
-        }
-        OracleServiceError::Processing(message) => {
-            RpcException::from(RpcError::internal_server_error().with_data(message))
-        }
-        OracleServiceError::DuplicateRequest => {
-            RpcException::from(RpcError::oracle_request_finished())
+        OracleServiceError::Processing(msg) => {
+            RpcException::from(RpcError::internal_server_error().with_data(msg))
         }
         OracleServiceError::UrlBlocked => invalid_params("URL blocked by security policy"),
     }
-}
-
-fn invalid_params(message: impl Into<String>) -> RpcException {
-    RpcException::from(RpcError::invalid_params().with_data(message.into()))
-}
-
-fn internal_error(message: impl Into<String>) -> RpcException {
-    RpcException::from(RpcError::internal_server_error().with_data(message.into()))
 }
 
 #[cfg(test)]

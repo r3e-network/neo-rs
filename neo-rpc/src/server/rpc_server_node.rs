@@ -2,6 +2,7 @@
 
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
+use crate::server::rpc_helpers::{internal_error, invalid_params};
 use crate::server::rpc_method_attribute::RpcMethodDescriptor;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 use async_trait::async_trait;
@@ -58,11 +59,11 @@ impl RpcServerNode {
                 block_in_place(|| handle.block_on(fut))
             } else {
                 let runtime =
-                    Runtime::new().map_err(|err| Self::internal_error(err.to_string()))?;
+                    Runtime::new().map_err(|err| internal_error(err.to_string()))?;
                 runtime.block_on(fut)
             }
         }
-        .map_err(|err| Self::internal_error(err.to_string()))?;
+        .map_err(|err| internal_error(err.to_string()))?;
 
         Self::with_local_node(server, |node| {
             let unconnected: Vec<Value> = unconnected_endpoints
@@ -187,12 +188,12 @@ impl RpcServerNode {
     }
 
     fn send_raw_transaction(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        let payload = Self::expect_string_param(params, 0, "sendrawtransaction")?;
+        let payload = crate::server::rpc_helpers::expect_string_param(params, 0, "sendrawtransaction")?;
         let raw = BASE64_STANDARD
             .decode(payload.trim())
-            .map_err(|_| Self::invalid_params("Invalid transaction payload"))?;
+            .map_err(|_| invalid_params("Invalid transaction payload"))?;
         let transaction = Transaction::from_bytes(&raw)
-            .map_err(|err| Self::invalid_params(format!("Invalid transaction: {err}")))?;
+            .map_err(|err| invalid_params(format!("Invalid transaction: {err}")))?;
         let relay_result = Self::with_relay_responder(server, |sender| {
             server
                 .system()
@@ -204,19 +205,19 @@ impl RpcServerNode {
                     },
                     Some(sender),
                 )
-                .map_err(|err| Self::internal_error(err.to_string()))
+                .map_err(|err| internal_error(err.to_string()))
         })?;
         Self::map_relay_result(relay_result)
     }
 
     fn submit_block(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        let payload = Self::expect_string_param(params, 0, "submitblock")?;
+        let payload = crate::server::rpc_helpers::expect_string_param(params, 0, "submitblock")?;
         let raw = BASE64_STANDARD
             .decode(payload.trim())
-            .map_err(|_| Self::invalid_params("Invalid block payload"))?;
+            .map_err(|_| invalid_params("Invalid block payload"))?;
         let mut reader = MemoryReader::new(&raw);
         let block = <Block as Serializable>::deserialize(&mut reader)
-            .map_err(|err| Self::invalid_params(format!("Invalid block: {err}")))?;
+            .map_err(|err| invalid_params(format!("Invalid block: {err}")))?;
         let relay_result = Self::with_relay_responder(server, |sender| {
             server
                 .system()
@@ -225,7 +226,7 @@ impl RpcServerNode {
                     BlockchainCommand::InventoryBlock { block, relay: true },
                     Some(sender),
                 )
-                .map_err(|err| Self::internal_error(err.to_string()))
+                .map_err(|err| internal_error(err.to_string()))
         })?;
         Self::map_relay_result(relay_result)
     }
@@ -243,7 +244,7 @@ impl RpcServerNode {
         if let Some(local) = system
             .context()
             .local_node_service()
-            .map_err(|err| Self::internal_error(err.to_string()))?
+            .map_err(|err| internal_error(err.to_string()))?
         {
             return Ok(local);
         }
@@ -252,10 +253,10 @@ impl RpcServerNode {
         let result = if let Ok(handle) = Handle::try_current() {
             block_in_place(|| handle.block_on(fut))
         } else {
-            let runtime = Runtime::new().map_err(|err| Self::internal_error(err.to_string()))?;
+            let runtime = Runtime::new().map_err(|err| internal_error(err.to_string()))?;
             runtime.block_on(fut)
         };
-        result.map_err(|err| Self::internal_error(err.to_string()))
+        result.map_err(|err| internal_error(err.to_string()))
     }
 
     fn format_hardfork(fork: Hardfork) -> String {
@@ -264,10 +265,6 @@ impl RpcServerNode {
 
     fn format_public_key(bytes: &[u8]) -> String {
         hex::encode(bytes)
-    }
-
-    fn internal_error(message: impl Into<String>) -> RpcException {
-        RpcException::from(RpcError::internal_server_error().with_data(message.into()))
     }
 
     #[allow(dead_code)]
@@ -289,28 +286,6 @@ impl RpcServerNode {
         }
 
         None
-    }
-
-    fn expect_string_param(
-        params: &[Value],
-        index: usize,
-        method: &str,
-    ) -> Result<String, RpcException> {
-        params
-            .get(index)
-            .and_then(|value| value.as_str())
-            .map(std::string::ToString::to_string)
-            .ok_or_else(|| {
-                RpcException::from(RpcError::invalid_params().with_data(format!(
-                    "{} expects string parameter {}",
-                    method,
-                    index + 1
-                )))
-            })
-    }
-
-    fn invalid_params(message: impl Into<String>) -> RpcException {
-        RpcException::from(RpcError::invalid_params().with_data(message.into()))
     }
 
     fn map_relay_result(result: RelayResult) -> Result<Value, RpcException> {
@@ -360,7 +335,7 @@ impl RpcServerNode {
         }
         let result = rx
             .blocking_recv()
-            .map_err(|_| Self::internal_error("relay result channel closed"))?;
+            .map_err(|_| internal_error("relay result channel closed"))?;
         let _ = actor_system.stop(&responder);
         Ok(result)
     }
@@ -382,7 +357,7 @@ impl RpcServerNode {
             .as_nanos();
         let actor = actor_system
             .actor_of(props, format!("rpc-relay-{unique}"))
-            .map_err(|err| Self::internal_error(err.to_string()))?;
+            .map_err(|err| internal_error(err.to_string()))?;
         Ok((actor, rx))
     }
 }

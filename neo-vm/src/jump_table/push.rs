@@ -23,9 +23,9 @@ pub fn register_handlers(jump_table: &mut JumpTable) {
     jump_table.register(OpCode::PUSHINT256, push_int256);
     jump_table.register(OpCode::PUSHA, push_a);
     jump_table.register(OpCode::PUSHNULL, push_null);
-    jump_table.register(OpCode::PUSHDATA1, push_data1);
-    jump_table.register(OpCode::PUSHDATA2, push_data2);
-    jump_table.register(OpCode::PUSHDATA4, push_data4);
+    jump_table.register(OpCode::PUSHDATA1, push_data);
+    jump_table.register(OpCode::PUSHDATA2, push_data);
+    jump_table.register(OpCode::PUSHDATA4, push_data);
     jump_table.register(OpCode::PUSHM1, push_m1);
     jump_table.register(OpCode::PUSH0, push_0);
     jump_table.register(OpCode::PUSH1, push_1);
@@ -48,78 +48,40 @@ pub fn register_handlers(jump_table: &mut JumpTable) {
     jump_table.register(OpCode::PUSHF, push_f);
 }
 
+/// Helper to get current context or return error.
+#[inline]
+fn require_context(engine: &mut ExecutionEngine) -> VmResult<&mut crate::execution_context::ExecutionContext> {
+    engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))
+}
+
 /// Implements the PUSHINT8 operation.
 fn push_int8(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-
-    // Get the value from the instruction
     let value = instruction.read_i8_operand()?;
-
-    // Push the value onto the stack
-    context.push(StackItem::from_int(value))?;
-
-    Ok(())
+    require_context(engine)?.push(StackItem::from_int(value))
 }
 
 /// Implements the PUSHINT16 operation.
 fn push_int16(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-
-    // Get the value from the instruction
     let value = instruction.read_i16_operand()?;
-
-    // Push the value onto the stack
-    context.push(StackItem::from_int(value))?;
-
-    Ok(())
+    require_context(engine)?.push(StackItem::from_int(value))
 }
 
 /// Implements the PUSHINT32 operation.
 fn push_int32(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-
-    // Get the value from the instruction
     let value = instruction.read_i32_operand()?;
-
-    // Push the value onto the stack
-    context.push(StackItem::from_int(value))?;
-
-    Ok(())
+    require_context(engine)?.push(StackItem::from_int(value))
 }
 
 /// Implements the PUSHINT64 operation.
 fn push_int64(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-
-    // Get the value from the instruction
     let value = instruction.read_i64_operand()?;
-
-    // Push the value onto the stack
-    context.push(StackItem::from_int(value))?;
-
-    Ok(())
+    require_context(engine)?.push(StackItem::from_int(value))
 }
 
 /// Implements the PUSHINT128 operation.
 fn push_int128(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-
-    // Get the value from the instruction
     let bytes = instruction.operand();
     if bytes.len() != 16 {
         return Err(VmError::invalid_instruction_msg(format!(
@@ -127,333 +89,83 @@ fn push_int128(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
             bytes.len()
         )));
     }
-
-    // Convert the bytes to a BigInt
     let value = BigInt::from_signed_bytes_le(bytes);
-
-    // Push the value onto the stack
-    context.push(StackItem::from_int(value))?;
-
-    Ok(())
+    require_context(engine)?.push(StackItem::from_int(value))
 }
 
 /// Implements the PUSHINT256 operation.
 fn push_int256(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-
-    // Get the value from the instruction
     let bytes = instruction.operand();
     if bytes.len() != HASH_SIZE {
         return Err(VmError::invalid_instruction_msg(format!(
-            "Expected HASH_SIZE bytes for PUSHINT256, got {}",
+            "Expected {} bytes for PUSHINT256, got {}",
+            HASH_SIZE,
             bytes.len()
         )));
     }
-
-    // Convert the bytes to a BigInt
     let value = BigInt::from_signed_bytes_le(bytes);
-
-    // Push the value onto the stack
-    context.push(StackItem::from_int(value))?;
-
-    Ok(())
+    require_context(engine)?.push(StackItem::from_int(value))
 }
 
 /// Implements the PUSHA operation.
 fn push_a(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-
-    // Get the offset from the instruction
+    let context = require_context(engine)?;
     let offset = instruction.read_i32_operand()?;
-
-    // Calculate the address
     let current_ip = context.instruction_pointer();
     let address = current_ip as i32 + offset;
-
     let script_len = context.script().len();
+
     if address < 0 || address > script_len as i32 {
         return Err(VmError::invalid_operation_msg(format!(
             "Address out of bounds: {address}"
         )));
     }
 
-    // Push the address as a pointer onto the stack
     let script = context.script_arc();
-    let pointer_item = StackItem::from_pointer(script, address as usize);
-    context.push(pointer_item)?;
-
-    Ok(())
+    context.push(StackItem::from_pointer(script, address as usize))
 }
 
 /// Implements the PUSHNULL operation.
 #[inline]
 fn push_null(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    engine.push(StackItem::Null)?;
-    Ok(())
+    engine.push(StackItem::Null)
 }
 
-/// Implements the PUSHDATA1 operation.
-fn push_data1(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-
+/// Unified PUSHDATA handler for PUSHDATA1, PUSHDATA2, PUSHDATA4.
+/// The instruction already contains the parsed operand data.
+fn push_data(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let data = instruction.operand();
-
-    // Push the data onto the stack
-    context.push(StackItem::from_byte_string(data.to_vec()))?;
-
-    Ok(())
+    require_context(engine)?.push(StackItem::from_byte_string(data.to_vec()))
 }
 
-/// Implements the PUSHDATA2 operation.
-fn push_data2(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-
-    let data = instruction.operand();
-
-    // Push the data onto the stack
-    context.push(StackItem::from_byte_string(data.to_vec()))?;
-
-    Ok(())
-}
-
-/// Implements the PUSHDATA4 operation.
-fn push_data4(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-
-    let data = instruction.operand();
-
-    // Push the data onto the stack
-    context.push(StackItem::from_byte_string(data.to_vec()))?;
-
-    Ok(())
-}
-
-/// Implements the PUSHM1 operation.
-#[inline]
-fn push_m1(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    engine.push(StackItem::from_int(-1))?;
-    Ok(())
-}
-
-/// Implements the PUSH0 operation.
-#[inline]
-fn push_0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    engine.push(StackItem::from_int(0))?;
-    Ok(())
-}
-
-/// Implements the PUSH1 operation.
-#[inline]
-fn push_1(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    engine.push(StackItem::from_int(1))?;
-    Ok(())
-}
-
-/// Implements the PUSH2 operation.
-#[inline]
-fn push_2(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    engine.push(StackItem::from_int(2))?;
-    Ok(())
-}
-
-/// Implements the PUSH3 operation.
-#[inline]
-fn push_3(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    engine.push(StackItem::from_int(3))?;
-    Ok(())
-}
-
-/// Implements the PUSH4 operation.
-fn push_4(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-
-    // Push 4 onto the stack
-    context.push(StackItem::from_int(4))?;
-
-    Ok(())
-}
-
-/// Implements the PUSH5 operation.
-fn push_5(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-
-    // Push 5 onto the stack
-    context.push(StackItem::from_int(5))?;
-
-    Ok(())
-}
-
-/// Implements the PUSH6 operation.
-fn push_6(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-
-    // Push 6 onto the stack
-    context.push(StackItem::from_int(6))?;
-
-    Ok(())
-}
-
-/// Implements the PUSH7 operation.
-fn push_7(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-
-    // Push 7 onto the stack
-    context.push(StackItem::from_int(7))?;
-
-    Ok(())
-}
-
-/// Implements the PUSH8 operation.
-fn push_8(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-
-    // Push 8 onto the stack
-    context.push(StackItem::from_int(8))?;
-
-    Ok(())
-}
-
-/// Implements the PUSH9 operation.
-fn push_9(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-
-    // Push 9 onto the stack
-    context.push(StackItem::from_int(9))?;
-
-    Ok(())
-}
-
-/// Implements the PUSH10 operation.
-fn push_10(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-
-    // Push 10 onto the stack
-    context.push(StackItem::from_int(10))?;
-
-    Ok(())
-}
-
-/// Implements the PUSH11 operation.
-fn push_11(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-
-    // Push 11 onto the stack
-    context.push(StackItem::from_int(11))?;
-
-    Ok(())
-}
-
-/// Implements the PUSH12 operation.
-fn push_12(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-
-    // Push 12 onto the stack
-    context.push(StackItem::from_int(12))?;
-
-    Ok(())
-}
-
-/// Implements the PUSH13 operation.
-fn push_13(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-
-    // Push 13 onto the stack
-    context.push(StackItem::from_int(13))?;
-
-    Ok(())
-}
-
-/// Implements the PUSH14 operation.
-fn push_14(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-
-    // Push 14 onto the stack
-    context.push(StackItem::from_int(14))?;
-
-    Ok(())
-}
-
-/// Implements the PUSH15 operation.
-fn push_15(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-
-    // Push 15 onto the stack
-    context.push(StackItem::from_int(15))?;
-
-    Ok(())
-}
-
-/// Implements the PUSH16 operation.
-fn push_16(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-
-    // Push 16 onto the stack
-    context.push(StackItem::from_int(16))?;
-
-    Ok(())
-}
+// Small integer push operations - all use the same pattern
+#[inline] fn push_m1(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> { engine.push(StackItem::from_int(-1)) }
+#[inline] fn push_0(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> { engine.push(StackItem::from_int(0)) }
+#[inline] fn push_1(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> { engine.push(StackItem::from_int(1)) }
+#[inline] fn push_2(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> { engine.push(StackItem::from_int(2)) }
+#[inline] fn push_3(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> { engine.push(StackItem::from_int(3)) }
+#[inline] fn push_4(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> { engine.push(StackItem::from_int(4)) }
+#[inline] fn push_5(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> { engine.push(StackItem::from_int(5)) }
+#[inline] fn push_6(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> { engine.push(StackItem::from_int(6)) }
+#[inline] fn push_7(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> { engine.push(StackItem::from_int(7)) }
+#[inline] fn push_8(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> { engine.push(StackItem::from_int(8)) }
+#[inline] fn push_9(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> { engine.push(StackItem::from_int(9)) }
+#[inline] fn push_10(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> { engine.push(StackItem::from_int(10)) }
+#[inline] fn push_11(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> { engine.push(StackItem::from_int(11)) }
+#[inline] fn push_12(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> { engine.push(StackItem::from_int(12)) }
+#[inline] fn push_13(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> { engine.push(StackItem::from_int(13)) }
+#[inline] fn push_14(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> { engine.push(StackItem::from_int(14)) }
+#[inline] fn push_15(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> { engine.push(StackItem::from_int(15)) }
+#[inline] fn push_16(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> { engine.push(StackItem::from_int(16)) }
 
 /// Implements the PUSHT operation.
 #[inline]
 fn push_t(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    engine.push(StackItem::from_bool(true))?;
-    Ok(())
+    engine.push(StackItem::from_bool(true))
 }
 
 /// Implements the PUSHF operation.
 #[inline]
 fn push_f(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    engine.push(StackItem::from_bool(false))?;
-    Ok(())
+    engine.push(StackItem::from_bool(false))
 }

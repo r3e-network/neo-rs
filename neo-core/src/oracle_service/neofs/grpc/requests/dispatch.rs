@@ -1,5 +1,3 @@
-#[allow(unused)]
-use super::super::super::NeoFsRange;
 use super::super::super::{NeoFsAuth, NeoFsCommand, NeoFsRequest, OracleNeoFsProtocol};
 use super::super::auth::build_neofs_grpc_address;
 use super::super::client::neofs_grpc_client;

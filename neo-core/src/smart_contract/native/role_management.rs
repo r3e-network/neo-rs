@@ -5,8 +5,7 @@
 
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::hardfork::Hardfork;
-#[allow(unused)]
-use crate::persistence::{DataCache, IReadOnlyStoreGeneric, SeekDirection};
+use crate::persistence::{DataCache, SeekDirection};
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::call_flags::CallFlags;

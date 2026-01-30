@@ -5,6 +5,7 @@ use crate::server::model::block_hash_or_index::BlockHashOrIndex as RpcBlockHashO
 use crate::server::model::contract_name_or_hash_or_id::ContractNameOrHashOrId;
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
+use crate::server::rpc_helpers::internal_error;
 use crate::server::rpc_method_attribute::RpcMethodDescriptor;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
@@ -67,7 +68,7 @@ impl RpcServerBlockchain {
     fn get_best_block_hash(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {
         let store = server.system().store_cache();
         let ledger = LedgerContract::new();
-        let hash = ledger.current_hash(&store).map_err(Self::internal_error)?;
+        let hash = ledger.current_hash(&store).map_err(internal_error)?;
         Ok(Value::String(hash.to_string()))
     }
 
@@ -76,7 +77,7 @@ impl RpcServerBlockchain {
         let ledger = LedgerContract::new();
         let count = ledger
             .current_index(&store)
-            .map_err(Self::internal_error)?
+            .map_err(internal_error)?
             .saturating_add(1);
         Ok(json!(count))
     }
@@ -93,7 +94,7 @@ impl RpcServerBlockchain {
         let base_height = if let Some(index) = cache_height {
             index
         } else {
-            ledger.current_index(&store).map_err(Self::internal_error)?
+            ledger.current_index(&store).map_err(internal_error)?
         };
         Ok(json!(base_height.saturating_add(1)))
     }
@@ -102,14 +103,14 @@ impl RpcServerBlockchain {
         let height = Self::expect_u32_param(params, 0, "getblockhash")?;
         let store = server.system().store_cache();
         let ledger = LedgerContract::new();
-        let current = ledger.current_index(&store).map_err(Self::internal_error)?;
+        let current = ledger.current_index(&store).map_err(internal_error)?;
         if height > current {
             return Err(RpcException::from(RpcError::unknown_height()));
         }
 
         let hash = ledger
             .get_block_hash_by_index(&store, height)
-            .map_err(Self::internal_error)?
+            .map_err(internal_error)?
             .ok_or_else(|| RpcException::from(RpcError::unknown_block()))?;
         Ok(Value::String(hash.to_string()))
     }
@@ -121,10 +122,10 @@ impl RpcServerBlockchain {
         let ledger = LedgerContract::new();
         let block = Self::fetch_payload_block(&ledger, &store, &identifier)?;
         if verbose {
-            let current_index = ledger.current_index(&store).map_err(Self::internal_error)?;
+            let current_index = ledger.current_index(&store).map_err(internal_error)?;
             let next_hash = ledger
                 .get_block_hash_by_index(&store, block.header.index().saturating_add(1))
-                .map_err(Self::internal_error)?;
+                .map_err(internal_error)?;
             return Ok(Self::block_to_json(
                 server,
                 &block,
@@ -145,10 +146,10 @@ impl RpcServerBlockchain {
         let block = Self::fetch_payload_block(&ledger, &store, &identifier)?;
         let header = &block.header;
         if verbose {
-            let current_index = ledger.current_index(&store).map_err(Self::internal_error)?;
+            let current_index = ledger.current_index(&store).map_err(internal_error)?;
             let next_hash = ledger
                 .get_block_hash_by_index(&store, header.index().saturating_add(1))
-                .map_err(Self::internal_error)?;
+                .map_err(internal_error)?;
             return Ok(Self::header_to_json(
                 server,
                 header,
@@ -165,14 +166,14 @@ impl RpcServerBlockchain {
         let height = Self::expect_u32_param(params, 0, "getblocksysfee")?;
         let store = server.system().store_cache();
         let ledger = LedgerContract::new();
-        let current = ledger.current_index(&store).map_err(Self::internal_error)?;
+        let current = ledger.current_index(&store).map_err(internal_error)?;
         if height > current {
             return Err(RpcException::from(RpcError::unknown_height()));
         }
 
         let block = ledger
             .get_block(&store, HashOrIndex::Index(height))
-            .map_err(Self::internal_error)?
+            .map_err(internal_error)?
             .ok_or_else(|| RpcException::from(RpcError::unknown_block()))?;
 
         let system_fee: i64 = block
@@ -219,7 +220,7 @@ impl RpcServerBlockchain {
 
         let store = server.system().store_cache();
         let ledger = LedgerContract::new();
-        let height = ledger.current_index(&store).map_err(Self::internal_error)?;
+        let height = ledger.current_index(&store).map_err(internal_error)?;
         let verified_hashes: Vec<Value> = verified
             .iter()
             .map(|tx| Value::String(tx.hash().to_string()))
@@ -255,7 +256,7 @@ impl RpcServerBlockchain {
         let ledger = LedgerContract::new();
         let state = ledger
             .get_transaction_state(&store, &hash)
-            .map_err(Self::internal_error)?;
+            .map_err(internal_error)?;
 
         // Convert Arc<Transaction> to Transaction for uniform handling
         let transaction = tx_from_pool
@@ -271,13 +272,13 @@ impl RpcServerBlockchain {
         let mut json = tx.to_json(system.settings());
         if let (Value::Object(ref mut obj), Some(state)) = (&mut json, state) {
             let block_index = state.block_index();
-            let current_index = ledger.current_index(&store).map_err(Self::internal_error)?;
+            let current_index = ledger.current_index(&store).map_err(internal_error)?;
             let confirmations = current_index.saturating_sub(block_index).saturating_add(1);
             obj.insert("confirmations".to_string(), json!(confirmations));
 
             if let Some(block_hash) = ledger
                 .get_block_hash_by_index(&store, block_index)
-                .map_err(Self::internal_error)?
+                .map_err(internal_error)?
             {
                 obj.insert(
                     "blockhash".to_string(),
@@ -286,7 +287,7 @@ impl RpcServerBlockchain {
 
                 if let Some(block) = ledger
                     .get_block(&store, HashOrIndex::Index(block_index))
-                    .map_err(Self::internal_error)?
+                    .map_err(internal_error)?
                 {
                     obj.insert("blocktime".to_string(), json!(block.header.timestamp));
                 }
@@ -401,7 +402,7 @@ impl RpcServerBlockchain {
         for contract in registry.contracts() {
             if let Some(state) =
                 ContractManagement::get_contract_from_store_cache(&store, &contract.hash())
-                    .map_err(Self::internal_error)?
+                    .map_err(internal_error)?
             {
                 contracts.push(contract_state_to_json(&state));
             }
@@ -424,12 +425,12 @@ impl RpcServerBlockchain {
                 settings.validators_count as usize,
                 settings,
             )
-            .map_err(Self::internal_error)?;
+            .map_err(internal_error)?;
         let mut result = Vec::with_capacity(validators.len());
         for point in validators {
             let votes = neo
                 .get_candidate_vote_snapshot(&snapshot, &point)
-                .map_err(Self::internal_error)?;
+                .map_err(internal_error)?;
             let votes_value = votes.to_i64().ok_or_else(|| {
                 RpcException::from(
                     RpcError::internal_server_error().with_data("candidate vote out of range"),
@@ -483,7 +484,7 @@ impl RpcServerBlockchain {
         let ledger = LedgerContract::new();
         let state = ledger
             .get_transaction_state(&store, &hash)
-            .map_err(Self::internal_error)?
+            .map_err(internal_error)?
             .ok_or_else(|| RpcException::from(RpcError::unknown_transaction()))?;
         Ok(json!(state.block_index()))
     }
@@ -568,7 +569,7 @@ impl RpcServerBlockchain {
 
         let ledger_block = ledger
             .get_block(store, selector)
-            .map_err(Self::internal_error)?
+            .map_err(internal_error)?
             .ok_or_else(|| RpcException::from(RpcError::unknown_block()))?;
         Ok(Self::convert_ledger_block(&ledger_block))
     }
@@ -651,7 +652,7 @@ impl RpcServerBlockchain {
 
     fn serialize_block(block: &Block) -> Result<Vec<u8>, RpcException> {
         let mut writer = BinaryWriter::new();
-        block.serialize(&mut writer).map_err(Self::internal_error)?;
+        block.serialize(&mut writer).map_err(internal_error)?;
         Ok(writer.into_bytes())
     }
 
@@ -659,13 +660,13 @@ impl RpcServerBlockchain {
         let mut writer = BinaryWriter::new();
         header
             .serialize(&mut writer)
-            .map_err(Self::internal_error)?;
+            .map_err(internal_error)?;
         Ok(writer.into_bytes())
     }
 
     fn serialize_transaction(tx: &Transaction) -> Result<Vec<u8>, RpcException> {
         let mut writer = BinaryWriter::new();
-        tx.serialize(&mut writer).map_err(Self::internal_error)?;
+        tx.serialize(&mut writer).map_err(internal_error)?;
         Ok(writer.into_bytes())
     }
 
@@ -784,16 +785,16 @@ impl RpcServerBlockchain {
         match identifier {
             ContractNameOrHashOrId::Id(id) => {
                 ContractManagement::get_contract_by_id_from_store_cache(store, *id)
-                    .map_err(Self::internal_error)
+                    .map_err(internal_error)
             }
             ContractNameOrHashOrId::Hash(hash) => {
                 ContractManagement::get_contract_from_store_cache(store, hash)
-                    .map_err(Self::internal_error)
+                    .map_err(internal_error)
             }
             ContractNameOrHashOrId::Name(name) => {
                 let hash = Self::contract_name_to_hash(name)?;
                 ContractManagement::get_contract_from_store_cache(store, &hash)
-                    .map_err(Self::internal_error)
+                    .map_err(internal_error)
             }
         }
     }
@@ -817,7 +818,7 @@ impl RpcServerBlockchain {
     ) -> Result<i32, RpcException> {
         if let ContractNameOrHashOrId::Id(id) = identifier {
             let state = ContractManagement::get_contract_by_id_from_store_cache(store, *id)
-                .map_err(Self::internal_error)?;
+                .map_err(internal_error)?;
             state
                 .map(|contract| contract.id)
                 .ok_or_else(|| RpcException::from(RpcError::unknown_contract()))
@@ -826,10 +827,6 @@ impl RpcServerBlockchain {
                 .ok_or_else(|| RpcException::from(RpcError::unknown_contract()))?;
             Ok(contract.id)
         }
-    }
-
-    fn internal_error(err: impl ToString) -> RpcException {
-        RpcException::from(RpcError::internal_server_error().with_data(err.to_string()))
     }
 }
 

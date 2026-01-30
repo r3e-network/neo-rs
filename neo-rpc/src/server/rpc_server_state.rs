@@ -2,6 +2,7 @@
 
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
+use crate::server::rpc_helpers::internal_error;
 use crate::server::rpc_method_attribute::RpcMethodDescriptor;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
@@ -41,7 +42,7 @@ impl RpcServerState {
         let lookup = server
             .system()
             .state_store()
-            .map_err(Self::internal_error)?;
+            .map_err(internal_error)?;
         lookup.ok_or_else(|| {
             RpcException::from(
                 RpcError::internal_server_error()
@@ -337,7 +338,7 @@ impl RpcServerState {
         let mut item = StorageItem::new();
         item.deserialize_from_bytes(&value);
         let contract = ContractManagement::deserialize_contract_state(&item.get_value())
-            .map_err(Self::internal_error)?;
+            .map_err(internal_error)?;
         Ok(contract.id)
     }
 
@@ -365,10 +366,6 @@ impl RpcServerState {
         };
         obj.insert("witnesses".to_string(), Value::Array(witnesses));
         Value::Object(obj)
-    }
-
-    fn internal_error<T: ToString>(err: T) -> RpcException {
-        RpcException::from(RpcError::internal_server_error().with_data(err.to_string()))
     }
 }
 

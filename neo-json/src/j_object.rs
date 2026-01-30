@@ -61,7 +61,7 @@ impl JObject {
     /// Returns `true` when the object has no properties.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.properties.count() == 0
     }
 
     /// Returns the values in insertion order.

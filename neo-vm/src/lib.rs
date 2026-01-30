@@ -348,7 +348,6 @@ pub mod vm_unhandled_exception;
 // ============================================================================
 
 #[cfg(test)]
-#[allow(dead_code)]
 pub mod tests;
 
 // ============================================================================
@@ -388,7 +387,6 @@ pub use vm_unhandled_exception::VMUnhandledException;
 
 /// Test I/O implementation for unit tests.
 #[cfg(test)]
-#[allow(dead_code)]
 pub use crate::tests::real_io as io;
 
 /// Production I/O implementation.

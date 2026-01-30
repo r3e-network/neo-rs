@@ -1,5 +1,6 @@
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
+use crate::server::rpc_helpers::{internal_error, invalid_params};
 use crate::server::rpc_method_attribute::RpcMethodDescriptor;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
@@ -627,14 +628,6 @@ fn emit_contract_call_with_arg(
         .emit_syscall("System.Contract.Call")
         .map_err(|err| internal_error(err.to_string()))?;
     Ok(())
-}
-
-fn invalid_params(message: impl Into<String>) -> RpcException {
-    RpcException::from(RpcError::invalid_params().with_data(message.into()))
-}
-
-fn internal_error(message: impl Into<String>) -> RpcException {
-    RpcException::from(RpcError::internal_server_error().with_data(message.into()))
 }
 
 fn current_time_millis() -> u64 {
