@@ -393,7 +393,12 @@ pub fn ret(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
     );
     if rvcount != 0 {
         let eval_stack_len = context.evaluation_stack().len();
-        let mut items = Vec::new();
+        let capacity = if rvcount == -1 {
+            eval_stack_len
+        } else {
+            (rvcount as usize).min(eval_stack_len)
+        };
+        let mut items = Vec::with_capacity(capacity);
 
         if rvcount == -1 {
             for i in 0..eval_stack_len {

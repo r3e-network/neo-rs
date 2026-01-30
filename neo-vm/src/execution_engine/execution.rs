@@ -45,10 +45,16 @@ impl ExecutionEngine {
             let rvcount = context.rvcount();
 
             // Collect items to transfer before removing the context
-            let mut items = Vec::new();
+            let eval_stack_len = context.evaluation_stack().len();
+            let capacity = if rvcount == -1 {
+                eval_stack_len
+            } else if rvcount > 0 {
+                (rvcount as usize).min(eval_stack_len)
+            } else {
+                0
+            };
+            let mut items = Vec::with_capacity(capacity);
             if rvcount != 0 {
-                let eval_stack_len = context.evaluation_stack().len();
-
                 if rvcount == -1 {
                     // Return all items
                     for i in 0..eval_stack_len {
