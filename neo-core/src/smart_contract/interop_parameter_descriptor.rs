@@ -7,24 +7,43 @@ use num_traits::ToPrimitive;
 /// Type of parameter for interop methods
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum InteropParameterType {
+    /// A generic stack item.
     StackItem,
+    /// A pointer type.
     Pointer,
+    /// An array type.
     Array,
+    /// An interop interface type.
     InteropInterface,
+    /// A boolean value.
     Boolean,
+    /// A signed byte (-128 to 127).
     SByte,
+    /// An unsigned byte (0 to 255).
     Byte,
+    /// A signed 16-bit integer.
     Short,
+    /// An unsigned 16-bit integer.
     UShort,
+    /// A signed 32-bit integer.
     Int,
+    /// An unsigned 32-bit integer.
     UInt,
+    /// A signed 64-bit integer.
     Long,
+    /// An unsigned 64-bit integer.
     ULong,
+    /// An arbitrary precision integer.
     BigInteger,
+    /// A byte array.
     ByteArray,
+    /// A UTF-8 string.
     String,
+    /// A 160-bit hash (20 bytes).
     UInt160,
+    /// A 256-bit hash (32 bytes).
     UInt256,
+    /// An elliptic curve point.
     ECPoint,
 }
 
@@ -167,11 +186,18 @@ impl InteropParameterDescriptor {
 /// Converted value from stack item
 #[derive(Clone, Debug)]
 pub enum ConvertedValue {
+    /// A generic stack item.
     StackItem(StackItem),
+    /// A boolean value.
     Boolean(bool),
+    /// A 32-bit integer.
     Int(i32),
+    /// A UTF-8 string.
     String(String),
+    /// A byte array.
     ByteArray(Vec<u8>),
+    /// A 160-bit hash.
     UInt160(crate::UInt160),
+    /// A 256-bit hash.
     UInt256(crate::UInt256),
 }

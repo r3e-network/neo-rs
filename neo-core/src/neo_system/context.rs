@@ -68,7 +68,9 @@ pub struct NeoSystemContext {
     pub(crate) service_registry: Arc<ServiceRegistry>,
     /// Registered callbacks for service additions.
     pub service_added_handlers: Arc<RwLock<Vec<Arc<dyn IServiceAddedHandler + Send + Sync>>>>,
+    /// Registered callbacks for wallet changes.
     pub wallet_changed_handlers: Arc<RwLock<Vec<Arc<dyn IWalletChangedHandler + Send + Sync>>>>,
+    /// Currently active wallet, if any.
     pub current_wallet: Arc<RwLock<Option<Arc<dyn Wallet>>>>,
     /// Store provider used to instantiate persistence backends.
     pub store_provider: Arc<dyn IStoreProvider>,

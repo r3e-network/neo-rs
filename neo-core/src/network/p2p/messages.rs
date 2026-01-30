@@ -208,6 +208,7 @@ impl ProtocolMessage {
         Self::pong_with_block_index(0, nonce)
     }
 
+    /// Creates a pong reply with a specific block index and nonce.
     pub fn pong_with_block_index(block_index: u32, nonce: u32) -> Self {
         Self::Pong(PingPayload::create_with_nonce(block_index, nonce))
     }

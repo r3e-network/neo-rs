@@ -405,22 +405,26 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Rate limiter timing issue - needs investigation"]
     fn test_rate_limiter_blocks_after_burst() {
+        // Use a very low rate to ensure blocking happens quickly
         let config = RateLimitConfig {
-            max_rps: 5,
-            burst: 5,
+            max_rps: 1,
+            burst: 2,
         };
         let limiter = GovernorRateLimiter::new(config);
         let ip: IpAddr = "127.0.0.1".parse().unwrap();
 
-        // Exhaust burst
-        for _ in 0..5 {
-            assert!(limiter.check(ip).is_allowed());
-        }
+        // First two requests should be allowed (burst=2)
+        assert!(limiter.check(ip).is_allowed());
+        assert!(limiter.check(ip).is_allowed());
 
-        // Next request should be blocked
-        assert!(limiter.check(ip).is_blocked());
+        // Third request should be blocked (burst exhausted, rate is 1/sec)
+        let result = limiter.check(ip);
+        assert!(
+            result.is_blocked(),
+            "Expected blocked after burst exhausted, got {:?}",
+            result
+        );
     }
 
     #[test]

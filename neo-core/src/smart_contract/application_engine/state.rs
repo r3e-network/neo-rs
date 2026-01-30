@@ -106,38 +106,46 @@ impl ApplicationEngine {
         Ok(())
     }
 
+    /// Returns the current VM execution state.
     pub fn state(&self) -> VMState {
         self.vm_engine.engine().state()
     }
 
+    /// Returns the fault exception message as a string slice, if any.
     pub fn fault_exception_string(&self) -> Option<&str> {
         self.fault_exception.as_deref()
     }
 
+    /// Sets the fault exception message.
     pub fn set_fault_exception<S: Into<String>>(&mut self, message: S) {
         self.fault_exception = Some(message.into());
     }
 
+    /// Clears the fault exception message.
     pub fn clear_fault_exception(&mut self) {
         self.fault_exception = None;
     }
 
+    /// Stores a typed state value in the engine's state map.
     pub fn set_state<T: Any + Send + Sync>(&mut self, value: T) {
         self.states.insert(TypeId::of::<T>(), Box::new(value));
     }
 
+    /// Retrieves a reference to a typed state value.
     pub fn get_state<T: Any + Send + Sync>(&self) -> Option<&T> {
         self.states
             .get(&TypeId::of::<T>())
             .and_then(|boxed| boxed.downcast_ref::<T>())
     }
 
+    /// Retrieves a mutable reference to a typed state value.
     pub fn get_state_mut<T: Any + Send + Sync>(&mut self) -> Option<&mut T> {
         self.states
             .get_mut(&TypeId::of::<T>())
             .and_then(|boxed| boxed.downcast_mut::<T>())
     }
 
+    /// Removes and returns a typed state value.
     pub fn take_state<T: Any + Send + Sync>(&mut self) -> Option<T> {
         self.states
             .remove(&TypeId::of::<T>())
@@ -150,6 +158,7 @@ impl ApplicationEngine {
         self.vm_engine.engine_mut().set_state(state);
     }
 
+    /// Records the VM state for a transaction in the ledger state tracker.
     pub fn record_transaction_vm_state(&mut self, hash: &UInt256, vm_state: VMState) -> bool {
         if let Some(states) = self.get_state_mut::<LedgerTransactionStates>() {
             states.mark_vm_state(hash, vm_state)
@@ -158,6 +167,7 @@ impl ApplicationEngine {
         }
     }
 
+    /// Pushes a stack item onto the evaluation stack.
     pub fn push(&mut self, item: StackItem) -> StdResult<()> {
         self.vm_engine
             .engine_mut()
@@ -165,6 +175,7 @@ impl ApplicationEngine {
             .map_err(|err| err.to_string())
     }
 
+    /// Pops a stack item from the evaluation stack.
     pub fn pop(&mut self) -> StdResult<StackItem> {
         self.vm_engine
             .engine_mut()
@@ -172,6 +183,7 @@ impl ApplicationEngine {
             .map_err(|err| err.to_string())
     }
 
+    /// Peeks at a stack item at the given index without removing it.
     pub fn peek(&self, index: usize) -> StdResult<&StackItem> {
         self.vm_engine
             .engine()
@@ -179,22 +191,27 @@ impl ApplicationEngine {
             .map_err(|err| err.to_string())
     }
 
+    /// Returns the invocation stack of execution contexts.
     pub fn invocation_stack(&self) -> &[ExecutionContext] {
         self.vm_engine.engine().invocation_stack()
     }
 
+    /// Returns the script hash of the calling contract.
     pub fn get_calling_script_hash(&self) -> Option<UInt160> {
         self.calling_script_hash
     }
 
+    /// Returns the script hash of the currently executing contract.
     pub fn current_script_hash(&self) -> Option<UInt160> {
         self.current_script_hash
     }
 
+    /// Returns the script hash of the entry point contract.
     pub fn entry_script_hash(&self) -> Option<UInt160> {
         self.entry_script_hash
     }
 
+    /// Checks if the current execution context has the required call flags.
     pub fn has_call_flags(&self, required: CallFlags) -> bool {
         match self.current_execution_state() {
             Ok(state_arc) => state_arc.lock().call_flags.contains(required),
@@ -202,12 +219,14 @@ impl ApplicationEngine {
         }
     }
 
+    /// Returns the call flags of the current execution context.
     pub fn get_current_call_flags(&self) -> VmResult<CallFlags> {
         let state_arc = self.current_execution_state()?;
         let call_flags = state_arc.lock().call_flags;
         Ok(call_flags)
     }
 
+    /// Returns the execution state of the current context.
     pub fn current_execution_state(&self) -> VmResult<Arc<Mutex<ExecutionContextState>>> {
         let context = self
             .vm_engine
@@ -217,6 +236,7 @@ impl ApplicationEngine {
         Ok(context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new))
     }
 
+    /// Returns the index of the block currently being persisted.
     pub fn current_block_index(&self) -> u32 {
         if let Some(block) = self.persisting_block.as_ref() {
             return block.header.index;
@@ -227,6 +247,7 @@ impl ApplicationEngine {
             .unwrap_or(0)
     }
 
+    /// Returns the timestamp of the block currently being persisted.
     pub fn current_block_timestamp(&self) -> Result<u64, String> {
         self.persisting_block
             .as_ref()
@@ -239,23 +260,28 @@ impl ApplicationEngine {
         self.persisting_block.as_ref()
     }
 
+    /// Checks if a hardfork is enabled at the current block height.
     pub fn is_hardfork_enabled(&self, hardfork: Hardfork) -> bool {
         self.protocol_settings
             .is_hardfork_enabled(hardfork, self.current_block_index())
     }
 
+    /// Returns the trigger type for this execution.
     pub fn trigger_type(&self) -> TriggerType {
         self.trigger
     }
 
+    /// Returns the trigger type (alias for trigger_type).
     pub fn trigger(&self) -> TriggerType {
         self.trigger
     }
 
+    /// Returns the total GAS consumed during execution.
     pub fn gas_consumed(&self) -> i64 {
         (self.gas_consumed + FEE_FACTOR - 1) / FEE_FACTOR
     }
 
+    /// Returns the total fee consumed during execution.
     pub fn fee_consumed(&self) -> i64 {
         (self.fee_consumed + FEE_FACTOR - 1) / FEE_FACTOR
     }

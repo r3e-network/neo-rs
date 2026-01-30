@@ -505,17 +505,15 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Timestamp validation timing issue - pre-existing issue"]
     fn validate_timestamp_bounds_rejects_far_future() {
+        // Use a timestamp far enough in the future that timing drift won't matter
         let current_time = TimeProvider::current().utc_now_timestamp_millis() as u64;
-        let future_timestamp = current_time + MAX_TIMESTAMP_DRIFT_MS + 1000;
-        assert_eq!(
-            validate_timestamp_bounds(future_timestamp),
-            Err(BlockValidationError::TimestampTooFarInFuture {
-                timestamp: future_timestamp,
-                current: current_time,
-            })
-        );
+        let future_timestamp = current_time + MAX_TIMESTAMP_DRIFT_MS + 10_000; // 10 seconds buffer
+        let result = validate_timestamp_bounds(future_timestamp);
+        assert!(matches!(
+            result,
+            Err(BlockValidationError::TimestampTooFarInFuture { .. })
+        ));
     }
 
     #[test]

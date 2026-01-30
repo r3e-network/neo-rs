@@ -43,21 +43,33 @@ const PREFIX_NFT_STATE: u8 = 8;
 const PREFIX_NFT_OWNER_UNIQUE_ID_INDEX: u8 = 21;
 const PREFIX_NFT_ASSET_ID_UNIQUE_ID_INDEX: u8 = 23;
 
+/// Type of token (fungible or non-fungible).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenType {
+    /// Fungible token (divisible, interchangeable).
     Fungible = 0,
+    /// Non-fungible token (unique, indivisible).
     NonFungible = 1,
 }
 
+/// State of a registered token.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TokenState {
+    /// Type of the token.
     pub token_type: TokenType,
+    /// Owner address of the token contract.
     pub owner: UInt160,
+    /// Human-readable name of the token.
     pub name: String,
+    /// Short symbol for the token.
     pub symbol: String,
+    /// Number of decimal places.
     pub decimals: u8,
+    /// Current total supply.
     pub total_supply: BigInt,
+    /// Maximum allowed supply.
     pub max_supply: BigInt,
+    /// Address allowed to mint new tokens.
     pub mintable_address: Option<UInt160>,
 }
 
