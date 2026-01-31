@@ -474,8 +474,8 @@ mod tests {
         assert!(result.is_err());
         match result.unwrap_err() {
             TeeError::MrEnclaveMismatch { expected, actual } => {
-                assert_eq!(expected, hex::encode(&wrong_mrenclave));
-                assert_eq!(actual, hex::encode(&report.mrenclave));
+                assert_eq!(expected, hex::encode(wrong_mrenclave));
+                assert_eq!(actual, hex::encode(report.mrenclave));
             }
             _ => panic!("Expected MrEnclaveMismatch error"),
         }
@@ -493,8 +493,8 @@ mod tests {
         assert!(result.is_err());
         match result.unwrap_err() {
             TeeError::MrSignerMismatch { expected, actual } => {
-                assert_eq!(expected, hex::encode(&wrong_mrsigner));
-                assert_eq!(actual, hex::encode(&report.mrsigner));
+                assert_eq!(expected, hex::encode(wrong_mrsigner));
+                assert_eq!(actual, hex::encode(report.mrsigner));
             }
             _ => panic!("Expected MrSignerMismatch error"),
         }

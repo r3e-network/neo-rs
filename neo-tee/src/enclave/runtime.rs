@@ -414,12 +414,12 @@ impl TeeEnclave {
 
         let mut hasher = Sha256::new();
         hasher.update(b"neo-tee-sgx-simulation-key-v2");
-        hasher.update(&machine_id);
+        hasher.update(machine_id);
         hasher.update(self.config.sealed_data_path.to_string_lossy().as_bytes());
 
         // Add configuration parameters to key derivation
-        hasher.update(&(self.config.heap_size_mb as u64).to_le_bytes());
-        hasher.update(&(self.config.tcs_count as u64).to_le_bytes());
+        hasher.update((self.config.heap_size_mb as u64).to_le_bytes());
+        hasher.update((self.config.tcs_count as u64).to_le_bytes());
 
         let result = hasher.finalize();
 
@@ -441,16 +441,16 @@ impl TeeEnclave {
         // Step 1: Extract PRK from machine_id
         let mut hasher = Sha256::new();
         hasher.update(b"neo-tee-simulation-extract");
-        hasher.update(&machine_id);
+        hasher.update(machine_id);
         let prk = hasher.finalize();
 
         // Step 2: Expand to get final key
         let mut hasher = Sha256::new();
-        hasher.update(&prk);
+        hasher.update(prk);
         hasher.update(b"neo-tee-simulation-key-v2");
         hasher.update(self.config.sealed_data_path.to_string_lossy().as_bytes());
-        hasher.update(&(self.config.heap_size_mb as u64).to_le_bytes());
-        hasher.update(&(self.config.tcs_count as u64).to_le_bytes());
+        hasher.update((self.config.heap_size_mb as u64).to_le_bytes());
+        hasher.update((self.config.tcs_count as u64).to_le_bytes());
         let result = hasher.finalize();
 
         let mut sealing_key = [0u8; 32];
@@ -496,7 +496,7 @@ impl TeeEnclave {
             Self::generate_and_save_machine_id(&id_file)
         };
 
-        hasher.update(&machine_id);
+        hasher.update(machine_id);
         hasher.finalize().to_vec()
     }
 
