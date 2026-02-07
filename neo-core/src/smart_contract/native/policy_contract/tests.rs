@@ -373,7 +373,10 @@ fn check_set_fee_per_byte() {
     let ret = engine
         .call_native_contract(policy.hash(), "getFeePerByte", &[])
         .expect("getFeePerByte");
-    assert_eq!(bytes_to_i64(&ret), PolicyContract::DEFAULT_FEE_PER_BYTE as i64);
+    assert_eq!(
+        bytes_to_i64(&ret),
+        PolicyContract::DEFAULT_FEE_PER_BYTE as i64
+    );
 
     // With signature.
     let committee = committee_address(&settings, snapshot.as_ref());
@@ -414,7 +417,10 @@ fn check_set_base_exec_fee() {
     let ret = engine
         .call_native_contract(policy.hash(), "getExecFeeFactor", &[])
         .expect("getExecFeeFactor");
-    assert_eq!(bytes_to_i64(&ret), PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64);
+    assert_eq!(
+        bytes_to_i64(&ret),
+        PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64
+    );
 
     // With signature, wrong value.
     let committee = committee_address(&settings, snapshot.as_ref());
@@ -434,7 +440,10 @@ fn check_set_base_exec_fee() {
     let ret = engine
         .call_native_contract(policy.hash(), "getExecFeeFactor", &[])
         .expect("getExecFeeFactor");
-    assert_eq!(bytes_to_i64(&ret), PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64);
+    assert_eq!(
+        bytes_to_i64(&ret),
+        PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64
+    );
 
     // Proper set (scaled by fee factor).
     let ret = engine
@@ -564,7 +573,10 @@ fn check_set_storage_price() {
     let ret = engine
         .call_native_contract(policy.hash(), "getStoragePrice", &[])
         .expect("getStoragePrice");
-    assert_eq!(bytes_to_i64(&ret), PolicyContract::DEFAULT_STORAGE_PRICE as i64);
+    assert_eq!(
+        bytes_to_i64(&ret),
+        PolicyContract::DEFAULT_STORAGE_PRICE as i64
+    );
 
     // With signature, wrong value.
     let committee = committee_address(&settings, snapshot.as_ref());
@@ -584,7 +596,10 @@ fn check_set_storage_price() {
     let ret = engine
         .call_native_contract(policy.hash(), "getStoragePrice", &[])
         .expect("getStoragePrice");
-    assert_eq!(bytes_to_i64(&ret), PolicyContract::DEFAULT_STORAGE_PRICE as i64);
+    assert_eq!(
+        bytes_to_i64(&ret),
+        PolicyContract::DEFAULT_STORAGE_PRICE as i64
+    );
 
     // Proper set.
     let ret = engine
