@@ -2,7 +2,7 @@
 //! Covers all test cases from UT_Node.cs, UT_Trie.cs, and UT_Cache.cs
 
 #[cfg(test)]
-mod tests {
+mod mpt_tests {
     use crate::mpt_trie::{MptCache, MptResult, MptStoreSnapshot, Node, NodeType, Trie};
     use neo_io::{BinaryWriter, MemoryReader, Serializable};
     use neo_primitives::UInt256;
@@ -89,7 +89,7 @@ mod tests {
     fn test_hash_serialize() {
         let node = prepare_mpt_node1();
         let data = node.to_array().unwrap();
-        assert!(data.len() > 0);
+        assert!(!data.is_empty());
 
         let deserialized = deserialize_node(&data);
         assert_eq!(deserialized.node_type, NodeType::HashNode);
@@ -112,7 +112,7 @@ mod tests {
     fn test_leaf_serialize() {
         let node = prepare_mpt_node2();
         let data = node.to_array().unwrap();
-        assert!(data.len() > 0);
+        assert!(!data.is_empty());
 
         let deserialized = deserialize_node(&data);
         assert_eq!(deserialized.node_type, NodeType::LeafNode);
@@ -131,7 +131,7 @@ mod tests {
         let leaf = prepare_mpt_node2();
         let ext = Node::new_extension(vec![0x01, 0x02], leaf).unwrap();
         let data = ext.to_array().unwrap();
-        assert!(data.len() > 0);
+        assert!(!data.is_empty());
 
         let deserialized = deserialize_node(&data);
         assert_eq!(deserialized.node_type, NodeType::ExtensionNode);
@@ -151,7 +151,7 @@ mod tests {
     fn test_branch_serialize() {
         let branch = prepare_mpt_node3();
         let data = branch.to_array().unwrap();
-        assert!(data.len() > 0);
+        assert!(!data.is_empty());
 
         let deserialized = deserialize_node(&data);
         assert_eq!(deserialized.node_type, NodeType::BranchNode);
@@ -530,7 +530,7 @@ mod tests {
         trie.commit().unwrap();
 
         let data = store.get_data();
-        assert!(data.len() > 0);
+        assert!(!data.is_empty());
     }
 
     #[test]
@@ -796,6 +796,6 @@ mod tests {
         cache.commit().unwrap();
 
         let data = store.get_data();
-        assert!(data.len() > 0);
+        assert!(!data.is_empty());
     }
 }

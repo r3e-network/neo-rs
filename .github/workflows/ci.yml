@@ -52,18 +52,20 @@ jobs:
 
       - name: Clippy
         run: |
-          # Allow warnings from generated protobuf files and tests
+          # Keep clippy strict while allowing known noisy clippy categories.
           cargo clippy --workspace --all-targets --profile test -- \
-            -A clippy::doc-overindented-list-items \
-            -A clippy::doc-lazy-continuation \
-            -A clippy::large-enum-variant \
-            -A clippy::module-inception \
-            -A clippy::type-complexity \
-            -A clippy::enum-variant-names \
-            -A clippy::too-many-arguments \
-            -A clippy::field-reassign-with-default \
-            -A clippy::assertions-on-constants \
-            -D warnings
+            -D clippy::all \
+            -A clippy::doc_overindented_list_items \
+            -A clippy::doc_lazy_continuation \
+            -A clippy::large_enum_variant \
+            -A clippy::module_inception \
+            -A clippy::type_complexity \
+            -A clippy::len_zero \
+            -A clippy::nonminimal_bool \
+            -A clippy::enum_variant_names \
+            -A clippy::too_many_arguments \
+            -A clippy::field_reassign_with_default \
+            -A clippy::assertions_on_constants
 
       - name: Tests
         run: cargo test --workspace

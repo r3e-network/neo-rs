@@ -74,7 +74,7 @@ async fn test_message_deduplication() {
         eprintln!("First message processing failed: {:?}", e);
     }
 
-    let result2 = service.process_message(payload.clone());
+    let _result2 = service.process_message(payload.clone());
 
     drop(service);
     let mut event_count = 0;

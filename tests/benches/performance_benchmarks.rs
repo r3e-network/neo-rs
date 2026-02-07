@@ -7,9 +7,9 @@
 //! - Chain state operations
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use neo_core::state::{StateChanges, StateTrieManager, StorageItem, StorageKey};
 use neo_crypto::Crypto;
 use neo_primitives::{UInt160, UInt256};
-use neo_state::{StateChanges, StateTrieManager, StorageItem, StorageKey};
 
 // ============================================================================
 // Cryptographic Benchmarks
@@ -69,7 +69,9 @@ fn bench_state_trie_single_insert(c: &mut Criterion) {
                 changes.storage.insert(key, Some(item));
                 (trie, changes)
             },
-            |(mut trie, changes)| black_box(trie.apply_changes(1, &changes).unwrap()),
+            |(mut trie, changes): (StateTrieManager, StateChanges)| {
+                black_box(trie.apply_changes(1, &changes).unwrap())
+            },
         )
     });
 }
@@ -92,7 +94,9 @@ fn bench_state_trie_batch_insert(c: &mut Criterion) {
                     }
                     (trie, changes)
                 },
-                |(mut trie, changes)| black_box(trie.apply_changes(1, &changes).unwrap()),
+                |(mut trie, changes): (StateTrieManager, StateChanges)| {
+                    black_box(trie.apply_changes(1, &changes).unwrap())
+                },
             )
         });
     }
@@ -103,7 +107,7 @@ fn bench_state_trie_incremental_blocks(c: &mut Criterion) {
     c.bench_function("state_trie/10_blocks_10_changes_each", |b| {
         b.iter_with_setup(
             || StateTrieManager::new(false),
-            |mut trie| {
+            |mut trie: StateTrieManager| {
                 for block in 1u32..=10 {
                     let mut changes = StateChanges::new();
                     for i in 0..10 {

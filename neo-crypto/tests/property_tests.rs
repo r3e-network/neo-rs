@@ -6,8 +6,8 @@
 //! - Various hash algorithms
 
 use neo_crypto::{
-    crypto_utils::{Base58, Ed25519Crypto, Hex, Secp256k1Crypto, Secp256r1Crypto},
-    Crypto, HashAlgorithm,
+    crypto_utils::{Base58, Ed25519Crypto, Hex, Secp256r1Crypto},
+    Crypto,
 };
 use proptest::prelude::*;
 

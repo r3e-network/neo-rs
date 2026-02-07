@@ -4,9 +4,7 @@
 //! cryptographic primitives used in the Neo blockchain.
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use neo_crypto::{
-    Crypto, ECCurve, ECDsa, Ed25519Crypto, HashAlgorithm, NeoHash, Secp256k1Crypto, Secp256r1Crypto,
-};
+use neo_crypto::{Crypto, Ed25519Crypto, Secp256k1Crypto, Secp256r1Crypto};
 use rand::{rngs::OsRng, RngCore};
 
 // Generate random data of specified size

@@ -13,7 +13,7 @@ impl OracleService {
     pub(in super::super) async fn process_url(
         &self,
         url: &str,
-        oracle_key: Option<&KeyPair>,
+        _oracle_key: Option<&KeyPair>,
     ) -> (OracleResponseCode, String) {
         // Validate URL length
         if url.len() > MAX_URL_LENGTH {
@@ -38,7 +38,7 @@ impl OracleService {
         if url.len() >= 6 && url[..6].eq_ignore_ascii_case("neofs:") {
             #[cfg(feature = "oracle")]
             {
-                return self.neofs.process(&self.settings, url, oracle_key).await;
+                return self.neofs.process(&self.settings, url, _oracle_key).await;
             }
             #[cfg(not(feature = "oracle"))]
             {
@@ -92,7 +92,7 @@ impl OracleService {
         if scheme.eq_ignore_ascii_case("neofs") {
             #[cfg(feature = "oracle")]
             {
-                return self.neofs.process(&self.settings, url, oracle_key).await;
+                return self.neofs.process(&self.settings, url, _oracle_key).await;
             }
             #[cfg(not(feature = "oracle"))]
             {

@@ -110,14 +110,14 @@ impl PolicyContract {
     const CPU_FEE: i64 = 1 << 15;
 
     /// The default execution fee factor.
-    pub const DEFAULT_EXEC_FEE_FACTOR: u32 = 1;
+    pub const DEFAULT_EXEC_FEE_FACTOR: u32 = 30;
 
     /// The default storage price.
-    pub const DEFAULT_STORAGE_PRICE: u32 = 1_000;
+    pub const DEFAULT_STORAGE_PRICE: u32 = 100_000;
 
     /// The default network fee per byte of transactions.
     /// In the unit of datoshi, 1 datoshi = 1e-8 GAS.
-    pub const DEFAULT_FEE_PER_BYTE: u32 = 20;
+    pub const DEFAULT_FEE_PER_BYTE: u32 = 1_000;
 
     /// The default fee for attributes.
     pub const DEFAULT_ATTRIBUTE_FEE: u32 = 0;

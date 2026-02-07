@@ -348,6 +348,7 @@ pub mod vm_unhandled_exception;
 // ============================================================================
 
 #[cfg(test)]
+/// Internal test modules for the VM implementation.
 pub mod tests;
 
 // ============================================================================

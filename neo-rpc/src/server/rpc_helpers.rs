@@ -117,7 +117,7 @@ pub fn expect_hash_param(
                 .decode(&text)
                 .ok()
                 .and_then(|bytes| UInt256::from_bytes(&bytes).ok())
-                .ok_or_else(|| ())
+                .ok_or(())
         })
         .map_err(|_| {
             invalid_params(format!(

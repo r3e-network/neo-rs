@@ -13,7 +13,7 @@ use neo_vm::op_code::OpCode;
 // Creates a test account with NEO and GAS balances
 fn create_test_account(neo_balance: u64, gas_balance: u64) -> (UInt160, AccountState) {
     let hash = UInt160::from([0x01u8; 20]);
-    let account = AccountState::with_balances(hash, neo_balance, gas_balance as u64);
+    let account = AccountState::with_balances(hash, neo_balance, gas_balance);
     (hash, account)
 }
 

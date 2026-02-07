@@ -831,7 +831,7 @@ mod tests {
             return;
         }
 
-        let settings = neo_config::ProtocolSettings::default_settings();
+        let settings = neo_core::ProtocolSettings::default_settings();
         let address = WalletHelper::to_address(&UInt160::zero(), settings.address_version);
         let (contract_hash, contract_state_response) = load_contract_state_case("GasToken");
         let symbol_b64 = general_purpose::STANDARD.encode("GAS".as_bytes());

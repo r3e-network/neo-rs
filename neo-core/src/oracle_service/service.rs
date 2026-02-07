@@ -218,6 +218,7 @@ impl OracleService {
         }
 
         // Additional SSRF validation (sync version for pre-check)
+        #[cfg(feature = "oracle")]
         if let Err(reason) = super::https::security::validate_url_for_ssrf(url) {
             tracing::warn!(
                 target: "neo::oracle",
