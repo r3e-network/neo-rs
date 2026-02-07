@@ -154,7 +154,7 @@ proptest! {
         let uint_b = UInt160::from_bytes(&b).unwrap();
 
         if uint_a < uint_b {
-            prop_assert!(!(uint_b < uint_a));
+            prop_assert!(uint_b >= uint_a);
         }
     }
 
@@ -165,7 +165,7 @@ proptest! {
         let uint_b = UInt256::from_bytes(&b).unwrap();
 
         if uint_a < uint_b {
-            prop_assert!(!(uint_b < uint_a));
+            prop_assert!(uint_b >= uint_a);
         }
     }
 
