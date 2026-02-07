@@ -7,7 +7,6 @@ use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::hardfork::Hardfork;
 use crate::neo_config::ADDRESS_SIZE;
 use crate::persistence::i_read_only_store::IReadOnlyStoreGeneric;
-use crate::persistence::seek_direction::SeekDirection;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::call_flags::CallFlags;
@@ -50,14 +49,14 @@ impl Default for WhitelistedContract {
 }
 
 impl IInteroperable for WhitelistedContract {
-    fn from_stack_item(&mut self, stack_item: StackItem) -> std::result::Result<(), Error> {
+    fn from_stack_item(&mut self, stack_item: StackItem) {
         let StackItem::Struct(struct_item) = stack_item else {
-            return Ok(());
+            return;
         };
 
         let items = struct_item.items();
         if items.len() < 4 {
-            return Ok(());
+            return;
         }
 
         if let Ok(bytes) = items[0].as_bytes() {
@@ -83,16 +82,15 @@ impl IInteroperable for WhitelistedContract {
                 self.fixed_fee = fee;
             }
         }
-        Ok(())
     }
 
-    fn to_stack_item(&self) -> std::result::Result<StackItem, Error> {
-        Ok(StackItem::from_struct(vec![
+    fn to_stack_item(&self) -> StackItem {
+        StackItem::from_struct(vec![
             StackItem::from_byte_string(self.contract_hash.to_bytes()),
             StackItem::from_byte_string(self.method.as_bytes().to_vec()),
             StackItem::from_int(self.arg_count as i64),
             StackItem::from_int(self.fixed_fee),
-        ]))
+        ])
     }
 
     fn clone_box(&self) -> Box<dyn IInteroperable> {
