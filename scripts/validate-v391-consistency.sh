@@ -16,6 +16,8 @@ Environment overrides:
   NEO_EXECUTION_SPECS_DIR   Path to neo-execution-specs checkout (default: /tmp/neo-execution-specs)
   NEO_EXECUTION_SPECS_REPO  Git URL used when clone/update is needed
   REPORT_ROOT               Output directory for reports (default: <repo>/reports/compat-v391)
+  MAINNET_CSHARP_CANDIDATES / MAINNET_NEOGO_CANDIDATES (space-separated RPC candidate URLs)
+  TESTNET_CSHARP_CANDIDATES / TESTNET_NEOGO_CANDIDATES (space-separated RPC candidate URLs)
 USAGE
 }
 
@@ -572,8 +574,8 @@ if [[ "$NETWORK" == "all" || "$NETWORK" == "mainnet" ]]; then
     mainnet \
     860833102 \
     15000 \
-    "http://seed1.neo.org:10332 http://seed2.neo.org:10332 http://seed3.neo.org:10332 http://seed4.neo.org:10332 http://seed5.neo.org:10332" \
-    "http://rpc3.n3.nspcc.ru:10332 http://rpc2.n3.nspcc.ru:10332 http://rpc1.n3.nspcc.ru:10332" \
+    "${MAINNET_CSHARP_CANDIDATES:-http://seed1.neo.org:10332 http://seed2.neo.org:10332 http://seed3.neo.org:10332 http://seed4.neo.org:10332 http://seed5.neo.org:10332}" \
+    "${MAINNET_NEOGO_CANDIDATES:-http://rpc3.n3.nspcc.ru:10332 https://rpc3.n3.nspcc.ru:10331 http://rpc2.n3.nspcc.ru:10332 https://rpc2.n3.nspcc.ru:10331 http://rpc1.n3.nspcc.ru:10332 https://rpc1.n3.nspcc.ru:10331}" \
     40332
 fi
 
@@ -582,8 +584,8 @@ if [[ "$NETWORK" == "all" || "$NETWORK" == "testnet" ]]; then
     testnet \
     894710606 \
     3000 \
-    "http://seed1t5.neo.org:20332 http://seed2t5.neo.org:20332 http://seed3t5.neo.org:20332 http://seed4t5.neo.org:20332 http://seed5t5.neo.org:20332" \
-    "http://rpc.t5.n3.nspcc.ru:20332 http://rpc1.t5.n3.nspcc.ru:20332 http://rpc2.t5.n3.nspcc.ru:20332 http://rpc3.t5.n3.nspcc.ru:20332" \
+    "${TESTNET_CSHARP_CANDIDATES:-http://seed1t5.neo.org:20332 http://seed2t5.neo.org:20332 http://seed3t5.neo.org:20332 http://seed4t5.neo.org:20332 http://seed5t5.neo.org:20332}" \
+    "${TESTNET_NEOGO_CANDIDATES:-http://rpc.t5.n3.nspcc.ru:20332 https://rpc.t5.n3.nspcc.ru:20331 http://rpc1.t5.n3.nspcc.ru:20332 http://rpc2.t5.n3.nspcc.ru:20332 http://rpc3.t5.n3.nspcc.ru:20332}" \
     41332
 fi
 
