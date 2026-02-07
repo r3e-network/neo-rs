@@ -806,7 +806,14 @@ impl StdLib {
             return "0".to_string();
         }
         if value.sign() != Sign::Minus {
-            return value.to_str_radix(16);
+            let hex = value.to_str_radix(16);
+            let requires_sign_padding = hex.len() % 2 == 0
+                && matches!(hex.as_bytes().first(), Some(b'8'..=b'f'));
+            return if requires_sign_padding {
+                format!("0{hex}")
+            } else {
+                hex
+            };
         }
 
         let abs_value = (-value).to_biguint().unwrap_or_default();
@@ -1188,9 +1195,15 @@ mod tests {
         assert_eq!(string, "f");
 
         let string = "ff".as_bytes().to_vec();
-        let result = stdlib.atoi(&[string, base]).unwrap();
+        let result = stdlib.atoi(&[string, base.clone()]).unwrap();
         let number = BigInt::from_signed_bytes_le(&result);
         assert_eq!(number, BigInt::from(-1));
+
+        // Positive values with sign bit set should include a leading 0 nibble.
+        let number = 255i64.to_le_bytes().to_vec();
+        let result = stdlib.itoa(&[number, base]).unwrap();
+        let string = String::from_utf8(result).unwrap();
+        assert_eq!(string, "0ff");
     }
 
     #[test]

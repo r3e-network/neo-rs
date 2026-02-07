@@ -41,13 +41,13 @@ fn test_whitelist_stack_item_roundtrip() {
         fixed_fee,
     };
 
-    let item = wl.to_stack_item();
+    let item = wl.to_stack_item().unwrap();
     let bytes = BinarySerializer::serialize(&item, &ExecutionEngineLimits::default()).unwrap();
     let decoded_item =
         BinarySerializer::deserialize(&bytes, &ExecutionEngineLimits::default(), None).unwrap();
 
     let mut decoded = WhitelistedContract::default();
-    decoded.from_stack_item(decoded_item);
+    decoded.from_stack_item(decoded_item).unwrap();
 
     assert_eq!(wl, decoded);
 }
@@ -373,7 +373,7 @@ fn check_set_fee_per_byte() {
     let ret = engine
         .call_native_contract(policy.hash(), "getFeePerByte", &[])
         .expect("getFeePerByte");
-    assert_eq!(bytes_to_i64(&ret), 1000);
+    assert_eq!(bytes_to_i64(&ret), PolicyContract::DEFAULT_FEE_PER_BYTE as i64);
 
     // With signature.
     let committee = committee_address(&settings, snapshot.as_ref());
@@ -414,7 +414,7 @@ fn check_set_base_exec_fee() {
     let ret = engine
         .call_native_contract(policy.hash(), "getExecFeeFactor", &[])
         .expect("getExecFeeFactor");
-    assert_eq!(bytes_to_i64(&ret), 30);
+    assert_eq!(bytes_to_i64(&ret), PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64);
 
     // With signature, wrong value.
     let committee = committee_address(&settings, snapshot.as_ref());
@@ -434,7 +434,7 @@ fn check_set_base_exec_fee() {
     let ret = engine
         .call_native_contract(policy.hash(), "getExecFeeFactor", &[])
         .expect("getExecFeeFactor");
-    assert_eq!(bytes_to_i64(&ret), 30);
+    assert_eq!(bytes_to_i64(&ret), PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64);
 
     // Proper set (scaled by fee factor).
     let ret = engine
@@ -506,7 +506,7 @@ fn check_recover_funds_complete_flow() {
     );
     let gas_state = AccountState::with_balance(gas_balance.clone());
     let gas_bytes = BinarySerializer::serialize(
-        &gas_state.to_stack_item(),
+        &gas_state.to_stack_item().expect("to_stack_item"),
         &ExecutionEngineLimits::default(),
     )
     .expect("serialize account state");
@@ -564,7 +564,7 @@ fn check_set_storage_price() {
     let ret = engine
         .call_native_contract(policy.hash(), "getStoragePrice", &[])
         .expect("getStoragePrice");
-    assert_eq!(bytes_to_i64(&ret), 100_000);
+    assert_eq!(bytes_to_i64(&ret), PolicyContract::DEFAULT_STORAGE_PRICE as i64);
 
     // With signature, wrong value.
     let committee = committee_address(&settings, snapshot.as_ref());
@@ -584,7 +584,7 @@ fn check_set_storage_price() {
     let ret = engine
         .call_native_contract(policy.hash(), "getStoragePrice", &[])
         .expect("getStoragePrice");
-    assert_eq!(bytes_to_i64(&ret), 100_000);
+    assert_eq!(bytes_to_i64(&ret), PolicyContract::DEFAULT_STORAGE_PRICE as i64);
 
     // Proper set.
     let ret = engine
@@ -1008,7 +1008,10 @@ fn test_white_list_fee() {
         .as_int()
         .expect("int");
     assert!(result.is_zero());
-    assert_eq!(engine.fee_consumed(), 2_028_330);
+    assert_eq!(
+        engine.fee_consumed(),
+        2_028_330 * PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64 / 30
+    );
     assert_eq!(
         policy
             .clean_whitelist(
@@ -1061,7 +1064,10 @@ fn test_white_list_fee() {
         .as_int()
         .expect("int");
     assert!(result.is_zero());
-    assert_eq!(engine.fee_consumed(), 1_045_260);
+    assert_eq!(
+        engine.fee_consumed(),
+        1_045_260 * PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64 / 30
+    );
 
     // Clean whitelist.
     let mut engine = make_engine(

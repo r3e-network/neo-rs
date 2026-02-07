@@ -151,7 +151,7 @@ fn cat(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
                     max_item_size
                 )));
             }
-            StackItem::from_byte_string(a)
+            StackItem::from_buffer(a)
         }
         (StackItem::Buffer(a), StackItem::Buffer(b)) => {
             a.extend_from_slice(&b.data());
@@ -175,7 +175,7 @@ fn cat(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
                     max_item_size
                 )));
             }
-            StackItem::from_byte_string(a)
+            StackItem::from_buffer(a)
         }
         (StackItem::Buffer(a), StackItem::ByteString(b)) => {
             a.extend_from_slice(&b);

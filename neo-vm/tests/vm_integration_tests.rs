@@ -393,3 +393,38 @@ fn test_vm_instruction_handling() {
 
     println!("✅ VM instruction handling test passed");
 }
+
+#[test]
+fn test_vm_cat_pushdata_returns_buffer() {
+    let script_bytes = vec![
+        OpCode::PUSHDATA1 as u8,
+        0x02,
+        0x01,
+        0x02,
+        OpCode::PUSHDATA1 as u8,
+        0x02,
+        0x03,
+        0x04,
+        OpCode::CAT as u8,
+        OpCode::RET as u8,
+    ];
+
+    let script = Script::new_relaxed(script_bytes);
+    let mut engine = ExecutionEngine::new(None);
+
+    engine.load_script(script, -1, 0).unwrap();
+    engine.execute();
+
+    assert_eq!(engine.state(), VMState::HALT, "VM should halt");
+
+    let result_stack = engine.result_stack();
+    assert_eq!(result_stack.len(), 1, "Should have one result");
+
+    let result = result_stack.peek(0).unwrap();
+    match result {
+        neo_vm::stack_item::StackItem::Buffer(buffer) => {
+            assert_eq!(buffer.data(), vec![0x01, 0x02, 0x03, 0x04]);
+        }
+        other => panic!("CAT result should be Buffer, got {other:?}"),
+    }
+}

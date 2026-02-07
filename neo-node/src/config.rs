@@ -651,9 +651,8 @@ impl NodeConfig {
             settings.seed_list = self.p2p.seed_nodes.clone();
         }
 
-        if let Some(seconds) = self.blockchain.block_time {
-            let millis = seconds.saturating_mul(1_000);
-            settings.milliseconds_per_block = u32::try_from(millis).unwrap_or(u32::MAX);
+        if let Some(milliseconds) = self.blockchain.block_time {
+            settings.milliseconds_per_block = u32::try_from(milliseconds).unwrap_or(u32::MAX);
         }
 
         settings
@@ -1545,6 +1544,15 @@ mod tests {
             msg.contains("unknown field") || msg.contains("extra"),
             "unexpected error message: {msg}"
         );
+    }
+
+    #[test]
+    fn blockchain_block_time_is_milliseconds() {
+        let mut config = NodeConfig::default();
+        config.blockchain.block_time = Some(15_000);
+
+        let settings = config.protocol_settings();
+        assert_eq!(settings.milliseconds_per_block, 15_000);
     }
 
     #[test]
