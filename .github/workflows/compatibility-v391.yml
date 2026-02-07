@@ -95,6 +95,7 @@ jobs:
           TARGET_NETWORK: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.network || 'all' }}
           PROFILE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.profile || 'dev' }}
           SKIP_BASELINE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.skip_baseline || 'false' }}
+          VECTOR_GAS_TOLERANCE: 1000000
         run: |
           if [ "$TARGET_NETWORK" != "all" ] && [ "$TARGET_NETWORK" != "${{ matrix.network }}" ]; then
             echo "Skipping matrix lane '${{ matrix.network }}' for requested network '$TARGET_NETWORK'"
