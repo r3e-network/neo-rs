@@ -50,7 +50,6 @@ on:
 
 jobs:
   consistency:
-    if: github.event_name != 'workflow_dispatch' || github.event.inputs.network == 'all' || github.event.inputs.network == matrix.network
     name: ${{ matrix.network }} consistency
     runs-on: ubuntu-latest
     timeout-minutes: 120
@@ -93,9 +92,15 @@ jobs:
 
       - name: Run Neo v3.9.1 consistency validation
         env:
+          TARGET_NETWORK: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.network || 'all' }}
           PROFILE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.profile || 'dev' }}
           SKIP_BASELINE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.skip_baseline || 'false' }}
         run: |
+          if [ "$TARGET_NETWORK" != "all" ] && [ "$TARGET_NETWORK" != "${{ matrix.network }}" ]; then
+            echo "Skipping matrix lane '${{ matrix.network }}' for requested network '$TARGET_NETWORK'"
+            exit 0
+          fi
+
           args=(--network "${{ matrix.network }}" --profile "$PROFILE")
           if [ "$SKIP_BASELINE" = "true" ]; then
             args+=(--skip-baseline)
