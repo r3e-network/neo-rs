@@ -84,6 +84,9 @@ impl HardforkManager {
         hardforks.insert(Hardfork::HfCockatrice, 5450000);
         hardforks.insert(Hardfork::HfDomovoi, 5570000);
         hardforks.insert(Hardfork::HfEchidna, 7300000);
+        hardforks.insert(Hardfork::HfFaun, 8800000);
+        // HfGorgon is defined but not activated on MainNet yet.
+        // See: https://github.com/neo-project/neo/blob/master/src/Neo/config.mainnet.json
         Self { hardforks }
     }
 
@@ -95,6 +98,9 @@ impl HardforkManager {
         hardforks.insert(Hardfork::HfCockatrice, 3967000);
         hardforks.insert(Hardfork::HfDomovoi, 4144000);
         hardforks.insert(Hardfork::HfEchidna, 5870000);
+        hardforks.insert(Hardfork::HfFaun, 12960000);
+        // HfGorgon is defined but not activated on TestNet yet.
+        // See: https://github.com/neo-project/neo/blob/master/src/Neo/config.testnet.json
         Self { hardforks }
     }
 
@@ -189,6 +195,8 @@ mod tests {
         assert!(!manager.is_enabled(Hardfork::HfBasilisk, 4119999));
         assert!(manager.is_enabled(Hardfork::HfEchidna, 7300000));
         assert!(!manager.is_enabled(Hardfork::HfEchidna, 7299999));
+        assert!(manager.is_enabled(Hardfork::HfFaun, 8800000));
+        assert!(!manager.is_enabled(Hardfork::HfFaun, 8799999));
     }
     #[test]
     fn test_testnet_hardforks() {
@@ -199,6 +207,8 @@ mod tests {
         assert!(!manager.is_enabled(Hardfork::HfBasilisk, 2679999));
         assert!(manager.is_enabled(Hardfork::HfEchidna, 5870000));
         assert!(!manager.is_enabled(Hardfork::HfEchidna, 5869999));
+        assert!(manager.is_enabled(Hardfork::HfFaun, 12960000));
+        assert!(!manager.is_enabled(Hardfork::HfFaun, 12959999));
     }
     #[test]
     fn test_global_hardfork_manager() {
