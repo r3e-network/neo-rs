@@ -329,6 +329,26 @@ For faster iterations you can target a specific crate or test:
 cargo test -p neo-vm --test vm_integration_tests
 ```
 
+## Neo v3.9.1 Consistency Validation
+
+Run continuous protocol/vector compatibility checks locally:
+
+```bash
+bash scripts/validate-v391-consistency.sh --network all
+```
+
+Key checks performed:
+
+- Local `neo-node` `getversion.protocol` parity vs live C# (`Neo:3.9.1`) and NeoGo endpoints.
+- Full execution-spec vector run against local `neo-node` for MainNet/TestNet.
+- Optional C# vs NeoGo baseline compatibility to detect reference endpoint drift.
+
+CI automation:
+
+- Workflow: `.github/workflows/compatibility-v391.yml`
+- Triggers: schedule every 12 hours, `workflow_dispatch`, and PR/push affecting core protocol paths.
+- Artifacts: `reports/compat-v391/**` with protocol snapshots, logs, and vector reports.
+
 ## Linting & formatting
 
 ```bash

@@ -1,0 +1,113 @@
+name: Neo v3.9.1 Consistency
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - '.github/workflows/compatibility-v391.yml'
+      - 'scripts/validate-v391-consistency.sh'
+      - 'neo-core/**'
+      - 'neo-node/**'
+      - 'neo-rpc/**'
+      - 'neo-vm/**'
+      - 'neo-p2p/**'
+  pull_request:
+    branches: [main, master]
+    paths:
+      - '.github/workflows/compatibility-v391.yml'
+      - 'scripts/validate-v391-consistency.sh'
+      - 'neo-core/**'
+      - 'neo-node/**'
+      - 'neo-rpc/**'
+      - 'neo-vm/**'
+      - 'neo-p2p/**'
+  schedule:
+    - cron: '0 */12 * * *'
+  workflow_dispatch:
+    inputs:
+      network:
+        description: 'Network to validate'
+        required: false
+        type: choice
+        options:
+          - all
+          - mainnet
+          - testnet
+        default: all
+      skip_baseline:
+        description: 'Skip C# vs NeoGo baseline check'
+        required: false
+        type: boolean
+        default: false
+      profile:
+        description: 'Cargo profile'
+        required: false
+        type: choice
+        options:
+          - dev
+          - release
+        default: dev
+
+jobs:
+  consistency:
+    if: github.event_name != 'workflow_dispatch' || github.event.inputs.network == 'all' || github.event.inputs.network == matrix.network
+    name: ${{ matrix.network }} consistency
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        network: [mainnet, testnet]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            clang \
+            cmake \
+            curl \
+            jq \
+            libbz2-dev \
+            libclang-dev \
+            liblz4-dev \
+            librocksdb-dev \
+            libsnappy-dev \
+            libssl-dev \
+            libzstd-dev \
+            pkg-config \
+            python3 \
+            python3-pip \
+            python3-venv \
+            zlib1g-dev
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run Neo v3.9.1 consistency validation
+        env:
+          PROFILE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.profile || 'dev' }}
+          SKIP_BASELINE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.skip_baseline || 'false' }}
+        run: |
+          args=(--network "${{ matrix.network }}" --profile "$PROFILE")
+          if [ "$SKIP_BASELINE" = "true" ]; then
+            args+=(--skip-baseline)
+          fi
+
+          bash scripts/validate-v391-consistency.sh "${args[@]}"
+
+      - name: Upload consistency artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v391-consistency-${{ matrix.network }}
+          path: |
+            reports/compat-v391/**
+          retention-days: 14
