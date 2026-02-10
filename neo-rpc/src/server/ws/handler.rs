@@ -198,7 +198,7 @@ fn handle_subscribe(
         .map(|params| {
             params
                 .iter()
-                .filter_map(|s| WsEventType::parse(s))
+                .filter_map(|s| s.parse::<WsEventType>().ok())
                 .collect()
         })
         .unwrap_or_default();
@@ -261,7 +261,7 @@ fn handle_unsubscribe(
         if !params.is_empty() {
             let event_types: Vec<WsEventType> = params
                 .iter()
-                .filter_map(|s| WsEventType::parse(s))
+                .filter_map(|s| s.parse::<WsEventType>().ok())
                 .collect();
 
             if !event_types.is_empty() {

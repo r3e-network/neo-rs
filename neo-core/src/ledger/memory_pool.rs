@@ -132,7 +132,7 @@ impl MemoryPool {
     }
 
     /// Returns the highest-priority verified transactions, sorted in descending order by fee.
-    /// Uses Arc<Transaction> to avoid expensive cloning of transaction data.
+    /// Uses `Arc<Transaction>` to avoid expensive cloning of transaction data.
     pub fn get_sorted_verified_transactions(&self, limit: usize) -> Vec<Arc<Transaction>> {
         if limit == 0 {
             return Vec::new();
@@ -421,7 +421,7 @@ impl MemoryPool {
     }
 
     /// Attempts to fetch a transaction from either the verified or unverified sets.
-    /// Returns Arc<Transaction> to avoid expensive cloning.
+    /// Returns `Arc<Transaction>` to avoid expensive cloning.
     pub fn try_get(&self, hash: &UInt256) -> Option<Arc<Transaction>> {
         if let Some(item) = self.verified_transactions.get(hash) {
             return Some(Arc::clone(&item.transaction));
@@ -432,7 +432,7 @@ impl MemoryPool {
     }
 
     /// Returns the highest priority verified transactions, up to `limit`.
-    /// Uses Arc<Transaction> to avoid expensive cloning.
+    /// Uses `Arc<Transaction>` to avoid expensive cloning.
     pub fn sorted_verified_transactions(&self, limit: usize) -> Vec<Arc<Transaction>> {
         if limit == 0 {
             return Vec::new();
@@ -450,7 +450,7 @@ impl MemoryPool {
     }
 
     /// Returns all verified transactions without any ordering guarantees.
-    /// Uses Arc<Transaction> to avoid expensive cloning.
+    /// Uses `Arc<Transaction>` to avoid expensive cloning.
     pub fn verified_transactions_vec(&self) -> Vec<Arc<Transaction>> {
         let mut result = Vec::with_capacity(self.verified_transactions.len());
         result.extend(
@@ -462,7 +462,7 @@ impl MemoryPool {
     }
 
     /// Returns all unverified transactions currently tracked by the mempool.
-    /// Uses Arc<Transaction> to avoid expensive cloning.
+    /// Uses `Arc<Transaction>` to avoid expensive cloning.
     pub fn unverified_transactions_vec(&self) -> Vec<Arc<Transaction>> {
         let mut result = Vec::with_capacity(self.unverified_transactions.len());
         result.extend(
@@ -474,7 +474,7 @@ impl MemoryPool {
     }
 
     /// Returns all transactions (verified followed by unverified) currently tracked by the mempool.
-    /// Uses Arc<Transaction> to avoid expensive cloning.
+    /// Uses `Arc<Transaction>` to avoid expensive cloning.
     pub fn all_transactions_vec(&self) -> Vec<Arc<Transaction>> {
         let total_len = self.verified_transactions.len() + self.unverified_transactions.len();
         let mut transactions = Vec::with_capacity(total_len);
@@ -493,7 +493,7 @@ impl MemoryPool {
 
     /// Returns verified and unverified transactions as separate vectors,
     /// sorted in descending priority order.
-    /// Uses Arc<Transaction> to avoid expensive cloning.
+    /// Uses `Arc<Transaction>` to avoid expensive cloning.
     pub fn verified_and_unverified_transactions(
         &self,
     ) -> (Vec<Arc<Transaction>>, Vec<Arc<Transaction>>) {
@@ -519,7 +519,7 @@ impl MemoryPool {
     }
 
     /// Returns an iterator over verified transactions in descending priority order.
-    /// Uses Arc<Transaction> to avoid expensive cloning.
+    /// Uses `Arc<Transaction>` to avoid expensive cloning.
     pub fn iter_verified(&self) -> impl Iterator<Item = Arc<Transaction>> + '_ {
         self.verified_sorted
             .iter()
@@ -528,7 +528,7 @@ impl MemoryPool {
     }
 
     /// Returns an iterator over unverified transactions in descending priority order.
-    /// Uses Arc<Transaction> to avoid expensive cloning.
+    /// Uses `Arc<Transaction>` to avoid expensive cloning.
     pub fn iter_unverified(&self) -> impl Iterator<Item = Arc<Transaction>> + '_ {
         self.unverified_sorted
             .iter()
@@ -903,9 +903,8 @@ impl MemoryPool {
 
             if from_verified {
                 if let Some(removed_item) = self.try_remove_verified(hash) {
-                    self.verification_context
-                        .remove_transaction(&removed_item.transaction);
-                    // Extract Transaction from Arc if possible, otherwise clone
+                    // Note: verification_context.remove_transaction is already
+                    // called inside try_remove_verified — do NOT call it again.
                     removed.push(
                         Arc::try_unwrap(removed_item.transaction)
                             .unwrap_or_else(|arc| (*arc).clone()),
@@ -1011,7 +1010,7 @@ mod tests {
         let key = StorageKey::create_with_uint160(GasToken::new().id(), PREFIX_ACCOUNT, &account);
         let state = AccountState::with_balance(BigInt::from(amount));
         let bytes =
-            BinarySerializer::serialize(&state.to_stack_item(), &ExecutionEngineLimits::default())
+            BinarySerializer::serialize(&state.to_stack_item().expect("to_stack_item"), &ExecutionEngineLimits::default())
                 .expect("serialize account state");
         snapshot.update(key, StorageItem::from_bytes(bytes));
     }

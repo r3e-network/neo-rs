@@ -30,7 +30,7 @@ fn bench_memory_store_read_write(c: &mut Criterion) {
 
     // Benchmark write operations
     for size in [32usize, 256, 1024, 4096].iter() {
-        let data = random_bytes(*size);
+        let _data = random_bytes(*size);
         group.throughput(Throughput::Bytes(*size as u64));
         group.bench_with_input(BenchmarkId::new("write", size), size, |b, &size| {
             b.iter(|| {

@@ -171,7 +171,11 @@ impl PolicyContract {
                     })?;
 
                     let mut whitelist = WhitelistedContract::default();
-                    whitelist.from_stack_item(stack_item);
+                    whitelist.from_stack_item(stack_item).map_err(|e| {
+                        Error::native_contract(format!(
+                            "Failed to deserialize WhitelistedContract: {e}"
+                        ))
+                    })?;
                     return Ok(Some(whitelist.fixed_fee));
                 }
             }

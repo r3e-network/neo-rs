@@ -186,7 +186,7 @@ impl ProtocolSettings {
                 "seed5t5.neo.org:20333".to_string(),
             ],
             milliseconds_per_block: 15_000,
-            max_transactions_per_block: 5_000,
+            max_transactions_per_block: 512,
             max_block_size: constants::MAX_BLOCK_SIZE as u32,
             max_valid_until_block_increment: 5_760,
             memory_pool_max_transactions: 50_000,

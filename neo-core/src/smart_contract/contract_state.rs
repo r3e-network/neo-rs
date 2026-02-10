@@ -4,7 +4,7 @@
 //! of a deployed smart contract in the Neo blockchain.
 
 use crate::cryptography::Crypto;
-use crate::error::CoreResult;
+use crate::error::{CoreError, CoreResult};
 use crate::neo_config::ADDRESS_SIZE;
 use crate::neo_io::serializable::helper::{
     get_var_size_bytes, get_var_size_serializable_slice, get_var_size_str,
@@ -247,82 +247,88 @@ impl NefFile {
 }
 
 impl IInteroperable for ContractState {
-    fn from_stack_item(&mut self, stack_item: StackItem) {
+    fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
         let items = match stack_item {
             StackItem::Array(array) => array.items(),
             StackItem::Struct(struct_item) => struct_item.items(),
             other => {
-                tracing::error!(
-                    "ContractState expects array stack item, found {:?}",
+                return Err(CoreError::invalid_format(format!(
+                    "ContractState expects Array/Struct stack item, found {:?}",
                     other.stack_item_type()
-                );
-                return;
+                )));
             }
         };
 
         if items.len() < 5 {
-            tracing::error!("ContractState stack item must contain five elements");
-            return;
+            return Err(CoreError::invalid_format(format!(
+                "ContractState stack item must contain 5 elements, found {}",
+                items.len()
+            )));
         }
 
         let id = match items[0].as_int() {
             Ok(value) => value.to_i32().unwrap_or_default(),
             Err(_) => {
-                tracing::error!("ContractState id must be Integer");
-                return;
+                return Err(CoreError::invalid_format("ContractState id must be Integer"));
             }
         };
 
         let update_counter = match items[1].as_int() {
             Ok(value) => value.to_u16().unwrap_or_default(),
             Err(_) => {
-                tracing::error!("ContractState update counter must be Integer");
-                return;
+                return Err(CoreError::invalid_format(
+                    "ContractState update counter must be Integer",
+                ));
             }
         };
 
         let hash_bytes = match items[2].as_bytes() {
             Ok(bytes) => bytes,
             Err(_) => {
-                tracing::error!("ContractState hash must be ByteString");
-                return;
+                return Err(CoreError::invalid_format(
+                    "ContractState hash must be ByteString",
+                ));
             }
         };
         let Ok(hash) = UInt160::from_bytes(&hash_bytes) else {
-            tracing::error!("ContractState hash must be UInt160 bytes");
-            return;
+            return Err(CoreError::invalid_format(
+                "ContractState hash must be valid UInt160 bytes",
+            ));
         };
 
         let nef_bytes = match items[3].as_bytes() {
             Ok(bytes) => bytes,
             Err(_) => {
-                tracing::error!("ContractState NEF must be ByteString");
-                return;
+                return Err(CoreError::invalid_format(
+                    "ContractState NEF must be ByteString",
+                ));
             }
         };
         let Ok(nef) = NefFile::parse(&nef_bytes) else {
-            tracing::error!("ContractState NEF bytes failed to parse");
-            return;
+            return Err(CoreError::invalid_format(
+                "ContractState NEF bytes failed to parse",
+            ));
         };
 
         let mut manifest = ContractManifest::new(String::new());
-        manifest.from_stack_item(items[4].clone());
+        manifest.from_stack_item(items[4].clone())?;
 
         self.id = id;
         self.update_counter = update_counter;
         self.hash = hash;
         self.nef = nef;
         self.manifest = manifest;
+        Ok(())
     }
 
-    fn to_stack_item(&self) -> StackItem {
-        StackItem::from_array(vec![
+    fn to_stack_item(&self) -> Result<StackItem, CoreError> {
+        Ok(StackItem::from_array(vec![
             StackItem::from_int(self.id),
             StackItem::from_int(self.update_counter),
             StackItem::from_byte_string(self.hash.to_bytes().to_vec()),
             StackItem::from_byte_string(self.nef.to_bytes()),
-            self.manifest.to_stack_item(),
-        ])
+            self.manifest.to_stack_item()?,
+        ]))
     }
 
     fn clone_box(&self) -> Box<dyn IInteroperable> {

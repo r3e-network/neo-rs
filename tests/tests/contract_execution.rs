@@ -6,7 +6,7 @@ use neo_core::{UInt160, UInt256};
 use neo_vm::{op_code::OpCode, ExecutionEngine, Script, VMState};
 
 // Setup test environment
-fn setup_test_env() -> (ChainState, MemoryWorldState) {
+fn _setup_test_env() -> (ChainState, MemoryWorldState) {
     let chain = ChainState::new();
     let world_state = MemoryWorldState::new();
 

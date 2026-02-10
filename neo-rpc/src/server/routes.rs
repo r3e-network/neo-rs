@@ -1,5 +1,5 @@
-use super::middleware::{GovernorRateLimiter, RateLimitConfig, RateLimitTier};
-use super::rcp_server_settings::{RpcServerConfig, RpcServerSettings, UnhandledExceptionPolicy};
+use super::middleware::{GovernorRateLimiter, RateLimitConfig};
+use super::rpc_server_settings::{RpcServerConfig, RpcServerSettings, UnhandledExceptionPolicy};
 use super::rpc_error::RpcError;
 use super::rpc_server::{RpcServer, RPC_ERR_TOTAL, RPC_REQ_TOTAL};
 
@@ -120,6 +120,8 @@ struct RpcFilters {
     auth: Arc<Option<BasicAuth>>,
     rate_limiter: Option<Arc<GovernorRateLimiter>>,
     cors: Option<CorsConfig>,
+    /// Maximum entries in a JSON-RPC batch request (prevents amplification attacks).
+    max_batch_size: usize,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -153,12 +155,14 @@ pub fn build_rpc_routes(
     } else {
         None
     };
+    let max_batch = settings.max_batch_size;
     let filters = RpcFilters {
         server: handle,
         disabled,
         auth,
         rate_limiter,
         cors: CorsConfig::from_settings(&settings, has_auth),
+        max_batch_size: max_batch,
     };
 
     let max_body = settings.max_request_body_size as u64;
@@ -378,6 +382,27 @@ fn process_array(
     if entries.is_empty() {
         return (
             Some(error_response(None, RpcError::invalid_request())),
+            false,
+        );
+    }
+
+    // Enforce maximum batch size to prevent amplification attacks.
+    // A single HTTP request passes the per-IP rate limiter once, so without
+    // this cap an attacker could pack thousands of calls into one request.
+    if entries.len() > filters.max_batch_size {
+        return (
+            Some(error_response(
+                None,
+                RpcError::new(
+                    -32600,
+                    format!(
+                        "Batch too large: {} entries exceeds maximum of {}",
+                        entries.len(),
+                        filters.max_batch_size
+                    ),
+                    None,
+                ),
+            )),
             false,
         );
     }
@@ -719,8 +744,8 @@ impl RequestOutcome {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::server::middleware::RateLimitCheckResult;
-    use crate::server::rcp_server_settings::RpcServerConfig;
+    use crate::server::middleware::{RateLimitCheckResult, RateLimitTier};
+    use crate::server::rpc_server_settings::RpcServerConfig;
     use crate::server::rpc_method_attribute::RpcMethodDescriptor;
     use crate::server::rpc_server::RpcHandler;
     use crate::server::rpc_server_blockchain::RpcServerBlockchain;
@@ -764,6 +789,7 @@ mod tests {
             auth: Arc::new(None),
             rate_limiter: None,
             cors: None,
+            max_batch_size: 1024,
         };
         (server, filters)
     }
@@ -836,6 +862,7 @@ mod tests {
             auth: Arc::new(None),
             rate_limiter: None,
             cors: None,
+            max_batch_size: 1024,
         };
         (server, filters)
     }
@@ -862,6 +889,7 @@ mod tests {
             auth,
             rate_limiter: None,
             cors: None,
+            max_batch_size: 1024,
         };
         (server, filters)
     }

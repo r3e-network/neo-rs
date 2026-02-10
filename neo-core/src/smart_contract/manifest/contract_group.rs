@@ -149,25 +149,26 @@ impl Serialize for ContractGroup {
 }
 
 impl IInteroperable for ContractGroup {
-    fn from_stack_item(&mut self, stack_item: StackItem) {
+    fn from_stack_item(&mut self, stack_item: StackItem) -> std::result::Result<(), Error> {
         match Self::try_from_stack_item_value(&stack_item) {
             Ok(group) => *self = group,
             Err(e) => {
                 tracing::error!("Failed to parse ContractGroup from stack item: {}", e);
             }
         }
+        Ok(())
     }
 
-    fn to_stack_item(&self) -> StackItem {
+    fn to_stack_item(&self) -> std::result::Result<StackItem, Error> {
         let pub_key_bytes = self.pub_key.encode_point(true).unwrap_or_else(|e| {
             tracing::error!("Failed to encode ECPoint: {}", e);
             self.pub_key.to_bytes()
         });
 
-        StackItem::from_struct(vec![
+        Ok(StackItem::from_struct(vec![
             StackItem::from_byte_string(pub_key_bytes),
             StackItem::from_byte_string(self.signature.clone()),
-        ])
+        ]))
     }
 
     fn clone_box(&self) -> Box<dyn IInteroperable> {

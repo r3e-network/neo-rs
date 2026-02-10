@@ -96,7 +96,7 @@ fn test_vectors() {
         let seed = hex::decode(seed_hex).unwrap();
         let expected = Base58::decode_check(extprv).unwrap();
         let ext_key = ExtendedKey::create_with_path(&seed, path, Some(curve)).unwrap();
-        assert_eq!(&expected[13..45], ext_key.chain_code.as_ref());
-        assert_eq!(&expected[46..78], ext_key.private_key.as_ref());
+        assert_eq!(&expected[13..45], ext_key.chain_code().as_ref());
+        assert_eq!(&expected[46..78], ext_key.private_key().as_ref());
     }
 }

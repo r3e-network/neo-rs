@@ -13,7 +13,7 @@ use super::{
     header::Header, i_inventory::IInventory, transaction::Transaction, witness::Witness,
     InventoryType,
 };
-use crate::constants::{MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK};
+use crate::constants::{BLOCK_MAX_TX_WIRE_LIMIT, MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK};
 use crate::ledger::{HeaderCache, TransactionVerificationContext, VerifyResult};
 use crate::neo_io::serializable::helper::get_var_size;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
@@ -471,11 +471,11 @@ impl Serializable for Block {
         let header_size = header.size();
 
         // Read transaction count
-        let tx_count = reader.read_var_int(MAX_TRANSACTIONS_PER_BLOCK as u64)? as usize;
-        if tx_count > MAX_TRANSACTIONS_PER_BLOCK {
+        let tx_count = reader.read_var_int(BLOCK_MAX_TX_WIRE_LIMIT as u64)? as usize;
+        if tx_count > BLOCK_MAX_TX_WIRE_LIMIT {
             return Err(IoError::invalid_data(format!(
-                "Too many transactions: {} exceeds maximum {}",
-                tx_count, MAX_TRANSACTIONS_PER_BLOCK
+                "Too many transactions: {} exceeds wire limit {}",
+                tx_count, BLOCK_MAX_TX_WIRE_LIMIT
             )));
         }
 

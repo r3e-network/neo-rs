@@ -126,6 +126,14 @@ pub struct RpcServerConfig {
         alias = "FindStoragePageSize"
     )]
     pub find_storage_page_size: usize,
+    /// Maximum number of JSON-RPC calls allowed in a single batch request.
+    /// Prevents amplification attacks where a single HTTP request bypasses
+    /// per-IP rate limiting. Matches C# `MaxBatchSize` (default 1024).
+    #[serde(
+        default = "RpcServerConfig::default_max_batch_size",
+        alias = "MaxBatchSize"
+    )]
+    pub max_batch_size: usize,
 }
 
 impl RpcServerConfig {
@@ -195,6 +203,10 @@ impl RpcServerConfig {
 
     const fn default_find_storage_page_size() -> usize {
         50
+    }
+
+    const fn default_max_batch_size() -> usize {
+        1024
     }
 
     #[must_use]
@@ -330,6 +342,7 @@ impl Default for RpcServerConfig {
             session_enabled: false,
             session_expiration_time: Self::default_session_expiration_seconds(),
             find_storage_page_size: Self::default_find_storage_page_size(),
+            max_batch_size: Self::default_max_batch_size(),
         }
     }
 }
@@ -417,6 +430,13 @@ mod tests {
     fn rpc_server_config_loads_csharp_settings() {
         let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let config_path = manifest_dir.join("../neo_csharp/node/plugins/RpcServer/RpcServer.json");
+        if !config_path.exists() {
+            eprintln!(
+                "SKIP: neo_csharp submodule not initialized (missing {})",
+                config_path.display()
+            );
+            return;
+        }
         let raw = fs::read_to_string(&config_path).expect("read rpc server config");
         let json: Value = serde_json::from_str(&raw).expect("parse rpc server config");
         let servers = json["PluginConfiguration"]["Servers"]

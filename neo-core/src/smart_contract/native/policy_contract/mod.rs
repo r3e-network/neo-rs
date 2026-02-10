@@ -49,14 +49,19 @@ impl Default for WhitelistedContract {
 }
 
 impl IInteroperable for WhitelistedContract {
-    fn from_stack_item(&mut self, stack_item: StackItem) {
+    fn from_stack_item(&mut self, stack_item: StackItem) -> Result<()> {
         let StackItem::Struct(struct_item) = stack_item else {
-            return;
+            return Err(Error::invalid_format(
+                "WhitelistedContract expects Struct stack item",
+            ));
         };
 
         let items = struct_item.items();
         if items.len() < 4 {
-            return;
+            return Err(Error::invalid_format(format!(
+                "WhitelistedContract stack item must contain 4 elements, found {}",
+                items.len()
+            )));
         }
 
         if let Ok(bytes) = items[0].as_bytes() {
@@ -82,15 +87,17 @@ impl IInteroperable for WhitelistedContract {
                 self.fixed_fee = fee;
             }
         }
+
+        Ok(())
     }
 
-    fn to_stack_item(&self) -> StackItem {
-        StackItem::from_struct(vec![
+    fn to_stack_item(&self) -> Result<StackItem> {
+        Ok(StackItem::from_struct(vec![
             StackItem::from_byte_string(self.contract_hash.to_bytes()),
             StackItem::from_byte_string(self.method.as_bytes().to_vec()),
             StackItem::from_int(self.arg_count as i64),
             StackItem::from_int(self.fixed_fee),
-        ])
+        ]))
     }
 
     fn clone_box(&self) -> Box<dyn IInteroperable> {

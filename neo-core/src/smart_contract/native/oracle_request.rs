@@ -1,5 +1,6 @@
 //! OracleRequest - matches C# Neo.SmartContract.Native.OracleRequest exactly
 
+use crate::error::CoreError;
 use crate::smart_contract::i_interoperable::IInteroperable;
 use crate::{UInt160, UInt256};
 use neo_vm::StackItem;
@@ -54,11 +55,11 @@ impl OracleRequest {
 }
 
 impl IInteroperable for OracleRequest {
-    fn from_stack_item(&mut self, stack_item: StackItem) {
+    fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
         if let StackItem::Struct(struct_item) = stack_item {
             let items = struct_item.items();
             if items.len() < 7 {
-                return;
+                return Ok(());
             }
 
             if let Ok(bytes) = items[0].as_bytes() {
@@ -107,10 +108,11 @@ impl IInteroperable for OracleRequest {
                 self.user_data = bytes;
             }
         }
+        Ok(())
     }
 
-    fn to_stack_item(&self) -> StackItem {
-        StackItem::from_struct(vec![
+    fn to_stack_item(&self) -> Result<StackItem, CoreError> {
+        Ok(StackItem::from_struct(vec![
             StackItem::from_byte_string(self.original_tx_id.to_bytes()),
             StackItem::from_int(self.gas_for_response),
             StackItem::from_byte_string(self.url.as_bytes()),
@@ -121,7 +123,7 @@ impl IInteroperable for OracleRequest {
             StackItem::from_byte_string(self.callback_contract.to_bytes()),
             StackItem::from_byte_string(self.callback_method.as_bytes()),
             StackItem::from_byte_string(self.user_data.clone()),
-        ])
+        ]))
     }
 
     fn clone_box(&self) -> Box<dyn IInteroperable> {

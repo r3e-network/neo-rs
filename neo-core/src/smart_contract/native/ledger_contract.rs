@@ -577,7 +577,7 @@ impl NativeContract for LedgerContract {
                             max_traceable_blocks,
                         ) =>
                     {
-                        trimmed.to_stack_item()
+                        trimmed.to_stack_item()?
                     }
                     _ => StackItem::null(),
                 };
@@ -598,7 +598,7 @@ impl NativeContract for LedgerContract {
                     current_index,
                     max_traceable_blocks,
                 )? {
-                    state.transaction().to_stack_item()
+                    state.transaction().to_stack_item()?
                 } else {
                     StackItem::null()
                 };
@@ -636,7 +636,7 @@ impl NativeContract for LedgerContract {
                         current_index,
                         max_traceable_blocks,
                     )? {
-                        tx.transaction().to_stack_item()
+                        tx.transaction().to_stack_item()?
                     } else {
                         StackItem::null()
                     }
@@ -687,7 +687,7 @@ impl NativeContract for LedgerContract {
                         .signers()
                         .iter()
                         .map(|signer| signer.to_stack_item())
-                        .collect::<Vec<_>>();
+                        .collect::<std::result::Result<Vec<_>, _>>()?;
                     StackItem::from_array(items)
                 } else {
                     StackItem::null()

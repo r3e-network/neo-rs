@@ -76,7 +76,7 @@ impl ContractManagement {
         manifest: &ContractManifest,
         limits: &ExecutionEngineLimits,
     ) -> Result<()> {
-        BinarySerializer::serialize(&manifest.to_stack_item(), limits)
+        BinarySerializer::serialize(&manifest.to_stack_item()?, limits)
             .map_err(|e| Error::invalid_operation(format!("Invalid manifest: {e}")))?;
         Ok(())
     }

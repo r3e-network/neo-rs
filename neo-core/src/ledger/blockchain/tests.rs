@@ -98,7 +98,7 @@ mod tests {
         let key = StorageKey::create_with_uint160(GasToken::new().id(), PREFIX_ACCOUNT, &account);
         let state = AccountState::with_balance(BigInt::from(amount));
         let bytes =
-            BinarySerializer::serialize(&state.to_stack_item(), &ExecutionEngineLimits::default())
+            BinarySerializer::serialize(&state.to_stack_item().expect("to_stack_item"), &ExecutionEngineLimits::default())
                 .expect("serialize account state");
         store
             .data_cache()

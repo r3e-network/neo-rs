@@ -7,7 +7,7 @@ mod diagnostic;
 pub mod middleware;
 pub mod model;
 mod parameter_converter;
-mod rcp_server_settings;
+mod rpc_server_settings;
 mod routes;
 mod rpc_error;
 mod rpc_error_factory;
@@ -30,7 +30,7 @@ mod tree_node;
 pub mod ws;
 
 // Public exports
-pub use rcp_server_settings::{RpcServerConfig, RpcServerSettings};
+pub use rpc_server_settings::{RpcServerConfig, RpcServerSettings};
 pub use rpc_error::RpcError as ServerRpcError;
 pub use rpc_exception::RpcException;
 pub use rpc_method_attribute::RpcMethodDescriptor;

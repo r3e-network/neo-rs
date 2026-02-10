@@ -7,6 +7,7 @@ use crate::network::p2p::payloads::{
     Conflicts, NotValidBefore, OracleResponse, OracleResponseCode, Signer, Transaction,
     TransactionAttribute, Witness, WitnessCondition, WitnessRule, WitnessRuleAction,
 };
+use crate::error::CoreError;
 use crate::{cryptography::ECPoint, UInt160, UInt256, WitnessScope};
 use neo_vm::{op_code::OpCode, script_builder::ScriptBuilder};
 
@@ -635,55 +636,55 @@ impl WitnessBuilder {
     }
 
     /// Adds an invocation script (mutable reference).
-    pub fn add_invocation(&mut self, script: Vec<u8>) -> &mut Self {
+    pub fn add_invocation(&mut self, script: Vec<u8>) -> Result<&mut Self, CoreError> {
         if !self.invocation.is_empty() {
-            panic!(
-                "Invocation script already exists in the witness builder. Only one invocation script can be added per witness."
-            );
+            return Err(CoreError::invalid_operation(
+                "Invocation script already exists in the witness builder",
+            ));
         }
         self.invocation = script;
-        self
+        Ok(self)
     }
 
     /// Adds a verification script (mutable reference).
-    pub fn add_verification(&mut self, script: Vec<u8>) -> &mut Self {
+    pub fn add_verification(&mut self, script: Vec<u8>) -> Result<&mut Self, CoreError> {
         if !self.verification.is_empty() {
-            panic!(
-                "Verification script already exists in the witness builder. Only one verification script can be added per witness."
-            );
+            return Err(CoreError::invalid_operation(
+                "Verification script already exists in the witness builder",
+            ));
         }
         self.verification = script;
-        self
+        Ok(self)
     }
 
-    pub fn add_invocation_with_builder<F>(&mut self, config: F) -> &mut Self
+    pub fn add_invocation_with_builder<F>(&mut self, config: F) -> Result<&mut Self, CoreError>
     where
         F: FnOnce(&mut ScriptBuilder),
     {
         if !self.invocation.is_empty() {
-            panic!(
-                "Invocation script already exists in the witness builder. Only one invocation script can be added per witness."
-            );
+            return Err(CoreError::invalid_operation(
+                "Invocation script already exists in the witness builder",
+            ));
         }
         let mut builder = ScriptBuilder::new();
         config(&mut builder);
         self.invocation = builder.to_array();
-        self
+        Ok(self)
     }
 
-    pub fn add_verification_with_builder<F>(&mut self, config: F) -> &mut Self
+    pub fn add_verification_with_builder<F>(&mut self, config: F) -> Result<&mut Self, CoreError>
     where
         F: FnOnce(&mut ScriptBuilder),
     {
         if !self.verification.is_empty() {
-            panic!(
-                "Verification script already exists in the witness builder. Only one verification script can be added per witness."
-            );
+            return Err(CoreError::invalid_operation(
+                "Verification script already exists in the witness builder",
+            ));
         }
         let mut builder = ScriptBuilder::new();
         config(&mut builder);
         self.verification = builder.to_array();
-        self
+        Ok(self)
     }
 
     pub fn build(&self) -> Witness {

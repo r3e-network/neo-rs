@@ -3,6 +3,7 @@
 //! and access their methods.
 
 use super::{ContractManifest, ContractPermissionDescriptor, WildCardContainer};
+use crate::error::CoreError;
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
 use crate::smart_contract::i_interoperable::IInteroperable;
@@ -117,45 +118,43 @@ impl ContractPermission {
 }
 
 impl IInteroperable for ContractPermission {
-    fn from_stack_item(&mut self, stack_item: StackItem) {
+    fn from_stack_item(&mut self, stack_item: StackItem) -> std::result::Result<(), CoreError> {
         let struct_item = match stack_item {
             StackItem::Struct(struct_item) => struct_item,
             other => {
-                tracing::error!(
-                    "ContractPermission expects struct stack item, found {:?}",
+                return Err(CoreError::invalid_format(format!(
+                    "ContractPermission expects Struct stack item, found {:?}",
                     other.stack_item_type()
-                );
-                return;
+                )));
             }
         };
 
         let items = struct_item.items();
         if items.len() < 2 {
-            tracing::error!("ContractPermission stack item must contain two elements");
-            return;
+            return Err(CoreError::invalid_format(format!(
+                "ContractPermission stack item must contain 2 elements, found {}",
+                items.len()
+            )));
         }
 
-        match ContractPermissionDescriptor::from_stack_item(&items[0]) {
-            Ok(contract) => self.contract = contract,
-            Err(e) => {
-                tracing::error!("Invalid contract descriptor in stack item: {}", e);
-                return;
-            }
-        }
+        self.contract = ContractPermissionDescriptor::from_stack_item(&items[0])
+            .map_err(|e| CoreError::invalid_format(format!(
+                "Invalid contract descriptor in stack item: {}", e
+            )))?;
 
-        match WildCardContainer::from_stack_item(&items[1]) {
-            Ok(methods) => self.methods = methods,
-            Err(e) => {
-                tracing::error!("Invalid methods container in stack item: {}", e);
-            }
-        }
+        self.methods = WildCardContainer::from_stack_item(&items[1])
+            .map_err(|e| CoreError::invalid_format(format!(
+                "Invalid methods container in stack item: {}", e
+            )))?;
+
+        Ok(())
     }
 
-    fn to_stack_item(&self) -> StackItem {
-        StackItem::from_struct(vec![
+    fn to_stack_item(&self) -> std::result::Result<StackItem, CoreError> {
+        Ok(StackItem::from_struct(vec![
             self.contract.to_stack_item(),
             self.methods.to_stack_item(),
-        ])
+        ]))
     }
 
     fn clone_box(&self) -> Box<dyn IInteroperable> {

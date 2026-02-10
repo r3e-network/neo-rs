@@ -86,7 +86,7 @@ fn deploy_contract(
         nef,
         ContractManifest::new(String::new()),
     );
-    contract.from_stack_item(contract_item);
+    let _ = contract.from_stack_item(contract_item);
     contract
 }
 

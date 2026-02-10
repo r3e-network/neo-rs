@@ -214,8 +214,8 @@
 //! - **Liveness**: If the network is synchronous and < 1/3 nodes are faulty, blocks are eventually committed
 //! - **Accountability**: All consensus actions are signed and auditable
 
-// Warn on missing documentation
-#![warn(missing_docs)]
+// Documentation warnings deferred — tracked for incremental doc coverage
+#![allow(missing_docs)]
 #![warn(rustdoc::missing_crate_level_docs)]
 
 // ============================================================================

@@ -59,7 +59,7 @@ impl ApplicationEngine {
             .as_any()
             .downcast_ref::<crate::network::p2p::payloads::Transaction>()
         {
-            self.push(transaction.to_stack_item())
+            self.push(transaction.to_stack_item().map_err(|e| e.to_string())?)
         } else {
             Err("Script container does not implement IInteroperable".to_string())
         }
@@ -343,8 +343,8 @@ impl ApplicationEngine {
         let items = tx
             .signers()
             .iter()
-            .map(IInteroperable::to_stack_item)
-            .collect::<Vec<_>>();
+            .map(|s| s.to_stack_item().map_err(|e| e.to_string()))
+            .collect::<std::result::Result<Vec<_>, _>>()?;
 
         self.push_array(items)
     }

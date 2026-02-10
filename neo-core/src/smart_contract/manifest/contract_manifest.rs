@@ -473,36 +473,39 @@ impl Serializable for ContractManifest {
 }
 
 impl IInteroperable for ContractManifest {
-    fn from_stack_item(&mut self, stack_item: StackItem) {
+    fn from_stack_item(&mut self, stack_item: StackItem) -> std::result::Result<(), Error> {
         let struct_item = match stack_item {
             StackItem::Struct(struct_item) => struct_item,
             other => {
-                tracing::error!(
-                    "ContractManifest expects struct stack item, found {:?}",
+                return Err(Error::invalid_format(format!(
+                    "ContractManifest expects Struct stack item, found {:?}",
                     other.stack_item_type()
-                );
-                return;
+                )));
             }
         };
 
         let items = struct_item.items();
         if items.len() < 8 {
-            tracing::error!("ContractManifest stack item must contain eight elements");
-            return;
+            return Err(Error::invalid_format(format!(
+                "ContractManifest stack item must contain 8 elements, found {}",
+                items.len()
+            )));
         }
 
         let name_bytes = match items[0].as_bytes() {
             Ok(bytes) => bytes,
             Err(_) => {
-                tracing::error!("ContractManifest name must be byte string");
-                return;
+                return Err(Error::invalid_format(
+                    "ContractManifest name must be ByteString",
+                ));
             }
         };
         self.name = match String::from_utf8(name_bytes) {
             Ok(name) => name,
             Err(_) => {
-                tracing::error!("ContractManifest name must be valid UTF-8");
-                return;
+                return Err(Error::invalid_format(
+                    "ContractManifest name must be valid UTF-8",
+                ));
             }
         };
 
@@ -513,8 +516,9 @@ impl IInteroperable for ContractManifest {
                 .filter_map(|item| ContractGroup::try_from_stack_item_value(item).ok())
                 .collect(),
             _ => {
-                tracing::error!("ContractManifest groups must be an array");
-                return;
+                return Err(Error::invalid_format(
+                    "ContractManifest groups must be an Array",
+                ));
             }
         };
 
@@ -524,8 +528,9 @@ impl IInteroperable for ContractManifest {
                 tracing::warn!("ContractManifest features map is not empty, ignoring");
             }
         } else {
-            tracing::error!("ContractManifest features must be a map");
-            return;
+            return Err(Error::invalid_format(
+                "ContractManifest features must be a Map",
+            ));
         }
         self.features.clear();
 
@@ -539,28 +544,30 @@ impl IInteroperable for ContractManifest {
                 })
                 .collect(),
             _ => {
-                tracing::error!("ContractManifest supported standards must be an array");
-                return;
+                return Err(Error::invalid_format(
+                    "ContractManifest supported standards must be an Array",
+                ));
             }
         };
 
         let mut abi = ContractAbi::default();
-        abi.from_stack_item(items[4].clone());
+        abi.from_stack_item(items[4].clone())?;
         self.abi = abi;
 
         self.permissions = match &items[5] {
-            StackItem::Array(array) => array
-                .items()
-                .iter()
-                .map(|item| {
+            StackItem::Array(array) => {
+                let mut perms = Vec::new();
+                for item in array.items().iter() {
                     let mut permission = ContractPermission::default_wildcard();
-                    permission.from_stack_item(item.clone());
-                    permission
-                })
-                .collect(),
+                    permission.from_stack_item(item.clone())?;
+                    perms.push(permission);
+                }
+                perms
+            }
             _ => {
-                tracing::error!("ContractManifest permissions must be an array");
-                return;
+                return Err(Error::invalid_format(
+                    "ContractManifest permissions must be an Array",
+                ));
             }
         };
 
@@ -574,8 +581,9 @@ impl IInteroperable for ContractManifest {
                     .collect(),
             ),
             _ => {
-                tracing::error!("ContractManifest trusts must be null or array");
-                return;
+                return Err(Error::invalid_format(
+                    "ContractManifest trusts must be Null or Array",
+                ));
             }
         };
 
@@ -594,14 +602,15 @@ impl IInteroperable for ContractManifest {
                 None
             }
         };
+        Ok(())
     }
 
-    fn to_stack_item(&self) -> StackItem {
+    fn to_stack_item(&self) -> std::result::Result<StackItem, Error> {
         let group_items = self
             .groups
             .iter()
             .map(|group| group.to_stack_item())
-            .collect::<Vec<_>>();
+            .collect::<std::result::Result<Vec<_>, _>>()?;
 
         let mut features_map = BTreeMap::new();
         for (key, value) in &self.features {
@@ -622,7 +631,7 @@ impl IInteroperable for ContractManifest {
             .permissions
             .iter()
             .map(|permission| permission.to_stack_item())
-            .collect::<Vec<_>>();
+            .collect::<std::result::Result<Vec<_>, _>>()?;
 
         let trusts_item = match &self.trusts {
             WildCardContainer::Wildcard => StackItem::null(),
@@ -642,16 +651,16 @@ impl IInteroperable for ContractManifest {
             None => "null".as_bytes().to_vec(),
         };
 
-        StackItem::from_struct(vec![
+        Ok(StackItem::from_struct(vec![
             StackItem::from_byte_string(self.name.as_bytes()),
             StackItem::from_array(group_items),
             StackItem::from_map(features_map),
             StackItem::from_array(standards_items),
-            self.abi.to_stack_item(),
+            self.abi.to_stack_item()?,
             StackItem::from_array(permission_items),
             trusts_item,
             StackItem::from_byte_string(extra_bytes),
-        ])
+        ]))
     }
 
     fn clone_box(&self) -> Box<dyn IInteroperable> {

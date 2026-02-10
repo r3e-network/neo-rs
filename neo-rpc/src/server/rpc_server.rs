@@ -29,7 +29,7 @@ use std::sync::{Arc, Weak};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
-use super::rcp_server_settings::RpcServerConfig;
+use super::rpc_server_settings::RpcServerConfig;
 use super::routes::{build_rpc_routes, build_ws_route, BasicAuth};
 use super::session::Session;
 use crate::server::rpc_exception::RpcException;

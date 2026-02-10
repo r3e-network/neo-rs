@@ -342,10 +342,10 @@ fn test_deposit_stack_item_roundtrip() {
     use neo_core::smart_contract::i_interoperable::IInteroperable;
 
     let original = Deposit::new(BigInt::from(500), 100);
-    let stack_item = original.to_stack_item();
+    let stack_item = original.to_stack_item().unwrap();
 
     let mut recovered = Deposit::default();
-    recovered.from_stack_item(stack_item);
+    recovered.from_stack_item(stack_item).unwrap();
 
     assert_eq!(recovered.amount, original.amount, "Amount should roundtrip");
     assert_eq!(recovered.till, original.till, "Till should roundtrip");

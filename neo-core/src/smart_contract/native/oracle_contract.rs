@@ -5,7 +5,7 @@
 
 use crate::cryptography::NeoHash;
 use crate::error::{CoreError as Error, CoreResult as Result};
-use crate::neo_config::{HASH_SIZE, MAX_SCRIPT_SIZE, MAX_TRANSACTIONS_PER_BLOCK};
+use crate::neo_config::{BLOCK_MAX_TX_WIRE_LIMIT, HASH_SIZE, MAX_SCRIPT_SIZE};
 use crate::network::p2p::payloads::{
     oracle_response::OracleResponse as TxOracleResponse,
     transaction_attribute::TransactionAttribute,
@@ -98,7 +98,7 @@ impl Default for OracleConfig {
             max_url_length: 256,
             max_filter_length: 128,
             max_callback_length: HASH_SIZE,
-            max_user_data_length: MAX_TRANSACTIONS_PER_BLOCK,
+            max_user_data_length: BLOCK_MAX_TX_WIRE_LIMIT,
             max_response_length: MAX_SCRIPT_SIZE,
             request_timeout: 144, // ~24 hours at 10 second blocks
             min_response_gas: 10_000_000,

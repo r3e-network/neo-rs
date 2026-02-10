@@ -88,7 +88,7 @@ impl Default for TokenState {
 }
 
 impl IInteroperable for TokenState {
-    fn from_stack_item(&mut self, stack_item: StackItem) {
+    fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
         if let StackItem::Struct(struct_item) = stack_item {
             let items = struct_item.items();
             if items.len() >= 7 {
@@ -128,9 +128,10 @@ impl IInteroperable for TokenState {
                 }
             }
         }
+        Ok(())
     }
 
-    fn to_stack_item(&self) -> StackItem {
+    fn to_stack_item(&self) -> Result<StackItem, CoreError> {
         let items = vec![
             StackItem::from_int(self.token_type as i32),
             StackItem::from_byte_string(self.owner.to_bytes()),
@@ -141,7 +142,7 @@ impl IInteroperable for TokenState {
             StackItem::from_int(self.max_supply.clone()),
             StackItem::from_bool(self.mintable_address.is_some()),
         ];
-        StackItem::from_struct(items)
+        Ok(StackItem::from_struct(items))
     }
 
     fn clone_box(&self) -> Box<dyn IInteroperable> {
@@ -167,7 +168,7 @@ impl AccountState {
 }
 
 impl IInteroperable for AccountState {
-    fn from_stack_item(&mut self, stack_item: StackItem) {
+    fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
         if let StackItem::Struct(struct_item) = stack_item {
             let items = struct_item.items();
             if let Some(first) = items.first() {
@@ -176,10 +177,11 @@ impl IInteroperable for AccountState {
                 }
             }
         }
+        Ok(())
     }
 
-    fn to_stack_item(&self) -> StackItem {
-        StackItem::from_struct(vec![StackItem::from_int(self.balance.clone())])
+    fn to_stack_item(&self) -> Result<StackItem, CoreError> {
+        Ok(StackItem::from_struct(vec![StackItem::from_int(self.balance.clone())]))
     }
 
     fn clone_box(&self) -> Box<dyn IInteroperable> {
@@ -201,7 +203,7 @@ impl NFTState {
 }
 
 impl IInteroperable for NFTState {
-    fn from_stack_item(&mut self, stack_item: StackItem) {
+    fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
         if let StackItem::Struct(struct_item) = stack_item {
             let items = struct_item.items();
             if items.len() >= 2 {
@@ -238,9 +240,10 @@ impl IInteroperable for NFTState {
                 }
             }
         }
+        Ok(())
     }
 
-    fn to_stack_item(&self) -> StackItem {
+    fn to_stack_item(&self) -> Result<StackItem, CoreError> {
         let properties_items: Vec<StackItem> = self
             .properties
             .iter()
@@ -251,11 +254,11 @@ impl IInteroperable for NFTState {
                 ])
             })
             .collect();
-        StackItem::from_struct(vec![
+        Ok(StackItem::from_struct(vec![
             StackItem::from_byte_string(self.asset_id.to_bytes()),
             StackItem::from_byte_string(self.owner.to_bytes()),
             StackItem::from_array(properties_items),
-        ])
+        ]))
     }
 
     fn clone_box(&self) -> Box<dyn IInteroperable> {
@@ -547,7 +550,7 @@ impl TokenManagement {
             BinarySerializer::deserialize(&bytes, &ExecutionEngineLimits::default(), None)
                 .map_err(CoreError::native_contract)?;
         let mut token_state = TokenState::default();
-        token_state.from_stack_item(stack_item);
+        token_state.from_stack_item(stack_item)?;
         Ok(Some(token_state))
     }
 
@@ -576,7 +579,7 @@ impl TokenManagement {
             BinarySerializer::deserialize(&bytes, &ExecutionEngineLimits::default(), None)
                 .map_err(CoreError::native_contract)?;
         let mut account_state = AccountState::default();
-        account_state.from_stack_item(stack_item);
+        account_state.from_stack_item(stack_item)?;
         Ok(Some(account_state))
     }
 
@@ -598,7 +601,7 @@ impl TokenManagement {
         if state.balance.is_zero() {
             engine.delete_storage_item(context, key.suffix())?;
         } else {
-            let stack_item = state.to_stack_item();
+            let stack_item = state.to_stack_item()?;
             let bytes = BinarySerializer::serialize(&stack_item, &ExecutionEngineLimits::default())
                 .map_err(CoreError::native_contract)?;
             engine.put_storage_item(context, key.suffix(), &bytes)?;
@@ -824,7 +827,7 @@ impl TokenManagement {
             ));
         };
 
-        let stack_item = token_state.to_stack_item();
+        let stack_item = token_state.to_stack_item()?;
         let bytes = BinarySerializer::serialize(&stack_item, &ExecutionEngineLimits::default())
             .map_err(CoreError::native_contract)?;
         Ok(bytes)
@@ -969,7 +972,7 @@ impl TokenManagement {
         let key = StorageKey::create_with_uint160(ID, PREFIX_TOKEN_STATE, &asset_id)
             .suffix()
             .to_vec();
-        let stack_item = token_state.to_stack_item();
+        let stack_item = token_state.to_stack_item()?;
         let bytes = BinarySerializer::serialize(&stack_item, &ExecutionEngineLimits::default())
             .map_err(CoreError::native_contract)?;
         engine.put_storage_item(&context, &key, &bytes)?;
@@ -1024,7 +1027,7 @@ impl TokenManagement {
         let key = StorageKey::create_with_uint160(ID, PREFIX_TOKEN_STATE, &asset_id)
             .suffix()
             .to_vec();
-        let stack_item = token_state.to_stack_item();
+        let stack_item = token_state.to_stack_item()?;
         let bytes = BinarySerializer::serialize(&stack_item, &ExecutionEngineLimits::default())
             .map_err(CoreError::native_contract)?;
         engine.put_storage_item(&context, &key, &bytes)?;
@@ -1097,7 +1100,7 @@ impl TokenManagement {
         let key = StorageKey::create_with_uint160(ID, PREFIX_TOKEN_STATE, &asset_id)
             .suffix()
             .to_vec();
-        let stack_item = token_state.to_stack_item();
+        let stack_item = token_state.to_stack_item()?;
         let bytes = BinarySerializer::serialize(&stack_item, &ExecutionEngineLimits::default())
             .map_err(CoreError::native_contract)?;
         engine.put_storage_item(&context, &key, &bytes)?;
@@ -1172,7 +1175,7 @@ impl TokenManagement {
         let key = StorageKey::create_with_uint160(ID, PREFIX_TOKEN_STATE, &asset_id)
             .suffix()
             .to_vec();
-        let stack_item = token_state.to_stack_item();
+        let stack_item = token_state.to_stack_item()?;
         let bytes = BinarySerializer::serialize(&stack_item, &ExecutionEngineLimits::default())
             .map_err(CoreError::native_contract)?;
         engine.put_storage_item(&context, &key, &bytes)?;
@@ -1242,7 +1245,7 @@ impl TokenManagement {
         let mut updated_token_state = token_state.clone();
         updated_token_state.total_supply = new_supply;
 
-        let token_stack_item = updated_token_state.to_stack_item();
+        let token_stack_item = updated_token_state.to_stack_item()?;
         let token_bytes =
             BinarySerializer::serialize(&token_stack_item, &ExecutionEngineLimits::default())
                 .map_err(CoreError::native_contract)?;
@@ -1253,7 +1256,7 @@ impl TokenManagement {
             owner: account,
             properties: Vec::new(),
         };
-        let nft_stack_item = nft_state.to_stack_item();
+        let nft_stack_item = nft_state.to_stack_item()?;
         let nft_bytes =
             BinarySerializer::serialize(&nft_stack_item, &ExecutionEngineLimits::default())
                 .map_err(CoreError::native_contract)?;
@@ -1355,7 +1358,7 @@ impl TokenManagement {
         };
 
         token_state.total_supply -= 1;
-        let token_stack_item = token_state.to_stack_item();
+        let token_stack_item = token_state.to_stack_item()?;
         let token_bytes =
             BinarySerializer::serialize(&token_stack_item, &ExecutionEngineLimits::default())
                 .map_err(CoreError::native_contract)?;
@@ -1434,7 +1437,7 @@ impl TokenManagement {
         }
 
         nft_state.owner = to;
-        let nft_stack_item = nft_state.to_stack_item();
+        let nft_stack_item = nft_state.to_stack_item()?;
         let nft_bytes =
             BinarySerializer::serialize(&nft_stack_item, &ExecutionEngineLimits::default())
                 .map_err(CoreError::native_contract)?;
@@ -1658,7 +1661,7 @@ impl TokenManagement {
         match BinarySerializer::deserialize(data, &ExecutionEngineLimits::default(), None) {
             Ok(stack_item) => {
                 let mut state = TokenState::default();
-                state.from_stack_item(stack_item);
+                state.from_stack_item(stack_item).ok()?;
                 Some(state)
             }
             Err(_) => None,
@@ -1669,7 +1672,7 @@ impl TokenManagement {
         match BinarySerializer::deserialize(data, &ExecutionEngineLimits::default(), None) {
             Ok(stack_item) => {
                 let mut state = AccountState::default();
-                state.from_stack_item(stack_item);
+                state.from_stack_item(stack_item).ok()?;
                 Some(state)
             }
             Err(_) => None,
@@ -1680,7 +1683,7 @@ impl TokenManagement {
         match BinarySerializer::deserialize(data, &ExecutionEngineLimits::default(), None) {
             Ok(stack_item) => {
                 let mut state = NFTState::default();
-                state.from_stack_item(stack_item);
+                state.from_stack_item(stack_item).ok()?;
                 Some(state)
             }
             Err(_) => None,

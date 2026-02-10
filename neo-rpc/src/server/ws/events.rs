@@ -2,6 +2,8 @@
 
 use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};
+use std::fmt;
+use std::str::FromStr;
 
 /// Types of events that can be subscribed to
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -17,16 +19,27 @@ pub enum WsEventType {
     Notification,
 }
 
-impl WsEventType {
-    /// Parse event type from string
-    #[must_use]
-    pub fn parse(s: &str) -> Option<Self> {
+impl fmt::Display for WsEventType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::BlockAdded => write!(f, "block_added"),
+            Self::TransactionAdded => write!(f, "transaction_added"),
+            Self::TransactionRemoved => write!(f, "transaction_removed"),
+            Self::Notification => write!(f, "notification"),
+        }
+    }
+}
+
+impl FromStr for WsEventType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "block_added" => Some(Self::BlockAdded),
-            "transaction_added" => Some(Self::TransactionAdded),
-            "transaction_removed" => Some(Self::TransactionRemoved),
-            "notification" => Some(Self::Notification),
-            _ => None,
+            "block_added" => Ok(Self::BlockAdded),
+            "transaction_added" => Ok(Self::TransactionAdded),
+            "transaction_removed" => Ok(Self::TransactionRemoved),
+            "notification" => Ok(Self::Notification),
+            _ => Err(format!("unknown event type: {s}")),
         }
     }
 }
@@ -180,14 +193,14 @@ mod tests {
     #[test]
     fn test_event_type_parsing() {
         assert_eq!(
-            WsEventType::parse("block_added"),
-            Some(WsEventType::BlockAdded)
+            "block_added".parse::<WsEventType>(),
+            Ok(WsEventType::BlockAdded)
         );
         assert_eq!(
-            WsEventType::parse("transaction_added"),
-            Some(WsEventType::TransactionAdded)
+            "transaction_added".parse::<WsEventType>(),
+            Ok(WsEventType::TransactionAdded)
         );
-        assert_eq!(WsEventType::parse("unknown"), None);
+        assert!("unknown".parse::<WsEventType>().is_err());
     }
 
     #[test]

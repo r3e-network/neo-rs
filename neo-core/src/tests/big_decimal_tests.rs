@@ -3,6 +3,7 @@ use crate::big_decimal::BigDecimal;
 use num_bigint::BigInt;
 
 #[cfg(test)]
+#[allow(clippy::module_inception)]
 mod big_decimal_tests {
     use super::*;
 

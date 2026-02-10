@@ -844,7 +844,7 @@ fn contract_state_to_json(contract: &ContractState) -> Value {
 mod tests {
     use super::*;
     use crate::client::models::RpcRawMemPool;
-    use crate::server::rcp_server_settings::RpcServerConfig;
+    use crate::server::rpc_server_settings::RpcServerConfig;
     use neo_core::extensions::io::serializable::SerializableExtensions;
     use neo_core::ledger::block::Block as LedgerBlock;
     use neo_core::ledger::block_header::BlockHeader as LedgerBlockHeader;

@@ -225,7 +225,7 @@ fn gas_transfer_triggers_on_nep17_payment_with_native_caller() {
         nef.clone(),
         ContractManifest::new(String::new()),
     );
-    receiver.from_stack_item(contract_item);
+    let _ = receiver.from_stack_item(contract_item);
     let receiver_hash = receiver.hash;
 
     // Fund sender with GAS and transfer to receiver contract.

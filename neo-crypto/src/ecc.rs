@@ -35,7 +35,7 @@ use std::cmp::Ordering;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use subtle::ConstantTimeEq;
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use zeroize::{Zeroize, Zeroizing, ZeroizeOnDrop};
 
 /// Supported elliptic curves.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -650,12 +650,15 @@ pub fn verify_ed25519(public_key: &[u8], message: &[u8], signature: &[u8]) -> Cr
 }
 
 /// Generates a random keypair for the specified curve.
-pub fn generate_keypair(curve: ECCurve) -> CryptoResult<(Vec<u8>, ECPoint)> {
+///
+/// The private key is returned wrapped in [`Zeroizing`] so it is automatically
+/// zeroed when dropped, preventing secret material from lingering in memory.
+pub fn generate_keypair(curve: ECCurve) -> CryptoResult<(Zeroizing<Vec<u8>>, ECPoint)> {
     match curve {
         ECCurve::Secp256r1 => {
             let signing_key = P256SigningKey::random(&mut OsRng);
             let verifying_key = signing_key.verifying_key();
-            let private_key = signing_key.to_bytes().to_vec();
+            let private_key = Zeroizing::new(signing_key.to_bytes().to_vec());
             let public_point = ECPoint::new_unchecked(
                 curve,
                 verifying_key.to_encoded_point(true).as_bytes().to_vec(),
@@ -665,7 +668,7 @@ pub fn generate_keypair(curve: ECCurve) -> CryptoResult<(Vec<u8>, ECPoint)> {
         ECCurve::Secp256k1 => {
             let signing_key = K256SigningKey::random(&mut OsRng);
             let verifying_key = signing_key.verifying_key();
-            let private_key = signing_key.to_bytes().to_vec();
+            let private_key = Zeroizing::new(signing_key.to_bytes().to_vec());
             let public_point = ECPoint::new_unchecked(
                 curve,
                 verifying_key.to_encoded_point(true).as_bytes().to_vec(),
@@ -674,7 +677,7 @@ pub fn generate_keypair(curve: ECCurve) -> CryptoResult<(Vec<u8>, ECPoint)> {
         }
         ECCurve::Ed25519 => {
             let signing_key = Ed25519SigningKey::generate(&mut OsRng);
-            let private_key = signing_key.to_bytes().to_vec();
+            let private_key = Zeroizing::new(signing_key.to_bytes().to_vec());
             let public_point =
                 ECPoint::new_unchecked(curve, signing_key.verifying_key().to_bytes().to_vec())?;
             Ok((private_key, public_point))
@@ -873,7 +876,7 @@ mod tests {
             ECCurve::Secp256r1.compressed_size()
         );
 
-        let private_array: [u8; 32] = private_key.try_into().unwrap();
+        let private_array: [u8; 32] = private_key.as_slice().try_into().unwrap();
         let signing_key =
             P256SigningKey::from_bytes(&p256::FieldBytes::from(private_array)).unwrap();
         let message = b"keygen-roundtrip";

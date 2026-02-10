@@ -1,5 +1,6 @@
 //! NotifyEventArgs - matches C# Neo.SmartContract.NotifyEventArgs exactly
 
+use crate::error::CoreError;
 use crate::smart_contract::i_interoperable::IInteroperable;
 use crate::{IVerifiable, UInt160};
 use neo_vm::StackItem;
@@ -66,19 +67,19 @@ impl fmt::Debug for NotifyEventArgs {
 }
 
 impl IInteroperable for NotifyEventArgs {
-    fn from_stack_item(&mut self, _stack_item: StackItem) {
+    fn from_stack_item(&mut self, _stack_item: StackItem) -> Result<(), CoreError> {
         // Not supported in C# implementation (throws NotSupportedException)
-        panic!("NotSupportedException: FromStackItem is not supported for NotifyEventArgs");
+        Err(CoreError::invalid_operation("FromStackItem is not supported for NotifyEventArgs"))
     }
 
-    fn to_stack_item(&self) -> StackItem {
+    fn to_stack_item(&self) -> Result<StackItem, CoreError> {
         // Returns an array with [ScriptHash, EventName, State]
         let state: Vec<StackItem> = self.state.iter().map(StackItem::deep_clone).collect();
-        StackItem::from_array(vec![
+        Ok(StackItem::from_array(vec![
             StackItem::from_byte_string(self.script_hash.to_bytes()),
             StackItem::from_byte_string(self.event_name.clone().into_bytes()),
             StackItem::from_array(state),
-        ])
+        ]))
     }
 
     fn clone_box(&self) -> Box<dyn IInteroperable> {

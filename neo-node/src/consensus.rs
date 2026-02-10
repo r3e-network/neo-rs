@@ -271,9 +271,10 @@ impl ConsensusActor {
     }
 
     fn start_timer(&mut self, ctx: &ActorContext) {
-        let block_ms = self.system.time_per_block().as_millis() as u64;
-        let interval_ms = block_ms.saturating_div(5).max(200);
-        let interval = Duration::from_millis(interval_ms);
+        // Fixed 1-second interval matching C# `new System.Timers.Timer(1000)`.
+        // The previous `block_ms / 5` (3s on MainNet) delayed timeout detection
+        // and view-change initiation, hurting consensus liveness.
+        let interval = Duration::from_secs(1);
         self.timer = Some(ctx.schedule_repeatedly(
             interval,
             interval,

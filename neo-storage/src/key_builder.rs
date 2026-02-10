@@ -275,7 +275,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "max_length must be greater than zero")]
     fn test_key_builder_new_panics_on_zero() {
-        KeyBuilder::new(1, 0x01, 0);
+        let _ = KeyBuilder::new(1, 0x01, 0);
     }
 
     #[test]

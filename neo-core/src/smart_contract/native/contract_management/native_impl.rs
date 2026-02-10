@@ -99,7 +99,7 @@ impl NativeContract for ContractManagement {
                     .map_err(|e| Error::invalid_argument(format!("Invalid hash: {}", e)))?;
                 match self.get_contract(&hash)? {
                     Some(contract) => {
-                        let item = contract.to_stack_item();
+                        let item = contract.to_stack_item()?;
                         let bytes =
                             BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
                                 .map_err(|e| {
@@ -129,7 +129,7 @@ impl NativeContract for ContractManagement {
 
                 let contract = self.deploy(engine, nef_bytes, manifest_bytes, data)?;
 
-                let item = contract.to_stack_item();
+                let item = contract.to_stack_item()?;
                 let bytes = BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
                     .map_err(|e| {
                     Error::serialization(format!("Failed to serialize contract state: {}", e))
@@ -251,7 +251,7 @@ impl NativeContract for ContractManagement {
                 );
                 match self.get_contract_by_id(id)? {
                     Some(contract) => {
-                        let item = contract.to_stack_item();
+                        let item = contract.to_stack_item()?;
                         let bytes =
                             BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
                                 .map_err(|e| {

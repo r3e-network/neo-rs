@@ -33,8 +33,7 @@ impl Future for ContractTaskAwaiter {
     type Output = Result<(), String>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        // Poll the underlying task
-        let task = unsafe { Pin::new_unchecked(&mut self.task) };
-        task.poll(cx)
+        // ContractTask is Unpin (wraps Pin<Box<...>>), so Pin::new is safe.
+        Pin::new(&mut self.task).poll(cx)
     }
 }

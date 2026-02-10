@@ -16,7 +16,12 @@ pub enum IoError {
     InvalidUtf8,
     /// The stream contained data that failed a semantic validation.
     #[error("{context}: {value}")]
-    InvalidData { context: String, value: String },
+    InvalidData {
+        /// Description of the validation that failed.
+        context: String,
+        /// The invalid value that was encountered.
+        value: String,
+    },
     /// Wrapper around lower-level I/O errors when writing.
     #[error(transparent)]
     Io(#[from] io::Error),
@@ -85,6 +90,7 @@ impl<'a> MemoryReader<'a> {
         }
     }
 
+    /// Reads exactly `N` bytes into a fixed-size array.
     #[inline]
     pub fn read_array<const N: usize>(&mut self) -> IoResult<[u8; N]> {
         self.ensure_available(N)?;

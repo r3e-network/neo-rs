@@ -388,7 +388,7 @@ impl Actor for RelayResultResponder {
 mod tests {
     use super::*;
     use crate::client::models::RpcPeers;
-    use crate::server::rcp_server_settings::RpcServerConfig;
+    use crate::server::rpc_server_settings::RpcServerConfig;
     use neo_core::extensions::io::serializable::SerializableExtensions;
     use neo_core::ledger::TransactionVerificationContext;
     use neo_core::neo_io::BinaryWriter;

@@ -1,5 +1,5 @@
 use super::*;
-use crate::server::rcp_server_settings::RpcServerConfig;
+use crate::server::rpc_server_settings::RpcServerConfig;
 use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::transaction::Transaction;
 use neo_core::network::p2p::payloads::witness::Witness;
@@ -235,7 +235,7 @@ fn deploy_verify_contract(system: &Arc<NeoSystem>) -> UInt160 {
         BinarySerializer::deserialize(&contract_bytes, &ExecutionEngineLimits::default(), None)
             .expect("contract stack item");
     let mut contract = ContractState::default();
-    contract.from_stack_item(item);
+    let _ = contract.from_stack_item(item);
 
     let tracked = engine.snapshot_cache().tracked_items();
     apply_tracked_items(&mut store_cache, tracked);

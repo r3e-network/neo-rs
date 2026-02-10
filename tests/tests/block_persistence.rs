@@ -428,7 +428,7 @@ fn test_block_chain_height_tracking() {
     let mut prev_hash = chain.current_hash().unwrap();
     for i in 1..=5 {
         let block = create_block_entry(i, prev_hash, 1468595301000 + (i as u64 * 15000), 10);
-        let result = chain.add_block(block.clone());
+        let _result = chain.add_block(block.clone());
 
         // Verify the chain height increased
         assert_eq!(

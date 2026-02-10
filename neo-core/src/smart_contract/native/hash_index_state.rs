@@ -1,5 +1,6 @@
 //! HashIndexState - matches C# Neo.SmartContract.Native.HashIndexState exactly
 
+use crate::error::CoreError;
 use crate::smart_contract::i_interoperable::IInteroperable;
 use crate::UInt256;
 use neo_vm::StackItem;
@@ -23,11 +24,11 @@ impl HashIndexState {
 }
 
 impl IInteroperable for HashIndexState {
-    fn from_stack_item(&mut self, stack_item: StackItem) {
+    fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
         if let StackItem::Struct(struct_item) = stack_item {
             let items = struct_item.items();
             if items.len() < 2 {
-                return;
+                return Ok(());
             }
 
             if let Ok(bytes) = items[0].as_bytes() {
@@ -44,13 +45,14 @@ impl IInteroperable for HashIndexState {
                 }
             }
         }
+        Ok(())
     }
 
-    fn to_stack_item(&self) -> StackItem {
-        StackItem::from_struct(vec![
+    fn to_stack_item(&self) -> Result<StackItem, CoreError> {
+        Ok(StackItem::from_struct(vec![
             StackItem::from_byte_string(self.hash.to_bytes()),
             StackItem::from_int(self.index),
-        ])
+        ]))
     }
 
     fn clone_box(&self) -> Box<dyn IInteroperable> {

@@ -13,6 +13,7 @@ use crate::macros::{OptionExt, ValidateLength};
 use crate::neo_io::serializable::helper::get_var_size;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::smart_contract::IInteroperable;
+use crate::error::CoreError;
 use crate::witness_rule::{WitnessRule, WitnessRuleAction};
 use crate::{
     cryptography::{ECCurve, ECPoint},
@@ -415,13 +416,13 @@ impl Serializable for Signer {
 }
 
 impl IInteroperable for Signer {
-    fn from_stack_item(&mut self, _stack_item: StackItem) {
+    fn from_stack_item(&mut self, _stack_item: StackItem) -> Result<(), CoreError> {
         // This operation is not supported for Signer.
         // The C# implementation throws NotSupportedException.
-        panic!("NotSupportedException: Signer::from_stack_item is not supported");
+        Err(CoreError::InvalidOperation { message: "Signer::from_stack_item is not supported".into() })
     }
 
-    fn to_stack_item(&self) -> StackItem {
+    fn to_stack_item(&self) -> Result<StackItem, CoreError> {
         let allowed_contracts = if self.scopes.contains(WitnessScope::CUSTOM_CONTRACTS) {
             StackItem::from_array(
                 self.allowed_contracts
@@ -456,13 +457,13 @@ impl IInteroperable for Signer {
             StackItem::from_array(Vec::new())
         };
 
-        StackItem::from_array(vec![
+        Ok(StackItem::from_array(vec![
             StackItem::from_byte_string(self.account.to_bytes()),
             StackItem::from_int(i64::from(self.scopes.bits())),
             allowed_contracts,
             allowed_groups,
             rules,
-        ])
+        ]))
     }
 
     fn clone_box(&self) -> Box<dyn IInteroperable> {

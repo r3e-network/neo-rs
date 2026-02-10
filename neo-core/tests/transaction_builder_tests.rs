@@ -82,8 +82,8 @@ fn transaction_builder_adds_attributes() {
 fn transaction_builder_adds_witness() {
     let tx = TransactionBuilder::create_empty()
         .add_witness(|wb| {
-            wb.add_invocation(Vec::new());
-            wb.add_verification(Vec::new());
+            wb.add_invocation(Vec::new()).unwrap();
+            wb.add_verification(Vec::new()).unwrap();
         })
         .build();
     assert_eq!(tx.witnesses().len(), 1);

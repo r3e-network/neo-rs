@@ -297,7 +297,10 @@ impl GasToken {
         {
             if matches!(stack_item, StackItem::Struct(_)) {
                 let mut state = AccountState::default();
-                state.from_stack_item(stack_item);
+                if let Err(e) = state.from_stack_item(stack_item) {
+                    tracing::warn!("Failed to deserialize AccountState from stack item: {e}");
+                    return AccountState::default();
+                }
                 return state;
             }
         }
@@ -348,7 +351,7 @@ impl GasToken {
         } else {
             let state = AccountState::with_balance(balance.clone());
             let bytes = BinarySerializer::serialize(
-                &state.to_stack_item(),
+                &state.to_stack_item()?,
                 &ExecutionEngineLimits::default(),
             )
             .map_err(CoreError::native_contract)?;

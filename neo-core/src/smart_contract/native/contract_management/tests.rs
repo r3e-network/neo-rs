@@ -58,7 +58,7 @@ fn contract_from_bytes(bytes: &[u8]) -> ContractState {
     let item = BinarySerializer::deserialize(bytes, &ExecutionEngineLimits::default(), None)
         .expect("deserialize contract state stack item");
     let mut contract = ContractState::default();
-    contract.from_stack_item(item);
+    let _ = contract.from_stack_item(item);
     contract
 }
 

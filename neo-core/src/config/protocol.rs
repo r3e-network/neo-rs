@@ -251,7 +251,7 @@ impl ProtocolSettings {
             ms_per_block: 15000,
             max_valid_until_block_increment: 5760,
             validators_count: 7,
-            max_transactions_per_block: 5000,
+            max_transactions_per_block: 512,
             memory_pool_max_transactions: 50000,
             max_traceable_blocks: 2_102_400,
             initial_gas_distribution: 5_200_000_000_000_000,

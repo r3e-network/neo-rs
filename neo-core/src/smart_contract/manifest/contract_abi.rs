@@ -1,5 +1,6 @@
 //! ContractAbi - matches C# Neo.SmartContract.Manifest.ContractAbi exactly
 
+use crate::error::CoreError;
 use crate::smart_contract::i_interoperable::IInteroperable;
 use crate::smart_contract::manifest::{ContractEventDescriptor, ContractMethodDescriptor};
 use neo_vm::StackItem;
@@ -132,53 +133,60 @@ impl ContractAbi {
 }
 
 impl IInteroperable for ContractAbi {
-    fn from_stack_item(&mut self, stack_item: StackItem) {
-        if let StackItem::Struct(struct_item) = stack_item {
-            let items = struct_item.items();
-            if items.len() < 2 {
-                return;
-            }
-
-            if let Ok(method_items) = items[0].as_array() {
-                self.methods = method_items
-                    .iter()
-                    .map(|item| {
-                        let mut method = ContractMethodDescriptor::default();
-                        method.from_stack_item(item.clone());
-                        method
-                    })
-                    .collect();
-            }
-
-            if let Ok(event_items) = items[1].as_array() {
-                self.events = event_items
-                    .iter()
-                    .map(|item| {
-                        let mut event = ContractEventDescriptor::default();
-                        event.from_stack_item(item.clone());
-                        event
-                    })
-                    .collect();
-            }
+    fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
+        let StackItem::Struct(struct_item) = stack_item else {
+            return Err(CoreError::invalid_format(
+                "ContractAbi expects Struct stack item",
+            ));
+        };
+        let items = struct_item.items();
+        if items.len() < 2 {
+            return Err(CoreError::invalid_format(format!(
+                "ContractAbi stack item must contain 2 elements, found {}",
+                items.len()
+            )));
         }
+
+        if let Ok(method_items) = items[0].as_array() {
+            self.methods = method_items
+                .iter()
+                .map(|item| {
+                    let mut method = ContractMethodDescriptor::default();
+                    method.from_stack_item(item.clone())?;
+                    Ok(method)
+                })
+                .collect::<Result<Vec<_>, CoreError>>()?;
+        }
+
+        if let Ok(event_items) = items[1].as_array() {
+            self.events = event_items
+                .iter()
+                .map(|item| {
+                    let mut event = ContractEventDescriptor::default();
+                    event.from_stack_item(item.clone())?;
+                    Ok(event)
+                })
+                .collect::<Result<Vec<_>, CoreError>>()?;
+        }
+        Ok(())
     }
 
-    fn to_stack_item(&self) -> StackItem {
+    fn to_stack_item(&self) -> Result<StackItem, CoreError> {
         let methods = self
             .methods
             .iter()
             .map(|method| method.to_stack_item())
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, _>>()?;
         let events = self
             .events
             .iter()
             .map(|event| event.to_stack_item())
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, _>>()?;
 
-        StackItem::from_struct(vec![
+        Ok(StackItem::from_struct(vec![
             StackItem::from_array(methods),
             StackItem::from_array(events),
-        ])
+        ]))
     }
 
     fn clone_box(&self) -> Box<dyn IInteroperable> {

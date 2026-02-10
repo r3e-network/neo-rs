@@ -605,8 +605,8 @@ mod tests {
 
     #[test]
     fn max_constants_are_correct() {
-        assert_eq!(MAX_BLOCK_SIZE, 4_194_304); // 4 MB
-        assert_eq!(MAX_TRANSACTIONS_PER_BLOCK, 65_535); // u16::MAX
+        assert_eq!(MAX_BLOCK_SIZE, 2_097_152); // 2 MB — Neo N3 default
+        assert_eq!(MAX_TRANSACTIONS_PER_BLOCK, 512); // Neo N3 ProtocolSettings.Default
         assert_eq!(MAX_TIMESTAMP_DRIFT_MS, 900_000); // 15 minutes
         assert_eq!(MIN_TIMESTAMP_MS, 1468595301000); // Genesis timestamp
     }

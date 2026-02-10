@@ -17,6 +17,7 @@ pub const UINT160_SIZE: usize = ADDRESS_SIZE;
 ///
 /// This is implemented as a reference type to match the C# implementation.
 #[derive(Clone, Copy, Default, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[repr(C)]
 pub struct UInt160 {
     /// First 8 bytes of the `UInt160` (least significant).
     pub value1: u64,

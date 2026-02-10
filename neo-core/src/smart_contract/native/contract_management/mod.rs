@@ -119,7 +119,7 @@ impl ContractManagement {
     }
 
     pub(super) fn serialize_contract_state(contract: &ContractState) -> Result<Vec<u8>> {
-        BinarySerializer::serialize(&contract.to_stack_item(), &ExecutionEngineLimits::default())
+        BinarySerializer::serialize(&contract.to_stack_item()?, &ExecutionEngineLimits::default())
             .map_err(|e| Error::serialization(format!("Failed to serialize contract state: {e}")))
     }
 
@@ -188,7 +188,8 @@ impl ContractManagement {
             .map_err(|e| Error::deserialization(format!("ContractState NEF parse: {e}")))?;
 
         let mut manifest = ContractManifest::new(String::new());
-        manifest.from_stack_item(items[4].clone());
+        manifest.from_stack_item(items[4].clone())
+            .map_err(|e| Error::deserialization(format!("ContractState manifest: {e}")))?;
 
         if hash.is_zero() || nef.script.is_empty() || manifest.name.is_empty() {
             return Err(Error::deserialization(

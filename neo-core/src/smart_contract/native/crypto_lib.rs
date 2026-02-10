@@ -563,18 +563,21 @@ impl CryptoLib {
             Bls12381Group::G1 => {
                 let p1 = self.deserialize_g1(x.bytes())?;
                 let p2 = self.deserialize_g1(y.bytes())?;
+                // SAFETY: p1, p2 are valid G1 affine points from `deserialize_g1`.
                 let equal = unsafe { blst::blst_p1_affine_is_equal(&p1, &p2) };
                 Ok(vec![if equal { 1 } else { 0 }])
             }
             Bls12381Group::G2 => {
                 let p1 = self.deserialize_g2(x.bytes())?;
                 let p2 = self.deserialize_g2(y.bytes())?;
+                // SAFETY: p1, p2 are valid G2 affine points from `deserialize_g2`.
                 let equal = unsafe { blst::blst_p2_affine_is_equal(&p1, &p2) };
                 Ok(vec![if equal { 1 } else { 0 }])
             }
             Bls12381Group::Gt => {
                 let p1 = self.deserialize_gt(x.bytes())?;
                 let p2 = self.deserialize_gt(y.bytes())?;
+                // SAFETY: p1, p2 are valid Fp12 values from `deserialize_gt`.
                 let equal = unsafe { blst::blst_fp12_is_equal(&p1, &p2) };
                 Ok(vec![if equal { 1 } else { 0 }])
             }
@@ -670,6 +673,7 @@ impl CryptoLib {
             Bls12381Group::G1 => {
                 let point = self.deserialize_g1(data)?;
                 let mut proj = blst_p1::default();
+                // SAFETY: `point` is a validated G1 affine point from `deserialize_g1`.
                 unsafe {
                     blst::blst_p1_from_affine(&mut proj, &point);
                 }
@@ -678,6 +682,7 @@ impl CryptoLib {
             Bls12381Group::G2 => {
                 let point = self.deserialize_g2(data)?;
                 let mut proj = blst_p2::default();
+                // SAFETY: `point` is a validated G2 affine point from `deserialize_g2`.
                 unsafe {
                     blst::blst_p2_from_affine(&mut proj, &point);
                 }
@@ -898,6 +903,7 @@ impl CryptoLib {
     }
 
     fn gt_mul(&self, p: &blst_fp12, scalar: &[u8; 32], neg: bool) -> blst_fp12 {
+        // SAFETY: `blst_fp12_one` returns a pointer to a static constant (the identity element).
         let mut result = unsafe { *blst::blst_fp12_one() };
         let base = *p;
 
@@ -908,6 +914,7 @@ impl CryptoLib {
                     blst::blst_fp12_sqr(&mut result, &result);
                 }
                 if (byte >> bit) & 1 == 1 {
+                    // SAFETY: result and base are valid blst_fp12 values.
                     unsafe {
                         blst::blst_fp12_mul(&mut result, &result, &base);
                     }
@@ -964,11 +971,15 @@ impl CryptoLib {
             ));
         }
 
+        // SAFETY: `data` length is validated to be exactly 48 bytes (FP_SIZE) above.
+        // `target` is a valid mutable reference to a blst_fp struct.
         unsafe {
             blst::blst_fp_from_bendian(target, data.as_ptr());
         }
 
         let mut check = [0u8; FP_SIZE];
+        // SAFETY: `target` was just written by `blst_fp_from_bendian`. `check` is a
+        // stack-allocated 48-byte array matching the expected output size.
         unsafe {
             blst::blst_bendian_from_fp(check.as_mut_ptr(), target);
         }

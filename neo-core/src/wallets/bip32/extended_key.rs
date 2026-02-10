@@ -1,5 +1,8 @@
 //! BIP-32 extended key derivation.
 
+// Zeroize derive macro generates code that triggers false-positive unused_assignments
+#![allow(unused_assignments)]
+
 use super::key_path::KeyPath;
 use crate::cryptography::{ECCurve, ECPoint, ECC};
 use hmac::{Hmac, Mac};
@@ -9,6 +12,7 @@ use once_cell::sync::Lazy;
 use p256::elliptic_curve::bigint::ArrayEncoding;
 use p256::elliptic_curve::Curve;
 use sha2::Sha512;
+use zeroize::Zeroize;
 
 type HmacSha512 = Hmac<Sha512>;
 
@@ -18,14 +22,44 @@ static SECP256R1_ORDER: Lazy<BigUint> =
 static SECP256K1_ORDER: Lazy<BigUint> =
     Lazy::new(|| BigUint::from_bytes_be(&k256::Secp256k1::ORDER.to_be_byte_array()));
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Zeroize)]
+#[zeroize(drop)]
 pub struct ExtendedKey {
-    pub private_key: [u8; 32],
-    pub public_key: ECPoint,
-    pub chain_code: [u8; 32],
+    /// Private key bytes — zeroized on drop.
+    private_key: [u8; 32],
+    /// Corresponding public key (not sensitive, skipped by zeroize).
+    #[zeroize(skip)]
+    public_key: ECPoint,
+    /// BIP-32 chain code — zeroized on drop.
+    chain_code: [u8; 32],
+}
+
+impl std::fmt::Debug for ExtendedKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ExtendedKey")
+            .field("private_key", &"[REDACTED]")
+            .field("public_key", &self.public_key)
+            .field("chain_code", &"[REDACTED]")
+            .finish()
+    }
 }
 
 impl ExtendedKey {
+    /// Returns a reference to the private key bytes.
+    pub fn private_key(&self) -> &[u8; 32] {
+        &self.private_key
+    }
+
+    /// Returns a reference to the public key.
+    pub fn public_key(&self) -> &ECPoint {
+        &self.public_key
+    }
+
+    /// Returns a reference to the chain code bytes.
+    pub fn chain_code(&self) -> &[u8; 32] {
+        &self.chain_code
+    }
+
     pub fn create(seed: &[u8], curve: Option<ECCurve>) -> Result<Self, String> {
         let curve = curve.unwrap_or(ECCurve::Secp256r1);
         if matches!(curve, ECCurve::Ed25519) {

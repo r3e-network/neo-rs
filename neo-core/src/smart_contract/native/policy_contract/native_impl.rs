@@ -116,6 +116,20 @@ impl NativeContract for PolicyContract {
             if let Some(&faun_height) = engine.protocol_settings().hardforks.get(&Hardfork::HfFaun)
             {
                 if engine.current_block_index() == faun_height {
+                    // v3.9.1: Scale exec fee factor by ApplicationEngine.FeeFactor at Faun activation.
+                    //
+                    // C# ref: `var item = engine.SnapshotCache.GetAndChange(_execFeeFactor)
+                    //           ?? throw new InvalidOperationException();
+                    //          item.Set((uint)(BigInteger)item * ApplicationEngine.FeeFactor);`
+                    //
+                    // NOTE: The `if let Some` + `value <= MAX_EXEC_FEE_FACTOR` guard is
+                    // intentional.  In our Rust implementation, `initialize` is called
+                    // TWICE per block: once from `register_native_contracts` (engine
+                    // constructor) and once from `ContractManagement::on_persist`.  The
+                    // C# code only calls `InitializeAsync` once (from OnPersist).  The
+                    // guard prevents double-scaling (30 → 300000 → 3B) by ensuring the
+                    // multiplication is idempotent: after the first scaling the value
+                    // exceeds MAX_EXEC_FEE_FACTOR (100), so subsequent calls are no-ops.
                     if let Some(item) = snapshot_ref.try_get(&Self::exec_fee_factor_key()) {
                         let value = BigInt::from_signed_bytes_le(&item.get_value())
                             .to_u32()
@@ -133,6 +147,28 @@ impl NativeContract for PolicyContract {
                                 StorageItem::from_bytes(Self::encode_u32(scaled)),
                             )?;
                         }
+                    }
+
+                    // v3.9.1: Add timestamp to ALL blocked accounts at Faun activation.
+                    //
+                    // C# ref: `engine.SnapshotCache.GetAndChange(key).Set(time)`
+                    // for every entry under Prefix_BlockedAccount.  This ensures
+                    // recoverFund has a valid timestamp for the 1-year waiting period.
+                    let timestamp = engine
+                        .get_current_block_time()
+                        .map_err(Error::invalid_operation)?;
+                    let timestamp_bytes = Self::encode_u64(timestamp);
+                    let prefix_key =
+                        StorageKey::new(Self::ID, vec![Self::PREFIX_BLOCKED_ACCOUNT]);
+                    let all_keys: Vec<StorageKey> = snapshot_ref
+                        .find(Some(&prefix_key), SeekDirection::Forward)
+                        .map(|(key, _)| key)
+                        .collect();
+                    for key in all_keys {
+                        engine.set_storage(
+                            key,
+                            StorageItem::from_bytes(timestamp_bytes.clone()),
+                        )?;
                     }
                 }
             }

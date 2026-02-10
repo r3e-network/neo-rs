@@ -141,7 +141,7 @@ mod tests {
             WitnessScope::CALLED_BY_ENTRY,
         )]);
 
-        let item = tx.to_stack_item();
+        let item = tx.to_stack_item().unwrap();
         assert!(!item.is_null());
 
         let array = item.as_array().expect("array");
@@ -162,22 +162,20 @@ mod tests {
         assert_eq!(array[7].as_bytes().expect("script"), vec![0x01, 0x02]);
     }
 
-    /// Test ToStackItem panics when sender is missing (matches C# ArgumentException).
+    /// Test ToStackItem returns error when sender is missing (matches C# ArgumentException).
     #[test]
-    #[should_panic(expected = "ArgumentException: Sender is not specified in the transaction.")]
     fn test_to_stack_item_requires_sender() {
         let tx = Transaction::new();
-        let _ = tx.to_stack_item();
+        let result = tx.to_stack_item();
+        assert!(result.is_err(), "to_stack_item should return Err when sender is missing");
     }
 
-    /// Test FromStackItem panics (matches C# NotSupportedException).
+    /// Test FromStackItem returns error (matches C# NotSupportedException).
     #[test]
-    #[should_panic(
-        expected = "NotSupportedException: Transaction::from_stack_item is not supported"
-    )]
     fn test_from_stack_item_not_supported() {
         let mut tx = Transaction::new();
-        tx.from_stack_item(StackItem::null());
+        let result = tx.from_stack_item(StackItem::null());
+        assert!(result.is_err(), "Transaction::from_stack_item should return Err for unsupported operation");
     }
 
     /// Test transaction size limits (matches C# size validation behavior)

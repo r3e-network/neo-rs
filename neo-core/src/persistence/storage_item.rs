@@ -9,7 +9,7 @@ use crate::neo_io::{IoResult, MemoryReader};
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::i_interoperable::IInteroperable;
 use neo_vm::execution_engine_limits::ExecutionEngineLimits;
-use num_bigint::{BigInt, Sign};
+use num_bigint::BigInt;
 use std::fmt;
 
 #[allow(dead_code)]
@@ -75,14 +75,22 @@ impl StorageItem {
 
         match cache {
             StorageCache::BigInteger(value) => {
-                let (_, bytes) = value.to_bytes_le();
+                // Use signed encoding to match C# BigInteger two's complement format.
+                // to_bytes_le() discards the sign, corrupting negative values.
+                let mut bytes = value.to_signed_bytes_le();
+                if bytes.is_empty() {
+                    bytes.push(0);
+                }
                 bytes
             }
-            StorageCache::Interoperable(interoperable) => BinarySerializer::serialize(
-                &interoperable.to_stack_item(),
-                &ExecutionEngineLimits::default(),
-            )
-            .unwrap_or_default(),
+            StorageCache::Interoperable(interoperable) => match interoperable.to_stack_item() {
+                Ok(item) => BinarySerializer::serialize(
+                    &item,
+                    &ExecutionEngineLimits::default(),
+                )
+                .unwrap_or_default(),
+                Err(_) => Vec::new(),
+            },
         }
     }
 
@@ -123,7 +131,11 @@ impl StorageItem {
             Some(StorageCache::BigInteger(value)) => value.clone(),
             _ => {
                 let bytes = self.get_value();
-                BigInt::from_bytes_le(Sign::Plus, &bytes)
+                if bytes.is_empty() {
+                    return BigInt::ZERO;
+                }
+                // Use signed decoding to match C# BigInteger two's complement format.
+                BigInt::from_signed_bytes_le(&bytes)
             }
         }
     }

@@ -3,6 +3,7 @@
 //
 
 use super::*;
+use crate::error::CoreError;
 
 impl IInventory for Transaction {
     fn inventory_type(&self) -> InventoryType {
@@ -88,19 +89,19 @@ impl crate::IVerifiable for Transaction {
 }
 
 impl IInteroperable for Transaction {
-    fn from_stack_item(&mut self, _stack_item: StackItem) {
+    fn from_stack_item(&mut self, _stack_item: StackItem) -> Result<(), CoreError> {
         // This operation is not supported for Transaction.
         // The C# implementation throws NotSupportedException.
-        panic!("NotSupportedException: Transaction::from_stack_item is not supported");
+        Err(CoreError::invalid_operation("FromStackItem is not supported for Transaction"))
     }
 
-    fn to_stack_item(&self) -> StackItem {
+    fn to_stack_item(&self) -> Result<StackItem, CoreError> {
         if self.signers.is_empty() {
-            panic!("ArgumentException: Sender is not specified in the transaction.");
+            return Err(CoreError::invalid_argument("Sender is not specified in the transaction"));
         }
         let sender = self.signers[0].account.to_bytes();
 
-        StackItem::from_array(vec![
+        Ok(StackItem::from_array(vec![
             StackItem::from_byte_string(self.hash().to_bytes()),
             StackItem::from_int(self.version as i64),
             StackItem::from_int(self.nonce),
@@ -109,7 +110,7 @@ impl IInteroperable for Transaction {
             StackItem::from_int(self.network_fee),
             StackItem::from_int(self.valid_until_block),
             StackItem::from_byte_string(self.script.clone()),
-        ])
+        ]))
     }
 
     fn clone_box(&self) -> Box<dyn IInteroperable> {

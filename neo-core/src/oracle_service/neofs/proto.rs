@@ -1,4 +1,12 @@
 #[cfg(feature = "neofs-grpc")]
+#[allow(
+    clippy::doc_overindented_list_items,
+    clippy::doc_lazy_continuation,
+    clippy::large_enum_variant,
+    clippy::enum_variant_names,
+    clippy::module_inception,
+    dead_code
+)]
 pub(super) mod neofs_proto {
     pub mod neo {
         pub mod fs {

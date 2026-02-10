@@ -1,5 +1,6 @@
 //! AccountState - matches C# Neo.SmartContract.Native.AccountState exactly
 
+use crate::error::CoreError;
 use crate::smart_contract::i_interoperable::IInteroperable;
 use neo_vm::StackItem;
 use num_bigint::BigInt;
@@ -47,7 +48,7 @@ impl AccountState {
 }
 
 impl IInteroperable for AccountState {
-    fn from_stack_item(&mut self, stack_item: StackItem) {
+    fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
         if let StackItem::Struct(struct_item) = stack_item {
             let items = struct_item.items();
             if let Some(first) = items.first() {
@@ -56,10 +57,11 @@ impl IInteroperable for AccountState {
                 }
             }
         }
+        Ok(())
     }
 
-    fn to_stack_item(&self) -> StackItem {
-        StackItem::from_struct(vec![StackItem::from_int(self.balance.clone())])
+    fn to_stack_item(&self) -> Result<StackItem, CoreError> {
+        Ok(StackItem::from_struct(vec![StackItem::from_int(self.balance.clone())]))
     }
 
     fn clone_box(&self) -> Box<dyn IInteroperable> {

@@ -1,5 +1,6 @@
 //! ContractParameterDefinition - matches C# Neo.SmartContract.Manifest.ContractParameterDefinition exactly
 
+use crate::error::CoreError;
 use crate::smart_contract::i_interoperable::IInteroperable;
 use crate::smart_contract::ContractParameterType;
 use neo_vm::StackItem;
@@ -66,33 +67,40 @@ impl ContractParameterDefinition {
 }
 
 impl IInteroperable for ContractParameterDefinition {
-    fn from_stack_item(&mut self, stack_item: StackItem) {
-        if let StackItem::Struct(struct_item) = stack_item {
-            let items = struct_item.items();
-            if items.len() < 2 {
-                return;
-            }
+    fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
+        let StackItem::Struct(struct_item) = stack_item else {
+            return Err(CoreError::invalid_format(
+                "ContractParameterDefinition expects Struct stack item",
+            ));
+        };
+        let items = struct_item.items();
+        if items.len() < 2 {
+            return Err(CoreError::invalid_format(format!(
+                "ContractParameterDefinition stack item must contain 2 elements, found {}",
+                items.len()
+            )));
+        }
 
-            if let Ok(bytes) = items[0].as_bytes() {
-                if let Ok(name) = String::from_utf8(bytes) {
-                    self.name = name;
-                }
-            }
-
-            if let Ok(integer) = items[1].as_int() {
-                if let Some(value) = integer.to_u8() {
-                    self.param_type = ContractParameterType::try_from_u8(value)
-                        .unwrap_or(ContractParameterType::Any);
-                }
+        if let Ok(bytes) = items[0].as_bytes() {
+            if let Ok(name) = String::from_utf8(bytes) {
+                self.name = name;
             }
         }
+
+        if let Ok(integer) = items[1].as_int() {
+            if let Some(value) = integer.to_u8() {
+                self.param_type = ContractParameterType::try_from_u8(value)
+                    .unwrap_or(ContractParameterType::Any);
+            }
+        }
+        Ok(())
     }
 
-    fn to_stack_item(&self) -> StackItem {
-        StackItem::from_struct(vec![
+    fn to_stack_item(&self) -> Result<StackItem, CoreError> {
+        Ok(StackItem::from_struct(vec![
             StackItem::from_byte_string(self.name.as_bytes()),
             StackItem::from_int(self.param_type as u8),
-        ])
+        ]))
     }
 
     fn clone_box(&self) -> Box<dyn IInteroperable> {

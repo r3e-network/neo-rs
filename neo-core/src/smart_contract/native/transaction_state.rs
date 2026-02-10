@@ -1,5 +1,6 @@
 //! TransactionState - matches C# Neo.SmartContract.Native.TransactionState exactly.
 
+use crate::error::CoreError;
 use crate::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use crate::network::p2p::payloads::transaction::Transaction;
 use crate::smart_contract::i_interoperable::IInteroperable;
@@ -52,11 +53,11 @@ impl TransactionState {
 }
 
 impl IInteroperable for TransactionState {
-    fn from_stack_item(&mut self, stack_item: StackItem) {
+    fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
         if let StackItem::Struct(struct_item) = stack_item {
             let items = struct_item.items();
             if items.is_empty() {
-                return;
+                return Ok(());
             }
 
             if let Ok(integer) = items[0].as_int() {
@@ -69,7 +70,7 @@ impl IInteroperable for TransactionState {
             if items.len() == 1 {
                 self.transaction = None;
                 self.state = VMState::NONE;
-                return;
+                return Ok(());
             }
 
             self.transaction = items[1]
@@ -85,16 +86,17 @@ impl IInteroperable for TransactionState {
                 .map(Self::decode_vm_state)
                 .unwrap_or(VMState::NONE);
         }
+        Ok(())
     }
 
-    fn to_stack_item(&self) -> StackItem {
+    fn to_stack_item(&self) -> Result<StackItem, CoreError> {
         if let Some(tx) = &self.transaction {
             if let Some(bytes) = Self::serialize_transaction(tx) {
-                return StackItem::from_struct(vec![
+                return Ok(StackItem::from_struct(vec![
                     StackItem::from_int(self.block_index),
                     StackItem::from_byte_string(bytes),
                     StackItem::from_int(self.state as u8),
-                ]);
+                ]));
             }
 
             warn!(
@@ -104,7 +106,7 @@ impl IInteroperable for TransactionState {
             );
         }
 
-        StackItem::from_struct(vec![StackItem::from_int(self.block_index)])
+        Ok(StackItem::from_struct(vec![StackItem::from_int(self.block_index)]))
     }
 
     fn clone_box(&self) -> Box<dyn IInteroperable> {
@@ -132,7 +134,7 @@ mod tests {
     }
 
     fn stack_bytes(state: &TransactionState) -> Vec<u8> {
-        BinarySerializer::serialize(&state.to_stack_item(), &ExecutionEngineLimits::default())
+        BinarySerializer::serialize(&state.to_stack_item().expect("to_stack_item"), &ExecutionEngineLimits::default())
             .expect("serialize stack item")
     }
 
@@ -144,10 +146,10 @@ mod tests {
     #[test]
     fn conflict_stub_roundtrip() {
         let state = TransactionState::new(7, None, VMState::NONE);
-        let stack = state.to_stack_item();
+        let stack = state.to_stack_item().unwrap();
 
         let mut parsed = TransactionState::new(0, None, VMState::HALT);
-        parsed.from_stack_item(stack);
+        parsed.from_stack_item(stack).unwrap();
 
         assert_eq!(parsed.block_index, 7);
         assert!(parsed.transaction.is_none());
@@ -160,10 +162,10 @@ mod tests {
         tx.set_script(vec![0x01, 0x02, 0x03]);
 
         let state = TransactionState::new(42, Some(tx.clone()), VMState::HALT);
-        let stack = state.to_stack_item();
+        let stack = state.to_stack_item().unwrap();
 
         let mut parsed = TransactionState::new(0, None, VMState::NONE);
-        parsed.from_stack_item(stack);
+        parsed.from_stack_item(stack).unwrap();
 
         assert_eq!(parsed.block_index, 42);
         assert_eq!(parsed.state, VMState::HALT);
@@ -177,7 +179,7 @@ mod tests {
         let bytes = stack_bytes(&state);
 
         let mut parsed = TransactionState::new(0, None, VMState::HALT);
-        parsed.from_stack_item(decode_stack(&bytes));
+        parsed.from_stack_item(decode_stack(&bytes)).unwrap();
 
         assert_eq!(parsed.block_index, 1);
         assert_eq!(
@@ -205,7 +207,7 @@ mod tests {
     fn transaction_state_from_replica_updates_fields() {
         let origin = TransactionState::new(1, Some(sample_transaction(1, 100)), VMState::NONE);
         let mut replica = TransactionState::new(0, None, VMState::HALT);
-        replica.from_replica(&origin);
+        let _ = replica.from_replica(&origin);
 
         assert_eq!(stack_bytes(&replica), stack_bytes(&origin));
         assert_eq!(
@@ -214,7 +216,7 @@ mod tests {
         );
 
         let new_origin = TransactionState::new(2, Some(sample_transaction(99, 200)), VMState::NONE);
-        replica.from_replica(&new_origin);
+        let _ = replica.from_replica(&new_origin);
 
         assert_eq!(stack_bytes(&replica), stack_bytes(&new_origin));
         assert_eq!(replica.block_index, 2);
@@ -230,7 +232,7 @@ mod tests {
         let bytes = stack_bytes(&state);
 
         let mut parsed = TransactionState::new(0, Some(sample_transaction(1, 0)), VMState::HALT);
-        parsed.from_stack_item(decode_stack(&bytes));
+        parsed.from_stack_item(decode_stack(&bytes)).unwrap();
 
         assert_eq!(parsed.block_index, 7);
         assert!(parsed.transaction.is_none());

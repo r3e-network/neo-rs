@@ -455,7 +455,7 @@ mod tests {
 
         // Exhaust ip1's burst
         for _ in 0..5 {
-            limiter.check(ip1);
+            let _ = limiter.check(ip1);
         }
 
         // ip2 should still have its full burst

@@ -191,7 +191,7 @@ fn parse_address_with_version(address: &str, version: u8) -> Result<UInt160, ()>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::server::rcp_server_settings::RpcServerConfig;
+    use crate::server::rpc_server_settings::RpcServerConfig;
     use crate::server::rpc_server::RpcHandler;
     use neo_core::neo_system::NeoSystem;
     use neo_core::protocol_settings::ProtocolSettings;

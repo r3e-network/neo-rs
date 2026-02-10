@@ -640,7 +640,7 @@ fn current_time_millis() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::server::rcp_server_settings::RpcServerConfig;
+    use crate::server::rpc_server_settings::RpcServerConfig;
     use crate::server::rpc_server::RpcHandler;
     use neo_core::neo_io::{Serializable, SerializableExt};
     use neo_core::neo_system::NeoSystem;

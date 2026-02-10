@@ -5,7 +5,7 @@
 //! GAS deposits for notary service fees.
 
 use crate::cryptography::Crypto;
-use crate::error::{CoreError as Error, CoreResult as Result};
+use crate::error::{CoreError, CoreError as Error, CoreResult as Result};
 use crate::hardfork::Hardfork;
 use crate::network::p2p::payloads::{Transaction, TransactionAttribute, TransactionAttributeType};
 use crate::persistence::i_read_only_store::IReadOnlyStoreGeneric;
@@ -60,11 +60,11 @@ impl Deposit {
 }
 
 impl IInteroperable for Deposit {
-    fn from_stack_item(&mut self, stack_item: StackItem) {
+    fn from_stack_item(&mut self, stack_item: StackItem) -> std::result::Result<(), CoreError> {
         if let StackItem::Struct(struct_item) = stack_item {
             let items = struct_item.items();
             if items.len() < 2 {
-                return;
+                return Ok(());
             }
 
             if let Ok(integer) = items[0].as_int() {
@@ -77,13 +77,14 @@ impl IInteroperable for Deposit {
                 }
             }
         }
+        Ok(())
     }
 
-    fn to_stack_item(&self) -> StackItem {
-        StackItem::from_struct(vec![
+    fn to_stack_item(&self) -> std::result::Result<StackItem, CoreError> {
+        Ok(StackItem::from_struct(vec![
             StackItem::from_int(self.amount.clone()),
             StackItem::from_int(self.till),
-        ])
+        ]))
     }
 
     fn clone_box(&self) -> Box<dyn IInteroperable> {
@@ -1016,9 +1017,9 @@ mod tests {
     #[test]
     fn test_deposit_to_stack_item() {
         let deposit = Deposit::new(BigInt::from(500), 100);
-        let item = deposit.to_stack_item();
+        let item = deposit.to_stack_item().unwrap();
         let mut new_deposit = Deposit::default();
-        new_deposit.from_stack_item(item);
+        new_deposit.from_stack_item(item).unwrap();
         assert_eq!(new_deposit.amount, deposit.amount);
         assert_eq!(new_deposit.till, deposit.till);
     }

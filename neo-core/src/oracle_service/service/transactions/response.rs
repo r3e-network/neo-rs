@@ -130,17 +130,18 @@ impl OracleService {
             ));
         }
 
-        tx.set_network_fee(engine.fee_consumed());
+        let comp1 = engine.fee_consumed();
+        tx.set_network_fee(comp1);
 
         let exec_fee_factor = PolicyContract::new()
             .get_exec_fee_factor_snapshot(snapshot, settings, height)
             .unwrap_or(PolicyContract::DEFAULT_EXEC_FEE_FACTOR)
             as i64;
-        let network_fee = exec_fee_factor
-            * crate::smart_contract::helper::Helper::multi_signature_contract_cost(
-                m as i32, n as i32,
-            );
-        tx.set_network_fee(tx.network_fee().saturating_add(network_fee));
+        let multi_sig_cost = crate::smart_contract::helper::Helper::multi_signature_contract_cost(
+            m as i32, n as i32,
+        );
+        let comp2 = exec_fee_factor * multi_sig_cost;
+        tx.set_network_fee(tx.network_fee().saturating_add(comp2));
 
         let size_inv = 66 * m;
         let oracle_witness_size = Witness::empty().size();
@@ -172,7 +173,8 @@ impl OracleService {
         }
 
         size += get_var_size_serializable_slice(tx.attributes());
-        let final_network_fee = tx.network_fee().saturating_add(size as i64 * fee_per_byte);
+        let comp3 = size as i64 * fee_per_byte;
+        let final_network_fee = tx.network_fee().saturating_add(comp3);
         tx.set_network_fee(final_network_fee);
         tx.set_system_fee(request.gas_for_response - final_network_fee);
 

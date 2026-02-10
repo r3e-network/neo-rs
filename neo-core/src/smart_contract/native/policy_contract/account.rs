@@ -116,15 +116,8 @@ impl PolicyContract {
         let context = engine.get_native_storage_context(&self.hash)?;
         let key = Self::blocked_account_suffix(account);
 
-        let block_data = engine.get_storage_item(&context, &key);
-        if let Some(item) = block_data {
-            if item.is_empty() && engine.is_hardfork_enabled(Hardfork::HfFaun) {
-                // Set request time for recover funds.
-                let timestamp = engine
-                    .get_current_block_time()
-                    .map_err(Error::invalid_operation)?;
-                engine.put_storage_item(&context, &key, &Self::encode_u64(timestamp))?;
-            }
+        // v3.9.1: simple existence check — timestamps are set at Faun activation.
+        if engine.get_storage_item(&context, &key).is_some() {
             return Ok(false);
         }
 
@@ -149,6 +142,13 @@ impl PolicyContract {
         Ok(true)
     }
 
+    /// Recovers funds from a blocked account after the required waiting period.
+    ///
+    /// **v3.9.1 note**: This method intentionally performs *read-only* access on
+    /// the blocked-account storage entry (via `get_storage_item`).  The entry
+    /// must NOT be written back or marked as `Changed` — only the GAS/NEP-17
+    /// token transfer is executed.  Pre-Faun entries with empty data are
+    /// migrated at the Faun activation block (see `native_impl.rs`).
     pub(super) fn recover_fund(
         &self,
         engine: &mut ApplicationEngine,

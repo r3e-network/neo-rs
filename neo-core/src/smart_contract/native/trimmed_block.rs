@@ -1,3 +1,4 @@
+use crate::error::CoreError;
 use crate::extensions::io::memory_reader::MemoryReaderExtensions;
 use crate::ledger::{block_header::BlockHeader, Block};
 use crate::neo_io::{
@@ -64,13 +65,13 @@ impl Serializable for TrimmedBlock {
 }
 
 impl IInteroperable for TrimmedBlock {
-    fn from_stack_item(&mut self, _stack_item: StackItem) {
+    fn from_stack_item(&mut self, _stack_item: StackItem) -> Result<(), CoreError> {
         // Not supported in C# implementation (throws NotSupportedException)
-        panic!("NotSupportedException: TrimmedBlock does not support FromStackItem");
+        Err(CoreError::invalid_operation("FromStackItem is not supported for TrimmedBlock"))
     }
 
-    fn to_stack_item(&self) -> StackItem {
-        StackItem::from_array(vec![
+    fn to_stack_item(&self) -> Result<StackItem, CoreError> {
+        Ok(StackItem::from_array(vec![
             StackItem::from_byte_string(self.hash().to_bytes()),
             StackItem::from_int(self.header.version),
             StackItem::from_byte_string(self.header.previous_hash.to_bytes()),
@@ -81,7 +82,7 @@ impl IInteroperable for TrimmedBlock {
             StackItem::from_int(self.header.primary_index as u32),
             StackItem::from_byte_string(self.header.next_consensus.to_bytes()),
             StackItem::from_int(self.hashes.len() as u32),
-        ])
+        ]))
     }
 
     fn clone_box(&self) -> Box<dyn IInteroperable> {

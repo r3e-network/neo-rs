@@ -1,5 +1,6 @@
 //! ContractEventDescriptor - matches C# Neo.SmartContract.Manifest.ContractEventDescriptor exactly
 
+use crate::error::CoreError;
 use crate::smart_contract::i_interoperable::IInteroperable;
 use crate::smart_contract::manifest::ContractParameterDefinition;
 use neo_vm::StackItem;
@@ -72,42 +73,49 @@ impl ContractEventDescriptor {
 }
 
 impl IInteroperable for ContractEventDescriptor {
-    fn from_stack_item(&mut self, stack_item: StackItem) {
-        if let StackItem::Struct(struct_item) = stack_item {
-            let items = struct_item.items();
-            if items.len() < 2 {
-                return;
-            }
+    fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
+        let StackItem::Struct(struct_item) = stack_item else {
+            return Err(CoreError::invalid_format(
+                "ContractEventDescriptor expects Struct stack item",
+            ));
+        };
+        let items = struct_item.items();
+        if items.len() < 2 {
+            return Err(CoreError::invalid_format(format!(
+                "ContractEventDescriptor stack item must contain 2 elements, found {}",
+                items.len()
+            )));
+        }
 
-            if let Ok(bytes) = items[0].as_bytes() {
-                if let Ok(name) = String::from_utf8(bytes) {
-                    self.name = name;
-                }
-            }
-
-            if let Ok(param_items) = items[1].as_array() {
-                self.parameters = param_items
-                    .iter()
-                    .map(|item| {
-                        let mut param = ContractParameterDefinition::default();
-                        param.from_stack_item(item.clone());
-                        param
-                    })
-                    .collect();
+        if let Ok(bytes) = items[0].as_bytes() {
+            if let Ok(name) = String::from_utf8(bytes) {
+                self.name = name;
             }
         }
+
+        if let Ok(param_items) = items[1].as_array() {
+            self.parameters = param_items
+                .iter()
+                .map(|item| {
+                    let mut param = ContractParameterDefinition::default();
+                    param.from_stack_item(item.clone())?;
+                    Ok(param)
+                })
+                .collect::<Result<Vec<_>, CoreError>>()?;
+        }
+        Ok(())
     }
 
-    fn to_stack_item(&self) -> StackItem {
+    fn to_stack_item(&self) -> Result<StackItem, CoreError> {
         let params = self
             .parameters
             .iter()
             .map(|p| p.to_stack_item())
-            .collect::<Vec<_>>();
-        StackItem::from_struct(vec![
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(StackItem::from_struct(vec![
             StackItem::from_byte_string(self.name.as_bytes()),
             StackItem::from_array(params),
-        ])
+        ]))
     }
 
     fn clone_box(&self) -> Box<dyn IInteroperable> {

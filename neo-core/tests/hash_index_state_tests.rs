@@ -9,7 +9,7 @@ fn hash_index_state_round_trips_via_stack_item() {
     let origin = HashIndexState::new(UInt256::zero(), 42);
     let limits = ExecutionEngineLimits::default();
 
-    let stack_representation = origin.to_stack_item();
+    let stack_representation = origin.to_stack_item().unwrap();
     assert!(matches!(stack_representation, neo_vm::StackItem::Struct(_)));
 
     let serialized =
@@ -18,7 +18,7 @@ fn hash_index_state_round_trips_via_stack_item() {
         BinarySerializer::deserialize(&serialized, &limits, None).expect("deserialize");
 
     let mut dest = HashIndexState::default();
-    dest.from_stack_item(deserialized);
+    dest.from_stack_item(deserialized).unwrap();
 
     assert_eq!(origin.hash, dest.hash);
     assert_eq!(origin.index, dest.index);

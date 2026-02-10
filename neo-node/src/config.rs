@@ -1338,6 +1338,7 @@ fn build_tokens_tracker_settings(
     settings
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_dbft_settings(
     default_network: u32,
     recovery_logs: Option<String>,
@@ -1382,6 +1383,7 @@ fn build_dbft_settings(
     settings
 }
 
+#[allow(clippy::too_many_arguments, clippy::field_reassign_with_default)]
 fn build_oracle_service_settings(
     default_network: u32,
     network: Option<u32>,

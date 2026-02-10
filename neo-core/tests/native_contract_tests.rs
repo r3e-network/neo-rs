@@ -119,7 +119,7 @@ fn call_get_contract(
 
     let item = engine.result_stack().peek(0).expect("result item").clone();
     let mut state = ContractState::default();
-    state.from_stack_item(item);
+    let _ = state.from_stack_item(item);
     state
 }
 

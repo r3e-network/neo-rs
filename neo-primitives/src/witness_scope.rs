@@ -35,16 +35,22 @@ impl WitnessScope {
     pub const GLOBAL: Self = Self(0x80);
 
     // C# naming convention aliases
+    /// Alias for [`CALLED_BY_ENTRY`](Self::CALLED_BY_ENTRY) (C# naming convention).
     #[allow(non_upper_case_globals)]
     pub const CalledByEntry: Self = Self::CALLED_BY_ENTRY;
+    /// Alias for [`NONE`](Self::NONE) (C# naming convention).
     #[allow(non_upper_case_globals)]
     pub const None: Self = Self::NONE;
+    /// Alias for [`GLOBAL`](Self::GLOBAL) (C# naming convention).
     #[allow(non_upper_case_globals)]
     pub const Global: Self = Self::GLOBAL;
+    /// Alias for [`CUSTOM_CONTRACTS`](Self::CUSTOM_CONTRACTS) (C# naming convention).
     #[allow(non_upper_case_globals)]
     pub const CustomContracts: Self = Self::CUSTOM_CONTRACTS;
+    /// Alias for [`CUSTOM_GROUPS`](Self::CUSTOM_GROUPS) (C# naming convention).
     #[allow(non_upper_case_globals)]
     pub const CustomGroups: Self = Self::CUSTOM_GROUPS;
+    /// Alias for [`WITNESS_RULES`](Self::WITNESS_RULES) (C# naming convention).
     #[allow(non_upper_case_globals)]
     pub const WitnessRules: Self = Self::WITNESS_RULES;
 
