@@ -63,6 +63,7 @@ impl<S> MptCache<S>
 where
     S: MptStoreSnapshot,
 {
+    /// Creates a new cache backed by the given store snapshot with the specified key prefix.
     pub fn new(store: Arc<S>, prefix: u8) -> Self {
         Self {
             store,

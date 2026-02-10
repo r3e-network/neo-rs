@@ -632,6 +632,7 @@ impl Crypto {
         ECDsa::verify(data, signature, public_key, ECCurve::Secp256k1).unwrap_or(false)
     }
 
+    /// Verifies an ECDSA signature using the specified curve and hash algorithm.
     #[must_use]
     pub fn verify_signature_with_curve(
         data: &[u8],
@@ -744,6 +745,9 @@ impl Bls12381Crypto {
         }
 
         let mut sk_scalar = blst_scalar::default();
+        // SAFETY: `blst_scalar_from_lendian` reads exactly 32 bytes from `private_key`,
+        // which is guaranteed to be a valid 32-byte slice. `blst_scalar_fr_check` only
+        // reads the initialized `sk_scalar`. Both are pure FFI calls with no aliasing.
         unsafe {
             blst::blst_scalar_from_lendian(&mut sk_scalar, private_key.as_ptr());
             if !blst::blst_scalar_fr_check(&sk_scalar) {
@@ -768,6 +772,9 @@ impl Bls12381Crypto {
 
         let sk_scalar = Self::validate_private_key(private_key)?;
 
+        // SAFETY: `sk_scalar` was validated by `validate_private_key`. All blst FFI
+        // calls operate on stack-allocated, default-initialized structs with no aliasing.
+        // `blst_p2_compress` writes exactly 96 bytes into `pk_bytes`.
         unsafe {
             // Derive public key: PK = sk * G2
             let mut pk = blst_p2::default();
@@ -788,6 +795,10 @@ impl Bls12381Crypto {
 
         let sk_scalar = Self::validate_private_key(private_key)?;
 
+        // SAFETY: `sk_scalar` validated above. `message` and `NEO_BLS_DST` are valid
+        // slices with correct lengths passed via `as_ptr()`/`len()`. All blst FFI calls
+        // operate on stack-allocated, default-initialized structs. `blst_p1_compress`
+        // writes exactly 48 bytes into `sig_bytes`.
         unsafe {
             // Hash message to G1 curve point
             let mut msg_point = blst_p1::default();
@@ -823,6 +834,9 @@ impl Bls12381Crypto {
     ) -> Result<bool, String> {
         use blst::{blst_p1, blst_p1_affine, blst_p2_affine, BLST_ERROR};
 
+        // SAFETY: All inputs are fixed-size arrays with correct lengths for blst FFI.
+        // Each deserialized point is validated (subgroup check, infinity check) before
+        // use. Stack-allocated structs are default-initialized before FFI writes.
         unsafe {
             // Deserialize signature (G1 point)
             let mut sig_affine = blst_p1_affine::default();
@@ -895,6 +909,9 @@ impl Bls12381Crypto {
             return Ok(signatures[0]);
         }
 
+        // SAFETY: Each signature is a fixed 48-byte array. Every deserialized point
+        // is validated (subgroup + infinity check) before aggregation. Stack-allocated
+        // structs are default-initialized. Loop bounds match `signatures.len()`.
         unsafe {
             // Initialize with first signature
             let mut agg = blst_p1::default();
@@ -946,6 +963,9 @@ impl Bls12381Crypto {
         }
 
         // Aggregate public keys
+        // SAFETY: Each public key is a fixed 96-byte array. Every deserialized G2 point
+        // is validated (subgroup + infinity check) before aggregation. The aggregated
+        // key is then used for pairing verification via the already-audited `verify`.
         unsafe {
             let mut agg_pk = blst_p2::default();
             let mut first_affine = blst_p2_affine::default();
@@ -984,23 +1004,28 @@ impl Bls12381Crypto {
     }
 }
 
+/// Convenience functions for Base58 encoding and decoding.
 pub mod base58 {
     use super::Base58;
 
+    /// Encodes raw bytes as a Base58 string.
     #[must_use]
     pub fn encode(data: &[u8]) -> String {
         Base58::encode(data)
     }
 
+    /// Decodes a Base58 string into raw bytes.
     pub fn decode(s: &str) -> Result<Vec<u8>, String> {
         Base58::decode(s)
     }
 
+    /// Encodes raw bytes as a Base58Check string (with checksum).
     #[must_use]
     pub fn encode_check(data: &[u8]) -> String {
         Base58::encode_check(data)
     }
 
+    /// Decodes a Base58Check string, verifying the embedded checksum.
     pub fn decode_check(s: &str) -> Result<Vec<u8>, String> {
         Base58::decode_check(s)
     }
@@ -1008,16 +1033,19 @@ pub mod base58 {
 
 // NOTE: Removed duplicate `pub mod hash` - use `crate::hash` or `NeoHash` instead
 
+/// Murmur3 hash function utilities.
 pub mod murmur {
     use murmur3::murmur3_32;
     use std::convert::TryInto;
     use std::io::Cursor;
 
+    /// Computes a 32-bit Murmur3 hash of the given data with the specified seed.
     #[must_use]
     pub fn murmur32(data: &[u8], seed: u32) -> u32 {
         murmur3_32(&mut Cursor::new(data), seed).expect("murmur32 hashing should not fail")
     }
 
+    /// Computes a 128-bit Murmur3 hash of the given data with the specified seed.
     #[must_use]
     pub fn murmur128(data: &[u8], seed: u32) -> [u8; 16] {
         const C1: u64 = 0x87c3_7b91_1142_53d5;

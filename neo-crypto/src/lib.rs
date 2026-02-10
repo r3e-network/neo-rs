@@ -1,3 +1,4 @@
+#![warn(missing_docs)]
 //! # Neo Crypto
 //!
 //! Cryptographic utilities for the Neo blockchain implementation.
@@ -34,6 +35,7 @@
 //! let script_hash = Crypto::hash160(b"contract script");
 //! ```
 
+/// Bloom filter implementation for probabilistic set membership testing.
 pub mod bloom_filter;
 pub mod crypto_utils;
 pub mod ecc;

@@ -14,6 +14,7 @@ mod trie;
 mod tests;
 
 pub use cache::{MptCache, MptStoreSnapshot};
+/// Type alias for [`MptCache`].
 pub type Cache<S> = MptCache<S>;
 pub use error::{MptError, MptResult};
 pub use node::Node;

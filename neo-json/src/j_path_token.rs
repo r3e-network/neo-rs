@@ -7,11 +7,14 @@ use crate::j_token::JToken;
 /// JSON path token (matches C# `JPathToken`)
 #[derive(Clone, Debug)]
 pub struct JPathToken {
+    /// The type of this path token.
     pub token_type: JPathTokenType,
+    /// Optional content payload (identifier name, string literal, or number).
     pub content: Option<String>,
 }
 
 impl JPathToken {
+    /// Returns `true` if this token is the JSONPath root (`$`).
     #[must_use]
     pub const fn is_root(&self) -> bool {
         matches!(self.token_type, JPathTokenType::Root)

@@ -4,6 +4,9 @@ use std::io::Cursor;
 
 const SEED_MULTIPLIER: u32 = 0xFBA4_C795;
 
+/// Probabilistic data structure for testing set membership.
+///
+/// Uses Murmur3 hashing with configurable hash function count and tweak value.
 #[derive(Clone, Debug)]
 pub struct BloomFilter {
     seeds: Vec<u32>,
@@ -13,6 +16,7 @@ pub struct BloomFilter {
 }
 
 impl BloomFilter {
+    /// Creates a new empty bloom filter with the given bit size, hash function count, and tweak.
     pub fn new(bit_size: usize, hash_functions: usize, tweak: u32) -> CryptoResult<Self> {
         if hash_functions == 0 {
             return Err(CryptoError::invalid_argument(
@@ -37,6 +41,7 @@ impl BloomFilter {
         })
     }
 
+    /// Creates a bloom filter pre-populated with the given bit array.
     pub fn with_bits(
         bit_size: usize,
         hash_functions: usize,
@@ -49,6 +54,7 @@ impl BloomFilter {
         Ok(filter)
     }
 
+    /// Inserts an element into the bloom filter.
     pub fn add(&mut self, element: &[u8]) {
         let seeds = self.seeds.clone();
         for seed in seeds {
@@ -58,6 +64,7 @@ impl BloomFilter {
         }
     }
 
+    /// Tests whether an element is possibly in the filter. May return false positives.
     #[must_use]
     pub fn check(&self, element: &[u8]) -> bool {
         for seed in &self.seeds {
@@ -70,21 +77,25 @@ impl BloomFilter {
         true
     }
 
+    /// Returns the size of the bit array.
     #[must_use]
     pub const fn bit_size(&self) -> usize {
         self.bit_size
     }
 
+    /// Returns the number of hash functions used by this filter.
     #[must_use]
     pub fn hash_functions(&self) -> usize {
         self.seeds.len()
     }
 
+    /// Returns the tweak value used for seed generation.
     #[must_use]
     pub const fn tweak(&self) -> u32 {
         self.tweak
     }
 
+    /// Returns a copy of the underlying bit array.
     #[must_use]
     pub fn bits(&self) -> Vec<u8> {
         self.bits.clone()

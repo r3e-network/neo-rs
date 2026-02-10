@@ -161,7 +161,7 @@ impl NativeContract for PolicyContract {
                     let prefix_key =
                         StorageKey::new(Self::ID, vec![Self::PREFIX_BLOCKED_ACCOUNT]);
                     let all_keys: Vec<StorageKey> = snapshot_ref
-                        .find(Some(&prefix_key), SeekDirection::Forward)
+                        .find(Some(&prefix_key), crate::persistence::seek_direction::SeekDirection::Forward)
                         .map(|(key, _)| key)
                         .collect();
                     for key in all_keys {

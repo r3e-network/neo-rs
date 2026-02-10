@@ -453,10 +453,13 @@ where
 
                     if should_merge {
                         if !full_state {
-                            let child_hash = node.next.as_ref().unwrap().hash();
+                            let child_hash = node.next.as_ref()
+                                .ok_or_else(|| MptError::invalid("extension node missing child during merge"))?
+                                .hash();
                             cache.delete_node(child_hash)?;
                         }
-                        let next_node = node.take_next().unwrap();
+                        let next_node = node.take_next()
+                            .ok_or_else(|| MptError::invalid("extension node missing child during take"))?;
                         node.key.extend_from_slice(&next_node.key);
                         node.next = next_node.next;
                     }
@@ -854,6 +857,8 @@ where
 /// Key/value entry returned by trie enumeration helpers.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TrieEntry {
+    /// The nibble-encoded key for this entry.
     pub key: Vec<u8>,
+    /// The value stored at this key.
     pub value: Vec<u8>,
 }

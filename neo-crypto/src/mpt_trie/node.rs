@@ -30,7 +30,9 @@ pub const MAX_VALUE_LENGTH: usize = 3 + MAX_STORAGE_VALUE_SIZE + mem::size_of::<
 /// Uses `Arc<Node>` for children to enable structural sharing and reduce cloning overhead.
 #[derive(Debug)]
 pub struct Node {
+    /// The type of this trie node (branch, extension, leaf, hash, or empty).
     pub node_type: NodeType,
+    /// Reference count tracking how many parents point to this node.
     pub reference: u32,
     hash: RwLock<Option<UInt256>>,
     /// Children for branch nodes - stored as Arc for structural sharing
@@ -39,6 +41,7 @@ pub struct Node {
     pub key: Vec<u8>,
     /// Next node for extension nodes - stored as Arc for structural sharing
     pub next: Option<Arc<Self>>,
+    /// Stored value for leaf nodes.
     pub value: Vec<u8>,
 }
 

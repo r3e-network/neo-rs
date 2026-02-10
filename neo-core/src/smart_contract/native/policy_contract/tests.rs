@@ -41,13 +41,13 @@ fn test_whitelist_stack_item_roundtrip() {
         fixed_fee,
     };
 
-    let item = wl.to_stack_item();
+    let item = wl.to_stack_item().unwrap();
     let bytes = BinarySerializer::serialize(&item, &ExecutionEngineLimits::default()).unwrap();
     let decoded_item =
         BinarySerializer::deserialize(&bytes, &ExecutionEngineLimits::default(), None).unwrap();
 
     let mut decoded = WhitelistedContract::default();
-    decoded.from_stack_item(decoded_item);
+    decoded.from_stack_item(decoded_item).unwrap();
 
     assert_eq!(wl, decoded);
 }
@@ -515,7 +515,7 @@ fn check_recover_funds_complete_flow() {
     );
     let gas_state = AccountState::with_balance(gas_balance.clone());
     let gas_bytes = BinarySerializer::serialize(
-        &gas_state.to_stack_item(),
+        &gas_state.to_stack_item().unwrap(),
         &ExecutionEngineLimits::default(),
     )
     .expect("serialize account state");

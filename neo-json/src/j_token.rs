@@ -11,15 +11,23 @@ use std::collections::HashSet;
 use std::fmt;
 use std::io::Write;
 
+/// An optional JSON token, representing a value that may be absent.
 pub type JsonValue = Option<JToken>;
 
+/// Core JSON token enum (matches C# `Neo.Json.JToken`).
 #[derive(Clone, Debug, PartialEq)]
 pub enum JToken {
+    /// A JSON `null` value.
     Null,
+    /// A JSON boolean value.
     Boolean(bool),
+    /// A JSON numeric value stored as `f64`.
     Number(f64),
+    /// A JSON string value.
     String(String),
+    /// A JSON array (matches C# `JArray`).
     Array(JArray),
+    /// A JSON object (matches C# `JObject`).
     Object(JObject),
 }
 
@@ -86,6 +94,7 @@ impl JToken {
         Self::Array(JArray::from(items))
     }
 
+    /// Returns the element at the given index if this token is an array.
     pub fn get_index(&self, index: usize) -> Result<Option<&Self>, JsonError> {
         match self {
             Self::Array(array) => array.get_checked(index),
@@ -93,6 +102,7 @@ impl JToken {
         }
     }
 
+    /// Sets the element at the given index if this token is an array.
     pub fn set_index(&mut self, index: usize, value: Option<Self>) -> Result<(), JsonError> {
         match self {
             Self::Array(array) => array.set(index, value),
@@ -100,6 +110,7 @@ impl JToken {
         }
     }
 
+    /// Returns the value of the given property key if this token is an object.
     pub fn get_property(&self, key: &str) -> Result<Option<&Self>, JsonError> {
         match self {
             Self::Object(object) => Ok(object.get(key)),
@@ -107,6 +118,7 @@ impl JToken {
         }
     }
 
+    /// Sets the value of the given property key if this token is an object.
     pub fn set_property(
         &mut self,
         key: impl Into<String>,
@@ -139,6 +151,7 @@ impl JToken {
         }
     }
 
+    /// Returns the token's truthiness as a boolean (matches C# `AsBoolean`).
     #[must_use]
     pub fn as_boolean(&self) -> bool {
         match self {
@@ -151,6 +164,7 @@ impl JToken {
         }
     }
 
+    /// Attempts to convert the token to an `f64` numeric value.
     #[must_use]
     pub fn as_number(&self) -> Option<f64> {
         match self {
@@ -189,6 +203,7 @@ impl JToken {
         }
     }
 
+    /// Returns the boolean value or an error if the token is not a boolean.
     pub const fn get_boolean(&self) -> Result<bool, JsonError> {
         match self {
             Self::Boolean(value) => Ok(*value),
@@ -196,6 +211,7 @@ impl JToken {
         }
     }
 
+    /// Returns the numeric value or an error if the token is not a number.
     pub const fn get_number(&self) -> Result<f64, JsonError> {
         match self {
             Self::Number(value) => Ok(*value),
@@ -203,6 +219,7 @@ impl JToken {
         }
     }
 
+    /// Returns the string value or an error if the token is not a string.
     pub fn get_string(&self) -> Result<String, JsonError> {
         match self {
             Self::String(value) => Ok(value.clone()),
@@ -210,6 +227,7 @@ impl JToken {
         }
     }
 
+    /// Returns the numeric value as an `i32`, or an error if not integral or out of range.
     pub fn get_int32(&self) -> Result<i32, JsonError> {
         let number = self.get_number()?;
         if number.fract() != 0.0 {
@@ -221,10 +239,12 @@ impl JToken {
         Ok(number as i32)
     }
 
+    /// Parses a JSON string into a `JToken` with a maximum nesting depth.
     pub fn parse(value: &str, max_nest: usize) -> Result<Self, JsonError> {
         Self::parse_bytes(value.as_bytes(), max_nest)
     }
 
+    /// Parses a JSON byte slice into a `JToken` with a maximum nesting depth.
     pub fn parse_bytes(bytes: &[u8], max_nest: usize) -> Result<Self, JsonError> {
         let mut deserializer = serde_json::Deserializer::from_slice(bytes);
         let seed = TokenSeed {
@@ -236,6 +256,7 @@ impl JToken {
         Ok(token.unwrap_or(Self::Null))
     }
 
+    /// Serializes this token to a UTF-8 byte vector, optionally with indentation.
     pub fn to_byte_array(&self, indented: bool) -> Result<Vec<u8>, JsonError> {
         let mut buffer = Vec::new();
         if indented {
@@ -249,11 +270,13 @@ impl JToken {
         Ok(buffer)
     }
 
+    /// Serializes this token to a JSON string, optionally with indentation.
     pub fn to_string_formatted(&self, indented: bool) -> Result<String, JsonError> {
         let bytes = self.to_byte_array(indented)?;
         JsonUtility::strict_utf8_decode(&bytes).map_err(JsonError::from)
     }
 
+    /// Writes this token as JSON to the given writer, optionally with indentation.
     pub fn write(&self, writer: &mut dyn Write, indented: bool) -> Result<(), JsonError> {
         if indented {
             let formatter = PrettyFormatter::with_indent(b"  ");
@@ -266,6 +289,7 @@ impl JToken {
         Ok(())
     }
 
+    /// Evaluates a JSONPath expression against this token and returns matching elements.
     pub fn json_path(&self, expr: &str) -> Result<JArray, JsonError> {
         if expr.is_empty() {
             return Ok(JArray::from_vec(vec![Some(self.clone())]));
