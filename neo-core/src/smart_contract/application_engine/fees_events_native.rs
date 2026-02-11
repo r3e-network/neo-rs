@@ -47,7 +47,7 @@ impl ApplicationEngine {
         Ok(())
     }
 
-    /// Adds a fee expressed in execution units (multiplied by `ExecFeeFactor`).
+    /// Adds a fee expressed in execution units (scaled by `ExecFeeFactor / 30`).
     pub(crate) fn add_cpu_fee(&mut self, fee_units: i64) -> Result<()> {
         if fee_units < 0 {
             return Err(Error::invalid_operation(
@@ -60,7 +60,9 @@ impl ApplicationEngine {
 
         let pico_gas = fee_units
             .checked_mul(i64::from(self.exec_fee_factor))
-            .ok_or_else(|| Error::invalid_operation("CPU fee overflow"))?;
+            .ok_or_else(|| Error::invalid_operation("CPU fee overflow"))?
+            .checked_div(i64::from(PolicyContract::DEFAULT_EXEC_FEE_FACTOR))
+            .ok_or_else(|| Error::invalid_operation("CPU fee scaling overflow"))?;
         self.add_fee_pico(pico_gas)
     }
 

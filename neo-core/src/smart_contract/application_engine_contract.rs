@@ -206,12 +206,16 @@ fn contract_call_native_handler(
             ));
         }
 
-        let context = engine
-            .current_context()
-            .cloned()
-            .ok_or_else(|| "No current execution context".to_string())?;
-        let state_arc =
-            context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+        let (state_arc, stack_len) = {
+            let context = engine
+                .current_context()
+                .ok_or_else(|| "No current execution context".to_string())?;
+            let state_arc = context
+                .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+            let stack_len = context.evaluation_stack().len();
+            (state_arc, stack_len)
+        };
+
         let (script_hash, method_name, arg_count, return_type, parameter_types) = {
             let state = state_arc.lock();
             let script_hash = state
@@ -233,7 +237,6 @@ fn contract_call_native_handler(
             )
         };
 
-        let stack_len = context.evaluation_stack().len();
         if arg_count > stack_len {
             return Err(format!(
                 "Native contract expected {} argument(s) but stack contains {}",

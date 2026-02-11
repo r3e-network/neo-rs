@@ -37,12 +37,32 @@ impl InteropHost for ApplicationEngine {
         engine: &mut ExecutionEngine,
         context: &ExecutionContext,
     ) -> VmResult<()> {
+        // DEADLOCK FIX: When CALL creates a callee context via clone_with_position,
+        // caller and callee share the same `states: Arc<RwLock<HashMap>>`. Looking up
+        // the same TypeId (ExecutionContextState) returns the same Arc<Mutex<T>>.
+        // Holding the callee's lock while trying to lock the caller's state is a
+        // same-thread reentrant lock on a non-reentrant parking_lot::Mutex → deadlock.
+        //
+        // Fix: extract all needed values from the callee state, drop the lock, THEN
+        // acquire the caller state lock.
         let state_arc =
             context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
-        let mut state = state_arc.lock();
 
+        // Phase 1: Extract values and reset under a short-lived lock
+        let (snapshot_cache, notification_count, is_dynamic_call) = {
+            let mut state = state_arc.lock();
+            let snapshot = state.snapshot_cache.clone();
+            let notif_count = state.notification_count;
+            let dynamic_call = state.is_dynamic_call;
+            state.notification_count = 0;
+            state.is_dynamic_call = false;
+            (snapshot, notif_count, dynamic_call)
+        };
+        // Lock is now dropped — safe to acquire caller's state lock
+
+        // Phase 2: Commit snapshot and propagate state to caller
         if engine.uncaught_exception().is_none() {
-            if let Some(snapshot) = state.snapshot_cache.clone() {
+            if let Some(snapshot) = snapshot_cache {
                 snapshot.commit();
             }
 
@@ -52,9 +72,9 @@ impl InteropHost for ApplicationEngine {
                 let mut current_state = current_state_arc.lock();
                 current_state.notification_count = current_state
                     .notification_count
-                    .saturating_add(state.notification_count);
+                    .saturating_add(notification_count);
 
-                if state.is_dynamic_call {
+                if is_dynamic_call {
                     let return_count = context.evaluation_stack().len();
                     match return_count {
                         0 => {
@@ -72,17 +92,14 @@ impl InteropHost for ApplicationEngine {
                     }
                 }
             }
-        } else if state.notification_count > 0 {
-            if state.notification_count >= self.notifications.len() {
+        } else if notification_count > 0 {
+            if notification_count >= self.notifications.len() {
                 self.notifications.clear();
             } else {
-                let retain = self.notifications.len() - state.notification_count;
+                let retain = self.notifications.len() - notification_count;
                 self.notifications.truncate(retain);
             }
         }
-
-        state.notification_count = 0;
-        state.is_dynamic_call = false;
 
         self.refresh_context_tracking()
             .map_err(|e| VmError::invalid_operation_msg(e.to_string()))?;

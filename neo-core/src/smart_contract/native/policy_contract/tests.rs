@@ -1025,7 +1025,7 @@ fn test_white_list_fee() {
     assert!(result.is_zero());
     assert_eq!(
         engine.fee_consumed(),
-        2_028_330 * PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64 / 30
+        2_028_330 * PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64 / 30 / 30
     );
     assert_eq!(
         policy
@@ -1081,7 +1081,7 @@ fn test_white_list_fee() {
     assert!(result.is_zero());
     assert_eq!(
         engine.fee_consumed(),
-        1_045_260 * PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64 / 30
+        1_045_260 * PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64 / 30 / 30
     );
 
     // Clean whitelist.

@@ -52,6 +52,7 @@ fn memcpy(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the values from the stack
+    // Pop order matches C#: count, src_index, src, dst_index, dst
     let count = context
         .pop()?
         .as_int()?
@@ -62,12 +63,12 @@ fn memcpy(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
         .as_int()?
         .to_usize()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid source offset"))?;
+    let src = context.pop()?;
     let dst_offset = context
         .pop()?
         .as_int()?
         .to_usize()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid destination offset"))?;
-    let src = context.pop()?;
     let dst = context.pop()?;
 
     // Resolve the source data without taking ownership when possible

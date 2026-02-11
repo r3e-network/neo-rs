@@ -10,7 +10,7 @@ use neo_core::smart_contract::iterators::{IteratorInterop, StorageIterator};
 use neo_core::smart_contract::manifest::{
     ContractAbi, ContractManifest, ContractMethodDescriptor, ContractParameterDefinition,
 };
-use neo_core::smart_contract::native::{ContractManagement, NativeContract, NeoToken};
+use neo_core::smart_contract::native::{ContractManagement, CryptoLib, NativeContract, NeoToken};
 use neo_core::smart_contract::{
     ApplicationEngine, Contract, ContractParameterType, ContractState, FindOptions, IInteroperable,
     NefFile, StorageItem, StorageKey, TriggerType,
@@ -396,6 +396,42 @@ async fn invokefunction_symbol_returns_byte_string() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn invokefunction_cryptolib_sha256_with_argument_halts() {
+    let server = make_server(RpcServerConfig::default());
+    let handlers = RpcServerSmartContract::register_handlers();
+    let invokefunction = find_handler(&handlers, "invokefunction");
+
+    let crypto_hash = CryptoLib::new().hash().to_string();
+    let params = [
+        Value::String(crypto_hash),
+        Value::String("sha256".to_string()),
+        json!([{"type": "ByteArray", "value": "68656c6c6f"}]),
+    ];
+    let result = (invokefunction.callback())(&server, &params).expect("invoke cryptolib sha256");
+
+    let state = result
+        .get("state")
+        .and_then(|value| value.as_str())
+        .expect("state");
+    assert_eq!(state, "HALT");
+
+    let stack = result
+        .get("stack")
+        .and_then(|value| value.as_array())
+        .expect("stack");
+    let first = stack.first().expect("stack entry");
+    assert_eq!(
+        first.get("type").and_then(|v| v.as_str()),
+        Some("ByteString")
+    );
+    let value = first
+        .get("value")
+        .and_then(|v| v.as_str())
+        .expect("byte string value");
+    assert!(!value.is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn invokescript_total_supply_matches_csharp() {
     let server = make_server(RpcServerConfig::default());
     let handlers = RpcServerSmartContract::register_handlers();
@@ -427,6 +463,36 @@ async fn invokescript_total_supply_matches_csharp() {
         first.get("value").and_then(|v| v.as_str()),
         Some("100000000")
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn invokescript_push1_reports_csharp_gas_units() {
+    let server = make_server(RpcServerConfig::default());
+    let handlers = RpcServerSmartContract::register_handlers();
+    let invokescript = find_handler(&handlers, "invokescript");
+
+    let params = [Value::String("EQ==".to_string())];
+    let result = (invokescript.callback())(&server, &params).expect("invoke push1 script");
+
+    let state = result
+        .get("state")
+        .and_then(|value| value.as_str())
+        .expect("state");
+    assert_eq!(state, "HALT");
+
+    let gas = result
+        .get("gasconsumed")
+        .and_then(|value| value.as_str())
+        .expect("gasconsumed");
+    assert_eq!(gas, "1");
+
+    let stack = result
+        .get("stack")
+        .and_then(|value| value.as_array())
+        .expect("stack");
+    let first = stack.first().expect("stack entry");
+    assert_eq!(first.get("type").and_then(|v| v.as_str()), Some("Integer"));
+    assert_eq!(first.get("value").and_then(|v| v.as_str()), Some("1"));
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -114,25 +114,26 @@ fn new_array_t(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
     let mut items = Vec::with_capacity(count);
     for _ in 0..count {
         // Create a default value based on the type
+        // Type bytes match C# StackItemType enum values
         let default_value = match type_byte {
-            0x00 => Ok(StackItem::Boolean(false)),
-            0x01 => Ok(StackItem::Integer(BigInt::from(0))),
-            0x02 => Ok(StackItem::from_byte_string(Vec::<u8>::new())),
-            0x03 => Ok(StackItem::from_buffer(Vec::<u8>::new())),
-            0x04 => Ok(StackItem::Array(Array::new(
+            0x20 => Ok(StackItem::Boolean(false)),
+            0x21 => Ok(StackItem::Integer(BigInt::from(0))),
+            0x28 => Ok(StackItem::from_byte_string(Vec::<u8>::new())),
+            0x30 => Ok(StackItem::from_buffer(Vec::<u8>::new())),
+            0x40 => Ok(StackItem::Array(Array::new(
                 Vec::<StackItem>::new(),
                 Some(context.reference_counter().clone()),
             )?)),
-            0x05 => Ok(StackItem::Struct(Struct::new(
+            0x41 => Ok(StackItem::Struct(Struct::new(
                 Vec::<StackItem>::new(),
                 Some(context.reference_counter().clone()),
             )?)),
-            0x06 => Ok(StackItem::Map(Map::new(
+            0x48 => Ok(StackItem::Map(Map::new(
                 BTreeMap::new(),
                 Some(context.reference_counter().clone()),
             )?)),
             _ => Err(VmError::invalid_instruction_msg(format!(
-                "Invalid type: {type_byte}"
+                "Invalid type: {type_byte:#04x}"
             ))),
         }?;
 

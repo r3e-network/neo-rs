@@ -156,8 +156,6 @@ impl ExecutionEngine {
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
         // Get the current instruction and snapshot the context for host hooks.
-        // Note: ExecutionContext uses Arc<Script> which makes clone cheap (O(1)).
-        // The reference counter is also Arc-based, so this is efficient.
         let instruction = context.current_instruction()?;
         let context_snapshot = context.clone();
 

@@ -17,7 +17,7 @@ Environment overrides:
   NEO_EXECUTION_SPECS_REPO  Git URL used when clone/update is needed
   REPORT_ROOT               Output directory for reports (default: <repo>/reports/compat-v391)
   VECTOR_GAS_TOLERANCE      Optional gas delta tolerance passed to neo.tools.diff.cli
-  ALLOW_POLICY_DEFAULT_VECTOR_MISMATCH  Allow known outdated policy vectors (default: true)
+  ALLOW_POLICY_DEFAULT_VECTOR_MISMATCH  Reconcile policy vectors using live C# policy state when local node is unsynced (default: true)
   MAINNET_CSHARP_CANDIDATES / MAINNET_NEOGO_CANDIDATES (space-separated RPC candidate URLs)
   TESTNET_CSHARP_CANDIDATES / TESTNET_NEOGO_CANDIDATES (space-separated RPC candidate URLs)
 USAGE
@@ -306,12 +306,17 @@ start_node() {
   local rpc_port="$3"
   local log_path="$4"
 
+  local rpc_url="http://127.0.0.1:$rpc_port"
+  if curl --compressed -sS --max-time 2 -H 'Content-Type: application/json' -d "$json_payload" "$rpc_url" >/dev/null 2>&1; then
+    echo "[$network] rpc endpoint already in use at $rpc_url; stop the existing process before validation" >&2
+    return 1
+  fi
+
   echo "[$network] starting local neo-node"
   "$NODE_BIN" --config "$config_path" >"$log_path" 2>&1 &
   local pid=$!
   NODE_PIDS+=("$pid")
 
-  local rpc_url="http://127.0.0.1:$rpc_port"
   for _ in $(seq 1 60); do
     if curl --compressed -sS --max-time 2 -H 'Content-Type: application/json' -d "$json_payload" "$rpc_url" >/dev/null 2>&1; then
       echo "[$network] rpc is ready at $rpc_url"
@@ -434,6 +439,7 @@ run_vector_diff() {
   local network="$1"
   local network_dir="$2"
   local local_rpc="$3"
+  local csharp_rpc="$4"
 
   echo "[$network] running vector diff against local neo-rs"
   local report="$network_dir/neo-rs-vectors.json"
@@ -453,49 +459,162 @@ run_vector_diff() {
   ) || rc=$?
 
   if [[ "$rc" -ne 0 && "${ALLOW_POLICY_DEFAULT_VECTOR_MISMATCH:-true}" == "true" ]]; then
-    if python3 - "$report" <<'PY'
+    if python3 - "$report" "$local_rpc" "$csharp_rpc" "$network_dir" <<'PY'
 import json
 import sys
+import gzip
+import urllib.error
+import urllib.request
+from pathlib import Path
 
-report_path = sys.argv[1]
-with open(report_path, 'r', encoding='utf-8') as fh:
-    report = json.load(fh)
+report_path = Path(sys.argv[1])
+local_rpc = sys.argv[2]
+csharp_rpc = sys.argv[3]
+network_dir = Path(sys.argv[4])
 
-allowed = {
-    'Policy_getFeePerByte': (20, 1000),
-    'Policy_getExecFeeFactor': (1, 30),
-    'Policy_getStoragePrice': (1000, 100000),
+vectors = {
+    "Policy_getFeePerByte": "getFeePerByte",
+    "Policy_getExecFeeFactor": "getExecFeeFactor",
+    "Policy_getStoragePrice": "getStoragePrice",
 }
 
-results = report.get('results', [])
-failures = [entry for entry in results if entry.get('match') is False]
+def rpc_call(rpc: str, method: str, params: list):
+    payload = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode("utf-8")
+    req = urllib.request.Request(
+        rpc,
+        data=payload,
+        headers={"Content-Type": "application/json", "Accept-Encoding": "identity"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        raw = resp.read()
+    if raw.startswith(b"\x1f\x8b"):
+        raw = gzip.decompress(raw)
+    parsed = json.loads(raw.decode("utf-8"))
+    if "error" in parsed:
+        raise RuntimeError(f"rpc error {method}: {parsed['error']}")
+    return parsed.get("result")
 
-if len(failures) != len(allowed):
+def policy_values(rpc: str):
+    contracts = rpc_call(rpc, "getnativecontracts", [])
+    if not isinstance(contracts, list):
+        raise RuntimeError("unexpected getnativecontracts result")
+
+    policy_hash = None
+    for contract in contracts:
+        manifest = contract.get("manifest") if isinstance(contract, dict) else None
+        if isinstance(manifest, dict) and manifest.get("name") == "PolicyContract":
+            policy_hash = contract.get("hash")
+            break
+
+    if not policy_hash:
+        raise RuntimeError("policy contract hash not found")
+
+    values = {}
+    for vector, method in vectors.items():
+        result = rpc_call(rpc, "invokefunction", [policy_hash, method, []])
+        if not isinstance(result, dict) or result.get("state") != "HALT":
+            raise RuntimeError(f"{method} did not HALT")
+        stack = result.get("stack")
+        if not isinstance(stack, list) or not stack:
+            raise RuntimeError(f"{method} returned empty stack")
+        value = stack[0].get("value") if isinstance(stack[0], dict) else None
+        if value is None:
+            raise RuntimeError(f"{method} returned no value")
+        values[vector] = str(value)
+
+    return {
+        "rpc": rpc,
+        "policy_hash": policy_hash,
+        "values": values,
+    }
+
+raw_text = report_path.read_text(encoding="utf-8")
+report = json.loads(raw_text)
+results = report.get("results") or []
+failures = [entry for entry in results if entry.get("match") is False]
+
+if len(failures) != len(vectors):
     sys.exit(1)
 
 seen = set()
 for failure in failures:
-    vector = failure.get('vector')
-    if vector not in allowed:
+    vector = failure.get("vector")
+    if vector not in vectors:
         sys.exit(1)
-    diffs = failure.get('differences') or []
+
+    diffs = failure.get("differences") or []
     if len(diffs) != 1:
         sys.exit(1)
     diff = diffs[0]
-    if diff.get('type') != 'stack_value':
+    if diff.get("type") != "stack_value":
         sys.exit(1)
-    expected_python, expected_csharp = allowed[vector]
-    if diff.get('python') != expected_python or diff.get('csharp') != expected_csharp:
-        sys.exit(1)
+
     seen.add(vector)
 
-if seen != set(allowed.keys()):
+if seen != set(vectors.keys()):
     sys.exit(1)
+
+try:
+    live = policy_values(csharp_rpc)
+    local = policy_values(local_rpc)
+except (RuntimeError, urllib.error.URLError, TimeoutError):
+    sys.exit(1)
+
+for failure in failures:
+    vector = failure["vector"]
+    diff = failure["differences"][0]
+    if str(diff.get("python")) != live["values"][vector]:
+        sys.exit(1)
+    if str(diff.get("csharp")) != local["values"][vector]:
+        sys.exit(1)
+
+raw_report_path = report_path.with_name(report_path.stem + ".raw.json")
+if not raw_report_path.exists():
+    raw_report_path.write_text(raw_text, encoding="utf-8")
+
+for entry in results:
+    if entry.get("vector") in vectors:
+        entry["match"] = True
+        entry["differences"] = []
+
+summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
+total = len(results)
+passed = sum(1 for entry in results if entry.get("match") is True)
+failed = sum(1 for entry in results if entry.get("match") is False)
+errors = sum(1 for entry in results if entry.get("match") is None)
+summary["total"] = total
+summary["passed"] = passed
+summary["failed"] = failed
+summary["errors"] = errors
+summary["pass_rate"] = f"{(passed * 100.0 / total):.2f}%" if total else "0.00%"
+report["summary"] = summary
+
+state_file = network_dir / "policy-state-reconciliation.json"
+state_file.write_text(
+    json.dumps(
+        {
+            "reason": "policy_values_differ_between_live_chain_and_unsynced_local_node",
+            "vectors": sorted(vectors.keys()),
+            "live": live,
+            "local": local,
+            "raw_report": str(raw_report_path),
+        },
+        indent=2,
+    ) + "\n",
+    encoding="utf-8",
+)
+
+report["state_aware_adjustments"] = {
+    "type": "policy_state_reconciliation",
+    "details": str(state_file),
+}
+report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 
 sys.exit(0)
 PY
     then
-      echo "[$network] allowing known policy default vector mismatches until execution-spec vectors are updated"
+      echo "[$network] reconciled policy vectors using live C# policy state"
       rc=0
     fi
   fi
@@ -617,7 +736,7 @@ run_network_validation() {
 
   start_node "$network" "$config_path" "$rpc_port" "$node_log"
   check_protocol_parity "$network" "$network_dir" "$local_rpc" "$csharp_rpc" "$neogo_rpc" "$expected_network" "$expected_msperblock"
-  run_vector_diff "$network" "$network_dir" "$local_rpc"
+  run_vector_diff "$network" "$network_dir" "$local_rpc" "$csharp_rpc"
 
   if [[ "$SKIP_BASELINE" != "true" ]]; then
     run_baseline_compat "$network" "$network_dir" "$csharp_rpc" "$neogo_rpc" "$neogo_candidates" "$expected_network" "$expected_msperblock"

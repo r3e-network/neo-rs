@@ -387,7 +387,7 @@ impl Instruction {
             OpCode::PUSHDATA1 => OperandSizePrefix(1),
             OpCode::PUSHDATA2 => OperandSizePrefix(2),
             OpCode::PUSHDATA4 => OperandSizePrefix(4),
-            OpCode::TRY => OperandSizePrefix(4),
+            OpCode::TRY => OperandSizePrefix(2),
             // Jump instructions with 1-byte offset
             OpCode::JMP
             | OpCode::JMPIF

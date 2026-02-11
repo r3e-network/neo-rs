@@ -480,14 +480,20 @@ impl ExecutionContext {
         })
     }
 
-    /// Clones the context so that they share the same script, stack, and static fields.
-    /// This matches the C# implementation's Clone(int) method.
+    /// Clones the context for a CALL operation.
+    /// Matches C# `ExecutionContext.Clone()`: same script & static fields,
+    /// but a **fresh** evaluation stack and rvcount = -1 (return all).
     #[must_use]
     pub fn clone_with_position(&self, position: usize) -> Self {
+        let mut shared = self.shared_states.clone();
+        // C# Clone() creates a brand-new EvaluationStack so the callee
+        // does not share the caller's operand stack.
+        shared.evaluation_stack =
+            EvaluationStack::new(shared.reference_counter.clone());
         Self {
-            shared_states: self.shared_states.clone(),
+            shared_states: shared,
             instruction_pointer: position,
-            rvcount: 0, // The C# implementation sets this to 0
+            rvcount: -1, // C# sets rvcount = -1 (return all items)
             local_variables: None,
             arguments: None,
             try_stack: None,
@@ -846,23 +852,16 @@ mod tests {
         // Clone the context
         let clone = context.clone();
 
-        // Check that the clone has the same script and stack
+        // Check that the clone has the same script but a FRESH empty eval stack
+        // (matches C# Clone() semantics — callee starts with empty operand stack)
         assert_eq!(clone.script().to_array(), context.script().to_array());
-        assert_eq!(
-            clone
-                .evaluation_stack()
-                .peek(0)
-                .expect("intermediate value should exist")
-                .as_int()
-                .expect("VM operation should succeed"),
-            BigInt::from(42)
-        );
+        assert!(clone.evaluation_stack().is_empty());
 
-        // Check that the clone has a different instruction pointer
+        // Check that the clone has the same instruction pointer
         assert_eq!(clone.instruction_pointer(), context.instruction_pointer());
 
-        // Check that the clone has a different rvcount
-        assert_eq!(clone.rvcount(), 0);
+        // C# Clone() sets rvcount = -1 (return all items)
+        assert_eq!(clone.rvcount(), -1);
 
         // Clone with a different position
         let clone_with_position = context.clone_with_position(2);

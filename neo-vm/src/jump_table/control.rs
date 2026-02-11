@@ -338,15 +338,8 @@ pub fn throw(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
 
 /// TRY - Begin try block
 pub fn r#try(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    let operand = instruction.operand();
-    let catch_offset = i32::from(i16::from_le_bytes([
-        *operand.first().unwrap_or(&0),
-        *operand.get(1).unwrap_or(&0),
-    ]));
-    let finally_offset = i32::from(i16::from_le_bytes([
-        *operand.get(2).unwrap_or(&0),
-        *operand.get(3).unwrap_or(&0),
-    ]));
+    let catch_offset = i32::from(instruction.token_i8());
+    let finally_offset = i32::from(instruction.token_i8_1());
     engine.execute_try(catch_offset, finally_offset)
 }
 
@@ -385,12 +378,6 @@ pub fn ret(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
     let mut context = engine.invocation_stack_mut().remove(context_index);
 
     let rvcount = context.rvcount();
-    #[cfg(debug_assertions)]
-    println!(
-        "RET handler: rvcount={}, eval_stack_len={}",
-        rvcount,
-        context.evaluation_stack().len()
-    );
     if rvcount != 0 {
         let eval_stack_len = context.evaluation_stack().len();
         let capacity = if rvcount == -1 {

@@ -655,6 +655,10 @@ impl NodeConfig {
             settings.milliseconds_per_block = u32::try_from(milliseconds).unwrap_or(u32::MAX);
         }
 
+        if let Some(max_tx) = self.blockchain.max_transactions_per_block {
+            settings.max_transactions_per_block = max_tx;
+        }
+
         settings
     }
 
@@ -1555,6 +1559,16 @@ mod tests {
 
         let settings = config.protocol_settings();
         assert_eq!(settings.milliseconds_per_block, 15_000);
+    }
+
+    #[test]
+    fn blockchain_max_transactions_override_applies_to_protocol_settings() {
+        let mut config = NodeConfig::default();
+        config.network.network_type = Some("TestNet".to_string());
+        config.blockchain.max_transactions_per_block = Some(5_000);
+
+        let settings = config.protocol_settings();
+        assert_eq!(settings.max_transactions_per_block, 5_000);
     }
 
     #[test]
