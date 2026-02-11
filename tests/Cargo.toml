@@ -1,6 +1,6 @@
 [package]
 name = "neo-tests"
-version = "0.7.0"
+version = "0.7.1"
 edition = "2021"
 publish = false
 description = "Integration tests for neo-rs workspace layer boundaries and end-to-end testing"

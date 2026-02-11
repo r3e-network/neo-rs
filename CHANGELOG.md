@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.7.1] - 2026-02-11
+
+### Compatibility
+- Aligned runtime behavior with Neo N3 v3.9.1 execution-spec vectors.
+- MainNet/TestNet consistency validation now reaches `393/393` via state-aware policy reconciliation when local nodes are unsynced from live governance state.
+
+### Fixed
+- Native contract invocation stack/context checks now use live execution context state, preventing argument-stack FAULT mismatches.
+- Execution fee accounting normalized to C#-compatible units (`ExecFeeFactor / 30` scaling path).
+- Node protocol settings now correctly honor `max_transactions_per_block` overrides from config.
+
+### Added
+- RPC regressions for `CryptoLib.sha256` invoke behavior and C#-aligned `PUSH1` gas reporting.
+- Consistency validator enhancements for policy-state reconciliation against live C# RPC values while preserving raw unreconciled reports.
+
 ## [0.7.0] - 2025-11-30
 
 ### Compatibility

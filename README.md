@@ -104,14 +104,14 @@ NEO_NETWORK=testnet NEO_DATA_DIR=./data/testnet ./target/release/neo-node
 
 | neo-rs Version | Neo N3 Version | C# Reference                                                                                      |
 | -------------- | -------------- | ------------------------------------------------------------------------------------------------- |
-| 0.7.x          | 3.9.2          | [`71c2f8e`](https://github.com/neo-project/neo/commit/71c2f8e65274b9054cf1011f06fb80b078e3e631) (v3.9.2+ production ready) |
+| 0.7.x          | 3.9.1          | [`v3.9.1`](https://github.com/neo-project/neo/releases/tag/v3.9.1) (execution/vector parity validated) |
 | 0.4.x          | 3.8.2          | [`ede620e`](https://github.com/neo-project/neo/commit/ede620e5722c48e199a0f3f2ab482ae090c1b878) |
 
-This implementation maintains byte-for-byte serialization compatibility with the official C# Neo implementation (v3.9.2) for blocks, transactions, and P2P messages. Verified against commit `71c2f8e` (neo_csharp submodule) for semantic parity.
+This implementation maintains byte-for-byte serialization compatibility with the official C# Neo implementation (v3.9.1) for blocks, transactions, and P2P messages. Verified with live protocol/vector parity checks against Neo v3.9.1 (C# and NeoGo reference endpoints).
 
-### C# v3.9.2 Feature Parity
+### C# v3.9.1 Feature Parity
 
-The following C# Neo v3.9.2 features are fully implemented:
+The following C# Neo v3.9.1 features are fully implemented:
 
 | Feature | Status | Description |
 |---------|--------|-------------|

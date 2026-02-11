@@ -4,7 +4,7 @@ Steps to cut a production release for `neo-rs` (Rust Neo N3 node).
 
 ## Pre-flight
 - Bump versions in `Cargo.toml` (workspace/package) and update `CHANGELOG.md` with a dated entry.
-- Update compatibility statements in `README.md` and `CHANGELOG.md` for the target Neo N3 release (currently v3.9.0).
+- Update compatibility statements in `README.md` and `CHANGELOG.md` for the target Neo N3 release (currently v3.9.1).
 - Run: `cargo fmt --all`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`.
 - Optionally build binaries locally: `cargo build --release --workspace`.
 

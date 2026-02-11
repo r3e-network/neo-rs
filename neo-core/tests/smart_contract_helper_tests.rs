@@ -11,7 +11,6 @@ use neo_core::smart_contract::application_engine::{ApplicationEngine, TEST_MODE_
 use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::smart_contract::helper::Helper;
 use neo_core::smart_contract::i_diagnostic::IDiagnostic;
-use neo_core::smart_contract::native::policy_contract::PolicyContract;
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::wallets::key_pair::KeyPair;
 use neo_core::{Transaction, UInt160, WitnessScope};
@@ -251,8 +250,7 @@ fn test_signature_contract_engine_fee_consumed() {
     assert!(pre_exec_count.load(Ordering::Relaxed) > 0);
     assert_eq!(opcode_units.load(Ordering::Relaxed), expected_opcode_units);
 
-    let expected_fee =
-        Helper::signature_contract_cost() * PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64;
+    let expected_fee = Helper::signature_contract_cost();
     assert_eq!(engine.fee_consumed(), expected_fee);
 }
 
@@ -365,8 +363,7 @@ fn test_multi_signature_contract_engine_fee_consumed() {
     assert!(pre_exec_count.load(Ordering::Relaxed) > 0);
     assert_eq!(opcode_units.load(Ordering::Relaxed), expected_opcode_units);
 
-    let expected_fee = Helper::multi_signature_contract_cost(2, public_keys.len() as i32)
-        * PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64;
+    let expected_fee = Helper::multi_signature_contract_cost(2, public_keys.len() as i32);
     assert_eq!(engine.fee_consumed(), expected_fee);
 }
 

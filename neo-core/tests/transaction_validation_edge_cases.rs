@@ -797,7 +797,10 @@ mod tests {
         let verification_fee =
             verification_fee_for_witness(&tx, &witness, &script_hash, &snapshot, &settings);
         let size_fee = tx.size() as i64 * PolicyContract::DEFAULT_FEE_PER_BYTE as i64;
-        assert_eq!(network_fee, verification_fee + size_fee);
+        assert_eq!(
+            network_fee,
+            size_fee + PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64 * verification_fee
+        );
     }
 
     /// Test multi-sig contract network fee matches engine verification gas + size gas.
@@ -862,7 +865,10 @@ mod tests {
         let verification_fee =
             verification_fee_for_witness(&tx, &witness, &script_hash, &snapshot, &settings);
         let size_fee = tx.size() as i64 * PolicyContract::DEFAULT_FEE_PER_BYTE as i64;
-        assert_eq!(network_fee, verification_fee + size_fee);
+        assert_eq!(
+            network_fee,
+            size_fee + PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64 * verification_fee
+        );
     }
 
     /// Test signature contract fee details using wallet MakeTransaction flow (matches C# FeeIsSignatureContractDetailed).
@@ -956,8 +962,11 @@ mod tests {
 
         let size_fee = tx.size() as i64 * PolicyContract::DEFAULT_FEE_PER_BYTE as i64;
         assert_eq!(245_000, size_fee);
-        assert_eq!(983_520, verification_gas);
-        assert_eq!(tx.network_fee(), verification_gas + size_fee);
+        assert_eq!(32_784, verification_gas);
+        assert_eq!(
+            tx.network_fee(),
+            size_fee + PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64 * verification_gas
+        );
     }
 
     /// Test multi-sig contract fee details using wallet MakeTransaction flow (matches C# FeeIsMultiSigContract).
@@ -1062,8 +1071,11 @@ mod tests {
         let size_fee = tx.size() as i64 * PolicyContract::DEFAULT_FEE_PER_BYTE as i64;
         assert_eq!(348, tx.size());
         assert_eq!(348_000, size_fee);
-        assert_eq!(1_967_100, verification_gas);
-        assert_eq!(tx.network_fee(), verification_gas + size_fee);
+        assert_eq!(65_570, verification_gas);
+        assert_eq!(
+            tx.network_fee(),
+            size_fee + PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64 * verification_gas
+        );
     }
 
     /// Test signature contract fees across witness scope variants (Global vs CustomContracts).

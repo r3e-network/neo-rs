@@ -89,8 +89,8 @@ fn create_response_tx_matches_csharp_fee_math() {
         .expect("response tx");
 
     assert_eq!(166, tx.size());
-    assert_eq!(2_198_650, tx.network_fee());
-    assert_eq!(97_801_350, tx.system_fee());
+    assert_eq!(1_248_349, tx.network_fee());
+    assert_eq!(98_751_651, tx.system_fee());
 
     request.gas_for_response = 10_000_000;
     response.result = vec![0u8; 10_250];
@@ -107,6 +107,6 @@ fn create_response_tx_matches_csharp_fee_math() {
 
     assert_eq!(165, tx.size());
     assert_eq!(OracleResponseCode::InsufficientFunds, response.code);
-    assert_eq!(2_197_650, tx.network_fee());
-    assert_eq!(7_802_350, tx.system_fee());
+    assert_eq!(1_247_349, tx.network_fee());
+    assert_eq!(8_752_651, tx.system_fee());
 }
