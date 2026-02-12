@@ -396,18 +396,30 @@ impl RpcServerBlockchain {
     }
 
     fn get_native_contracts(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {
-        let store = server.system().store_cache();
+        let system = server.system();
+        let store = system.store_cache();
+        let settings = system.settings();
+        let ledger = LedgerContract::new();
+        let block_height = ledger.current_index(&store).map_err(internal_error)?;
+
         let registry = NativeRegistry::new();
-        let mut contracts = Vec::new();
+        let mut contract_states = Vec::new();
+
         for contract in registry.contracts() {
-            if let Some(state) =
-                ContractManagement::get_contract_from_store_cache(&store, &contract.hash())
-                    .map_err(internal_error)?
-            {
-                contracts.push(contract_state_to_json(&state));
+            let state = ContractManagement::get_contract_from_store_cache(&store, &contract.hash())
+                .map_err(internal_error)?
+                .or_else(|| contract.contract_state(settings, block_height));
+
+            if let Some(state) = state {
+                contract_states.push(state);
             }
         }
-        Ok(Value::Array(contracts))
+
+        contract_states.sort_by(|left, right| right.id.cmp(&left.id));
+
+        Ok(Value::Array(
+            contract_states.iter().map(contract_state_to_json).collect(),
+        ))
     }
 
     fn get_next_block_validators(
