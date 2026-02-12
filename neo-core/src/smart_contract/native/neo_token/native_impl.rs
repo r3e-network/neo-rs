@@ -381,3 +381,22 @@ impl NativeContract for NeoToken {
         Ok(())
     }
 }
+
+impl FungibleToken for NeoToken {
+    fn ft_symbol(&self) -> &str {
+        Self::SYMBOL
+    }
+
+    fn ft_decimals(&self) -> u8 {
+        Self::DECIMALS
+    }
+
+    fn ft_total_supply(&self, _engine: &ApplicationEngine) -> CoreResult<BigInt> {
+        Ok(BigInt::from(Self::TOTAL_SUPPLY))
+    }
+
+    fn ft_balance_of(&self, engine: &ApplicationEngine, account: &UInt160) -> CoreResult<BigInt> {
+        let snapshot = engine.snapshot_cache();
+        self.balance_of_snapshot(snapshot.as_ref(), account)
+    }
+}

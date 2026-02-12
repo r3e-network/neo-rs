@@ -11,7 +11,7 @@
 
 use super::{
     contract_management::ContractManagement,
-    fungible_token::PREFIX_ACCOUNT,
+    fungible_token::{FungibleToken, PREFIX_ACCOUNT},
     gas_token::GasToken,
     helpers::NativeHelpers,
     native_contract::{NativeContract, NativeMethod},

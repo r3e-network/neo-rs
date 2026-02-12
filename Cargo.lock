@@ -2113,7 +2113,7 @@ dependencies = [
 
 [[package]]
 name = "neo-cli"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "anyhow",
  "base64 0.21.7",
@@ -2131,7 +2131,7 @@ dependencies = [
 
 [[package]]
 name = "neo-consensus"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "async-trait",
  "bincode",
@@ -2148,7 +2148,7 @@ dependencies = [
 
 [[package]]
 name = "neo-core"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "aes",
  "async-trait",
@@ -2225,7 +2225,7 @@ dependencies = [
 
 [[package]]
 name = "neo-crypto"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "blake2",
  "blst",
@@ -2254,7 +2254,7 @@ dependencies = [
 
 [[package]]
 name = "neo-hsm"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2278,7 +2278,7 @@ dependencies = [
 
 [[package]]
 name = "neo-io"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "async-trait",
  "bytes",
@@ -2300,7 +2300,7 @@ dependencies = [
 
 [[package]]
 name = "neo-json"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "derive_more",
  "hashbrown 0.14.5",
@@ -2313,7 +2313,7 @@ dependencies = [
 
 [[package]]
 name = "neo-node"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2350,7 +2350,7 @@ dependencies = [
 
 [[package]]
 name = "neo-p2p"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "async-trait",
  "futures",
@@ -2366,7 +2366,7 @@ dependencies = [
 
 [[package]]
 name = "neo-primitives"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "bs58",
  "hex",
@@ -2383,7 +2383,7 @@ dependencies = [
 
 [[package]]
 name = "neo-rpc"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2430,7 +2430,7 @@ dependencies = [
 
 [[package]]
 name = "neo-storage"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "neo-primitives",
  "parking_lot",
@@ -2443,7 +2443,7 @@ dependencies = [
 
 [[package]]
 name = "neo-tee"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -2468,7 +2468,7 @@ dependencies = [
 
 [[package]]
 name = "neo-telemetry"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2512,7 +2512,7 @@ dependencies = [
 
 [[package]]
 name = "neo-vm"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "bitflags 2.10.0",
  "criterion",

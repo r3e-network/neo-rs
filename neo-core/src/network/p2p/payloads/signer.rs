@@ -304,7 +304,7 @@ impl Serializable for Signer {
                 .validate_max_length(MAX_SUBITEMS, "Allowed groups")?;
             writer.write_var_uint(self.allowed_groups.len() as u64)?;
             for group in &self.allowed_groups {
-                let encoded = group.encode_point(true).map_err(IoError::invalid_data)?;
+                let encoded = group.encode_point(true).map_err(|e| IoError::invalid_data(e.to_string()))?;
                 if encoded.len() != 33 {
                     return Err(IoError::invalid_data("Group must be compressed"));
                 }

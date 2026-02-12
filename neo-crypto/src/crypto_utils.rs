@@ -37,6 +37,7 @@
 //! - Private keys are handled as `SecretKey` types with zeroization on drop
 //! - Signature verification is constant-time to prevent timing attacks
 
+use crate::error::CryptoError;
 use crate::{Crypto, CryptoResult, ECCurve, ECPoint, HashAlgorithm};
 use bs58;
 use core::convert::TryFrom;
@@ -171,7 +172,7 @@ impl Secp256k1Crypto {
     /// # Errors
     /// Returns an error if a valid key cannot be generated after `MAX_KEY_GEN_ATTEMPTS` attempts.
     /// This should only occur if the system RNG is misbehaving.
-    pub fn generate_private_key() -> Result<[u8; 32], String> {
+    pub fn generate_private_key() -> CryptoResult<[u8; 32]> {
         let mut rng = OsRng;
         for _ in 0..MAX_KEY_GEN_ATTEMPTS {
             let mut candidate = Zeroizing::new([0u8; 32]);
@@ -180,29 +181,29 @@ impl Secp256k1Crypto {
                 return Ok(secret_key.secret_bytes());
             }
         }
-        Err(format!(
-            "Failed to generate valid secp256k1 private key after {MAX_KEY_GEN_ATTEMPTS} attempts - RNG may be broken"
-        ))
+        Err(CryptoError::key_generation_failed(format!(
+            "Failed to generate valid secp256k1 private key after {MAX_KEY_GEN_ATTEMPTS} attempts"
+        )))
     }
 
     /// Derives public key from private key
-    pub fn derive_public_key(private_key: &[u8; 32]) -> Result<[u8; 33], String> {
+    pub fn derive_public_key(private_key: &[u8; 32]) -> CryptoResult<[u8; 33]> {
         let secp = Secp256k1::new();
         let secret_key = Secp256k1SecretKey::from_slice(private_key)
-            .map_err(|e| format!("Invalid private key: {e}"))?;
+            .map_err(|e| CryptoError::invalid_key(format!("Invalid private key: {e}")))?;
         let public_key = Secp256k1PublicKey::from_secret_key(&secp, &secret_key);
         Ok(public_key.serialize())
     }
 
     /// Signs a message with secp256k1
-    pub fn sign(message: &[u8], private_key: &[u8; 32]) -> Result<[u8; 64], String> {
+    pub fn sign(message: &[u8], private_key: &[u8; 32]) -> CryptoResult<[u8; 64]> {
         let secp = Secp256k1::new();
         let secret_key = Secp256k1SecretKey::from_slice(private_key)
-            .map_err(|e| format!("Invalid private key: {e}"))?;
+            .map_err(|e| CryptoError::invalid_key(format!("Invalid private key: {e}")))?;
 
         let message_hash = Sha256::digest(message);
         let message = Message::from_digest_slice(&message_hash)
-            .map_err(|e| format!("Invalid message: {e}"))?;
+            .map_err(|e| CryptoError::invalid_argument(format!("Invalid message: {e}")))?;
 
         let signature = secp.sign_ecdsa(&message, &secret_key);
         Ok(signature.serialize_compact())
@@ -213,39 +214,45 @@ impl Secp256k1Crypto {
         message: &[u8],
         signature: &[u8; 64],
         public_key: &[u8; 33],
-    ) -> Result<bool, String> {
+    ) -> CryptoResult<bool> {
         let secp = Secp256k1::verification_only();
         let public_key = Secp256k1PublicKey::from_slice(public_key)
-            .map_err(|e| format!("Invalid public key: {e}"))?;
+            .map_err(|e| CryptoError::invalid_key(format!("Invalid public key: {e}")))?;
 
         let message_hash = Sha256::digest(message);
         let message = Message::from_digest_slice(&message_hash)
-            .map_err(|e| format!("Invalid message: {e}"))?;
+            .map_err(|e| CryptoError::invalid_argument(format!("Invalid message: {e}")))?;
 
         let signature = secp256k1::ecdsa::Signature::from_compact(signature)
-            .map_err(|e| format!("Invalid signature: {e}"))?;
+            .map_err(|e| CryptoError::invalid_signature(format!("Invalid signature: {e}")))?;
 
         Ok(secp.verify_ecdsa(&message, &signature, &public_key).is_ok())
     }
 
     /// Recovers a compressed secp256k1 public key from a message hash and signature.
     /// Accepts 65-byte (r||s||v) or 64-byte EIP-2098 compact signatures.
-    pub fn recover_public_key(message_hash: &[u8], signature: &[u8]) -> Result<Vec<u8>, String> {
+    pub fn recover_public_key(message_hash: &[u8], signature: &[u8]) -> CryptoResult<Vec<u8>> {
         if signature.len() != 65 && signature.len() != 64 {
-            return Err("Signature must be 65 or 64 bytes".to_string());
+            return Err(CryptoError::invalid_signature(
+                "Signature must be 65 or 64 bytes",
+            ));
         }
         if message_hash.len() != 32 {
-            return Err("Message hash must be 32 bytes".to_string());
+            return Err(CryptoError::invalid_argument(
+                "Message hash must be 32 bytes",
+            ));
         }
 
         let msg = Message::from_digest_slice(message_hash)
-            .map_err(|e| format!("Invalid message hash: {e}"))?;
+            .map_err(|e| CryptoError::invalid_argument(format!("Invalid message hash: {e}")))?;
 
         let (rec_id, sig_bytes) = if signature.len() == 65 {
             let rec = signature[64];
             let rec_id = if rec >= 27 { rec - 27 } else { rec };
             if rec_id > 3 {
-                return Err("Recovery id must be in range 0..3".to_string());
+                return Err(CryptoError::invalid_signature(
+                    "Recovery id must be in range 0..3",
+                ));
             }
             (rec_id, signature[..64].to_vec())
         } else {
@@ -257,14 +264,14 @@ impl Secp256k1Crypto {
         };
 
         let rec_id = RecoveryId::from_i32(i32::from(rec_id))
-            .map_err(|e| format!("Invalid recovery id: {e}"))?;
+            .map_err(|e| CryptoError::invalid_signature(format!("Invalid recovery id: {e}")))?;
         let recoverable = RecoverableSignature::from_compact(&sig_bytes, rec_id)
-            .map_err(|e| format!("Invalid recoverable signature: {e}"))?;
+            .map_err(|e| CryptoError::invalid_signature(format!("Invalid recoverable signature: {e}")))?;
 
         let secp = Secp256k1::new();
         let public_key = secp
             .recover_ecdsa(&msg, &recoverable)
-            .map_err(|e| format!("Failed to recover public key: {e}"))?;
+            .map_err(|e| CryptoError::invalid_key(format!("Failed to recover public key: {e}")))?;
 
         Ok(public_key.serialize().to_vec())
     }
@@ -284,30 +291,30 @@ impl Secp256r1Crypto {
     }
 
     /// Derives public key from private key
-    pub fn derive_public_key(private_key: &[u8; 32]) -> Result<Vec<u8>, String> {
+    pub fn derive_public_key(private_key: &[u8; 32]) -> CryptoResult<Vec<u8>> {
         let signing_key = SigningKey::try_from(private_key.as_slice())
-            .map_err(|e| format!("Invalid private key: {e}"))?;
+            .map_err(|e| CryptoError::invalid_key(format!("Invalid private key: {e}")))?;
         let verifying_key = VerifyingKey::from(&signing_key);
         Ok(verifying_key.to_encoded_point(true).as_bytes().to_vec())
     }
 
     /// Signs a message with secp256r1
-    pub fn sign(message: &[u8], private_key: &[u8; 32]) -> Result<[u8; 64], String> {
+    pub fn sign(message: &[u8], private_key: &[u8; 32]) -> CryptoResult<[u8; 64]> {
         let signing_key = SigningKey::try_from(private_key.as_slice())
-            .map_err(|e| format!("Invalid private key: {e}"))?;
+            .map_err(|e| CryptoError::invalid_key(format!("Invalid private key: {e}")))?;
         let signature: Signature = signing_key.sign(message);
         let bytes: [u8; 64] = signature.to_bytes().into();
         Ok(bytes)
     }
 
     /// Verifies a secp256r1 signature
-    pub fn verify(message: &[u8], signature: &[u8; 64], public_key: &[u8]) -> Result<bool, String> {
+    pub fn verify(message: &[u8], signature: &[u8; 64], public_key: &[u8]) -> CryptoResult<bool> {
         let public_key = P256PublicKey::from_sec1_bytes(public_key)
-            .map_err(|e| format!("Invalid public key: {e}"))?;
+            .map_err(|e| CryptoError::invalid_key(format!("Invalid public key: {e}")))?;
         let verifying_key = VerifyingKey::from(public_key);
 
         let signature = Signature::try_from(signature.as_slice())
-            .map_err(|e| format!("Invalid signature: {e}"))?;
+            .map_err(|e| CryptoError::invalid_signature(format!("Invalid signature: {e}")))?;
 
         Ok(verifying_key.verify(message, &signature).is_ok())
     }
@@ -324,16 +331,16 @@ impl Ed25519Crypto {
     }
 
     /// Derives public key from private key
-    pub fn derive_public_key(private_key: &[u8; 32]) -> Result<[u8; 32], String> {
+    pub fn derive_public_key(private_key: &[u8; 32]) -> CryptoResult<[u8; 32]> {
         let signing_key = Ed25519SigningKey::try_from(private_key.as_slice())
-            .map_err(|e| format!("Invalid private key: {e}"))?;
+            .map_err(|e| CryptoError::invalid_key(format!("Invalid private key: {e}")))?;
         Ok(signing_key.verifying_key().to_bytes())
     }
 
     /// Signs a message with Ed25519
-    pub fn sign(message: &[u8], private_key: &[u8; 32]) -> Result<[u8; 64], String> {
+    pub fn sign(message: &[u8], private_key: &[u8; 32]) -> CryptoResult<[u8; 64]> {
         let signing_key = Ed25519SigningKey::try_from(private_key.as_slice())
-            .map_err(|e| format!("Invalid private key: {e}"))?;
+            .map_err(|e| CryptoError::invalid_key(format!("Invalid private key: {e}")))?;
         let signature = signing_key.sign(message);
         Ok(signature.to_bytes())
     }
@@ -343,11 +350,11 @@ impl Ed25519Crypto {
         message: &[u8],
         signature: &[u8; 64],
         public_key: &[u8; 32],
-    ) -> Result<bool, String> {
+    ) -> CryptoResult<bool> {
         let verifying_key = Ed25519VerifyingKey::from_bytes(public_key)
-            .map_err(|e| format!("Invalid public key: {e}"))?;
+            .map_err(|e| CryptoError::invalid_key(format!("Invalid public key: {e}")))?;
         let signature = Ed25519Signature::try_from(signature.as_slice())
-            .map_err(|e| format!("Invalid signature: {e}"))?;
+            .map_err(|e| CryptoError::invalid_signature(format!("Invalid signature: {e}")))?;
 
         Ok(verifying_key.verify_strict(message, &signature).is_ok())
     }
@@ -364,10 +371,10 @@ impl Base58 {
     }
 
     /// Decodes Base58 string to bytes
-    pub fn decode(s: &str) -> Result<Vec<u8>, String> {
+    pub fn decode(s: &str) -> CryptoResult<Vec<u8>> {
         bs58::decode(s)
             .into_vec()
-            .map_err(|e| format!("Base58 decode error: {e}"))
+            .map_err(|e| CryptoError::encoding_error(format!("Base58 decode error: {e}")))
     }
 
     /// Encodes data to `Base58Check` string (Base58 with 4-byte checksum).
@@ -381,19 +388,23 @@ impl Base58 {
     }
 
     /// Decodes `Base58Check` string back to bytes, verifying the checksum.
-    pub fn decode_check(s: &str) -> Result<Vec<u8>, String> {
+    pub fn decode_check(s: &str) -> CryptoResult<Vec<u8>> {
         let bytes = bs58::decode(s)
             .into_vec()
-            .map_err(|e| format!("Base58 decode error: {e}"))?;
+            .map_err(|e| CryptoError::encoding_error(format!("Base58 decode error: {e}")))?;
 
         if bytes.len() < 4 {
-            return Err("Invalid Base58Check payload: too short".to_string());
+            return Err(CryptoError::encoding_error(
+                "Invalid Base58Check payload: too short",
+            ));
         }
 
         let (payload, checksum) = bytes.split_at(bytes.len() - 4);
         let expected = NeoHash::hash256(payload);
         if checksum != &expected[..4] {
-            return Err("Invalid Base58Check checksum".to_string());
+            return Err(CryptoError::encoding_error(
+                "Invalid Base58Check checksum",
+            ));
         }
 
         Ok(payload.to_vec())
@@ -411,8 +422,8 @@ impl Hex {
     }
 
     /// Decodes hex string to bytes
-    pub fn decode(s: &str) -> Result<Vec<u8>, String> {
-        hex::decode(s).map_err(|e| format!("Hex decode error: {e}"))
+    pub fn decode(s: &str) -> CryptoResult<Vec<u8>> {
+        hex::decode(s).map_err(|e| CryptoError::encoding_error(format!("Hex decode error: {e}")))
     }
 }
 
@@ -538,7 +549,7 @@ pub struct ECDsa;
 
 impl ECDsa {
     /// Signs data with ECDSA
-    pub fn sign(data: &[u8], private_key: &[u8; 32], curve: ECCurve) -> Result<[u8; 64], String> {
+    pub fn sign(data: &[u8], private_key: &[u8; 32], curve: ECCurve) -> CryptoResult<[u8; 64]> {
         match curve {
             ECCurve::Secp256k1 => Secp256k1Crypto::sign(data, private_key),
             ECCurve::Secp256r1 => Secp256r1Crypto::sign(data, private_key),
@@ -552,39 +563,43 @@ impl ECDsa {
         signature: &[u8],
         public_key: &[u8],
         curve: ECCurve,
-    ) -> Result<bool, String> {
+    ) -> CryptoResult<bool> {
         match curve {
             ECCurve::Secp256k1 => {
                 if signature.len() != 64 || public_key.len() != 33 {
-                    return Err("Invalid signature or public key length".to_string());
+                    return Err(CryptoError::invalid_argument(
+                        "Invalid signature or public key length",
+                    ));
                 }
                 let sig_bytes: [u8; 64] = signature
                     .try_into()
-                    .map_err(|_| "Invalid signature length".to_string())?;
+                    .map_err(|_| CryptoError::invalid_signature("Invalid signature length"))?;
                 let pub_bytes: [u8; 33] = public_key
                     .try_into()
-                    .map_err(|_| "Invalid public key length".to_string())?;
+                    .map_err(|_| CryptoError::invalid_key("Invalid public key length"))?;
                 Secp256k1Crypto::verify(data, &sig_bytes, &pub_bytes)
             }
             ECCurve::Secp256r1 => {
                 if signature.len() != 64 {
-                    return Err("Invalid signature length".to_string());
+                    return Err(CryptoError::invalid_signature("Invalid signature length"));
                 }
                 let sig_bytes: [u8; 64] = signature
                     .try_into()
-                    .map_err(|_| "Invalid signature length".to_string())?;
+                    .map_err(|_| CryptoError::invalid_signature("Invalid signature length"))?;
                 Secp256r1Crypto::verify(data, &sig_bytes, public_key)
             }
             ECCurve::Ed25519 => {
                 if signature.len() != 64 || public_key.len() != 32 {
-                    return Err("Invalid signature or public key length".to_string());
+                    return Err(CryptoError::invalid_argument(
+                        "Invalid signature or public key length",
+                    ));
                 }
                 let sig_bytes: [u8; 64] = signature
                     .try_into()
-                    .map_err(|_| "Invalid signature length".to_string())?;
+                    .map_err(|_| CryptoError::invalid_signature("Invalid signature length"))?;
                 let pub_bytes: [u8; 32] = public_key
                     .try_into()
-                    .map_err(|_| "Invalid public key length".to_string())?;
+                    .map_err(|_| CryptoError::invalid_key("Invalid public key length"))?;
                 Ed25519Crypto::verify(data, &sig_bytes, &pub_bytes)
             }
         }
@@ -596,26 +611,31 @@ pub struct ECC;
 
 impl ECC {
     /// Generates a public key from private key
-    pub fn generate_public_key(private_key: &[u8; 32], curve: ECCurve) -> Result<ECPoint, String> {
+    pub fn generate_public_key(private_key: &[u8; 32], curve: ECCurve) -> CryptoResult<ECPoint> {
         match curve {
             ECCurve::Secp256k1 => {
                 let pub_bytes = Secp256k1Crypto::derive_public_key(private_key)?;
-                ECPoint::from_bytes_with_curve(curve, &pub_bytes).map_err(|e| e.to_string())
+                ECPoint::from_bytes_with_curve(curve, &pub_bytes)
+                    .map_err(|e| CryptoError::invalid_point(e.to_string()))
             }
             ECCurve::Secp256r1 => {
                 let pub_bytes = Secp256r1Crypto::derive_public_key(private_key)?;
-                ECPoint::from_bytes_with_curve(curve, &pub_bytes).map_err(|e| e.to_string())
+                ECPoint::from_bytes_with_curve(curve, &pub_bytes)
+                    .map_err(|e| CryptoError::invalid_point(e.to_string()))
             }
             ECCurve::Ed25519 => {
                 let pub_bytes = Ed25519Crypto::derive_public_key(private_key)?;
-                ECPoint::from_bytes_with_curve(curve, &pub_bytes).map_err(|e| e.to_string())
+                ECPoint::from_bytes_with_curve(curve, &pub_bytes)
+                    .map_err(|e| CryptoError::invalid_point(e.to_string()))
             }
         }
     }
 
     /// Compresses a public key
-    pub fn compress_public_key(public_key: &ECPoint) -> Result<Vec<u8>, String> {
-        public_key.encode_compressed().map_err(|e| e.to_string())
+    pub fn compress_public_key(public_key: &ECPoint) -> CryptoResult<Vec<u8>> {
+        public_key
+            .encode_compressed()
+            .map_err(|e| CryptoError::invalid_point(e.to_string()))
     }
 }
 
@@ -737,11 +757,13 @@ pub struct Bls12381Crypto;
 const NEO_BLS_DST: &[u8] = b"BLS_SIG_BLS12381G1_XMD:SHA-256_SSWU_RO_NUL_";
 
 impl Bls12381Crypto {
-    fn validate_private_key(private_key: &[u8; 32]) -> Result<blst::blst_scalar, String> {
+    fn validate_private_key(private_key: &[u8; 32]) -> CryptoResult<blst::blst_scalar> {
         use blst::blst_scalar;
 
         if private_key.iter().all(|b| *b == 0) {
-            return Err("Invalid private key: scalar cannot be zero".to_string());
+            return Err(CryptoError::invalid_key(
+                "Invalid private key: scalar cannot be zero",
+            ));
         }
 
         let mut sk_scalar = blst_scalar::default();
@@ -751,7 +773,9 @@ impl Bls12381Crypto {
         unsafe {
             blst::blst_scalar_from_lendian(&mut sk_scalar, private_key.as_ptr());
             if !blst::blst_scalar_fr_check(&sk_scalar) {
-                return Err("Invalid private key: scalar not in Fr field".to_string());
+                return Err(CryptoError::invalid_key(
+                    "Invalid private key: scalar not in Fr field",
+                ));
             }
         }
         Ok(sk_scalar)
@@ -767,7 +791,7 @@ impl Bls12381Crypto {
 
     /// Derives a public key from a private key
     /// Returns a 96-byte compressed G2 point
-    pub fn derive_public_key(private_key: &[u8; 32]) -> Result<[u8; 96], String> {
+    pub fn derive_public_key(private_key: &[u8; 32]) -> CryptoResult<[u8; 96]> {
         use blst::blst_p2;
 
         let sk_scalar = Self::validate_private_key(private_key)?;
@@ -790,7 +814,7 @@ impl Bls12381Crypto {
 
     /// Signs a message with BLS12-381
     /// Returns a 48-byte compressed G1 signature
-    pub fn sign(message: &[u8], private_key: &[u8; 32]) -> Result<[u8; 48], String> {
+    pub fn sign(message: &[u8], private_key: &[u8; 32]) -> CryptoResult<[u8; 48]> {
         use blst::blst_p1;
 
         let sk_scalar = Self::validate_private_key(private_key)?;
@@ -831,7 +855,7 @@ impl Bls12381Crypto {
         message: &[u8],
         signature: &[u8; 48],
         public_key: &[u8; 96],
-    ) -> Result<bool, String> {
+    ) -> CryptoResult<bool> {
         use blst::{blst_p1, blst_p1_affine, blst_p2_affine, BLST_ERROR};
 
         // SAFETY: All inputs are fixed-size arrays with correct lengths for blst FFI.
@@ -842,25 +866,27 @@ impl Bls12381Crypto {
             let mut sig_affine = blst_p1_affine::default();
             let result = blst::blst_p1_uncompress(&mut sig_affine, signature.as_ptr());
             if result != BLST_ERROR::BLST_SUCCESS {
-                return Err("Invalid signature encoding".to_string());
+                return Err(CryptoError::invalid_signature("Invalid signature encoding"));
             }
 
             // Check signature point is in G1 subgroup
             if blst::blst_p1_affine_is_inf(&sig_affine) || !blst::blst_p1_affine_in_g1(&sig_affine)
             {
-                return Err("Signature not in G1 subgroup".to_string());
+                return Err(CryptoError::invalid_signature(
+                    "Signature not in G1 subgroup",
+                ));
             }
 
             // Deserialize public key (G2 point)
             let mut pk_affine = blst_p2_affine::default();
             let result = blst::blst_p2_uncompress(&mut pk_affine, public_key.as_ptr());
             if result != BLST_ERROR::BLST_SUCCESS {
-                return Err("Invalid public key encoding".to_string());
+                return Err(CryptoError::invalid_key("Invalid public key encoding"));
             }
 
             // Check public key is in G2 subgroup
             if blst::blst_p2_affine_is_inf(&pk_affine) || !blst::blst_p2_affine_in_g2(&pk_affine) {
-                return Err("Public key not in G2 subgroup".to_string());
+                return Err(CryptoError::invalid_key("Public key not in G2 subgroup"));
             }
 
             // Hash message to G1 curve point
@@ -898,11 +924,13 @@ impl Bls12381Crypto {
 
     /// Aggregates multiple BLS signatures into one
     /// Used for dBFT consensus where multiple validators sign
-    pub fn aggregate_signatures(signatures: &[[u8; 48]]) -> Result<[u8; 48], String> {
+    pub fn aggregate_signatures(signatures: &[[u8; 48]]) -> CryptoResult<[u8; 48]> {
         use blst::{blst_p1, blst_p1_affine};
 
         if signatures.is_empty() {
-            return Err("No signatures to aggregate".to_string());
+            return Err(CryptoError::invalid_argument(
+                "No signatures to aggregate",
+            ));
         }
 
         if signatures.len() == 1 {
@@ -918,12 +946,14 @@ impl Bls12381Crypto {
             let mut first_affine = blst_p1_affine::default();
             let result = blst::blst_p1_uncompress(&mut first_affine, signatures[0].as_ptr());
             if result != blst::BLST_ERROR::BLST_SUCCESS {
-                return Err("Invalid first signature".to_string());
+                return Err(CryptoError::invalid_signature("Invalid first signature"));
             }
             if blst::blst_p1_affine_is_inf(&first_affine)
                 || !blst::blst_p1_affine_in_g1(&first_affine)
             {
-                return Err("First signature not in G1 subgroup".to_string());
+                return Err(CryptoError::invalid_signature(
+                    "First signature not in G1 subgroup",
+                ));
             }
             blst::blst_p1_from_affine(&mut agg, &first_affine);
 
@@ -932,12 +962,16 @@ impl Bls12381Crypto {
                 let mut sig_affine = blst_p1_affine::default();
                 let result = blst::blst_p1_uncompress(&mut sig_affine, sig.as_ptr());
                 if result != blst::BLST_ERROR::BLST_SUCCESS {
-                    return Err("Invalid signature in aggregation".to_string());
+                    return Err(CryptoError::invalid_signature(
+                        "Invalid signature in aggregation",
+                    ));
                 }
                 if blst::blst_p1_affine_is_inf(&sig_affine)
                     || !blst::blst_p1_affine_in_g1(&sig_affine)
                 {
-                    return Err("Signature not in G1 subgroup".to_string());
+                    return Err(CryptoError::invalid_signature(
+                        "Signature not in G1 subgroup",
+                    ));
                 }
                 blst::blst_p1_add_or_double_affine(&mut agg, &agg, &sig_affine);
             }
@@ -955,11 +989,11 @@ impl Bls12381Crypto {
         message: &[u8],
         aggregated_signature: &[u8; 48],
         public_keys: &[[u8; 96]],
-    ) -> Result<bool, String> {
+    ) -> CryptoResult<bool> {
         use blst::{blst_p2, blst_p2_affine};
 
         if public_keys.is_empty() {
-            return Err("No public keys provided".to_string());
+            return Err(CryptoError::invalid_argument("No public keys provided"));
         }
 
         // Aggregate public keys
@@ -971,12 +1005,14 @@ impl Bls12381Crypto {
             let mut first_affine = blst_p2_affine::default();
             let result = blst::blst_p2_uncompress(&mut first_affine, public_keys[0].as_ptr());
             if result != blst::BLST_ERROR::BLST_SUCCESS {
-                return Err("Invalid first public key".to_string());
+                return Err(CryptoError::invalid_key("Invalid first public key"));
             }
             if blst::blst_p2_affine_is_inf(&first_affine)
                 || !blst::blst_p2_affine_in_g2(&first_affine)
             {
-                return Err("First public key not in G2 subgroup".to_string());
+                return Err(CryptoError::invalid_key(
+                    "First public key not in G2 subgroup",
+                ));
             }
             blst::blst_p2_from_affine(&mut agg_pk, &first_affine);
 
@@ -984,12 +1020,16 @@ impl Bls12381Crypto {
                 let mut pk_affine = blst_p2_affine::default();
                 let result = blst::blst_p2_uncompress(&mut pk_affine, pk.as_ptr());
                 if result != blst::BLST_ERROR::BLST_SUCCESS {
-                    return Err("Invalid public key in aggregation".to_string());
+                    return Err(CryptoError::invalid_key(
+                        "Invalid public key in aggregation",
+                    ));
                 }
                 if blst::blst_p2_affine_is_inf(&pk_affine)
                     || !blst::blst_p2_affine_in_g2(&pk_affine)
                 {
-                    return Err("Public key not in G2 subgroup".to_string());
+                    return Err(CryptoError::invalid_key(
+                        "Public key not in G2 subgroup",
+                    ));
                 }
                 blst::blst_p2_add_or_double_affine(&mut agg_pk, &agg_pk, &pk_affine);
             }
@@ -1007,6 +1047,7 @@ impl Bls12381Crypto {
 /// Convenience functions for Base58 encoding and decoding.
 pub mod base58 {
     use super::Base58;
+    use crate::CryptoResult;
 
     /// Encodes raw bytes as a Base58 string.
     #[must_use]
@@ -1015,7 +1056,7 @@ pub mod base58 {
     }
 
     /// Decodes a Base58 string into raw bytes.
-    pub fn decode(s: &str) -> Result<Vec<u8>, String> {
+    pub fn decode(s: &str) -> CryptoResult<Vec<u8>> {
         Base58::decode(s)
     }
 
@@ -1026,7 +1067,7 @@ pub mod base58 {
     }
 
     /// Decodes a Base58Check string, verifying the embedded checksum.
-    pub fn decode_check(s: &str) -> Result<Vec<u8>, String> {
+    pub fn decode_check(s: &str) -> CryptoResult<Vec<u8>> {
         Base58::decode_check(s)
     }
 }

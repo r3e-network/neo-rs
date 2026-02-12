@@ -313,26 +313,26 @@ impl ECPoint {
     }
 
     /// Backward-compatible decoding helper mirroring `ECPoint::decode(data, curve)`.
-    pub fn decode(data: &[u8], curve: ECCurve) -> Result<Self, String> {
-        Self::from_bytes_with_curve(curve, data).map_err(|e| e.to_string())
+    pub fn decode(data: &[u8], curve: ECCurve) -> CryptoResult<Self> {
+        Self::from_bytes_with_curve(curve, data)
     }
 
     /// Backward-compatible encoding helper mirroring `ECPoint::encode_point(compressed)`.
     ///
     /// - For secp256r1/k1, returns SEC1 compressed (33 bytes) or uncompressed (65 bytes).
     /// - For Ed25519, returns the 32-byte public key regardless of `compressed`.
-    pub fn encode_point(&self, compressed: bool) -> Result<Vec<u8>, String> {
+    pub fn encode_point(&self, compressed: bool) -> CryptoResult<Vec<u8>> {
         if compressed {
-            return self.encode_compressed().map_err(|e| e.to_string());
+            return self.encode_compressed();
         }
 
         match self.curve {
             ECCurve::Secp256r1 => {
-                let affine = Self::parse_p256_point(&self.data).map_err(|e| e.to_string())?;
+                let affine = Self::parse_p256_point(&self.data)?;
                 Ok(affine.to_encoded_point(false).as_bytes().to_vec())
             }
             ECCurve::Secp256k1 => {
-                let affine = Self::parse_k256_point(&self.data).map_err(|e| e.to_string())?;
+                let affine = Self::parse_k256_point(&self.data)?;
                 Ok(affine.to_encoded_point(false).as_bytes().to_vec())
             }
             ECCurve::Ed25519 => Ok(self.data.clone()),

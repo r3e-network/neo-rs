@@ -96,8 +96,8 @@ fn read_group_bytes(reader: &mut MemoryReader) -> IoResult<Vec<u8>> {
         }
     };
     let bytes = reader.read_bytes(encoded_len)?;
-    let point = ECPoint::decode(&bytes, ECCurve::secp256r1()).map_err(IoError::invalid_data)?;
-    point.encode_point(true).map_err(IoError::invalid_data)
+    let point = ECPoint::decode(&bytes, ECCurve::secp256r1()).map_err(|e| IoError::invalid_data(e.to_string()))?;
+    point.encode_point(true).map_err(|e| IoError::invalid_data(e.to_string()))
 }
 
 /// The action to be taken if the current context meets with the rule (matches C# WitnessRuleAction exactly).

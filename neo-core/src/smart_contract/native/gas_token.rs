@@ -1,5 +1,5 @@
 use super::contract_management::ContractManagement;
-use super::fungible_token::{PREFIX_ACCOUNT as ACCOUNT_PREFIX, PREFIX_TOTAL_SUPPLY};
+use super::fungible_token::{FungibleToken, PREFIX_ACCOUNT as ACCOUNT_PREFIX, PREFIX_TOTAL_SUPPLY};
 use super::helpers::NativeHelpers;
 use super::native_contract::{NativeContract, NativeMethod};
 use super::neo_token::NeoToken;
@@ -669,5 +669,25 @@ impl NativeContract for GasToken {
         }
 
         Ok(())
+    }
+}
+
+impl FungibleToken for GasToken {
+    fn ft_symbol(&self) -> &str {
+        Self::SYMBOL
+    }
+
+    fn ft_decimals(&self) -> u8 {
+        Self::DECIMALS
+    }
+
+    fn ft_total_supply(&self, engine: &ApplicationEngine) -> CoreResult<BigInt> {
+        let snapshot = engine.snapshot_cache();
+        Ok(self.total_supply_snapshot(snapshot.as_ref()))
+    }
+
+    fn ft_balance_of(&self, engine: &ApplicationEngine, account: &UInt160) -> CoreResult<BigInt> {
+        let snapshot = engine.snapshot_cache();
+        Ok(self.balance_of_snapshot(snapshot.as_ref(), account))
     }
 }

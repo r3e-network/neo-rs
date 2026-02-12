@@ -46,6 +46,13 @@ pub enum CryptoError {
         /// Error message describing the encoding issue.
         message: String,
     },
+
+    /// Key generation failed after exhausting retry budget.
+    #[error("Key generation failed: {message}")]
+    KeyGenerationFailed {
+        /// Error message describing the generation failure.
+        message: String,
+    },
 }
 
 impl CryptoError {
@@ -81,6 +88,54 @@ impl CryptoError {
     pub fn encoding_error<S: Into<String>>(message: S) -> Self {
         Self::EncodingError {
             message: message.into(),
+        }
+    }
+
+    /// Create a new key generation failure error.
+    pub fn key_generation_failed<S: Into<String>>(message: S) -> Self {
+        Self::KeyGenerationFailed {
+            message: message.into(),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// From impls for underlying library error types
+// ---------------------------------------------------------------------------
+
+impl From<secp256k1::Error> for CryptoError {
+    fn from(e: secp256k1::Error) -> Self {
+        // secp256k1::Error covers invalid keys, signatures, and messages.
+        // Map to the most general variant; callers that need finer granularity
+        // should use map_err with a specific constructor instead.
+        Self::InvalidKey {
+            message: e.to_string(),
+        }
+    }
+}
+
+// p256::ecdsa::Error is a re-export of `signature::Error`, which is also
+// `ed25519_dalek::SignatureError`. A single From impl covers both.
+impl From<p256::ecdsa::Error> for CryptoError {
+    fn from(e: p256::ecdsa::Error) -> Self {
+        Self::InvalidSignature {
+            message: e.to_string(),
+        }
+    }
+}
+
+impl From<bs58::decode::Error> for CryptoError {
+    fn from(e: bs58::decode::Error) -> Self {
+        Self::EncodingError {
+            message: format!("Base58 decode error: {e}"),
+        }
+    }
+}
+
+impl From<hex::FromHexError> for CryptoError {
+    fn from(e: hex::FromHexError) -> Self {
+        Self::EncodingError {
+            message: format!("Hex decode error: {e}"),
         }
     }
 }
