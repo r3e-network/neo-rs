@@ -41,11 +41,8 @@ COPY neo-p2p/ neo-p2p/
 COPY neo-rpc/ neo-rpc/
 COPY neo-consensus/ neo-consensus/
 COPY neo-tee/ neo-tee/
-COPY neo-config/ neo-config/
+COPY neo-hsm/ neo-hsm/
 COPY neo-telemetry/ neo-telemetry/
-COPY neo-state/ neo-state/
-COPY neo-mempool/ neo-mempool/
-COPY neo-chain/ neo-chain/
 COPY neo-cli/ neo-cli/
 COPY neo-node/ neo-node/
 COPY scripts/ scripts/
