@@ -99,6 +99,16 @@ impl Map {
         self.inner.lock().items.clone()
     }
 
+    /// Provides zero-copy read access to the map entries under the lock.
+    #[inline]
+    pub fn with_items<R>(
+        &self,
+        f: impl FnOnce(&VmOrderedDictionary<StackItem, StackItem>) -> R,
+    ) -> R {
+        let inner = self.inner.lock();
+        f(&inner.items)
+    }
+
     /// Gets the value for the specified key.
     pub fn get(&self, key: &StackItem) -> VmResult<StackItem> {
         self.validate_key(key)?;
@@ -238,8 +248,13 @@ impl Map {
     }
 
     fn validate_key(&self, key: &StackItem) -> VmResult<()> {
-        let bytes = key.as_bytes()?;
-        if bytes.len() > MAX_KEY_SIZE {
+        // Fast path: avoid allocation for ByteString keys (the common case).
+        let len = if let Some(slice) = key.as_bytes_ref() {
+            slice.len()
+        } else {
+            key.as_bytes()?.len()
+        };
+        if len > MAX_KEY_SIZE {
             return Err(VmError::invalid_operation_msg(format!(
                 "The key length exceed the max value. {MAX_KEY_SIZE} at most."
             )));

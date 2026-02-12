@@ -25,9 +25,8 @@ hex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 lazy_static = { workspace = true }
-byteorder = "1.4"
+byteorder = { workspace = true }
 bytes = { workspace = true }
-log = { workspace = true }
 # tokio kept for monitoring and persistence/backup modules
 # Consider moving these to neo-node in future refactoring
 tokio = { workspace = true, features = ["sync", "time", "fs", "io-util", "rt"] }
@@ -52,7 +51,7 @@ quick-xml = { version = "0.31", features = ["serialize"], optional = true }
 uuid = { workspace = true }
 base64 = { workspace = true }
 hmac = "0.12"
-murmur3 = "0.5"
+murmur3 = { workspace = true }
 zstd = "0.13"
 rocksdb = { workspace = true, optional = true }
 url = { workspace = true }
@@ -71,7 +70,7 @@ aes = "0.8"
 cbc = "0.1"
 cipher = "0.4"
 zeroize = { workspace = true }
-subtle = "2.5"
+subtle = { workspace = true }
 
 # Actor framework removed (Phase 2 refactoring)
 ractor = { workspace = true, optional = true }
@@ -95,7 +94,7 @@ neo-json = { path = "../neo-json" }
 neo-primitives = { path = "../neo-primitives" }
 neo-crypto = { path = "../neo-crypto" }
 neo-storage = { path = "../neo-storage" }
-xxhash-rust = { version = "0.8.15", features = ["xxh3"] }
+xxhash-rust = { workspace = true }
 unicode-segmentation = "1.10"
 
 [dev-dependencies]
@@ -114,6 +113,10 @@ harness = false
 #harness = false
 
 [build-dependencies]
+# NOTE: These are only used when neofs-grpc feature is enabled (build.rs checks
+# CARGO_FEATURE_NEOFS_GRPC). Cargo does not support feature-gating build-deps,
+# so they are always compiled. Consider moving proto generation to a build script
+# crate or xtask to avoid compiling these unconditionally.
 tonic-build = "0.11"
 protoc-bin-vendored = "3.0"
 

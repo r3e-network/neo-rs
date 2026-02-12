@@ -26,7 +26,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 lazy_static = { workspace = true }
 once_cell = { workspace = true }
-xxhash-rust = { version = "0.8", features = ["xxh3"] }
+xxhash-rust = { workspace = true }
 parking_lot = { workspace = true }
 
 # Internal dependencies
@@ -35,7 +35,7 @@ neo-io = { path = "../neo-io" }
 # Cryptography dependencies for script hash calculation
 sha2 = { workspace = true }
 ripemd = { workspace = true }
-murmur3 = "0.5"
+murmur3 = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

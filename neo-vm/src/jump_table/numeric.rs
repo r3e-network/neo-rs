@@ -25,9 +25,17 @@ fn require_context(engine: &mut ExecutionEngine) -> VmResult<&mut ExecutionConte
 }
 
 /// Checks if a `BigInt` value exceeds the maximum allowed size.
+///
+/// Uses `BigInt::bits()` to compute the byte length without allocating a `Vec<u8>`.
+/// `bits()` returns the number of bits needed to represent the magnitude, so we
+/// add 1 for the sign bit and round up to whole bytes: `(bits + 8) / 8`.
+/// For zero, `bits()` returns 0 and the signed encoding is a single `0x00` byte.
 #[inline]
 fn check_bigint_size(value: &BigInt) -> VmResult<()> {
-    let byte_len = value.to_signed_bytes_le().len();
+    let bits = value.bits();
+    // Zero encodes as a single byte in signed two's-complement representation.
+    // For non-zero values: need `bits` magnitude bits + 1 sign bit, rounded up to bytes.
+    let byte_len = if bits == 0 { 1 } else { (bits as usize + 8) / 8 };
     if byte_len > MAX_BIGINT_SIZE {
         return Err(VmError::invalid_operation_msg(format!(
             "BigInt size {byte_len} bytes exceeds maximum {MAX_BIGINT_SIZE} bytes"

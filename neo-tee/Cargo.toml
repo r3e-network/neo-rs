@@ -25,21 +25,21 @@ attestation = ["sgx-hw"]
 [dependencies]
 # Core dependencies
 thiserror = { workspace = true }
-anyhow = "1.0"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-hex = "0.4"
-bs58 = "0.5"
-base64 = "0.22"
-rand = "0.8"
-sha2 = "0.10"
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+hex = { workspace = true }
+bs58 = { workspace = true }
+base64 = { workspace = true }
+rand = { workspace = true }
+sha2 = { workspace = true }
 hkdf = "0.12"
 aes-gcm = "0.10"
 zeroize = { workspace = true }
-parking_lot = "0.12"
-async-trait = "0.1"
-tokio = { version = "1", features = ["sync"] }
-tracing = "0.1"
+parking_lot = { workspace = true }
+async-trait = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
+tracing = { workspace = true }
 
 # Workspace crypto primitives (secp256r1 + hash160)
 neo-crypto = { workspace = true }

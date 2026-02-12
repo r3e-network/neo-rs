@@ -207,8 +207,8 @@ impl ContractStorage {
     ) -> impl Iterator<Item = (&'a StorageKey, &'a StorageItem)> + 'a {
         self.cache
             .iter()
-            .filter(move |(k, v)| k.contract_hash == *contract_hash && v.is_some())
-            .map(|(k, v)| (k, v.as_ref().unwrap()))
+            .filter(move |(k, _)| k.contract_hash == *contract_hash)
+            .filter_map(|(k, v)| v.as_ref().map(|item| (k, item)))
     }
 
     /// Finds storage items with a key prefix.
@@ -219,10 +219,10 @@ impl ContractStorage {
     ) -> impl Iterator<Item = (&'a StorageKey, &'a StorageItem)> + 'a {
         self.cache
             .iter()
-            .filter(move |(k, v)| {
-                k.contract_hash == *contract_hash && k.key.starts_with(prefix) && v.is_some()
+            .filter(move |(k, _)| {
+                k.contract_hash == *contract_hash && k.key.starts_with(prefix)
             })
-            .map(|(k, v)| (k, v.as_ref().unwrap()))
+            .filter_map(|(k, v)| v.as_ref().map(|item| (k, item)))
     }
 
     /// Loads initial state from a backend.

@@ -18,8 +18,6 @@ use crate::unhandled_exception_policy::UnhandledExceptionPolicy;
 use tracing::error;
 
 /// Handlers for wiring state root calculation into block persistence.
-/// Currently unused but reserved for neo-node integration.
-#[allow(dead_code)]
 pub struct StateServiceCommitHandlers {
     state_store: Arc<StateStore>,
     exception_policy: UnhandledExceptionPolicy,
@@ -28,7 +26,6 @@ pub struct StateServiceCommitHandlers {
 
 impl StateServiceCommitHandlers {
     /// Creates a new handler with the given state store.
-    #[allow(dead_code)]
     pub fn new(state_store: Arc<StateStore>) -> Self {
         let exception_policy = state_store.exception_policy();
         Self {
@@ -79,50 +76,6 @@ impl ICommittingHandler for StateServiceCommitHandlers {
         if let Err(payload) = result {
             self.handle_panic(payload, "committing");
         }
-    }
-}
-
-/// Extended handlers with state root verification support.
-#[allow(dead_code)]
-pub struct StateServiceVerificationHandlers {
-    inner: StateServiceCommitHandlers,
-}
-
-impl StateServiceVerificationHandlers {
-    /// Creates a new handler with verification support.
-    #[allow(dead_code)]
-    pub fn new(state_store: Arc<StateStore>) -> Self {
-        Self {
-            inner: StateServiceCommitHandlers::new(state_store),
-        }
-    }
-
-    /// Verifies the state root after block persistence.
-    #[allow(dead_code)]
-    fn verify_state_root(&self, block: &Block) -> Result<(), String> {
-        let height = block.index();
-
-        // Get the locally computed root
-        let local_root = self
-            .inner
-            .state_store
-            .current_local_root_hash()
-            .ok_or_else(|| format!("No local state root found for block {}", height))?;
-
-        // Verify state root consistency
-        self.inner
-            .state_store
-            .verify_state_root_on_persist(height, &local_root, None)
-            .map_err(|e| format!("State root verification failed for block {}: {}", height, e))?;
-
-        tracing::debug!(
-            target: "state",
-            height,
-            root_hash = %local_root,
-            "State root verified on persist"
-        );
-
-        Ok(())
     }
 }
 

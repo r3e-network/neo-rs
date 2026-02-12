@@ -245,6 +245,23 @@ impl Array {
         self.items().into_iter()
     }
 
+    /// Provides zero-copy read access to the items under the lock.
+    ///
+    /// This avoids the `Vec` clone that `items()` performs, which is significant
+    /// when the caller only needs to inspect or iterate without taking ownership.
+    #[inline]
+    pub fn with_items<R>(&self, f: impl FnOnce(&[StackItem]) -> R) -> R {
+        let inner = self.inner.lock();
+        f(&inner.items)
+    }
+
+    /// Provides zero-copy mutable access to the items under the lock.
+    #[inline]
+    pub fn with_items_mut<R>(&self, f: impl FnOnce(&mut Vec<StackItem>) -> R) -> R {
+        let mut inner = self.inner.lock();
+        f(&mut inner.items)
+    }
+
     /// Reverses the order of items in the array.
     pub fn reverse_items(&self) -> VmResult<()> {
         let mut inner = self.inner.lock();

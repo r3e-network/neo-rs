@@ -56,6 +56,13 @@ impl Buffer {
         self.inner.lock().data.clone()
     }
 
+    /// Provides zero-copy read access to the buffer data under the lock.
+    #[inline]
+    pub fn with_data<R>(&self, f: impl FnOnce(&[u8]) -> R) -> R {
+        let inner = self.inner.lock();
+        f(&inner.data)
+    }
+
     /// Gets a mutable reference to the buffer data.
     pub(crate) fn with_data_mut<R>(&self, f: impl FnOnce(&mut Vec<u8>) -> R) -> R {
         let mut inner = self.inner.lock();

@@ -39,22 +39,21 @@ impl Default for MempoolConfig {
     }
 }
 
+/// Interior state protected by a single lock.
+struct MempoolInner {
+    transactions: HashMap<UInt256, TransactionEntry>,
+    by_sender: HashMap<UInt160, HashSet<UInt256>>,
+    priority_queue: BinaryHeap<PriorityEntry>,
+    current_height: u32,
+}
+
 /// Transaction mempool
 pub struct Mempool {
     /// Configuration
     config: MempoolConfig,
 
-    /// Transaction storage (hash -> entry)
-    transactions: RwLock<HashMap<UInt256, TransactionEntry>>,
-
-    /// Transactions by sender
-    by_sender: RwLock<HashMap<UInt160, HashSet<UInt256>>>,
-
-    /// Priority queue for transaction ordering
-    priority_queue: RwLock<BinaryHeap<PriorityEntry>>,
-
-    /// Current block height
-    current_height: RwLock<u32>,
+    /// All mutable state behind a single RwLock to prevent multi-lock deadlocks.
+    inner: RwLock<MempoolInner>,
 }
 
 /// Entry for the priority queue
@@ -91,10 +90,12 @@ impl Mempool {
     pub fn with_config(config: MempoolConfig) -> Self {
         Self {
             config,
-            transactions: RwLock::new(HashMap::new()),
-            by_sender: RwLock::new(HashMap::new()),
-            priority_queue: RwLock::new(BinaryHeap::new()),
-            current_height: RwLock::new(0),
+            inner: RwLock::new(MempoolInner {
+                transactions: HashMap::new(),
+                by_sender: HashMap::new(),
+                priority_queue: BinaryHeap::new(),
+                current_height: 0,
+            }),
         }
     }
 
@@ -102,70 +103,58 @@ impl Mempool {
     pub fn add(&self, entry: TransactionEntry) -> MempoolResult<()> {
         let hash = entry.hash;
 
-        // Check if transaction already exists
+        // Validate under read lock first
         {
-            let txs = self.transactions.read();
-            if txs.contains_key(&hash) {
+            let inner = self.inner.read();
+
+            if inner.transactions.contains_key(&hash) {
                 return Err(MempoolError::DuplicateTransaction(hash));
             }
-        }
 
-        // Check fee policy
-        if !self
-            .config
-            .fee_policy
-            .is_fee_acceptable(entry.network_fee, entry.size)
-        {
-            return Err(MempoolError::InsufficientFee {
-                required: self.config.fee_policy.minimum_fee(entry.size),
-                actual: entry.network_fee,
-            });
-        }
+            if !self
+                .config
+                .fee_policy
+                .is_fee_acceptable(entry.network_fee, entry.size)
+            {
+                return Err(MempoolError::InsufficientFee {
+                    required: self.config.fee_policy.minimum_fee(entry.size),
+                    actual: entry.network_fee,
+                });
+            }
 
-        // Check expiration
-        let current_height = *self.current_height.read();
-        if entry.is_expired(current_height) {
-            return Err(MempoolError::Expired(entry.valid_until_block));
-        }
+            if entry.is_expired(inner.current_height) {
+                return Err(MempoolError::Expired(entry.valid_until_block));
+            }
 
-        // Check sender limit
-        {
-            let by_sender = self.by_sender.read();
-            if let Some(sender_txs) = by_sender.get(&entry.sender) {
+            if let Some(sender_txs) = inner.by_sender.get(&entry.sender) {
                 if sender_txs.len() >= self.config.max_per_sender {
                     return Err(MempoolError::TooManyFromSender(self.config.max_per_sender));
                 }
             }
         }
 
-        // Check pool capacity
-        {
-            let txs = self.transactions.read();
-            if txs.len() >= self.config.max_transactions {
-                // Try to evict lowest priority transaction
-                drop(txs);
-                if !self.try_evict_lowest(&entry) {
-                    return Err(MempoolError::PoolFull(self.config.max_transactions));
-                }
+        // Acquire write lock for mutation
+        let mut inner = self.inner.write();
+
+        // Check capacity — may need to evict
+        if inner.transactions.len() >= self.config.max_transactions {
+            if !Self::try_evict_lowest_inner(&mut inner, &entry) {
+                return Err(MempoolError::PoolFull(self.config.max_transactions));
             }
         }
 
-        // Add to storage
-        {
-            let mut txs = self.transactions.write();
-            let mut by_sender = self.by_sender.write();
-            let mut queue = self.priority_queue.write();
-
-            txs.insert(hash, entry.clone());
-
-            by_sender.entry(entry.sender).or_default().insert(hash);
-
-            queue.push(PriorityEntry {
-                hash,
-                priority: entry.priority,
-                fee_per_byte: entry.fee_per_byte(),
-            });
+        // Re-check duplicate under write lock (another thread may have inserted)
+        if inner.transactions.contains_key(&hash) {
+            return Err(MempoolError::DuplicateTransaction(hash));
         }
+
+        inner.transactions.insert(hash, entry.clone());
+        inner.by_sender.entry(entry.sender).or_default().insert(hash);
+        inner.priority_queue.push(PriorityEntry {
+            hash,
+            priority: entry.priority,
+            fee_per_byte: entry.fee_per_byte(),
+        });
 
         tracing::debug!("Added transaction to mempool: {:?}", hash);
         Ok(())
@@ -173,57 +162,56 @@ impl Mempool {
 
     /// Remove a transaction from the pool
     pub fn remove(&self, hash: &UInt256) -> Option<TransactionEntry> {
-        let mut txs = self.transactions.write();
+        let mut inner = self.inner.write();
+        Self::remove_inner(&mut inner, hash)
+    }
 
-        if let Some(entry) = txs.remove(hash) {
-            let mut by_sender = self.by_sender.write();
-
-            if let Some(sender_txs) = by_sender.get_mut(&entry.sender) {
+    /// Remove helper that operates on the already-locked inner state.
+    fn remove_inner(inner: &mut MempoolInner, hash: &UInt256) -> Option<TransactionEntry> {
+        if let Some(entry) = inner.transactions.remove(hash) {
+            if let Some(sender_txs) = inner.by_sender.get_mut(&entry.sender) {
                 sender_txs.remove(hash);
                 if sender_txs.is_empty() {
-                    by_sender.remove(&entry.sender);
+                    inner.by_sender.remove(&entry.sender);
                 }
             }
-
-            // Note: We don't remove from priority_queue immediately for performance
-            // Stale entries are filtered when dequeuing
-
+            // Note: We don't remove from priority_queue immediately for performance.
+            // Stale entries are filtered when dequeuing.
             tracing::debug!("Removed transaction from mempool: {:?}", hash);
             return Some(entry);
         }
-
         None
     }
 
     /// Get a transaction by hash
     pub fn get(&self, hash: &UInt256) -> Option<TransactionEntry> {
-        self.transactions.read().get(hash).cloned()
+        self.inner.read().transactions.get(hash).cloned()
     }
 
     /// Check if a transaction exists
     pub fn contains(&self, hash: &UInt256) -> bool {
-        self.transactions.read().contains_key(hash)
+        self.inner.read().transactions.contains_key(hash)
     }
 
     /// Get current pool size
     pub fn len(&self) -> usize {
-        self.transactions.read().len()
+        self.inner.read().transactions.len()
     }
 
     /// Check if pool is empty
     pub fn is_empty(&self) -> bool {
-        self.transactions.read().is_empty()
+        self.inner.read().transactions.is_empty()
     }
 
     /// Get all transaction hashes
     pub fn hashes(&self) -> Vec<UInt256> {
-        self.transactions.read().keys().copied().collect()
+        self.inner.read().transactions.keys().copied().collect()
     }
 
     /// Get top N transactions by priority
     pub fn get_top(&self, n: usize) -> Vec<TransactionEntry> {
-        let txs = self.transactions.read();
-        let mut entries: Vec<_> = txs.values().cloned().collect();
+        let inner = self.inner.read();
+        let mut entries: Vec<_> = inner.transactions.values().cloned().collect();
         entries.sort();
         entries.truncate(n);
         entries
@@ -231,39 +219,43 @@ impl Mempool {
 
     /// Get transactions for a sender
     pub fn get_by_sender(&self, sender: &UInt160) -> Vec<TransactionEntry> {
-        let by_sender = self.by_sender.read();
-        let txs = self.transactions.read();
-
-        by_sender
+        let inner = self.inner.read();
+        inner
+            .by_sender
             .get(sender)
-            .map(|hashes| hashes.iter().filter_map(|h| txs.get(h).cloned()).collect())
+            .map(|hashes| {
+                hashes
+                    .iter()
+                    .filter_map(|h| inner.transactions.get(h).cloned())
+                    .collect()
+            })
             .unwrap_or_default()
     }
 
     /// Update the current block height and remove expired transactions
     pub fn update_height(&self, height: u32) {
-        *self.current_height.write() = height;
+        {
+            self.inner.write().current_height = height;
+        }
         self.remove_expired();
         self.update_fee_policy();
     }
 
     /// Remove expired transactions
     pub fn remove_expired(&self) -> usize {
-        let current_height = *self.current_height.read();
-        let expired: Vec<UInt256>;
+        let mut inner = self.inner.write();
+        let current_height = inner.current_height;
 
-        {
-            let txs = self.transactions.read();
-            expired = txs
-                .iter()
-                .filter(|(_, entry)| entry.is_expired(current_height))
-                .map(|(hash, _)| *hash)
-                .collect();
-        }
+        let expired: Vec<UInt256> = inner
+            .transactions
+            .iter()
+            .filter(|(_, entry)| entry.is_expired(current_height))
+            .map(|(hash, _)| *hash)
+            .collect();
 
         let count = expired.len();
         for hash in expired {
-            self.remove(&hash);
+            Self::remove_inner(&mut inner, &hash);
         }
 
         if count > 0 {
@@ -275,24 +267,20 @@ impl Mempool {
 
     /// Clear all transactions
     pub fn clear(&self) {
-        self.transactions.write().clear();
-        self.by_sender.write().clear();
-        self.priority_queue.write().clear();
+        let mut inner = self.inner.write();
+        inner.transactions.clear();
+        inner.by_sender.clear();
+        inner.priority_queue.clear();
     }
 
-    /// Try to evict lowest priority transaction to make room
-    fn try_evict_lowest(&self, new_entry: &TransactionEntry) -> bool {
-        let txs = self.transactions.read();
-
-        // Find lowest priority transaction
-        let lowest = txs.values().max_by(std::cmp::Ord::cmp);
+    /// Try to evict lowest priority transaction to make room (operates on locked inner).
+    fn try_evict_lowest_inner(inner: &mut MempoolInner, new_entry: &TransactionEntry) -> bool {
+        let lowest = inner.transactions.values().max_by(std::cmp::Ord::cmp);
 
         if let Some(lowest) = lowest {
-            // Only evict if new transaction has higher priority
             if new_entry.priority > lowest.priority {
                 let hash = lowest.hash;
-                drop(txs);
-                self.remove(&hash);
+                Self::remove_inner(inner, &hash);
                 return true;
             }
         }
@@ -302,7 +290,8 @@ impl Mempool {
 
     /// Update fee policy based on pool utilization
     fn update_fee_policy(&self) {
-        let utilization = self.len() as f64 / self.config.max_transactions as f64;
+        let len = self.inner.read().transactions.len();
+        let utilization = len as f64 / self.config.max_transactions as f64;
 
         // Update fee policy based on current pool congestion level
         let mut config = self.config.clone();
@@ -311,22 +300,22 @@ impl Mempool {
 
     /// Get pool statistics
     pub fn stats(&self) -> MempoolStats {
-        let txs = self.transactions.read();
-        let by_sender = self.by_sender.read();
+        let inner = self.inner.read();
 
-        let total_fees: i64 = txs
+        let total_fees: i64 = inner
+            .transactions
             .values()
             .map(super::transaction_entry::TransactionEntry::total_fee)
             .sum();
-        let total_size: usize = txs.values().map(|e| e.size).sum();
+        let total_size: usize = inner.transactions.values().map(|e| e.size).sum();
 
         MempoolStats {
-            transaction_count: txs.len(),
-            sender_count: by_sender.len(),
+            transaction_count: inner.transactions.len(),
+            sender_count: inner.by_sender.len(),
             total_fees,
             total_size,
             capacity: self.config.max_transactions,
-            utilization: txs.len() as f64 / self.config.max_transactions as f64,
+            utilization: inner.transactions.len() as f64 / self.config.max_transactions as f64,
         }
     }
 }

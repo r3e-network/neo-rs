@@ -2116,7 +2116,7 @@ name = "neo-cli"
 version = "0.7.2"
 dependencies = [
  "anyhow",
- "base64 0.21.7",
+ "base64 0.22.1",
  "clap",
  "hex",
  "neo-json",
@@ -2152,7 +2152,7 @@ version = "0.7.2"
 dependencies = [
  "aes",
  "async-trait",
- "base64 0.21.7",
+ "base64 0.22.1",
  "bincode",
  "bitflags 2.10.0",
  "blst",
@@ -2174,7 +2174,6 @@ dependencies = [
  "inventory",
  "k256",
  "lazy_static",
- "log",
  "lz4_flex",
  "murmur3",
  "neo-crypto",
@@ -2387,7 +2386,7 @@ version = "0.7.2"
 dependencies = [
  "anyhow",
  "async-trait",
- "base64 0.21.7",
+ "base64 0.22.1",
  "bs58",
  "bytes",
  "dashmap 5.5.3",

@@ -150,13 +150,13 @@ impl MemoryPool {
     }
 
     /// internal int SortedTxCount => _sortedTransactions.Count;
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn sorted_tx_count(&self) -> usize {
         self.verified_sorted.len()
     }
 
     /// internal int UnverifiedSortedTxCount => _unverifiedSortedTransactions.Count;
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn unverified_sorted_tx_count(&self) -> usize {
         self.unverified_sorted.len()
     }
@@ -182,7 +182,7 @@ impl MemoryPool {
             || self.unverified_transactions.contains_key(hash)
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn lowest_fee_item(&self) -> Option<&PoolItem> {
         let verified = self.verified_sorted.iter().next();
         let unverified = self.unverified_sorted.iter().next();
@@ -202,7 +202,7 @@ impl MemoryPool {
     }
 
     /// Returns true if the pool has capacity for a transaction with at least the given priority.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn can_transaction_fit_in_pool(&self, tx: &Transaction) -> bool {
         if self.count() < self.capacity {
             return true;

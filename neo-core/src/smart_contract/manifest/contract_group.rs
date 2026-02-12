@@ -73,7 +73,7 @@ impl ContractGroup {
         ) {
             Ok(is_valid) => Ok(is_valid),
             Err(e) => {
-                log::info!("Error verifying contract group signature: {}", e);
+                tracing::info!("Error verifying contract group signature: {}", e);
                 Ok(false)
             }
         }

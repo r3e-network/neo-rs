@@ -24,7 +24,7 @@ sha3 = { workspace = true }
 ripemd = { workspace = true }
 blake2 = { workspace = true }
 blst = { workspace = true }
-murmur3 = "0.5"
+murmur3 = { workspace = true }
 
 # Elliptic curve cryptography
 p256 = { workspace = true }
@@ -44,7 +44,7 @@ serde = { workspace = true }
 thiserror = { workspace = true }
 
 # Constant-time operations and secure memory handling
-subtle = "2.5"
+subtle = { workspace = true }
 zeroize = { workspace = true }
 parking_lot = { workspace = true }
 tracing = { workspace = true }

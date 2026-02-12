@@ -36,7 +36,7 @@ use crate::error::VmResult;
 use crate::instruction::Instruction;
 use crate::op_code::OpCode;
 use neo_io::MemoryReader;
-use parking_lot::Mutex;
+use parking_lot::RwLock;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
@@ -44,19 +44,29 @@ use std::ptr;
 use std::sync::Arc;
 
 /// Represents a script in the Neo VM.
+///
+/// # Performance
+///
+/// The instruction cache uses `RwLock` instead of `Mutex` so the hot
+/// `get_instruction()` path only acquires a shared read lock. For strict-mode
+/// scripts the cache is fully populated at construction time, meaning the write
+/// lock is never taken during execution.
+///
+/// The hash code is computed eagerly at construction time to avoid any
+/// synchronisation overhead on the `hash()` / `hash_code()` accessors.
 #[derive(Debug, Clone)]
 pub struct Script {
     /// The script data
     script: Vec<u8>,
 
-    /// Cached instructions (wrapped in `Arc<Mutex>` for safe mutable access)
-    instructions: Arc<Mutex<HashMap<usize, Instruction>>>,
+    /// Cached instructions – `RwLock` for cheap concurrent reads on the hot path.
+    instructions: Arc<RwLock<HashMap<usize, Instruction>>>,
 
     /// Whether strict mode is enabled
     strict_mode: bool,
 
-    /// Cached hash code (wrapped in `Arc<Mutex>` for safe mutable access)
-    hash_code: Arc<Mutex<Option<u64>>>,
+    /// Eagerly computed hash code (no lock needed for reads).
+    hash_code: u64,
 }
 
 impl PartialEq for Script {
@@ -99,13 +109,21 @@ impl Iterator for InstructionIterator<'_> {
 }
 
 impl Script {
+    /// Computes the hash code for the given script bytes.
+    fn compute_hash(script: &[u8]) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        script.hash(&mut hasher);
+        hasher.finish()
+    }
+
     /// Creates a new script with optional validation and strict mode.
     pub fn new(script: Vec<u8>, strict_mode: bool) -> VmResult<Self> {
+        let hash_code = Self::compute_hash(&script);
         let mut s = Self {
             script,
-            instructions: Arc::new(Mutex::new(HashMap::new())),
+            instructions: Arc::new(RwLock::new(HashMap::new())),
             strict_mode: false, // Start with false to allow parsing
-            hash_code: Arc::new(Mutex::new(None)),
+            hash_code,
         };
 
         if strict_mode {
@@ -129,22 +147,24 @@ impl Script {
     /// This matches the C# Script(byte[] script) constructor exactly
     #[must_use]
     pub fn new_from_bytes(script: Vec<u8>) -> Self {
+        let hash_code = Self::compute_hash(&script);
         Self {
             script,
-            instructions: Arc::new(Mutex::new(HashMap::new())),
+            instructions: Arc::new(RwLock::new(HashMap::new())),
             strict_mode: false,
-            hash_code: Arc::new(Mutex::new(None)),
+            hash_code,
         }
     }
 
     /// Creates a new script without validation.
     #[must_use]
     pub fn new_relaxed(script: Vec<u8>) -> Self {
+        let hash_code = Self::compute_hash(&script);
         Self {
             script,
-            instructions: Arc::new(Mutex::new(HashMap::new())),
+            instructions: Arc::new(RwLock::new(HashMap::new())),
             strict_mode: false,
-            hash_code: Arc::new(Mutex::new(None)),
+            hash_code,
         }
     }
 
@@ -162,7 +182,7 @@ impl Script {
             position += instruction.size();
         }
 
-        *self.instructions.lock() = instructions;
+        *self.instructions.write() = instructions;
         Ok(())
     }
 
@@ -188,7 +208,7 @@ impl Script {
 
     /// Validates the script in strict mode.
     pub fn validate_strict(&self) -> VmResult<()> {
-        let instructions = self.instructions.lock();
+        let instructions = self.instructions.read();
 
         // Validate jump targets
         for (&ip, instruction) in instructions.iter() {
@@ -327,8 +347,9 @@ impl Script {
             )));
         }
 
+        // Fast path: read lock for cache hit (common case, especially in strict mode).
         {
-            let instructions = self.instructions.lock();
+            let instructions = self.instructions.read();
             if let Some(instruction) = instructions.get(&position) {
                 return Ok(instruction.clone());
             }
@@ -340,14 +361,13 @@ impl Script {
             )));
         }
 
-        // Parse the instruction
+        // Slow path: parse and cache under write lock (relaxed mode only).
         let mut reader = MemoryReader::new(&self.script);
         reader.set_position(position)?;
         let instruction = Instruction::parse_from_neo_io_reader(&mut reader)?;
 
-        // Cache the instruction
         {
-            let mut instructions = self.instructions.lock();
+            let mut instructions = self.instructions.write();
             instructions.insert(position, instruction.clone());
         }
 
@@ -448,50 +468,13 @@ impl Script {
     /// The hash of the script as a byte array
     #[must_use]
     pub fn hash(&self) -> Vec<u8> {
-        {
-            let hash_code = self.hash_code.lock();
-            if let Some(hash) = *hash_code {
-                return hash.to_le_bytes().to_vec();
-            }
-        }
-
-        // Calculate the hash
-        let mut hasher = DefaultHasher::new();
-        self.script.hash(&mut hasher);
-        let hash = hasher.finish();
-
-        // Cache the hash
-        {
-            let mut hash_code = self.hash_code.lock();
-            *hash_code = Some(hash);
-        }
-
-        // Convert the hash to a byte array
-        hash.to_le_bytes().to_vec()
+        self.hash_code.to_le_bytes().to_vec()
     }
 
     /// Gets the hash code of the script.
     #[must_use]
     pub fn hash_code(&self) -> u64 {
-        {
-            let hash_code = self.hash_code.lock();
-            if let Some(hash) = *hash_code {
-                return hash;
-            }
-        }
-
-        // Calculate the hash
-        let mut hasher = DefaultHasher::new();
-        self.script.hash(&mut hasher);
-        let hash = hasher.finish();
-
-        // Cache the hash
-        {
-            let mut hash_code = self.hash_code.lock();
-            *hash_code = Some(hash);
-        }
-
-        hash
+        self.hash_code
     }
 
     /// Calculates the jump target for a jump instruction.

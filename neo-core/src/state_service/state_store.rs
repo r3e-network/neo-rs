@@ -294,8 +294,7 @@ pub struct StateSnapshot {
     store: Arc<dyn StateStoreBackend>,
     /// The Merkle Patricia Trie for state storage.
     pub trie: Trie<StateStoreSnapshot>,
-    #[allow(dead_code)]
-    settings: StateServiceSettings,
+    _settings: StateServiceSettings,
 }
 
 impl StateSnapshot {
@@ -308,7 +307,7 @@ impl StateSnapshot {
         Self {
             store,
             trie,
-            settings,
+            _settings: settings,
         }
     }
 
@@ -1136,20 +1135,6 @@ impl StateStore {
                 false
             }
         }
-    }
-
-    /// Handles state root validation failure.
-    ///
-    /// This logs the failure and optionally triggers recovery mechanisms.
-    #[allow(dead_code)]
-    fn handle_validation_failure(&self, index: u32, reason: &str) {
-        warn!(
-            target: "state",
-            index,
-            reason,
-            "State root validation failed"
-        );
-        // Future: could trigger state rebuild, request state sync, etc.
     }
 }
 

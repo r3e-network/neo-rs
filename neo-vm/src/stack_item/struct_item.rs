@@ -209,6 +209,20 @@ impl Struct {
         self.items().into_iter()
     }
 
+    /// Provides zero-copy read access to the items under the lock.
+    #[inline]
+    pub fn with_items<R>(&self, f: impl FnOnce(&[StackItem]) -> R) -> R {
+        let inner = self.inner.lock();
+        f(&inner.items)
+    }
+
+    /// Provides zero-copy mutable access to the items under the lock.
+    #[inline]
+    pub fn with_items_mut<R>(&self, f: impl FnOnce(&mut Vec<StackItem>) -> R) -> R {
+        let mut inner = self.inner.lock();
+        f(&mut inner.items)
+    }
+
     /// Creates a deep copy of the struct.
     pub fn deep_copy(&self, reference_counter: Option<ReferenceCounter>) -> VmResult<Self> {
         let copy = Self::new(

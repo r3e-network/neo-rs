@@ -27,7 +27,7 @@ thiserror = { workspace = true }
 parking_lot = { workspace = true }
 
 # Hash functions
-xxhash-rust = { version = "0.8", features = ["xxh3"] }
+xxhash-rust = { workspace = true }
 rand = { workspace = true }
 
 [dev-dependencies]

@@ -40,39 +40,30 @@ impl ExecutionEngine {
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
         if context.instruction_pointer() >= context.script().len() {
-            // Perform implicit RET when reaching end of script
-            // Get return value count from the current context
+            // Perform implicit RET when reaching end of script.
+            // Pop return values directly from the eval stack instead of
+            // peek+clone, since the context is about to be destroyed.
             let rvcount = context.rvcount();
-
-            // Collect items to transfer before removing the context
             let eval_stack_len = context.evaluation_stack().len();
-            let capacity = if rvcount == -1 {
+
+            let count = if rvcount == -1 {
                 eval_stack_len
             } else if rvcount > 0 {
                 (rvcount as usize).min(eval_stack_len)
             } else {
                 0
             };
-            let mut items = Vec::with_capacity(capacity);
-            if rvcount != 0 {
-                if rvcount == -1 {
-                    // Return all items
-                    for i in 0..eval_stack_len {
-                        if let Ok(item) = context.evaluation_stack().peek(i) {
-                            items.push(item.clone());
-                        }
-                    }
-                } else if rvcount > 0 {
-                    // Return specific number of items
-                    let count = (rvcount as usize).min(eval_stack_len);
-                    for i in 0..count {
-                        if let Ok(item) = context.evaluation_stack().peek(i) {
-                            items.push(item.clone());
-                        }
-                    }
-                }
 
-                // Preserve original order when pushing to target stack
+            // Pop items from the top of the eval stack (they come out in
+            // reverse order, so we reverse once to restore original order).
+            let mut items = Vec::with_capacity(count);
+            if count > 0 {
+                let ctx = self
+                    .current_context_mut()
+                    .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+                for _ in 0..count {
+                    items.push(ctx.pop()?);
+                }
                 items.reverse();
             }
 
@@ -155,14 +146,22 @@ impl ExecutionEngine {
             .current_context_mut()
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-        // Get the current instruction and snapshot the context for host hooks.
+        // Get the current instruction.
         let instruction = context.current_instruction()?;
-        let context_snapshot = context.clone();
 
         self.pre_execute_instruction(&instruction)?;
+
+        // Only clone the context when an interop host is present – the clone is
+        // expensive and the vast majority of instructions don't need it.
         if let Some(host_ptr) = self.interop_host {
+            let context_snapshot = self
+                .current_context()
+                .cloned()
+                .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
             // SAFETY: See interop_host field documentation for invariants
-            unsafe { (*host_ptr).pre_execute_instruction(self, &context_snapshot, &instruction)? };
+            unsafe {
+                (*host_ptr).pre_execute_instruction(self, &context_snapshot, &instruction)?
+            };
         }
 
         // Execute the instruction - direct array access for optimal dispatch

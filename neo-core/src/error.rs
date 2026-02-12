@@ -136,13 +136,6 @@ pub enum CoreError {
     #[error("Invalid password")]
     InvalidPassword,
 
-    /// Generic catch-all error case
-    #[error("{message}")]
-    Other {
-        /// Description of the error
-        message: String,
-    },
-
     /// Buffer overflow or underflow
     #[error(
         "Buffer overflow: attempted to read {requested} bytes, but only {available} available"
@@ -223,12 +216,6 @@ pub enum CoreError {
         message: String,
     },
 
-    /// Validation error
-    #[error("Validation error: {message}")]
-    Validation {
-        /// Validation error message
-        message: String,
-    },
 }
 
 impl CoreError {
@@ -372,10 +359,10 @@ impl CoreError {
         }
     }
 
-    /// Create a new validation error
+    /// Create a new validation error (delegates to `ValidationFailed`)
     pub fn validation<S: Into<String>>(message: S) -> Self {
-        Self::Validation {
-            message: message.into(),
+        Self::ValidationFailed {
+            reason: message.into(),
         }
     }
 
@@ -437,8 +424,6 @@ impl CoreError {
             CoreError::TypeConversion { .. } => "conversion",
             CoreError::NativeContractError { .. } => "native_contract",
             CoreError::RuntimeError { .. } => "runtime",
-            CoreError::Validation { .. } => "validation",
-            CoreError::Other { .. } => "unknown",
         }
     }
 }

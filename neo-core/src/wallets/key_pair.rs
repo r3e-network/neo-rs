@@ -76,13 +76,13 @@ impl KeyPair {
         // Generate public key from private key
         let public_point =
             ECC::generate_public_key(&key_bytes, ECCurve::secp256r1()).map_err(|e| {
-                Error::Other {
+                Error::InvalidOperation {
                     message: format!("Failed to derive public key: {}", e),
                 }
             })?;
         let public_key = public_point.to_bytes();
         let compressed_public_key =
-            ECC::compress_public_key(&public_point).map_err(|e| Error::Other {
+            ECC::compress_public_key(&public_point).map_err(|e| Error::InvalidOperation {
                 message: format!("Failed to compress public key: {}", e),
             })?;
 
@@ -142,7 +142,7 @@ impl KeyPair {
             crate::cryptography::ECCurve::secp256r1(),
             &self.compressed_public_key,
         )
-        .map_err(|e| Error::Other {
+        .map_err(|e| Error::InvalidOperation {
             message: format!("Failed to create ECPoint: {}", e),
         })
     }
@@ -162,7 +162,7 @@ impl KeyPair {
     pub fn sign(&self, data: &[u8]) -> Result<Vec<u8>> {
         ECDsa::sign(data, &self.private_key, ECCurve::secp256r1())
             .map(|sig| sig.to_vec())
-            .map_err(|e| Error::Other {
+            .map_err(|e| Error::InvalidOperation {
                 message: format!("Signing failed: {}", e),
             })
     }
@@ -170,7 +170,7 @@ impl KeyPair {
     /// Verifies a signature against data.
     pub fn verify(&self, data: &[u8], signature: &[u8]) -> Result<bool> {
         ECDsa::verify(data, signature, &self.public_key, ECCurve::secp256r1()).map_err(|e| {
-            Error::Other {
+            Error::InvalidOperation {
                 message: format!("Verification failed: {}", e),
             }
         })
@@ -398,11 +398,11 @@ impl KeyPair {
     fn try_get_verification_script_for_key(private_key: &[u8; HASH_SIZE]) -> Result<Vec<u8>> {
         let public_point =
             ECC::generate_public_key(private_key, ECCurve::secp256r1()).map_err(|e| {
-                Error::Other {
+                Error::InvalidOperation {
                     message: format!("Failed to generate public key: {}", e),
                 }
             })?;
-        let compressed = ECC::compress_public_key(&public_point).map_err(|e| Error::Other {
+        let compressed = ECC::compress_public_key(&public_point).map_err(|e| Error::InvalidOperation {
             message: format!("Failed to compress public key: {}", e),
         })?;
 

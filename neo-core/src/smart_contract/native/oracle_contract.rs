@@ -785,7 +785,7 @@ impl OracleContract {
         {
             Ok(bytes) => self.parse_designated_accounts(&bytes),
             Err(err) => {
-                log::debug!("failed to fetch designated oracle nodes: {}", err);
+                tracing::debug!("failed to fetch designated oracle nodes: {}", err);
                 Vec::new()
             }
         }

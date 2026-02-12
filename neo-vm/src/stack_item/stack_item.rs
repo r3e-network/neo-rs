@@ -315,6 +315,20 @@ impl StackItem {
         }
     }
 
+    /// Returns a borrowed byte slice for variants that own contiguous bytes
+    /// (`ByteString`). For other convertible variants the caller should fall
+    /// back to [`as_bytes`](Self::as_bytes).
+    ///
+    /// This avoids the `Vec` allocation that `as_bytes()` performs, which is
+    /// significant in hot paths like map key validation.
+    #[inline]
+    pub fn as_bytes_ref(&self) -> Option<&[u8]> {
+        match self {
+            Self::ByteString(b) => Some(b.as_slice()),
+            _ => None,
+        }
+    }
+
     /// Converts the stack item to an array.
     pub fn as_array(&self) -> VmResult<Vec<Self>> {
         match self {

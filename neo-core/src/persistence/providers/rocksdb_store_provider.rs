@@ -257,14 +257,6 @@ impl RocksDbStore {
         })
     }
 
-    #[allow(dead_code)]
-    fn fast_write_options() -> WriteOptions {
-        let mut opts = WriteOptions::default();
-        opts.set_sync(false);
-        opts.disable_wal(true);
-        opts
-    }
-
     fn iterator_from(
         &self,
         key_or_prefix: &[u8],
@@ -279,12 +271,7 @@ impl RocksDbStore {
         )
     }
 
-    #[allow(dead_code)]
-    fn read_options(&self) -> ReadOptions {
-        build_read_options(None, &self.read_ahead_config)
-    }
-
-    #[allow(dead_code)]
+    /// Flush any pending batch commits to RocksDB.
     pub fn flush_batch_commits(&self) {
         if let Some(batch) = self.batch_committer.flush() {
             if let Err(err) = self.db.write(batch) {
@@ -658,7 +645,6 @@ impl IStoreSnapshot for RocksDbSnapshot {
 
 impl RocksDbStore {
     /// Enables fast sync mode optimizations (disable WAL, reduce fsync).
-    #[allow(dead_code)]
     pub fn enable_fast_sync_mode(&self) {
         let mut opts = Options::default();
         opts.set_disable_auto_compactions(true);
@@ -669,7 +655,6 @@ impl RocksDbStore {
     }
 
     /// Disables fast sync mode optimizations.
-    #[allow(dead_code)]
     pub fn disable_fast_sync_mode(&self) {
         if let Err(err) = self
             .db
@@ -681,7 +666,6 @@ impl RocksDbStore {
     }
 
     /// Force flush all memtables to disk.
-    #[allow(dead_code)]
     pub fn flush_memtables(&self) {
         if let Err(err) = self.db.flush_wal(true) {
             warn!(target: "neo", error = %err, "failed to flush WAL");
@@ -692,7 +676,6 @@ impl RocksDbStore {
     }
 
     /// Returns memory usage statistics.
-    #[allow(dead_code)]
     pub fn memory_usage(&self) -> Option<(u64, u64)> {
         self.db
             .property_int_value("rocksdb.cur-size-active-mem-table")
@@ -710,21 +693,18 @@ impl RocksDbStore {
     }
 
     /// Enables read caching with the specified configuration.
-    #[allow(dead_code)]
     pub fn enable_read_cache(&mut self, config: ReadCacheConfig) {
         self.read_cache = Some(Arc::new(StorageReadCache::new(config)));
         debug!(target: "neo", "enabled read cache");
     }
 
     /// Disables read caching.
-    #[allow(dead_code)]
     pub fn disable_read_cache(&mut self) {
         self.read_cache = None;
         debug!(target: "neo", "disabled read cache");
     }
 
     /// Gets read cache statistics if caching is enabled.
-    #[allow(dead_code)]
     pub fn read_cache_stats(
         &self,
     ) -> Option<crate::persistence::read_cache::ReadCacheStatsSnapshot> {
@@ -732,7 +712,6 @@ impl RocksDbStore {
     }
 
     /// Clears the read cache.
-    #[allow(dead_code)]
     pub fn clear_read_cache(&self) {
         if let Some(ref cache) = self.read_cache {
             cache.clear();
@@ -741,13 +720,11 @@ impl RocksDbStore {
     }
 
     /// Returns batch commit statistics.
-    #[allow(dead_code)]
     pub fn batch_commit_stats(&self) -> WriteBatchStatsSnapshot {
         self.batch_committer.buffer.stats_snapshot()
     }
 
     /// Forces a flush of pending batch writes.
-    #[allow(dead_code)]
     pub fn flush_batch_writes(&self) -> CoreResult<()> {
         self.batch_committer.buffer.force_flush()
     }
