@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.7.2] - 2026-02-12
+
+### Fixed
+- RPC getnativecontracts now returns active native contracts even when persisted native contract states are not yet present in local storage.
+- Compatibility with execution-spec native/crypto vector lanes restored for cold-start nodes.
+
 ## [0.7.1] - 2026-02-11
 
 ### Compatibility
