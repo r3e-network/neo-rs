@@ -659,6 +659,13 @@ impl NodeConfig {
             settings.max_transactions_per_block = max_tx;
         }
 
+        if let Some(mempool) = &self.mempool {
+            if let Some(max_mempool) = mempool.max_transactions {
+                settings.memory_pool_max_transactions =
+                    i32::try_from(max_mempool).unwrap_or(i32::MAX);
+            }
+        }
+
         settings
     }
 
@@ -1572,6 +1579,19 @@ mod tests {
     }
 
     #[test]
+    fn mempool_max_transactions_override_applies_to_protocol_settings() {
+        let mut config = NodeConfig::default();
+        config.network.network_type = Some("MainNet".to_string());
+        config.mempool = Some(MempoolSection {
+            max_transactions: Some(12_345),
+            max_transactions_per_sender: None,
+        });
+
+        let settings = config.protocol_settings();
+        assert_eq!(settings.memory_pool_max_transactions, 12_345);
+    }
+
+    #[test]
     fn writes_rpc_config_with_restricted_permissions() {
         let tmp = TempDir::new().expect("temp dir");
         env::set_var("NEO_PLUGINS_DIR", tmp.path());
@@ -1608,7 +1628,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Config file field names don't match struct - needs migration"]
     fn bundled_mainnet_config_parses() {
         let cfg: NodeConfig = toml::from_str(include_str!("../../neo_mainnet_node.toml"))
             .expect("mainnet config should parse");
@@ -1616,7 +1635,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Config file field names don't match struct - needs migration"]
     fn bundled_testnet_config_parses() {
         let cfg: NodeConfig = toml::from_str(include_str!("../../neo_testnet_node.toml"))
             .expect("testnet config should parse");
@@ -1624,7 +1642,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Config file field names don't match struct - needs migration"]
     fn bundled_production_config_parses() {
         toml::from_str::<NodeConfig>(include_str!("../../neo_production_node.toml"))
             .expect("production template should parse");

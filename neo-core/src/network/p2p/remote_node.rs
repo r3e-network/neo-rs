@@ -88,6 +88,14 @@ pub struct RemoteNode {
     memory_usage_bytes: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HandshakeGateDecision {
+    AcceptVersion,
+    AcceptVerack,
+    AcceptProtocol,
+    Reject(&'static str),
+}
+
 impl RemoteNode {
     /// Maximum payload size accepted for alert messages before dropping them.
     const MAX_ALERT_PAYLOAD_BYTES: usize = 4 * 1024;
@@ -549,26 +557,70 @@ impl RemoteNode {
         self.system.current_block_index()
     }
 
+    fn handshake_gate_decision(
+        version_received: bool,
+        handshake_complete: bool,
+        command: MessageCommand,
+    ) -> HandshakeGateDecision {
+        if !version_received {
+            return match command {
+                MessageCommand::Version => HandshakeGateDecision::AcceptVersion,
+                _ => HandshakeGateDecision::Reject("expected version message before handshake"),
+            };
+        }
+
+        if !handshake_complete {
+            return match command {
+                MessageCommand::Verack => HandshakeGateDecision::AcceptVerack,
+                _ => HandshakeGateDecision::Reject("expected verack message after version"),
+            };
+        }
+
+        match command {
+            MessageCommand::Version | MessageCommand::Verack => {
+                HandshakeGateDecision::Reject("duplicate handshake message after completion")
+            }
+            _ => HandshakeGateDecision::AcceptProtocol,
+        }
+    }
+
     async fn on_inbound(&mut self, message: NetworkMessage, ctx: &mut ActorContext) -> ActorResult {
-        debug!(
-            target: "neo",
-            endpoint = %self.endpoint,
-            command = ?message.command(),
-            "processing inbound message"
-        );
+        let command = message.command();
+        debug!(target: "neo", endpoint = %self.endpoint, ?command, "processing inbound message");
         if !self.dispatch_message_received(&message) {
             trace!(
                 target: "neo",
-                command = ?message.command(),
+                ?command,
                 "message processing cancelled by handler"
             );
             return Ok(());
         }
 
-        match &message.payload {
-            ProtocolMessage::Version(payload) => self.on_version(payload.clone(), ctx).await,
-            ProtocolMessage::Verack => self.on_verack(ctx).await,
-            _ => self.forward_protocol(message, ctx).await,
+        match Self::handshake_gate_decision(
+            self.remote_version.is_some(),
+            self.handshake_complete,
+            command,
+        ) {
+            HandshakeGateDecision::AcceptVersion => {
+                if let ProtocolMessage::Version(payload) = &message.payload {
+                    self.on_version(payload.clone(), ctx).await
+                } else {
+                    let error = NetworkError::ProtocolViolation {
+                        peer: self.endpoint,
+                        violation: "expected version payload".to_string(),
+                    };
+                    self.fail(ctx, error).await
+                }
+            }
+            HandshakeGateDecision::AcceptVerack => self.on_verack(ctx).await,
+            HandshakeGateDecision::AcceptProtocol => self.forward_protocol(message, ctx).await,
+            HandshakeGateDecision::Reject(reason) => {
+                let error = NetworkError::ProtocolViolation {
+                    peer: self.endpoint,
+                    violation: reason.to_string(),
+                };
+                self.fail(ctx, error).await
+            }
         }
     }
 
@@ -962,11 +1014,11 @@ fn current_unix_timestamp() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::{
-        message_handlers, register_message_received_handler, PendingKnownHashes, RemoteNode,
-        UInt256,
+        message_handlers, register_message_received_handler, HandshakeGateDecision,
+        PendingKnownHashes, RemoteNode, UInt256,
     };
     use crate::i_event_handlers::IMessageReceivedHandler;
-    use crate::network::p2p::{message::Message, timeouts};
+    use crate::network::p2p::{message::Message, message_command::MessageCommand, timeouts};
     use std::sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
@@ -1070,5 +1122,38 @@ mod tests {
             RemoteNode::MAX_ALERT_LOG_BYTES + 3,
             "appends ellipsis when payload is longer than capture window"
         );
+    }
+
+    #[test]
+    fn handshake_gate_requires_version_first() {
+        let version = RemoteNode::handshake_gate_decision(false, false, MessageCommand::Version);
+        assert!(matches!(version, HandshakeGateDecision::AcceptVersion));
+
+        let verack = RemoteNode::handshake_gate_decision(false, false, MessageCommand::Verack);
+        assert!(matches!(verack, HandshakeGateDecision::Reject(_)));
+
+        let ping = RemoteNode::handshake_gate_decision(false, false, MessageCommand::Ping);
+        assert!(matches!(ping, HandshakeGateDecision::Reject(_)));
+    }
+
+    #[test]
+    fn handshake_gate_requires_verack_after_version() {
+        let verack = RemoteNode::handshake_gate_decision(true, false, MessageCommand::Verack);
+        assert!(matches!(verack, HandshakeGateDecision::AcceptVerack));
+
+        let ping = RemoteNode::handshake_gate_decision(true, false, MessageCommand::Ping);
+        assert!(matches!(ping, HandshakeGateDecision::Reject(_)));
+    }
+
+    #[test]
+    fn handshake_gate_rejects_duplicate_handshake_messages_after_completion() {
+        let version = RemoteNode::handshake_gate_decision(true, true, MessageCommand::Version);
+        assert!(matches!(version, HandshakeGateDecision::Reject(_)));
+
+        let verack = RemoteNode::handshake_gate_decision(true, true, MessageCommand::Verack);
+        assert!(matches!(verack, HandshakeGateDecision::Reject(_)));
+
+        let ping = RemoteNode::handshake_gate_decision(true, true, MessageCommand::Ping);
+        assert!(matches!(ping, HandshakeGateDecision::AcceptProtocol));
     }
 }

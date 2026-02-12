@@ -4,6 +4,7 @@ use neo_core::wallets::{IWalletProvider, Wallet};
 use parking_lot::{Mutex, RwLock};
 use std::any::Any;
 use std::sync::{mpsc, Arc};
+use tracing::warn;
 
 /// Type alias for optional wallet reference.
 type OptionalWallet = Option<Arc<dyn Wallet>>;
@@ -39,13 +40,31 @@ impl IWalletProvider for NodeWalletProvider {
     }
 
     fn wallet_changed(&self) -> mpsc::Receiver<Option<Arc<dyn Wallet>>> {
-        self.receiver
-            .lock()
-            .take()
-            .expect("wallet changed receiver already taken")
+        if let Some(receiver) = self.receiver.lock().take() {
+            return receiver;
+        }
+
+        warn!(
+            target: "neo",
+            "wallet provider receiver already taken; returning disconnected receiver"
+        );
+        let (_sender, receiver) = mpsc::channel();
+        receiver
     }
 
     fn get_wallet(&self) -> Option<Arc<dyn Wallet>> {
         self.current.read().clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wallet_changed_can_be_called_more_than_once_without_panicking() {
+        let provider = NodeWalletProvider::new();
+        let _first = provider.wallet_changed();
+        let _second = provider.wallet_changed();
     }
 }

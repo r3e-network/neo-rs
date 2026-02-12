@@ -112,8 +112,17 @@ pub fn check_storage_network(path: &str, magic: u32, read_only: bool) -> Result<
 /// Checks if a bind address is publicly accessible.
 pub fn is_public_bind(bind: &str) -> bool {
     bind.parse::<std::net::IpAddr>()
-        .map(|ip| !ip.is_loopback() && !ip.is_unspecified())
+        .map(|ip| !ip.is_loopback())
         .unwrap_or(true)
+}
+
+fn has_default_rpc_credentials(user: &str, pass: &str) -> bool {
+    if !user.eq_ignore_ascii_case("neo") {
+        return false;
+    }
+
+    let normalized = pass.trim().to_ascii_lowercase();
+    normalized.starts_with("change-me-") || normalized == "change-me" || normalized == "changeme"
 }
 
 /// Validates the node configuration.
@@ -128,6 +137,49 @@ pub fn validate_node_config(
         && (node_config.rpc.rpc_user.is_none() || node_config.rpc.rpc_pass.is_none())
     {
         bail!("rpc.auth_enabled requires both rpc_user and rpc_pass");
+    }
+
+    if node_config.rpc.enabled && node_config.rpc.auth_enabled {
+        if let (Some(user), Some(pass)) = (&node_config.rpc.rpc_user, &node_config.rpc.rpc_pass) {
+            if has_default_rpc_credentials(user, pass) {
+                let bind = node_config
+                    .rpc
+                    .bind_address
+                    .as_deref()
+                    .unwrap_or("127.0.0.1");
+                if is_public_bind(bind) {
+                    bail!(
+                        "default rpc credentials are not allowed on public bind addresses; set unique rpc_user and rpc_pass"
+                    );
+                }
+                warn!(
+                    target: "neo",
+                    bind_address = bind,
+                    "RPC is using template credentials on loopback; change rpc_user/rpc_pass before exposing RPC"
+                );
+            }
+        }
+    }
+
+    if node_config
+        .blockchain
+        .max_free_transactions_per_block
+        .is_some()
+    {
+        bail!(
+            "blockchain.max_free_transactions_per_block is not supported by neo-node yet; remove this setting"
+        );
+    }
+
+    if node_config
+        .mempool
+        .as_ref()
+        .and_then(|m| m.max_transactions_per_sender)
+        .is_some()
+    {
+        bail!(
+            "mempool.max_transactions_per_sender is not supported by neo-node yet; remove this setting"
+        );
     }
 
     if rpc_hardened && (node_config.rpc.rpc_user.is_none() || node_config.rpc.rpc_pass.is_none()) {
@@ -310,6 +362,54 @@ mod tests {
     }
 
     #[test]
+    fn validate_rejects_default_rpc_credentials_on_public_bind() {
+        let mut cfg = NodeConfig::default();
+        cfg.rpc.enabled = true;
+        cfg.rpc.auth_enabled = true;
+        cfg.rpc.bind_address = Some("0.0.0.0".to_string());
+        cfg.rpc.rpc_user = Some("neo".to_string());
+        cfg.rpc.rpc_pass = Some("change-me-mainnet-rpc-password".to_string());
+
+        let err = validate_node_config(&cfg, None, None, &cfg.protocol_settings(), false)
+            .expect_err("template credentials on public bind must be rejected");
+        assert!(
+            err.to_string()
+                .to_ascii_lowercase()
+                .contains("default rpc credentials"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_unsupported_max_free_transactions_per_block() {
+        let mut cfg = NodeConfig::default();
+        cfg.blockchain.max_free_transactions_per_block = Some(20);
+        let err = validate_node_config(&cfg, None, None, &cfg.protocol_settings(), false)
+            .expect_err("unsupported blockchain.max_free_transactions_per_block should fail");
+        assert!(
+            err.to_string()
+                .contains("blockchain.max_free_transactions_per_block"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_unsupported_mempool_max_transactions_per_sender() {
+        let mut cfg = NodeConfig::default();
+        cfg.mempool = Some(crate::config::MempoolSection {
+            max_transactions: Some(10_000),
+            max_transactions_per_sender: Some(100),
+        });
+        let err = validate_node_config(&cfg, None, None, &cfg.protocol_settings(), false)
+            .expect_err("unsupported mempool.max_transactions_per_sender should fail");
+        assert!(
+            err.to_string()
+                .contains("mempool.max_transactions_per_sender"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
     fn check_storage_allows_memory_without_path() {
         check_storage_access(Some("memory"), None, StorageConfig::default())
             .expect("memory backend should skip validation");
@@ -362,5 +462,35 @@ mod tests {
         fs::write(path.join("VERSION"), STORAGE_VERSION).expect("write version");
         check_storage_network(path.to_str().unwrap(), 0x1, true)
             .expect("markers present should pass");
+    }
+
+    #[test]
+    fn bundled_mainnet_config_is_check_config_valid() {
+        let cfg: NodeConfig =
+            toml::from_str(include_str!("../../neo_mainnet_node.toml")).expect("parse mainnet");
+        let settings = cfg.protocol_settings();
+        validate_node_config(
+            &cfg,
+            cfg.storage.path.as_deref(),
+            cfg.storage.backend.as_deref(),
+            &settings,
+            false,
+        )
+        .expect("bundled mainnet config should pass --check-config validation");
+    }
+
+    #[test]
+    fn bundled_production_config_is_check_config_valid() {
+        let cfg: NodeConfig = toml::from_str(include_str!("../../neo_production_node.toml"))
+            .expect("parse production");
+        let settings = cfg.protocol_settings();
+        validate_node_config(
+            &cfg,
+            cfg.storage.path.as_deref(),
+            cfg.storage.backend.as_deref(),
+            &settings,
+            false,
+        )
+        .expect("bundled production config should pass --check-config validation");
     }
 }

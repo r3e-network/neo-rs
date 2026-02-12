@@ -30,6 +30,8 @@ port = 10332
 bind_address = "127.0.0.1"
 cors_enabled = false
 auth_enabled = true
+rpc_user = "neo"
+rpc_pass = "change-me-mainnet-rpc-password"
 max_gas_invoke = 50000000
 max_iterator_results = 100
 disabled_methods = ["openwallet"]
@@ -54,8 +56,6 @@ max_files = 10
 [blockchain]
 block_time = 15000  # 15 seconds in milliseconds
 max_transactions_per_block = 512
-max_free_transactions_per_block = 20
 
 [mempool]
 max_transactions = 50000
-max_transactions_per_sender = 200

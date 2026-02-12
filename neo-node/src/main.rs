@@ -199,6 +199,7 @@ async fn inner_main() -> Result<()> {
         protocol_settings.network,
         rpc_plugin_config_path.as_deref(),
     )
+    .await
     .context("failed to start RPC server")?;
 
     let needs_wallet_provider = state_service_settings
@@ -239,7 +240,13 @@ async fn inner_main() -> Result<()> {
     let hsm_wallet_enabled =
         maybe_enable_hsm_wallet(&cli, &node_config, &rpc_server, &system).await?;
     if !hsm_wallet_enabled {
-        maybe_open_wallet(&cli, &node_config, &rpc_server, &system)?;
+        maybe_open_wallet(
+            &cli,
+            &node_config,
+            &rpc_server,
+            wallet_provider.as_ref(),
+            &system,
+        )?;
     }
 
     let health_state = Arc::new(RwLock::new(health::HealthState::default()));
@@ -337,7 +344,7 @@ fn build_channels_config(node_config: &NodeConfig) -> ChannelsConfig {
     node_config.channels_config()
 }
 
-fn start_rpc_server_if_enabled(
+async fn start_rpc_server_if_enabled(
     node_config: &NodeConfig,
     system: Arc<NeoSystem>,
     network: u32,
@@ -349,7 +356,8 @@ fn start_rpc_server_if_enabled(
 
     let mut settings_json: Option<Value> = None;
     if let Some(path) = rpc_config_path {
-        let raw = fs::read_to_string(path)
+        let raw = tokio::fs::read_to_string(path)
+            .await
             .with_context(|| format!("failed to read rpc config at {}", path))?;
         settings_json = Some(serde_json::from_str(&raw).context("invalid rpc config json")?);
     }
@@ -410,11 +418,6 @@ fn setup_wallet_provider(
         return Ok(None);
     }
 
-    let Some(server) = rpc_server else {
-        warn!(target: "neo", "wallet provider requires RPC server; skipping");
-        return Ok(None);
-    };
-
     let provider = Arc::new(NodeWalletProvider::new());
     let provider_trait: Arc<dyn IWalletProvider + Send + Sync> = provider.clone();
     system
@@ -422,14 +425,21 @@ fn setup_wallet_provider(
         .map_err(|e| anyhow::anyhow!(e.to_string()))
         .context("failed to attach wallet provider")?;
 
-    let callback_provider = Arc::clone(&provider);
-    server
-        .write()
-        .set_wallet_change_callback(Some(Arc::new(move |wallet| {
-            callback_provider.set_wallet(wallet);
-        })));
+    if let Some(server) = rpc_server {
+        let callback_provider = Arc::clone(&provider);
+        server
+            .write()
+            .set_wallet_change_callback(Some(Arc::new(move |wallet| {
+                callback_provider.set_wallet(wallet);
+            })));
+        info!(target: "neo", "wallet provider enabled");
+    } else {
+        info!(
+            target: "neo",
+            "wallet provider enabled without RPC callback; wallet updates rely on local wallet loading"
+        );
+    }
 
-    info!(target: "neo", "wallet provider enabled");
     Ok(Some(provider))
 }
 
@@ -796,20 +806,21 @@ fn maybe_open_wallet(
     cli: &NodeCli,
     node_config: &NodeConfig,
     rpc_server: &Option<Arc<ParkingRwLock<RpcServer>>>,
+    wallet_provider: Option<&Arc<NodeWalletProvider>>,
     system: &Arc<NeoSystem>,
 ) -> Result<()> {
     let Some((wallet_path, password)) = resolve_wallet_config(cli, node_config)? else {
         return Ok(());
     };
 
-    let Some(server) = rpc_server else {
+    if rpc_server.is_none() && wallet_provider.is_none() {
         warn!(
             target: "neo",
             path = %wallet_path.display(),
-            "wallet configured but RPC is disabled; skipping wallet load"
+            "wallet configured but neither RPC nor wallet provider is active; skipping wallet load"
         );
         return Ok(());
-    };
+    }
 
     if !wallet_path.exists() {
         bail!("wallet file not found: {}", wallet_path.display());
@@ -823,13 +834,26 @@ fn maybe_open_wallet(
         .map_err(|err| anyhow::anyhow!(err.to_string()))
         .context("failed to open wallet")?;
     let wallet_arc: Arc<dyn CoreWallet> = Arc::new(wallet);
-    server.write().set_wallet(Some(wallet_arc));
+    if let Some(provider) = wallet_provider {
+        provider.set_wallet(Some(wallet_arc.clone()));
+    }
+    if let Some(server) = rpc_server {
+        server.write().set_wallet(Some(wallet_arc.clone()));
+    }
 
-    info!(
-        target: "neo",
-        path = %wallet_path.display(),
-        "wallet opened for RPC signing"
-    );
+    if rpc_server.is_some() {
+        info!(
+            target: "neo",
+            path = %wallet_path.display(),
+            "wallet opened for RPC signing"
+        );
+    } else {
+        info!(
+            target: "neo",
+            path = %wallet_path.display(),
+            "wallet opened for local services"
+        );
+    }
     Ok(())
 }
 
@@ -1020,5 +1044,77 @@ fn apply_cli_overrides(cli: &NodeCli, node_config: &mut NodeConfig) {
             disabled.push("listplugins".to_string());
         }
         node_config.rpc.disabled_methods = disabled;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+    use std::any::Any;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[derive(Default)]
+    struct WalletChangeProbe {
+        changes: AtomicUsize,
+    }
+
+    impl IWalletChangedHandler for WalletChangeProbe {
+        fn i_wallet_provider_wallet_changed_handler(
+            &self,
+            _sender: &dyn Any,
+            _wallet: Option<Arc<dyn CoreWallet>>,
+        ) {
+            self.changes.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn setup_wallet_provider_works_without_rpc_server() {
+        let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("neo system");
+        let probe = Arc::new(WalletChangeProbe::default());
+        system
+            .register_wallet_changed_handler(probe.clone())
+            .expect("register probe");
+
+        let provider = setup_wallet_provider(&None, &system, true).expect("setup provider");
+
+        assert!(provider.is_some());
+        assert!(
+            probe.changes.load(Ordering::SeqCst) >= 1,
+            "wallet change probe should observe provider attachment"
+        );
+
+        system.shutdown().await.expect("shutdown");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn maybe_open_wallet_uses_provider_without_rpc_server() {
+        let cli = NodeCli::parse_from(["neo-node"]);
+        let tmp = tempfile::TempDir::new().expect("temp dir");
+        let missing_wallet = tmp.path().join("missing-wallet.json");
+
+        let mut node_config = NodeConfig::default();
+        node_config.unlock_wallet.is_active = true;
+        node_config.unlock_wallet.path = Some(missing_wallet.to_string_lossy().to_string());
+        node_config.unlock_wallet.password = Some("password".to_string());
+
+        let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("neo system");
+        let provider = setup_wallet_provider(&None, &system, true)
+            .expect("setup provider")
+            .expect("provider");
+
+        let err = maybe_open_wallet(&cli, &node_config, &None, Some(&provider), &system)
+            .expect_err("missing wallet file should fail");
+        assert!(
+            err.to_string().contains("wallet file not found"),
+            "unexpected error: {err}"
+        );
+        assert!(
+            provider.get_wallet().is_none(),
+            "wallet should remain unset"
+        );
+
+        system.shutdown().await.expect("shutdown");
     }
 }

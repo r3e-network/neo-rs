@@ -53,8 +53,6 @@ max_files = 10
 [blockchain]
 block_time = 15000  # 15 seconds in milliseconds
 max_transactions_per_block = 512
-max_free_transactions_per_block = 20
 
 [mempool]
 max_transactions = 50000
-max_transactions_per_sender = 200
