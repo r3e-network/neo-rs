@@ -20,7 +20,7 @@ pub struct TransactionBuilder {
 
 impl TransactionBuilder {
     /// Creates a builder seeded with an empty transaction.
-    pub fn create_empty() -> Self {
+    pub fn new() -> Self {
         let mut tx = Transaction::new();
         tx.set_script(vec![OpCode::RET as u8]);
         Self { inner: tx }
@@ -84,7 +84,7 @@ impl TransactionBuilder {
     where
         F: FnOnce(&mut TransactionAttributesBuilder),
     {
-        let mut builder = TransactionAttributesBuilder::create_empty();
+        let mut builder = TransactionAttributesBuilder::new();
         config(&mut builder);
         self.inner.set_attributes(builder.build());
         self
@@ -95,7 +95,7 @@ impl TransactionBuilder {
     where
         F: FnOnce(&mut WitnessBuilder),
     {
-        let mut builder = WitnessBuilder::create_empty();
+        let mut builder = WitnessBuilder::new();
         config(&mut builder);
         self.inner.add_witness(builder.build());
         self
@@ -106,7 +106,7 @@ impl TransactionBuilder {
     where
         F: FnOnce(&mut WitnessBuilder, &Transaction),
     {
-        let mut builder = WitnessBuilder::create_empty();
+        let mut builder = WitnessBuilder::new();
         config(&mut builder, &self.inner);
         self.inner.add_witness(builder.build());
         self
@@ -117,7 +117,7 @@ impl TransactionBuilder {
     where
         F: FnOnce(&mut SignerBuilder, &Transaction),
     {
-        let mut builder = SignerBuilder::create_empty();
+        let mut builder = SignerBuilder::new();
         config(&mut builder, &self.inner);
         self.inner.add_signer(builder.build());
         self
@@ -156,7 +156,7 @@ pub struct SignerBuilder {
 impl SignerBuilder {
     /// Creates a builder with default signer settings (zero account,
     /// `None` scope).
-    pub fn create_empty() -> Self {
+    pub fn new() -> Self {
         Self {
             account: UInt160::zero(),
             scopes: WitnessScope::NONE,
@@ -211,7 +211,7 @@ impl SignerBuilder {
     where
         F: FnOnce(&mut WitnessRuleBuilder),
     {
-        let mut builder = WitnessRuleBuilder::create(action);
+        let mut builder = WitnessRuleBuilder::new(action);
         config(&mut builder);
         self.rules.push(builder.build());
         self
@@ -234,7 +234,7 @@ pub struct TransactionAttributesBuilder {
 }
 
 impl TransactionAttributesBuilder {
-    pub fn create_empty() -> Self {
+    pub fn new() -> Self {
         Self {
             attributes: Vec::new(),
         }
@@ -310,13 +310,8 @@ pub struct WitnessConditionBuilder {
 
 impl WitnessConditionBuilder {
     /// Creates a new empty witness condition builder.
-    pub fn create() -> Self {
+    pub fn new() -> Self {
         Self { condition: None }
-    }
-
-    /// Alias for `create`.
-    pub fn create_empty() -> Self {
-        Self::create()
     }
 
     /// Adds an AND condition.
@@ -324,7 +319,7 @@ impl WitnessConditionBuilder {
     where
         F: FnOnce(&mut AndConditionBuilder),
     {
-        let mut builder = AndConditionBuilder::create_empty();
+        let mut builder = AndConditionBuilder::new();
         config(&mut builder);
         self.condition = Some(builder.build());
         self
@@ -335,7 +330,7 @@ impl WitnessConditionBuilder {
     where
         F: FnOnce(&mut OrConditionBuilder),
     {
-        let mut builder = OrConditionBuilder::create_empty();
+        let mut builder = OrConditionBuilder::new();
         config(&mut builder);
         self.condition = Some(builder.build());
         self
@@ -380,7 +375,7 @@ impl WitnessConditionBuilder {
     where
         F: FnOnce(&mut WitnessConditionBuilder),
     {
-        let mut builder = WitnessConditionBuilder::create();
+        let mut builder = WitnessConditionBuilder::new();
         config(&mut builder);
         self.condition = Some(WitnessCondition::Not {
             condition: Box::new(builder.build()),
@@ -411,7 +406,7 @@ pub struct WitnessRuleBuilder {
 
 impl WitnessRuleBuilder {
     /// Creates a new witness rule builder with the specified action.
-    pub fn create(action: WitnessRuleAction) -> Self {
+    pub fn new(action: WitnessRuleAction) -> Self {
         Self {
             action,
             condition: None,
@@ -423,7 +418,7 @@ impl WitnessRuleBuilder {
     where
         F: FnOnce(&mut WitnessConditionBuilder),
     {
-        let mut builder = WitnessConditionBuilder::create();
+        let mut builder = WitnessConditionBuilder::new();
         config(&mut builder);
         self.condition = Some(builder.build());
         self
@@ -448,7 +443,7 @@ pub struct AndConditionBuilder {
 
 impl AndConditionBuilder {
     /// Creates a new empty AND condition builder.
-    pub fn create_empty() -> Self {
+    pub fn new() -> Self {
         Self {
             conditions: Vec::new(),
         }
@@ -459,7 +454,7 @@ impl AndConditionBuilder {
     where
         F: FnOnce(&mut AndConditionBuilder),
     {
-        let mut builder = AndConditionBuilder::create_empty();
+        let mut builder = AndConditionBuilder::new();
         config(&mut builder);
         self.conditions.push(builder.build());
         self
@@ -470,7 +465,7 @@ impl AndConditionBuilder {
     where
         F: FnOnce(&mut OrConditionBuilder),
     {
-        let mut builder = OrConditionBuilder::create_empty();
+        let mut builder = OrConditionBuilder::new();
         config(&mut builder);
         self.conditions.push(builder.build());
         self
@@ -533,7 +528,7 @@ pub struct OrConditionBuilder {
 
 impl OrConditionBuilder {
     /// Creates a new empty OR condition builder.
-    pub fn create_empty() -> Self {
+    pub fn new() -> Self {
         Self {
             conditions: Vec::new(),
         }
@@ -544,7 +539,7 @@ impl OrConditionBuilder {
     where
         F: FnOnce(&mut AndConditionBuilder),
     {
-        let mut builder = AndConditionBuilder::create_empty();
+        let mut builder = AndConditionBuilder::new();
         config(&mut builder);
         self.conditions.push(builder.build());
         self
@@ -555,7 +550,7 @@ impl OrConditionBuilder {
     where
         F: FnOnce(&mut OrConditionBuilder),
     {
-        let mut builder = OrConditionBuilder::create_empty();
+        let mut builder = OrConditionBuilder::new();
         config(&mut builder);
         self.conditions.push(builder.build());
         self
@@ -619,7 +614,7 @@ pub struct WitnessBuilder {
 
 impl WitnessBuilder {
     /// Creates a new empty witness builder.
-    pub fn create_empty() -> Self {
+    pub fn new() -> Self {
         Self::default()
     }
 

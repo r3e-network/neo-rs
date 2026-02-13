@@ -145,7 +145,7 @@ impl NeoToken {
         S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         let prefix = StorageKey::create(Self::ID, Self::PREFIX_GAS_PER_BLOCK);
-        let mut records = Vec::new();
+        let mut records = Vec::with_capacity(8);
         for (key, item) in snapshot.find(Some(&prefix), SeekDirection::Backward) {
             if key.id != Self::ID {
                 continue;

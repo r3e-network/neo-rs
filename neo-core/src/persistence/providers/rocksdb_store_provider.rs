@@ -69,6 +69,7 @@ impl BatchCommitter {
         count
     }
 
+    #[allow(dead_code)]
     fn flush(&self) -> Option<WriteBatch> {
         // The buffer flushes automatically, but we can force it here
         if self.buffer.has_pending() {
@@ -272,6 +273,7 @@ impl RocksDbStore {
     }
 
     /// Flush any pending batch commits to RocksDB.
+    #[allow(dead_code)]
     pub fn flush_batch_commits(&self) {
         if let Some(batch) = self.batch_committer.flush() {
             if let Err(err) = self.db.write(batch) {
@@ -643,6 +645,11 @@ impl IStoreSnapshot for RocksDbSnapshot {
     }
 }
 
+// These methods form the operational API for RocksDbStore (fast-sync, cache
+// management, diagnostics).  The struct is crate-private so the compiler flags
+// them as dead code, but they are intentionally kept for use by higher-level
+// subsystems that will be wired up during node integration.
+#[allow(dead_code)]
 impl RocksDbStore {
     /// Enables fast sync mode optimizations (disable WAL, reduce fsync).
     pub fn enable_fast_sync_mode(&self) {

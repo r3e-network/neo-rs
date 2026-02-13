@@ -105,8 +105,8 @@ pub struct PeerConnection {
     /// Whether we have received and processed peer handshake metadata
     pub node_info_set: bool,
 
-    /// Message sender channel
-    pub message_tx: mpsc::UnboundedSender<NetworkMessage>,
+    /// Message sender channel (bounded to apply backpressure)
+    pub message_tx: mpsc::Sender<NetworkMessage>,
 
     /// Whether this is an inbound connection
     pub inbound: bool,
@@ -152,7 +152,8 @@ impl PeerConnection {
         inbound: bool,
         frame_config: FrameConfig,
     ) -> Self {
-        let (message_tx, _) = mpsc::unbounded_channel();
+        // Bounded channel provides backpressure when the receiver falls behind.
+        let (message_tx, _) = mpsc::channel(1024);
         let now = std::time::Instant::now();
 
         Self {

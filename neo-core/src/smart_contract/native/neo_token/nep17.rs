@@ -97,7 +97,7 @@ impl NeoToken {
         let snapshot_ref = snapshot.as_ref();
         let context = engine.get_native_storage_context(&self.hash())?;
 
-        let mut gas_distributions: Vec<(UInt160, BigInt)> = Vec::new();
+        let mut gas_distributions: Vec<(UInt160, BigInt)> = Vec::with_capacity(2);
 
         let mut from_state_opt = self.get_account_state(snapshot_ref, &from)?;
 

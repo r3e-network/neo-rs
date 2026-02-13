@@ -94,8 +94,8 @@ impl IInteroperable for Deposit {
 
 /// Serializes a Deposit to bytes (matching C# StorageItem format).
 fn serialize_deposit(deposit: &Deposit) -> Vec<u8> {
-    let mut result = Vec::new();
     let amount_bytes = deposit.amount.to_signed_bytes_le();
+    let mut result = Vec::with_capacity(1 + amount_bytes.len() + 4);
     result.push(amount_bytes.len() as u8);
     result.extend_from_slice(&amount_bytes);
     result.extend_from_slice(&deposit.till.to_le_bytes());
@@ -688,7 +688,8 @@ impl Notary {
                     err
                 ))
             })?;
-        let min_allowed = engine.protocol_settings().validators_count.max(0) as u32;
+        let min_allowed = u32::try_from(engine.protocol_settings().validators_count.max(0))
+            .unwrap_or(0);
         let max_allowed = max_valid_increment.saturating_div(2);
 
         if value < min_allowed || value > max_allowed {
@@ -871,7 +872,7 @@ impl NativeContract for Notary {
                     notaries = Some(self.get_notary_nodes(snapshot_ref)?);
                 }
 
-                total_fees += attr.nkeys as i64 + 1;
+                total_fees += i64::from(attr.nkeys) + 1;
 
                 if tx.sender() == Some(self.hash()) && tx.signers().len() >= 2 {
                     let payer = tx.signers()[1].account;
@@ -913,10 +914,13 @@ impl NativeContract for Notary {
                 Error::native_contract(format!("Failed to read Notary attribute fee: {}", err))
             })?;
 
+        let notary_count = i64::try_from(notaries.len()).map_err(|_| {
+            Error::native_contract("Notary node count exceeds i64 capacity")
+        })?;
         let single_reward = total_fees
             .checked_mul(fee_per_key)
             .ok_or_else(|| Error::native_contract("Notary reward overflow"))?
-            / notaries.len() as i64;
+            / notary_count;
 
         for notary in notaries {
             let account = Contract::create_signature_contract(notary).script_hash();

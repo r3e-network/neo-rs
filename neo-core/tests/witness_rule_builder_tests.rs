@@ -4,12 +4,12 @@ use neo_core::UInt160;
 
 #[test]
 fn witness_rule_builder_create() {
-    let _builder = WitnessRuleBuilder::create(WitnessRuleAction::Allow);
+    let _builder = WitnessRuleBuilder::new(WitnessRuleAction::Allow);
 }
 
 #[test]
 fn witness_rule_builder_condition_script_hash() {
-    let rule = WitnessRuleBuilder::create(WitnessRuleAction::Allow)
+    let rule = WitnessRuleBuilder::new(WitnessRuleAction::Allow)
         .add_condition(|wcb| {
             wcb.script_hash(UInt160::zero());
         })
@@ -24,7 +24,7 @@ fn witness_rule_builder_condition_script_hash() {
 
 #[test]
 fn witness_rule_builder_condition_and() {
-    let rule = WitnessRuleBuilder::create(WitnessRuleAction::Allow)
+    let rule = WitnessRuleBuilder::new(WitnessRuleAction::Allow)
         .add_condition(|wcb| {
             wcb.and(|and| {
                 and.script_hash(UInt160::zero());

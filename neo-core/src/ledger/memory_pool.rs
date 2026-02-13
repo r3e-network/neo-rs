@@ -589,9 +589,7 @@ impl MemoryPool {
 
                     if matches_conflict || matches_persisted {
                         // Extract Transaction for the event handler
-                        conflicting_items.push(
-                            Arc::try_unwrap(item.transaction.clone()).unwrap_or_else(|arc| (*arc).clone())
-                        );
+                        conflicting_items.push((*item.transaction).clone());
                         Some(item_hash)
                     } else {
                         None
@@ -737,8 +735,7 @@ impl MemoryPool {
                     self.unverified_transactions.remove(&hash);
                     self.unverified_sorted.take(&item);
                     invalidated.push(
-                        Arc::try_unwrap(item.transaction.clone())
-                            .unwrap_or_else(|arc| (*arc).clone()),
+                        Arc::try_unwrap(item.transaction).unwrap_or_else(|arc| (*arc).clone()),
                     );
                     continue;
                 }
@@ -784,7 +781,7 @@ impl MemoryPool {
                 self.unverified_transactions.remove(&hash);
                 self.unverified_sorted.take(&item);
                 invalidated.push(
-                    Arc::try_unwrap(item.transaction.clone()).unwrap_or_else(|arc| (*arc).clone()),
+                    Arc::try_unwrap(item.transaction).unwrap_or_else(|arc| (*arc).clone()),
                 );
             }
         }
@@ -861,25 +858,23 @@ impl MemoryPool {
             return;
         }
 
-        let mut moved = Vec::with_capacity(self.verified_sorted.len());
-        for item in self.verified_sorted.iter() {
-            moved.push(item.clone());
-        }
+        let sorted = std::mem::take(&mut self.verified_sorted);
+        let mut txs = std::mem::take(&mut self.verified_transactions);
 
-        for item in moved {
+        for item in sorted {
             let hash = item.transaction.hash();
+            // Prefer the HashMap entry (same PoolItem) to avoid keeping both.
+            let item = txs.remove(&hash).unwrap_or(item);
             self.unverified_transactions.insert(hash, item.clone());
             self.unverified_sorted.insert(item);
         }
 
-        self.verified_transactions.clear();
-        self.verified_sorted.clear();
         self.conflicts.clear();
         self.verification_context = TransactionVerificationContext::new();
     }
 
     fn remove_over_capacity(&mut self) -> Vec<Transaction> {
-        let mut removed = Vec::new();
+        let mut removed = Vec::with_capacity(self.count().saturating_sub(self.capacity));
 
         while self.count() > self.capacity {
             let candidate_verified = self.verified_sorted.iter().next().cloned();

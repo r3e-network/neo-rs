@@ -304,8 +304,8 @@ impl TaskManager {
                 .retain(|hash| !ledger_contract.contains_block(&store_cache, hash));
 
             let candidates: Vec<UInt256> = session.available_tasks.iter().copied().collect();
-            let mut scheduled = Vec::new();
-            let mut to_remove = Vec::new();
+            let mut scheduled = Vec::with_capacity(candidates.len());
+            let mut to_remove = Vec::with_capacity(candidates.len());
             for hash in candidates {
                 if self.increment_inv_task(hash) {
                     session.register_inv_task(hash);
@@ -514,7 +514,7 @@ impl TaskManager {
                 return;
             }
 
-            let mut pending = Vec::new();
+            let mut pending = Vec::with_capacity(hashes.len());
             for hash in hashes.iter().copied() {
                 if this.is_known_hash(&hash) {
                     continue;
@@ -538,7 +538,7 @@ impl TaskManager {
                 return;
             }
 
-            let mut scheduled = Vec::new();
+            let mut scheduled = Vec::with_capacity(pending.len());
             for hash in pending.into_iter() {
                 if this.increment_inv_task(hash) {
                     entry.session.register_inv_task(hash);
@@ -577,7 +577,7 @@ impl TaskManager {
         let inventory_type = payload.inventory_type;
         let hashes: Vec<UInt256> = payload.hashes.clone();
         self.with_session_mut(&path, move |entry, this| {
-            let mut scheduled = Vec::new();
+            let mut scheduled = Vec::with_capacity(hashes.len());
             for hash in hashes.iter().copied() {
                 this.forget_hash(&hash);
                 this.decrement_inv_task(&hash);
@@ -696,8 +696,9 @@ impl TaskManager {
         let mut persisted = block.clone();
         let hash = persisted.hash();
 
-        let mut to_disconnect = Vec::new();
-        let mut to_request = Vec::new();
+        let session_count = self.sessions.len();
+        let mut to_disconnect = Vec::with_capacity(session_count);
+        let mut to_request = Vec::with_capacity(session_count);
 
         for (path, entry) in self.sessions.iter_mut() {
             if let Some(stored) = entry.session.received_block.remove(&index) {
@@ -737,7 +738,7 @@ impl TaskManager {
     }
 
     fn on_invalid_block(&mut self, hash: &UInt256, block_index: Option<u32>) {
-        let mut offenders = Vec::new();
+        let mut offenders = Vec::with_capacity(self.sessions.len());
 
         for entry in self.sessions.values() {
             let mut matches = false;

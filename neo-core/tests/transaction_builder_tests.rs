@@ -8,29 +8,29 @@ use neo_core::{UInt160, UInt256};
 use neo_vm::op_code::OpCode;
 
 #[test]
-fn transaction_builder_create_empty() {
-    let tx = TransactionBuilder::create_empty().build();
+fn transaction_builder_new() {
+    let tx = TransactionBuilder::new().build();
     assert_ne!(tx.hash(), UInt256::zero());
 }
 
 #[test]
 fn transaction_builder_sets_version() {
     let expected = 1u8;
-    let tx = TransactionBuilder::create_empty().version(expected).build();
+    let tx = TransactionBuilder::new().version(expected).build();
     assert_eq!(tx.version(), expected);
 }
 
 #[test]
 fn transaction_builder_sets_nonce() {
     let expected = 0x0bad_f00du32;
-    let tx = TransactionBuilder::create_empty().nonce(expected).build();
+    let tx = TransactionBuilder::new().nonce(expected).build();
     assert_eq!(tx.nonce(), expected);
 }
 
 #[test]
 fn transaction_builder_sets_system_fee() {
     let expected = 42i64;
-    let tx = TransactionBuilder::create_empty()
+    let tx = TransactionBuilder::new()
         .system_fee(expected)
         .build();
     assert_eq!(tx.system_fee(), expected);
@@ -39,7 +39,7 @@ fn transaction_builder_sets_system_fee() {
 #[test]
 fn transaction_builder_sets_network_fee() {
     let expected = 99i64;
-    let tx = TransactionBuilder::create_empty()
+    let tx = TransactionBuilder::new()
         .network_fee(expected)
         .build();
     assert_eq!(tx.network_fee(), expected);
@@ -48,7 +48,7 @@ fn transaction_builder_sets_network_fee() {
 #[test]
 fn transaction_builder_sets_valid_until() {
     let expected = 123u32;
-    let tx = TransactionBuilder::create_empty()
+    let tx = TransactionBuilder::new()
         .valid_until(expected)
         .build();
     assert_eq!(tx.valid_until_block(), expected);
@@ -56,7 +56,7 @@ fn transaction_builder_sets_valid_until() {
 
 #[test]
 fn transaction_builder_attaches_script() {
-    let tx = TransactionBuilder::create_empty()
+    let tx = TransactionBuilder::new()
         .attach_system(|sb| {
             sb.emit_opcode(OpCode::NOP);
         })
@@ -66,7 +66,7 @@ fn transaction_builder_attaches_script() {
 
 #[test]
 fn transaction_builder_adds_attributes() {
-    let tx = TransactionBuilder::create_empty()
+    let tx = TransactionBuilder::new()
         .add_attributes(|ab| {
             ab.add_high_priority();
         })
@@ -80,7 +80,7 @@ fn transaction_builder_adds_attributes() {
 
 #[test]
 fn transaction_builder_adds_witness() {
-    let tx = TransactionBuilder::create_empty()
+    let tx = TransactionBuilder::new()
         .add_witness(|wb| {
             wb.add_invocation(Vec::new()).unwrap();
             wb.add_verification(Vec::new()).unwrap();
@@ -93,7 +93,7 @@ fn transaction_builder_adds_witness() {
 
 #[test]
 fn transaction_builder_adds_witness_with_tx() {
-    let tx = TransactionBuilder::create_empty()
+    let tx = TransactionBuilder::new()
         .add_witness_with_tx(|_wb, tx| {
             assert_ne!(tx.hash(), UInt256::zero());
         })
@@ -110,7 +110,7 @@ fn transaction_builder_adds_signer_with_rules() {
     .expect("ecpoint");
     let expected_contract = UInt160::zero();
 
-    let tx = TransactionBuilder::create_empty()
+    let tx = TransactionBuilder::new()
         .add_signer(|sb, _tx| {
             sb.account(expected_contract)
                 .allow_contract(expected_contract)

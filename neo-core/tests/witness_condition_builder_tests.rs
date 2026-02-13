@@ -16,7 +16,7 @@ fn sample_pubkey() -> ECPoint {
 fn witness_condition_builder_and_condition() {
     let expected_pubkey = sample_pubkey();
     let expected_contract = UInt160::zero();
-    let condition = WitnessConditionBuilder::create()
+    let condition = WitnessConditionBuilder::new()
         .and(|and| {
             and.called_by_contract(expected_contract);
             and.called_by_group(expected_pubkey.clone());
@@ -45,7 +45,7 @@ fn witness_condition_builder_and_condition() {
 fn witness_condition_builder_or_condition() {
     let expected_pubkey = sample_pubkey();
     let expected_contract = UInt160::zero();
-    let condition = WitnessConditionBuilder::create()
+    let condition = WitnessConditionBuilder::new()
         .or(|or| {
             or.called_by_contract(expected_contract);
             or.called_by_group(expected_pubkey.clone());
@@ -72,7 +72,7 @@ fn witness_condition_builder_or_condition() {
 
 #[test]
 fn witness_condition_builder_boolean() {
-    let condition = WitnessConditionBuilder::create().boolean(true).build();
+    let condition = WitnessConditionBuilder::new().boolean(true).build();
     match condition {
         WitnessCondition::Boolean { value } => assert!(value),
         other => panic!("unexpected condition: {other:?}"),
@@ -82,7 +82,7 @@ fn witness_condition_builder_boolean() {
 #[test]
 fn witness_condition_builder_called_by_contract() {
     let expected_contract = UInt160::zero();
-    let condition = WitnessConditionBuilder::create()
+    let condition = WitnessConditionBuilder::new()
         .called_by_contract(expected_contract)
         .build();
 
@@ -94,7 +94,7 @@ fn witness_condition_builder_called_by_contract() {
 
 #[test]
 fn witness_condition_builder_called_by_entry() {
-    let condition = WitnessConditionBuilder::create().called_by_entry().build();
+    let condition = WitnessConditionBuilder::new().called_by_entry().build();
     match condition {
         WitnessCondition::CalledByEntry => {}
         other => panic!("unexpected condition: {other:?}"),
@@ -104,7 +104,7 @@ fn witness_condition_builder_called_by_entry() {
 #[test]
 fn witness_condition_builder_called_by_group() {
     let expected_pubkey = sample_pubkey();
-    let condition = WitnessConditionBuilder::create()
+    let condition = WitnessConditionBuilder::new()
         .called_by_group(expected_pubkey.clone())
         .build();
 
@@ -119,7 +119,7 @@ fn witness_condition_builder_called_by_group() {
 #[test]
 fn witness_condition_builder_group() {
     let expected_pubkey = sample_pubkey();
-    let condition = WitnessConditionBuilder::create()
+    let condition = WitnessConditionBuilder::new()
         .group(expected_pubkey.clone())
         .build();
 
@@ -132,7 +132,7 @@ fn witness_condition_builder_group() {
 #[test]
 fn witness_condition_builder_script_hash() {
     let expected_contract = UInt160::zero();
-    let condition = WitnessConditionBuilder::create()
+    let condition = WitnessConditionBuilder::new()
         .script_hash(expected_contract)
         .build();
 
@@ -144,7 +144,7 @@ fn witness_condition_builder_script_hash() {
 
 #[test]
 fn witness_condition_builder_defaults_to_true() {
-    let condition = WitnessConditionBuilder::create().build();
+    let condition = WitnessConditionBuilder::new().build();
     match condition {
         WitnessCondition::Boolean { value } => assert!(value),
         other => panic!("unexpected condition: {other:?}"),
@@ -155,7 +155,7 @@ fn witness_condition_builder_defaults_to_true() {
 fn witness_condition_builder_not_with_and() {
     let expected_pubkey = sample_pubkey();
     let expected_contract = UInt160::zero();
-    let condition = WitnessConditionBuilder::create()
+    let condition = WitnessConditionBuilder::new()
         .not(|not| {
             not.and(|and| {
                 and.called_by_contract(expected_contract);
@@ -191,7 +191,7 @@ fn witness_condition_builder_not_with_and() {
 fn witness_condition_builder_not_with_or() {
     let expected_pubkey = sample_pubkey();
     let expected_contract = UInt160::zero();
-    let condition = WitnessConditionBuilder::create()
+    let condition = WitnessConditionBuilder::new()
         .not(|not| {
             not.or(|or| {
                 or.called_by_contract(expected_contract);

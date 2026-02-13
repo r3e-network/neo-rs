@@ -189,7 +189,7 @@ impl ContractManagement {
         }
 
         if storage.contract_count == 0 {
-            storage.contract_count = storage.contracts.len() as u32;
+            storage.contract_count = u32::try_from(storage.contracts.len()).unwrap_or(u32::MAX);
         }
 
         if let Some(max_id) = storage.contract_ids.keys().copied().max() {

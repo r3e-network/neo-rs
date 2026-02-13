@@ -416,11 +416,9 @@ pub mod neo_io {
 // VM Re-export
 // ============================================================================
 
-/// Re-export of Neo Virtual Machine types.
-// TODO: Replace blanket re-export with explicit type list
-// Currently used internally by: blockchain_application_executed, nep17_tracker, nep11_tracker
+/// Re-export of Neo Virtual Machine types used internally by neo-core modules.
 pub mod neo_vm {
-    pub use neo_vm::*;
+    pub use neo_vm::{CallFlags, OpCode, ScriptBuilder, StackItem, VMState};
 }
 
 // ============================================================================
@@ -443,31 +441,33 @@ pub mod neo_ledger {
 /// Re-exports from [`neo_primitives`] crate.
 ///
 /// Contains core primitive types like `UInt160`, `UInt256`.
-// TODO: Replace blanket re-export with explicit type list (no external or internal usage found)
+/// Kept for backward compatibility; no current downstream consumers.
 pub mod primitives {
-    pub use neo_primitives::*;
+    pub use neo_primitives::{UInt160, UInt256};
 }
 
 /// Re-exports from [`neo_crypto`] crate.
 ///
 /// Contains cryptographic primitives and hash functions.
-// TODO: Replace blanket re-export with explicit type list (no external or internal usage found)
+/// Kept for backward compatibility; no current downstream consumers.
 pub mod crypto {
-    pub use neo_crypto::*;
+    pub use neo_crypto::{ct_hash_eq, ct_hash_slice_eq, Crypto, CryptoError, HashAlgorithm, ECC};
 }
 
 /// Re-exports from [`neo_storage`] crate.
 ///
 /// Contains storage traits and abstractions.
-// TODO: Replace blanket re-export with explicit type list (no external or internal usage found)
+/// Kept for backward compatibility; no current downstream consumers.
 pub mod storage {
-    pub use neo_storage::*;
+    pub use neo_storage::{
+        IReadOnlyStore, ISnapshot, IStore, IWriteStore, StorageItem, StorageKey,
+    };
 }
 
 /// Re-exports smart contract types for backward compatibility.
 ///
 /// Note: `neo-contract` crate has been merged - types now live in [`smart_contract`] module.
-// TODO: Replace blanket re-export with explicit type list (no external or internal usage found)
+/// No current downstream consumers use this re-export path.
 pub mod contract {
     pub use crate::smart_contract::*;
 }

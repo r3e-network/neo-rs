@@ -137,7 +137,7 @@ impl LedgerContext {
         }
 
         let headers = self.headers_by_index.read();
-        let mut collected = Vec::new();
+        let mut collected = Vec::with_capacity(count);
         let mut index = index_start as usize;
 
         while index < headers.len() && collected.len() < count {

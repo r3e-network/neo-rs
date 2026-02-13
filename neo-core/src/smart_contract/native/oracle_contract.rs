@@ -381,8 +381,14 @@ impl OracleContract {
         let snapshot_arc = engine.snapshot_cache();
         let snapshot = snapshot_arc.as_ref();
         let price = self.get_price_value(snapshot);
-        engine.add_runtime_fee(price as u64)?;
-        engine.add_runtime_fee(gas_for_response as u64)?;
+        let price_u64 = u64::try_from(price).map_err(|_| {
+            Error::invalid_operation("Oracle price cannot be converted to u64")
+        })?;
+        engine.add_runtime_fee(price_u64)?;
+        let gas_for_response_u64 = u64::try_from(gas_for_response).map_err(|_| {
+            Error::invalid_operation("gasForResponse cannot be converted to u64")
+        })?;
+        engine.add_runtime_fee(gas_for_response_u64)?;
         let id = self.next_request_id(snapshot)?;
         let url_hash = self.compute_url_hash(&url);
 
@@ -641,7 +647,10 @@ impl OracleContract {
     fn serialize_id_list(&self, list: &[u64]) -> Result<Vec<u8>> {
         let items = list
             .iter()
-            .map(|id| StackItem::from_int(*id as i64))
+            .map(|id| {
+                let id_i64 = i64::try_from(*id).expect("Oracle request id exceeds i64::MAX");
+                StackItem::from_int(id_i64)
+            })
             .collect::<Vec<_>>();
         BinarySerializer::serialize(
             &StackItem::from_array(items),
@@ -681,8 +690,11 @@ impl OracleContract {
         contract: UInt160,
         request: &PendingRequest,
     ) -> Result<()> {
+        let id_i64 = i64::try_from(id).map_err(|_| {
+            Error::runtime_error("Oracle request id exceeds i64::MAX")
+        })?;
         let state = vec![
-            StackItem::from_int(id as i64),
+            StackItem::from_int(id_i64),
             StackItem::from_byte_string(contract.to_bytes()),
             StackItem::from_byte_string(request.url.as_bytes().to_vec()),
             match &request.filter {
@@ -701,8 +713,11 @@ impl OracleContract {
         request_id: u64,
         request: &PendingRequest,
     ) -> Result<()> {
+        let id_i64 = i64::try_from(request_id).map_err(|_| {
+            Error::runtime_error("Oracle request id exceeds i64::MAX")
+        })?;
         let state = vec![
-            StackItem::from_int(request_id as i64),
+            StackItem::from_int(id_i64),
             StackItem::from_byte_string(request.original_tx_id.to_bytes()),
         ];
         engine
@@ -754,7 +769,8 @@ impl OracleContract {
         for transaction in &block.transactions {
             for attribute in transaction.attributes() {
                 if let TransactionAttribute::OracleResponse(response) = attribute {
-                    let index = (response.id as usize) % recipients.len();
+                    let id_usize = usize::try_from(response.id).unwrap_or(0);
+                    let index = id_usize % recipients.len();
                     let account = recipients[index];
                     *rewards.entry(account).or_insert(0) += price;
                 }
@@ -796,9 +812,12 @@ impl OracleContract {
             return Vec::new();
         }
 
-        let count = u32::from_le_bytes(bytes[0..4].try_into().unwrap_or([0; 4])) as usize;
+        let count = u32::from_le_bytes(bytes[0..4].try_into().unwrap_or([0; 4]));
+        let count_usize = count as usize;
+        // Cap to prevent excessive allocation from malformed data
+        let safe_count = count_usize.min((bytes.len().saturating_sub(4)) / 33);
         let mut offset = 4;
-        let mut accounts = Vec::with_capacity(count);
+        let mut accounts = Vec::with_capacity(safe_count);
 
         for _ in 0..count {
             if offset + 33 > bytes.len() {

@@ -806,7 +806,7 @@ impl RemoteNode {
             return;
         }
 
-        let mut endpoints = Vec::new();
+        let mut endpoints = Vec::with_capacity(payload.address_list.len());
         let mut seen = HashSet::new();
 
         for address in payload.address_list {

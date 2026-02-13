@@ -534,7 +534,7 @@ impl LocalNodeActor {
     }
 
     async fn resolve_seed_endpoints(&self) -> Vec<SocketAddr> {
-        let mut endpoints = Vec::new();
+        let mut endpoints = Vec::with_capacity(self.state.seed_list().len() * 2);
         for entry in self.state.seed_list() {
             if let Some((host, port)) = parse_seed_entry(&entry) {
                 match lookup_host((host.as_str(), port)).await {

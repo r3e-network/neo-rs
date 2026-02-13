@@ -140,8 +140,7 @@ impl Blockchain {
             return false;
         };
 
-        let mut block_for_hash = block.clone();
-        let hash = block_for_hash.hash();
+        let hash = block.header.clone().hash();
 
         match system.persist_block(block.clone()) {
             Ok(_) => {

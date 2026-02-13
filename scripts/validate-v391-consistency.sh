@@ -238,7 +238,6 @@ max_files = 2
 [blockchain]
 block_time = 15000
 max_transactions_per_block = 512
-max_free_transactions_per_block = 20
 
 [mempool]
 max_transactions = 50000
@@ -291,7 +290,6 @@ max_files = 2
 [blockchain]
 block_time = 3000
 max_transactions_per_block = 5000
-max_free_transactions_per_block = 20
 
 [mempool]
 max_transactions = 50000

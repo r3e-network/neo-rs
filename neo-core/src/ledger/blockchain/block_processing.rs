@@ -13,10 +13,7 @@ impl Blockchain {
         };
 
         let block_index = block.index();
-        let hash = {
-            let mut temp = block.clone();
-            temp.hash()
-        };
+        let hash = block.header.clone().hash();
 
         let store_cache = context.store_cache();
         let settings = context.settings();
@@ -89,7 +86,8 @@ impl Blockchain {
                     unverified.values().map(|e| e.blocks.len()).sum::<usize>()
                 };
                 if unverified_count >= 10 {
-                    self.persist_block_sequence_parallel(block.clone()).await;
+                    self.persist_block_sequence_parallel(block.clone())
+                        .await;
                     return VerifyResult::Succeed;
                 }
             }
@@ -130,10 +128,8 @@ impl Blockchain {
         // Process the first block
         let first_succeeded = self.persist_block_via_system(&block);
         if first_succeeded {
-            self.handle_persist_completed(PersistCompleted {
-                block: block.clone(),
-            })
-            .await;
+            self.handle_persist_completed(PersistCompleted { block })
+                .await;
         } else if let Some(context) = &self.system_context {
             // In fast sync mode, still record the block even if execution failed
             context.record_block(block);
@@ -165,12 +161,12 @@ impl Blockchain {
             let succeeded = self.persist_block_via_system(&next_block);
             if succeeded {
                 self.handle_persist_completed(PersistCompleted {
-                    block: next_block.clone(),
+                    block: next_block,
                 })
                 .await;
             } else if let Some(context) = &self.system_context {
                 // In fast sync mode, still record the block even if execution failed
-                context.record_block(next_block.clone());
+                context.record_block(next_block);
             }
             next_index = next_index.saturating_add(1);
         }
@@ -227,12 +223,10 @@ impl Blockchain {
 
         for (succeeded, block) in verified {
             if succeeded {
-                self.handle_persist_completed(PersistCompleted {
-                    block: block.clone(),
-                })
-                .await;
+                self.handle_persist_completed(PersistCompleted { block })
+                    .await;
             } else if is_fast_sync {
-                context.record_block(block.clone());
+                context.record_block(block);
             }
         }
     }
@@ -317,7 +311,7 @@ impl Blockchain {
         whitelist.insert(NativeHelpers::committee_address(settings, Some(snapshot)));
 
         // Consensus validators: BFT multi-sig address + individual signature contracts.
-        let validators_count = settings.validators_count.max(0) as usize;
+        let validators_count = usize::try_from(settings.validators_count.max(0)).unwrap_or(0);
         let validators = NeoToken::new()
             .get_next_block_validators_snapshot(snapshot, validators_count, settings)
             .unwrap_or_else(|_| settings.standby_validators());

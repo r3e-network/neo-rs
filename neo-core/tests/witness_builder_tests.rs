@@ -2,13 +2,13 @@ use neo_core::builders::WitnessBuilder;
 use neo_vm::op_code::OpCode;
 
 #[test]
-fn witness_builder_create_empty() {
-    let _builder = WitnessBuilder::create_empty();
+fn witness_builder_new() {
+    let _builder = WitnessBuilder::new();
 }
 
 #[test]
 fn witness_builder_adds_invocation_with_builder() {
-    let witness = WitnessBuilder::create_empty()
+    let witness = WitnessBuilder::new()
         .add_invocation_with_builder(|sb| {
             sb.emit_opcode(OpCode::NOP);
             sb.emit_opcode(OpCode::NOP);
@@ -22,7 +22,7 @@ fn witness_builder_adds_invocation_with_builder() {
 
 #[test]
 fn witness_builder_adds_invocation_bytes() {
-    let witness = WitnessBuilder::create_empty()
+    let witness = WitnessBuilder::new()
         .add_invocation(vec![0x01, 0x02, 0x03])
         .unwrap()
         .build();
@@ -32,7 +32,7 @@ fn witness_builder_adds_invocation_bytes() {
 
 #[test]
 fn witness_builder_adds_verification_with_builder() {
-    let witness = WitnessBuilder::create_empty()
+    let witness = WitnessBuilder::new()
         .add_verification_with_builder(|sb| {
             sb.emit_opcode(OpCode::NOP);
             sb.emit_opcode(OpCode::NOP);
@@ -46,7 +46,7 @@ fn witness_builder_adds_verification_with_builder() {
 
 #[test]
 fn witness_builder_adds_verification_bytes() {
-    let witness = WitnessBuilder::create_empty()
+    let witness = WitnessBuilder::new()
         .add_verification(vec![0x01, 0x02, 0x03])
         .unwrap()
         .build();

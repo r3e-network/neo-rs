@@ -127,7 +127,7 @@ impl ContractManagement {
                     Error::invalid_argument(format!("Storage fee calculation overflow: {}", e))
                 })?;
 
-        let minimum_fee = deployment_fee.max(0) as u64;
+        let minimum_fee = u64::try_from(deployment_fee.max(0)).unwrap_or(0);
         let fee_to_charge = storage_fee.max(minimum_fee);
 
         // Validate fee is reasonable

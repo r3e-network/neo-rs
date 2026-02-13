@@ -6,7 +6,6 @@
 use crate::{Error, Result, Storage};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::io::Read;
 use std::path::PathBuf;
 use std::time::SystemTime;
 use tokio::fs;
@@ -201,21 +200,20 @@ impl BackupManager {
     }
 
     /// Lists all available backups (production implementation)
-    pub fn list_backups(&self) -> Result<Vec<BackupMetadata>> {
+    pub async fn list_backups(&self) -> Result<Vec<BackupMetadata>> {
         let mut backups = Vec::new();
 
         // 1. Scan backup directory for backup files
         if self.backup_dir.exists() {
-            let entries = std::fs::read_dir(&self.backup_dir)?;
+            let mut entries = fs::read_dir(&self.backup_dir).await?;
 
-            for entry in entries {
-                let entry = entry?;
+            while let Some(entry) = entries.next_entry().await? {
                 let path = entry.path();
 
                 // 2. Check if file is a backup file
                 if path.extension().and_then(|s| s.to_str()) == Some("neo") {
                     // 3. Try to load metadata for this backup
-                    if let Ok(metadata) = self.load_backup_metadata_sync(&path) {
+                    if let Ok(metadata) = self.load_backup_metadata(&path).await {
                         backups.push(metadata);
                     }
                 }
@@ -229,9 +227,9 @@ impl BackupManager {
     }
 
     /// Deletes a backup (production implementation)
-    pub fn delete_backup(&mut self, backup_id: &str) -> Result<()> {
+    pub async fn delete_backup(&mut self, backup_id: &str) -> Result<()> {
         // 1. Find backup by ID
-        let backups = self.list_backups()?;
+        let backups = self.list_backups().await?;
         let backup = backups
             .iter()
             .find(|b| b.id == backup_id)
@@ -239,37 +237,37 @@ impl BackupManager {
 
         // 2. Delete backup file
         if backup.file_path.exists() {
-            std::fs::remove_file(&backup.file_path)?;
+            fs::remove_file(&backup.file_path).await?;
         }
 
         // 3. Delete metadata file
         let metadata_path = self.get_metadata_path(&backup.file_path);
         if metadata_path.exists() {
-            std::fs::remove_file(&metadata_path)?;
+            fs::remove_file(&metadata_path).await?;
         }
 
         Ok(())
     }
 
     /// Verifies a backup's integrity (production implementation)
-    pub fn verify_backup(&self, backup_path: &PathBuf) -> Result<bool> {
+    pub async fn verify_backup(&self, backup_path: &PathBuf) -> Result<bool> {
         // 1. Check if backup file exists
         if !backup_path.exists() {
             return Ok(false);
         }
 
         // 2. Load backup metadata
-        let metadata = self.load_backup_metadata_sync(backup_path)?;
+        let metadata = self.load_backup_metadata(backup_path).await?;
 
         // 3. Verify file size matches metadata
-        let actual_size = std::fs::metadata(backup_path)?.len();
+        let actual_size = fs::metadata(backup_path).await?.len();
         if actual_size != metadata.size {
             return Ok(false);
         }
 
         // 4. Verify checksum if available
         if let Some(expected_checksum) = &metadata.checksum {
-            let actual_checksum = self.calculate_backup_checksum_sync(backup_path)?;
+            let actual_checksum = self.calculate_backup_checksum(backup_path).await?;
             if actual_checksum != *expected_checksum {
                 return Ok(false);
             }
@@ -483,23 +481,6 @@ impl BackupManager {
         Ok(format!("{:x}", hasher.finalize()))
     }
 
-    /// Calculates backup checksum synchronously
-    fn calculate_backup_checksum_sync(&self, backup_path: &PathBuf) -> Result<String> {
-        let mut file = std::fs::File::open(backup_path)?;
-        let mut hasher = Sha256::new();
-        let mut buffer = vec![0u8; 8192];
-
-        loop {
-            let bytes_read = file.read(&mut buffer)?;
-            if bytes_read == 0 {
-                break;
-            }
-            hasher.update(&buffer[..bytes_read]);
-        }
-
-        Ok(format!("{:x}", hasher.finalize()))
-    }
-
     /// Saves backup metadata
     async fn save_backup_metadata(&self, metadata: &BackupMetadata) -> Result<()> {
         let metadata_path = self.get_metadata_path(&metadata.file_path);
@@ -512,14 +493,6 @@ impl BackupManager {
     async fn load_backup_metadata(&self, backup_path: &PathBuf) -> Result<BackupMetadata> {
         let metadata_path = self.get_metadata_path(backup_path);
         let metadata_json = fs::read_to_string(&metadata_path).await?;
-        let metadata: BackupMetadata = serde_json::from_str(&metadata_json)?;
-        Ok(metadata)
-    }
-
-    /// Loads backup metadata synchronously
-    fn load_backup_metadata_sync(&self, backup_path: &PathBuf) -> Result<BackupMetadata> {
-        let metadata_path = self.get_metadata_path(backup_path);
-        let metadata_json = std::fs::read_to_string(&metadata_path)?;
         let metadata: BackupMetadata = serde_json::from_str(&metadata_json)?;
         Ok(metadata)
     }
@@ -549,7 +522,7 @@ impl BackupManager {
 
     /// Cleans up old backups
     async fn cleanup_old_backups(&mut self) -> Result<()> {
-        let mut backups = self.list_backups()?;
+        let mut backups = self.list_backups().await?;
 
         if backups.len() > self.max_backups {
             backups.sort_by(|a, b| a.created_at.cmp(&b.created_at));
@@ -559,7 +532,7 @@ impl BackupManager {
             let mut deletion_errors = Vec::new();
 
             for backup in backups.iter().take(to_remove) {
-                if let Err(e) = self.delete_backup(&backup.id) {
+                if let Err(e) = self.delete_backup(&backup.id).await {
                     // Log the error using proper logging instead of eprintln!
                     error!("Failed to delete old backup {}: {}", backup.id, e);
                     deletion_errors.push((backup.id.clone(), e));
@@ -589,7 +562,7 @@ impl BackupManager {
     /// Gets the height of the last backup (production implementation)
     pub async fn get_last_backup_height(&self) -> Result<u32> {
         // 1. Get all available backups
-        let backups = self.list_backups()?;
+        let backups = self.list_backups().await?;
 
         // 2. Find the most recent successful backup
         let latest_backup = backups

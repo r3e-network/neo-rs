@@ -291,7 +291,8 @@ impl NativeContract for NeoToken {
             .ok_or_else(|| CoreError::native_contract("No persisting block available"))?;
 
         let committee_count = engine.protocol_settings().committee_members_count();
-        let validators_count = engine.protocol_settings().validators_count as usize;
+        let validators_count = usize::try_from(engine.protocol_settings().validators_count.max(0))
+            .unwrap_or(0);
         let snapshot = engine.snapshot_cache();
 
         let committee =
@@ -300,7 +301,8 @@ impl NativeContract for NeoToken {
             return Ok(());
         }
 
-        let reward_index = (block.index() % committee_count as u32) as usize;
+        let committee_count_u32 = u32::try_from(committee_count).unwrap_or(1);
+        let reward_index = (block.index() % committee_count_u32) as usize;
         if reward_index >= committee.len() {
             return Ok(());
         }
@@ -324,8 +326,12 @@ impl NativeContract for NeoToken {
         }
 
         if Self::should_refresh_committee(block.index(), committee_count) {
-            let m = committee_count as i64;
-            let n = validators_count as i64;
+            let m = i64::try_from(committee_count).map_err(|_| {
+                CoreError::native_contract("Committee count exceeds i64 capacity")
+            })?;
+            let n = i64::try_from(validators_count).map_err(|_| {
+                CoreError::native_contract("Validators count exceeds i64 capacity")
+            })?;
 
             // Use safe arithmetic for reward calculation
             let mut voter_reward_each =

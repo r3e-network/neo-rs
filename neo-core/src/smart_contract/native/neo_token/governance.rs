@@ -317,7 +317,7 @@ impl NeoToken {
         let snapshot = engine.snapshot_cache();
         let validators = self.get_next_block_validators_snapshot(
             snapshot.as_ref(),
-            engine.protocol_settings().validators_count as usize,
+            usize::try_from(engine.protocol_settings().validators_count.max(0)).unwrap_or(0),
             engine.protocol_settings(),
         )?;
         let items: Vec<StackItem> = validators

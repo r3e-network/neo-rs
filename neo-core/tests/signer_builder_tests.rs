@@ -5,13 +5,13 @@ use neo_core::network::p2p::payloads::{WitnessCondition, WitnessRuleAction, Witn
 use neo_core::UInt160;
 
 #[test]
-fn signer_builder_create_empty() {
-    let _builder = SignerBuilder::create_empty();
+fn signer_builder_new() {
+    let _builder = SignerBuilder::new();
 }
 
 #[test]
 fn signer_builder_sets_account() {
-    let signer = SignerBuilder::create_empty()
+    let signer = SignerBuilder::new()
         .account(UInt160::zero())
         .build();
 
@@ -20,7 +20,7 @@ fn signer_builder_sets_account() {
 
 #[test]
 fn signer_builder_allows_contract() {
-    let signer = SignerBuilder::create_empty()
+    let signer = SignerBuilder::new()
         .allow_contract(UInt160::zero())
         .build();
 
@@ -35,7 +35,7 @@ fn signer_builder_allows_group() {
     )
     .expect("ecpoint");
 
-    let signer = SignerBuilder::create_empty()
+    let signer = SignerBuilder::new()
         .allow_group(group.clone())
         .build();
 
@@ -44,7 +44,7 @@ fn signer_builder_allows_group() {
 
 #[test]
 fn signer_builder_adds_witness_scope() {
-    let signer = SignerBuilder::create_empty()
+    let signer = SignerBuilder::new()
         .add_witness_scope(WitnessScope::GLOBAL)
         .build();
 
@@ -53,7 +53,7 @@ fn signer_builder_adds_witness_scope() {
 
 #[test]
 fn signer_builder_adds_witness_rule() {
-    let signer = SignerBuilder::create_empty()
+    let signer = SignerBuilder::new()
         .add_witness_rule(WitnessRuleAction::Allow, |cb| {
             cb.add_condition(|cond| {
                 cond.script_hash(UInt160::zero());

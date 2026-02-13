@@ -170,7 +170,7 @@ impl Header {
             self._hash = Some(hash);
             return hash;
         }
-        // Neo block hashes use single SHA256 over the unsigned header payload.
+        // Neo N3 block hashes use single SHA-256 over the unsigned header payload.
         let hash = UInt256::from(crate::cryptography::Crypto::sha256(&writer.into_bytes()));
         self._hash = Some(hash);
         hash

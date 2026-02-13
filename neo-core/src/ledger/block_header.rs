@@ -89,7 +89,7 @@ impl BlockHeader {
         let mut writer = BinaryWriter::new();
         self.serialize_unsigned(&mut writer)
             .expect("block header serialization should not fail");
-        // Neo block hashes use single SHA256 over the unsigned header payload.
+        // Neo N3 block hashes use single SHA-256 over the unsigned header payload.
         UInt256::from(Crypto::sha256(&writer.into_bytes()))
     }
 

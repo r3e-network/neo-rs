@@ -3,13 +3,13 @@ use neo_core::network::p2p::payloads::{OracleResponseCode, TransactionAttribute}
 use neo_core::UInt256;
 
 #[test]
-fn transaction_attributes_builder_create_empty() {
-    let _builder = TransactionAttributesBuilder::create_empty();
+fn transaction_attributes_builder_new() {
+    let _builder = TransactionAttributesBuilder::new();
 }
 
 #[test]
 fn transaction_attributes_builder_add_conflict() {
-    let attrs = TransactionAttributesBuilder::create_empty()
+    let attrs = TransactionAttributesBuilder::new()
         .add_conflict(|cb| {
             cb.hash = UInt256::zero();
         })
@@ -26,7 +26,7 @@ fn transaction_attributes_builder_add_conflict() {
 
 #[test]
 fn transaction_attributes_builder_add_oracle_response() {
-    let attrs = TransactionAttributesBuilder::create_empty()
+    let attrs = TransactionAttributesBuilder::new()
         .add_oracle_response(|ob| {
             ob.id = 1;
             ob.code = OracleResponseCode::Success;
@@ -47,7 +47,7 @@ fn transaction_attributes_builder_add_oracle_response() {
 
 #[test]
 fn transaction_attributes_builder_add_high_priority() {
-    let attrs = TransactionAttributesBuilder::create_empty()
+    let attrs = TransactionAttributesBuilder::new()
         .add_high_priority()
         .build();
 
@@ -57,7 +57,7 @@ fn transaction_attributes_builder_add_high_priority() {
 
 #[test]
 fn transaction_attributes_builder_add_not_valid_before() {
-    let attrs = TransactionAttributesBuilder::create_empty()
+    let attrs = TransactionAttributesBuilder::new()
         .add_not_valid_before(10)
         .build();
 
@@ -75,7 +75,7 @@ fn transaction_attributes_builder_add_not_valid_before() {
     expected = "HighPriority attribute already exists. Only one allowed per transaction."
 )]
 fn transaction_attributes_builder_rejects_duplicate_high_priority() {
-    let _attrs = TransactionAttributesBuilder::create_empty()
+    let _attrs = TransactionAttributesBuilder::new()
         .add_high_priority()
         .add_high_priority()
         .build();
@@ -84,7 +84,7 @@ fn transaction_attributes_builder_rejects_duplicate_high_priority() {
 #[test]
 #[should_panic(expected = "NotValidBefore attribute for block 10 already exists")]
 fn transaction_attributes_builder_rejects_duplicate_not_valid_before() {
-    let _attrs = TransactionAttributesBuilder::create_empty()
+    let _attrs = TransactionAttributesBuilder::new()
         .add_not_valid_before(10)
         .add_not_valid_before(10)
         .build();

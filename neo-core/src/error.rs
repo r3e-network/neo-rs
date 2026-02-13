@@ -497,8 +497,10 @@ pub enum UnifiedError {
     Core(CoreError),
     /// Standard I/O errors
     Io(std::io::Error),
-    /// Generic string errors
+    /// Generic string errors (kept for backward compatibility).
     Message(String),
+    /// Typed error with preserved source chain.
+    Other(Box<dyn std::error::Error + Send + Sync>),
 }
 
 impl std::fmt::Display for UnifiedError {
@@ -507,6 +509,7 @@ impl std::fmt::Display for UnifiedError {
             Self::Core(e) => write!(f, "{e}"),
             Self::Io(e) => write!(f, "I/O error: {e}"),
             Self::Message(e) => write!(f, "{e}"),
+            Self::Other(e) => write!(f, "{e}"),
         }
     }
 }
@@ -517,6 +520,7 @@ impl std::error::Error for UnifiedError {
             Self::Core(e) => Some(e),
             Self::Io(e) => Some(e),
             Self::Message(_) => None,
+            Self::Other(e) => Some(e.as_ref()),
         }
     }
 }

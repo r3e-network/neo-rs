@@ -331,7 +331,11 @@ impl GasToken {
 
         let fee_per_key = policy
             .get_attribute_fee_for_type(snapshot, TransactionAttributeType::NotaryAssisted as u8)?;
-        Ok((attr.nkeys as i64 + 1) * fee_per_key)
+        let nkeys = i64::from(attr.nkeys);
+        nkeys
+            .checked_add(1)
+            .and_then(|n| n.checked_mul(fee_per_key))
+            .ok_or_else(|| CoreError::native_contract("Notary fee calculation overflow"))
     }
 
     fn decode_amount(data: &[u8]) -> BigInt {
@@ -648,7 +652,7 @@ impl NativeContract for GasToken {
             let validators = neo_token
                 .get_next_block_validators_snapshot(
                     snapshot_ref,
-                    engine.protocol_settings().validators_count as usize,
+                    usize::try_from(engine.protocol_settings().validators_count.max(0)).unwrap_or(0),
                     engine.protocol_settings(),
                 )
                 .unwrap_or_else(|_| engine.protocol_settings().standby_validators());

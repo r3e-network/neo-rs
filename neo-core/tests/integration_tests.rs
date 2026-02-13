@@ -388,15 +388,15 @@ fn test_event_manager() {
 #[test]
 fn test_builders() {
     // Test TransactionBuilder
-    let tx_builder = TransactionBuilder::create_empty();
+    let tx_builder = TransactionBuilder::new();
     let _tx = tx_builder.build();
 
     // Test SignerBuilder
-    let signer_builder = SignerBuilder::create_empty();
+    let signer_builder = SignerBuilder::new();
     let _signer = signer_builder.build();
 
     // Test WitnessBuilder
-    let witness_builder = WitnessBuilder::create_empty();
+    let witness_builder = WitnessBuilder::new();
     let _witness = witness_builder.build();
 }
 

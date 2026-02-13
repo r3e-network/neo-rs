@@ -38,7 +38,7 @@ impl RemoteNode {
 
         let now = std::time::Instant::now();
         let ledger_contract = LedgerContract::new();
-        let mut hashes = Vec::new();
+        let mut hashes = Vec::with_capacity(payload.hashes.len());
 
         match payload.inventory_type {
             InventoryType::Block => {
@@ -274,7 +274,7 @@ impl RemoteNode {
             return Ok(());
         }
 
-        let mut not_found = Vec::new();
+        let mut not_found = Vec::with_capacity(payload.hashes.len());
 
         match payload.inventory_type {
             InventoryType::Transaction => {

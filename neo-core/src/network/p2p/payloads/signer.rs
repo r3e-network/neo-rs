@@ -80,7 +80,7 @@ impl Signer {
             )];
         }
 
-        let mut result = Vec::new();
+        let mut result = Vec::with_capacity(4);
 
         if self.scopes.contains(WitnessScope::CALLED_BY_ENTRY) {
             result.push(WitnessRule::new(

@@ -12,7 +12,8 @@ impl NeoToken {
         if committee_members_count == 0 {
             return false;
         }
-        height % committee_members_count as u32 == 0
+        let count_u32 = u32::try_from(committee_members_count).unwrap_or(u32::MAX);
+        height % count_u32 == 0
     }
 
     /// Attempts to read the current committee from the snapshot-backed storage used by the
@@ -233,7 +234,7 @@ impl NeoToken {
     where
         S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
-        let validators_count = settings.validators_count as usize;
+        let validators_count = usize::try_from(settings.validators_count.max(0)).unwrap_or(0);
         let committee = self.compute_committee_members(snapshot, settings)?;
         let mut validators: Vec<ECPoint> = committee
             .into_iter()

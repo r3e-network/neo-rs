@@ -105,6 +105,7 @@ impl NativeHelpers {
         if committee_members_count == 0 {
             return false;
         }
-        next_height % committee_members_count as u32 == 0
+        let count_u32 = u32::try_from(committee_members_count).unwrap_or(u32::MAX);
+        next_height % count_u32 == 0
     }
 }

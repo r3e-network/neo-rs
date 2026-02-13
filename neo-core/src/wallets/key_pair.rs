@@ -202,7 +202,8 @@ impl KeyPair {
 
         let (data, checksum) = decoded.split_at(decoded.len() - 4);
         let computed_checksum = &crate::cryptography::Crypto::hash256(data)[0..4];
-        if checksum != computed_checksum {
+        // Constant-time comparison to prevent timing side-channel on checksum validation
+        if !bool::from(checksum.ct_eq(computed_checksum)) {
             return Err(Error::InvalidWif);
         }
 
@@ -384,7 +385,8 @@ impl KeyPair {
         let computed_hash_full = crate::cryptography::Crypto::hash256(address.as_bytes());
         let computed_hash = &computed_hash_full[0..4];
 
-        if computed_hash != address_hash {
+        // Constant-time comparison to prevent timing oracle on password verification
+        if !bool::from(computed_hash.ct_eq(address_hash)) {
             // Zeroize private key before returning error
             private_key.zeroize();
             return Err(Error::InvalidPassword);
