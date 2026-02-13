@@ -3,8 +3,9 @@
 //
 
 use super::{
-    CallFlags, EvaluationStack, ExecutionContext, ExecutionEngine, ExecutionEngineLimits,
-    InteropService, JumpTable, ReferenceCounter, StackItem, VMState, VmError, DEFAULT_GAS_LIMIT,
+    CallFlags, DEFAULT_GAS_LIMIT, EvaluationStack, ExecutionContext, ExecutionEngine,
+    ExecutionEngineLimits, InteropService, JumpTable, ReferenceCounter, StackItem, VMState,
+    VmError,
 };
 
 impl ExecutionEngine {
@@ -64,7 +65,7 @@ impl ExecutionEngine {
     fn on_state_changed(&mut self) {}
 
     /// Called when an exception causes the VM to enter the FAULT state.
-    pub(super) fn on_fault(&mut self, err: VmError) {
+    pub(crate) fn on_fault(&mut self, err: VmError) {
         #[cfg(debug_assertions)]
         println!("ExecutionEngine fault: {err:?}");
         if self.uncaught_exception.is_none() {

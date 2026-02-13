@@ -67,7 +67,10 @@ impl Debugger {
 
     /// private void `ExecuteAndCheckBreakPoints()`
     fn execute_and_check_break_points(&mut self) {
-        let _ = self.engine.execute_next();
+        if let Err(err) = self.engine.execute_next() {
+            self.engine.on_fault(err);
+            return;
+        }
 
         if self.engine.state() == VMState::NONE
             && !self.engine.invocation_stack().is_empty()
@@ -128,7 +131,10 @@ impl Debugger {
             return self.engine.state();
         }
 
-        let _ = self.engine.execute_next();
+        if let Err(err) = self.engine.execute_next() {
+            self.engine.on_fault(err);
+            return self.engine.state();
+        }
 
         if self.engine.state() == VMState::NONE {
             self.engine.set_state(VMState::BREAK);

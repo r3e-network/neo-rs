@@ -173,9 +173,7 @@ fn test_debugger_step_over() {
             engine.set_state(VMState::HALT);
         } else {
             // Get the context to unload
-            if let Ok(mut context) = engine.remove_context(engine.invocation_stack().len() - 1) {
-                engine.unload_context(&mut context)?;
-            }
+            let _ = engine.remove_context(engine.invocation_stack().len() - 1)?;
         }
 
         Ok(())
@@ -194,7 +192,7 @@ fn test_debugger_step_over() {
         0x03,                // Main: Call function at offset 3 (relative)
         OpCode::RET as u8,   // Main: Return
         OpCode::PUSH2 as u8, // Function: Push 2
-        OpCode::ADD as u8,   // Function: Add
+        OpCode::NOP as u8,   // Function: Nop (placeholder)
         OpCode::RET as u8,   // Function: Return
     ];
     let script = Script::new_relaxed(script_bytes);
@@ -259,9 +257,7 @@ fn test_debugger_step_out() {
             engine.set_state(VMState::HALT);
         } else {
             // Get the context to unload
-            if let Ok(mut context) = engine.remove_context(engine.invocation_stack().len() - 1) {
-                engine.unload_context(&mut context)?;
-            }
+            let _ = engine.remove_context(engine.invocation_stack().len() - 1)?;
         }
 
         Ok(())
@@ -280,7 +276,7 @@ fn test_debugger_step_out() {
         0x03,                // Main: Call function at offset 3 (relative)
         OpCode::RET as u8,   // Main: Return
         OpCode::PUSH2 as u8, // Function: Push 2
-        OpCode::ADD as u8,   // Function: Add
+        OpCode::NOP as u8,   // Function: Nop (placeholder)
         OpCode::RET as u8,   // Function: Return
     ];
     let script = Script::new_relaxed(script_bytes);
