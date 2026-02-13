@@ -857,6 +857,7 @@ impl MemoryPool {
             return;
         }
 
+        #[allow(clippy::mutable_key_type)]
         let sorted = std::mem::take(&mut self.verified_sorted);
         let mut txs = std::mem::take(&mut self.verified_transactions);
 

@@ -137,10 +137,10 @@ impl Mempool {
         let mut inner = self.inner.write();
 
         // Check capacity — may need to evict
-        if inner.transactions.len() >= self.config.max_transactions {
-            if !Self::try_evict_lowest_inner(&mut inner, &entry) {
-                return Err(MempoolError::PoolFull(self.config.max_transactions));
-            }
+        if inner.transactions.len() >= self.config.max_transactions
+            && !Self::try_evict_lowest_inner(&mut inner, &entry)
+        {
+            return Err(MempoolError::PoolFull(self.config.max_transactions));
         }
 
         // Re-check duplicate under write lock (another thread may have inserted)

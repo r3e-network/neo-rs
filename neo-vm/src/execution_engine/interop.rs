@@ -63,11 +63,8 @@ impl ExecutionEngine {
     /// Returns `Some(result)` if a host was present and the call was dispatched,
     /// `None` if no host is configured.
     pub fn invoke_host_syscall(&mut self, hash: u32) -> Option<VmResult<()>> {
-        if let Some(host) = self.interop_host {
-            Some(host.invoke_syscall(self, hash))
-        } else {
-            None
-        }
+        self.interop_host
+            .map(|host| host.invoke_syscall(self, hash))
     }
 
     /// Invokes the CALLT opcode by delegating to the interop host.

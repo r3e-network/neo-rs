@@ -153,6 +153,12 @@ pub struct SignerBuilder {
     rules: Vec<WitnessRule>,
 }
 
+impl Default for SignerBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SignerBuilder {
     /// Creates a builder with default signer settings (zero account,
     /// `None` scope).
@@ -233,6 +239,12 @@ pub struct TransactionAttributesBuilder {
     attributes: Vec<TransactionAttribute>,
 }
 
+impl Default for TransactionAttributesBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TransactionAttributesBuilder {
     pub fn new() -> Self {
         Self {
@@ -306,6 +318,12 @@ impl TransactionAttributesBuilder {
 #[must_use]
 pub struct WitnessConditionBuilder {
     condition: Option<WitnessCondition>,
+}
+
+impl Default for WitnessConditionBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl WitnessConditionBuilder {
@@ -441,6 +459,12 @@ pub struct AndConditionBuilder {
     conditions: Vec<WitnessCondition>,
 }
 
+impl Default for AndConditionBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AndConditionBuilder {
     /// Creates a new empty AND condition builder.
     pub fn new() -> Self {
@@ -524,6 +548,12 @@ impl AndConditionBuilder {
 #[must_use]
 pub struct OrConditionBuilder {
     conditions: Vec<WitnessCondition>,
+}
+
+impl Default for OrConditionBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl OrConditionBuilder {
