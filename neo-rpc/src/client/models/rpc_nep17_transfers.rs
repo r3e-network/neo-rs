@@ -321,7 +321,10 @@ mod tests {
         path.push("Neo.Network.RPC.Tests");
         path.push("RpcTestCases.json");
         if !path.exists() {
-            eprintln!("SKIP: neo_csharp submodule not initialized ({})", path.display());
+            eprintln!(
+                "SKIP: neo_csharp submodule not initialized ({})",
+                path.display()
+            );
             return None;
         }
         let payload = fs::read_to_string(&path).expect("read RpcTestCases.json");
@@ -354,7 +357,9 @@ mod tests {
 
     #[test]
     fn nep17_transfers_to_json_matches_rpc_test_case() {
-        let Some(expected) = load_rpc_case_result("getnep17transfersasync") else { return; };
+        let Some(expected) = load_rpc_case_result("getnep17transfersasync") else {
+            return;
+        };
         let settings = ProtocolSettings::default_settings();
         let parsed = RpcNep17Transfers::from_json(&expected, &settings).expect("parse");
         let actual = parsed.to_json(&settings);
@@ -363,7 +368,11 @@ mod tests {
 
     #[test]
     fn nep17_transfers_null_address_matches_rpc_test_case() {
-        let Some(expected) = load_rpc_case_result("getnep17transfersasync_with_null_transferaddress") else { return; };
+        let Some(expected) =
+            load_rpc_case_result("getnep17transfersasync_with_null_transferaddress")
+        else {
+            return;
+        };
         let settings = ProtocolSettings::default_settings();
         let parsed = RpcNep17Transfers::from_json(&expected, &settings).expect("parse");
         let actual = parsed.to_json(&settings);

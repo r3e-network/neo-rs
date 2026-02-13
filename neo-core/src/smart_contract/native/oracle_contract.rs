@@ -381,13 +381,11 @@ impl OracleContract {
         let snapshot_arc = engine.snapshot_cache();
         let snapshot = snapshot_arc.as_ref();
         let price = self.get_price_value(snapshot);
-        let price_u64 = u64::try_from(price).map_err(|_| {
-            Error::invalid_operation("Oracle price cannot be converted to u64")
-        })?;
+        let price_u64 = u64::try_from(price)
+            .map_err(|_| Error::invalid_operation("Oracle price cannot be converted to u64"))?;
         engine.add_runtime_fee(price_u64)?;
-        let gas_for_response_u64 = u64::try_from(gas_for_response).map_err(|_| {
-            Error::invalid_operation("gasForResponse cannot be converted to u64")
-        })?;
+        let gas_for_response_u64 = u64::try_from(gas_for_response)
+            .map_err(|_| Error::invalid_operation("gasForResponse cannot be converted to u64"))?;
         engine.add_runtime_fee(gas_for_response_u64)?;
         let id = self.next_request_id(snapshot)?;
         let url_hash = self.compute_url_hash(&url);
@@ -690,9 +688,8 @@ impl OracleContract {
         contract: UInt160,
         request: &PendingRequest,
     ) -> Result<()> {
-        let id_i64 = i64::try_from(id).map_err(|_| {
-            Error::runtime_error("Oracle request id exceeds i64::MAX")
-        })?;
+        let id_i64 = i64::try_from(id)
+            .map_err(|_| Error::runtime_error("Oracle request id exceeds i64::MAX"))?;
         let state = vec![
             StackItem::from_int(id_i64),
             StackItem::from_byte_string(contract.to_bytes()),
@@ -713,9 +710,8 @@ impl OracleContract {
         request_id: u64,
         request: &PendingRequest,
     ) -> Result<()> {
-        let id_i64 = i64::try_from(request_id).map_err(|_| {
-            Error::runtime_error("Oracle request id exceeds i64::MAX")
-        })?;
+        let id_i64 = i64::try_from(request_id)
+            .map_err(|_| Error::runtime_error("Oracle request id exceeds i64::MAX"))?;
         let state = vec![
             StackItem::from_int(id_i64),
             StackItem::from_byte_string(request.original_tx_id.to_bytes()),

@@ -137,15 +137,13 @@ impl IInteroperable for ContractPermission {
             )));
         }
 
-        self.contract = ContractPermissionDescriptor::from_stack_item(&items[0])
-            .map_err(|e| CoreError::invalid_format(format!(
-                "Invalid contract descriptor in stack item: {}", e
-            )))?;
+        self.contract = ContractPermissionDescriptor::from_stack_item(&items[0]).map_err(|e| {
+            CoreError::invalid_format(format!("Invalid contract descriptor in stack item: {}", e))
+        })?;
 
-        self.methods = WildCardContainer::from_stack_item(&items[1])
-            .map_err(|e| CoreError::invalid_format(format!(
-                "Invalid methods container in stack item: {}", e
-            )))?;
+        self.methods = WildCardContainer::from_stack_item(&items[1]).map_err(|e| {
+            CoreError::invalid_format(format!("Invalid methods container in stack item: {}", e))
+        })?;
 
         Ok(())
     }

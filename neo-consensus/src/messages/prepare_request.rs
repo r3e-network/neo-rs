@@ -64,11 +64,21 @@ impl PrepareRequestMessage {
         // Matches C# DBFTPlugin PrepareRequest.Serialize (after the common message header):
         // `Version:u32, PrevHash:UInt256, Timestamp:u64, Nonce:u64, TransactionHashes: UInt256[] (varint count)`.
         let mut writer = BinaryWriter::new();
-        writer.write_u32(self.version).expect("infallible: in-memory write");
-        writer.write_serializable(&self.prev_hash).expect("infallible: in-memory write");
-        writer.write_u64(self.timestamp).expect("infallible: in-memory write");
-        writer.write_u64(self.nonce).expect("infallible: in-memory write");
-        writer.write_serializable_vec(&self.transaction_hashes).expect("infallible: in-memory write");
+        writer
+            .write_u32(self.version)
+            .expect("infallible: in-memory write");
+        writer
+            .write_serializable(&self.prev_hash)
+            .expect("infallible: in-memory write");
+        writer
+            .write_u64(self.timestamp)
+            .expect("infallible: in-memory write");
+        writer
+            .write_u64(self.nonce)
+            .expect("infallible: in-memory write");
+        writer
+            .write_serializable_vec(&self.transaction_hashes)
+            .expect("infallible: in-memory write");
         writer.into_bytes()
     }
 

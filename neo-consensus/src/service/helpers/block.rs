@@ -49,7 +49,9 @@ pub(in crate::service) fn compute_next_consensus_address(validators: &[Validator
         builder.emit_push(key.as_bytes());
     }
     builder.emit_push_int(n as i64);
-    builder.emit_syscall("System.Crypto.CheckMultisig").expect("infallible: in-memory emit");
+    builder
+        .emit_syscall("System.Crypto.CheckMultisig")
+        .expect("infallible: in-memory emit");
     UInt160::from_script(&builder.to_array())
 }
 
@@ -67,14 +69,30 @@ pub(in crate::service) fn compute_header_hash(
     use neo_io::BinaryWriter;
 
     let mut writer = BinaryWriter::new();
-    writer.write_u32(version).expect("infallible: in-memory write");
-    writer.write_serializable(&prev_hash).expect("infallible: in-memory write");
-    writer.write_serializable(&merkle_root).expect("infallible: in-memory write");
-    writer.write_u64(timestamp).expect("infallible: in-memory write");
-    writer.write_u64(nonce).expect("infallible: in-memory write");
-    writer.write_u32(index).expect("infallible: in-memory write");
-    writer.write_u8(primary_index).expect("infallible: in-memory write");
-    writer.write_serializable(&next_consensus).expect("infallible: in-memory write");
+    writer
+        .write_u32(version)
+        .expect("infallible: in-memory write");
+    writer
+        .write_serializable(&prev_hash)
+        .expect("infallible: in-memory write");
+    writer
+        .write_serializable(&merkle_root)
+        .expect("infallible: in-memory write");
+    writer
+        .write_u64(timestamp)
+        .expect("infallible: in-memory write");
+    writer
+        .write_u64(nonce)
+        .expect("infallible: in-memory write");
+    writer
+        .write_u32(index)
+        .expect("infallible: in-memory write");
+    writer
+        .write_u8(primary_index)
+        .expect("infallible: in-memory write");
+    writer
+        .write_serializable(&next_consensus)
+        .expect("infallible: in-memory write");
 
     // Matches C# `IVerifiable.CalculateHash()` (single SHA-256 over unsigned bytes).
     UInt256::from(neo_crypto::Crypto::sha256(&writer.into_bytes()))

@@ -149,7 +149,11 @@ impl Mempool {
         }
 
         inner.transactions.insert(hash, entry.clone());
-        inner.by_sender.entry(entry.sender).or_default().insert(hash);
+        inner
+            .by_sender
+            .entry(entry.sender)
+            .or_default()
+            .insert(hash);
         inner.priority_queue.push(PriorityEntry {
             hash,
             priority: entry.priority,

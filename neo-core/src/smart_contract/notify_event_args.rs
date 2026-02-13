@@ -69,7 +69,9 @@ impl fmt::Debug for NotifyEventArgs {
 impl IInteroperable for NotifyEventArgs {
     fn from_stack_item(&mut self, _stack_item: StackItem) -> Result<(), CoreError> {
         // Not supported in C# implementation (throws NotSupportedException)
-        Err(CoreError::invalid_operation("FromStackItem is not supported for NotifyEventArgs"))
+        Err(CoreError::invalid_operation(
+            "FromStackItem is not supported for NotifyEventArgs",
+        ))
     }
 
     fn to_stack_item(&self) -> Result<StackItem, CoreError> {

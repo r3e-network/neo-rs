@@ -30,27 +30,21 @@ fn transaction_builder_sets_nonce() {
 #[test]
 fn transaction_builder_sets_system_fee() {
     let expected = 42i64;
-    let tx = TransactionBuilder::new()
-        .system_fee(expected)
-        .build();
+    let tx = TransactionBuilder::new().system_fee(expected).build();
     assert_eq!(tx.system_fee(), expected);
 }
 
 #[test]
 fn transaction_builder_sets_network_fee() {
     let expected = 99i64;
-    let tx = TransactionBuilder::new()
-        .network_fee(expected)
-        .build();
+    let tx = TransactionBuilder::new().network_fee(expected).build();
     assert_eq!(tx.network_fee(), expected);
 }
 
 #[test]
 fn transaction_builder_sets_valid_until() {
     let expected = 123u32;
-    let tx = TransactionBuilder::new()
-        .valid_until(expected)
-        .build();
+    let tx = TransactionBuilder::new().valid_until(expected).build();
     assert_eq!(tx.valid_until_block(), expected);
 }
 

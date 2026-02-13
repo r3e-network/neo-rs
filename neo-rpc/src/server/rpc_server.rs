@@ -29,8 +29,8 @@ use std::sync::{Arc, Weak};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
-use super::rpc_server_settings::RpcServerConfig;
 use super::routes::{build_rpc_routes, build_ws_route, BasicAuth};
+use super::rpc_server_settings::RpcServerConfig;
 use super::session::Session;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_method_attribute::RpcMethodDescriptor;
@@ -693,7 +693,9 @@ impl AsyncWrite for PlainConnection {
 }
 
 /// Builds TLS configuration from RPC server settings asynchronously.
-pub async fn build_tls_config_from_settings(settings: &RpcServerConfig) -> Result<Option<Arc<ServerConfig>>, String> {
+pub async fn build_tls_config_from_settings(
+    settings: &RpcServerConfig,
+) -> Result<Option<Arc<ServerConfig>>, String> {
     build_tls_config(settings).await
 }
 

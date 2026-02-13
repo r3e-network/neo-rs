@@ -1,7 +1,7 @@
 use super::middleware::{GovernorRateLimiter, RateLimitConfig};
-use super::rpc_server_settings::{RpcServerConfig, RpcServerSettings, UnhandledExceptionPolicy};
 use super::rpc_error::RpcError;
 use super::rpc_server::{RpcServer, RPC_ERR_TOTAL, RPC_REQ_TOTAL};
+use super::rpc_server_settings::{RpcServerConfig, RpcServerSettings, UnhandledExceptionPolicy};
 
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::Engine as _;
@@ -745,11 +745,11 @@ impl RequestOutcome {
 mod tests {
     use super::*;
     use crate::server::middleware::{RateLimitCheckResult, RateLimitTier};
-    use crate::server::rpc_server_settings::RpcServerConfig;
     use crate::server::rpc_method_attribute::RpcMethodDescriptor;
     use crate::server::rpc_server::RpcHandler;
     use crate::server::rpc_server_blockchain::RpcServerBlockchain;
     use crate::server::rpc_server_node::RpcServerNode;
+    use crate::server::rpc_server_settings::RpcServerConfig;
     use neo_core::neo_io::BinaryWriter;
     use neo_core::neo_system::NeoSystem;
     use neo_core::network::p2p::helper::get_sign_data_vec;

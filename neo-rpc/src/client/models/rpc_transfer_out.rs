@@ -170,7 +170,10 @@ mod tests {
         path.push("Neo.Network.RPC.Tests");
         path.push("RpcTestCases.json");
         if !path.exists() {
-            eprintln!("SKIP: neo_csharp submodule not initialized ({})", path.display());
+            eprintln!(
+                "SKIP: neo_csharp submodule not initialized ({})",
+                path.display()
+            );
             return None;
         }
         let payload = fs::read_to_string(&path).expect("read RpcTestCases.json");
@@ -204,7 +207,9 @@ mod tests {
     #[test]
     fn transfer_out_to_json_matches_rpc_test_case() {
         let settings = ProtocolSettings::default_settings();
-        let Some(params) = load_rpc_case_params("sendmanyasync") else { return; };
+        let Some(params) = load_rpc_case_params("sendmanyasync") else {
+            return;
+        };
         let transfers = params
             .get(1)
             .and_then(|value| value.as_array())

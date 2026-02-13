@@ -688,8 +688,8 @@ impl Notary {
                     err
                 ))
             })?;
-        let min_allowed = u32::try_from(engine.protocol_settings().validators_count.max(0))
-            .unwrap_or(0);
+        let min_allowed =
+            u32::try_from(engine.protocol_settings().validators_count.max(0)).unwrap_or(0);
         let max_allowed = max_valid_increment.saturating_div(2);
 
         if value < min_allowed || value > max_allowed {
@@ -914,9 +914,8 @@ impl NativeContract for Notary {
                 Error::native_contract(format!("Failed to read Notary attribute fee: {}", err))
             })?;
 
-        let notary_count = i64::try_from(notaries.len()).map_err(|_| {
-            Error::native_contract("Notary node count exceeds i64 capacity")
-        })?;
+        let notary_count = i64::try_from(notaries.len())
+            .map_err(|_| Error::native_contract("Notary node count exceeds i64 capacity"))?;
         let single_reward = total_fees
             .checked_mul(fee_per_key)
             .ok_or_else(|| Error::native_contract("Notary reward overflow"))?

@@ -652,7 +652,8 @@ impl NativeContract for GasToken {
             let validators = neo_token
                 .get_next_block_validators_snapshot(
                     snapshot_ref,
-                    usize::try_from(engine.protocol_settings().validators_count.max(0)).unwrap_or(0),
+                    usize::try_from(engine.protocol_settings().validators_count.max(0))
+                        .unwrap_or(0),
                     engine.protocol_settings(),
                 )
                 .unwrap_or_else(|_| engine.protocol_settings().standby_validators());

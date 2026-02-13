@@ -428,14 +428,18 @@ mod helper {
         let key: [u8; 32] = private_key
             .try_into()
             .map_err(|_| "invalid private key length".to_string())?;
-        Secp256k1Crypto::derive_public_key(&key).map(|pk| pk.to_vec()).map_err(|e| e.to_string())
+        Secp256k1Crypto::derive_public_key(&key)
+            .map(|pk| pk.to_vec())
+            .map_err(|e| e.to_string())
     }
 
     pub fn sign_message(message: &[u8], private_key: &[u8]) -> Result<Vec<u8>, String> {
         let key: [u8; 32] = private_key
             .try_into()
             .map_err(|_| "invalid private key length".to_string())?;
-        Secp256k1Crypto::sign(message, &key).map(|sig| sig.to_vec()).map_err(|e| e.to_string())
+        Secp256k1Crypto::sign(message, &key)
+            .map(|sig| sig.to_vec())
+            .map_err(|e| e.to_string())
     }
 
     pub fn sign_message_recoverable(message: &[u8], private_key: &[u8]) -> Result<Vec<u8>, String> {

@@ -71,10 +71,7 @@ impl Nep17Api {
 
     /// Get symbol of NEP17 token
     /// Matches C# `SymbolAsync`
-    pub async fn symbol(
-        &self,
-        script_hash: &UInt160,
-    ) -> Result<String, RpcError> {
+    pub async fn symbol(&self, script_hash: &UInt160) -> Result<String, RpcError> {
         let result = self
             .contract_client
             .test_invoke(script_hash, "symbol", vec![])
@@ -101,10 +98,7 @@ impl Nep17Api {
 
     /// Get total supply of NEP17 token
     /// Matches C# `TotalSupplyAsync`
-    pub async fn total_supply(
-        &self,
-        script_hash: &UInt160,
-    ) -> Result<BigInt, RpcError> {
+    pub async fn total_supply(&self, script_hash: &UInt160) -> Result<BigInt, RpcError> {
         let result = self
             .contract_client
             .test_invoke(script_hash, "totalSupply", vec![])
@@ -124,8 +118,7 @@ impl Nep17Api {
         let contract_state = self
             .rpc_client
             .get_contract_state(&script_hash.to_string())
-            .await
-            ?;
+            .await?;
 
         self.token_info_from_state(contract_state).await
     }
@@ -136,11 +129,7 @@ impl Nep17Api {
         &self,
         contract: &str,
     ) -> Result<RpcNep17TokenInfo, RpcError> {
-        let contract_state = self
-            .rpc_client
-            .get_contract_state(contract)
-            .await
-            ?;
+        let contract_state = self.rpc_client.get_contract_state(contract).await?;
 
         self.token_info_from_state(contract_state).await
     }
@@ -334,7 +323,8 @@ impl Nep17Api {
         start_time: Option<u64>,
         end_time: Option<u64>,
     ) -> Result<RpcNep17Transfers, RpcError> {
-        Ok(self.rpc_client
+        Ok(self
+            .rpc_client
             .get_nep17_transfers(address, start_time, end_time)
             .await?)
     }
@@ -555,10 +545,7 @@ mod tests {
         invoke_response(Vec::new(), gas_consumed)
     }
 
-    fn emit_argument(
-        sb: &mut ScriptBuilder,
-        arg: &serde_json::Value,
-    ) -> Result<(), RpcError> {
+    fn emit_argument(sb: &mut ScriptBuilder, arg: &serde_json::Value) -> Result<(), RpcError> {
         match arg {
             serde_json::Value::Null => {
                 sb.emit_opcode(OpCode::PUSHNULL);
@@ -670,7 +657,10 @@ mod tests {
         path.push("Neo.Network.RPC.Tests");
         path.push("RpcTestCases.json");
         if !path.exists() {
-            eprintln!("SKIP: neo_csharp submodule not initialized ({})", path.display());
+            eprintln!(
+                "SKIP: neo_csharp submodule not initialized ({})",
+                path.display()
+            );
             return None;
         }
         let payload = fs::read_to_string(&path).expect("read RpcTestCases.json");
@@ -744,7 +734,10 @@ mod tests {
             return;
         }
 
-        let Some((contract_hash, contract_state_response)) = load_contract_state_case("GasToken") else { return; };
+        let Some((contract_hash, contract_state_response)) = load_contract_state_case("GasToken")
+        else {
+            return;
+        };
         let symbol = "GAS";
         let symbol_b64 = general_purpose::STANDARD.encode(symbol.as_bytes());
 
@@ -789,7 +782,10 @@ mod tests {
             return;
         }
 
-        let Some((_contract_hash, contract_state_response)) = load_contract_state_case("GasToken") else { return; };
+        let Some((_contract_hash, contract_state_response)) = load_contract_state_case("GasToken")
+        else {
+            return;
+        };
         let symbol_b64 = general_purpose::STANDARD.encode("GAS".as_bytes());
 
         let invoke_response = format!(
@@ -837,7 +833,10 @@ mod tests {
 
         let settings = neo_core::ProtocolSettings::default_settings();
         let address = WalletHelper::to_address(&UInt160::zero(), settings.address_version);
-        let Some((contract_hash, contract_state_response)) = load_contract_state_case("GasToken") else { return; };
+        let Some((contract_hash, contract_state_response)) = load_contract_state_case("GasToken")
+        else {
+            return;
+        };
         let symbol_b64 = general_purpose::STANDARD.encode("GAS".as_bytes());
 
         let invoke_info_response = format!(

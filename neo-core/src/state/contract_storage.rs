@@ -219,9 +219,7 @@ impl ContractStorage {
     ) -> impl Iterator<Item = (&'a StorageKey, &'a StorageItem)> + 'a {
         self.cache
             .iter()
-            .filter(move |(k, _)| {
-                k.contract_hash == *contract_hash && k.key.starts_with(prefix)
-            })
+            .filter(move |(k, _)| k.contract_hash == *contract_hash && k.key.starts_with(prefix))
             .filter_map(|(k, v)| v.as_ref().map(|item| (k, item)))
     }
 

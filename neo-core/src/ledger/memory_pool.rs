@@ -780,9 +780,8 @@ impl MemoryPool {
             } else {
                 self.unverified_transactions.remove(&hash);
                 self.unverified_sorted.take(&item);
-                invalidated.push(
-                    Arc::try_unwrap(item.transaction).unwrap_or_else(|arc| (*arc).clone()),
-                );
+                invalidated
+                    .push(Arc::try_unwrap(item.transaction).unwrap_or_else(|arc| (*arc).clone()));
             }
         }
 
@@ -1004,9 +1003,11 @@ mod tests {
     fn set_gas_balance(snapshot: &DataCache, account: UInt160, amount: i64) {
         let key = StorageKey::create_with_uint160(GasToken::new().id(), PREFIX_ACCOUNT, &account);
         let state = AccountState::with_balance(BigInt::from(amount));
-        let bytes =
-            BinarySerializer::serialize(&state.to_stack_item().expect("to_stack_item"), &ExecutionEngineLimits::default())
-                .expect("serialize account state");
+        let bytes = BinarySerializer::serialize(
+            &state.to_stack_item().expect("to_stack_item"),
+            &ExecutionEngineLimits::default(),
+        )
+        .expect("serialize account state");
         snapshot.update(key, StorageItem::from_bytes(bytes));
     }
 

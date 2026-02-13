@@ -10,7 +10,7 @@
 // modifications are permitted.
 
 use super::models::RpcTransaction;
-use crate::{Nep17Api, RpcClient, RpcUtility, RpcError};
+use crate::{Nep17Api, RpcClient, RpcError, RpcUtility};
 use neo_core::big_decimal::BigDecimal;
 use neo_core::smart_contract::native::{GasToken, NeoToken};
 use neo_core::wallets::helper::Helper as WalletHelper;
@@ -42,10 +42,7 @@ impl WalletApi {
 
     /// Get unclaimed gas with address, scripthash or public key string
     /// Matches C# `GetUnclaimedGasAsync` with string parameter
-    pub async fn get_unclaimed_gas(
-        &self,
-        account: &str,
-    ) -> Result<f64, RpcError> {
+    pub async fn get_unclaimed_gas(&self, account: &str) -> Result<f64, RpcError> {
         let account_hash =
             RpcUtility::get_script_hash(account, &self.rpc_client.protocol_settings)?;
         self.get_unclaimed_gas_from_hash(&account_hash).await
@@ -53,10 +50,7 @@ impl WalletApi {
 
     /// Get unclaimed gas
     /// Matches C# `GetUnclaimedGasAsync` with `UInt160` parameter
-    pub async fn get_unclaimed_gas_from_hash(
-        &self,
-        account: &UInt160,
-    ) -> Result<f64, RpcError> {
+    pub async fn get_unclaimed_gas_from_hash(&self, account: &UInt160) -> Result<f64, RpcError> {
         let script_hash = neo_hash();
         let block_count = self.rpc_client.get_block_count().await?;
 
@@ -119,19 +113,13 @@ impl WalletApi {
 
     /// Claim GAS from NEO
     /// Matches C# `ClaimGasAsync`
-    pub async fn claim_gas(
-        &self,
-        key: &KeyPair,
-    ) -> Result<Transaction, RpcError> {
+    pub async fn claim_gas(&self, key: &KeyPair) -> Result<Transaction, RpcError> {
         self.claim_gas_with_assert(key, true).await
     }
 
     /// Claim GAS using WIF or private key string.
     /// Matches C# ClaimGasAsync(string)
-    pub async fn claim_gas_from_key(
-        &self,
-        key: &str,
-    ) -> Result<Transaction, RpcError> {
+    pub async fn claim_gas_from_key(&self, key: &str) -> Result<Transaction, RpcError> {
         self.claim_gas_from_key_with_assert(key, true).await
     }
 
@@ -263,7 +251,8 @@ impl WalletApi {
         data: Option<serde_json::Value>,
         add_assert: bool,
     ) -> Result<(Transaction, String), RpcError> {
-        let key_pair = RpcUtility::get_key_pair(from_key).map_err(|e| RpcError::Other(e.to_string()))?;
+        let key_pair =
+            RpcUtility::get_key_pair(from_key).map_err(|e| RpcError::Other(e.to_string()))?;
         self.transfer_decimal_with_assert(
             token_hash, &key_pair, to_address, amount, data, add_assert,
         )
@@ -356,10 +345,7 @@ impl WalletApi {
 
     /// Wait for a transaction to be confirmed.
     /// Matches C# `WaitTransactionAsync`
-    pub async fn wait_transaction(
-        &self,
-        tx: &Transaction,
-    ) -> Result<RpcTransaction, RpcError> {
+    pub async fn wait_transaction(&self, tx: &Transaction) -> Result<RpcTransaction, RpcError> {
         self.wait_transaction_with_timeout(tx, 60).await
     }
 
@@ -389,15 +375,14 @@ impl WalletApi {
             tokio::time::sleep(poll_duration).await;
         }
 
-        Err(RpcError::Other("Timeout while waiting for transaction confirmation".to_string()))
+        Err(RpcError::Other(
+            "Timeout while waiting for transaction confirmation".to_string(),
+        ))
     }
 
     /// Get account state including balances
     /// Matches C# `GetAccountStateAsync`
-    pub async fn get_account_state(
-        &self,
-        account: &str,
-    ) -> Result<WalletAccountState, RpcError> {
+    pub async fn get_account_state(&self, account: &str) -> Result<WalletAccountState, RpcError> {
         let account_hash =
             RpcUtility::get_script_hash(account, &self.rpc_client.protocol_settings)?;
 
@@ -489,7 +474,10 @@ mod tests {
         path.push("Neo.Network.RPC.Tests");
         path.push("RpcTestCases.json");
         if !path.exists() {
-            eprintln!("SKIP: neo_csharp submodule not initialized ({})", path.display());
+            eprintln!(
+                "SKIP: neo_csharp submodule not initialized ({})",
+                path.display()
+            );
             return None;
         }
         let payload = fs::read_to_string(&path).expect("read RpcTestCases.json");
@@ -537,10 +525,7 @@ mod tests {
         rpc_response(JToken::Object(result))
     }
 
-    fn emit_argument(
-        sb: &mut ScriptBuilder,
-        arg: &serde_json::Value,
-    ) -> Result<(), RpcError> {
+    fn emit_argument(sb: &mut ScriptBuilder, arg: &serde_json::Value) -> Result<(), RpcError> {
         match arg {
             serde_json::Value::Null => {
                 sb.emit_opcode(OpCode::PUSHNULL);
@@ -1219,7 +1204,9 @@ mod tests {
         settings.ms_per_block = 2;
         let tx = Transaction::new();
 
-        let Some(result_json) = load_rpc_case_result("getrawtransactionasync") else { return; };
+        let Some(result_json) = load_rpc_case_result("getrawtransactionasync") else {
+            return;
+        };
         let response_body = rpc_response(JToken::Object(result_json.clone()));
 
         let mut server = Server::new_async().await;
@@ -1262,7 +1249,9 @@ mod tests {
         settings.ms_per_block = 2;
         let tx = Transaction::new();
 
-        let Some(mut unconfirmed) = load_rpc_case_result("getrawtransactionasync") else { return; };
+        let Some(mut unconfirmed) = load_rpc_case_result("getrawtransactionasync") else {
+            return;
+        };
         for key in ["confirmations", "blockhash", "blocktime", "vmstate"] {
             unconfirmed.properties_mut().remove(&key.to_string());
         }

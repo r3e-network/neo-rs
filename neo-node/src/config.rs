@@ -16,7 +16,6 @@ use neo_core::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use zeroize::Zeroizing;
 use std::{
     env, fs,
     fs::OpenOptions,
@@ -26,6 +25,7 @@ use std::{
     time::Duration,
 };
 use url::Url;
+use zeroize::Zeroizing;
 
 fn plugins_directory() -> PathBuf {
     match env::var_os("NEO_PLUGINS_DIR") {

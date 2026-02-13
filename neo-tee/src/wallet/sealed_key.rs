@@ -72,7 +72,11 @@ impl SealedKey {
             ));
         }
 
-        Ok(Zeroizing::new(unseal_data(&self.sealed_data, &sealing_key, None)?))
+        Ok(Zeroizing::new(unseal_data(
+            &self.sealed_data,
+            &sealing_key,
+            None,
+        )?))
     }
 
     /// Save sealed key to file

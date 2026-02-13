@@ -9,7 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use crate::{RpcClient, TransactionManager, RpcError};
+use crate::{RpcClient, RpcError, TransactionManager};
 use neo_core::{Signer, Transaction, TransactionAttribute};
 use rand::Rng;
 use std::sync::Arc;

@@ -33,10 +33,7 @@ impl StateApi {
 
     /// Get state root by index
     /// Matches C# `GetStateRootAsync`
-    pub async fn get_state_root(
-        &self,
-        index: u32,
-    ) -> Result<RpcStateRoot, RpcError> {
+    pub async fn get_state_root(&self, index: u32) -> Result<RpcStateRoot, RpcError> {
         let result = self
             .rpc_client
             .rpc_send_async("getstateroot", vec![JToken::Number(f64::from(index))])
@@ -101,9 +98,7 @@ impl StateApi {
 
     /// Get state height information
     /// Matches C# `GetStateHeightAsync`
-    pub async fn get_state_height(
-        &self,
-    ) -> Result<(Option<u32>, Option<u32>), RpcError> {
+    pub async fn get_state_height(&self) -> Result<(Option<u32>, Option<u32>), RpcError> {
         let result = self
             .rpc_client
             .rpc_send_async("getstateheight", vec![])

@@ -215,7 +215,6 @@ pub enum CoreError {
         /// Description of the runtime failure
         message: String,
     },
-
 }
 
 impl CoreError {

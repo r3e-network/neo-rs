@@ -167,7 +167,10 @@ mod tests {
     fn test_to_stack_item_requires_sender() {
         let tx = Transaction::new();
         let result = tx.to_stack_item();
-        assert!(result.is_err(), "to_stack_item should return Err when sender is missing");
+        assert!(
+            result.is_err(),
+            "to_stack_item should return Err when sender is missing"
+        );
     }
 
     /// Test FromStackItem returns error (matches C# NotSupportedException).
@@ -175,7 +178,10 @@ mod tests {
     fn test_from_stack_item_not_supported() {
         let mut tx = Transaction::new();
         let result = tx.from_stack_item(StackItem::null());
-        assert!(result.is_err(), "Transaction::from_stack_item should return Err for unsupported operation");
+        assert!(
+            result.is_err(),
+            "Transaction::from_stack_item should return Err for unsupported operation"
+        );
     }
 
     /// Test transaction size limits (matches C# size validation behavior)

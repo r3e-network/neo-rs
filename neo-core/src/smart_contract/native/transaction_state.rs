@@ -106,7 +106,9 @@ impl IInteroperable for TransactionState {
             );
         }
 
-        Ok(StackItem::from_struct(vec![StackItem::from_int(self.block_index)]))
+        Ok(StackItem::from_struct(vec![StackItem::from_int(
+            self.block_index,
+        )]))
     }
 
     fn clone_box(&self) -> Box<dyn IInteroperable> {
@@ -134,8 +136,11 @@ mod tests {
     }
 
     fn stack_bytes(state: &TransactionState) -> Vec<u8> {
-        BinarySerializer::serialize(&state.to_stack_item().expect("to_stack_item"), &ExecutionEngineLimits::default())
-            .expect("serialize stack item")
+        BinarySerializer::serialize(
+            &state.to_stack_item().expect("to_stack_item"),
+            &ExecutionEngineLimits::default(),
+        )
+        .expect("serialize stack item")
     }
 
     fn decode_stack(bytes: &[u8]) -> StackItem {

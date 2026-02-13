@@ -71,7 +71,8 @@ impl ExtendedKey {
         private_key.copy_from_slice(&i[..32]);
         chain_code.copy_from_slice(&i[32..]);
 
-        let public_key = ECC::generate_public_key(&private_key, curve).map_err(|e| e.to_string())?;
+        let public_key =
+            ECC::generate_public_key(&private_key, curve).map_err(|e| e.to_string())?;
 
         Ok(Self {
             private_key,
@@ -99,7 +100,10 @@ impl ExtendedKey {
             data[0] = 0;
             data[1..33].copy_from_slice(&self.private_key);
         } else {
-            let pub_bytes = self.public_key.encode_point(true).map_err(|e| e.to_string())?;
+            let pub_bytes = self
+                .public_key
+                .encode_point(true)
+                .map_err(|e| e.to_string())?;
             if pub_bytes.len() != 33 {
                 return Err("Invalid public key length".to_string());
             }
@@ -114,7 +118,8 @@ impl ExtendedKey {
 
         let order = curve_order(self.public_key.curve())?;
         let private_key = add_mod_n(il, &self.private_key, &order)?;
-        let public_key = ECC::generate_public_key(&private_key, self.public_key.curve()).map_err(|e| e.to_string())?;
+        let public_key = ECC::generate_public_key(&private_key, self.public_key.curve())
+            .map_err(|e| e.to_string())?;
 
         Ok(Self {
             private_key,

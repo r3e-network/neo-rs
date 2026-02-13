@@ -453,13 +453,18 @@ where
 
                     if should_merge {
                         if !full_state {
-                            let child_hash = node.next.as_ref()
-                                .ok_or_else(|| MptError::invalid("extension node missing child during merge"))?
+                            let child_hash = node
+                                .next
+                                .as_ref()
+                                .ok_or_else(|| {
+                                    MptError::invalid("extension node missing child during merge")
+                                })?
                                 .hash();
                             cache.delete_node(child_hash)?;
                         }
-                        let next_node = node.take_next()
-                            .ok_or_else(|| MptError::invalid("extension node missing child during take"))?;
+                        let next_node = node.take_next().ok_or_else(|| {
+                            MptError::invalid("extension node missing child during take")
+                        })?;
                         node.key.extend_from_slice(&next_node.key);
                         node.next = next_node.next;
                     }

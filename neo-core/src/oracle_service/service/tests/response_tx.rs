@@ -69,7 +69,10 @@ fn create_response_tx_matches_csharp_fee_math() {
     let _guard = runtime.enter();
     let system =
         crate::neo_system::NeoSystem::new(settings.clone(), None, None).expect("neo system");
-    let oracle_settings = OracleServiceSettings { network: settings.network, ..Default::default() };
+    let oracle_settings = OracleServiceSettings {
+        network: settings.network,
+        ..Default::default()
+    };
     let service = OracleService::new(oracle_settings, system).expect("oracle service");
     let snapshot = service.snapshot_cache();
 

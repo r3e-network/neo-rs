@@ -265,8 +265,9 @@ impl Secp256k1Crypto {
 
         let rec_id = RecoveryId::from_i32(i32::from(rec_id))
             .map_err(|e| CryptoError::invalid_signature(format!("Invalid recovery id: {e}")))?;
-        let recoverable = RecoverableSignature::from_compact(&sig_bytes, rec_id)
-            .map_err(|e| CryptoError::invalid_signature(format!("Invalid recoverable signature: {e}")))?;
+        let recoverable = RecoverableSignature::from_compact(&sig_bytes, rec_id).map_err(|e| {
+            CryptoError::invalid_signature(format!("Invalid recoverable signature: {e}"))
+        })?;
 
         let secp = Secp256k1::new();
         let public_key = secp
@@ -402,9 +403,7 @@ impl Base58 {
         let (payload, checksum) = bytes.split_at(bytes.len() - 4);
         let expected = NeoHash::hash256(payload);
         if checksum != &expected[..4] {
-            return Err(CryptoError::encoding_error(
-                "Invalid Base58Check checksum",
-            ));
+            return Err(CryptoError::encoding_error("Invalid Base58Check checksum"));
         }
 
         Ok(payload.to_vec())
@@ -928,9 +927,7 @@ impl Bls12381Crypto {
         use blst::{blst_p1, blst_p1_affine};
 
         if signatures.is_empty() {
-            return Err(CryptoError::invalid_argument(
-                "No signatures to aggregate",
-            ));
+            return Err(CryptoError::invalid_argument("No signatures to aggregate"));
         }
 
         if signatures.len() == 1 {
@@ -1027,9 +1024,7 @@ impl Bls12381Crypto {
                 if blst::blst_p2_affine_is_inf(&pk_affine)
                     || !blst::blst_p2_affine_in_g2(&pk_affine)
                 {
-                    return Err(CryptoError::invalid_key(
-                        "Public key not in G2 subgroup",
-                    ));
+                    return Err(CryptoError::invalid_key("Public key not in G2 subgroup"));
                 }
                 blst::blst_p2_add_or_double_affine(&mut agg_pk, &agg_pk, &pk_affine);
             }

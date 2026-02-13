@@ -84,11 +84,8 @@ impl StorageItem {
                 bytes
             }
             StorageCache::Interoperable(interoperable) => match interoperable.to_stack_item() {
-                Ok(item) => BinarySerializer::serialize(
-                    &item,
-                    &ExecutionEngineLimits::default(),
-                )
-                .unwrap_or_default(),
+                Ok(item) => BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
+                    .unwrap_or_default(),
                 Err(_) => Vec::new(),
             },
         }

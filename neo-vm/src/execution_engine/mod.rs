@@ -171,20 +171,12 @@ impl HostPtr {
     }
 
     /// Calls [`InteropHost::invoke_syscall`] on the wrapped host.
-    pub(crate) fn invoke_syscall(
-        &self,
-        engine: &mut ExecutionEngine,
-        hash: u32,
-    ) -> VmResult<()> {
+    pub(crate) fn invoke_syscall(&self, engine: &mut ExecutionEngine, hash: u32) -> VmResult<()> {
         unsafe { (*self.0).invoke_syscall(engine, hash) }
     }
 
     /// Calls [`InteropHost::on_callt`] on the wrapped host.
-    pub(crate) fn on_callt(
-        &self,
-        engine: &mut ExecutionEngine,
-        token_id: u16,
-    ) -> VmResult<()> {
+    pub(crate) fn on_callt(&self, engine: &mut ExecutionEngine, token_id: u16) -> VmResult<()> {
         unsafe { (*self.0).on_callt(engine, token_id) }
     }
 }

@@ -9,11 +9,11 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
+use crate::error::CoreError;
 use crate::macros::{OptionExt, ValidateLength};
 use crate::neo_io::serializable::helper::get_var_size;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::smart_contract::IInteroperable;
-use crate::error::CoreError;
 use crate::witness_rule::{WitnessRule, WitnessRuleAction};
 use crate::{
     cryptography::{ECCurve, ECPoint},
@@ -303,7 +303,9 @@ impl Serializable for Signer {
                 .validate_max_length(MAX_SUBITEMS, "Allowed groups")?;
             writer.write_var_uint(self.allowed_groups.len() as u64)?;
             for group in &self.allowed_groups {
-                let encoded = group.encode_point(true).map_err(|e| IoError::invalid_data(e.to_string()))?;
+                let encoded = group
+                    .encode_point(true)
+                    .map_err(|e| IoError::invalid_data(e.to_string()))?;
                 if encoded.len() != 33 {
                     return Err(IoError::invalid_data("Group must be compressed"));
                 }
@@ -393,7 +395,9 @@ impl IInteroperable for Signer {
     fn from_stack_item(&mut self, _stack_item: StackItem) -> Result<(), CoreError> {
         // This operation is not supported for Signer.
         // The C# implementation throws NotSupportedException.
-        Err(CoreError::InvalidOperation { message: "Signer::from_stack_item is not supported".into() })
+        Err(CoreError::InvalidOperation {
+            message: "Signer::from_stack_item is not supported".into(),
+        })
     }
 
     fn to_stack_item(&self) -> Result<StackItem, CoreError> {

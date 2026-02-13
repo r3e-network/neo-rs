@@ -158,17 +158,17 @@ impl NativeContract for PolicyContract {
                         .get_current_block_time()
                         .map_err(Error::invalid_operation)?;
                     let timestamp_bytes = Self::encode_u64(timestamp);
-                    let prefix_key =
-                        StorageKey::new(Self::ID, vec![Self::PREFIX_BLOCKED_ACCOUNT]);
+                    let prefix_key = StorageKey::new(Self::ID, vec![Self::PREFIX_BLOCKED_ACCOUNT]);
                     let all_keys: Vec<StorageKey> = snapshot_ref
-                        .find(Some(&prefix_key), crate::persistence::seek_direction::SeekDirection::Forward)
+                        .find(
+                            Some(&prefix_key),
+                            crate::persistence::seek_direction::SeekDirection::Forward,
+                        )
                         .map(|(key, _)| key)
                         .collect();
                     for key in all_keys {
-                        engine.set_storage(
-                            key,
-                            StorageItem::from_bytes(timestamp_bytes.clone()),
-                        )?;
+                        engine
+                            .set_storage(key, StorageItem::from_bytes(timestamp_bytes.clone()))?;
                     }
                 }
             }

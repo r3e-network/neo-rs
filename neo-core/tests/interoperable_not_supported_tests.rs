@@ -10,7 +10,10 @@ use neo_vm::StackItem;
 fn signer_from_stack_item_returns_error() {
     let mut signer = Signer::new(UInt160::zero(), WitnessScope::NONE);
     let result = signer.from_stack_item(StackItem::null());
-    assert!(result.is_err(), "Signer::from_stack_item should return Err for unsupported operation");
+    assert!(
+        result.is_err(),
+        "Signer::from_stack_item should return Err for unsupported operation"
+    );
 }
 
 #[test]
@@ -22,12 +25,18 @@ fn notify_event_args_from_stack_item_returns_error() {
         Vec::new(),
     );
     let result = args.from_stack_item(StackItem::null());
-    assert!(result.is_err(), "NotifyEventArgs::from_stack_item should return Err");
+    assert!(
+        result.is_err(),
+        "NotifyEventArgs::from_stack_item should return Err"
+    );
 }
 
 #[test]
 fn trimmed_block_from_stack_item_returns_error() {
     let mut block = TrimmedBlock::create(BlockHeader::default(), Vec::new());
     let result = block.from_stack_item(StackItem::null());
-    assert!(result.is_err(), "TrimmedBlock::from_stack_item should return Err");
+    assert!(
+        result.is_err(),
+        "TrimmedBlock::from_stack_item should return Err"
+    );
 }

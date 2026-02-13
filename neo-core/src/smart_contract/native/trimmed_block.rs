@@ -67,7 +67,9 @@ impl Serializable for TrimmedBlock {
 impl IInteroperable for TrimmedBlock {
     fn from_stack_item(&mut self, _stack_item: StackItem) -> Result<(), CoreError> {
         // Not supported in C# implementation (throws NotSupportedException)
-        Err(CoreError::invalid_operation("FromStackItem is not supported for TrimmedBlock"))
+        Err(CoreError::invalid_operation(
+            "FromStackItem is not supported for TrimmedBlock",
+        ))
     }
 
     fn to_stack_item(&self) -> Result<StackItem, CoreError> {

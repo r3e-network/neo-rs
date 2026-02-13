@@ -97,9 +97,11 @@ mod tests {
     fn seed_gas_balance(store: &mut StoreCache, account: UInt160, amount: i64) {
         let key = StorageKey::create_with_uint160(GasToken::new().id(), PREFIX_ACCOUNT, &account);
         let state = AccountState::with_balance(BigInt::from(amount));
-        let bytes =
-            BinarySerializer::serialize(&state.to_stack_item().expect("to_stack_item"), &ExecutionEngineLimits::default())
-                .expect("serialize account state");
+        let bytes = BinarySerializer::serialize(
+            &state.to_stack_item().expect("to_stack_item"),
+            &ExecutionEngineLimits::default(),
+        )
+        .expect("serialize account state");
         store
             .data_cache()
             .update(key, StorageItem::from_bytes(bytes));

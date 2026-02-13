@@ -9,7 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use crate::{Nep17Api, RpcClient, TransactionManagerFactory, RpcError};
+use crate::{Nep17Api, RpcClient, RpcError, TransactionManagerFactory};
 use neo_core::network::p2p::helper::get_sign_data_vec;
 use neo_core::persistence::DataCache;
 use neo_core::smart_contract::native::GasToken;
@@ -109,10 +109,7 @@ impl TransactionManager {
 
     /// Add Signature
     /// Matches C# `AddSignature`
-    pub fn add_signature(
-        &mut self,
-        key: &KeyPair,
-    ) -> Result<&mut Self, RpcError> {
+    pub fn add_signature(&mut self, key: &KeyPair) -> Result<&mut Self, RpcError> {
         let public_point = key.get_public_key_point()?;
         let contract = Contract::create_signature_contract(public_point);
         self.add_sign_item(contract, key.clone())?;
@@ -151,10 +148,7 @@ impl TransactionManager {
 
     /// Add witness with contract
     /// Matches C# `AddWitness`
-    pub fn add_witness(
-        &mut self,
-        contract: Contract,
-    ) -> Result<&mut Self, RpcError> {
+    pub fn add_witness(&mut self, contract: Contract) -> Result<&mut Self, RpcError> {
         if !self.context.add_contract(contract) {
             return Err("AddWitness failed!".into());
         }
@@ -165,10 +159,7 @@ impl TransactionManager {
     /// Matches C# `AddWitness` with `UInt160`.
     ///
     /// Note: Contract lookup requires an RPC call; use [`Self::add_witness_with_hash_async`].
-    pub fn add_witness_with_hash(
-        &mut self,
-        script_hash: &UInt160,
-    ) -> Result<&mut Self, RpcError> {
+    pub fn add_witness_with_hash(&mut self, script_hash: &UInt160) -> Result<&mut Self, RpcError> {
         let contract = Contract::create_with_hash(*script_hash, Vec::new());
         self.add_witness(contract)
     }
@@ -245,11 +236,7 @@ impl TransactionManager {
 
     // Helper methods
 
-    fn add_sign_item(
-        &mut self,
-        contract: Contract,
-        key: KeyPair,
-    ) -> Result<(), RpcError> {
+    fn add_sign_item(&mut self, contract: Contract, key: KeyPair) -> Result<(), RpcError> {
         let hash = contract.script_hash();
         let script_hashes = self
             .tx
@@ -290,10 +277,7 @@ impl TransactionManager {
         Vec::new()
     }
 
-    async fn get_contract_async(
-        &self,
-        script_hash: &UInt160,
-    ) -> Result<Contract, RpcError> {
+    async fn get_contract_async(&self, script_hash: &UInt160) -> Result<Contract, RpcError> {
         let state = self
             ._rpc_client
             .get_contract_state(&script_hash.to_string())

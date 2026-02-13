@@ -269,7 +269,9 @@ impl IInteroperable for ContractState {
         let id = match items[0].as_int() {
             Ok(value) => value.to_i32().unwrap_or_default(),
             Err(_) => {
-                return Err(CoreError::invalid_format("ContractState id must be Integer"));
+                return Err(CoreError::invalid_format(
+                    "ContractState id must be Integer",
+                ));
             }
         };
 

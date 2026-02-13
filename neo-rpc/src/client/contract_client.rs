@@ -131,10 +131,7 @@ impl ContractClient {
     }
 
     /// Helper to emit argument based on type
-    fn emit_argument(
-        sb: &mut ScriptBuilder,
-        arg: &serde_json::Value,
-    ) -> Result<(), RpcError> {
+    fn emit_argument(sb: &mut ScriptBuilder, arg: &serde_json::Value) -> Result<(), RpcError> {
         match arg {
             serde_json::Value::Null => {
                 sb.emit_opcode(OpCode::PUSHNULL);

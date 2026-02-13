@@ -11,18 +11,14 @@ fn signer_builder_new() {
 
 #[test]
 fn signer_builder_sets_account() {
-    let signer = SignerBuilder::new()
-        .account(UInt160::zero())
-        .build();
+    let signer = SignerBuilder::new().account(UInt160::zero()).build();
 
     assert_eq!(signer.account, UInt160::zero());
 }
 
 #[test]
 fn signer_builder_allows_contract() {
-    let signer = SignerBuilder::new()
-        .allow_contract(UInt160::zero())
-        .build();
+    let signer = SignerBuilder::new().allow_contract(UInt160::zero()).build();
 
     assert_eq!(signer.allowed_contracts, vec![UInt160::zero()]);
 }
@@ -35,9 +31,7 @@ fn signer_builder_allows_group() {
     )
     .expect("ecpoint");
 
-    let signer = SignerBuilder::new()
-        .allow_group(group.clone())
-        .build();
+    let signer = SignerBuilder::new().allow_group(group.clone()).build();
 
     assert_eq!(signer.allowed_groups, vec![group]);
 }

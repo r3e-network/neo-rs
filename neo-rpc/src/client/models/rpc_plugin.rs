@@ -136,7 +136,10 @@ mod tests {
         path.push("Neo.Network.RPC.Tests");
         path.push("RpcTestCases.json");
         if !path.exists() {
-            eprintln!("SKIP: neo_csharp submodule not initialized ({})", path.display());
+            eprintln!(
+                "SKIP: neo_csharp submodule not initialized ({})",
+                path.display()
+            );
             return None;
         }
         let payload = fs::read_to_string(&path).expect("read RpcTestCases.json");
@@ -169,7 +172,9 @@ mod tests {
 
     #[test]
     fn plugins_to_json_matches_rpc_test_case() {
-        let Some(expected) = load_rpc_case_result_array("listpluginsasync") else { return; };
+        let Some(expected) = load_rpc_case_result_array("listpluginsasync") else {
+            return;
+        };
         let parsed = expected
             .children()
             .iter()

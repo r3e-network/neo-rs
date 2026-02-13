@@ -181,7 +181,9 @@ impl IInteroperable for AccountState {
     }
 
     fn to_stack_item(&self) -> Result<StackItem, CoreError> {
-        Ok(StackItem::from_struct(vec![StackItem::from_int(self.balance.clone())]))
+        Ok(StackItem::from_struct(vec![StackItem::from_int(
+            self.balance.clone(),
+        )]))
     }
 
     fn clone_box(&self) -> Box<dyn IInteroperable> {

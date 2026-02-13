@@ -137,7 +137,10 @@ mod tests {
         path.push("Neo.Network.RPC.Tests");
         path.push("RpcTestCases.json");
         if !path.exists() {
-            eprintln!("SKIP: neo_csharp submodule not initialized ({})", path.display());
+            eprintln!(
+                "SKIP: neo_csharp submodule not initialized ({})",
+                path.display()
+            );
             return None;
         }
         let payload = fs::read_to_string(&path).expect("read RpcTestCases.json");
@@ -196,7 +199,9 @@ mod tests {
 
     #[test]
     fn request_to_json_matches_rpc_test_case_with_params() {
-        let Some(request) = load_rpc_case_request("sendrawtransactionasyncerror") else { return; };
+        let Some(request) = load_rpc_case_request("sendrawtransactionasyncerror") else {
+            return;
+        };
         let expected = build_expected_request(&request);
         let parsed = RpcRequest::from_json(&request).expect("parse");
         let actual = parsed.to_json();
@@ -205,7 +210,9 @@ mod tests {
 
     #[test]
     fn request_to_json_matches_rpc_test_case_without_params() {
-        let Some(request) = load_rpc_case_request("getbestblockhashasync") else { return; };
+        let Some(request) = load_rpc_case_request("getbestblockhashasync") else {
+            return;
+        };
         let expected = build_expected_request(&request);
         let parsed = RpcRequest::from_json(&request).expect("parse");
         let actual = parsed.to_json();

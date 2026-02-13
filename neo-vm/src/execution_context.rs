@@ -488,8 +488,7 @@ impl ExecutionContext {
         let mut shared = self.shared_states.clone();
         // C# Clone() creates a brand-new EvaluationStack so the callee
         // does not share the caller's operand stack.
-        shared.evaluation_stack =
-            EvaluationStack::new(shared.reference_counter.clone());
+        shared.evaluation_stack = EvaluationStack::new(shared.reference_counter.clone());
         Self {
             shared_states: shared,
             instruction_pointer: position,

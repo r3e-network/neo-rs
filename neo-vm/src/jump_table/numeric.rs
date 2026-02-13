@@ -35,7 +35,11 @@ fn check_bigint_size(value: &BigInt) -> VmResult<()> {
     let bits = value.bits();
     // Zero encodes as a single byte in signed two's-complement representation.
     // For non-zero values: need `bits` magnitude bits + 1 sign bit, rounded up to bytes.
-    let byte_len = if bits == 0 { 1 } else { (bits as usize + 8) / 8 };
+    let byte_len = if bits == 0 {
+        1
+    } else {
+        (bits as usize + 8) / 8
+    };
     if byte_len > MAX_BIGINT_SIZE {
         return Err(VmError::invalid_operation_msg(format!(
             "BigInt size {byte_len} bytes exceeds maximum {MAX_BIGINT_SIZE} bytes"

@@ -404,9 +404,10 @@ impl KeyPair {
                     message: format!("Failed to generate public key: {}", e),
                 }
             })?;
-        let compressed = ECC::compress_public_key(&public_point).map_err(|e| Error::InvalidOperation {
-            message: format!("Failed to compress public key: {}", e),
-        })?;
+        let compressed =
+            ECC::compress_public_key(&public_point).map_err(|e| Error::InvalidOperation {
+                message: format!("Failed to compress public key: {}", e),
+            })?;
 
         let mut script = Vec::new();
         script.push(0x0c); // PUSHDATA1

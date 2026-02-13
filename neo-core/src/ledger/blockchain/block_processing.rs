@@ -86,8 +86,7 @@ impl Blockchain {
                     unverified.values().map(|e| e.blocks.len()).sum::<usize>()
                 };
                 if unverified_count >= 10 {
-                    self.persist_block_sequence_parallel(block.clone())
-                        .await;
+                    self.persist_block_sequence_parallel(block.clone()).await;
                     return VerifyResult::Succeed;
                 }
             }
@@ -160,10 +159,8 @@ impl Blockchain {
 
             let succeeded = self.persist_block_via_system(&next_block);
             if succeeded {
-                self.handle_persist_completed(PersistCompleted {
-                    block: next_block,
-                })
-                .await;
+                self.handle_persist_completed(PersistCompleted { block: next_block })
+                    .await;
             } else if let Some(context) = &self.system_context {
                 // In fast sync mode, still record the block even if execution failed
                 context.record_block(next_block);

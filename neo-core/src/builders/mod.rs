@@ -3,11 +3,11 @@
 //! currently required by the tests while keeping the API ergonomic for future
 //! extensions.
 
+use crate::error::CoreError;
 use crate::network::p2p::payloads::{
     Conflicts, NotValidBefore, OracleResponse, OracleResponseCode, Signer, Transaction,
     TransactionAttribute, Witness, WitnessCondition, WitnessRule, WitnessRuleAction,
 };
-use crate::error::CoreError;
 use crate::{cryptography::ECPoint, UInt160, UInt256, WitnessScope};
 use neo_vm::{op_code::OpCode, script_builder::ScriptBuilder};
 

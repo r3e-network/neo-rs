@@ -92,12 +92,16 @@ impl IInteroperable for Transaction {
     fn from_stack_item(&mut self, _stack_item: StackItem) -> Result<(), CoreError> {
         // This operation is not supported for Transaction.
         // The C# implementation throws NotSupportedException.
-        Err(CoreError::invalid_operation("FromStackItem is not supported for Transaction"))
+        Err(CoreError::invalid_operation(
+            "FromStackItem is not supported for Transaction",
+        ))
     }
 
     fn to_stack_item(&self) -> Result<StackItem, CoreError> {
         if self.signers.is_empty() {
-            return Err(CoreError::invalid_argument("Sender is not specified in the transaction"));
+            return Err(CoreError::invalid_argument(
+                "Sender is not specified in the transaction",
+            ));
         }
         let sender = self.signers[0].account.to_bytes();
 

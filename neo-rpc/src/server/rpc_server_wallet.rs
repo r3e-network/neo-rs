@@ -1019,10 +1019,8 @@ impl RpcServerWallet {
 
         send(actor_ref)?;
 
-        let result = tokio::task::block_in_place(|| {
-            Handle::current().block_on(rx)
-        })
-        .map_err(|err| internal_error(err.to_string()))?;
+        let result = tokio::task::block_in_place(|| Handle::current().block_on(rx))
+            .map_err(|err| internal_error(err.to_string()))?;
         Ok(result)
     }
 }
