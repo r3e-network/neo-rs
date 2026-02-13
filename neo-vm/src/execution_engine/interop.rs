@@ -32,7 +32,7 @@ impl ExecutionEngine {
     ///
     /// The caller must ensure that `host` remains valid for the lifetime of this
     /// `ExecutionEngine` and that no aliasing `&mut` references exist during callbacks.
-    pub fn set_interop_host(&mut self, host: *mut dyn InteropHost) {
+    pub unsafe fn set_interop_host(&mut self, host: *mut dyn InteropHost) {
         // SAFETY: The caller is responsible for upholding the HostPtr invariants.
         self.interop_host = Some(unsafe { HostPtr::new(host) });
     }

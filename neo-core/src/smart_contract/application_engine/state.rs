@@ -70,7 +70,10 @@ impl ApplicationEngine {
     pub(super) fn attach_host(&mut self) {
         let host: &mut dyn InteropHost = self;
         let host_ptr = host as *mut dyn InteropHost;
-        self.vm_engine.engine_mut().set_interop_host(host_ptr);
+        // SAFETY: `host_ptr` is derived from `&mut self` and the
+        // `ApplicationEngine` owns the `VmEngine`, so the pointer remains
+        // valid for the engine's lifetime.
+        unsafe { self.vm_engine.engine_mut().set_interop_host(host_ptr) };
     }
 
     fn register_default_interops(&mut self) -> Result<()> {

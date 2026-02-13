@@ -4,7 +4,7 @@ use neo_vm::execution_context::ExecutionContext;
 use neo_vm::instruction::Instruction;
 
 /// Diagnostic interface for ApplicationEngine (matches C# IDiagnostic)
-pub trait IDiagnostic: std::fmt::Debug {
+pub trait IDiagnostic: std::fmt::Debug + Send {
     /// Called when ApplicationEngine is initialized
     fn initialized(&mut self, engine: &mut crate::smart_contract::ApplicationEngine);
 

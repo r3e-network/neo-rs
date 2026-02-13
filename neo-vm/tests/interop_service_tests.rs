@@ -106,7 +106,9 @@ fn delegates_to_host_when_handler_missing() {
 
     let mut host = Box::new(RecordingHost::default());
     let host_ptr: *mut dyn InteropHost = &mut *host;
-    engine.set_interop_host(host_ptr);
+    // SAFETY: `host_ptr` points to a live, pinned `Box<RecordingHost>` that
+    // outlives the engine and is not aliased mutably during callbacks.
+    unsafe { engine.set_interop_host(host_ptr) };
 
     service
         .invoke_by_hash(&mut engine, hash)

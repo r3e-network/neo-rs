@@ -100,6 +100,14 @@ const HASH_SIZE: usize = 32;
 #[derive(Clone, Copy)]
 pub(crate) struct HostPtr(*mut dyn InteropHost);
 
+// SAFETY: `HostPtr` wraps a raw pointer whose safety invariants are already
+// enforced by the `unsafe fn new` contract: the pointee must be valid for the
+// lifetime of the `HostPtr` and must not be aliased mutably during callbacks.
+// All access is serialized through `&mut ExecutionEngine`, so sending the
+// pointer across threads is safe when the engine itself is behind a `Mutex`.
+unsafe impl Send for HostPtr {}
+unsafe impl Sync for HostPtr {}
+
 impl HostPtr {
     /// Creates a new `HostPtr` from a raw pointer.
     ///

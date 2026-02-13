@@ -239,13 +239,11 @@ impl Session {
 
 // THREAD SAFETY
 //
-// `ApplicationEngine` (and the underlying `ExecutionEngine`) is not inherently
-// thread-safe. Session guards all mutable state with `parking_lot::Mutex` to
-// serialize access. The `Send`/`Sync` markers remain necessary because
-// `ApplicationEngine` does not implement them; the mutexes enforce exclusive
-// access when sessions move across threads.
-unsafe impl Send for Session {}
-unsafe impl Sync for Session {}
+// `ApplicationEngine` (and the underlying `ExecutionEngine`) is now `Send`
+// because `HostPtr` implements `Send + Sync` with its safety invariants
+// enforced at construction time. All mutable state in `Session` is guarded
+// by `parking_lot::Mutex`, so `Session` is naturally `Send + Sync` without
+// manual unsafe impls.
 
 #[cfg(test)]
 mod tests {
