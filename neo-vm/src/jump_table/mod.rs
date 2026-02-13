@@ -83,7 +83,22 @@ impl JumpTable {
     #[inline(always)]
     #[must_use]
     pub fn get_handler(&self, opcode: OpCode) -> Option<InstructionHandler> {
-        // SAFETY: Opcode is guaranteed to be in range 0-255
+        debug_assert!((opcode as usize) < self.handlers.len());
+        // SAFETY: OpCode is a u8 enum (0..=255) and handlers has exactly 256 entries.
+        unsafe { *self.handlers.get_unchecked(opcode as usize) }
+    }
+
+    /// Gets the handler for a raw `u8` opcode value.
+    ///
+    /// This is used in the hot execution loop where the opcode is already a `u8`.
+    /// The `debug_assert` catches out-of-bounds access in debug builds while
+    /// maintaining zero overhead in release builds.
+    #[inline(always)]
+    #[must_use]
+    pub fn get_handler_by_u8(&self, opcode: u8) -> Option<InstructionHandler> {
+        debug_assert!((opcode as usize) < self.handlers.len());
+        // SAFETY: opcode is u8 (0..=255) and handlers has exactly 256 entries,
+        // so the index is always in bounds.
         unsafe { *self.handlers.get_unchecked(opcode as usize) }
     }
 
@@ -91,7 +106,8 @@ impl JumpTable {
     /// This matches the C# implementation's indexer set accessor.
     #[inline]
     pub fn set_handler(&mut self, opcode: OpCode, handler: InstructionHandler) {
-        // SAFETY: Opcode is guaranteed to be in range 0-255
+        debug_assert!((opcode as usize) < self.handlers.len());
+        // SAFETY: OpCode is a u8 enum (0..=255) and handlers has exactly 256 entries.
         unsafe {
             *self.handlers.get_unchecked_mut(opcode as usize) = Some(handler);
         }
@@ -160,7 +176,8 @@ impl std::ops::Index<OpCode> for JumpTable {
 
     #[inline]
     fn index(&self, opcode: OpCode) -> &Self::Output {
-        // SAFETY: Opcode is guaranteed to be in range 0-255
+        debug_assert!((opcode as usize) < self.handlers.len());
+        // SAFETY: OpCode is a u8 enum (0..=255) and handlers has exactly 256 entries.
         unsafe {
             self.handlers
                 .get_unchecked(opcode as usize)
@@ -174,8 +191,8 @@ impl std::ops::IndexMut<OpCode> for JumpTable {
     #[inline]
     fn index_mut(&mut self, opcode: OpCode) -> &mut Self::Output {
         let idx = opcode as usize;
-        // We need to ensure the handler exists first
-        // SAFETY: Opcode is guaranteed to be in range 0-255
+        debug_assert!(idx < self.handlers.len());
+        // SAFETY: OpCode is a u8 enum (0..=255) and handlers has exactly 256 entries.
         unsafe {
             if self.handlers.get_unchecked(idx).is_none() {
                 *self.handlers.get_unchecked_mut(idx) = Some(

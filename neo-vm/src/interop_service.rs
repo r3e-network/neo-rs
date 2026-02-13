@@ -213,10 +213,8 @@ impl InteropService {
             return callback(engine);
         }
 
-        if let Some(host_ptr) = engine.interop_host_ptr() {
-            // Safety: the pointer originates from the engine's stored host reference
-            // and remains valid for the duration of this call.
-            unsafe { (*host_ptr).invoke_syscall(engine, hash) }
+        if let Some(result) = engine.invoke_host_syscall(hash) {
+            result
         } else {
             Err(VmError::invalid_operation_msg(format!(
                 "Syscall {name} requires an interop host"

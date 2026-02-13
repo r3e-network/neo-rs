@@ -17,9 +17,9 @@ impl ExecutionEngine {
         // Push the context onto the invocation stack
         self.invocation_stack.push(context);
 
-        if let Some(host_ptr) = self.interop_host {
+        if let Some(host) = self.interop_host {
             if let Some(new_context) = self.current_context().cloned() {
-                unsafe { (*host_ptr).on_context_loaded(self, &new_context)? };
+                host.on_context_loaded(self, &new_context)?;
             }
         }
 
@@ -59,11 +59,7 @@ impl ExecutionEngine {
             arguments.clear_references();
         }
 
-        if let Some(host_ptr) = self.interop_host {
-            // SAFETY: The host pointer is managed by the caller and guaranteed to remain valid
-            // while the execution engine lives. We only borrow it mutably here for the duration
-            // of this callback.
-            let host = unsafe { &mut *host_ptr };
+        if let Some(host) = self.interop_host {
             host.on_context_unloaded(self, context)?;
         }
 

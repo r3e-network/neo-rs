@@ -76,6 +76,111 @@ use std::convert::TryFrom;
 
 const HASH_SIZE: usize = 32;
 
+/// A wrapper around a raw host pointer that centralizes all unsafe access.
+///
+/// # Safety
+///
+/// This type exists to encapsulate the raw `*mut dyn InteropHost` pointer that the
+/// execution engine uses to call back into the host environment (e.g. `ApplicationEngine`).
+///
+/// The following invariants **must** be upheld by the caller who creates a `HostPtr`:
+///
+/// 1. **Lifetime**: The pointed-to `InteropHost` must outlive the `HostPtr` (and therefore
+///    the `ExecutionEngine` that holds it).
+/// 2. **Exclusive access**: While the `ExecutionEngine` holds this pointer, no other code
+///    should hold a mutable reference to the same `InteropHost`.
+/// 3. **Thread safety**: `HostPtr` is intentionally `!Send` and `!Sync` due to the raw
+///    pointer. Do not share across threads.
+/// 4. **Validity**: The pointer must not be dangling. The `Option` wrapper on the engine
+///    field handles the null case.
+///
+/// `HostPtr` is `Copy` because it wraps a raw pointer — this is required so that it can
+/// be extracted from `&self` before passing `&mut self` to the host callback methods
+/// (mirroring the original `Option<*mut dyn InteropHost>` which was also `Copy`).
+#[derive(Clone, Copy)]
+pub(crate) struct HostPtr(*mut dyn InteropHost);
+
+impl HostPtr {
+    /// Creates a new `HostPtr` from a raw pointer.
+    ///
+    /// # Safety
+    ///
+    /// The caller must guarantee that `ptr` is valid for the lifetime of this `HostPtr`
+    /// and that no aliasing `&mut` references exist during method calls.
+    pub(crate) unsafe fn new(ptr: *mut dyn InteropHost) -> Self {
+        Self(ptr)
+    }
+
+    /// Returns the underlying raw pointer (for API compatibility with callers that
+    /// need to pass it onward).
+    #[inline]
+    pub(crate) fn as_raw(&self) -> *mut dyn InteropHost {
+        self.0
+    }
+
+    /// Calls [`InteropHost::on_context_loaded`] on the wrapped host.
+    ///
+    /// # Safety (internal)
+    ///
+    /// Safe to call as long as the `HostPtr` invariants documented on the type are upheld.
+    pub(crate) fn on_context_loaded(
+        &self,
+        engine: &mut ExecutionEngine,
+        context: &ExecutionContext,
+    ) -> VmResult<()> {
+        // SAFETY: Invariant maintained by constructor contract — the pointer is valid
+        // and exclusively accessible for the duration of this call.
+        unsafe { (*self.0).on_context_loaded(engine, context) }
+    }
+
+    /// Calls [`InteropHost::on_context_unloaded`] on the wrapped host.
+    pub(crate) fn on_context_unloaded(
+        &self,
+        engine: &mut ExecutionEngine,
+        context: &ExecutionContext,
+    ) -> VmResult<()> {
+        unsafe { (*self.0).on_context_unloaded(engine, context) }
+    }
+
+    /// Calls [`InteropHost::pre_execute_instruction`] on the wrapped host.
+    pub(crate) fn pre_execute_instruction(
+        &self,
+        engine: &mut ExecutionEngine,
+        context: &ExecutionContext,
+        instruction: &Instruction,
+    ) -> VmResult<()> {
+        unsafe { (*self.0).pre_execute_instruction(engine, context, instruction) }
+    }
+
+    /// Calls [`InteropHost::post_execute_instruction`] on the wrapped host.
+    pub(crate) fn post_execute_instruction(
+        &self,
+        engine: &mut ExecutionEngine,
+        context: &ExecutionContext,
+        instruction: &Instruction,
+    ) -> VmResult<()> {
+        unsafe { (*self.0).post_execute_instruction(engine, context, instruction) }
+    }
+
+    /// Calls [`InteropHost::invoke_syscall`] on the wrapped host.
+    pub(crate) fn invoke_syscall(
+        &self,
+        engine: &mut ExecutionEngine,
+        hash: u32,
+    ) -> VmResult<()> {
+        unsafe { (*self.0).invoke_syscall(engine, hash) }
+    }
+
+    /// Calls [`InteropHost::on_callt`] on the wrapped host.
+    pub(crate) fn on_callt(
+        &self,
+        engine: &mut ExecutionEngine,
+        token_id: u16,
+    ) -> VmResult<()> {
+        unsafe { (*self.0).on_callt(engine, token_id) }
+    }
+}
+
 /// Default gas limit for execution (20 GAS)
 /// This is a reasonable default to prevent infinite loops and resource exhaustion
 /// Value is in fractional GAS units where 1 GAS = 100_000_000 (10^8)
@@ -106,39 +211,10 @@ pub struct ExecutionEngine {
 
     /// Host responsible for advanced syscall execution (`ApplicationEngine`).
     ///
-    /// # Safety Warning (H-3)
-    ///
-    /// This field uses a raw pointer (`*mut dyn InteropHost`) instead of a safe reference
-    /// or smart pointer. This design choice was made to avoid complex lifetime annotations
-    /// that would propagate throughout the codebase.
-    ///
-    /// ## Invariants that MUST be maintained:
-    ///
-    /// 1. **Lifetime**: The pointed-to `InteropHost` MUST outlive the `ExecutionEngine`.
-    ///    The caller (typically `ApplicationEngine`) is responsible for ensuring this.
-    ///
-    /// 2. **Exclusive Access**: While the `ExecutionEngine` holds this pointer, no other
-    ///    code should hold a mutable reference to the same `InteropHost`.
-    ///
-    /// 3. **Thread Safety**: The `ExecutionEngine` is not `Send` or `Sync` due to this
-    ///    raw pointer. Do not share across threads.
-    ///
-    /// 4. **Null Safety**: The pointer is wrapped in `Option`, so null checks are handled.
-    ///    However, a dangling pointer (pointing to freed memory) would cause UB.
-    ///
-    /// ## Why not use safer alternatives?
-    ///
-    /// - `&'a mut dyn InteropHost`: Would require lifetime parameter on `ExecutionEngine`,
-    ///   propagating to all users and making the API significantly more complex.
-    /// - `Arc<Mutex<dyn InteropHost>>`: Would add runtime overhead and potential deadlocks.
-    /// - `Box<dyn InteropHost>`: Would transfer ownership, but the host needs to outlive
-    ///   multiple engine invocations.
-    ///
-    /// ## Mitigation
-    ///
-    /// All unsafe dereferences are localized to a few methods with SAFETY comments.
-    /// The `ApplicationEngine` in neo-contract manages the lifetime correctly.
-    pub(crate) interop_host: Option<*mut dyn InteropHost>,
+    /// All unsafe pointer access is encapsulated inside [`HostPtr`], which provides
+    /// safe method wrappers for every `InteropHost` callback. See the `HostPtr` type
+    /// documentation for the safety invariants that callers must uphold.
+    pub(crate) interop_host: Option<HostPtr>,
 
     /// Effective call flags for the current execution context
     pub(crate) call_flags: CallFlags,

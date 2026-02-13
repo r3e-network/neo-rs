@@ -153,21 +153,17 @@ impl ExecutionEngine {
 
         // Only clone the context when an interop host is present – the clone is
         // expensive and the vast majority of instructions don't need it.
-        if let Some(host_ptr) = self.interop_host {
+        if let Some(host) = self.interop_host {
             let context_snapshot = self
                 .current_context()
                 .cloned()
                 .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-            // SAFETY: See interop_host field documentation for invariants
-            unsafe {
-                (*host_ptr).pre_execute_instruction(self, &context_snapshot, &instruction)?
-            };
+            host.pre_execute_instruction(self, &context_snapshot, &instruction)?;
         }
 
         // Execute the instruction - direct array access for optimal dispatch
         let opcode = instruction.opcode();
-        // SAFETY: Opcode is guaranteed to be in range 0-255
-        let handler = unsafe { *self.jump_table.handlers.get_unchecked(opcode as usize) };
+        let handler = self.jump_table.get_handler_by_u8(opcode as u8);
         let result = match handler {
             Some(h) => h(self, &instruction),
             None => Err(VmError::unsupported_operation_msg(format!(
@@ -245,10 +241,9 @@ impl ExecutionEngine {
     #[inline(always)]
     fn post_execute_instruction(&mut self, instruction: &Instruction) -> VmResult<()> {
         if self.reference_counter.count() < self.limits.max_stack_size as usize {
-            if let Some(host_ptr) = self.interop_host {
+            if let Some(host) = self.interop_host {
                 if let Some(context) = self.current_context().cloned() {
-                    // SAFETY: See interop_host field documentation for invariants
-                    unsafe { (*host_ptr).post_execute_instruction(self, &context, instruction)? };
+                    host.post_execute_instruction(self, &context, instruction)?;
                 }
             }
             return Ok(());
@@ -263,10 +258,9 @@ impl ExecutionEngine {
             )));
         }
 
-        if let Some(host_ptr) = self.interop_host {
+        if let Some(host) = self.interop_host {
             if let Some(context) = self.current_context().cloned() {
-                // SAFETY: See interop_host field documentation for invariants
-                unsafe { (*host_ptr).post_execute_instruction(self, &context, instruction)? };
+                host.post_execute_instruction(self, &context, instruction)?;
             }
         }
 

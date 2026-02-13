@@ -2,7 +2,7 @@
 // interop.rs - Interop service and host methods
 //
 
-use super::{ExecutionEngine, InteropHost, InteropService, VmError, VmResult};
+use super::{ExecutionEngine, HostPtr, InteropHost, InteropService, VmError, VmResult};
 
 impl ExecutionEngine {
     /// Sets the interop service used for syscall dispatch.
@@ -27,8 +27,14 @@ impl ExecutionEngine {
     }
 
     /// Assigns the host responsible for advanced interop handling.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `host` remains valid for the lifetime of this
+    /// `ExecutionEngine` and that no aliasing `&mut` references exist during callbacks.
     pub fn set_interop_host(&mut self, host: *mut dyn InteropHost) {
-        self.interop_host = Some(host);
+        // SAFETY: The caller is responsible for upholding the HostPtr invariants.
+        self.interop_host = Some(unsafe { HostPtr::new(host) });
     }
 
     /// Clears the registered interop host.
@@ -38,13 +44,30 @@ impl ExecutionEngine {
 
     /// Returns a mutable reference to the configured interop host, if any.
     pub fn interop_host_mut(&mut self) -> Option<&mut dyn InteropHost> {
-        self.interop_host.map(|ptr| unsafe { &mut *ptr })
+        self.interop_host.map(|h| {
+            // SAFETY: The HostPtr invariants guarantee the pointer is valid and
+            // exclusively accessible. The returned reference borrows `self` via
+            // the function signature, preventing aliasing.
+            unsafe { &mut *h.as_raw() }
+        })
     }
 
     /// Returns the raw pointer to the configured interop host, if any.
     #[must_use]
     pub fn interop_host_ptr(&self) -> Option<*mut dyn InteropHost> {
-        self.interop_host
+        self.interop_host.map(|h| h.as_raw())
+    }
+
+    /// Invokes a syscall on the configured interop host.
+    ///
+    /// Returns `Some(result)` if a host was present and the call was dispatched,
+    /// `None` if no host is configured.
+    pub fn invoke_host_syscall(&mut self, hash: u32) -> Option<VmResult<()>> {
+        if let Some(host) = self.interop_host {
+            Some(host.invoke_syscall(self, hash))
+        } else {
+            None
+        }
     }
 
     /// Invokes the CALLT opcode by delegating to the interop host.
@@ -52,10 +75,7 @@ impl ExecutionEngine {
     /// This method is called by the CALLT instruction handler to resolve method tokens
     /// and perform cross-contract calls via the `ApplicationEngine`.
     pub fn invoke_callt(&mut self, token_id: u16) -> VmResult<()> {
-        if let Some(host_ptr) = self.interop_host {
-            // SAFETY: The host pointer is managed by the caller (ApplicationEngine)
-            // and guaranteed to remain valid while the execution engine lives.
-            let host = unsafe { &mut *host_ptr };
+        if let Some(host) = self.interop_host {
             host.on_callt(self, token_id)
         } else {
             Err(VmError::invalid_operation_msg(format!(
