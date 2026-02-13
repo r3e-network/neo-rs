@@ -23,7 +23,6 @@ use hex::{decode as hex_decode, encode as hex_encode};
 use neo_primitives::{UInt160, UINT160_SIZE};
 use neo_vm::StackItem;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
 // Hash and Hasher now provided by impl_hash_for_fields macro
 use std::str::FromStr;
 
@@ -353,29 +352,15 @@ impl Serializable for Signer {
         // Read allowed contracts if flag is set
         if scopes.contains(WitnessScope::CUSTOM_CONTRACTS) {
             let count = reader.read_var_int(MAX_SUBITEMS as u64)? as usize;
-            if count == 0 {
-                return Err(IoError::invalid_data("Invalid allowed contracts count"));
-            }
             allowed_contracts.reserve(count);
             for _ in 0..count {
                 allowed_contracts.push(<UInt160 as Serializable>::deserialize(reader)?);
-            }
-
-            // Check for duplicates
-            let mut seen: HashSet<UInt160> = HashSet::new();
-            for contract in &allowed_contracts {
-                if !seen.insert(*contract) {
-                    return Err(IoError::invalid_data("Duplicate allowed contract"));
-                }
             }
         }
 
         // Read allowed groups if flag is set
         if scopes.contains(WitnessScope::CUSTOM_GROUPS) {
             let count = reader.read_var_int(MAX_SUBITEMS as u64)? as usize;
-            if count == 0 {
-                return Err(IoError::invalid_data("Invalid allowed groups count"));
-            }
             allowed_groups.reserve(count);
             for _ in 0..count {
                 let encoded = reader.read_bytes(ECPOINT_COMPRESSED_SIZE)?;
@@ -383,22 +368,11 @@ impl Serializable for Signer {
                     .map_err(|e| IoError::invalid_data(e.to_string()))?;
                 allowed_groups.push(point);
             }
-
-            // Check for duplicates
-            let mut seen: HashSet<Vec<u8>> = HashSet::new();
-            for group in &allowed_groups {
-                if !seen.insert(group.as_bytes().to_vec()) {
-                    return Err(IoError::invalid_data("Duplicate allowed group"));
-                }
-            }
         }
 
         // Read rules if flag is set
         if scopes.contains(WitnessScope::WITNESS_RULES) {
             let count = reader.read_var_int(MAX_SUBITEMS as u64)? as usize;
-            if count == 0 {
-                return Err(IoError::invalid_data("Invalid rules count"));
-            }
             rules.reserve(count);
             for _ in 0..count {
                 rules.push(<WitnessRule as Serializable>::deserialize(reader)?);
