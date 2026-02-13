@@ -43,6 +43,6 @@ impl ConsensusService {
     pub(in crate::service) fn send_event(&self, event: ConsensusEvent) -> ConsensusResult<()> {
         self.event_tx
             .try_send(event)
-            .map_err(|e| ConsensusError::ChannelError(e.to_string()))
+            .map_err(|e| ConsensusError::ChannelSendError(Box::new(e)))
     }
 }

@@ -402,9 +402,21 @@ async fn start_rpc_server_if_enabled(
         server.register_handlers(RpcServerOracle::register_handlers());
     }
 
+    // Build TLS config asynchronously before wrapping server in the lock
+    let tls_config = match neo_rpc::server::build_tls_config_from_settings(server.settings()).await
+    {
+        Ok(config) => config,
+        Err(err) => {
+            tracing::error!("RPC TLS configuration error: {}", err);
+            None
+        }
+    };
+
     let handle = Arc::new(ParkingRwLock::new(server));
     neo_rpc::server::register_server(network, Arc::clone(&handle));
-    handle.write().start_rpc_server(Arc::downgrade(&handle));
+    handle
+        .write()
+        .start_rpc_server(Arc::downgrade(&handle), tls_config);
 
     Ok(Some(handle))
 }

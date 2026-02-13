@@ -51,7 +51,7 @@ async fn test_primary_calculation() {
 }
 
 #[tokio::test]
-#[ignore = "TODO: Update test for new security requirements - messages now require valid witness/signatures"]
+#[ignore = "Requires valid witness/signatures on ConsensusPayload — needs test helper that signs payloads with validator keys (see create_validators_with_keys)"]
 async fn test_message_deduplication() {
     let (tx, mut rx) = mpsc::channel(100);
     let validators = create_test_validators(7);

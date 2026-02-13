@@ -398,7 +398,7 @@ impl ConsensusContext {
         } else {
             BLOCK_TIME_MS
         };
-        base << self.view_number.min(4)
+        base << (self.view_number + 1).min(5)
     }
 
     /// Checks if the current view has timed out
@@ -697,11 +697,11 @@ impl ConsensusContext {
     }
 
     fn encode_state(state: &PersistedConsensusState) -> ConsensusResult<Vec<u8>> {
-        bincode::serialize(state).map_err(|e| ConsensusError::SerializationError(e.to_string()))
+        Ok(bincode::serialize(state)?)
     }
 
     fn decode_state(encoded: &[u8]) -> ConsensusResult<PersistedConsensusState> {
-        bincode::deserialize(encoded).map_err(|e| ConsensusError::SerializationError(e.to_string()))
+        Ok(bincode::deserialize(encoded)?)
     }
 }
 
@@ -813,20 +813,20 @@ mod tests {
         let validators = create_test_validators(7);
         let mut ctx = ConsensusContext::new(0, validators, None);
 
-        // View 0: 15s
-        assert_eq!(ctx.get_timeout(), BLOCK_TIME_MS);
-
-        // View 1: 30s
-        ctx.view_number = 1;
+        // View 0: base << 1 = 30s (matches C# shift by ViewNumber+1)
         assert_eq!(ctx.get_timeout(), BLOCK_TIME_MS * 2);
 
-        // View 2: 60s
-        ctx.view_number = 2;
+        // View 1: base << 2 = 60s
+        ctx.view_number = 1;
         assert_eq!(ctx.get_timeout(), BLOCK_TIME_MS * 4);
 
-        // View 4+: capped at 240s
+        // View 2: base << 3 = 120s
+        ctx.view_number = 2;
+        assert_eq!(ctx.get_timeout(), BLOCK_TIME_MS * 8);
+
+        // View 4+: capped at base << 5 = 480s
         ctx.view_number = 10;
-        assert_eq!(ctx.get_timeout(), BLOCK_TIME_MS * 16);
+        assert_eq!(ctx.get_timeout(), BLOCK_TIME_MS * 32);
     }
 
     #[test]
@@ -1062,8 +1062,8 @@ mod tests {
         let result = ConsensusContext::load(&corrupted_path, validators, None);
         assert!(result.is_err());
         match result {
-            Err(ConsensusError::SerializationError(_)) => {} // Expected
-            _ => panic!("Expected SerializationError"),
+            Err(ConsensusError::BincodeError(_)) => {} // Expected
+            _ => panic!("Expected BincodeError"),
         }
 
         // Clean up

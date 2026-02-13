@@ -138,9 +138,13 @@ pub enum ConsensusError {
     #[error("Already received message from validator {0}")]
     AlreadyReceived(u8),
 
-    /// Channel send error.
+    /// Channel send error (stringly-typed fallback).
     #[error("Channel send error: {0}")]
     ChannelError(String),
+
+    /// Channel send error with preserved source.
+    #[error("Channel send error")]
+    ChannelSendError(#[source] Box<dyn std::error::Error + Send + Sync>),
 
     /// Persistence error.
     #[error("Persistence error: {0}")]
@@ -150,9 +154,13 @@ pub enum ConsensusError {
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
 
-    /// Serialization error.
+    /// Serialization error (stringly-typed fallback).
     #[error("Serialization error: {0}")]
     SerializationError(String),
+
+    /// Bincode serialization/deserialization error.
+    #[error("Serialization error")]
+    BincodeError(#[from] bincode::Error),
 
     /// Insufficient signatures for block assembly.
     #[error("Insufficient signatures: required {required}, got {got}")]

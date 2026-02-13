@@ -19,7 +19,7 @@ async fn timer_tick_triggers_change_view_broadcast() {
 
     service.start(0, 0, UInt256::zero(), 0).unwrap();
     service
-        .on_timer_tick(crate::context::BLOCK_TIME_MS + 1)
+        .on_timer_tick(crate::context::BLOCK_TIME_MS * 2 + 1)
         .unwrap();
 
     let mut change_view = None;
@@ -56,12 +56,12 @@ async fn view_change_rotates_primary_by_view() {
 
     service
         .context
-        .reset_for_new_view(1, crate::context::BLOCK_TIME_MS + 1);
+        .reset_for_new_view(1, crate::context::BLOCK_TIME_MS * 2 + 1);
     assert_eq!(service.context().primary_index(), 2);
 
     service
         .context
-        .reset_for_new_view(2, crate::context::BLOCK_TIME_MS + 2);
+        .reset_for_new_view(2, crate::context::BLOCK_TIME_MS * 2 + 2);
     assert_eq!(service.context().primary_index(), 1);
 }
 
@@ -76,7 +76,7 @@ async fn timeout_view_change_allows_new_prepare_request() {
     while rx.try_recv().is_ok() {}
 
     service
-        .on_timer_tick(crate::context::BLOCK_TIME_MS + 1)
+        .on_timer_tick(crate::context::BLOCK_TIME_MS * 2 + 1)
         .unwrap();
 
     let mut change_view = None;

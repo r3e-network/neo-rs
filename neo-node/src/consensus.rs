@@ -544,10 +544,10 @@ impl ConsensusActor {
         }
     }
 
-    fn on_service_event(&mut self, event: ConsensusEvent) {
+    async fn on_service_event(&mut self, event: ConsensusEvent) {
         match event {
             ConsensusEvent::BroadcastMessage(payload) => {
-                self.broadcast_consensus_message(payload);
+                self.broadcast_consensus_message(payload).await;
             }
             ConsensusEvent::RequestTransactions { max_count, .. } => {
                 self.propose_transactions(max_count);
@@ -562,7 +562,7 @@ impl ConsensusActor {
         }
     }
 
-    fn broadcast_consensus_message(&mut self, payload: ConsensusPayload) {
+    async fn broadcast_consensus_message(&mut self, payload: ConsensusPayload) {
         let Some(service) = self.service.as_ref() else {
             return;
         };
@@ -573,7 +573,7 @@ impl ConsensusActor {
             let mut saved = self.save_recovery_to_store(service);
             if !saved {
                 if let Some(parent) = self.recovery_path.parent() {
-                    let _ = std::fs::create_dir_all(parent);
+                    let _ = tokio::fs::create_dir_all(parent).await;
                 }
                 if let Err(err) = service.save_context(&self.recovery_path) {
                     warn!(target: "neo", %err, "failed to persist consensus recovery log");
@@ -1128,7 +1128,7 @@ impl Actor for ConsensusActor {
 
         if let Ok(message) = envelope.downcast::<ConsensusActorMessage>() {
             match *message {
-                ConsensusActorMessage::ServiceEvent(event) => self.on_service_event(event),
+                ConsensusActorMessage::ServiceEvent(event) => self.on_service_event(event).await,
                 ConsensusActorMessage::TimerTick => self.on_timer_tick(),
                 ConsensusActorMessage::ManualStart => {
                     if self.service.is_none() {

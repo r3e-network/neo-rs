@@ -3,6 +3,7 @@ use crate::context::{ConsensusContext, ValidatorInfo};
 use crate::ConsensusSigner;
 use std::sync::Arc;
 use tokio::sync::mpsc;
+use zeroize::Zeroizing;
 
 /// The main consensus service implementing dBFT 2.0
 pub struct ConsensusService {
@@ -10,9 +11,10 @@ pub struct ConsensusService {
     pub(super) context: ConsensusContext,
     /// Network magic number
     pub(super) network: u32,
-    /// Private key for signing consensus messages (secp256r1 ECDSA)
+    /// Private key for signing consensus messages (secp256r1 ECDSA).
+    /// Wrapped in `Zeroizing` so key material is wiped from memory on drop.
     #[allow(dead_code)]
-    pub(super) private_key: Vec<u8>,
+    pub(super) private_key: Zeroizing<Vec<u8>>,
     /// Optional signer for consensus messages (wallet/HSM/external signer).
     pub(super) signer: Option<Arc<dyn ConsensusSigner>>,
     /// Event sender
@@ -34,7 +36,7 @@ impl ConsensusService {
         Self {
             context: ConsensusContext::new(0, validators, my_index),
             network,
-            private_key,
+            private_key: Zeroizing::new(private_key),
             signer: None,
             event_tx,
             running: false,
@@ -52,7 +54,7 @@ impl ConsensusService {
         Self {
             context,
             network,
-            private_key,
+            private_key: Zeroizing::new(private_key),
             signer: None,
             event_tx,
             running: false,
