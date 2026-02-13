@@ -34,9 +34,6 @@ jobs:
     name: Clippy
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      SCCACHE_GHA_ENABLED: true
-      RUSTC_WRAPPER: sccache
     steps:
       - uses: actions/checkout@v4
 
@@ -60,6 +57,17 @@ jobs:
 
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.7
+        continue-on-error: true
+
+      - name: Enable sccache (best-effort)
+        run: |
+          if sccache --start-server 2>/dev/null && sccache --show-stats 2>/dev/null; then
+            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+            echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+            echo "::notice::sccache enabled"
+          else
+            echo "::warning::sccache unavailable — falling back to direct compilation"
+          fi
 
       - name: Cache cargo registry & git
         uses: Swatinem/rust-cache@v2
@@ -87,9 +95,6 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      SCCACHE_GHA_ENABLED: true
-      RUSTC_WRAPPER: sccache
     steps:
       - uses: actions/checkout@v4
 
@@ -111,6 +116,17 @@ jobs:
 
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.7
+        continue-on-error: true
+
+      - name: Enable sccache (best-effort)
+        run: |
+          if sccache --start-server 2>/dev/null && sccache --show-stats 2>/dev/null; then
+            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+            echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+            echo "::notice::sccache enabled"
+          else
+            echo "::warning::sccache unavailable — falling back to direct compilation"
+          fi
 
       - name: Cache cargo registry & git
         uses: Swatinem/rust-cache@v2
