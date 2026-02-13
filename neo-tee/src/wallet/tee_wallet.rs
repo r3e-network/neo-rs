@@ -10,7 +10,6 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tracing::{info, warn};
-use zeroize::Zeroizing;
 
 /// TEE-protected wallet that stores keys in sealed format
 pub struct TeeWallet {
@@ -256,7 +255,7 @@ impl TeeWallet {
             .ok_or_else(|| TeeError::KeyNotFound(hex::encode(script_hash)))?;
 
         // Unseal the private key inside TEE
-        let private_key = Zeroizing::new(sealed_key.unseal(&self.enclave)?);
+        let private_key = sealed_key.unseal(&self.enclave)?;
 
         let signature = self.sign_with_key(&private_key, data)?;
 

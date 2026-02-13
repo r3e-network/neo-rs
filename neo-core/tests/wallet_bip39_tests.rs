@@ -121,7 +121,7 @@ fn test_vectors() {
         assert_eq!(mnemonic, expected_mnemonic);
         let words: Vec<&str> = mnemonic.split(' ').collect();
         let decoded = mnemonic_to_entropy(&words).unwrap();
-        assert_eq!(decoded, entropy);
+        assert_eq!(*decoded, entropy);
     }
 }
 

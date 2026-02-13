@@ -4,6 +4,7 @@ use crate::enclave::{seal_data, unseal_data, SealedData, TeeEnclave};
 use crate::error::{TeeError, TeeResult};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+use zeroize::Zeroizing;
 
 /// A sealed private key stored in TEE-protected format
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,8 +54,11 @@ impl SealedKey {
         })
     }
 
-    /// Unseal the private key
-    pub fn unseal(&self, enclave: &TeeEnclave) -> TeeResult<Vec<u8>> {
+    /// Unseal the private key.
+    ///
+    /// The returned bytes are wrapped in [`Zeroizing`] so the private key
+    /// material is automatically zeroed when dropped.
+    pub fn unseal(&self, enclave: &TeeEnclave) -> TeeResult<Zeroizing<Vec<u8>>> {
         let sealing_key = enclave.sealing_key()?;
 
         // Verify AAD matches
@@ -68,7 +72,7 @@ impl SealedKey {
             ));
         }
 
-        unseal_data(&self.sealed_data, &sealing_key, None)
+        Ok(Zeroizing::new(unseal_data(&self.sealed_data, &sealing_key, None)?))
     }
 
     /// Save sealed key to file
@@ -134,7 +138,7 @@ mod tests {
         .unwrap();
 
         let unsealed = sealed.unseal(&enclave).unwrap();
-        assert_eq!(unsealed, private_key);
+        assert_eq!(&*unsealed, &private_key);
     }
 
     #[test]
@@ -161,6 +165,6 @@ mod tests {
 
         let loaded = SealedKey::load_from_file(&key_path).unwrap();
         let unsealed = loaded.unseal(&enclave).unwrap();
-        assert_eq!(unsealed, private_key);
+        assert_eq!(&*unsealed, &private_key);
     }
 }

@@ -4,6 +4,7 @@ use crate::cryptography::Crypto;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::env;
+use zeroize::Zeroizing;
 
 // English last so reverse index prefers English for overlapping words.
 const WORDLIST_KEYS: [&str; 10] = [
@@ -41,12 +42,25 @@ static WORDLIST_REVERSE_INDEX: Lazy<HashMap<&'static str, usize>> = Lazy::new(||
 });
 
 /// Generates a BIP-39 mnemonic from entropy using the current locale (falls back to English).
+///
+/// # Security
+///
+/// The returned mnemonic words are private-key-equivalent material.
+/// Callers MUST ensure the returned `Vec<String>` is not persisted to disk
+/// or logged, and should be dropped as soon as possible. `String` heap
+/// allocations are not guaranteed to be zeroed by the allocator on drop;
+/// consider converting to a seed immediately and discarding the word list.
 pub fn get_mnemonic_code(entropy: &[u8]) -> Result<Vec<String>, String> {
     let language = current_language().unwrap_or_else(|| "en".to_string());
     get_mnemonic_code_with_language(entropy, &language)
 }
 
 /// Generates a BIP-39 mnemonic from entropy using the specified language code.
+///
+/// # Security
+///
+/// The returned mnemonic words are private-key-equivalent material.
+/// See [`get_mnemonic_code`] for security considerations.
 pub fn get_mnemonic_code_with_language(
     entropy: &[u8],
     language: &str,
@@ -89,7 +103,10 @@ pub fn get_mnemonic_code_with_language(
 }
 
 /// Converts a BIP-39 mnemonic back to entropy (any supported language).
-pub fn mnemonic_to_entropy(mnemonic: &[&str]) -> Result<Vec<u8>, String> {
+///
+/// The returned entropy is wrapped in [`Zeroizing`] so the seed material
+/// is automatically zeroed when dropped.
+pub fn mnemonic_to_entropy(mnemonic: &[&str]) -> Result<Zeroizing<Vec<u8>>, String> {
     let word_count = mnemonic.len();
     if !(12..=24).contains(&word_count) || word_count % 3 != 0 {
         return Err("The number of words should be 12, 15, 18, 21 or 24.".to_string());
@@ -139,7 +156,7 @@ pub fn mnemonic_to_entropy(mnemonic: &[&str]) -> Result<Vec<u8>, String> {
         }
     }
 
-    Ok(entropy)
+    Ok(Zeroizing::new(entropy))
 }
 
 fn load_wordlist(data: &'static str) -> Vec<&'static str> {

@@ -54,6 +54,7 @@ use tokio::signal;
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};
 use wallet_provider::NodeWalletProvider;
+use zeroize::Zeroizing;
 
 fn main() -> Result<()> {
     let rt = tokio::runtime::Builder::new_multi_thread()
@@ -1009,16 +1010,16 @@ fn apply_cli_overrides(cli: &NodeCli, node_config: &mut NodeConfig) {
         node_config.rpc.cors_enabled = Some(false);
     }
     if let Some(user) = &cli.rpc_user {
-        node_config.rpc.rpc_user = Some(user.clone());
+        node_config.rpc.rpc_user = Some(Zeroizing::new(user.clone()));
     }
     if let Some(pass) = &cli.rpc_pass {
-        node_config.rpc.rpc_pass = Some(pass.clone());
+        node_config.rpc.rpc_pass = Some(Zeroizing::new(pass.clone()));
     }
     if let Some(cert) = &cli.rpc_tls_cert {
         node_config.rpc.tls_cert_file = Some(cert.clone());
     }
     if let Some(cert_pass) = &cli.rpc_tls_cert_password {
-        node_config.rpc.tls_cert_password = Some(cert_pass.clone());
+        node_config.rpc.tls_cert_password = Some(Zeroizing::new(cert_pass.clone()));
     }
     if let Some(path) = &cli.logging_path {
         node_config.logging.file_path = Some(path.clone());

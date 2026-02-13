@@ -140,7 +140,7 @@ toml = "0.8"
 # Error handling
 thiserror = "1.0"
 anyhow = "1.0"
-zeroize = { version = "1.8", features = ["derive"] }
+zeroize = { version = "1.8", features = ["derive", "serde"] }
 
 # Logging and tracing
 tracing = "0.1"

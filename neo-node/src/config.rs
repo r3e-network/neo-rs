@@ -16,6 +16,7 @@ use neo_core::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use zeroize::Zeroizing;
 use std::{
     env, fs,
     fs::OpenOptions,
@@ -206,13 +207,13 @@ pub struct RpcSection {
     #[serde(alias = "UnhandledExceptionPolicy")]
     pub unhandled_exception_policy: Option<String>,
     #[serde(alias = "RpcUser")]
-    pub rpc_user: Option<String>,
+    pub rpc_user: Option<Zeroizing<String>>,
     #[serde(alias = "RpcPass")]
-    pub rpc_pass: Option<String>,
+    pub rpc_pass: Option<Zeroizing<String>>,
     #[serde(alias = "SslCert")]
     pub tls_cert_file: Option<String>,
     #[serde(alias = "SslCertPassword")]
-    pub tls_cert_password: Option<String>,
+    pub tls_cert_password: Option<Zeroizing<String>>,
     #[serde(alias = "TrustedAuthorities")]
     pub trusted_authorities: Vec<String>,
     #[serde(alias = "DisabledMethods")]

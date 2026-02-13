@@ -293,6 +293,7 @@ pub fn build_feature_summary() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use zeroize::Zeroizing;
 
     #[test]
     fn validate_requires_storage_path_for_rocksdb() {
@@ -367,8 +368,8 @@ mod tests {
         cfg.rpc.enabled = true;
         cfg.rpc.auth_enabled = true;
         cfg.rpc.bind_address = Some("0.0.0.0".to_string());
-        cfg.rpc.rpc_user = Some("neo".to_string());
-        cfg.rpc.rpc_pass = Some("change-me-mainnet-rpc-password".to_string());
+        cfg.rpc.rpc_user = Some(Zeroizing::new("neo".to_string()));
+        cfg.rpc.rpc_pass = Some(Zeroizing::new("change-me-mainnet-rpc-password".to_string()));
 
         let err = validate_node_config(&cfg, None, None, &cfg.protocol_settings(), false)
             .expect_err("template credentials on public bind must be rejected");
