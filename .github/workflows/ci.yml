@@ -6,61 +6,68 @@ name: CI
   pull_request:
     branches: [main, master]
 
+# Cancel superseded runs on the same branch / PR.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# ── shared env ──────────────────────────────────────────────────────
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_TERM_COLOR: always
+
 jobs:
-  build-test:
+  # ── 1. Format check (no compilation, ~10 s) ──────────────────────
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all --check
+
+  # ── 2. Clippy lint ───────────────────────────────────────────────
+  clippy:
+    name: Clippy
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      CARGO_INCREMENTAL: 0
-      RUSTFLAGS: -Awarnings
+      SCCACHE_GHA_ENABLED: true
+      RUSTC_WRAPPER: sccache
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Reclaim runner disk space
         run: |
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet
           sudo docker image prune -af || true
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential \
-            clang \
-            cmake \
-            libbz2-dev \
-            libclang-dev \
-            liblz4-dev \
-            librocksdb-dev \
-            libsnappy-dev \
-            libssl-dev \
-            libzstd-dev \
-            pkg-config \
-            zlib1g-dev
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: Cache APT packages
+        uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          components: rustfmt, clippy
+          packages: >-
+            build-essential clang cmake libbz2-dev libclang-dev liblz4-dev
+            librocksdb-dev libsnappy-dev libssl-dev libzstd-dev pkg-config
+            zlib1g-dev
+          version: 1.0
 
-      - name: Cache cargo
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.7
+
+      - name: Cache cargo registry & git
         uses: Swatinem/rust-cache@v2
-
-      - name: Prepare tmp directory
-        run: |
-          echo "TMPDIR=${RUNNER_TEMP}/tmp" >> "$GITHUB_ENV"
-          echo "CARGO_TARGET_DIR=${RUNNER_TEMP}/target" >> "$GITHUB_ENV"
-          mkdir -p "${RUNNER_TEMP}/tmp"
-
-      - name: Format check
-        run: cargo fmt --all --check
+        with:
+          shared-key: ci-lint
 
       - name: Clippy
         run: |
-          # Keep clippy strict while allowing known noisy clippy categories.
           cargo clippy --workspace --all-targets --profile test -- \
             -D clippy::all \
             -A clippy::doc_overindented_list_items \
@@ -75,5 +82,43 @@ jobs:
             -A clippy::field_reassign_with_default \
             -A clippy::assertions_on_constants
 
-      - name: Tests
+  # ── 3. Tests ─────────────────────────────────────────────────────
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SCCACHE_GHA_ENABLED: true
+      RUSTC_WRAPPER: sccache
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reclaim runner disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet
+          sudo docker image prune -af || true
+
+      - name: Cache APT packages
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: >-
+            build-essential clang cmake libbz2-dev libclang-dev liblz4-dev
+            librocksdb-dev libsnappy-dev libssl-dev libzstd-dev pkg-config
+            zlib1g-dev
+          version: 1.0
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.7
+
+      - name: Cache cargo registry & git
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-test
+
+      - name: Build tests
+        run: cargo test --workspace --no-run
+
+      - name: Run tests
         run: cargo test --workspace
