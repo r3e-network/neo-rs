@@ -10,7 +10,7 @@
 // modifications are permitted.
 
 use super::models::RpcTransaction;
-use crate::{Nep17Api, RpcClient, RpcUtility};
+use crate::{Nep17Api, RpcClient, RpcUtility, RpcError};
 use neo_core::big_decimal::BigDecimal;
 use neo_core::smart_contract::native::{GasToken, NeoToken};
 use neo_core::wallets::helper::Helper as WalletHelper;
@@ -45,7 +45,7 @@ impl WalletApi {
     pub async fn get_unclaimed_gas(
         &self,
         account: &str,
-    ) -> Result<f64, Box<dyn std::error::Error>> {
+    ) -> Result<f64, RpcError> {
         let account_hash =
             RpcUtility::get_script_hash(account, &self.rpc_client.protocol_settings)?;
         self.get_unclaimed_gas_from_hash(&account_hash).await
@@ -56,7 +56,7 @@ impl WalletApi {
     pub async fn get_unclaimed_gas_from_hash(
         &self,
         account: &UInt160,
-    ) -> Result<f64, Box<dyn std::error::Error>> {
+    ) -> Result<f64, RpcError> {
         let script_hash = neo_hash();
         let block_count = self.rpc_client.get_block_count().await?;
 
@@ -83,7 +83,7 @@ impl WalletApi {
 
     /// Get Neo Balance
     /// Matches C# `GetNeoBalanceAsync`
-    pub async fn get_neo_balance(&self, account: &str) -> Result<u32, Box<dyn std::error::Error>> {
+    pub async fn get_neo_balance(&self, account: &str) -> Result<u32, RpcError> {
         let balance = self
             .get_token_balance(&neo_hash().to_string(), account)
             .await?;
@@ -92,7 +92,7 @@ impl WalletApi {
 
     /// Get Gas Balance
     /// Matches C# `GetGasBalanceAsync`
-    pub async fn get_gas_balance(&self, account: &str) -> Result<f64, Box<dyn std::error::Error>> {
+    pub async fn get_gas_balance(&self, account: &str) -> Result<f64, RpcError> {
         let balance = self
             .get_token_balance(&gas_hash().to_string(), account)
             .await?;
@@ -106,7 +106,7 @@ impl WalletApi {
         &self,
         token_hash: &str,
         account: &str,
-    ) -> Result<BigInt, Box<dyn std::error::Error>> {
+    ) -> Result<BigInt, RpcError> {
         let token_script_hash =
             RpcUtility::get_script_hash(token_hash, &self.rpc_client.protocol_settings)?;
         let account_hash =
@@ -122,7 +122,7 @@ impl WalletApi {
     pub async fn claim_gas(
         &self,
         key: &KeyPair,
-    ) -> Result<Transaction, Box<dyn std::error::Error>> {
+    ) -> Result<Transaction, RpcError> {
         self.claim_gas_with_assert(key, true).await
     }
 
@@ -131,7 +131,7 @@ impl WalletApi {
     pub async fn claim_gas_from_key(
         &self,
         key: &str,
-    ) -> Result<Transaction, Box<dyn std::error::Error>> {
+    ) -> Result<Transaction, RpcError> {
         self.claim_gas_from_key_with_assert(key, true).await
     }
 
@@ -140,8 +140,8 @@ impl WalletApi {
         &self,
         key: &str,
         add_assert: bool,
-    ) -> Result<Transaction, Box<dyn std::error::Error>> {
-        let key_pair = RpcUtility::get_key_pair(key).map_err(std::io::Error::other)?;
+    ) -> Result<Transaction, RpcError> {
+        let key_pair = RpcUtility::get_key_pair(key).map_err(|e| RpcError::Other(e.to_string()))?;
         self.claim_gas_with_assert(&key_pair, add_assert).await
     }
 
@@ -150,7 +150,7 @@ impl WalletApi {
         &self,
         key: &KeyPair,
         add_assert: bool,
-    ) -> Result<Transaction, Box<dyn std::error::Error>> {
+    ) -> Result<Transaction, RpcError> {
         let sender_script = Contract::create_signature_redeem_script(key.get_public_key_point()?);
         let sender = UInt160::from_script(&sender_script);
 
@@ -164,7 +164,7 @@ impl WalletApi {
         &self,
         account: &UInt160,
         key: &KeyPair,
-    ) -> Result<Transaction, Box<dyn std::error::Error>> {
+    ) -> Result<Transaction, RpcError> {
         self.claim_gas_from_account_with_assert(account, key, true)
             .await
     }
@@ -175,7 +175,7 @@ impl WalletApi {
         account: &UInt160,
         key: &KeyPair,
         add_assert: bool,
-    ) -> Result<Transaction, Box<dyn std::error::Error>> {
+    ) -> Result<Transaction, RpcError> {
         let neo_balance = self.nep17_api.balance_of(&neo_hash(), account).await?;
 
         if neo_balance == BigInt::from(0) {
@@ -209,7 +209,7 @@ impl WalletApi {
         to_address: &str,
         amount: BigInt,
         data: Option<serde_json::Value>,
-    ) -> Result<(Transaction, String), Box<dyn std::error::Error>> {
+    ) -> Result<(Transaction, String), RpcError> {
         self.transfer_with_assert(token_hash, key, to_address, amount, data, true)
             .await
     }
@@ -223,7 +223,7 @@ impl WalletApi {
         amount: BigInt,
         data: Option<serde_json::Value>,
         add_assert: bool,
-    ) -> Result<(Transaction, String), Box<dyn std::error::Error>> {
+    ) -> Result<(Transaction, String), RpcError> {
         let token_script_hash =
             RpcUtility::get_script_hash(token_hash, &self.rpc_client.protocol_settings)?;
         let to = RpcUtility::get_script_hash(to_address, &self.rpc_client.protocol_settings)?;
@@ -246,7 +246,7 @@ impl WalletApi {
         to_address: &str,
         amount: BigDecimal,
         data: Option<serde_json::Value>,
-    ) -> Result<(Transaction, String), Box<dyn std::error::Error>> {
+    ) -> Result<(Transaction, String), RpcError> {
         self.transfer_decimal_from_key_with_assert(
             token_hash, from_key, to_address, amount, data, true,
         )
@@ -262,8 +262,8 @@ impl WalletApi {
         amount: BigDecimal,
         data: Option<serde_json::Value>,
         add_assert: bool,
-    ) -> Result<(Transaction, String), Box<dyn std::error::Error>> {
-        let key_pair = RpcUtility::get_key_pair(from_key).map_err(std::io::Error::other)?;
+    ) -> Result<(Transaction, String), RpcError> {
+        let key_pair = RpcUtility::get_key_pair(from_key).map_err(|e| RpcError::Other(e.to_string()))?;
         self.transfer_decimal_with_assert(
             token_hash, &key_pair, to_address, amount, data, add_assert,
         )
@@ -280,7 +280,7 @@ impl WalletApi {
         to_address: &str,
         amount: BigDecimal,
         data: Option<serde_json::Value>,
-    ) -> Result<(Transaction, String), Box<dyn std::error::Error>> {
+    ) -> Result<(Transaction, String), RpcError> {
         self.transfer_decimal_with_assert(token_hash, key, to_address, amount, data, true)
             .await
     }
@@ -294,13 +294,13 @@ impl WalletApi {
         amount: BigDecimal,
         data: Option<serde_json::Value>,
         add_assert: bool,
-    ) -> Result<(Transaction, String), Box<dyn std::error::Error>> {
+    ) -> Result<(Transaction, String), RpcError> {
         let token_script_hash =
             RpcUtility::get_script_hash(token_hash, &self.rpc_client.protocol_settings)?;
         let decimals = self.nep17_api.decimals(&token_script_hash).await?;
         let amount_integer = amount
             .to_big_integer(decimals)
-            .map_err(|err| std::io::Error::other(err.to_string()))?;
+            .map_err(|e| RpcError::Other(e.to_string()))?;
 
         let to = RpcUtility::get_script_hash(to_address, &self.rpc_client.protocol_settings)?;
         let tx = self
@@ -332,7 +332,7 @@ impl WalletApi {
         amount: BigInt,
         data: Option<serde_json::Value>,
         add_assert: bool,
-    ) -> Result<(Transaction, String), Box<dyn std::error::Error>> {
+    ) -> Result<(Transaction, String), RpcError> {
         let token_script_hash =
             RpcUtility::get_script_hash(token_hash, &self.rpc_client.protocol_settings)?;
 
@@ -359,7 +359,7 @@ impl WalletApi {
     pub async fn wait_transaction(
         &self,
         tx: &Transaction,
-    ) -> Result<RpcTransaction, Box<dyn std::error::Error>> {
+    ) -> Result<RpcTransaction, RpcError> {
         self.wait_transaction_with_timeout(tx, 60).await
     }
 
@@ -368,7 +368,7 @@ impl WalletApi {
         &self,
         tx: &Transaction,
         timeout_seconds: u64,
-    ) -> Result<RpcTransaction, Box<dyn std::error::Error>> {
+    ) -> Result<RpcTransaction, RpcError> {
         // Wait for transaction to be included in a block
         let tx_hash = tx.hash();
         let timeout = std::time::Duration::from_secs(timeout_seconds);
@@ -389,10 +389,7 @@ impl WalletApi {
             tokio::time::sleep(poll_duration).await;
         }
 
-        Err(Box::new(std::io::Error::new(
-            std::io::ErrorKind::TimedOut,
-            "Timeout while waiting for transaction confirmation",
-        )))
+        Err(RpcError::Other("Timeout while waiting for transaction confirmation".to_string()))
     }
 
     /// Get account state including balances
@@ -400,7 +397,7 @@ impl WalletApi {
     pub async fn get_account_state(
         &self,
         account: &str,
-    ) -> Result<WalletAccountState, Box<dyn std::error::Error>> {
+    ) -> Result<WalletAccountState, RpcError> {
         let account_hash =
             RpcUtility::get_script_hash(account, &self.rpc_client.protocol_settings)?;
 
@@ -543,7 +540,7 @@ mod tests {
     fn emit_argument(
         sb: &mut ScriptBuilder,
         arg: &serde_json::Value,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), RpcError> {
         match arg {
             serde_json::Value::Null => {
                 sb.emit_opcode(OpCode::PUSHNULL);
@@ -1294,7 +1291,9 @@ mod tests {
             .wait_transaction_with_timeout(&tx, 1)
             .await
             .expect_err("timeout");
-        let io_err = err.downcast_ref::<std::io::Error>().expect("io error");
-        assert_eq!(io_err.kind(), std::io::ErrorKind::TimedOut);
+        assert!(
+            err.to_string().contains("Timeout"),
+            "expected timeout error, got: {err}"
+        );
     }
 }

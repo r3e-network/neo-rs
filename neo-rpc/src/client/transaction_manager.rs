@@ -9,7 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use crate::{Nep17Api, RpcClient, TransactionManagerFactory};
+use crate::{Nep17Api, RpcClient, TransactionManagerFactory, RpcError};
 use neo_core::network::p2p::helper::get_sign_data_vec;
 use neo_core::persistence::DataCache;
 use neo_core::smart_contract::native::GasToken;
@@ -78,7 +78,7 @@ impl TransactionManager {
         script: &[u8],
         signers: Option<Vec<Signer>>,
         _attributes: Option<Vec<TransactionAttribute>>,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
+    ) -> Result<Self, RpcError> {
         let factory = TransactionManagerFactory::new(rpc_client);
         factory
             .make_transaction(script, &signers.unwrap_or_default())
@@ -93,7 +93,7 @@ impl TransactionManager {
         system_fee: i64,
         signers: Option<Vec<Signer>>,
         attributes: Option<Vec<TransactionAttribute>>,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
+    ) -> Result<Self, RpcError> {
         let factory = TransactionManagerFactory::new(rpc_client);
         let mut manager = factory
             .make_transaction(script, &signers.unwrap_or_default())
@@ -112,7 +112,7 @@ impl TransactionManager {
     pub fn add_signature(
         &mut self,
         key: &KeyPair,
-    ) -> Result<&mut Self, Box<dyn std::error::Error>> {
+    ) -> Result<&mut Self, RpcError> {
         let public_point = key.get_public_key_point()?;
         let contract = Contract::create_signature_contract(public_point);
         self.add_sign_item(contract, key.clone())?;
@@ -126,7 +126,7 @@ impl TransactionManager {
         key: &KeyPair,
         m: usize,
         public_keys: Vec<ECPoint>,
-    ) -> Result<&mut Self, Box<dyn std::error::Error>> {
+    ) -> Result<&mut Self, RpcError> {
         let contract = Contract::create_multi_sig_contract(m, &public_keys);
         self.add_sign_item(contract, key.clone())?;
         Ok(self)
@@ -139,7 +139,7 @@ impl TransactionManager {
         keys: Vec<KeyPair>,
         m: usize,
         public_keys: Vec<ECPoint>,
-    ) -> Result<&mut Self, Box<dyn std::error::Error>> {
+    ) -> Result<&mut Self, RpcError> {
         let contract = Contract::create_multi_sig_contract(m, &public_keys);
 
         for key in keys {
@@ -154,7 +154,7 @@ impl TransactionManager {
     pub fn add_witness(
         &mut self,
         contract: Contract,
-    ) -> Result<&mut Self, Box<dyn std::error::Error>> {
+    ) -> Result<&mut Self, RpcError> {
         if !self.context.add_contract(contract) {
             return Err("AddWitness failed!".into());
         }
@@ -168,7 +168,7 @@ impl TransactionManager {
     pub fn add_witness_with_hash(
         &mut self,
         script_hash: &UInt160,
-    ) -> Result<&mut Self, Box<dyn std::error::Error>> {
+    ) -> Result<&mut Self, RpcError> {
         let contract = Contract::create_with_hash(*script_hash, Vec::new());
         self.add_witness(contract)
     }
@@ -177,14 +177,14 @@ impl TransactionManager {
     pub async fn add_witness_with_hash_async(
         &mut self,
         script_hash: &UInt160,
-    ) -> Result<&mut Self, Box<dyn std::error::Error>> {
+    ) -> Result<&mut Self, RpcError> {
         let contract = self.get_contract_async(script_hash).await?;
         self.add_witness(contract)
     }
 
     /// Sign the transaction
     /// Matches C# `SignAsync`
-    pub async fn sign(&mut self) -> Result<Transaction, Box<dyn std::error::Error>> {
+    pub async fn sign(&mut self) -> Result<Transaction, RpcError> {
         let script_hashes = self
             .tx
             .get_script_hashes_for_verifying(&DataCache::new(true));
@@ -249,7 +249,7 @@ impl TransactionManager {
         &mut self,
         contract: Contract,
         key: KeyPair,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), RpcError> {
         let hash = contract.script_hash();
         let script_hashes = self
             .tx
@@ -293,7 +293,7 @@ impl TransactionManager {
     async fn get_contract_async(
         &self,
         script_hash: &UInt160,
-    ) -> Result<Contract, Box<dyn std::error::Error>> {
+    ) -> Result<Contract, RpcError> {
         let state = self
             ._rpc_client
             .get_contract_state(&script_hash.to_string())

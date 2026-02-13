@@ -10,7 +10,7 @@
 // modifications are permitted.
 
 use super::models::{RpcContractState, RpcNep17TokenInfo, RpcNep17Transfers};
-use crate::{ContractClient, RpcClient, TransactionManagerFactory};
+use crate::{ContractClient, RpcClient, RpcError, TransactionManagerFactory};
 use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::{Contract, ECPoint, KeyPair, Signer, Transaction};
@@ -53,7 +53,7 @@ impl Nep17Api {
         &self,
         script_hash: &UInt160,
         account: &UInt160,
-    ) -> Result<BigInt, Box<dyn std::error::Error>> {
+    ) -> Result<BigInt, RpcError> {
         let result = self
             .contract_client
             .test_invoke(
@@ -74,7 +74,7 @@ impl Nep17Api {
     pub async fn symbol(
         &self,
         script_hash: &UInt160,
-    ) -> Result<String, Box<dyn std::error::Error>> {
+    ) -> Result<String, RpcError> {
         let result = self
             .contract_client
             .test_invoke(script_hash, "symbol", vec![])
@@ -87,7 +87,7 @@ impl Nep17Api {
 
     /// Get decimals of NEP17 token
     /// Matches C# `DecimalsAsync`
-    pub async fn decimals(&self, script_hash: &UInt160) -> Result<u8, Box<dyn std::error::Error>> {
+    pub async fn decimals(&self, script_hash: &UInt160) -> Result<u8, RpcError> {
         let result = self
             .contract_client
             .test_invoke(script_hash, "decimals", vec![])
@@ -104,7 +104,7 @@ impl Nep17Api {
     pub async fn total_supply(
         &self,
         script_hash: &UInt160,
-    ) -> Result<BigInt, Box<dyn std::error::Error>> {
+    ) -> Result<BigInt, RpcError> {
         let result = self
             .contract_client
             .test_invoke(script_hash, "totalSupply", vec![])
@@ -120,12 +120,12 @@ impl Nep17Api {
     pub async fn get_token_info(
         &self,
         script_hash: &UInt160,
-    ) -> Result<RpcNep17TokenInfo, Box<dyn std::error::Error>> {
+    ) -> Result<RpcNep17TokenInfo, RpcError> {
         let contract_state = self
             .rpc_client
             .get_contract_state(&script_hash.to_string())
             .await
-            .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+            ?;
 
         self.token_info_from_state(contract_state).await
     }
@@ -135,12 +135,12 @@ impl Nep17Api {
     pub async fn get_token_info_by_contract(
         &self,
         contract: &str,
-    ) -> Result<RpcNep17TokenInfo, Box<dyn std::error::Error>> {
+    ) -> Result<RpcNep17TokenInfo, RpcError> {
         let contract_state = self
             .rpc_client
             .get_contract_state(contract)
             .await
-            .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+            ?;
 
         self.token_info_from_state(contract_state).await
     }
@@ -151,7 +151,7 @@ impl Nep17Api {
         &self,
         address: &str,
         script_hash: &UInt160,
-    ) -> Result<RpcNep17TokenInfo, Box<dyn std::error::Error>> {
+    ) -> Result<RpcNep17TokenInfo, RpcError> {
         let mut token_info = self.get_token_info(script_hash).await?;
 
         // Parse address to UInt160 using the client's address version.
@@ -159,7 +159,7 @@ impl Nep17Api {
             hash
         } else {
             WalletHelper::to_script_hash(address, self.rpc_client.protocol_settings.address_version)
-                .map_err(std::io::Error::other)?
+                .map_err(|e| RpcError::Other(e.to_string()))?
         };
 
         // Get balance for the address
@@ -178,7 +178,7 @@ impl Nep17Api {
         to: &UInt160,
         amount: BigInt,
         data: Option<serde_json::Value>,
-    ) -> Result<Transaction, Box<dyn std::error::Error>> {
+    ) -> Result<Transaction, RpcError> {
         self.create_transfer_tx_with_assert(script_hash, key, to, amount, data, true)
             .await
     }
@@ -193,7 +193,7 @@ impl Nep17Api {
         to: &UInt160,
         amount: BigInt,
         data: Option<serde_json::Value>,
-    ) -> Result<Transaction, Box<dyn std::error::Error>> {
+    ) -> Result<Transaction, RpcError> {
         self.create_transfer_tx_with_from_and_assert(
             script_hash,
             from,
@@ -215,7 +215,7 @@ impl Nep17Api {
         amount: BigInt,
         data: Option<serde_json::Value>,
         add_assert: bool,
-    ) -> Result<Transaction, Box<dyn std::error::Error>> {
+    ) -> Result<Transaction, RpcError> {
         let from_script = Contract::create_signature_redeem_script(key.get_public_key_point()?);
         let from = UInt160::from_script(&from_script);
         self.create_transfer_tx_with_from_and_assert(
@@ -241,7 +241,7 @@ impl Nep17Api {
         amount: BigInt,
         data: Option<serde_json::Value>,
         add_assert: bool,
-    ) -> Result<Transaction, Box<dyn std::error::Error>> {
+    ) -> Result<Transaction, RpcError> {
         let script =
             self.build_transfer_script(script_hash, from, to, &amount, data, add_assert)?;
 
@@ -275,7 +275,7 @@ impl Nep17Api {
         to: &UInt160,
         amount: BigInt,
         data: Option<serde_json::Value>,
-    ) -> Result<Transaction, Box<dyn std::error::Error>> {
+    ) -> Result<Transaction, RpcError> {
         self.create_transfer_tx_multi_sig_with_assert(
             script_hash,
             m,
@@ -301,7 +301,7 @@ impl Nep17Api {
         amount: BigInt,
         data: Option<serde_json::Value>,
         add_assert: bool,
-    ) -> Result<Transaction, Box<dyn std::error::Error>> {
+    ) -> Result<Transaction, RpcError> {
         if m > from_keys.len() {
             return Err(format!("Need at least {m} KeyPairs for signing!").into());
         }
@@ -333,11 +333,10 @@ impl Nep17Api {
         address: &str,
         start_time: Option<u64>,
         end_time: Option<u64>,
-    ) -> Result<RpcNep17Transfers, Box<dyn std::error::Error>> {
-        self.rpc_client
+    ) -> Result<RpcNep17Transfers, RpcError> {
+        Ok(self.rpc_client
             .get_nep17_transfers(address, start_time, end_time)
-            .await
-            .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
+            .await?)
     }
 
     /// Get NEP17 token balances for an address
@@ -345,7 +344,7 @@ impl Nep17Api {
     pub async fn get_nep17_balances(
         &self,
         address: &str,
-    ) -> Result<Vec<RpcNep17TokenInfo>, Box<dyn std::error::Error>> {
+    ) -> Result<Vec<RpcNep17TokenInfo>, RpcError> {
         let balances = self.rpc_client.get_nep17_balances(address).await?;
 
         // Convert balances to token info
@@ -369,7 +368,7 @@ impl Nep17Api {
         amount: &BigInt,
         data: Option<serde_json::Value>,
         add_assert: bool,
-    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    ) -> Result<Vec<u8>, RpcError> {
         let mut sb = ScriptBuilder::new();
 
         // Emit transfer parameters in reverse order.
@@ -396,7 +395,7 @@ impl Nep17Api {
     async fn token_info_from_state(
         &self,
         contract_state: RpcContractState,
-    ) -> Result<RpcNep17TokenInfo, Box<dyn std::error::Error>> {
+    ) -> Result<RpcNep17TokenInfo, RpcError> {
         let contract_hash = &contract_state.contract_state.hash;
         let name = contract_state.contract_state.manifest.name.clone();
 
@@ -434,7 +433,7 @@ impl Nep17Api {
         script_hash: &UInt160,
         operation: &str,
         args: Vec<serde_json::Value>,
-    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    ) -> Result<Vec<u8>, RpcError> {
         let mut sb = ScriptBuilder::new();
 
         if args.is_empty() {
@@ -459,7 +458,7 @@ impl Nep17Api {
         &self,
         sb: &mut ScriptBuilder,
         arg: &serde_json::Value,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), RpcError> {
         match arg {
             serde_json::Value::Null => {
                 sb.emit_opcode(OpCode::PUSHNULL);
@@ -494,7 +493,7 @@ impl Nep17Api {
     }
 }
 
-fn stack_item_to_string(item: &StackItem) -> Result<String, Box<dyn std::error::Error>> {
+fn stack_item_to_string(item: &StackItem) -> Result<String, RpcError> {
     match item {
         StackItem::ByteString(bytes) => Ok(String::from_utf8(bytes.clone())?),
         StackItem::Buffer(buffer) => Ok(String::from_utf8(buffer.data())?),
@@ -559,7 +558,7 @@ mod tests {
     fn emit_argument(
         sb: &mut ScriptBuilder,
         arg: &serde_json::Value,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), RpcError> {
         match arg {
             serde_json::Value::Null => {
                 sb.emit_opcode(OpCode::PUSHNULL);

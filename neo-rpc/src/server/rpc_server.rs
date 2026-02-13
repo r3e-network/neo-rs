@@ -180,20 +180,17 @@ impl RpcServer {
         self.ws_bridge.is_some()
     }
 
-    pub fn start_rpc_server(&mut self, handle: Weak<RwLock<Self>>) {
+    pub fn start_rpc_server(
+        &mut self,
+        handle: Weak<RwLock<Self>>,
+        tls_config: Option<Arc<ServerConfig>>,
+    ) {
         if self.started {
             return;
         }
 
         self.self_handle = Some(handle.clone());
 
-        let tls_config = match build_tls_config(&self.settings) {
-            Ok(config) => config,
-            Err(err) => {
-                error!("RPC TLS configuration error: {}", err);
-                return;
-            }
-        };
         let tls_enabled = tls_config.is_some();
 
         // Security warning for production deployments without TLS
@@ -695,7 +692,12 @@ impl AsyncWrite for PlainConnection {
     }
 }
 
-fn build_tls_config(settings: &RpcServerConfig) -> Result<Option<Arc<ServerConfig>>, String> {
+/// Builds TLS configuration from RPC server settings asynchronously.
+pub async fn build_tls_config_from_settings(settings: &RpcServerConfig) -> Result<Option<Arc<ServerConfig>>, String> {
+    build_tls_config(settings).await
+}
+
+async fn build_tls_config(settings: &RpcServerConfig) -> Result<Option<Arc<ServerConfig>>, String> {
     let cert_path = settings.ssl_cert.trim();
     if cert_path.is_empty() {
         if !settings.ssl_cert_password.is_empty() || !settings.trusted_authorities.is_empty() {
@@ -707,7 +709,8 @@ fn build_tls_config(settings: &RpcServerConfig) -> Result<Option<Arc<ServerConfi
         return Ok(None);
     }
 
-    let cert_bytes = std::fs::read(cert_path)
+    let cert_bytes = tokio::fs::read(cert_path)
+        .await
         .map_err(|err| format!("failed to read TLS certificate {cert_path}: {err}"))?;
     let pfx =
         PFX::parse(&cert_bytes).map_err(|err| format!("invalid PKCS#12 {cert_path}: {err:?}"))?;

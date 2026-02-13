@@ -10,7 +10,7 @@
 // modifications are permitted.
 
 use super::models::{RpcFoundStates, RpcStateRoot};
-use crate::RpcClient;
+use crate::{RpcClient, RpcError};
 use base64::{engine::general_purpose, Engine as _};
 use neo_json::JToken;
 use neo_primitives::{UInt160, UInt256};
@@ -36,7 +36,7 @@ impl StateApi {
     pub async fn get_state_root(
         &self,
         index: u32,
-    ) -> Result<RpcStateRoot, Box<dyn std::error::Error>> {
+    ) -> Result<RpcStateRoot, RpcError> {
         let result = self
             .rpc_client
             .rpc_send_async("getstateroot", vec![JToken::Number(f64::from(index))])
@@ -54,7 +54,7 @@ impl StateApi {
         root_hash: &UInt256,
         script_hash: &UInt160,
         key: &[u8],
-    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    ) -> Result<Vec<u8>, RpcError> {
         let result = self
             .rpc_client
             .rpc_send_async(
@@ -80,7 +80,7 @@ impl StateApi {
         &self,
         root_hash: &UInt256,
         proof_bytes: &[u8],
-    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    ) -> Result<Vec<u8>, RpcError> {
         let result = self
             .rpc_client
             .rpc_send_async(
@@ -103,7 +103,7 @@ impl StateApi {
     /// Matches C# `GetStateHeightAsync`
     pub async fn get_state_height(
         &self,
-    ) -> Result<(Option<u32>, Option<u32>), Box<dyn std::error::Error>> {
+    ) -> Result<(Option<u32>, Option<u32>), RpcError> {
         let result = self
             .rpc_client
             .rpc_send_async("getstateheight", vec![])
@@ -157,7 +157,7 @@ impl StateApi {
         prefix: &[u8],
         from: Option<&[u8]>,
         count: Option<i32>,
-    ) -> Result<RpcFoundStates, Box<dyn std::error::Error>> {
+    ) -> Result<RpcFoundStates, RpcError> {
         let params = Self::make_find_states_params(root_hash, script_hash, prefix, from, count);
 
         let result = self.rpc_client.rpc_send_async("findstates", params).await?;
@@ -174,7 +174,7 @@ impl StateApi {
         root_hash: &UInt256,
         script_hash: &UInt160,
         key: &[u8],
-    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    ) -> Result<Vec<u8>, RpcError> {
         let result = self
             .rpc_client
             .rpc_send_async(

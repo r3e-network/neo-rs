@@ -10,7 +10,7 @@
 // modifications are permitted.
 
 use super::models::RpcInvokeResult;
-use crate::RpcClient;
+use crate::{RpcClient, RpcError};
 use neo_core::smart_contract::native::ContractManagement;
 use neo_core::{
     smart_contract::call_flags::CallFlags, ContractManifest, KeyPair, Signer, Transaction,
@@ -43,7 +43,7 @@ impl ContractClient {
         script_hash: &UInt160,
         operation: &str,
         args: Vec<serde_json::Value>,
-    ) -> Result<RpcInvokeResult, Box<dyn std::error::Error>> {
+    ) -> Result<RpcInvokeResult, RpcError> {
         // Create script using script builder
         let script =
             Self::build_dynamic_call_script(script_hash, operation, &args, CallFlags::ALL)?;
@@ -52,7 +52,7 @@ impl ContractClient {
         self.rpc_client
             .invoke_script(&script)
             .await
-            .map_err(|err| Box::new(err) as Box<dyn std::error::Error>)
+            .map_err(Into::into)
     }
 
     /// Deploy Contract, return signed transaction
@@ -62,7 +62,7 @@ impl ContractClient {
         nef_file: &[u8],
         manifest: &ContractManifest,
         key: &KeyPair,
-    ) -> Result<Transaction, Box<dyn std::error::Error>> {
+    ) -> Result<Transaction, RpcError> {
         let script = Self::build_deploy_contract_script(nef_file, manifest, CallFlags::ALL)?;
 
         let sender = key.get_script_hash();
@@ -80,7 +80,7 @@ impl ContractClient {
         method: &str,
         args: &[serde_json::Value],
         call_flags: CallFlags,
-    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    ) -> Result<Vec<u8>, RpcError> {
         let mut sb = ScriptBuilder::new();
 
         // C# parity: ScriptBuilderExtensions.EmitDynamicCall(scriptHash, method, CallFlags.All, args)
@@ -108,7 +108,7 @@ impl ContractClient {
         nef_file: &[u8],
         manifest: &ContractManifest,
         call_flags: CallFlags,
-    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    ) -> Result<Vec<u8>, RpcError> {
         let manifest_json = manifest.to_json()?.to_string();
 
         let mut sb = ScriptBuilder::new();
@@ -134,7 +134,7 @@ impl ContractClient {
     fn emit_argument(
         sb: &mut ScriptBuilder,
         arg: &serde_json::Value,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), RpcError> {
         match arg {
             serde_json::Value::Null => {
                 sb.emit_opcode(OpCode::PUSHNULL);

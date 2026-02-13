@@ -16,6 +16,7 @@ use super::super::models::{
     RpcValidateAddressResult, RpcValidator, RpcVersion,
 };
 use super::super::ClientRpcError;
+use crate::RpcError;
 use base64::{engine::general_purpose, Engine as _};
 use neo_core::big_decimal::BigDecimal;
 use neo_core::config::ProtocolSettings;
@@ -53,7 +54,7 @@ impl RpcClient {
         rpc_user: Option<String>,
         rpc_pass: Option<String>,
         protocol_settings: Option<ProtocolSettings>,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
+    ) -> Result<Self, RpcError> {
         RpcClientBuilder::new(url)
             .with_optional_auth(rpc_user, rpc_pass)
             .protocol_settings(protocol_settings.unwrap_or_default())

@@ -9,7 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use crate::{ContractClient, RpcClient};
+use crate::{ContractClient, RpcClient, RpcError};
 use neo_core::smart_contract::native::PolicyContract;
 use neo_core::NativeContract;
 use neo_primitives::UInt160;
@@ -38,7 +38,7 @@ impl PolicyApi {
 
     /// Get Fee Factor
     /// Matches C# `GetExecFeeFactorAsync`
-    pub async fn get_exec_fee_factor(&self) -> Result<u32, Box<dyn std::error::Error>> {
+    pub async fn get_exec_fee_factor(&self) -> Result<u32, RpcError> {
         let result = self
             .contract_client
             .test_invoke(&self.script_hash, "getExecFeeFactor", vec![])
@@ -52,7 +52,7 @@ impl PolicyApi {
 
     /// Get Storage Price
     /// Matches C# `GetStoragePriceAsync`
-    pub async fn get_storage_price(&self) -> Result<u32, Box<dyn std::error::Error>> {
+    pub async fn get_storage_price(&self) -> Result<u32, RpcError> {
         let result = self
             .contract_client
             .test_invoke(&self.script_hash, "getStoragePrice", vec![])
@@ -66,7 +66,7 @@ impl PolicyApi {
 
     /// Get Network Fee Per Byte
     /// Matches C# `GetFeePerByteAsync`
-    pub async fn get_fee_per_byte(&self) -> Result<i64, Box<dyn std::error::Error>> {
+    pub async fn get_fee_per_byte(&self) -> Result<i64, RpcError> {
         let result = self
             .contract_client
             .test_invoke(&self.script_hash, "getFeePerByte", vec![])
@@ -80,7 +80,7 @@ impl PolicyApi {
 
     /// Get Policy Blocked Accounts
     /// Matches C# `IsBlockedAsync`
-    pub async fn is_blocked(&self, account: &UInt160) -> Result<bool, Box<dyn std::error::Error>> {
+    pub async fn is_blocked(&self, account: &UInt160) -> Result<bool, RpcError> {
         let result = self
             .contract_client
             .test_invoke(

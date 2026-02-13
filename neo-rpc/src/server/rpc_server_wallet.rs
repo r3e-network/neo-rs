@@ -978,9 +978,10 @@ impl RpcServerWallet {
         use neo_core::akka::{Actor, ActorContext, ActorResult, Props};
         use neo_core::ledger::RelayResult;
         use parking_lot::Mutex;
+        use tokio::runtime::Handle;
 
         struct RelayResponder {
-            tx: std::sync::Arc<Mutex<Option<std::sync::mpsc::Sender<RelayResult>>>>,
+            tx: std::sync::Arc<Mutex<Option<tokio::sync::oneshot::Sender<RelayResult>>>>,
         }
 
         #[async_trait]
@@ -1005,7 +1006,7 @@ impl RpcServerWallet {
 
         let system = server.system();
         let actor_system = system.actor_system();
-        let (tx, rx) = std::sync::mpsc::channel();
+        let (tx, rx) = tokio::sync::oneshot::channel();
         let responder = RelayResponder {
             tx: std::sync::Arc::new(Mutex::new(Some(tx))),
         };
@@ -1018,7 +1019,10 @@ impl RpcServerWallet {
 
         send(actor_ref)?;
 
-        let result = rx.recv().map_err(|err| internal_error(err.to_string()))?;
+        let result = tokio::task::block_in_place(|| {
+            Handle::current().block_on(rx)
+        })
+        .map_err(|err| internal_error(err.to_string()))?;
         Ok(result)
     }
 }
