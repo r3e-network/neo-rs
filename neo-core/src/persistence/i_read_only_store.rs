@@ -37,9 +37,8 @@ where
         direction: SeekDirection,
     ) -> Box<dyn Iterator<Item = (TKey, TValue)> + '_>;
 
-    /// Gets the entry with the specified key.
-    /// Panics if the key is not found.
-    fn get(&self, key: &TKey) -> TValue {
-        self.try_get(key).expect("Key not found")
+    /// Gets the entry with the specified key, returning `None` if absent.
+    fn get(&self, key: &TKey) -> Option<TValue> {
+        self.try_get(key)
     }
 }

@@ -833,11 +833,15 @@ impl StateStore {
     /// Deserializes a proof payload produced by `encode_proof_payload`.
     pub fn decode_proof_payload(bytes: &[u8]) -> Option<(Vec<u8>, Vec<Vec<u8>>)> {
         let mut reader = MemoryReader::new(bytes);
-        let key = reader.read_var_bytes(usize::MAX).ok()?;
-        let count = reader.read_var_int(u64::MAX).ok()? as usize;
+        // Bound proof element sizes to prevent OOM from malicious payloads.
+        const MAX_PROOF_BYTES: usize = 0x100000; // 1 MB per element
+        const MAX_PROOF_NODES: u64 = 0x10000; // 65536 nodes max
+
+        let key = reader.read_var_bytes(MAX_PROOF_BYTES).ok()?;
+        let count = reader.read_var_int(MAX_PROOF_NODES).ok()? as usize;
         let mut nodes = Vec::with_capacity(count);
         for _ in 0..count {
-            nodes.push(reader.read_var_bytes(usize::MAX).ok()?);
+            nodes.push(reader.read_var_bytes(MAX_PROOF_BYTES).ok()?);
         }
         Some((key, nodes))
     }
