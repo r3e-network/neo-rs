@@ -22,7 +22,10 @@ impl ConsensusService {
             "Received Commit"
         );
 
-        if !payload.data.is_empty() && payload.data.len() != 64 {
+        // SECURITY: A valid Commit always carries a 64-byte signature (the validator's
+        // signature over the block's sign data). Empty data would allow a malicious
+        // validator to inject fake commits that count toward the M-of-N threshold.
+        if payload.data.len() != 64 {
             return Err(ConsensusError::InvalidSignatureLength {
                 expected: 64,
                 got: payload.data.len(),
@@ -45,44 +48,57 @@ impl ConsensusService {
             return Ok(());
         }
 
-        // Verify the commit signature against the proposed block hash
-        // The commit data contains the validator's signature of the block hash
-        if let Some(block_hash) = self.context.proposed_block_hash {
-            // dBFT commit signature is a signature over block.GetSignData(network),
-            // which is `[network:4][block_hash:32]`.
-            let mut block_sign_data = Vec::with_capacity(4 + 32);
-            block_sign_data.extend_from_slice(&self.network.to_le_bytes());
-            block_sign_data.extend_from_slice(&block_hash.as_bytes());
-
-            // Verify ExtensiblePayload witness signature (authenticity).
-            // SECURITY: Require non-empty witness and valid signature
-            if payload.witness.is_empty() {
+        // SECURITY: For current-view commits we must have a proposed block hash to
+        // verify the commit signature against. Without it, we cannot authenticate
+        // the signature and must reject the commit to prevent unverified commits
+        // from counting toward the M-of-N threshold.
+        let block_hash = match self.context.proposed_block_hash {
+            Some(hash) => hash,
+            None => {
                 warn!(
                     validator = payload.validator_index,
-                    "Commit missing witness"
-                );
-                return Err(ConsensusError::signature_failed("Commit missing witness"));
-            }
-            let sign_data = self.dbft_sign_data(payload)?;
-            if !self.verify_signature(&sign_data, &payload.witness, payload.validator_index) {
-                warn!(
-                    validator = payload.validator_index,
-                    "Commit witness signature verification failed"
+                    "Commit rejected: no proposed block hash available for signature verification"
                 );
                 return Err(ConsensusError::signature_failed(
-                    "Commit witness signature invalid",
+                    "Commit rejected: no proposed block hash to verify against",
                 ));
             }
+        };
 
-            if !payload.data.is_empty()
-                && !self.verify_signature(&block_sign_data, &payload.data, payload.validator_index)
-            {
-                warn!(
-                    validator = payload.validator_index,
-                    "Commit signature verification failed"
-                );
-                return Err(ConsensusError::signature_failed("Commit signature invalid"));
-            }
+        // dBFT commit signature is a signature over block.GetSignData(network),
+        // which is `[network:4][block_hash:32]`.
+        let mut block_sign_data = Vec::with_capacity(4 + 32);
+        block_sign_data.extend_from_slice(&self.network.to_le_bytes());
+        block_sign_data.extend_from_slice(&block_hash.as_bytes());
+
+        // Verify ExtensiblePayload witness signature (authenticity).
+        // SECURITY: Require non-empty witness and valid signature
+        if payload.witness.is_empty() {
+            warn!(
+                validator = payload.validator_index,
+                "Commit missing witness"
+            );
+            return Err(ConsensusError::signature_failed("Commit missing witness"));
+        }
+        let sign_data = self.dbft_sign_data(payload)?;
+        if !self.verify_signature(&sign_data, &payload.witness, payload.validator_index) {
+            warn!(
+                validator = payload.validator_index,
+                "Commit witness signature verification failed"
+            );
+            return Err(ConsensusError::signature_failed(
+                "Commit witness signature invalid",
+            ));
+        }
+
+        // Verify the commit signature over the block hash.
+        // (payload.data is guaranteed to be exactly 64 bytes by the check above.)
+        if !self.verify_signature(&block_sign_data, &payload.data, payload.validator_index) {
+            warn!(
+                validator = payload.validator_index,
+                "Commit signature verification failed"
+            );
+            return Err(ConsensusError::signature_failed("Commit signature invalid"));
         }
 
         // Add the commit (signature is in the payload data)
