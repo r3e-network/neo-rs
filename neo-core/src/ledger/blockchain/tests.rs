@@ -8,37 +8,37 @@ use super::*;
 
 mod tests {
     use super::{
-        classify_import_block, should_schedule_reverify_idle, Blockchain, ImportDisposition,
-        StateRoot, VerifyResult, STATE_SERVICE_CATEGORY,
+        Blockchain, ImportDisposition, STATE_SERVICE_CATEGORY, StateRoot, VerifyResult,
+        classify_import_block, should_schedule_reverify_idle,
     };
+    use crate::WitnessScope;
     use crate::neo_io::BinaryWriter;
     use crate::network::p2p::payloads::extensible_payload::ExtensiblePayload;
     use crate::network::p2p::payloads::witness::Witness as PayloadWitness;
     use crate::network::p2p::{
         helper::get_sign_data_vec,
         payloads::{
-            block::Block as PayloadBlock, conflicts::Conflicts, header::Header, signer::Signer,
-            transaction::Transaction, transaction_attribute::TransactionAttribute,
-            witness::Witness, InventoryType,
+            InventoryType, block::Block as PayloadBlock, conflicts::Conflicts, header::Header,
+            signer::Signer, transaction::Transaction, transaction_attribute::TransactionAttribute,
+            witness::Witness,
         },
     };
     use crate::persistence::StoreCache;
+    use crate::smart_contract::Contract;
     use crate::smart_contract::binary_serializer::BinarySerializer;
     use crate::smart_contract::native::fungible_token::PREFIX_ACCOUNT;
     use crate::smart_contract::native::gas_token::GasToken;
     use crate::smart_contract::native::{
-        role_management::RoleManagement, AccountState, NativeContract, Role,
+        AccountState, NativeContract, Role, role_management::RoleManagement,
     };
-    use crate::smart_contract::Contract;
     use crate::smart_contract::{IInteroperable, StorageItem, StorageKey};
     use crate::state_service::state_store::StateServiceSettings;
     use crate::wallets::KeyPair;
-    use crate::WitnessScope;
-    use crate::{neo_io::Serializable, NeoSystem, ProtocolSettings, UInt160, UInt256};
+    use crate::{NeoSystem, ProtocolSettings, UInt160, UInt256, neo_io::Serializable};
     use neo_vm::execution_engine_limits::ExecutionEngineLimits;
     use neo_vm::op_code::OpCode;
     use num_bigint::BigInt;
-    use tokio::time::{sleep, timeout, Duration};
+    use tokio::time::{Duration, sleep, timeout};
 
     fn sign_extensible_payload(
         payload: &mut ExtensiblePayload,
@@ -475,8 +475,8 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn import_rejects_invalid_block_when_verify_enabled() {
-        use crate::ledger::blockchain::{BlockchainCommand, Import};
         use crate::UInt256;
+        use crate::ledger::blockchain::{BlockchainCommand, Import};
 
         let settings = ProtocolSettings::mainnet();
         let system = NeoSystem::new(settings.clone(), None, None).expect("NeoSystem::new");

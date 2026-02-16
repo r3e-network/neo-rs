@@ -1,7 +1,7 @@
 //! MethodToken - matches C# Neo.SmartContract.MethodToken exactly
 
-use crate::smart_contract::CallFlags;
 use crate::UInt160;
+use crate::smart_contract::CallFlags;
 use serde::{Deserialize, Serialize};
 
 /// Represents the methods that a contract will call statically (matches C# MethodToken)

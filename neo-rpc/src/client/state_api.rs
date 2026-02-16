@@ -11,7 +11,7 @@
 
 use super::models::{RpcFoundStates, RpcStateRoot};
 use crate::{RpcClient, RpcError};
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use neo_json::JToken;
 use neo_primitives::{UInt160, UInt256};
 use std::sync::Arc;

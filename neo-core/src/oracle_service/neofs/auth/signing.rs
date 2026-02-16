@@ -1,11 +1,11 @@
 use crate::neo_io::BinaryWriter;
 use crate::wallets::KeyPair;
 use base64::Engine as _;
-use p256::ecdsa::signature::hazmat::PrehashSigner;
 use p256::ecdsa::signature::Signer as P256Signer;
+use p256::ecdsa::signature::hazmat::PrehashSigner;
 use p256::ecdsa::{Signature as P256Signature, SigningKey as P256SigningKey};
-use rand::rngs::OsRng;
 use rand::RngCore;
+use rand::rngs::OsRng;
 use sha2::{Digest, Sha512};
 
 pub(crate) fn sign_neofs_bearer(

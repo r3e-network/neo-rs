@@ -1,9 +1,9 @@
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use neo_core::config::ProtocolSettings;
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::{Block, BlockHeader, Signer, Transaction};
-use neo_io::serializable::helper::get_var_size;
 use neo_io::serializable::Serializable;
+use neo_io::serializable::helper::get_var_size;
 use neo_json::{JArray, JObject, JToken};
 
 use super::attributes::attribute_from_json;

@@ -1,7 +1,7 @@
 use super::super::{OracleService, OracleStatus, REFRESH_INTERVAL};
 use crate::smart_contract::native::OracleContract;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::{Duration, SystemTime};
 
 impl OracleService {

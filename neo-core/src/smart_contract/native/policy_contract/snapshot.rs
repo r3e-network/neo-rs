@@ -139,7 +139,6 @@ impl PolicyContract {
     ) -> Result<Option<i64>> {
         use crate::smart_contract::binary_serializer::BinarySerializer;
         use crate::smart_contract::native::ContractManagement;
-        use neo_vm::execution_engine_limits::ExecutionEngineLimits;
 
         // Retrieve the contract state
         let contract = ContractManagement::get_contract_from_snapshot(snapshot, contract_hash)?;
@@ -161,14 +160,12 @@ impl PolicyContract {
                         return Ok(None);
                     }
 
-                    let stack_item = BinarySerializer::deserialize(
-                        &bytes,
-                        &ExecutionEngineLimits::default(),
-                        None,
-                    )
-                    .map_err(|e| {
-                        Error::native_contract(format!("Failed to deserialize whitelist info: {e}"))
-                    })?;
+                    let stack_item =
+                        BinarySerializer::deserialize_default(&bytes).map_err(|e| {
+                            Error::native_contract(format!(
+                                "Failed to deserialize whitelist info: {e}"
+                            ))
+                        })?;
 
                     let mut whitelist = WhitelistedContract::default();
                     whitelist.from_stack_item(stack_item).map_err(|e| {

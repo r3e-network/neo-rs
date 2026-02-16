@@ -9,10 +9,10 @@ use crate::vm_state::VMState;
 /// Register all control handlers
 pub fn register_handlers(jump_table: &mut crate::jump_table::JumpTable) {
     use OpCode::{
-        ABORT, ABORTMSG, ASSERT, ASSERTMSG, CALL, CALLA, CALLT, CALL_L, ENDFINALLY, ENDTRY,
-        ENDTRY_L, JMP, JMPEQ, JMPEQ_L, JMPGE, JMPGE_L, JMPGT, JMPGT_L, JMPIF, JMPIFNOT, JMPIFNOT_L,
-        JMPIF_L, JMPLE, JMPLE_L, JMPLT, JMPLT_L, JMPNE, JMPNE_L, JMP_L, NOP, RET, SYSCALL, THROW,
-        TRY, TRY_L,
+        ABORT, ABORTMSG, ASSERT, ASSERTMSG, CALL, CALL_L, CALLA, CALLT, ENDFINALLY, ENDTRY,
+        ENDTRY_L, JMP, JMP_L, JMPEQ, JMPEQ_L, JMPGE, JMPGE_L, JMPGT, JMPGT_L, JMPIF, JMPIF_L,
+        JMPIFNOT, JMPIFNOT_L, JMPLE, JMPLE_L, JMPLT, JMPLT_L, JMPNE, JMPNE_L, NOP, RET, SYSCALL,
+        THROW, TRY, TRY_L,
     };
 
     jump_table.register(NOP, nop);

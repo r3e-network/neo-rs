@@ -1,5 +1,5 @@
-use crate::compression::{compress_lz4, decompress_lz4, CompressionResult};
-use crate::io::{serializable::helper, IoError, IoResult, MemoryReader, Serializable};
+use crate::compression::{CompressionResult, compress_lz4, decompress_lz4};
+use crate::io::{IoError, IoResult, MemoryReader, Serializable, serializable::helper};
 
 /// LZ4/serialization helpers for byte slices used by the core crate.
 pub trait ByteLz4Extensions {

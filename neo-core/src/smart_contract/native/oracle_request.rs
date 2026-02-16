@@ -2,9 +2,9 @@
 
 use crate::error::CoreError;
 use crate::smart_contract::i_interoperable::IInteroperable;
+use crate::smart_contract::stack_item_extract::{extract_bytes, extract_i64, extract_string};
 use crate::{UInt160, UInt256};
 use neo_vm::StackItem;
-use num_traits::ToPrimitive;
 
 /// Oracle request state (matches C# OracleRequest)
 #[derive(Clone, Debug)]
@@ -62,49 +62,39 @@ impl IInteroperable for OracleRequest {
                 return Ok(());
             }
 
-            if let Ok(bytes) = items[0].as_bytes() {
-                if bytes.len() == 32 {
-                    if let Ok(hash) = UInt256::from_bytes(&bytes) {
-                        self.original_tx_id = hash;
-                    }
-                }
+            if let Some(bytes) = extract_bytes(&items[0])
+                && bytes.len() == 32
+                && let Ok(hash) = UInt256::from_bytes(&bytes)
+            {
+                self.original_tx_id = hash;
             }
 
-            if let Ok(integer) = items[1].as_int() {
-                if let Some(value) = integer.to_i64() {
-                    self.gas_for_response = value;
-                }
+            if let Some(value) = extract_i64(&items[1]) {
+                self.gas_for_response = value;
             }
 
-            if let Ok(bytes) = items[2].as_bytes() {
-                if let Ok(url) = String::from_utf8(bytes) {
-                    self.url = url;
-                }
+            if let Some(url) = extract_string(&items[2]) {
+                self.url = url;
             }
 
             if matches!(items[3], StackItem::Null) {
                 self.filter = None;
-            } else if let Ok(bytes) = items[3].as_bytes() {
-                if let Ok(filter) = String::from_utf8(bytes) {
-                    self.filter = Some(filter);
-                }
+            } else if let Some(filter) = extract_string(&items[3]) {
+                self.filter = Some(filter);
             }
 
-            if let Ok(bytes) = items[4].as_bytes() {
-                if bytes.len() == 20 {
-                    if let Ok(hash) = UInt160::from_bytes(&bytes) {
-                        self.callback_contract = hash;
-                    }
-                }
+            if let Some(bytes) = extract_bytes(&items[4])
+                && bytes.len() == 20
+                && let Ok(hash) = UInt160::from_bytes(&bytes)
+            {
+                self.callback_contract = hash;
             }
 
-            if let Ok(bytes) = items[5].as_bytes() {
-                if let Ok(method) = String::from_utf8(bytes) {
-                    self.callback_method = method;
-                }
+            if let Some(method) = extract_string(&items[5]) {
+                self.callback_method = method;
             }
 
-            if let Ok(bytes) = items[6].as_bytes() {
+            if let Some(bytes) = extract_bytes(&items[6]) {
                 self.user_data = bytes;
             }
         }

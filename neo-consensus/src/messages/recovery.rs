@@ -420,7 +420,7 @@ mod tests {
         expected.push(0x01);
         expected.push(0x00); // view_number
         expected.push(4); // validator_index
-        expected.extend(std::iter::repeat(0xEE).take(64));
+        expected.extend(std::iter::repeat_n(0xEE, 64));
         expected.push(0x02); // invocation_script len
         expected.extend_from_slice(&[0xFF, 0x00]);
 

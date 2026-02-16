@@ -1,4 +1,4 @@
-use crate::compression::{compress_lz4, decompress_lz4, CompressionResult};
+use crate::compression::{CompressionResult, compress_lz4, decompress_lz4};
 
 /// LZ4 helpers for byte slices matching `Neo.Extensions.SpanExtensions`.
 pub trait SpanExtensions {

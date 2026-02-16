@@ -7,15 +7,15 @@ impl ApplicationEngine {
         }
 
         let management_hash = ContractManagement::new().hash();
-        if let Some(native) = self.native_registry.get(&management_hash) {
-            if let Some(manager) = native.as_any().downcast_ref::<ContractManagement>() {
-                let contract = manager
-                    .get_contract(hash)
-                    .map_err(|e| Error::invalid_operation(e.to_string()))?;
-                if let Some(contract) = contract {
-                    self.contracts.insert(*hash, contract.clone());
-                    return Ok(contract);
-                }
+        if let Some(native) = self.native_registry.get(&management_hash)
+            && let Some(manager) = native.as_any().downcast_ref::<ContractManagement>()
+        {
+            let contract = manager
+                .get_contract(hash)
+                .map_err(|e| Error::invalid_operation(e.to_string()))?;
+            if let Some(contract) = contract {
+                self.contracts.insert(*hash, contract.clone());
+                return Ok(contract);
             }
         }
 

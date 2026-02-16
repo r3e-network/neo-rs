@@ -1,6 +1,6 @@
+use neo_core::UInt256;
 use neo_core::builders::TransactionAttributesBuilder;
 use neo_core::network::p2p::payloads::{OracleResponseCode, TransactionAttribute};
-use neo_core::UInt256;
 
 #[test]
 fn transaction_attributes_builder_new() {

@@ -9,10 +9,10 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use super::super::utility::{witness_to_json, RpcUtility};
+use super::super::utility::{RpcUtility, witness_to_json};
+use neo_core::BlockHeader;
 use neo_core::config::ProtocolSettings;
 use neo_core::wallets::helper::Helper as WalletHelper;
-use neo_core::BlockHeader;
 use neo_io::Serializable;
 use neo_json::{JArray, JObject, JToken};
 use neo_primitives::UInt256;
@@ -189,7 +189,7 @@ impl RpcBlockHeader {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+    use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
     use neo_json::{JArray, JToken};
     use std::fs;
     use std::path::PathBuf;

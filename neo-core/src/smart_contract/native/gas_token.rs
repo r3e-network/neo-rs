@@ -1,3 +1,4 @@
+use super::AccountState;
 use super::contract_management::ContractManagement;
 use super::fungible_token::{FungibleToken, PREFIX_ACCOUNT as ACCOUNT_PREFIX, PREFIX_TOTAL_SUPPLY};
 use super::helpers::NativeHelpers;
@@ -7,31 +8,28 @@ use super::policy_contract::PolicyContract;
 use super::security_fixes::{
     PermissionValidator, ReentrancyGuardType, SafeArithmetic, SecurityContext, StateValidator,
 };
-use super::AccountState;
+use crate::UInt160;
 use crate::error::{CoreError, CoreResult};
 use crate::network::p2p::payloads::{Transaction, TransactionAttribute, TransactionAttributeType};
 use crate::persistence::i_read_only_store::IReadOnlyStoreGeneric;
 use crate::protocol_settings::ProtocolSettings;
+use crate::smart_contract::ContractParameterType;
+use crate::smart_contract::IInteroperable;
+use crate::smart_contract::StorageItem;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::helper::Helper;
 use crate::smart_contract::manifest::{ContractEventDescriptor, ContractParameterDefinition};
 use crate::smart_contract::storage_context::StorageContext;
 use crate::smart_contract::storage_key::StorageKey;
-use crate::smart_contract::ContractParameterType;
-use crate::smart_contract::IInteroperable;
-use crate::smart_contract::StorageItem;
-use crate::UInt160;
-use lazy_static::lazy_static;
-use neo_vm::execution_engine_limits::ExecutionEngineLimits;
 use neo_vm::StackItem;
 use num_bigint::BigInt;
 use num_traits::{Signed, Zero};
 use std::any::Any;
+use std::sync::LazyLock;
 
-lazy_static! {
-    static ref GAS_HASH: UInt160 = Helper::get_contract_hash(&UInt160::zero(), 0, "GasToken");
-}
+static GAS_HASH: LazyLock<UInt160> =
+    LazyLock::new(|| Helper::get_contract_hash(&UInt160::zero(), 0, "GasToken"));
 
 /// GAS native token with NEP-17 compliant behaviour.
 pub struct GasToken {
@@ -51,56 +49,9 @@ impl GasToken {
     const NAME: &'static str = "GasToken";
 
     pub fn new() -> Self {
-        let methods = vec![
-            NativeMethod::safe(
-                "symbol".to_string(),
-                0,
-                Vec::new(),
-                ContractParameterType::String,
-            ),
-            NativeMethod::safe(
-                "decimals".to_string(),
-                0,
-                Vec::new(),
-                ContractParameterType::Integer,
-            ),
-            NativeMethod::safe(
-                "totalSupply".to_string(),
-                1 << 15,
-                Vec::new(),
-                ContractParameterType::Integer,
-            )
-            .with_required_call_flags(crate::smart_contract::call_flags::CallFlags::READ_STATES),
-            NativeMethod::safe(
-                "balanceOf".to_string(),
-                1 << 15,
-                vec![ContractParameterType::Hash160],
-                ContractParameterType::Integer,
-            )
-            .with_required_call_flags(crate::smart_contract::call_flags::CallFlags::READ_STATES)
-            .with_parameter_names(vec!["account".to_string()]),
-            NativeMethod::unsafe_method(
-                "transfer".to_string(),
-                1 << 17,
-                crate::smart_contract::call_flags::CallFlags::ALL.bits(),
-                vec![
-                    ContractParameterType::Hash160,
-                    ContractParameterType::Hash160,
-                    ContractParameterType::Integer,
-                    ContractParameterType::Any,
-                ],
-                ContractParameterType::Boolean,
-            )
-            .with_storage_fee(50)
-            .with_parameter_names(vec![
-                "from".to_string(),
-                "to".to_string(),
-                "amount".to_string(),
-                "data".to_string(),
-            ]),
-        ];
-
-        Self { methods }
+        Self {
+            methods: <Self as FungibleToken>::ft_nep17_methods(),
+        }
     }
 
     pub fn symbol(&self) -> &'static str {
@@ -123,7 +74,7 @@ impl GasToken {
             "totalSupply" => {
                 let snapshot = engine.snapshot_cache();
                 let total = self.total_supply_snapshot(snapshot.as_ref());
-                Ok(Self::encode_amount(&total))
+                Ok(<Self as FungibleToken>::ft_encode_amount(&total))
             }
             "balanceOf" => self.balance_of(engine, args),
             "transfer" => self.transfer(engine, args),
@@ -140,16 +91,10 @@ impl GasToken {
                 "balanceOf expects exactly one argument".to_string(),
             ));
         }
-        if args[0].len() != 20 {
-            return Err(CoreError::native_contract(
-                "Account argument must be 20 bytes".to_string(),
-            ));
-        }
-        let account = UInt160::from_bytes(&args[0])
-            .map_err(|err| CoreError::native_contract(err.to_string()))?;
+        let account = <Self as FungibleToken>::ft_read_account(&args[0])?;
         let snapshot = engine.snapshot_cache();
         let balance = self.balance_of_snapshot(snapshot.as_ref(), &account);
-        Ok(Self::encode_amount(&balance))
+        Ok(<Self as FungibleToken>::ft_encode_amount(&balance))
     }
 
     fn transfer(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
@@ -161,9 +106,9 @@ impl GasToken {
                 "transfer expects from, to, amount, data".to_string(),
             ));
         }
-        let from = self.read_account(&args[0])?;
-        let to = self.read_account(&args[1])?;
-        let amount = Self::decode_amount(&args[2]);
+        let from = <Self as FungibleToken>::ft_read_account(&args[0])?;
+        let to = <Self as FungibleToken>::ft_read_account(&args[1])?;
+        let amount = <Self as FungibleToken>::ft_decode_amount(&args[2]);
         let data_bytes = args[3].clone();
         let data_item = if data_bytes.is_empty() {
             StackItem::null()
@@ -263,15 +208,6 @@ impl GasToken {
         Ok(vec![1])
     }
 
-    fn read_account(&self, data: &[u8]) -> CoreResult<UInt160> {
-        if data.len() != 20 {
-            return Err(CoreError::native_contract(
-                "Account argument must be 20 bytes".to_string(),
-            ));
-        }
-        UInt160::from_bytes(data).map_err(|err| CoreError::native_contract(err.to_string()))
-    }
-
     fn total_supply_key() -> StorageKey {
         StorageKey::create(Self::ID, PREFIX_TOTAL_SUPPLY)
     }
@@ -292,9 +228,7 @@ impl GasToken {
             return AccountState::default();
         }
 
-        if let Ok(stack_item) =
-            BinarySerializer::deserialize(&bytes, &ExecutionEngineLimits::default(), None)
-        {
+        if let Ok(stack_item) = BinarySerializer::deserialize_default(&bytes) {
             if matches!(stack_item, StackItem::Struct(_)) {
                 let mut state = AccountState::default();
                 if let Err(e) = state.from_stack_item(stack_item) {
@@ -306,14 +240,6 @@ impl GasToken {
         }
 
         AccountState::with_balance(item.to_bigint())
-    }
-
-    fn encode_amount(value: &BigInt) -> Vec<u8> {
-        let mut bytes = value.to_signed_bytes_le();
-        if bytes.is_empty() {
-            bytes.push(0);
-        }
-        bytes
     }
 
     fn notary_fee_deduction(
@@ -338,10 +264,6 @@ impl GasToken {
             .ok_or_else(|| CoreError::native_contract("Notary fee calculation overflow"))
     }
 
-    fn decode_amount(data: &[u8]) -> BigInt {
-        BigInt::from_signed_bytes_le(data)
-    }
-
     fn write_account_balance(
         &self,
         context: &StorageContext,
@@ -354,11 +276,8 @@ impl GasToken {
             engine.delete_storage_item(context, &key)?;
         } else {
             let state = AccountState::with_balance(balance.clone());
-            let bytes = BinarySerializer::serialize(
-                &state.to_stack_item()?,
-                &ExecutionEngineLimits::default(),
-            )
-            .map_err(CoreError::native_contract)?;
+            let bytes = BinarySerializer::serialize_default(&state.to_stack_item()?)
+                .map_err(CoreError::native_contract)?;
             engine.put_storage_item(context, &key, &bytes)?;
         }
         Ok(())
@@ -384,7 +303,7 @@ impl GasToken {
         if updated.is_zero() {
             engine.delete_storage_item(context, &key)?;
         } else {
-            let bytes = Self::encode_amount(&updated);
+            let bytes = <Self as FungibleToken>::ft_encode_amount(&updated);
             engine.put_storage_item(context, &key, &bytes)?;
         }
         Ok(updated)
@@ -567,24 +486,29 @@ impl NativeContract for GasToken {
         _settings: &ProtocolSettings,
         _block_height: u32,
     ) -> Vec<ContractEventDescriptor> {
-        vec![ContractEventDescriptor::new(
-            "Transfer".to_string(),
-            vec![
-                ContractParameterDefinition::new(
-                    "from".to_string(),
-                    ContractParameterType::Hash160,
-                )
-                .expect("Transfer.from"),
-                ContractParameterDefinition::new("to".to_string(), ContractParameterType::Hash160)
+        vec![
+            ContractEventDescriptor::new(
+                "Transfer".to_string(),
+                vec![
+                    ContractParameterDefinition::new(
+                        "from".to_string(),
+                        ContractParameterType::Hash160,
+                    )
+                    .expect("Transfer.from"),
+                    ContractParameterDefinition::new(
+                        "to".to_string(),
+                        ContractParameterType::Hash160,
+                    )
                     .expect("Transfer.to"),
-                ContractParameterDefinition::new(
-                    "amount".to_string(),
-                    ContractParameterType::Integer,
-                )
-                .expect("Transfer.amount"),
-            ],
-        )
-        .expect("Transfer event descriptor")]
+                    ContractParameterDefinition::new(
+                        "amount".to_string(),
+                        ContractParameterType::Integer,
+                    )
+                    .expect("Transfer.amount"),
+                ],
+            )
+            .expect("Transfer event descriptor"),
+        ]
     }
 
     fn initialize(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {

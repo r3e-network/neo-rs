@@ -48,13 +48,13 @@ use ed25519_dalek::{
 use ed25519_dalek::{Signer as _, Verifier as _};
 use hex;
 use p256::{
-    ecdsa::{signature::hazmat::PrehashVerifier, Signature, SigningKey, VerifyingKey},
     PublicKey as P256PublicKey, SecretKey as P256SecretKey,
+    ecdsa::{Signature, SigningKey, VerifyingKey, signature::hazmat::PrehashVerifier},
 };
-use rand::{rngs::OsRng, RngCore};
+use rand::{RngCore, rngs::OsRng};
 use secp256k1::{
-    ecdsa::{RecoverableSignature, RecoveryId},
     Message, PublicKey as Secp256k1PublicKey, Secp256k1, SecretKey as Secp256k1SecretKey,
+    ecdsa::{RecoverableSignature, RecoveryId},
 };
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
@@ -855,7 +855,7 @@ impl Bls12381Crypto {
         signature: &[u8; 48],
         public_key: &[u8; 96],
     ) -> CryptoResult<bool> {
-        use blst::{blst_p1, blst_p1_affine, blst_p2_affine, BLST_ERROR};
+        use blst::{BLST_ERROR, blst_p1, blst_p1_affine, blst_p2_affine};
 
         // SAFETY: All inputs are fixed-size arrays with correct lengths for blst FFI.
         // Each deserialized point is validated (subgroup check, infinity check) before

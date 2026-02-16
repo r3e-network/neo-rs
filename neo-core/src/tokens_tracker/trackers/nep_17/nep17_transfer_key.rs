@@ -4,8 +4,8 @@
 
 use super::super::token_transfer_key::TokenTransferKey;
 use super::super::tracker_base::TokenTransferKeyView;
-use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
 use crate::UInt160;
+use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 

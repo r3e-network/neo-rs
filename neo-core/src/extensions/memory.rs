@@ -1,5 +1,5 @@
 use crate::extensions::byte::ByteLz4Extensions;
-use crate::io::{serializable::helper, IoError, IoResult, Serializable};
+use crate::io::{IoError, IoResult, Serializable, serializable::helper};
 
 /// Extension helpers for read-only byte slices matching
 /// `Neo.Extensions.MemoryExtensions`.

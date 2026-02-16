@@ -9,37 +9,37 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
+use crate::IVerifiable as CoreIVerifiable;
 use crate::neo_io::serializable::helper::{
     get_var_size, get_var_size_bytes, get_var_size_serializable_slice,
 };
 use crate::network::p2p::payloads::signer::Signer;
 use crate::network::p2p::payloads::transaction::HEADER_SIZE;
-use crate::IVerifiable as CoreIVerifiable;
 use crate::{
+    Transaction, UInt160,
     network::p2p,
     persistence::DataCache,
     protocol_settings::ProtocolSettings,
     smart_contract::{
+        ContractBasicMethod, ContractParameterType,
         application_engine::ApplicationEngine,
         call_flags::CallFlags,
         helper::Helper as ContractHelper,
         native::contract_management::ContractManagement,
         native::{
-            ledger_contract::LedgerContract, native_contract::NativeContract,
-            policy_contract::PolicyContract, GasToken,
+            GasToken, ledger_contract::LedgerContract, native_contract::NativeContract,
+            policy_contract::PolicyContract,
         },
         trigger_type::TriggerType,
-        ContractBasicMethod, ContractParameterType,
     },
-    wallets::{transfer_output::TransferOutput, wallet::Wallet, wallet::WalletError, KeyPair},
-    Transaction, UInt160,
+    wallets::{KeyPair, transfer_output::TransferOutput, wallet::Wallet, wallet::WalletError},
 };
 use neo_primitives::UInt256;
 use neo_primitives::WitnessScope;
-use neo_vm::{op_code::OpCode, ScriptBuilder};
+use neo_vm::{ScriptBuilder, op_code::OpCode};
 use num_bigint::{BigInt, Sign};
-use rand::rngs::OsRng;
 use rand::RngCore;
+use rand::rngs::OsRng;
 use std::sync::Arc;
 
 /// A helper class related to wallets.
@@ -73,10 +73,16 @@ impl Helper {
     pub fn to_script_hash(address: &str, version: u8) -> Result<UInt160, String> {
         let data = address.base58_check_decode()?;
         if data.len() != 21 {
-            return Err(format!("Invalid address format: expected 21 bytes after Base58Check decoding, but got {} bytes. The address may be corrupted or in an invalid format.", data.len()));
+            return Err(format!(
+                "Invalid address format: expected 21 bytes after Base58Check decoding, but got {} bytes. The address may be corrupted or in an invalid format.",
+                data.len()
+            ));
         }
         if data[0] != version {
-            return Err(format!("Invalid address version: expected version {}, but got {}. The address may be for a different network.", version, data[0]));
+            return Err(format!(
+                "Invalid address version: expected version {}, but got {}. The address may be for a different network.",
+                version, data[0]
+            ));
         }
         UInt160::from_bytes(&data[1..]).map_err(|e| e.to_string())
     }

@@ -9,7 +9,7 @@
 
 pub mod traits;
 
-use crate::ledger::{ledger_context::LedgerContext, MemoryPool};
+use crate::ledger::{MemoryPool, ledger_context::LedgerContext};
 use crate::state_service::state_store::StateStore;
 use parking_lot::Mutex;
 use std::sync::Arc;

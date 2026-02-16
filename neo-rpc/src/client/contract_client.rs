@@ -13,12 +13,12 @@ use super::models::RpcInvokeResult;
 use crate::{RpcClient, RpcError};
 use neo_core::smart_contract::native::ContractManagement;
 use neo_core::{
-    smart_contract::call_flags::CallFlags, ContractManifest, KeyPair, Signer, Transaction,
-    WitnessScope,
+    ContractManifest, KeyPair, Signer, Transaction, WitnessScope,
+    smart_contract::call_flags::CallFlags,
 };
 use neo_primitives::UInt160;
-use neo_vm::op_code::OpCode;
 use neo_vm::ScriptBuilder;
+use neo_vm::op_code::OpCode;
 use std::sync::Arc;
 
 /// Contract related operations through RPC API
@@ -176,7 +176,7 @@ impl ContractClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base64::{engine::general_purpose, Engine as _};
+    use base64::{Engine as _, engine::general_purpose};
     use mockito::{Matcher, Server};
     use neo_core::config::ProtocolSettings;
     use neo_core::smart_contract::native::{GasToken, NativeContract};

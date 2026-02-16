@@ -36,8 +36,8 @@ pub use error::{AkkaError, AkkaResult};
 pub use event_stream::EventStreamHandle;
 pub use inbox::Inbox;
 pub use mailbox::{
-    default_mailbox_factory, priority_mailbox_factory, Cancelable, DefaultMailbox, Mailbox,
-    MailboxFactory, PriorityMailbox, PriorityMailboxConfig,
+    Cancelable, DefaultMailbox, Mailbox, MailboxFactory, PriorityMailbox, PriorityMailboxConfig,
+    default_mailbox_factory, priority_mailbox_factory,
 };
 pub use message::{Envelope, Idle, MailboxMessage, SystemMessage, Terminated};
 pub use props::Props;

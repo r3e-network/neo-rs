@@ -8,9 +8,7 @@
 use super::{
     message_command::MessageCommand, message_flags::MessageFlags, messages::ProtocolMessage,
 };
-use crate::compression::{
-    compress_lz4, decompress_lz4, COMPRESSION_MIN_SIZE, COMPRESSION_THRESHOLD,
-};
+use crate::compression::{CompressionError, compress_lz4_if_beneficial, decompress_lz4};
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::network::{NetworkError, NetworkResult as Result};
 use serde::{Deserialize, Serialize};
@@ -32,6 +30,66 @@ pub struct Message {
     pub payload_raw: Vec<u8>,
     /// Wire-format payload bytes (matches `_payloadCompressed` in C#).
     pub payload_compressed: Vec<u8>,
+}
+
+pub(crate) const fn should_try_compress_command(command: MessageCommand) -> bool {
+    matches!(
+        command,
+        MessageCommand::Block
+            | MessageCommand::Extensible
+            | MessageCommand::Transaction
+            | MessageCommand::Headers
+            | MessageCommand::Addr
+            | MessageCommand::MerkleBlock
+            | MessageCommand::FilterLoad
+            | MessageCommand::FilterAdd
+    )
+}
+
+/// Returns the encoded byte length for Neo var-size integers.
+pub(crate) const fn encoded_var_size(value: usize) -> usize {
+    if value < 0xFD {
+        1
+    } else if value <= 0xFFFF {
+        3
+    } else if value <= 0xFFFF_FFFF {
+        5
+    } else {
+        9
+    }
+}
+
+/// Encodes payload bytes for wire transport, optionally attempting compression.
+pub(crate) fn encode_wire_payload(
+    payload: &[u8],
+    try_compress: bool,
+) -> (MessageFlags, Vec<u8>, Option<CompressionError>) {
+    if !try_compress {
+        return (MessageFlags::NONE, payload.to_vec(), None);
+    }
+
+    match compress_lz4_if_beneficial(payload) {
+        Ok(Some(compressed)) => (MessageFlags::COMPRESSED, compressed, None),
+        Ok(None) => (MessageFlags::NONE, payload.to_vec(), None),
+        Err(error) => (MessageFlags::NONE, payload.to_vec(), Some(error)),
+    }
+}
+
+/// Decodes wire payload bytes into their uncompressed form.
+pub(crate) fn decode_wire_payload(
+    flags: MessageFlags,
+    payload: &[u8],
+    max_size: usize,
+) -> std::result::Result<Vec<u8>, CompressionError> {
+    if payload.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    if flags.is_compressed() {
+        decompress_lz4(payload, max_size)
+    } else {
+        Ok(payload.to_vec())
+    }
 }
 
 impl Message {
@@ -75,26 +133,19 @@ impl Message {
             )));
         }
 
-        let mut message = Self {
-            flags: MessageFlags::NONE,
-            command,
-            payload_raw: payload_bytes.clone(),
-            payload_compressed: payload_bytes,
-        };
+        // C# uses strict > comparison for compression threshold and only
+        // attempts compression for a command whitelist.
+        let (flags, payload_compressed, _compression_error) = encode_wire_payload(
+            &payload_bytes,
+            enable_compression && Self::should_try_compress(command),
+        );
 
-        // C# uses strict > comparison for compression threshold
-        // Match this exactly to ensure cross-implementation compatibility
-        if enable_compression
-            && Self::should_try_compress(command)
-            && message.payload_compressed.len() > COMPRESSION_MIN_SIZE
-        {
-            if let Ok(compressed) = compress_lz4(&message.payload_compressed) {
-                if compressed.len() + COMPRESSION_THRESHOLD < message.payload_compressed.len() {
-                    message.payload_compressed = compressed;
-                    message.flags = MessageFlags::COMPRESSED;
-                }
-            }
-        }
+        let message = Self {
+            flags,
+            command,
+            payload_raw: payload_bytes,
+            payload_compressed,
+        };
 
         Ok(message)
     }
@@ -117,17 +168,7 @@ impl Message {
 
     /// Returns true if the payload should attempt compression.
     fn should_try_compress(command: MessageCommand) -> bool {
-        matches!(
-            command,
-            MessageCommand::Block
-                | MessageCommand::Extensible
-                | MessageCommand::Transaction
-                | MessageCommand::Headers
-                | MessageCommand::Addr
-                | MessageCommand::MerkleBlock
-                | MessageCommand::FilterLoad
-                | MessageCommand::FilterAdd
-        )
+        should_try_compress_command(command)
     }
 
     /// Returns `true` when the payload is currently compressed.
@@ -158,7 +199,7 @@ impl Message {
         };
 
         // Calculate exact size needed to avoid reallocations
-        let total_size = 1 + 1 + Self::get_var_size(payload.len()) + payload.len();
+        let total_size = 1 + 1 + encoded_var_size(payload.len()) + payload.len();
         let mut writer = BinaryWriter::with_capacity(total_size);
 
         writer.write_u8(flags.to_byte())?;
@@ -186,7 +227,7 @@ impl Message {
         };
 
         // Reserve capacity to avoid reallocations
-        let required = 1 + 1 + Self::get_var_size(payload.len()) + payload.len();
+        let required = 1 + 1 + encoded_var_size(payload.len()) + payload.len();
         buffer.reserve(required);
 
         buffer.push(flags.to_byte());
@@ -219,40 +260,16 @@ impl Message {
 
     /// Decompress payload when needed (matches `DecompressPayload`).
     fn decompress_payload(&mut self) -> Result<()> {
-        if self.payload_compressed.is_empty() {
-            self.payload_raw.clear();
-            return Ok(());
-        }
-
-        if self.is_compressed() {
-            let decompressed =
-                decompress_lz4(&self.payload_compressed, PAYLOAD_MAX_SIZE).map_err(|err| {
-                    NetworkError::InvalidMessage(format!("Failed to decompress payload: {err}"))
-                })?;
-            self.payload_raw = decompressed;
-        } else {
-            self.payload_raw.clone_from(&self.payload_compressed);
-        }
-
+        self.payload_raw =
+            decode_wire_payload(self.flags, &self.payload_compressed, PAYLOAD_MAX_SIZE).map_err(
+                |err| NetworkError::InvalidMessage(format!("Failed to decompress payload: {err}")),
+            )?;
         Ok(())
     }
 
     /// Get payload size (matches C# `Size` property).
     pub fn size(&self) -> usize {
-        1 + 1 + Self::get_var_size(self.payload_compressed.len()) + self.payload_compressed.len()
-    }
-
-    /// Calculate the encoded length of a var-size integer.
-    const fn get_var_size(value: usize) -> usize {
-        if value < 0xFD {
-            1
-        } else if value <= 0xFFFF {
-            3
-        } else if value <= 0xFFFF_FFFF {
-            5
-        } else {
-            9
-        }
+        1 + 1 + encoded_var_size(self.payload_compressed.len()) + self.payload_compressed.len()
     }
 
     /// Attempts to deserialize the payload into a strongly typed representation.
@@ -301,6 +318,7 @@ impl Serializable for Message {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compression::COMPRESSION_MIN_SIZE;
     use crate::neo_io::{BinaryWriter, MemoryReader, Serializable};
 
     #[derive(Default)]
@@ -387,12 +405,12 @@ mod tests {
 
     #[test]
     fn get_var_size_calculation() {
-        assert_eq!(Message::get_var_size(0), 1);
-        assert_eq!(Message::get_var_size(0xFC), 1);
-        assert_eq!(Message::get_var_size(0xFD), 3);
-        assert_eq!(Message::get_var_size(0xFFFF), 3);
-        assert_eq!(Message::get_var_size(0x10000), 5);
-        assert_eq!(Message::get_var_size(0xFFFF_FFFF), 5);
-        assert_eq!(Message::get_var_size(0x1_0000_0000), 9);
+        assert_eq!(encoded_var_size(0), 1);
+        assert_eq!(encoded_var_size(0xFC), 1);
+        assert_eq!(encoded_var_size(0xFD), 3);
+        assert_eq!(encoded_var_size(0xFFFF), 3);
+        assert_eq!(encoded_var_size(0x10000), 5);
+        assert_eq!(encoded_var_size(0xFFFF_FFFF), 5);
+        assert_eq!(encoded_var_size(0x1_0000_0000), 9);
     }
 }

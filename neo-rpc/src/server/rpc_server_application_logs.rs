@@ -5,9 +5,9 @@ use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::{internal_error, invalid_params};
 use crate::server::rpc_method_attribute::RpcMethodDescriptor;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
+use neo_core::UInt256;
 use neo_core::application_logs::ApplicationLogsService;
 use neo_core::smart_contract::TriggerType;
-use neo_core::UInt256;
 use serde_json::Value;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -38,7 +38,7 @@ impl RpcServerApplicationLogs {
             _ => {
                 return Err(invalid_params(
                     "getapplicationlog expects string parameter 2",
-                ))
+                ));
             }
         };
 

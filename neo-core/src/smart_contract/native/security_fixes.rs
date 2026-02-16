@@ -455,16 +455,14 @@ mod tests {
 
         // Test total supply validation
         assert!(StateValidator::validate_total_supply(&BigInt::from(100), None).is_ok());
-        assert!(StateValidator::validate_total_supply(
-            &BigInt::from(100),
-            Some(&BigInt::from(1000))
-        )
-        .is_ok());
+        assert!(
+            StateValidator::validate_total_supply(&BigInt::from(100), Some(&BigInt::from(1000)))
+                .is_ok()
+        );
         assert!(StateValidator::validate_total_supply(&BigInt::from(-100), None).is_err());
-        assert!(StateValidator::validate_total_supply(
-            &BigInt::from(1000),
-            Some(&BigInt::from(100))
-        )
-        .is_err());
+        assert!(
+            StateValidator::validate_total_supply(&BigInt::from(1000), Some(&BigInt::from(100)))
+                .is_err()
+        );
     }
 }

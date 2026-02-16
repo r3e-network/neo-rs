@@ -10,8 +10,8 @@
 // modifications are permitted.
 
 use super::{
-    header::Header, i_inventory::IInventory, transaction::Transaction, witness::Witness,
-    InventoryType,
+    InventoryType, header::Header, i_inventory::IInventory, transaction::Transaction,
+    witness::Witness,
 };
 use crate::constants::{BLOCK_MAX_TX_WIRE_LIMIT, MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK};
 use crate::ledger::{HeaderCache, TransactionVerificationContext, VerifyResult};

@@ -13,6 +13,7 @@
 use crate::error::{CryptoError, CryptoResult};
 use ed25519_dalek::{Signature as Ed25519Signature, SigningKey as Ed25519SigningKey, VerifyingKey};
 use k256::{
+    AffinePoint as K256AffinePoint, EncodedPoint as K256EncodedPoint,
     ecdsa::{
         Signature as K256Signature, SigningKey as K256SigningKey, VerifyingKey as K256VerifyingKey,
     },
@@ -20,15 +21,14 @@ use k256::{
     elliptic_curve::sec1::{
         FromEncodedPoint as K256FromEncodedPoint, ToEncodedPoint as K256ToEncodedPoint,
     },
-    AffinePoint as K256AffinePoint, EncodedPoint as K256EncodedPoint,
 };
 use p256::{
+    AffinePoint as P256AffinePoint, EncodedPoint as P256EncodedPoint,
     ecdsa::signature::Verifier,
     ecdsa::{
         Signature as P256Signature, SigningKey as P256SigningKey, VerifyingKey as P256VerifyingKey,
     },
     elliptic_curve::rand_core::OsRng,
-    AffinePoint as P256AffinePoint, EncodedPoint as P256EncodedPoint,
 };
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
@@ -883,12 +883,14 @@ mod tests {
         let signature: P256Signature = signing_key.sign(message);
         let signature_bytes = signature.to_bytes();
 
-        assert!(verify_signature(
-            ECCurve::Secp256r1,
-            public_point.as_bytes(),
-            message,
-            signature_bytes.as_slice()
-        )
-        .unwrap());
+        assert!(
+            verify_signature(
+                ECCurve::Secp256r1,
+                public_point.as_bytes(),
+                message,
+                signature_bytes.as_slice()
+            )
+            .unwrap()
+        );
     }
 }

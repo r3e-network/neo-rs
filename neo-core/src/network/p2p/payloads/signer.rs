@@ -16,11 +16,11 @@ use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable}
 use crate::smart_contract::IInteroperable;
 use crate::witness_rule::{WitnessRule, WitnessRuleAction};
 use crate::{
-    cryptography::{ECCurve, ECPoint},
     WitnessCondition, WitnessScope,
+    cryptography::{ECCurve, ECPoint},
 };
 use hex::{decode as hex_decode, encode as hex_encode};
-use neo_primitives::{UInt160, UINT160_SIZE};
+use neo_primitives::{UINT160_SIZE, UInt160};
 use neo_vm::StackItem;
 use serde::{Deserialize, Serialize};
 // Hash and Hasher now provided by impl_hash_for_fields macro

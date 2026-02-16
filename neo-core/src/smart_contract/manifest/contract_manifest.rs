@@ -5,16 +5,19 @@
 //! Represents the manifest of a smart contract which declares the features
 //! and permissions it will use when deployed.
 
+use crate::UInt160;
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
 use crate::neo_config::{MAX_SCRIPT_LENGTH, MAX_SCRIPT_SIZE};
 use crate::neo_io::serializable::helper::{get_var_size, get_var_size_str};
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::smart_contract::i_interoperable::IInteroperable;
+use crate::smart_contract::manifest::stack_item_helpers::{
+    decode_interoperable_array, expect_array_items, expect_struct_items,
+};
 use crate::smart_contract::manifest::{
     ContractAbi, ContractGroup, ContractPermission, ContractPermissionDescriptor, WildCardContainer,
 };
-use crate::UInt160;
 use neo_vm::StackItem;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value};
@@ -456,6 +459,90 @@ impl ContractManifest {
         let permission = serde_json::from_str(&permission_json).map_err(map_json_error)?;
         Ok(permission)
     }
+
+    fn parse_name_from_stack(item: &StackItem) -> Result<String> {
+        let name_bytes = item
+            .as_bytes()
+            .map_err(|_| Error::invalid_format("ContractManifest name must be ByteString"))?;
+        String::from_utf8(name_bytes)
+            .map_err(|_| Error::invalid_format("ContractManifest name must be valid UTF-8"))
+    }
+
+    fn parse_groups_from_stack(item: &StackItem) -> Result<Vec<ContractGroup>> {
+        Ok(expect_array_items(item, "ContractManifest groups")?
+            .iter()
+            .filter_map(|entry| ContractGroup::try_from_stack_item_value(entry).ok())
+            .collect())
+    }
+
+    fn parse_features_from_stack(item: &StackItem) -> Result<()> {
+        if let StackItem::Map(map_item) = item {
+            if !map_item.items().is_empty() {
+                tracing::warn!("ContractManifest features map is not empty, ignoring");
+            }
+            Ok(())
+        } else {
+            Err(Error::invalid_format(
+                "ContractManifest features must be a Map",
+            ))
+        }
+    }
+
+    fn parse_supported_standards_from_stack(item: &StackItem) -> Result<Vec<String>> {
+        Ok(
+            expect_array_items(item, "ContractManifest supported standards")?
+                .iter()
+                .filter_map(|entry| {
+                    let bytes = entry.as_bytes().ok()?;
+                    String::from_utf8(bytes).ok()
+                })
+                .collect(),
+        )
+    }
+
+    fn parse_permissions_from_stack(item: &StackItem) -> Result<Vec<ContractPermission>> {
+        match decode_interoperable_array::<ContractPermission>(item)? {
+            Some(permissions) => Ok(permissions),
+            None => Err(Error::invalid_format(
+                "ContractManifest permissions must be an Array",
+            )),
+        }
+    }
+
+    fn parse_trusts_from_stack(
+        item: &StackItem,
+    ) -> Result<WildCardContainer<ContractPermissionDescriptor>> {
+        match item {
+            StackItem::Null => Ok(WildCardContainer::create_wildcard()),
+            StackItem::Array(_) => Ok(WildCardContainer::create(
+                expect_array_items(item, "ContractManifest trusts")?
+                    .iter()
+                    .filter_map(|entry| ContractPermissionDescriptor::from_stack_item(entry).ok())
+                    .collect(),
+            )),
+            _ => Err(Error::invalid_format(
+                "ContractManifest trusts must be Null or Array",
+            )),
+        }
+    }
+
+    fn parse_extra_from_stack(item: &StackItem) -> Option<Value> {
+        match item {
+            StackItem::Null => None,
+            StackItem::ByteString(bytes) => parse_extra_bytes(bytes.as_slice()),
+            StackItem::Buffer(buffer) => {
+                let data = buffer.data();
+                parse_extra_bytes(&data)
+            }
+            other => {
+                tracing::error!(
+                    "ContractManifest extra must be byte string or null, found {:?}",
+                    other.stack_item_type()
+                );
+                None
+            }
+        }
+    }
 }
 
 impl Serializable for ContractManifest {
@@ -474,134 +561,22 @@ impl Serializable for ContractManifest {
 
 impl IInteroperable for ContractManifest {
     fn from_stack_item(&mut self, stack_item: StackItem) -> std::result::Result<(), Error> {
-        let struct_item = match stack_item {
-            StackItem::Struct(struct_item) => struct_item,
-            other => {
-                return Err(Error::invalid_format(format!(
-                    "ContractManifest expects Struct stack item, found {:?}",
-                    other.stack_item_type()
-                )));
-            }
-        };
+        let items = expect_struct_items(&stack_item, "ContractManifest", 8)?;
 
-        let items = struct_item.items();
-        if items.len() < 8 {
-            return Err(Error::invalid_format(format!(
-                "ContractManifest stack item must contain 8 elements, found {}",
-                items.len()
-            )));
-        }
-
-        let name_bytes = match items[0].as_bytes() {
-            Ok(bytes) => bytes,
-            Err(_) => {
-                return Err(Error::invalid_format(
-                    "ContractManifest name must be ByteString",
-                ));
-            }
-        };
-        self.name = match String::from_utf8(name_bytes) {
-            Ok(name) => name,
-            Err(_) => {
-                return Err(Error::invalid_format(
-                    "ContractManifest name must be valid UTF-8",
-                ));
-            }
-        };
-
-        self.groups = match &items[1] {
-            StackItem::Array(array) => array
-                .items()
-                .iter()
-                .filter_map(|item| ContractGroup::try_from_stack_item_value(item).ok())
-                .collect(),
-            _ => {
-                return Err(Error::invalid_format(
-                    "ContractManifest groups must be an Array",
-                ));
-            }
-        };
-
-        // Features map is reserved in C# and currently unused; expect empty map.
-        if let StackItem::Map(map_item) = &items[2] {
-            if !map_item.items().is_empty() {
-                tracing::warn!("ContractManifest features map is not empty, ignoring");
-            }
-        } else {
-            return Err(Error::invalid_format(
-                "ContractManifest features must be a Map",
-            ));
-        }
+        self.name = Self::parse_name_from_stack(&items[0])?;
+        self.groups = Self::parse_groups_from_stack(&items[1])?;
+        Self::parse_features_from_stack(&items[2])?;
+        // Features map is reserved in C# and currently unused.
         self.features.clear();
-
-        self.supported_standards = match &items[3] {
-            StackItem::Array(array) => array
-                .items()
-                .iter()
-                .filter_map(|item| {
-                    let bytes = item.as_bytes().ok()?;
-                    String::from_utf8(bytes).ok()
-                })
-                .collect(),
-            _ => {
-                return Err(Error::invalid_format(
-                    "ContractManifest supported standards must be an Array",
-                ));
-            }
-        };
+        self.supported_standards = Self::parse_supported_standards_from_stack(&items[3])?;
 
         let mut abi = ContractAbi::default();
         abi.from_stack_item(items[4].clone())?;
         self.abi = abi;
 
-        self.permissions = match &items[5] {
-            StackItem::Array(array) => {
-                let mut perms = Vec::new();
-                for item in array.items().iter() {
-                    let mut permission = ContractPermission::default_wildcard();
-                    permission.from_stack_item(item.clone())?;
-                    perms.push(permission);
-                }
-                perms
-            }
-            _ => {
-                return Err(Error::invalid_format(
-                    "ContractManifest permissions must be an Array",
-                ));
-            }
-        };
-
-        self.trusts = match &items[6] {
-            StackItem::Null => WildCardContainer::create_wildcard(),
-            StackItem::Array(array) => WildCardContainer::create(
-                array
-                    .items()
-                    .iter()
-                    .filter_map(|item| ContractPermissionDescriptor::from_stack_item(item).ok())
-                    .collect(),
-            ),
-            _ => {
-                return Err(Error::invalid_format(
-                    "ContractManifest trusts must be Null or Array",
-                ));
-            }
-        };
-
-        self.extra = match &items[7] {
-            StackItem::Null => None,
-            StackItem::ByteString(bytes) => parse_extra_bytes(bytes.as_slice()),
-            StackItem::Buffer(buffer) => {
-                let data = buffer.data();
-                parse_extra_bytes(&data)
-            }
-            other => {
-                tracing::error!(
-                    "ContractManifest extra must be byte string or null, found {:?}",
-                    other.stack_item_type()
-                );
-                None
-            }
-        };
+        self.permissions = Self::parse_permissions_from_stack(&items[5])?;
+        self.trusts = Self::parse_trusts_from_stack(&items[6])?;
+        self.extra = Self::parse_extra_from_stack(&items[7]);
         Ok(())
     }
 

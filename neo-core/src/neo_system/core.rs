@@ -62,40 +62,40 @@ use super::context::NeoSystemContext;
 use super::helpers::{initialise_plugins, to_core_error};
 use super::mempool::attach_mempool_callbacks;
 use super::registry::ServiceRegistry;
-use super::relay::{RelayExtensibleCache, RELAY_CACHE_CAPACITY};
+use super::relay::{RELAY_CACHE_CAPACITY, RelayExtensibleCache};
 use super::system::STATE_STORE_SERVICE;
 
 use crate::akka::{ActorRef, ActorSystem, EventStreamHandle};
 
 use crate::error::{CoreError, CoreResult};
-use crate::events::{broadcast_plugin_event, PluginEvent};
-use crate::extensions::log_level::LogLevel;
-use crate::extensions::utility::ExtensionsUtility;
+use crate::events::{PluginEvent, broadcast_plugin_event};
 #[cfg(test)]
 use crate::extensions::LogLevel as ExternalLogLevel;
+use crate::extensions::log_level::LogLevel;
+use crate::extensions::utility::ExtensionsUtility;
 use crate::hardfork::Hardfork;
 use crate::i_event_handlers::IServiceAddedHandler;
 use crate::ledger::blockchain::{Blockchain, BlockchainCommand};
 use crate::ledger::{HeaderCache, LedgerContext, MemoryPool};
 use crate::network::p2p::{
-    payloads::block::Block, timeouts, LocalNode, TaskManager, TaskManagerCommand,
+    LocalNode, TaskManager, TaskManagerCommand, payloads::block::Block, timeouts,
 };
 use crate::persistence::{
-    i_store::IStore, i_store_provider::IStoreProvider, StoreCache, StoreFactory,
+    StoreCache, StoreFactory, i_store::IStore, i_store_provider::IStoreProvider,
 };
 pub use crate::protocol_settings::ProtocolSettings;
 use crate::services::{LedgerService, MempoolService, PeerManagerService, StateStoreService};
+use crate::smart_contract::native::PolicyContract;
 use crate::smart_contract::native::helpers::NativeHelpers;
 use crate::smart_contract::native::ledger_contract::LedgerContract;
-use crate::smart_contract::native::PolicyContract;
 use crate::state_service::StateStore;
 use neo_primitives::UInt256;
 #[cfg(test)]
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 
 // initialise_plugins and to_core_error have been extracted to super::helpers module
 #[cfg(test)]
-static TEST_SYSTEM_MUTEX: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+static TEST_SYSTEM_MUTEX: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
 // RelayExtensibleEntry, RelayExtensibleCache, and constants have been extracted to super::relay module
 

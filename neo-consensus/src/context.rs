@@ -1106,7 +1106,7 @@ mod tests {
         ctx.last_seen_messages.insert(1, 99); // Previous block - not failed
         ctx.last_seen_messages.insert(2, 98); // Old block (< 99) - FAILED
         ctx.last_seen_messages.insert(3, 95); // Very old block - FAILED
-                                              // Validators 4, 5, 6 have no messages - FAILED
+        // Validators 4, 5, 6 have no messages - FAILED
 
         // Failed: validators 2, 3, 4, 5, 6 = 5 validators
         assert_eq!(ctx.count_failed(), 5);
@@ -1124,7 +1124,7 @@ mod tests {
         ctx.last_seen_messages.insert(0, 10); // OK
         ctx.last_seen_messages.insert(1, 9); // OK (exactly at threshold)
         ctx.last_seen_messages.insert(2, 8); // FAILED (< threshold)
-                                             // Validator 3 has no message - FAILED
+        // Validator 3 has no message - FAILED
 
         assert_eq!(ctx.count_failed(), 2); // Validators 2 and 3
     }

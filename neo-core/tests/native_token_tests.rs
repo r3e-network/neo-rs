@@ -1,5 +1,6 @@
 use neo_core::network::p2p::payloads::{signer::Signer, transaction::Transaction};
 use neo_core::persistence::DataCache;
+use neo_core::smart_contract::IInteroperable;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::binary_serializer::BinarySerializer;
 use neo_core::smart_contract::call_flags::CallFlags;
@@ -10,7 +11,6 @@ use neo_core::smart_contract::manifest::{
 };
 use neo_core::smart_contract::native::{ContractManagement, GasToken, NativeContract, NeoToken};
 use neo_core::smart_contract::trigger_type::TriggerType;
-use neo_core::smart_contract::IInteroperable;
 use neo_core::wallets::KeyPair;
 use neo_core::witness::Witness;
 use neo_core::{IVerifiable, UInt160, WitnessScope};
@@ -150,9 +150,10 @@ fn gas_token_mint_burn_and_transfer_update_balances() {
 
     gas.burn(&mut engine, &account_a, &balance_a_after)
         .expect("burn succeeds");
-    assert!(gas
-        .balance_of_snapshot(snapshot.as_ref(), &account_a)
-        .is_zero());
+    assert!(
+        gas.balance_of_snapshot(snapshot.as_ref(), &account_a)
+            .is_zero()
+    );
 }
 
 #[test]

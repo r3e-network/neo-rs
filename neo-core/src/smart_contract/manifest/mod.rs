@@ -11,6 +11,7 @@ pub mod contract_method_descriptor;
 pub mod contract_parameter_definition;
 pub mod contract_permission;
 pub mod contract_permission_descriptor;
+mod stack_item_helpers;
 pub mod wild_card_container;
 
 pub use contract_abi::ContractAbi;

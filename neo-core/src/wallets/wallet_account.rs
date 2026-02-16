@@ -4,6 +4,7 @@
 //! hierarchy, providing the core primitives used by NEP-6 wallets and other
 //! account containers within the runtime.
 
+use crate::UInt160;
 use crate::network::p2p::payloads::transaction::Transaction;
 use crate::network::p2p::payloads::witness::Witness;
 use crate::protocol_settings::ProtocolSettings;
@@ -11,7 +12,6 @@ use crate::smart_contract::contract::Contract;
 use crate::wallets::helper::Helper;
 use crate::wallets::key_pair::KeyPair;
 use crate::wallets::wallet::{WalletError, WalletResult};
-use crate::UInt160;
 use neo_vm::op_code::OpCode;
 use std::sync::Arc;
 

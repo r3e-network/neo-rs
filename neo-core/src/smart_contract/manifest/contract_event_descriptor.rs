@@ -3,6 +3,10 @@
 use crate::error::CoreError;
 use crate::smart_contract::i_interoperable::IInteroperable;
 use crate::smart_contract::manifest::ContractParameterDefinition;
+use crate::smart_contract::manifest::stack_item_helpers::{
+    decode_interoperable_array, expect_struct_items,
+};
+use crate::smart_contract::stack_item_extract::extract_string;
 use neo_vm::StackItem;
 use serde::{Deserialize, Serialize};
 
@@ -74,34 +78,16 @@ impl ContractEventDescriptor {
 
 impl IInteroperable for ContractEventDescriptor {
     fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
-        let StackItem::Struct(struct_item) = stack_item else {
-            return Err(CoreError::invalid_format(
-                "ContractEventDescriptor expects Struct stack item",
-            ));
-        };
-        let items = struct_item.items();
-        if items.len() < 2 {
-            return Err(CoreError::invalid_format(format!(
-                "ContractEventDescriptor stack item must contain 2 elements, found {}",
-                items.len()
-            )));
+        let items = expect_struct_items(&stack_item, "ContractEventDescriptor", 2)?;
+
+        if let Some(name) = extract_string(&items[0]) {
+            self.name = name;
         }
 
-        if let Ok(bytes) = items[0].as_bytes() {
-            if let Ok(name) = String::from_utf8(bytes) {
-                self.name = name;
-            }
-        }
-
-        if let Ok(param_items) = items[1].as_array() {
-            self.parameters = param_items
-                .iter()
-                .map(|item| {
-                    let mut param = ContractParameterDefinition::default();
-                    param.from_stack_item(item.clone())?;
-                    Ok(param)
-                })
-                .collect::<Result<Vec<_>, CoreError>>()?;
+        if let Some(parameters) =
+            decode_interoperable_array::<ContractParameterDefinition>(&items[1])?
+        {
+            self.parameters = parameters;
         }
         Ok(())
     }

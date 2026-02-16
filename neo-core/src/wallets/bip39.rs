@@ -1,9 +1,9 @@
 //! BIP-39 mnemonic helpers (multi-language wordlists).
 
 use crate::cryptography::Crypto;
-use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::env;
+use std::sync::LazyLock;
 use zeroize::Zeroizing;
 
 // English last so reverse index prefers English for overlapping words.
@@ -11,7 +11,7 @@ const WORDLIST_KEYS: [&str; 10] = [
     "cs", "es", "fr", "it", "ja", "ko", "pt", "zh", "zh-hant", "en",
 ];
 
-static WORDLISTS: Lazy<HashMap<&'static str, Vec<&'static str>>> = Lazy::new(|| {
+static WORDLISTS: LazyLock<HashMap<&'static str, Vec<&'static str>>> = LazyLock::new(|| {
     let mut map = HashMap::new();
     map.insert("cs", load_wordlist(include_str!("bip39_wordlists/cs.txt")));
     map.insert("en", load_wordlist(include_str!("bip39_wordlists/en.txt")));
@@ -29,7 +29,7 @@ static WORDLISTS: Lazy<HashMap<&'static str, Vec<&'static str>>> = Lazy::new(|| 
     map
 });
 
-static WORDLIST_REVERSE_INDEX: Lazy<HashMap<&'static str, usize>> = Lazy::new(|| {
+static WORDLIST_REVERSE_INDEX: LazyLock<HashMap<&'static str, usize>> = LazyLock::new(|| {
     let mut map = HashMap::new();
     for key in WORDLIST_KEYS {
         if let Some(wordlist) = WORDLISTS.get(key) {

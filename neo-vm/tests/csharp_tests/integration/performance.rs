@@ -1,6 +1,6 @@
 //! Performance and benchmark tests for the JSON runner.
 
-use crate::csharp_tests::{resolve_test_dir, JsonTestRunner, VMUT};
+use crate::csharp_tests::{JsonTestRunner, VMUT, resolve_test_dir};
 use serde_json;
 use std::fs;
 use std::time::Instant;

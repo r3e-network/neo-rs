@@ -32,6 +32,32 @@ pub fn compress_lz4(data: &[u8]) -> CompressionResult<Vec<u8>> {
     Ok(lz4_flex::block::compress_prepend_size(data))
 }
 
+/// Returns `true` when payload size is large enough to attempt compression.
+///
+/// Uses a strict `>` comparison to match the C# implementation boundary.
+pub const fn should_attempt_lz4(payload_len: usize) -> bool {
+    payload_len > COMPRESSION_MIN_SIZE
+}
+
+/// Compresses payload data when both size and threshold heuristics are satisfied.
+///
+/// Returns:
+/// - `Ok(Some(compressed))` when compression is beneficial.
+/// - `Ok(None)` when compression should be skipped.
+/// - `Err(...)` when the compression operation fails.
+pub fn compress_lz4_if_beneficial(data: &[u8]) -> CompressionResult<Option<Vec<u8>>> {
+    if !should_attempt_lz4(data.len()) {
+        return Ok(None);
+    }
+
+    let compressed = compress_lz4(data)?;
+    if compressed.len().saturating_add(COMPRESSION_THRESHOLD) < data.len() {
+        Ok(Some(compressed))
+    } else {
+        Ok(None)
+    }
+}
+
 /// Decompresses LZ4 data (with prepended length) enforcing a maximum size.
 pub fn decompress_lz4(data: &[u8], max_size: usize) -> CompressionResult<Vec<u8>> {
     if data.len() < 4 {
@@ -68,6 +94,25 @@ pub fn decompress_lz4(data: &[u8], max_size: usize) -> CompressionResult<Vec<u8>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compression_attempt_threshold_matches_csharp_boundary() {
+        assert!(!should_attempt_lz4(COMPRESSION_MIN_SIZE));
+        assert!(should_attempt_lz4(COMPRESSION_MIN_SIZE + 1));
+    }
+
+    #[test]
+    fn compress_if_beneficial_skips_small_payloads() {
+        let payload = vec![0_u8; COMPRESSION_MIN_SIZE];
+        assert!(matches!(compress_lz4_if_beneficial(&payload), Ok(None)));
+    }
+
+    #[test]
+    fn compress_if_beneficial_compresses_when_threshold_met() {
+        let payload = vec![0_u8; COMPRESSION_MIN_SIZE + 256];
+        let compressed = compress_lz4_if_beneficial(&payload).expect("compression");
+        assert!(compressed.is_some());
+    }
 
     #[test]
     fn decompress_rejects_declared_size_over_limit_before_decode() {

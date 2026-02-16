@@ -77,8 +77,8 @@ exclude = [
 
 [workspace.package]
 version = "0.7.2"
-edition = "2021"
-rust-version = "1.75"
+edition = "2024"
+rust-version = "1.85"
 authors = [
     "R3E Network <jimmy@r3e.network>"
 ]
@@ -92,7 +92,7 @@ readme = "README.md"
 
 [workspace.metadata]
 # Minimum supported Rust version policy
-msrv = "1.70.0"
+msrv = "1.85.0"
 
 [workspace.dependencies]
 # === Internal crates ===

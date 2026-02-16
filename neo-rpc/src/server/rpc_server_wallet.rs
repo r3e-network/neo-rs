@@ -1,6 +1,6 @@
 //! RPC wallet endpoints mirroring RpcServer.Wallet.cs.
 
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use neo_core::big_decimal::BigDecimal;
 use neo_core::cryptography::{ECCurve, ECPoint};
 use neo_core::ledger::{RelayResult, VerifyResult};
@@ -31,7 +31,7 @@ use neo_vm::script_builder::ScriptBuilder;
 use neo_vm::vm_state::VMState;
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use std::future::Future;
 use std::io::ErrorKind;
 use std::path::Path;
@@ -226,18 +226,18 @@ impl RpcServerWallet {
             Err(WalletError::InvalidPassword) => {
                 return Err(RpcException::from(
                     RpcError::wallet_not_supported().with_data("Invalid password."),
-                ))
+                ));
             }
             Err(WalletError::WalletFileNotFound(_)) => {
-                return Err(RpcException::from(RpcError::wallet_not_found()))
+                return Err(RpcException::from(RpcError::wallet_not_found()));
             }
             Err(WalletError::Io(ref err)) if err.kind() == ErrorKind::NotFound => {
-                return Err(RpcException::from(RpcError::wallet_not_found()))
+                return Err(RpcException::from(RpcError::wallet_not_found()));
             }
             Err(err) => {
                 return Err(RpcException::from(
                     RpcError::wallet_not_supported().with_data(err.to_string()),
-                ))
+                ));
             }
         };
         let wallet_arc: Arc<dyn CoreWallet> = Arc::new(wallet);
@@ -482,23 +482,28 @@ impl RpcServerWallet {
         )
         .map_err(Self::wallet_failure)?;
 
-        if let Some(conflict_tx) = server.system().mempool().lock().try_get(&txid) {
-            let bumped = tx
-                .network_fee()
-                .max(conflict_tx.network_fee())
-                .saturating_add(1);
-            tx.set_network_fee(bumped);
-        } else if let Some(extra_fee) = params.get(2).and_then(Value::as_str) {
-            let decimals = GasToken::new().decimals();
-            let (ok, fee) = BigDecimal::try_parse(extra_fee, decimals);
-            let fee_amount = fee
-                .value()
-                .to_i64()
-                .ok_or_else(|| invalid_params("Incorrect amount format."))?;
-            if !ok || fee.sign() <= 0 {
-                return Err(invalid_params("Incorrect amount format."));
+        match server.system().mempool().lock().try_get(&txid) {
+            Some(conflict_tx) => {
+                let bumped = tx
+                    .network_fee()
+                    .max(conflict_tx.network_fee())
+                    .saturating_add(1);
+                tx.set_network_fee(bumped);
             }
-            tx.set_network_fee(tx.network_fee().saturating_add(fee_amount));
+            _ => {
+                if let Some(extra_fee) = params.get(2).and_then(Value::as_str) {
+                    let decimals = GasToken::new().decimals();
+                    let (ok, fee) = BigDecimal::try_parse(extra_fee, decimals);
+                    let fee_amount = fee
+                        .value()
+                        .to_i64()
+                        .ok_or_else(|| invalid_params("Incorrect amount format."))?;
+                    if !ok || fee.sign() <= 0 {
+                        return Err(invalid_params("Incorrect amount format."));
+                    }
+                    tx.set_network_fee(tx.network_fee().saturating_add(fee_amount));
+                }
+            }
         }
 
         Self::sign_and_relay(server, &wallet, tx, snapshot_arc)
@@ -574,16 +579,15 @@ impl RpcServerWallet {
     fn await_wallet_future<T>(
         future: Pin<Box<dyn Future<Output = WalletResult<T>> + Send>>,
     ) -> Result<T, RpcException> {
-        let result = if let Ok(handle) = Handle::try_current() {
-            handle.block_on(future)
-        } else {
-            RuntimeBuilder::new_current_thread()
+        let result = match Handle::try_current() {
+            Ok(handle) => handle.block_on(future),
+            _ => RuntimeBuilder::new_current_thread()
                 .enable_all()
                 .build()
                 .map_err(|err| {
                     RpcException::from(RpcError::internal_server_error().with_data(err.to_string()))
                 })?
-                .block_on(future)
+                .block_on(future),
         };
         result.map_err(Self::wallet_failure)
     }
@@ -1045,6 +1049,10 @@ fn signature_contract_pubkey(script: &[u8]) -> Result<Vec<u8>, RpcException> {
 mod tests {
     use super::*;
     use crate::server::rpc_server_settings::RpcServerConfig;
+    use neo_core::IVerifiable;
+    use neo_core::NeoSystem;
+    use neo_core::UInt256;
+    use neo_core::Witness;
     use neo_core::neo_io::BinaryWriter;
     use neo_core::network::p2p::helper::get_sign_data_vec;
     use neo_core::network::p2p::payloads::conflicts::Conflicts;
@@ -1055,10 +1063,6 @@ mod tests {
     use neo_core::smart_contract::helper::Helper as ContractHelper;
     use neo_core::smart_contract::native::LedgerContract;
     use neo_core::smart_contract::{StorageItem, StorageKey};
-    use neo_core::IVerifiable;
-    use neo_core::NeoSystem;
-    use neo_core::UInt256;
-    use neo_core::Witness;
     use neo_crypto::Secp256r1Crypto;
     use neo_vm::vm_state::VMState;
     use num_bigint::BigInt;
@@ -1385,9 +1389,11 @@ mod tests {
         let new_address = result.as_str().expect("address");
         let wallet = server.wallet().expect("wallet");
         let accounts = wallet.get_accounts();
-        assert!(accounts
-            .iter()
-            .any(|account| account.address() == new_address));
+        assert!(
+            accounts
+                .iter()
+                .any(|account| account.address() == new_address)
+        );
 
         let result = (close_handler.callback())(&server, &[]).expect("close wallet");
         assert_eq!(result.as_bool(), Some(true));
@@ -1526,11 +1532,13 @@ mod tests {
 
         let result = (list_handler.callback())(&server, &[]).expect("listaddress");
         let accounts = result.as_array().expect("account list");
-        assert!(accounts
-            .iter()
-            .filter_map(|entry| entry.as_object())
-            .any(|entry| entry.get("address").and_then(Value::as_str)
-                == Some(expected_address.as_str())));
+        assert!(
+            accounts
+                .iter()
+                .filter_map(|entry| entry.as_object())
+                .any(|entry| entry.get("address").and_then(Value::as_str)
+                    == Some(expected_address.as_str()))
+        );
 
         let result = (close_handler.callback())(&server, &[]).expect("close wallet");
         assert_eq!(result.as_bool(), Some(true));

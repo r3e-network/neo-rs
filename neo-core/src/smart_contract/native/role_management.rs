@@ -6,15 +6,14 @@
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::hardfork::Hardfork;
 use crate::persistence::{DataCache, SeekDirection};
+use crate::smart_contract::ContractParameterType;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::manifest::{ContractEventDescriptor, ContractParameterDefinition};
 use crate::smart_contract::native::{LedgerContract, NativeContract, NativeMethod, Role};
 use crate::smart_contract::storage_key::StorageKey;
-use crate::smart_contract::ContractParameterType;
 use crate::{ECCurve, ECPoint, UInt160};
-use neo_vm::execution_engine_limits::ExecutionEngineLimits;
 use neo_vm::StackItem;
 use std::convert::TryInto;
 
@@ -311,7 +310,7 @@ impl RoleManagement {
             .map(|pubkey| StackItem::from_byte_string(pubkey.as_bytes().to_vec()))
             .collect();
         let array = StackItem::from_array(items);
-        BinarySerializer::serialize(&array, &ExecutionEngineLimits::default())
+        BinarySerializer::serialize_default(&array)
             .map_err(|e| Error::native_contract(format!("Failed to serialize public keys: {e}")))
     }
 
@@ -321,10 +320,9 @@ impl RoleManagement {
             return Ok(Vec::new());
         }
 
-        let item = BinarySerializer::deserialize(data, &ExecutionEngineLimits::default(), None)
-            .map_err(|e| {
-                Error::native_contract(format!("Failed to deserialize public keys: {e}"))
-            })?;
+        let item = BinarySerializer::deserialize_default(data).map_err(|e| {
+            Error::native_contract(format!("Failed to deserialize public keys: {e}"))
+        })?;
 
         let StackItem::Array(array) = item else {
             return Err(Error::native_contract(
@@ -369,49 +367,53 @@ impl NativeContract for RoleManagement {
         block_height: u32,
     ) -> Vec<ContractEventDescriptor> {
         if settings.is_hardfork_enabled(Hardfork::HfEchidna, block_height) {
-            vec![ContractEventDescriptor::new(
-                "Designation".to_string(),
-                vec![
-                    ContractParameterDefinition::new(
-                        "Role".to_string(),
-                        ContractParameterType::Integer,
-                    )
-                    .expect("Designation.Role"),
-                    ContractParameterDefinition::new(
-                        "BlockIndex".to_string(),
-                        ContractParameterType::Integer,
-                    )
-                    .expect("Designation.BlockIndex"),
-                    ContractParameterDefinition::new(
-                        "Old".to_string(),
-                        ContractParameterType::Array,
-                    )
-                    .expect("Designation.Old"),
-                    ContractParameterDefinition::new(
-                        "New".to_string(),
-                        ContractParameterType::Array,
-                    )
-                    .expect("Designation.New"),
-                ],
-            )
-            .expect("Designation event descriptor")]
+            vec![
+                ContractEventDescriptor::new(
+                    "Designation".to_string(),
+                    vec![
+                        ContractParameterDefinition::new(
+                            "Role".to_string(),
+                            ContractParameterType::Integer,
+                        )
+                        .expect("Designation.Role"),
+                        ContractParameterDefinition::new(
+                            "BlockIndex".to_string(),
+                            ContractParameterType::Integer,
+                        )
+                        .expect("Designation.BlockIndex"),
+                        ContractParameterDefinition::new(
+                            "Old".to_string(),
+                            ContractParameterType::Array,
+                        )
+                        .expect("Designation.Old"),
+                        ContractParameterDefinition::new(
+                            "New".to_string(),
+                            ContractParameterType::Array,
+                        )
+                        .expect("Designation.New"),
+                    ],
+                )
+                .expect("Designation event descriptor"),
+            ]
         } else {
-            vec![ContractEventDescriptor::new(
-                "Designation".to_string(),
-                vec![
-                    ContractParameterDefinition::new(
-                        "Role".to_string(),
-                        ContractParameterType::Integer,
-                    )
-                    .expect("Designation.Role"),
-                    ContractParameterDefinition::new(
-                        "BlockIndex".to_string(),
-                        ContractParameterType::Integer,
-                    )
-                    .expect("Designation.BlockIndex"),
-                ],
-            )
-            .expect("Designation event descriptor")]
+            vec![
+                ContractEventDescriptor::new(
+                    "Designation".to_string(),
+                    vec![
+                        ContractParameterDefinition::new(
+                            "Role".to_string(),
+                            ContractParameterType::Integer,
+                        )
+                        .expect("Designation.Role"),
+                        ContractParameterDefinition::new(
+                            "BlockIndex".to_string(),
+                            ContractParameterType::Integer,
+                        )
+                        .expect("Designation.BlockIndex"),
+                    ],
+                )
+                .expect("Designation event descriptor"),
+            ]
         }
     }
 

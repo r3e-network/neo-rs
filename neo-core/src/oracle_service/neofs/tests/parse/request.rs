@@ -1,5 +1,5 @@
-use super::super::super::parse::parse_neofs_request;
 use super::super::super::NeoFsCommand;
+use super::super::super::parse::parse_neofs_request;
 
 fn sample_neofs_id(byte: u8) -> String {
     bs58::encode([byte; 32]).into_string()

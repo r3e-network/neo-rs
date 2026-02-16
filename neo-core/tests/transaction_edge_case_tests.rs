@@ -5,14 +5,14 @@
 
 use neo_core::ledger::{TransactionVerificationContext, VerifyResult};
 use neo_core::neo_io::Serializable;
-use neo_core::network::p2p::payloads::{signer::Signer, witness::Witness, InventoryType};
+use neo_core::network::p2p::payloads::{InventoryType, signer::Signer, witness::Witness};
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::{
-    Transaction, TransactionAttribute, UInt160, WitnessScope, HEADER_SIZE, MAX_TRANSACTION_SIZE,
+    HEADER_SIZE, MAX_TRANSACTION_SIZE, Transaction, TransactionAttribute, UInt160, WitnessScope,
 };
-use neo_vm::op_code::OpCode;
 use neo_vm::StackItem;
+use neo_vm::op_code::OpCode;
 
 // ============================================================================
 // Test Helper Functions
@@ -45,9 +45,9 @@ fn get_test_byte_array(size: usize, fill_byte: u8) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use neo_core::IVerifiable;
     use neo_core::network::p2p::payloads::i_inventory::IInventory;
     use neo_core::smart_contract::IInteroperable;
-    use neo_core::IVerifiable;
     use num_traits::ToPrimitive;
     use std::str::FromStr;
 

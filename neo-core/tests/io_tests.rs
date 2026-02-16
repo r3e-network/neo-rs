@@ -214,9 +214,11 @@ fn test_memory_reader_read_nullable_array() {
     let payload = writer.to_bytes();
 
     let mut reader_too_small = MemoryReader::new(&payload);
-    assert!(reader_too_small
-        .read_nullable_array::<UInt160>(values.len() - 1)
-        .is_err());
+    assert!(
+        reader_too_small
+            .read_nullable_array::<UInt160>(values.len() - 1)
+            .is_err()
+    );
 
     let mut reader = MemoryReader::new(&payload);
     let roundtrip = reader.read_nullable_array::<UInt160>(usize::MAX).unwrap();

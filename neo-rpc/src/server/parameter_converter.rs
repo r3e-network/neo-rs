@@ -1,12 +1,12 @@
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use hex;
+use neo_core::UInt160;
 use neo_core::cryptography::{ECCurve, ECPoint};
 use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::transaction::MAX_TRANSACTION_ATTRIBUTES;
 use neo_core::network::p2p::payloads::witness::Witness;
 use neo_core::smart_contract::contract_parameter::ContractParameter;
 use neo_core::wallets::helper::Helper as WalletHelper;
-use neo_core::UInt160;
 use neo_core::{WitnessRule, WitnessScope};
 use neo_json::{JArray, JObject, JToken, MAX_SAFE_INTEGER};
 use std::str::FromStr;

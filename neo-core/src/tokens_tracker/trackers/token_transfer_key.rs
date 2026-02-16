@@ -3,8 +3,8 @@
 //! Common transfer key structure used by both NEP-11 and NEP-17.
 
 use super::tracker_base::TokenTransferKeyView;
-use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
 use crate::UInt160;
+use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
 use serde::{Deserialize, Serialize};
 
 /// Key for transfer history records.

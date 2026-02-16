@@ -3,6 +3,7 @@
 //! Mirrors the behaviour of `Neo.SmartContract.Native.PolicyContract` from the
 //! Neo N3 C# reference node.
 
+use crate::UInt160;
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::hardfork::Hardfork;
 use crate::neo_config::ADDRESS_SIZE;
@@ -13,9 +14,11 @@ use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::find_options::FindOptions;
 use crate::smart_contract::manifest::{ContractEventDescriptor, ContractParameterDefinition};
 use crate::smart_contract::native::{NativeContract, NativeMethod};
+use crate::smart_contract::stack_item_extract::{
+    extract_bytes, extract_i64, extract_string, extract_u32,
+};
 use crate::smart_contract::storage_key::StorageKey;
 use crate::smart_contract::{ContractParameterType, StorageItem};
-use crate::UInt160;
 use neo_primitives::TransactionAttributeType;
 use neo_vm::StackItem;
 use num_bigint::{BigInt, Sign};
@@ -64,28 +67,22 @@ impl IInteroperable for WhitelistedContract {
             )));
         }
 
-        if let Ok(bytes) = items[0].as_bytes() {
-            if let Ok(hash) = UInt160::from_bytes(&bytes) {
-                self.contract_hash = hash;
-            }
+        if let Some(bytes) = extract_bytes(&items[0])
+            && let Ok(hash) = UInt160::from_bytes(&bytes)
+        {
+            self.contract_hash = hash;
         }
 
-        if let Ok(bytes) = items[1].as_bytes() {
-            if let Ok(method) = String::from_utf8(bytes) {
-                self.method = method;
-            }
+        if let Some(method) = extract_string(&items[1]) {
+            self.method = method;
         }
 
-        if let Ok(value) = items[2].as_int() {
-            if let Some(count) = value.to_u32() {
-                self.arg_count = count;
-            }
+        if let Some(count) = extract_u32(&items[2]) {
+            self.arg_count = count;
         }
 
-        if let Ok(value) = items[3].as_int() {
-            if let Some(fee) = value.to_i64() {
-                self.fixed_fee = fee;
-            }
+        if let Some(fee) = extract_i64(&items[3]) {
+            self.fixed_fee = fee;
         }
 
         Ok(())

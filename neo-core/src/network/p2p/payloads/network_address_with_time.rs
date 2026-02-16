@@ -1,6 +1,6 @@
 //! Network address descriptor with timestamp (mirrors `NetworkAddressWithTime.cs`).
 
-use crate::neo_io::{helper, BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable, helper};
 use crate::network::p2p::capabilities::{NodeCapability, ServerCapability};
 use crate::network::p2p::payloads::version_payload::MAX_CAPABILITIES;
 use serde::{Deserialize, Serialize};

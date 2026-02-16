@@ -139,14 +139,17 @@ impl Blockchain {
             let maybe_block = {
                 let mut unverified = self._block_cache_unverified.write().await;
                 if let Some(entry) = unverified.get_mut(&next_index) {
-                    if let Some(next_block) = entry.blocks.pop() {
-                        if entry.blocks.is_empty() {
-                            unverified.remove(&next_index);
+                    match entry.blocks.pop() {
+                        Some(next_block) => {
+                            if entry.blocks.is_empty() {
+                                unverified.remove(&next_index);
+                            }
+                            Some(next_block)
                         }
-                        Some(next_block)
-                    } else {
-                        unverified.remove(&next_index);
-                        None
+                        _ => {
+                            unverified.remove(&next_index);
+                            None
+                        }
                     }
                 } else {
                     None
@@ -178,14 +181,17 @@ impl Blockchain {
         {
             let mut unverified = self._block_cache_unverified.write().await;
             while let Some(entry) = unverified.get_mut(&next_index.saturating_add(1)) {
-                if let Some(block) = entry.blocks.pop() {
-                    next_index = block.index();
-                    blocks.push(block);
-                    if blocks.len() >= 64 {
+                match entry.blocks.pop() {
+                    Some(block) => {
+                        next_index = block.index();
+                        blocks.push(block);
+                        if blocks.len() >= 64 {
+                            break;
+                        }
+                    }
+                    _ => {
                         break;
                     }
-                } else {
-                    break;
                 }
             }
         }
@@ -297,9 +303,9 @@ impl Blockchain {
         settings: &ProtocolSettings,
         snapshot: &DataCache,
     ) -> std::collections::HashSet<UInt160> {
+        use crate::smart_contract::Contract;
         use crate::smart_contract::native::helpers::NativeHelpers;
         use crate::smart_contract::native::{NeoToken, Role, RoleManagement};
-        use crate::smart_contract::Contract;
 
         let current_height = LedgerContract::new().current_index(snapshot).unwrap_or(0);
         let mut whitelist = std::collections::HashSet::new();

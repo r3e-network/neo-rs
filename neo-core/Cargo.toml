@@ -24,7 +24,6 @@ derive_more = { workspace = true }
 hex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-lazy_static = { workspace = true }
 byteorder = { workspace = true }
 bytes = { workspace = true }
 # tokio kept for monitoring and persistence/backup modules

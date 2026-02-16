@@ -2,8 +2,8 @@
 //!
 //! Storage key for NEP-17 token balances.
 
-use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
 use crate::UInt160;
+use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
 use serde::{Deserialize, Serialize};
 
 /// Key for NEP-17 balance records.

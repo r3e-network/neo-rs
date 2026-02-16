@@ -15,9 +15,8 @@ pub(crate) struct NeoAccountState {
 impl NeoAccountState {
     pub(super) fn from_storage_item(item: &StorageItem) -> Result<Self, String> {
         let bytes = item.get_value();
-        let stack_item =
-            BinarySerializer::deserialize(&bytes, &ExecutionEngineLimits::default(), None)
-                .map_err(|err| format!("failed to deserialize NeoAccountState: {}", err))?;
+        let stack_item = BinarySerializer::deserialize_default(&bytes)
+            .map_err(|err| format!("failed to deserialize NeoAccountState: {}", err))?;
         Self::from_stack_item(stack_item)
     }
 
@@ -49,7 +48,7 @@ impl NeoAccountState {
                             return Err(format!(
                                 "vote target must be byte array, found {:?}",
                                 other.stack_item_type()
-                            ))
+                            ));
                         }
                     };
                     Some(
@@ -117,9 +116,8 @@ impl CandidateState {
         if bytes.is_empty() {
             return Ok(Self::default());
         }
-        let stack_item =
-            BinarySerializer::deserialize(&bytes, &ExecutionEngineLimits::default(), None)
-                .map_err(|err| format!("failed to deserialize CandidateState: {}", err))?;
+        let stack_item = BinarySerializer::deserialize_default(&bytes)
+            .map_err(|err| format!("failed to deserialize CandidateState: {}", err))?;
         Self::from_stack_item(stack_item)
     }
 
@@ -131,13 +129,13 @@ impl CandidateState {
                 return Ok(Self {
                     registered: votes.sign() != num_bigint::Sign::Minus,
                     votes: votes.max(BigInt::zero()),
-                })
+                });
             }
             other => {
                 return Err(format!(
                     "expected CandidateState struct, found {:?}",
                     other.stack_item_type()
-                ))
+                ));
             }
         };
 

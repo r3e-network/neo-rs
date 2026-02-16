@@ -8,13 +8,13 @@
 
 use crate::error::{CryptoError, CryptoResult};
 use blake2::{
+    Blake2b, Blake2b512, Blake2bVarCore, Blake2s256,
     digest::{
+        Output,
         block_buffer::BlockBuffer,
         consts::U32,
         core_api::{BlockSizeUser, BufferKindUser, UpdateCore, VariableOutputCore},
-        Output,
     },
-    Blake2b, Blake2b512, Blake2bVarCore, Blake2s256,
 };
 use ripemd::Ripemd160;
 use sha2::{Digest, Sha256, Sha512};

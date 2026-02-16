@@ -1,11 +1,11 @@
+use crate::UInt256;
 use crate::error::CoreError;
 use crate::extensions::io::memory_reader::MemoryReaderExtensions;
-use crate::ledger::{block_header::BlockHeader, Block};
+use crate::ledger::{Block, block_header::BlockHeader};
 use crate::neo_io::{
-    serializable::helper::get_var_size, BinaryWriter, IoResult, MemoryReader, Serializable,
+    BinaryWriter, IoResult, MemoryReader, Serializable, serializable::helper::get_var_size,
 };
 use crate::smart_contract::i_interoperable::IInteroperable;
-use crate::UInt256;
 use neo_vm::StackItem;
 
 /// A trimmed block containing only the header and transaction hashes (matches C# TrimmedBlock)

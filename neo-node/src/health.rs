@@ -7,8 +7,8 @@ pub const DEFAULT_MAX_HEADER_LAG: u32 = 20;
 
 use crate::metrics;
 use hyper::{
-    service::{make_service_fn, service_fn},
     Body, Request, Response, Server, StatusCode,
+    service::{make_service_fn, service_fn},
 };
 use serde::Serialize;
 use std::fs;

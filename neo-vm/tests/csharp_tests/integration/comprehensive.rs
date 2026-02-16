@@ -1,6 +1,6 @@
 //! Comprehensive integration tests executing the C# JSON fixtures.
 
-use crate::csharp_tests::{resolve_test_dir, JsonTestRunner};
+use crate::csharp_tests::{JsonTestRunner, resolve_test_dir};
 
 /// Test Others category (matches C# TestOthers)
 #[test]

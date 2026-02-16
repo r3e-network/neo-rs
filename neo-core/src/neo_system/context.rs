@@ -17,11 +17,11 @@ use tracing::{trace, warn};
 
 use super::converters::{convert_ledger_block, convert_ledger_header};
 use super::registry::ServiceRegistry;
-use super::relay::{RelayExtensibleCache, RelayExtensibleEntry, LEDGER_HYDRATION_WINDOW};
+use super::relay::{LEDGER_HYDRATION_WINDOW, RelayExtensibleCache, RelayExtensibleEntry};
 use super::system::{ReadinessStatus, STATE_STORE_SERVICE};
 use crate::contains_transaction_type::ContainsTransactionType;
 use crate::error::{CoreError, CoreResult};
-use crate::events::{broadcast_plugin_event, PluginEvent};
+use crate::events::{PluginEvent, broadcast_plugin_event};
 use crate::extensions::log_level::LogLevel;
 use crate::i_event_handlers::{
     ICommittedHandler, ICommittingHandler, ILogHandler, ILoggingHandler, INotifyHandler,
@@ -30,13 +30,13 @@ use crate::i_event_handlers::{
 };
 use crate::ledger::{HeaderCache, LedgerContext, MemoryPool};
 use crate::network::p2p::{
+    LocalNode,
     payloads::{
         block::Block, extensible_payload::ExtensiblePayload, header::Header,
         transaction::Transaction,
     },
-    LocalNode,
 };
-use crate::persistence::{i_store::IStore, i_store_provider::IStoreProvider, StoreCache};
+use crate::persistence::{StoreCache, i_store::IStore, i_store_provider::IStoreProvider};
 use crate::protocol_settings::ProtocolSettings;
 use crate::services::SystemContext;
 use crate::services::{
@@ -459,11 +459,14 @@ impl NeoSystemContext {
             .name("wallet-provider-listener".to_string())
             .spawn(move || {
                 for wallet in receiver {
-                    if let Some(ctx) = weak_context.upgrade() {
-                        let sender = provider_thread.as_any();
-                        ctx.notify_wallet_changed(sender, wallet.clone());
-                    } else {
-                        break;
+                    match weak_context.upgrade() {
+                        Some(ctx) => {
+                            let sender = provider_thread.as_any();
+                            ctx.notify_wallet_changed(sender, wallet.clone());
+                        }
+                        _ => {
+                            break;
+                        }
                     }
                 }
             })

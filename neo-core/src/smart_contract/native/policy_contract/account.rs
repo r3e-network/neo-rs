@@ -16,13 +16,7 @@ impl PolicyContract {
             ));
         }
 
-        let account_bytes = &args[0];
-        if account_bytes.len() != ADDRESS_SIZE {
-            return Err(Error::native_contract(format!(
-                "Invalid account hash length (must be {ADDRESS_SIZE} bytes)"
-            )));
-        }
-        let account = UInt160::from_bytes(account_bytes)?;
+        let account = Self::parse_account_hash_argument(&args[0])?;
         let context = engine.get_native_storage_context(&self.hash)?;
         let key = Self::blocked_account_suffix(&account);
         let blocked = engine.get_storage_item(&context, &key).is_some();
@@ -40,13 +34,7 @@ impl PolicyContract {
             ));
         }
 
-        let account_bytes = &args[0];
-        if account_bytes.len() != ADDRESS_SIZE {
-            return Err(Error::native_contract(format!(
-                "Invalid account hash length (must be {ADDRESS_SIZE} bytes)"
-            )));
-        }
-        let account = UInt160::from_bytes(account_bytes)?;
+        let account = Self::parse_account_hash_argument(&args[0])?;
 
         Self::assert_committee(engine)?;
         let blocked = self.block_account_internal(engine, &account)?;
@@ -65,13 +53,7 @@ impl PolicyContract {
             ));
         }
 
-        let account_bytes = &args[0];
-        if account_bytes.len() != ADDRESS_SIZE {
-            return Err(Error::native_contract(format!(
-                "Invalid account hash length (must be {ADDRESS_SIZE} bytes)"
-            )));
-        }
-        let account = UInt160::from_bytes(account_bytes)?;
+        let account = Self::parse_account_hash_argument(&args[0])?;
 
         Self::assert_committee(engine)?;
 
@@ -160,10 +142,8 @@ impl PolicyContract {
             ));
         }
 
-        let account = UInt160::from_bytes(&args[0])
-            .map_err(|_| Error::native_contract("Invalid account hash"))?;
-        let token = UInt160::from_bytes(&args[1])
-            .map_err(|_| Error::native_contract("Invalid token hash"))?;
+        let account = Self::parse_hash160_native(&args[0], "Invalid account hash")?;
+        let token = Self::parse_hash160_native(&args[1], "Invalid token hash")?;
 
         Self::assert_almost_full_committee(engine)?;
 

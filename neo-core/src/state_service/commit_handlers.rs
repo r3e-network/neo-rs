@@ -7,8 +7,8 @@
 
 use std::any::Any;
 use std::panic::{self, AssertUnwindSafe};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::i_event_handlers::{ICommittedHandler, ICommittingHandler};
 use crate::ledger::{block::Block, blockchain_application_executed::ApplicationExecuted};

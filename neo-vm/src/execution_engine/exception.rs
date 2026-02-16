@@ -256,11 +256,12 @@ impl ExecutionEngine {
             }
         }
 
-        if let Some(exception) = self.uncaught_exception.clone() {
-            self.set_state(VMState::FAULT);
-            Err(VmError::UnhandledException(exception))
-        } else {
-            Ok(())
+        match self.uncaught_exception.clone() {
+            Some(exception) => {
+                self.set_state(VMState::FAULT);
+                Err(VmError::UnhandledException(exception))
+            }
+            _ => Ok(()),
         }
     }
 }

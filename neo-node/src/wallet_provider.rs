@@ -3,7 +3,7 @@
 use neo_core::wallets::{IWalletProvider, Wallet};
 use parking_lot::{Mutex, RwLock};
 use std::any::Any;
-use std::sync::{mpsc, Arc};
+use std::sync::{Arc, mpsc};
 use tracing::warn;
 
 /// Type alias for optional wallet reference.

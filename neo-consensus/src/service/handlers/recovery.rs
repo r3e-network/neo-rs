@@ -1,5 +1,5 @@
-use super::super::helpers::{invocation_script_from_signature, signature_from_invocation_script};
 use super::super::ConsensusService;
+use super::super::helpers::{invocation_script_from_signature, signature_from_invocation_script};
 use crate::context::ConsensusState;
 use crate::messages::{
     ChangeViewMessage, ChangeViewPayloadCompact, CommitMessage, CommitPayloadCompact,

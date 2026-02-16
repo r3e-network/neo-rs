@@ -1,5 +1,5 @@
-use crate::network::p2p::payloads::OracleResponseCode;
 use crate::UInt256;
+use crate::network::p2p::payloads::OracleResponseCode;
 use futures::StreamExt;
 use reqwest::StatusCode;
 use sha2::{Digest, Sha256};

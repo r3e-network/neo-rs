@@ -1,13 +1,13 @@
 //! HSM-backed wallet implementation for RPC signing.
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use neo_core::cryptography::{ECCurve, ECPoint};
 use neo_core::network::p2p::helper::get_sign_data_vec;
 use neo_core::network::p2p::payloads::transaction::Transaction;
 use neo_core::network::p2p::payloads::witness::Witness;
 use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::smart_contract::contract::Contract;
 use neo_core::smart_contract::ContractParameterType;
+use neo_core::smart_contract::contract::Contract;
 use neo_core::wallets::wallet_account::WalletAccount;
 use neo_core::wallets::{Version, Wallet, WalletError, WalletResult};
 use neo_core::{UInt160, UInt256};
@@ -459,9 +459,9 @@ fn signature_invocation(signature: &[u8]) -> WalletResult<Vec<u8>> {
 mod tests {
     use super::*;
     use crate::hsm_integration::HsmRuntime;
+    use neo_core::WitnessScope;
     use neo_core::network::p2p::payloads::signer::Signer;
     use neo_core::smart_contract::helper::Helper as ContractHelper;
-    use neo_core::WitnessScope;
     use neo_crypto::Secp256r1Crypto;
     use neo_hsm::{HsmConfig, SimulationSigner};
     use neo_vm::op_code::OpCode;

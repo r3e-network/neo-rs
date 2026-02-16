@@ -11,26 +11,17 @@ use crate::smart_contract::native::security_fixes::{
 impl NeoToken {
     /// Encodes a BigInt amount to bytes (C# compatible format)
     pub(super) fn encode_amount(value: &BigInt) -> Vec<u8> {
-        let mut bytes = value.to_signed_bytes_le();
-        if bytes.is_empty() {
-            bytes.push(0);
-        }
-        bytes
+        <Self as FungibleToken>::ft_encode_amount(value)
     }
 
     /// Decodes bytes to a BigInt amount
     pub(super) fn decode_amount(data: &[u8]) -> BigInt {
-        BigInt::from_signed_bytes_le(data)
+        <Self as FungibleToken>::ft_decode_amount(data)
     }
 
     /// Reads an account UInt160 from argument bytes
     pub(super) fn read_account(&self, data: &[u8]) -> CoreResult<UInt160> {
-        if data.len() != 20 {
-            return Err(CoreError::native_contract(
-                "Account argument must be 20 bytes".to_string(),
-            ));
-        }
-        UInt160::from_bytes(data).map_err(|err| CoreError::native_contract(err.to_string()))
+        <Self as FungibleToken>::ft_read_account(data)
     }
 
     /// Reads an ECPoint public key from argument bytes
@@ -252,8 +243,7 @@ impl NeoToken {
             engine.delete_storage_item(context, &key)?;
         } else {
             let stack_item = state.to_stack_item();
-            let bytes = BinarySerializer::serialize(&stack_item, &ExecutionEngineLimits::default())
-                .map_err(CoreError::native_contract)?;
+            let bytes = Self::serialize_stack_item(&stack_item)?;
             engine.put_storage_item(context, &key, &bytes)?;
         }
         Ok(())

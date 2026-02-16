@@ -2,6 +2,7 @@
 
 use crate::error::CoreError;
 use crate::smart_contract::i_interoperable::IInteroperable;
+use crate::smart_contract::stack_item_extract::extract_int;
 use neo_vm::StackItem;
 use num_bigint::BigInt;
 
@@ -49,13 +50,12 @@ impl AccountState {
 
 impl IInteroperable for AccountState {
     fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
-        if let StackItem::Struct(struct_item) = stack_item {
-            let items = struct_item.items();
-            if let Some(first) = items.first() {
-                if let Ok(integer) = first.as_int() {
-                    self.balance = integer;
-                }
-            }
+        let StackItem::Struct(struct_item) = stack_item else {
+            return Ok(());
+        };
+        let items = struct_item.items();
+        if let Some(balance) = items.first().and_then(extract_int) {
+            self.balance = balance;
         }
         Ok(())
     }

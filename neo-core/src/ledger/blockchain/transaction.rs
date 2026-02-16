@@ -74,10 +74,8 @@ impl Blockchain {
         let snapshot = store_cache.data_cache();
         let settings = context.protocol_settings();
 
-        let add_result = memory_pool
+        memory_pool
             .lock()
-            .try_add(transaction.clone(), snapshot, &settings);
-
-        add_result
+            .try_add(transaction.clone(), snapshot, &settings)
     }
 }

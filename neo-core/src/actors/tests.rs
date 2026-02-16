@@ -3,10 +3,10 @@ use super::*;
 use async_trait::async_trait;
 use parking_lot::Mutex;
 use std::any::Any;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use tokio::sync::{oneshot, Mutex as AsyncMutex};
-use tokio::time::{sleep, timeout, Duration};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use tokio::sync::{Mutex as AsyncMutex, oneshot};
+use tokio::time::{Duration, sleep, timeout};
 
 #[derive(Default)]
 struct CounterActor {
@@ -195,14 +195,15 @@ impl Actor for EventProbe {
         message: Box<dyn Any + Send>,
         _ctx: &mut ActorContext,
     ) -> ActorResult {
-        if let Ok(event) = message.downcast::<TestEvent>() {
-            let TestEvent(value) = *event;
-            if let Some(sender) = self.notify.take() {
-                let _ = sender.send(value);
+        match message.downcast::<TestEvent>() {
+            Ok(event) => {
+                let TestEvent(value) = *event;
+                if let Some(sender) = self.notify.take() {
+                    let _ = sender.send(value);
+                }
+                Ok(())
             }
-            Ok(())
-        } else {
-            Err(AkkaError::actor("unexpected message"))
+            _ => Err(AkkaError::actor("unexpected message")),
         }
     }
 }
@@ -333,15 +334,16 @@ impl Actor for PriorityActor {
         message: Box<dyn Any + Send>,
         _ctx: &mut ActorContext,
     ) -> ActorResult {
-        if let Ok(msg) = message.downcast::<PriorityMsg>() {
-            let label = match *msg {
-                PriorityMsg::High(v) => format!("high-{v}"),
-                PriorityMsg::Low(v) => format!("low-{v}"),
-            };
-            self.log.lock().await.push(label);
-            Ok(())
-        } else {
-            Ok(())
+        match message.downcast::<PriorityMsg>() {
+            Ok(msg) => {
+                let label = match *msg {
+                    PriorityMsg::High(v) => format!("high-{v}"),
+                    PriorityMsg::Low(v) => format!("low-{v}"),
+                };
+                self.log.lock().await.push(label);
+                Ok(())
+            }
+            _ => Ok(()),
         }
     }
 }

@@ -4,7 +4,7 @@ use super::{
     context::ActorContext,
     error::{AkkaError, AkkaResult},
     event_stream::{EventStream, EventStreamHandle},
-    mailbox::{default_mailbox_factory, Mailbox},
+    mailbox::{Mailbox, default_mailbox_factory},
     message::{MailboxMessage, SystemMessage, Terminated},
     props::Props,
     ractor_bridge::{ActorBridge, BridgeArgs, BridgeMessage},

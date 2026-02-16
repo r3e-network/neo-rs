@@ -1,6 +1,6 @@
 //! Capability container implementation (mirrors `NodeCapability.cs`).
 
-use crate::neo_io::{helper, BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable, helper};
 use serde::{Deserialize, Serialize};
 
 use super::node_capability_type::NodeCapabilityType;

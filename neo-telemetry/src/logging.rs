@@ -6,10 +6,10 @@
 use crate::config::{LogFormat, LoggingConfig};
 use crate::{TelemetryError, TelemetryResult};
 use tracing_subscriber::{
+    EnvFilter,
     fmt::{self, format::FmtSpan},
     layer::SubscriberExt,
     util::SubscriberInitExt,
-    EnvFilter,
 };
 
 /// Initialize the logging system

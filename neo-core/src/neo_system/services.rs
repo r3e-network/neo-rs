@@ -6,10 +6,10 @@
 use std::any::Any;
 use std::sync::Arc;
 
-use super::context::NeoSystemContext;
 use super::NeoSystem;
+use super::context::NeoSystemContext;
 use crate::error::CoreResult;
-use crate::events::{broadcast_plugin_event, PluginEvent};
+use crate::events::{PluginEvent, broadcast_plugin_event};
 use crate::i_event_handlers::{
     ICommittedHandler, ICommittingHandler, ILogHandler, ILoggingHandler, INotifyHandler,
     IServiceAddedHandler, ITransactionAddedHandler, ITransactionRemovedHandler,

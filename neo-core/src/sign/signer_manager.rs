@@ -10,14 +10,13 @@
 // modifications are permitted.
 
 use super::i_signer::ISigner;
-use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 /// Global registry of signers
-static SIGNERS: Lazy<RwLock<HashMap<String, Arc<dyn ISigner>>>> =
-    Lazy::new(|| RwLock::new(HashMap::new()));
+static SIGNERS: LazyLock<RwLock<HashMap<String, Arc<dyn ISigner>>>> =
+    LazyLock::new(|| RwLock::new(HashMap::new()));
 
 /// Manages signers for the Neo blockchain
 pub struct SignerManager;

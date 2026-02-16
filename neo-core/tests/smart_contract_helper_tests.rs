@@ -14,12 +14,12 @@ use neo_core::smart_contract::i_diagnostic::IDiagnostic;
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::wallets::key_pair::KeyPair;
 use neo_core::{Transaction, UInt160, WitnessScope};
+use neo_vm::ScriptBuilder;
 use neo_vm::execution_context::ExecutionContext;
 use neo_vm::instruction::Instruction;
 use neo_vm::op_code::OpCode;
-use neo_vm::ScriptBuilder;
-use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
 
 #[derive(Debug)]
 struct OpcodeDiagnostic {
@@ -237,12 +237,14 @@ fn test_signature_contract_engine_fee_consumed() {
         .expect("load invocation");
     engine.execute().expect("execute");
 
-    assert!(engine
-        .result_stack()
-        .peek(0)
-        .expect("result")
-        .get_boolean()
-        .unwrap_or(false));
+    assert!(
+        engine
+            .result_stack()
+            .peek(0)
+            .expect("result")
+            .get_boolean()
+            .unwrap_or(false)
+    );
 
     let expected_opcode_units = ApplicationEngine::get_opcode_price(OpCode::PUSHDATA1 as u8) * 2
         + ApplicationEngine::get_opcode_price(OpCode::SYSCALL as u8);
@@ -347,12 +349,14 @@ fn test_multi_signature_contract_engine_fee_consumed() {
         .expect("load invocation");
     engine.execute().expect("execute");
 
-    assert!(engine
-        .result_stack()
-        .peek(0)
-        .expect("result")
-        .get_boolean()
-        .unwrap_or(false));
+    assert!(
+        engine
+            .result_stack()
+            .peek(0)
+            .expect("result")
+            .get_boolean()
+            .unwrap_or(false)
+    );
 
     let push_cost = ApplicationEngine::get_opcode_price(OpCode::PUSHDATA1 as u8);
     let m_opcode = ApplicationEngine::get_opcode_price(OpCode::PUSH2 as u8);

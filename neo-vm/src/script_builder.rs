@@ -214,7 +214,7 @@ impl ScriptBuilder {
                 return Err(VmError::invalid_operation(
                     "emit_push_bigint",
                     &format!("Invalid integer size for push: {target_len}"),
-                ))
+                ));
             }
         };
 

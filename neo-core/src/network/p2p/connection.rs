@@ -467,19 +467,15 @@ impl ConnectionInfo {
 
     /// Gets the connection direction as string
     pub fn direction(&self) -> &'static str {
-        if self.inbound {
-            "Inbound"
-        } else {
-            "Outbound"
-        }
+        if self.inbound { "Inbound" } else { "Outbound" }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::network::p2p::payloads::ping_payload::PingPayload;
     use crate::network::p2p::ProtocolMessage;
+    use crate::network::p2p::payloads::ping_payload::PingPayload;
     use std::time::Duration;
     use tokio::net::TcpListener;
 

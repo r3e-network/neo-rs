@@ -51,9 +51,7 @@ impl NeoToken {
             Some(state) => {
                 // Return serialized account state
                 let stack_item = state.to_stack_item();
-                let bytes =
-                    BinarySerializer::serialize(&stack_item, &ExecutionEngineLimits::default())
-                        .map_err(CoreError::native_contract)?;
+                let bytes = Self::serialize_stack_item(&stack_item)?;
                 Ok(bytes)
             }
             None => Ok(vec![]), // Null for non-existent account
@@ -76,8 +74,7 @@ impl NeoToken {
             })
             .collect();
         let array = StackItem::from_array(items);
-        let bytes = BinarySerializer::serialize(&array, &ExecutionEngineLimits::default())
-            .map_err(CoreError::native_contract)?;
+        let bytes = Self::serialize_stack_item(&array)?;
         Ok(bytes)
     }
 
@@ -215,9 +212,8 @@ impl NeoToken {
             return Ok(());
         }
 
-        let bytes =
-            BinarySerializer::serialize(&state.to_stack_item(), &ExecutionEngineLimits::default())
-                .map_err(CoreError::native_contract)?;
+        let stack_item = state.to_stack_item();
+        let bytes = Self::serialize_stack_item(&stack_item)?;
         engine.put_storage_item(context, &candidate_suffix, &bytes)?;
         Ok(())
     }
@@ -287,8 +283,7 @@ impl NeoToken {
             .map(|pk| StackItem::from_byte_string(pk.as_bytes().to_vec()))
             .collect();
         let array = StackItem::from_array(items);
-        let bytes = BinarySerializer::serialize(&array, &ExecutionEngineLimits::default())
-            .map_err(CoreError::native_contract)?;
+        let bytes = Self::serialize_stack_item(&array)?;
         Ok(bytes)
     }
 
@@ -325,8 +320,7 @@ impl NeoToken {
             .map(|pk| StackItem::from_byte_string(pk.as_bytes().to_vec()))
             .collect();
         let array = StackItem::from_array(items);
-        let bytes = BinarySerializer::serialize(&array, &ExecutionEngineLimits::default())
-            .map_err(CoreError::native_contract)?;
+        let bytes = Self::serialize_stack_item(&array)?;
         Ok(bytes)
     }
 

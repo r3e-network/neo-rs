@@ -75,7 +75,7 @@ mod world_state;
 pub use account::AccountState;
 pub use contract_storage::{ContractStorage, StorageChange, StorageItem, StorageKey};
 pub use error::{StateError, StateResult};
-pub use snapshot::{SnapshotManager, SnapshotState, StateSnapshot, MAX_SNAPSHOT_DEPTH};
+pub use snapshot::{MAX_SNAPSHOT_DEPTH, SnapshotManager, SnapshotState, StateSnapshot};
 pub use state_trie::{MemoryMptStore, StateTrieManager};
 pub use world_state::{
     MemoryWorldState, MutableStateView, StateChanges, StateMut, StateView, WorldState,

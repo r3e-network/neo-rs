@@ -4,9 +4,9 @@
 
 use crate::error::{VmError, VmResult};
 use crate::reference_counter::{CompoundParent, ReferenceCounter};
+use crate::stack_item::StackItem;
 use crate::stack_item::stack_item_type::StackItemType;
 use crate::stack_item::stack_item_vertex::next_stack_item_id;
-use crate::stack_item::StackItem;
 use parking_lot::Mutex;
 use std::collections::HashSet;
 use std::sync::Arc;

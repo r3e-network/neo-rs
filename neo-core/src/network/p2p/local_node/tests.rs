@@ -21,10 +21,12 @@ mod tests {
         node.apply_channels_config(&ChannelsConfig::default());
         assert_eq!(node.port(), 0);
         let payload = node.version_payload();
-        assert!(payload
-            .capabilities
-            .iter()
-            .all(|cap| !matches!(cap, NodeCapability::TcpServer { .. })));
+        assert!(
+            payload
+                .capabilities
+                .iter()
+                .all(|cap| !matches!(cap, NodeCapability::TcpServer { .. }))
+        );
 
         // Enabling a TCP endpoint should advertise the matching capability and port.
         let config = ChannelsConfig {
@@ -35,10 +37,12 @@ mod tests {
         assert_eq!(node.port(), 20333);
 
         let payload = node.version_payload();
-        assert!(payload
-            .capabilities
-            .iter()
-            .any(|cap| { matches!(cap, NodeCapability::TcpServer { port } if *port == 20333) }));
+        assert!(
+            payload
+                .capabilities
+                .iter()
+                .any(|cap| { matches!(cap, NodeCapability::TcpServer { port } if *port == 20333) })
+        );
     }
 
     #[test]
@@ -53,18 +57,22 @@ mod tests {
 
         // Compression is allowed by default (no DisableCompression capability)
         let payload = node.version_payload();
-        assert!(!payload
-            .capabilities
-            .iter()
-            .any(|cap| matches!(cap, NodeCapability::DisableCompression)));
+        assert!(
+            !payload
+                .capabilities
+                .iter()
+                .any(|cap| matches!(cap, NodeCapability::DisableCompression))
+        );
 
         config.enable_compression = false;
         node.apply_channels_config(&config);
         let payload = node.version_payload();
-        assert!(payload
-            .capabilities
-            .iter()
-            .any(|cap| matches!(cap, NodeCapability::DisableCompression)));
+        assert!(
+            payload
+                .capabilities
+                .iter()
+                .any(|cap| matches!(cap, NodeCapability::DisableCompression))
+        );
 
         let stored = node.config();
         assert_eq!(stored.enable_compression, config.enable_compression);

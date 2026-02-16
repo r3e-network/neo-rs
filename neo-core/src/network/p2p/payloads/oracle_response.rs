@@ -10,17 +10,17 @@
 // modifications are permitted.
 
 use super::oracle_response_code::OracleResponseCode;
+use crate::WitnessScope;
 use crate::macros::{OptionExt, ValidateLength};
 use crate::neo_io::serializable::helper::get_var_size;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::call_flags::CallFlags;
-use crate::smart_contract::native::{oracle_contract::OracleContract, NativeContract};
-use crate::WitnessScope;
-use lazy_static::lazy_static;
-use neo_vm::{op_code::OpCode, ScriptBuilder};
+use crate::smart_contract::native::{NativeContract, oracle_contract::OracleContract};
+use neo_vm::{ScriptBuilder, op_code::OpCode};
 use serde::{Deserialize, Serialize};
+use std::sync::LazyLock;
 use tracing::error;
 
 /// Indicates the maximum size of the Result field.
@@ -47,21 +47,19 @@ impl OracleResponse {
 
     /// Get the fixed script for oracle response transactions.
     pub fn get_fixed_script() -> Vec<u8> {
-        lazy_static! {
-            static ref ORACLE_FINISH_SCRIPT: Vec<u8> = {
-                let oracle_hash = OracleContract::new().hash();
-                let mut builder = ScriptBuilder::new();
-                builder.emit_opcode(OpCode::NEWARRAY0);
-                builder.emit_push_int(CallFlags::ALL.bits() as i64);
-                builder.emit_push("finish".as_bytes());
-                builder.emit_push(&oracle_hash.to_array());
-                if let Err(err) = builder.emit_syscall("System.Contract.Call") {
-                    error!(?err, "Failed to build OracleContract finish syscall script");
-                    return Vec::new();
-                }
-                builder.to_array()
-            };
-        }
+        static ORACLE_FINISH_SCRIPT: LazyLock<Vec<u8>> = LazyLock::new(|| {
+            let oracle_hash = OracleContract::new().hash();
+            let mut builder = ScriptBuilder::new();
+            builder.emit_opcode(OpCode::NEWARRAY0);
+            builder.emit_push_int(CallFlags::ALL.bits() as i64);
+            builder.emit_push("finish".as_bytes());
+            builder.emit_push(&oracle_hash.to_array());
+            if let Err(err) = builder.emit_syscall("System.Contract.Call") {
+                error!(?err, "Failed to build OracleContract finish syscall script");
+                return Vec::new();
+            }
+            builder.to_array()
+        });
 
         ORACLE_FINISH_SCRIPT.clone()
     }

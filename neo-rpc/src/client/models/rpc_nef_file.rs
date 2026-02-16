@@ -10,7 +10,7 @@
 // modifications are permitted.
 
 use super::RpcMethodToken;
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use neo_core::smart_contract::NefFile;
 use neo_json::JObject;
 

@@ -3,7 +3,7 @@
 use crate::cryptography::ECPoint;
 use crate::smart_contract::ContractParameterType;
 use crate::{UInt160, UInt256};
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use num_bigint::BigInt;
 
 /// Represents a parameter of a contract method (matches C# ContractParameter)
@@ -93,7 +93,7 @@ impl ContractParameter {
                 return Err(format!(
                     "Cannot set value from string for type {:?}",
                     self.param_type
-                ))
+                ));
             }
         };
 

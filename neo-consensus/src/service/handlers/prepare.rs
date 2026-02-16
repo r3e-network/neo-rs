@@ -1,8 +1,8 @@
+use super::super::ConsensusService;
 use super::super::helpers::invocation_script_from_signature;
 use super::super::helpers::{
     compute_header_hash, compute_merkle_root, compute_next_consensus_address,
 };
-use super::super::ConsensusService;
 use crate::context::ConsensusState;
 use crate::messages::{
     CommitMessage, ConsensusPayload, PrepareRequestMessage, PrepareResponseMessage,

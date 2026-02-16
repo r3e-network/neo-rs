@@ -10,8 +10,8 @@
 // modifications are permitted.
 
 use super::{
-    i_inventory::IInventory, signer::Signer, transaction_attribute::TransactionAttribute,
-    witness::Witness, InventoryType, TransactionAttributeType,
+    InventoryType, TransactionAttributeType, i_inventory::IInventory, signer::Signer,
+    transaction_attribute::TransactionAttribute, witness::Witness,
 };
 use crate::cryptography::{Crypto, Secp256r1Crypto};
 use crate::hardfork::Hardfork;
@@ -27,12 +27,12 @@ use crate::smart_contract::native::{ContractManagement, LedgerContract, PolicyCo
 use crate::smart_contract::trigger_type::TriggerType;
 use crate::smart_contract::{ContractBasicMethod, ContractParameterType, IInteroperable};
 use crate::wallets::helper::Helper as WalletHelper;
-use crate::{ledger::VerifyResult, CoreResult, IVerifiable, UInt160, UInt256};
-use base64::{engine::general_purpose, Engine as _};
-use neo_vm::{op_code::OpCode, StackItem};
+use crate::{CoreResult, IVerifiable, UInt160, UInt256, ledger::VerifyResult};
+use base64::{Engine as _, engine::general_purpose};
+use neo_vm::{StackItem, op_code::OpCode};
 use parking_lot::Mutex;
-use rand::rngs::OsRng;
 use rand::RngCore;
+use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::collections::HashSet;

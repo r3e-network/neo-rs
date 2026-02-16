@@ -2,8 +2,8 @@
 //!
 //! Tests for Neo.SmartContract.Native.PolicyContract functionality.
 
-use neo_core::smart_contract::native::policy_contract::PolicyContract;
 use neo_core::smart_contract::native::NativeContract;
+use neo_core::smart_contract::native::policy_contract::PolicyContract;
 
 /// Tests that PolicyContract has correct contract ID (-7)
 #[test]

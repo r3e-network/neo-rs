@@ -548,8 +548,8 @@ fn test_transaction_memory_efficiency() {
 
 #[test]
 fn test_concurrent_uint160_creation() {
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::thread;
 
     let iterations = 1000;

@@ -8,7 +8,7 @@ use crate::network::p2p::payloads::{
     Conflicts, NotValidBefore, OracleResponse, OracleResponseCode, Signer, Transaction,
     TransactionAttribute, Witness, WitnessCondition, WitnessRule, WitnessRuleAction,
 };
-use crate::{cryptography::ECPoint, UInt160, UInt256, WitnessScope};
+use crate::{UInt160, UInt256, WitnessScope, cryptography::ECPoint};
 use neo_vm::{op_code::OpCode, script_builder::ScriptBuilder};
 
 /// Convenience builder for constructing transactions in tests.

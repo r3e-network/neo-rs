@@ -2,8 +2,9 @@
 //!
 //! This module provides configuration parsing for the Neo N3 blockchain node.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use neo_core::{
+    UnhandledExceptionPolicy,
     application_logs::ApplicationLogsSettings,
     constants::{MAINNET_MAGIC, MAX_BLOCK_SIZE, TESTNET_MAGIC},
     network::p2p::channels_config::ChannelsConfig,
@@ -12,10 +13,9 @@ use neo_core::{
     protocol_settings::ProtocolSettings,
     state_service::state_store::StateServiceSettings,
     tokens_tracker::TokensTrackerSettings,
-    UnhandledExceptionPolicy,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::{
     env, fs,
     fs::OpenOptions,
@@ -1595,7 +1595,8 @@ mod tests {
     #[test]
     fn writes_rpc_config_with_restricted_permissions() {
         let tmp = TempDir::new().expect("temp dir");
-        env::set_var("NEO_PLUGINS_DIR", tmp.path());
+        // TODO: Audit that the environment access only happens in single-threaded code.
+        unsafe { env::set_var("NEO_PLUGINS_DIR", tmp.path()) };
 
         let mut config = NodeConfig::default();
         config.rpc.enabled = true;
@@ -1625,7 +1626,8 @@ mod tests {
             "config should contain Servers array"
         );
 
-        env::remove_var("NEO_PLUGINS_DIR");
+        // TODO: Audit that the environment access only happens in single-threaded code.
+        unsafe { env::remove_var("NEO_PLUGINS_DIR") };
     }
 
     #[test]

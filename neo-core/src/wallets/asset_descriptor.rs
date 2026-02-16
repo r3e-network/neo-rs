@@ -19,7 +19,7 @@ use crate::{
     },
 };
 use neo_primitives::UInt160;
-use neo_vm::{op_code::OpCode, vm_state::VMState, ScriptBuilder};
+use neo_vm::{ScriptBuilder, op_code::OpCode, vm_state::VMState};
 use num_traits::ToPrimitive;
 use std::sync::Arc;
 

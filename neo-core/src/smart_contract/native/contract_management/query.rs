@@ -4,12 +4,38 @@
 
 use super::*;
 use crate::persistence::{IReadOnlyStoreGeneric, SeekDirection};
+use crate::smart_contract::StorageItem;
 use crate::smart_contract::find_options::FindOptions;
 use crate::smart_contract::iterators::storage_iterator::StorageIterator;
-use crate::smart_contract::StorageItem;
 use std::collections::HashMap;
 
 impl ContractManagement {
+    fn get_contract_from_read_only_store<S>(
+        store: &S,
+        hash: &UInt160,
+    ) -> Result<Option<ContractState>>
+    where
+        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+    {
+        let storage_key = StorageKey::new(Self::ID, Self::contract_storage_key(hash));
+        let Some(item) = store.get(&storage_key) else {
+            return Ok(None);
+        };
+
+        let bytes = item.get_value();
+        if bytes.is_empty() {
+            return Ok(None);
+        }
+
+        let contract = Self::deserialize_contract_state(&bytes)?;
+        Ok(Some(contract))
+    }
+
+    fn parse_contract_hash_bytes(bytes: &[u8]) -> Result<UInt160> {
+        UInt160::from_bytes(bytes)
+            .map_err(|e| Error::invalid_data(format!("Invalid contract hash bytes: {e}")))
+    }
+
     /// Gets a contract by hash
     pub fn get_contract(&self, hash: &UInt160) -> Result<Option<ContractState>> {
         let storage = self.storage.read();
@@ -22,18 +48,7 @@ impl ContractManagement {
         snapshot: &DataCache,
         hash: &UInt160,
     ) -> Result<Option<ContractState>> {
-        let storage_key = StorageKey::new(Self::ID, Self::contract_storage_key(hash));
-        let Some(item) = snapshot.get(&storage_key) else {
-            return Ok(None);
-        };
-
-        let bytes = item.get_value();
-        if bytes.is_empty() {
-            return Ok(None);
-        }
-
-        let contract = Self::deserialize_contract_state(&bytes)?;
-        Ok(Some(contract))
+        Self::get_contract_from_read_only_store(snapshot, hash)
     }
 
     /// Gets the contract from the provided store cache (including persisted storage).
@@ -41,18 +56,7 @@ impl ContractManagement {
         store_cache: &StoreCache,
         hash: &UInt160,
     ) -> Result<Option<ContractState>> {
-        let storage_key = StorageKey::new(Self::ID, Self::contract_storage_key(hash));
-        let Some(item) = store_cache.get(&storage_key) else {
-            return Ok(None);
-        };
-
-        let bytes = item.get_value();
-        if bytes.is_empty() {
-            return Ok(None);
-        }
-
-        let contract = Self::deserialize_contract_state(&bytes)?;
-        Ok(Some(contract))
+        Self::get_contract_from_read_only_store(store_cache, hash)
     }
 
     /// Gets a contract by ID from the provided store cache.
@@ -96,8 +100,7 @@ impl ContractManagement {
             return Ok(None);
         }
 
-        let hash = UInt160::from_bytes(&bytes)
-            .map_err(|e| Error::invalid_data(format!("Invalid contract hash bytes: {e}")))?;
+        let hash = Self::parse_contract_hash_bytes(&bytes)?;
         Ok(Some(hash))
     }
 

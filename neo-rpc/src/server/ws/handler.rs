@@ -269,7 +269,7 @@ fn handle_unsubscribe(
 
                 // Check if any events remain
                 let remaining = subscription_mgr.get_subscribed_events(id);
-                if remaining.as_ref().map_or(true, std::vec::Vec::is_empty) {
+                if remaining.as_ref().is_none_or(std::vec::Vec::is_empty) {
                     subscription_mgr.unsubscribe(id);
                     *current_subscription = None;
                     return WsResponse::success(

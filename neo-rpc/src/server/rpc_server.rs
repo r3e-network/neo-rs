@@ -1,8 +1,7 @@
 use futures::stream;
 use hyper::server::accept::from_stream;
-use hyper::service::{make_service_fn, service_fn, Service};
+use hyper::service::{Service, make_service_fn, service_fn};
 use neo_core::{neo_system::NeoSystem, services::RpcService, wallets::Wallet};
-use once_cell::sync::Lazy;
 use p12::PFX;
 use parking_lot::{Mutex, RwLock, RwLockReadGuard};
 use prometheus::Counter;
@@ -12,7 +11,7 @@ use serde_json::Value;
 use tokio::{
     io::{AsyncRead, AsyncWrite, ReadBuf},
     net::{TcpListener, TcpStream},
-    sync::{oneshot, OwnedSemaphorePermit, Semaphore},
+    sync::{OwnedSemaphorePermit, Semaphore, oneshot},
     task::JoinHandle,
     time::sleep,
 };
@@ -25,19 +24,19 @@ use std::convert::Infallible;
 use std::io;
 use std::net::SocketAddr;
 use std::pin::Pin;
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, LazyLock, Weak};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
-use super::routes::{build_rpc_routes, build_ws_route, BasicAuth};
+use super::routes::{BasicAuth, build_rpc_routes, build_ws_route};
 use super::rpc_server_settings::RpcServerConfig;
 use super::session::Session;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_method_attribute::RpcMethodDescriptor;
 use sha1::{Digest, Sha1};
 use socket2::{SockRef, TcpKeepalive};
-use warp::filters::compression;
 use warp::Filter;
+use warp::filters::compression;
 
 pub type RpcCallback =
     dyn Fn(&RpcServer, &[Value]) -> Result<Value, RpcException> + Send + Sync + 'static;
@@ -69,7 +68,7 @@ impl RpcHandler {
     }
 }
 
-pub static RPC_REQ_TOTAL: Lazy<Counter> = Lazy::new(|| {
+pub static RPC_REQ_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     let counter =
         Counter::new("neo_rpc_requests_total", "Total RPC requests").unwrap_or_else(|_| {
             Counter::new("neo_rpc_requests_total_invalid", "Invalid")
@@ -80,7 +79,7 @@ pub static RPC_REQ_TOTAL: Lazy<Counter> = Lazy::new(|| {
     }
     counter
 });
-pub static RPC_ERR_TOTAL: Lazy<Counter> = Lazy::new(|| {
+pub static RPC_ERR_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     let counter = Counter::new("neo_rpc_errors_total", "Total RPC errors").unwrap_or_else(|_| {
         Counter::new("neo_rpc_errors_total_invalid", "Invalid")
             .expect("fallback counter creation should never fail")
@@ -287,16 +286,15 @@ impl RpcServer {
                         match listener.accept().await {
                             Ok((stream, remote_addr)) => {
                                 apply_tcp_keepalive(&stream, keepalive);
-                                let permit = if let Ok(permit) =
-                                    connection_limiter.clone().try_acquire_owned()
-                                {
-                                    permit
-                                } else {
-                                    debug!(
-                                        "RPC max concurrent connections reached; dropping {}",
-                                        remote_addr
-                                    );
-                                    continue;
+                                let permit = match connection_limiter.clone().try_acquire_owned() {
+                                    Ok(permit) => permit,
+                                    _ => {
+                                        debug!(
+                                            "RPC max concurrent connections reached; dropping {}",
+                                            remote_addr
+                                        );
+                                        continue;
+                                    }
                                 };
                                 match tls_acceptor.accept(stream).await {
                                     Ok(tls_stream) => {
@@ -395,16 +393,15 @@ impl RpcServer {
                         match listener.accept().await {
                             Ok((stream, remote_addr)) => {
                                 apply_tcp_keepalive(&stream, keepalive);
-                                let permit = if let Ok(permit) =
-                                    connection_limiter.clone().try_acquire_owned()
-                                {
-                                    permit
-                                } else {
-                                    debug!(
-                                        "RPC max concurrent connections reached; dropping {}",
-                                        remote_addr
-                                    );
-                                    continue;
+                                let permit = match connection_limiter.clone().try_acquire_owned() {
+                                    Ok(permit) => permit,
+                                    _ => {
+                                        debug!(
+                                            "RPC max concurrent connections reached; dropping {}",
+                                            remote_addr
+                                        );
+                                        continue;
+                                    }
                                 };
                                 let conn = PlainConnection {
                                     stream,
@@ -470,13 +467,13 @@ impl RpcServer {
                 loop {
                     tokio::select! {
                         () = sleep(interval) => {
-                            if let Some(server_arc) = purge_handle.upgrade() {
+                            match purge_handle.upgrade() { Some(server_arc) => {
                                 if let Some(server) = server_arc.try_read() {
                                     server.purge_expired_sessions();
                                 }
-                            } else {
+                            } _ => {
                                 break;
-                            }
+                            }}
                         }
                         _ = &mut purge_rx => break,
                     }
@@ -827,8 +824,8 @@ fn log_join_error(error: tokio::task::JoinError) {
     }
 }
 
-pub static SERVERS: Lazy<RwLock<HashMap<u32, Arc<RwLock<RpcServer>>>>> =
-    Lazy::new(|| RwLock::new(HashMap::new()));
+pub static SERVERS: LazyLock<RwLock<HashMap<u32, Arc<RwLock<RpcServer>>>>> =
+    LazyLock::new(|| RwLock::new(HashMap::new()));
 
 pub fn remove_server(network: u32) {
     if SERVERS.write().remove(&network).is_some() {

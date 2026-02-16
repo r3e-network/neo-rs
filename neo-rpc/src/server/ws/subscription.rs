@@ -38,25 +38,27 @@ impl SubscriptionManager {
 
     /// Add event types to an existing subscription
     pub fn add_events(&self, id: SubscriptionId, event_types: Vec<WsEventType>) -> bool {
-        if let Some(mut entry) = self.subscriptions.get_mut(&id) {
-            for event_type in event_types {
-                entry.insert(event_type);
+        match self.subscriptions.get_mut(&id) {
+            Some(mut entry) => {
+                for event_type in event_types {
+                    entry.insert(event_type);
+                }
+                true
             }
-            true
-        } else {
-            false
+            _ => false,
         }
     }
 
     /// Remove event types from an existing subscription
     pub fn remove_events(&self, id: SubscriptionId, event_types: &[WsEventType]) -> bool {
-        if let Some(mut entry) = self.subscriptions.get_mut(&id) {
-            for event_type in event_types {
-                entry.remove(event_type);
+        match self.subscriptions.get_mut(&id) {
+            Some(mut entry) => {
+                for event_type in event_types {
+                    entry.remove(event_type);
+                }
+                true
             }
-            true
-        } else {
-            false
+            _ => false,
         }
     }
 

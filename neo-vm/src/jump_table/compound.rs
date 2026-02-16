@@ -221,7 +221,7 @@ fn append(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
         _ => {
             return Err(VmError::invalid_type_simple(
                 "Expected Array, Struct, or Map",
-            ))
+            ));
         }
     }
 

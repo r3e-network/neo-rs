@@ -1,7 +1,7 @@
 use hex::{decode as hex_decode, encode as hex_encode};
 use neo_core::cryptography::Secp256r1Crypto;
-use neo_core::ledger::block_header::BlockHeader;
 use neo_core::ledger::Block;
+use neo_core::ledger::block_header::BlockHeader;
 use neo_core::neo_io::BinaryWriter;
 use neo_core::network::p2p::payloads::{Signer, Transaction, WitnessScope};
 use neo_core::persistence::DataCache;

@@ -2,7 +2,7 @@
 
 use super::InventoryType;
 use crate::neo_config::HASH_SIZE;
-use crate::neo_io::{helper, BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable, helper};
 use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};
 

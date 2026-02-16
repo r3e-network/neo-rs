@@ -1,14 +1,14 @@
 use super::middleware::{GovernorRateLimiter, RateLimitConfig};
 use super::rpc_error::RpcError;
-use super::rpc_server::{RpcServer, RPC_ERR_TOTAL, RPC_REQ_TOTAL};
+use super::rpc_server::{RPC_ERR_TOTAL, RPC_REQ_TOTAL, RpcServer};
 use super::rpc_server_settings::{RpcServerConfig, RpcServerSettings, UnhandledExceptionPolicy};
 
-use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use bytes::Bytes;
 use parking_lot::RwLock;
 use serde::Deserialize;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use std::collections::HashSet;
 use std::convert::Infallible;
 use std::net::{IpAddr, SocketAddr};
@@ -16,14 +16,13 @@ use std::panic::{self, AssertUnwindSafe};
 use std::sync::{Arc, Weak};
 use subtle::ConstantTimeEq;
 use tracing::error;
-use warp::http::header::{
-    HeaderValue, ACCESS_CONTROL_ALLOW_CREDENTIALS, ACCESS_CONTROL_ALLOW_HEADERS,
-    ACCESS_CONTROL_ALLOW_METHODS, ACCESS_CONTROL_ALLOW_ORIGIN, CONTENT_TYPE, VARY,
-    WWW_AUTHENTICATE,
-};
-use warp::http::StatusCode;
-use warp::reply::Response as HttpResponse;
 use warp::Filter;
+use warp::http::StatusCode;
+use warp::http::header::{
+    ACCESS_CONTROL_ALLOW_CREDENTIALS, ACCESS_CONTROL_ALLOW_HEADERS, ACCESS_CONTROL_ALLOW_METHODS,
+    ACCESS_CONTROL_ALLOW_ORIGIN, CONTENT_TYPE, HeaderValue, VARY, WWW_AUTHENTICATE,
+};
+use warp::reply::Response as HttpResponse;
 
 const MAX_PARAMS_DEPTH: usize = 32;
 
@@ -63,10 +62,9 @@ impl CorsConfig {
         let origins = settings
             .allow_origins
             .iter()
-            .filter_map(|origin| {
-                if let Ok(value) = HeaderValue::from_str(origin) {
-                    Some(value)
-                } else {
+            .filter_map(|origin| match HeaderValue::from_str(origin) {
+                Ok(value) => Some(value),
+                _ => {
                     invalid_origins += 1;
                     None
                 }
@@ -750,6 +748,7 @@ mod tests {
     use crate::server::rpc_server_blockchain::RpcServerBlockchain;
     use crate::server::rpc_server_node::RpcServerNode;
     use crate::server::rpc_server_settings::RpcServerConfig;
+    use neo_core::WitnessScope;
     use neo_core::neo_io::BinaryWriter;
     use neo_core::neo_system::NeoSystem;
     use neo_core::network::p2p::helper::get_sign_data_vec;
@@ -760,7 +759,6 @@ mod tests {
     use neo_core::smart_contract::native::LedgerContract;
     use neo_core::smart_contract::{StorageItem, StorageKey};
     use neo_core::wallets::KeyPair;
-    use neo_core::WitnessScope;
     use neo_vm::op_code::OpCode;
     use neo_vm::vm_state::VMState;
     use parking_lot::RwLock;

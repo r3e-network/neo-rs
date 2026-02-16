@@ -6,7 +6,7 @@ use crate::server::rpc_helpers::{internal_error, invalid_params};
 use crate::server::rpc_method_attribute::RpcMethodDescriptor;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 use async_trait::async_trait;
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use hex;
 use neo_core::akka::{Actor, ActorContext, ActorRef, ActorResult, ActorSystem, Props};
 use neo_core::hardfork::Hardfork;
@@ -16,7 +16,7 @@ use neo_core::neo_system::TransactionRouterMessage;
 use neo_core::network::p2p::local_node::LocalNode;
 use neo_core::network::p2p::payloads::{block::Block, transaction::Transaction};
 use parking_lot::Mutex;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use std::any::Any;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -55,11 +55,12 @@ impl RpcServerNode {
         // If a consumer added peers via `add_unconnected_peers`, they will appear here.
         let unconnected_endpoints = {
             let fut = system.unconnected_peers();
-            if let Ok(handle) = Handle::try_current() {
-                block_in_place(|| handle.block_on(fut))
-            } else {
-                let runtime = Runtime::new().map_err(|err| internal_error(err.to_string()))?;
-                runtime.block_on(fut)
+            match Handle::try_current() {
+                Ok(handle) => block_in_place(|| handle.block_on(fut)),
+                _ => {
+                    let runtime = Runtime::new().map_err(|err| internal_error(err.to_string()))?;
+                    runtime.block_on(fut)
+                }
             }
         }
         .map_err(|err| internal_error(err.to_string()))?;
@@ -250,11 +251,12 @@ impl RpcServerNode {
         }
 
         let fut = system.local_node_state();
-        let result = if let Ok(handle) = Handle::try_current() {
-            block_in_place(|| handle.block_on(fut))
-        } else {
-            let runtime = Runtime::new().map_err(|err| internal_error(err.to_string()))?;
-            runtime.block_on(fut)
+        let result = match Handle::try_current() {
+            Ok(handle) => block_in_place(|| handle.block_on(fut)),
+            _ => {
+                let runtime = Runtime::new().map_err(|err| internal_error(err.to_string()))?;
+                runtime.block_on(fut)
+            }
         };
         result.map_err(|err| internal_error(err.to_string()))
     }
@@ -393,23 +395,23 @@ mod tests {
     use neo_core::ledger::TransactionVerificationContext;
     use neo_core::neo_io::BinaryWriter;
     use neo_core::network::p2p::helper::get_sign_data_vec;
-    use neo_core::network::p2p::payloads::oracle_response::{OracleResponse, MAX_RESULT_SIZE};
+    use neo_core::network::p2p::payloads::oracle_response::{MAX_RESULT_SIZE, OracleResponse};
     use neo_core::network::p2p::payloads::oracle_response_code::OracleResponseCode;
     use neo_core::network::p2p::payloads::signer::Signer;
     use neo_core::network::p2p::payloads::transaction::Transaction;
     use neo_core::network::p2p::payloads::witness::Witness;
     use neo_core::network::p2p::payloads::{Block, Header, TransactionAttribute};
-    use neo_core::persistence::transaction::apply_tracked_items;
     use neo_core::persistence::StoreCache;
+    use neo_core::persistence::transaction::apply_tracked_items;
     use neo_core::protocol_settings::ProtocolSettings;
+    use neo_core::smart_contract::Contract;
     use neo_core::smart_contract::application_engine::ApplicationEngine;
-    use neo_core::smart_contract::native::helpers::NativeHelpers;
     use neo_core::smart_contract::native::GasToken;
     use neo_core::smart_contract::native::LedgerContract;
     use neo_core::smart_contract::native::NativeContract;
     use neo_core::smart_contract::native::PolicyContract;
+    use neo_core::smart_contract::native::helpers::NativeHelpers;
     use neo_core::smart_contract::trigger_type::TriggerType;
-    use neo_core::smart_contract::Contract;
     use neo_core::smart_contract::{StorageItem, StorageKey};
     use neo_core::wallets::KeyPair;
     use neo_core::{IVerifiable, NeoSystem, UInt160, UInt256, WitnessScope};
@@ -871,10 +873,12 @@ mod tests {
         let err = (handler.callback())(&server, &params).expect_err("invalid tx bytes");
         let rpc_error: RpcError = err.into();
         assert_eq!(rpc_error.code(), RpcError::invalid_params().code());
-        assert!(rpc_error
-            .data()
-            .unwrap_or_default()
-            .contains("Invalid transaction"));
+        assert!(
+            rpc_error
+                .data()
+                .unwrap_or_default()
+                .contains("Invalid transaction")
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -1200,10 +1204,12 @@ mod tests {
         let err = (handler.callback())(&server, &params).expect_err("invalid block bytes");
         let rpc_error: RpcError = err.into();
         assert_eq!(rpc_error.code(), RpcError::invalid_params().code());
-        assert!(rpc_error
-            .data()
-            .unwrap_or_default()
-            .contains("Invalid block"));
+        assert!(
+            rpc_error
+                .data()
+                .unwrap_or_default()
+                .contains("Invalid block")
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]

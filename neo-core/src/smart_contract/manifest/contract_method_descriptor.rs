@@ -1,11 +1,16 @@
 //! ContractMethodDescriptor - matches C# Neo.SmartContract.Manifest.ContractMethodDescriptor exactly
 
 use crate::error::CoreError;
+use crate::smart_contract::ContractParameterType;
 use crate::smart_contract::i_interoperable::IInteroperable;
 use crate::smart_contract::manifest::ContractParameterDefinition;
-use crate::smart_contract::ContractParameterType;
+use crate::smart_contract::manifest::stack_item_helpers::{
+    decode_interoperable_array, expect_struct_items,
+};
+use crate::smart_contract::stack_item_extract::{
+    extract_bool, extract_i32, extract_string, extract_u8,
+};
 use neo_vm::StackItem;
-use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
 
 /// Represents a method in a smart contract ABI (matches C# ContractMethodDescriptor)
@@ -128,49 +133,28 @@ impl ContractMethodDescriptor {
 
 impl IInteroperable for ContractMethodDescriptor {
     fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
-        let StackItem::Struct(struct_item) = stack_item else {
-            return Err(CoreError::invalid_format(
-                "ContractMethodDescriptor expects Struct stack item",
-            ));
-        };
-        let items = struct_item.items();
-        if items.len() < 5 {
-            return Err(CoreError::invalid_format(format!(
-                "ContractMethodDescriptor stack item must contain 5 elements, found {}",
-                items.len()
-            )));
+        let items = expect_struct_items(&stack_item, "ContractMethodDescriptor", 5)?;
+
+        if let Some(name) = extract_string(&items[0]) {
+            self.name = name;
         }
 
-        if let Ok(bytes) = items[0].as_bytes() {
-            if let Ok(name) = String::from_utf8(bytes) {
-                self.name = name;
-            }
+        if let Some(parameters) =
+            decode_interoperable_array::<ContractParameterDefinition>(&items[1])?
+        {
+            self.parameters = parameters;
         }
 
-        if let Ok(param_items) = items[1].as_array() {
-            let mut params = Vec::new();
-            for item in param_items.iter() {
-                let mut param = ContractParameterDefinition::default();
-                param.from_stack_item(item.clone())?;
-                params.push(param);
-            }
-            self.parameters = params;
+        if let Some(byte_val) = extract_u8(&items[2]) {
+            self.return_type =
+                ContractParameterType::try_from_u8(byte_val).unwrap_or(ContractParameterType::Void);
         }
 
-        if let Ok(integer) = items[2].as_int() {
-            if let Some(byte_val) = integer.to_u8() {
-                self.return_type = ContractParameterType::try_from_u8(byte_val)
-                    .unwrap_or(ContractParameterType::Void);
-            }
+        if let Some(offset) = extract_i32(&items[3]) {
+            self.offset = offset;
         }
 
-        if let Ok(integer) = items[3].as_int() {
-            if let Some(offset) = integer.to_i32() {
-                self.offset = offset;
-            }
-        }
-
-        if let Ok(flag) = items[4].as_bool() {
+        if let Some(flag) = extract_bool(&items[4]) {
             self.safe = flag;
         }
         Ok(())

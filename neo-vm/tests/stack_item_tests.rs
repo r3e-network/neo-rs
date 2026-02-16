@@ -3,8 +3,8 @@
 
 use neo_vm::execution_engine_limits::ExecutionEngineLimits;
 use neo_vm::script::Script;
-use neo_vm::stack_item::stack_item_type::StackItemType;
 use neo_vm::stack_item::StackItem;
+use neo_vm::stack_item::stack_item_type::StackItemType;
 use num_bigint::BigInt;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -186,9 +186,11 @@ fn test_struct_stack_item() {
         StackItem::from_int(3),
     ]);
     assert!(struct_item.equals(&struct_item2).unwrap());
-    assert!(struct_item
-        .equals_with_limits(&struct_item2, &ExecutionEngineLimits::default())
-        .unwrap());
+    assert!(
+        struct_item
+            .equals_with_limits(&struct_item2, &ExecutionEngineLimits::default())
+            .unwrap()
+    );
 
     let struct_item3 = StackItem::from_struct(vec![
         StackItem::from_int(1),

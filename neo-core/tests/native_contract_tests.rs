@@ -1,5 +1,5 @@
 use neo_core::hardfork::{Hardfork, HardforkManager};
-use neo_core::ledger::{create_genesis_block, Block, BlockHeader};
+use neo_core::ledger::{Block, BlockHeader, create_genesis_block};
 use neo_core::network::p2p::payloads::Witness;
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
@@ -8,9 +8,9 @@ use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::smart_contract::contract_state::ContractState;
 use neo_core::smart_contract::i_interoperable::IInteroperable;
 use neo_core::smart_contract::native::{
-    is_active_for, ContractManagement, CryptoLib, GasToken, IHardforkActivable, LedgerContract,
-    NativeContract, NativeRegistry, NeoToken, Notary, OracleContract, PolicyContract,
-    RoleManagement, StdLib, TreasuryContract,
+    ContractManagement, CryptoLib, GasToken, IHardforkActivable, LedgerContract, NativeContract,
+    NativeRegistry, NeoToken, Notary, OracleContract, PolicyContract, RoleManagement, StdLib,
+    TreasuryContract, is_active_for,
 };
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::{UInt160, UInt256};

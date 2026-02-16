@@ -1,10 +1,10 @@
 use neo_core::network::p2p::helper::get_sign_data_vec;
 use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::protocol_settings::ProtocolSettings;
+use neo_core::smart_contract::ContractParametersContext;
 use neo_core::smart_contract::contract::Contract;
 use neo_core::smart_contract::contract_parameter_type::ContractParameterType;
 use neo_core::smart_contract::helper::Helper as ContractHelper;
-use neo_core::smart_contract::ContractParametersContext;
 use neo_core::wallets::key_pair::KeyPair;
 use neo_core::{Transaction, UInt160, WitnessScope};
 use neo_vm::op_code::OpCode;
@@ -42,9 +42,11 @@ fn test_multisig_invocation_ordering() {
     let (_, parsed_keys) =
         ContractHelper::parse_multi_sig_contract(&contract.script).expect("parse multisig");
     let pub2_bytes = pub2.encode_point(true).expect("pub2 bytes");
-    assert!(parsed_keys
-        .iter()
-        .any(|k| k.as_slice() == pub2_bytes.as_slice()));
+    assert!(
+        parsed_keys
+            .iter()
+            .any(|k| k.as_slice() == pub2_bytes.as_slice())
+    );
 
     let mut tx = make_tx_for_contract(contract.script_hash());
     let sign_data = get_sign_data_vec(&tx, settings.network).expect("sign data");
@@ -54,12 +56,16 @@ fn test_multisig_invocation_ordering() {
     let sig2 = key2.sign(&sign_data).expect("sig2");
     let sig1 = key1.sign(&sign_data).expect("sig1");
 
-    assert!(context
-        .add_signature(contract.clone(), pub2, sig2)
-        .expect("add signature"));
-    assert!(context
-        .add_signature(contract.clone(), pub1, sig1)
-        .expect("add signature"));
+    assert!(
+        context
+            .add_signature(contract.clone(), pub2, sig2)
+            .expect("add signature")
+    );
+    assert!(
+        context
+            .add_signature(contract.clone(), pub1, sig1)
+            .expect("add signature")
+    );
 
     let witnesses = context.get_witnesses().expect("witnesses ready");
     tx.set_witnesses(witnesses);
@@ -89,9 +95,11 @@ fn test_multisig_rejects_non_member_signature() {
     let sig_other = key_other.sign(&sign_data).expect("sig_other");
 
     let mut context = ContractParametersContext::new(snapshot, tx, settings.network);
-    assert!(!context
-        .add_signature(contract, pub_other, sig_other)
-        .expect("add signature"));
+    assert!(
+        !context
+            .add_signature(contract, pub_other, sig_other)
+            .expect("add signature")
+    );
     assert!(!context.completed());
 }
 

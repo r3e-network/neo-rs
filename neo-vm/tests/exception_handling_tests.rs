@@ -46,7 +46,7 @@ fn try_and_endtry_push_and_update_context() {
         .current_context()
         .expect("context available")
         .instruction_pointer();
-    let try_instruction = Instruction::new(OpCode::TRY, &[2u8, 0u8, 3u8, 0u8]); // little-endian i16 offsets
+    let try_instruction = Instruction::new(OpCode::TRY, &[2u8, 3u8]); // signed-byte offsets
     vm_try::try_op(&mut engine, &try_instruction).expect("try executes");
 
     let context = engine.current_context().expect("context available");
@@ -76,7 +76,7 @@ fn throw_routes_to_catch_block() {
         .current_context()
         .expect("context available")
         .instruction_pointer();
-    let try_instruction = Instruction::new(OpCode::TRY, &[2u8, 0u8, 0u8, 0u8]);
+    let try_instruction = Instruction::new(OpCode::TRY, &[2u8, 0u8]);
     vm_try::try_op(&mut engine, &try_instruction).expect("try executes");
 
     // Push an exception onto the evaluation stack and execute THROW
@@ -114,7 +114,7 @@ fn throw_routes_to_finally_when_no_catch() {
         .current_context()
         .expect("context available")
         .instruction_pointer();
-    let try_instruction = Instruction::new(OpCode::TRY, &[0u8, 0u8, 2u8, 0u8]);
+    let try_instruction = Instruction::new(OpCode::TRY, &[0u8, 2u8]);
     vm_try::try_op(&mut engine, &try_instruction).expect("try executes");
 
     engine

@@ -5,8 +5,8 @@
 #[cfg(test)]
 #[allow(clippy::module_inception)]
 mod data_cache_tests {
-    use crate::persistence::{DataCache, StorageItem, StorageKey};
     use crate::UInt256;
+    use crate::persistence::{DataCache, StorageItem, StorageKey};
 
     #[test]
     fn test_data_cache_new_is_empty() {

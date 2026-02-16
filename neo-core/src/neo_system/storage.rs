@@ -3,11 +3,11 @@
 use std::sync::Arc;
 
 use crate::ledger::{HeaderCache, LedgerContext};
-use crate::persistence::{i_store::IStore, StoreCache};
+use crate::persistence::{StoreCache, i_store::IStore};
 use crate::protocol_settings::ProtocolSettings;
 use crate::state_service::{
-    state_store::{SnapshotBackedStateStoreBackend, StateRootVerifier, StateServiceSettings},
     StateStore,
+    state_store::{SnapshotBackedStateStoreBackend, StateRootVerifier, StateServiceSettings},
 };
 
 /// Initializes store, cache, and state store from a provider and optional path.

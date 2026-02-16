@@ -1,5 +1,6 @@
 //! ApplicationLogs service for capturing execution logs and serving RPC queries.
 
+use crate::UInt256;
 use crate::i_event_handlers::{ICommittedHandler, ICommittingHandler};
 use crate::ledger::block::Block as LedgerBlock;
 use crate::ledger::blockchain_application_executed::ApplicationExecuted;
@@ -7,8 +8,7 @@ use crate::neo_system::NeoSystem;
 use crate::persistence::{DataCache, IStore, IStoreSnapshot};
 use crate::smart_contract::{NotifyEventArgs, TriggerType};
 use crate::unhandled_exception_policy::UnhandledExceptionPolicy;
-use crate::UInt256;
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use neo_vm::stack_item::StackItemType;
 use neo_vm::{StackItem, VMState};
 use parking_lot::Mutex;
@@ -16,8 +16,8 @@ use serde_json::{Map, Value};
 use std::any::Any;
 use std::collections::HashSet;
 use std::panic::{self, AssertUnwindSafe};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tracing::{error, warn};
 
 use super::ApplicationLogsSettings;

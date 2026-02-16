@@ -55,6 +55,24 @@ impl PolicyContract {
             .ok_or_else(|| Error::native_contract(format!("{name} is out of range")))
     }
 
+    pub(super) fn parse_hash160_argument(arg: &[u8], name: &str) -> Result<UInt160> {
+        UInt160::from_bytes(arg)
+            .map_err(|e| Error::invalid_argument(format!("Invalid {name}: {e}")))
+    }
+
+    pub(super) fn parse_hash160_native(arg: &[u8], error: &str) -> Result<UInt160> {
+        UInt160::from_bytes(arg).map_err(|_| Error::native_contract(error))
+    }
+
+    pub(super) fn parse_account_hash_argument(arg: &[u8]) -> Result<UInt160> {
+        if arg.len() != ADDRESS_SIZE {
+            return Err(Error::native_contract(format!(
+                "Invalid account hash length (must be {ADDRESS_SIZE} bytes)"
+            )));
+        }
+        Ok(UInt160::from_bytes(arg)?)
+    }
+
     pub(super) fn fee_per_byte_key() -> StorageKey {
         StorageKey::create(Self::ID, Self::PREFIX_FEE_PER_BYTE)
     }

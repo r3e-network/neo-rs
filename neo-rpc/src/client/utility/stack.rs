@@ -1,7 +1,7 @@
 use std::any::Any;
 use std::sync::Arc;
 
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use neo_json::{JArray, JObject, JToken};
 use neo_vm::stack_item::InteropInterface;
 use neo_vm::{OrderedDictionary, Script, StackItem};

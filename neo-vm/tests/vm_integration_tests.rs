@@ -4,9 +4,9 @@
 //! error conditions, and stack operations.
 
 use neo_vm::{
-    application_engine::ApplicationEngine, execution_context::ExecutionContext,
-    reference_counter::ReferenceCounter, script_builder::ScriptBuilder, ExecutionEngine, OpCode,
-    Script, TriggerType, VMState,
+    ExecutionEngine, OpCode, Script, TriggerType, VMState, application_engine::ApplicationEngine,
+    execution_context::ExecutionContext, reference_counter::ReferenceCounter,
+    script_builder::ScriptBuilder,
 };
 
 /// Test basic arithmetic operations

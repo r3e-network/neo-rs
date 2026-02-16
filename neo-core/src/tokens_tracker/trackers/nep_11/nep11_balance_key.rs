@@ -3,8 +3,8 @@
 //! Storage key for NEP-11 (NFT) balances.
 
 use super::super::super::extensions::bytes_var_size;
-use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
 use crate::UInt160;
+use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
 use neo_vm::stack_item::ByteString;
 use num_bigint::BigInt;
 use num_traits::Zero;

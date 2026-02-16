@@ -10,7 +10,7 @@ use crate::persistence::{DataCache, IStore, IStoreSnapshot, SeekDirection};
 use crate::{NeoSystem, UInt160};
 use neo_vm::stack_item::StackItem;
 use num_bigint::BigInt;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 

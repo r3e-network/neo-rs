@@ -2,7 +2,7 @@
 //!
 //! Tests for arithmetic operations like ADD, SUB, MUL, DIV, etc.
 
-use crate::csharp_tests::{resolve_test_dir, JsonTestRunner};
+use crate::csharp_tests::{JsonTestRunner, resolve_test_dir};
 
 /// Test OpCodes Arithmetic category (matches C# TestOpCodesArithmetic)
 #[test]

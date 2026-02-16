@@ -2,7 +2,7 @@
 //!
 //! Tests for stack operations like DUP, SWAP, ROT, etc.
 
-use crate::csharp_tests::{resolve_test_dir, JsonTestRunner};
+use crate::csharp_tests::{JsonTestRunner, resolve_test_dir};
 
 /// Test OpCodes Stack category (matches C# TestOpCodesStack)
 #[test]

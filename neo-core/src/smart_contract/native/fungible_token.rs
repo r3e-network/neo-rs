@@ -9,13 +9,13 @@
 //! queries, balance queries, transfer event emission, and common
 //! byte-encoding helpers.
 
+use crate::UInt160;
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
-use crate::smart_contract::application_engine::ApplicationEngine;
-use crate::smart_contract::native::native_contract::NativeMethod;
-use crate::smart_contract::native::NativeContract;
 use crate::smart_contract::ContractParameterType;
-use crate::UInt160;
+use crate::smart_contract::application_engine::ApplicationEngine;
+use crate::smart_contract::native::NativeContract;
+use crate::smart_contract::native::native_contract::NativeMethod;
 use neo_vm::StackItem;
 use num_bigint::BigInt;
 

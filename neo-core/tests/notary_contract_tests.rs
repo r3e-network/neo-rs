@@ -3,7 +3,7 @@
 //! Tests for Neo.SmartContract.Native.Notary functionality.
 
 use neo_core::hardfork::HardforkManager;
-use neo_core::ledger::{create_genesis_block, Block, BlockHeader};
+use neo_core::ledger::{Block, BlockHeader, create_genesis_block};
 use neo_core::network::p2p::payloads::{NotaryAssisted, Signer, Transaction, TransactionAttribute};
 use neo_core::persistence::DataCache;
 use neo_core::persistence::IReadOnlyStoreGeneric;

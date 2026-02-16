@@ -10,8 +10,8 @@
 //! - Signature verification
 
 use neo_consensus::{
-    messages::RecoveryMessage, ConsensusEvent, ConsensusMessageType, ConsensusPayload,
-    ConsensusService, ValidatorInfo,
+    ConsensusEvent, ConsensusMessageType, ConsensusPayload, ConsensusService, ValidatorInfo,
+    messages::RecoveryMessage,
 };
 use neo_crypto::{ECCurve, ECPoint};
 use neo_primitives::{UInt160, UInt256};

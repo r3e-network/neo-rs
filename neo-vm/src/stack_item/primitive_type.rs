@@ -5,8 +5,8 @@
 //! (integers, booleans, byte strings and buffers).
 
 use crate::error::{VmError, VmResult};
-use crate::stack_item::stack_item_type::StackItemType;
 use crate::stack_item::StackItem;
+use crate::stack_item::stack_item_type::StackItemType;
 use num_bigint::BigInt;
 
 /// Read-only view over a primitive stack item.

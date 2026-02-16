@@ -9,11 +9,11 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
+use crate::UInt256;
 use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::native::LedgerContract;
-use crate::UInt256;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 

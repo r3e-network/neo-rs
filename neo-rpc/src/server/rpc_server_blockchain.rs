@@ -8,7 +8,7 @@ use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::internal_error;
 use crate::server::rpc_method_attribute::RpcMethodDescriptor;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use hex;
 use neo_core::ledger::{
     block::Block as LedgerBlock, block_header::BlockHeader as LedgerBlockHeader,
@@ -17,19 +17,19 @@ use neo_core::neo_io::{BinaryWriter, Serializable};
 use neo_core::network::p2p::payloads::{
     block::Block, header::Header, transaction::Transaction, witness::Witness as PayloadWitness,
 };
-use neo_core::persistence::seek_direction::SeekDirection;
 use neo_core::persistence::IReadOnlyStoreGeneric;
+use neo_core::persistence::seek_direction::SeekDirection;
 use neo_core::smart_contract::contract_state::ContractState;
 use neo_core::smart_contract::native::{
+    NativeRegistry,
     contract_management::ContractManagement,
     ledger_contract::{HashOrIndex, LedgerContract},
-    NativeRegistry,
 };
 use neo_core::smart_contract::storage_key::StorageKey;
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::{UInt160, UInt256, Witness as LedgerWitness};
 use num_traits::ToPrimitive;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -195,13 +195,13 @@ impl RpcServerBlockchain {
                     return Err(RpcException::from(
                         RpcError::invalid_params()
                             .with_data("shouldGetUnverified must be a boolean"),
-                    ))
+                    ));
                 }
             },
             _ => {
                 return Err(RpcException::from(
                     RpcError::invalid_params().with_data("shouldGetUnverified must be a boolean"),
-                ))
+                ));
             }
         };
 
@@ -270,7 +270,7 @@ impl RpcServerBlockchain {
         }
 
         let mut json = tx.to_json(system.settings());
-        if let (Value::Object(ref mut obj), Some(state)) = (&mut json, state) {
+        if let (Value::Object(obj), Some(state)) = (&mut json, state) {
             let block_index = state.block_index();
             let current_index = ledger.current_index(&store).map_err(internal_error)?;
             let confirmations = current_index.saturating_sub(block_index).saturating_add(1);
@@ -356,7 +356,7 @@ impl RpcServerBlockchain {
                 return Err(RpcException::from(
                     RpcError::invalid_params()
                         .with_data("start index must be a non-negative integer"),
-                ))
+                ));
             }
         };
 
@@ -858,9 +858,9 @@ mod tests {
     use crate::client::models::RpcRawMemPool;
     use crate::server::rpc_server_settings::RpcServerConfig;
     use neo_core::extensions::io::serializable::SerializableExtensions;
+    use neo_core::ledger::VerifyResult;
     use neo_core::ledger::block::Block as LedgerBlock;
     use neo_core::ledger::block_header::BlockHeader as LedgerBlockHeader;
-    use neo_core::ledger::VerifyResult;
     use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
     use neo_core::network::p2p::helper::get_sign_data_vec;
     use neo_core::network::p2p::payloads::block::Block;
@@ -869,9 +869,9 @@ mod tests {
     use neo_core::network::p2p::payloads::witness::Witness;
     use neo_core::protocol_settings::ProtocolSettings;
     use neo_core::smart_contract::application_engine::ApplicationEngine;
-    use neo_core::smart_contract::native::trimmed_block::TrimmedBlock;
     use neo_core::smart_contract::native::GasToken;
     use neo_core::smart_contract::native::LedgerContract;
+    use neo_core::smart_contract::native::trimmed_block::TrimmedBlock;
     use neo_core::smart_contract::trigger_type::TriggerType;
     use neo_core::smart_contract::{BinarySerializer, ContractManifest, ContractState, NefFile};
     use neo_core::smart_contract::{StorageItem, StorageKey};
@@ -2055,10 +2055,11 @@ mod tests {
         ];
         let result = (handler.callback())(&server, &params).expect("find storage page1");
         let obj = result.as_object().expect("object");
-        assert!(obj
-            .get("truncated")
-            .and_then(Value::as_bool)
-            .unwrap_or(false));
+        assert!(
+            obj.get("truncated")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        );
         assert_eq!(
             obj.get("results")
                 .and_then(Value::as_array)
@@ -2077,10 +2078,11 @@ mod tests {
         let result = (handler.callback())(&server, &params).expect("find storage page2");
         let obj = result.as_object().expect("object");
         println!("page2 result: {}", result);
-        assert!(!obj
-            .get("truncated")
-            .and_then(Value::as_bool)
-            .unwrap_or(true));
+        assert!(
+            !obj.get("truncated")
+                .and_then(Value::as_bool)
+                .unwrap_or(true)
+        );
         assert_eq!(
             obj.get("results")
                 .and_then(Value::as_array)
@@ -2122,10 +2124,11 @@ mod tests {
         ];
         let result = (handler.callback())(&server, &params).expect("find storage page1");
         let obj = result.as_object().expect("object");
-        assert!(!obj
-            .get("truncated")
-            .and_then(Value::as_bool)
-            .unwrap_or(true));
+        assert!(
+            !obj.get("truncated")
+                .and_then(Value::as_bool)
+                .unwrap_or(true)
+        );
         let results = obj
             .get("results")
             .and_then(Value::as_array)
@@ -2141,10 +2144,11 @@ mod tests {
         ];
         let result = (handler.callback())(&server, &params).expect("find storage page2");
         let obj = result.as_object().expect("object");
-        assert!(!obj
-            .get("truncated")
-            .and_then(Value::as_bool)
-            .unwrap_or(true));
+        assert!(
+            !obj.get("truncated")
+                .and_then(Value::as_bool)
+                .unwrap_or(true)
+        );
         let results = obj
             .get("results")
             .and_then(Value::as_array)
@@ -2399,10 +2403,12 @@ mod tests {
                 .unwrap_or_default(),
             "10000"
         );
-        assert!(entry
-            .get("active")
-            .and_then(Value::as_bool)
-            .unwrap_or(false));
+        assert!(
+            entry
+                .get("active")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]

@@ -2,16 +2,16 @@
 //!
 //! Tests for Neo.Network.P2P message serialization and payloads.
 
+use neo_core::UInt256;
 use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_core::network::p2p::message::{Message, PAYLOAD_MAX_SIZE};
 use neo_core::network::p2p::message_command::MessageCommand;
 use neo_core::network::p2p::message_flags::MessageFlags;
-use neo_core::network::p2p::payloads::inv_payload::{InvPayload, MAX_HASHES_COUNT};
-use neo_core::network::p2p::payloads::ping_payload::PingPayload;
 use neo_core::network::p2p::payloads::InventoryType;
 use neo_core::network::p2p::payloads::VersionPayload;
+use neo_core::network::p2p::payloads::inv_payload::{InvPayload, MAX_HASHES_COUNT};
+use neo_core::network::p2p::payloads::ping_payload::PingPayload;
 use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::UInt256;
 
 /// Tests Message payload max size constant (32 MiB)
 #[test]

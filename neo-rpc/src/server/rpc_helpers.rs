@@ -112,7 +112,7 @@ pub fn expect_hash_param(
     // Try hex first, then base64
     UInt256::from_str(&text)
         .or_else(|_| {
-            use base64::{engine::general_purpose::STANDARD, Engine};
+            use base64::{Engine, engine::general_purpose::STANDARD};
             STANDARD
                 .decode(&text)
                 .ok()

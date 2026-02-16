@@ -1,6 +1,6 @@
 //! Transaction mempool implementation
 
-use super::{FeePolicy, MempoolError, MempoolResult, TransactionEntry, DEFAULT_MAX_TRANSACTIONS};
+use super::{DEFAULT_MAX_TRANSACTIONS, FeePolicy, MempoolError, MempoolResult, TransactionEntry};
 use hashbrown::{HashMap, HashSet};
 use neo_primitives::{UInt160, UInt256};
 use parking_lot::RwLock;

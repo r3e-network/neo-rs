@@ -43,22 +43,16 @@ impl ExpectedStackItem {
     /// Checks if a stack item matches the expected value
     pub fn matches(&self, actual: &StackItem) -> bool {
         match self {
-            ExpectedStackItem::Boolean(expected) => {
-                if let Ok(actual_bool) = actual.as_bool() {
-                    *expected == actual_bool
-                } else {
-                    false
-                }
-            }
-            ExpectedStackItem::Integer(expected) => {
-                if let Ok(actual_int) = actual.as_int() {
-                    expected == &actual_int.to_string()
-                } else {
-                    false
-                }
-            }
-            ExpectedStackItem::ByteString(expected) => {
-                if let Ok(actual_bytes) = actual.as_bytes() {
+            ExpectedStackItem::Boolean(expected) => match actual.as_bool() {
+                Ok(actual_bool) => *expected == actual_bool,
+                _ => false,
+            },
+            ExpectedStackItem::Integer(expected) => match actual.as_int() {
+                Ok(actual_int) => expected == &actual_int.to_string(),
+                _ => false,
+            },
+            ExpectedStackItem::ByteString(expected) => match actual.as_bytes() {
+                Ok(actual_bytes) => {
                     let expected_bytes = if expected.len() % 2 == 0 {
                         (0..expected.len())
                             .step_by(2)
@@ -68,12 +62,11 @@ impl ExpectedStackItem {
                         vec![]
                     };
                     expected_bytes == actual_bytes
-                } else {
-                    false
                 }
-            }
-            ExpectedStackItem::Array(expected_items) => {
-                if let Ok(actual_array) = actual.as_array() {
+                _ => false,
+            },
+            ExpectedStackItem::Array(expected_items) => match actual.as_array() {
+                Ok(actual_array) => {
                     if expected_items.len() != actual_array.len() {
                         return false;
                     }
@@ -85,10 +78,9 @@ impl ExpectedStackItem {
                     }
 
                     true
-                } else {
-                    false
                 }
-            }
+                _ => false,
+            },
             ExpectedStackItem::Null => actual.is_null(),
         }
     }
@@ -104,57 +96,63 @@ pub fn execute_and_verify(script_bytes: Vec<u8>, expected: &ExpectedExecutionRes
     let mut engine = ExecutionEngine::new(None);
 
     // Load script and execute
-    if let Ok(_context) = engine.load_script(script, -1, 0) {
-        let _ = engine.execute();
+    match engine.load_script(script, -1, 0) {
+        Ok(_context) => {
+            let _ = engine.execute();
 
-        // Verify VM state
-        if engine.state() != expected.vm_state {
-            println!(
-                "VM state mismatch: expected {:?}, got {:?}",
-                expected.vm_state,
-                engine.state()
-            );
-            return false;
-        }
-
-        // Verify stack items
-        let result_stack = engine.result_stack();
-        if result_stack.len() != expected.result_stack.len() {
-            println!(
-                "Stack size mismatch: expected {}, got {}",
-                expected.result_stack.len(),
-                result_stack.len()
-            );
-            return false;
-        }
-
-        // Compare each stack item using peek instead of iter
-        for (i, expected_item) in expected.result_stack.iter().enumerate() {
-            if let Ok(actual_item) = result_stack.peek(i) {
-                if !expected_item.matches(actual_item) {
-                    println!("Stack item mismatch at position {}", i);
-                    return false;
-                }
-            } else {
-                println!("Could not access stack item at position {}", i);
+            // Verify VM state
+            if engine.state() != expected.vm_state {
+                println!(
+                    "VM state mismatch: expected {:?}, got {:?}",
+                    expected.vm_state,
+                    engine.state()
+                );
                 return false;
             }
-        }
 
-        // Verify exception state
-        let has_exception = engine.uncaught_exception().is_some();
-        if has_exception != expected.has_exception {
-            println!(
-                "Exception state mismatch: expected {}, got {}",
-                expected.has_exception, has_exception
-            );
-            return false;
-        }
+            // Verify stack items
+            let result_stack = engine.result_stack();
+            if result_stack.len() != expected.result_stack.len() {
+                println!(
+                    "Stack size mismatch: expected {}, got {}",
+                    expected.result_stack.len(),
+                    result_stack.len()
+                );
+                return false;
+            }
 
-        true
-    } else {
-        println!("Failed to load script");
-        false
+            // Compare each stack item using peek instead of iter
+            for (i, expected_item) in expected.result_stack.iter().enumerate() {
+                match result_stack.peek(i) {
+                    Ok(actual_item) => {
+                        if !expected_item.matches(actual_item) {
+                            println!("Stack item mismatch at position {}", i);
+                            return false;
+                        }
+                    }
+                    _ => {
+                        println!("Could not access stack item at position {}", i);
+                        return false;
+                    }
+                }
+            }
+
+            // Verify exception state
+            let has_exception = engine.uncaught_exception().is_some();
+            if has_exception != expected.has_exception {
+                println!(
+                    "Exception state mismatch: expected {}, got {}",
+                    expected.has_exception, has_exception
+                );
+                return false;
+            }
+
+            true
+        }
+        _ => {
+            println!("Failed to load script");
+            false
+        }
     }
 }
 

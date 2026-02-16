@@ -4,8 +4,8 @@
 //! including block height, peer count, mempool size, and storage status.
 
 use hyper::{
-    service::{make_service_fn, service_fn},
     Body, Request, Response, Server, StatusCode,
+    service::{make_service_fn, service_fn},
 };
 use serde::Serialize;
 use std::net::SocketAddr;

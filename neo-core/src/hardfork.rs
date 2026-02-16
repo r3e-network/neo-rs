@@ -35,9 +35,9 @@
 //! The `Hardfork` enum is defined in [`neo_primitives`] and re-exported here.
 //! This module provides the `HardforkManager` for managing hardfork activation heights.
 
-use lazy_static::lazy_static;
 use parking_lot::RwLock;
 use std::collections::HashMap;
+use std::sync::LazyLock;
 
 // Re-export Hardfork from neo-primitives (single source of truth)
 pub use neo_primitives::{Hardfork, HardforkParseError};
@@ -48,9 +48,8 @@ pub struct HardforkManager {
     hardforks: HashMap<Hardfork, u32>,
 }
 
-lazy_static! {
-    static ref INSTANCE: RwLock<HardforkManager> = RwLock::new(HardforkManager::new());
-}
+static INSTANCE: LazyLock<RwLock<HardforkManager>> =
+    LazyLock::new(|| RwLock::new(HardforkManager::new()));
 
 impl HardforkManager {
     /// Returns every known hardfork in declaration order.

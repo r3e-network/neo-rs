@@ -3,12 +3,12 @@
 //! This module provides the base wallet trait and functionality,
 //! converted from the C# Neo Wallet class (@neo-sharp/src/Neo/Wallets/Wallet.cs).
 
+use crate::Transaction;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::contract::Contract;
 use crate::wallets::{
-    i_wallet_factory::IWalletFactory, key_pair::KeyPair, wallet_account::WalletAccount, Version,
+    Version, i_wallet_factory::IWalletFactory, key_pair::KeyPair, wallet_account::WalletAccount,
 };
-use crate::Transaction;
 use crate::{UInt160, UInt256};
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -224,19 +224,22 @@ impl WalletManager {
 
         // Copy all accounts
         for account in old_wallet.get_accounts() {
-            if let Some(key_pair) = account.get_key() {
-                if let Some(contract) = account.contract() {
-                    new_wallet
-                        .create_account_with_contract(contract.clone(), Some(key_pair))
-                        .await?;
-                } else {
-                    new_wallet.create_account(key_pair.private_key()).await?;
+            match account.get_key() {
+                Some(key_pair) => {
+                    if let Some(contract) = account.contract() {
+                        new_wallet
+                            .create_account_with_contract(contract.clone(), Some(key_pair))
+                            .await?;
+                    } else {
+                        new_wallet.create_account(key_pair.private_key()).await?;
+                    }
                 }
-            } else {
-                // Watch-only account
-                new_wallet
-                    .create_account_watch_only(account.script_hash())
-                    .await?;
+                _ => {
+                    // Watch-only account
+                    new_wallet
+                        .create_account_watch_only(account.script_hash())
+                        .await?;
+                }
             }
         }
 

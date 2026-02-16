@@ -1,27 +1,25 @@
 use super::*;
 use crate::hardfork::HardforkManager;
-use crate::ledger::{create_genesis_block, Block, BlockHeader};
+use crate::ledger::{Block, BlockHeader, create_genesis_block};
 use crate::network::p2p::payloads::{Signer, Transaction, Witness, WitnessScope};
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
+use crate::smart_contract::IInteroperable;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::contract::Contract;
-use crate::smart_contract::iterators::i_iterator::IIterator;
 use crate::smart_contract::iterators::IteratorInterop;
+use crate::smart_contract::iterators::i_iterator::IIterator;
 use crate::smart_contract::native::{
     AccountState, ContractManagement, GasToken, NativeContract, NativeHelpers, NeoToken,
     TreasuryContract,
 };
 use crate::smart_contract::storage_key::StorageKey;
 use crate::smart_contract::trigger_type::TriggerType;
-use crate::smart_contract::IInteroperable;
 use crate::{IVerifiable, UInt160, UInt256};
 use neo_primitives::TransactionAttributeType;
-use neo_vm::{
-    execution_engine_limits::ExecutionEngineLimits, OpCode, ScriptBuilder, StackItem, VMState,
-};
+use neo_vm::{OpCode, ScriptBuilder, StackItem, VMState};
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
 use std::sync::Arc;
@@ -42,9 +40,8 @@ fn test_whitelist_stack_item_roundtrip() {
     };
 
     let item = wl.to_stack_item().unwrap();
-    let bytes = BinarySerializer::serialize(&item, &ExecutionEngineLimits::default()).unwrap();
-    let decoded_item =
-        BinarySerializer::deserialize(&bytes, &ExecutionEngineLimits::default(), None).unwrap();
+    let bytes = BinarySerializer::serialize_default(&item).unwrap();
+    let decoded_item = BinarySerializer::deserialize_default(&bytes).unwrap();
 
     let mut decoded = WhitelistedContract::default();
     decoded.from_stack_item(decoded_item).unwrap();
@@ -502,9 +499,11 @@ fn check_recover_funds_complete_flow() {
         .expect("blockAccount");
     assert!(bytes_to_bool(&ret));
 
-    assert!(policy
-        .is_blocked_snapshot(snapshot.as_ref(), &blocked_account)
-        .expect("is blocked"));
+    assert!(
+        policy
+            .is_blocked_snapshot(snapshot.as_ref(), &blocked_account)
+            .expect("is blocked")
+    );
 
     // Set GAS balance for blocked account.
     let gas_balance = BigInt::from(50_000) * BigInt::from(10u8).pow(u32::from(gas.decimals()));
@@ -514,11 +513,8 @@ fn check_recover_funds_complete_flow() {
         &blocked_account,
     );
     let gas_state = AccountState::with_balance(gas_balance.clone());
-    let gas_bytes = BinarySerializer::serialize(
-        &gas_state.to_stack_item().unwrap(),
-        &ExecutionEngineLimits::default(),
-    )
-    .expect("serialize account state");
+    let gas_bytes = BinarySerializer::serialize_default(&gas_state.to_stack_item().unwrap())
+        .expect("serialize account state");
     snapshot.add(
         gas_key,
         crate::persistence::StorageItem::from_bytes(gas_bytes),
@@ -544,9 +540,10 @@ fn check_recover_funds_complete_flow() {
         )
         .expect("recoverFund");
 
-    assert!(gas
-        .balance_of_snapshot(snapshot.as_ref(), &blocked_account)
-        .is_zero());
+    assert!(
+        gas.balance_of_snapshot(snapshot.as_ref(), &blocked_account)
+            .is_zero()
+    );
     let treasury_balance =
         gas.balance_of_snapshot(snapshot.as_ref(), &TreasuryContract::new().hash());
     assert!(treasury_balance >= gas_balance);
@@ -803,15 +800,21 @@ fn check_block_account() {
         .expect("blockAccount");
     assert!(bytes_to_bool(&ret));
 
-    assert!(!policy
-        .is_blocked_snapshot(snapshot.as_ref(), &UInt160::zero())
-        .expect("is blocked"));
-    assert!(policy
-        .is_blocked_snapshot(snapshot.as_ref(), &account_a)
-        .expect("is blocked"));
-    assert!(policy
-        .is_blocked_snapshot(snapshot.as_ref(), &account_b)
-        .expect("is blocked"));
+    assert!(
+        !policy
+            .is_blocked_snapshot(snapshot.as_ref(), &UInt160::zero())
+            .expect("is blocked")
+    );
+    assert!(
+        policy
+            .is_blocked_snapshot(snapshot.as_ref(), &account_a)
+            .expect("is blocked")
+    );
+    assert!(
+        policy
+            .is_blocked_snapshot(snapshot.as_ref(), &account_b)
+            .expect("is blocked")
+    );
 }
 
 #[test]
@@ -832,9 +835,11 @@ fn check_block_unblock_account() {
     let result =
         engine.call_native_contract(policy.hash(), "blockAccount", &[UInt160::zero().to_bytes()]);
     assert!(result.is_err());
-    assert!(!policy
-        .is_blocked_snapshot(snapshot.as_ref(), &UInt160::zero())
-        .expect("is blocked"));
+    assert!(
+        !policy
+            .is_blocked_snapshot(snapshot.as_ref(), &UInt160::zero())
+            .expect("is blocked")
+    );
 
     // Block with signature.
     let mut engine = make_engine(
@@ -847,9 +852,11 @@ fn check_block_unblock_account() {
         .call_native_contract(policy.hash(), "blockAccount", &[UInt160::zero().to_bytes()])
         .expect("blockAccount");
     assert!(bytes_to_bool(&ret));
-    assert!(policy
-        .is_blocked_snapshot(snapshot.as_ref(), &UInt160::zero())
-        .expect("is blocked"));
+    assert!(
+        policy
+            .is_blocked_snapshot(snapshot.as_ref(), &UInt160::zero())
+            .expect("is blocked")
+    );
 
     // Unblock without signature.
     let mut engine = make_engine(
@@ -864,9 +871,11 @@ fn check_block_unblock_account() {
         &[UInt160::zero().to_bytes()],
     );
     assert!(result.is_err());
-    assert!(policy
-        .is_blocked_snapshot(snapshot.as_ref(), &UInt160::zero())
-        .expect("is blocked"));
+    assert!(
+        policy
+            .is_blocked_snapshot(snapshot.as_ref(), &UInt160::zero())
+            .expect("is blocked")
+    );
 
     // Unblock with signature.
     let mut engine = make_engine(
@@ -883,9 +892,11 @@ fn check_block_unblock_account() {
         )
         .expect("unblockAccount");
     assert!(bytes_to_bool(&ret));
-    assert!(!policy
-        .is_blocked_snapshot(snapshot.as_ref(), &UInt160::zero())
-        .expect("is blocked"));
+    assert!(
+        !policy
+            .is_blocked_snapshot(snapshot.as_ref(), &UInt160::zero())
+            .expect("is blocked")
+    );
 }
 
 #[test]
@@ -954,9 +965,11 @@ fn test_list_blocked_accounts() {
         .expect("blockAccount");
     assert!(bytes_to_bool(&ret));
 
-    assert!(policy
-        .is_blocked_snapshot(snapshot.as_ref(), &UInt160::zero())
-        .expect("is blocked"));
+    assert!(
+        policy
+            .is_blocked_snapshot(snapshot.as_ref(), &UInt160::zero())
+            .expect("is blocked")
+    );
 
     let mut script = ScriptBuilder::new();
     emit_dynamic_call(&mut script, &policy.hash(), "getBlockedAccounts", &[]);

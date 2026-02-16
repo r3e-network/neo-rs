@@ -15,12 +15,12 @@
 //! attack vectors including oversized blocks, timestamp manipulation,
 //! and merkle root tampering.
 
+use crate::UInt256;
 use crate::constants::{MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK};
 use crate::cryptography::MerkleTree;
 use crate::network::p2p::payloads::header::Header;
 use crate::network::p2p::payloads::transaction::Transaction;
 use crate::time_provider::TimeProvider;
-use crate::UInt256;
 
 /// Maximum allowed timestamp drift from current time (15 minutes in milliseconds)
 pub const MAX_TIMESTAMP_DRIFT_MS: u64 = 15 * 60 * 1000; // 15 minutes

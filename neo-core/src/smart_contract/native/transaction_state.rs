@@ -4,8 +4,8 @@ use crate::error::CoreError;
 use crate::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use crate::network::p2p::payloads::transaction::Transaction;
 use crate::smart_contract::i_interoperable::IInteroperable;
+use crate::smart_contract::stack_item_extract::{extract_bytes, extract_u8, extract_u32};
 use neo_vm::{StackItem, VMState};
-use num_traits::ToPrimitive;
 use tracing::warn;
 
 /// State of a transaction in the ledger (matches C# TransactionState).
@@ -54,51 +54,51 @@ impl TransactionState {
 
 impl IInteroperable for TransactionState {
     fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
-        if let StackItem::Struct(struct_item) = stack_item {
-            let items = struct_item.items();
-            if items.is_empty() {
-                return Ok(());
-            }
-
-            if let Ok(integer) = items[0].as_int() {
-                if let Some(index) = integer.to_u32() {
-                    self.block_index = index;
-                }
-            }
-
-            // Conflict-only representations encode only the block index.
-            if items.len() == 1 {
-                self.transaction = None;
-                self.state = VMState::NONE;
-                return Ok(());
-            }
-
-            self.transaction = items[1]
-                .as_bytes()
-                .ok()
-                .as_deref()
-                .and_then(Self::deserialize_transaction);
-
-            self.state = items
-                .get(2)
-                .and_then(|item| item.as_int().ok())
-                .and_then(|value| value.to_u8())
-                .map(Self::decode_vm_state)
-                .unwrap_or(VMState::NONE);
+        let StackItem::Struct(struct_item) = stack_item else {
+            return Ok(());
+        };
+        let items = struct_item.items();
+        if items.is_empty() {
+            return Ok(());
         }
+
+        if let Some(index) = extract_u32(&items[0]) {
+            self.block_index = index;
+        }
+
+        // Conflict-only representations encode only the block index.
+        if items.len() == 1 {
+            self.transaction = None;
+            self.state = VMState::NONE;
+            return Ok(());
+        }
+
+        self.transaction = items
+            .get(1)
+            .and_then(extract_bytes)
+            .as_deref()
+            .and_then(Self::deserialize_transaction);
+
+        self.state = items
+            .get(2)
+            .and_then(extract_u8)
+            .map(Self::decode_vm_state)
+            .unwrap_or(VMState::NONE);
         Ok(())
     }
 
     fn to_stack_item(&self) -> Result<StackItem, CoreError> {
-        if let Some(tx) = &self.transaction {
-            if let Some(bytes) = Self::serialize_transaction(tx) {
-                return Ok(StackItem::from_struct(vec![
-                    StackItem::from_int(self.block_index),
-                    StackItem::from_byte_string(bytes),
-                    StackItem::from_int(self.state as u8),
-                ]));
-            }
+        if let Some(tx) = &self.transaction
+            && let Some(bytes) = Self::serialize_transaction(tx)
+        {
+            return Ok(StackItem::from_struct(vec![
+                StackItem::from_int(self.block_index),
+                StackItem::from_byte_string(bytes),
+                StackItem::from_int(self.state as u8),
+            ]));
+        }
 
+        if self.transaction.is_some() {
             warn!(
                 target: "neo",
                 block_index = self.block_index,
@@ -121,9 +121,8 @@ mod tests {
     use super::TransactionState;
     use crate::network::p2p::payloads::{signer::Signer, transaction::Transaction};
     use crate::smart_contract::BinarySerializer;
-    use crate::{smart_contract::IInteroperable, UInt160, Witness, WitnessScope};
-    use neo_vm::execution_engine_limits::ExecutionEngineLimits;
-    use neo_vm::{op_code::OpCode, StackItem, VMState};
+    use crate::{UInt160, Witness, WitnessScope, smart_contract::IInteroperable};
+    use neo_vm::{StackItem, VMState, op_code::OpCode};
 
     fn sample_transaction(nonce: u32, network_fee: i64) -> Transaction {
         let mut tx = Transaction::new();
@@ -136,16 +135,12 @@ mod tests {
     }
 
     fn stack_bytes(state: &TransactionState) -> Vec<u8> {
-        BinarySerializer::serialize(
-            &state.to_stack_item().expect("to_stack_item"),
-            &ExecutionEngineLimits::default(),
-        )
-        .expect("serialize stack item")
+        BinarySerializer::serialize_default(&state.to_stack_item().expect("to_stack_item"))
+            .expect("serialize stack item")
     }
 
     fn decode_stack(bytes: &[u8]) -> StackItem {
-        BinarySerializer::deserialize(bytes, &ExecutionEngineLimits::default(), None)
-            .expect("deserialize stack item")
+        BinarySerializer::deserialize_default(bytes).expect("deserialize stack item")
     }
 
     #[test]

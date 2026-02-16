@@ -263,7 +263,7 @@ pub use signer::ConsensusSigner;
 // Public Re-exports - Context
 // ============================================================================
 
-pub use context::{ConsensusContext, ConsensusState, ValidatorInfo, BLOCK_TIME_MS, MAX_VALIDATORS};
+pub use context::{BLOCK_TIME_MS, ConsensusContext, ConsensusState, MAX_VALIDATORS, ValidatorInfo};
 
 // ============================================================================
 // Public Re-exports - Messages

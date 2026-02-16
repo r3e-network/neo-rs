@@ -4,6 +4,7 @@
 
 use hex::decode as hex_decode;
 use hex::encode as hex_encode;
+use neo_core::UInt160;
 use neo_core::cryptography::{
     Bls12381Crypto, Crypto, Ed25519Crypto, NamedCurveHash, NeoHash, Secp256k1Crypto,
     Secp256r1Crypto,
@@ -15,14 +16,13 @@ use neo_core::network::p2p::payloads::{Signer, Transaction, Witness, WitnessScop
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
-use neo_core::smart_contract::native::crypto_lib::CryptoLib;
 use neo_core::smart_contract::native::NativeContract;
+use neo_core::smart_contract::native::crypto_lib::CryptoLib;
 use neo_core::smart_contract::trigger_type::TriggerType;
-use neo_core::UInt160;
 use neo_vm::{OpCode, ScriptBuilder};
 use num_bigint::BigInt;
 use p256::ecdsa::SigningKey as P256SigningKey;
-use p256::ecdsa::{signature::hazmat::PrehashSigner, Signature as P256Signature};
+use p256::ecdsa::{Signature as P256Signature, signature::hazmat::PrehashSigner};
 use secp256k1::{Message, Secp256k1, SecretKey};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -54,8 +54,7 @@ const BLS_GT_HEX: &str = concat!(
     "943e50439f1d59882a98eaa0170f1250ebd871fc0a92a7b2d83168d0d727272d",
     "441befa15c503dd8e90ce98db3e7b6d194f60839c508a84305aaca1789b6",
 );
-const BLS_NOT_G1_HEX: &str =
-    "8123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+const BLS_NOT_G1_HEX: &str = "8123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 const BLS_NOT_G2_HEX: &str = concat!(
     "8123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
@@ -291,15 +290,11 @@ const BLS_GT_SCALAR_MUL_POINT_4: &str = concat!(
 );
 const BLS_GT_SCALAR_MUL_POINT_4_SCALAR: &str =
     "0000000000000000000000000000000000000000000000000000000000000000";
-const BLS_G1_SCALAR_MUL_POINT: &str =
-    "a1f9855f7670a63e4c80d64dfe6ddedc2ed2bfaebae27e4da82d71ba474987a39808e8921d3df97df6e5d4b979234de8";
+const BLS_G1_SCALAR_MUL_POINT: &str = "a1f9855f7670a63e4c80d64dfe6ddedc2ed2bfaebae27e4da82d71ba474987a39808e8921d3df97df6e5d4b979234de8";
 const BLS_G1_SCALAR_MUL_SCALAR: &str = BLS_GT_SCALAR_MUL_POINT_1_SCALAR;
-const BLS_G1_SCALAR_MUL_EXPECTED: &str =
-    "ae85e3e2d677c9e3424ed79b5a7554262c3d6849202b84d2e7024e4b1f2e9dd3f7cf20b807a9f2a67d87e47e9e94d361";
-const BLS_G1_SCALAR_MUL_EXPECTED_NEG: &str =
-    "8e85e3e2d677c9e3424ed79b5a7554262c3d6849202b84d2e7024e4b1f2e9dd3f7cf20b807a9f2a67d87e47e9e94d361";
-const BLS_G1_SCALAR_MUL_EXPECTED_ZERO: &str =
-    "c00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
+const BLS_G1_SCALAR_MUL_EXPECTED: &str = "ae85e3e2d677c9e3424ed79b5a7554262c3d6849202b84d2e7024e4b1f2e9dd3f7cf20b807a9f2a67d87e47e9e94d361";
+const BLS_G1_SCALAR_MUL_EXPECTED_NEG: &str = "8e85e3e2d677c9e3424ed79b5a7554262c3d6849202b84d2e7024e4b1f2e9dd3f7cf20b807a9f2a67d87e47e9e94d361";
+const BLS_G1_SCALAR_MUL_EXPECTED_ZERO: &str = "c00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
 const BLS_G2_SCALAR_MUL_POINT: &str = concat!(
     "a41e586fdd58d39616fea921a855e65417a5732809afc35e28466e3acaeed3d5",
     "3dd4b97ca398b2f29bf6bbcaca026a6609a42bdeaaeef42813ae225e35c23c61",

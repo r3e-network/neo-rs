@@ -142,9 +142,9 @@ fn normalize_numeric_json(value: JsonValue) -> JsonValue {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base64::{engine::general_purpose, Engine as _};
-    use neo_core::smart_contract::manifest::ContractManifest;
+    use base64::{Engine as _, engine::general_purpose};
     use neo_core::smart_contract::NefFile;
+    use neo_core::smart_contract::manifest::ContractManifest;
     use neo_json::{JArray, JToken};
     use std::fs;
     use std::path::PathBuf;

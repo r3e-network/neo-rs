@@ -1,6 +1,6 @@
 //! Thin transactional wrapper over `StoreCache` for explicit commit semantics.
 
-use super::{data_cache::DataCacheResult, StoreCache, TrackState, Trackable};
+use super::{StoreCache, TrackState, Trackable, data_cache::DataCacheResult};
 use crate::persistence::{i_store::IStore, i_store_snapshot::IStoreSnapshot};
 use crate::smart_contract::StorageKey;
 use std::sync::Arc;

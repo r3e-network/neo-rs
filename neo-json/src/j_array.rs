@@ -3,8 +3,8 @@
 use std::fmt;
 use std::iter::FromIterator;
 
-use crate::j_token::JToken;
 use crate::JsonError;
+use crate::j_token::JToken;
 
 /// Represents a JSON array (matches the behaviour of the C# implementation).
 #[derive(Clone, Debug, PartialEq)]

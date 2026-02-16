@@ -1,16 +1,29 @@
 //! Ledger contract state types and serialization helpers.
+use crate::UInt256;
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::neo_io::{BinaryWriter, MemoryReader, Serializable};
-use crate::network::p2p::payloads::transaction::{Transaction, MAX_TRANSACTION_SIZE};
+use crate::network::p2p::payloads::transaction::{MAX_TRANSACTION_SIZE, Transaction};
 use crate::smart_contract::native::{
     hash_index_state::HashIndexState, trimmed_block::TrimmedBlock,
 };
-use crate::UInt256;
 use neo_vm::vm_state::VMState;
 use serde::{Deserialize, Serialize};
 
 const RECORD_KIND_TRANSACTION: u8 = 0x01;
 const RECORD_KIND_CONFLICT_STUB: u8 = 0x02;
+
+fn vm_state_from_raw(value: u8) -> VMState {
+    match value {
+        value if value == VMState::HALT as u8 => VMState::HALT,
+        value if value == VMState::FAULT as u8 => VMState::FAULT,
+        value if value == VMState::BREAK as u8 => VMState::BREAK,
+        _ => VMState::NONE,
+    }
+}
+
+fn parse_uint256_invalid_data(bytes: &[u8], name: &str) -> Result<UInt256> {
+    UInt256::from_bytes(bytes).map_err(|e| Error::invalid_data(format!("Invalid {name}: {e}")))
+}
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PersistedTransactionState {
@@ -37,12 +50,7 @@ impl PersistedTransactionState {
     }
 
     pub fn vm_state(&self) -> VMState {
-        match self.vm_state {
-            value if value == VMState::HALT as u8 => VMState::HALT,
-            value if value == VMState::FAULT as u8 => VMState::FAULT,
-            value if value == VMState::BREAK as u8 => VMState::BREAK,
-            _ => VMState::NONE,
-        }
+        vm_state_from_raw(self.vm_state)
     }
 
     pub fn set_vm_state(&mut self, vm_state: VMState) {
@@ -180,12 +188,7 @@ pub fn deserialize_transaction_record(bytes: &[u8]) -> Result<TransactionStateRe
                 .map_err(|e| Error::serialization(e.to_string()))?;
 
             let mut state = PersistedTransactionState::new(&tx, block_index);
-            state.set_vm_state(match vm_state {
-                value if value == VMState::HALT as u8 => VMState::HALT,
-                value if value == VMState::FAULT as u8 => VMState::FAULT,
-                value if value == VMState::BREAK as u8 => VMState::BREAK,
-                _ => VMState::NONE,
-            });
+            state.set_vm_state(vm_state_from_raw(vm_state));
             Ok(TransactionStateRecord::Full(state))
         }
         RECORD_KIND_CONFLICT_STUB => {
@@ -216,8 +219,7 @@ pub fn deserialize_hash_index_state(bytes: &[u8]) -> Result<HashIndexState> {
         ));
     }
 
-    let hash = UInt256::from_bytes(&bytes[..32])
-        .map_err(|e| Error::invalid_data(format!("Invalid hash in HashIndexState: {e}")))?;
+    let hash = parse_uint256_invalid_data(&bytes[..32], "hash in HashIndexState")?;
 
     let mut index_bytes = [0u8; 4];
     index_bytes.copy_from_slice(&bytes[32..36]);

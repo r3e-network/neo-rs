@@ -1,7 +1,7 @@
 //! Message command identifiers (mirrors `Neo.Network.P2P.MessageCommand`).
 
 use crate::NetworkError;
-use serde::{de::Error as DeError, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as DeError};
 use std::{fmt, net::SocketAddr, str::FromStr};
 
 /// Neo message command (single-byte discriminator).

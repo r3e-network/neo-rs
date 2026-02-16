@@ -1,4 +1,4 @@
-use super::super::{OracleService, FINISHED_CACHE_TTL};
+use super::super::{FINISHED_CACHE_TTL, OracleService};
 use crate::persistence::{DataCache, StoreCache};
 use crate::smart_contract::native::OracleContract;
 use std::collections::HashSet;

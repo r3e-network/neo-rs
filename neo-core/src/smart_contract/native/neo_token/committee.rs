@@ -25,8 +25,7 @@ impl NeoToken {
         let key = StorageKey::create(Self::ID, Self::PREFIX_COMMITTEE);
         let item = snapshot.try_get(&key)?;
         let bytes = item.get_value();
-        let stack_item =
-            BinarySerializer::deserialize(&bytes, &ExecutionEngineLimits::default(), None).ok()?;
+        let stack_item = Self::deserialize_stack_item(&bytes).ok()?;
 
         Self::decode_committee_stack_item(stack_item).ok()
     }
@@ -102,9 +101,7 @@ impl NeoToken {
         if let Some(item) = snapshot.try_get(&key) {
             let bytes = item.get_value();
             if !bytes.is_empty() {
-                if let Ok(stack_item) =
-                    BinarySerializer::deserialize(&bytes, &ExecutionEngineLimits::default(), None)
-                {
+                if let Ok(stack_item) = Self::deserialize_stack_item(&bytes) {
                     if let Ok(values) = Self::decode_committee_with_votes(stack_item) {
                         if !values.is_empty() {
                             return Ok(values);
@@ -185,8 +182,7 @@ impl NeoToken {
             })
             .collect();
         let array = StackItem::from_array(items);
-        BinarySerializer::serialize(&array, &ExecutionEngineLimits::default())
-            .map_err(CoreError::native_contract)
+        Self::serialize_stack_item(&array)
     }
 
     pub(super) fn compute_committee_members<S>(

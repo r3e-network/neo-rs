@@ -56,8 +56,8 @@ pub use hardfork::{Hardfork, HardforkParseError};
 pub use inventory_type::InventoryType;
 pub use oracle_response_code::OracleResponseCode;
 pub use transaction_attribute_type::TransactionAttributeType;
-pub use uint160::{UInt160, UINT160_SIZE};
-pub use uint256::{UInt256, UINT256_SIZE};
+pub use uint160::{UINT160_SIZE, UInt160};
+pub use uint256::{UINT256_SIZE, UInt256};
 pub use verify_result::VerifyResult;
 pub use witness_scope::{InvalidWitnessScopeError, WitnessScope};
 

@@ -3,6 +3,7 @@
 //! This module provides the state root computation and verification service
 //! that matches the C# StateService plugin exactly.
 
+#[cfg(feature = "runtime")]
 pub(crate) mod commit_handlers;
 pub mod keys;
 pub mod message_type;
@@ -21,7 +22,7 @@ pub use keys::Keys;
 pub use message_type::MessageType;
 pub use metrics::StateRootIngestStats;
 pub use root_cache::{
-    StateRootCache, StateRootCacheEntry, StateRootCacheStats, DEFAULT_ROOT_CACHE_CAPACITY,
+    DEFAULT_ROOT_CACHE_CAPACITY, StateRootCache, StateRootCacheEntry, StateRootCacheStats,
 };
 pub use state_root::StateRoot;
 pub use state_store::{StateStore, StateStoreTransaction};

@@ -1,6 +1,6 @@
 //! Bitwise / logical opcode tests.
 
-use crate::csharp_tests::{resolve_test_dir, JsonTestRunner};
+use crate::csharp_tests::{JsonTestRunner, resolve_test_dir};
 
 /// Test bitwise logic opcodes (AND, OR, XOR, INVERT, EQUAL, NOTEQUAL)
 ///

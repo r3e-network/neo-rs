@@ -1,49 +1,47 @@
 use super::*;
+use crate::Witness;
 use crate::i_event_handlers::{
     ILogHandler, ILoggingHandler, INotifyHandler, ITransactionAddedHandler,
     ITransactionRemovedHandler, IWalletChangedHandler,
 };
 use crate::ledger::Block as LedgerBlock;
 use crate::ledger::{
-    block_header::BlockHeader as LedgerBlockHeader,
+    Block, block_header::BlockHeader as LedgerBlockHeader,
     transaction_removal_reason::TransactionRemovalReason,
-    transaction_removed_event_args::TransactionRemovedEventArgs, Block,
+    transaction_removed_event_args::TransactionRemovedEventArgs,
 };
 use crate::neo_io::Serializable;
+use crate::neo_system::NeoSystemContext;
 use crate::neo_system::converters::{convert_ledger_block, convert_ledger_header};
 use crate::neo_system::relay::LEDGER_HYDRATION_WINDOW;
-use crate::neo_system::NeoSystemContext;
-use crate::network::p2p::payloads::witness::Witness as PayloadWitness;
-use crate::network::p2p::payloads::Transaction;
 use crate::network::p2p::ChannelsConfig;
+use crate::network::p2p::payloads::Transaction;
+use crate::network::p2p::payloads::witness::Witness as PayloadWitness;
+use crate::persistence::StoreCache;
 use crate::persistence::data_cache::DataCache;
 use crate::persistence::i_store::IStore;
 use crate::persistence::providers::memory_store::MemoryStore;
-use crate::persistence::StoreCache;
 use crate::smart_contract::application_engine::{ApplicationEngine, TEST_MODE_GAS};
 use crate::smart_contract::contract::Contract;
 use crate::smart_contract::log_event_args::LogEventArgs;
 use crate::smart_contract::native::trimmed_block::TrimmedBlock;
 use crate::smart_contract::notify_event_args::NotifyEventArgs;
 use crate::smart_contract::trigger_type::TriggerType;
-use crate::wallets::key_pair::KeyPair;
 use crate::wallets::IWalletProvider;
+use crate::wallets::key_pair::KeyPair;
 use crate::wallets::{Version, Wallet, WalletAccount, WalletError, WalletResult};
-use crate::Witness;
 use crate::{IVerifiable, UInt160, UInt256};
 use async_trait::async_trait;
-use lazy_static::lazy_static;
 use neo_vm::StackItem;
 use parking_lot::Mutex;
 use std::any::Any;
 use std::net::SocketAddr;
+use std::sync::LazyLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{mpsc, Arc};
-use tokio::time::{sleep, timeout, Duration};
+use std::sync::{Arc, mpsc};
+use tokio::time::{Duration, sleep, timeout};
 
-lazy_static! {
-    static ref LOG_TEST_MUTEX: Mutex<()> = Mutex::new(());
-}
+static LOG_TEST_MUTEX: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
 #[derive(Debug)]
 struct DummyService;

@@ -3,12 +3,13 @@
 //! and access their methods.
 
 use super::{ContractManifest, ContractPermissionDescriptor, WildCardContainer};
+use crate::ECPoint;
+use crate::UInt160;
 use crate::error::CoreError;
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
 use crate::smart_contract::i_interoperable::IInteroperable;
-use crate::ECPoint;
-use crate::UInt160;
+use crate::smart_contract::manifest::stack_item_helpers::expect_struct_items;
 // Removed neo_cryptography dependency - using external crypto crates directly
 use neo_vm::StackItem;
 use serde::{Deserialize, Serialize};
@@ -117,25 +118,15 @@ impl ContractPermission {
     }
 }
 
+impl Default for ContractPermission {
+    fn default() -> Self {
+        Self::default_wildcard()
+    }
+}
+
 impl IInteroperable for ContractPermission {
     fn from_stack_item(&mut self, stack_item: StackItem) -> std::result::Result<(), CoreError> {
-        let struct_item = match stack_item {
-            StackItem::Struct(struct_item) => struct_item,
-            other => {
-                return Err(CoreError::invalid_format(format!(
-                    "ContractPermission expects Struct stack item, found {:?}",
-                    other.stack_item_type()
-                )));
-            }
-        };
-
-        let items = struct_item.items();
-        if items.len() < 2 {
-            return Err(CoreError::invalid_format(format!(
-                "ContractPermission stack item must contain 2 elements, found {}",
-                items.len()
-            )));
-        }
+        let items = expect_struct_items(&stack_item, "ContractPermission", 2)?;
 
         self.contract = ContractPermissionDescriptor::from_stack_item(&items[0]).map_err(|e| {
             CoreError::invalid_format(format!("Invalid contract descriptor in stack item: {}", e))

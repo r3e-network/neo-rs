@@ -179,9 +179,7 @@ fn test_script_get_try_offsets() {
     let script_bytes = vec![
         OpCode::TRY as u8,
         0x05,
-        0x00,
-        0x0A,
-        0x00,                // TRY with catch at +5 and finally at +10
+        0x08,                // TRY with catch at +5 and finally at +8
         OpCode::PUSH1 as u8, // PUSH1
         OpCode::THROW as u8, // THROW
         OpCode::NOP as u8,   // NOP
@@ -199,7 +197,7 @@ fn test_script_get_try_offsets() {
     let result = script.get_try_offsets(&instruction);
     let (catch_offset, finally_offset) = result.unwrap();
     assert_eq!(catch_offset, 5);
-    assert_eq!(finally_offset, 10);
+    assert_eq!(finally_offset, 8);
 
     // Test non-TRY instruction
     let instruction = script.get_instruction(5).unwrap();

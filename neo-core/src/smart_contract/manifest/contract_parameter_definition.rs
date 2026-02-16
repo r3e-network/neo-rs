@@ -1,10 +1,11 @@
 //! ContractParameterDefinition - matches C# Neo.SmartContract.Manifest.ContractParameterDefinition exactly
 
 use crate::error::CoreError;
-use crate::smart_contract::i_interoperable::IInteroperable;
 use crate::smart_contract::ContractParameterType;
+use crate::smart_contract::i_interoperable::IInteroperable;
+use crate::smart_contract::manifest::stack_item_helpers::expect_struct_items;
+use crate::smart_contract::stack_item_extract::{extract_string, extract_u8};
 use neo_vm::StackItem;
-use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
 
 /// Represents a parameter of an event or method in ABI (matches C# ContractParameterDefinition)
@@ -68,30 +69,15 @@ impl ContractParameterDefinition {
 
 impl IInteroperable for ContractParameterDefinition {
     fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
-        let StackItem::Struct(struct_item) = stack_item else {
-            return Err(CoreError::invalid_format(
-                "ContractParameterDefinition expects Struct stack item",
-            ));
-        };
-        let items = struct_item.items();
-        if items.len() < 2 {
-            return Err(CoreError::invalid_format(format!(
-                "ContractParameterDefinition stack item must contain 2 elements, found {}",
-                items.len()
-            )));
+        let items = expect_struct_items(&stack_item, "ContractParameterDefinition", 2)?;
+
+        if let Some(name) = extract_string(&items[0]) {
+            self.name = name;
         }
 
-        if let Ok(bytes) = items[0].as_bytes() {
-            if let Ok(name) = String::from_utf8(bytes) {
-                self.name = name;
-            }
-        }
-
-        if let Ok(integer) = items[1].as_int() {
-            if let Some(value) = integer.to_u8() {
-                self.param_type =
-                    ContractParameterType::try_from_u8(value).unwrap_or(ContractParameterType::Any);
-            }
+        if let Some(value) = extract_u8(&items[1]) {
+            self.param_type =
+                ContractParameterType::try_from_u8(value).unwrap_or(ContractParameterType::Any);
         }
         Ok(())
     }

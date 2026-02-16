@@ -3,7 +3,7 @@
 use neo_core::chain::{BlockIndexEntry, ChainState};
 use neo_core::state::{MemoryWorldState, StateChanges, StorageItem, StorageKey, WorldState};
 use neo_core::{UInt160, UInt256};
-use neo_vm::{op_code::OpCode, ExecutionEngine, Script, VMState};
+use neo_vm::{ExecutionEngine, Script, VMState, op_code::OpCode};
 
 // Setup test environment
 fn _setup_test_env() -> (ChainState, MemoryWorldState) {

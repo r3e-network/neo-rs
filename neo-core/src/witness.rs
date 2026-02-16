@@ -35,12 +35,12 @@
 //! let script_hash = witness.script_hash();
 //! ```
 
+use crate::UInt160;
 use crate::error::{CoreError, CoreResult};
 use crate::neo_config::ADDRESS_SIZE;
 use crate::neo_io::Serializable;
 use crate::smart_contract::helper::Helper;
-use crate::UInt160;
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 use std::{convert::TryInto, fmt};

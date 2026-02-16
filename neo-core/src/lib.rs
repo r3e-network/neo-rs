@@ -323,11 +323,11 @@ pub use events::{EventHandler, EventManager};
 pub use hardfork::Hardfork;
 pub use ledger::{Block, BlockHeader};
 pub use neo_primitives::{
-    InvalidWitnessScopeError, UInt160, UInt256, WitnessScope, UINT160_SIZE, UINT256_SIZE,
+    InvalidWitnessScopeError, UINT160_SIZE, UINT256_SIZE, UInt160, UInt256, WitnessScope,
 };
 pub use network::p2p::payloads::{
-    InventoryType, OracleResponseCode, Signer, Transaction, TransactionAttribute,
-    TransactionAttributeType, HEADER_SIZE, MAX_TRANSACTION_ATTRIBUTES, MAX_TRANSACTION_SIZE,
+    HEADER_SIZE, InventoryType, MAX_TRANSACTION_ATTRIBUTES, MAX_TRANSACTION_SIZE,
+    OracleResponseCode, Signer, Transaction, TransactionAttribute, TransactionAttributeType,
 };
 pub use protocol_settings::ProtocolSettings;
 pub use rpc::RpcException;
@@ -345,19 +345,19 @@ pub use chain::{
     ChainResult, ChainState, ChainStateSnapshot, ForkChoice, ValidationResult,
 };
 pub use config::{
-    ConfigError, ConfigResult, ConsensusSettings, GenesisConfig, GenesisValidator, LoggingSettings,
-    NetworkConfig, NetworkType, NodeSettings, RpcSettings, Settings, StorageSettings,
-    TelemetrySettings, CONFIG_VERSION,
+    CONFIG_VERSION, ConfigError, ConfigResult, ConsensusSettings, GenesisConfig, GenesisValidator,
+    LoggingSettings, NetworkConfig, NetworkType, NodeSettings, RpcSettings, Settings,
+    StorageSettings, TelemetrySettings,
 };
 pub use mempool::{
-    FeePolicy, Mempool, MempoolConfig, MempoolError, MempoolResult, TransactionEntry,
-    TransactionEntryParams, DEFAULT_EXPIRATION_BLOCKS, DEFAULT_MAX_TRANSACTIONS,
+    DEFAULT_EXPIRATION_BLOCKS, DEFAULT_MAX_TRANSACTIONS, FeePolicy, Mempool, MempoolConfig,
+    MempoolError, MempoolResult, TransactionEntry, TransactionEntryParams,
 };
 pub use state::{
-    AccountState, ContractStorage, MemoryMptStore, MemoryWorldState, MutableStateView,
-    SnapshotManager, SnapshotState, StateChanges, StateError, StateMut, StateResult, StateSnapshot,
-    StateTrieManager, StateView, StorageChange, StorageItem, StorageKey, WorldState,
-    MAX_SNAPSHOT_DEPTH,
+    AccountState, ContractStorage, MAX_SNAPSHOT_DEPTH, MemoryMptStore, MemoryWorldState,
+    MutableStateView, SnapshotManager, SnapshotState, StateChanges, StateError, StateMut,
+    StateResult, StateSnapshot, StateTrieManager, StateView, StorageChange, StorageItem,
+    StorageKey, WorldState,
 };
 
 // Runtime types (requires `runtime` feature)
@@ -389,8 +389,8 @@ pub use network::{NetworkError, NetworkResult};
 /// I/O utilities with extension traits.
 pub mod neo_io {
     pub use ::neo_io_crate::{
-        serializable::{self, helper},
         BinaryWriter, IoError, IoResult, MemoryReader, Serializable,
+        serializable::{self, helper},
     };
     pub use Serializable as ISerializable;
 
@@ -451,7 +451,7 @@ pub mod primitives {
 /// Contains cryptographic primitives and hash functions.
 /// Kept for backward compatibility; no current downstream consumers.
 pub mod crypto {
-    pub use neo_crypto::{ct_hash_eq, ct_hash_slice_eq, Crypto, CryptoError, HashAlgorithm, ECC};
+    pub use neo_crypto::{Crypto, CryptoError, ECC, HashAlgorithm, ct_hash_eq, ct_hash_slice_eq};
 }
 
 /// Re-exports from [`neo_storage`] crate.

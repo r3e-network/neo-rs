@@ -19,7 +19,7 @@ pub trait Actor: Send + 'static {
 
     /// Handles a single incoming message.
     async fn handle(&mut self, message: Box<dyn Any + Send>, ctx: &mut ActorContext)
-        -> ActorResult;
+    -> ActorResult;
 
     /// Invoked before the actor is permanently stopped.
     async fn post_stop(&mut self, _ctx: &mut ActorContext) -> ActorResult {

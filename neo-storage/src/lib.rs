@@ -51,7 +51,7 @@ pub mod types;
 pub use cache::{ClonedCache, DataCache, DataCacheError, DataCacheResult, Trackable};
 pub use error::{StorageError, StorageResult};
 pub use hash_utils::{
-    default_xx_hash3_seed, hash_code_combine_i32, xx_hash3_32, DEFAULT_XX_HASH3_SEED,
+    DEFAULT_XX_HASH3_SEED, default_xx_hash3_seed, hash_code_combine_i32, xx_hash3_32,
 };
 pub use key_builder::{KeyBuilder, KeyBuilderError};
 pub use traits::{IReadOnlyStore, ISnapshot, IStore, IWriteStore};

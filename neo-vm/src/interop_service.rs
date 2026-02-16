@@ -213,12 +213,11 @@ impl InteropService {
             return callback(engine);
         }
 
-        if let Some(result) = engine.invoke_host_syscall(hash) {
-            result
-        } else {
-            Err(VmError::invalid_operation_msg(format!(
+        match engine.invoke_host_syscall(hash) {
+            Some(result) => result,
+            _ => Err(VmError::invalid_operation_msg(format!(
                 "Syscall {name} requires an interop host"
-            )))
+            ))),
         }
     }
 

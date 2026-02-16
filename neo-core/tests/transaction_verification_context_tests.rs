@@ -1,11 +1,11 @@
+use neo_core::UInt160;
+use neo_core::WitnessScope;
 use neo_core::ledger::TransactionVerificationContext;
 use neo_core::network::p2p::payloads::{
     oracle_response::OracleResponse, oracle_response_code::OracleResponseCode, signer::Signer,
     transaction::Transaction, transaction_attribute::TransactionAttribute,
 };
 use neo_core::persistence::DataCache;
-use neo_core::UInt160;
-use neo_core::WitnessScope;
 use num_bigint::BigInt;
 
 fn build_transaction(network_fee: i64, system_fee: i64) -> Transaction {

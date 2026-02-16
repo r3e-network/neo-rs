@@ -10,16 +10,16 @@
 // modifications are permitted.
 
 use super::{
-    conflicts::Conflicts, high_priority_attribute::HighPriorityAttribute,
+    TransactionAttributeType, conflicts::Conflicts, high_priority_attribute::HighPriorityAttribute,
     not_valid_before::NotValidBefore, notary_assisted::NotaryAssisted,
     oracle_response::OracleResponse, oracle_response_code::OracleResponseCode,
-    transaction::Transaction, TransactionAttributeType,
+    transaction::Transaction,
 };
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::native::PolicyContract;
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use serde::{Deserialize, Serialize};
 
 /// Represents an attribute of a transaction.

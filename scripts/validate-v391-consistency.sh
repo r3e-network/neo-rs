@@ -241,7 +241,6 @@ max_transactions_per_block = 512
 
 [mempool]
 max_transactions = 50000
-max_transactions_per_sender = 200
 EOF_MAINNET
   else
     cat > "$config_path" <<EOF_TESTNET
@@ -293,7 +292,6 @@ max_transactions_per_block = 5000
 
 [mempool]
 max_transactions = 50000
-max_transactions_per_sender = 200
 EOF_TESTNET
   fi
 }

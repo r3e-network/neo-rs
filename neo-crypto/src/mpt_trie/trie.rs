@@ -1,11 +1,11 @@
+use super::MptCache;
 use super::cache::MptStoreSnapshot;
 use super::error::{MptError, MptResult};
-use super::node::{Node, BRANCH_CHILD_COUNT, BRANCH_VALUE_INDEX, MAX_KEY_LENGTH, MAX_VALUE_LENGTH};
+use super::node::{BRANCH_CHILD_COUNT, BRANCH_VALUE_INDEX, MAX_KEY_LENGTH, MAX_VALUE_LENGTH, Node};
 use super::node_type::NodeType;
-use super::MptCache;
 use crate::Crypto;
-use neo_primitives::UInt256;
 use neo_primitives::UINT256_SIZE;
+use neo_primitives::UInt256;
 use parking_lot::Mutex;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
@@ -438,7 +438,7 @@ where
                     }
 
                     // Check if next is now empty
-                    let next_is_empty = node.next.as_ref().map_or(true, |n| n.is_empty());
+                    let next_is_empty = node.next.as_ref().is_none_or(|n| n.is_empty());
                     if next_is_empty {
                         let next = node.take_next().unwrap_or_default();
                         *node = next;

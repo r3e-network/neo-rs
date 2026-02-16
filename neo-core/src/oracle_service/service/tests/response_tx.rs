@@ -4,11 +4,11 @@ use crate::neo_io::{BinaryWriter, Serializable};
 use crate::network::p2p::payloads::{
     OracleResponse, OracleResponseCode, Signer, Transaction, Witness,
 };
-use crate::persistence::storage_key::StorageKey;
 use crate::persistence::DataCache;
+use crate::persistence::storage_key::StorageKey;
 use crate::protocol_settings::ProtocolSettings;
-use crate::smart_contract::native::{LedgerContract, OracleRequest};
 use crate::smart_contract::StorageItem;
+use crate::smart_contract::native::{LedgerContract, OracleRequest};
 use crate::{UInt160, UInt256, WitnessScope};
 use neo_vm::VMState;
 

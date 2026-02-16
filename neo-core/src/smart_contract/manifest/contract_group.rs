@@ -6,8 +6,9 @@ use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
 use crate::neo_config::ADDRESS_SIZE;
 use crate::smart_contract::i_interoperable::IInteroperable;
+use crate::smart_contract::manifest::stack_item_helpers::expect_struct_items;
 use crate::{ECCurve, ECPoint};
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use std::convert::TryFrom;
 // Removed neo_cryptography dependency - using external crypto crates directly
 use neo_vm::StackItem;
@@ -85,22 +86,8 @@ impl ContractGroup {
     ///
     /// Returns `Error` if the stack item is not a valid struct with two elements.
     pub fn try_from_stack_item_value(stack_item: &StackItem) -> Result<Self> {
-        let struct_item = match stack_item {
-            StackItem::Struct(struct_item) => struct_item,
-            other => {
-                return Err(Error::invalid_data(format!(
-                    "ContractGroup expects struct stack item, found {:?}",
-                    other.stack_item_type()
-                )));
-            }
-        };
-
-        let items = struct_item.items();
-        if items.len() < 2 {
-            return Err(Error::invalid_data(
-                "ContractGroup stack item must contain two elements",
-            ));
-        }
+        let items = expect_struct_items(stack_item, "ContractGroup", 2)
+            .map_err(|err| Error::invalid_data(err.to_string()))?;
 
         let pub_key_bytes = items[0]
             .as_bytes()

@@ -30,16 +30,24 @@ impl NativeContract for PolicyContract {
             return Vec::new();
         }
 
-        let mut events = vec![ContractEventDescriptor::new(
-            Self::MILLISECONDS_PER_BLOCK_CHANGED_EVENT_NAME.to_string(),
-            vec![
-                ContractParameterDefinition::new("old".to_string(), ContractParameterType::Integer)
+        let mut events = vec![
+            ContractEventDescriptor::new(
+                Self::MILLISECONDS_PER_BLOCK_CHANGED_EVENT_NAME.to_string(),
+                vec![
+                    ContractParameterDefinition::new(
+                        "old".to_string(),
+                        ContractParameterType::Integer,
+                    )
                     .expect("MillisecondsPerBlockChanged.old"),
-                ContractParameterDefinition::new("new".to_string(), ContractParameterType::Integer)
+                    ContractParameterDefinition::new(
+                        "new".to_string(),
+                        ContractParameterType::Integer,
+                    )
                     .expect("MillisecondsPerBlockChanged.new"),
-            ],
-        )
-        .expect("MillisecondsPerBlockChanged event descriptor")];
+                ],
+            )
+            .expect("MillisecondsPerBlockChanged event descriptor"),
+        ];
 
         if settings.is_hardfork_enabled(Hardfork::HfFaun, block_height) {
             events.push(
@@ -74,11 +82,13 @@ impl NativeContract for PolicyContract {
             events.push(
                 ContractEventDescriptor::new(
                     "RecoveredFund".to_string(),
-                    vec![ContractParameterDefinition::new(
-                        "account".to_string(),
-                        ContractParameterType::Hash160,
-                    )
-                    .expect("RecoveredFund.account")],
+                    vec![
+                        ContractParameterDefinition::new(
+                            "account".to_string(),
+                            ContractParameterType::Hash160,
+                        )
+                        .expect("RecoveredFund.account"),
+                    ],
                 )
                 .expect("RecoveredFund event descriptor"),
             );

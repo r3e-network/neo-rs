@@ -1,5 +1,6 @@
 //! ApplicationEngine.Helper - matches C# Neo.SmartContract.ApplicationEngine helper methods exactly
 
+use crate::UInt160;
 use crate::cryptography::crypto_utils::NeoHash;
 use crate::hardfork::Hardfork;
 use crate::smart_contract::application_engine::{
@@ -9,7 +10,6 @@ use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::i_interoperable::IInteroperable;
 use crate::smart_contract::notify_event_args::NotifyEventArgs;
 use crate::smart_contract::trigger_type::TriggerType;
-use crate::UInt160;
 use neo_vm::stack_item::{Array, Map, Struct};
 use neo_vm::{OrderedDictionary, StackItem, VMState};
 use num_traits::ToPrimitive;
@@ -269,7 +269,7 @@ impl ApplicationEngine {
         let limits = self.execution_limits();
         let mut result = Vec::new();
         for notification in self.notifications() {
-            if hash.map_or(true, |expected| notification.script_hash == expected) {
+            if hash.is_none_or(|expected| notification.script_hash == expected) {
                 result.push(notification.to_stack_item().map_err(|e| e.to_string())?);
                 if result.len() > limits.max_stack_size as usize {
                     return Err("Too many notifications".to_string());

@@ -1,9 +1,9 @@
 //! Shared in-memory ledger cache mirroring the behaviour of the C# `NeoSystem`.
 
+use crate::UInt256;
 use crate::network::p2p::payloads::{
     block::Block, extensible_payload::ExtensiblePayload, header::Header, transaction::Transaction,
 };
-use crate::UInt256;
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};

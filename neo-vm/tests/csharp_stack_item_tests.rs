@@ -385,9 +385,7 @@ mod tests {
         );
 
         // Verify buffer content is preserved
-        if let (StackItem::Buffer(ref orig), StackItem::Buffer(ref copy)) =
-            (&buffer_item, &buffer_copy)
-        {
+        if let (StackItem::Buffer(orig), StackItem::Buffer(copy)) = (&buffer_item, &buffer_copy) {
             assert_eq!(
                 orig.data(),
                 copy.data(),

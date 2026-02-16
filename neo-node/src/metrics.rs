@@ -3,11 +3,10 @@
 //! This module provides metrics collection using the neo-core telemetry system,
 //! with optional Prometheus export support for backward compatibility.
 
-use lazy_static::lazy_static;
 use neo_core::network::p2p::timeouts::TimeoutStats;
 use neo_core::telemetry::Telemetry;
 use prometheus::{Counter, Encoder, Gauge, TextEncoder};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use sysinfo::{DiskExt, System, SystemExt};
 
 fn register_gauge_best_effort(name: &str, help: &str) -> Gauge {
@@ -28,65 +27,83 @@ fn register_counter_best_effort(name: &str, help: &str) -> Counter {
     counter
 }
 
-lazy_static! {
-    /// Global telemetry instance for the node.
-    pub static ref TELEMETRY: Arc<Telemetry> = Arc::new(Telemetry::new("neo-node", env!("CARGO_PKG_VERSION")));
+/// Global telemetry instance for the node.
+pub static TELEMETRY: LazyLock<Arc<Telemetry>> =
+    LazyLock::new(|| Arc::new(Telemetry::new("neo-node", env!("CARGO_PKG_VERSION"))));
 
-    // Prometheus gauges for backward compatibility
-    static ref HEADER_HEIGHT: Gauge =
-        register_gauge_best_effort("neo_header_height", "Highest header seen");
-    static ref BLOCK_HEIGHT: Gauge =
-        register_gauge_best_effort("neo_block_height", "Highest block persisted");
-    static ref HEADER_LAG: Gauge =
-        register_gauge_best_effort("neo_header_lag", "Header lag in blocks");
-    static ref MEMPOOL_SIZE: Gauge =
-        register_gauge_best_effort("neo_mempool_size", "Mempool size (transactions)");
-    static ref TIMEOUT_HANDSHAKE: Gauge =
-        register_gauge_best_effort("neo_p2p_timeouts_handshake", "Handshake timeouts");
-    static ref TIMEOUT_READ: Gauge =
-        register_gauge_best_effort("neo_p2p_timeouts_read", "Read timeouts");
-    static ref TIMEOUT_WRITE: Gauge =
-        register_gauge_best_effort("neo_p2p_timeouts_write", "Write timeouts");
-    static ref PEER_COUNT: Gauge = register_gauge_best_effort("neo_peer_count", "Peer count");
-    static ref DISK_FREE_BYTES: Gauge =
-        register_gauge_best_effort("neo_storage_free_bytes", "Free bytes on storage path disk");
-    static ref DISK_TOTAL_BYTES: Gauge = register_gauge_best_effort(
+// Prometheus gauges for backward compatibility
+static HEADER_HEIGHT: LazyLock<Gauge> =
+    LazyLock::new(|| register_gauge_best_effort("neo_header_height", "Highest header seen"));
+static BLOCK_HEIGHT: LazyLock<Gauge> =
+    LazyLock::new(|| register_gauge_best_effort("neo_block_height", "Highest block persisted"));
+static HEADER_LAG: LazyLock<Gauge> =
+    LazyLock::new(|| register_gauge_best_effort("neo_header_lag", "Header lag in blocks"));
+static MEMPOOL_SIZE: LazyLock<Gauge> =
+    LazyLock::new(|| register_gauge_best_effort("neo_mempool_size", "Mempool size (transactions)"));
+static TIMEOUT_HANDSHAKE: LazyLock<Gauge> = LazyLock::new(|| {
+    register_gauge_best_effort("neo_p2p_timeouts_handshake", "Handshake timeouts")
+});
+static TIMEOUT_READ: LazyLock<Gauge> =
+    LazyLock::new(|| register_gauge_best_effort("neo_p2p_timeouts_read", "Read timeouts"));
+static TIMEOUT_WRITE: LazyLock<Gauge> =
+    LazyLock::new(|| register_gauge_best_effort("neo_p2p_timeouts_write", "Write timeouts"));
+static PEER_COUNT: LazyLock<Gauge> =
+    LazyLock::new(|| register_gauge_best_effort("neo_peer_count", "Peer count"));
+static DISK_FREE_BYTES: LazyLock<Gauge> = LazyLock::new(|| {
+    register_gauge_best_effort("neo_storage_free_bytes", "Free bytes on storage path disk")
+});
+static DISK_TOTAL_BYTES: LazyLock<Gauge> = LazyLock::new(|| {
+    register_gauge_best_effort(
         "neo_storage_total_bytes",
         "Total bytes on storage path disk",
-    );
-    static ref STATE_LOCAL_ROOT_INDEX: Gauge = register_gauge_best_effort(
+    )
+});
+static STATE_LOCAL_ROOT_INDEX: LazyLock<Gauge> = LazyLock::new(|| {
+    register_gauge_best_effort(
         "neo_state_local_root_index",
         "Current local state root index (block height) if known, otherwise -1",
-    );
-    static ref STATE_VALIDATED_ROOT_INDEX: Gauge = register_gauge_best_effort(
+    )
+});
+static STATE_VALIDATED_ROOT_INDEX: LazyLock<Gauge> = LazyLock::new(|| {
+    register_gauge_best_effort(
         "neo_state_validated_root_index",
         "Current validated state root index if known, otherwise -1",
-    );
-    static ref STATE_VALIDATED_LAG: Gauge = register_gauge_best_effort(
+    )
+});
+static STATE_VALIDATED_LAG: LazyLock<Gauge> = LazyLock::new(|| {
+    register_gauge_best_effort(
         "neo_state_validated_lag",
         "Difference between local and validated state roots; -1 when unknown",
-    );
-    static ref STATE_ROOT_INGEST_ACCEPTED: Gauge = register_gauge_best_effort(
+    )
+});
+static STATE_ROOT_INGEST_ACCEPTED: LazyLock<Gauge> = LazyLock::new(|| {
+    register_gauge_best_effort(
         "neo_state_roots_accepted_total",
         "Total accepted state roots since process start",
-    );
-    static ref STATE_ROOT_INGEST_REJECTED: Gauge = register_gauge_best_effort(
+    )
+});
+static STATE_ROOT_INGEST_REJECTED: LazyLock<Gauge> = LazyLock::new(|| {
+    register_gauge_best_effort(
         "neo_state_roots_rejected_total",
         "Total rejected state roots since process start",
-    );
-    static ref STATE_ROOT_INGEST_ACCEPTED_COUNTER: Counter = register_counter_best_effort(
+    )
+});
+static STATE_ROOT_INGEST_ACCEPTED_COUNTER: LazyLock<Counter> = LazyLock::new(|| {
+    register_counter_best_effort(
         "neo_state_roots_accepted",
         "Counter of accepted state roots since process start",
-    );
-    static ref STATE_ROOT_INGEST_REJECTED_COUNTER: Counter = register_counter_best_effort(
+    )
+});
+static STATE_ROOT_INGEST_REJECTED_COUNTER: LazyLock<Counter> = LazyLock::new(|| {
+    register_counter_best_effort(
         "neo_state_roots_rejected",
         "Counter of rejected state roots since process start",
-    );
-    static ref STATE_ROOT_INGEST_ACCEPTED_LAST: std::sync::atomic::AtomicU64 =
-        std::sync::atomic::AtomicU64::new(0);
-    static ref STATE_ROOT_INGEST_REJECTED_LAST: std::sync::atomic::AtomicU64 =
-        std::sync::atomic::AtomicU64::new(0);
-}
+    )
+});
+static STATE_ROOT_INGEST_ACCEPTED_LAST: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+static STATE_ROOT_INGEST_REJECTED_LAST: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
 
 /// Returns the global telemetry instance.
 #[allow(dead_code)]

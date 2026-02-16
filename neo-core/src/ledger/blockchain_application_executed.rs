@@ -44,6 +44,8 @@ impl ApplicationExecuted {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::UInt160;
+    use crate::WitnessScope;
     use crate::ledger::{Block, BlockHeader};
     use crate::network::p2p::payloads::signer::Signer;
     use crate::network::p2p::payloads::witness::Witness;
@@ -52,8 +54,6 @@ mod tests {
     use crate::smart_contract::application_engine::TEST_MODE_GAS;
     use crate::smart_contract::native::{LedgerContract, NativeContract};
     use crate::smart_contract::trigger_type::TriggerType;
-    use crate::UInt160;
-    use crate::WitnessScope;
     use std::sync::Arc;
 
     fn signed_transaction() -> Transaction {

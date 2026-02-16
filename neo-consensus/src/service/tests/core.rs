@@ -1,6 +1,6 @@
 use super::helpers::{create_test_validators, create_validators_with_keys};
-use crate::messages::{ConsensusPayload, PrepareRequestMessage};
 use crate::ConsensusService;
+use crate::messages::{ConsensusPayload, PrepareRequestMessage};
 use crate::{ConsensusError, ConsensusMessageType};
 use neo_primitives::UInt256;
 use tokio::sync::mpsc;

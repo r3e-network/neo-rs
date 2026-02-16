@@ -4,11 +4,8 @@
 
 use super::*;
 use crate::protocol_settings::ProtocolSettings;
-use crate::smart_contract::binary_serializer::BinarySerializer;
-use crate::smart_contract::i_interoperable::IInteroperable;
 use crate::smart_contract::manifest::{ContractEventDescriptor, ContractParameterDefinition};
 use crate::smart_contract::storage_context::StorageContext;
-use neo_vm::execution_engine_limits::ExecutionEngineLimits;
 
 fn put_storage_if_changed(
     engine: &mut ApplicationEngine,
@@ -23,6 +20,12 @@ fn put_storage_if_changed(
     }
     engine.put_storage_item(context, key, value)?;
     Ok(())
+}
+
+impl ContractManagement {
+    fn parse_hash160_argument(arg: &[u8]) -> Result<UInt160> {
+        UInt160::from_bytes(arg).map_err(|e| Error::invalid_argument(format!("Invalid hash: {e}")))
+    }
 }
 
 impl NativeContract for ContractManagement {
@@ -54,29 +57,35 @@ impl NativeContract for ContractManagement {
         vec![
             ContractEventDescriptor::new(
                 "Deploy".to_string(),
-                vec![ContractParameterDefinition::new(
-                    "Hash".to_string(),
-                    ContractParameterType::Hash160,
-                )
-                .expect("Deploy.Hash")],
+                vec![
+                    ContractParameterDefinition::new(
+                        "Hash".to_string(),
+                        ContractParameterType::Hash160,
+                    )
+                    .expect("Deploy.Hash"),
+                ],
             )
             .expect("Deploy event descriptor"),
             ContractEventDescriptor::new(
                 "Update".to_string(),
-                vec![ContractParameterDefinition::new(
-                    "Hash".to_string(),
-                    ContractParameterType::Hash160,
-                )
-                .expect("Update.Hash")],
+                vec![
+                    ContractParameterDefinition::new(
+                        "Hash".to_string(),
+                        ContractParameterType::Hash160,
+                    )
+                    .expect("Update.Hash"),
+                ],
             )
             .expect("Update event descriptor"),
             ContractEventDescriptor::new(
                 "Destroy".to_string(),
-                vec![ContractParameterDefinition::new(
-                    "Hash".to_string(),
-                    ContractParameterType::Hash160,
-                )
-                .expect("Destroy.Hash")],
+                vec![
+                    ContractParameterDefinition::new(
+                        "Hash".to_string(),
+                        ContractParameterType::Hash160,
+                    )
+                    .expect("Destroy.Hash"),
+                ],
             )
             .expect("Destroy event descriptor"),
         ]
@@ -95,21 +104,9 @@ impl NativeContract for ContractManagement {
                         "getContract requires 1 argument".to_string(),
                     ));
                 }
-                let hash = UInt160::from_bytes(&args[0])
-                    .map_err(|e| Error::invalid_argument(format!("Invalid hash: {}", e)))?;
+                let hash = Self::parse_hash160_argument(&args[0])?;
                 match self.get_contract(&hash)? {
-                    Some(contract) => {
-                        let item = contract.to_stack_item()?;
-                        let bytes =
-                            BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
-                                .map_err(|e| {
-                                Error::serialization(format!(
-                                    "Failed to serialize contract state: {}",
-                                    e
-                                ))
-                            })?;
-                        Ok(bytes)
-                    }
+                    Some(contract) => Self::serialize_contract_state(&contract),
                     None => Ok(vec![]),
                 }
             }
@@ -128,13 +125,7 @@ impl NativeContract for ContractManagement {
                 };
 
                 let contract = self.deploy(engine, nef_bytes, manifest_bytes, data)?;
-
-                let item = contract.to_stack_item()?;
-                let bytes = BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
-                    .map_err(|e| {
-                    Error::serialization(format!("Failed to serialize contract state: {}", e))
-                })?;
-                Ok(bytes)
+                Self::serialize_contract_state(&contract)
             }
             "update" => {
                 if args.len() != 2 && args.len() != 3 {
@@ -206,8 +197,7 @@ impl NativeContract for ContractManagement {
                         "hasMethod requires 3 arguments".to_string(),
                     ));
                 }
-                let hash = UInt160::from_bytes(&args[0])
-                    .map_err(|e| Error::invalid_argument(format!("Invalid hash: {}", e)))?;
+                let hash = Self::parse_hash160_argument(&args[0])?;
                 let method = String::from_utf8(args[1].clone()).map_err(|e| {
                     Error::invalid_argument(format!("Invalid method string: {}", e))
                 })?;
@@ -229,8 +219,7 @@ impl NativeContract for ContractManagement {
                         "isContract requires 1 argument".to_string(),
                     ));
                 }
-                let hash = UInt160::from_bytes(&args[0])
-                    .map_err(|e| Error::invalid_argument(format!("Invalid hash: {}", e)))?;
+                let hash = Self::parse_hash160_argument(&args[0])?;
                 let result = Self::is_contract(engine.snapshot_cache().as_ref(), &hash)?;
                 Ok(vec![if result { 1 } else { 0 }])
             }
@@ -250,18 +239,7 @@ impl NativeContract for ContractManagement {
                         .map_err(|_| Error::invalid_argument("Invalid contract ID".to_string()))?,
                 );
                 match self.get_contract_by_id(id)? {
-                    Some(contract) => {
-                        let item = contract.to_stack_item()?;
-                        let bytes =
-                            BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
-                                .map_err(|e| {
-                                Error::serialization(format!(
-                                    "Failed to serialize contract state: {}",
-                                    e
-                                ))
-                            })?;
-                        Ok(bytes)
-                    }
+                    Some(contract) => Self::serialize_contract_state(&contract),
                     None => Ok(vec![]),
                 }
             }

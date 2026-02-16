@@ -364,12 +364,15 @@ impl WalletApi {
 
         while std::time::Instant::now() < deadline {
             // Check if transaction is in a block
-            if let Ok(rpc_tx) = self.rpc_client.get_transaction(&tx_hash.to_string()).await {
-                if rpc_tx.confirmations.is_some() {
-                    return Ok(rpc_tx);
+            match self.rpc_client.get_transaction(&tx_hash.to_string()).await {
+                Ok(rpc_tx) => {
+                    if rpc_tx.confirmations.is_some() {
+                        return Ok(rpc_tx);
+                    }
                 }
-            } else {
-                // Transaction not found yet, continue waiting
+                _ => {
+                    // Transaction not found yet, continue waiting
+                }
             }
 
             tokio::time::sleep(poll_duration).await;
@@ -439,13 +442,13 @@ pub struct WalletAccountState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base64::{engine::general_purpose, Engine as _};
+    use base64::{Engine as _, engine::general_purpose};
     use mockito::{Matcher, Server};
     use neo_core::config::ProtocolSettings;
     use neo_json::{JObject, JToken};
     use neo_primitives::UInt256;
-    use neo_vm::op_code::OpCode;
     use neo_vm::ScriptBuilder;
+    use neo_vm::op_code::OpCode;
     use regex::escape;
     use reqwest::Url;
     use std::fs;

@@ -6,7 +6,7 @@
 //! - Block/transaction serialization
 //! - Chain state operations
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use neo_core::state::{StateChanges, StateTrieManager, StorageItem, StorageKey};
 use neo_crypto::Crypto;
 use neo_primitives::{UInt160, UInt256};

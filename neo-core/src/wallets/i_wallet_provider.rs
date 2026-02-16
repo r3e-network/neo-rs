@@ -11,7 +11,7 @@
 use crate::wallets::Wallet;
 
 use std::any::Any;
-use std::sync::{mpsc, Arc};
+use std::sync::{Arc, mpsc};
 
 /// A provider for obtaining wallet instance.
 /// Matches C# IWalletProvider exactly

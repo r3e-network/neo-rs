@@ -1,9 +1,9 @@
 //! Protocol routing and wire message helpers for `RemoteNode`.
 use super::RemoteNode;
 use crate::akka::{ActorContext, ActorResult};
+use crate::network::MessageCommand;
 use crate::network::p2p::messages::{NetworkMessage, ProtocolMessage};
 use crate::network::p2p::payloads::addr_payload::{AddrPayload, MAX_COUNT_TO_SEND};
-use crate::network::MessageCommand;
 use rand::{seq::IteratorRandom, thread_rng};
 use tracing::trace;
 impl RemoteNode {
@@ -154,20 +154,20 @@ impl RemoteNode {
             payload_raw: payload.clone(),
             payload_compressed: payload.clone(),
         };
-        if wire.flags.is_compressed() {
-            match crate::compression::compress_lz4(&wire.payload_raw) {
-                Ok(compressed) => wire.payload_compressed = compressed,
-                Err(err) => {
-                    tracing::warn!(
-                        target: "neo",
-                        error = %err,
-                        "failed to recompress payload for message handlers"
-                    );
-                    wire.flags = crate::network::MessageFlags::NONE;
-                    wire.payload_compressed = wire.payload_raw.clone();
-                }
-            }
+        let (flags, payload_compressed, compression_error) =
+            crate::network::p2p::message::encode_wire_payload(
+                &wire.payload_raw,
+                wire.flags.is_compressed(),
+            );
+        if let Some(err) = compression_error {
+            tracing::warn!(
+                target: "neo",
+                error = %err,
+                "failed to recompress payload for message handlers"
+            );
         }
+        wire.flags = flags;
+        wire.payload_compressed = payload_compressed;
         Some(wire)
     }
     pub(super) fn is_single_command(command: MessageCommand) -> bool {

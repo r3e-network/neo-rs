@@ -14,22 +14,22 @@ use super::{
     providers::memory_store_provider::MemoryStoreProvider,
 };
 use crate::error::{CoreError, CoreResult};
-use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 /// Global registry of store providers.
-static PROVIDERS: Lazy<RwLock<HashMap<String, Arc<dyn IStoreProvider>>>> = Lazy::new(|| {
-    let mut providers = HashMap::new();
+static PROVIDERS: LazyLock<RwLock<HashMap<String, Arc<dyn IStoreProvider>>>> =
+    LazyLock::new(|| {
+        let mut providers = HashMap::new();
 
-    // Register default memory provider
-    let mem_provider = Arc::new(MemoryStoreProvider::new()) as Arc<dyn IStoreProvider>;
-    providers.insert("Memory".to_string(), mem_provider.clone());
-    providers.insert("".to_string(), mem_provider); // Default case
+        // Register default memory provider
+        let mem_provider = Arc::new(MemoryStoreProvider::new()) as Arc<dyn IStoreProvider>;
+        providers.insert("Memory".to_string(), mem_provider.clone());
+        providers.insert("".to_string(), mem_provider); // Default case
 
-    RwLock::new(providers)
-});
+        RwLock::new(providers)
+    });
 
 /// Factory for creating stores.
 pub struct StoreFactory;

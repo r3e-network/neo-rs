@@ -5,7 +5,7 @@ use crate::smart_contract::find_options::FindOptions;
 use crate::smart_contract::iterators::i_iterator::IIterator;
 use crate::smart_contract::storage_item::StorageItem;
 use crate::smart_contract::storage_key::StorageKey;
-use neo_vm::{execution_engine_limits::ExecutionEngineLimits, StackItem};
+use neo_vm::{StackItem, execution_engine_limits::ExecutionEngineLimits};
 
 /// Storage iterator for iterating over storage items (matches C# StorageIterator)
 #[derive(Debug)]

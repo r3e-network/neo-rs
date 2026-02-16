@@ -1,6 +1,6 @@
 //! Slot opcode tests covering INITSSLOT, LDSFLD, STSFLD, etc.
 
-use crate::csharp_tests::{resolve_test_dir, JsonTestRunner};
+use crate::csharp_tests::{JsonTestRunner, resolve_test_dir};
 
 #[test]
 fn test_opcodes_slot() {

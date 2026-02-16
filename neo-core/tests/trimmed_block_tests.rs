@@ -1,12 +1,12 @@
 use chrono::{TimeZone, Utc};
-use neo_core::ledger::block_header::BlockHeader;
-use neo_core::ledger::Block;
-use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
-use neo_core::network::p2p::payloads::transaction::Transaction;
-use neo_core::smart_contract::native::trimmed_block::TrimmedBlock;
 use neo_core::UInt160;
 use neo_core::UInt256;
 use neo_core::Witness;
+use neo_core::ledger::Block;
+use neo_core::ledger::block_header::BlockHeader;
+use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
+use neo_core::network::p2p::payloads::transaction::Transaction;
+use neo_core::smart_contract::native::trimmed_block::TrimmedBlock;
 
 fn sample_timestamp() -> u64 {
     Utc.with_ymd_and_hms(1988, 6, 1, 0, 0, 0)
@@ -60,22 +60,20 @@ fn trimmed_block_header_fields_match() {
 #[test]
 fn trimmed_block_size_matches_reference() {
     let mut block = trimmed_block_with_no_transactions();
-    block.hashes =
-        vec![
-            UInt256::parse("0x33d3b8965712d1c1d9edb1e9f5bdc8dfeadfde7d572bea3522eef19aef2da56d")
-                .unwrap(),
-        ];
+    block.hashes = vec![
+        UInt256::parse("0x33d3b8965712d1c1d9edb1e9f5bdc8dfeadfde7d572bea3522eef19aef2da56d")
+            .unwrap(),
+    ];
     assert_eq!(block.size(), 146);
 }
 
 #[test]
 fn trimmed_block_clone_produces_independent_copy() {
     let mut original = trimmed_block_with_no_transactions();
-    original.hashes =
-        vec![
-            UInt256::parse("0x22d3b8965712d1c1d9edb1e9f5bdc8dfeadfde7d572bea3522eef19aef2da56c")
-                .unwrap(),
-        ];
+    original.hashes = vec![
+        UInt256::parse("0x22d3b8965712d1c1d9edb1e9f5bdc8dfeadfde7d572bea3522eef19aef2da56c")
+            .unwrap(),
+    ];
 
     let mut clone = original.clone();
     clone.header.index += 1;
@@ -95,11 +93,10 @@ fn trimmed_block_clone_produces_independent_copy() {
 #[test]
 fn trimmed_block_serialization_roundtrips() {
     let mut block = trimmed_block_with_no_transactions();
-    block.hashes =
-        vec![
-            UInt256::parse("0x1111111111111111111111111111111111111111111111111111111111111111")
-                .unwrap(),
-        ];
+    block.hashes = vec![
+        UInt256::parse("0x1111111111111111111111111111111111111111111111111111111111111111")
+            .unwrap(),
+    ];
 
     let mut writer = BinaryWriter::new();
     block.serialize(&mut writer).expect("serialize block");

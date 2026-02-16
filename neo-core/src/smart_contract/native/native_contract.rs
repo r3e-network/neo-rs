@@ -1,5 +1,6 @@
 //! Base native contract trait and types.
 
+use crate::UInt160;
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
 use crate::hardfork::Hardfork;
@@ -10,7 +11,6 @@ use crate::smart_contract::manifest::{
 };
 use crate::smart_contract::native::IHardforkActivable;
 use crate::smart_contract::{ContractManifest, ContractParameterType, ContractState, NefFile};
-use crate::UInt160;
 use neo_vm::{OpCode, ScriptBuilder};
 use serde::{Deserialize, Serialize};
 use std::any::Any;
@@ -358,7 +358,7 @@ impl BaseNativeContract {
 /// Macro to help implement native contracts.
 #[macro_export]
 macro_rules! impl_native_contract {
-    ($contract:ty, $hash:expr, $name:expr, $methods:expr) => {
+    ($contract:ty, $hash:expr_2021, $name:expr_2021, $methods:expr_2021) => {
         impl NativeContract for $contract {
             fn hash(&self) -> UInt160 {
                 $hash

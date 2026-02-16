@@ -59,7 +59,6 @@ reqwest = { workspace = true, optional = true }
 
 # Utilities
 uuid = { workspace = true, optional = true }
-once_cell = { workspace = true, optional = true }
 parking_lot = { workspace = true, optional = true }
 prometheus = { workspace = true, optional = true }
 base64 = { workspace = true, optional = true }
@@ -91,7 +90,6 @@ server = [
     "dep:warp",
     "dep:hyper",
     "dep:uuid",
-    "dep:once_cell",
     "dep:parking_lot",
     "dep:prometheus",
     "dep:serde_urlencoded",

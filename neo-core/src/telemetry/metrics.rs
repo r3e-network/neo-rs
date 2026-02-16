@@ -194,21 +194,13 @@ impl Histogram {
     /// Returns the minimum observed value.
     pub fn min(&self) -> f64 {
         let min = f64::from_bits(self.min.load(Ordering::Relaxed));
-        if min == f64::MAX {
-            0.0
-        } else {
-            min
-        }
+        if min == f64::MAX { 0.0 } else { min }
     }
 
     /// Returns the maximum observed value.
     pub fn max(&self) -> f64 {
         let max = f64::from_bits(self.max.load(Ordering::Relaxed));
-        if max == f64::MIN {
-            0.0
-        } else {
-            max
-        }
+        if max == f64::MIN { 0.0 } else { max }
     }
 
     /// Returns the average of all observations.

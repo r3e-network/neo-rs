@@ -1,6 +1,6 @@
 //! Sealed key storage for TEE wallet
 
-use crate::enclave::{seal_data, unseal_data, SealedData, TeeEnclave};
+use crate::enclave::{SealedData, TeeEnclave, seal_data, unseal_data};
 use crate::error::{TeeError, TeeResult};
 use serde::{Deserialize, Serialize};
 use std::path::Path;

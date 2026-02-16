@@ -1,8 +1,8 @@
 use super::{
     actor::Actor,
     mailbox::{
-        default_mailbox_factory, mailbox_factory_from, priority_mailbox_factory, Mailbox,
-        MailboxFactory, PriorityMailboxConfig,
+        Mailbox, MailboxFactory, PriorityMailboxConfig, default_mailbox_factory,
+        mailbox_factory_from, priority_mailbox_factory,
     },
 };
 use std::{fmt, sync::Arc};

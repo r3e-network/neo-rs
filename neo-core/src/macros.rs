@@ -236,7 +236,7 @@ macro_rules! impl_default_via_new {
 /// ```
 #[macro_export]
 macro_rules! impl_display_enum {
-    ($enum_type:ty, $($variant:ident => $display:expr),+ $(,)?) => {
+    ($enum_type:ty, $($variant:ident => $display:expr_2021),+ $(,)?) => {
         impl std::fmt::Display for $enum_type {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 match self {
@@ -263,7 +263,7 @@ macro_rules! impl_display_enum {
 /// ```
 #[macro_export]
 macro_rules! impl_try_from_u8 {
-    ($enum_type:ty, $($value:expr => $variant:ident),+ $(,)?) => {
+    ($enum_type:ty, $($value:expr_2021 => $variant:ident),+ $(,)?) => {
         impl TryFrom<u8> for $enum_type {
             type Error = $crate::CoreError;
 
@@ -291,7 +291,7 @@ macro_rules! impl_try_from_u8 {
 /// ```
 #[macro_export]
 macro_rules! impl_serializable_bytes {
-    ($type:ty, $size:expr) => {
+    ($type:ty, $size:expr_2021) => {
         impl $crate::neo_io::Serializable for $type {
             fn serialize(
                 &self,
@@ -473,7 +473,7 @@ impl ValidateLength for String {
 /// ```
 #[macro_export]
 macro_rules! validate_and_write_var_bytes {
-    ($writer:expr, $data:expr, $max:expr, $name:expr) => {{
+    ($writer:expr_2021, $data:expr_2021, $max:expr_2021, $name:expr_2021) => {{
         use $crate::macros::ValidateLength;
         $data.validate_max_length($max, $name)?;
         $writer.write_var_bytes(&$data)?;

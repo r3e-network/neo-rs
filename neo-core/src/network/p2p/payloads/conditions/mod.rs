@@ -25,5 +25,5 @@ pub use not_condition::{expression as not_expression, new as new_not};
 pub use or_condition::{expressions as or_expressions, new as new_or};
 pub use script_hash_condition::{hash as script_hash_value, new as new_script_hash};
 pub use witness_condition::{
-    is_valid, WitnessCondition, WitnessConditionType, MAX_NESTING_DEPTH, MAX_SUBITEMS,
+    MAX_NESTING_DEPTH, MAX_SUBITEMS, WitnessCondition, WitnessConditionType, is_valid,
 };

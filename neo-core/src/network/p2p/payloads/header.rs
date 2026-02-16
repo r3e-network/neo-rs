@@ -806,15 +806,15 @@ impl crate::IVerifiable for Header {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ledger::block_header::BlockHeader as LedgerBlockHeader;
+    use crate::Witness as LedgerWitness;
     use crate::ledger::HeaderCache;
+    use crate::ledger::block_header::BlockHeader as LedgerBlockHeader;
+    use crate::persistence::StoreCache;
     use crate::persistence::i_store::IStore;
     use crate::persistence::providers::memory_store::MemoryStore;
-    use crate::persistence::StoreCache;
+    use crate::smart_contract::StorageItem;
     use crate::smart_contract::native::trimmed_block::TrimmedBlock;
     use crate::smart_contract::storage_key::StorageKey;
-    use crate::smart_contract::StorageItem;
-    use crate::Witness as LedgerWitness;
     use neo_vm::op_code::OpCode;
     use std::sync::Arc;
 

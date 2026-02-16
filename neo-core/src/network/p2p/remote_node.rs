@@ -1,6 +1,7 @@
 //! Actor-based remote node implementation mirroring the Akka.NET design.
 //! Submodules: handshake.rs, timers.rs, inventory.rs, routing.rs, message_handlers.rs, pending_known_hashes.rs.
 
+mod actor_impl;
 mod handshake;
 mod inventory;
 mod message_handlers;
@@ -13,39 +14,38 @@ use super::{
     connection::{ConnectionState, PeerConnection},
     local_node::{LocalNode, RemoteNodeSnapshot},
     payloads::{
+        VersionPayload,
         addr_payload::AddrPayload,
         filter_add_payload::FilterAddPayload,
         filter_load_payload::FilterLoadPayload,
         get_block_by_index_payload::GetBlockByIndexPayload,
         headers_payload::{HeadersPayload, MAX_HEADERS_COUNT},
         ping_payload::PingPayload,
-        VersionPayload,
     },
     peer::PeerCommand,
     task_manager::TaskManagerCommand,
 };
-use crate::akka::{Actor, ActorContext, ActorResult, Cancelable, Props};
+use crate::akka::{ActorContext, ActorResult, Cancelable, Props};
 use crate::cryptography::BloomFilter;
 use crate::ledger::blockchain::BlockchainCommand;
+use crate::network::MessageCommand;
 use crate::network::error::NetworkError;
 use crate::network::p2p::messages::{NetworkMessage, ProtocolMessage};
-use crate::network::MessageCommand;
-use crate::{neo_system::NeoSystemContext, protocol_settings::ProtocolSettings, UInt256};
-use async_trait::async_trait;
+use crate::{UInt256, neo_system::NeoSystemContext, protocol_settings::ProtocolSettings};
 use neo_io_crate::HashSetCache;
 use std::collections::{HashSet, VecDeque};
 use std::net::SocketAddr;
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
     Arc,
+    atomic::{AtomicBool, Ordering},
 };
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::{Mutex, oneshot};
 use tracing::{debug, error, info, trace, warn};
 
 pub use message_handlers::{
-    register_message_received_handler, unregister_message_received_handler,
-    MessageHandlerSubscription,
+    MessageHandlerSubscription, register_message_received_handler,
+    unregister_message_received_handler,
 };
 use pending_known_hashes::PendingKnownHashes;
 
@@ -514,11 +514,12 @@ impl RemoteNode {
             return Ok(());
         }
 
+        let mut sent_any = false;
+
         while self.verack_received && self.ack_ready {
-            let next_message = if let Some(msg) = self.message_queue_high.pop_front() {
-                Some(msg)
-            } else {
-                self.message_queue_low.pop_front()
+            let next_message = match self.message_queue_high.pop_front() {
+                Some(msg) => Some(msg),
+                _ => self.message_queue_low.pop_front(),
             };
 
             let Some(message) = next_message else {
@@ -536,7 +537,19 @@ impl RemoteNode {
                 self.sent_commands[index] = true;
             }
             self.send_wire_message(&message).await?;
+            sent_any = true;
             self.ack_ready = true;
+        }
+
+        // `send_wire_message` may buffer small payloads without an immediate flush.
+        // Flush once at the end of a queue drain so control messages (e.g. GetHeaders)
+        // are actually delivered to peers.
+        if sent_any {
+            let mut connection = self.connection.lock().await;
+            connection
+                .flush()
+                .await
+                .map_err(|err| crate::akka::AkkaError::system(err.to_string()))?;
         }
 
         Ok(())
@@ -821,14 +834,14 @@ impl RemoteNode {
             return;
         }
 
-        if let Some(parent) = ctx.parent() {
-            if let Err(err) = parent.tell(PeerCommand::AddPeers { endpoints }) {
-                warn!(
-                    target: "neo",
-                    error = %err,
-                    "failed to forward peer addresses to local node"
-                );
-            }
+        if let Some(parent) = ctx.parent()
+            && let Err(err) = parent.tell(PeerCommand::AddPeers { endpoints })
+        {
+            warn!(
+                target: "neo",
+                error = %err,
+                "failed to forward peer addresses to local node"
+            );
         }
     }
 
@@ -878,14 +891,13 @@ impl RemoteNode {
 
     async fn fail(&mut self, ctx: &mut ActorContext, error: NetworkError) -> ActorResult {
         warn!(target: "neo", endpoint = %self.endpoint, error = %error, "remote node failure");
-        if !self.inbound {
-            if let Some(parent) = ctx.parent() {
-                if let Err(err) = parent.tell(PeerCommand::ConnectionFailed {
-                    endpoint: self.endpoint,
-                }) {
-                    error!(target: "neo", error = %err, "failed to notify parent about connection failure");
-                }
-            }
+        if !self.inbound
+            && let Some(parent) = ctx.parent()
+            && let Err(err) = parent.tell(PeerCommand::ConnectionFailed {
+                endpoint: self.endpoint,
+            })
+        {
+            error!(target: "neo", error = %err, "failed to notify parent about connection failure");
         }
         ctx.stop_self()?;
         Ok(())
@@ -928,70 +940,6 @@ impl RemoteNode {
     }
 }
 
-#[async_trait]
-impl Actor for RemoteNode {
-    async fn handle(
-        &mut self,
-        message: Box<dyn std::any::Any + Send>,
-        ctx: &mut ActorContext,
-    ) -> ActorResult {
-        match message.downcast::<RemoteNodeCommand>() {
-            Ok(command) => match *command {
-                RemoteNodeCommand::StartProtocol => self.start_protocol(ctx).await,
-                RemoteNodeCommand::Send(message) => self.enqueue_message(message).await,
-                RemoteNodeCommand::Inbound(message) => self.on_inbound(message, ctx).await,
-                RemoteNodeCommand::ConnectionError { error } => self.fail(ctx, error).await,
-                RemoteNodeCommand::HandshakeTimeout => {
-                    if self.handshake_complete {
-                        return Ok(());
-                    }
-                    let error = NetworkError::ProtocolViolation {
-                        peer: self.endpoint,
-                        violation: "handshake timeout".to_string(),
-                    };
-                    self.fail(ctx, error).await
-                }
-                RemoteNodeCommand::TimerTick => self.on_timer(ctx).await,
-                RemoteNodeCommand::Disconnect { reason } => {
-                    debug!(target: "neo", endpoint = %self.endpoint, reason, "disconnecting remote node");
-                    ctx.stop_self()?;
-                    Ok(())
-                }
-            },
-            Err(other) => {
-                // Drop unknown message types quietly to avoid log spam and mismatched routing.
-                trace!(
-                    target: "neo",
-                    message_type_id = ?other.as_ref().type_id(),
-                    "unknown message routed to remote node actor"
-                );
-                Ok(())
-            }
-        }
-    }
-
-    async fn post_stop(&mut self, ctx: &mut ActorContext) -> ActorResult {
-        {
-            let mut connection = self.connection.lock().await;
-            if let Err(err) = connection.close().await {
-                warn!(target: "neo", error = %err, "error shutting down TCP stream during stop");
-            }
-        }
-        self.known_hashes.clear();
-        self.sent_hashes.clear();
-        self.pending_known_hashes.clear();
-        self.bloom_filter = None;
-        self.cancel_timer();
-        if let Some(parent) = ctx.parent() {
-            let self_ref = ctx.self_ref();
-            if let Err(err) = parent.tell(PeerCommand::ConnectionTerminated { actor: self_ref }) {
-                trace!(target: "neo", error = %err, "failed to notify parent about remote node termination");
-            }
-        }
-        Ok(())
-    }
-}
-
 /// Remote node control messages.
 #[derive(Debug, Clone)]
 pub enum RemoteNodeCommand {
@@ -1012,148 +960,4 @@ fn current_unix_timestamp() -> u64 {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{
-        message_handlers, register_message_received_handler, HandshakeGateDecision,
-        PendingKnownHashes, RemoteNode, UInt256,
-    };
-    use crate::i_event_handlers::IMessageReceivedHandler;
-    use crate::network::p2p::{message::Message, message_command::MessageCommand, timeouts};
-    use std::sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    };
-    use std::time::{Duration, Instant};
-
-    fn make_hash(byte: u8) -> UInt256 {
-        let mut data = [0u8; 32];
-        data[0] = byte;
-        UInt256::from(data)
-    }
-
-    #[test]
-    fn prune_older_than_removes_stale_entries() {
-        let now = Instant::now();
-        let mut cache = PendingKnownHashes::new(4);
-
-        // Use timestamps within MAX_PENDING_TTL (60s) to avoid auto-prune during try_add.
-        // Entry 1 at now - 55s, Entry 2 at now - 5s.
-        // When entry 2 is added, auto-prune cutoff is (now - 5) - 60 = now - 65s,
-        // which won't remove entry 1 (at now - 55s).
-        cache.try_add(make_hash(1), now - Duration::from_secs(55));
-        cache.try_add(make_hash(2), now - Duration::from_secs(5));
-
-        // Prune entries older than now - 30s; should remove entry 1 but keep entry 2
-        let removed = cache.prune_older_than(now - Duration::from_secs(30));
-        assert_eq!(removed, 1);
-        assert!(!cache.contains(&make_hash(1)));
-        assert!(cache.contains(&make_hash(2)));
-    }
-
-    #[test]
-    fn timeout_stats_increment() {
-        timeouts::reset();
-        timeouts::inc_handshake_timeout();
-        timeouts::inc_read_timeout();
-        timeouts::inc_write_timeout();
-        let stats = timeouts::stats();
-        assert_eq!(stats.handshake, 1);
-        assert_eq!(stats.read, 1);
-        assert_eq!(stats.write, 1);
-    }
-
-    #[test]
-    fn timeout_stats_logged() {
-        timeouts::reset();
-        timeouts::log_stats();
-    }
-
-    #[derive(Default)]
-    struct TestHandler {
-        invocations: AtomicUsize,
-    }
-
-    impl IMessageReceivedHandler for TestHandler {
-        fn remote_node_message_received_handler(
-            &self,
-            _system: &dyn std::any::Any,
-            _message: &Message,
-        ) -> bool {
-            self.invocations.fetch_add(1, Ordering::Relaxed);
-            true
-        }
-    }
-
-    #[test]
-    fn register_handler_tracks_subscription() {
-        message_handlers::reset();
-
-        let handler = Arc::new(TestHandler::default());
-        let subscription = register_message_received_handler(handler.clone());
-        let count = message_handlers::with_handlers(|handlers| handlers.len());
-        assert_eq!(count, 1);
-
-        drop(subscription);
-        let count = message_handlers::with_handlers(|handlers| handlers.len());
-        assert_eq!(count, 0);
-    }
-
-    #[test]
-    fn summarize_alert_payload_strips_control_chars() {
-        let payload = b"Node alert:\nRestart\x07 now";
-        let summary = RemoteNode::summarize_alert_payload(payload);
-        assert_eq!(summary, "Node alert:\nRestart now");
-    }
-
-    #[test]
-    fn summarize_alert_payload_serializes_binary_as_hex() {
-        let payload = [0xFFu8, 0x00, 0x34, 0xAB];
-        let summary = RemoteNode::summarize_alert_payload(&payload);
-        assert_eq!(summary, "0xff0034ab");
-    }
-
-    #[test]
-    fn summarize_alert_payload_truncates_output() {
-        let payload = vec![b'a'; RemoteNode::MAX_ALERT_LOG_BYTES + 8];
-        let summary = RemoteNode::summarize_alert_payload(&payload);
-        assert!(summary.ends_with("..."));
-        assert_eq!(
-            summary.len(),
-            RemoteNode::MAX_ALERT_LOG_BYTES + 3,
-            "appends ellipsis when payload is longer than capture window"
-        );
-    }
-
-    #[test]
-    fn handshake_gate_requires_version_first() {
-        let version = RemoteNode::handshake_gate_decision(false, false, MessageCommand::Version);
-        assert!(matches!(version, HandshakeGateDecision::AcceptVersion));
-
-        let verack = RemoteNode::handshake_gate_decision(false, false, MessageCommand::Verack);
-        assert!(matches!(verack, HandshakeGateDecision::Reject(_)));
-
-        let ping = RemoteNode::handshake_gate_decision(false, false, MessageCommand::Ping);
-        assert!(matches!(ping, HandshakeGateDecision::Reject(_)));
-    }
-
-    #[test]
-    fn handshake_gate_requires_verack_after_version() {
-        let verack = RemoteNode::handshake_gate_decision(true, false, MessageCommand::Verack);
-        assert!(matches!(verack, HandshakeGateDecision::AcceptVerack));
-
-        let ping = RemoteNode::handshake_gate_decision(true, false, MessageCommand::Ping);
-        assert!(matches!(ping, HandshakeGateDecision::Reject(_)));
-    }
-
-    #[test]
-    fn handshake_gate_rejects_duplicate_handshake_messages_after_completion() {
-        let version = RemoteNode::handshake_gate_decision(true, true, MessageCommand::Version);
-        assert!(matches!(version, HandshakeGateDecision::Reject(_)));
-
-        let verack = RemoteNode::handshake_gate_decision(true, true, MessageCommand::Verack);
-        assert!(matches!(verack, HandshakeGateDecision::Reject(_)));
-
-        let ping = RemoteNode::handshake_gate_decision(true, true, MessageCommand::Ping);
-        assert!(matches!(ping, HandshakeGateDecision::AcceptProtocol));
-    }
-}
+mod tests;

@@ -3,6 +3,7 @@
 //! This module provides data serialization and deserialization capabilities
 //! that match the C# Neo implementation exactly.
 
+use crate::compression::{compress_lz4, decompress_lz4};
 use crate::error::CoreError;
 use crate::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use serde::{Deserialize, Serialize};
@@ -107,7 +108,8 @@ pub fn validate_serialization<T: Serialize + for<'de> Deserialize<'de> + Partial
 
 /// Compresses serialized data using LZ4 (production implementation matching C# Neo compression)
 pub fn compress_data(data: &[u8]) -> crate::Result<Vec<u8>> {
-    Ok(lz4_flex::compress_prepend_size(data))
+    compress_lz4(data)
+        .map_err(|e| CoreError::serialization(format!("Data compression failed: {}", e)))
 }
 
 /// Decompresses data using LZ4 (production implementation matching C# Neo compression)
@@ -117,7 +119,9 @@ pub fn decompress_data(compressed_data: &[u8]) -> crate::Result<Vec<u8>> {
         return Err(CoreError::deserialization("Cannot decompress empty data"));
     }
 
-    lz4_flex::decompress_size_prepended(compressed_data)
+    // Persistence payloads historically had no strict decompressed-size cap in this path.
+    // Reuse shared LZ4 helper with an effectively unbounded max to preserve behavior.
+    decompress_lz4(compressed_data, usize::MAX)
         .map_err(|e| CoreError::deserialization(format!("Data decompression failed: {}", e)))
 }
 

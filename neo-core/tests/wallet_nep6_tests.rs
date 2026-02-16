@@ -1,6 +1,7 @@
 use std::fs;
 use std::sync::Arc;
 
+use neo_core::WitnessScope;
 use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::transaction::Transaction;
 use neo_core::protocol_settings::ProtocolSettings;
@@ -8,7 +9,6 @@ use neo_core::smart_contract::helper::Helper as ContractHelper;
 use neo_core::wallets::wallet::WalletError;
 use neo_core::wallets::wallet::WalletResult;
 use neo_core::wallets::{KeyPair, Nep6Wallet, Wallet};
-use neo_core::WitnessScope;
 use neo_crypto::Secp256r1Crypto;
 use neo_vm::op_code::OpCode;
 use rand::RngCore;
@@ -52,9 +52,11 @@ fn nep6_wallet_imports_and_signs() -> WalletResult<()> {
         .block_on(wallet.sign(payload, &script_hash))
         .expect("sign data");
     let original_key = KeyPair::from_wif(&wif).expect("wif decode");
-    assert!(original_key
-        .verify(payload, &signature)
-        .expect("verify signature"));
+    assert!(
+        original_key
+            .verify(payload, &signature)
+            .expect("verify signature")
+    );
 
     // Sign transaction and ensure witness is produced
     let mut transaction = Transaction::new();
@@ -76,12 +78,14 @@ fn nep6_wallet_imports_and_signs() -> WalletResult<()> {
     let sign_data =
         neo_core::network::p2p::helper::get_sign_data_vec(&transaction, settings.network)
             .expect("sign data");
-    assert!(Secp256r1Crypto::verify(
-        &sign_data,
-        &signature_bytes,
-        &original_key.compressed_public_key()
-    )
-    .expect("verify witness signature"));
+    assert!(
+        Secp256r1Crypto::verify(
+            &sign_data,
+            &signature_bytes,
+            &original_key.compressed_public_key()
+        )
+        .expect("verify witness signature")
+    );
 
     fs::remove_file(wallet_path).ok();
     Ok(())

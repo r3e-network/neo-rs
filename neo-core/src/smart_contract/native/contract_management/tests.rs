@@ -3,6 +3,7 @@ use crate::neo_io::BinaryWriter;
 use crate::network::p2p::payloads::signer::Signer;
 use crate::network::p2p::payloads::transaction::Transaction;
 use crate::persistence::{DataCache, SeekDirection, StorageItem};
+use crate::smart_contract::IInteroperable;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::contract_state::NefFile;
@@ -13,11 +14,9 @@ use crate::smart_contract::manifest::{
     ContractParameterDefinition, ContractPermission, WildCardContainer,
 };
 use crate::smart_contract::trigger_type::TriggerType;
-use crate::smart_contract::IInteroperable;
 use crate::wallets::KeyPair;
 use crate::witness::Witness;
 use crate::{IVerifiable, UInt160, WitnessScope};
-use neo_vm::execution_engine_limits::ExecutionEngineLimits;
 use neo_vm::OpCode;
 use neo_vm::StackItem;
 use std::sync::Arc;
@@ -55,7 +54,7 @@ fn make_nef(script: Vec<u8>) -> NefFile {
 }
 
 fn contract_from_bytes(bytes: &[u8]) -> ContractState {
-    let item = BinarySerializer::deserialize(bytes, &ExecutionEngineLimits::default(), None)
+    let item = BinarySerializer::deserialize_default(bytes)
         .expect("deserialize contract state stack item");
     let mut contract = ContractState::default();
     let _ = contract.from_stack_item(item);
@@ -411,17 +410,19 @@ fn has_method_accepts_any_parameter_count() {
     let cm = ContractManagement::new();
     let mut manifest = default_manifest();
     manifest.abi = ContractAbi::new(
-        vec![ContractMethodDescriptor::new(
-            "alpha".to_string(),
-            vec![
-                ContractParameterDefinition::new("p0".to_string(), ContractParameterType::Any)
-                    .unwrap(),
-            ],
-            ContractParameterType::Void,
-            0,
-            true,
-        )
-        .unwrap()],
+        vec![
+            ContractMethodDescriptor::new(
+                "alpha".to_string(),
+                vec![
+                    ContractParameterDefinition::new("p0".to_string(), ContractParameterType::Any)
+                        .unwrap(),
+                ],
+                ContractParameterType::Void,
+                0,
+                true,
+            )
+            .unwrap(),
+        ],
         Vec::new(),
     );
 
@@ -571,10 +572,12 @@ fn destroy_removes_contract_and_storage() {
         .expect("destroy");
 
     let prefix = StorageKey::new(contract.id, Vec::new());
-    assert!(snapshot
-        .find(Some(&prefix), SeekDirection::Forward)
-        .next()
-        .is_none());
+    assert!(
+        snapshot
+            .find(Some(&prefix), SeekDirection::Forward)
+            .next()
+            .is_none()
+    );
 
     let contract_key = StorageKey::new(
         ContractManagement::ID,

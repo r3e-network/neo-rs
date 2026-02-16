@@ -79,11 +79,11 @@ pub use message_command::MessageCommand;
 pub use message_flags::MessageFlags;
 pub use messages::{MessageHeader, NetworkMessage, ProtocolMessage};
 #[cfg(feature = "runtime")]
-pub use peer::{ConnectedPeer, PeerCommand, PeerState, PeerTimer, MAX_COUNT_FROM_SEED_LIST};
+pub use peer::{ConnectedPeer, MAX_COUNT_FROM_SEED_LIST, PeerCommand, PeerState, PeerTimer};
 #[cfg(feature = "runtime")]
 pub use remote_node::{
-    register_message_received_handler, unregister_message_received_handler,
-    MessageHandlerSubscription, RemoteNode, RemoteNodeCommand,
+    MessageHandlerSubscription, RemoteNode, RemoteNodeCommand, register_message_received_handler,
+    unregister_message_received_handler,
 };
 #[cfg(feature = "runtime")]
 pub use task_manager::{TaskManager, TaskManagerActor, TaskManagerCommand};

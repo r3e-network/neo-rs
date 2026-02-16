@@ -424,10 +424,10 @@ impl PeerState {
             return;
         }
 
-        if let Some(ip) = UPnP::get_external_ip() {
-            if let Ok(addr) = ip.parse::<IpAddr>() {
-                self.local_addresses.insert(addr);
-            }
+        if let Some(ip) = UPnP::get_external_ip()
+            && let Ok(addr) = ip.parse::<IpAddr>()
+        {
+            self.local_addresses.insert(addr);
         }
 
         let _ = UPnP::forward_port(self.listener_tcp_port as i32, "TCP", "NEO Tcp");

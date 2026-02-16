@@ -719,9 +719,11 @@ mod tests {
     fn test_error_display() {
         assert_eq!(DataCacheError::ReadOnly.to_string(), "cache is read-only");
         assert_eq!(DataCacheError::KeyNotFound.to_string(), "key not found");
-        assert!(DataCacheError::CommitFailed("test".to_string())
-            .to_string()
-            .contains("unable to commit"));
+        assert!(
+            DataCacheError::CommitFailed("test".to_string())
+                .to_string()
+                .contains("unable to commit")
+        );
     }
 
     #[test]

@@ -285,9 +285,11 @@ fn test_emit_push_big_integer_extended() {
         10,
     )
     .expect("parse big int");
-    assert!(ScriptBuilder::new()
-        .emit_push_bigint(exceed_256_plus_one)
-        .is_err());
+    assert!(
+        ScriptBuilder::new()
+            .emit_push_bigint(exceed_256_plus_one)
+            .is_err()
+    );
 }
 
 #[test]

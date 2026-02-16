@@ -5,28 +5,26 @@
 
 use crate::cryptography::NeoHash;
 use crate::error::{CoreError as Error, CoreResult as Result};
-use crate::neo_config::{BLOCK_MAX_TX_WIRE_LIMIT, HASH_SIZE, MAX_SCRIPT_SIZE};
 use crate::network::p2p::payloads::{
     oracle_response::OracleResponse as TxOracleResponse,
     transaction_attribute::TransactionAttribute,
 };
 use crate::persistence::{
-    i_read_only_store::IReadOnlyStoreGeneric, seek_direction::SeekDirection, DataCache,
+    DataCache, i_read_only_store::IReadOnlyStoreGeneric, seek_direction::SeekDirection,
 };
+use crate::smart_contract::ContractParameterType;
+use crate::smart_contract::StorageItem;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::contract::Contract;
-use crate::smart_contract::manifest::{ContractEventDescriptor, ContractParameterDefinition};
 use crate::smart_contract::native::{
-    oracle_request::OracleRequest, GasToken, NativeContract, NativeMethod, Role, RoleManagement,
+    GasToken, NativeContract, NativeMethod, Role, RoleManagement, oracle_request::OracleRequest,
 };
 use crate::smart_contract::storage_key::StorageKey;
-use crate::smart_contract::ContractParameterType;
-use crate::smart_contract::StorageItem;
 use crate::{UInt160, UInt256};
 use bincode;
-use neo_vm::{ExecutionEngineLimits, StackItem};
+use neo_vm::StackItem;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
@@ -40,6 +38,9 @@ const PREFIX_REQUEST: u8 = 0x07;
 const PREFIX_ID_LIST: u8 = 0x06;
 const PREFIX_REQUEST_ID: u8 = 0x09;
 const MAX_PENDING_PER_URL: usize = 256;
+
+mod config;
+pub use config::{OracleConfig, OracleConfigBuilder};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PendingRequest {
@@ -62,149 +63,6 @@ pub struct OracleContract {
     methods: Vec<NativeMethod>,
     /// Oracle configuration.
     config: OracleConfig,
-}
-
-/// Oracle configuration parameters.
-#[derive(Debug, Clone)]
-pub struct OracleConfig {
-    /// Maximum URL length.
-    pub max_url_length: usize,
-
-    /// Maximum filter length.
-    pub max_filter_length: usize,
-
-    /// Maximum callback method name length.
-    pub max_callback_length: usize,
-
-    /// Maximum user data length.
-    pub max_user_data_length: usize,
-
-    /// Maximum response data length.
-    pub max_response_length: usize,
-
-    /// Request timeout in blocks.
-    pub request_timeout: u32,
-
-    /// Minimum gas for response.
-    pub min_response_gas: i64,
-
-    /// Maximum gas for response.
-    pub max_response_gas: i64,
-}
-
-impl Default for OracleConfig {
-    fn default() -> Self {
-        Self {
-            max_url_length: 256,
-            max_filter_length: 128,
-            max_callback_length: HASH_SIZE,
-            max_user_data_length: BLOCK_MAX_TX_WIRE_LIMIT,
-            max_response_length: MAX_SCRIPT_SIZE,
-            request_timeout: 144, // ~24 hours at 10 second blocks
-            min_response_gas: 10_000_000,
-            max_response_gas: 50_000_000,
-        }
-    }
-}
-
-/// Builder for `OracleConfig` with fluent API and validation.
-#[derive(Debug, Clone)]
-pub struct OracleConfigBuilder {
-    config: OracleConfig,
-}
-
-impl OracleConfigBuilder {
-    /// Creates a new builder with default values.
-    #[inline]
-    pub fn new() -> Self {
-        Self {
-            config: OracleConfig::default(),
-        }
-    }
-
-    /// Sets the maximum URL length.
-    #[inline]
-    pub fn max_url_length(mut self, len: usize) -> Self {
-        self.config.max_url_length = len;
-        self
-    }
-
-    /// Sets the maximum filter length.
-    #[inline]
-    pub fn max_filter_length(mut self, len: usize) -> Self {
-        self.config.max_filter_length = len;
-        self
-    }
-
-    /// Sets the maximum callback method name length.
-    #[inline]
-    pub fn max_callback_length(mut self, len: usize) -> Self {
-        self.config.max_callback_length = len;
-        self
-    }
-
-    /// Sets the maximum user data length.
-    #[inline]
-    pub fn max_user_data_length(mut self, len: usize) -> Self {
-        self.config.max_user_data_length = len;
-        self
-    }
-
-    /// Sets the maximum response data length.
-    #[inline]
-    pub fn max_response_length(mut self, len: usize) -> Self {
-        self.config.max_response_length = len;
-        self
-    }
-
-    /// Sets the request timeout in blocks.
-    #[inline]
-    pub fn request_timeout(mut self, timeout: u32) -> Self {
-        self.config.request_timeout = timeout;
-        self
-    }
-
-    /// Sets the minimum gas for response.
-    #[inline]
-    pub fn min_response_gas(mut self, gas: i64) -> Self {
-        self.config.min_response_gas = gas;
-        self
-    }
-
-    /// Sets the maximum gas for response.
-    #[inline]
-    pub fn max_response_gas(mut self, gas: i64) -> Self {
-        self.config.max_response_gas = gas;
-        self
-    }
-
-    /// Validates and builds the configuration.
-    pub fn build(self) -> Result<OracleConfig> {
-        // Validate constraints
-        if self.config.min_response_gas > self.config.max_response_gas {
-            return Err(Error::invalid_operation(
-                "min_response_gas cannot exceed max_response_gas".to_string(),
-            ));
-        }
-        if self.config.max_url_length == 0 {
-            return Err(Error::invalid_operation(
-                "max_url_length must be greater than 0".to_string(),
-            ));
-        }
-        Ok(self.config)
-    }
-
-    /// Builds without validation (for internal use).
-    #[inline]
-    pub fn build_unchecked(self) -> OracleConfig {
-        self.config
-    }
-}
-
-impl Default for OracleConfigBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl OracleContract {
@@ -587,10 +445,9 @@ impl OracleContract {
 
     fn read_id_list(&self, snapshot: &DataCache, hash: &[u8; 20]) -> Result<Vec<u64>> {
         let key = self.id_list_key(hash);
-        if let Some(item) = snapshot.try_get(&key) {
-            self.deserialize_id_list(&item.get_value())
-        } else {
-            Ok(Vec::new())
+        match snapshot.try_get(&key) {
+            Some(item) => self.deserialize_id_list(&item.get_value()),
+            _ => Ok(Vec::new()),
         }
     }
 
@@ -650,15 +507,12 @@ impl OracleContract {
                 StackItem::from_int(id_i64)
             })
             .collect::<Vec<_>>();
-        BinarySerializer::serialize(
-            &StackItem::from_array(items),
-            &ExecutionEngineLimits::default(),
-        )
-        .map_err(|err| Error::serialization(err.to_string()))
+        BinarySerializer::serialize_default(&StackItem::from_array(items))
+            .map_err(|err| Error::serialization(err.to_string()))
     }
 
     fn deserialize_id_list(&self, bytes: &[u8]) -> Result<Vec<u64>> {
-        let item = BinarySerializer::deserialize(bytes, &ExecutionEngineLimits::default(), None)
+        let item = BinarySerializer::deserialize_default(bytes)
             .map_err(|err| Error::serialization(err.to_string()))?;
 
         let StackItem::Array(array) = item else {
@@ -911,125 +765,4 @@ impl OracleContract {
     }
 }
 
-impl NativeContract for OracleContract {
-    fn supported_standards(
-        &self,
-        settings: &crate::protocol_settings::ProtocolSettings,
-        block_height: u32,
-    ) -> Vec<String> {
-        if settings.is_hardfork_enabled(crate::hardfork::Hardfork::HfFaun, block_height) {
-            vec!["NEP-30".to_string()]
-        } else {
-            Vec::new()
-        }
-    }
-
-    fn activations(&self) -> Vec<crate::hardfork::Hardfork> {
-        vec![crate::hardfork::Hardfork::HfFaun]
-    }
-
-    fn initialize(&self, engine: &mut ApplicationEngine) -> Result<()> {
-        let snapshot_arc = engine.snapshot_cache();
-        let snapshot = snapshot_arc.as_ref();
-        let key = self.price_key();
-        if snapshot.try_get(&key).is_none() {
-            self.put_item(
-                snapshot,
-                key,
-                StorageItem::from_bytes(DEFAULT_PRICE.to_le_bytes().to_vec()),
-            );
-        }
-        Ok(())
-    }
-
-    fn id(&self) -> i32 {
-        self.id
-    }
-
-    fn hash(&self) -> UInt160 {
-        self.hash
-    }
-
-    fn name(&self) -> &str {
-        "OracleContract"
-    }
-
-    fn methods(&self) -> &[NativeMethod] {
-        &self.methods
-    }
-
-    fn events(
-        &self,
-        _settings: &crate::protocol_settings::ProtocolSettings,
-        _block_height: u32,
-    ) -> Vec<ContractEventDescriptor> {
-        vec![
-            ContractEventDescriptor::new(
-                "OracleRequest".to_string(),
-                vec![
-                    ContractParameterDefinition::new(
-                        "Id".to_string(),
-                        ContractParameterType::Integer,
-                    )
-                    .expect("OracleRequest.Id"),
-                    ContractParameterDefinition::new(
-                        "RequestContract".to_string(),
-                        ContractParameterType::Hash160,
-                    )
-                    .expect("OracleRequest.RequestContract"),
-                    ContractParameterDefinition::new(
-                        "Url".to_string(),
-                        ContractParameterType::String,
-                    )
-                    .expect("OracleRequest.Url"),
-                    ContractParameterDefinition::new(
-                        "Filter".to_string(),
-                        ContractParameterType::String,
-                    )
-                    .expect("OracleRequest.Filter"),
-                ],
-            )
-            .expect("OracleRequest event descriptor"),
-            ContractEventDescriptor::new(
-                "OracleResponse".to_string(),
-                vec![
-                    ContractParameterDefinition::new(
-                        "Id".to_string(),
-                        ContractParameterType::Integer,
-                    )
-                    .expect("OracleResponse.Id"),
-                    ContractParameterDefinition::new(
-                        "OriginalTx".to_string(),
-                        ContractParameterType::Hash256,
-                    )
-                    .expect("OracleResponse.OriginalTx"),
-                ],
-            )
-            .expect("OracleResponse event descriptor"),
-        ]
-    }
-
-    fn invoke(
-        &self,
-        engine: &mut ApplicationEngine,
-        method: &str,
-        args: &[Vec<u8>],
-    ) -> Result<Vec<u8>> {
-        self.invoke_method(engine, method, args)
-    }
-
-    fn post_persist(&self, engine: &mut ApplicationEngine) -> Result<()> {
-        self.cleanup_persisted_responses(engine)?;
-        self.reward_oracle_nodes(engine)
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-}
-
-impl Default for OracleContract {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+mod native_impl;

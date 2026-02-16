@@ -7,54 +7,8 @@ use super::*;
 impl NeoToken {
     pub fn new() -> Self {
         // Method registrations matching C# NeoToken exactly
-        let methods = vec![
-            // NEP-17 standard methods
-            NativeMethod::safe(
-                "symbol".to_string(),
-                0,
-                Vec::new(),
-                ContractParameterType::String,
-            ),
-            NativeMethod::safe(
-                "decimals".to_string(),
-                0,
-                Vec::new(),
-                ContractParameterType::Integer,
-            ),
-            NativeMethod::safe(
-                "totalSupply".to_string(),
-                1 << 15,
-                Vec::new(),
-                ContractParameterType::Integer,
-            )
-            .with_required_call_flags(CallFlags::READ_STATES),
-            NativeMethod::safe(
-                "balanceOf".to_string(),
-                1 << 15,
-                vec![ContractParameterType::Hash160],
-                ContractParameterType::Integer,
-            )
-            .with_required_call_flags(CallFlags::READ_STATES)
-            .with_parameter_names(vec!["account".to_string()]),
-            NativeMethod::unsafe_method(
-                "transfer".to_string(),
-                1 << 17,
-                CallFlags::ALL.bits(),
-                vec![
-                    ContractParameterType::Hash160,
-                    ContractParameterType::Hash160,
-                    ContractParameterType::Integer,
-                    ContractParameterType::Any,
-                ],
-                ContractParameterType::Boolean,
-            )
-            .with_storage_fee(50)
-            .with_parameter_names(vec![
-                "from".to_string(),
-                "to".to_string(),
-                "amount".to_string(),
-                "data".to_string(),
-            ]),
+        let mut methods = <Self as FungibleToken>::ft_nep17_methods();
+        methods.extend(vec![
             // Governance query methods (safe)
             NativeMethod::safe(
                 "unclaimedGas".to_string(),
@@ -228,7 +182,7 @@ impl NeoToken {
                 ContractParameterType::Void,
             )
             .with_parameter_names(vec!["registerPrice".to_string()]),
-        ];
+        ]);
 
         Self { methods }
     }

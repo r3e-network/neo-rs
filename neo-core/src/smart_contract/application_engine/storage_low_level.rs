@@ -97,10 +97,12 @@ impl ApplicationEngine {
 
     pub fn pop_iterator_id(&mut self) -> Result<u32, String> {
         let item = self.pop()?;
-        if let StackItem::InteropInterface(interface) = &item {
-            if let Some(iterator) = interface.as_any().downcast_ref::<IteratorInterop>() {
-                return Ok(iterator.id());
-            }
+        if let StackItem::InteropInterface(interface) = &item
+            && let Some(iterator) = interface.as_any().downcast_ref::<IteratorInterop>()
+        {
+            return Ok(iterator.id());
+        }
+        if matches!(item, StackItem::InteropInterface(_)) {
             return Err("Invalid iterator interop interface".to_string());
         }
         let identifier = item

@@ -9,8 +9,8 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use super::super::models::RpcPlugin;
 use super::super::ClientRpcError;
+use super::super::models::RpcPlugin;
 use neo_json::{JObject, JToken};
 
 pub(super) fn token_as_string(token: JToken, context: &str) -> Result<String, ClientRpcError> {

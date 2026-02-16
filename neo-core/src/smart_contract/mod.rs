@@ -41,6 +41,7 @@ pub mod method_token;
 pub mod native;
 pub mod nef_file;
 pub mod notify_event_args;
+pub mod stack_item_extract;
 pub mod storage_context;
 pub mod storage_item;
 pub mod storage_key;

@@ -3,6 +3,7 @@
 //! This module provides the ContractState struct which represents the state
 //! of a deployed smart contract in the Neo blockchain.
 
+use crate::UInt160;
 use crate::cryptography::Crypto;
 use crate::error::{CoreError, CoreResult};
 use crate::neo_config::ADDRESS_SIZE;
@@ -11,15 +12,14 @@ use crate::neo_io::serializable::helper::{
 };
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::smart_contract::{
-    helper::Helper, i_interoperable::IInteroperable, manifest::ContractManifest,
-    method_token::MethodToken, CallFlags,
+    CallFlags, helper::Helper, i_interoperable::IInteroperable, manifest::ContractManifest,
+    method_token::MethodToken,
 };
-use crate::UInt160;
-use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use neo_vm::StackItem;
 use num_traits::ToPrimitive;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// Represents the state of a deployed smart contract.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

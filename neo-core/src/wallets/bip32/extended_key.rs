@@ -4,23 +4,23 @@
 #![allow(unused_assignments)]
 
 use super::key_path::KeyPath;
-use crate::cryptography::{ECCurve, ECPoint, ECC};
+use crate::cryptography::{ECC, ECCurve, ECPoint};
 use hmac::{Hmac, Mac};
 use num_bigint::BigUint;
 use num_traits::Zero;
-use once_cell::sync::Lazy;
-use p256::elliptic_curve::bigint::ArrayEncoding;
 use p256::elliptic_curve::Curve;
+use p256::elliptic_curve::bigint::ArrayEncoding;
 use sha2::Sha512;
+use std::sync::LazyLock;
 use zeroize::Zeroize;
 
 type HmacSha512 = Hmac<Sha512>;
 
-static SECP256R1_ORDER: Lazy<BigUint> =
-    Lazy::new(|| BigUint::from_bytes_be(&p256::NistP256::ORDER.to_be_byte_array()));
+static SECP256R1_ORDER: LazyLock<BigUint> =
+    LazyLock::new(|| BigUint::from_bytes_be(&p256::NistP256::ORDER.to_be_byte_array()));
 
-static SECP256K1_ORDER: Lazy<BigUint> =
-    Lazy::new(|| BigUint::from_bytes_be(&k256::Secp256k1::ORDER.to_be_byte_array()));
+static SECP256K1_ORDER: LazyLock<BigUint> =
+    LazyLock::new(|| BigUint::from_bytes_be(&k256::Secp256k1::ORDER.to_be_byte_array()));
 
 #[derive(Clone, Zeroize)]
 #[zeroize(drop)]

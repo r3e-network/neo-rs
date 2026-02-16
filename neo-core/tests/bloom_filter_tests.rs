@@ -1,5 +1,5 @@
-use neo_core::cryptography::bloom_filter::BloomFilter;
 use neo_core::cryptography::CryptoError;
+use neo_core::cryptography::bloom_filter::BloomFilter;
 
 fn sample_data(id: u8) -> Vec<u8> {
     vec![id, id.wrapping_mul(3), id.wrapping_add(5)]

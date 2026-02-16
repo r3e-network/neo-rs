@@ -37,8 +37,8 @@ use crate::instruction::Instruction;
 use crate::op_code::OpCode;
 use neo_io::MemoryReader;
 use parking_lot::RwLock;
-use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::ptr;
 use std::sync::Arc;
@@ -261,8 +261,8 @@ impl Script {
                     }
                 }
                 OpCode::TRY => {
-                    let catch_offset = instruction.operand_as::<i8>()?;
-                    let finally_offset = instruction.operand_as::<i8>()?;
+                    let catch_offset = instruction.token_i8();
+                    let finally_offset = instruction.token_i8_1();
 
                     // Jump offsets are relative to the next instruction
                     let next_ip = ip + instruction.size();
@@ -546,16 +546,10 @@ impl Script {
             )));
         }
 
-        // Get the catch and finally offsets (signed 16-bit values)
+        // Get the catch and finally offsets (signed 8-bit values)
         let operand = instruction.operand();
-        let catch_offset = i32::from(i16::from_le_bytes([
-            *operand.first().unwrap_or(&0),
-            *operand.get(1).unwrap_or(&0),
-        ]));
-        let finally_offset = i32::from(i16::from_le_bytes([
-            *operand.get(2).unwrap_or(&0),
-            *operand.get(3).unwrap_or(&0),
-        ]));
+        let catch_offset = i32::from(*operand.first().unwrap_or(&0) as i8);
+        let finally_offset = i32::from(*operand.get(1).unwrap_or(&0) as i8);
 
         // Calculate the absolute positions
         let catch_position = self.get_jump_offset(position, catch_offset)?;

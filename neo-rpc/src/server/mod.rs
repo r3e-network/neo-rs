@@ -34,8 +34,8 @@ pub use rpc_error::RpcError as ServerRpcError;
 pub use rpc_exception::RpcException;
 pub use rpc_method_attribute::RpcMethodDescriptor;
 pub use rpc_server::{
-    build_tls_config_from_settings, get_server, register_server, remove_server, RpcCallback,
-    RpcHandler, RpcServer, SERVERS,
+    RpcCallback, RpcHandler, RpcServer, SERVERS, build_tls_config_from_settings, get_server,
+    register_server, remove_server,
 };
 pub use rpc_server_application_logs::RpcServerApplicationLogs;
 pub use rpc_server_blockchain::RpcServerBlockchain;

@@ -46,6 +46,11 @@ impl BinarySerializer {
         )
     }
 
+    /// Deserialize a [`StackItem`] with default VM limits and no reference counter.
+    pub fn deserialize_default(data: &[u8]) -> Result<StackItem, String> {
+        Self::deserialize(data, &ExecutionEngineLimits::default(), None)
+    }
+
     /// Deserialize using explicit limits (mirrors the C# overload).
     pub fn deserialize_with_limits(
         reader: &mut MemoryReader<'_>,
@@ -209,6 +214,11 @@ impl BinarySerializer {
             limits.max_item_size as usize,
             limits.max_stack_size as usize,
         )
+    }
+
+    /// Serialize a stack item with default VM limits.
+    pub fn serialize_default(item: &StackItem) -> Result<Vec<u8>, String> {
+        Self::serialize(item, &ExecutionEngineLimits::default())
     }
 
     /// Serialize a stack item using explicit limits.

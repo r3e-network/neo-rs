@@ -254,13 +254,17 @@ mod tests {
         assert!(StackItem::Integer(BigInt::from(-1)).as_bool().unwrap());
 
         assert!(StackItem::from_byte_string(vec![1u8]).as_bool().unwrap());
-        assert!(!StackItem::from_byte_string(Vec::<u8>::new())
-            .as_bool()
-            .unwrap());
+        assert!(
+            !StackItem::from_byte_string(Vec::<u8>::new())
+                .as_bool()
+                .unwrap()
+        );
         assert!(!StackItem::from_byte_string(vec![0u8]).as_bool().unwrap());
-        assert!(StackItem::from_byte_string(vec![0u8, 1u8])
-            .as_bool()
-            .unwrap());
+        assert!(
+            StackItem::from_byte_string(vec![0u8, 1u8])
+                .as_bool()
+                .unwrap()
+        );
 
         // Test buffer values
         assert!(StackItem::from_buffer(vec![1u8]).as_bool().unwrap());
@@ -268,19 +272,27 @@ mod tests {
         assert!(StackItem::from_buffer(vec![0u8]).as_bool().unwrap());
 
         // Test array values
-        assert!(StackItem::from_array(vec![StackItem::Null])
-            .as_bool()
-            .unwrap());
-        assert!(StackItem::from_array(Vec::<StackItem>::new())
-            .as_bool()
-            .unwrap());
+        assert!(
+            StackItem::from_array(vec![StackItem::Null])
+                .as_bool()
+                .unwrap()
+        );
+        assert!(
+            StackItem::from_array(Vec::<StackItem>::new())
+                .as_bool()
+                .unwrap()
+        );
 
-        assert!(StackItem::from_struct(vec![StackItem::Null])
-            .as_bool()
-            .unwrap());
-        assert!(StackItem::from_struct(Vec::<StackItem>::new())
-            .as_bool()
-            .unwrap());
+        assert!(
+            StackItem::from_struct(vec![StackItem::Null])
+                .as_bool()
+                .unwrap()
+        );
+        assert!(
+            StackItem::from_struct(Vec::<StackItem>::new())
+                .as_bool()
+                .unwrap()
+        );
 
         // Test map values
         let mut map = BTreeMap::new();

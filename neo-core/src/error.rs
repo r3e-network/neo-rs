@@ -137,9 +137,7 @@ pub enum CoreError {
     InvalidPassword,
 
     /// Buffer overflow or underflow
-    #[error(
-        "Buffer overflow: attempted to read {requested} bytes, but only {available} available"
-    )]
+    #[error("Buffer overflow: attempted to read {requested} bytes, but only {available} available")]
     BufferOverflow {
         /// Amount of space requested
         requested: usize,

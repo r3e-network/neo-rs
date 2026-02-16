@@ -3,20 +3,20 @@
 //! This module provides the ContractManagement native contract which manages
 //! all deployed smart contracts on the Neo blockchain.
 
+use crate::UInt160;
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
 use crate::neo_io::{MemoryReader, Serializable};
 use crate::persistence::{DataCache, StoreCache};
+use crate::smart_contract::ContractParameterType;
+use crate::smart_contract::StorageKey;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::contract_state::{ContractState, NefFile};
 use crate::smart_contract::i_interoperable::IInteroperable;
 use crate::smart_contract::manifest::ContractManifest;
 use crate::smart_contract::native::{NativeContract, NativeMethod, PolicyContract};
-use crate::smart_contract::ContractParameterType;
-use crate::smart_contract::StorageKey;
-use crate::UInt160;
-use neo_vm::{ExecutionEngineLimits, StackItem};
+use neo_vm::StackItem;
 use num_traits::ToPrimitive;
 use parking_lot::RwLock;
 use std::collections::HashMap;
@@ -114,16 +114,13 @@ impl ContractManagement {
             return StackItem::null();
         }
 
-        BinarySerializer::deserialize(data, &ExecutionEngineLimits::default(), None)
+        BinarySerializer::deserialize_default(data)
             .unwrap_or_else(|_| StackItem::from_byte_string(data.to_vec()))
     }
 
     pub(super) fn serialize_contract_state(contract: &ContractState) -> Result<Vec<u8>> {
-        BinarySerializer::serialize(
-            &contract.to_stack_item()?,
-            &ExecutionEngineLimits::default(),
-        )
-        .map_err(|e| Error::serialization(format!("Failed to serialize contract state: {e}")))
+        BinarySerializer::serialize_default(&contract.to_stack_item()?)
+            .map_err(|e| Error::serialization(format!("Failed to serialize contract state: {e}")))
     }
 
     pub fn deserialize_contract_state(bytes: &[u8]) -> Result<ContractState> {
@@ -133,9 +130,7 @@ impl ContractManagement {
             ));
         }
 
-        if let Ok(item) =
-            BinarySerializer::deserialize(bytes, &ExecutionEngineLimits::default(), None)
-        {
+        if let Ok(item) = BinarySerializer::deserialize_default(bytes) {
             if let Ok(contract) = Self::contract_state_from_stack_item(item) {
                 return Ok(contract);
             }
@@ -154,7 +149,7 @@ impl ContractManagement {
             _ => {
                 return Err(Error::deserialization(
                     "ContractState stack item must be array or struct".to_string(),
-                ))
+                ));
             }
         };
 

@@ -3,8 +3,8 @@
 //! Benchmarks for Neo Virtual Machine instruction execution, stack operations,
 //! and script execution with realistic workloads.
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use neo_vm::{op_code::OpCode, ExecutionEngine, Script, ScriptBuilder, VMState};
+use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
+use neo_vm::{ExecutionEngine, Script, ScriptBuilder, VMState, op_code::OpCode};
 
 /// Creates a script that performs arithmetic operations
 fn create_arithmetic_script(iterations: usize) -> Script {

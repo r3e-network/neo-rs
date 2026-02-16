@@ -8,7 +8,8 @@ fn main() {
 
     if env::var("PROTOC").is_err() {
         if let Ok(path) = protoc_bin_vendored::protoc_bin_path() {
-            env::set_var("PROTOC", path);
+            // SAFETY: build scripts are single-process setup steps and set PROTOC before use.
+            unsafe { env::set_var("PROTOC", path) };
         }
     }
 

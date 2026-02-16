@@ -315,12 +315,12 @@ pub fn witness_from_json(json: &JObject) -> Result<Witness, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base64::engine::general_purpose::STANDARD as BASE64;
     use base64::Engine as _;
+    use base64::engine::general_purpose::STANDARD as BASE64;
     use neo_core::network::p2p::payloads::oracle_response_code::OracleResponseCode;
     use neo_core::{Signer, TransactionAttribute, WitnessCondition};
     use neo_json::JArray;
-    use neo_primitives::{UInt256, WitnessScope, ADDRESS_SIZE};
+    use neo_primitives::{ADDRESS_SIZE, UInt256, WitnessScope};
 
     #[test]
     fn to_script_hash_accepts_address() {
@@ -618,9 +618,11 @@ mod tests {
         assert_eq!(parsed.signers().len(), 1);
         let parsed_signer = &parsed.signers()[0];
         assert_eq!(parsed_signer.account, signer.account);
-        assert!(parsed_signer
-            .scopes
-            .contains(WitnessScope::CUSTOM_CONTRACTS));
+        assert!(
+            parsed_signer
+                .scopes
+                .contains(WitnessScope::CUSTOM_CONTRACTS)
+        );
         assert_eq!(parsed_signer.allowed_contracts, signer.allowed_contracts);
         assert_eq!(parsed_signer.allowed_groups.len(), 1);
         assert_eq!(parsed_signer.rules.len(), 1);

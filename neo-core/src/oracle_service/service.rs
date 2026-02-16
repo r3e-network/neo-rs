@@ -23,11 +23,11 @@ use std::time::{Duration, SystemTime};
 use thiserror::Error;
 use tokio::task::JoinHandle;
 
+pub(super) use super::OracleServiceSettings;
 #[cfg(feature = "oracle")]
 pub(super) use super::https::OracleHttpsProtocol;
 #[cfg(feature = "oracle")]
 pub(super) use super::neofs::OracleNeoFsProtocol;
-pub(super) use super::OracleServiceSettings;
 
 const REFRESH_INTERVAL: Duration = Duration::from_secs(3 * 60);
 const FINISHED_CACHE_TTL: Duration = Duration::from_secs(3 * 24 * 60 * 60);
@@ -162,18 +162,17 @@ impl OracleService {
         }
 
         // Check if we've seen this URL recently
-        if let Some(entry) = dedup_cache.get(url) {
-            if let Ok(elapsed) = now.duration_since(entry.timestamp) {
-                if elapsed < DEDUP_CACHE_TTL {
-                    tracing::debug!(
-                        target: "neo::oracle",
-                        request_id,
-                        url = %url,
-                        "Duplicate request detected (recent)"
-                    );
-                    return true;
-                }
-            }
+        if let Some(entry) = dedup_cache.get(url)
+            && let Ok(elapsed) = now.duration_since(entry.timestamp)
+            && elapsed < DEDUP_CACHE_TTL
+        {
+            tracing::debug!(
+                target: "neo::oracle",
+                request_id,
+                url = %url,
+                "Duplicate request detected (recent)"
+            );
+            return true;
         }
 
         // Mark URL as in-flight

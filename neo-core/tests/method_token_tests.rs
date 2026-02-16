@@ -1,6 +1,6 @@
 use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
-use neo_core::smart_contract::method_token::MethodToken;
 use neo_core::smart_contract::CallFlags;
+use neo_core::smart_contract::method_token::MethodToken;
 use neo_primitives::UInt160;
 
 fn serialize_token(token: &MethodToken) -> Vec<u8> {

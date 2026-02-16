@@ -20,9 +20,9 @@ pub mod server_capability;
 pub mod unknown_capability;
 
 pub use archival_node_capability::archival_node;
-pub use disable_compression_capability::{disable_compression, DisableCompressionCapability};
+pub use disable_compression_capability::{DisableCompressionCapability, disable_compression};
 pub use full_node_capability::full_node;
-pub use node_capability::{NodeCapability, MAX_UNKNOWN_CAPABILITY_DATA};
+pub use node_capability::{MAX_UNKNOWN_CAPABILITY_DATA, NodeCapability};
 pub use node_capability_type::NodeCapabilityType;
-pub use server_capability::{tcp_server, ws_server, ServerCapability};
+pub use server_capability::{ServerCapability, tcp_server, ws_server};
 pub use unknown_capability::{unknown, unknown_from_byte};

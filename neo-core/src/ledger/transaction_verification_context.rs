@@ -1,5 +1,5 @@
 use crate::network::p2p::payloads::{
-    oracle_response::OracleResponse, transaction_attribute::TransactionAttribute, Transaction,
+    Transaction, oracle_response::OracleResponse, transaction_attribute::TransactionAttribute,
 };
 use crate::persistence::DataCache;
 use crate::smart_contract::native::GasToken;

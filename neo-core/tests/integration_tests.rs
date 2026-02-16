@@ -5,12 +5,12 @@
 
 //! Integration tests for the Neo Core module.
 
+use neo_core::ContainsTransactionType;
 use neo_core::big_decimal::BigDecimal;
 use neo_core::builders::{SignerBuilder, TransactionBuilder, WitnessBuilder};
 use neo_core::events::{EventHandler, EventManager};
 use neo_core::hardfork::{Hardfork, HardforkManager};
-use neo_core::ContainsTransactionType;
-use neo_primitives::{UInt160, UInt256, UINT160_SIZE, UINT256_SIZE};
+use neo_primitives::{UINT160_SIZE, UINT256_SIZE, UInt160, UInt256};
 
 // Imports for tests moved to neo-node (Phase 2 refactoring):
 // use neo_core::protocol_settings::ProtocolSettings;
@@ -28,8 +28,8 @@ use neo_primitives::{UInt160, UInt256, UINT160_SIZE, UINT256_SIZE};
 use num_bigint::BigInt;
 
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
     Arc,
+    atomic::{AtomicBool, Ordering},
 };
 
 fn to_hex(bytes: &[u8], little_endian: bool) -> String {

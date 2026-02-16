@@ -202,11 +202,8 @@ impl NativeContract for NeoToken {
                 vote_to: None,
                 last_gas_per_vote: BigInt::zero(),
             };
-            let bytes = BinarySerializer::serialize(
-                &state.to_stack_item(),
-                &ExecutionEngineLimits::default(),
-            )
-            .map_err(CoreError::native_contract)?;
+            let bytes = BinarySerializer::serialize_default(&state.to_stack_item())
+                .map_err(CoreError::native_contract)?;
             engine.set_storage(account_key, StorageItem::from_bytes(bytes))?;
         }
 

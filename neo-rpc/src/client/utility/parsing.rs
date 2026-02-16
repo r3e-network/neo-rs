@@ -1,4 +1,4 @@
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use neo_core::network::payloads::oracle_response_code::OracleResponseCode;
 use neo_json::{JObject, JToken};
 use serde_json::Value as JsonValue;

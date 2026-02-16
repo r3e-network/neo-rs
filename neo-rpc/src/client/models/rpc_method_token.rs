@@ -9,7 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use neo_core::smart_contract::{method_token::MethodToken, CallFlags};
+use neo_core::smart_contract::{CallFlags, method_token::MethodToken};
 use neo_json::JObject;
 use neo_primitives::UInt160;
 /// RPC method token helper matching C# `RpcMethodToken`
@@ -162,11 +162,7 @@ fn parse_call_flags(value: &str) -> Option<CallFlags> {
         result |= flag;
     }
 
-    if matched {
-        Some(result)
-    } else {
-        None
-    }
+    if matched { Some(result) } else { None }
 }
 
 fn parse_u16_field(json: &JObject, field: &str) -> Result<u16, String> {
@@ -210,10 +206,12 @@ mod tests {
         assert_eq!(parsed.method_token.method, "balanceOf");
         assert!(parsed.method_token.has_return_value);
         assert_eq!(parsed.method_token.parameters_count, 1);
-        assert!(parsed
-            .method_token
-            .call_flags
-            .contains(CallFlags::READ_ONLY));
+        assert!(
+            parsed
+                .method_token
+                .call_flags
+                .contains(CallFlags::READ_ONLY)
+        );
     }
 
     #[test]
@@ -230,14 +228,18 @@ mod tests {
 
         let parsed = RpcMethodToken::from_json(&json).unwrap();
         assert_eq!(parsed.method_token.parameters_count, 2);
-        assert!(parsed
-            .method_token
-            .call_flags
-            .contains(CallFlags::READ_STATES));
-        assert!(parsed
-            .method_token
-            .call_flags
-            .contains(CallFlags::WRITE_STATES));
+        assert!(
+            parsed
+                .method_token
+                .call_flags
+                .contains(CallFlags::READ_STATES)
+        );
+        assert!(
+            parsed
+                .method_token
+                .call_flags
+                .contains(CallFlags::WRITE_STATES)
+        );
     }
 
     #[test]

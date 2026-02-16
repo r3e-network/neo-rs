@@ -80,11 +80,14 @@ fn test_script_parsing() {
     let mut instruction_count = 0;
 
     while position < script.len() {
-        if let Ok(ins) = script.get_instruction(position) {
-            instruction_count += 1;
-            position += ins.size();
-        } else {
-            break;
+        match script.get_instruction(position) {
+            Ok(ins) => {
+                instruction_count += 1;
+                position += ins.size();
+            }
+            _ => {
+                break;
+            }
         }
     }
 
@@ -143,16 +146,19 @@ fn test_script_with_pushdata() {
     let mut instruction_count = 0;
 
     while position < script.len() {
-        if let Ok(ins) = script.get_instruction(position) {
-            instruction_count += 1;
-            position += ins.size();
+        match script.get_instruction(position) {
+            Ok(ins) => {
+                instruction_count += 1;
+                position += ins.size();
 
-            // Prevent infinite loops
-            if instruction_count > 10 {
+                // Prevent infinite loops
+                if instruction_count > 10 {
+                    break;
+                }
+            }
+            _ => {
                 break;
             }
-        } else {
-            break;
         }
     }
 
@@ -176,11 +182,14 @@ fn test_script_instruction_iteration() {
     let mut instruction_count = 0;
 
     while position < script.len() {
-        if let Ok(ins) = script.get_instruction(position) {
-            instruction_count += 1;
-            position += ins.size();
-        } else {
-            break;
+        match script.get_instruction(position) {
+            Ok(ins) => {
+                instruction_count += 1;
+                position += ins.size();
+            }
+            _ => {
+                break;
+            }
         }
     }
 

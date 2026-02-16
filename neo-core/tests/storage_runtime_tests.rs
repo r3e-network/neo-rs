@@ -12,7 +12,7 @@ use neo_core::smart_contract::manifest::{
 use neo_core::smart_contract::storage_context::StorageContext;
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::smart_contract::{StorageItem, StorageKey};
-use neo_core::{constants, UInt160};
+use neo_core::{UInt160, constants};
 use neo_vm::{OpCode, StackItem};
 use std::sync::Arc;
 

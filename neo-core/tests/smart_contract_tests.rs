@@ -4,7 +4,7 @@
 //! Note: This file contains basic tests that can run at the core level.
 //! More advanced VM and smart contract tests will be in their respective crates.
 
-use neo_core::cryptography::crypto_utils::{murmur, NeoHash};
+use neo_core::cryptography::crypto_utils::{NeoHash, murmur};
 use neo_core::{Transaction, UInt160, UInt256};
 use std::str::FromStr;
 
@@ -191,8 +191,8 @@ fn test_signature_verification_data() {
 /// Test witness and signer functionality (core to smart contract execution)
 #[test]
 fn test_witness_and_signer_functionality() {
-    use neo_core::network::p2p::payloads::{Signer, Witness};
     use neo_core::WitnessScope;
+    use neo_core::network::p2p::payloads::{Signer, Witness};
 
     // Create a basic witness
     let witness = Witness::new_with_scripts(vec![0x01, 0x02], vec![0x03, 0x04]);
@@ -209,8 +209,8 @@ fn test_witness_and_signer_functionality() {
 /// Test transaction with signers (required for smart contract execution)
 #[test]
 fn test_transaction_with_signers() {
-    use neo_core::network::p2p::payloads::Signer;
     use neo_core::WitnessScope;
+    use neo_core::network::p2p::payloads::Signer;
 
     let mut tx = Transaction::new();
     tx.set_script(vec![0x01, 0x02, 0x03]);

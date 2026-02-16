@@ -25,11 +25,7 @@ impl JBoolean {
     /// Converts to a floating point number (1 if true, 0 if false)
     #[must_use]
     pub const fn as_number(&self) -> f64 {
-        if self.value {
-            1.0
-        } else {
-            0.0
-        }
+        if self.value { 1.0 } else { 0.0 }
     }
 
     /// Converts to string

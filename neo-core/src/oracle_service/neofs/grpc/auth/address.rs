@@ -1,5 +1,5 @@
-use super::super::super::proto::neofs_v2;
 use super::super::super::NeoFsRequest;
+use super::super::super::proto::neofs_v2;
 
 pub(crate) fn build_neofs_grpc_address(
     request: &NeoFsRequest,

@@ -147,11 +147,10 @@ fn csharp_ut_witness_condition_nesting_binary_roundtrip_and_overflow() {
     };
     let bytes = overflow_or.to_array().expect("serialize");
     let mut reader = MemoryReader::new(&bytes);
-    assert!(WitnessCondition::deserialize_with_depth(
-        &mut reader,
-        WitnessCondition::MAX_NESTING_DEPTH
-    )
-    .is_err());
+    assert!(
+        WitnessCondition::deserialize_with_depth(&mut reader, WitnessCondition::MAX_NESTING_DEPTH)
+            .is_err()
+    );
 
     let overflow_and = WitnessCondition::And {
         conditions: vec![WitnessCondition::And {
@@ -162,11 +161,10 @@ fn csharp_ut_witness_condition_nesting_binary_roundtrip_and_overflow() {
     };
     let bytes = overflow_and.to_array().expect("serialize");
     let mut reader = MemoryReader::new(&bytes);
-    assert!(WitnessCondition::deserialize_with_depth(
-        &mut reader,
-        WitnessCondition::MAX_NESTING_DEPTH
-    )
-    .is_err());
+    assert!(
+        WitnessCondition::deserialize_with_depth(&mut reader, WitnessCondition::MAX_NESTING_DEPTH)
+            .is_err()
+    );
 
     let overflow_not = WitnessCondition::Not {
         condition: Box::new(WitnessCondition::Not {
@@ -177,11 +175,10 @@ fn csharp_ut_witness_condition_nesting_binary_roundtrip_and_overflow() {
     };
     let bytes = overflow_not.to_array().expect("serialize");
     let mut reader = MemoryReader::new(&bytes);
-    assert!(WitnessCondition::deserialize_with_depth(
-        &mut reader,
-        WitnessCondition::MAX_NESTING_DEPTH
-    )
-    .is_err());
+    assert!(
+        WitnessCondition::deserialize_with_depth(&mut reader, WitnessCondition::MAX_NESTING_DEPTH)
+            .is_err()
+    );
 }
 
 #[test]

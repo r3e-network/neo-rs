@@ -9,15 +9,15 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
+use super::super::ClientRpcError;
 use super::super::models::{
     RpcAccount, RpcApplicationLog, RpcContractState, RpcInvokeResult, RpcNep11Balances,
     RpcNep11Transfers, RpcNep17Balances, RpcNep17Transfers, RpcPeers, RpcPlugin, RpcRawMemPool,
     RpcRequest, RpcResponse, RpcTransaction, RpcTransferOut, RpcUnclaimedGas,
     RpcValidateAddressResult, RpcValidator, RpcVersion,
 };
-use super::super::ClientRpcError;
 use crate::RpcError;
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use neo_core::big_decimal::BigDecimal;
 use neo_core::config::ProtocolSettings;
 use neo_core::network::p2p::payloads::block::Block;
@@ -38,7 +38,7 @@ use super::helpers::{
     parse_plugins, token_as_boolean, token_as_number, token_as_object, token_as_string,
 };
 use super::hooks::RpcRequestOutcome;
-use super::{RpcClient, RpcClientHooks, MAX_JSON_NESTING, RPC_NAME_REGEX};
+use super::{MAX_JSON_NESTING, RPC_NAME_REGEX, RpcClient, RpcClientHooks};
 
 impl RpcClient {
     /// Creates a configurable builder for the RPC client.
@@ -118,7 +118,7 @@ impl RpcClient {
                 return Err(ClientRpcError::new(
                     -32700,
                     "Invalid response format".to_string(),
-                ))
+                ));
             }
         };
 

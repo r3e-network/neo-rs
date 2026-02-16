@@ -17,11 +17,15 @@ use super::{
     native_contract::{NativeContract, NativeMethod},
     policy_contract::PolicyContract,
 };
+use crate::UInt160;
 use crate::cryptography::ECPoint;
 use crate::error::{CoreError, CoreResult};
 use crate::hardfork::Hardfork;
 use crate::persistence::{i_read_only_store::IReadOnlyStoreGeneric, seek_direction::SeekDirection};
 use crate::protocol_settings::ProtocolSettings;
+use crate::smart_contract::Contract;
+use crate::smart_contract::ContractParameterType;
+use crate::smart_contract::StorageItem;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::call_flags::CallFlags;
@@ -30,19 +34,14 @@ use crate::smart_contract::manifest::{ContractEventDescriptor, ContractParameter
 use crate::smart_contract::native::ledger_contract::LedgerContract;
 use crate::smart_contract::storage_context::StorageContext;
 use crate::smart_contract::storage_key::StorageKey;
-use crate::smart_contract::Contract;
-use crate::smart_contract::ContractParameterType;
-use crate::smart_contract::StorageItem;
-use crate::UInt160;
-use lazy_static::lazy_static;
-use neo_vm::{stack_item::StackItem, ExecutionEngineLimits};
+use neo_vm::stack_item::StackItem;
 use num_bigint::BigInt;
 use num_traits::{Signed, ToPrimitive, Zero};
 use std::any::Any;
+use std::sync::LazyLock;
 
-lazy_static! {
-    static ref NEO_HASH: UInt160 = Helper::get_contract_hash(&UInt160::zero(), 0, "NeoToken");
-}
+static NEO_HASH: LazyLock<UInt160> =
+    LazyLock::new(|| Helper::get_contract_hash(&UInt160::zero(), 0, "NeoToken"));
 
 /// NEO native token contract implementation.
 ///
@@ -77,6 +76,14 @@ impl NeoToken {
     const DATOSHI_FACTOR: i64 = 100_000_000;
     /// Default register price: 1000 GAS (in Datoshi)
     const DEFAULT_REGISTER_PRICE: i64 = 1000_00000000;
+
+    pub(super) fn serialize_stack_item(item: &StackItem) -> CoreResult<Vec<u8>> {
+        BinarySerializer::serialize_default(item).map_err(CoreError::native_contract)
+    }
+
+    pub(super) fn deserialize_stack_item(bytes: &[u8]) -> CoreResult<StackItem> {
+        BinarySerializer::deserialize_default(bytes).map_err(CoreError::native_contract)
+    }
 }
 
 // Include implementation files

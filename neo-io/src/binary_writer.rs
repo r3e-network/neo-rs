@@ -1,4 +1,4 @@
-use crate::{serializable::Serializable, IoResult};
+use crate::{IoResult, serializable::Serializable};
 
 /// A sequential binary writer for serializing Neo protocol data in little-endian format.
 ///

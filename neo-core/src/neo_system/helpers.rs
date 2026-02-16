@@ -10,7 +10,7 @@ use std::sync::Arc;
 use tracing::info;
 
 use crate::error::{CoreError, CoreResult};
-use crate::events::{broadcast_plugin_event, PluginEvent};
+use crate::events::{PluginEvent, broadcast_plugin_event};
 
 use super::NeoSystem;
 

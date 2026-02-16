@@ -3,11 +3,11 @@
 //! Provides LRU caching for recent state roots to reduce disk I/O
 //! during block validation and state synchronization.
 
+use crate::UInt256;
 use crate::persistence::cache::LruCache;
 use crate::state_service::state_root::StateRoot;
-use crate::UInt256;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Default capacity for the state root cache.
 pub const DEFAULT_ROOT_CACHE_CAPACITY: usize = 1000;

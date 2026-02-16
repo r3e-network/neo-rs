@@ -1,4 +1,4 @@
-use crate::io::{serializable::helper, IoError, IoResult, MemoryReader, Serializable};
+use crate::io::{IoError, IoResult, MemoryReader, Serializable, serializable::helper};
 
 /// Extension helpers for [`MemoryReader`] mirroring
 /// `Neo.Extensions.IO.MemoryReaderExtensions`.

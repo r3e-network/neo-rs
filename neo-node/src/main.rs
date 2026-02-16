@@ -19,15 +19,16 @@ mod startup;
 mod tee_integration;
 mod wallet_provider;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::Parser;
 use cli::NodeCli;
 use config::{
-    resolve_application_logs_store_path, resolve_state_service_store_path,
-    resolve_tokens_tracker_store_path, DbftSettings, NodeConfig,
+    DbftSettings, NodeConfig, resolve_application_logs_store_path,
+    resolve_state_service_store_path, resolve_tokens_tracker_store_path,
 };
 use consensus::DbftConsensusController;
 use neo_core::{
+    UnhandledExceptionPolicy,
     application_logs::ApplicationLogsService,
     i_event_handlers::{ICommittedHandler, ICommittingHandler, IWalletChangedHandler},
     neo_system::NeoSystem,
@@ -40,7 +41,6 @@ use neo_core::{
     },
     tokens_tracker::{TokensTracker, TokensTrackerService},
     wallets::{IWalletProvider, Nep6Wallet, Wallet as CoreWallet},
-    UnhandledExceptionPolicy,
 };
 use neo_rpc::server::{
     RpcServer, RpcServerApplicationLogs, RpcServerBlockchain, RpcServerNode, RpcServerOracle,
@@ -137,7 +137,9 @@ async fn inner_main() -> Result<()> {
     );
 
     if read_only_storage {
-        bail!("read-only storage mode is only supported with --check-* flags; cannot start the node in read-only mode");
+        bail!(
+            "read-only storage mode is only supported with --check-* flags; cannot start the node in read-only mode"
+        );
     }
 
     let store_provider = startup::select_store_provider(backend_name.as_deref(), storage_config)?;
@@ -325,10 +327,10 @@ async fn inner_main() -> Result<()> {
     let _ = pump_shutdown_tx.send(true);
     let _ = metrics_handle.await;
 
-    if let Some(server) = rpc_server {
-        if let Some(mut guard) = server.try_write() {
-            guard.stop_rpc_server();
-        }
+    if let Some(server) = rpc_server
+        && let Some(mut guard) = server.try_write()
+    {
+        guard.stop_rpc_server();
     }
 
     system

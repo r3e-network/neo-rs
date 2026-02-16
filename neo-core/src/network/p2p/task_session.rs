@@ -6,11 +6,11 @@
 //! translation below keeps the same fields and behaviour so that the ported
 //! `TaskManager` can rely on identical semantics.
 
+use crate::UInt256;
 use crate::network::p2p::{
     capabilities::NodeCapability,
-    payloads::{block::Block, VersionPayload},
+    payloads::{VersionPayload, block::Block},
 };
-use crate::UInt256;
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 

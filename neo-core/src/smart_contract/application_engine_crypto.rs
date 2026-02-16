@@ -1,9 +1,9 @@
 //! ApplicationEngine.Crypto - matches C# Neo.SmartContract.ApplicationEngine.Crypto.cs
 
-use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::ApplicationEngine;
-use neo_vm::execution_engine::ExecutionEngine;
+use crate::smart_contract::call_flags::CallFlags;
 use neo_vm::VmResult;
+use neo_vm::execution_engine::ExecutionEngine;
 use sha2::{Digest, Sha256};
 
 /// The price of CheckSig in GAS (1 << 15 = 32768 * 30 = 983040)
@@ -154,7 +154,7 @@ impl ApplicationEngine {
         public_key: &[u8],
         signature: &[u8],
     ) -> Result<bool, String> {
-        use p256::ecdsa::{signature::Verifier, Signature, VerifyingKey};
+        use p256::ecdsa::{Signature, VerifyingKey, signature::Verifier};
 
         if signature.len() != 64 {
             return Ok(false);

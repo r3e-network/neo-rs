@@ -812,7 +812,7 @@ fn parse_parameter_type(name: &str) -> WalletResult<ContractParameterType> {
         other => {
             return Err(WalletError::Other(format!(
                 "Unsupported contract parameter type: {other}"
-            )))
+            )));
         }
     };
 

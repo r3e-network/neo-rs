@@ -2,6 +2,9 @@
 
 use crate::error::CoreError;
 use crate::smart_contract::i_interoperable::IInteroperable;
+use crate::smart_contract::manifest::stack_item_helpers::{
+    decode_interoperable_array, expect_struct_items,
+};
 use crate::smart_contract::manifest::{ContractEventDescriptor, ContractMethodDescriptor};
 use neo_vm::StackItem;
 use serde::{Deserialize, Serialize};
@@ -134,39 +137,14 @@ impl ContractAbi {
 
 impl IInteroperable for ContractAbi {
     fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
-        let StackItem::Struct(struct_item) = stack_item else {
-            return Err(CoreError::invalid_format(
-                "ContractAbi expects Struct stack item",
-            ));
-        };
-        let items = struct_item.items();
-        if items.len() < 2 {
-            return Err(CoreError::invalid_format(format!(
-                "ContractAbi stack item must contain 2 elements, found {}",
-                items.len()
-            )));
+        let items = expect_struct_items(&stack_item, "ContractAbi", 2)?;
+
+        if let Some(methods) = decode_interoperable_array::<ContractMethodDescriptor>(&items[0])? {
+            self.methods = methods;
         }
 
-        if let Ok(method_items) = items[0].as_array() {
-            self.methods = method_items
-                .iter()
-                .map(|item| {
-                    let mut method = ContractMethodDescriptor::default();
-                    method.from_stack_item(item.clone())?;
-                    Ok(method)
-                })
-                .collect::<Result<Vec<_>, CoreError>>()?;
-        }
-
-        if let Ok(event_items) = items[1].as_array() {
-            self.events = event_items
-                .iter()
-                .map(|item| {
-                    let mut event = ContractEventDescriptor::default();
-                    event.from_stack_item(item.clone())?;
-                    Ok(event)
-                })
-                .collect::<Result<Vec<_>, CoreError>>()?;
+        if let Some(events) = decode_interoperable_array::<ContractEventDescriptor>(&items[1])? {
+            self.events = events;
         }
         Ok(())
     }

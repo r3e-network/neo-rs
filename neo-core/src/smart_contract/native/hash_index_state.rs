@@ -1,10 +1,10 @@
 //! HashIndexState - matches C# Neo.SmartContract.Native.HashIndexState exactly
 
+use crate::UInt256;
 use crate::error::CoreError;
 use crate::smart_contract::i_interoperable::IInteroperable;
-use crate::UInt256;
+use crate::smart_contract::stack_item_extract::{extract_bytes, extract_u32};
 use neo_vm::StackItem;
-use num_traits::ToPrimitive;
 
 /// State for hash index tracking (matches C# HashIndexState)
 #[derive(Clone, Debug, Default)]
@@ -25,25 +25,23 @@ impl HashIndexState {
 
 impl IInteroperable for HashIndexState {
     fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
-        if let StackItem::Struct(struct_item) = stack_item {
-            let items = struct_item.items();
-            if items.len() < 2 {
-                return Ok(());
-            }
+        let StackItem::Struct(struct_item) = stack_item else {
+            return Ok(());
+        };
+        let items = struct_item.items();
+        if items.len() < 2 {
+            return Ok(());
+        }
 
-            if let Ok(bytes) = items[0].as_bytes() {
-                if bytes.len() == 32 {
-                    if let Ok(hash) = UInt256::from_bytes(&bytes) {
-                        self.hash = hash;
-                    }
-                }
-            }
+        if let Some(bytes) = extract_bytes(&items[0])
+            && bytes.len() == 32
+            && let Ok(hash) = UInt256::from_bytes(&bytes)
+        {
+            self.hash = hash;
+        }
 
-            if let Ok(integer) = items[1].as_int() {
-                if let Some(idx) = integer.to_u32() {
-                    self.index = idx;
-                }
-            }
+        if let Some(idx) = extract_u32(&items[1]) {
+            self.index = idx;
         }
         Ok(())
     }

@@ -4,7 +4,7 @@ use crate::network::{NetworkError, NetworkResult};
 use std::io::IoSlice;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
-use tokio::time::{timeout, Duration};
+use tokio::time::{Duration, timeout};
 
 /// Initial buffer capacity for reading small messages.
 const INITIAL_READ_CAPACITY: usize = 256;

@@ -2,7 +2,7 @@
 
 use neo_consensus::BlockData;
 use neo_core::network::p2p::payloads::Block;
-use neo_crypto::{ecc::generate_keypair, ECCurve};
+use neo_crypto::{ECCurve, ecc::generate_keypair};
 use neo_vm::op_code::OpCode;
 
 #[tokio::test]

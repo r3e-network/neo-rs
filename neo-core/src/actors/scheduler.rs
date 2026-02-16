@@ -1,7 +1,7 @@
 use super::actor_ref::ActorRef;
 use std::any::Any;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tokio::runtime::Handle;
 use tokio::sync::Notify;

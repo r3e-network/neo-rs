@@ -59,13 +59,14 @@
 // modifications are permitted.
 
 use super::payloads::{
+    InventoryType, VersionPayload,
     block::Block,
     get_block_by_index_payload::GetBlockByIndexPayload,
     header::Header,
-    inv_payload::{InvPayload, HEADER_PREFETCH_COUNT, MAX_HASHES_COUNT},
-    InventoryType, VersionPayload,
+    inv_payload::{HEADER_PREFETCH_COUNT, InvPayload, MAX_HASHES_COUNT},
 };
 use super::task_session::TaskSession;
+use crate::UInt256;
 use crate::akka::{
     Actor, ActorContext, ActorRef, ActorResult, Cancelable, EventStreamHandle, Props, Terminated,
 };
@@ -73,7 +74,6 @@ use crate::ledger::{PersistCompleted, RelayResult, VerifyResult};
 use crate::neo_system::NeoSystemContext;
 use crate::network::p2p::{NetworkMessage, ProtocolMessage, RemoteNodeCommand};
 use crate::smart_contract::native::LedgerContract;
-use crate::UInt256;
 use async_trait::async_trait;
 use std::any::Any;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -742,11 +742,11 @@ impl TaskManager {
 
         for entry in self.sessions.values() {
             let mut matches = false;
-            if let Some(index) = block_index {
-                if let Some(stored) = entry.session.received_block.get(&index) {
-                    let mut candidate = stored.clone();
-                    matches = candidate.hash() == *hash;
-                }
+            if let Some(index) = block_index
+                && let Some(stored) = entry.session.received_block.get(&index)
+            {
+                let mut candidate = stored.clone();
+                matches = candidate.hash() == *hash;
             } else {
                 for stored in entry.session.received_block.values() {
                     let mut candidate = stored.clone();
@@ -858,13 +858,14 @@ impl Actor for TaskManagerActor {
                         self.state.attach_system(context, ctx);
                         self.schedule_timer(ctx);
                     }
-                    TaskManagerCommand::Register { version } => {
-                        if let Some(sender) = ctx.sender() {
+                    TaskManagerCommand::Register { version } => match ctx.sender() {
+                        Some(sender) => {
                             self.state.register_session(sender, version, ctx);
-                        } else {
+                        }
+                        _ => {
                             warn!(target: "neo", "register command without sender");
                         }
-                    }
+                    },
                     TaskManagerCommand::Update { last_block_index } => {
                         if let Some(sender) = ctx.sender() {
                             self.state.update_session(&sender, last_block_index);

@@ -1,10 +1,10 @@
 use super::helpers::{create_validators_with_keys, sign_commit, sign_payload};
+use crate::ConsensusMessageType;
 use crate::messages::{
     ChangeViewMessage, ChangeViewPayloadCompact, CommitMessage, CommitPayloadCompact,
     ConsensusPayload, PreparationPayloadCompact, PrepareRequestMessage, PrepareResponseMessage,
     RecoveryMessage, RecoveryRequestMessage,
 };
-use crate::ConsensusMessageType;
 use crate::{ChangeViewReason, ConsensusEvent, ConsensusService};
 use neo_primitives::UInt256;
 use neo_vm::ScriptBuilder;
@@ -604,14 +604,18 @@ async fn recovery_response_includes_compact_payloads() {
         invocation_script(&[0xAA; 64])
     );
 
-    assert!(recovery
-        .preparation_messages
-        .iter()
-        .any(|msg| msg.validator_index == 0));
-    assert!(recovery
-        .preparation_messages
-        .iter()
-        .any(|msg| msg.validator_index == 2));
+    assert!(
+        recovery
+            .preparation_messages
+            .iter()
+            .any(|msg| msg.validator_index == 0)
+    );
+    assert!(
+        recovery
+            .preparation_messages
+            .iter()
+            .any(|msg| msg.validator_index == 2)
+    );
 
     let commit = recovery
         .commit_messages

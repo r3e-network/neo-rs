@@ -1,4 +1,4 @@
-use crate::{network::p2p::payloads::Transaction, UInt256, Witness};
+use crate::{UInt256, Witness, network::p2p::payloads::Transaction};
 use serde::{Deserialize, Serialize};
 
 use super::block_header::BlockHeader;

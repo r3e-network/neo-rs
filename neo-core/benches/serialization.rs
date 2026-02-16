@@ -3,14 +3,14 @@
 //! Benchmarks for transaction serialization, block serialization, and other
 //! data structure encoding/decoding operations in Neo core.
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use neo_core::{
     extensions::SerializableExtensions,
     io::{BinaryWriter, MemoryReader, Serializable},
-    network::p2p::payloads::{transaction::Transaction, Header, Signer, Witness},
+    network::p2p::payloads::{Header, Signer, Witness, transaction::Transaction},
 };
 use neo_primitives::{UInt160, UInt256};
-use rand::{rngs::OsRng, RngCore};
+use rand::{RngCore, rngs::OsRng};
 
 // Generate random bytes
 fn random_bytes(size: usize) -> Vec<u8> {

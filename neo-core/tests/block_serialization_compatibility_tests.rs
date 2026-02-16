@@ -5,7 +5,7 @@
 
 use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_core::network::p2p::payloads::{
-    signer::Signer, witness::Witness, Block, Header, Transaction,
+    Block, Header, Transaction, signer::Signer, witness::Witness,
 };
 use neo_core::{UInt160, UInt256, WitnessScope};
 
@@ -477,8 +477,8 @@ mod block_serialization_tests {
     /// Test inventory type
     #[test]
     fn test_block_inventory_type() {
-        use neo_core::network::p2p::payloads::i_inventory::IInventory;
         use neo_core::network::p2p::payloads::InventoryType;
+        use neo_core::network::p2p::payloads::i_inventory::IInventory;
 
         let block = Block::new();
         assert_eq!(block.inventory_type(), InventoryType::Block);

@@ -16,7 +16,7 @@ use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::{Contract, ECPoint, KeyPair, Signer, Transaction};
 use neo_primitives::{UInt160, WitnessScope};
 use neo_vm::op_code::OpCode;
-use neo_vm::{stack_item::StackItem, ScriptBuilder};
+use neo_vm::{ScriptBuilder, stack_item::StackItem};
 use num_bigint::BigInt;
 use num_traits::cast::ToPrimitive;
 use std::sync::Arc;
@@ -496,13 +496,13 @@ fn stack_item_to_string(item: &StackItem) -> Result<String, RpcError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base64::{engine::general_purpose, Engine as _};
+    use base64::{Engine as _, engine::general_purpose};
     use mockito::{Matcher, Server};
-    use neo_core::smart_contract::native::GasToken;
     use neo_core::NativeContract;
+    use neo_core::smart_contract::native::GasToken;
     use neo_json::{JArray, JObject, JToken};
-    use neo_vm::op_code::OpCode;
     use neo_vm::ScriptBuilder;
+    use neo_vm::op_code::OpCode;
     use regex::escape;
     use reqwest::Url;
     use std::fs;

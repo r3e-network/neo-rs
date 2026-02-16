@@ -241,10 +241,10 @@ impl ExecutionEngine {
     #[inline(always)]
     fn post_execute_instruction(&mut self, instruction: &Instruction) -> VmResult<()> {
         if self.reference_counter.count() < self.limits.max_stack_size as usize {
-            if let Some(host) = self.interop_host {
-                if let Some(context) = self.current_context().cloned() {
-                    host.post_execute_instruction(self, &context, instruction)?;
-                }
+            if let Some(host) = self.interop_host
+                && let Some(context) = self.current_context().cloned()
+            {
+                host.post_execute_instruction(self, &context, instruction)?;
             }
             return Ok(());
         }
@@ -258,10 +258,10 @@ impl ExecutionEngine {
             )));
         }
 
-        if let Some(host) = self.interop_host {
-            if let Some(context) = self.current_context().cloned() {
-                host.post_execute_instruction(self, &context, instruction)?;
-            }
+        if let Some(host) = self.interop_host
+            && let Some(context) = self.current_context().cloned()
+        {
+            host.post_execute_instruction(self, &context, instruction)?;
         }
 
         Ok(())

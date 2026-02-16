@@ -72,8 +72,8 @@ pub mod witness_scope;
 // Re-export commonly used types
 pub use crate::ledger::VerifyResult;
 // Re-export witness_rule types from root module (avoid duplicate files)
-pub use crate::witness_rule::{WitnessCondition, WitnessRule, WitnessRuleAction};
 pub use crate::IVerifiable;
+pub use crate::witness_rule::{WitnessCondition, WitnessRule, WitnessRuleAction};
 pub use addr_payload::AddrPayload;
 pub use block::Block;
 pub use conflicts::Conflicts;
@@ -97,7 +97,7 @@ pub use oracle_response::OracleResponse;
 pub use oracle_response_code::OracleResponseCode;
 pub use ping_payload::PingPayload;
 pub use signer::Signer;
-pub use transaction::{Transaction, HEADER_SIZE, MAX_TRANSACTION_ATTRIBUTES, MAX_TRANSACTION_SIZE};
+pub use transaction::{HEADER_SIZE, MAX_TRANSACTION_ATTRIBUTES, MAX_TRANSACTION_SIZE, Transaction};
 pub use transaction_attribute::TransactionAttribute;
 pub use version_payload::VersionPayload;
 pub use witness::Witness;

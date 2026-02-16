@@ -4,8 +4,8 @@ use super::{ChainError, ChainResult, ChainState};
 
 /// Maximum allowed time drift for block timestamps (in seconds)
 const MAX_TIME_DRIFT_SECS: u64 = 900; // 15 minutes
-use neo_primitives::constants::{MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK};
 use neo_primitives::UInt256;
+use neo_primitives::constants::{MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Result of block validation

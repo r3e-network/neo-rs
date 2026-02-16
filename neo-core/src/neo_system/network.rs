@@ -8,8 +8,8 @@ use std::sync::Arc;
 
 use tokio::sync::oneshot;
 
-use super::helpers::to_core_error;
 use super::NeoSystem;
+use super::helpers::to_core_error;
 use crate::error::{CoreError, CoreResult};
 use crate::network::p2p::local_node::RelayInventory;
 use crate::network::p2p::{

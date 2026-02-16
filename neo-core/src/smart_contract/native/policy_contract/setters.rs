@@ -293,8 +293,7 @@ impl PolicyContract {
             ));
         }
 
-        let contract_hash = UInt160::from_bytes(&args[0])
-            .map_err(|e| Error::invalid_argument(format!("Invalid contract hash: {e}")))?;
+        let contract_hash = Self::parse_hash160_argument(&args[0], "contract hash")?;
         let method = std::str::from_utf8(&args[1])
             .map_err(|_| Error::native_contract("Invalid method name string"))?;
 
@@ -333,9 +332,8 @@ impl PolicyContract {
             fixed_fee,
         };
 
-        let bytes = crate::smart_contract::binary_serializer::BinarySerializer::serialize(
+        let bytes = crate::smart_contract::binary_serializer::BinarySerializer::serialize_default(
             &whitelisted.to_stack_item()?,
-            &neo_vm::execution_engine_limits::ExecutionEngineLimits::default(),
         )
         .map_err(|e| Error::native_contract(format!("Failed to serialize whitelist info: {e}")))?;
 
@@ -371,8 +369,7 @@ impl PolicyContract {
             ));
         }
 
-        let contract_hash = UInt160::from_bytes(&args[0])
-            .map_err(|e| Error::invalid_argument(format!("Invalid contract hash: {e}")))?;
+        let contract_hash = Self::parse_hash160_argument(&args[0], "contract hash")?;
         let method = std::str::from_utf8(&args[1])
             .map_err(|_| Error::native_contract("Invalid method name string"))?;
         let arg_count = Self::parse_u32_argument(&args[2], "argCount")?;
@@ -443,10 +440,8 @@ impl PolicyContract {
             }
 
             let stack_item =
-                crate::smart_contract::binary_serializer::BinarySerializer::deserialize(
+                crate::smart_contract::binary_serializer::BinarySerializer::deserialize_default(
                     &bytes,
-                    &neo_vm::execution_engine_limits::ExecutionEngineLimits::default(),
-                    None,
                 )
                 .map_err(|e| {
                     Error::native_contract(format!("Failed to deserialize whitelist info: {e}"))

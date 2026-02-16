@@ -16,7 +16,7 @@ use neo_crypto::{ECCurve, ECPoint};
 use neo_primitives::{UInt160, UInt256};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{RwLock, mpsc};
 
 // ============================================================================
 // Test Helpers

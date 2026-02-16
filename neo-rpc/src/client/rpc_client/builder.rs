@@ -10,9 +10,9 @@
 // modifications are permitted.
 
 use super::hooks::RpcClientHooks;
-use super::{RpcClient, DEFAULT_HTTP_TIMEOUT};
+use super::{DEFAULT_HTTP_TIMEOUT, RpcClient};
 use crate::RpcError;
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use neo_core::config::ProtocolSettings;
 use reqwest::{Client, Url};
 use std::sync::Arc;

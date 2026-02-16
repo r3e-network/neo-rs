@@ -1,21 +1,21 @@
 //! Inventory handling (inv announcements, getdata, mempool, blocks) for `RemoteNode`.
 use super::RemoteNode;
+use crate::UInt160;
+use crate::UInt256;
 use crate::contains_transaction_type::ContainsTransactionType;
 use crate::cryptography::BloomFilter;
 use crate::ledger::blockchain::BlockchainCommand;
 use crate::neo_io::Serializable;
 use crate::network::p2p::messages::{NetworkMessage, ProtocolMessage};
+use crate::network::p2p::payloads::InventoryType;
 use crate::network::p2p::payloads::get_block_by_index_payload::GetBlockByIndexPayload;
 use crate::network::p2p::payloads::get_blocks_payload::GetBlocksPayload;
 use crate::network::p2p::payloads::inv_payload::{InvPayload, MAX_HASHES_COUNT};
 use crate::network::p2p::payloads::merkle_block_payload::MerkleBlockPayload;
-use crate::network::p2p::payloads::transaction::{Transaction, MAX_TRANSACTION_SIZE};
-use crate::network::p2p::payloads::InventoryType;
+use crate::network::p2p::payloads::transaction::{MAX_TRANSACTION_SIZE, Transaction};
 use crate::network::p2p::payloads::{block::Block, extensible_payload::ExtensiblePayload};
 use crate::network::p2p::task_manager::TaskManagerCommand;
 use crate::smart_contract::native::ledger_contract::LedgerContract;
-use crate::UInt160;
-use crate::UInt256;
 use tracing::{trace, warn};
 
 impl RemoteNode {
@@ -282,13 +282,16 @@ impl RemoteNode {
                     if !self.sent_hashes.try_add(hash) {
                         continue;
                     }
-                    if let Some(transaction) = self.system.try_get_transaction_from_mempool(&hash) {
-                        self.enqueue_message(NetworkMessage::new(ProtocolMessage::Transaction(
-                            transaction,
-                        )))
-                        .await?;
-                    } else {
-                        not_found.push(hash);
+                    match self.system.try_get_transaction_from_mempool(&hash) {
+                        Some(transaction) => {
+                            self.enqueue_message(NetworkMessage::new(
+                                ProtocolMessage::Transaction(transaction),
+                            ))
+                            .await?;
+                        }
+                        _ => {
+                            not_found.push(hash);
+                        }
                     }
                 }
             }
@@ -297,21 +300,24 @@ impl RemoteNode {
                     if !self.sent_hashes.try_add(hash) {
                         continue;
                     }
-                    if let Some(mut block) = self.system.try_get_block(&hash) {
-                        if let Some(flags) = self.bloom_filter_flags(&block) {
-                            let payload = MerkleBlockPayload::create(&mut block, flags);
-                            self.enqueue_message(NetworkMessage::new(
-                                ProtocolMessage::MerkleBlock(payload),
-                            ))
-                            .await?;
-                        } else {
-                            self.enqueue_message(NetworkMessage::new(ProtocolMessage::Block(
-                                block,
-                            )))
-                            .await?;
+                    match self.system.try_get_block(&hash) {
+                        Some(mut block) => {
+                            if let Some(flags) = self.bloom_filter_flags(&block) {
+                                let payload = MerkleBlockPayload::create(&mut block, flags);
+                                self.enqueue_message(NetworkMessage::new(
+                                    ProtocolMessage::MerkleBlock(payload),
+                                ))
+                                .await?;
+                            } else {
+                                self.enqueue_message(NetworkMessage::new(ProtocolMessage::Block(
+                                    block,
+                                )))
+                                .await?;
+                            }
                         }
-                    } else {
-                        not_found.push(hash);
+                        _ => {
+                            not_found.push(hash);
+                        }
                     }
                 }
             }

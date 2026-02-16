@@ -5,8 +5,8 @@
 use super::super::super::extensions::bytes_var_size;
 use super::super::token_transfer_key::TokenTransferKey;
 use super::super::tracker_base::TokenTransferKeyView;
-use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
 use crate::UInt160;
+use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
 use neo_vm::stack_item::ByteString;
 use num_bigint::BigInt;
 use num_traits::Zero;

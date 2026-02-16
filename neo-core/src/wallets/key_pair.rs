@@ -3,20 +3,20 @@
 //! This module provides cryptographic key pair functionality,
 //! converted from the C# Neo KeyPair class (@neo-sharp/src/Neo/Wallets/KeyPair.cs).
 
-use crate::cryptography::{ECCurve, ECDsa, ECC};
+use crate::UInt160;
+use crate::cryptography::{ECC, ECCurve, ECDsa};
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::neo_config::HASH_SIZE;
 use crate::smart_contract::helper::Helper;
 use crate::wallets::helper::Helper as WalletHelper;
-use crate::UInt160;
 use aes::Aes256;
 use base64::Engine;
 use cbc::{
-    cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit},
     Decryptor, Encryptor,
+    cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit},
 };
-use rand::rngs::OsRng;
 use rand::RngCore;
+use rand::rngs::OsRng;
 use scrypt::Params;
 use std::fmt;
 use subtle::ConstantTimeEq;

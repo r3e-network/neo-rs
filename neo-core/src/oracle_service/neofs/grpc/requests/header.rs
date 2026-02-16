@@ -29,7 +29,7 @@ impl OracleNeoFsProtocol {
                 return (
                     OracleResponseCode::Error,
                     "object has no header".to_string(),
-                )
+                );
             }
         };
         let payload = build_neofs_object_payload(header, &object.payload);

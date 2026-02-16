@@ -56,11 +56,7 @@ impl Boolean {
     /// Converts the boolean to a byte array.
     #[must_use]
     pub fn to_bytes(&self) -> Vec<u8> {
-        if self.value {
-            vec![1]
-        } else {
-            vec![0]
-        }
+        if self.value { vec![1] } else { vec![0] }
     }
 }
 

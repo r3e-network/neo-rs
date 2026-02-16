@@ -6,9 +6,9 @@
 // This module exists for backward compatibility and only re-exports items.
 
 pub use neo_crypto::{
-    Base58, BloomFilter, Bls12381Crypto, Crypto, CryptoError, CryptoResult, ECCurve, ECDsa,
+    Base58, BloomFilter, Bls12381Crypto, Crypto, CryptoError, CryptoResult, ECC, ECCurve, ECDsa,
     ECPoint, Ed25519Crypto, HashAlgorithm, Hex, NamedCurveHash, NeoHash, Secp256k1Crypto,
-    Secp256r1Crypto, ECC,
+    Secp256r1Crypto,
 };
 
 /// Merkle tree implementation (moved from neo_cryptography module)

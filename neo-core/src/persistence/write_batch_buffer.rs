@@ -19,7 +19,7 @@ use tracing::{debug, error, trace};
 use crate::{CoreError, CoreResult};
 
 #[cfg(feature = "rocksdb")]
-use rocksdb::{WriteBatch, WriteOptions, DB};
+use rocksdb::{DB, WriteBatch, WriteOptions};
 
 /// Statistics for write batch operations.
 #[derive(Debug, Default)]

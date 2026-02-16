@@ -1,8 +1,8 @@
 //! ContractPermissionDescriptor - matches C# Neo.SmartContract.Manifest.ContractPermissionDescriptor exactly
 
 use super::contract_group::ContractGroup;
-use crate::cryptography::ECPoint;
 use crate::UInt160;
+use crate::cryptography::ECPoint;
 use neo_vm::StackItem;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

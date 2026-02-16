@@ -1,6 +1,6 @@
+use neo_core::UInt160;
 use neo_core::smart_contract::manifest::ContractPermissionDescriptor;
 use neo_core::wallets::KeyPair;
-use neo_core::UInt160;
 
 #[test]
 fn contract_permission_descriptor_equality_matches_csharp() {

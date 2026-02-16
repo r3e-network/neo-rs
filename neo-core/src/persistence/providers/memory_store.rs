@@ -17,7 +17,7 @@ use crate::persistence::{
     i_write_store::IWriteStore,
     seek_direction::SeekDirection,
 };
-use crate::smart_contract::{storage_key::StorageKey, StorageItem};
+use crate::smart_contract::{StorageItem, storage_key::StorageKey};
 use parking_lot::RwLock;
 use std::collections::BTreeMap;
 use std::sync::Arc;

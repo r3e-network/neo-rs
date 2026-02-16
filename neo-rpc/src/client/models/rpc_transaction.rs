@@ -10,8 +10,8 @@
 // modifications are permitted.
 
 use super::vm_state_utils::{vm_state_from_str, vm_state_to_string};
-use neo_core::config::ProtocolSettings;
 use neo_core::Transaction;
+use neo_core::config::ProtocolSettings;
 use neo_json::JObject;
 use neo_primitives::UInt256;
 use neo_vm::VMState;
@@ -76,33 +76,32 @@ impl RpcTransaction {
     /// Matches C# `FromJson`
     pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
         let transaction = super::super::utility::transaction_from_json(json, protocol_settings)?;
+        let Some(confirmations_token) = json.get("confirmations") else {
+            return Ok(Self {
+                transaction,
+                block_hash: None,
+                confirmations: None,
+                block_time: None,
+                vm_state: None,
+            });
+        };
 
-        let (block_hash, confirmations, block_time, vm_state) =
-            if json.get("confirmations").is_some() {
-                let block_hash = json
-                    .get("blockhash")
-                    .and_then(neo_json::JToken::as_string)
-                    .and_then(|s| UInt256::parse(&s).ok());
+        let block_hash = json
+            .get("blockhash")
+            .and_then(neo_json::JToken::as_string)
+            .and_then(|s| UInt256::parse(&s).ok());
 
-                let confirmations = json
-                    .get("confirmations")
-                    .and_then(neo_json::JToken::as_number)
-                    .map(|n| n as u32);
+        let confirmations = confirmations_token.as_number().map(|n| n as u32);
 
-                let block_time = json
-                    .get("blocktime")
-                    .and_then(neo_json::JToken::as_number)
-                    .map(|n| n as u64);
+        let block_time = json
+            .get("blocktime")
+            .and_then(neo_json::JToken::as_number)
+            .map(|n| n as u64);
 
-                let vm_state = json
-                    .get("vmstate")
-                    .and_then(neo_json::JToken::as_string)
-                    .and_then(|s| vm_state_from_str(&s));
-
-                (block_hash, confirmations, block_time, vm_state)
-            } else {
-                (None, None, None, None)
-            };
+        let vm_state = json
+            .get("vmstate")
+            .and_then(neo_json::JToken::as_string)
+            .and_then(|s| vm_state_from_str(&s));
 
         Ok(Self {
             transaction,

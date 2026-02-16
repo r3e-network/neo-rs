@@ -1,10 +1,10 @@
+use crate::UInt160;
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::hardfork::Hardfork;
+use crate::smart_contract::ContractParameterType;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::native::{NativeContract, NativeMethod};
-use crate::smart_contract::ContractParameterType;
-use crate::UInt160;
 
 /// The Treasury native contract.
 pub struct TreasuryContract {

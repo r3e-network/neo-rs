@@ -59,7 +59,7 @@ pub use gas_token::GasToken;
 pub use helpers::NativeHelpers;
 pub use i_hardfork_activable::IHardforkActivable;
 pub use ledger_contract::{LedgerContract, LedgerTransactionStates};
-pub use native_contract::{is_active_for, NativeContract, NativeContractsCache, NativeMethod};
+pub use native_contract::{NativeContract, NativeContractsCache, NativeMethod, is_active_for};
 pub use neo_token::NeoToken;
 pub use notary::{Deposit as NotaryDeposit, Notary};
 pub use oracle_contract::OracleContract;

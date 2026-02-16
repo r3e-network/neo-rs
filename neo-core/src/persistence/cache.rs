@@ -94,22 +94,25 @@ where
 
     /// Gets a value from the cache (production implementation)
     pub fn get(&mut self, key: &K) -> Option<V> {
-        if let Some(value) = self.data.get(key).cloned() {
-            self.move_to_front(key);
+        match self.data.get(key).cloned() {
+            Some(value) => {
+                self.move_to_front(key);
 
-            // Update statistics
-            if self.enable_stats {
-                self.stats.hits += 1;
+                // Update statistics
+                if self.enable_stats {
+                    self.stats.hits += 1;
+                }
+
+                Some(value)
             }
+            _ => {
+                // Update statistics
+                if self.enable_stats {
+                    self.stats.misses += 1;
+                }
 
-            Some(value)
-        } else {
-            // Update statistics
-            if self.enable_stats {
-                self.stats.misses += 1;
+                None
             }
-
-            None
         }
     }
 
@@ -137,19 +140,20 @@ where
 
     /// Removes a value from the cache
     pub fn remove(&mut self, key: &K) -> Option<V> {
-        if let Some(value) = self.data.remove(key) {
-            // Remove from access order
-            if let Some(pos) = self.access_order.iter().position(|k| k == key) {
-                self.access_order.remove(pos);
-            }
+        match self.data.remove(key) {
+            Some(value) => {
+                // Remove from access order
+                if let Some(pos) = self.access_order.iter().position(|k| k == key) {
+                    self.access_order.remove(pos);
+                }
 
-            if self.enable_stats {
-                self.stats.entries = self.data.len();
-            }
+                if self.enable_stats {
+                    self.stats.entries = self.data.len();
+                }
 
-            Some(value)
-        } else {
-            None
+                Some(value)
+            }
+            _ => None,
         }
     }
 
@@ -316,14 +320,15 @@ where
 
     /// Removes a value from the cache
     pub fn remove(&mut self, key: &K) -> Option<V> {
-        if let Some(entry) = self.data.remove(key) {
-            if self.enable_stats {
-                self.stats.entries = self.data.len();
-            }
+        match self.data.remove(key) {
+            Some(entry) => {
+                if self.enable_stats {
+                    self.stats.entries = self.data.len();
+                }
 
-            Some(entry.value)
-        } else {
-            None
+                Some(entry.value)
+            }
+            _ => None,
         }
     }
 

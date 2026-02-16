@@ -33,9 +33,8 @@
 //! ```
 
 use chrono::{DateTime, Utc};
-use once_cell::sync::Lazy;
 use parking_lot::RwLock;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 /// Trait implemented by concrete time sources.
 pub trait TimeSource: Send + Sync {
@@ -59,8 +58,8 @@ impl TimeSource for SystemTimeSource {
 }
 
 /// Global holder for the currently active time source.
-static CURRENT_TIME_SOURCE: Lazy<RwLock<Arc<dyn TimeSource>>> =
-    Lazy::new(|| RwLock::new(Arc::new(SystemTimeSource) as Arc<dyn TimeSource>));
+static CURRENT_TIME_SOURCE: LazyLock<RwLock<Arc<dyn TimeSource>>> =
+    LazyLock::new(|| RwLock::new(Arc::new(SystemTimeSource) as Arc<dyn TimeSource>));
 
 /// Time provider facade replicating the behaviour of the C# implementation.
 #[derive(Debug, Clone, Copy)]

@@ -5,10 +5,10 @@
 //! - Configuration validation
 //! - Seed node resolution
 
-use crate::config::{infer_magic_from_type, NodeConfig};
-use anyhow::{bail, Context, Result};
+use crate::config::{NodeConfig, infer_magic_from_type};
+use anyhow::{Context, Result, bail};
 use neo_core::{
-    persistence::{providers::RocksDBStoreProvider, storage::StorageConfig, IStoreProvider},
+    persistence::{IStoreProvider, providers::RocksDBStoreProvider, storage::StorageConfig},
     protocol_settings::ProtocolSettings,
 };
 use std::{fs, path::Path, sync::Arc};
@@ -396,11 +396,13 @@ mod tests {
 
     #[test]
     fn validate_rejects_unsupported_mempool_max_transactions_per_sender() {
-        let mut cfg = NodeConfig::default();
-        cfg.mempool = Some(crate::config::MempoolSection {
-            max_transactions: Some(10_000),
-            max_transactions_per_sender: Some(100),
-        });
+        let cfg = NodeConfig {
+            mempool: Some(crate::config::MempoolSection {
+                max_transactions: Some(10_000),
+                max_transactions_per_sender: Some(100),
+            }),
+            ..NodeConfig::default()
+        };
         let err = validate_node_config(&cfg, None, None, &cfg.protocol_settings(), false)
             .expect_err("unsupported mempool.max_transactions_per_sender should fail");
         assert!(

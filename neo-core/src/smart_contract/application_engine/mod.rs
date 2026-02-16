@@ -68,6 +68,7 @@
 //! directory to keep individual methods readable while preserving a single Rust
 //! module boundary (matching the C# layout).
 
+use crate::IVerifiable;
 use crate::cryptography::crypto_utils::NeoHash;
 use crate::error::{CoreError as Error, Result};
 use crate::hardfork::Hardfork;
@@ -104,7 +105,6 @@ use crate::smart_contract::storage_context::StorageContext;
 use crate::smart_contract::storage_item::StorageItem;
 use crate::smart_contract::storage_key::StorageKey;
 use crate::smart_contract::trigger_type::TriggerType;
-use crate::IVerifiable;
 use crate::{UInt160, UInt256, WitnessCondition, WitnessRuleAction};
 use neo_vm::evaluation_stack::EvaluationStack;
 use neo_vm::execution_context::ExecutionContext;

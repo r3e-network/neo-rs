@@ -10,8 +10,8 @@
 // modifications are permitted.
 
 use crate::{ContractClient, RpcClient, RpcError};
-use neo_core::smart_contract::native::PolicyContract;
 use neo_core::NativeContract;
+use neo_core::smart_contract::native::PolicyContract;
 use neo_primitives::UInt160;
 use num_traits::cast::ToPrimitive;
 use std::sync::Arc;
@@ -99,11 +99,11 @@ impl PolicyApi {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base64::{engine::general_purpose, Engine as _};
+    use base64::{Engine as _, engine::general_purpose};
     use mockito::{Matcher, Server};
     use neo_json::{JArray, JObject, JToken};
-    use neo_vm::op_code::OpCode;
     use neo_vm::ScriptBuilder;
+    use neo_vm::op_code::OpCode;
     use regex::escape;
     use reqwest::Url;
     use std::net::TcpListener;

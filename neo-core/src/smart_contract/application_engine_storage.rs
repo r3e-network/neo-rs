@@ -202,7 +202,7 @@ fn storage_get_handler(app: &mut ApplicationEngine, _engine: &mut ExecutionEngin
             return Err(map_storage_error(
                 "System.Storage.Get",
                 "Storage key must be a byte array".to_string(),
-            ))
+            ));
         }
     };
 
@@ -238,7 +238,7 @@ fn storage_put_handler(app: &mut ApplicationEngine, _engine: &mut ExecutionEngin
             return Err(map_storage_error(
                 "System.Storage.Put",
                 "Storage value must be a byte array".to_string(),
-            ))
+            ));
         }
     };
 
@@ -252,7 +252,7 @@ fn storage_put_handler(app: &mut ApplicationEngine, _engine: &mut ExecutionEngin
             return Err(map_storage_error(
                 "System.Storage.Put",
                 "Storage key must be a byte array".to_string(),
-            ))
+            ));
         }
     };
 
@@ -281,7 +281,7 @@ fn storage_delete_handler(
             return Err(map_storage_error(
                 "System.Storage.Delete",
                 "Storage key must be a byte array".to_string(),
-            ))
+            ));
         }
     };
 
@@ -332,7 +332,7 @@ fn storage_put_local_handler(
             return Err(map_storage_error(
                 "System.Storage.Local.Put",
                 "Storage value must be a byte array".to_string(),
-            ))
+            ));
         }
     };
 
@@ -346,7 +346,7 @@ fn storage_put_local_handler(
             return Err(map_storage_error(
                 "System.Storage.Local.Put",
                 "Storage key must be a byte array".to_string(),
-            ))
+            ));
         }
     };
 

@@ -1,7 +1,7 @@
 //! Test invoke command - test invokes a script
 
 use super::CommandResult;
-use base64::{engine::general_purpose::STANDARD, Engine};
+use base64::{Engine, engine::general_purpose::STANDARD};
 use neo_rpc::client::RpcClient;
 
 pub async fn execute(client: &RpcClient, script_b64: &str) -> CommandResult {

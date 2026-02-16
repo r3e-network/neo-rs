@@ -531,15 +531,18 @@ impl ApplicationEngine {
             let id = contract.id();
             let name = contract.name().to_string();
             let block_height = self.current_block_index();
-            if let Some(state) = contract.contract_state(&self.protocol_settings, block_height) {
-                self.contracts.entry(hash).or_insert(state);
-            } else {
-                tracing::debug!(
-                    "Native contract {} (id {}) inactive at height {}",
-                    name,
-                    id,
-                    block_height
-                );
+            match contract.contract_state(&self.protocol_settings, block_height) {
+                Some(state) => {
+                    self.contracts.entry(hash).or_insert(state);
+                }
+                _ => {
+                    tracing::debug!(
+                        "Native contract {} (id {}) inactive at height {}",
+                        name,
+                        id,
+                        block_height
+                    );
+                }
             }
         }
 
@@ -619,11 +622,11 @@ impl ApplicationEngine {
     ) -> [u8; 16] {
         let mut data = [0u8; 16];
 
-        if let Some(container) = container {
-            if let Some(transaction) = container.as_any().downcast_ref::<Transaction>() {
-                let hash_bytes = transaction.hash().to_bytes();
-                data.copy_from_slice(&hash_bytes[..16]);
-            }
+        if let Some(container) = container
+            && let Some(transaction) = container.as_any().downcast_ref::<Transaction>()
+        {
+            let hash_bytes = transaction.hash().to_bytes();
+            data.copy_from_slice(&hash_bytes[..16]);
         }
 
         if let Some(block) = persisting_block {

@@ -18,20 +18,20 @@ use neo_core::network::p2p::payloads::{
     Witness,
 };
 use neo_core::network::p2p::{
-    register_message_received_handler, LocalNodeCommand, Message, MessageCommand,
-    MessageHandlerSubscription, TaskManagerCommand,
+    LocalNodeCommand, Message, MessageCommand, MessageHandlerSubscription, TaskManagerCommand,
+    register_message_received_handler,
 };
 use neo_core::persistence::IStore;
 use neo_core::prelude::Serializable;
+use neo_core::smart_contract::ContractParametersContext;
 use neo_core::smart_contract::contract::Contract;
 use neo_core::smart_contract::native::ledger_contract::HashOrIndex;
-use neo_core::smart_contract::native::{helpers::NativeHelpers, LedgerContract, NeoToken};
-use neo_core::smart_contract::ContractParametersContext;
+use neo_core::smart_contract::native::{LedgerContract, NeoToken, helpers::NativeHelpers};
 use neo_core::time_provider::TimeProvider;
 use neo_core::wallets::Wallet;
 use neo_core::{ContainsTransactionType, UInt160, UInt256};
-use neo_vm::op_code::OpCode;
 use neo_vm::ScriptBuilder;
+use neo_vm::op_code::OpCode;
 use parking_lot::Mutex;
 use std::any::Any;
 use std::collections::{HashMap, HashSet};
@@ -263,11 +263,7 @@ impl ConsensusActor {
 
     fn current_time_ms() -> u64 {
         let millis = TimeProvider::current().utc_now_timestamp_millis();
-        if millis < 0 {
-            0
-        } else {
-            millis as u64
-        }
+        if millis < 0 { 0 } else { millis as u64 }
     }
 
     fn start_timer(&mut self, ctx: &ActorContext) {
@@ -406,31 +402,34 @@ impl ConsensusActor {
 
         let mut use_recovery = None;
         if !self.settings.ignore_recovery_logs {
-            if let Some(context) =
-                self.load_recovery_from_store(validator_infos.clone(), Some(my_index))
-            {
-                if context.block_index == block_index {
-                    use_recovery = Some(context);
-                } else {
-                    warn!(target: "neo", "recovery log does not match current height; ignoring");
-                }
-            } else if self.recovery_path.exists() {
-                match ConsensusContext::load(
-                    &self.recovery_path,
-                    validator_infos.clone(),
-                    Some(my_index),
-                ) {
-                    Ok(context) if context.block_index == block_index => {
+            match self.load_recovery_from_store(validator_infos.clone(), Some(my_index)) {
+                Some(context) => {
+                    if context.block_index == block_index {
                         use_recovery = Some(context);
+                    } else {
+                        warn!(target: "neo", "recovery log does not match current height; ignoring");
                     }
-                    Ok(_) => {
-                        warn!(
-                            target: "neo",
-                            "recovery log does not match current height; ignoring"
-                        );
-                    }
-                    Err(err) => {
-                        warn!(target: "neo", %err, "failed to load consensus recovery log");
+                }
+                _ => {
+                    if self.recovery_path.exists() {
+                        match ConsensusContext::load(
+                            &self.recovery_path,
+                            validator_infos.clone(),
+                            Some(my_index),
+                        ) {
+                            Ok(context) if context.block_index == block_index => {
+                                use_recovery = Some(context);
+                            }
+                            Ok(_) => {
+                                warn!(
+                                    target: "neo",
+                                    "recovery log does not match current height; ignoring"
+                                );
+                            }
+                            Err(err) => {
+                                warn!(target: "neo", %err, "failed to load consensus recovery log");
+                            }
+                        }
                     }
                 }
             }
@@ -575,10 +574,13 @@ impl ConsensusActor {
                 if let Some(parent) = self.recovery_path.parent() {
                     let _ = tokio::fs::create_dir_all(parent).await;
                 }
-                if let Err(err) = service.save_context(&self.recovery_path) {
-                    warn!(target: "neo", %err, "failed to persist consensus recovery log");
-                } else {
-                    saved = true;
+                match service.save_context(&self.recovery_path) {
+                    Err(err) => {
+                        warn!(target: "neo", %err, "failed to persist consensus recovery log");
+                    }
+                    _ => {
+                        saved = true;
+                    }
                 }
             }
             if !saved {

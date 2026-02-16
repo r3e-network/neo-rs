@@ -15,7 +15,7 @@ use crate::{
 };
 use serde::Deserialize;
 use serde_json::Value;
-use std::collections::{hash_map::Entry, HashMap};
+use std::collections::{HashMap, hash_map::Entry};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};

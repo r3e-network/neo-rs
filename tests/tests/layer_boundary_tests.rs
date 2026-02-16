@@ -80,12 +80,12 @@ fn parse_neo_dependencies(cargo_toml_path: &Path) -> Vec<String> {
         if in_dependencies && !in_dev_dependencies {
             // Match lines like: neo-primitives = { workspace = true }
             // or: neo-vm = { path = "../neo-vm" }
-            if trimmed.starts_with("neo-") {
-                if let Some(name) = trimmed.split('=').next() {
-                    let dep_name = name.trim().to_string();
-                    if dep_name.starts_with("neo-") {
-                        deps.push(dep_name);
-                    }
+            if trimmed.starts_with("neo-")
+                && let Some(name) = trimmed.split('=').next()
+            {
+                let dep_name = name.trim().to_string();
+                if dep_name.starts_with("neo-") {
+                    deps.push(dep_name);
                 }
             }
         }
@@ -225,13 +225,13 @@ fn test_no_upward_dependencies() {
         let deps = parse_neo_dependencies(&cargo_toml);
 
         for dep in deps {
-            if let Some(dep_layer) = Layer::from_crate_name(&dep) {
-                if dep_layer > crate_layer {
-                    violations.push(format!(
-                        "{} (Layer {:?}) depends on {} (Layer {:?})",
-                        crate_name, crate_layer, dep, dep_layer
-                    ));
-                }
+            if let Some(dep_layer) = Layer::from_crate_name(&dep)
+                && dep_layer > crate_layer
+            {
+                violations.push(format!(
+                    "{} (Layer {:?}) depends on {} (Layer {:?})",
+                    crate_name, crate_layer, dep, dep_layer
+                ));
             }
         }
     }

@@ -9,13 +9,13 @@ use crate::network::p2p::payloads::Witness;
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::{
+    Contract,
     helper::Helper,
     native::helpers::NativeHelpers,
-    native::{role_management::RoleManagement, Role},
-    Contract,
+    native::{Role, role_management::RoleManagement},
 };
 use crate::{IVerifiable, UInt160, UInt256};
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};
 
@@ -313,8 +313,8 @@ impl Default for StateRoot {
 mod multisig_verify_tests {
     use super::*;
     use crate::persistence::data_cache::DataCache;
-    use crate::smart_contract::native::{role_management::RoleManagement, NativeContract, Role};
     use crate::smart_contract::Contract;
+    use crate::smart_contract::native::{NativeContract, Role, role_management::RoleManagement};
     use crate::smart_contract::{StorageItem, StorageKey};
     use crate::wallets::KeyPair;
     use neo_vm::op_code::OpCode;
