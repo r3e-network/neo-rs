@@ -475,12 +475,9 @@ impl OracleContract {
             ));
         }
 
-        let price = i64::from_le_bytes(
-            args[0]
-                .as_slice()
-                .try_into()
-                .map_err(|_| Error::invalid_operation("Invalid price value"))?,
-        );
+        let price = BigInt::from_signed_bytes_le(&args[0])
+            .to_i64()
+            .ok_or_else(|| Error::invalid_operation("Invalid price value"))?;
 
         if price <= 0 {
             return Err(Error::invalid_operation(

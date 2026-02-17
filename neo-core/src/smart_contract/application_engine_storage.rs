@@ -153,6 +153,19 @@ fn map_storage_error(service: &str, error: String) -> VmError {
     }
 }
 
+fn pop_storage_bytes(app: &mut ApplicationEngine, service: &str, label: &str) -> VmResult<Vec<u8>> {
+    let item = app.pop().map_err(|e| map_storage_error(service, e))?;
+    item.as_bytes().map_err(|error| {
+        map_storage_error(
+            service,
+            format!(
+                "Storage {label} conversion failed for {:?}: {error}",
+                item.stack_item_type()
+            ),
+        )
+    })
+}
+
 fn storage_get_context_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
@@ -192,25 +205,13 @@ fn storage_as_read_only_handler(
 }
 
 fn storage_get_handler(app: &mut ApplicationEngine, _engine: &mut ExecutionEngine) -> VmResult<()> {
-    let key_item = app
-        .pop()
-        .map_err(|e| map_storage_error("System.Storage.Get", e))?;
-    let key = match key_item {
-        StackItem::ByteString(bytes) => bytes,
-        StackItem::Buffer(buffer) => buffer.data(),
-        _ => {
-            return Err(map_storage_error(
-                "System.Storage.Get",
-                "Storage key must be a byte array".to_string(),
-            ))
-        }
-    };
-
     let context_item = app
         .pop()
         .map_err(|e| map_storage_error("System.Storage.Get", e))?;
     let context = StorageContext::from_stack_item(&context_item)
         .map_err(|e| map_storage_error("System.Storage.Get", e))?;
+
+    let key = pop_storage_bytes(app, "System.Storage.Get", "key")?;
 
     match app
         .storage_get(context, key)
@@ -228,39 +229,15 @@ fn storage_get_handler(app: &mut ApplicationEngine, _engine: &mut ExecutionEngin
 }
 
 fn storage_put_handler(app: &mut ApplicationEngine, _engine: &mut ExecutionEngine) -> VmResult<()> {
-    let value_item = app
-        .pop()
-        .map_err(|e| map_storage_error("System.Storage.Put", e))?;
-    let value = match value_item {
-        StackItem::ByteString(bytes) => bytes,
-        StackItem::Buffer(buffer) => buffer.data(),
-        _ => {
-            return Err(map_storage_error(
-                "System.Storage.Put",
-                "Storage value must be a byte array".to_string(),
-            ))
-        }
-    };
-
-    let key_item = app
-        .pop()
-        .map_err(|e| map_storage_error("System.Storage.Put", e))?;
-    let key = match key_item {
-        StackItem::ByteString(bytes) => bytes,
-        StackItem::Buffer(buffer) => buffer.data(),
-        _ => {
-            return Err(map_storage_error(
-                "System.Storage.Put",
-                "Storage key must be a byte array".to_string(),
-            ))
-        }
-    };
-
     let context_item = app
         .pop()
         .map_err(|e| map_storage_error("System.Storage.Put", e))?;
     let context = StorageContext::from_stack_item(&context_item)
         .map_err(|e| map_storage_error("System.Storage.Put", e))?;
+
+    let key = pop_storage_bytes(app, "System.Storage.Put", "key")?;
+
+    let value = pop_storage_bytes(app, "System.Storage.Put", "value")?;
 
     app.storage_put(context, key, value)
         .map_err(|e| map_storage_error("System.Storage.Put", e))?;
@@ -271,25 +248,13 @@ fn storage_delete_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
 ) -> VmResult<()> {
-    let key_item = app
-        .pop()
-        .map_err(|e| map_storage_error("System.Storage.Delete", e))?;
-    let key = match key_item {
-        StackItem::ByteString(bytes) => bytes,
-        StackItem::Buffer(buffer) => buffer.data(),
-        _ => {
-            return Err(map_storage_error(
-                "System.Storage.Delete",
-                "Storage key must be a byte array".to_string(),
-            ))
-        }
-    };
-
     let context_item = app
         .pop()
         .map_err(|e| map_storage_error("System.Storage.Delete", e))?;
     let context = StorageContext::from_stack_item(&context_item)
         .map_err(|e| map_storage_error("System.Storage.Delete", e))?;
+
+    let key = pop_storage_bytes(app, "System.Storage.Delete", "key")?;
 
     app.storage_delete(context, key)
         .map_err(|e| map_storage_error("System.Storage.Delete", e))?;
@@ -322,33 +287,9 @@ fn storage_put_local_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
 ) -> VmResult<()> {
-    let value_item = app
-        .pop()
-        .map_err(|e| map_storage_error("System.Storage.Local.Put", e))?;
-    let value = match value_item {
-        StackItem::ByteString(bytes) => bytes,
-        StackItem::Buffer(buffer) => buffer.data(),
-        _ => {
-            return Err(map_storage_error(
-                "System.Storage.Local.Put",
-                "Storage value must be a byte array".to_string(),
-            ))
-        }
-    };
+    let value = pop_storage_bytes(app, "System.Storage.Local.Put", "value")?;
 
-    let key_item = app
-        .pop()
-        .map_err(|e| map_storage_error("System.Storage.Local.Put", e))?;
-    let key = match key_item {
-        StackItem::ByteString(bytes) => bytes,
-        StackItem::Buffer(buffer) => buffer.data(),
-        _ => {
-            return Err(map_storage_error(
-                "System.Storage.Local.Put",
-                "Storage key must be a byte array".to_string(),
-            ))
-        }
-    };
+    let key = pop_storage_bytes(app, "System.Storage.Local.Put", "key")?;
 
     app.storage_put_local(key, value)
         .map_err(|e| map_storage_error("System.Storage.Local.Put", e))?;
@@ -401,6 +342,16 @@ fn storage_find_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
 ) -> VmResult<()> {
+    let context_item = app
+        .pop()
+        .map_err(|e| map_storage_error("System.Storage.Find", e))?;
+    let context = StorageContext::from_stack_item(&context_item)
+        .map_err(|e| map_storage_error("System.Storage.Find", e))?;
+
+    let prefix = app
+        .pop_bytes()
+        .map_err(|e| map_storage_error("System.Storage.Find", e))?;
+
     let options_bits = app
         .pop_integer()
         .map_err(|e| map_storage_error("System.Storage.Find", e))?;
@@ -410,16 +361,6 @@ fn storage_find_handler(
             format!("Invalid FindOptions value: {options_bits}"),
         )
     })?;
-
-    let prefix = app
-        .pop_bytes()
-        .map_err(|e| map_storage_error("System.Storage.Find", e))?;
-
-    let context_item = app
-        .pop()
-        .map_err(|e| map_storage_error("System.Storage.Find", e))?;
-    let context = StorageContext::from_stack_item(&context_item)
-        .map_err(|e| map_storage_error("System.Storage.Find", e))?;
 
     let iterator = app
         .storage_find(context, prefix.clone(), options)

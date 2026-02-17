@@ -63,7 +63,13 @@ impl InteropHost for ApplicationEngine {
         // Phase 2: Commit snapshot and propagate state to caller
         if engine.uncaught_exception().is_none() {
             if let Some(snapshot) = snapshot_cache {
-                snapshot.commit();
+                // `DataCache` is currently shared across execution contexts. Calling `commit()`
+                // on a shared snapshot clears the global change-set and can drop pending writes
+                // before the block-level persistence pipeline flushes them to storage.
+                // Only commit when this context owns the snapshot state exclusively.
+                if std::sync::Arc::strong_count(&snapshot) == 1 {
+                    snapshot.commit();
+                }
             }
 
             if let Some(current_ctx) = engine.current_context() {

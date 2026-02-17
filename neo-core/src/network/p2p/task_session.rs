@@ -14,6 +14,12 @@ use crate::UInt256;
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
+#[derive(Debug, Clone, Copy)]
+struct HeaderRequestState {
+    start_index: u32,
+    requested_at: Instant,
+}
+
 /// Mirrors the per-peer bookkeeping performed by the C# task manager.
 #[derive(Debug, Default)]
 pub struct TaskSession {
@@ -32,6 +38,8 @@ pub struct TaskSession {
     pub last_block_index: u32,
     /// Whether the peer has already been sent the mempool snapshot.
     pub mempool_sent: bool,
+    /// Tracks the last header range request issued to this peer.
+    last_header_request: Option<HeaderRequestState>,
 }
 
 impl TaskSession {
@@ -59,6 +67,7 @@ impl TaskSession {
             is_full_node,
             last_block_index,
             mempool_sent: false,
+            last_header_request: None,
         }
     }
 
@@ -103,6 +112,27 @@ impl TaskSession {
     /// Stores a received block for later validation.
     pub fn store_received_block(&mut self, index: u32, block: Block) {
         self.received_block.insert(index, block);
+    }
+
+    /// Returns true if a header request should be issued for the supplied start index.
+    ///
+    /// This prevents flooding peers with the exact same `GetHeaders` range while
+    /// the blockchain actor is still processing previously received headers.
+    pub fn should_request_headers(&self, start_index: u32, retry_after: Duration) -> bool {
+        match self.last_header_request {
+            None => true,
+            Some(state) => {
+                state.start_index != start_index || state.requested_at.elapsed() >= retry_after
+            }
+        }
+    }
+
+    /// Records the most recent header request.
+    pub fn record_header_request(&mut self, start_index: u32) {
+        self.last_header_request = Some(HeaderRequestState {
+            start_index,
+            requested_at: Instant::now(),
+        });
     }
 
     /// Removes and returns any inventory tasks that exceeded the timeout.

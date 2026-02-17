@@ -845,7 +845,7 @@ impl RemoteNode {
         self.enqueue_message(message).await
     }
 
-    fn on_headers(&mut self, payload: HeadersPayload, ctx: &ActorContext) {
+    async fn on_headers(&mut self, payload: HeadersPayload, ctx: &ActorContext) {
         if let Some(last) = payload.headers.last() {
             self.last_block_index = last.index();
             if let Err(err) = self.system.task_manager.tell_from(
@@ -860,10 +860,15 @@ impl RemoteNode {
 
         if !payload.headers.is_empty() {
             let headers = payload.headers.clone();
-            if let Err(err) = self.system.blockchain.tell_from(
-                BlockchainCommand::Headers(headers.clone()),
-                Some(ctx.self_ref()),
-            ) {
+            if let Err(err) = self
+                .system
+                .blockchain
+                .tell_from_async(
+                    BlockchainCommand::Headers(headers.clone()),
+                    Some(ctx.self_ref()),
+                )
+                .await
+            {
                 warn!(target: "neo", error = %err, "failed to forward headers to blockchain");
             }
 

@@ -35,7 +35,7 @@ impl RemoteNode {
             }
             ProtocolMessage::GetHeaders(payload) => self.on_get_headers(payload.clone()).await,
             ProtocolMessage::Headers(payload) => {
-                self.on_headers(payload.clone(), ctx);
+                self.on_headers(payload.clone(), ctx).await;
                 Ok(())
             }
             ProtocolMessage::Addr(payload) => {
@@ -106,17 +106,19 @@ impl RemoteNode {
             return Err(crate::akka::AkkaError::system(err.to_string()));
         }
 
-        // Flush high-priority messages immediately to reduce latency
-        // For other messages, let the buffer batch them
-        if Self::is_high_priority(message.command()) {
-            if let Err(err) = connection.flush().await {
-                tracing::warn!(
-                    target: "neo",
-                    endpoint = %self.endpoint,
-                    error = %err,
-                    "failed to flush high-priority message"
-                );
+        // Flush every outbound message so protocol-critical requests (headers/getdata/etc.)
+        // are put on the wire immediately instead of waiting for buffer thresholds.
+        if let Err(err) = connection.flush().await {
+            if err.is_timeout() {
+                crate::network::p2p::timeouts::inc_write_timeout();
             }
+            tracing::warn!(
+                target: "neo",
+                endpoint = %self.endpoint,
+                error = %err,
+                "failed to flush outbound message"
+            );
+            return Err(crate::akka::AkkaError::system(err.to_string()));
         }
 
         self.last_sent = std::time::Instant::now();

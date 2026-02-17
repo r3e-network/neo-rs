@@ -285,7 +285,7 @@ impl NeoSystem {
             log_handlers: Arc::new(RwLock::new(Vec::new())),
             logging_handlers: Arc::new(RwLock::new(Vec::new())),
             notify_handlers: Arc::new(RwLock::new(Vec::new())),
-            fast_sync_mode: Arc::new(AtomicBool::new(true)),
+            fast_sync_mode: Arc::new(AtomicBool::new(false)),
         });
 
         if state_service_enabled {

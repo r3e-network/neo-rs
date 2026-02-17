@@ -423,6 +423,16 @@ impl LedgerContract {
         Ok(())
     }
 
+    /// Repairs or updates the persisted current block pointer.
+    pub fn set_current_block_state(
+        &self,
+        snapshot: &DataCache,
+        hash: &UInt256,
+        index: u32,
+    ) -> Result<()> {
+        self.update_current_block_state(snapshot, hash, index)
+    }
+
     pub(crate) fn persist_transaction_states(
         &self,
         snapshot: &DataCache,

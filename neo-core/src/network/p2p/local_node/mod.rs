@@ -96,7 +96,7 @@ pub const PROTOCOL_VERSION: u32 = 0;
 
 /// TCP connection timeout for outbound peer connections.
 /// Prevents resource exhaustion from hanging connections.
-pub const TCP_CONNECTION_TIMEOUT: Duration = Duration::from_secs(10);
+pub const TCP_CONNECTION_TIMEOUT: Duration = Duration::from_secs(6);
 
 mod actor;
 mod actor_impl;

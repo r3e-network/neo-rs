@@ -28,6 +28,12 @@ impl LedgerContext {
         self.best_height.load(Ordering::Relaxed)
     }
 
+    /// Updates in-memory tip trackers without storing block/header bodies.
+    pub fn record_tip(&self, index: u32) {
+        self.best_height.fetch_max(index, Ordering::Relaxed);
+        self.best_header.fetch_max(index, Ordering::Relaxed);
+    }
+
     /// Inserts a transaction into the mempool cache and returns its hash.
     pub fn insert_transaction(&self, transaction: Transaction) -> UInt256 {
         let hash = transaction.hash();

@@ -66,7 +66,10 @@ impl ApplicationEngine {
             key.len() + value_len
         };
 
-        if new_data_size > 0 {
+        // Native contracts (negative contract IDs) are charged through native
+        // method metadata / explicit runtime fees, not via Storage.Put dynamic
+        // byte-cost accounting.
+        if new_data_size > 0 && context.id >= 0 {
             let fee_units = new_data_size as u64;
             let storage_price = self.get_storage_price() as u64;
             self.add_runtime_fee(fee_units.saturating_mul(storage_price))?;

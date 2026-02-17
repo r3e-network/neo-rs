@@ -184,4 +184,28 @@ pub enum LocalNodeCommand {
         /// Local socket address.
         local: SocketAddr,
     },
+    /// Outbound TCP connection established asynchronously.
+    OutboundTcpConnected {
+        /// TCP stream for the established connection.
+        stream: TcpStream,
+        /// Remote endpoint we dialed.
+        endpoint: SocketAddr,
+        /// Local endpoint bound for the connection.
+        local: SocketAddr,
+        /// Whether this outbound target is trusted.
+        is_trusted: bool,
+    },
+    /// Outbound TCP connection attempt failed asynchronously.
+    OutboundTcpFailed {
+        /// Remote endpoint we attempted to dial.
+        endpoint: SocketAddr,
+        /// Whether this outbound target is trusted.
+        is_trusted: bool,
+        /// Human-readable error detail.
+        error: String,
+        /// Whether the failure was a timeout.
+        timed_out: bool,
+        /// Whether the failure was permission denied.
+        permission_denied: bool,
+    },
 }

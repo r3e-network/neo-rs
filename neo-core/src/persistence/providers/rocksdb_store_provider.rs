@@ -99,7 +99,7 @@ impl RocksDBStoreProvider {
     pub fn new(base_config: StorageConfig) -> Self {
         Self {
             base_config,
-            batch_config: BatchCommitConfig::default(),
+            batch_config: BatchCommitConfig::balanced(),
             batch_stats: Arc::new(BatchCommitStats::new()),
             read_cache_config: Some(ReadCacheConfig::default()),
             enable_bloom_filters: true,
@@ -158,6 +158,7 @@ impl IStoreProvider for RocksDBStoreProvider {
         };
         let store = RocksDbStore::open(
             &config,
+            self.batch_config,
             &self.read_cache_config,
             self.enable_bloom_filters,
             self.enable_read_ahead,
@@ -210,6 +211,7 @@ struct RocksDbStore {
 impl RocksDbStore {
     fn open(
         config: &StorageConfig,
+        batch_config: WriteBatchConfig,
         read_cache_config: &Option<ReadCacheConfig>,
         enable_bloom_filters: bool,
         enable_read_ahead: bool,
@@ -234,10 +236,7 @@ impl RocksDbStore {
             Arc::new(DB::open(&options, &config.path)?)
         };
 
-        let batch_committer = Arc::new(BatchCommitter::new(
-            Arc::clone(&db),
-            WriteBatchConfig::default(),
-        ));
+        let batch_committer = Arc::new(BatchCommitter::new(Arc::clone(&db), batch_config));
 
         let read_cache = read_cache_config
             .as_ref()
@@ -252,7 +251,7 @@ impl RocksDbStore {
             db,
             on_new_snapshot: Arc::new(RwLock::new(Vec::new())),
             batch_committer,
-            batch_config: WriteBatchConfig::default(),
+            batch_config,
             read_cache,
             read_ahead_config,
         })
@@ -412,6 +411,14 @@ impl IStore for RocksDbStore {
 
     fn on_new_snapshot(&self, handler: OnNewSnapshotDelegate) {
         self.on_new_snapshot.write().push(handler);
+    }
+
+    fn enable_fast_sync_mode(&self) {
+        RocksDbStore::enable_fast_sync_mode(self);
+    }
+
+    fn disable_fast_sync_mode(&self) {
+        RocksDbStore::disable_fast_sync_mode(self);
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -618,11 +625,18 @@ impl IStoreSnapshot for RocksDbSnapshot {
             return Ok(());
         }
 
-        let ops = batch_guard.len();
         let _start = Instant::now();
 
         if self.use_batch_commit {
             self.batch_committer.try_add(&mut batch_guard);
+            drop(batch_guard);
+            if let Err(err) = self.batch_committer.buffer.force_flush() {
+                error!(target: "neo", error = %err, "rocksdb batch force flush failed");
+                return Err(StorageError::CommitFailed(format!(
+                    "RocksDB force flush failed: {}",
+                    err
+                )));
+            }
             return Ok(());
         }
 
@@ -630,11 +644,7 @@ impl IStoreSnapshot for RocksDbSnapshot {
         mem::swap(&mut *batch_guard, &mut batch);
         drop(batch_guard);
 
-        let mut write_opts = WriteOptions::default();
-        if ops > 10 {
-            write_opts.set_sync(false);
-            write_opts.disable_wal(true);
-        }
+        let write_opts = WriteOptions::default();
 
         self.db.write_opt(batch, &write_opts).map_err(|err| {
             error!(target: "neo", error = %err, "rocksdb snapshot commit failed");
@@ -791,6 +801,9 @@ fn build_db_options(config: &StorageConfig, enable_bloom_filters: bool) -> Optio
     let mut options = Options::default();
     options.create_if_missing(true);
     options.set_error_if_exists(false);
+    if let Ok(parallelism) = std::thread::available_parallelism() {
+        options.increase_parallelism(parallelism.get() as i32);
+    }
     options.set_compression_type(match config.compression_algorithm {
         CompressionAlgorithm::None => rocksdb::DBCompressionType::None,
         CompressionAlgorithm::Lz4 => rocksdb::DBCompressionType::Lz4,
@@ -829,7 +842,11 @@ fn build_db_options(config: &StorageConfig, enable_bloom_filters: bool) -> Optio
 
     // Configure block cache and bloom filters
     let cache_size = config.cache_size.unwrap_or(256 * 1024 * 1024);
+    options.optimize_for_point_lookup((cache_size / 2) as u64);
     let cache = Cache::new_lru_cache(cache_size);
+    let row_cache_size = (cache_size / 4).clamp(64 * 1024 * 1024, 512 * 1024 * 1024);
+    let row_cache = Cache::new_lru_cache(row_cache_size);
+    options.set_row_cache(&row_cache);
     let mut table_options = BlockBasedOptions::default();
     table_options.set_block_cache(&cache);
 

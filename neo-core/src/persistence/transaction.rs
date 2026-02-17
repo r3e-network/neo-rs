@@ -1,6 +1,7 @@
 //! Thin transactional wrapper over `StoreCache` for explicit commit semantics.
 
 use super::{data_cache::DataCacheResult, StoreCache, TrackState, Trackable};
+use crate::persistence::data_cache::DataCacheConfig;
 use crate::persistence::{i_store::IStore, i_store_snapshot::IStoreSnapshot};
 use crate::smart_contract::StorageKey;
 use std::sync::Arc;
@@ -24,8 +25,16 @@ impl StoreTransaction {
 
     /// Creates a transaction backed by a snapshot.
     pub fn from_snapshot(snapshot: Arc<dyn IStoreSnapshot>) -> Self {
+        Self::from_snapshot_with_config(snapshot, DataCacheConfig::default())
+    }
+
+    /// Creates a transaction backed by a snapshot using a custom cache config.
+    pub fn from_snapshot_with_config(
+        snapshot: Arc<dyn IStoreSnapshot>,
+        config: DataCacheConfig,
+    ) -> Self {
         Self {
-            cache: StoreCache::new_from_snapshot(snapshot),
+            cache: StoreCache::new_from_snapshot_with_config(snapshot, config),
         }
     }
 

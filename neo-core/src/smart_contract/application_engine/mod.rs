@@ -216,7 +216,7 @@ struct PendingNativeCall {
 pub struct ApplicationEngine {
     trigger: TriggerType,
     script_container: Option<Arc<dyn IVerifiable>>,
-    persisting_block: Option<Block>,
+    persisting_block: Option<Arc<Block>>,
     protocol_settings: ProtocolSettings,
     gas_limit: i64,
     gas_consumed: i64,

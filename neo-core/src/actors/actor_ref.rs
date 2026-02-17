@@ -64,6 +64,15 @@ impl ActorRef {
         self.tell_from(message, None)
     }
 
+    /// Sends a message to the actor without specifying a sender, awaiting
+    /// mailbox capacity when necessary.
+    pub async fn tell_async<M>(&self, message: M) -> AkkaResult<()>
+    where
+        M: Any + Send + 'static,
+    {
+        self.tell_from_async(message, None).await
+    }
+
     /// Sends a message to the actor specifying the sender.
     /// Uses try_send to avoid blocking when the mailbox is full.
     pub fn tell_from<M>(&self, message: M, sender: Option<ActorRef>) -> AkkaResult<()>
@@ -78,6 +87,41 @@ impl ActorRef {
             ActorChannel::Ractor(ractor_ref) => ractor_ref
                 .cast(BridgeMessage::Mailbox(MailboxMessage::User(envelope)))
                 .map_err(|e| AkkaError::send(format!("{}", e))),
+        }
+    }
+
+    /// Sends a message to the actor specifying the sender.
+    /// Uses a backpressured send for legacy mailboxes so callers can avoid
+    /// dropping critical messages under load.
+    pub async fn tell_from_async<M>(&self, message: M, sender: Option<ActorRef>) -> AkkaResult<()>
+    where
+        M: Any + Send + 'static,
+    {
+        let mut payload = Some((Box::new(message) as Box<dyn Any + Send>, sender));
+        match &self.channel {
+            ActorChannel::Legacy(mailbox) => {
+                let (message, sender) = payload
+                    .take()
+                    .expect("payload must be present when sending to legacy mailbox");
+                mailbox
+                    .send(MailboxCommand::Message(MailboxMessage::User(Envelope {
+                        message,
+                        sender,
+                    })))
+                    .await
+                    .map_err(|e| AkkaError::send(format!("{}", e)))
+            }
+            ActorChannel::Ractor(ractor_ref) => {
+                let (message, sender) = payload
+                    .take()
+                    .expect("payload must be present when sending to ractor mailbox");
+                ractor_ref
+                    .cast(BridgeMessage::Mailbox(MailboxMessage::User(Envelope {
+                        message,
+                        sender,
+                    })))
+                    .map_err(|e| AkkaError::send(format!("{}", e)))
+            }
         }
     }
 

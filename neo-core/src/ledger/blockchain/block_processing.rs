@@ -3,8 +3,6 @@
 //
 
 use super::*;
-#[cfg(feature = "parallel")]
-use rayon::prelude::*;
 
 impl Blockchain {
     pub(super) async fn on_new_block(&self, block: &Block, verify: bool) -> VerifyResult {
@@ -79,19 +77,11 @@ impl Blockchain {
         }
 
         if block_index == current_height + 1 {
-            #[cfg(feature = "parallel")]
-            {
-                let unverified_count = {
-                    let unverified = self._block_cache_unverified.read().await;
-                    unverified.values().map(|e| e.blocks.len()).sum::<usize>()
-                };
-                if unverified_count >= 10 {
-                    self.persist_block_sequence_parallel(block.clone()).await;
-                    return VerifyResult::Succeed;
-                }
+            if self.persist_block_sequence(block.clone()).await {
+                VerifyResult::Succeed
+            } else {
+                VerifyResult::Invalid
             }
-            self.persist_block_sequence(block.clone()).await;
-            VerifyResult::Succeed
         } else {
             if block_index == header_height + 1 {
                 header_cache.add(block.header.clone());
@@ -109,29 +99,16 @@ impl Blockchain {
         entry.blocks.push(block);
     }
 
-    async fn persist_block_sequence(&self, block: Block) {
+    async fn persist_block_sequence(&self, block: Block) -> bool {
         let mut next_index = block.index().saturating_add(1);
-
-        #[cfg(feature = "parallel")]
-        {
-            let unverified_count = {
-                let unverified = self._block_cache_unverified.read().await;
-                unverified.values().map(|e| e.blocks.len()).sum::<usize>()
-            };
-            if unverified_count >= 10 {
-                self.persist_block_sequence_parallel(block).await;
-                return;
-            }
-        }
 
         // Process the first block
         let first_succeeded = self.persist_block_via_system(&block);
         if first_succeeded {
             self.handle_persist_completed(PersistCompleted { block })
                 .await;
-        } else if let Some(context) = &self.system_context {
-            // In fast sync mode, still record the block even if execution failed
-            context.record_block(block);
+        } else {
+            return false;
         }
 
         // Process subsequent blocks from the unverified cache
@@ -161,92 +138,17 @@ impl Blockchain {
             if succeeded {
                 self.handle_persist_completed(PersistCompleted { block: next_block })
                     .await;
-            } else if let Some(context) = &self.system_context {
-                // In fast sync mode, still record the block even if execution failed
-                context.record_block(next_block);
+            } else {
+                warn!(
+                    target: "neo",
+                    index = next_block.index(),
+                    "stopping contiguous persistence sequence after block persist failure"
+                );
+                break;
             }
             next_index = next_index.saturating_add(1);
         }
-    }
-
-    #[cfg(feature = "parallel")]
-    async fn persist_block_sequence_parallel(&self, first_block: Block) {
-        let mut blocks: Vec<Block> = Vec::with_capacity(64);
-        let mut next_index = first_block.index();
-        blocks.push(first_block);
-
-        {
-            let mut unverified = self._block_cache_unverified.write().await;
-            while let Some(entry) = unverified.get_mut(&next_index.saturating_add(1)) {
-                if let Some(block) = entry.blocks.pop() {
-                    next_index = block.index();
-                    blocks.push(block);
-                    if blocks.len() >= 64 {
-                        break;
-                    }
-                } else {
-                    break;
-                }
-            }
-        }
-
-        if blocks.is_empty() {
-            return;
-        }
-
-        let context = match &self.system_context {
-            Some(ctx) => ctx.clone(),
-            None => {
-                for block in blocks {
-                    let _ = self.persist_block_via_system(&block);
-                }
-                return;
-            }
-        };
-
-        let is_fast_sync = context.is_fast_sync_mode();
-
-        let verified: Vec<(bool, Block)> = blocks
-            .into_par_iter()
-            .map(|block| {
-                let succeeded = if is_fast_sync {
-                    self.persist_block_via_system_fast(&block)
-                } else {
-                    self.persist_block_via_system(&block)
-                };
-                (succeeded, block)
-            })
-            .collect();
-
-        for (succeeded, block) in verified {
-            if succeeded {
-                self.handle_persist_completed(PersistCompleted { block })
-                    .await;
-            } else if is_fast_sync {
-                context.record_block(block);
-            }
-        }
-    }
-
-    fn persist_block_via_system_fast(&self, block: &Block) -> bool {
-        let Some(system) = self
-            .system_context
-            .as_ref()
-            .and_then(|ctx| ctx.neo_system())
-        else {
-            return false;
-        };
-
-        match system.persist_block(block.clone()) {
-            Ok(_) => {
-                tracing::debug!(target: "neo", index = block.index(), "fast persisted block");
-                true
-            }
-            Err(e) => {
-                tracing::warn!(target: "neo", index = block.index(), error = %e, "fast persist failed");
-                false
-            }
-        }
+        true
     }
 
     pub(super) async fn on_new_extensible(&self, payload: ExtensiblePayload) -> VerifyResult {

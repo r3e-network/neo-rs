@@ -54,6 +54,8 @@ struct InnerState {
 pub struct DataCacheConfig {
     /// Maximum number of entries in the write cache
     pub max_entries: usize,
+    /// Whether reads should be mirrored into the write cache dictionary.
+    pub track_reads_in_write_cache: bool,
     /// Enable read caching with LRU
     pub enable_read_cache: bool,
     /// Read cache configuration
@@ -70,6 +72,7 @@ impl Default for DataCacheConfig {
     fn default() -> Self {
         Self {
             max_entries: 100000,
+            track_reads_in_write_cache: true,
             enable_read_cache: true,
             read_cache_config: ReadCacheConfig::default(),
             enable_prefetching: true,
@@ -395,6 +398,35 @@ impl DataCache {
         }
     }
 
+    /// Creates an isolated writable fork backed by the same underlying store
+    /// callbacks, with an independent in-memory tracked state.
+    ///
+    /// This is intended for per-transaction execution where writes must not
+    /// leak back unless explicitly merged.
+    pub fn fork_isolated(&self) -> Self {
+        let state = self.state.read();
+        let cloned_state = InnerState {
+            dictionary: state.dictionary.clone(),
+            change_set: state.change_set.clone(),
+        };
+        drop(state);
+
+        Self {
+            state: Arc::new(RwLock::new(cloned_state)),
+            read_only: self.read_only,
+            on_read: Arc::clone(&self.on_read),
+            on_update: Arc::clone(&self.on_update),
+            store_get: self.store_get.as_ref().map(Arc::clone),
+            store_find: self.store_find.as_ref().map(Arc::clone),
+            ref_count: Arc::new(AtomicUsize::new(1)),
+            read_cache: self.read_cache.clone(),
+            config: self.config,
+            pattern_tracker: RwLock::new(AccessPatternTracker::new()),
+            access_seq: AtomicU64::new(0),
+            prefetch_window: RwLock::new(HashSet::new()),
+        }
+    }
+
     /// Gets an item from the cache.
     #[inline]
     pub fn get(&self, key: &StorageKey) -> Option<StorageItem> {
@@ -455,6 +487,9 @@ impl DataCache {
 
     /// Track an item in the write cache without blocking the caller.
     fn track_in_write_cache(&self, key: &StorageKey, item: &StorageItem) {
+        if !self.config.track_reads_in_write_cache {
+            return;
+        }
         let mut state = self.state.write();
         // Check if we're approaching the max entries limit
         if state.dictionary.len() < self.config.max_entries {

@@ -27,6 +27,12 @@ pub trait IStore: IReadOnlyStore + IWriteStore<Vec<u8>, Vec<u8>> + Send + Sync +
     /// Event raised when a new snapshot is created
     fn on_new_snapshot(&self, handler: OnNewSnapshotDelegate);
 
+    /// Enables storage-level fast-sync optimizations when supported.
+    fn enable_fast_sync_mode(&self) {}
+
+    /// Disables storage-level fast-sync optimizations.
+    fn disable_fast_sync_mode(&self) {}
+
     /// Downcast support for concrete implementations.
     fn as_any(&self) -> &dyn Any;
 }

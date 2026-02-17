@@ -8,7 +8,11 @@
 use crate::config::{infer_magic_from_type, NodeConfig};
 use anyhow::{bail, Context, Result};
 use neo_core::{
-    persistence::{providers::RocksDBStoreProvider, storage::StorageConfig, IStoreProvider},
+    persistence::{
+        providers::{rocksdb_store_provider::BatchCommitConfig, RocksDBStoreProvider},
+        storage::StorageConfig,
+        IStoreProvider,
+    },
     protocol_settings::ProtocolSettings,
 };
 use std::{fs, path::Path, sync::Arc};
@@ -29,11 +33,39 @@ pub fn select_store_provider(
     match normalized.as_str() {
         "" | "memory" | "mem" | "inmemory" => Ok(None),
         "rocksdb" | "rocksdbstore" | "rocksdb-store" => {
+            let batch_config = rocksdb_batch_config_from_env();
             let provider: Arc<dyn IStoreProvider> =
-                Arc::new(RocksDBStoreProvider::new(storage_config));
+                Arc::new(RocksDBStoreProvider::new(storage_config).with_batch_config(batch_config));
             Ok(Some(provider))
         }
         other => bail!("unsupported storage backend '{}'", other),
+    }
+}
+
+fn rocksdb_batch_config_from_env() -> BatchCommitConfig {
+    let raw = std::env::var("NEO_ROCKSDB_BATCH_PROFILE").unwrap_or_default();
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "" | "balanced" => BatchCommitConfig::balanced(),
+        "durable" => {
+            info!(target: "neo", profile = "durable", "using RocksDB batch profile");
+            BatchCommitConfig::durable()
+        }
+        "high_throughput" | "high-throughput" | "throughput" => {
+            warn!(
+                target: "neo",
+                profile = "high_throughput",
+                "using RocksDB high-throughput batch profile (reduced crash durability)"
+            );
+            BatchCommitConfig::high_throughput()
+        }
+        other => {
+            warn!(
+                target: "neo",
+                profile = other,
+                "unknown NEO_ROCKSDB_BATCH_PROFILE value; falling back to balanced"
+            );
+            BatchCommitConfig::balanced()
+        }
     }
 }
 

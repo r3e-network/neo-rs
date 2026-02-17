@@ -91,43 +91,36 @@ impl RemoteNode {
                         }
                     }
                     Err(error) => {
-                        // Map timeouts during handshake to the explicit handshake timeout command
-                        // so we can follow the same shutdown path as the timer-based guard.
                         let done = handshake_done.load(Ordering::Relaxed);
                         let is_timeout = error.is_timeout();
-                        let should_treat_as_handshake_timeout = is_timeout && !done;
-                        match (should_treat_as_handshake_timeout, is_timeout) {
-                            (true, true) => {
+                        if is_timeout {
+                            if !done {
                                 warn!(
                                     target: "neo",
                                     endpoint = %endpoint,
                                     "handshake read timed out"
                                 );
                                 timeouts::inc_handshake_timeout();
-                            }
-                            (_, true) => {
+                                // Keep the reader alive; the explicit handshake timer owns teardown.
+                                continue;
+                            } else {
                                 debug!(
                                     target: "neo",
                                     endpoint = %endpoint,
                                     "read loop timed out during active session"
                                 );
                                 timeouts::inc_read_timeout();
-                            }
-                            _ => {
-                                debug!(
-                                    target: "neo",
-                                    endpoint = %endpoint,
-                                    error = %error,
-                                    "read loop encountered network error"
-                                );
+                                continue;
                             }
                         }
-                        let command = if should_treat_as_handshake_timeout {
-                            RemoteNodeCommand::HandshakeTimeout
-                        } else {
-                            RemoteNodeCommand::ConnectionError { error }
-                        };
-                        let _ = actor.tell(command);
+
+                        debug!(
+                            target: "neo",
+                            endpoint = %endpoint,
+                            error = %error,
+                            "read loop encountered network error"
+                        );
+                        let _ = actor.tell(RemoteNodeCommand::ConnectionError { error });
                         break;
                     }
                 }

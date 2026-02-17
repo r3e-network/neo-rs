@@ -81,6 +81,7 @@ sysinfo.workspace = true
 rand = { workspace = true }
 url = { workspace = true }
 num_cpus = { workspace = true }
+mimalloc = { version = "0.1", default-features = false }
 
 [dev-dependencies]
 tempfile.workspace = true

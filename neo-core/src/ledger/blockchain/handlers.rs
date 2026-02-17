@@ -5,6 +5,73 @@
 use super::*;
 
 impl Blockchain {
+    fn find_tip_in_store(
+        ledger_contract: &LedgerContract,
+        store_cache: &StoreCache,
+    ) -> Option<(u32, UInt256)> {
+        if ledger_contract
+            .get_block_hash_by_index(store_cache, 1)
+            .ok()
+            .flatten()
+            .is_none()
+        {
+            return None;
+        }
+
+        let mut low = 1u32;
+        let mut high = 1u32;
+
+        loop {
+            let next = high.saturating_mul(2);
+            if next == high {
+                break;
+            }
+
+            if ledger_contract
+                .get_block_hash_by_index(store_cache, next)
+                .ok()
+                .flatten()
+                .is_some()
+            {
+                low = next;
+                high = next;
+            } else {
+                high = next;
+                break;
+            }
+        }
+
+        if high == low {
+            let hash = ledger_contract
+                .get_block_hash_by_index(store_cache, low)
+                .ok()
+                .flatten()?;
+            return Some((low, hash));
+        }
+
+        let mut left = low;
+        let mut right = high.saturating_sub(1);
+        while left < right {
+            let mid = left + (right - left + 1) / 2;
+            if ledger_contract
+                .get_block_hash_by_index(store_cache, mid)
+                .ok()
+                .flatten()
+                .is_some()
+            {
+                left = mid;
+            } else {
+                right = mid.saturating_sub(1);
+            }
+        }
+
+        let hash = ledger_contract
+            .get_block_hash_by_index(store_cache, left)
+            .ok()
+            .flatten()?;
+        Some((left, hash))
+    }
+
     pub(super) async fn handle_persist_completed(&self, persist: PersistCompleted) {
         let PersistCompleted { mut block } = persist;
         let hash = block.hash();
@@ -55,14 +122,14 @@ impl Blockchain {
         }
 
         if let Some(context) = &self.system_context {
-            if !context.is_fast_sync_mode() {
-                context
-                    .actor_system
-                    .event_stream()
-                    .publish(PersistCompleted {
-                        block: block.clone(),
-                    });
-            }
+            // TaskManager depends on persist notifications to release per-peer
+            // block queues and request subsequent ranges.
+            context
+                .actor_system
+                .event_stream()
+                .publish(PersistCompleted {
+                    block: block.clone(),
+                });
         }
 
         {
@@ -294,12 +361,7 @@ impl Blockchain {
         let hash = block.hash();
         let index = block.index();
 
-        let verify = !self
-            .system_context
-            .as_ref()
-            .map(|c| c.is_fast_sync_mode())
-            .unwrap_or(true);
-        let result = self.on_new_block(&block, verify).await;
+        let result = self.on_new_block(&block, true).await;
 
         if let Some(context) = &self.system_context {
             let inventory = if relay && result == VerifyResult::Succeed {
@@ -486,9 +548,57 @@ impl Blockchain {
             return;
         };
 
-        let ledger = context.ledger();
-        if ledger.block_hash_at(0).is_some() {
-            tracing::debug!(target: "neo", "ledger already contains genesis block; skipping initialization");
+        let store_cache = context.store_cache();
+        let ledger_contract = LedgerContract::new();
+        let persisted_index = ledger_contract.current_index(&store_cache).unwrap_or(0);
+        let persisted_hash = ledger_contract
+            .current_hash(&store_cache)
+            .unwrap_or_else(|_| UInt256::zero());
+        let has_block_one = ledger_contract
+            .get_block_hash_by_index(&store_cache, 1)
+            .ok()
+            .flatten()
+            .is_some();
+
+        if persisted_index == 0 && has_block_one {
+            if let Some((tip_index, tip_hash)) =
+                Self::find_tip_in_store(&ledger_contract, &store_cache)
+            {
+                let snapshot = store_cache.data_cache();
+                if let Err(error) =
+                    ledger_contract.set_current_block_state(snapshot, &tip_hash, tip_index)
+                {
+                    tracing::warn!(
+                        target: "neo",
+                        %error,
+                        tip_index,
+                        "failed to repair persisted current block pointer"
+                    );
+                } else {
+                    tracing::warn!(
+                        target: "neo",
+                        repaired_index = tip_index,
+                        repaired_hash = %tip_hash,
+                        "repaired stale current block pointer from storage"
+                    );
+                }
+                return;
+            }
+
+            tracing::warn!(
+                target: "neo",
+                "detected historical blocks in storage but could not locate tip; skipping genesis re-initialization"
+            );
+            return;
+        }
+
+        if persisted_index > 0 || !persisted_hash.is_zero() {
+            tracing::debug!(
+                target: "neo",
+                persisted_index,
+                persisted_hash = %persisted_hash,
+                "ledger already initialized in storage; skipping genesis initialization"
+            );
             return;
         }
 

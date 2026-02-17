@@ -89,8 +89,11 @@ impl NeoToken {
         PermissionValidator::validate_non_negative(&amount, "Transfer amount")?;
 
         let caller = engine.calling_script_hash();
-        if from != caller && !engine.check_witness_hash(&from)? {
-            return Ok(vec![0]);
+        if from != caller {
+            let witnessed = engine.check_witness_hash(&from)?;
+            if !witnessed {
+                return Ok(vec![0]);
+            }
         }
 
         let snapshot = engine.snapshot_cache();

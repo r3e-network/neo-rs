@@ -81,12 +81,22 @@ use std::sync::Arc;
 use std::time::Duration;
 use tracing::{trace, warn};
 
-/// Interval for task manager housekeeping (optimized for faster sync).
-const TIMER_INTERVAL: Duration = Duration::from_secs(3);
-/// Timeout applied to in-flight inventory requests (reduced for faster recovery).
-const TASK_TIMEOUT: Duration = Duration::from_secs(30);
-/// Maximum concurrent tasks per peer (significantly increased for faster sync).
-const MAX_CONCURRENT_TASKS: u32 = 30;
+/// Interval for task manager housekeeping.
+const TIMER_INTERVAL: Duration = Duration::from_secs(30);
+/// Timeout applied to in-flight inventory requests.
+const TASK_TIMEOUT: Duration = Duration::from_secs(20);
+/// Maximum concurrent tasks per peer.
+const MAX_CONCURRENT_TASKS: u32 = 3;
+/// Maximum number of sequential block heights requested in a single getblkbyidx round.
+///
+/// Smaller batches reduce head-of-line blocking when a slow peer gets assigned
+/// the earliest range needed by persistence.
+const MAX_BLOCK_INDEX_BATCH: u32 = 64;
+/// Number of batch windows to keep in flight globally.
+///
+/// This allows multiple peers to download disjoint height ranges concurrently
+/// without giving any single peer an excessively large assignment.
+const BLOCK_INDEX_WINDOW_MULTIPLIER: u32 = 8;
 const HEADER_TASK_HASH: UInt256 = UInt256 {
     value1: 0,
     value2: 0,
@@ -346,6 +356,7 @@ impl TaskManager {
             .unwrap_or_else(|| ledger.highest_header_index());
         header_height = header_height.max(ledger.highest_header_index());
 
+        let header_request_start = header_height.saturating_add(1);
         if (!self.has_header_task()
             || self
                 .global_inv_tasks
@@ -354,10 +365,13 @@ impl TaskManager {
                 .unwrap_or(0)
                 < MAX_CONCURRENT_TASKS)
             && header_height < session.last_block_index
+            && session.should_request_headers(header_request_start, self.task_timeout)
             && self.increment_inv_task(HEADER_TASK_HASH)
         {
             session.register_inv_task(HEADER_TASK_HASH);
-            let payload = GetBlockByIndexPayload::create(header_height + 1, HEADER_PREFETCH_COUNT);
+            session.record_header_request(header_request_start);
+            let payload =
+                GetBlockByIndexPayload::create(header_request_start, HEADER_PREFETCH_COUNT);
             let message = NetworkMessage::new(ProtocolMessage::GetHeaders(payload));
             if let Err(error) = actor.tell(RemoteNodeCommand::Send(message)) {
                 warn!(
@@ -369,7 +383,8 @@ impl TaskManager {
                 self.decrement_inv_task(&HEADER_TASK_HASH);
                 session.complete_inv_task(&HEADER_TASK_HASH);
             }
-            return;
+            // Keep scheduling block-by-index tasks in the same pass so initial
+            // synchronization can progress on blocks while headers continue to advance.
         }
 
         if current_height < session.last_block_index {
@@ -383,7 +398,8 @@ impl TaskManager {
                 }
             }
 
-            let limit_height = current_height.saturating_add(MAX_HASHES_COUNT as u32);
+            let global_window = MAX_BLOCK_INDEX_BATCH.saturating_mul(BLOCK_INDEX_WINDOW_MULTIPLIER);
+            let limit_height = current_height.saturating_add(global_window);
 
             if start_height <= session.last_block_index && start_height < limit_height {
                 let mut end_height = start_height;
@@ -395,7 +411,7 @@ impl TaskManager {
                     end_height += 1;
                 }
 
-                let count = (end_height - start_height + 1).min(MAX_HASHES_COUNT as u32);
+                let count = (end_height - start_height + 1).min(MAX_BLOCK_INDEX_BATCH);
                 let mut granted = 0u32;
                 for offset in 0..count {
                     let index = start_height + offset;

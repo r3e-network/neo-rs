@@ -24,6 +24,22 @@ impl RemoteNode {
             return;
         }
 
+        if matches!(
+            payload.inventory_type,
+            InventoryType::Consensus | InventoryType::Extensible
+        ) {
+            // Consensus/extensible inventories can arrive at very high frequency on public testnet.
+            // Pulling each item via TaskManager causes sync starvation and relay loops.
+            trace!(
+                target: "neo",
+                endpoint = %self.endpoint,
+                inventory_type = ?payload.inventory_type,
+                count = payload.hashes.len(),
+                "ignoring consensus/extensible inv announcement"
+            );
+            return;
+        }
+
         // Validate inventory count to prevent DoS (matches C# MaxHashesCount)
         if payload.hashes.len() > MAX_HASHES_COUNT {
             warn!(
@@ -170,13 +186,18 @@ impl RemoteNode {
             return Ok(());
         }
 
-        if let Err(err) = self.system.tx_router.tell_from(
-            crate::neo_system::TransactionRouterMessage::Preverify {
-                transaction: transaction.clone(),
-                relay: true,
-            },
-            Some(ctx.self_ref()),
-        ) {
+        if let Err(err) = self
+            .system
+            .tx_router
+            .tell_from_async(
+                crate::neo_system::TransactionRouterMessage::Preverify {
+                    transaction: transaction.clone(),
+                    relay: true,
+                },
+                Some(ctx.self_ref()),
+            )
+            .await
+        {
             warn!(
                 target: "neo",
                 %hash,
@@ -212,10 +233,15 @@ impl RemoteNode {
             "block received from remote node"
         );
 
-        if let Err(err) = self.system.blockchain.tell_from(
-            BlockchainCommand::InventoryBlock { block, relay: true },
-            Some(ctx.self_ref()),
-        ) {
+        if let Err(err) = self
+            .system
+            .blockchain
+            .tell_from_async(
+                BlockchainCommand::InventoryBlock { block, relay: true },
+                Some(ctx.self_ref()),
+            )
+            .await
+        {
             warn!(
                 target: "neo",
                 hash = %hash,
@@ -238,13 +264,18 @@ impl RemoteNode {
         self.pending_known_hashes.remove(&hash);
         self.notify_inventory_completed(hash, None, None, ctx);
         trace!(target: "neo", hash = %hash, "extensible payload received");
-        if let Err(err) = self.system.blockchain.tell_from(
-            BlockchainCommand::InventoryExtensible {
-                payload,
-                relay: true,
-            },
-            Some(ctx.self_ref()),
-        ) {
+        if let Err(err) = self
+            .system
+            .blockchain
+            .tell_from_async(
+                BlockchainCommand::InventoryExtensible {
+                    payload,
+                    relay: false,
+                },
+                Some(ctx.self_ref()),
+            )
+            .await
+        {
             warn!(
                 target: "neo",
                 hash = %hash,

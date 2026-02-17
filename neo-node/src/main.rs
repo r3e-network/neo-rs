@@ -11,6 +11,7 @@ mod health;
 mod hsm_integration;
 #[cfg(feature = "hsm")]
 mod hsm_wallet;
+mod import_acc;
 mod logging;
 mod metrics;
 mod rpc_consensus;
@@ -55,6 +56,9 @@ use tokio::sync::RwLock;
 use tracing::{error, info, warn};
 use wallet_provider::NodeWalletProvider;
 use zeroize::Zeroizing;
+
+#[global_allocator]
+static GLOBAL_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 fn main() -> Result<()> {
     let rt = tokio::runtime::Builder::new_multi_thread()
@@ -177,6 +181,33 @@ async fn inner_main() -> Result<()> {
     .map_err(|e| anyhow::anyhow!(e.to_string()))
     .context("failed to initialise NeoSystem")?;
 
+    if let Some(import_path) = cli.import_acc.as_ref() {
+        let summary = import_acc::import_acc_file(&system, import_path)
+            .context("failed to import blocks from .acc file")?;
+        info!(
+            target: "neo",
+            declared_start = summary.declared_start,
+            declared_count = summary.declared_count,
+            imported = summary.imported,
+            skipped = summary.skipped,
+            final_height = summary.final_height,
+            elapsed_secs = summary.elapsed_secs,
+            "acc import summary"
+        );
+        if cli.import_only {
+            info!(
+                target: "neo",
+                "import completed and --import-only is set; shutting down"
+            );
+            system
+                .shutdown()
+                .await
+                .map_err(|e| anyhow::anyhow!(e.to_string()))
+                .context("failed to shut down NeoSystem after import")?;
+            return Ok(());
+        }
+    }
+
     let _application_logs_service =
         maybe_enable_application_logs(&node_config, &protocol_settings, &system)
             .context("failed to initialise ApplicationLogs")?;
@@ -258,6 +289,9 @@ async fn inner_main() -> Result<()> {
     let pump_health_state = health_state.clone();
     let metrics_handle = tokio::spawn(async move {
         let tick = std::time::Duration::from_secs(1);
+        const FAST_SYNC_ENABLE_LAG: u32 = 5_000;
+        const FAST_SYNC_DISABLE_LAG: u32 = 500;
+        let mut fast_sync_enabled = metrics_system.context().is_fast_sync_mode();
         loop {
             tokio::select! {
                 _ = tokio::time::sleep(tick) => {}
@@ -272,6 +306,38 @@ async fn inner_main() -> Result<()> {
             let block_height = metrics_system.current_block_index();
             let header_height = metrics_system.ledger_context().highest_header_index();
             let header_lag = header_height.saturating_sub(block_height);
+            let max_peer_height = metrics_system.max_peer_block_height().await.unwrap_or(0);
+            let peer_lag = max_peer_height.saturating_sub(block_height);
+            let effective_sync_lag = header_lag.max(peer_lag);
+            let should_enable_fast_sync = if fast_sync_enabled {
+                effective_sync_lag > FAST_SYNC_DISABLE_LAG
+            } else {
+                effective_sync_lag > FAST_SYNC_ENABLE_LAG
+            };
+            if should_enable_fast_sync != fast_sync_enabled {
+                if should_enable_fast_sync {
+                    metrics_system.context().enable_fast_sync_mode();
+                    metrics_system.store().enable_fast_sync_mode();
+                    info!(
+                        target: "neo",
+                        header_lag,
+                        peer_lag,
+                        max_peer_height,
+                        "fast sync mode enabled"
+                    );
+                } else {
+                    metrics_system.context().disable_fast_sync_mode();
+                    metrics_system.store().disable_fast_sync_mode();
+                    info!(
+                        target: "neo",
+                        header_lag,
+                        peer_lag,
+                        max_peer_height,
+                        "fast sync mode disabled"
+                    );
+                }
+                fast_sync_enabled = should_enable_fast_sync;
+            }
 
             let peer_count = metrics_system.peer_count().await.unwrap_or(0);
             let mempool_size = metrics_system.mempool().lock().count() as u32;

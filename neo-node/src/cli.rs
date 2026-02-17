@@ -192,6 +192,17 @@ pub struct NodeCli {
     #[arg(long)]
     pub check_all: bool,
 
+    /// Import blocks from a Neo `.acc` file before starting networking.
+    ///
+    /// The file format is the standard offline package payload used by Neo tooling.
+    /// If you have a `.zip` package, unzip it first and pass the inner `.acc` path.
+    #[arg(long, value_name = "PATH", env = "NEO_IMPORT_ACC")]
+    pub import_acc: Option<PathBuf>,
+
+    /// Exit after finishing `--import-acc` instead of starting the node.
+    #[arg(long, requires = "import_acc")]
+    pub import_only: bool,
+
     /// Enable a lightweight health check server (HTTP on localhost) reporting readiness.
     #[arg(long, value_name = "PORT", env = "NEO_HEALTH_PORT")]
     pub health_port: Option<u16>,

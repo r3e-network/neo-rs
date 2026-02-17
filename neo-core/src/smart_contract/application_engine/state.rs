@@ -10,8 +10,28 @@ impl ApplicationEngine {
         gas_limit: i64,
         diagnostic: Option<Box<dyn IDiagnostic>>,
     ) -> Result<Self> {
+        Self::new_with_shared_block(
+            trigger,
+            script_container,
+            snapshot_cache,
+            persisting_block.map(Arc::new),
+            protocol_settings,
+            gas_limit,
+            diagnostic,
+        )
+    }
+
+    pub fn new_with_shared_block(
+        trigger: TriggerType,
+        script_container: Option<Arc<dyn IVerifiable>>,
+        snapshot_cache: Arc<DataCache>,
+        persisting_block: Option<Arc<Block>>,
+        protocol_settings: ProtocolSettings,
+        gas_limit: i64,
+        diagnostic: Option<Box<dyn IDiagnostic>>,
+    ) -> Result<Self> {
         let nonce_data =
-            Self::initialize_nonce_data(script_container.as_ref(), persisting_block.as_ref());
+            Self::initialize_nonce_data(script_container.as_ref(), persisting_block.as_deref());
         let original_snapshot_cache = Arc::clone(&snapshot_cache);
         let engine = ExecutionEngine::new(Some(JumpTable::default()));
 
@@ -56,6 +76,74 @@ impl ApplicationEngine {
         app.refresh_policy_settings();
         app.register_default_interops()?;
         // Ignore any fees incurred during engine initialization (native contract setup, policy reads).
+        app.fee_consumed = 0;
+        app.gas_consumed = 0;
+
+        if let Some(mut diagnostic) = app.diagnostic.take() {
+            diagnostic.initialized(&mut app);
+            app.diagnostic = Some(diagnostic);
+        }
+
+        Ok(app)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_preloaded_native(
+        trigger: TriggerType,
+        script_container: Option<Arc<dyn IVerifiable>>,
+        snapshot_cache: Arc<DataCache>,
+        persisting_block: Option<Arc<Block>>,
+        protocol_settings: ProtocolSettings,
+        gas_limit: i64,
+        contracts: HashMap<UInt160, ContractState>,
+        native_contract_cache: Arc<Mutex<NativeContractsCache>>,
+        diagnostic: Option<Box<dyn IDiagnostic>>,
+    ) -> Result<Self> {
+        let nonce_data =
+            Self::initialize_nonce_data(script_container.as_ref(), persisting_block.as_deref());
+        let original_snapshot_cache = Arc::clone(&snapshot_cache);
+        let engine = ExecutionEngine::new(Some(JumpTable::default()));
+
+        let mut app = Self {
+            trigger,
+            script_container,
+            persisting_block,
+            protocol_settings,
+            gas_limit,
+            gas_consumed: 0,
+            fee_amount: gas_limit.saturating_mul(FEE_FACTOR),
+            fee_consumed: 0,
+            exec_fee_factor: PolicyContract::DEFAULT_EXEC_FEE_FACTOR * (FEE_FACTOR as u32),
+            storage_price: PolicyContract::DEFAULT_STORAGE_PRICE,
+            call_flags: CallFlags::ALL,
+            vm_engine: VmEngineHost::new(engine),
+            interop_handlers: HashMap::new(),
+            snapshot_cache,
+            original_snapshot_cache,
+            notifications: Vec::new(),
+            logs: Vec::new(),
+            native_registry: NativeRegistry::new(),
+            native_contract_cache,
+            contracts,
+            storage_iterators: HashMap::new(),
+            next_iterator_id: 1,
+            current_script_hash: None,
+            calling_script_hash: None,
+            entry_script_hash: None,
+            invocation_counter: HashMap::new(),
+            pending_native_calls: Vec::new(),
+            nonce_data,
+            random_times: 0,
+            diagnostic,
+            fault_exception: None,
+            states: HashMap::new(),
+            runtime_context: None,
+        };
+
+        app.attach_host();
+        app.refresh_policy_settings();
+        app.register_default_interops()?;
+        // Ignore any fees incurred during engine initialization.
         app.fee_consumed = 0;
         app.gas_consumed = 0;
 
@@ -253,14 +341,14 @@ impl ApplicationEngine {
     /// Returns the timestamp of the block currently being persisted.
     pub fn current_block_timestamp(&self) -> Result<u64, String> {
         self.persisting_block
-            .as_ref()
+            .as_deref()
             .map(|block| block.header.timestamp)
             .ok_or_else(|| "GetTime can only be called with Application trigger.".to_string())
     }
 
     /// Returns the block currently being persisted, if any.
     pub fn persisting_block(&self) -> Option<&Block> {
-        self.persisting_block.as_ref()
+        self.persisting_block.as_deref()
     }
 
     /// Checks if a hardfork is enabled at the current block height.
@@ -379,6 +467,14 @@ impl ApplicationEngine {
 
     pub(super) fn native_contract_cache(&self) -> Arc<Mutex<NativeContractsCache>> {
         Arc::clone(&self.native_contract_cache)
+    }
+
+    pub fn native_contract_cache_handle(&self) -> Arc<Mutex<NativeContractsCache>> {
+        Arc::clone(&self.native_contract_cache)
+    }
+
+    pub fn contracts_snapshot(&self) -> HashMap<UInt160, ContractState> {
+        self.contracts.clone()
     }
 
     /// Returns a clone of the current snapshot cache.

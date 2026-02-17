@@ -1,6 +1,8 @@
 //! StorageContext - matches C# Neo.SmartContract.StorageContext exactly
 
+use neo_vm::stack_item::InteropInterface;
 use neo_vm::StackItem;
+use num_traits::ToPrimitive;
 
 /// The storage context used to read and write data in smart contracts (matches C# StorageContext)
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -72,7 +74,7 @@ impl StorageContext {
 impl StorageContext {
     /// Converts the context to a stack item representation used on the VM stack.
     pub fn to_stack_item(&self) -> StackItem {
-        StackItem::from_byte_string(self.to_bytes().to_vec())
+        StackItem::from_interface(self.clone())
     }
 
     /// Parses a stack item into a storage context.
@@ -83,7 +85,59 @@ impl StorageContext {
                 let data = buffer.data();
                 Self::from_bytes(&data)
             }
-            _ => Err("StorageContext stack representation must be a byte array".to_string()),
+            StackItem::InteropInterface(interface) => interface
+                .as_any()
+                .downcast_ref::<StorageContext>()
+                .cloned()
+                .ok_or_else(|| "StorageContext interop interface is not compatible".to_string()),
+            StackItem::Struct(structure) => {
+                let items = structure.items();
+                Self::from_stack_parts(&items)
+            }
+            StackItem::Array(array) => {
+                let items = array.items();
+                Self::from_stack_parts(&items)
+            }
+            _ => Err(format!(
+                "StorageContext stack representation must be a byte array or interop context, got {:?}",
+                item.stack_item_type()
+            )),
         }
+    }
+
+    fn from_stack_parts(items: &[StackItem]) -> Result<Self, String> {
+        if items.is_empty() || items.len() > 2 {
+            return Err(
+                "StorageContext stack representation must contain id and optional read-only flag"
+                    .to_string(),
+            );
+        }
+
+        let id_bigint = items[0]
+            .as_int()
+            .map_err(|_| "StorageContext id must be integer".to_string())?;
+        let id = id_bigint
+            .to_i32()
+            .ok_or_else(|| "StorageContext id out of i32 range".to_string())?;
+
+        let is_read_only = if items.len() == 2 {
+            items[1]
+                .as_bool()
+                .map_err(|_| "StorageContext read-only flag must be boolean".to_string())?
+        } else {
+            false
+        };
+
+        Ok(Self { id, is_read_only })
+    }
+}
+
+impl InteropInterface for StorageContext {
+    fn interface_type(&self) -> &str {
+        "StorageContext"
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }

@@ -3,9 +3,8 @@
 //
 
 use super::{
-    CallFlags, DEFAULT_GAS_LIMIT, EvaluationStack, ExecutionContext, ExecutionEngine,
-    ExecutionEngineLimits, InteropService, JumpTable, ReferenceCounter, StackItem, VMState,
-    VmError,
+    CallFlags, EvaluationStack, ExecutionContext, ExecutionEngine, ExecutionEngineLimits,
+    InteropService, JumpTable, ReferenceCounter, StackItem, VMState, VmError, DEFAULT_GAS_LIMIT,
 };
 
 impl ExecutionEngine {

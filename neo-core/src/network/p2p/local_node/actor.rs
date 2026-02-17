@@ -51,7 +51,7 @@ impl LocalNodeActor {
                         return Ok(());
                     }
                     self.state.track_pending(endpoint);
-                    self.initiate_connect(ctx, endpoint, is_trusted).await?;
+                    self.queue_outbound_connect(ctx, endpoint, is_trusted);
                 }
                 Ok(())
             }
@@ -281,6 +281,72 @@ impl LocalNodeActor {
                 self.spawn_remote(ctx, stream, remote, local, false, true)
                     .await?;
             }
+            LocalNodeCommand::OutboundTcpConnected {
+                stream,
+                endpoint,
+                local,
+                is_trusted,
+            } => {
+                if let Err(error) = self
+                    .spawn_remote(ctx, stream, endpoint, local, is_trusted, false)
+                    .await
+                {
+                    warn!(
+                        target: "neo",
+                        endpoint = %endpoint,
+                        is_trusted,
+                        %error,
+                        "failed to spawn remote actor for outbound connection"
+                    );
+                    self.peer.connection_failed(endpoint);
+                    self.state.clear_pending(&endpoint);
+                    if !is_trusted {
+                        self.requeue_endpoint(endpoint);
+                    }
+                }
+            }
+            LocalNodeCommand::OutboundTcpFailed {
+                endpoint,
+                is_trusted,
+                error,
+                timed_out,
+                permission_denied,
+            } => {
+                if timed_out {
+                    warn!(
+                        target: "neo",
+                        endpoint = %endpoint,
+                        timeout_secs = TCP_CONNECTION_TIMEOUT.as_secs(),
+                        "connection attempt timed out"
+                    );
+                    self.peer.connection_failed(endpoint);
+                    self.state.clear_pending(&endpoint);
+                    if !is_trusted {
+                        self.requeue_endpoint(endpoint);
+                    }
+                } else if permission_denied {
+                    error!(
+                        target: "neo",
+                        endpoint = %endpoint,
+                        error = %error,
+                        "permission denied opening outbound connection; not retrying"
+                    );
+                    self.peer.connection_failed(endpoint);
+                    self.state.clear_pending(&endpoint);
+                } else {
+                    debug!(
+                        target: "neo",
+                        endpoint = %endpoint,
+                        error = %error,
+                        "connection attempt failed"
+                    );
+                    self.peer.connection_failed(endpoint);
+                    self.state.clear_pending(&endpoint);
+                    if !is_trusted {
+                        self.requeue_endpoint(endpoint);
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -295,8 +361,14 @@ impl LocalNodeActor {
             return Ok(());
         }
 
-        if !self.peer.has_unconnected_peers() {
-            self.need_more_peers(ctx, deficit).await?;
+        // Keep a healthy candidate pool. Re-queued failed endpoints can keep this
+        // non-empty while still starving discovery, so replenish whenever the pool
+        // is smaller than what the current deficit needs.
+        let unconnected = self.peer.unconnected_count();
+        let target_unconnected = deficit.saturating_mul(4).max(MAX_COUNT_FROM_SEED_LIST);
+        if unconnected < target_unconnected {
+            self.need_more_peers(ctx, target_unconnected - unconnected)
+                .await?;
         }
 
         let targets = self.peer.take_connect_targets(deficit);
@@ -306,7 +378,7 @@ impl LocalNodeActor {
                     continue;
                 }
                 self.state.track_pending(endpoint);
-                self.initiate_connect(ctx, endpoint, false).await?;
+                self.queue_outbound_connect(ctx, endpoint, false);
             } else {
                 self.requeue_endpoint(endpoint);
             }
@@ -337,46 +409,71 @@ impl LocalNodeActor {
         Ok(())
     }
 
-    async fn initiate_connect(
-        &mut self,
-        ctx: &mut ActorContext,
-        endpoint: SocketAddr,
-        is_trusted: bool,
-    ) -> ActorResult {
-        match timeout(TCP_CONNECTION_TIMEOUT, TcpStream::connect(endpoint)).await {
-            Ok(Ok(stream)) => {
-                if let Err(err) = stream.set_nodelay(true) {
-                    warn!(target: "neo", endpoint = %endpoint, error = %err, "failed to enable TCP_NODELAY");
-                }
+    fn queue_outbound_connect(&self, ctx: &ActorContext, endpoint: SocketAddr, is_trusted: bool) {
+        let actor = ctx.self_ref();
+        tokio::spawn(async move {
+            match timeout(TCP_CONNECTION_TIMEOUT, TcpStream::connect(endpoint)).await {
+                Ok(Ok(stream)) => {
+                    if let Err(err) = stream.set_nodelay(true) {
+                        warn!(target: "neo", endpoint = %endpoint, error = %err, "failed to enable TCP_NODELAY");
+                    }
 
-                let local_endpoint = stream
-                    .local_addr()
-                    .unwrap_or_else(|_| SocketAddr::from(([0, 0, 0, 0], 0)));
+                    let local = stream
+                        .local_addr()
+                        .unwrap_or_else(|_| SocketAddr::from(([0, 0, 0, 0], 0)));
 
-                self.spawn_remote(ctx, stream, endpoint, local_endpoint, is_trusted, false)
-                    .await
-            }
-            Ok(Err(error)) => {
-                if error.kind() == ErrorKind::PermissionDenied {
-                    error!(target: "neo", endpoint = %endpoint, error = %error, "permission denied opening outbound connection; not retrying");
-                    self.peer.connection_failed(endpoint);
-                    self.state.clear_pending(&endpoint);
-                } else {
-                    debug!(target: "neo", endpoint = %endpoint, error = %error, "connection attempt failed");
-                    self.peer.connection_failed(endpoint);
-                    self.state.clear_pending(&endpoint);
-                    self.requeue_endpoint(endpoint);
+                    if let Err(err) = actor.tell(LocalNodeCommand::OutboundTcpConnected {
+                        stream,
+                        endpoint,
+                        local,
+                        is_trusted,
+                    }) {
+                        warn!(
+                            target: "neo",
+                            endpoint = %endpoint,
+                            error = %err,
+                            "failed to enqueue outbound connect success"
+                        );
+                    }
                 }
-                Ok(())
+                Ok(Err(error)) => {
+                    let permission_denied = error.kind() == ErrorKind::PermissionDenied;
+                    if let Err(err) = actor.tell(LocalNodeCommand::OutboundTcpFailed {
+                        endpoint,
+                        is_trusted,
+                        error: error.to_string(),
+                        timed_out: false,
+                        permission_denied,
+                    }) {
+                        warn!(
+                            target: "neo",
+                            endpoint = %endpoint,
+                            error = %err,
+                            "failed to enqueue outbound connect failure"
+                        );
+                    }
+                }
+                Err(_) => {
+                    if let Err(err) = actor.tell(LocalNodeCommand::OutboundTcpFailed {
+                        endpoint,
+                        is_trusted,
+                        error: format!(
+                            "connection attempt timed out after {}s",
+                            TCP_CONNECTION_TIMEOUT.as_secs()
+                        ),
+                        timed_out: true,
+                        permission_denied: false,
+                    }) {
+                        warn!(
+                            target: "neo",
+                            endpoint = %endpoint,
+                            error = %err,
+                            "failed to enqueue outbound connect timeout"
+                        );
+                    }
+                }
             }
-            Err(_) => {
-                warn!(target: "neo", endpoint = %endpoint, timeout_secs = TCP_CONNECTION_TIMEOUT.as_secs(), "connection attempt timed out");
-                self.peer.connection_failed(endpoint);
-                self.state.clear_pending(&endpoint);
-                self.requeue_endpoint(endpoint);
-                Ok(())
-            }
-        }
+        });
     }
 
     fn send_inventory_to_peers(
@@ -495,6 +592,10 @@ impl LocalNodeActor {
     }
 
     async fn need_more_peers(&mut self, _ctx: &mut ActorContext, count: usize) -> ActorResult {
+        if count == 0 {
+            return Ok(());
+        }
+
         let requested = count.max(MAX_COUNT_FROM_SEED_LIST);
 
         if self.peer.connected_count() > 0 {
@@ -510,12 +611,13 @@ impl LocalNodeActor {
                     );
                 }
             }
-            return Ok(());
         }
 
         let seeds = self.resolve_seed_endpoints().await;
         if seeds.is_empty() {
-            warn!(target: "neo", "no seeds available to satisfy peer request");
+            if self.peer.connected_count() == 0 {
+                warn!(target: "neo", "no seeds available to satisfy peer request");
+            }
             return Ok(());
         }
 

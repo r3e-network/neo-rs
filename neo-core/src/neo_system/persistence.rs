@@ -12,7 +12,8 @@ use crate::events::PluginEvent;
 use crate::ledger::block::Block as LedgerBlock;
 use crate::ledger::blockchain_application_executed::ApplicationExecuted;
 use crate::network::p2p::payloads::block::Block;
-use crate::persistence::data_cache::DataCache;
+use crate::persistence::data_cache::{DataCache, DataCacheConfig};
+use crate::persistence::seek_direction::SeekDirection;
 use crate::persistence::StoreTransaction;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::application_engine::TEST_MODE_GAS;
@@ -21,21 +22,77 @@ use crate::smart_contract::native::ledger_contract::{
     LedgerTransactionStates, PersistedTransactionState,
 };
 use crate::smart_contract::trigger_type::TriggerType;
+use crate::smart_contract::{StorageItem, StorageKey};
 use neo_vm::vm_state::VMState;
+use tracing::debug;
 
 impl NeoSystem {
     /// Persists a block through the minimal smart-contract pipeline, returning
     /// the list of execution summaries produced during processing.
     pub fn persist_block(&self, block: Block) -> CoreResult<Vec<ApplicationExecuted>> {
-        let ledger_block = convert_payload_block(&block);
-        let mut tx = StoreTransaction::from_snapshot(self.store().get_snapshot());
-        let base_snapshot = Arc::new(tx.cache().data_cache().clone());
+        self.persist_block_internal(block, true)
+    }
 
-        let mut on_persist_engine = ApplicationEngine::new(
+    /// Persists a block while skipping insertion into the in-memory block/header
+    /// cache. This is intended for offline import paths where runtime query
+    /// caches are not needed.
+    pub fn persist_block_without_runtime_cache(
+        &self,
+        block: Block,
+    ) -> CoreResult<Vec<ApplicationExecuted>> {
+        self.persist_block_internal(block, false)
+    }
+
+    fn persist_block_internal(
+        &self,
+        block: Block,
+        update_runtime_cache: bool,
+    ) -> CoreResult<Vec<ApplicationExecuted>> {
+        let ledger_block = convert_payload_block(&block);
+        let persisting_block = Arc::new(ledger_block.clone());
+        let base_cache_config = DataCacheConfig {
+            // Keep block-local hot keys in memory so subsequent transactions in
+            // the same block avoid repeated RocksDB lookups.
+            track_reads_in_write_cache: true,
+            enable_read_cache: false,
+            enable_prefetching: false,
+            ..Default::default()
+        };
+        let tx_cache_config = DataCacheConfig {
+            // Transaction overlays are short-lived and discarded on FAULT, so
+            // avoid duplicating read entries into each tx-local cache.
+            track_reads_in_write_cache: false,
+            enable_read_cache: false,
+            enable_prefetching: false,
+            ..Default::default()
+        };
+        let mut tx = StoreTransaction::from_snapshot_with_config(
+            self.store().get_snapshot(),
+            base_cache_config,
+        );
+        let base_snapshot = Arc::new(tx.cache().data_cache().clone());
+        let tx_store_get: Arc<dyn Fn(&StorageKey) -> Option<StorageItem> + Send + Sync> = {
+            let base = Arc::clone(&base_snapshot);
+            Arc::new(move |key: &StorageKey| base.get(key))
+        };
+        let tx_store_find: Arc<
+            dyn Fn(Option<&StorageKey>, SeekDirection) -> Vec<(StorageKey, StorageItem)>
+                + Send
+                + Sync,
+        > = {
+            let base = Arc::clone(&base_snapshot);
+            Arc::new(
+                move |prefix: Option<&StorageKey>, direction: SeekDirection| {
+                    base.find(prefix, direction).collect::<Vec<_>>()
+                },
+            )
+        };
+
+        let mut on_persist_engine = ApplicationEngine::new_with_shared_block(
             TriggerType::OnPersist,
             None,
             Arc::clone(&base_snapshot),
-            Some(ledger_block.clone()),
+            Some(Arc::clone(&persisting_block)),
             self.settings().clone(),
             TEST_MODE_GAS,
             None,
@@ -51,6 +108,14 @@ impl NeoSystem {
 
         let mut executed = Vec::with_capacity(ledger_block.transactions.len() + 2);
         executed.push(on_persist_exec);
+        let native_hashes: std::collections::HashSet<_> = on_persist_engine
+            .native_contracts()
+            .into_iter()
+            .map(|contract| contract.hash())
+            .collect();
+        let mut seeded_contracts = on_persist_engine.contracts_snapshot();
+        seeded_contracts.retain(|hash, _| native_hashes.contains(hash));
+        let seeded_native_cache = on_persist_engine.native_contract_cache_handle();
 
         let mut tx_states = on_persist_engine
             .take_state::<LedgerTransactionStates>()
@@ -59,23 +124,28 @@ impl NeoSystem {
             });
 
         for tx in &ledger_block.transactions {
-            let tx_snapshot = Arc::new(base_snapshot.as_ref().clone_cache());
+            let tx_snapshot = Arc::new(DataCache::new_with_config(
+                false,
+                Some(Arc::clone(&tx_store_get)),
+                Some(Arc::clone(&tx_store_find)),
+                tx_cache_config,
+            ));
             let container: Arc<dyn crate::IVerifiable> = Arc::new(tx.clone());
-            let mut tx_engine = ApplicationEngine::new(
+            let mut tx_engine = ApplicationEngine::new_with_preloaded_native(
                 TriggerType::Application,
                 Some(container),
                 Arc::clone(&tx_snapshot),
-                Some(ledger_block.clone()),
+                Some(Arc::clone(&persisting_block)),
                 self.settings().clone(),
                 tx.system_fee(),
+                seeded_contracts.clone(),
+                Arc::clone(&seeded_native_cache),
                 None,
             )?;
 
             tx_engine.set_state(tx_states);
             tx_engine.load_script(tx.script().to_vec(), CallFlags::ALL, None)?;
-            tx_engine.execute()?;
-
-            let vm_state = tx_engine.state();
+            let vm_state = tx_engine.execute_allow_fault();
             let tx_hash = tx.hash();
 
             let executed_tx = ApplicationExecuted::new(&mut tx_engine);
@@ -91,24 +161,38 @@ impl NeoSystem {
                 });
             executed.push(executed_tx);
 
-            if vm_state != VMState::HALT {
-                return Err(CoreError::system(format!(
-                    "transaction execution halted in state {:?} for hash {}",
-                    vm_state, tx_hash
-                )));
+            match vm_state {
+                VMState::HALT => {
+                    let tracked = tx_snapshot.tracked_items();
+                    base_snapshot.merge_tracked_items(&tracked);
+                }
+                VMState::FAULT => {
+                    debug!(
+                        target: "neo",
+                        %tx_hash,
+                        block_index = ledger_block.index(),
+                        exception = ?tx_engine.fault_exception(),
+                        "transaction execution faulted; skipping storage merge"
+                    );
+                }
+                other => {
+                    return Err(CoreError::system(format!(
+                        "unexpected transaction VM state {:?} for hash {}",
+                        other, tx_hash
+                    )));
+                }
             }
-
-            let tracked = tx_snapshot.tracked_items();
-            base_snapshot.merge_tracked_items(&tracked);
         }
 
-        let mut post_persist_engine = ApplicationEngine::new(
+        let mut post_persist_engine = ApplicationEngine::new_with_preloaded_native(
             TriggerType::PostPersist,
             None,
             Arc::clone(&base_snapshot),
-            Some(ledger_block.clone()),
+            Some(Arc::clone(&persisting_block)),
             self.settings().clone(),
             TEST_MODE_GAS,
+            seeded_contracts,
+            seeded_native_cache,
             None,
         )?;
         post_persist_engine.set_state(tx_states);
@@ -138,8 +222,15 @@ impl NeoSystem {
             ))
         })?;
 
-        // Update in-memory caches with the payload block so networking queries can respond immediately.
-        self.context().record_block(block.clone());
+        if update_runtime_cache {
+            // Update in-memory caches with the payload block so networking queries can respond immediately.
+            self.context().record_block(block.clone());
+        } else {
+            // Keep tip height moving for helper call sites during offline imports.
+            self.context()
+                .ledger_handle()
+                .record_tip(ledger_block.index());
+        }
 
         // Skip expensive plugin events during fast sync
         if !self.context().is_fast_sync_mode() {

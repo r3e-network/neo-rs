@@ -131,7 +131,7 @@ impl NeoSystemContext {
     }
 
     pub fn store_cache(&self) -> StoreCache {
-        StoreCache::new_from_store(self.store.clone(), true)
+        StoreCache::new_from_store(self.store.clone(), false)
     }
 
     pub fn store_snapshot_cache(&self) -> StoreCache {
@@ -768,7 +768,7 @@ impl SystemContext for NeoSystemContext {
     }
 
     fn block_hash_at(&self, index: u32) -> Option<UInt256> {
-        self.ledger.block_hash_at(index)
+        NeoSystemContext::block_hash_at(self, index)
     }
 
     fn mempool_count(&self) -> usize {

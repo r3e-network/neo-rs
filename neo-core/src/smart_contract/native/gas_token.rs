@@ -626,6 +626,7 @@ impl NativeContract for GasToken {
             .persisting_block()
             .cloned()
             .ok_or_else(|| CoreError::native_contract("No persisting block available"))?;
+        let block_hash = block.header.clone().hash();
 
         let mut total_network_fee: i64 = 0;
         let snapshot = engine.snapshot_cache();
@@ -640,7 +641,35 @@ impl NativeContract for GasToken {
             };
             let total_fee = tx.system_fee() + tx.network_fee();
             let burn_amount = BigInt::from(total_fee);
-            self.burn(engine, &sender, &burn_amount)?;
+            let pre_balance = self.balance_of_snapshot(snapshot_ref, &sender);
+            if pre_balance < burn_amount {
+                tracing::warn!(
+                    target: "neo",
+                    block_index = block.index(),
+                    block_hash = %block_hash,
+                    tx_hash = %tx.hash(),
+                    sender = %sender,
+                    system_fee = tx.system_fee(),
+                    network_fee = tx.network_fee(),
+                    burn_amount = %burn_amount,
+                    pre_balance = %pre_balance,
+                    "insufficient sender balance before gas burn"
+                );
+            }
+            self.burn(engine, &sender, &burn_amount).map_err(|err| {
+                CoreError::native_contract(format!(
+                    "GasToken burn failed at block {} ({}), tx {} sender {} (system_fee={}, network_fee={}, burn={}, balance={}): {}",
+                    block.index(),
+                    block_hash,
+                    tx.hash(),
+                    sender,
+                    tx.system_fee(),
+                    tx.network_fee(),
+                    burn_amount,
+                    pre_balance,
+                    err
+                ))
+            })?;
             total_network_fee += tx.network_fee();
 
             total_network_fee -= Self::notary_fee_deduction(&policy, snapshot_ref, tx)?;
