@@ -341,7 +341,10 @@ impl ApplicationEngine {
 
     /// Gets contract ID for a given hash.
     pub(super) fn get_contract_id_by_hash(&self, hash: &UInt160) -> Option<i32> {
-        self.contracts.get(hash).map(|contract| contract.id)
+        if let Some(contract) = self.contracts.get(hash) {
+            return Some(contract.id);
+        }
+        self.native_registry.get(hash).map(|native| native.id())
     }
 
     /// Sets a storage item directly (for testing and internal use).
@@ -367,14 +370,22 @@ impl ApplicationEngine {
 
     /// Gets the storage context for a native contract.
     pub fn get_native_storage_context(&self, contract_hash: &UInt160) -> Result<StorageContext> {
-        // 1. Get contract state to get the ID
-        let contract = self.get_contract(contract_hash).ok_or_else(|| {
-            Error::not_found(format!("Native contract not found: {}", contract_hash))
-        })?;
+        // Create storage context for native contracts using the best available source:
+        // preloaded contract metadata first, then native registry fallback.
+        let contract_id = self
+            .get_contract(contract_hash)
+            .map(|contract| contract.id)
+            .or_else(|| {
+                self.native_registry
+                    .get(contract_hash)
+                    .map(|native| native.id())
+            })
+            .ok_or_else(|| {
+                Error::not_found(format!("Native contract not found: {}", contract_hash))
+            })?;
 
-        // 2. Create storage context for native contract (always read-write for native contracts)
         Ok(StorageContext {
-            id: contract.id,
+            id: contract_id,
             is_read_only: false,
         })
     }
@@ -524,35 +535,31 @@ impl ApplicationEngine {
 
     /// Registers native contracts in the contracts HashMap so they can be found
     pub(super) fn register_native_contracts(&mut self) {
-        let contracts: Vec<Arc<dyn NativeContract>> = self.native_registry.contracts().collect();
-
-        for contract in &contracts {
-            let hash = contract.hash();
-            let id = contract.id();
-            let name = contract.name().to_string();
-            let block_height = self.current_block_index();
-            if let Some(state) = contract.contract_state(&self.protocol_settings, block_height) {
-                self.contracts.entry(hash).or_insert(state);
-            } else {
-                tracing::debug!(
-                    "Native contract {} (id {}) inactive at height {}",
-                    name,
-                    id,
-                    block_height
-                );
-            }
-        }
-
         let block_height = self.current_block_index();
+        let contracts: Vec<Arc<dyn NativeContract>> = self.native_registry.contracts().collect();
         for contract in contracts {
             if !contract.is_active(&self.protocol_settings, block_height) {
                 continue;
             }
+            let (should_initialize, _hardforks_now) =
+                contract.is_initialize_block(&self.protocol_settings, block_height);
+            if !should_initialize {
+                continue;
+            }
+
+            let hash = contract.hash();
+            if !self.contracts.contains_key(&hash) {
+                if let Some(state) = contract.contract_state(&self.protocol_settings, block_height)
+                {
+                    self.contracts.insert(hash, state);
+                }
+            }
+
             if let Err(error) = contract.initialize(self) {
                 if let Some(container) = &self.script_container {
                     let log_event = LogEventArgs::new(
                         Arc::clone(container),
-                        contract.hash(),
+                        hash,
                         format!(
                             "Native contract {} initialization error: {}",
                             contract.name(),

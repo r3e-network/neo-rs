@@ -1,4 +1,39 @@
 use super::*;
+use parking_lot::Mutex;
+use std::cmp::Ordering as CmpOrdering;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::OnceLock;
+use std::time::Instant;
+use tracing::info;
+
+#[derive(Default)]
+struct NativeOnPersistPerfStats {
+    blocks: AtomicU64,
+    total_ns_by_contract: Mutex<HashMap<String, u64>>,
+}
+
+fn native_on_persist_perf_stats() -> &'static NativeOnPersistPerfStats {
+    static STATS: OnceLock<NativeOnPersistPerfStats> = OnceLock::new();
+    STATS.get_or_init(NativeOnPersistPerfStats::default)
+}
+
+fn native_on_persist_perf_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        std::env::var("NEO_PERSIST_PROFILE")
+            .ok()
+            .map(|raw| {
+                let normalized = raw.trim().to_ascii_lowercase();
+                matches!(normalized.as_str(), "1" | "true" | "yes" | "on")
+            })
+            .unwrap_or(false)
+    })
+}
+
+fn duration_to_u64_ns(duration: std::time::Duration) -> u64 {
+    duration.as_nanos().min(u128::from(u64::MAX)) as u64
+}
 
 impl ApplicationEngine {
     pub(crate) fn add_runtime_fee(&mut self, fee: u64) -> Result<()> {
@@ -267,8 +302,47 @@ impl ApplicationEngine {
             .filter(|contract| contract.is_active(&self.protocol_settings, block_height))
             .collect();
 
+        let profiling = native_on_persist_perf_enabled();
         for contract in active_contracts {
-            contract.on_persist(self)?;
+            if profiling {
+                let started = Instant::now();
+                contract.on_persist(self)?;
+                let elapsed_ns = duration_to_u64_ns(started.elapsed());
+                let mut totals = native_on_persist_perf_stats().total_ns_by_contract.lock();
+                let key = contract.name().to_string();
+                let entry = totals.entry(key).or_insert(0);
+                *entry = entry.saturating_add(elapsed_ns);
+            } else {
+                contract.on_persist(self)?;
+            }
+        }
+
+        if profiling {
+            let stats = native_on_persist_perf_stats();
+            let blocks = stats.blocks.fetch_add(1, Ordering::Relaxed) + 1;
+            if blocks % 1000 == 0 {
+                let blocks_f = blocks as f64;
+                let mut top = {
+                    let totals = stats.total_ns_by_contract.lock();
+                    totals
+                        .iter()
+                        .map(|(name, ns)| (name.clone(), (*ns as f64) / blocks_f / 1_000_000.0))
+                        .collect::<Vec<_>>()
+                };
+                top.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(CmpOrdering::Equal));
+                let summary = top
+                    .into_iter()
+                    .take(8)
+                    .map(|(name, avg_ms)| format!("{name}={avg_ms:.3}ms"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                info!(
+                    target: "neo",
+                    blocks,
+                    top = %summary,
+                    "native on-persist contract profile"
+                );
+            }
         }
 
         Ok(())

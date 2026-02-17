@@ -27,6 +27,14 @@ impl ApplicationEngine {
             return Ok(contract);
         }
 
+        if let Some(native) = self.native_registry.get(hash) {
+            let block_height = self.current_block_index();
+            if let Some(contract) = native.contract_state(&self.protocol_settings, block_height) {
+                self.contracts.insert(*hash, contract.clone());
+                return Ok(contract);
+            }
+        }
+
         Err(Error::not_found(format!("Contract not found: {hash:?}")))
     }
 

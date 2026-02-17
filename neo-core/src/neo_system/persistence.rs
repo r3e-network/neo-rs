@@ -3,7 +3,9 @@
 //! This module keeps the block execution and commit pipeline isolated from the
 //! core orchestration logic.
 
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, OnceLock};
+use std::time::Instant;
 
 use super::converters::convert_payload_block;
 use super::NeoSystem;
@@ -24,7 +26,48 @@ use crate::smart_contract::native::ledger_contract::{
 use crate::smart_contract::trigger_type::TriggerType;
 use crate::smart_contract::{StorageItem, StorageKey};
 use neo_vm::vm_state::VMState;
-use tracing::debug;
+use tracing::{debug, info};
+
+#[derive(Default)]
+struct PersistPerfStats {
+    blocks: AtomicU64,
+    txs: AtomicU64,
+    block_total_ns: AtomicU64,
+    on_persist_ns: AtomicU64,
+    on_persist_engine_ns: AtomicU64,
+    on_persist_native_ns: AtomicU64,
+    tx_prepare_ns: AtomicU64,
+    tx_execute_ns: AtomicU64,
+    tx_merge_ns: AtomicU64,
+    post_persist_ns: AtomicU64,
+    post_persist_engine_ns: AtomicU64,
+    post_persist_native_ns: AtomicU64,
+    apply_tracked_ns: AtomicU64,
+    commit_ns: AtomicU64,
+}
+
+fn persist_perf_stats() -> &'static PersistPerfStats {
+    static STATS: OnceLock<PersistPerfStats> = OnceLock::new();
+    STATS.get_or_init(PersistPerfStats::default)
+}
+
+fn persist_perf_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        std::env::var("NEO_PERSIST_PROFILE")
+            .ok()
+            .map(|raw| {
+                let normalized = raw.trim().to_ascii_lowercase();
+                matches!(normalized.as_str(), "1" | "true" | "yes" | "on")
+            })
+            .unwrap_or(false)
+    })
+}
+
+fn saturating_ns(duration: std::time::Duration) -> u64 {
+    let nanos = duration.as_nanos();
+    nanos.min(u128::from(u64::MAX)) as u64
+}
 
 impl NeoSystem {
     /// Persists a block through the minimal smart-contract pipeline, returning
@@ -49,7 +92,15 @@ impl NeoSystem {
         update_runtime_cache: bool,
     ) -> CoreResult<Vec<ApplicationExecuted>> {
         let emit_detailed_execution = !self.context().is_fast_sync_mode();
+        let perf_enabled = persist_perf_enabled();
+        let block_started = if perf_enabled {
+            Some(Instant::now())
+        } else {
+            None
+        };
+
         let ledger_block = convert_payload_block(&block);
+        let tx_count = ledger_block.transactions.len() as u64;
         let persisting_block = Arc::new(ledger_block.clone());
         let base_cache_config = DataCacheConfig {
             // Keep block-local hot keys in memory so subsequent transactions in
@@ -89,6 +140,16 @@ impl NeoSystem {
             )
         };
 
+        let on_persist_started = if perf_enabled {
+            Some(Instant::now())
+        } else {
+            None
+        };
+        let on_persist_engine_started = if perf_enabled {
+            Some(Instant::now())
+        } else {
+            None
+        };
         let mut on_persist_engine = ApplicationEngine::new_with_shared_block(
             TriggerType::OnPersist,
             None,
@@ -98,8 +159,28 @@ impl NeoSystem {
             TEST_MODE_GAS,
             None,
         )?;
+        if let Some(started) = on_persist_engine_started {
+            persist_perf_stats()
+                .on_persist_engine_ns
+                .fetch_add(saturating_ns(started.elapsed()), Ordering::Relaxed);
+        }
 
+        let on_persist_native_started = if perf_enabled {
+            Some(Instant::now())
+        } else {
+            None
+        };
         on_persist_engine.native_on_persist()?;
+        if let Some(started) = on_persist_native_started {
+            persist_perf_stats()
+                .on_persist_native_ns
+                .fetch_add(saturating_ns(started.elapsed()), Ordering::Relaxed);
+        }
+        if let Some(started) = on_persist_started {
+            persist_perf_stats()
+                .on_persist_ns
+                .fetch_add(saturating_ns(started.elapsed()), Ordering::Relaxed);
+        }
         let mut executed = if emit_detailed_execution {
             let on_persist_exec = ApplicationExecuted::new(&mut on_persist_engine);
             self.actor_system()
@@ -127,6 +208,11 @@ impl NeoSystem {
             });
 
         for tx in &ledger_block.transactions {
+            let tx_prepare_started = if perf_enabled {
+                Some(Instant::now())
+            } else {
+                None
+            };
             let tx_snapshot = Arc::new(DataCache::new_with_config(
                 false,
                 Some(Arc::clone(&tx_store_get)),
@@ -148,7 +234,23 @@ impl NeoSystem {
 
             tx_engine.set_state(tx_states);
             tx_engine.load_script(tx.script().to_vec(), CallFlags::ALL, None)?;
+            if let Some(started) = tx_prepare_started {
+                persist_perf_stats()
+                    .tx_prepare_ns
+                    .fetch_add(saturating_ns(started.elapsed()), Ordering::Relaxed);
+            }
+
+            let tx_exec_started = if perf_enabled {
+                Some(Instant::now())
+            } else {
+                None
+            };
             let vm_state = tx_engine.execute_allow_fault();
+            if let Some(started) = tx_exec_started {
+                persist_perf_stats()
+                    .tx_execute_ns
+                    .fetch_add(saturating_ns(started.elapsed()), Ordering::Relaxed);
+            }
             let tx_hash = tx.hash();
 
             if emit_detailed_execution {
@@ -168,6 +270,11 @@ impl NeoSystem {
                     LedgerTransactionStates::new(Vec::<PersistedTransactionState>::new())
                 });
 
+            let tx_merge_started = if perf_enabled {
+                Some(Instant::now())
+            } else {
+                None
+            };
             match vm_state {
                 VMState::HALT => {
                     let tracked = tx_snapshot.tracked_items();
@@ -189,8 +296,23 @@ impl NeoSystem {
                     )));
                 }
             }
+            if let Some(started) = tx_merge_started {
+                persist_perf_stats()
+                    .tx_merge_ns
+                    .fetch_add(saturating_ns(started.elapsed()), Ordering::Relaxed);
+            }
         }
 
+        let post_persist_started = if perf_enabled {
+            Some(Instant::now())
+        } else {
+            None
+        };
+        let post_persist_engine_started = if perf_enabled {
+            Some(Instant::now())
+        } else {
+            None
+        };
         let mut post_persist_engine = ApplicationEngine::new_with_preloaded_native(
             TriggerType::PostPersist,
             None,
@@ -202,8 +324,28 @@ impl NeoSystem {
             seeded_native_cache,
             None,
         )?;
+        if let Some(started) = post_persist_engine_started {
+            persist_perf_stats()
+                .post_persist_engine_ns
+                .fetch_add(saturating_ns(started.elapsed()), Ordering::Relaxed);
+        }
+        let post_persist_native_started = if perf_enabled {
+            Some(Instant::now())
+        } else {
+            None
+        };
         post_persist_engine.set_state(tx_states);
         post_persist_engine.native_post_persist()?;
+        if let Some(started) = post_persist_native_started {
+            persist_perf_stats()
+                .post_persist_native_ns
+                .fetch_add(saturating_ns(started.elapsed()), Ordering::Relaxed);
+        }
+        if let Some(started) = post_persist_started {
+            persist_perf_stats()
+                .post_persist_ns
+                .fetch_add(saturating_ns(started.elapsed()), Ordering::Relaxed);
+        }
         if emit_detailed_execution {
             let post_persist_exec = ApplicationExecuted::new(&mut post_persist_engine);
             self.actor_system()
@@ -217,17 +359,37 @@ impl NeoSystem {
             self.invoke_committing(&ledger_block, base_snapshot.as_ref(), &executed);
         }
 
+        let apply_tracked_started = if perf_enabled {
+            Some(Instant::now())
+        } else {
+            None
+        };
         crate::persistence::transaction::apply_tracked_items(
             tx.cache_mut(),
             base_snapshot.tracked_items(),
         );
+        if let Some(started) = apply_tracked_started {
+            persist_perf_stats()
+                .apply_tracked_ns
+                .fetch_add(saturating_ns(started.elapsed()), Ordering::Relaxed);
+        }
 
+        let commit_started = if perf_enabled {
+            Some(Instant::now())
+        } else {
+            None
+        };
         tx.commit().map_err(|err| {
             CoreError::system(format!(
                 "failed to commit store cache for block {}: {err}",
                 ledger_block.index()
             ))
         })?;
+        if let Some(started) = commit_started {
+            persist_perf_stats()
+                .commit_ns
+                .fetch_add(saturating_ns(started.elapsed()), Ordering::Relaxed);
+        }
 
         if update_runtime_cache {
             // Update in-memory caches with the payload block so networking queries can respond immediately.
@@ -251,6 +413,72 @@ impl NeoSystem {
                 });
 
             self.invoke_committed(&ledger_block);
+        }
+
+        if let Some(started) = block_started {
+            let stats = persist_perf_stats();
+            let total_ns = saturating_ns(started.elapsed());
+            stats.block_total_ns.fetch_add(total_ns, Ordering::Relaxed);
+            stats.txs.fetch_add(tx_count, Ordering::Relaxed);
+            let blocks = stats.blocks.fetch_add(1, Ordering::Relaxed) + 1;
+
+            if blocks % 1000 == 0 {
+                let blocks_f = blocks as f64;
+                let txs = stats.txs.load(Ordering::Relaxed);
+                let txs_f = txs.max(1) as f64;
+
+                let total_ms_per_block =
+                    stats.block_total_ns.load(Ordering::Relaxed) as f64 / blocks_f / 1_000_000.0;
+                let on_persist_ms =
+                    stats.on_persist_ns.load(Ordering::Relaxed) as f64 / blocks_f / 1_000_000.0;
+                let on_persist_engine_ms = stats.on_persist_engine_ns.load(Ordering::Relaxed)
+                    as f64
+                    / blocks_f
+                    / 1_000_000.0;
+                let on_persist_native_ms = stats.on_persist_native_ns.load(Ordering::Relaxed)
+                    as f64
+                    / blocks_f
+                    / 1_000_000.0;
+                let tx_prepare_us =
+                    stats.tx_prepare_ns.load(Ordering::Relaxed) as f64 / txs_f / 1_000.0;
+                let tx_execute_us =
+                    stats.tx_execute_ns.load(Ordering::Relaxed) as f64 / txs_f / 1_000.0;
+                let tx_merge_us =
+                    stats.tx_merge_ns.load(Ordering::Relaxed) as f64 / txs_f / 1_000.0;
+                let post_persist_ms =
+                    stats.post_persist_ns.load(Ordering::Relaxed) as f64 / blocks_f / 1_000_000.0;
+                let post_persist_engine_ms = stats.post_persist_engine_ns.load(Ordering::Relaxed)
+                    as f64
+                    / blocks_f
+                    / 1_000_000.0;
+                let post_persist_native_ms = stats.post_persist_native_ns.load(Ordering::Relaxed)
+                    as f64
+                    / blocks_f
+                    / 1_000_000.0;
+                let apply_tracked_ms =
+                    stats.apply_tracked_ns.load(Ordering::Relaxed) as f64 / blocks_f / 1_000_000.0;
+                let commit_ms =
+                    stats.commit_ns.load(Ordering::Relaxed) as f64 / blocks_f / 1_000_000.0;
+
+                info!(
+                    target: "neo",
+                    blocks,
+                    txs,
+                    avg_block_ms = total_ms_per_block,
+                    avg_on_persist_ms = on_persist_ms,
+                    avg_on_persist_engine_ms = on_persist_engine_ms,
+                    avg_on_persist_native_ms = on_persist_native_ms,
+                    avg_tx_prepare_us = tx_prepare_us,
+                    avg_tx_execute_us = tx_execute_us,
+                    avg_tx_merge_us = tx_merge_us,
+                    avg_post_persist_ms = post_persist_ms,
+                    avg_post_persist_engine_ms = post_persist_engine_ms,
+                    avg_post_persist_native_ms = post_persist_native_ms,
+                    avg_apply_tracked_ms = apply_tracked_ms,
+                    avg_commit_ms = commit_ms,
+                    "persist pipeline profile"
+                );
+            }
         }
 
         Ok(executed)
