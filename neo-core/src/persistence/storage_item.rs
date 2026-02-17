@@ -10,6 +10,7 @@ use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::i_interoperable::IInteroperable;
 use neo_vm::execution_engine_limits::ExecutionEngineLimits;
 use num_bigint::BigInt;
+use std::borrow::Cow;
 use std::fmt;
 
 #[allow(dead_code)]
@@ -88,6 +89,15 @@ impl StorageItem {
                     .unwrap_or_default(),
                 Err(_) => Vec::new(),
             },
+        }
+    }
+
+    /// Gets the value without cloning when raw bytes are already materialized.
+    pub fn value_bytes(&self) -> Cow<'_, [u8]> {
+        if !self.value.is_empty() || self.cache.is_none() {
+            Cow::Borrowed(&self.value)
+        } else {
+            Cow::Owned(self.get_value())
         }
     }
 

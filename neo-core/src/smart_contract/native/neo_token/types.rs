@@ -14,7 +14,8 @@ pub(crate) struct NeoAccountState {
 
 impl NeoAccountState {
     pub(super) fn from_storage_item(item: &StorageItem) -> Result<Self, String> {
-        let bytes = item.get_value();
+        let value = item.value_bytes();
+        let bytes = value.as_ref();
         let stack_item =
             BinarySerializer::deserialize(&bytes, &ExecutionEngineLimits::default(), None)
                 .map_err(|err| format!("failed to deserialize NeoAccountState: {}", err))?;
@@ -113,10 +114,12 @@ pub(crate) struct CandidateState {
 
 impl CandidateState {
     pub(super) fn from_storage_item(item: &StorageItem) -> Result<Self, String> {
-        let bytes = item.get_value();
+        let value = item.value_bytes();
+        let bytes = value.as_ref();
         if bytes.is_empty() {
             return Ok(Self::default());
         }
+
         let stack_item =
             BinarySerializer::deserialize(&bytes, &ExecutionEngineLimits::default(), None)
                 .map_err(|err| format!("failed to deserialize CandidateState: {}", err))?;

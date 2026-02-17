@@ -4,7 +4,7 @@
 
 use super::*;
 use std::cmp::Reverse;
-use std::collections::BinaryHeap;
+use std::collections::{BinaryHeap, BTreeMap, HashMap};
 
 impl NeoToken {
     /// Determines whether the committee should be refreshed at the specified height.
@@ -205,22 +205,27 @@ impl NeoToken {
             .map(|item| item.to_bigint())
             .unwrap_or_else(BigInt::zero);
 
-        let candidates = self.get_candidates_internal(snapshot)?;
-
         let committee_members_count = settings.committee_members_count();
         let turnout_low = &voters_count * BigInt::from(5i64) < BigInt::from(Self::TOTAL_SUPPLY);
 
-        if turnout_low || candidates.len() < committee_members_count {
-            let mut standby = Vec::with_capacity(settings.standby_committee.len());
-            for pk in &settings.standby_committee {
-                let votes = candidates
-                    .iter()
-                    .find(|(c_pk, _)| c_pk == pk)
-                    .map(|(_, v)| v.clone())
-                    .unwrap_or_else(BigInt::zero);
-                standby.push((pk.clone(), votes));
+        if turnout_low {
+            return self.standby_committee_votes(snapshot, settings);
+        }
+
+        let candidates = self.get_candidates_internal(snapshot)?;
+        if candidates.len() < committee_members_count {
+            let mut candidate_votes: BTreeMap<ECPoint, BigInt> = BTreeMap::new();
+            for (pk, votes) in candidates {
+                candidate_votes.insert(pk, votes);
             }
-            return Ok(standby);
+            return Ok(settings
+                .standby_committee
+                .iter()
+                .map(|pk| {
+                    let votes = candidate_votes.get(pk).cloned().unwrap_or_else(BigInt::zero);
+                    (pk.clone(), votes)
+                })
+                .collect());
         }
 
         #[derive(Clone, Eq, PartialEq)]
@@ -258,6 +263,69 @@ impl NeoToken {
             .collect();
         ordered.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
         Ok(ordered)
+    }
+
+    fn standby_committee_votes<S>(
+        &self,
+        snapshot: &S,
+        settings: &ProtocolSettings,
+    ) -> CoreResult<Vec<(ECPoint, BigInt)>>
+    where
+        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+    {
+        let standby = &settings.standby_committee;
+        if standby.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut standby_index: HashMap<Vec<u8>, usize> = HashMap::with_capacity(standby.len());
+        for (index, pk) in standby.iter().enumerate() {
+            standby_index.insert(pk.as_bytes().to_vec(), index);
+        }
+
+        let policy = PolicyContract::new();
+        let blocked_accounts = policy.blocked_accounts_snapshot(snapshot);
+        let has_blocked_accounts = !blocked_accounts.is_empty();
+
+        let mut votes_by_index = vec![BigInt::zero(); standby.len()];
+        let prefix = StorageKey::create(Self::ID, Self::PREFIX_CANDIDATE);
+        for (key, item) in snapshot.find(Some(&prefix), SeekDirection::Forward) {
+            if key.id != Self::ID {
+                continue;
+            }
+            let suffix = key.suffix();
+            if suffix.first().copied() != Some(Self::PREFIX_CANDIDATE) {
+                continue;
+            }
+            let pk_bytes = &suffix[1..];
+            let Some(&index) = standby_index.get(pk_bytes) else {
+                continue;
+            };
+
+            let state =
+                CandidateState::from_storage_item(&item).map_err(CoreError::native_contract)?;
+            if !state.registered {
+                continue;
+            }
+
+            if has_blocked_accounts {
+                let Ok(pk) = ECPoint::from_bytes(pk_bytes) else {
+                    continue;
+                };
+                let account = Contract::create_signature_contract(pk).script_hash();
+                if blocked_accounts.contains(&account) {
+                    continue;
+                }
+            }
+
+            votes_by_index[index] = state.votes;
+        }
+
+        Ok(standby
+            .iter()
+            .cloned()
+            .zip(votes_by_index)
+            .collect::<Vec<_>>())
     }
 
     pub fn compute_next_block_validators_snapshot<S>(
