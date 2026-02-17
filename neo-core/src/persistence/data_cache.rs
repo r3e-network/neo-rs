@@ -430,8 +430,13 @@ impl DataCache {
     /// Gets an item from the cache.
     #[inline]
     pub fn get(&self, key: &StorageKey) -> Option<StorageItem> {
-        // Record access pattern for intelligent prefetching
-        let pattern = self.record_access_pattern(key);
+        // Access-pattern tracking is only useful when prefetching via read cache.
+        let should_track_pattern = self.config.enable_prefetching && self.read_cache.is_some();
+        let pattern = if should_track_pattern {
+            self.record_access_pattern(key)
+        } else {
+            PrefetchPattern::None
+        };
 
         // First check write cache (for uncommitted changes) - minimal lock hold
         {
@@ -675,25 +680,63 @@ impl DataCache {
 
     /// Applies a delete operation.
     fn apply_delete(&self, key: &StorageKey) {
-        let mut state = self.state.write();
-        let prev_state = state
-            .dictionary
-            .get(key)
-            .map(|t| t.state)
-            .unwrap_or(TrackState::NotFound);
+        let prev_state = {
+            let state = self.state.read();
+            state
+                .dictionary
+                .get(key)
+                .map(|t| t.state)
+                .unwrap_or(TrackState::NotFound)
+        };
+
         match prev_state {
             TrackState::Added => {
+                let mut state = self.state.write();
                 state.dictionary.remove(key);
                 state.change_set.remove(key);
             }
             TrackState::Changed | TrackState::None => {
+                let mut state = self.state.write();
                 state.dictionary.insert(
                     key.clone(),
                     Trackable::new(StorageItem::default(), TrackState::Deleted),
                 );
                 state.change_set.insert(key.clone());
             }
-            TrackState::Deleted | TrackState::NotFound => {}
+            TrackState::Deleted => {}
+            TrackState::NotFound => {
+                // For overlays that do not track reads, only emit a delete when the
+                // key actually exists in the backing store.
+                let exists_in_store = self
+                    .store_get
+                    .as_ref()
+                    .and_then(|getter| getter(key))
+                    .is_some();
+                if !exists_in_store {
+                    return;
+                }
+
+                let mut state = self.state.write();
+                let current_state = state
+                    .dictionary
+                    .get(key)
+                    .map(|t| t.state)
+                    .unwrap_or(TrackState::NotFound);
+                match current_state {
+                    TrackState::Added => {
+                        state.dictionary.remove(key);
+                        state.change_set.remove(key);
+                    }
+                    TrackState::Changed | TrackState::None | TrackState::NotFound => {
+                        state.dictionary.insert(
+                            key.clone(),
+                            Trackable::new(StorageItem::default(), TrackState::Deleted),
+                        );
+                        state.change_set.insert(key.clone());
+                    }
+                    TrackState::Deleted => {}
+                }
+            }
         }
     }
 
@@ -773,8 +816,65 @@ impl DataCache {
         direction: SeekDirection,
     ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
         let prefix_bytes = key_prefix.map(|k| k.to_array());
+
+        if let Some(store_find) = &self.store_find {
+            // Overlay only pending changes from the change-set onto backing-store
+            // results. This avoids scanning the full dictionary (which may contain
+            // many read-tracked keys) and correctly applies deletes.
+            let state = self.state.read();
+            let mut overlays: HashMap<StorageKey, Option<StorageItem>> = HashMap::new();
+
+            for key in &state.change_set {
+                if let Some(prefix) = &prefix_bytes {
+                    if !key.to_array().starts_with(prefix) {
+                        continue;
+                    }
+                }
+
+                let Some(trackable) = state.dictionary.get(key) else {
+                    continue;
+                };
+                match trackable.state {
+                    TrackState::Added | TrackState::Changed => {
+                        overlays.insert(key.clone(), Some(trackable.item.clone()));
+                    }
+                    TrackState::Deleted | TrackState::NotFound => {
+                        overlays.insert(key.clone(), None);
+                    }
+                    TrackState::None => {}
+                }
+            }
+            drop(state);
+
+            // Fast path: no pending overlays for this prefix, so return the
+            // backing iterator materialized as-is.
+            if overlays.is_empty() {
+                return Box::new(store_find(key_prefix, direction).into_iter());
+            }
+
+            let mut merged = Vec::new();
+            for (key, item) in store_find(key_prefix, direction) {
+                match overlays.remove(&key) {
+                    Some(Some(overlay_item)) => merged.push((key, overlay_item)),
+                    Some(None) => {}
+                    None => merged.push((key, item)),
+                }
+            }
+
+            merged.extend(
+                overlays
+                    .into_iter()
+                    .filter_map(|(key, item)| item.map(|value| (key, value))),
+            );
+            match direction {
+                SeekDirection::Forward => merged.sort_by(|a, b| a.0.cmp(&b.0)),
+                SeekDirection::Backward => merged.sort_by(|a, b| b.0.cmp(&a.0)),
+            }
+            return Box::new(merged.into_iter());
+        }
+
         let state = self.state.read();
-        let base_items: Vec<(StorageKey, StorageItem)> = state
+        let mut base_items: Vec<(StorageKey, StorageItem)> = state
             .dictionary
             .iter()
             .filter(|(_, t)| t.state != TrackState::Deleted && t.state != TrackState::NotFound)
@@ -788,38 +888,12 @@ impl DataCache {
             .map(|(k, t)| (k.clone(), t.item.clone()))
             .collect();
 
-        let items: Vec<_> = if let Some(store_find) = &self.store_find {
-            let mut all_items = store_find(key_prefix, direction);
-            for (key, item) in base_items {
-                if !all_items.iter().any(|(k, _)| k == &key) {
-                    all_items.push((key, item));
-                }
-            }
-            match direction {
-                SeekDirection::Forward => {
-                    all_items.sort_by(|a, b| a.0.cmp(&b.0));
-                }
-                SeekDirection::Backward => {
-                    all_items.sort_by(|a, b| b.0.cmp(&a.0));
-                }
-            }
-            all_items
-        } else {
-            match direction {
-                SeekDirection::Forward => {
-                    let mut items: Vec<_> = base_items;
-                    items.sort_by(|a, b| a.0.cmp(&b.0));
-                    items
-                }
-                SeekDirection::Backward => {
-                    let mut items: Vec<_> = base_items;
-                    items.sort_by(|a, b| b.0.cmp(&a.0));
-                    items
-                }
-            }
-        };
+        match direction {
+            SeekDirection::Forward => base_items.sort_by(|a, b| a.0.cmp(&b.0)),
+            SeekDirection::Backward => base_items.sort_by(|a, b| b.0.cmp(&a.0)),
+        }
 
-        Box::new(items.into_iter())
+        Box::new(base_items.into_iter())
     }
 
     /// Returns the number of pending changes.
@@ -875,6 +949,7 @@ impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for DataCache {
 mod tests {
     use super::*;
     use crate::smart_contract::StorageKey;
+    use std::sync::Arc;
 
     fn make_key(id: i32, suffix: &[u8]) -> StorageKey {
         StorageKey::new(id, suffix.to_vec())
@@ -982,5 +1057,90 @@ mod tests {
             cache.get(&make_key(2, b"new")).unwrap().get_value(),
             vec![2]
         );
+    }
+
+    #[test]
+    fn delete_uncached_key_without_store_is_noop() {
+        let cache = DataCache::new(false);
+        let key = make_key(5, b"missing");
+        cache.delete(&key);
+        assert!(cache.tracked_items().is_empty());
+    }
+
+    #[test]
+    fn delete_marks_uncached_key_as_deleted_when_backing_store_has_key() {
+        let key = make_key(5, b"exists");
+        let mut backing_map = std::collections::HashMap::new();
+        backing_map.insert(key.clone(), StorageItem::from_bytes(vec![1]));
+        let backing_map = Arc::new(backing_map);
+
+        let getter = {
+            let map = Arc::clone(&backing_map);
+            Arc::new(move |lookup: &StorageKey| map.get(lookup).cloned())
+        };
+
+        let cache = DataCache::new_with_store(false, Some(getter), None);
+        cache.delete(&key);
+
+        let tracked = cache.tracked_items();
+        assert_eq!(tracked.len(), 1, "delete should produce one tracked change");
+        assert_eq!(tracked[0].0, key);
+        assert_eq!(tracked[0].1.state, TrackState::Deleted);
+    }
+
+    #[test]
+    fn find_overlays_changes_and_hides_deleted_store_entries() {
+        let key_a = make_key(11, b"a");
+        let key_b = make_key(11, b"b");
+        let key_c = make_key(11, b"c");
+
+        let mut backing_map = std::collections::HashMap::new();
+        backing_map.insert(key_a.clone(), StorageItem::from_bytes(vec![1]));
+        backing_map.insert(key_b.clone(), StorageItem::from_bytes(vec![2]));
+        let backing_map = Arc::new(backing_map);
+
+        let getter = {
+            let map = Arc::clone(&backing_map);
+            Arc::new(move |key: &StorageKey| map.get(key).cloned())
+        };
+        let finder = {
+            let map = Arc::clone(&backing_map);
+            Arc::new(
+                move |prefix: Option<&StorageKey>,
+                      direction: SeekDirection|
+                      -> Vec<(StorageKey, StorageItem)> {
+                    let prefix_bytes = prefix.map(|p| p.to_array());
+                    let mut items: Vec<_> = map
+                        .iter()
+                        .filter(|(key, _)| match &prefix_bytes {
+                            Some(bytes) => key.to_array().starts_with(bytes),
+                            None => true,
+                        })
+                        .map(|(key, value)| (key.clone(), value.clone()))
+                        .collect();
+
+                    match direction {
+                        SeekDirection::Forward => items.sort_by(|a, b| a.0.cmp(&b.0)),
+                        SeekDirection::Backward => items.sort_by(|a, b| b.0.cmp(&a.0)),
+                    }
+
+                    items
+                },
+            )
+        };
+
+        let cache = DataCache::new_with_store(false, Some(getter), Some(finder));
+        cache.update(key_a.clone(), StorageItem::from_bytes(vec![9]));
+        cache.delete(&key_b);
+        cache.add(key_c.clone(), StorageItem::from_bytes(vec![3]));
+
+        let prefix = make_key(11, b"");
+        let entries: Vec<_> = cache.find(Some(&prefix), SeekDirection::Forward).collect();
+
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].0, key_a);
+        assert_eq!(entries[0].1.get_value(), vec![9]);
+        assert_eq!(entries[1].0, key_c);
+        assert_eq!(entries[1].1.get_value(), vec![3]);
     }
 }

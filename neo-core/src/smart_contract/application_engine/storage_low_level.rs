@@ -7,6 +7,12 @@ impl ApplicationEngine {
             return Some(item.get_value());
         }
 
+        // In most execution paths (including import), both caches point to the
+        // same DataCache instance; avoid performing the same lookup twice.
+        if Arc::ptr_eq(&self.snapshot_cache, &self.original_snapshot_cache) {
+            return None;
+        }
+
         self.original_snapshot_cache
             .get(&storage_key)
             .map(|item| item.get_value())

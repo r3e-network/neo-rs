@@ -191,7 +191,7 @@ impl Default for ReadAheadConfig {
         Self {
             enabled: true,
             read_ahead_size: 256 * 1024, // 256KB
-            verify_checksums: true,
+            verify_checksums: false,
             fill_cache: true,
         }
     }

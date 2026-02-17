@@ -266,6 +266,16 @@ impl ApplicationEngine {
             SeekDirection::Forward
         };
 
+        if Arc::ptr_eq(&self.snapshot_cache, &self.original_snapshot_cache) {
+            // Fast path: single backing cache. `DataCache::find` already yields
+            // key-ordered entries for the requested direction.
+            let entries = self
+                .snapshot_cache
+                .find(Some(&search_key), direction)
+                .collect::<Vec<_>>();
+            return Ok(StorageIterator::new(entries, prefix.len(), options));
+        }
+
         let mut entries_map: HashMap<StorageKey, StorageItem> = HashMap::new();
         for (key, value) in self.snapshot_cache.find(Some(&search_key), direction) {
             entries_map.insert(key, value);

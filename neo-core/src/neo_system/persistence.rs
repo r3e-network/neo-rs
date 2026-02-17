@@ -48,6 +48,7 @@ impl NeoSystem {
         block: Block,
         update_runtime_cache: bool,
     ) -> CoreResult<Vec<ApplicationExecuted>> {
+        let emit_detailed_execution = !self.context().is_fast_sync_mode();
         let ledger_block = convert_payload_block(&block);
         let persisting_block = Arc::new(ledger_block.clone());
         let base_cache_config = DataCacheConfig {
@@ -99,15 +100,17 @@ impl NeoSystem {
         )?;
 
         on_persist_engine.native_on_persist()?;
-        let on_persist_exec = ApplicationExecuted::new(&mut on_persist_engine);
-        if !self.context().is_fast_sync_mode() {
+        let mut executed = if emit_detailed_execution {
+            let on_persist_exec = ApplicationExecuted::new(&mut on_persist_engine);
             self.actor_system()
                 .event_stream()
                 .publish(on_persist_exec.clone());
-        }
-
-        let mut executed = Vec::with_capacity(ledger_block.transactions.len() + 2);
-        executed.push(on_persist_exec);
+            let mut records = Vec::with_capacity(ledger_block.transactions.len() + 2);
+            records.push(on_persist_exec);
+            records
+        } else {
+            Vec::new()
+        };
         let native_hashes: std::collections::HashSet<_> = on_persist_engine
             .native_contracts()
             .into_iter()
@@ -148,18 +151,22 @@ impl NeoSystem {
             let vm_state = tx_engine.execute_allow_fault();
             let tx_hash = tx.hash();
 
-            let executed_tx = ApplicationExecuted::new(&mut tx_engine);
-            if !self.context().is_fast_sync_mode() {
+            if emit_detailed_execution {
+                let executed_tx = ApplicationExecuted::new(&mut tx_engine);
                 self.actor_system()
                     .event_stream()
                     .publish(executed_tx.clone());
+                executed.push(executed_tx);
+            } else {
+                // Keep ledger transaction VM states accurate without building
+                // full `ApplicationExecuted` payloads during fast-sync/import.
+                let _ = tx_engine.record_transaction_vm_state(&tx_hash, vm_state);
             }
             tx_states = tx_engine
                 .take_state::<LedgerTransactionStates>()
                 .unwrap_or_else(|| {
                     LedgerTransactionStates::new(Vec::<PersistedTransactionState>::new())
                 });
-            executed.push(executed_tx);
 
             match vm_state {
                 VMState::HALT => {
@@ -197,16 +204,16 @@ impl NeoSystem {
         )?;
         post_persist_engine.set_state(tx_states);
         post_persist_engine.native_post_persist()?;
-        let post_persist_exec = ApplicationExecuted::new(&mut post_persist_engine);
-        if !self.context().is_fast_sync_mode() {
+        if emit_detailed_execution {
+            let post_persist_exec = ApplicationExecuted::new(&mut post_persist_engine);
             self.actor_system()
                 .event_stream()
                 .publish(post_persist_exec.clone());
+            executed.push(post_persist_exec);
         }
-        executed.push(post_persist_exec);
 
         // Skip expensive handler calls during fast sync
-        if !self.context().is_fast_sync_mode() {
+        if emit_detailed_execution {
             self.invoke_committing(&ledger_block, base_snapshot.as_ref(), &executed);
         }
 
@@ -233,7 +240,7 @@ impl NeoSystem {
         }
 
         // Skip expensive plugin events during fast sync
-        if !self.context().is_fast_sync_mode() {
+        if emit_detailed_execution {
             // Notify plugins that a block has been persisted, matching the C# event ordering.
             let block_hash = ledger_block.hash().to_string();
             let block_height = ledger_block.index();
