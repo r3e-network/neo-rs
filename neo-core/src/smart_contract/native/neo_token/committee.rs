@@ -3,6 +3,8 @@
 //
 
 use super::*;
+use std::cmp::Reverse;
+use std::collections::BinaryHeap;
 
 impl NeoToken {
     /// Determines whether the committee should be refreshed at the specified height.
@@ -221,9 +223,41 @@ impl NeoToken {
             return Ok(standby);
         }
 
-        let mut ordered = candidates;
+        #[derive(Clone, Eq, PartialEq)]
+        struct RankedCandidate {
+            pubkey: ECPoint,
+            votes: BigInt,
+        }
+
+        impl Ord for RankedCandidate {
+            fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+                self.votes
+                    .cmp(&other.votes)
+                    .then_with(|| other.pubkey.cmp(&self.pubkey))
+            }
+        }
+
+        impl PartialOrd for RankedCandidate {
+            fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+                Some(self.cmp(other))
+            }
+        }
+
+        let mut top_candidates: BinaryHeap<Reverse<RankedCandidate>> =
+            BinaryHeap::with_capacity(committee_members_count.saturating_add(1));
+        for (pubkey, votes) in candidates {
+            top_candidates.push(Reverse(RankedCandidate { pubkey, votes }));
+            if top_candidates.len() > committee_members_count {
+                let _ = top_candidates.pop();
+            }
+        }
+
+        let mut ordered: Vec<(ECPoint, BigInt)> = top_candidates
+            .into_iter()
+            .map(|Reverse(candidate)| (candidate.pubkey, candidate.votes))
+            .collect();
         ordered.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-        Ok(ordered.into_iter().take(committee_members_count).collect())
+        Ok(ordered)
     }
 
     pub fn compute_next_block_validators_snapshot<S>(

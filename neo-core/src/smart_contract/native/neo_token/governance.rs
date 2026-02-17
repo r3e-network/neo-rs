@@ -233,6 +233,8 @@ impl NeoToken {
         let prefix = StorageKey::create(Self::ID, Self::PREFIX_CANDIDATE);
         let mut candidates = Vec::new();
         let policy = PolicyContract::new();
+        let blocked_accounts = policy.blocked_accounts_snapshot(snapshot);
+        let has_blocked_accounts = !blocked_accounts.is_empty();
         for (key, item) in snapshot.find(Some(&prefix), SeekDirection::Forward) {
             if key.id != Self::ID {
                 continue;
@@ -254,10 +256,7 @@ impl NeoToken {
             }
 
             let candidate_account = Contract::create_signature_contract(pk.clone()).script_hash();
-            if policy
-                .is_blocked_snapshot(snapshot, &candidate_account)
-                .unwrap_or(false)
-            {
+            if has_blocked_accounts && blocked_accounts.contains(&candidate_account) {
                 continue;
             }
 

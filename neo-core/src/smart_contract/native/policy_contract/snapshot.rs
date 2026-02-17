@@ -129,6 +129,34 @@ impl PolicyContract {
             .is_some())
     }
 
+    /// Returns all blocked accounts in the current snapshot.
+    pub fn blocked_accounts_snapshot<S>(&self, snapshot: &S) -> std::collections::HashSet<UInt160>
+    where
+        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+    {
+        let mut blocked = std::collections::HashSet::new();
+        let prefix = StorageKey::new(Self::ID, vec![Self::PREFIX_BLOCKED_ACCOUNT]);
+        for (key, _) in snapshot.find(
+            Some(&prefix),
+            crate::persistence::seek_direction::SeekDirection::Forward,
+        ) {
+            if key.id != Self::ID {
+                continue;
+            }
+            let suffix = key.suffix();
+            if suffix.first().copied() != Some(Self::PREFIX_BLOCKED_ACCOUNT) {
+                continue;
+            }
+            if suffix.len() != 1 + ADDRESS_SIZE {
+                continue;
+            }
+            if let Ok(account) = UInt160::from_bytes(&suffix[1..]) {
+                blocked.insert(account);
+            }
+        }
+        blocked
+    }
+
     /// Gets the fixed fee for a whitelisted contract method, if it exists.
     pub fn get_whitelisted_fee(
         &self,

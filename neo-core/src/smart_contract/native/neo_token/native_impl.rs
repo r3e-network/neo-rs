@@ -240,18 +240,6 @@ impl NativeContract for NeoToken {
         }
 
         let snapshot = engine.snapshot_cache();
-        // Committee members can only change via transactions that mutate votes,
-        // candidate registration, or NEO balances. If this refresh block has no
-        // transactions and committee cache already exists, recomputing the full
-        // candidate set is redundant and very expensive.
-        if block.transactions.is_empty()
-            && snapshot
-                .as_ref()
-                .try_get(&StorageKey::create(Self::ID, Self::PREFIX_COMMITTEE))
-                .is_some()
-        {
-            return Ok(());
-        }
         let old_committee =
             self.committee_from_cache_with_votes(snapshot.as_ref(), engine.protocol_settings())?;
         let old_keys: Vec<ECPoint> = old_committee.iter().map(|(pk, _)| pk.clone()).collect();
