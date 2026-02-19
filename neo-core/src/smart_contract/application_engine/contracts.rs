@@ -1,4 +1,5 @@
 use super::*;
+use crate::smart_contract::contract_basic_method::ContractBasicMethod;
 
 impl ApplicationEngine {
     pub(super) fn fetch_contract(&mut self, hash: &UInt160) -> Result<ContractState> {
@@ -68,7 +69,7 @@ impl ApplicationEngine {
         let prev_context_clone = previous_context.clone();
         let prev_hash = previous_hash;
 
-        self.load_script_with_state(script_bytes, rvcount, offset, move |state| {
+        let context = self.load_script_with_state(script_bytes, rvcount, offset, move |state| {
             state.call_flags = flags;
             state.contract = Some(contract_clone.clone());
             state.method_name = Some(method_clone.name.clone());
@@ -84,7 +85,31 @@ impl ApplicationEngine {
             state.script_hash = Some(contract_clone.hash);
             state.calling_context = prev_context_clone.clone();
             state.calling_script_hash = prev_hash;
-        })
+        })?;
+
+        if let Some(init) = contract
+            .manifest
+            .abi
+            .get_method_ref(
+                ContractBasicMethod::INITIALIZE,
+                ContractBasicMethod::INITIALIZE_P_COUNT as usize,
+            )
+        {
+            if init.offset < 0 {
+                return Err(Error::invalid_operation(
+                    "Initialization method offset cannot be negative".to_string(),
+                ));
+            }
+
+            let init_context = context.clone_with_position(init.offset as usize);
+            self.vm_engine
+                .engine_mut()
+                .load_context(init_context)
+                .map_err(|e| Error::invalid_operation(e.to_string()))?;
+            self.refresh_context_tracking()?;
+        }
+
+        Ok(context)
     }
 
     pub(super) fn call_contract_internal(
@@ -163,6 +188,20 @@ impl ApplicationEngine {
 
         flags &= calling_flags;
 
+        let whitelisted_fixed_fee = if self
+            .protocol_settings
+            .is_hardfork_enabled(Hardfork::HfFaun, self.current_block_index())
+        {
+            PolicyContract::new().get_whitelisted_fee(
+                self.snapshot_cache.as_ref(),
+                &contract.hash,
+                &method.name,
+                method.parameters.len() as u32,
+            )?
+        } else {
+            None
+        };
+
         self.increment_invocation_counter(&contract.hash);
 
         let new_context = self.load_contract_context(
@@ -175,24 +214,8 @@ impl ApplicationEngine {
             has_return_value,
         )?;
 
-        let mut whitelisted = false;
-        if self
-            .protocol_settings
-            .is_hardfork_enabled(Hardfork::HfFaun, self.current_block_index())
-        {
-            let policy = PolicyContract::new();
-            if let Some(fixed_fee) = policy.get_whitelisted_fee(
-                self.snapshot_cache.as_ref(),
-                &contract.hash,
-                &method.name,
-                method.parameters.len() as u32,
-            )? {
-                self.add_fee_datoshi(fixed_fee)?;
-                whitelisted = true;
-            }
-        }
-
-        if whitelisted {
+        if let Some(fixed_fee) = whitelisted_fixed_fee {
+            self.add_fee_datoshi(fixed_fee)?;
             let state_arc = new_context
                 .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
             state_arc.lock().whitelisted = true;

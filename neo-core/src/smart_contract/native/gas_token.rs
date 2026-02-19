@@ -28,6 +28,7 @@ use neo_vm::StackItem;
 use num_bigint::BigInt;
 use num_traits::{Signed, Zero};
 use std::any::Any;
+use std::sync::OnceLock;
 
 lazy_static! {
     static ref GAS_HASH: UInt160 = Helper::get_contract_hash(&UInt160::zero(), 0, "GasToken");
@@ -342,6 +343,45 @@ impl GasToken {
         BigInt::from_signed_bytes_le(data)
     }
 
+    fn watched_account() -> Option<&'static UInt160> {
+        static WATCHED: OnceLock<Option<UInt160>> = OnceLock::new();
+        WATCHED
+            .get_or_init(|| {
+                let raw = std::env::var("NEO_GAS_WATCH_ACCOUNT").ok()?;
+                let normalized = raw.trim();
+                if normalized.is_empty() {
+                    return None;
+                }
+                match UInt160::parse(normalized) {
+                    Ok(value) => Some(value),
+                    Err(err) => {
+                        tracing::warn!(
+                            target: "neo",
+                            account = normalized,
+                            error = %err,
+                            "invalid NEO_GAS_WATCH_ACCOUNT; gas watch disabled"
+                        );
+                        None
+                    }
+                }
+            })
+            .as_ref()
+    }
+
+    fn is_watched_account(account: &UInt160) -> bool {
+        Self::watched_account()
+            .map(|watched| watched == account)
+            .unwrap_or(false)
+    }
+
+    fn watched_tx_hash(engine: &ApplicationEngine) -> String {
+        engine
+            .script_container()
+            .and_then(|container| container.hash().ok())
+            .map(|hash| hash.to_string())
+            .unwrap_or_else(|| "<none>".to_string())
+    }
+
     fn write_account_balance(
         &self,
         context: &StorageContext,
@@ -349,9 +389,29 @@ impl GasToken {
         account: &UInt160,
         balance: &BigInt,
     ) -> CoreResult<()> {
+        let watched = Self::is_watched_account(account);
+        let previous_balance = if watched {
+            let snapshot = engine.snapshot_cache();
+            self.balance_of_snapshot(snapshot.as_ref(), account)
+        } else {
+            BigInt::zero()
+        };
         let key = Self::account_suffix(account);
         if balance.is_zero() {
             engine.delete_storage_item(context, &key)?;
+            if watched {
+                tracing::info!(
+                    target: "neo",
+                    block_index = engine.current_block_index(),
+                    trigger = ?engine.trigger(),
+                    tx_hash = %Self::watched_tx_hash(engine),
+                    account = %account,
+                    previous_balance = %previous_balance,
+                    next_balance = %balance,
+                    op = "delete",
+                    "watched GAS account balance change"
+                );
+            }
         } else {
             let state = AccountState::with_balance(balance.clone());
             let bytes = BinarySerializer::serialize(
@@ -360,6 +420,19 @@ impl GasToken {
             )
             .map_err(CoreError::native_contract)?;
             engine.put_storage_item(context, &key, &bytes)?;
+            if watched {
+                tracing::info!(
+                    target: "neo",
+                    block_index = engine.current_block_index(),
+                    trigger = ?engine.trigger(),
+                    tx_hash = %Self::watched_tx_hash(engine),
+                    account = %account,
+                    previous_balance = %previous_balance,
+                    next_balance = %balance,
+                    op = "put",
+                    "watched GAS account balance change"
+                );
+            }
         }
         Ok(())
     }
@@ -438,6 +511,19 @@ impl GasToken {
         let snapshot = engine.snapshot_cache();
         let snapshot_ref = snapshot.as_ref();
         let balance = self.balance_of_snapshot(snapshot_ref, account);
+        let watched = Self::is_watched_account(account);
+        if watched {
+            tracing::info!(
+                target: "neo",
+                block_index = engine.current_block_index(),
+                trigger = ?engine.trigger(),
+                tx_hash = %Self::watched_tx_hash(engine),
+                account = %account,
+                amount = %amount,
+                balance_before = %balance,
+                "watched GAS mint"
+            );
+        }
 
         // Use safe arithmetic
         let new_balance = SafeArithmetic::safe_add(&balance, amount)?;
@@ -489,6 +575,19 @@ impl GasToken {
         let snapshot = engine.snapshot_cache();
         let snapshot_ref = snapshot.as_ref();
         let balance = self.balance_of_snapshot(snapshot_ref, account);
+        let watched = Self::is_watched_account(account);
+        if watched {
+            tracing::info!(
+                target: "neo",
+                block_index = engine.current_block_index(),
+                trigger = ?engine.trigger(),
+                tx_hash = %Self::watched_tx_hash(engine),
+                account = %account,
+                amount = %amount,
+                balance_before = %balance,
+                "watched GAS burn"
+            );
+        }
 
         // Validate balance is sufficient
         if balance < *amount {
@@ -642,6 +741,23 @@ impl NativeContract for GasToken {
             let total_fee = tx.system_fee() + tx.network_fee();
             let burn_amount = BigInt::from(total_fee);
             let pre_balance = self.balance_of_snapshot(snapshot_ref, &sender);
+            let sender_balance_key =
+                StorageKey::create_with_uint160(Self::ID, ACCOUNT_PREFIX, &sender).to_array();
+            if Self::is_watched_account(&sender) {
+                tracing::info!(
+                    target: "neo",
+                    block_index = block.index(),
+                    block_hash = %block_hash,
+                    tx_hash = %tx.hash(),
+                    sender = %sender,
+                    sender_balance_key = %format!("0x{}", hex::encode(&sender_balance_key)),
+                    system_fee = tx.system_fee(),
+                    network_fee = tx.network_fee(),
+                    burn_amount = %burn_amount,
+                    pre_balance = %pre_balance,
+                    "watched GAS on_persist sender burn preparation"
+                );
+            }
             if pre_balance < burn_amount {
                 tracing::warn!(
                     target: "neo",

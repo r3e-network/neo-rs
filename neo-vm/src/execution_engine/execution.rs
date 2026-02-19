@@ -141,13 +141,14 @@ impl ExecutionEngine {
         }
         self.instructions_executed += 1;
 
-        // Get the current context
-        let context = self
-            .current_context_mut()
-            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+        let context_index = self.invocation_stack.len() - 1;
 
         // Get the current instruction.
-        let instruction = context.current_instruction()?;
+        let instruction = self
+            .invocation_stack
+            .get_mut(context_index)
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
+            .current_instruction()?;
 
         self.pre_execute_instruction(&instruction)?;
 
@@ -188,7 +189,7 @@ impl ExecutionEngine {
         self.post_execute_instruction(&instruction)?;
 
         if !self.is_jumping {
-            if let Some(context) = self.current_context_mut() {
+            if let Some(context) = self.invocation_stack.get_mut(context_index) {
                 let _ = context.move_next(); // Ignore errors here
             }
         }

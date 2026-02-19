@@ -70,7 +70,21 @@ impl ExecutionEngine {
         if self.uncaught_exception.is_none() {
             let message = match &err {
                 VmError::CatchableException { message } => message.clone(),
-                _ => err.to_string(),
+                _ => {
+                    let mut fault_text = err.to_string();
+                    if let Some(context) = self.current_context() {
+                        let ip = context.instruction_pointer();
+                        let opcode = context
+                            .current_instruction()
+                            .map(|instruction| format!("{:?}", instruction.opcode()))
+                            .unwrap_or_else(|_| "<none>".to_string());
+                        let eval_depth = context.evaluation_stack().len();
+                        fault_text = format!(
+                            "{fault_text} [ip={ip} opcode={opcode} eval_depth={eval_depth}]"
+                        );
+                    }
+                    fault_text
+                }
             };
             self.uncaught_exception = Some(StackItem::from_byte_string(message.into_bytes()));
         }

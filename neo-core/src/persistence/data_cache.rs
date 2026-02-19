@@ -11,12 +11,14 @@ use super::{
     track_state::TrackState,
 };
 use crate::smart_contract::{StorageItem, StorageKey};
+use crate::{UInt160, UInt256};
 use parking_lot::RwLock;
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use thiserror::Error;
-use tracing::{debug, trace, warn};
+use tracing::{debug, info, trace, warn};
 
 /// Represents an entry in the cache.
 #[derive(Debug, Clone)]
@@ -42,6 +44,143 @@ pub type OnEntryDelegate = Arc<dyn Fn(&DataCache, &StorageKey, &StorageItem) + S
 type StoreGetFn = dyn Fn(&StorageKey) -> Option<StorageItem> + Send + Sync;
 type StoreFindFn =
     dyn Fn(Option<&StorageKey>, SeekDirection) -> Vec<(StorageKey, StorageItem)> + Send + Sync;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Default)]
+pub(crate) enum StorageWatchPhase {
+    #[default]
+    Unknown,
+    OnPersist,
+    Application,
+    PostPersist,
+}
+
+impl StorageWatchPhase {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Unknown => "unknown",
+            Self::OnPersist => "on_persist",
+            Self::Application => "application",
+            Self::PostPersist => "post_persist",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct StorageWatchContext {
+    block_index: u32,
+    phase: StorageWatchPhase,
+    tx_hash: Option<UInt256>,
+}
+
+thread_local! {
+    static STORAGE_WATCH_CONTEXT: RefCell<Option<StorageWatchContext>> = const { RefCell::new(None) };
+}
+
+pub(crate) fn set_storage_watch_context(
+    block_index: u32,
+    phase: StorageWatchPhase,
+    tx_hash: Option<UInt256>,
+) {
+    STORAGE_WATCH_CONTEXT.with(|context| {
+        *context.borrow_mut() = Some(StorageWatchContext {
+            block_index,
+            phase,
+            tx_hash,
+        });
+    });
+}
+
+pub(crate) fn clear_storage_watch_context() {
+    STORAGE_WATCH_CONTEXT.with(|context| {
+        *context.borrow_mut() = None;
+    });
+}
+
+fn current_storage_watch_context() -> Option<StorageWatchContext> {
+    STORAGE_WATCH_CONTEXT.with(|context| *context.borrow())
+}
+
+fn watched_gas_account_bytes() -> Option<([u8; 20], [u8; 20])> {
+    static WATCHED: OnceLock<Option<([u8; 20], [u8; 20])>> = OnceLock::new();
+    *WATCHED.get_or_init(|| {
+        let raw = std::env::var("NEO_GAS_WATCH_ACCOUNT").ok()?;
+        let normalized = raw.trim();
+        match UInt160::parse(normalized) {
+            Ok(account) => {
+                let little_endian = account.as_bytes();
+                let mut big_endian = little_endian;
+                big_endian.reverse();
+                Some((little_endian, big_endian))
+            }
+            Err(err) => {
+                warn!(
+                    target: "neo",
+                    account = normalized,
+                    error = %err,
+                    "failed to parse NEO_GAS_WATCH_ACCOUNT for storage tracing"
+                );
+                None
+            }
+        }
+    })
+}
+
+fn is_watched_gas_balance_key(key: &StorageKey) -> bool {
+    const GAS_TOKEN_ID: i32 = -6;
+    const ACCOUNT_PREFIX: u8 = 0x14;
+
+    let Some((account_le, account_be)) = watched_gas_account_bytes() else {
+        return false;
+    };
+
+    let key_account = &key.key()[1..];
+    key.id() == GAS_TOKEN_ID
+        && key.key().len() == 21
+        && key.key()[0] == ACCOUNT_PREFIX
+        && (key_account == account_le || key_account == account_be)
+}
+
+fn log_watched_storage_event(
+    op: &'static str,
+    source: &'static str,
+    key: &StorageKey,
+    prev_state: Option<TrackState>,
+    new_state: Option<TrackState>,
+    value: Option<&StorageItem>,
+) {
+    if !is_watched_gas_balance_key(key) {
+        return;
+    }
+
+    let context = current_storage_watch_context();
+    let block_index = context.map(|ctx| ctx.block_index);
+    let phase = context
+        .map(|ctx| ctx.phase.as_str())
+        .unwrap_or(StorageWatchPhase::Unknown.as_str());
+    let tx_hash = context
+        .and_then(|ctx| ctx.tx_hash)
+        .map(|hash| hash.to_string())
+        .unwrap_or_else(|| "<none>".to_string());
+    let balance = value
+        .map(|item| item.to_bigint().to_string())
+        .unwrap_or_else(|| "<none>".to_string());
+
+    info!(
+        target: "neo",
+        block_index = ?block_index,
+        phase,
+        tx_hash = %tx_hash,
+        op,
+        source,
+        key_id = key.id(),
+        key_prefix = key.key().first().copied().unwrap_or_default(),
+        key_len = key.key().len(),
+        prev_state = ?prev_state,
+        new_state = ?new_state,
+        balance = %balance,
+        "watched DataCache key event"
+    );
+}
 
 /// Internal state protected by RwLock for thread-safe Copy-on-Write
 struct InnerState {
@@ -389,6 +528,14 @@ impl DataCache {
     /// Merges tracked changes from another cache into this one.
     pub fn merge_tracked_items(&self, items: &[(StorageKey, Trackable)]) {
         for (key, trackable) in items {
+            log_watched_storage_event(
+                "merge",
+                "merge_tracked_items",
+                key,
+                None,
+                Some(trackable.state),
+                Some(&trackable.item),
+            );
             match trackable.state {
                 TrackState::Added => self.add(key.clone(), trackable.item.clone()),
                 TrackState::Changed => self.update(key.clone(), trackable.item.clone()),
@@ -444,8 +591,24 @@ impl DataCache {
             if let Some(trackable) = state.dictionary.get(key) {
                 if trackable.state != TrackState::Deleted && trackable.state != TrackState::NotFound
                 {
+                    log_watched_storage_event(
+                        "get",
+                        "dictionary_hit",
+                        key,
+                        Some(trackable.state),
+                        Some(trackable.state),
+                        Some(&trackable.item),
+                    );
                     return Some(trackable.item.clone());
                 }
+                log_watched_storage_event(
+                    "get",
+                    "dictionary_deleted",
+                    key,
+                    Some(trackable.state),
+                    Some(trackable.state),
+                    None,
+                );
                 return None;
             }
         }
@@ -463,6 +626,7 @@ impl DataCache {
                     self.trigger_prefetch_if_needed(key, pattern);
                 }
 
+                log_watched_storage_event("get", "read_cache_hit", key, None, None, Some(&item));
                 return Some(item);
             }
         }
@@ -483,10 +647,12 @@ impl DataCache {
                     handler(self, key, &item);
                 }
 
+                log_watched_storage_event("get", "store_get_hit", key, None, None, Some(&item));
                 return Some(item);
             }
         }
 
+        log_watched_storage_event("get", "miss", key, None, None, None);
         None
     }
 
@@ -618,6 +784,19 @@ impl DataCache {
     /// Applies an add operation to the internal storage.
     fn apply_add(&self, key: &StorageKey, value: StorageItem) {
         let mut state = self.state.write();
+        let prev_state = state
+            .dictionary
+            .get(key)
+            .map(|t| t.state)
+            .unwrap_or(TrackState::NotFound);
+        log_watched_storage_event(
+            "add",
+            "apply_add",
+            key,
+            Some(prev_state),
+            Some(TrackState::Added),
+            Some(&value),
+        );
         state
             .dictionary
             .insert(key.clone(), Trackable::new(value, TrackState::Added));
@@ -657,6 +836,14 @@ impl DataCache {
             TrackState::Deleted => TrackState::Added,
             TrackState::NotFound => TrackState::Changed,
         };
+        log_watched_storage_event(
+            "update",
+            "apply_update",
+            key,
+            Some(prev_state),
+            Some(new_state),
+            Some(&value),
+        );
         state
             .dictionary
             .insert(key.clone(), Trackable::new(value, new_state));
@@ -680,13 +867,13 @@ impl DataCache {
 
     /// Applies a delete operation.
     fn apply_delete(&self, key: &StorageKey) {
-        let prev_state = {
+        let (prev_state, previous_item) = {
             let state = self.state.read();
-            state
-                .dictionary
-                .get(key)
-                .map(|t| t.state)
-                .unwrap_or(TrackState::NotFound)
+            let previous = state.dictionary.get(key);
+            (
+                previous.map(|t| t.state).unwrap_or(TrackState::NotFound),
+                previous.map(|t| t.item.clone()),
+            )
         };
 
         match prev_state {
@@ -694,6 +881,14 @@ impl DataCache {
                 let mut state = self.state.write();
                 state.dictionary.remove(key);
                 state.change_set.remove(key);
+                log_watched_storage_event(
+                    "delete",
+                    "apply_delete_added",
+                    key,
+                    Some(prev_state),
+                    Some(TrackState::NotFound),
+                    previous_item.as_ref(),
+                );
             }
             TrackState::Changed | TrackState::None => {
                 let mut state = self.state.write();
@@ -702,17 +897,41 @@ impl DataCache {
                     Trackable::new(StorageItem::default(), TrackState::Deleted),
                 );
                 state.change_set.insert(key.clone());
+                log_watched_storage_event(
+                    "delete",
+                    "apply_delete_tracked",
+                    key,
+                    Some(prev_state),
+                    Some(TrackState::Deleted),
+                    previous_item.as_ref(),
+                );
             }
-            TrackState::Deleted => {}
+            TrackState::Deleted => {
+                log_watched_storage_event(
+                    "delete",
+                    "apply_delete_already_deleted",
+                    key,
+                    Some(prev_state),
+                    Some(TrackState::Deleted),
+                    previous_item.as_ref(),
+                );
+            }
             TrackState::NotFound => {
                 // For overlays that do not track reads, only emit a delete when the
                 // key actually exists in the backing store.
-                let exists_in_store = self
+                let store_item = self
                     .store_get
                     .as_ref()
-                    .and_then(|getter| getter(key))
-                    .is_some();
-                if !exists_in_store {
+                    .and_then(|getter| getter(key));
+                if store_item.is_none() {
+                    log_watched_storage_event(
+                        "delete",
+                        "apply_delete_not_found_skip",
+                        key,
+                        Some(prev_state),
+                        None,
+                        None,
+                    );
                     return;
                 }
 
@@ -726,6 +945,14 @@ impl DataCache {
                     TrackState::Added => {
                         state.dictionary.remove(key);
                         state.change_set.remove(key);
+                        log_watched_storage_event(
+                            "delete",
+                            "apply_delete_not_found_added",
+                            key,
+                            Some(prev_state),
+                            Some(TrackState::NotFound),
+                            store_item.as_ref(),
+                        );
                     }
                     TrackState::Changed | TrackState::None | TrackState::NotFound => {
                         state.dictionary.insert(
@@ -733,8 +960,25 @@ impl DataCache {
                             Trackable::new(StorageItem::default(), TrackState::Deleted),
                         );
                         state.change_set.insert(key.clone());
+                        log_watched_storage_event(
+                            "delete",
+                            "apply_delete_not_found_emit",
+                            key,
+                            Some(prev_state),
+                            Some(TrackState::Deleted),
+                            store_item.as_ref(),
+                        );
                     }
-                    TrackState::Deleted => {}
+                    TrackState::Deleted => {
+                        log_watched_storage_event(
+                            "delete",
+                            "apply_delete_not_found_already_deleted",
+                            key,
+                            Some(prev_state),
+                            Some(TrackState::Deleted),
+                            store_item.as_ref(),
+                        );
+                    }
                 }
             }
         }

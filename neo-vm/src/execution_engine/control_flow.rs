@@ -73,7 +73,6 @@ impl ExecutionEngine {
 
         let new_context = context.clone_with_position(position);
         self.load_context(new_context)?;
-        self.is_jumping = true;
 
         Ok(())
     }

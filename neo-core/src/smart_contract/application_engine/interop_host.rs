@@ -60,50 +60,60 @@ impl InteropHost for ApplicationEngine {
         };
         // Lock is now dropped — safe to acquire caller's state lock
 
-        // Phase 2: Commit snapshot and propagate state to caller
-        if engine.uncaught_exception().is_none() {
-            if let Some(snapshot) = snapshot_cache {
-                // `DataCache` is currently shared across execution contexts. Calling `commit()`
-                // on a shared snapshot clears the global change-set and can drop pending writes
-                // before the block-level persistence pipeline flushes them to storage.
-                // Only commit when this context owns the snapshot state exclusively.
-                if std::sync::Arc::strong_count(&snapshot) == 1 {
-                    snapshot.commit();
+        // C# only applies cross-contract unload handling when the unloaded context
+        // script differs from the current context script. Cloned contexts created
+        // via CALL/LoadContract(_initialize) share the same script and must bypass
+        // dynamic-call return-value checks.
+        let is_cross_contract_unload = engine.current_context().map_or(true, |current_ctx| {
+            current_ctx.script_hash() != context.script_hash()
+        });
+
+        // Phase 2: Commit snapshot and propagate state to caller (cross-contract only)
+        if is_cross_contract_unload {
+            if engine.uncaught_exception().is_none() {
+                if let Some(snapshot) = snapshot_cache {
+                    // `DataCache` is currently shared across execution contexts. Calling `commit()`
+                    // on a shared snapshot clears the global change-set and can drop pending writes
+                    // before the block-level persistence pipeline flushes them to storage.
+                    // Only commit when this context owns the snapshot state exclusively.
+                    if std::sync::Arc::strong_count(&snapshot) == 1 {
+                        snapshot.commit();
+                    }
                 }
-            }
 
-            if let Some(current_ctx) = engine.current_context() {
-                let current_state_arc = current_ctx
-                    .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
-                let mut current_state = current_state_arc.lock();
-                current_state.notification_count = current_state
-                    .notification_count
-                    .saturating_add(notification_count);
+                if let Some(current_ctx) = engine.current_context() {
+                    let current_state_arc = current_ctx
+                        .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+                    let mut current_state = current_state_arc.lock();
+                    current_state.notification_count = current_state
+                        .notification_count
+                        .saturating_add(notification_count);
 
-                if is_dynamic_call {
-                    let return_count = context.evaluation_stack().len();
-                    match return_count {
-                        0 => {
-                            engine.push(StackItem::null())?;
-                        }
-                        1 => {
-                            // Single return value is already on the evaluation stack and will be
-                            // propagated by the VM according to the configured return count.
-                        }
-                        _ => {
-                            return Err(VmError::invalid_operation_msg(
-                                "Multiple return values are not allowed in cross-contract calls.",
-                            ));
+                    if is_dynamic_call {
+                        let return_count = context.evaluation_stack().len();
+                        match return_count {
+                            0 => {
+                                engine.push(StackItem::null())?;
+                            }
+                            1 => {
+                                // Single return value is already on the evaluation stack and will be
+                                // propagated by the VM according to the configured return count.
+                            }
+                            _ => {
+                                return Err(VmError::invalid_operation_msg(
+                                    "Multiple return values are not allowed in cross-contract calls.",
+                                ));
+                            }
                         }
                     }
                 }
-            }
-        } else if notification_count > 0 {
-            if notification_count >= self.notifications.len() {
-                self.notifications.clear();
-            } else {
-                let retain = self.notifications.len() - notification_count;
-                self.notifications.truncate(retain);
+            } else if notification_count > 0 {
+                if notification_count >= self.notifications.len() {
+                    self.notifications.clear();
+                } else {
+                    let retain = self.notifications.len() - notification_count;
+                    self.notifications.truncate(retain);
+                }
             }
         }
 

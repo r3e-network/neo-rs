@@ -239,6 +239,22 @@ fn storage_put_handler(app: &mut ApplicationEngine, _engine: &mut ExecutionEngin
 
     let value = pop_storage_bytes(app, "System.Storage.Put", "value")?;
 
+    if std::env::var_os("NEO_TRACE_STORAGE_PUT").is_some() {
+        let key_preview = key
+            .iter()
+            .take(16)
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        eprintln!(
+            "trace storage.put: ctx_id={} readonly={} key_len={} value_len={} key_prefix={}",
+            context.id,
+            context.is_read_only,
+            key.len(),
+            value.len(),
+            key_preview,
+        );
+    }
+
     app.storage_put(context, key, value)
         .map_err(|e| map_storage_error("System.Storage.Put", e))?;
     Ok(())

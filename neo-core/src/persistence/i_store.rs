@@ -33,6 +33,9 @@ pub trait IStore: IReadOnlyStore + IWriteStore<Vec<u8>, Vec<u8>> + Send + Sync +
     /// Disables storage-level fast-sync optimizations.
     fn disable_fast_sync_mode(&self) {}
 
+    /// Flushes pending writes to durable storage when supported.
+    fn flush(&self) {}
+
     /// Downcast support for concrete implementations.
     fn as_any(&self) -> &dyn Any;
 }

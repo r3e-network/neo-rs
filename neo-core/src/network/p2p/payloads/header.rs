@@ -401,7 +401,7 @@ impl Header {
         }
 
         let mut result_item = if engine.result_stack().len() == 1 {
-            engine.result_stack().peek(0).ok()
+            engine.result_stack().peek(0).ok().cloned()
         } else {
             None
         };
@@ -409,7 +409,7 @@ impl Header {
         if result_item.is_none() {
             if let Some(stack) = engine.current_evaluation_stack() {
                 if stack.len() == 1 {
-                    result_item = stack.peek(0).ok();
+                    result_item = stack.peek(0).ok().cloned();
                 }
             }
         }

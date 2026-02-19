@@ -421,6 +421,13 @@ impl IStore for RocksDbStore {
         RocksDbStore::disable_fast_sync_mode(self);
     }
 
+    fn flush(&self) {
+        if let Err(err) = self.flush_batch_writes() {
+            warn!(target: "neo", error = %err, "failed to flush pending RocksDB batch writes");
+        }
+        self.flush_memtables();
+    }
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -625,26 +632,19 @@ impl IStoreSnapshot for RocksDbSnapshot {
             return Ok(());
         }
 
-        let _start = Instant::now();
-
-        if self.use_batch_commit {
-            self.batch_committer.try_add(&mut batch_guard);
-            drop(batch_guard);
-            if let Err(err) = self.batch_committer.buffer.force_flush() {
-                error!(target: "neo", error = %err, "rocksdb batch force flush failed");
-                return Err(StorageError::CommitFailed(format!(
-                    "RocksDB force flush failed: {}",
-                    err
-                )));
-            }
-            return Ok(());
-        }
-
         let mut batch = WriteBatch::default();
         mem::swap(&mut *batch_guard, &mut batch);
         drop(batch_guard);
 
-        let write_opts = WriteOptions::default();
+        let _start = Instant::now();
+
+        let mut write_opts = WriteOptions::default();
+        if self.use_batch_commit {
+            write_opts.set_sync(self.store.batch_config.sync_on_flush);
+            if self.store.batch_config.disable_wal {
+                write_opts.disable_wal(true);
+            }
+        }
 
         self.db.write_opt(batch, &write_opts).map_err(|err| {
             error!(target: "neo", error = %err, "rocksdb snapshot commit failed");

@@ -128,76 +128,28 @@ fn memcpy(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
 /// This operation enforces `MaxItemSize` limits after concatenation to prevent
 /// memory exhaustion attacks via incremental `ByteString` building.
 fn cat(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    // SECURITY FIX (M-2): Get max_item_size limit before borrowing context mutably
     let max_item_size = engine.limits().max_item_size as usize;
-
-    // Get the current context
     let context = engine
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    // Pop the values from the stack
-    let b = context.pop()?;
-    let a = context.pop()?;
+    // Match C# semantics: CAT always creates a brand-new buffer and never mutates
+    // either operand in place.
+    let x2 = context.pop()?.as_bytes()?;
+    let x1 = context.pop()?.as_bytes()?;
 
-    // Concatenate the values and enforce MaxItemSize limit
-    let result = match (a, b) {
-        (StackItem::ByteString(mut a), StackItem::ByteString(b)) => {
-            a.extend_from_slice(&b);
-            // SECURITY FIX (M-2): Enforce MaxItemSize after concatenation
-            if a.len() > max_item_size {
-                return Err(VmError::invalid_operation_msg(format!(
-                    "MaxItemSize exceed: {}/{}",
-                    a.len(),
-                    max_item_size
-                )));
-            }
-            StackItem::from_buffer(a)
-        }
-        (StackItem::Buffer(a), StackItem::Buffer(b)) => {
-            a.extend_from_slice(&b.data());
-            // SECURITY FIX (M-2): Enforce MaxItemSize after concatenation
-            if a.len() > max_item_size {
-                return Err(VmError::invalid_operation_msg(format!(
-                    "MaxItemSize exceed: {}/{}",
-                    a.len(),
-                    max_item_size
-                )));
-            }
-            StackItem::Buffer(a)
-        }
-        (StackItem::ByteString(mut a), StackItem::Buffer(b)) => {
-            a.extend_from_slice(&b.data());
-            // SECURITY FIX (M-2): Enforce MaxItemSize after concatenation
-            if a.len() > max_item_size {
-                return Err(VmError::invalid_operation_msg(format!(
-                    "MaxItemSize exceed: {}/{}",
-                    a.len(),
-                    max_item_size
-                )));
-            }
-            StackItem::from_buffer(a)
-        }
-        (StackItem::Buffer(a), StackItem::ByteString(b)) => {
-            a.extend_from_slice(&b);
-            // SECURITY FIX (M-2): Enforce MaxItemSize after concatenation
-            if a.len() > max_item_size {
-                return Err(VmError::invalid_operation_msg(format!(
-                    "MaxItemSize exceed: {}/{}",
-                    a.len(),
-                    max_item_size
-                )));
-            }
-            StackItem::Buffer(a)
-        }
-        _ => {
-            return Err(VmError::invalid_type_simple(
-                "Expected ByteString or Buffer",
-            ));
-        }
-    };
+    let length = x1.len().saturating_add(x2.len());
+    if length > max_item_size {
+        return Err(VmError::invalid_operation_msg(format!(
+            "MaxItemSize exceed: {}/{}",
+            length, max_item_size
+        )));
+    }
 
-    context.push(result)?;
+    let mut result = Vec::with_capacity(length);
+    result.extend_from_slice(&x1);
+    result.extend_from_slice(&x2);
+    context.push(StackItem::from_buffer(result))?;
 
     Ok(())
 }

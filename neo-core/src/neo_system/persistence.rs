@@ -14,7 +14,10 @@ use crate::events::PluginEvent;
 use crate::ledger::block::Block as LedgerBlock;
 use crate::ledger::blockchain_application_executed::ApplicationExecuted;
 use crate::network::p2p::payloads::block::Block;
-use crate::persistence::data_cache::{DataCache, DataCacheConfig};
+use crate::persistence::data_cache::{
+    clear_storage_watch_context, set_storage_watch_context, DataCache, DataCacheConfig,
+    StorageWatchPhase,
+};
 use crate::persistence::seek_direction::SeekDirection;
 use crate::persistence::StoreTransaction;
 use crate::smart_contract::application_engine::ApplicationEngine;
@@ -25,8 +28,9 @@ use crate::smart_contract::native::ledger_contract::{
 };
 use crate::smart_contract::trigger_type::TriggerType;
 use crate::smart_contract::{StorageItem, StorageKey};
+use crate::UInt256;
 use neo_vm::vm_state::VMState;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 #[derive(Default)]
 struct PersistPerfStats {
@@ -64,9 +68,88 @@ fn persist_perf_enabled() -> bool {
     })
 }
 
+fn fault_trace_block_filter() -> Option<u32> {
+    static FILTER: OnceLock<Option<u32>> = OnceLock::new();
+    *FILTER.get_or_init(|| {
+        std::env::var("NEO_TRACE_FAULT_BLOCK")
+            .ok()
+            .and_then(|raw| {
+                let trimmed = raw.trim();
+                if trimmed.is_empty() {
+                    return None;
+                }
+                match trimmed.parse::<u32>() {
+                    Ok(value) => Some(value),
+                    Err(err) => {
+                        warn!(
+                            target: "neo",
+                            raw = trimmed,
+                            error = %err,
+                            "invalid NEO_TRACE_FAULT_BLOCK; ignoring filter"
+                        );
+                        None
+                    }
+                }
+            })
+    })
+}
+
+fn fault_trace_tx_filter() -> Option<&'static UInt256> {
+    static FILTER: OnceLock<Option<UInt256>> = OnceLock::new();
+    FILTER
+        .get_or_init(|| {
+            std::env::var("NEO_TRACE_FAULT_TX")
+                .ok()
+                .and_then(|raw| {
+                    let trimmed = raw.trim();
+                    if trimmed.is_empty() {
+                        return None;
+                    }
+                    let normalized = trimmed
+                        .strip_prefix("0x")
+                        .or_else(|| trimmed.strip_prefix("0X"))
+                        .unwrap_or(trimmed);
+                    match UInt256::parse(normalized) {
+                        Ok(value) => Some(value),
+                        Err(err) => {
+                            warn!(
+                                target: "neo",
+                                raw = trimmed,
+                                error = %err,
+                                "invalid NEO_TRACE_FAULT_TX; ignoring filter"
+                            );
+                            None
+                        }
+                    }
+                })
+        })
+        .as_ref()
+}
+
+fn should_trace_fault(block_index: u32, tx_hash: &UInt256) -> bool {
+    let block_filter = fault_trace_block_filter();
+    let tx_filter = fault_trace_tx_filter();
+    match (block_filter, tx_filter) {
+        (None, None) => false,
+        (Some(expected_block), None) => block_index == expected_block,
+        (None, Some(expected_tx)) => tx_hash == expected_tx,
+        (Some(expected_block), Some(expected_tx)) => {
+            block_index == expected_block && tx_hash == expected_tx
+        }
+    }
+}
+
 fn saturating_ns(duration: std::time::Duration) -> u64 {
     let nanos = duration.as_nanos();
     nanos.min(u128::from(u64::MAX)) as u64
+}
+
+struct StorageWatchContextGuard;
+
+impl Drop for StorageWatchContextGuard {
+    fn drop(&mut self) {
+        clear_storage_watch_context();
+    }
 }
 
 impl NeoSystem {
@@ -100,6 +183,7 @@ impl NeoSystem {
         };
 
         let ledger_block = convert_payload_block(&block);
+        let _watch_context_guard = StorageWatchContextGuard;
         let tx_count = ledger_block.transactions.len() as u64;
         let persisting_block = Arc::new(ledger_block.clone());
         let base_cache_config = DataCacheConfig {
@@ -170,6 +254,7 @@ impl NeoSystem {
         } else {
             None
         };
+        set_storage_watch_context(ledger_block.index(), StorageWatchPhase::OnPersist, None);
         on_persist_engine.native_on_persist()?;
         if let Some(started) = on_persist_native_started {
             persist_perf_stats()
@@ -208,6 +293,12 @@ impl NeoSystem {
             });
 
         for tx in &ledger_block.transactions {
+            let tx_hash = tx.hash();
+            set_storage_watch_context(
+                ledger_block.index(),
+                StorageWatchPhase::Application,
+                Some(tx_hash),
+            );
             let tx_prepare_started = if perf_enabled {
                 Some(Instant::now())
             } else {
@@ -251,8 +342,6 @@ impl NeoSystem {
                     .tx_execute_ns
                     .fetch_add(saturating_ns(started.elapsed()), Ordering::Relaxed);
             }
-            let tx_hash = tx.hash();
-
             if emit_detailed_execution {
                 let executed_tx = ApplicationExecuted::new(&mut tx_engine);
                 self.actor_system()
@@ -281,13 +370,23 @@ impl NeoSystem {
                     base_snapshot.merge_tracked_items(&tracked);
                 }
                 VMState::FAULT => {
-                    debug!(
-                        target: "neo",
-                        %tx_hash,
-                        block_index = ledger_block.index(),
-                        exception = ?tx_engine.fault_exception(),
-                        "transaction execution faulted; skipping storage merge"
-                    );
+                    if should_trace_fault(ledger_block.index(), &tx_hash) {
+                        warn!(
+                            target: "neo",
+                            %tx_hash,
+                            block_index = ledger_block.index(),
+                            exception = tx_engine.fault_exception().unwrap_or("<none>"),
+                            "transaction execution faulted; skipping storage merge"
+                        );
+                    } else {
+                        debug!(
+                            target: "neo",
+                            %tx_hash,
+                            block_index = ledger_block.index(),
+                            exception = ?tx_engine.fault_exception(),
+                            "transaction execution faulted; skipping storage merge"
+                        );
+                    }
                 }
                 other => {
                     return Err(CoreError::system(format!(
@@ -335,6 +434,7 @@ impl NeoSystem {
             None
         };
         post_persist_engine.set_state(tx_states);
+        set_storage_watch_context(ledger_block.index(), StorageWatchPhase::PostPersist, None);
         post_persist_engine.native_post_persist()?;
         if let Some(started) = post_persist_native_started {
             persist_perf_stats()

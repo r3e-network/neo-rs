@@ -600,7 +600,7 @@ impl JsonTestRunner {
             }
 
             if let Some(expected_stack) = &expected_ctx.evaluation_stack {
-                verify_stack_against_evaluation(expected_stack, actual_ctx.evaluation_stack())
+                verify_stack_against_evaluation(expected_stack, &actual_ctx.evaluation_stack())
                     .map_err(|e| format!("Invocation stack[{}] evaluation stack: {}", depth, e))?;
             }
         }

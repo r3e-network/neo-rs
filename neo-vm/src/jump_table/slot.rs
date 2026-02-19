@@ -131,7 +131,7 @@ fn init_static_slot(engine: &mut ExecutionEngine, instruction: &Instruction) -> 
         .ok_or_else(|| VmError::invalid_instruction_msg("Missing static count"))?
         as usize;
 
-    if ctx.static_fields().is_some() {
+    if ctx.has_static_fields() {
         return Err(VmError::invalid_operation_msg(
             "INITSSLOT cannot be executed twice",
         ));

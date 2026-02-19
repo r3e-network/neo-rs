@@ -215,8 +215,12 @@ impl ApplicationEngine {
 
     /// Sends a notification
     pub fn runtime_notify(&mut self) -> Result<(), String> {
-        let state = self.pop_array()?;
+        // Match C# interop argument binding order:
+        // System.Runtime.Notify(eventName, state)
+        // OnSysCall pops arguments from stack in declaration order, so event name
+        // is popped first, then state.
         let event_name = self.pop_bytes()?;
+        let state = self.pop_array()?;
 
         if event_name.len() > MAX_EVENT_NAME {
             return Err(format!(

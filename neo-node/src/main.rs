@@ -100,6 +100,8 @@ async fn inner_main() -> Result<()> {
         cli.rpc_hardened,
     )?;
 
+    maybe_enable_import_batch_profile(&cli);
+
     if cli.check_all {
         startup::check_storage_access(
             backend_name.as_deref(),
@@ -405,6 +407,22 @@ async fn inner_main() -> Result<()> {
 
     info!(target: "neo", "shutdown complete");
     Ok(())
+}
+
+fn maybe_enable_import_batch_profile(cli: &NodeCli) {
+    if cli.import_acc.is_none() {
+        return;
+    }
+    if std::env::var_os("NEO_ROCKSDB_BATCH_PROFILE").is_some() {
+        return;
+    }
+
+    std::env::set_var("NEO_ROCKSDB_BATCH_PROFILE", "durable");
+    info!(
+        target: "neo",
+        profile = "durable",
+        "auto-selected RocksDB durable batch profile for --import-acc (set NEO_ROCKSDB_BATCH_PROFILE to override)"
+    );
 }
 
 fn build_channels_config(node_config: &NodeConfig) -> ChannelsConfig {

@@ -275,7 +275,7 @@ impl ApplicationEngine {
     }
 
     /// Peeks at a stack item at the given index without removing it.
-    pub fn peek(&self, index: usize) -> StdResult<&StackItem> {
+    pub fn peek(&self, index: usize) -> StdResult<StackItem> {
         self.vm_engine
             .engine()
             .peek(index)
@@ -377,6 +377,11 @@ impl ApplicationEngine {
         (self.fee_consumed + FEE_FACTOR - 1) / FEE_FACTOR
     }
 
+    #[must_use]
+    pub const fn exec_fee_factor_raw(&self) -> u32 {
+        self.exec_fee_factor
+    }
+
     /// Returns the current storage price (datoshi per byte) cached from the Policy contract.
     pub fn storage_price(&self) -> u32 {
         self.storage_price
@@ -390,7 +395,9 @@ impl ApplicationEngine {
         self.vm_engine.engine().result_stack()
     }
 
-    pub(crate) fn current_evaluation_stack(&self) -> Option<&EvaluationStack> {
+    pub(crate) fn current_evaluation_stack(
+        &self,
+    ) -> Option<parking_lot::MutexGuard<'_, EvaluationStack>> {
         self.vm_engine
             .engine()
             .current_context()

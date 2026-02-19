@@ -1,0 +1,61 @@
+[network]
+network_type = "TestNet"
+network_magic = 0x3554334E
+
+[storage]
+backend = "rocksdb"
+data_dir = "./data/testnet_trace3"
+read_only = false
+cache_size = 2048
+write_buffer_size = 512
+max_open_files = 4000
+compression = "lz4"
+
+[p2p]
+port = 20353
+max_connections = 64
+min_desired_connections = 16
+max_connections_per_address = 3
+seed_nodes = [
+    "seed1t5.neo.org:20333",
+    "seed2t5.neo.org:20333",
+    "seed3t5.neo.org:20333",
+    "seed4t5.neo.org:20333",
+    "seed5t5.neo.org:20333"
+]
+enable_compression = true
+broadcast_history_limit = 50000
+
+[rpc]
+enabled = false
+port = 20352
+bind_address = "127.0.0.1"
+cors_enabled = false
+auth_enabled = false
+max_gas_invoke = 50000000
+max_iterator_results = 100
+disabled_methods = []
+
+[consensus]
+enabled = false
+auto_start = false
+
+[telemetry]
+[telemetry.metrics]
+enabled = false
+port = 9090
+bind_address = "127.0.0.1"
+
+[logging]
+level = "info"
+format = "pretty"
+file_path = "./logs/neo-node-testnet-trace3.log"
+max_file_size = "200MB"
+max_files = 3
+
+[blockchain]
+block_time = 15000
+max_transactions_per_block = 512
+
+[mempool]
+max_transactions = 50000

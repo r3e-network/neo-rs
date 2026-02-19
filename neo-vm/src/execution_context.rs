@@ -28,11 +28,11 @@ pub struct SharedStates {
     /// Script being executed
     script: Arc<Script>,
     /// Evaluation stack for this context
-    pub evaluation_stack: crate::evaluation_stack::EvaluationStack,
+    evaluation_stack: Arc<Mutex<crate::evaluation_stack::EvaluationStack>>,
     /// Static fields shared across all clones
-    pub static_fields: Option<Slot>,
+    static_fields: Arc<Mutex<Option<Slot>>>,
     /// Reference counter for garbage collection
-    pub reference_counter: ReferenceCounter,
+    reference_counter: ReferenceCounter,
     /// State map matching C# Dictionary<Type, object>
     states: Arc<RwLock<HashMap<TypeId, Box<dyn Any + Send + Sync>>>>,
 }
@@ -41,8 +41,8 @@ impl std::fmt::Debug for SharedStates {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SharedStates")
             .field("script", &"<Script>")
-            .field("evaluation_stack", &"<EvaluationStack>")
-            .field("static_fields", &self.static_fields)
+            .field("evaluation_stack", &"<SharedEvaluationStack>")
+            .field("static_fields", &"<SharedStaticFields>")
             .finish()
     }
 }
@@ -54,10 +54,10 @@ impl SharedStates {
         let script = Arc::new(script);
         Self {
             script: Arc::clone(&script),
-            evaluation_stack: crate::evaluation_stack::EvaluationStack::new(
-                reference_counter.clone(),
-            ),
-            static_fields: None,
+            evaluation_stack: Arc::new(Mutex::new(
+                crate::evaluation_stack::EvaluationStack::new(reference_counter.clone()),
+            )),
+            static_fields: Arc::new(Mutex::new(None)),
             reference_counter,
             states: Arc::new(RwLock::new(HashMap::new())),
         }
@@ -83,29 +83,44 @@ impl SharedStates {
 
     /// Returns the evaluation stack.
     #[must_use]
-    pub const fn evaluation_stack(&self) -> &crate::evaluation_stack::EvaluationStack {
-        &self.evaluation_stack
+    pub fn evaluation_stack(&self) -> parking_lot::MutexGuard<'_, crate::evaluation_stack::EvaluationStack> {
+        self.evaluation_stack.lock()
     }
 
     /// Returns a mutable reference to the evaluation stack.
-    pub fn evaluation_stack_mut(&mut self) -> &mut crate::evaluation_stack::EvaluationStack {
-        &mut self.evaluation_stack
+    pub fn evaluation_stack_mut(
+        &self,
+    ) -> parking_lot::MutexGuard<'_, crate::evaluation_stack::EvaluationStack> {
+        self.evaluation_stack.lock()
     }
 
-    /// Returns the static fields if initialized.
+    /// Returns true when static fields are initialized.
     #[must_use]
-    pub const fn static_fields(&self) -> Option<&Slot> {
-        self.static_fields.as_ref()
+    pub fn has_static_fields(&self) -> bool {
+        self.static_fields.lock().is_some()
     }
 
-    /// Returns a mutable reference to the static fields option.
-    pub fn static_fields_mut(&mut self) -> &mut Option<Slot> {
-        &mut self.static_fields
+    /// Executes a closure with mutable access to the shared static fields.
+    pub fn with_static_fields_mut<R, F: FnOnce(&mut Option<Slot>) -> R>(&self, f: F) -> R {
+        let mut guard = self.static_fields.lock();
+        f(&mut guard)
+    }
+
+    /// Checks whether two shared state instances point to the same evaluation stack.
+    #[must_use]
+    pub fn evaluation_stack_ptr_eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.evaluation_stack, &other.evaluation_stack)
+    }
+
+    /// Checks whether two shared state instances point to the same static field slot.
+    #[must_use]
+    pub fn static_fields_ptr_eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.static_fields, &other.static_fields)
     }
 
     /// Sets the static fields.
     pub fn set_static_fields(&mut self, static_fields: Option<Slot>) {
-        self.static_fields = static_fields;
+        *self.static_fields.lock() = static_fields;
     }
 
     /// Gets custom data of the specified type. If the data does not exist, create a new one.
@@ -289,32 +304,61 @@ impl ExecutionContext {
     /// Returns the evaluation stack for this context.
     /// This matches the C# implementation's `EvaluationStack` property.
     #[must_use]
-    pub fn evaluation_stack(&self) -> &EvaluationStack {
+    pub fn evaluation_stack(&self) -> parking_lot::MutexGuard<'_, EvaluationStack> {
         self.shared_states.evaluation_stack()
     }
 
     /// Returns the evaluation stack for this context (mutable).
     /// This matches the C# implementation's `EvaluationStack` property.
-    pub fn evaluation_stack_mut(&mut self) -> &mut EvaluationStack {
+    pub fn evaluation_stack_mut(&self) -> parking_lot::MutexGuard<'_, EvaluationStack> {
         self.shared_states.evaluation_stack_mut()
     }
 
-    /// Returns the static fields for this context.
-    /// This matches the C# implementation's `StaticFields` property getter.
+    /// Returns true when static fields are initialized for this context.
     #[must_use]
-    pub fn static_fields(&self) -> Option<&Slot> {
-        self.shared_states.static_fields()
+    pub fn has_static_fields(&self) -> bool {
+        self.shared_states.has_static_fields()
     }
 
-    /// Returns the static fields for this context (mutable).
-    /// This matches the C# implementation's `StaticFields` property setter.
-    pub fn static_fields_mut(&mut self) -> &mut Option<Slot> {
-        self.shared_states.static_fields_mut()
+    /// Executes a closure with mutable access to static fields.
+    pub fn with_static_fields_mut<R, F: FnOnce(&mut Option<Slot>) -> R>(&self, f: F) -> R {
+        self.shared_states.with_static_fields_mut(f)
     }
 
     /// Sets the static fields for this context.
     pub fn set_static_fields(&mut self, static_fields: Option<Slot>) {
         self.shared_states.set_static_fields(static_fields);
+    }
+
+    /// Returns true when both contexts share the same evaluation stack.
+    #[must_use]
+    pub fn shares_evaluation_stack_with(&self, other: &Self) -> bool {
+        self.shared_states.evaluation_stack_ptr_eq(&other.shared_states)
+    }
+
+    /// Returns true when both contexts share the same static field slot.
+    #[must_use]
+    pub fn shares_static_fields_with(&self, other: &Self) -> bool {
+        self.shared_states.static_fields_ptr_eq(&other.shared_states)
+    }
+
+    /// Clears static field references for this context.
+    pub fn clear_static_fields_references(&self) {
+        self.with_static_fields_mut(|static_fields| {
+            if let Some(static_fields) = static_fields.as_mut() {
+                static_fields.clear_references();
+            }
+        });
+    }
+
+    /// Returns the number of initialized static fields in this context.
+    #[must_use]
+    pub fn static_fields_len(&self) -> usize {
+        self.with_static_fields_mut(|static_fields| {
+            static_fields
+                .as_ref()
+                .map_or(0, crate::slot::Slot::len)
+        })
     }
 
     /// Returns the local variables for this context.
@@ -459,11 +503,14 @@ impl ExecutionContext {
         reference_counter: &ReferenceCounter,
     ) -> VmResult<Self> {
         // Create a new shared states with the new reference counter
-        let mut shared_states = SharedStates::new(self.script().clone(), reference_counter.clone());
+        let shared_states = SharedStates::new(self.script().clone(), reference_counter.clone());
 
         // Copy the evaluation stack
-        self.evaluation_stack()
-            .copy_to(shared_states.evaluation_stack_mut(), None)?;
+        {
+            let source_stack = self.evaluation_stack();
+            let mut target_stack = shared_states.evaluation_stack_mut();
+            source_stack.copy_to(&mut target_stack, None)?;
+        }
 
         // Create the new context
 
@@ -481,18 +528,14 @@ impl ExecutionContext {
     }
 
     /// Clones the context for a CALL operation.
-    /// Matches C# `ExecutionContext.Clone()`: same script & static fields,
-    /// but a **fresh** evaluation stack and rvcount = -1 (return all).
+    /// Matches C# `ExecutionContext.Clone(position)`: shared script/evaluation stack/static fields
+    /// and `rvcount = 0`.
     #[must_use]
     pub fn clone_with_position(&self, position: usize) -> Self {
-        let mut shared = self.shared_states.clone();
-        // C# Clone() creates a brand-new EvaluationStack so the callee
-        // does not share the caller's operand stack.
-        shared.evaluation_stack = EvaluationStack::new(shared.reference_counter.clone());
         Self {
-            shared_states: shared,
+            shared_states: self.shared_states.clone(),
             instruction_pointer: position,
-            rvcount: -1, // C# sets rvcount = -1 (return all items)
+            rvcount: 0,
             local_variables: None,
             arguments: None,
             try_stack: None,
@@ -533,16 +576,17 @@ impl ExecutionContext {
 
     /// Loads a value from a static field.
     pub fn load_static_field(&self, index: usize) -> VmResult<crate::stack_item::StackItem> {
-        if let Some(static_fields) = self.shared_states.static_fields() {
-            static_fields
-                .get(index)
-                .cloned()
-                .ok_or_else(|| VmError::invalid_operation_msg("Static field index out of range"))
-        } else {
-            Err(VmError::invalid_operation_msg(
-                "No static fields initialized",
-            ))
-        }
+        self.shared_states.with_static_fields_mut(|static_fields| {
+            if let Some(static_fields) = static_fields.as_ref() {
+                static_fields.get(index).cloned().ok_or_else(|| {
+                    VmError::invalid_operation_msg("Static field index out of range")
+                })
+            } else {
+                Err(VmError::invalid_operation_msg(
+                    "No static fields initialized",
+                ))
+            }
+        })
     }
 
     /// Stores a value to a static field.
@@ -551,14 +595,16 @@ impl ExecutionContext {
         index: usize,
         value: crate::stack_item::StackItem,
     ) -> VmResult<()> {
-        if let Some(static_fields) = self.shared_states.static_fields_mut() {
-            static_fields.set(index, value)?;
-            Ok(())
-        } else {
-            Err(VmError::invalid_operation_msg(
-                "No static fields initialized",
-            ))
-        }
+        self.shared_states.with_static_fields_mut(|static_fields| {
+            if let Some(static_fields) = static_fields.as_mut() {
+                static_fields.set(index, value)?;
+                Ok(())
+            } else {
+                Err(VmError::invalid_operation_msg(
+                    "No static fields initialized",
+                ))
+            }
+        })
     }
 
     /// Loads a value from a local variable.
@@ -851,16 +897,16 @@ mod tests {
         // Clone the context
         let clone = context.clone();
 
-        // Check that the clone has the same script but a FRESH empty eval stack
-        // (matches C# Clone() semantics — callee starts with empty operand stack)
+        // Clone() shares script/evaluation stack/static fields (C# semantics).
         assert_eq!(clone.script().to_array(), context.script().to_array());
-        assert!(clone.evaluation_stack().is_empty());
+        assert_eq!(clone.evaluation_stack().len(), 1);
+        assert!(clone.shares_evaluation_stack_with(&context));
 
         // Check that the clone has the same instruction pointer
         assert_eq!(clone.instruction_pointer(), context.instruction_pointer());
 
-        // C# Clone() sets rvcount = -1 (return all items)
-        assert_eq!(clone.rvcount(), -1);
+        // C# Clone() sets rvcount = 0 for CALL.
+        assert_eq!(clone.rvcount(), 0);
 
         // Clone with a different position
         let clone_with_position = context.clone_with_position(2);

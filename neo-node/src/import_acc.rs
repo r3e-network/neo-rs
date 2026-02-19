@@ -33,6 +33,20 @@ pub struct ImportSummary {
     pub elapsed_secs: f64,
 }
 
+fn import_stop_height_from_env() -> Option<u32> {
+    std::env::var("NEO_IMPORT_STOP_HEIGHT")
+        .ok()
+        .and_then(|raw| raw.trim().parse::<u32>().ok())
+}
+
+fn import_progress_interval_from_env() -> u64 {
+    std::env::var("NEO_IMPORT_PROGRESS_INTERVAL")
+        .ok()
+        .and_then(|raw| raw.trim().parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(1_000)
+}
+
 pub fn import_acc_file(system: &Arc<NeoSystem>, path: &Path) -> Result<ImportSummary> {
     if !path.exists() {
         bail!("import file does not exist: {}", path.display());
@@ -65,6 +79,8 @@ pub fn import_acc_file(system: &Arc<NeoSystem>, path: &Path) -> Result<ImportSum
     let mut skipped = 0u64;
     let mut size_buf = [0u8; 4];
     let mut payload = Vec::<u8>::new();
+    let stop_height = import_stop_height_from_env();
+    let progress_interval = import_progress_interval_from_env();
 
     // Import is an offline bootstrap path: keep fast-sync mode enabled to skip
     // expensive event fan-out while preserving full block execution/validation.
@@ -80,6 +96,8 @@ pub fn import_acc_file(system: &Arc<NeoSystem>, path: &Path) -> Result<ImportSum
         declared_start,
         declared_count,
         local_height = current_height,
+        stop_height = ?stop_height,
+        progress_interval,
         "starting .acc import"
     );
 
@@ -144,12 +162,23 @@ pub fn import_acc_file(system: &Arc<NeoSystem>, path: &Path) -> Result<ImportSum
             }
 
             system
-                .persist_block_without_runtime_cache(block)
+                .persist_block(block)
                 .with_context(|| format!("failed to persist imported block {}", block_index))?;
             current_height = block_index;
             imported += 1;
 
-            if imported % 1000 == 0 {
+            if stop_height.is_some_and(|limit| current_height >= limit) {
+                info!(
+                    target: "neo",
+                    imported,
+                    current_height,
+                    stop_height = ?stop_height,
+                    "reached NEO_IMPORT_STOP_HEIGHT; ending import early"
+                );
+                break;
+            }
+
+            if imported % progress_interval == 0 {
                 let elapsed = started_at.elapsed().as_secs_f64();
                 let rate = if elapsed > 0.0 {
                     imported as f64 / elapsed
@@ -224,5 +253,12 @@ pub fn import_acc_file(system: &Arc<NeoSystem>, path: &Path) -> Result<ImportSum
     if !was_fast_sync {
         system.context().disable_fast_sync_mode();
     }
+
+    system.store().flush();
+    info!(
+        target: "neo",
+        "storage flush completed after .acc import finalization"
+    );
+
     result
 }

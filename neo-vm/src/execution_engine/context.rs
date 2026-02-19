@@ -35,19 +35,12 @@ impl ExecutionEngine {
             // Get the new current context
         }
 
-        if let Some(static_fields) = context.static_fields_mut() {
-            let current_static_fields = self
+        if context.has_static_fields() {
+            let current_shares_static = self
                 .current_context()
-                .and_then(|ctx| ctx.static_fields())
-                .map(|sf| sf as *const _);
-
-            if current_static_fields.is_none()
-                || !std::ptr::eq(
-                    current_static_fields.expect("Operation failed"),
-                    static_fields,
-                )
-            {
-                static_fields.clear_references();
+                .is_some_and(|current| context.shares_static_fields_with(current));
+            if !current_shares_static {
+                context.clear_static_fields_references();
             }
         }
 

@@ -6,11 +6,11 @@ use super::{ExecutionEngine, StackItem, VmError, VmResult, DEFAULT_GAS_LIMIT};
 
 impl ExecutionEngine {
     /// Returns the item at the specified index from the top of the current stack without removing it.
-    pub fn peek(&self, index: usize) -> VmResult<&StackItem> {
+    pub fn peek(&self, index: usize) -> VmResult<StackItem> {
         let context = self
             .current_context()
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-        context.evaluation_stack().peek(index)
+        context.evaluation_stack().peek(index).cloned()
     }
 
     /// Removes and returns the item at the top of the current stack.

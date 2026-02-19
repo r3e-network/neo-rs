@@ -36,7 +36,7 @@ pub fn register_handlers(jump_table: &mut JumpTable) {
 #[inline]
 fn dup(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Peek the top item on the stack and push a copy
-    let item = engine.peek(0)?.clone();
+    let item = engine.peek(0)?;
     engine.push(item)?;
     Ok(())
 }

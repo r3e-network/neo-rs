@@ -82,6 +82,7 @@ use std::sync::Arc;
 /// Registry for native contracts.
 pub struct NativeRegistry {
     contracts: HashMap<UInt160, Arc<dyn NativeContract>>,
+    contract_order: Vec<UInt160>,
 }
 
 impl NativeRegistry {
@@ -89,6 +90,7 @@ impl NativeRegistry {
     pub fn new() -> Self {
         let mut registry = Self {
             contracts: HashMap::new(),
+            contract_order: Vec::new(),
         };
 
         // Register standard native contracts
@@ -99,7 +101,11 @@ impl NativeRegistry {
 
     /// Registers a native contract.
     pub fn register(&mut self, contract: Arc<dyn NativeContract>) {
-        self.contracts.insert(contract.hash(), contract);
+        let hash = contract.hash();
+        if !self.contracts.contains_key(&hash) {
+            self.contract_order.push(hash);
+        }
+        self.contracts.insert(hash, contract);
     }
 
     /// Gets a native contract by hash.
@@ -124,6 +130,7 @@ impl NativeRegistry {
 
     pub fn take_contract_by_name(&mut self, name: &str) -> Option<Arc<dyn NativeContract>> {
         let hash = self.find_hash_by_name(name)?;
+        self.contract_order.retain(|item| item != &hash);
         self.contracts.remove(&hash)
     }
 
@@ -137,15 +144,26 @@ impl NativeRegistry {
         self.contracts.keys().copied().collect()
     }
 
-    /// Returns mutable references to all registered native contracts.
+    /// Returns all registered native contracts in deterministic registration order.
+    ///
+    /// Persistence order is consensus-critical. This follows the same declaration order
+    /// as neo-project/neo `NativeContract.Contracts`.
     pub fn contracts(&self) -> impl Iterator<Item = Arc<dyn NativeContract>> + '_ {
-        self.contracts.values().cloned()
+        self.contract_order
+            .iter()
+            .filter_map(|hash| self.contracts.get(hash).cloned())
     }
 
     /// Registers standard Neo native contracts.
     fn register_standard_contracts(&mut self) {
         // Register ContractManagement contract
         self.register(Arc::new(ContractManagement::new()));
+
+        // Register StdLib contract
+        self.register(Arc::new(StdLib::new()));
+
+        // Register CryptoLib contract
+        self.register(Arc::new(CryptoLib::new()));
 
         // Register LedgerContract
         self.register(Arc::new(LedgerContract::new()));
@@ -161,12 +179,6 @@ impl NativeRegistry {
 
         // Register RoleManagement contract
         self.register(Arc::new(RoleManagement::new()));
-
-        // Register StdLib contract
-        self.register(Arc::new(StdLib::new()));
-
-        // Register CryptoLib contract
-        self.register(Arc::new(CryptoLib::new()));
 
         // Register Oracle contract
         self.register(Arc::new(OracleContract::new()));
@@ -215,6 +227,33 @@ mod tests {
 
         // Should have at least NEO and GAS contracts
         assert!(hashes.len() >= 2);
+    }
+
+    #[test]
+    fn test_native_registry_contract_iteration_order() {
+        let registry = NativeRegistry::new();
+        let names: Vec<String> = registry
+            .contracts()
+            .map(|contract| contract.name().to_string())
+            .collect();
+
+        // Keep this order aligned with neo-project/neo NativeContract.Contracts.
+        let expected = vec![
+            "ContractManagement".to_string(),
+            "StdLib".to_string(),
+            "CryptoLib".to_string(),
+            "LedgerContract".to_string(),
+            "NeoToken".to_string(),
+            "GasToken".to_string(),
+            "PolicyContract".to_string(),
+            "RoleManagement".to_string(),
+            "OracleContract".to_string(),
+            "Notary".to_string(),
+            "Treasury".to_string(),
+            "TokenManagement".to_string(),
+        ];
+
+        assert_eq!(names, expected);
     }
 
     #[test]

@@ -376,33 +376,41 @@ pub fn ret(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
 
     let context_index = engine.invocation_stack().len() - 1;
     let mut context = engine.invocation_stack_mut().remove(context_index);
+    let return_to_result_stack = engine.invocation_stack().is_empty();
+    let shares_caller_stack = if return_to_result_stack {
+        false
+    } else {
+        let caller = engine
+            .current_context()
+            .ok_or_else(|| VmError::invalid_operation_msg("No caller context"))?;
+        context.shares_evaluation_stack_with(caller)
+    };
 
-    let rvcount = context.rvcount();
-    if rvcount != 0 {
+    if !shares_caller_stack {
+        let rvcount = context.rvcount();
         let eval_stack_len = context.evaluation_stack().len();
-        let capacity = if rvcount == -1 {
-            eval_stack_len
-        } else {
-            (rvcount as usize).min(eval_stack_len)
-        };
-        let mut items = Vec::with_capacity(capacity);
-
-        if rvcount == -1 {
-            for i in 0..eval_stack_len {
-                if let Ok(item) = context.evaluation_stack().peek(i) {
-                    items.push(item.clone());
-                }
-            }
-        } else if rvcount > 0 {
-            let count = (rvcount as usize).min(eval_stack_len);
-            for i in 0..count {
-                if let Ok(item) = context.evaluation_stack().peek(i) {
-                    items.push(item.clone());
-                }
-            }
+        if rvcount >= 0 && eval_stack_len != rvcount as usize {
+            return Err(VmError::invalid_operation_msg(format!(
+                "Return value count mismatch: expected {}, but got {} items on the evaluation stack",
+                rvcount, eval_stack_len
+            )));
         }
 
-        let return_to_result_stack = engine.invocation_stack().is_empty();
+        let count = if rvcount >= 0 {
+            rvcount as usize
+        } else {
+            eval_stack_len
+        };
+        let mut items = Vec::with_capacity(count);
+        for i in 0..count {
+            let item = context
+                .evaluation_stack()
+                .peek(i)
+                .map_err(|_| VmError::stack_underflow_msg(i + 1, eval_stack_len))?
+                .clone();
+            items.push(item);
+        }
+
         items.reverse();
         if return_to_result_stack {
             for item in items {
@@ -423,6 +431,7 @@ pub fn ret(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
     if engine.invocation_stack().is_empty() {
         engine.set_state(VMState::HALT);
     }
+    engine.is_jumping = true;
 
     Ok(())
 }

@@ -174,9 +174,6 @@ impl ApplicationEngine {
                 .load_context(context)
                 .map_err(|e| Error::invalid_operation(e.to_string()))?;
 
-            // Loading a new execution context during instruction execution must be treated like a
-            // jump so the VM does not advance the newly loaded context's instruction pointer.
-            engine.is_jumping = true;
             engine.set_call_flags(call_flags);
         }
 
