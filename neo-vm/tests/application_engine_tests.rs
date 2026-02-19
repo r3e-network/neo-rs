@@ -615,7 +615,8 @@ fn test_simple_arithmetic() {
             context.evaluation_stack().len()
         );
         if !context.evaluation_stack().is_empty() {
-            let eval_result = context.evaluation_stack().peek(0).unwrap();
+            let stack = context.evaluation_stack();
+            let eval_result = stack.peek(0).unwrap();
             println!("Evaluation stack top: {:?}", eval_result);
         }
     }
