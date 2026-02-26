@@ -40,6 +40,7 @@ parking_lot = { workspace = true }
 async-trait = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
 tracing = { workspace = true }
+libloading = "0.8"
 
 # Workspace crypto primitives (secp256r1 + hash160)
 neo-crypto = { workspace = true }

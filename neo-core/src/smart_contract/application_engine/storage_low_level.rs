@@ -3,17 +3,7 @@ use super::*;
 impl ApplicationEngine {
     pub fn get_storage_item(&self, context: &StorageContext, key: &[u8]) -> Option<Vec<u8>> {
         let storage_key = StorageKey::new(context.id, key.to_vec());
-        if let Some(item) = self.snapshot_cache.get(&storage_key) {
-            return Some(item.get_value());
-        }
-
-        // In most execution paths (including import), both caches point to the
-        // same DataCache instance; avoid performing the same lookup twice.
-        if Arc::ptr_eq(&self.snapshot_cache, &self.original_snapshot_cache) {
-            return None;
-        }
-
-        self.original_snapshot_cache
+        self.snapshot_cache
             .get(&storage_key)
             .map(|item| item.get_value())
     }
@@ -162,7 +152,9 @@ impl ApplicationEngine {
                 .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
             let call_flags = {
                 let mut state = state_arc.lock();
-                state.snapshot_cache = Some(Arc::clone(&self.snapshot_cache));
+                // Match Neo C#: each loaded context receives an isolated clone of
+                // the current snapshot cache and commits into its parent on unload.
+                state.snapshot_cache = Some(Arc::new(self.snapshot_cache.clone_cache()));
                 configure(&mut state);
                 if state.script_hash.is_none() {
                     state.script_hash = Some(script_hash);

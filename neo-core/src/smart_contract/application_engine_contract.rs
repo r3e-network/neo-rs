@@ -11,8 +11,21 @@ use crate::UInt160;
 use neo_vm::{ExecutionEngine, ExecutionEngineLimits, StackItem, VmError, VmResult};
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
+use std::sync::OnceLock;
 
 const SYSTEM_CONTRACT_CALL_PRICE: i64 = 1 << 15;
+
+fn native_call_trace_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        std::env::var("NEO_TRACE_CALL_NATIVE")
+            .map(|raw| {
+                let normalized = raw.trim().to_ascii_lowercase();
+                matches!(normalized.as_str(), "1" | "true" | "yes" | "on")
+            })
+            .unwrap_or(false)
+    })
+}
 
 pub(crate) fn register_contract_interops(engine: &mut ApplicationEngine) -> VmResult<()> {
     engine.register_host_service(
@@ -237,6 +250,15 @@ fn contract_call_native_handler(
             )
         };
 
+        if native_call_trace_enabled() {
+            let caller_hash = app.get_calling_script_hash().unwrap_or_else(UInt160::zero);
+            let current_hash = app.current_script_hash().unwrap_or_else(UInt160::zero);
+            eprintln!(
+                "call_native begin contract={} method={} arg_count={} param_types={:?} current={} caller={}",
+                script_hash, method_name, arg_count, parameter_types, current_hash, caller_hash
+            );
+        }
+
         if arg_count > stack_len {
             return Err(format!(
                 "Native contract expected {} argument(s) but stack contains {}",
@@ -247,6 +269,13 @@ fn contract_call_native_handler(
         let mut args = Vec::with_capacity(arg_count);
         for index in 0..arg_count {
             let item = engine.pop().map_err(|e| e.to_string())?;
+            if native_call_trace_enabled() {
+                let stack_type = item.stack_item_type();
+                let bytes_len = item.as_bytes().ok().map(|value| value.len());
+                eprintln!(
+                    "call_native stack_item[{index}] vm_type={stack_type:?} as_bytes_len={bytes_len:?}"
+                );
+            }
             let bytes = match parameter_types.get(index) {
                 Some(ContractParameterType::Any) => {
                     BinarySerializer::serialize(&item, app.execution_limits())
@@ -255,12 +284,32 @@ fn contract_call_native_handler(
                 Some(ContractParameterType::InteropInterface) => stack_item_to_interop_bytes(item)?,
                 _ => ApplicationEngine::stack_item_to_bytes(item)?,
             };
+            if native_call_trace_enabled() {
+                let preview_len = bytes.len().min(24);
+                eprintln!(
+                    "call_native arg[{index}] type={:?} len={} preview=0x{}",
+                    parameter_types.get(index),
+                    bytes.len(),
+                    hex::encode(&bytes[..preview_len])
+                );
+            }
             args.push(bytes);
         }
 
         let result_bytes = app
             .call_native_contract(script_hash, &method_name, &args)
             .map_err(|e| e.to_string())?;
+
+        if native_call_trace_enabled() {
+            let preview_len = result_bytes.len().min(24);
+            eprintln!(
+                "call_native result contract={} method={} len={} preview=0x{}",
+                script_hash,
+                method_name,
+                result_bytes.len(),
+                hex::encode(&result_bytes[..preview_len])
+            );
+        }
 
         {
             let mut state = state_arc.lock();
@@ -289,34 +338,41 @@ fn push_native_result(
     return_type: ContractParameterType,
     result: Vec<u8>,
 ) -> Result<(), String> {
+    let Some(item) = decode_native_result(return_type, result)? else {
+        return Ok(());
+    };
+    engine.push(item).map_err(|e| e.to_string())
+}
+
+fn decode_native_result(
+    return_type: ContractParameterType,
+    result: Vec<u8>,
+) -> Result<Option<StackItem>, String> {
     match return_type {
-        ContractParameterType::Void => Ok(()),
+        ContractParameterType::Void => Ok(None),
         ContractParameterType::Boolean => {
             let value = result.iter().any(|byte| *byte != 0);
-            engine
-                .push(StackItem::from_bool(value))
-                .map_err(|e| e.to_string())
+            Ok(Some(StackItem::from_bool(value)))
         }
         ContractParameterType::Integer => {
             let big = BigInt::from_signed_bytes_le(&result);
-            engine
-                .push(StackItem::from_int(big))
-                .map_err(|e| e.to_string())
+            Ok(Some(StackItem::from_int(big)))
         }
         ContractParameterType::String => {
             let string_bytes = String::from_utf8(result.clone())
                 .map_err(|_| "Invalid UTF-8 string returned by native contract".to_string())?
                 .into_bytes();
-            engine
-                .push(StackItem::from_byte_string(string_bytes))
-                .map_err(|e| e.to_string())
+            Ok(Some(StackItem::from_byte_string(string_bytes)))
         }
         ContractParameterType::Array | ContractParameterType::Map | ContractParameterType::Any => {
+            if result.is_empty() {
+                // Neo native methods use an empty payload to encode `null` results
+                // for stack types such as Array/Map/Any (e.g., getContract miss).
+                return Ok(Some(StackItem::null()));
+            }
             match BinarySerializer::deserialize(&result, &ExecutionEngineLimits::default(), None) {
-                Ok(item) => engine.push(item).map_err(|e| e.to_string()),
-                Err(_) => engine
-                    .push(StackItem::from_byte_string(result))
-                    .map_err(|e| e.to_string()),
+                Ok(item) => Ok(Some(item)),
+                Err(_) => Ok(Some(StackItem::from_byte_string(result))),
             }
         }
         ContractParameterType::InteropInterface => {
@@ -325,20 +381,16 @@ fn push_native_result(
                 let iterator_id = id
                     .to_u32()
                     .ok_or_else(|| "Iterator identifier out of range".to_string())?;
-                return engine
-                    .push(StackItem::from_interface(IteratorInterop::new(iterator_id)))
-                    .map_err(|e| e.to_string());
+                return Ok(Some(StackItem::from_interface(IteratorInterop::new(
+                    iterator_id,
+                ))));
             }
 
             let interop =
                 Bls12381Interop::from_encoded_bytes(&result).map_err(|e| e.to_string())?;
-            engine
-                .push(StackItem::from_interface(interop))
-                .map_err(|e| e.to_string())
+            Ok(Some(StackItem::from_interface(interop)))
         }
-        _ => engine
-            .push(StackItem::from_byte_string(result))
-            .map_err(|e| e.to_string()),
+        _ => Ok(Some(StackItem::from_byte_string(result))),
     }
 }
 
@@ -367,4 +419,36 @@ fn contract_native_post_persist_handler(
 ) -> VmResult<()> {
     let result = app.native_post_persist().map_err(|e| e.to_string());
     map_contract_result("System.Contract.NativePostPersist", result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decode_native_result_array_empty_is_null() {
+        let item = decode_native_result(ContractParameterType::Array, Vec::new())
+            .expect("decode")
+            .expect("stack item");
+        assert!(item.is_null());
+    }
+
+    #[test]
+    fn decode_native_result_any_empty_is_null() {
+        let item = decode_native_result(ContractParameterType::Any, Vec::new())
+            .expect("decode")
+            .expect("stack item");
+        assert!(item.is_null());
+    }
+
+    #[test]
+    fn decode_native_result_array_payload_roundtrips() {
+        let original = StackItem::from_array(vec![StackItem::from_int(BigInt::from(1u8))]);
+        let encoded = BinarySerializer::serialize(&original, &ExecutionEngineLimits::default())
+            .expect("encode");
+        let decoded = decode_native_result(ContractParameterType::Array, encoded)
+            .expect("decode")
+            .expect("stack item");
+        assert!(matches!(decoded, StackItem::Array(_)));
+    }
 }

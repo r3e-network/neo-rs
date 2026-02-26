@@ -1,6 +1,8 @@
 //! Enclave runtime implementation
 
 use crate::error::{EnclaveInitError, TeeError, TeeResult};
+#[cfg(feature = "sgx-hw")]
+use crate::sgx::VerifiedSgxEvidence;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -137,6 +139,9 @@ pub struct TeeEnclave {
     monotonic_counter: RwLock<u64>,
     /// Initialization error details (if any)
     init_error: RwLock<Option<String>>,
+    /// Verified SGX quote evidence (strict hardware mode only).
+    #[cfg(feature = "sgx-hw")]
+    sgx_evidence: RwLock<Option<VerifiedSgxEvidence>>,
 }
 
 impl TeeEnclave {
@@ -148,6 +153,8 @@ impl TeeEnclave {
             sealing_key: RwLock::new(None),
             monotonic_counter: RwLock::new(0),
             init_error: RwLock::new(None),
+            #[cfg(feature = "sgx-hw")]
+            sgx_evidence: RwLock::new(None),
         }
     }
 
@@ -191,6 +198,9 @@ impl TeeEnclave {
             }
             Err(e) => {
                 self.set_error_state(format!("Sealing key derivation failed: {}", e));
+                if matches!(e, TeeError::EnclaveInitError { .. }) {
+                    return Err(e);
+                }
                 return Err(TeeError::enclave_init_error(
                     EnclaveInitError::SealingKeyDerivationFailed,
                     e.to_string(),
@@ -288,17 +298,12 @@ impl TeeEnclave {
     fn check_hardware_attestation(&self) -> bool {
         #[cfg(feature = "sgx-hw")]
         {
-            // Check if we're actually running in SGX
-            match std::fs::exists("/dev/sgx_enclave") {
-                Ok(true) => {
-                    debug!("SGX device found, hardware attestation available");
-                    true
-                }
-                _ => {
-                    debug!("SGX device not found, hardware attestation unavailable");
-                    false
-                }
+            if self.config.simulation {
+                debug!("hardware attestation unavailable because enclave is in simulation mode");
+                return false;
             }
+
+            self.sgx_evidence.read().is_some()
         }
         #[cfg(not(feature = "sgx-hw"))]
         {
@@ -324,6 +329,11 @@ impl TeeEnclave {
     /// Get the enclave configuration
     pub fn config(&self) -> &EnclaveConfig {
         &self.config
+    }
+
+    #[cfg(feature = "sgx-hw")]
+    pub(crate) fn sgx_evidence(&self) -> Option<VerifiedSgxEvidence> {
+        self.sgx_evidence.read().clone()
     }
 
     /// Get the sealing key (only available inside enclave)
@@ -372,6 +382,10 @@ impl TeeEnclave {
             key.fill(0);
         }
         *self.sealing_key.write() = None;
+        #[cfg(feature = "sgx-hw")]
+        {
+            *self.sgx_evidence.write() = None;
+        }
 
         *state = EnclaveState::Uninitialized;
         info!("TEE enclave shutdown complete");
@@ -394,37 +408,32 @@ impl TeeEnclave {
     /// Derive sealing key from SGX hardware
     #[cfg(feature = "sgx-hw")]
     fn derive_sgx_sealing_key(&self) -> TeeResult<[u8; 32]> {
-        // SGX EGETKEY instruction requires running inside an SGX enclave.
-        // When running outside an enclave (e.g. CI/dev), fall back to a deterministic simulated key.
-        // On real SGX hardware this should use the EGETKEY instruction via the sgx_isa crate.
-        //
-        // Note: The sgx_isa crate's Keyrequest::egetkey requires actual SGX hardware.
-        // When not running inside an enclave, this function uses simulation.
-        use sha2::{Digest, Sha256};
-
-        if std::fs::exists("/dev/sgx_enclave").unwrap_or(false) {
-            // SGX device exists but we might not be inside an enclave
-            debug!("SGX hardware available but not running in enclave, using simulated key");
-        } else {
-            debug!("SGX hardware not available, using simulated key");
+        if !self.config.simulation {
+            let material = crate::sgx::verify_runtime_evidence(
+                &self.config.sealed_data_path,
+                self.config.expected_mrenclave,
+                self.config.expected_mrsigner,
+                self.config.min_isv_svn,
+                self.config.allow_debug_in_production,
+            )?;
+            let sealing_key = material.sealing_key;
+            *self.sgx_evidence.write() = Some(material.evidence);
+            return Ok(sealing_key);
         }
 
-        // Use HKDF-like derivation for better key separation
+        // Keep deterministic fallback only for explicit simulation mode in sgx-hw builds.
+        use sha2::{Digest, Sha256};
         let machine_id = self.get_machine_identifier();
-
         let mut hasher = Sha256::new();
         hasher.update(b"neo-tee-sgx-simulation-key-v2");
         hasher.update(machine_id);
         hasher.update(self.config.sealed_data_path.to_string_lossy().as_bytes());
-
-        // Add configuration parameters to key derivation
         hasher.update((self.config.heap_size_mb as u64).to_le_bytes());
         hasher.update((self.config.tcs_count as u64).to_le_bytes());
-
         let result = hasher.finalize();
-
         let mut sealing_key = [0u8; 32];
         sealing_key.copy_from_slice(&result);
+        debug!("using deterministic SGX simulation sealing key (simulation=true)");
         Ok(sealing_key)
     }
 
@@ -460,8 +469,11 @@ impl TeeEnclave {
         Ok(sealing_key)
     }
 
-    /// Get a machine-specific identifier for simulation mode
-    #[cfg(not(feature = "sgx-hw"))]
+    /// Get a machine-specific identifier for key derivation fallback paths.
+    ///
+    /// This is used in simulation mode and in SGX builds when code is not
+    /// executing inside an enclave and must fail over to deterministic software
+    /// key derivation.
     fn get_machine_identifier(&self) -> Vec<u8> {
         use sha2::{Digest, Sha256};
 
@@ -501,7 +513,6 @@ impl TeeEnclave {
     }
 
     /// Generate and save a new machine identifier
-    #[cfg(not(feature = "sgx-hw"))]
     fn generate_and_save_machine_id(id_file: &PathBuf) -> Vec<u8> {
         let id: [u8; 32] = rand::random();
 
@@ -722,6 +733,52 @@ mod tests {
             let msg = e.to_string();
             assert!(!msg.contains("Debug mode not allowed"));
         }
+    }
+
+    #[cfg(feature = "sgx-hw")]
+    #[test]
+    fn test_sgx_hardware_mode_fails_closed_without_verified_evidence() {
+        let temp = tempdir().unwrap();
+        let config = EnclaveConfig {
+            sealed_data_path: temp.path().to_path_buf(),
+            simulation: false,
+            ..Default::default()
+        };
+
+        let enclave = TeeEnclave::new(config);
+        let err = enclave
+            .initialize()
+            .expect_err("hardware mode must fail closed without verified SGX quote evidence");
+
+        match err {
+            TeeError::EnclaveInitError { error, .. } => {
+                assert_eq!(error, EnclaveInitError::HardwareUnavailable);
+            }
+            other => panic!("unexpected error: {other}"),
+        }
+    }
+
+    #[cfg(feature = "sgx-hw")]
+    #[test]
+    fn test_sgx_hardware_mode_accepts_real_evidence_when_opted_in() {
+        if std::env::var("NEO_TEE_RUN_REAL_SGX_TEST").as_deref() != Ok("1") {
+            // Opt-in only: requires operator-provided real SGX quote + sealing key evidence.
+            return;
+        }
+
+        let temp = tempdir().unwrap();
+        let config = EnclaveConfig {
+            sealed_data_path: temp.path().to_path_buf(),
+            simulation: false,
+            ..Default::default()
+        };
+
+        let enclave = TeeEnclave::new(config);
+        let init = enclave.initialize().expect(
+            "real SGX test requires valid evidence (NEO_TEE_SGX_QUOTE_PATH + NEO_TEE_SGX_SEALING_KEY_PATH/HEX)",
+        );
+        assert!(init.hardware_attestation_available);
+        assert!(enclave.is_ready());
     }
 
     #[test]

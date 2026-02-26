@@ -626,15 +626,14 @@ impl ConsensusActor {
     }
 
     fn propose_transactions(&mut self, max_count: usize) {
-        let Some(service) = self.service.as_mut() else {
+        if self.service.is_none() {
             return;
-        };
+        }
 
         let settings = self.system.settings();
         let max_tx = settings.max_transactions_per_block as usize;
         let limit = std::cmp::min(max_count, max_tx);
 
-        let pool = self.system.mempool();
         let mut selected = Vec::new();
         let mut total_size = 0usize;
         let mut total_system_fee = 0i64;
@@ -642,7 +641,8 @@ impl ConsensusActor {
         let required_signatures = consensus_m_threshold(self.validators.len());
         let header_size = estimate_header_size(&self.validators, required_signatures);
 
-        for tx in pool.lock().get_sorted_verified_transactions(limit) {
+        let candidates = self.proposal_candidates(limit);
+        for tx in candidates {
             let candidate_count = selected.len() + 1;
             let size_with_count =
                 header_size + var_size(candidate_count as u64) + total_size + tx.size();
@@ -667,9 +667,72 @@ impl ConsensusActor {
             .collect();
 
         let hashes = selected.into_iter().map(|tx| tx.hash()).collect();
-        if let Err(err) = service.on_transactions_received(hashes) {
-            warn!(target: "neo", %err, "failed to submit proposal transactions");
+        if let Some(service) = self.service.as_mut() {
+            if let Err(err) = service.on_transactions_received(hashes) {
+                warn!(target: "neo", %err, "failed to submit proposal transactions");
+            }
         }
+    }
+
+    fn proposal_candidates(&self, limit: usize) -> Vec<Arc<Transaction>> {
+        if limit == 0 {
+            return Vec::new();
+        }
+
+        let pool = self.system.mempool();
+
+        #[cfg(feature = "tee")]
+        if let Some(runtime) = crate::tee_integration::active_runtime() {
+            // Obtain TEE ordering first, then resolve hashes against the canonical verified
+            // mempool to keep dBFT proposal selection in sync with TEE ordering policy.
+            let tee_hashes = runtime
+                .mempool
+                .get_ordered_hashes(limit.saturating_mul(4).max(limit));
+            let pool_guard = pool.lock();
+
+            let mut verified_by_hash = HashMap::new();
+            for tx in pool_guard.verified_transactions_vec() {
+                verified_by_hash.insert(tx.hash(), tx);
+            }
+
+            let mut candidates = Vec::with_capacity(limit);
+            let mut seen = HashSet::with_capacity(limit.saturating_mul(2));
+
+            for hash_bytes in tee_hashes {
+                if candidates.len() >= limit {
+                    break;
+                }
+
+                let Ok(hash) = UInt256::from_bytes(&hash_bytes) else {
+                    continue;
+                };
+                let Some(tx) = verified_by_hash.get(&hash) else {
+                    continue;
+                };
+
+                let tx_hash = tx.hash();
+                if seen.insert(tx_hash) {
+                    candidates.push(Arc::clone(tx));
+                }
+            }
+
+            if candidates.len() < limit {
+                for tx in pool_guard.get_sorted_verified_transactions(limit) {
+                    let tx_hash = tx.hash();
+                    if seen.insert(tx_hash) {
+                        candidates.push(tx);
+                    }
+                    if candidates.len() >= limit {
+                        break;
+                    }
+                }
+            }
+
+            return candidates;
+        }
+
+        let fallback = pool.lock().get_sorted_verified_transactions(limit);
+        fallback
     }
 
     fn try_prepare_response(&mut self, now: u64) {

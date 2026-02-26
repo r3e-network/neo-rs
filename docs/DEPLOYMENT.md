@@ -2,7 +2,7 @@
 
 > **Version**: 0.7.0  
 > **Last Updated**: 2026-01-28  
-> **Target Compatibility**: Neo N3 v3.9.2
+> **Target Compatibility**: Neo N3 v3.9.1
 
 Comprehensive deployment documentation for the Neo N3 Rust node implementation.
 
@@ -150,6 +150,81 @@ Example with TEE support:
 ```bash
 cargo build --release -p neo-node --features tee-sgx
 ```
+
+`tee-sgx` runs in strict fail-closed mode:
+- Requires SGX devices (`/dev/sgx_enclave`, `/dev/sgx_provision`) and DCAP verification library.
+- Requires SGX quote evidence and sealing key material at startup.
+- Default evidence paths are under `--tee-data-path`:
+  `sgx.quote` and `sgx.sealing_key`.
+- You can override paths via:
+  `NEO_TEE_SGX_QUOTE_PATH`, `NEO_TEE_SGX_SEALING_KEY_PATH`, `NEO_TEE_SGX_SEALING_KEY_HEX`.
+- Quote `report_data[0..32]` must match:
+  `SHA256("neo-tee-sgx-sealing-key-v1" || sealing_key)`.
+
+Generate evidence from this repo:
+```bash
+./scripts/generate-sgx-evidence.sh /tmp/neo-tee-strict-test
+```
+
+Run node in strict SGX mode:
+```bash
+target/debug/neo-node \
+  --config neo_mainnet_node.toml \
+  --tee \
+  --tee-data-path /tmp/neo-tee-strict-test \
+  --tee-ordering-policy batched
+```
+
+Run node in opportunistic mode (use TEE when available, otherwise continue as ordinary node):
+```bash
+target/debug/neo-node \
+  --config neo_mainnet_node.toml \
+  --tee-auto \
+  --tee-data-path /tmp/neo-tee-strict-test \
+  --tee-ordering-policy batched
+```
+
+Run node in ordinary mode (no TEE):
+```bash
+target/debug/neo-node \
+  --config neo_mainnet_node.toml
+```
+
+Optional (not recommended for production):
+- `NEO_TEE_SGX_ALLOW_NON_TERMINAL_QV=1`
+- `NEO_TEE_SGX_ALLOW_EXPIRED_COLLATERAL=1`
+
+Consensus compatibility note:
+- `NEO_NATIVE_STRICT_SECURITY` defaults to disabled (compatibility-first native execution).
+- Set `NEO_NATIVE_STRICT_SECURITY=1` only when you explicitly want stricter native guard/invariant checks and have validated full chain parity.
+
+Real-hardware note:
+- If DCAP returns a non-terminal result such as `0xA008` (`configuration and software hardening needed`),
+  strict `--tee` mode will fail closed by default.
+- Use `--allow-non-terminal-qv` only as an explicit operator override while remediation is in progress.
+
+Automated strict SGX runtime validation:
+```bash
+scripts/validate-tee-sgx-runtime.sh \
+  --config neo_testnet_node.toml \
+  --rpc-url http://127.0.0.1:20332 \
+  --listen-port 20333 \
+  --rpc-port 20332 \
+  --tee-data-path /tmp/neo-tee-strict-test \
+  --storage /tmp/neo-tee-validate-storage \
+  --allow-non-terminal-qv \
+  --iterations 100 \
+  --require-block-progress
+```
+
+Notes:
+- The validator asserts SGX log lines, RPC readiness, TEE wallet export denial, and repeated contract execution checks.
+- Use `--block-progress-timeout <sec>` to control how long strict block-progress validation waits before failing.
+- Use `--listen-port` / `--rpc-port` when default local ports are occupied by another node/process.
+- Prefer an isolated `--storage` path for deterministic block-progress checks (avoids stale local chain state affecting timing).
+- `--tee` is strict (fail-closed on TEE errors). `--tee-auto` is optional (falls back to ordinary mode).
+- To validate opportunistic fallback, run `neo-node --tee-auto --tee-data-path <invalid-path>` and assert log line `TEE auto mode: runtime initialization failed; continuing without TEE`, plus healthy RPC/P2P progression.
+- Node startup also validates persisted `ContractManagement` state integrity (malformed payloads/duplicate non-native IDs). If corruption is detected, startup fails and the operator should restore from backup or resync.
 
 ### Build Verification
 
@@ -585,13 +660,13 @@ Available endpoints:
 
 ```bash
 # Node status
-./target/release/neo-cli node status
+./target/release/neo-cli state
 
 # Blockchain height
-./target/release/neo-cli blockchain height
+./target/release/neo-cli block-count
 
 # Peer information
-./target/release/neo-cli node peers
+./target/release/neo-cli peers
 
 # Check sync status
 curl -s -X POST \

@@ -41,6 +41,8 @@ pub mod attestation;
 pub mod enclave;
 pub mod error;
 pub mod mempool;
+#[cfg(feature = "sgx-hw")]
+pub(crate) mod sgx;
 pub mod wallet;
 
 pub use attestation::{AttestationReport, AttestationService};

@@ -18,6 +18,8 @@ mod rpc_consensus;
 mod startup;
 #[cfg(feature = "tee")]
 mod tee_integration;
+#[cfg(feature = "tee")]
+mod tee_wallet;
 mod wallet_provider;
 
 use anyhow::{bail, Context, Result};
@@ -35,6 +37,7 @@ use neo_core::{
     network::p2p::channels_config::ChannelsConfig,
     oracle_service::OracleService,
     protocol_settings::ProtocolSettings,
+    smart_contract::native::ContractManagement,
     state_service::{
         metrics::state_root_ingest_stats, state_store::StateServiceSettings,
         verification::StateServiceVerification,
@@ -75,11 +78,10 @@ fn main() -> Result<()> {
 async fn inner_main() -> Result<()> {
     let cli = NodeCli::parse();
     let mut node_config = NodeConfig::load(&cli.config)?;
+    apply_cli_overrides(&cli, &mut node_config);
 
     let logging_handles = logging::init_tracing(&node_config.logging, cli.daemon)?;
     let _log_guard = logging_handles.guard;
-
-    apply_cli_overrides(&cli, &mut node_config);
 
     let storage_config = node_config.storage_config();
     let storage_path = cli
@@ -183,8 +185,17 @@ async fn inner_main() -> Result<()> {
     .map_err(|e| anyhow::anyhow!(e.to_string()))
     .context("failed to initialise NeoSystem")?;
 
+    validate_contract_management_integrity(&system)
+        .context("contract management storage integrity check failed")?;
+
+    apply_mempool_policy(&node_config, &system);
+
+    #[cfg(feature = "tee")]
+    let tee_runtime = maybe_enable_tee_runtime(&cli, &node_config, &protocol_settings, &system)
+        .context("failed to initialize TEE runtime")?;
+
     if let Some(import_path) = cli.import_acc.as_ref() {
-        let summary = import_acc::import_acc_file(&system, import_path)
+        let summary = import_acc::import_acc_file(&system, import_path, storage_path.as_deref())
             .context("failed to import blocks from .acc file")?;
         info!(
             target: "neo",
@@ -273,7 +284,23 @@ async fn inner_main() -> Result<()> {
 
     let hsm_wallet_enabled =
         maybe_enable_hsm_wallet(&cli, &node_config, &rpc_server, &system).await?;
-    if !hsm_wallet_enabled {
+
+    #[cfg(feature = "tee")]
+    let tee_wallet_enabled = maybe_enable_tee_wallet(
+        &cli,
+        &node_config,
+        &rpc_server,
+        wallet_provider.as_ref(),
+        &system,
+        tee_runtime.as_ref(),
+        hsm_wallet_enabled,
+    )
+    .context("failed to initialize TEE wallet")?;
+
+    #[cfg(not(feature = "tee"))]
+    let tee_wallet_enabled = false;
+
+    if !hsm_wallet_enabled && !tee_wallet_enabled {
         maybe_open_wallet(
             &cli,
             &node_config,
@@ -399,6 +426,14 @@ async fn inner_main() -> Result<()> {
         }
     }
 
+    #[cfg(feature = "tee")]
+    if let Some(runtime) = tee_runtime.as_ref() {
+        tee_integration::clear_active_runtime();
+        if let Err(err) = runtime.shutdown() {
+            error!(target: "neo::tee", error = %err, "failed to shut down TEE runtime");
+        }
+    }
+
     system
         .shutdown()
         .await
@@ -417,16 +452,223 @@ fn maybe_enable_import_batch_profile(cli: &NodeCli) {
         return;
     }
 
-    std::env::set_var("NEO_ROCKSDB_BATCH_PROFILE", "durable");
+    std::env::set_var("NEO_ROCKSDB_BATCH_PROFILE", "high_throughput");
     info!(
         target: "neo",
-        profile = "durable",
-        "auto-selected RocksDB durable batch profile for --import-acc (set NEO_ROCKSDB_BATCH_PROFILE to override)"
+        profile = "high_throughput",
+        "auto-selected RocksDB high-throughput batch profile for --import-acc (set NEO_ROCKSDB_BATCH_PROFILE to override)"
     );
 }
 
 fn build_channels_config(node_config: &NodeConfig) -> ChannelsConfig {
     node_config.channels_config()
+}
+
+fn apply_mempool_policy(node_config: &NodeConfig, system: &Arc<NeoSystem>) {
+    let sender_limit = node_config
+        .mempool
+        .as_ref()
+        .and_then(|mempool| mempool.max_transactions_per_sender);
+
+    if let Some(limit) = sender_limit {
+        system
+            .mempool()
+            .lock()
+            .set_max_transactions_per_sender(Some(limit));
+        info!(
+            target: "neo",
+            limit,
+            "configured mempool max transactions per sender"
+        );
+    }
+}
+
+fn validate_contract_management_integrity(system: &Arc<NeoSystem>) -> Result<()> {
+    let store_cache = system.store_cache();
+    ContractManagement::validate_snapshot_integrity(store_cache.data_cache())
+        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+
+    let non_native_contracts = ContractManagement::list_contracts(store_cache.data_cache())
+        .map_err(|e| anyhow::anyhow!(e.to_string()))?
+        .len();
+    info!(
+        target: "neo",
+        non_native_contracts,
+        "ContractManagement snapshot integrity check passed"
+    );
+    Ok(())
+}
+
+#[cfg(feature = "tee")]
+fn maybe_enable_tee_runtime(
+    cli: &NodeCli,
+    node_config: &NodeConfig,
+    protocol_settings: &ProtocolSettings,
+    system: &Arc<NeoSystem>,
+) -> Result<Option<Arc<tee_integration::TeeRuntime>>> {
+    if !cli.tee && !cli.tee_auto {
+        tee_integration::clear_active_runtime();
+        return Ok(None);
+    }
+
+    let mempool_capacity = node_config
+        .mempool
+        .as_ref()
+        .and_then(|mempool| mempool.max_transactions)
+        .unwrap_or_else(|| {
+            usize::try_from(protocol_settings.memory_pool_max_transactions)
+                .unwrap_or(50_000)
+                .max(1)
+        });
+
+    let runtime = match tee_integration::TeeRuntime::new(
+        cli.tee_data_path.clone(),
+        &cli.tee_ordering_policy,
+        mempool_capacity,
+    )
+    .map_err(|e| anyhow::anyhow!(e.to_string()))
+    .context("failed to initialize TEE runtime")
+    {
+        Ok(runtime) => Arc::new(runtime),
+        Err(err) if cli.tee_auto => {
+            tee_integration::clear_active_runtime();
+            warn!(
+                target: "neo::tee",
+                error = %err,
+                "TEE auto mode: runtime initialization failed; continuing without TEE"
+            );
+            return Ok(None);
+        }
+        Err(err) => return Err(err),
+    };
+
+    if let Err(err) = runtime
+        .run_startup_self_checks()
+        .map_err(|e| anyhow::anyhow!(e.to_string()))
+        .context("TEE startup self-check failed")
+    {
+        if cli.tee_auto {
+            if let Err(shutdown_err) = runtime.shutdown() {
+                warn!(
+                    target: "neo::tee",
+                    error = %shutdown_err,
+                    "TEE auto mode: failed to shut down runtime after startup self-check failure"
+                );
+            }
+            warn!(
+                target: "neo::tee",
+                error = %err,
+                "TEE auto mode: startup self-checks failed; continuing without TEE"
+            );
+            tee_integration::clear_active_runtime();
+            return Ok(None);
+        }
+        return Err(err);
+    }
+    info!(target: "neo::tee", "TEE startup self-checks passed");
+
+    let attestation_report = match runtime
+        .generate_attestation()
+        .map_err(|e| anyhow::anyhow!(e.to_string()))
+        .context("failed to generate TEE attestation report")
+    {
+        Ok(report) => report,
+        Err(err) if cli.tee_auto => {
+            if let Err(shutdown_err) = runtime.shutdown() {
+                warn!(
+                    target: "neo::tee",
+                    error = %shutdown_err,
+                    "TEE auto mode: failed to shut down runtime after attestation failure"
+                );
+            }
+            warn!(
+                target: "neo::tee",
+                error = %err,
+                "TEE auto mode: attestation generation failed; continuing without TEE"
+            );
+            tee_integration::clear_active_runtime();
+            return Ok(None);
+        }
+        Err(err) => return Err(err),
+    };
+    info!(
+        target: "neo::tee",
+        bytes = attestation_report.len(),
+        "TEE attestation report generated"
+    );
+
+    install_tee_mempool_bridge(system, Arc::clone(&runtime));
+    info!(
+        target: "neo::tee",
+        "TEE mempool bridge installed for canonical mempool events"
+    );
+    tee_integration::register_active_runtime(&runtime);
+
+    if cli.tee_auto {
+        info!(
+            target: "neo::tee",
+            "TEE auto mode: runtime initialized successfully"
+        );
+    }
+
+    Ok(Some(runtime))
+}
+
+#[cfg(feature = "tee")]
+fn install_tee_mempool_bridge(system: &Arc<NeoSystem>, runtime: Arc<tee_integration::TeeRuntime>) {
+    let mempool = system.mempool();
+    let mut guard = mempool.lock();
+
+    let existing_added = guard.transaction_added.take();
+    let runtime_for_added = Arc::clone(&runtime);
+    guard.transaction_added = Some(Box::new(move |pool, tx| {
+        if let Some(handler) = &existing_added {
+            handler(pool, tx);
+        }
+
+        let mut tx_hash = [0u8; 32];
+        tx_hash.copy_from_slice(tx.hash().as_bytes().as_ref());
+
+        let mut sender = [0u8; 20];
+        if let Some(script_hash) = tx.sender() {
+            sender.copy_from_slice(script_hash.as_bytes().as_ref());
+        }
+
+        if let Err(err) = runtime_for_added.mempool.add_transaction(
+            tx_hash,
+            tx.to_bytes(),
+            tx.network_fee(),
+            tx.system_fee(),
+            sender,
+        ) {
+            let duplicate = matches!(
+                &err,
+                neo_tee::TeeError::Other(message) if message.contains("already in pool")
+            );
+            if !duplicate {
+                warn!(
+                    target: "neo::tee",
+                    tx_hash = %tx.hash(),
+                    error = %err,
+                    "failed to mirror transaction into TEE mempool"
+                );
+            }
+        }
+    }));
+
+    let existing_removed = guard.transaction_removed.take();
+    let runtime_for_removed = Arc::clone(&runtime);
+    guard.transaction_removed = Some(Box::new(move |pool, args| {
+        if let Some(handler) = &existing_removed {
+            handler(pool, args);
+        }
+
+        for tx in &args.transactions {
+            let mut tx_hash = [0u8; 32];
+            tx_hash.copy_from_slice(tx.hash().as_bytes().as_ref());
+            runtime_for_removed.mempool.remove_transaction(&tx_hash);
+        }
+    }));
 }
 
 async fn start_rpc_server_if_enabled(
@@ -870,6 +1112,89 @@ async fn maybe_enable_hsm_wallet(
     }
 }
 
+#[cfg(feature = "tee")]
+fn maybe_enable_tee_wallet(
+    cli: &NodeCli,
+    node_config: &NodeConfig,
+    rpc_server: &Option<Arc<ParkingRwLock<RpcServer>>>,
+    wallet_provider: Option<&Arc<NodeWalletProvider>>,
+    system: &Arc<NeoSystem>,
+    tee_runtime: Option<&Arc<tee_integration::TeeRuntime>>,
+    hsm_wallet_enabled: bool,
+) -> Result<bool> {
+    if hsm_wallet_enabled {
+        if tee_runtime.is_some() {
+            warn!(
+                target: "neo::tee",
+                "TEE runtime is enabled but HSM wallet is active; skipping TEE wallet adapter"
+            );
+        }
+        return Ok(false);
+    }
+
+    let Some(runtime) = tee_runtime else {
+        return Ok(false);
+    };
+
+    if rpc_server.is_none() && wallet_provider.is_none() {
+        warn!(
+            target: "neo::tee",
+            "TEE wallet requested but neither RPC nor wallet provider is active; skipping"
+        );
+        return Ok(false);
+    }
+
+    let wallet_path = resolve_tee_wallet_path(cli, node_config);
+    let wallet = tee_wallet::TeeWalletAdapter::from_runtime(
+        Arc::clone(runtime),
+        Arc::new(system.settings().clone()),
+        &wallet_path,
+    )
+    .context("failed to build TEE wallet adapter")?;
+
+    let wallet_arc: Arc<dyn CoreWallet> = Arc::new(wallet);
+    if let Some(provider) = wallet_provider {
+        provider.set_wallet(Some(wallet_arc.clone()));
+    }
+    if let Some(server) = rpc_server {
+        server.write().set_wallet(Some(wallet_arc));
+    }
+
+    info!(
+        target: "neo::tee",
+        path = %wallet_path.display(),
+        "TEE wallet adapter enabled for signing"
+    );
+    Ok(true)
+}
+
+#[cfg(feature = "tee")]
+fn resolve_tee_wallet_path(cli: &NodeCli, node_config: &NodeConfig) -> PathBuf {
+    if let Some(path) = cli.wallet.clone() {
+        if cli.wallet_password.is_some() || node_config.unlock_wallet.password.is_some() {
+            warn!(
+                target: "neo::tee",
+                "wallet password settings are ignored for TEE wallets"
+            );
+        }
+        return path;
+    }
+
+    if node_config.unlock_wallet.is_active {
+        if let Some(path) = node_config.unlock_wallet.path.as_ref() {
+            if node_config.unlock_wallet.password.is_some() {
+                warn!(
+                    target: "neo::tee",
+                    "unlock_wallet.password is ignored for TEE wallets"
+                );
+            }
+            return PathBuf::from(path);
+        }
+    }
+
+    cli.tee_data_path.join("wallet")
+}
+
 fn resolve_wallet_config(
     cli: &NodeCli,
     node_config: &NodeConfig,
@@ -1054,6 +1379,9 @@ fn build_state_service_settings(
 
 /// Applies CLI argument overrides to the node configuration.
 fn apply_cli_overrides(cli: &NodeCli, node_config: &mut NodeConfig) {
+    if let Some(path) = &cli.storage {
+        node_config.storage.path = Some(path.to_string_lossy().to_string());
+    }
     if let Some(magic) = cli.network_magic {
         node_config.network.network_magic = Some(magic);
     }
@@ -1150,6 +1478,8 @@ mod tests {
     use clap::Parser;
     use std::any::Any;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    #[cfg(feature = "tee")]
+    use tempfile::NamedTempFile;
 
     #[derive(Default)]
     struct WalletChangeProbe {
@@ -1213,5 +1543,78 @@ mod tests {
         );
 
         system.shutdown().await.expect("shutdown");
+    }
+
+    #[cfg(feature = "tee")]
+    #[test]
+    fn cli_accepts_tee_auto_mode() {
+        let cli = NodeCli::parse_from(["neo-node", "--tee-auto"]);
+        assert!(cli.tee_auto);
+        assert!(!cli.tee);
+    }
+
+    #[cfg(feature = "tee")]
+    #[test]
+    fn cli_rejects_conflicting_tee_modes() {
+        let result = NodeCli::try_parse_from(["neo-node", "--tee", "--tee-auto"]);
+        assert!(result.is_err(), "expected --tee and --tee-auto to conflict");
+    }
+
+    #[cfg(feature = "tee")]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn tee_auto_falls_back_when_tee_startup_fails() {
+        let marker = NamedTempFile::new().expect("marker file");
+        let tee_path = marker.path().to_string_lossy().to_string();
+        let args = vec![
+            "neo-node".to_string(),
+            "--tee-auto".to_string(),
+            "--tee-data-path".to_string(),
+            tee_path,
+        ];
+        let cli = NodeCli::parse_from(args);
+        let node_config = NodeConfig::default();
+        let protocol_settings = node_config.protocol_settings();
+        let system = NeoSystem::new(protocol_settings.clone(), None, None).expect("neo system");
+
+        let runtime = maybe_enable_tee_runtime(&cli, &node_config, &protocol_settings, &system)
+            .expect("tee-auto should fall back to non-TEE mode");
+        assert!(runtime.is_none(), "tee-auto should continue without TEE");
+
+        system.shutdown().await.expect("shutdown");
+    }
+
+    #[cfg(feature = "tee")]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn tee_required_fails_when_tee_startup_fails() {
+        let marker = NamedTempFile::new().expect("marker file");
+        let tee_path = marker.path().to_string_lossy().to_string();
+        let args = vec![
+            "neo-node".to_string(),
+            "--tee".to_string(),
+            "--tee-data-path".to_string(),
+            tee_path,
+        ];
+        let cli = NodeCli::parse_from(args);
+        let node_config = NodeConfig::default();
+        let protocol_settings = node_config.protocol_settings();
+        let system = NeoSystem::new(protocol_settings.clone(), None, None).expect("neo system");
+
+        let result = maybe_enable_tee_runtime(&cli, &node_config, &protocol_settings, &system);
+        assert!(
+            result.is_err(),
+            "strict tee mode should fail when TEE startup fails"
+        );
+
+        system.shutdown().await.expect("shutdown");
+    }
+
+    #[test]
+    fn cli_storage_override_updates_config_storage_path() {
+        let cli = NodeCli::parse_from(["neo-node", "--storage", "/tmp/neo-custom"]);
+        let mut node_config = NodeConfig::default();
+
+        apply_cli_overrides(&cli, &mut node_config);
+
+        assert_eq!(node_config.storage.path.as_deref(), Some("/tmp/neo-custom"));
     }
 }

@@ -44,6 +44,7 @@ pub type OnEntryDelegate = Arc<dyn Fn(&DataCache, &StorageKey, &StorageItem) + S
 type StoreGetFn = dyn Fn(&StorageKey) -> Option<StorageItem> + Send + Sync;
 type StoreFindFn =
     dyn Fn(Option<&StorageKey>, SeekDirection) -> Vec<(StorageKey, StorageItem)> + Send + Sync;
+type CommitApplyFn = dyn Fn(&[(StorageKey, Trackable)]) + Send + Sync;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Default)]
 pub(crate) enum StorageWatchPhase {
@@ -351,6 +352,9 @@ pub struct DataCache {
     access_seq: AtomicU64,
     /// Prefetch window - keys that were recently prefetched
     prefetch_window: RwLock<HashSet<StorageKey>>,
+    /// Optional commit sink used by cloned overlays to propagate tracked
+    /// changes into their parent cache (mirrors Neo C# ClonedCache semantics).
+    commit_apply: Option<Arc<CommitApplyFn>>,
 }
 
 use std::sync::atomic::AtomicUsize;
@@ -381,6 +385,7 @@ impl Clone for DataCache {
             pattern_tracker: RwLock::new(AccessPatternTracker::new()),
             access_seq: AtomicU64::new(0),
             prefetch_window: RwLock::new(HashSet::new()),
+            commit_apply: self.commit_apply.as_ref().map(Arc::clone),
         }
     }
 }
@@ -467,6 +472,7 @@ impl DataCache {
             pattern_tracker: RwLock::new(AccessPatternTracker::new()),
             access_seq: AtomicU64::new(0),
             prefetch_window: RwLock::new(HashSet::new()),
+            commit_apply: None,
         }
     }
 
@@ -506,23 +512,29 @@ impl DataCache {
         self.on_update.write().push(handler);
     }
 
-    /// Creates a lightweight copy of this cache using Copy-on-Write.
-    /// This is O(1) - just shares the underlying data.
+    /// Creates a cloned overlay cache that uses this cache as the backing store.
+    ///
+    /// This matches Neo C# `DataCache.CloneCache()` semantics:
+    /// - reads fall through to the parent cache,
+    /// - writes are tracked locally,
+    /// - `commit()` applies tracked changes into the parent cache.
     pub fn clone_cache(&self) -> Self {
-        Self {
-            state: Arc::clone(&self.state),
-            read_only: self.read_only,
-            on_read: Arc::clone(&self.on_read),
-            on_update: Arc::clone(&self.on_update),
-            store_get: self.store_get.as_ref().map(Arc::clone),
-            store_find: self.store_find.as_ref().map(Arc::clone),
-            ref_count: Arc::clone(&self.ref_count),
-            read_cache: self.read_cache.clone(),
-            config: self.config,
-            pattern_tracker: RwLock::new(AccessPatternTracker::new()),
-            access_seq: AtomicU64::new(0),
-            prefetch_window: RwLock::new(HashSet::new()),
-        }
+        let parent = Arc::new(self.clone());
+        let store_get_parent = Arc::clone(&parent);
+        let store_find_parent = Arc::clone(&parent);
+        let commit_parent = Arc::clone(&parent);
+
+        let store_get: Arc<StoreGetFn> =
+            Arc::new(move |key: &StorageKey| store_get_parent.get(key));
+        let store_find: Arc<StoreFindFn> = Arc::new(move |prefix, direction| {
+            store_find_parent.find(prefix, direction).collect()
+        });
+
+        let mut overlay = Self::new_with_config(false, Some(store_get), Some(store_find), self.config);
+        overlay.commit_apply = Some(Arc::new(move |items: &[(StorageKey, Trackable)]| {
+            commit_parent.merge_tracked_items(items);
+        }));
+        overlay
     }
 
     /// Merges tracked changes from another cache into this one.
@@ -571,6 +583,7 @@ impl DataCache {
             pattern_tracker: RwLock::new(AccessPatternTracker::new()),
             access_seq: AtomicU64::new(0),
             prefetch_window: RwLock::new(HashSet::new()),
+            commit_apply: None,
         }
     }
 
@@ -989,11 +1002,32 @@ impl DataCache {
         if self.read_only {
             return;
         }
-        // Clear change set (actual persistence handled by StoreCache)
-        self.state.write().change_set.clear();
+        if let Some(apply) = &self.commit_apply {
+            let tracked = self.tracked_items();
+            if !tracked.is_empty() {
+                apply(&tracked);
+            }
+        }
 
-        // Note: We don't clear the read cache on commit -
-        // it contains valid data that may be useful for future reads
+        // Match C# DataCache.Commit() state transitions:
+        // - Added/Changed become None (still cached),
+        // - Deleted entries are removed from dictionary.
+        let mut state = self.state.write();
+        let keys: Vec<StorageKey> = state.change_set.iter().cloned().collect();
+        for key in keys {
+            if let Some(trackable) = state.dictionary.get_mut(&key) {
+                match trackable.state {
+                    TrackState::Added | TrackState::Changed => {
+                        trackable.state = TrackState::None;
+                    }
+                    TrackState::Deleted => {
+                        state.dictionary.remove(&key);
+                    }
+                    TrackState::None | TrackState::NotFound => {}
+                }
+            }
+        }
+        state.change_set.clear();
     }
 
     /// Gets all tracked items for persistence.
@@ -1091,13 +1125,29 @@ impl DataCache {
             drop(state);
 
             // Fast path: no pending overlays for this prefix, so return the
-            // backing iterator materialized as-is.
+            // backing iterator with explicit prefix filtering. Some backing
+            // iterators are range scans starting at `key_prefix` and do not
+            // enforce prefix boundaries by themselves.
             if overlays.is_empty() {
-                return Box::new(store_find(key_prefix, direction).into_iter());
+                let prefix_bytes = prefix_bytes.clone();
+                return Box::new(store_find(key_prefix, direction).into_iter().filter(
+                    move |(key, _)| {
+                        if let Some(prefix) = &prefix_bytes {
+                            key.to_array().starts_with(prefix)
+                        } else {
+                            true
+                        }
+                    },
+                ));
             }
 
             let mut merged = Vec::new();
             for (key, item) in store_find(key_prefix, direction) {
+                if let Some(prefix) = &prefix_bytes {
+                    if !key.to_array().starts_with(prefix) {
+                        continue;
+                    }
+                }
                 match overlays.remove(&key) {
                     Some(Some(overlay_item)) => merged.push((key, overlay_item)),
                     Some(None) => {}
@@ -1200,7 +1250,7 @@ mod tests {
     }
 
     #[test]
-    fn clone_cache_preserves_entries_and_change_set() {
+    fn clone_cache_reads_parent_but_starts_with_empty_change_set() {
         let cache = DataCache::new(false);
         let key = make_key(1, b"a");
         cache.add(key.clone(), StorageItem::from_bytes(vec![42]));
@@ -1214,10 +1264,7 @@ mod tests {
         );
 
         let change_set = cloned.get_change_set();
-        assert!(
-            change_set.contains(&key),
-            "clone should retain pending change set entries"
-        );
+        assert!(change_set.is_empty(), "cloned overlay should start clean");
     }
 
     #[test]
@@ -1282,25 +1329,25 @@ mod tests {
     }
 
     #[test]
-    fn copy_on_write_shares_data() {
+    fn clone_cache_isolated_until_commit() {
         let cache = DataCache::new(false);
         let key = make_key(1, b"test");
+        let new_key = make_key(2, b"new");
 
         // Add to original cache
         cache.add(key.clone(), StorageItem::from_bytes(vec![1]));
 
-        // Clone should share data
+        // Clone should be able to read parent data.
         let cloned = cache.clone_cache();
         assert_eq!(cloned.get(&key).unwrap().get_value(), vec![1]);
 
-        // Modify cloned cache - both should see changes (shared state)
-        cloned.add(make_key(2, b"new"), StorageItem::from_bytes(vec![2]));
+        // Child writes stay isolated before commit.
+        cloned.add(new_key.clone(), StorageItem::from_bytes(vec![2]));
+        assert!(cache.get(&new_key).is_none());
 
-        // Both should see the new entry (shared state)
-        assert_eq!(
-            cache.get(&make_key(2, b"new")).unwrap().get_value(),
-            vec![2]
-        );
+        // Commit propagates child changes into the parent cache.
+        cloned.commit();
+        assert_eq!(cache.get(&new_key).unwrap().get_value(), vec![2]);
     }
 
     #[test]
@@ -1386,5 +1433,62 @@ mod tests {
         assert_eq!(entries[0].1.get_value(), vec![9]);
         assert_eq!(entries[1].0, key_c);
         assert_eq!(entries[1].1.get_value(), vec![3]);
+    }
+
+    #[test]
+    fn find_enforces_prefix_when_backing_iterator_is_range_scan() {
+        let key_a = make_key(-1, &[0x08, 0x01]);
+        let key_b = make_key(-1, &[0x0c, 0x01]);
+        let key_c = make_key(0, &[0x08, 0x01]);
+
+        let mut backing_map = std::collections::HashMap::new();
+        backing_map.insert(key_a.clone(), StorageItem::from_bytes(vec![1]));
+        backing_map.insert(key_b.clone(), StorageItem::from_bytes(vec![2]));
+        backing_map.insert(key_c.clone(), StorageItem::from_bytes(vec![3]));
+        let backing_map = Arc::new(backing_map);
+
+        let getter = {
+            let map = Arc::clone(&backing_map);
+            Arc::new(move |key: &StorageKey| map.get(key).cloned())
+        };
+        let finder = {
+            let map = Arc::clone(&backing_map);
+            Arc::new(
+                move |prefix: Option<&StorageKey>,
+                      direction: SeekDirection|
+                      -> Vec<(StorageKey, StorageItem)> {
+                    let start = prefix.map(|p| p.to_array());
+                    let mut items: Vec<_> = map
+                        .iter()
+                        .map(|(key, value)| (key.clone(), value.clone()))
+                        .collect();
+
+                    match direction {
+                        SeekDirection::Forward => {
+                            items.sort_by(|a, b| a.0.cmp(&b.0));
+                            if let Some(start) = &start {
+                                items.retain(|(key, _)| key.to_array() >= *start);
+                            }
+                        }
+                        SeekDirection::Backward => {
+                            items.sort_by(|a, b| b.0.cmp(&a.0));
+                            if let Some(start) = &start {
+                                items.retain(|(key, _)| key.to_array() <= *start);
+                            }
+                        }
+                    }
+
+                    items
+                },
+            )
+        };
+
+        let cache = DataCache::new_with_store(false, Some(getter), Some(finder));
+        let prefix = make_key(-1, &[0x08]);
+        let entries: Vec<_> = cache.find(Some(&prefix), SeekDirection::Forward).collect();
+
+        assert_eq!(entries.len(), 1, "only matching prefix entries should be returned");
+        assert_eq!(entries[0].0, key_a);
+        assert_eq!(entries[0].1.get_value(), vec![1]);
     }
 }

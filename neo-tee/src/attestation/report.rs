@@ -355,11 +355,11 @@ impl AttestationReport {
                 }
             }
             ReportType::Remote => {
-                #[cfg(feature = "attestation")]
+                #[cfg(feature = "sgx-hw")]
                 {
                     self.verify_remote_quote()
                 }
-                #[cfg(not(feature = "attestation"))]
+                #[cfg(not(feature = "sgx-hw"))]
                 {
                     false
                 }
@@ -446,15 +446,24 @@ impl AttestationReport {
         false
     }
 
-    #[cfg(feature = "attestation")]
+    #[cfg(feature = "sgx-hw")]
     fn verify_remote_quote(&self) -> bool {
-        // Real remote quote verification requires IAS/DCAP integration.
-        // Until the verifier is implemented, fail closed for non-simulated reports.
-        tracing::warn!(
-            target: "neo",
-            "SGX remote quote verification is unavailable (failing closed)"
-        );
-        false
+        let Some(quote) = self.quote.as_deref() else {
+            tracing::warn!(target: "neo", "remote attestation report missing quote bytes");
+            return false;
+        };
+
+        match crate::sgx::verify_quote_signature(quote) {
+            Ok(_) => true,
+            Err(err) => {
+                tracing::warn!(
+                    target: "neo",
+                    error = %err,
+                    "SGX remote quote verification failed"
+                );
+                false
+            }
+        }
     }
 
     /// Serialize report to bytes
@@ -478,14 +487,17 @@ impl Quote {
     ///
     /// Supports SGX quote formats (v3, ECDSA quotes)
     pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        if bytes.len() < 512 {
+        // sgx_quote3_t fixed-size prefix:
+        // 48-byte header + 384-byte report_body + 4-byte signature_data_len.
+        if bytes.len() < 436 {
             return None;
         }
 
-        // Parse quote header (48 bytes)
+        // Parse SGX quote v3 header.
         let version = u16::from_le_bytes([bytes[0], bytes[1]]);
-        let signature_type = u16::from_le_bytes([bytes[2], bytes[3]]);
+        let signature_type = u16::from_le_bytes([bytes[2], bytes[3]]); // att_key_type
 
+        // Preserve header att_key_data_0 in legacy fields.
         let mut epid_group_id = [0u8; 4];
         epid_group_id.copy_from_slice(&bytes[4..8]);
 
@@ -495,78 +507,55 @@ impl Quote {
         let mut pce_svn = [0u8; 2];
         pce_svn.copy_from_slice(&bytes[10..12]);
 
-        let xeid = u32::from_le_bytes([bytes[12], bytes[13], bytes[14], bytes[15]]);
+        // Legacy field in this struct. In SGX quote v3 this corresponds to att_key_data_0.
+        let xeid = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
 
-        // Parse timestamp (8 bytes at offset 16)
+        // SGX quote v3 does not include a timestamp in the quote header.
         let mut timestamp = [0u8; 8];
-        timestamp.copy_from_slice(&bytes[16..24]);
+        timestamp.fill(0);
 
-        // Parse report data (64 bytes at offset 64 in the report body)
-        // The report body starts at offset 48
+        // Parse sgx_report_body_t fields from quote body.
         let report_body_offset = 48;
-        let mut report_data = [0u8; 64];
-        if bytes.len() >= report_body_offset + 320 {
-            report_data.copy_from_slice(&bytes[report_body_offset + 256..report_body_offset + 320]);
-        }
+        let cpu_svn_offset = report_body_offset;
+        let misc_select_offset = report_body_offset + 16;
+        let attributes_offset = report_body_offset + 48;
+        let mrenclave_offset = report_body_offset + 64;
+        let mrsigner_offset = report_body_offset + 128;
+        let isv_prod_id_offset = report_body_offset + 256;
+        let isv_svn_offset = report_body_offset + 258;
+        let report_data_offset = report_body_offset + 320;
 
-        // Parse MRENCLAVE (32 bytes at offset 64 in report body)
-        let mut mrenclave = [0u8; 32];
-        if bytes.len() >= report_body_offset + 64 {
-            mrenclave.copy_from_slice(&bytes[report_body_offset + 32..report_body_offset + 64]);
-        }
-
-        // Parse MRSIGNER (32 bytes at offset 128 in report body)
-        let mut mrsigner = [0u8; 32];
-        if bytes.len() >= report_body_offset + 128 {
-            mrsigner.copy_from_slice(&bytes[report_body_offset + 96..report_body_offset + 128]);
-        }
-
-        // Parse attributes (16 bytes at offset 48 in report body)
-        let mut attributes = [0u8; 16];
-        if bytes.len() >= report_body_offset + 48 {
-            attributes.copy_from_slice(&bytes[report_body_offset + 48..report_body_offset + 64]);
-        }
-
-        // Parse ISV Prod ID (2 bytes at offset 256 in report body)
-        let isv_prod_id = if bytes.len() >= report_body_offset + 258 {
-            u16::from_le_bytes([
-                bytes[report_body_offset + 256],
-                bytes[report_body_offset + 257],
-            ])
-        } else {
-            0
-        };
-
-        // Parse ISV SVN (2 bytes at offset 258 in report body)
-        let isv_svn = if bytes.len() >= report_body_offset + 260 {
-            u16::from_le_bytes([
-                bytes[report_body_offset + 258],
-                bytes[report_body_offset + 259],
-            ])
-        } else {
-            0
-        };
-
-        // Parse report ID (32 bytes at offset 320 in report body)
-        let mut report_id = [0u8; 32];
-        if bytes.len() >= report_body_offset + 352 {
-            report_id.copy_from_slice(&bytes[report_body_offset + 320..report_body_offset + 352]);
-        }
-
-        // Parse report ID MAC (32 bytes at offset 352 in report body)
-        let mut report_id_ma = [0u8; 32];
-        if bytes.len() >= report_body_offset + 384 {
-            report_id_ma
-                .copy_from_slice(&bytes[report_body_offset + 352..report_body_offset + 384]);
-        }
-
-        // Parse CPU SVN (16 bytes at offset 48)
+        // Parse CPU SVN.
         let mut cpu_svn = [0u8; 16];
-        cpu_svn.copy_from_slice(&bytes[48..64]);
+        cpu_svn.copy_from_slice(&bytes[cpu_svn_offset..cpu_svn_offset + 16]);
 
-        // Parse misc select (4 bytes at offset 64)
+        // Parse misc select.
         let mut misc_select = [0u8; 4];
-        misc_select.copy_from_slice(&bytes[64..68]);
+        misc_select.copy_from_slice(&bytes[misc_select_offset..misc_select_offset + 4]);
+
+        // Parse attributes.
+        let mut attributes = [0u8; 16];
+        attributes.copy_from_slice(&bytes[attributes_offset..attributes_offset + 16]);
+
+        // Parse MRENCLAVE and MRSIGNER.
+        let mut mrenclave = [0u8; 32];
+        mrenclave.copy_from_slice(&bytes[mrenclave_offset..mrenclave_offset + 32]);
+
+        let mut mrsigner = [0u8; 32];
+        mrsigner.copy_from_slice(&bytes[mrsigner_offset..mrsigner_offset + 32]);
+
+        // Parse ISV product/security version.
+        let isv_prod_id =
+            u16::from_le_bytes([bytes[isv_prod_id_offset], bytes[isv_prod_id_offset + 1]]);
+        let isv_svn = u16::from_le_bytes([bytes[isv_svn_offset], bytes[isv_svn_offset + 1]]);
+
+        // Parse report_data.
+        let mut report_data = [0u8; 64];
+        report_data.copy_from_slice(&bytes[report_data_offset..report_data_offset + 64]);
+
+        // Legacy fields not present in SGX quote v3 body.
+        let report_id = [0u8; 32];
+        let report_id_ma = [0u8; 32];
 
         Some(Self {
             version,
@@ -762,8 +751,8 @@ mod tests {
 
     #[test]
     fn test_quote_parse_minimal() {
-        // Create a minimal valid quote structure (at least 512 bytes)
-        let mut bytes = vec![0u8; 512];
+        // Create a minimal valid SGX quote v3 structure (436-byte fixed prefix).
+        let mut bytes = vec![0u8; 436];
 
         // Set version to 3 (ECDSA)
         bytes[0] = 3;
@@ -781,5 +770,34 @@ mod tests {
         assert_eq!(quote.version, 3);
         assert_eq!(quote.signature_type, 2);
         assert_eq!(quote.isv_svn, 1);
+    }
+
+    #[test]
+    fn test_quote_parse_uses_sgx_v3_report_body_offsets() {
+        let mut bytes = vec![0u8; 436];
+        bytes[0] = 3;
+        bytes[2] = 2;
+
+        let mrenclave = [0x11u8; 32];
+        let mrsigner = [0x22u8; 32];
+        let report_data = [0x33u8; 64];
+
+        bytes[48 + 64..48 + 96].copy_from_slice(&mrenclave);
+        bytes[48 + 128..48 + 160].copy_from_slice(&mrsigner);
+        bytes[48 + 320..48 + 384].copy_from_slice(&report_data);
+
+        bytes[48 + 48] = 0x02; // debug bit
+        bytes[48 + 256] = 0x34;
+        bytes[48 + 257] = 0x12; // isv_prod_id = 0x1234
+        bytes[48 + 258] = 0x78;
+        bytes[48 + 259] = 0x56; // isv_svn = 0x5678
+
+        let quote = Quote::from_bytes(&bytes).expect("quote should parse");
+        assert_eq!(quote.mrenclave, mrenclave);
+        assert_eq!(quote.mrsigner, mrsigner);
+        assert_eq!(quote.report_data, report_data);
+        assert_eq!(quote.attributes[0] & 0x02, 0x02);
+        assert_eq!(quote.isv_prod_id, 0x1234);
+        assert_eq!(quote.isv_svn, 0x5678);
     }
 }

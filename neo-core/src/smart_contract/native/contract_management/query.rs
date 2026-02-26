@@ -181,16 +181,40 @@ impl ContractManagement {
     /// Lists all non-native contracts from the snapshot cache.
     pub fn list_contracts(snapshot: &DataCache) -> Result<Vec<ContractState>> {
         let prefix = StorageKey::new(Self::ID, vec![PREFIX_CONTRACT]);
-        let mut contracts: Vec<ContractState> = snapshot
-            .find(Some(&prefix), SeekDirection::Forward)
-            .filter_map(|(_, item)| {
-                let bytes = item.get_value();
-                Self::deserialize_contract_state(&bytes).ok()
-            })
-            .filter(|contract| contract.id >= 0)
-            .collect();
+        let mut contracts = Vec::<ContractState>::new();
+        for (_, item) in snapshot.find(Some(&prefix), SeekDirection::Forward) {
+            let bytes = item.get_value();
+            let contract = Self::deserialize_contract_state(&bytes)?;
+            if contract.id >= 0 {
+                contracts.push(contract);
+            }
+        }
         contracts.sort_by_key(|contract| contract.id);
         Ok(contracts)
+    }
+
+    /// Validates persisted non-native contract metadata loaded from snapshot storage.
+    ///
+    /// This fails fast when storage is corrupted (for example, duplicate non-native IDs
+    /// mapped to different contract hashes), preventing late runtime faults during block sync.
+    pub fn validate_snapshot_integrity(snapshot: &DataCache) -> Result<()> {
+        let contracts = Self::list_contracts(snapshot)?;
+        let mut ids = HashMap::<i32, UInt160>::with_capacity(contracts.len());
+
+        for contract in contracts {
+            if let Some(existing) = ids.insert(contract.id, contract.hash) {
+                if existing != contract.hash {
+                    return Err(Error::invalid_data(format!(
+                        "corrupted ContractManagement state: duplicate non-native contract id {} for hashes {} and {}",
+                        contract.id,
+                        existing.to_hex_string(),
+                        contract.hash.to_hex_string()
+                    )));
+                }
+            }
+        }
+
+        Ok(())
     }
 
     /// Gets the minimum deployment fee
@@ -226,8 +250,8 @@ impl ContractManagement {
             storage.minimum_deployment_fee = value;
 
             (
-                storage.minimum_deployment_fee.to_le_bytes(),
-                storage.next_id.to_le_bytes(),
+                Self::encode_storage_i64(storage.minimum_deployment_fee),
+                Self::encode_storage_i32(storage.next_id),
             )
         };
 

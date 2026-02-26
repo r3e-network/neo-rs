@@ -125,10 +125,16 @@ impl AttestationService {
 
     /// Generate an attestation report with custom report data
     pub fn generate_report(&self, user_data: &[u8]) -> TeeResult<AttestationReport> {
-        // Create report data from user data (max 64 bytes)
-        let mut report_data = [0u8; 64];
-        let len = user_data.len().min(64);
-        report_data[..len].copy_from_slice(&user_data[..len]);
+        #[cfg(feature = "sgx-hw")]
+        let report_data = crate::sgx::report_data_from_user_data(user_data);
+
+        #[cfg(not(feature = "sgx-hw"))]
+        let report_data = {
+            let mut data = [0u8; 64];
+            let len = user_data.len().min(64);
+            data[..len].copy_from_slice(&user_data[..len]);
+            data
+        };
 
         #[cfg(feature = "sgx-hw")]
         {
@@ -258,7 +264,20 @@ impl AttestationService {
         };
 
         let options = self.config.to_quote_options();
-        Ok(quote.validate(&options))
+        let result = quote.validate(&options);
+        if result != QuoteValidationResult::Valid {
+            return Ok(result);
+        }
+
+        #[cfg(feature = "sgx-hw")]
+        {
+            if let Err(err) = crate::sgx::verify_quote_signature(quote_bytes) {
+                warn!("SGX DCAP quote verification failed: {}", err);
+                return Ok(QuoteValidationResult::InvalidSignature);
+            }
+        }
+
+        Ok(QuoteValidationResult::Valid)
     }
 
     /// Verify a quote with detailed validation
@@ -285,7 +304,20 @@ impl AttestationService {
         }
 
         let options = self.config.to_quote_options();
-        Ok(quote.validate(&options))
+        let result = quote.validate(&options);
+        if result != QuoteValidationResult::Valid {
+            return Ok(result);
+        }
+
+        #[cfg(feature = "sgx-hw")]
+        {
+            if let Err(err) = crate::sgx::verify_quote_signature(quote_bytes) {
+                warn!("SGX DCAP quote verification failed: {}", err);
+                return Ok(QuoteValidationResult::InvalidSignature);
+            }
+        }
+
+        Ok(QuoteValidationResult::Valid)
     }
 
     /// Get the expected MRENCLAVE for this enclave version
@@ -357,32 +389,56 @@ impl AttestationService {
 
     #[cfg(feature = "sgx-hw")]
     fn generate_sgx_report(&self, report_data: [u8; 64]) -> TeeResult<AttestationReport> {
-        // SGX hardware report generation requires running inside an SGX enclave.
-        // When running outside an enclave (e.g. CI/dev), return a deterministic simulated report.
-        // On real SGX hardware this should use the EREPORT instruction via the sgx_isa crate.
-        //
-        // Note: The sgx_isa crate's Report::for_target requires actual SGX hardware.
-        // When not running inside an enclave, this function uses simulation.
-        debug!("SGX hardware feature enabled but not running in enclave, using simulation");
+        if self._enclave.config().simulation {
+            if !self.config.allow_simulated {
+                return Err(TeeError::FeatureNotEnabled(
+                    "simulated attestation is disabled and enclave is in simulation mode"
+                        .to_string(),
+                ));
+            }
+
+            debug!(
+                "SGX hardware feature enabled but enclave is in simulation mode; emitting simulated attestation report"
+            );
+            return Ok(AttestationReport::simulated_with_measurements(
+                report_data,
+                self.expected_mrenclave(),
+                [0u8; 32],
+            ));
+        }
+
+        let evidence = self._enclave.sgx_evidence().ok_or_else(|| {
+            TeeError::FeatureNotEnabled(
+                "strict SGX mode requires verified quote evidence during enclave initialization"
+                    .to_string(),
+            )
+        })?;
+
+        if evidence.report_data != report_data {
+            warn!(
+                "requested report_data differs from verified SGX quote report_data; returning quote-bound report_data in strict mode"
+            );
+        }
+
         Ok(AttestationReport {
             version: 1,
-            report_type: ReportType::Simulated,
-            mrenclave: self.expected_mrenclave(),
-            mrsigner: [0u8; 32],
-            isv_prod_id: 1,
-            isv_svn: 1,
-            report_data,
+            report_type: ReportType::Remote,
+            mrenclave: evidence.mrenclave,
+            mrsigner: evidence.mrsigner,
+            isv_prod_id: evidence.isv_prod_id,
+            isv_svn: evidence.isv_svn,
+            report_data: evidence.report_data,
             timestamp: std::time::SystemTime::now(),
-            cpu_svn: [0u8; 16],
-            attributes: super::report::EnclaveAttributes {
-                debug: true,
-                mode64bit: true,
-                provision_key: false,
-                einit_token: false,
-                key_separation: false,
+            cpu_svn: evidence.cpu_svn,
+            attributes: crate::attestation::report::EnclaveAttributes {
+                debug: (evidence.attributes[0] & 0x02) != 0,
+                mode64bit: (evidence.attributes[0] & 0x04) != 0,
+                provision_key: (evidence.attributes[0] & 0x10) != 0,
+                einit_token: (evidence.attributes[0] & 0x20) != 0,
+                key_separation: true,
             },
-            raw_report: Vec::new(),
-            quote: None,
+            raw_report: evidence.quote.clone(),
+            quote: Some(evidence.quote),
         })
     }
 
@@ -410,7 +466,10 @@ mod tests {
         let enclave = Arc::new(TeeEnclave::new(config));
         enclave.initialize().unwrap();
 
-        let service = AttestationService::new(enclave).unwrap();
+        // Test helper always uses a simulation enclave, so force testing config to
+        // keep simulated attestation enabled even in sgx-hw builds.
+        let service = AttestationService::with_config(enclave, AttestationConfig::testing())
+            .unwrap();
         (temp, service)
     }
 
@@ -505,14 +564,33 @@ mod tests {
         let config = AttestationConfig::production();
         let (_temp, service) = setup_service_with_config(config);
 
-        let report = service.generate_report(b"test").unwrap();
+        match service.generate_report(b"test") {
+            Ok(report) => {
+                // Should fail because simulated reports are not allowed in production config.
+                assert!(!service.verify_report(&report).unwrap());
 
-        // Should fail because simulated reports are not allowed in production config
-        assert!(!service.verify_report(&report).unwrap());
+                // Detailed check should return InvalidSignature.
+                let result = service.verify_report_detailed(&report);
+                assert_eq!(result, QuoteValidationResult::InvalidSignature);
+            }
+            Err(TeeError::FeatureNotEnabled(_)) => {
+                // In strict SGX mode we fail closed until real quote generation is integrated.
+            }
+            Err(other) => panic!("unexpected error: {other}"),
+        }
+    }
 
-        // Detailed check should return InvalidSignature
-        let result = service.verify_report_detailed(&report);
-        assert_eq!(result, QuoteValidationResult::InvalidSignature);
+    #[cfg(feature = "sgx-hw")]
+    #[test]
+    fn test_strict_sgx_mode_fails_closed_when_quote_generation_unavailable() {
+        let config = AttestationConfig::production();
+        let (_temp, service) = setup_service_with_config(config);
+
+        match service.generate_report(b"strict-mode-test") {
+            Err(TeeError::FeatureNotEnabled(_)) => {}
+            Ok(_) => panic!("strict SGX mode must not emit simulated attestation reports"),
+            Err(other) => panic!("unexpected error: {other}"),
+        }
     }
 
     #[test]

@@ -53,7 +53,7 @@ pub enum TeeError {
     #[error("Enclave initialization failed: {0}")]
     EnclaveInitFailed(String),
 
-    #[error("Enclave initialization error: {error}")]
+    #[error("Enclave initialization error: {error}. context: {context}")]
     EnclaveInitError {
         /// The specific initialization error
         error: EnclaveInitError,

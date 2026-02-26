@@ -7,19 +7,6 @@ impl ApplicationEngine {
             return Ok(contract.clone());
         }
 
-        let management_hash = ContractManagement::new().hash();
-        if let Some(native) = self.native_registry.get(&management_hash) {
-            if let Some(manager) = native.as_any().downcast_ref::<ContractManagement>() {
-                let contract = manager
-                    .get_contract(hash)
-                    .map_err(|e| Error::invalid_operation(e.to_string()))?;
-                if let Some(contract) = contract {
-                    self.contracts.insert(*hash, contract.clone());
-                    return Ok(contract);
-                }
-            }
-        }
-
         if let Some(contract) =
             ContractManagement::get_contract_from_snapshot(self.snapshot_cache.as_ref(), hash)
                 .map_err(|e| Error::invalid_operation(e.to_string()))?
@@ -148,15 +135,16 @@ impl ApplicationEngine {
             .current_context()
             .cloned()
             .ok_or_else(|| Error::invalid_operation("No current execution context"))?;
-        let previous_hash = UInt160::from_bytes(&previous_context.script_hash())
-            .map_err(|e| Error::invalid_operation(format!("Invalid script hash: {e}")))?;
 
         let state_arc = previous_context
             .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
-        let (calling_flags, executing_contract) = {
+        let (calling_flags, executing_contract, previous_hash_from_state) = {
             let state = state_arc.lock();
-            (state.call_flags, state.contract.clone())
+            (state.call_flags, state.contract.clone(), state.script_hash)
         };
+        let previous_hash = previous_hash_from_state
+            .or_else(|| UInt160::from_bytes(&previous_context.script_hash()).ok())
+            .ok_or_else(|| Error::invalid_operation("Invalid script hash in execution context"))?;
 
         if method.safe {
             flags.remove(CallFlags::WRITE_STATES | CallFlags::ALLOW_NOTIFY);
@@ -372,5 +360,63 @@ impl ApplicationEngine {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::smart_contract::native::GasToken;
+    use neo_vm::OpCode;
+
+    #[test]
+    fn call_contract_uses_execution_state_script_hash_for_caller() {
+        let snapshot = Arc::new(DataCache::new(false));
+        let mut engine = ApplicationEngine::new(
+            TriggerType::Application,
+            None,
+            snapshot,
+            None,
+            ProtocolSettings::default(),
+            TEST_MODE_GAS,
+            None,
+        )
+        .expect("engine");
+
+        engine
+            .load_script(vec![OpCode::RET as u8], CallFlags::ALL, None)
+            .expect("load entry script");
+
+        let entry_context = engine.current_context().cloned().expect("entry context");
+        let vm_script_hash =
+            UInt160::from_bytes(&entry_context.script_hash()).expect("entry vm script hash");
+        let logical_contract_hash =
+            UInt160::parse("0xc198d687cc67e244662c3b9c1325f095f8e663b1").expect("hash");
+        assert_ne!(logical_contract_hash, vm_script_hash);
+
+        let state_arc =
+            entry_context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+        state_arc.lock().script_hash = Some(logical_contract_hash);
+        engine
+            .refresh_context_tracking()
+            .expect("refresh context tracking");
+
+        let gas_hash = GasToken::new().hash();
+        engine
+            .call_contract_dynamic(
+                &gas_hash,
+                "balanceOf",
+                CallFlags::READ_STATES | CallFlags::ALLOW_CALL,
+                vec![StackItem::from_byte_string(UInt160::zero().to_bytes())],
+            )
+            .expect("load GAS balanceOf call");
+
+        let gas_context = engine.current_context().cloned().expect("gas context");
+        let gas_state_arc =
+            gas_context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+        let gas_state = gas_state_arc.lock();
+
+        assert_eq!(gas_state.calling_script_hash, Some(logical_contract_hash));
+        assert_eq!(engine.get_calling_script_hash(), Some(logical_contract_hash));
     }
 }

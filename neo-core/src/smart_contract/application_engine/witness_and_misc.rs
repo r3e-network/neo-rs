@@ -500,34 +500,46 @@ impl ApplicationEngine {
                 .map_err(|e| Error::invalid_operation(format!("Invalid script hash: {e}")))?;
             let state_arc = current_context
                 .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
-            let state = state_arc.lock();
-            let current_hash = state.script_hash.unwrap_or(fallback_hash);
+            let (current_hash, call_flags, calling_script_hash, context_snapshot) = {
+                let state = state_arc.lock();
+                let current_hash = state.script_hash.unwrap_or(fallback_hash);
+                let calling_script_hash = state
+                    .native_calling_script_hash
+                    .or(state.calling_script_hash)
+                    .or_else(|| {
+                        state.calling_context.as_ref().and_then(|ctx| {
+                            let ctx_state = ctx.get_state_with_factory::<ExecutionContextState, _>(
+                                ExecutionContextState::new,
+                            );
+                            let ctx_state = ctx_state.lock();
+                            ctx_state
+                                .script_hash
+                                .or_else(|| UInt160::from_bytes(&ctx.script_hash()).ok())
+                        })
+                    });
+                (
+                    current_hash,
+                    state.call_flags,
+                    calling_script_hash,
+                    state.snapshot_cache.clone(),
+                )
+            };
 
             self.current_script_hash = Some(current_hash);
             if self.entry_script_hash.is_none() {
                 self.entry_script_hash = Some(current_hash);
             }
 
-            self.call_flags = state.call_flags;
-            self.calling_script_hash = state
-                .native_calling_script_hash
-                .or(state.calling_script_hash)
-                .or_else(|| {
-                    state.calling_context.as_ref().and_then(|ctx| {
-                        let ctx_state = ctx.get_state_with_factory::<ExecutionContextState, _>(
-                            ExecutionContextState::new,
-                        );
-                        let ctx_state = ctx_state.lock();
-                        ctx_state
-                            .script_hash
-                            .or_else(|| UInt160::from_bytes(&ctx.script_hash()).ok())
-                    })
-                });
+            self.call_flags = call_flags;
+            self.calling_script_hash = calling_script_hash;
+            self.snapshot_cache =
+                context_snapshot.unwrap_or_else(|| Arc::clone(&self.original_snapshot_cache));
         } else {
             self.current_script_hash = None;
             self.calling_script_hash = None;
             self.entry_script_hash = None;
             self.call_flags = CallFlags::ALL;
+            self.snapshot_cache = Arc::clone(&self.original_snapshot_cache);
         }
 
         Ok(())

@@ -88,6 +88,9 @@ impl NativeContract for ContractManagement {
         method: &str,
         args: &[Vec<u8>],
     ) -> Result<Vec<u8>> {
+        // Keep in-memory metadata aligned with persisted storage for this snapshot.
+        self.hydrate_from_engine(engine)?;
+
         match method {
             "getContract" => {
                 if args.len() != 1 {
@@ -188,15 +191,8 @@ impl NativeContract for ContractManagement {
                         "setMinimumDeploymentFee requires 1 argument".to_string(),
                     ));
                 }
-                if args[0].len() != 8 {
-                    return Err(Error::invalid_argument("Invalid fee value".to_string()));
-                }
-                let value = i64::from_le_bytes(
-                    args[0]
-                        .as_slice()
-                        .try_into()
-                        .map_err(|_| Error::invalid_argument("Invalid fee value".to_string()))?,
-                );
+                let value = Self::decode_storage_i64(&args[0])
+                    .ok_or_else(|| Error::invalid_argument("Invalid fee value".to_string()))?;
                 self.set_minimum_deployment_fee(engine, value)?;
                 Ok(vec![])
             }
@@ -211,15 +207,8 @@ impl NativeContract for ContractManagement {
                 let method = String::from_utf8(args[1].clone()).map_err(|e| {
                     Error::invalid_argument(format!("Invalid method string: {}", e))
                 })?;
-                if args[2].len() != 4 {
-                    return Err(Error::invalid_argument(
-                        "Invalid parameter count".to_string(),
-                    ));
-                }
-                let pcount =
-                    i32::from_le_bytes(args[2].as_slice().try_into().map_err(|_| {
-                        Error::invalid_argument("Invalid parameter count".to_string())
-                    })?);
+                let pcount = Self::decode_storage_i32(&args[2])
+                    .ok_or_else(|| Error::invalid_argument("Invalid parameter count".to_string()))?;
                 let result = self.has_method(&hash, &method, pcount)?;
                 Ok(vec![if result { 1 } else { 0 }])
             }
@@ -240,15 +229,8 @@ impl NativeContract for ContractManagement {
                         "getContractById requires 1 argument".to_string(),
                     ));
                 }
-                if args[0].len() != 4 {
-                    return Err(Error::invalid_argument("Invalid contract ID".to_string()));
-                }
-                let id = i32::from_le_bytes(
-                    args[0]
-                        .as_slice()
-                        .try_into()
-                        .map_err(|_| Error::invalid_argument("Invalid contract ID".to_string()))?,
-                );
+                let id = Self::decode_storage_i32(&args[0])
+                    .ok_or_else(|| Error::invalid_argument("Invalid contract ID".to_string()))?;
                 match self.get_contract_by_id(id)? {
                     Some(contract) => {
                         let item = contract.to_stack_item()?;
@@ -376,9 +358,9 @@ impl NativeContract for ContractManagement {
         let (min_fee_bytes, next_id_bytes, count_bytes) = {
             let storage = self.storage.read();
             (
-                storage.minimum_deployment_fee.to_le_bytes(),
-                storage.next_id.to_le_bytes(),
-                storage.contract_count.to_le_bytes(),
+                Self::encode_storage_i64(storage.minimum_deployment_fee),
+                Self::encode_storage_i32(storage.next_id),
+                Self::encode_storage_u32(storage.contract_count),
             )
         };
 

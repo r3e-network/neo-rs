@@ -49,36 +49,38 @@ impl InteropHost for ApplicationEngine {
             context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
 
         // Phase 1: Extract values and reset under a short-lived lock
-        let (snapshot_cache, notification_count, is_dynamic_call) = {
+        let (snapshot_cache, notification_count, is_dynamic_call, unloaded_script_hash) = {
             let mut state = state_arc.lock();
             let snapshot = state.snapshot_cache.clone();
             let notif_count = state.notification_count;
             let dynamic_call = state.is_dynamic_call;
+            let script_hash = state.script_hash.clone();
             state.notification_count = 0;
             state.is_dynamic_call = false;
-            (snapshot, notif_count, dynamic_call)
+            (snapshot, notif_count, dynamic_call, script_hash)
         };
         // Lock is now dropped — safe to acquire caller's state lock
 
-        // C# only applies cross-contract unload handling when the unloaded context
-        // script differs from the current context script. Cloned contexts created
-        // via CALL/LoadContract(_initialize) share the same script and must bypass
-        // dynamic-call return-value checks.
+        // Match C# semantics: only cross-contract unloads (different script)
+        // trigger child snapshot commit and dynamic-call return normalization.
+        // Compare script hashes first because this engine may materialize fresh
+        // script objects for equivalent contracts during load.
         let is_cross_contract_unload = engine.current_context().map_or(true, |current_ctx| {
-            current_ctx.script_hash() != context.script_hash()
+            let current_state_arc = current_ctx
+                .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+            let current_script_hash = current_state_arc.lock().script_hash.clone();
+
+            match (unloaded_script_hash.as_ref(), current_script_hash.as_ref()) {
+                (Some(unloaded), Some(current)) => unloaded != current,
+                _ => !std::sync::Arc::ptr_eq(&current_ctx.script_arc(), &context.script_arc()),
+            }
         });
 
         // Phase 2: Commit snapshot and propagate state to caller (cross-contract only)
         if is_cross_contract_unload {
             if engine.uncaught_exception().is_none() {
                 if let Some(snapshot) = snapshot_cache {
-                    // `DataCache` is currently shared across execution contexts. Calling `commit()`
-                    // on a shared snapshot clears the global change-set and can drop pending writes
-                    // before the block-level persistence pipeline flushes them to storage.
-                    // Only commit when this context owns the snapshot state exclusively.
-                    if std::sync::Arc::strong_count(&snapshot) == 1 {
-                        snapshot.commit();
-                    }
+                    snapshot.commit();
                 }
 
                 if let Some(current_ctx) = engine.current_context() {

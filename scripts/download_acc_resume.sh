@@ -8,7 +8,7 @@ fi
 
 URL="$1"
 OUT="$2"
-EXPECTED_MD5="$3"
+EXPECTED_MD5="$(echo "$3" | tr '[:lower:]' '[:upper:]')"
 
 mkdir -p "$(dirname "$OUT")"
 
@@ -17,11 +17,37 @@ server_length() {
 }
 
 local_length() {
-  if [[ -f "$OUT" ]]; then
-    stat -f "%z" "$OUT"
-  else
+  if [[ ! -f "$OUT" ]]; then
     echo 0
+    return
   fi
+
+  if stat --version >/dev/null 2>&1; then
+    stat --format="%s" "$OUT"
+    return
+  fi
+
+  if stat -f "%z" "$OUT" >/dev/null 2>&1; then
+    stat -f "%z" "$OUT"
+    return
+  fi
+
+  wc -c <"$OUT" | tr -d '[:space:]'
+}
+
+file_md5() {
+  if command -v md5sum >/dev/null 2>&1; then
+    md5sum "$OUT" | awk '{print toupper($1)}'
+    return
+  fi
+
+  if command -v md5 >/dev/null 2>&1; then
+    md5 -q "$OUT" | tr '[:lower:]' '[:upper:]'
+    return
+  fi
+
+  echo "error: neither md5sum nor md5 is available" >&2
+  exit 1
 }
 
 echo "[$(date '+%F %T')] downloader-start url=$URL out=$OUT expected_md5=$EXPECTED_MD5"
@@ -34,7 +60,7 @@ while true; do
     continue
   fi
 
-  actual_md5="$(md5 -q "$OUT")"
+  actual_md5="$(file_md5)"
   if [[ "$actual_md5" == "$EXPECTED_MD5" ]]; then
     echo "[$(date '+%F %T')] download-complete md5-match=$actual_md5 size=$(local_length)"
     exit 0

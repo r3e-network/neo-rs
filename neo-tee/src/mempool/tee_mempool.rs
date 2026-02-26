@@ -135,16 +135,6 @@ impl TeeMempool {
         system_fee: i64,
         sender: [u8; 20],
     ) -> TeeResult<u64> {
-        // Check capacity
-        if self.transactions.read().len() >= self.config.capacity {
-            return Err(TeeError::MempoolFull);
-        }
-
-        // Check for duplicate
-        if self.transactions.read().contains_key(&tx_hash) {
-            return Err(TeeError::Other("Transaction already in pool".to_string()));
-        }
-
         // Assign sequence number atomically
         let sequence = {
             let mut counter = self.sequence_counter.write();
@@ -173,9 +163,29 @@ impl TeeMempool {
             sender,
         };
 
-        // Insert into both indexes
-        self.transactions.write().insert(tx_hash, entry);
-        self.ordered.write().insert(ordering_key, tx_hash);
+        // Insert into both indexes atomically under write locks to keep both
+        // indexes consistent under concurrent writers.
+        let mut transactions = self.transactions.write();
+        let mut ordered = self.ordered.write();
+
+        if transactions.len() >= self.config.capacity {
+            return Err(TeeError::MempoolFull);
+        }
+
+        if transactions.contains_key(&tx_hash) {
+            return Err(TeeError::Other("Transaction already in pool".to_string()));
+        }
+
+        transactions.insert(tx_hash, entry);
+        if let Some(replaced_hash) = ordered.insert(ordering_key, tx_hash) {
+            if replaced_hash != tx_hash {
+                // Roll back on unexpected index collision.
+                transactions.remove(&tx_hash);
+                return Err(TeeError::Other(
+                    "Ordering index collision while inserting transaction".to_string(),
+                ));
+            }
+        }
 
         debug!(
             "Added transaction {} with sequence {} to batch {}",
@@ -189,8 +199,11 @@ impl TeeMempool {
 
     /// Remove a transaction from the mempool
     pub fn remove_transaction(&self, tx_hash: &[u8; 32]) -> bool {
-        if let Some(entry) = self.transactions.write().remove(tx_hash) {
-            self.ordered.write().remove(&entry.ordering_key);
+        let mut transactions = self.transactions.write();
+        let mut ordered = self.ordered.write();
+
+        if let Some(entry) = transactions.remove(tx_hash) {
+            ordered.remove(&entry.ordering_key);
             true
         } else {
             false

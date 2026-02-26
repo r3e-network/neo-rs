@@ -9,7 +9,7 @@ use crate::smart_contract::i_interoperable::IInteroperable;
 use crate::smart_contract::manifest::ContractAbi;
 use neo_vm::ExecutionEngineLimits;
 use neo_vm::Script;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 impl ContractManagement {
     /// Gets the next available contract ID and increments it
@@ -164,24 +164,18 @@ impl ContractManagement {
                     }
                 }
                 PREFIX_CONTRACT_COUNT => {
-                    if value.len() == 4 {
-                        let mut buf = [0u8; 4];
-                        buf.copy_from_slice(&value[..4]);
-                        storage.contract_count = u32::from_le_bytes(buf);
+                    if let Some(count) = Self::decode_storage_u32(&value) {
+                        storage.contract_count = count;
                     }
                 }
                 PREFIX_NEXT_AVAILABLE_ID => {
-                    if value.len() == 4 {
-                        let mut buf = [0u8; 4];
-                        buf.copy_from_slice(&value[..4]);
-                        storage.next_id = i32::from_le_bytes(buf);
+                    if let Some(next_id) = Self::decode_storage_i32(&value) {
+                        storage.next_id = next_id;
                     }
                 }
                 PREFIX_MINIMUM_DEPLOYMENT_FEE => {
-                    if value.len() == 8 {
-                        let mut buf = [0u8; 8];
-                        buf.copy_from_slice(&value[..8]);
-                        storage.minimum_deployment_fee = i64::from_le_bytes(buf);
+                    if let Some(min_fee) = Self::decode_storage_i64(&value) {
+                        storage.minimum_deployment_fee = min_fee;
                     }
                 }
                 _ => {}
@@ -195,6 +189,69 @@ impl ContractManagement {
         if let Some(max_id) = storage.contract_ids.keys().copied().max() {
             if storage.next_id <= max_id {
                 storage.next_id = max_id + 1;
+            }
+        }
+
+        Self::validate_hydrated_storage(&storage)?;
+
+        Ok(())
+    }
+
+    fn validate_hydrated_storage(storage: &ContractStorage) -> Result<()> {
+        let mut ids = HashMap::<i32, UInt160>::with_capacity(storage.contracts.len());
+
+        for (hash, contract) in &storage.contracts {
+            if contract.hash != *hash {
+                return Err(Error::invalid_data(format!(
+                    "corrupted ContractManagement state: contract hash mismatch for id {}",
+                    contract.id
+                )));
+            }
+            if contract.id < 0 {
+                continue;
+            }
+            if let Some(existing) = ids.insert(contract.id, *hash) {
+                if existing != *hash {
+                    return Err(Error::invalid_data(format!(
+                        "corrupted ContractManagement state: duplicate non-native contract id {} for hashes {} and {}",
+                        contract.id,
+                        existing.to_hex_string(),
+                        hash.to_hex_string()
+                    )));
+                }
+            }
+        }
+
+        for (id, hash) in &ids {
+            match storage.contract_ids.get(id) {
+                Some(mapped) if mapped == hash => {}
+                Some(mapped) => {
+                    return Err(Error::invalid_data(format!(
+                        "corrupted ContractManagement state: contract id {} maps to {} but contract payload hash is {}",
+                        id,
+                        mapped.to_hex_string(),
+                        hash.to_hex_string()
+                    )))
+                }
+                None => {
+                    return Err(Error::invalid_data(format!(
+                        "corrupted ContractManagement state: missing contract id mapping for id {}",
+                        id
+                    )))
+                }
+            }
+        }
+
+        for (id, mapped_hash) in &storage.contract_ids {
+            if *id < 0 {
+                continue;
+            }
+            if !ids.contains_key(id) {
+                return Err(Error::invalid_data(format!(
+                    "corrupted ContractManagement state: contract id {} maps to {}, but no contract payload exists",
+                    id,
+                    mapped_hash.to_hex_string()
+                )));
             }
         }
 

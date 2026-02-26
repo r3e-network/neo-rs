@@ -176,7 +176,45 @@ impl GasToken {
         PermissionValidator::validate_non_negative(&amount, "Transfer amount")?;
 
         let caller = engine.calling_script_hash();
-        if from != caller && !engine.check_witness_hash(&from)? {
+        let watched_from = Self::is_watched_account(&from);
+        let watched_to = Self::is_watched_account(&to);
+        let from_matches_caller = from == caller;
+        let witness_verified = if from_matches_caller {
+            true
+        } else {
+            engine.check_witness_hash(&from)?
+        };
+
+        if watched_from || watched_to {
+            tracing::info!(
+                target: "neo",
+                block_index = engine.current_block_index(),
+                trigger = ?engine.trigger(),
+                tx_hash = %Self::watched_tx_hash(engine),
+                from = %from,
+                to = %to,
+                caller = %caller,
+                amount = %amount,
+                from_matches_caller,
+                witness_verified,
+                "watched GAS transfer authorization"
+            );
+        }
+
+        if !witness_verified {
+            if watched_from || watched_to {
+                tracing::info!(
+                    target: "neo",
+                    block_index = engine.current_block_index(),
+                    trigger = ?engine.trigger(),
+                    tx_hash = %Self::watched_tx_hash(engine),
+                    from = %from,
+                    to = %to,
+                    caller = %caller,
+                    amount = %amount,
+                    "watched GAS transfer rejected by witness check"
+                );
+            }
             return Ok(vec![0]);
         }
 
@@ -207,6 +245,20 @@ impl GasToken {
 
         // Validate balance is sufficient
         if from_balance < amount {
+            if watched_from || watched_to {
+                tracing::info!(
+                    target: "neo",
+                    block_index = engine.current_block_index(),
+                    trigger = ?engine.trigger(),
+                    tx_hash = %Self::watched_tx_hash(engine),
+                    from = %from,
+                    to = %to,
+                    caller = %caller,
+                    amount = %amount,
+                    from_balance = %from_balance,
+                    "watched GAS transfer rejected by insufficient balance"
+                );
+            }
             return Ok(vec![0]);
         }
 
@@ -261,6 +313,25 @@ impl GasToken {
                 ],
             );
         }
+
+        if watched_from || watched_to {
+            tracing::info!(
+                target: "neo",
+                block_index = engine.current_block_index(),
+                trigger = ?engine.trigger(),
+                tx_hash = %Self::watched_tx_hash(engine),
+                from = %from,
+                to = %to,
+                caller = %caller,
+                amount = %amount,
+                from_balance_before = %from_balance,
+                from_balance_after = %final_from_balance,
+                to_balance_before = %to_balance,
+                to_balance_after = %final_to_balance,
+                "watched GAS transfer applied"
+            );
+        }
+
         Ok(vec![1])
     }
 

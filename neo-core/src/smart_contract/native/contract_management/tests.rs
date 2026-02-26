@@ -2,7 +2,8 @@ use super::*;
 use crate::neo_io::BinaryWriter;
 use crate::network::p2p::payloads::signer::Signer;
 use crate::network::p2p::payloads::transaction::Transaction;
-use crate::persistence::{DataCache, SeekDirection, StorageItem};
+use crate::persistence::providers::memory_store::MemoryStore;
+use crate::persistence::{DataCache, IStore, SeekDirection, StorageItem, StoreCache};
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::contract_state::NefFile;
@@ -201,6 +202,117 @@ fn deploy_returns_expected_hash_and_prevents_duplicates() {
         )
         .expect_err("duplicate deploy should fail");
     assert!(matches!(err, Error::InvalidOperation { .. }));
+}
+
+#[test]
+fn deploy_accepts_manifest_with_empty_permissions() {
+    let snapshot = Arc::new(DataCache::new(false));
+    let cm_hash = ContractManagement::new().hash();
+    let nef = make_nef(vec![OpCode::RET as u8; u8::MAX as usize]);
+    let nef_bytes = nef.to_bytes();
+    let mut manifest = default_manifest();
+    manifest.permissions.clear();
+    let manifest_payload = manifest_bytes(&manifest);
+
+    let mut engine = make_engine(snapshot, Some(UInt160::zero()), 50_000_000_000);
+    let contract_bytes = engine
+        .call_native_contract(
+            cm_hash,
+            "deploy",
+            &[nef_bytes, manifest_payload, Vec::new()],
+        )
+        .expect("deploy with empty permissions succeeds");
+
+    let contract = contract_from_bytes(&contract_bytes);
+    assert_eq!(contract.manifest.permissions.len(), 0);
+}
+
+#[test]
+fn deploy_reads_next_contract_id_from_variable_length_storage_integer() {
+    let snapshot = Arc::new(DataCache::new(false));
+    let cm = ContractManagement::new();
+    let cm_hash = cm.hash();
+
+    // Mirror C# StorageItem(BigInteger) encoding: compact little-endian integers.
+    snapshot.add(
+        StorageKey::new(
+            ContractManagement::ID,
+            ContractManagement::minimum_deployment_fee_key(),
+        ),
+        StorageItem::from_bytes(vec![0x00]),
+    );
+    snapshot.add(
+        StorageKey::new(
+            ContractManagement::ID,
+            ContractManagement::contract_count_key(),
+        ),
+        StorageItem::from_bytes(vec![0x1f]), // 31
+    );
+    snapshot.add(
+        StorageKey::new(ContractManagement::ID, ContractManagement::next_id_key()),
+        StorageItem::from_bytes(vec![0x20]), // 32
+    );
+
+    let nef = make_nef(vec![OpCode::RET as u8; u8::MAX as usize]);
+    let manifest = default_manifest();
+    let manifest_payload = manifest_bytes(&manifest);
+
+    let mut engine = make_engine(snapshot, Some(UInt160::zero()), 50_000_000_000);
+    let contract_bytes = engine
+        .call_native_contract(
+            cm_hash,
+            "deploy",
+            &[nef.to_bytes(), manifest_payload, Vec::new()],
+        )
+        .expect("deploy succeeds");
+
+    let contract = contract_from_bytes(&contract_bytes);
+    assert_eq!(contract.id, 32);
+}
+
+#[test]
+fn deploy_increments_contract_id_after_store_roundtrip() {
+    let store: Arc<dyn IStore> = Arc::new(MemoryStore::new());
+    let mut cache = StoreCache::new_from_store(Arc::clone(&store), false);
+    let snapshot = Arc::new(cache.data_cache().clone());
+    let cm_hash = ContractManagement::new().hash();
+    let nef = make_nef(vec![OpCode::RET as u8]);
+    let manifest = default_manifest();
+    let manifest_payload = manifest_bytes(&manifest);
+
+    let mut first = make_engine(
+        Arc::clone(&snapshot),
+        Some(UInt160::parse("0x0101010101010101010101010101010101010101").unwrap()),
+        50_000_000_000,
+    );
+    let first_bytes = first
+        .call_native_contract(
+            cm_hash,
+            "deploy",
+            &[nef.to_bytes(), manifest_payload.clone(), Vec::new()],
+        )
+        .expect("first deploy");
+    let first_contract = contract_from_bytes(&first_bytes);
+    assert_eq!(first_contract.id, 1);
+
+    cache.commit();
+
+    let cache_after_restart = StoreCache::new_from_store(store, false);
+    let snapshot_after_restart = Arc::new(cache_after_restart.data_cache().clone());
+    let mut second = make_engine(
+        Arc::clone(&snapshot_after_restart),
+        Some(UInt160::parse("0x0202020202020202020202020202020202020202").unwrap()),
+        50_000_000_000,
+    );
+    let second_bytes = second
+        .call_native_contract(
+            cm_hash,
+            "deploy",
+            &[nef.to_bytes(), manifest_payload, Vec::new()],
+        )
+        .expect("second deploy");
+    let second_contract = contract_from_bytes(&second_bytes);
+    assert_eq!(second_contract.id, 2);
 }
 
 #[test]
@@ -404,6 +516,79 @@ fn is_contract_and_list_contracts_filter_native() {
     let list = ContractManagement::list_contracts(snapshot.as_ref()).expect("list contracts");
     assert_eq!(list.len(), 1);
     assert_eq!(list[0].hash, contract.hash);
+}
+
+#[test]
+fn list_contracts_rejects_malformed_contract_payload() {
+    let snapshot = Arc::new(DataCache::new(false));
+    let hash = UInt160::from_bytes(&[0x11; 20]).expect("hash");
+    let key = StorageKey::new(
+        ContractManagement::ID,
+        ContractManagement::contract_storage_key(&hash),
+    );
+    snapshot.add(key, StorageItem::from_bytes(vec![0xff, 0x00, 0x01]));
+
+    let err = ContractManagement::list_contracts(snapshot.as_ref())
+        .expect_err("malformed contract payload should fail");
+    assert!(matches!(err, Error::Deserialization { .. }));
+}
+
+#[test]
+fn validate_snapshot_integrity_rejects_duplicate_non_native_ids() {
+    let snapshot = Arc::new(DataCache::new(false));
+    let manifest = default_manifest();
+    let nef = make_nef(vec![OpCode::RET as u8]);
+
+    let contract_a = ContractState::new(
+        1,
+        UInt160::from_bytes(&[0x21; 20]).expect("hash a"),
+        nef.clone(),
+        manifest.clone(),
+    );
+    let contract_b = ContractState::new(
+        1,
+        UInt160::from_bytes(&[0x22; 20]).expect("hash b"),
+        nef,
+        manifest,
+    );
+    add_contract_to_snapshot(snapshot.as_ref(), &contract_a);
+    add_contract_to_snapshot(snapshot.as_ref(), &contract_b);
+
+    let err = ContractManagement::validate_snapshot_integrity(snapshot.as_ref())
+        .expect_err("duplicate contract ids should fail integrity check");
+    assert!(matches!(err, Error::InvalidData { .. }));
+    assert!(err
+        .to_string()
+        .contains("duplicate non-native contract id 1"));
+}
+
+#[test]
+fn hydrate_from_engine_rejects_duplicate_non_native_ids() {
+    let snapshot = Arc::new(DataCache::new(false));
+    let manifest = default_manifest();
+    let nef = make_nef(vec![OpCode::RET as u8]);
+    let cm = ContractManagement::new();
+
+    let contract_a = ContractState::new(
+        1,
+        UInt160::from_bytes(&[0x31; 20]).expect("hash a"),
+        nef.clone(),
+        manifest.clone(),
+    );
+    let contract_b = ContractState::new(
+        1,
+        UInt160::from_bytes(&[0x32; 20]).expect("hash b"),
+        nef,
+        manifest,
+    );
+    add_contract_to_snapshot(snapshot.as_ref(), &contract_a);
+    add_contract_to_snapshot(snapshot.as_ref(), &contract_b);
+
+    let engine = make_engine(snapshot, None, 50_000_000_000);
+    let err = cm
+        .hydrate_from_engine(&engine)
+        .expect_err("duplicate contract ids should fail hydration");
+    assert!(matches!(err, Error::InvalidData { .. }));
 }
 
 #[test]

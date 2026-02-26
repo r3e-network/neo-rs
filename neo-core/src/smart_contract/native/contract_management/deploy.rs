@@ -157,9 +157,9 @@ impl ContractManagement {
             storage.contract_count += 1;
 
             (
-                storage.contract_count.to_le_bytes(),
-                storage.next_id.to_le_bytes(),
-                storage.minimum_deployment_fee.to_le_bytes(),
+                Self::encode_storage_u32(storage.contract_count),
+                Self::encode_storage_i32(storage.next_id),
+                Self::encode_storage_i64(storage.minimum_deployment_fee),
             )
         };
 

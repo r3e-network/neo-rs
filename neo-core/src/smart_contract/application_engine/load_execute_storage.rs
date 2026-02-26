@@ -35,9 +35,16 @@ impl ApplicationEngine {
         let has_return_value = method.return_type != ContractParameterType::Void;
         let previous_context = self.vm_engine.engine().current_context().cloned();
         let previous_hash = if let Some(ref ctx) = previous_context {
+            let state_arc = ctx.get_state_with_factory::<ExecutionContextState, _>(
+                ExecutionContextState::new,
+            );
+            let hash_from_state = state_arc.lock().script_hash;
             Some(
-                UInt160::from_bytes(&ctx.script_hash())
-                    .map_err(|e| Error::invalid_operation(format!("Invalid script hash: {e}")))?,
+                hash_from_state
+                    .or_else(|| UInt160::from_bytes(&ctx.script_hash()).ok())
+                    .ok_or_else(|| {
+                        Error::invalid_operation("Invalid script hash in execution context")
+                    })?,
             )
         } else {
             None
@@ -266,34 +273,10 @@ impl ApplicationEngine {
             SeekDirection::Forward
         };
 
-        if Arc::ptr_eq(&self.snapshot_cache, &self.original_snapshot_cache) {
-            // Fast path: single backing cache. `DataCache::find` already yields
-            // key-ordered entries for the requested direction.
-            let entries = self
-                .snapshot_cache
-                .find(Some(&search_key), direction)
-                .collect::<Vec<_>>();
-            return Ok(StorageIterator::new(entries, prefix.len(), options));
-        }
-
-        let mut entries_map: HashMap<StorageKey, StorageItem> = HashMap::new();
-        for (key, value) in self.snapshot_cache.find(Some(&search_key), direction) {
-            entries_map.insert(key, value);
-        }
-
-        for (key, value) in self
-            .original_snapshot_cache
+        let entries = self
+            .snapshot_cache
             .find(Some(&search_key), direction)
-        {
-            entries_map.entry(key).or_insert(value);
-        }
-
-        let mut entries: Vec<_> = entries_map.into_iter().collect();
-        entries.sort_by(|a, b| a.0.suffix().cmp(b.0.suffix()));
-        if direction == SeekDirection::Backward {
-            entries.reverse();
-        }
-
+            .collect::<Vec<_>>();
         Ok(StorageIterator::new(entries, prefix.len(), options))
     }
 

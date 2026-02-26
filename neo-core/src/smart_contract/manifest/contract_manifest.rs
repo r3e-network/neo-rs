@@ -205,11 +205,8 @@ impl ContractManifest {
             group_keys.push(group.pub_key.clone());
         }
 
-        // Validate permissions
-        if self.permissions.is_empty() {
-            return Err(Error::invalid_data("At least one permission required"));
-        }
-
+        // Validate permissions. Neo N3 allows empty permissions arrays, which
+        // means the contract is not allowed to call any external methods.
         let mut permission_contracts = Vec::new();
         for permission in &self.permissions {
             permission.validate()?;

@@ -38,7 +38,7 @@ use std::path::Path;
 use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
-use tokio::runtime::{Builder as RuntimeBuilder, Handle};
+use tokio::runtime::{Builder as RuntimeBuilder, Handle, RuntimeFlavor};
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
@@ -571,11 +571,30 @@ impl RpcServerWallet {
             })
     }
 
-    fn await_wallet_future<T>(
+    fn await_wallet_future<T: Send + 'static>(
         future: Pin<Box<dyn Future<Output = WalletResult<T>> + Send>>,
     ) -> Result<T, RpcException> {
         let result = if let Ok(handle) = Handle::try_current() {
-            handle.block_on(future)
+            match handle.runtime_flavor() {
+                RuntimeFlavor::CurrentThread => std::thread::spawn(move || {
+                    RuntimeBuilder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .map_err(|err| WalletError::Other(err.to_string()))?
+                        .block_on(future)
+                })
+                .join()
+                .map_err(|_| {
+                    RpcException::from(
+                        RpcError::internal_server_error()
+                            .with_data("wallet runtime thread panicked"),
+                    )
+                })?,
+                RuntimeFlavor::MultiThread => {
+                    tokio::task::block_in_place(move || handle.block_on(future))
+                }
+                _ => tokio::task::block_in_place(move || handle.block_on(future)),
+            }
         } else {
             RuntimeBuilder::new_current_thread()
                 .enable_all()
@@ -2700,6 +2719,20 @@ mod tests {
         let err = (handler.callback())(&server, &[]).expect_err("missing payload");
         let rpc_error: RpcError = err.into();
         assert_eq!(rpc_error.code(), RpcError::invalid_params().code());
+    }
+
+    #[test]
+    fn await_wallet_future_supports_current_thread_runtime() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("current-thread runtime");
+
+        let result = runtime.block_on(async {
+            RpcServerWallet::await_wallet_future(Box::pin(async { Ok::<i32, WalletError>(7) }))
+        });
+
+        assert_eq!(result.expect("await_wallet_future result"), 7);
     }
 
     #[test]

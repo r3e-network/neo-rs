@@ -140,6 +140,11 @@ pub struct NodeCli {
     #[arg(long)]
     pub tee: bool,
 
+    /// Automatically enable TEE when available; fall back to ordinary mode if TEE setup fails.
+    #[cfg(feature = "tee")]
+    #[arg(long, conflicts_with = "tee")]
+    pub tee_auto: bool,
+
     /// Path to store TEE sealed data.
     #[cfg(feature = "tee")]
     #[arg(long, value_name = "PATH", default_value = "./tee_data")]

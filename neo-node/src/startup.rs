@@ -203,15 +203,14 @@ pub fn validate_node_config(
         );
     }
 
-    if node_config
+    if let Some(limit) = node_config
         .mempool
         .as_ref()
         .and_then(|m| m.max_transactions_per_sender)
-        .is_some()
     {
-        bail!(
-            "mempool.max_transactions_per_sender is not supported by neo-node yet; remove this setting"
-        );
+        if limit == 0 {
+            bail!("mempool.max_transactions_per_sender must be greater than zero");
+        }
     }
 
     if rpc_hardened && (node_config.rpc.rpc_user.is_none() || node_config.rpc.rpc_pass.is_none()) {
@@ -427,14 +426,25 @@ mod tests {
     }
 
     #[test]
-    fn validate_rejects_unsupported_mempool_max_transactions_per_sender() {
+    fn validate_allows_mempool_max_transactions_per_sender_for_compat() {
         let mut cfg = NodeConfig::default();
         cfg.mempool = Some(crate::config::MempoolSection {
             max_transactions: Some(10_000),
             max_transactions_per_sender: Some(100),
         });
+        validate_node_config(&cfg, None, None, &cfg.protocol_settings(), false)
+            .expect("mempool.max_transactions_per_sender should be accepted for compatibility");
+    }
+
+    #[test]
+    fn validate_rejects_zero_mempool_max_transactions_per_sender() {
+        let mut cfg = NodeConfig::default();
+        cfg.mempool = Some(crate::config::MempoolSection {
+            max_transactions: Some(10_000),
+            max_transactions_per_sender: Some(0),
+        });
         let err = validate_node_config(&cfg, None, None, &cfg.protocol_settings(), false)
-            .expect_err("unsupported mempool.max_transactions_per_sender should fail");
+            .expect_err("mempool.max_transactions_per_sender=0 should be rejected");
         assert!(
             err.to_string()
                 .contains("mempool.max_transactions_per_sender"),

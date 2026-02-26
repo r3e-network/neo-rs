@@ -78,7 +78,8 @@ impl RemoteNode {
                 match result {
                     Ok((message, _done)) => {
                         let command = message.command();
-                        if let Err(err) = actor.tell(RemoteNodeCommand::Inbound(message)) {
+                        if let Err(err) = actor.tell_async(RemoteNodeCommand::Inbound(message)).await
+                        {
                             warn!(target: "neo", error = %err, "failed to deliver inbound message to remote node actor");
                             break;
                         } else {

@@ -27,42 +27,50 @@ cargo build --release
 
 #### Simple Usage
 ```bash
-# TestNet node (default)
-./target/release/neo-node
+# MainNet node (default config)
+./target/release/neo-node --config neo_mainnet_node.toml
 
-# MainNet node
-./target/release/neo-node --network mainnet
+# TestNet node
+./target/release/neo-node --config neo_testnet_node.toml
 
-# Local development node
-./target/release/neo-node --network local --log-level debug
+# Validate config before starting
+./target/release/neo-node --config neo_mainnet_node.toml --check-config
 ```
 
 #### Advanced Usage
 ```bash
-# Using environment variables
-NEO_NETWORK=testnet NEO_DATA_DIR=./data/testnet ./target/release/neo-node
+# Custom storage path
+./target/release/neo-node \
+  --config neo_mainnet_node.toml \
+  --storage /opt/neo/data
 
-# Using configuration file
-./target/release/neo-node --config config/testnet.toml
+# Hardened RPC mode
+NEO_RPC_USER=neo NEO_RPC_PASS='change-this' \
+./target/release/neo-node \
+  --config neo_mainnet_node.toml \
+  --rpc-hardened
 
-# Production mainnet with metrics
-./target/release/neo-node --network mainnet --data-dir /opt/neo/data --metrics
+# TEE strict mode (requires tee/tee-sgx build)
+./target/release/neo-node \
+  --config neo_mainnet_node.toml \
+  --tee \
+  --tee-data-path /tmp/neo-tee
 ```
 
 ### Using the CLI Client
 
 ```bash
-# Get node status
-./target/release/neo-cli node status
+# Get node state
+./target/release/neo-cli state
 
 # Get current block height
-./target/release/neo-cli blockchain height
+./target/release/neo-cli block-count
 
 # Get block information
-./target/release/neo-cli blockchain block 1000 --verbose
+./target/release/neo-cli block 1000
 
 # Invoke smart contract (read-only)
-./target/release/neo-cli contract invoke 0xcontract123 "balanceOf" --params '["0xaddress123"]'
+./target/release/neo-cli invoke 0xcontract123 balanceOf '["0xaddress123"]'
 ```
 
 📖 **See [CLI Usage Guide](docs/CLI_USAGE.md) for comprehensive documentation.**

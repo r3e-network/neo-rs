@@ -8,7 +8,23 @@ NODE_LOG="${NODE_LOG:-logs/neo-node-watchdog-node.log}"
 WATCHDOG_LOG="${WATCHDOG_LOG:-logs/neo-node-watchdog.log}"
 RUST_LOG_LEVEL="${RUST_LOG_LEVEL:-warn}"
 ROCKSDB_BATCH_PROFILE="${ROCKSDB_BATCH_PROFILE:-balanced}"
-NODE_CMD=(./target/release/neo-node --config neo_testnet_node.toml)
+NODE_CONFIG="${NODE_CONFIG:-neo_testnet_node.toml}"
+NODE_STORAGE="${NODE_STORAGE:-}"
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+NODE_BIN="${NODE_BIN:-$ROOT/target/release/neo-node}"
+if [[ ! -x "$NODE_BIN" && -x "$ROOT/target/debug/neo-node" ]]; then
+  NODE_BIN="$ROOT/target/debug/neo-node"
+fi
+if [[ ! -x "$NODE_BIN" ]]; then
+  echo "error: neo-node binary not found at $ROOT/target/{release,debug}/neo-node" >&2
+  exit 1
+fi
+
+NODE_CMD=("$NODE_BIN" --config "$NODE_CONFIG")
+if [[ -n "$NODE_STORAGE" ]]; then
+  NODE_CMD+=(--storage "$NODE_STORAGE")
+fi
 
 mkdir -p "$(dirname "$NODE_LOG")" "$(dirname "$WATCHDOG_LOG")"
 
@@ -34,7 +50,7 @@ rpc_headercount() {
 
 start_node() {
   # Stop leftover instance before launching a new one.
-  pkill -f 'target/release/neo-node --config neo_testnet_node.toml' >/dev/null 2>&1 || true
+  pkill -f "neo-node --config $NODE_CONFIG" >/dev/null 2>&1 || true
   env \
     RUST_LOG="$RUST_LOG_LEVEL" \
     NEO_ROCKSDB_BATCH_PROFILE="$ROCKSDB_BATCH_PROFILE" \
@@ -62,7 +78,7 @@ last_height=""
 last_header=""
 last_progress_ts=0
 
-log "watchdog config poll=${POLL_SECONDS}s stall=${STALL_SECONDS}s rocksdb_profile=${ROCKSDB_BATCH_PROFILE}"
+log "watchdog config poll=${POLL_SECONDS}s stall=${STALL_SECONDS}s rocksdb_profile=${ROCKSDB_BATCH_PROFILE} node_bin=${NODE_BIN} config=${NODE_CONFIG} storage=${NODE_STORAGE:-<config-default>}"
 start_node
 last_progress_ts=$(date +%s)
 

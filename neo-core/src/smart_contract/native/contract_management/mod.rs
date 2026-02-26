@@ -17,6 +17,7 @@ use crate::smart_contract::ContractParameterType;
 use crate::smart_contract::StorageKey;
 use crate::UInt160;
 use neo_vm::{ExecutionEngineLimits, StackItem};
+use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use parking_lot::RwLock;
 use std::collections::HashMap;
@@ -106,6 +107,54 @@ impl ContractManagement {
     #[inline]
     fn minimum_deployment_fee_key() -> Vec<u8> {
         vec![PREFIX_MINIMUM_DEPLOYMENT_FEE]
+    }
+
+    #[inline]
+    fn encode_storage_bigint(value: BigInt) -> Vec<u8> {
+        let mut bytes = value.to_signed_bytes_le();
+        if bytes.is_empty() {
+            bytes.push(0);
+        }
+        bytes
+    }
+
+    #[inline]
+    fn encode_storage_i32(value: i32) -> Vec<u8> {
+        Self::encode_storage_bigint(BigInt::from(value))
+    }
+
+    #[inline]
+    fn encode_storage_i64(value: i64) -> Vec<u8> {
+        Self::encode_storage_bigint(BigInt::from(value))
+    }
+
+    #[inline]
+    fn encode_storage_u32(value: u32) -> Vec<u8> {
+        Self::encode_storage_bigint(BigInt::from(value))
+    }
+
+    #[inline]
+    fn decode_storage_i32(bytes: &[u8]) -> Option<i32> {
+        if bytes.is_empty() {
+            return Some(0);
+        }
+        BigInt::from_signed_bytes_le(bytes).to_i32()
+    }
+
+    #[inline]
+    fn decode_storage_i64(bytes: &[u8]) -> Option<i64> {
+        if bytes.is_empty() {
+            return Some(0);
+        }
+        BigInt::from_signed_bytes_le(bytes).to_i64()
+    }
+
+    #[inline]
+    fn decode_storage_u32(bytes: &[u8]) -> Option<u32> {
+        if bytes.is_empty() {
+            return Some(0);
+        }
+        BigInt::from_signed_bytes_le(bytes).to_u32()
     }
 
     #[inline]

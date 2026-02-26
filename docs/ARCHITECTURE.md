@@ -2,7 +2,7 @@
 
 > **Version**: 0.7.0  
 > **Last Updated**: 2026-01-28  
-> **Target Compatibility**: Neo N3 v3.9.2
+> **Target Compatibility**: Neo N3 v3.9.1
 
 This document provides comprehensive architecture documentation for the neo-rs project, a professional Rust implementation of the Neo N3 blockchain node.
 
@@ -251,6 +251,7 @@ pub enum StackItem {
 │                    DataCache                                     │
 │              (In-memory caching with change tracking)            │
 │  • TrackState: None, Added, Changed, Deleted, NotFound          │
+│  • Prefix-safe `find`: enforces exact prefix boundaries          │
 │  • Write-through to underlying store                            │
 └─────────────────────────────────────────────────────────────────┘
                               │

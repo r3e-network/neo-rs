@@ -278,7 +278,15 @@ impl ApplicationEngine {
             }
         }
 
-        let result = native.invoke(self, method, args)?;
+        let result = native.invoke(self, method, args).map_err(|err| {
+            Error::native_contract(format!(
+                "{}({}) method `{}` failed: {}",
+                native.name(),
+                contract_hash,
+                method,
+                err
+            ))
+        })?;
 
         Ok(result)
     }

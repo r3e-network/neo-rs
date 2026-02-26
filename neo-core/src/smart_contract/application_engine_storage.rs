@@ -212,11 +212,38 @@ fn storage_get_handler(app: &mut ApplicationEngine, _engine: &mut ExecutionEngin
         .map_err(|e| map_storage_error("System.Storage.Get", e))?;
 
     let key = pop_storage_bytes(app, "System.Storage.Get", "key")?;
+    let trace_enabled = std::env::var_os("NEO_TRACE_STORAGE_GET").is_some();
+    let trace_context_id = context.id;
+    let trace_context_read_only = context.is_read_only;
+    let trace_key_len = key.len();
+    let trace_key_preview = if trace_enabled {
+        Some(
+            key.iter()
+                .take(24)
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>(),
+        )
+    } else {
+        None
+    };
 
-    match app
+    let value = app
         .storage_get(context, key)
-        .map_err(|e| map_storage_error("System.Storage.Get", e))?
-    {
+        .map_err(|e| map_storage_error("System.Storage.Get", e))?;
+
+    if trace_enabled {
+        eprintln!(
+            "trace storage.get: ctx_id={} readonly={} key_len={} key_prefix={} hit={} value_len={}",
+            trace_context_id,
+            trace_context_read_only,
+            trace_key_len,
+            trace_key_preview.as_deref().unwrap_or(""),
+            value.is_some(),
+            value.as_ref().map(|v| v.len()).unwrap_or(0)
+        );
+    }
+
+    match value {
         Some(value) => app
             .push_bytes(value)
             .map_err(|e| map_storage_error("System.Storage.Get", e))?,

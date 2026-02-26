@@ -76,6 +76,7 @@ pub struct MemoryPool {
     verification_context: TransactionVerificationContext,
 
     pub capacity: usize,
+    max_transactions_per_sender: Option<usize>,
 }
 
 impl MemoryPool {
@@ -103,7 +104,21 @@ impl MemoryPool {
             conflicts: HashMap::with_capacity(capacity / 2),
             verification_context: TransactionVerificationContext::new(),
             capacity,
+            max_transactions_per_sender: None,
         }
+    }
+
+    /// Sets an optional per-sender transaction limit.
+    ///
+    /// When configured, transactions from the same sender beyond this limit are rejected
+    /// with [`VerifyResult::PolicyFail`].
+    pub fn set_max_transactions_per_sender(&mut self, limit: Option<usize>) {
+        self.max_transactions_per_sender = limit;
+    }
+
+    /// Returns the currently configured optional per-sender transaction limit.
+    pub fn max_transactions_per_sender(&self) -> Option<usize> {
+        self.max_transactions_per_sender
     }
 
     /// Pre-allocates capacity for expected number of verified transactions.
@@ -180,6 +195,19 @@ impl MemoryPool {
     pub fn contains_key(&self, hash: &UInt256) -> bool {
         self.verified_transactions.contains_key(hash)
             || self.unverified_transactions.contains_key(hash)
+    }
+
+    /// Returns the total number of transactions in the pool attributed to `sender`.
+    pub fn sender_transaction_count(&self, sender: &UInt160) -> usize {
+        self.verified_transactions
+            .values()
+            .filter(|item| item.transaction.sender() == Some(*sender))
+            .count()
+            + self
+                .unverified_transactions
+                .values()
+                .filter(|item| item.transaction.sender() == Some(*sender))
+                .count()
     }
 
     #[cfg(test)]
@@ -339,6 +367,21 @@ impl MemoryPool {
             Ok(list) => list,
             Err(result) => return result,
         };
+
+        if let Some(limit) = self.max_transactions_per_sender {
+            if let Some(sender) = tx.sender() {
+                let replaced_from_same_sender = conflicts_to_remove
+                    .iter()
+                    .filter(|item| item.transaction.sender() == Some(sender))
+                    .count();
+                let sender_tx_count = self
+                    .sender_transaction_count(&sender)
+                    .saturating_sub(replaced_from_same_sender);
+                if sender_tx_count >= limit {
+                    return VerifyResult::PolicyFail;
+                }
+            }
+        }
 
         // OPTIMIZATION: Build conflict transactions Vec with pre-allocated capacity.
         // Use Arc::clone to share references instead of deep cloning transaction data.
@@ -1185,6 +1228,66 @@ mod tests {
         );
         assert!(pool.contains_key(&base.hash()));
         assert_eq!(pool.verified_count(), 1);
+    }
+
+    #[test]
+    fn max_transactions_per_sender_limit_is_enforced() {
+        let settings = ProtocolSettings {
+            memory_pool_max_transactions: 10,
+            ..Default::default()
+        };
+        let mut pool = test_balance_pool(&settings);
+        pool.set_max_transactions_per_sender(Some(1));
+        let snapshot = DataCache::new(false);
+
+        let tx1 = build_signed_transaction(&settings, [101u8; 32], 1_0000_0000, 0, Vec::new());
+        let tx2 = build_signed_transaction(&settings, [101u8; 32], 2_0000_0000, 0, Vec::new());
+        let sender = tx1.sender().expect("sender");
+
+        assert_eq!(
+            pool.try_add(tx1.clone(), &snapshot, &settings),
+            VerifyResult::Succeed
+        );
+        assert_eq!(
+            pool.try_add(tx2, &snapshot, &settings),
+            VerifyResult::PolicyFail
+        );
+        assert_eq!(pool.sender_transaction_count(&sender), 1);
+        assert_eq!(pool.max_transactions_per_sender(), Some(1));
+    }
+
+    #[test]
+    fn max_transactions_per_sender_allows_conflict_replacement() {
+        let settings = ProtocolSettings {
+            memory_pool_max_transactions: 10,
+            ..Default::default()
+        };
+        let mut pool = test_balance_pool(&settings);
+        pool.set_max_transactions_per_sender(Some(1));
+        let snapshot = DataCache::new(false);
+
+        let tx1 = build_signed_transaction(&settings, [102u8; 32], 1_0000_0000, 0, Vec::new());
+        let tx2 = build_signed_transaction(
+            &settings,
+            [102u8; 32],
+            2_0000_0000,
+            0,
+            vec![TransactionAttribute::Conflicts(Conflicts::new(tx1.hash()))],
+        );
+        let sender = tx1.sender().expect("sender");
+
+        assert_eq!(
+            pool.try_add(tx1.clone(), &snapshot, &settings),
+            VerifyResult::Succeed
+        );
+        assert_eq!(
+            pool.try_add(tx2.clone(), &snapshot, &settings),
+            VerifyResult::Succeed
+        );
+
+        assert!(!pool.contains_key(&tx1.hash()));
+        assert!(pool.contains_key(&tx2.hash()));
+        assert_eq!(pool.sender_transaction_count(&sender), 1);
     }
 
     #[test]

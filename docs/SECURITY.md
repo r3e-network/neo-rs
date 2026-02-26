@@ -2,9 +2,15 @@
 
 > **Version**: 0.7.0  
 > **Last Updated**: 2026-01-28  
-> **Target Compatibility**: Neo N3 v3.9.2
+> **Target Compatibility**: Neo N3 v3.9.1
 
 This document provides comprehensive security information for the neo-rs project, a professional Rust implementation of the Neo N3 blockchain node.
+
+## Runtime Security Mode
+
+- By default, native contract execution runs in a compatibility-first mode to preserve consensus parity with Neo N3 reference nodes.
+- Optional strict native checks can be enabled with `NEO_NATIVE_STRICT_SECURITY=1`.
+- Strict mode is intended for controlled hardening/testing workflows and must be parity-validated before production consensus use.
 
 ## Table of Contents
 
@@ -303,7 +309,13 @@ Security properties:
 | Memory (Zeroizing) | Runtime operations | Auto-clear on drop |
 | Encrypted Wallet File | At-rest storage | AES-256-GCM + password |
 | HSM (optional) | High-security operations | Hardware isolation |
-| TEE (optional) | Secure enclaves | Intel SGX/AMD SEV |
+| TEE (optional) | Secure enclaves | Enclave isolation (SGX/SEV); strict `--tee` fail-closed or optional `--tee-auto` fallback |
+
+#### TEE Runtime Modes
+
+- `--tee`: strict fail-closed mode. If TEE initialization, startup self-checks, or attestation fails, node startup fails.
+- `--tee-auto`: opportunistic mode. The node attempts TEE first; if setup fails it logs a warning and continues in ordinary mode.
+- No TEE flags: ordinary node mode, with standard software wallet/mempool behavior.
 
 #### Address Derivation
 

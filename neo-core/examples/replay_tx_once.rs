@@ -6,10 +6,12 @@ use neo_core::persistence::{
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::application_engine::{ApplicationEngine, TEST_MODE_GAS};
 use neo_core::smart_contract::call_flags::CallFlags;
+use neo_core::smart_contract::execution_context_state::ExecutionContextState;
 use neo_core::smart_contract::native::ledger_contract::{HashOrIndex, LedgerContract};
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::smart_contract::{StorageItem, StorageKey};
 use neo_core::{UInt256, IVerifiable};
+use neo_vm::op_code::OpCode;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -56,7 +58,27 @@ fn print_instruction_window(context: &neo_vm::execution_context::ExecutionContex
     println!("context script window around ip={target_ip}:");
     for (offset, opcode, size) in decoded[start..end].iter().copied() {
         let marker = if offset == target_ip { ">>" } else { "  " };
-        println!("{marker} offset={offset} opcode={opcode:?} size={size}");
+        if opcode == OpCode::SYSCALL {
+            if let Ok(instruction) = script.get_instruction(offset) {
+                println!(
+                    "{marker} offset={offset} opcode={opcode:?} size={size} syscall=0x{:08x}",
+                    instruction.token_u32()
+                );
+            } else {
+                println!("{marker} offset={offset} opcode={opcode:?} size={size}");
+            }
+        } else if opcode == OpCode::CALLT {
+            if let Ok(instruction) = script.get_instruction(offset) {
+                println!(
+                    "{marker} offset={offset} opcode={opcode:?} size={size} token_id={}",
+                    instruction.token_u16()
+                );
+            } else {
+                println!("{marker} offset={offset} opcode={opcode:?} size={size}");
+            }
+        } else {
+            println!("{marker} offset={offset} opcode={opcode:?} size={size}");
+        }
     }
 }
 
@@ -103,6 +125,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         tx_state.block_index()
     };
+    let allow_tip_mismatch = std::env::var("NEO_REPLAY_ALLOW_TIP_MISMATCH")
+        .ok()
+        .map(|raw| {
+            let normalized = raw.trim().to_ascii_lowercase();
+            matches!(normalized.as_str(), "1" | "true" | "yes" | "on")
+        })
+        .unwrap_or(false);
+    let target_tip = ledger.current_index(&target_cache)?;
+    let expected_tip = context_block_index.saturating_sub(1);
+    if target_tip != expected_tip {
+        let message = format!(
+            "target_state_dir tip mismatch: expected {} (context_block_index - 1), got {}",
+            expected_tip, target_tip
+        );
+        if !allow_tip_mismatch {
+            return Err(format!(
+                "{message}. Set NEO_REPLAY_ALLOW_TIP_MISMATCH=1 to override for debug-only runs."
+            )
+            .into());
+        }
+        eprintln!("warning: {message} (override enabled)");
+    }
     let block = ledger
         .get_block(&source_cache, HashOrIndex::Index(context_block_index))?
         .ok_or("context block not found in tx_source_dir")?;
@@ -183,6 +227,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         tx_engine.invocation_stack().len()
     );
     for (index, context) in tx_engine.invocation_stack().iter().enumerate() {
+        if std::env::var("NEO_REPLAY_PRINT_CONTEXT_TOKENS")
+            .ok()
+            .as_deref()
+            == Some("1")
+        {
+            let state_arc =
+                context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+            let state = state_arc.lock();
+            if let Some(contract) = state.contract.as_ref() {
+                println!(
+                    "context[{index}] contract_hash={} method={} token_count={}",
+                    contract.hash,
+                    state.method_name.as_deref().unwrap_or("<none>"),
+                    contract.nef.tokens.len()
+                );
+                for (token_index, token) in contract.nef.tokens.iter().enumerate() {
+                    println!(
+                        "  token[{token_index}] hash={} method={} params={} has_return={} flags={:?}",
+                        token.hash,
+                        token.method,
+                        token.parameters_count,
+                        token.has_return_value,
+                        token.call_flags
+                    );
+                }
+            }
+        }
         let opcode = context
             .current_instruction()
             .map(|instruction| format!("{:?}", instruction.opcode()))
@@ -197,7 +268,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             context.local_variables().map(|slot| slot.len()).unwrap_or(0),
             context.static_fields_len(),
         );
-        if index + 1 == tx_engine.invocation_stack().len() {
+        if std::env::var("NEO_REPLAY_PRINT_ALL_CONTEXT_WINDOWS")
+            .ok()
+            .as_deref()
+            == Some("1")
+        {
+            print_instruction_window(context);
+        } else if index + 1 == tx_engine.invocation_stack().len() {
             print_instruction_window(context);
         }
     }
