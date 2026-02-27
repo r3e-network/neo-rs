@@ -57,8 +57,8 @@ members = [
 
     # === Application Layer ===
     # NOTE: neo-config, neo-state, neo-mempool, neo-chain merged into neo-core
-    # CLI client
-    "neo-cli",
+    # CLI client — removed: functionality merged into neo-node
+    # "neo-cli",
 
     # Node daemon (standalone RPC server)
     "neo-node",
@@ -122,7 +122,7 @@ neo-telemetry = { path = "neo-telemetry", version = "0.7.2" }
 # NOTE: neo-config, neo-mempool, neo-chain, neo-state merged into neo-core
 
 # Application layer
-neo-cli = { path = "neo-cli", version = "0.7.2" }
+# neo-cli removed: functionality merged into neo-node
 neo-node = { path = "neo-node", version = "0.7.2" }
 
 # === Core dependencies ===
