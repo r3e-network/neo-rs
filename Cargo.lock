@@ -2473,6 +2473,7 @@ dependencies = [
  "bs58",
  "hex",
  "hkdf",
+ "libloading 0.8.9",
  "neo-crypto",
  "parking_lot",
  "rand 0.8.5",
