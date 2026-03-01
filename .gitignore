@@ -71,3 +71,18 @@ target_codex/
 neo-csharp-latest/
 /neo_csharp/
 /reports/
+
+# Checkpoint snapshots
+/checkpoints/
+
+# SGX evidence helper generated artifacts
+/tools/sgx-evidence-helper/sgx_evidence_helper
+/tools/sgx-evidence-helper/enclave.so
+/tools/sgx-evidence-helper/enclave.signed.so
+/tools/sgx-evidence-helper/App/Enclave_u.c
+/tools/sgx-evidence-helper/App/Enclave_u.h
+/tools/sgx-evidence-helper/App/*.o
+/tools/sgx-evidence-helper/Enclave/Enclave_t.c
+/tools/sgx-evidence-helper/Enclave/Enclave_t.h
+/tools/sgx-evidence-helper/Enclave/*.o
+/tools/sgx-evidence-helper/Enclave/Enclave_private_test.pem
