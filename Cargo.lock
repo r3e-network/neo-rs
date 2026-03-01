@@ -2131,24 +2131,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "neo-cli"
-version = "0.7.2"
-dependencies = [
- "anyhow",
- "base64 0.22.1",
- "clap",
- "hex",
- "neo-json",
- "neo-primitives",
- "neo-rpc",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
- "tokio",
- "url",
-]
-
-[[package]]
 name = "neo-consensus"
 version = "0.7.2"
 dependencies = [

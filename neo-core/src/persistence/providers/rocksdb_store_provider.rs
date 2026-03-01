@@ -983,6 +983,12 @@ fn build_db_options(config: &StorageConfig, enable_bloom_filters: bool) -> Optio
     }
     options.set_max_write_buffer_number(4);
     options.set_min_write_buffer_number_to_merge(2);
+    
+    // Advanced Performance Tuning
+    options.set_allow_mmap_reads(true);
+    options.set_allow_mmap_writes(false);
+    options.set_enable_pipelined_write(true);
+    options.set_memtable_prefix_bloom_ratio(0.02);
 
     // Configure block cache and bloom filters
     let cache_size = config.cache_size.unwrap_or(256 * 1024 * 1024);

@@ -66,7 +66,8 @@ static GLOBAL_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
 fn main() -> Result<()> {
     let rt = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(num_cpus::get().max(4))
-        .max_blocking_threads(32)
+        .max_blocking_threads(512)
+        .global_queue_interval(61)
         .enable_all()
         .thread_name("neo-node")
         .thread_stack_size(2 * 1024 * 1024)
