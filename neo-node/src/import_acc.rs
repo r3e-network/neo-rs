@@ -310,7 +310,7 @@ pub fn import_acc_file(
             }
 
             system
-                .persist_block(block)
+                .persist_block_without_runtime_cache(block)
                 .with_context(|| format!("failed to persist imported block {}", block_index))?;
             current_height = block_index;
             imported += 1;

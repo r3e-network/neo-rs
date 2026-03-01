@@ -44,7 +44,7 @@ pub struct TaskSession {
 
 impl TaskSession {
     /// Upper bound on outstanding tasks (significantly increased for faster sync).
-    pub const MAX_PENDING_TASKS: usize = 5000;
+    pub const MAX_PENDING_TASKS: usize = 50000;
 
     /// Creates a new session for the supplied peer version payload.
     pub fn new(version: &VersionPayload) -> Self {
