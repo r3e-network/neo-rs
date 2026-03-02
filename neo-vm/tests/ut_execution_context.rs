@@ -166,10 +166,8 @@ fn test_execution_context_static_fields() {
     let static_slot = Slot::new(4, reference_counter.clone());
     context.set_static_fields(Some(static_slot));
 
-    let statics = context
-        .static_fields()
-        .expect("static fields should be set");
-    assert_eq!(statics.count(), 4);
+    assert!(context.has_static_fields());
+    assert_eq!(context.static_fields_len(), 4);
 }
 
 #[test]

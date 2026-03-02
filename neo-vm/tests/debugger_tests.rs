@@ -30,7 +30,7 @@ fn test_debugger_breakpoints() {
     // Load the script
     debugger
         .engine_mut()
-        .load_script(script.clone(), 0, 0)
+        .load_script(script.clone(), 1, 0)
         .unwrap();
 
     // Add a breakpoint at the ADD instruction
@@ -104,7 +104,7 @@ fn test_debugger_step() {
     let script = Script::new_relaxed(script_bytes);
 
     // Load the script
-    debugger.engine_mut().load_script(script, 0, 0).unwrap();
+    debugger.engine_mut().load_script(script, 1, 0).unwrap();
 
     // Step through the script
     let state = debugger.step();
@@ -158,6 +158,8 @@ fn test_debugger_step_over() {
             let offset = *offset as i8 as isize;
             // Calculate the call target relative to the current instruction pointer
             if let Some(call_target) = context.instruction_pointer().checked_add_signed(offset) {
+                let size = instruction.size();
+                context.set_instruction_pointer(context.instruction_pointer() + size);
                 let new_context = context.clone_with_position(call_target);
                 engine.load_context(new_context)?;
                 engine.is_jumping = true;
@@ -198,7 +200,7 @@ fn test_debugger_step_over() {
     let script = Script::new_relaxed(script_bytes);
 
     // Load the script
-    debugger.engine_mut().load_script(script, 0, 0).unwrap();
+    debugger.engine_mut().load_script(script, 1, 0).unwrap();
 
     // Step through the script
     let state = debugger.step();
@@ -242,6 +244,8 @@ fn test_debugger_step_out() {
         if let Some(offset) = operand_bytes.first() {
             let offset = *offset as i8 as isize;
             if let Some(call_target) = context.instruction_pointer().checked_add_signed(offset) {
+                let size = instruction.size();
+                context.set_instruction_pointer(context.instruction_pointer() + size);
                 let new_context = context.clone_with_position(call_target);
                 engine.load_context(new_context)?;
                 engine.is_jumping = true;
@@ -282,7 +286,7 @@ fn test_debugger_step_out() {
     let script = Script::new_relaxed(script_bytes);
 
     // Load the script
-    debugger.engine_mut().load_script(script, 0, 0).unwrap();
+    debugger.engine_mut().load_script(script, 1, 0).unwrap();
 
     // Step into the function
     let state = debugger.step();

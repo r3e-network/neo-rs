@@ -207,11 +207,15 @@ fn test_execution_engine_multiple_contexts() {
         // CALL uses a single-byte relative offset
         let offset = instruction.token_i8() as isize;
 
-        let context = engine.current_context().unwrap();
+        let context = engine.current_context_mut().unwrap();
         let target = context
             .instruction_pointer()
             .checked_add_signed(offset)
             .expect("valid jump target");
+
+        // Advance instruction pointer of the current caller context
+        let size = instruction.size();
+        context.set_instruction_pointer(context.instruction_pointer() + size);
 
         // Share the caller state with the callee
         let new_context = context.clone_with_position(target);
