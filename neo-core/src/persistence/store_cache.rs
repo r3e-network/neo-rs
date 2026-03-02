@@ -361,7 +361,7 @@ impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for StoreCache {
             Vec::new()
         };
 
-        let mut merged = std::collections::HashMap::new();
+        let mut merged = hashbrown::HashMap::new();
         for (key, value) in snapshot_items {
             merged.insert(key, value);
         }

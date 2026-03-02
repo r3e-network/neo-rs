@@ -1361,7 +1361,7 @@ mod tests {
     #[test]
     fn delete_marks_uncached_key_as_deleted_when_backing_store_has_key() {
         let key = make_key(5, b"exists");
-        let mut backing_map = std::collections::HashMap::new();
+        let mut backing_map = hashbrown::HashMap::new();
         backing_map.insert(key.clone(), StorageItem::from_bytes(vec![1]));
         let backing_map = Arc::new(backing_map);
 
@@ -1385,7 +1385,7 @@ mod tests {
         let key_b = make_key(11, b"b");
         let key_c = make_key(11, b"c");
 
-        let mut backing_map = std::collections::HashMap::new();
+        let mut backing_map = hashbrown::HashMap::new();
         backing_map.insert(key_a.clone(), StorageItem::from_bytes(vec![1]));
         backing_map.insert(key_b.clone(), StorageItem::from_bytes(vec![2]));
         let backing_map = Arc::new(backing_map);
@@ -1441,7 +1441,7 @@ mod tests {
         let key_b = make_key(-1, &[0x0c, 0x01]);
         let key_c = make_key(0, &[0x08, 0x01]);
 
-        let mut backing_map = std::collections::HashMap::new();
+        let mut backing_map = hashbrown::HashMap::new();
         backing_map.insert(key_a.clone(), StorageItem::from_bytes(vec![1]));
         backing_map.insert(key_b.clone(), StorageItem::from_bytes(vec![2]));
         backing_map.insert(key_c.clone(), StorageItem::from_bytes(vec![3]));

@@ -21,7 +21,7 @@ use crate::{StateChanges, StateError, StateResult, StorageKey};
 use neo_crypto::mpt_trie::{MptResult, MptStoreSnapshot, Trie};
 use neo_primitives::UInt256;
 use parking_lot::Mutex;
-use std::collections::HashMap;
+use hashbrown::HashMap;
 use std::sync::Arc;
 use tracing::{debug, info};
 

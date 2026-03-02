@@ -16,7 +16,7 @@ use super::{
 use crate::error::{CoreError, CoreResult};
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
-use std::collections::HashMap;
+use hashbrown::HashMap;
 use std::sync::Arc;
 
 /// Global registry of store providers.

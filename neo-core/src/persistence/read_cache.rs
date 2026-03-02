@@ -6,7 +6,7 @@
 
 use crate::smart_contract::{StorageItem, StorageKey};
 use parking_lot::RwLock;
-use std::collections::HashMap;
+use hashbrown::HashMap;
 use std::hash::Hash;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
