@@ -776,18 +776,15 @@ impl IStoreSnapshot for RocksDbSnapshot {
 
         let _start = Instant::now();
 
-        let mut write_opts = WriteOptions::default();
         if self.use_batch_commit {
-            write_opts.set_sync(self.store.batch_config.sync_on_flush);
-            if self.store.batch_config.disable_wal {
-                write_opts.disable_wal(true);
-            }
+            self.batch_committer.try_add(&mut batch);
+        } else {
+            let write_opts = WriteOptions::default();
+            self.db.write_opt(batch, &write_opts).map_err(|err| {
+                error!(target: "neo", error = %err, "rocksdb snapshot commit failed");
+                StorageError::CommitFailed(format!("RocksDB write failed: {}", err))
+            })?;
         }
-
-        self.db.write_opt(batch, &write_opts).map_err(|err| {
-            error!(target: "neo", error = %err, "rocksdb snapshot commit failed");
-            StorageError::CommitFailed(format!("RocksDB write failed: {}", err))
-        })?;
 
         // Keep read cache coherent after writes. Without invalidation, callers can observe
         // stale values (e.g., current block pointer) across snapshots.
