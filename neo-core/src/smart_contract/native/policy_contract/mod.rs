@@ -416,7 +416,7 @@ impl PolicyContract {
             NativeMethod::unsafe_method(
                 "recoverFund".to_string(),
                 Self::CPU_FEE,
-                (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
+                CallFlags::ALL.bits(),
                 vec![
                     ContractParameterType::Hash160,
                     ContractParameterType::Hash160,

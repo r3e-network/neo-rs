@@ -500,6 +500,45 @@ fn check_set_base_exec_fee() {
 }
 
 #[test]
+fn recover_fund_requires_allow_call_permissions() {
+    let settings = settings_all_active();
+    let snapshot = make_snapshot_with_genesis(&settings);
+    let policy = PolicyContract::new();
+    let gas = GasToken::new();
+    let blocked_account =
+        UInt160::parse("0xa400ff00ff00ff00ff00ff00ff00ff00ff00ff01").expect("blocked account");
+    let block = make_block(2000, 31_536_001_000);
+
+    let mut engine = make_engine_with_script(
+        Arc::clone(&snapshot),
+        settings,
+        Vec::new(),
+        Some(block),
+        vec![OpCode::RET as u8],
+    );
+
+    let state = engine.current_execution_state().expect("execution state");
+    {
+        let mut state = state.lock();
+        state.call_flags = CallFlags::STATES | CallFlags::ALLOW_NOTIFY;
+    }
+    engine.refresh_context_tracking().expect("refresh context");
+
+    let err = engine
+        .call_native_contract(
+            policy.hash(),
+            "recoverFund",
+            &[blocked_account.to_bytes(), gas.hash().to_bytes()],
+        )
+        .expect_err("recoverFund should require ALLOW_CALL permissions");
+    assert!(
+        err.to_string()
+            .contains("do not satisfy required permissions"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn check_recover_funds_complete_flow() {
     let settings = settings_all_active();
     let snapshot = make_snapshot_with_genesis(&settings);

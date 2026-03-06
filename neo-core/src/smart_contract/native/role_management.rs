@@ -145,7 +145,7 @@ impl RoleManagement {
             ));
         }
 
-        let mut public_keys = self.parse_public_keys(&args[1])?;
+        let public_keys = self.parse_public_keys(&args[1])?;
         if public_keys.is_empty() || public_keys.len() > Self::MAX_NODES {
             return Err(Error::native_contract(format!(
                 "Nodes count {} must be between 1 and {}",
@@ -153,7 +153,14 @@ impl RoleManagement {
                 Self::MAX_NODES
             )));
         }
-        public_keys.sort();
+
+        let mut stored_public_keys = public_keys.clone();
+        stored_public_keys.sort();
+        if stored_public_keys.windows(2).any(|pair| pair[0] == pair[1]) {
+            return Err(Error::invalid_operation(
+                "Duplicate publickeys are not allowed".to_string(),
+            ));
+        }
 
         let persisting_block = engine
             .persisting_block()
@@ -171,7 +178,7 @@ impl RoleManagement {
             ));
         }
 
-        let serialized_keys = self.serialize_public_keys(&public_keys)?;
+        let serialized_keys = self.serialize_public_keys(&stored_public_keys)?;
         engine.put_storage_item(&context, &key_suffix, &serialized_keys)?;
 
         let snapshot = engine.snapshot_cache();
@@ -444,12 +451,15 @@ impl Default for RoleManagement {
 mod tests {
     use super::*;
     use crate::cryptography::Secp256r1Crypto;
+    use crate::hardfork::HardforkManager;
+    use crate::ledger::{Block, BlockHeader};
     use crate::network::p2p::payloads::{signer::Signer, transaction::Transaction};
+    use crate::protocol_settings::ProtocolSettings;
     use crate::smart_contract::trigger_type::TriggerType;
-    use crate::smart_contract::StorageItem;
+    use crate::smart_contract::{native::NativeHelpers, StorageItem};
     use crate::witness::Witness;
-    use crate::{IVerifiable, WitnessScope};
-    use neo_vm::{OpCode, ScriptBuilder};
+    use crate::{IVerifiable, UInt256, WitnessScope};
+    use neo_vm::{OpCode, ScriptBuilder, StackItem};
     use std::sync::Arc;
 
     fn sample_point(tag: u8) -> ECPoint {
@@ -465,9 +475,34 @@ mod tests {
             .expect("valid test key")
     }
 
-    fn make_engine(snapshot: Arc<DataCache>) -> ApplicationEngine {
-        const TEST_GAS_LIMIT: i64 = 400_000_000;
+    const TEST_GAS_LIMIT: i64 = 400_000_000;
 
+    fn settings_all_active() -> ProtocolSettings {
+        let mut settings = ProtocolSettings::default();
+        let mut hardforks = std::collections::HashMap::new();
+        for hardfork in HardforkManager::all() {
+            hardforks.insert(hardfork, 0);
+        }
+        settings.hardforks = hardforks;
+        settings
+    }
+
+    fn make_block(index: u32, timestamp: u64) -> Block {
+        let header = BlockHeader::new(
+            0,
+            UInt256::zero(),
+            UInt256::zero(),
+            timestamp,
+            0,
+            index,
+            0,
+            UInt160::zero(),
+            vec![Witness::empty()],
+        );
+        Block::new(header, Vec::new())
+    }
+
+    fn make_engine(snapshot: Arc<DataCache>) -> ApplicationEngine {
         let mut container = Transaction::new();
         container.set_signers(vec![Signer::new(UInt160::zero(), WitnessScope::GLOBAL)]);
         container.add_witness(Witness::new());
@@ -483,6 +518,34 @@ mod tests {
             None,
         )
         .expect("engine")
+    }
+
+    fn make_engine_with_signers(
+        snapshot: Arc<DataCache>,
+        settings: ProtocolSettings,
+        signers: Vec<Signer>,
+        persisting_block: Option<Block>,
+    ) -> ApplicationEngine {
+        let mut tx = Transaction::new();
+        tx.set_signers(signers);
+        tx.set_witnesses(vec![Witness::empty(); tx.signers().len()]);
+        tx.set_script(vec![OpCode::RET as u8]);
+
+        let script_container: Arc<dyn IVerifiable> = Arc::new(tx);
+        ApplicationEngine::new(
+            TriggerType::Application,
+            Some(script_container),
+            snapshot,
+            persisting_block,
+            settings,
+            TEST_GAS_LIMIT,
+            None,
+        )
+        .expect("engine")
+    }
+
+    fn committee_address(settings: &ProtocolSettings, snapshot: &DataCache) -> UInt160 {
+        NativeHelpers::committee_address(settings, Some(snapshot))
     }
 
     fn emit_contract_call(
@@ -586,5 +649,48 @@ mod tests {
         let designated = engine.result_stack().peek(0).unwrap().as_array().unwrap();
         assert_eq!(designated.len(), 1);
         assert_eq!(designated[0].as_bytes().unwrap(), public_key.to_bytes());
+    }
+
+    #[test]
+    fn designate_as_role_rejects_duplicate_public_keys() {
+        let settings = settings_all_active();
+        let snapshot = Arc::new(DataCache::new(false));
+        let contract = RoleManagement::new();
+        let committee = committee_address(&settings, snapshot.as_ref());
+        let persisting_block = make_block(1000, 1_000);
+        let duplicate_key = sample_point(0x42);
+        let args = vec![
+            StackItem::from_int(Role::Oracle as u8 as i64)
+                .as_bytes()
+                .expect("role bytes"),
+            contract
+                .serialize_public_keys(&[duplicate_key.clone(), duplicate_key])
+                .expect("public keys payload"),
+        ];
+
+        let mut engine = make_engine_with_signers(
+            Arc::clone(&snapshot),
+            settings,
+            vec![Signer::new(committee, WitnessScope::GLOBAL)],
+            Some(persisting_block),
+        );
+
+        let err = engine
+            .call_native_contract(contract.hash(), "designateAsRole", &args)
+            .expect_err("duplicate public keys should be rejected");
+        assert!(
+            err.to_string()
+                .contains("Duplicate publickeys are not allowed"),
+            "unexpected error: {err}"
+        );
+
+        let key = StorageKey::new(
+            RoleManagement::ID,
+            RoleManagement::role_key_suffix(Role::Oracle, 1001),
+        );
+        assert!(
+            snapshot.get(&key).is_none(),
+            "duplicate designation must not be stored"
+        );
     }
 }
