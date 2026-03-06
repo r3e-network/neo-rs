@@ -419,6 +419,17 @@ impl OracleContract {
     }
 
     fn finish(&self, engine: &mut ApplicationEngine) -> Result<Vec<u8>> {
+        if engine.invocation_stack().len() != 2 {
+            return Err(Error::invalid_operation(
+                "Oracle finish must be invoked from the fixed response script".to_string(),
+            ));
+        }
+        if engine.get_invocation_counter(&self.hash) != 1 {
+            return Err(Error::invalid_operation(
+                "Oracle finish cannot be re-entered".to_string(),
+            ));
+        }
+
         let tx = engine
             .script_container()
             .and_then(|container| container.as_transaction())
@@ -726,13 +737,14 @@ impl OracleContract {
             .map_err(Error::runtime_error)
     }
 
-    fn cleanup_persisted_responses(&self, engine: &mut ApplicationEngine) -> Result<()> {
+    fn cleanup_persisted_responses(&self, engine: &mut ApplicationEngine) -> Result<Vec<u64>> {
         let Some(block) = engine.persisting_block().cloned() else {
-            return Ok(());
+            return Ok(Vec::new());
         };
 
         let snapshot_arc = engine.snapshot_cache();
         let snapshot = snapshot_arc.as_ref();
+        let mut completed_response_ids = Vec::new();
 
         for transaction in &block.transactions {
             for attribute in transaction.attributes() {
@@ -741,15 +753,24 @@ impl OracleContract {
                         let url_hash = self.compute_url_hash(&request.url);
                         self.delete_request(snapshot, response.id);
                         self.remove_request_id(snapshot, &url_hash, response.id)?;
+                        completed_response_ids.push(response.id);
                     }
                 }
             }
         }
 
-        Ok(())
+        Ok(completed_response_ids)
     }
 
-    fn reward_oracle_nodes(&self, engine: &mut ApplicationEngine) -> Result<()> {
+    fn reward_oracle_nodes(
+        &self,
+        engine: &mut ApplicationEngine,
+        response_ids: &[u64],
+    ) -> Result<()> {
+        if response_ids.is_empty() {
+            return Ok(());
+        }
+
         let Some(block) = engine.persisting_block().cloned() else {
             return Ok(());
         };
@@ -766,16 +787,14 @@ impl OracleContract {
             return Ok(());
         }
 
+        let recipient_count = u64::try_from(recipients.len())
+            .map_err(|_| Error::invalid_operation("Too many oracle recipients"))?;
         let mut rewards: HashMap<UInt160, i64> = HashMap::new();
-        for transaction in &block.transactions {
-            for attribute in transaction.attributes() {
-                if let TransactionAttribute::OracleResponse(response) = attribute {
-                    let id_usize = usize::try_from(response.id).unwrap_or(0);
-                    let index = id_usize % recipients.len();
-                    let account = recipients[index];
-                    *rewards.entry(account).or_insert(0) += price;
-                }
-            }
+        for response_id in response_ids {
+            let index = usize::try_from(*response_id % recipient_count)
+                .map_err(|_| Error::invalid_operation("Oracle recipient index overflow"))?;
+            let account = recipients[index];
+            *rewards.entry(account).or_insert(0) += price;
         }
 
         if rewards.is_empty() {
@@ -847,7 +866,7 @@ impl OracleContract {
         snapshot: &DataCache,
         response: TxOracleResponse,
     ) -> Result<Vec<u8>> {
-        let TxOracleResponse { id, result, .. } = response;
+        let TxOracleResponse { id, code, result } = response;
         if result.len() > self.config.max_response_length {
             return Err(Error::invalid_operation(
                 "Response data too long".to_string(),
@@ -856,12 +875,31 @@ impl OracleContract {
         let request = self
             .read_request(snapshot, id)?
             .ok_or_else(|| Error::invalid_operation("Request not found"))?;
-        let url_hash = self.compute_url_hash(&request.url);
-        self.delete_request(snapshot, id);
-        self.remove_request_id(snapshot, &url_hash, id)?;
         self.emit_oracle_response(engine, id, &request)?;
-        let _ = result;
-        Ok(vec![1])
+
+        let reference_counter = engine
+            .current_context()
+            .map(|context| context.reference_counter().clone());
+        let user_data = BinarySerializer::deserialize(
+            &request.user_data,
+            engine.execution_limits(),
+            reference_counter,
+        )
+        .map_err(Error::invalid_operation)?;
+
+        engine.call_from_native_contract_dynamic(
+            &self.hash,
+            &request.callback_contract,
+            &request.callback_method,
+            vec![
+                StackItem::from_byte_string(request.url.into_bytes()),
+                user_data,
+                StackItem::from_int(code as i32),
+                StackItem::from_byte_string(result),
+            ],
+        )?;
+
+        Ok(Vec::new())
     }
 
     pub fn get_request(&self, snapshot: &DataCache, id: u64) -> Result<Option<OracleRequest>> {
@@ -1024,8 +1062,8 @@ impl NativeContract for OracleContract {
     }
 
     fn post_persist(&self, engine: &mut ApplicationEngine) -> Result<()> {
-        self.cleanup_persisted_responses(engine)?;
-        self.reward_oracle_nodes(engine)
+        let completed_response_ids = self.cleanup_persisted_responses(engine)?;
+        self.reward_oracle_nodes(engine, &completed_response_ids)
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
