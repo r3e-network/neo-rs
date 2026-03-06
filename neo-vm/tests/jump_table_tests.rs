@@ -99,7 +99,7 @@ fn test_bitwise_operations() {
 
     // Continue execution
     drop(stack);
-    drop(context);
+    let _ = context;
     engine.execute_next().unwrap(); // PUSH1
     engine.execute_next().unwrap(); // PUSH2
     engine.execute_next().unwrap(); // OR
@@ -111,7 +111,7 @@ fn test_bitwise_operations() {
 
     // Continue execution
     drop(stack);
-    drop(context);
+    let _ = context;
     engine.execute_next().unwrap(); // PUSH3
     engine.execute_next().unwrap(); // PUSH5
     engine.execute_next().unwrap(); // XOR
@@ -123,7 +123,7 @@ fn test_bitwise_operations() {
 
     // Continue execution
     drop(stack);
-    drop(context);
+    let _ = context;
     engine.execute_next().unwrap(); // PUSH5
     engine.execute_next().unwrap(); // INVERT
 
@@ -132,7 +132,7 @@ fn test_bitwise_operations() {
     assert_eq!(stack.len(), 4);
     assert_eq!(stack.peek(0).unwrap().as_int().unwrap(), BigInt::from(-6));
     drop(stack);
-    drop(context);
+    let _ = context;
 }
 
 #[test]
@@ -181,7 +181,7 @@ fn test_numeric_operations() {
 
     // Continue execution
     drop(stack);
-    drop(context);
+    let _ = context;
     engine.execute_next().unwrap(); // PUSH7
     engine.execute_next().unwrap(); // DEC
 
@@ -192,7 +192,7 @@ fn test_numeric_operations() {
 
     // Continue execution
     drop(stack);
-    drop(context);
+    let _ = context;
     engine.execute_next().unwrap(); // PUSH2
     engine.execute_next().unwrap(); // PUSH3
     engine.execute_next().unwrap(); // ADD
@@ -204,7 +204,7 @@ fn test_numeric_operations() {
 
     // Continue execution
     drop(stack);
-    drop(context);
+    let _ = context;
     engine.execute_next().unwrap(); // PUSH9
     engine.execute_next().unwrap(); // PUSH4
     engine.execute_next().unwrap(); // SUB
@@ -216,7 +216,7 @@ fn test_numeric_operations() {
 
     // Continue execution
     drop(stack);
-    drop(context);
+    let _ = context;
     engine.execute_next().unwrap(); // PUSH3
     engine.execute_next().unwrap(); // PUSH4
     engine.execute_next().unwrap(); // MUL
@@ -228,7 +228,7 @@ fn test_numeric_operations() {
 
     // Continue execution
     drop(stack);
-    drop(context);
+    let _ = context;
     engine.execute_next().unwrap(); // PUSH9
     engine.execute_next().unwrap(); // PUSH3
     engine.execute_next().unwrap(); // DIV
@@ -240,7 +240,7 @@ fn test_numeric_operations() {
 
     // Continue execution
     drop(stack);
-    drop(context);
+    let _ = context;
     engine.execute_next().unwrap(); // PUSH7
     engine.execute_next().unwrap(); // PUSH3
     engine.execute_next().unwrap(); // MOD
@@ -250,7 +250,7 @@ fn test_numeric_operations() {
     assert_eq!(stack.len(), 7);
     assert_eq!(stack.peek(0).unwrap().as_int().unwrap(), BigInt::from(1));
     drop(stack);
-    drop(context);
+    let _ = context;
 }
 
 #[test]
@@ -296,7 +296,7 @@ fn test_stack_operations() {
 
     // Continue execution
     drop(stack);
-    drop(context);
+    let _ = context;
     engine.execute_next().unwrap(); // DUP
 
     let context = engine.current_context().unwrap();
@@ -307,7 +307,7 @@ fn test_stack_operations() {
 
     // Continue execution
     drop(stack);
-    drop(context);
+    let _ = context;
     engine.execute_next().unwrap(); // SWAP
 
     let context = engine.current_context().unwrap();
@@ -318,7 +318,7 @@ fn test_stack_operations() {
 
     // Continue execution
     drop(stack);
-    drop(context);
+    let _ = context;
     engine.execute_next().unwrap(); // OVER
 
     let context = engine.current_context().unwrap();
@@ -330,7 +330,7 @@ fn test_stack_operations() {
 
     // Continue execution
     drop(stack);
-    drop(context);
+    let _ = context;
     engine.execute_next().unwrap(); // ROT
 
     let context = engine.current_context().unwrap();
@@ -344,7 +344,7 @@ fn test_stack_operations() {
 
     // Continue execution
     drop(stack);
-    drop(context);
+    let _ = context;
     engine.execute_next().unwrap(); // TUCK
 
     let context = engine.current_context().unwrap();
@@ -359,7 +359,7 @@ fn test_stack_operations() {
 
     // Continue execution
     drop(stack);
-    drop(context);
+    let _ = context;
     engine.execute_next().unwrap(); // DEPTH
 
     let context = engine.current_context().unwrap();
@@ -369,7 +369,7 @@ fn test_stack_operations() {
 
     // Continue execution
     drop(stack);
-    drop(context);
+    let _ = context;
     engine.execute_next().unwrap(); // DROP
 
     let context = engine.current_context().unwrap();
@@ -379,7 +379,7 @@ fn test_stack_operations() {
 
     // Continue execution
     drop(stack);
-    drop(context);
+    let _ = context;
     engine.execute_next().unwrap(); // NIP
 
     let context = engine.current_context().unwrap();
@@ -393,7 +393,7 @@ fn test_stack_operations() {
 
     // Continue execution
     drop(stack);
-    drop(context);
+    let _ = context;
     engine.execute_next().unwrap(); // PICK
 
     let context = engine.current_context().unwrap();
@@ -405,5 +405,5 @@ fn test_stack_operations() {
     assert_eq!(stack.peek(3).unwrap().as_int().unwrap(), BigInt::from(2));
     assert_eq!(stack.peek(4).unwrap().as_int().unwrap(), BigInt::from(1));
     drop(stack);
-    drop(context);
+    let _ = context;
 }

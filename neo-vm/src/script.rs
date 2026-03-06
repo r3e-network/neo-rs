@@ -540,24 +540,19 @@ impl Script {
         let opcode = instruction.opcode();
         let position = instruction.pointer();
 
-        if opcode != OpCode::TRY {
-            return Err(VmError::invalid_instruction_msg(format!(
-                "Not a TRY instruction: {opcode:?}"
-            )));
-        }
+        let (catch_offset, finally_offset) = match opcode {
+            OpCode::TRY => (
+                i32::from(instruction.token_i8()),
+                i32::from(instruction.token_i8_1()),
+            ),
+            OpCode::TRY_L => (instruction.token_i32(), instruction.token_i32_1()),
+            _ => {
+                return Err(VmError::invalid_instruction_msg(format!(
+                    "Not a TRY instruction: {opcode:?}"
+                )));
+            }
+        };
 
-        // Get the catch and finally offsets (signed 16-bit values)
-        let operand = instruction.operand();
-        let catch_offset = i32::from(i16::from_le_bytes([
-            *operand.first().unwrap_or(&0),
-            *operand.get(1).unwrap_or(&0),
-        ]));
-        let finally_offset = i32::from(i16::from_le_bytes([
-            *operand.get(2).unwrap_or(&0),
-            *operand.get(3).unwrap_or(&0),
-        ]));
-
-        // Calculate the absolute positions
         let catch_position = self.get_jump_offset(position, catch_offset)?;
         let finally_position = self.get_jump_offset(position, finally_offset)?;
 

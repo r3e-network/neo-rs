@@ -940,10 +940,10 @@ fn runtime_get_notifications_reports_all_and_filtered() {
     let snapshot = Arc::new(DataCache::new(false));
 
     let mut callee_builder = ScriptBuilder::new();
-    callee_builder.emit_push_string("testEvent2");
     callee_builder.emit_push_int(1);
     callee_builder.emit_push_int(1);
     callee_builder.emit_pack();
+    callee_builder.emit_push_string("testEvent2");
     callee_builder
         .emit_syscall("System.Runtime.Notify")
         .expect("notify syscall");
@@ -971,8 +971,8 @@ fn runtime_get_notifications_reports_all_and_filtered() {
     add_contract_to_snapshot(snapshot.as_ref(), &callee_contract);
 
     let mut caller_builder = ScriptBuilder::new();
-    caller_builder.emit_push_string("testEvent1");
     caller_builder.emit_opcode(OpCode::NEWARRAY0);
+    caller_builder.emit_push_string("testEvent1");
     caller_builder
         .emit_syscall("System.Runtime.Notify")
         .expect("notify syscall");

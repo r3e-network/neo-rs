@@ -11,14 +11,20 @@ use super::{
     track_state::TrackState,
 };
 use crate::smart_contract::{StorageItem, StorageKey};
+#[cfg(feature = "runtime")]
 use crate::{UInt160, UInt256};
 use parking_lot::RwLock;
+#[cfg(feature = "runtime")]
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
+#[cfg(feature = "runtime")]
+use std::sync::OnceLock;
 use thiserror::Error;
-use tracing::{debug, info, trace, warn};
+#[cfg(feature = "runtime")]
+use tracing::info;
+use tracing::{debug, trace, warn};
 
 /// Represents an entry in the cache.
 #[derive(Debug, Clone)]
@@ -46,6 +52,7 @@ type StoreFindFn =
     dyn Fn(Option<&StorageKey>, SeekDirection) -> Vec<(StorageKey, StorageItem)> + Send + Sync;
 type CommitApplyFn = dyn Fn(&[(StorageKey, Trackable)]) + Send + Sync;
 
+#[cfg(feature = "runtime")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Default)]
 pub(crate) enum StorageWatchPhase {
     #[default]
@@ -55,6 +62,7 @@ pub(crate) enum StorageWatchPhase {
     PostPersist,
 }
 
+#[cfg(feature = "runtime")]
 impl StorageWatchPhase {
     const fn as_str(self) -> &'static str {
         match self {
@@ -66,6 +74,7 @@ impl StorageWatchPhase {
     }
 }
 
+#[cfg(feature = "runtime")]
 #[derive(Clone, Copy, Debug, Default)]
 struct StorageWatchContext {
     block_index: u32,
@@ -73,10 +82,12 @@ struct StorageWatchContext {
     tx_hash: Option<UInt256>,
 }
 
+#[cfg(feature = "runtime")]
 thread_local! {
     static STORAGE_WATCH_CONTEXT: RefCell<Option<StorageWatchContext>> = const { RefCell::new(None) };
 }
 
+#[cfg(feature = "runtime")]
 pub(crate) fn set_storage_watch_context(
     block_index: u32,
     phase: StorageWatchPhase,
@@ -91,16 +102,19 @@ pub(crate) fn set_storage_watch_context(
     });
 }
 
+#[cfg(feature = "runtime")]
 pub(crate) fn clear_storage_watch_context() {
     STORAGE_WATCH_CONTEXT.with(|context| {
         *context.borrow_mut() = None;
     });
 }
 
+#[cfg(feature = "runtime")]
 fn current_storage_watch_context() -> Option<StorageWatchContext> {
     STORAGE_WATCH_CONTEXT.with(|context| *context.borrow())
 }
 
+#[cfg(feature = "runtime")]
 fn watched_gas_account_bytes() -> Option<([u8; 20], [u8; 20])> {
     static WATCHED: OnceLock<Option<([u8; 20], [u8; 20])>> = OnceLock::new();
     *WATCHED.get_or_init(|| {
@@ -126,6 +140,7 @@ fn watched_gas_account_bytes() -> Option<([u8; 20], [u8; 20])> {
     })
 }
 
+#[cfg(feature = "runtime")]
 fn is_watched_gas_balance_key(key: &StorageKey) -> bool {
     const GAS_TOKEN_ID: i32 = -6;
     const ACCOUNT_PREFIX: u8 = 0x14;
@@ -141,6 +156,7 @@ fn is_watched_gas_balance_key(key: &StorageKey) -> bool {
         && (key_account == account_le || key_account == account_be)
 }
 
+#[cfg(feature = "runtime")]
 fn log_watched_storage_event(
     op: &'static str,
     source: &'static str,
@@ -181,6 +197,17 @@ fn log_watched_storage_event(
         balance = %balance,
         "watched DataCache key event"
     );
+}
+
+#[cfg(not(feature = "runtime"))]
+fn log_watched_storage_event(
+    _op: &'static str,
+    _source: &'static str,
+    _key: &StorageKey,
+    _prev_state: Option<TrackState>,
+    _new_state: Option<TrackState>,
+    _value: Option<&StorageItem>,
+) {
 }
 
 /// Internal state protected by RwLock for thread-safe Copy-on-Write
@@ -526,11 +553,11 @@ impl DataCache {
 
         let store_get: Arc<StoreGetFn> =
             Arc::new(move |key: &StorageKey| store_get_parent.get(key));
-        let store_find: Arc<StoreFindFn> = Arc::new(move |prefix, direction| {
-            store_find_parent.find(prefix, direction).collect()
-        });
+        let store_find: Arc<StoreFindFn> =
+            Arc::new(move |prefix, direction| store_find_parent.find(prefix, direction).collect());
 
-        let mut overlay = Self::new_with_config(false, Some(store_get), Some(store_find), self.config);
+        let mut overlay =
+            Self::new_with_config(false, Some(store_get), Some(store_find), self.config);
         overlay.commit_apply = Some(Arc::new(move |items: &[(StorageKey, Trackable)]| {
             commit_parent.merge_tracked_items(items);
         }));
@@ -932,10 +959,7 @@ impl DataCache {
             TrackState::NotFound => {
                 // For overlays that do not track reads, only emit a delete when the
                 // key actually exists in the backing store.
-                let store_item = self
-                    .store_get
-                    .as_ref()
-                    .and_then(|getter| getter(key));
+                let store_item = self.store_get.as_ref().and_then(|getter| getter(key));
                 if store_item.is_none() {
                     log_watched_storage_event(
                         "delete",
@@ -1487,7 +1511,11 @@ mod tests {
         let prefix = make_key(-1, &[0x08]);
         let entries: Vec<_> = cache.find(Some(&prefix), SeekDirection::Forward).collect();
 
-        assert_eq!(entries.len(), 1, "only matching prefix entries should be returned");
+        assert_eq!(
+            entries.len(),
+            1,
+            "only matching prefix entries should be returned"
+        );
         assert_eq!(entries[0].0, key_a);
         assert_eq!(entries[0].1.get_value(), vec![1]);
     }

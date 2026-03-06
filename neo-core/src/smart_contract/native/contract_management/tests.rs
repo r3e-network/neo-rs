@@ -63,6 +63,18 @@ fn contract_from_bytes(bytes: &[u8]) -> ContractState {
     contract
 }
 
+fn assert_native_contract_error_contains(err: Error, expected: &str) {
+    match err {
+        Error::NativeContractError { message } => {
+            assert!(
+                message.contains(expected),
+                "expected native contract error containing `{expected}`, got `{message}`"
+            );
+        }
+        other => panic!("expected native contract error containing `{expected}`, got {other:?}"),
+    }
+}
+
 fn add_contract_to_snapshot(snapshot: &DataCache, contract: &ContractState) {
     let mut writer = BinaryWriter::new();
     contract.serialize(&mut writer).expect("serialize contract");
@@ -123,7 +135,7 @@ fn deploy_rejects_missing_sender_and_invalid_payloads() {
             &[nef_bytes.clone(), manifest_payload.clone(), Vec::new()],
         )
         .expect_err("missing sender should fail");
-    assert!(matches!(err, Error::InvalidOperation { .. }));
+    assert_native_contract_error_contains(err, "Deploy must be invoked by a transaction");
 
     let mut oversized_manifest =
         make_engine(Arc::clone(&snapshot), Some(UInt160::zero()), 50_000_000_000);
@@ -135,7 +147,7 @@ fn deploy_rejects_missing_sender_and_invalid_payloads() {
             &[nef_bytes.clone(), too_large, Vec::new()],
         )
         .expect_err("oversized manifest should fail");
-    assert!(matches!(err, Error::InvalidData { .. }));
+    assert_native_contract_error_contains(err, "Manifest exceeds maximum allowed length");
 
     let mut empty_nef = make_engine(Arc::clone(&snapshot), Some(UInt160::zero()), 50_000_000_000);
     let err = empty_nef
@@ -145,7 +157,7 @@ fn deploy_rejects_missing_sender_and_invalid_payloads() {
             &[Vec::new(), manifest_payload.clone(), Vec::new()],
         )
         .expect_err("empty NEF should fail");
-    assert!(matches!(err, Error::InvalidData { .. }));
+    assert_native_contract_error_contains(err, "NEF file length cannot be zero");
 
     let mut empty_manifest =
         make_engine(Arc::clone(&snapshot), Some(UInt160::zero()), 50_000_000_000);
@@ -156,7 +168,7 @@ fn deploy_rejects_missing_sender_and_invalid_payloads() {
             &[nef_bytes.clone(), Vec::new(), Vec::new()],
         )
         .expect_err("empty manifest should fail");
-    assert!(matches!(err, Error::InvalidData { .. }));
+    assert_native_contract_error_contains(err, "Manifest length cannot be zero");
 
     let mut insufficient_gas =
         make_engine(Arc::clone(&snapshot), Some(UInt160::zero()), 10_000_000);
@@ -167,7 +179,7 @@ fn deploy_rejects_missing_sender_and_invalid_payloads() {
             &[nef_bytes, manifest_payload, Vec::new()],
         )
         .expect_err("insufficient gas should fail");
-    assert!(matches!(err, Error::InsufficientGas { .. }));
+    assert_native_contract_error_contains(err, "Insufficient gas");
 }
 
 #[test]
@@ -201,7 +213,7 @@ fn deploy_returns_expected_hash_and_prevents_duplicates() {
             &[nef_bytes, manifest_payload, Vec::new()],
         )
         .expect_err("duplicate deploy should fail");
-    assert!(matches!(err, Error::InvalidOperation { .. }));
+    assert_native_contract_error_contains(err, "Contract already exists");
 }
 
 #[test]
@@ -372,16 +384,20 @@ fn update_preserves_storage_and_increments_counter() {
         .call_native_contract(cm_hash, "update", &update_payload)
         .expect("update succeeds");
 
-    let updated = ContractManagement::get_contract_from_snapshot(snapshot.as_ref(), &contract.hash)
-        .expect("get contract")
-        .expect("contract exists");
+    let update_snapshot = update_engine.snapshot_cache();
+    let updated =
+        ContractManagement::get_contract_from_snapshot(update_snapshot.as_ref(), &contract.hash)
+            .expect("get contract")
+            .expect("contract exists");
     assert_eq!(updated.update_counter, 1);
     assert_eq!(updated.id, contract.id);
     assert_eq!(updated.nef.script, updated_nef.script);
     assert_eq!(updated.manifest, updated_manifest);
 
     let prefix = StorageKey::new(contract.id, Vec::new());
-    let count = snapshot.find(Some(&prefix), SeekDirection::Forward).count();
+    let count = update_snapshot
+        .find(Some(&prefix), SeekDirection::Forward)
+        .count();
     assert_eq!(count, 1);
 }
 
@@ -410,7 +426,7 @@ fn update_requires_calling_context() {
             &[nef.to_bytes(), manifest_payload, Vec::new()],
         )
         .expect_err("missing calling context should fail");
-    assert!(matches!(err, Error::InvalidOperation { .. }));
+    assert_native_contract_error_contains(err, "No calling context");
 }
 
 #[test]
@@ -449,7 +465,7 @@ fn update_rejects_empty_payloads() {
     let err = update_engine
         .call_native_contract(cm_hash, "update", &[Vec::new(), Vec::new(), Vec::new()])
         .expect_err("empty payloads should fail");
-    assert!(matches!(err, Error::InvalidData { .. }));
+    assert_native_contract_error_contains(err, "NEF file and manifest cannot both be empty");
 }
 
 #[test]
@@ -493,7 +509,7 @@ fn update_rejects_oversized_manifest() {
             &[Vec::new(), oversized_manifest, Vec::new()],
         )
         .expect_err("oversized manifest should fail");
-    assert!(matches!(err, Error::InvalidData { .. }));
+    assert_native_contract_error_contains(err, "Manifest exceeds maximum allowed length");
 }
 
 #[test]
@@ -755,8 +771,9 @@ fn destroy_removes_contract_and_storage() {
         .call_native_contract(cm_hash, "destroy", &[])
         .expect("destroy");
 
+    let engine_snapshot = engine.snapshot_cache();
     let prefix = StorageKey::new(contract.id, Vec::new());
-    assert!(snapshot
+    assert!(engine_snapshot
         .find(Some(&prefix), SeekDirection::Forward)
         .next()
         .is_none());
@@ -765,5 +782,5 @@ fn destroy_removes_contract_and_storage() {
         ContractManagement::ID,
         ContractManagement::contract_storage_key(&contract.hash),
     );
-    assert!(snapshot.get(&contract_key).is_none());
+    assert!(engine_snapshot.get(&contract_key).is_none());
 }

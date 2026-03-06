@@ -3,6 +3,7 @@
 //! This module provides the state root computation and verification service
 //! that matches the C# StateService plugin exactly.
 
+#[cfg(feature = "runtime")]
 pub(crate) mod commit_handlers;
 pub mod keys;
 pub mod message_type;

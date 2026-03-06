@@ -21,9 +21,9 @@ fn runtime_notify_requires_allow_notify_flag() {
     .expect("engine");
 
     let mut builder = ScriptBuilder::new();
-    builder.emit_push_string("evt");
     builder.emit_push_int(0);
     builder.emit_pack();
+    builder.emit_push_string("evt");
     builder
         .emit_syscall("System.Runtime.Notify")
         .expect("notify syscall");

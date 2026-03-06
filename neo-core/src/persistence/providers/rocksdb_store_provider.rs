@@ -40,35 +40,6 @@ impl BatchCommitter {
         Self { buffer }
     }
 
-    fn try_add(&self, batch: &mut WriteBatch) -> usize {
-        let count = batch.len();
-        if count == 0 {
-            return 0;
-        }
-
-        // Merge the batch into our buffer
-        struct BatchIterator<'a> {
-            buffer: &'a WriteBatchBuffer,
-        }
-
-        impl<'a> rocksdb::WriteBatchIterator for BatchIterator<'a> {
-            fn put(&mut self, key: Box<[u8]>, value: Box<[u8]>) {
-                self.buffer.put(&key, &value);
-            }
-
-            fn delete(&mut self, key: Box<[u8]>) {
-                self.buffer.delete(&key);
-            }
-        }
-
-        let mut iter = BatchIterator {
-            buffer: &self.buffer,
-        };
-        batch.iterate(&mut iter);
-
-        count
-    }
-
     #[allow(dead_code)]
     fn flush(&self) -> Option<WriteBatch> {
         // The buffer flushes automatically, but we can force it here
@@ -529,8 +500,6 @@ struct RocksDbSnapshot {
     db: Arc<DB>,
     snapshot: DbSnapshot<'static>,
     write_batch: Mutex<WriteBatch>,
-    batch_committer: Arc<BatchCommitter>,
-    use_batch_commit: bool,
     /// Optional read cache for this snapshot
     read_cache: Option<Arc<StorageReadCache>>,
     /// Read-ahead configuration
@@ -545,16 +514,12 @@ impl RocksDbSnapshot {
         read_ahead_config: ReadAheadConfig,
     ) -> Self {
         let snapshot = Self::create_snapshot(&db);
-        let batch_committer = Arc::clone(&store.batch_committer);
-        let use_batch_commit = store.batch_config.max_batch_size > 1;
 
         Self {
             store,
             db,
             snapshot,
             write_batch: Mutex::new(WriteBatch::default()),
-            batch_committer,
-            use_batch_commit,
             read_cache,
             read_ahead_config,
         }
@@ -776,15 +741,16 @@ impl IStoreSnapshot for RocksDbSnapshot {
 
         let _start = Instant::now();
 
-        if self.use_batch_commit {
-            self.batch_committer.try_add(&mut batch);
-        } else {
-            let write_opts = WriteOptions::default();
-            self.db.write_opt(batch, &write_opts).map_err(|err| {
-                error!(target: "neo", error = %err, "rocksdb snapshot commit failed");
-                StorageError::CommitFailed(format!("RocksDB write failed: {}", err))
-            })?;
+        let mut write_opts = WriteOptions::default();
+        write_opts.set_sync(self.store.batch_config.sync_on_flush);
+        if self.store.batch_config.disable_wal {
+            write_opts.disable_wal(true);
         }
+
+        self.db.write_opt(batch, &write_opts).map_err(|err| {
+            error!(target: "neo", error = %err, "rocksdb snapshot commit failed");
+            StorageError::CommitFailed(format!("RocksDB write failed: {}", err))
+        })?;
 
         // Keep read cache coherent after writes. Without invalidation, callers can observe
         // stale values (e.g., current block pointer) across snapshots.
@@ -980,7 +946,7 @@ fn build_db_options(config: &StorageConfig, enable_bloom_filters: bool) -> Optio
     }
     options.set_max_write_buffer_number(4);
     options.set_min_write_buffer_number_to_merge(2);
-    
+
     // Advanced Performance Tuning
     options.set_allow_mmap_reads(true);
     options.set_allow_mmap_writes(false);

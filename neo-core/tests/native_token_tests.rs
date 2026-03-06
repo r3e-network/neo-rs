@@ -175,18 +175,16 @@ fn gas_transfer_triggers_on_nep17_payment_with_native_caller() {
     )
     .expect("engine");
 
-    // Build a simple contract script that emits a Notify("Payment", [callingHash]).
     let mut sb = ScriptBuilder::new();
-    sb.emit_push_string("Payment");
     sb.emit_syscall("System.Runtime.GetCallingScriptHash")
         .expect("syscall hash");
     sb.emit_push_int(1);
     sb.emit_pack();
+    sb.emit_push_string("Payment");
     sb.emit_syscall("System.Runtime.Notify")
         .expect("notify syscall");
     let script = sb.to_array();
 
-    // Create NEF and manifest with onNEP17Payment entry.
     let nef = NefFile::new("test".to_string(), script);
     let on_payment = ContractMethodDescriptor::new(
         "onNEP17Payment".to_string(),
@@ -210,7 +208,6 @@ fn gas_transfer_triggers_on_nep17_payment_with_native_caller() {
     let manifest_json = manifest.to_json().expect("manifest json");
     let manifest_bytes = serde_json::to_vec(&manifest_json).expect("serialize manifest");
 
-    // Deploy through native ContractManagement so the engine can fetch it.
     let cm_hash = ContractManagement::new().hash();
     let deploy_args = vec![nef.to_bytes(), manifest_bytes, Vec::new()];
     let contract_bytes = engine
@@ -228,7 +225,6 @@ fn gas_transfer_triggers_on_nep17_payment_with_native_caller() {
     let _ = receiver.from_stack_item(contract_item);
     let receiver_hash = receiver.hash;
 
-    // Fund sender with GAS and transfer to receiver contract.
     let gas = GasToken::new();
     engine.set_current_script_hash(Some(gas.hash()));
     let amount = BigInt::from(1_000_000);
@@ -239,14 +235,13 @@ fn gas_transfer_triggers_on_nep17_payment_with_native_caller() {
         sender.to_bytes(),
         receiver_hash.to_bytes(),
         amount.to_signed_bytes_le(),
-        Vec::new(), // data = null
+        Vec::new(),
     ];
     let transfer_result = gas
         .invoke(&mut engine, "transfer", &transfer_args)
         .expect("transfer call");
     assert_eq!(transfer_result, vec![1]);
 
-    // Load a dummy context so we can execute queued callbacks.
     engine
         .load_script(vec![OpCode::RET as u8], CallFlags::ALL, None)
         .expect("load dummy");

@@ -122,14 +122,8 @@ impl NativeContract for PolicyContract {
                     //           ?? throw new InvalidOperationException();
                     //          item.Set((uint)(BigInteger)item * ApplicationEngine.FeeFactor);`
                     //
-                    // NOTE: The `if let Some` + `value <= MAX_EXEC_FEE_FACTOR` guard is
-                    // intentional.  In our Rust implementation, `initialize` is called
-                    // TWICE per block: once from `register_native_contracts` (engine
-                    // constructor) and once from `ContractManagement::on_persist`.  The
-                    // C# code only calls `InitializeAsync` once (from OnPersist).  The
-                    // guard prevents double-scaling (30 → 300000 → 3B) by ensuring the
-                    // multiplication is idempotent: after the first scaling the value
-                    // exceeds MAX_EXEC_FEE_FACTOR (100), so subsequent calls are no-ops.
+                    // Keep this branch idempotent so repeated initialization against the
+                    // same snapshot cannot over-scale the stored value.
                     if let Some(item) = snapshot_ref.try_get(&Self::exec_fee_factor_key()) {
                         let value = BigInt::from_signed_bytes_le(&item.get_value())
                             .to_u32()

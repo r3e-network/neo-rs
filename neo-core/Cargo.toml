@@ -138,3 +138,51 @@ parallel = ["dep:rayon"]
 full = ["rocksdb", "upnp", "monitoring", "oracle", "neofs-grpc", "parallel"]
 runtime = ["dep:ractor"]
 performance-tests = []
+
+[[example]]
+name = "check_unclaimed_gas"
+required-features = ["rocksdb"]
+
+[[example]]
+name = "disassemble_tx"
+required-features = ["rocksdb"]
+
+[[example]]
+name = "find_txs_by_script_hex"
+required-features = ["rocksdb"]
+
+[[example]]
+name = "find_txs_by_script_text"
+required-features = ["rocksdb"]
+
+[[example]]
+name = "inspect_contract_state"
+required-features = ["rocksdb"]
+
+[[example]]
+name = "inspect_neo_account_state"
+required-features = ["rocksdb"]
+
+[[example]]
+name = "list_storage_prefix"
+required-features = ["rocksdb"]
+
+[[example]]
+name = "print_height"
+required-features = ["rocksdb"]
+
+[[example]]
+name = "print_storage_key"
+required-features = ["rocksdb"]
+
+[[example]]
+name = "print_tx_state"
+required-features = ["rocksdb"]
+
+[[example]]
+name = "replay_tx_once"
+required-features = ["rocksdb"]
+
+[[example]]
+name = "scan_sender_txs"
+required-features = ["rocksdb"]

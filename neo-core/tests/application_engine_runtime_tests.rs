@@ -110,10 +110,10 @@ fn install_notify_contract(engine: &mut ApplicationEngine, param_type: ContractP
 }
 
 fn push_notify_args(engine: &mut ApplicationEngine, event_name: &str, state: StackItem) {
+    engine.push(state).expect("push state");
     engine
         .push(StackItem::from_byte_string(event_name.as_bytes()))
         .expect("push name");
-    engine.push(state).expect("push state");
 }
 
 fn big(value: &str) -> BigInt {

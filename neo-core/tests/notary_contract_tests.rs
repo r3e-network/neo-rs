@@ -249,6 +249,10 @@ fn call_notary_bool(
     let result = engine
         .call_native_contract(Notary::new().hash(), method, &args)
         .expect("call native");
+    engine
+        .process_pending_native_calls()
+        .expect("process pending native calls");
+    engine.execute().expect("execute dummy script");
     result.iter().any(|byte| *byte != 0)
 }
 

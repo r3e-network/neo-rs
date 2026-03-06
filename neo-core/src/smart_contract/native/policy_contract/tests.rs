@@ -237,6 +237,48 @@ fn emit_dynamic_call(
 }
 
 #[test]
+fn on_persist_engine_defers_policy_initialize_until_native_on_persist() {
+    let mut settings = ProtocolSettings::default();
+    settings.hardforks.insert(Hardfork::HfFaun, 10);
+
+    let snapshot = Arc::new(DataCache::new(false));
+    let key = PolicyContract::exec_fee_factor_key();
+    assert!(snapshot.as_ref().try_get(&key).is_none());
+
+    let block = make_block(10, 1_000);
+    let mut engine = ApplicationEngine::new(
+        TriggerType::OnPersist,
+        None,
+        Arc::clone(&snapshot),
+        Some(block),
+        settings,
+        TEST_GAS_LIMIT,
+        None,
+    )
+    .expect("on persist engine");
+
+    assert!(
+        snapshot.as_ref().try_get(&key).is_none(),
+        "OnPersist engine construction should not eagerly initialize PolicyContract storage"
+    );
+
+    engine.native_on_persist().expect("native on persist");
+
+    let value = snapshot
+        .as_ref()
+        .try_get(&key)
+        .map(|item| BigInt::from_signed_bytes_le(&item.get_value()))
+        .and_then(|value| value.to_u32())
+        .expect("scaled exec fee factor");
+
+    assert_eq!(
+        value,
+        PolicyContract::DEFAULT_EXEC_FEE_FACTOR
+            * crate::smart_contract::application_engine::FEE_FACTOR as u32,
+    );
+}
+
+#[test]
 fn check_default() {
     let settings = settings_all_active();
     let snapshot = make_snapshot_with_genesis(&settings);
@@ -536,19 +578,21 @@ fn check_recover_funds_complete_flow() {
         Some(block_finish.clone()),
         vec![OpCode::NOP as u8],
     );
-    engine
+    let recover_ret = engine
         .call_native_contract(
             policy.hash(),
             "recoverFund",
             &[blocked_account.to_bytes(), gas.hash().to_bytes()],
         )
         .expect("recoverFund");
+    assert_eq!(recover_ret, vec![1]);
 
+    let engine_snapshot = engine.snapshot_cache();
     assert!(gas
-        .balance_of_snapshot(snapshot.as_ref(), &blocked_account)
+        .balance_of_snapshot(engine_snapshot.as_ref(), &blocked_account)
         .is_zero());
     let treasury_balance =
-        gas.balance_of_snapshot(snapshot.as_ref(), &TreasuryContract::new().hash());
+        gas.balance_of_snapshot(engine_snapshot.as_ref(), &TreasuryContract::new().hash());
     assert!(treasury_balance >= gas_balance);
 }
 
