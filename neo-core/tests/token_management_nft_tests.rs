@@ -75,6 +75,21 @@ fn sample_account(tag: u8) -> UInt160 {
     UInt160::from_bytes(&bytes).unwrap()
 }
 
+fn collect_iterator_keys(engine: &mut ApplicationEngine, iterator_result: &[u8]) -> Vec<Vec<u8>> {
+    let iterator_id = u32::from_le_bytes(iterator_result.try_into().expect("iterator id length"));
+    let mut keys = Vec::new();
+    while engine
+        .iterator_next_internal(iterator_id)
+        .expect("iterator next")
+    {
+        let value = engine
+            .iterator_value_internal(iterator_id)
+            .expect("iterator value");
+        keys.push(value.as_bytes().expect("iterator key bytes"));
+    }
+    keys
+}
+
 #[test]
 fn nft_create_and_mint() {
     let settings = protocol_settings_with_faun();
@@ -707,14 +722,7 @@ fn nft_get_nfts_of_owner_after_transfer() {
     );
 }
 
-#[test]
-#[ignore]
 fn nft_index_updates_after_burn() {
-    // This test is temporarily ignored due to an issue with the snapshot_cache
-    // and original_snapshot_cache interaction in getNFTsOfOwner/getNFTs.
-    // The index deletion is not properly reflected because the original_snapshot_cache
-    // was captured at engine creation time and still contains the deleted entries.
-    // This requires further investigation of the DataCache snapshot mechanism.
     let settings = protocol_settings_with_faun();
     let snapshot = make_snapshot_with_genesis(&settings);
     let token_mgmt = TokenManagement::new();
@@ -764,20 +772,30 @@ fn nft_index_updates_after_burn() {
     assert_eq!(burn_result, vec![1]);
 
     let get_info_args = vec![nft_id.to_bytes()];
-
     let info_result = engine
         .call_native_contract(token_mgmt.hash(), "getNFTInfo", &get_info_args)
         .expect("getNFTInfo call");
     assert!(info_result.is_empty(), "Burned NFT should not exist");
 
-    let get_owner_nfts_args = vec![holder.to_bytes()];
+    let get_nfts_args = vec![asset_id.to_bytes()];
+    let asset_nfts_result = engine
+        .call_native_contract(token_mgmt.hash(), "getNFTs", &get_nfts_args)
+        .expect("getNFTs call");
+    let asset_nft_keys = collect_iterator_keys(&mut engine, &asset_nfts_result);
+    assert!(asset_nft_keys.is_empty(), "getNFTs should be empty after burn");
 
+    let get_owner_nfts_args = vec![holder.to_bytes()];
     let owner_nfts_result = engine
         .call_native_contract(token_mgmt.hash(), "getNFTsOfOwner", &get_owner_nfts_args)
         .expect("getNFTsOfOwner call");
-
+    let owner_nft_keys = collect_iterator_keys(&mut engine, &owner_nfts_result);
     assert!(
-        owner_nfts_result.is_empty(),
+        owner_nft_keys.is_empty(),
         "getNFTsOfOwner should be empty after burn"
     );
+}
+
+#[test]
+fn nft_index_updates_after_burn_regression() {
+    nft_index_updates_after_burn();
 }

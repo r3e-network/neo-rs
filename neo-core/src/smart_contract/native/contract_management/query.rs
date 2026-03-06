@@ -130,26 +130,14 @@ impl ContractManagement {
         Ok(ids.into_iter().map(|(_, hash)| hash).collect())
     }
 
-    /// Creates an iterator over deployed contract hashes (non-native) matching C# GetContractHashes.
     pub fn get_contract_hashes_iterator(&self, engine: &mut ApplicationEngine) -> Result<u32> {
         let context = engine.get_native_storage_context(&self.hash)?;
         let search_key = StorageKey::new(context.id, vec![PREFIX_CONTRACT_HASH]);
 
-        let mut entries_map: HashMap<StorageKey, StorageItem> = HashMap::new();
-        for (key, value) in engine
+        let mut entries: Vec<(StorageKey, StorageItem)> = engine
             .snapshot_cache()
             .find(Some(&search_key), SeekDirection::Forward)
-        {
-            entries_map.insert(key, value);
-        }
-        for (key, value) in engine
-            .original_snapshot_cache()
-            .find(Some(&search_key), SeekDirection::Forward)
-        {
-            entries_map.entry(key).or_insert(value);
-        }
-
-        let mut entries: Vec<(StorageKey, StorageItem)> = entries_map.into_iter().collect();
+            .collect();
         entries.sort_by(|a, b| a.0.suffix().cmp(b.0.suffix()));
 
         let filtered: Vec<(StorageKey, StorageItem)> = entries

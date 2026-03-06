@@ -784,3 +784,69 @@ fn destroy_removes_contract_and_storage() {
     );
     assert!(engine_snapshot.get(&contract_key).is_none());
 }
+
+#[test]
+fn get_contract_hashes_excludes_destroyed_contract_in_same_snapshot() {
+    let snapshot = Arc::new(DataCache::new(false));
+    let cm_hash = ContractManagement::new().hash();
+
+    let mut engine = make_engine(Arc::clone(&snapshot), Some(UInt160::zero()), 50_000_000_000);
+
+    let nef = make_nef(vec![OpCode::RET as u8]);
+    let manifest = default_manifest();
+    let manifest_payload = manifest_bytes(&manifest);
+
+    let contract_bytes = engine
+        .call_native_contract(
+            cm_hash,
+            "deploy",
+            &[nef.to_bytes(), manifest_payload, Vec::new()],
+        )
+        .expect("deploy");
+    let contract = contract_from_bytes(&contract_bytes);
+
+    engine
+        .load_script(vec![OpCode::RET as u8], CallFlags::ALL, None)
+        .expect("load script");
+    engine
+        .call_contract_dynamic(&contract.hash, "testMethod", CallFlags::ALL, Vec::new())
+        .expect("call contract");
+    for context in engine.invocation_stack() {
+        let state_arc =
+            context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+        let mut state = state_arc.lock();
+        state.call_flags = CallFlags::ALL;
+    }
+    let state = engine.current_execution_state().expect("execution state");
+    state.lock().native_calling_script_hash = Some(contract.hash);
+    engine.refresh_context_tracking().expect("refresh context");
+    engine
+        .call_native_contract(cm_hash, "destroy", &[])
+        .expect("destroy");
+
+    let result = engine
+        .call_native_contract(cm_hash, "getContractHashes", &[])
+        .expect("getContractHashes");
+    let iterator_id = u32::from_le_bytes(result.as_slice().try_into().expect("iterator id length"));
+
+    let mut hashes = Vec::new();
+    while engine
+        .iterator_next_internal(iterator_id)
+        .expect("iterator next")
+    {
+        let item = engine
+            .iterator_value_internal(iterator_id)
+            .expect("iterator value");
+        let StackItem::Struct(struct_item) = item else {
+            panic!("expected struct item");
+        };
+        let items = struct_item.items();
+        let value_bytes = items[1].as_bytes().expect("value bytes");
+        hashes.push(UInt160::from_bytes(&value_bytes).expect("hash"));
+    }
+
+    assert!(
+        hashes.is_empty(),
+        "destroyed contracts must not appear in getContractHashes results"
+    );
+}
