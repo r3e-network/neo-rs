@@ -16,6 +16,8 @@ use crate::smart_contract::ContractParameterType;
 use crate::{ECCurve, ECPoint, UInt160};
 use neo_vm::execution_engine_limits::ExecutionEngineLimits;
 use neo_vm::StackItem;
+use num_bigint::BigInt;
+use num_traits::ToPrimitive;
 use std::convert::TryInto;
 
 /// The RoleManagement native contract.
@@ -229,23 +231,22 @@ impl RoleManagement {
         if args.is_empty() {
             return Err(Error::native_contract("Missing role argument"));
         }
-        let role = if let Some(&value) = args[0].first() {
-            Role::from_u8(value).ok_or_else(|| {
-                Error::native_contract(format!("Invalid role identifier: {}", value))
-            })?
-        } else {
-            return Err(Error::native_contract("Invalid role argument"));
-        };
+
+        let role_value = BigInt::from_signed_bytes_le(&args[0])
+            .to_u8()
+            .ok_or_else(|| Error::native_contract("Invalid role argument"))?;
+        let role = Role::from_u8(role_value).ok_or_else(|| {
+            Error::native_contract(format!("Invalid role identifier: {}", role_value))
+        })?;
 
         let index = if args.len() >= 2 {
-            if args[1].len() != 4 {
-                return Err(Error::native_contract(
-                    "Index argument must be 4 bytes".to_string(),
-                ));
-            }
-            let mut buffer = [0u8; 4];
-            buffer.copy_from_slice(&args[1]);
-            u32::from_le_bytes(buffer)
+            BigInt::from_signed_bytes_le(&args[1])
+                .to_u32()
+                .ok_or_else(|| {
+                    Error::native_contract(
+                        "Index argument must be a non-negative 32-bit integer".to_string(),
+                    )
+                })?
         } else {
             0
         };
@@ -443,7 +444,13 @@ impl Default for RoleManagement {
 mod tests {
     use super::*;
     use crate::cryptography::Secp256r1Crypto;
+    use crate::network::p2p::payloads::{signer::Signer, transaction::Transaction};
+    use crate::smart_contract::trigger_type::TriggerType;
     use crate::smart_contract::StorageItem;
+    use crate::witness::Witness;
+    use crate::{IVerifiable, WitnessScope};
+    use neo_vm::{OpCode, ScriptBuilder};
+    use std::sync::Arc;
 
     fn sample_point(tag: u8) -> ECPoint {
         let private_key = {
@@ -456,6 +463,45 @@ mod tests {
             Secp256r1Crypto::derive_public_key(&private_key).expect("derive public key for test");
         ECPoint::decode_compressed_with_curve(ECCurve::secp256r1(), &public_key)
             .expect("valid test key")
+    }
+
+    fn make_engine(snapshot: Arc<DataCache>) -> ApplicationEngine {
+        const TEST_GAS_LIMIT: i64 = 400_000_000;
+
+        let mut container = Transaction::new();
+        container.set_signers(vec![Signer::new(UInt160::zero(), WitnessScope::GLOBAL)]);
+        container.add_witness(Witness::new());
+        let script_container: Arc<dyn IVerifiable> = Arc::new(container);
+
+        ApplicationEngine::new(
+            TriggerType::Application,
+            Some(script_container),
+            snapshot,
+            None,
+            Default::default(),
+            TEST_GAS_LIMIT,
+            None,
+        )
+        .expect("engine")
+    }
+
+    fn emit_contract_call(
+        sb: &mut ScriptBuilder,
+        contract_hash: UInt160,
+        method: &str,
+        mut args: Vec<StackItem>,
+    ) {
+        let arg_count = args.len();
+        for arg in args.drain(..).rev() {
+            sb.emit_push_stack_item(arg).expect("emit arg");
+        }
+        sb.emit_push_int(arg_count as i64);
+        sb.emit_opcode(OpCode::PACK);
+        sb.emit_push_int(CallFlags::ALL.bits() as i64);
+        sb.emit_push_string(method);
+        sb.emit_push_byte_array(&contract_hash.to_bytes());
+        sb.emit_syscall("System.Contract.Call")
+            .expect("System.Contract.Call syscall");
     }
 
     #[test]
@@ -499,5 +545,46 @@ mod tests {
             .unwrap()
             .expect("entry");
         assert_eq!(result_after, bytes_new);
+    }
+
+    #[test]
+    fn vm_get_designated_by_role_accepts_compact_integer_index() {
+        let contract = RoleManagement::new();
+        let snapshot = Arc::new(DataCache::new(false));
+        let public_key = sample_point(0x21);
+        let encoded = contract
+            .serialize_public_keys(std::slice::from_ref(&public_key))
+            .unwrap();
+        snapshot.add(
+            StorageKey::new(
+                RoleManagement::ID,
+                RoleManagement::role_key_suffix(Role::Oracle, 1),
+            ),
+            StorageItem::from_bytes(encoded),
+        );
+
+        let mut sb = ScriptBuilder::new();
+        emit_contract_call(
+            &mut sb,
+            contract.hash(),
+            "getDesignatedByRole",
+            vec![
+                StackItem::from_int(Role::Oracle as u8 as i64),
+                StackItem::from_int(1),
+            ],
+        );
+        sb.emit_opcode(OpCode::RET);
+
+        let mut engine = make_engine(Arc::clone(&snapshot));
+        engine
+            .load_script(sb.to_array(), CallFlags::ALL, None)
+            .expect("load script");
+        engine
+            .execute()
+            .expect("execute role lookup with compact integer index");
+
+        let designated = engine.result_stack().peek(0).unwrap().as_array().unwrap();
+        assert_eq!(designated.len(), 1);
+        assert_eq!(designated[0].as_bytes().unwrap(), public_key.to_bytes());
     }
 }

@@ -305,7 +305,7 @@ impl TokenManagement {
                 true,
                 CallFlags::READ_STATES.bits(),
                 vec![ContractParameterType::Hash160],
-                ContractParameterType::Array,
+                ContractParameterType::InteropInterface,
             )
             .with_active_in(Hardfork::HfFaun)
             .with_parameter_names(vec!["owner".to_string()]),

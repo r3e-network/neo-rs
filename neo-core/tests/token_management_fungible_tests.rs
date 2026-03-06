@@ -9,6 +9,7 @@ use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::smart_contract::native::{NativeContract, TokenManagement};
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::{UInt160, UInt256};
+use neo_vm::{OpCode, ScriptBuilder, StackItem};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -77,6 +78,91 @@ fn sample_account(tag: u8) -> UInt160 {
     UInt160::from_bytes(&bytes).unwrap()
 }
 
+fn emit_contract_call(
+    sb: &mut ScriptBuilder,
+    contract_hash: UInt160,
+    method: &str,
+    mut args: Vec<StackItem>,
+) {
+    let arg_count = args.len();
+    for arg in args.drain(..).rev() {
+        sb.emit_push_stack_item(arg).expect("emit arg");
+    }
+    sb.emit_push_int(arg_count as i64);
+    sb.emit_opcode(OpCode::PACK);
+    sb.emit_push_int(CallFlags::ALL.bits() as i64);
+    sb.emit_push_string(method);
+    sb.emit_push_byte_array(&contract_hash.to_bytes());
+    sb.emit_syscall("System.Contract.Call")
+        .expect("System.Contract.Call syscall");
+}
+
+#[test]
+fn get_assets_of_owner_vm_call_returns_iterator_interface() {
+    let settings = protocol_settings_with_faun();
+    let snapshot = make_snapshot_with_genesis(&settings);
+    let token_mgmt = TokenManagement::new();
+    let owner = sample_account(0x01);
+    let holder = sample_account(0x04);
+
+    let block = make_block(1);
+    let mut engine = ApplicationEngine::new(
+        TriggerType::Application,
+        None,
+        Arc::clone(&snapshot),
+        Some(block),
+        settings.clone(),
+        TEST_GAS_LIMIT,
+        None,
+    )
+    .expect("engine");
+
+    let create_args = vec![
+        vec![0],
+        owner.to_bytes(),
+        b"IterableToken".to_vec(),
+        b"ITR".to_vec(),
+        vec![0],
+        Vec::new(),
+        vec![1],
+    ];
+    let asset_result = engine
+        .call_native_contract(token_mgmt.hash(), "create", &create_args)
+        .expect("create call");
+    let asset_id = UInt160::from_bytes(&asset_result).expect("asset id");
+
+    engine.set_current_script_hash(Some(owner));
+    engine.set_calling_script_hash(Some(owner));
+
+    let mint_args = vec![asset_id.to_bytes(), holder.to_bytes()];
+    let mint_result = engine
+        .call_native_contract(token_mgmt.hash(), "mint", &mint_args)
+        .expect("mint call");
+    assert_eq!(mint_result, vec![1]);
+
+    let mut sb = ScriptBuilder::new();
+    emit_contract_call(
+        &mut sb,
+        token_mgmt.hash(),
+        "getAssetsOfOwner",
+        vec![StackItem::from_byte_string(holder.to_bytes())],
+    );
+    sb.emit_opcode(OpCode::RET);
+
+    engine
+        .load_script(sb.to_array(), CallFlags::ALL, None)
+        .expect("load script");
+    engine.execute().expect("execute getAssetsOfOwner");
+
+    match engine.result_stack().peek(0).unwrap() {
+        StackItem::InteropInterface(_) => {}
+        item => panic!(
+            "expected iterator interop result, got {:?}",
+            item.stack_item_type()
+        ),
+    }
+}
+
 #[test]
 
 fn get_assets_of_owner_excludes_fully_burned_asset_in_same_overlay() {
@@ -139,7 +225,9 @@ fn get_assets_of_owner_excludes_fully_burned_asset_in_same_overlay() {
     let iterator_id = u32::from_le_bytes(iterator_bytes.try_into().expect("iterator id length"));
 
     assert!(
-        !engine.iterator_next_internal(iterator_id).expect("iterator next"),
+        !engine
+            .iterator_next_internal(iterator_id)
+            .expect("iterator next"),
         "getAssetsOfOwner should be empty after full burn in the overlay snapshot"
     );
 }
@@ -188,9 +276,16 @@ fn mint_and_burn_support_explicit_amount_argument() {
     assert_eq!(mint_result, vec![1]);
 
     let balance_result = engine
-        .call_native_contract(token_mgmt.hash(), "balanceOf", &[asset_id.to_bytes(), holder.to_bytes()])
+        .call_native_contract(
+            token_mgmt.hash(),
+            "balanceOf",
+            &[asset_id.to_bytes(), holder.to_bytes()],
+        )
         .expect("balanceOf after mint");
-    assert_eq!(BigInt::from_signed_bytes_le(&balance_result), BigInt::from(5));
+    assert_eq!(
+        BigInt::from_signed_bytes_le(&balance_result),
+        BigInt::from(5)
+    );
 
     engine.set_calling_script_hash(Some(holder));
     let burn_args = vec![asset_id.to_bytes(), holder.to_bytes(), vec![3]];
@@ -200,7 +295,14 @@ fn mint_and_burn_support_explicit_amount_argument() {
     assert_eq!(burn_result, vec![1]);
 
     let balance_after_burn = engine
-        .call_native_contract(token_mgmt.hash(), "balanceOf", &[asset_id.to_bytes(), holder.to_bytes()])
+        .call_native_contract(
+            token_mgmt.hash(),
+            "balanceOf",
+            &[asset_id.to_bytes(), holder.to_bytes()],
+        )
         .expect("balanceOf after burn");
-    assert_eq!(BigInt::from_signed_bytes_le(&balance_after_burn), BigInt::from(2));
+    assert_eq!(
+        BigInt::from_signed_bytes_le(&balance_after_burn),
+        BigInt::from(2)
+    );
 }

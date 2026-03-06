@@ -47,7 +47,7 @@ pub enum TrackState {
 ///
 /// Represents the keys in contract storage, matching C# Neo.SmartContract.StorageKey exactly.
 /// Combines a contract ID with a key suffix to form a unique storage key.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StorageKey {
     /// Contract ID (native contracts use negative IDs).
     pub id: i32,
@@ -56,6 +56,21 @@ pub struct StorageKey {
     /// Cached full key (optional).
     #[serde(skip)]
     cache: Option<Vec<u8>>,
+}
+
+impl PartialEq for StorageKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id && self.key == other.key
+    }
+}
+
+impl Eq for StorageKey {}
+
+impl std::hash::Hash for StorageKey {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+        self.key.hash(state);
+    }
 }
 
 impl StorageKey {
@@ -538,6 +553,20 @@ mod tests {
         let expected_id = i32::from_le_bytes([0x01, 0x02, 0x03, 0x04]);
         assert_eq!(key.id(), expected_id);
         assert_eq!(key.key(), &[0xAA, 0xBB]);
+    }
+
+    #[test]
+    fn test_storage_key_equality_and_hash_ignore_cached_bytes() {
+        use std::collections::HashSet;
+
+        let constructed = StorageKey::new(-1, vec![0xAA, 0xBB]);
+        let roundtrip = StorageKey::from_bytes(&constructed.to_array());
+
+        assert_eq!(constructed, roundtrip);
+
+        let mut keys = HashSet::new();
+        keys.insert(constructed);
+        assert!(keys.contains(&roundtrip));
     }
 
     #[test]

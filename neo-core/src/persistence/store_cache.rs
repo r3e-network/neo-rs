@@ -141,25 +141,7 @@ impl StoreCache {
 
     /// Gets an item from the cache or underlying store.
     pub fn get(&self, key: &StorageKey) -> Option<StorageItem> {
-        // First check the cache
-        if let Some(item) = self.data_cache.get(key) {
-            return Some(item);
-        }
-
-        if let Some(store) = &self.store {
-            if let Some(item) = store.try_get(key) {
-                return Some(item);
-            }
-        }
-
-        if let Some(snapshot) = &self.snapshot {
-            let key_bytes = key.to_array();
-            if let Some(value_bytes) = snapshot.try_get(&key_bytes) {
-                return Some(StorageItem::from_bytes(value_bytes));
-            }
-        }
-
-        None
+        self.data_cache.get(key)
     }
 
     /// Adds an item to the cache.
@@ -286,6 +268,46 @@ mod tests {
     }
 
     #[test]
+    fn deleted_entry_masks_backing_store_get() {
+        let store: Arc<dyn IStore> = Arc::new(MemoryStore::new());
+        let key = StorageKey::new(5, b"deleted-get".to_vec());
+        let value = StorageItem::from_bytes(vec![7, 7, 7]);
+
+        let mut snapshot = store.get_snapshot();
+        if let Some(snap) = Arc::get_mut(&mut snapshot) {
+            snap.put(key.to_array(), value.get_value());
+            snap.commit();
+        }
+
+        let mut cache = StoreCache::new_from_store(store, false);
+        cache.delete(key.clone());
+
+        assert!(cache.get(&key).is_none());
+    }
+
+    #[test]
+    fn deleted_entry_masks_snapshot_find() {
+        let store: Arc<dyn IStore> = Arc::new(MemoryStore::new());
+        let key = StorageKey::new(6, b"deleted-find".to_vec());
+
+        let mut seeded = store.get_snapshot();
+        if let Some(snap) = Arc::get_mut(&mut seeded) {
+            snap.put(key.to_array(), vec![9]);
+            snap.commit();
+        }
+
+        let snapshot = store.get_snapshot();
+        let mut cache = StoreCache::new_from_snapshot(snapshot);
+        cache.delete(key.clone());
+
+        let entries: Vec<_> = cache.find(Some(&key), SeekDirection::Forward).collect();
+        assert!(
+            entries.is_empty(),
+            "deleted key leaked through find(): {entries:?}"
+        );
+    }
+
+    #[test]
     fn commit_applies_tracked_items_to_store() {
         let store: Arc<dyn IStore> = Arc::new(MemoryStore::new());
         let mut cache = StoreCache::new_from_store(store.clone(), false);
@@ -343,38 +365,6 @@ impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for StoreCache {
         key_prefix: Option<&StorageKey>,
         direction: SeekDirection,
     ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
-        let cache_items = self.data_cache.find(key_prefix, direction);
-
-        if self.store.is_some() && self.snapshot.is_none() {
-            // `data_cache.find` already merges the backing store and cache and sorts results.
-            return Box::new(cache_items.into_iter());
-        }
-
-        let snapshot_items: Vec<(StorageKey, StorageItem)> = if let Some(snapshot) = &self.snapshot
-        {
-            let prefix_bytes = key_prefix.map(|k| k.to_array());
-            snapshot
-                .find(prefix_bytes.as_ref(), direction)
-                .map(|(key, value)| (StorageKey::from_bytes(&key), StorageItem::from_bytes(value)))
-                .collect()
-        } else {
-            Vec::new()
-        };
-
-        let mut merged = hashbrown::HashMap::new();
-        for (key, value) in snapshot_items {
-            merged.insert(key, value);
-        }
-        for (key, value) in cache_items {
-            merged.insert(key, value);
-        }
-
-        let mut sorted: Vec<_> = merged.into_iter().collect();
-        match direction {
-            SeekDirection::Forward => sorted.sort_by(|a, b| a.0.cmp(&b.0)),
-            SeekDirection::Backward => sorted.sort_by(|a, b| b.0.cmp(&a.0)),
-        }
-
-        Box::new(sorted.into_iter())
+        self.data_cache.find(key_prefix, direction)
     }
 }
