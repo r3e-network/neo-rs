@@ -59,6 +59,12 @@ pub struct InteropParameterDescriptor {
     /// Validators for the parameter
     pub validators: Vec<Box<dyn ValidatorAttribute>>,
 
+    /// Indicates whether null values are allowed for this parameter.
+    pub is_nullable: bool,
+
+    /// Indicates whether null values are allowed for array elements.
+    pub is_element_nullable: bool,
+
     /// Indicates whether the parameter is an enumeration
     pub is_enum: bool,
 
@@ -79,6 +85,8 @@ impl InteropParameterDescriptor {
             name,
             param_type,
             validators: Vec::new(),
+            is_nullable: false,
+            is_element_nullable: false,
             is_enum: false,
             is_array,
             is_interface,
@@ -98,10 +106,24 @@ impl InteropParameterDescriptor {
             name,
             param_type,
             validators,
+            is_nullable: false,
+            is_element_nullable: false,
             is_enum: false,
             is_array,
             is_interface,
         }
+    }
+
+    /// Marks whether this parameter accepts null values.
+    pub fn with_nullable(mut self, is_nullable: bool) -> Self {
+        self.is_nullable = is_nullable;
+        self
+    }
+
+    /// Marks whether array elements of this parameter accept null values.
+    pub fn with_element_nullable(mut self, is_element_nullable: bool) -> Self {
+        self.is_element_nullable = is_element_nullable;
+        self
     }
 
     /// Validates a stack item against this parameter descriptor
@@ -115,6 +137,18 @@ impl InteropParameterDescriptor {
 
     /// Converts a stack item to the appropriate type
     pub fn convert(&self, item: &StackItem) -> Result<ConvertedValue, String> {
+        if item.is_null() && !matches!(self.param_type, InteropParameterType::StackItem) {
+            if !self.is_nullable {
+                let name = if self.name.is_empty() {
+                    "value"
+                } else {
+                    &self.name
+                };
+                return Err(format!("The argument `{name}` can't be null."));
+            }
+            return Ok(ConvertedValue::Null);
+        }
+
         match self.param_type {
             InteropParameterType::StackItem => Ok(ConvertedValue::StackItem(item.clone())),
             InteropParameterType::Boolean => match item {
@@ -186,6 +220,8 @@ impl InteropParameterDescriptor {
 /// Converted value from stack item
 #[derive(Clone, Debug)]
 pub enum ConvertedValue {
+    /// A null value preserved for nullable interop parameters.
+    Null,
     /// A generic stack item.
     StackItem(StackItem),
     /// A boolean value.
@@ -200,4 +236,21 @@ pub enum ConvertedValue {
     UInt160(crate::UInt160),
     /// A 256-bit hash.
     UInt256(crate::UInt256),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn non_nullable_string_rejects_null() {
+        let descriptor =
+            InteropParameterDescriptor::new("value".to_string(), InteropParameterType::String);
+
+        let err = descriptor
+            .convert(&StackItem::Null)
+            .expect_err("non-nullable strings must reject null");
+
+        assert!(err.contains("null"));
+    }
 }

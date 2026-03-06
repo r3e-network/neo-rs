@@ -88,6 +88,44 @@ fn nep6_wallet_imports_and_signs() -> WalletResult<()> {
 }
 
 #[test]
+fn nep6_wallet_can_open_read_only_without_password() -> WalletResult<()> {
+    let settings = Arc::new(ProtocolSettings::default());
+    let wallet_path = temp_wallet_path();
+    let wallet = Nep6Wallet::new(
+        Some("test".to_string()),
+        Some(wallet_path.clone()),
+        Arc::clone(&settings),
+    );
+
+    let key_pair = KeyPair::generate().expect("key generation failed");
+    let password = "read-only-secret";
+    let nep2 = key_pair
+        .to_nep2(password, settings.address_version)
+        .expect("nep2 export");
+    let script_hash = key_pair.get_script_hash();
+
+    let rt = runtime();
+    rt.block_on(wallet.import_nep2(&nep2, password))
+        .expect("import nep2");
+    rt.block_on(wallet.save()).expect("save wallet");
+
+    let reopened = Nep6Wallet::from_file_with_password(&wallet_path, None, Arc::clone(&settings))
+        .expect("open wallet without password");
+
+    assert!(matches!(
+        rt.block_on(reopened.sign(b"read-only", &script_hash)),
+        Err(WalletError::AccountLocked)
+    ));
+    assert!(rt.block_on(reopened.unlock(password))?);
+
+    let signature = rt.block_on(reopened.sign(b"read-only", &script_hash))?;
+    assert!(key_pair.verify(b"read-only", &signature).expect("verify"));
+
+    fs::remove_file(wallet_path).ok();
+    Ok(())
+}
+
+#[test]
 fn nep6_wallet_changes_password_and_unlocks() -> WalletResult<()> {
     let settings = Arc::new(ProtocolSettings::default());
     let wallet_path = temp_wallet_path();

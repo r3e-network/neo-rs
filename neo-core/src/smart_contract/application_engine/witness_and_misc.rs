@@ -122,60 +122,42 @@ impl ApplicationEngine {
                 Ok(calling_state.calling_context.is_none())
             }
             WitnessCondition::Group { group } => {
-                if !self.has_call_flags(CallFlags::READ_STATES) {
-                    return Err(Error::invalid_operation(
-                        "Read states not allowed".to_string(),
-                    ));
-                }
-
                 let current_hash = self
                     .current_script_hash()
                     .ok_or_else(|| Error::invalid_operation("No current script hash"))?;
-
-                let Some(contract) = ContractManagement::get_contract_from_snapshot(
-                    self.snapshot_cache.as_ref(),
-                    &current_hash,
-                )?
-                else {
-                    return Ok(false);
-                };
-
-                let group_point = crate::cryptography::ECPoint::from_bytes(group)
-                    .map_err(|e| Error::invalid_data(format!("Invalid witness group: {e}")))?;
-                Ok(contract
-                    .manifest
-                    .groups
-                    .iter()
-                    .any(|g| g.pub_key == group_point))
+                self.contract_matches_group(&current_hash, group)
             }
             WitnessCondition::CalledByGroup { group } => {
-                if !self.has_call_flags(CallFlags::READ_STATES) {
-                    return Err(Error::invalid_operation(
-                        "Read states not allowed".to_string(),
-                    ));
-                }
-
                 let Some(calling_hash) = self.get_calling_script_hash() else {
                     return Ok(false);
                 };
-
-                let Some(contract) = ContractManagement::get_contract_from_snapshot(
-                    self.snapshot_cache.as_ref(),
-                    &calling_hash,
-                )?
-                else {
-                    return Ok(false);
-                };
-
-                let group_point = crate::cryptography::ECPoint::from_bytes(group)
-                    .map_err(|e| Error::invalid_data(format!("Invalid witness group: {e}")))?;
-                Ok(contract
-                    .manifest
-                    .groups
-                    .iter()
-                    .any(|g| g.pub_key == group_point))
+                self.contract_matches_group(&calling_hash, group)
             }
         }
+    }
+
+    fn contract_matches_group(&self, contract_hash: &UInt160, group: &[u8]) -> Result<bool> {
+        if !self.has_call_flags(CallFlags::READ_STATES) {
+            return Err(Error::invalid_operation(
+                "Read states not allowed".to_string(),
+            ));
+        }
+
+        let Some(contract) = ContractManagement::get_contract_from_snapshot(
+            self.snapshot_cache.as_ref(),
+            contract_hash,
+        )?
+        else {
+            return Ok(false);
+        };
+
+        let group_point = crate::cryptography::ECPoint::from_bytes(group)
+            .map_err(|e| Error::invalid_data(format!("Invalid witness group: {e}")))?;
+        Ok(contract
+            .manifest
+            .groups
+            .iter()
+            .any(|entry| entry.pub_key == group_point))
     }
 
     /// Gets the current execution context.

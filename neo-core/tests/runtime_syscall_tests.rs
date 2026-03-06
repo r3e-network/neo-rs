@@ -668,6 +668,143 @@ fn runtime_check_witness_returns_false_without_matching_signer() {
     assert!(!second);
 }
 
+#[test]
+fn runtime_check_witness_oracle_response_inherits_original_custom_group_signer() {
+    let snapshot = Arc::new(DataCache::new(false));
+    let account = UInt160::from_bytes(&[0x33; 20]).expect("account");
+    let group = sample_group(0x11);
+
+    let grouped_contract = make_contract_with_group(500, "GroupedContract", Some(group.clone()));
+    let other_contract = make_contract_with_group(501, "OtherContract", None);
+    add_contract_to_snapshot(snapshot.as_ref(), &grouped_contract);
+    add_contract_to_snapshot(snapshot.as_ref(), &other_contract);
+
+    let mut signer = Signer::new(account, WitnessScope::CUSTOM_GROUPS);
+    signer.allowed_groups.push(group.clone());
+
+    let mut original_tx = Transaction::new();
+    original_tx.set_signers(vec![signer]);
+    original_tx.set_script(vec![0x01]);
+    original_tx.add_witness(neo_core::witness::Witness::new());
+    persist_transaction_state(snapshot.as_ref(), &original_tx, 7);
+    persist_oracle_request(snapshot.as_ref(), 42, original_tx.hash());
+
+    assert!(neo_core::smart_contract::native::LedgerContract::new()
+        .get_transaction_state(snapshot.as_ref(), &original_tx.hash())
+        .expect("read original tx")
+        .is_some());
+    assert!(neo_core::smart_contract::native::OracleContract::new()
+        .get_request(snapshot.as_ref(), 42)
+        .expect("read oracle request")
+        .is_some());
+
+    let make_response_tx = || {
+        let mut tx = Transaction::new();
+        tx.set_script(
+            neo_core::network::p2p::payloads::oracle_response::OracleResponse::get_fixed_script(),
+        );
+        tx.set_attributes(vec![
+            neo_core::network::p2p::payloads::transaction_attribute::TransactionAttribute::OracleResponse(
+                neo_core::network::p2p::payloads::oracle_response::OracleResponse {
+                    id: 42,
+                    code: neo_core::network::p2p::payloads::oracle_response_code::OracleResponseCode::Success,
+                    result: Vec::new(),
+                },
+            ),
+        ]);
+        tx
+    };
+
+    let mut grouped_engine = make_runtime_engine(Arc::clone(&snapshot), make_response_tx());
+    assert!(execute_check_witness(
+        &mut grouped_engine,
+        &account,
+        CallFlags::READ_STATES,
+        Some(grouped_contract.hash),
+        None,
+    ));
+
+    let mut other_engine = make_runtime_engine(Arc::clone(&snapshot), make_response_tx());
+    assert!(!execute_check_witness(
+        &mut other_engine,
+        &account,
+        CallFlags::READ_STATES,
+        Some(other_contract.hash),
+        None,
+    ));
+}
+
+#[test]
+fn runtime_check_witness_oracle_response_inherits_original_called_by_group_rule() {
+    let snapshot = Arc::new(DataCache::new(false));
+    let account = UInt160::from_bytes(&[0x44; 20]).expect("account");
+    let group = sample_group(0x22);
+
+    let allowed_caller = make_contract_with_group(510, "AllowedCaller", Some(group.clone()));
+    let other_caller = make_contract_with_group(511, "OtherCaller", None);
+    add_contract_to_snapshot(snapshot.as_ref(), &allowed_caller);
+    add_contract_to_snapshot(snapshot.as_ref(), &other_caller);
+
+    let mut signer = Signer::new(account, WitnessScope::WITNESS_RULES);
+    signer.rules.push(neo_core::WitnessRule::new(
+        neo_core::WitnessRuleAction::Allow,
+        neo_core::WitnessCondition::CalledByGroup {
+            group: group.to_bytes(),
+        },
+    ));
+
+    let mut original_tx = Transaction::new();
+    original_tx.set_signers(vec![signer]);
+    original_tx.set_script(vec![0x01]);
+    original_tx.add_witness(neo_core::witness::Witness::new());
+    persist_transaction_state(snapshot.as_ref(), &original_tx, 9);
+    persist_oracle_request(snapshot.as_ref(), 43, original_tx.hash());
+
+    assert!(neo_core::smart_contract::native::LedgerContract::new()
+        .get_transaction_state(snapshot.as_ref(), &original_tx.hash())
+        .expect("read original tx")
+        .is_some());
+    assert!(neo_core::smart_contract::native::OracleContract::new()
+        .get_request(snapshot.as_ref(), 43)
+        .expect("read oracle request")
+        .is_some());
+
+    let make_response_tx = || {
+        let mut tx = Transaction::new();
+        tx.set_script(
+            neo_core::network::p2p::payloads::oracle_response::OracleResponse::get_fixed_script(),
+        );
+        tx.set_attributes(vec![
+            neo_core::network::p2p::payloads::transaction_attribute::TransactionAttribute::OracleResponse(
+                neo_core::network::p2p::payloads::oracle_response::OracleResponse {
+                    id: 43,
+                    code: neo_core::network::p2p::payloads::oracle_response_code::OracleResponseCode::Success,
+                    result: Vec::new(),
+                },
+            ),
+        ]);
+        tx
+    };
+
+    let mut allowed_engine = make_runtime_engine(Arc::clone(&snapshot), make_response_tx());
+    assert!(execute_check_witness(
+        &mut allowed_engine,
+        &account,
+        CallFlags::READ_STATES,
+        None,
+        Some(allowed_caller.hash),
+    ));
+
+    let mut denied_engine = make_runtime_engine(snapshot, make_response_tx());
+    assert!(!execute_check_witness(
+        &mut denied_engine,
+        &account,
+        CallFlags::READ_STATES,
+        None,
+        Some(other_caller.hash),
+    ));
+}
+
 const CONTRACT_MANAGEMENT_ID: i32 = -1;
 const PREFIX_CONTRACT: u8 = 8;
 const PREFIX_CONTRACT_HASH: u8 = 12;
@@ -689,6 +826,140 @@ fn add_contract_to_snapshot(snapshot: &DataCache, contract: &ContractState) {
         id_key,
         StorageItem::from_bytes(contract.hash.to_bytes().to_vec()),
     );
+}
+
+fn make_runtime_engine(snapshot: Arc<DataCache>, tx: Transaction) -> ApplicationEngine {
+    let container: Arc<dyn neo_core::IVerifiable> = Arc::new(tx);
+    ApplicationEngine::new(
+        TriggerType::Application,
+        Some(container),
+        snapshot,
+        None,
+        Default::default(),
+        400_000_000,
+        None,
+    )
+    .expect("engine")
+}
+
+fn execute_check_witness(
+    engine: &mut ApplicationEngine,
+    account: &UInt160,
+    call_flags: CallFlags,
+    current_script_hash: Option<UInt160>,
+    calling_script_hash: Option<UInt160>,
+) -> bool {
+    let mut script = ScriptBuilder::new();
+    script.emit_push_byte_array(&account.to_bytes());
+    script
+        .emit_syscall("System.Runtime.CheckWitness")
+        .expect("check witness syscall");
+    script.emit_opcode(OpCode::RET);
+
+    engine
+        .load_script(script.to_array(), call_flags, None)
+        .expect("load script");
+    engine.set_current_script_hash(current_script_hash);
+    engine.set_calling_script_hash(calling_script_hash);
+    engine.execute().expect("execute");
+
+    engine
+        .result_stack()
+        .peek(0)
+        .expect("result item")
+        .as_bool()
+        .expect("bool")
+}
+
+fn sample_group(seed: u8) -> neo_core::ECPoint {
+    let private_key = {
+        let mut bytes = [0u8; 32];
+        bytes[31] = seed.max(1);
+        bytes
+    };
+    let public_key = neo_core::cryptography::Secp256r1Crypto::derive_public_key(&private_key)
+        .expect("derive test key");
+    neo_core::ECPoint::decode_compressed_with_curve(neo_core::ECCurve::secp256r1(), &public_key)
+        .expect("static test key")
+}
+
+fn make_contract_with_group(
+    id: i32,
+    name: &str,
+    group: Option<neo_core::ECPoint>,
+) -> ContractState {
+    let nef = NefFile::new(name.to_string(), vec![OpCode::RET as u8]);
+    let hash = ContractState::calculate_hash(&UInt160::zero(), nef.checksum, name);
+    let mut manifest = ContractManifest::new(name.to_string());
+    if let Some(group) = group {
+        manifest.groups = vec![neo_core::smart_contract::manifest::ContractGroup::new(
+            group,
+            vec![0u8; 64],
+        )];
+    }
+    ContractState::new(id, hash, nef, manifest)
+}
+
+fn persist_transaction_state(snapshot: &DataCache, tx: &Transaction, block_index: u32) {
+    const PREFIX_TRANSACTION: u8 = 11;
+    const RECORD_KIND_TRANSACTION: u8 = 0x01;
+
+    let key = StorageKey::create_with_uint256(
+        neo_core::smart_contract::native::LedgerContract::ID,
+        PREFIX_TRANSACTION,
+        &tx.hash(),
+    );
+
+    let mut tx_writer = BinaryWriter::new();
+    <Transaction as neo_core::neo_io::Serializable>::serialize(tx, &mut tx_writer)
+        .expect("serialize tx");
+
+    let mut writer = BinaryWriter::new();
+    writer
+        .write_u8(RECORD_KIND_TRANSACTION)
+        .expect("record kind");
+    writer.write_u32(block_index).expect("block index");
+    writer.write_u8(VMState::NONE as u8).expect("vm state");
+    writer
+        .write_var_bytes(&tx_writer.into_bytes())
+        .expect("tx bytes");
+    snapshot.add(key, StorageItem::from_bytes(writer.into_bytes()));
+}
+
+fn persist_oracle_request(snapshot: &DataCache, id: u64, original_tx_id: UInt256) {
+    const ORACLE_ID: i32 = -9;
+    const PREFIX_REQUEST: u8 = 0x07;
+
+    #[derive(serde::Serialize)]
+    struct PendingRequestRecord {
+        id: u64,
+        original_tx_id: UInt256,
+        gas_for_response: i64,
+        url: String,
+        filter: Option<String>,
+        callback_contract: UInt160,
+        callback_method: String,
+        user_data: Vec<u8>,
+        block_height: u32,
+        timestamp: u64,
+    }
+
+    let request = PendingRequestRecord {
+        id,
+        original_tx_id,
+        gas_for_response: 10_000_000,
+        url: "https://example.com".to_string(),
+        filter: None,
+        callback_contract: UInt160::zero(),
+        callback_method: "callback".to_string(),
+        user_data: Vec::new(),
+        block_height: 0,
+        timestamp: 0,
+    };
+
+    let key = StorageKey::create_with_bytes(ORACLE_ID, PREFIX_REQUEST, &id.to_be_bytes());
+    let bytes = bincode::serialize(&request).expect("serialize request");
+    snapshot.add(key, StorageItem::from_bytes(bytes));
 }
 
 fn manifest_with(

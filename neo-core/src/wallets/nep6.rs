@@ -134,6 +134,14 @@ impl Nep6Wallet {
         password: &str,
         settings: Arc<ProtocolSettings>,
     ) -> WalletResult<Self> {
+        Self::from_file_with_password(path, Some(password), settings)
+    }
+
+    pub fn from_file_with_password(
+        path: &str,
+        password: Option<&str>,
+        settings: Arc<ProtocolSettings>,
+    ) -> WalletResult<Self> {
         let content = fs::read_to_string(path)?;
         let wallet_file: Nep6WalletFile = serde_json::from_str(&content)
             .map_err(|e| WalletError::Other(format!("Invalid wallet format: {e}")))?;
@@ -548,7 +556,11 @@ impl Nep6Account {
         self.inner.script_hash()
     }
 
-    fn from_file(file: Nep6AccountFile, wallet: &Nep6Wallet, password: &str) -> WalletResult<Self> {
+    fn from_file(
+        file: Nep6AccountFile,
+        wallet: &Nep6Wallet,
+        password: Option<&str>,
+    ) -> WalletResult<Self> {
         let script_hash =
             Helper::to_script_hash(&file.address, wallet.protocol_settings.address_version)
                 .map_err(WalletError::Other)?;
@@ -592,15 +604,17 @@ impl Nep6Account {
         };
 
         if account.inner.nep2_key().is_some() {
-            let unlocked = account
-                .inner
-                .unlock(password)
-                .map_err(|e| WalletError::Other(e.to_string()))?;
-            if !unlocked {
-                return Err(WalletError::InvalidPassword);
-            }
-            if account.lock {
-                account.inner.lock();
+            if let Some(password) = password {
+                let unlocked = account
+                    .inner
+                    .unlock(password)
+                    .map_err(|e| WalletError::Other(e.to_string()))?;
+                if !unlocked {
+                    return Err(WalletError::InvalidPassword);
+                }
+                if account.lock {
+                    account.inner.lock();
+                }
             }
         }
 

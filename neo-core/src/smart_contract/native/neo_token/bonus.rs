@@ -60,13 +60,6 @@ impl NeoToken {
             ));
         }
 
-        let ledger = LedgerContract::new();
-        let expect_end = ledger.current_index(snapshot)? + 1;
-        if expect_end != end {
-            return Err(CoreError::native_contract(
-                "end height must equal current height + 1".to_string(),
-            ));
-        }
         if state.balance_height() >= end {
             return Ok(BigInt::zero());
         }
@@ -164,5 +157,113 @@ impl NeoToken {
         }
         records.sort_by(|a, b| b.0.cmp(&a.0));
         records
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::persistence::DataCache;
+    use crate::smart_contract::application_engine::ApplicationEngine;
+    use crate::smart_contract::binary_serializer::BinarySerializer;
+    use crate::smart_contract::native::NativeContract;
+    use crate::smart_contract::trigger_type::TriggerType;
+    use crate::UInt256;
+    use std::sync::Arc;
+
+    const PREFIX_CURRENT_BLOCK: u8 = 12;
+    const TEST_GAS_LIMIT: i64 = 400_000_000;
+
+    fn seed_ledger_current_index(snapshot: &DataCache, index: u32) {
+        let key = StorageKey::create(LedgerContract::ID, PREFIX_CURRENT_BLOCK);
+        let mut bytes = UInt256::zero().to_bytes().to_vec();
+        bytes.extend_from_slice(&index.to_le_bytes());
+        snapshot.add(key, StorageItem::from_bytes(bytes));
+    }
+
+    fn seed_neo_account(snapshot: &DataCache, account: &UInt160, state: NeoAccountState) {
+        let key = StorageKey::create_with_uint160(NeoToken::ID, PREFIX_ACCOUNT, account);
+        let bytes =
+            BinarySerializer::serialize(&state.to_stack_item(), &ExecutionEngineLimits::default())
+                .expect("serialize NeoAccountState");
+        snapshot.add(key, StorageItem::from_bytes(bytes));
+    }
+
+    fn seed_gas_per_block(snapshot: &DataCache, index: u32, value: BigInt) {
+        let mut suffix = vec![NeoToken::PREFIX_GAS_PER_BLOCK];
+        suffix.extend_from_slice(&index.to_be_bytes());
+        let key = StorageKey::new(NeoToken::ID, suffix);
+        snapshot.add(key, StorageItem::from_bytes(value.to_signed_bytes_le()));
+    }
+
+    #[test]
+    fn unclaimed_gas_helper_allows_future_end_heights_like_csharp_calculate_bonus() {
+        let snapshot = DataCache::new(false);
+        let neo = NeoToken::new();
+        let account = UInt160::zero();
+
+        seed_ledger_current_index(&snapshot, 1);
+        seed_neo_account(
+            &snapshot,
+            &account,
+            NeoAccountState {
+                balance: BigInt::from(NeoToken::TOTAL_SUPPLY),
+                balance_height: 0,
+                vote_to: None,
+                last_gas_per_vote: BigInt::zero(),
+            },
+        );
+        seed_gas_per_block(&snapshot, 0, BigInt::from(5i64 * NeoToken::DATOSHI_FACTOR));
+
+        let bonus = neo
+            .unclaimed_gas(&snapshot, &account, 12)
+            .expect("future end height should be accepted");
+
+        assert_eq!(bonus, BigInt::from(6i64 * NeoToken::DATOSHI_FACTOR));
+    }
+
+    #[test]
+    fn unclaimed_gas_contract_method_still_requires_expected_end_height() {
+        let snapshot = Arc::new(DataCache::new(false));
+        let neo = NeoToken::new();
+        let account = UInt160::zero();
+
+        seed_ledger_current_index(snapshot.as_ref(), 1);
+        seed_neo_account(
+            snapshot.as_ref(),
+            &account,
+            NeoAccountState {
+                balance: BigInt::from(NeoToken::TOTAL_SUPPLY),
+                balance_height: 0,
+                vote_to: None,
+                last_gas_per_vote: BigInt::zero(),
+            },
+        );
+        seed_gas_per_block(
+            snapshot.as_ref(),
+            0,
+            BigInt::from(5i64 * NeoToken::DATOSHI_FACTOR),
+        );
+
+        let mut engine = ApplicationEngine::new(
+            TriggerType::Application,
+            None,
+            Arc::clone(&snapshot),
+            None,
+            ProtocolSettings::default(),
+            TEST_GAS_LIMIT,
+            None,
+        )
+        .expect("engine");
+
+        let err = engine
+            .call_native_contract(
+                neo.hash(),
+                "unclaimedGas",
+                &[account.to_bytes(), 12u32.to_le_bytes().to_vec()],
+            )
+            .expect_err("contract method should reject unexpected end height");
+
+        assert!(err.to_string().contains("end"));
     }
 }

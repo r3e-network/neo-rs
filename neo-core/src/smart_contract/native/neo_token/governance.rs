@@ -30,6 +30,20 @@ impl NeoToken {
             ));
         };
         let snapshot = engine.snapshot_cache();
+        let expect_end = engine
+            .persisting_block()
+            .map(|block| block.index())
+            .unwrap_or_else(|| {
+                LedgerContract::new()
+                    .current_index(snapshot.as_ref())
+                    .unwrap_or(0)
+                    + 1
+            });
+        if end != expect_end {
+            return Err(CoreError::native_contract(
+                "end height must equal current height + 1".to_string(),
+            ));
+        }
         let gas = self.unclaimed_gas(snapshot.as_ref(), &account, end)?;
         Ok(Self::encode_amount(&gas))
     }
