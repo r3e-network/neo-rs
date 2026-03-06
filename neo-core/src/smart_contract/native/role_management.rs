@@ -154,14 +154,6 @@ impl RoleManagement {
             )));
         }
 
-        let mut stored_public_keys = public_keys.clone();
-        stored_public_keys.sort();
-        if stored_public_keys.windows(2).any(|pair| pair[0] == pair[1]) {
-            return Err(Error::invalid_operation(
-                "Duplicate publickeys are not allowed".to_string(),
-            ));
-        }
-
         let persisting_block = engine
             .persisting_block()
             .ok_or_else(|| Error::invalid_operation("Persisting block is not available"))?;
@@ -175,6 +167,14 @@ impl RoleManagement {
         if engine.get_storage_item(&context, &key_suffix).is_some() {
             return Err(Error::invalid_operation(
                 "Role already designated at this height".to_string(),
+            ));
+        }
+
+        let mut stored_public_keys = public_keys.clone();
+        stored_public_keys.sort();
+        if stored_public_keys.windows(2).any(|pair| pair[0] == pair[1]) {
+            return Err(Error::invalid_operation(
+                "Duplicate publickeys are not allowed".to_string(),
             ));
         }
 
@@ -691,6 +691,57 @@ mod tests {
         assert!(
             snapshot.get(&key).is_none(),
             "duplicate designation must not be stored"
+        );
+    }
+
+    #[test]
+    fn designate_as_role_reports_existing_designation_before_duplicate_validation() {
+        let settings = settings_all_active();
+        let snapshot = Arc::new(DataCache::new(false));
+        let contract = RoleManagement::new();
+        let committee = committee_address(&settings, snapshot.as_ref());
+        let persisting_block = make_block(1000, 1_000);
+        let designation_key = StorageKey::new(
+            RoleManagement::ID,
+            RoleManagement::role_key_suffix(Role::Oracle, 1001),
+        );
+        snapshot.add(
+            designation_key,
+            StorageItem::from_bytes(
+                contract
+                    .serialize_public_keys(&[sample_point(0x10)])
+                    .expect("existing designation payload"),
+            ),
+        );
+
+        let duplicate_key = sample_point(0x43);
+        let args = vec![
+            StackItem::from_int(Role::Oracle as u8 as i64)
+                .as_bytes()
+                .expect("role bytes"),
+            contract
+                .serialize_public_keys(&[duplicate_key.clone(), duplicate_key])
+                .expect("public keys payload"),
+        ];
+
+        let mut engine = make_engine_with_signers(
+            Arc::clone(&snapshot),
+            settings,
+            vec![Signer::new(committee, WitnessScope::GLOBAL)],
+            Some(persisting_block),
+        );
+
+        let err = engine
+            .call_native_contract(contract.hash(), "designateAsRole", &args)
+            .expect_err("existing designation should fail before duplicate validation");
+        assert!(
+            err.to_string().contains("Role already designated"),
+            "unexpected error: {err}"
+        );
+        assert!(
+            !err.to_string()
+                .contains("Duplicate publickeys are not allowed"),
+            "duplicate validation should not run before existing designation check: {err}"
         );
     }
 }

@@ -19,7 +19,8 @@ use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::contract::Contract;
 use crate::smart_contract::manifest::{ContractEventDescriptor, ContractParameterDefinition};
 use crate::smart_contract::native::{
-    oracle_request::OracleRequest, GasToken, NativeContract, NativeMethod, Role, RoleManagement,
+    contract_management::ContractManagement, oracle_request::OracleRequest, GasToken,
+    NativeContract, NativeMethod, Role, RoleManagement,
 };
 use crate::smart_contract::storage_key::StorageKey;
 use crate::smart_contract::ContractParameterType;
@@ -365,9 +366,17 @@ impl OracleContract {
             return Err(Error::invalid_operation("Invalid gas amount"));
         }
 
-        let calling_contract = engine
-            .get_calling_script_hash()
-            .unwrap_or_else(UInt160::zero);
+        let calling_contract = engine.get_calling_script_hash().ok_or_else(|| {
+            Error::invalid_operation("Oracle request must be invoked by a contract".to_string())
+        })?;
+        let snapshot_arc = engine.snapshot_cache();
+        let snapshot = snapshot_arc.as_ref();
+        if !ContractManagement::is_contract(snapshot, &calling_contract)? {
+            return Err(Error::invalid_operation(
+                "Oracle request must be invoked by a contract".to_string(),
+            ));
+        }
+
         let original_tx_id = engine
             .script_container()
             .and_then(|container| container.as_transaction().map(|tx| tx.hash()))
@@ -378,8 +387,6 @@ impl OracleContract {
             .map_err(|e| Error::runtime_error(e.to_string()))?
             .as_secs();
 
-        let snapshot_arc = engine.snapshot_cache();
-        let snapshot = snapshot_arc.as_ref();
         let price = self.get_price_value(snapshot);
         let price_u64 = u64::try_from(price)
             .map_err(|_| Error::invalid_operation("Oracle price cannot be converted to u64"))?;
@@ -387,6 +394,7 @@ impl OracleContract {
         let gas_for_response_u64 = u64::try_from(gas_for_response)
             .map_err(|_| Error::invalid_operation("gasForResponse cannot be converted to u64"))?;
         engine.add_runtime_fee(gas_for_response_u64)?;
+        GasToken::new().mint(engine, &self.hash, &BigInt::from(gas_for_response), false)?;
         let id = self.next_request_id(snapshot)?;
         let url_hash = self.compute_url_hash(&url);
 
