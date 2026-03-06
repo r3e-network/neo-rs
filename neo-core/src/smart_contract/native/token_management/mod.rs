@@ -362,12 +362,30 @@ impl TokenManagement {
                 CallFlags::WRITE_STATES.bits() | CallFlags::ALLOW_CALL.bits(),
                 vec![
                     ContractParameterType::Hash160,
+                    ContractParameterType::Hash160,
+                ],
+                ContractParameterType::Boolean,
+            )
+            .with_active_in(Hardfork::HfFaun)
+            .with_parameter_names(vec!["assetId".to_string(), "account".to_string()]),
+            NativeMethod::new(
+                "mint".to_string(),
+                1 << 15,
+                false,
+                CallFlags::WRITE_STATES.bits() | CallFlags::ALLOW_CALL.bits(),
+                vec![
+                    ContractParameterType::Hash160,
+                    ContractParameterType::Hash160,
                     ContractParameterType::Integer,
                 ],
                 ContractParameterType::Boolean,
             )
             .with_active_in(Hardfork::HfFaun)
-            .with_parameter_names(vec!["assetId".to_string(), "amountOrNftId".to_string()]),
+            .with_parameter_names(vec![
+                "assetId".to_string(),
+                "account".to_string(),
+                "amount".to_string(),
+            ]),
             NativeMethod::new(
                 "burn".to_string(),
                 1 << 15,
@@ -375,12 +393,30 @@ impl TokenManagement {
                 CallFlags::WRITE_STATES.bits(),
                 vec![
                     ContractParameterType::Hash160,
+                    ContractParameterType::Hash160,
+                ],
+                ContractParameterType::Boolean,
+            )
+            .with_active_in(Hardfork::HfFaun)
+            .with_parameter_names(vec!["assetId".to_string(), "account".to_string()]),
+            NativeMethod::new(
+                "burn".to_string(),
+                1 << 15,
+                false,
+                CallFlags::WRITE_STATES.bits(),
+                vec![
+                    ContractParameterType::Hash160,
+                    ContractParameterType::Hash160,
                     ContractParameterType::Integer,
                 ],
                 ContractParameterType::Boolean,
             )
             .with_active_in(Hardfork::HfFaun)
-            .with_parameter_names(vec!["assetId".to_string(), "amountOrNftId".to_string()]),
+            .with_parameter_names(vec![
+                "assetId".to_string(),
+                "account".to_string(),
+                "amount".to_string(),
+            ]),
             NativeMethod::new(
                 "transfer".to_string(),
                 1 << 15,

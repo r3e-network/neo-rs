@@ -14,6 +14,8 @@ use std::sync::Arc;
 
 const TEST_GAS_LIMIT: i64 = 3_000_000_000;
 
+use num_bigint::BigInt;
+
 fn protocol_settings_with_faun() -> ProtocolSettings {
     let mut settings = ProtocolSettings::default();
     let mut hardforks = HashMap::new();
@@ -140,4 +142,65 @@ fn get_assets_of_owner_excludes_fully_burned_asset_in_same_overlay() {
         !engine.iterator_next_internal(iterator_id).expect("iterator next"),
         "getAssetsOfOwner should be empty after full burn in the overlay snapshot"
     );
+}
+
+#[test]
+fn mint_and_burn_support_explicit_amount_argument() {
+    let settings = protocol_settings_with_faun();
+    let snapshot = make_snapshot_with_genesis(&settings);
+    let token_mgmt = TokenManagement::new();
+    let owner = sample_account(0x01);
+    let holder = sample_account(0x06);
+
+    let block = make_block(1);
+    let mut engine = ApplicationEngine::new(
+        TriggerType::Application,
+        None,
+        Arc::clone(&snapshot),
+        Some(block),
+        settings.clone(),
+        TEST_GAS_LIMIT,
+        None,
+    )
+    .expect("engine");
+
+    let create_args = vec![
+        vec![0],
+        owner.to_bytes(),
+        b"AmountToken".to_vec(),
+        b"AMT".to_vec(),
+        vec![0],
+        Vec::new(),
+        vec![1],
+    ];
+    let asset_result = engine
+        .call_native_contract(token_mgmt.hash(), "create", &create_args)
+        .expect("create call");
+    let asset_id = UInt160::from_bytes(&asset_result).expect("asset id");
+
+    engine.set_current_script_hash(Some(owner));
+    engine.set_calling_script_hash(Some(owner));
+
+    let mint_args = vec![asset_id.to_bytes(), holder.to_bytes(), vec![5]];
+    let mint_result = engine
+        .call_native_contract(token_mgmt.hash(), "mint", &mint_args)
+        .expect("mint with explicit amount");
+    assert_eq!(mint_result, vec![1]);
+
+    let balance_result = engine
+        .call_native_contract(token_mgmt.hash(), "balanceOf", &[asset_id.to_bytes(), holder.to_bytes()])
+        .expect("balanceOf after mint");
+    assert_eq!(BigInt::from_signed_bytes_le(&balance_result), BigInt::from(5));
+
+    engine.set_calling_script_hash(Some(holder));
+    let burn_args = vec![asset_id.to_bytes(), holder.to_bytes(), vec![3]];
+    let burn_result = engine
+        .call_native_contract(token_mgmt.hash(), "burn", &burn_args)
+        .expect("burn with explicit amount");
+    assert_eq!(burn_result, vec![1]);
+
+    let balance_after_burn = engine
+        .call_native_contract(token_mgmt.hash(), "balanceOf", &[asset_id.to_bytes(), holder.to_bytes()])
+        .expect("balanceOf after burn");
+    assert_eq!(BigInt::from_signed_bytes_le(&balance_after_burn), BigInt::from(2));
 }
