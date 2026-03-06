@@ -873,25 +873,11 @@ impl TokenManagement {
         let account = UInt160::from_bytes(&args[0])
             .map_err(|_| CoreError::native_contract("Invalid account"))?;
 
-        let snapshot = engine.snapshot_cache();
         let prefix = StorageKey::create(ID, PREFIX_ACCOUNT_STATE);
-
-        let mut entries_map = std::collections::BTreeMap::new();
-
-        for (key, value) in snapshot
-            .as_ref()
+        let entries: Vec<(StorageKey, StorageItem)> = engine
+            .snapshot_cache()
             .find(Some(&prefix), SeekDirection::Forward)
-        {
-            entries_map.insert(key, value);
-        }
-        for (key, value) in engine
-            .original_snapshot_cache()
-            .find(Some(&prefix), SeekDirection::Forward)
-        {
-            entries_map.entry(key).or_insert(value);
-        }
-
-        let entries: Vec<(StorageKey, StorageItem)> = entries_map.into_iter().collect();
+            .collect();
 
         let filtered: Vec<(StorageKey, StorageItem)> = entries
             .into_iter()
