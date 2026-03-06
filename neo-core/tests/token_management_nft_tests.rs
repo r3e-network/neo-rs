@@ -14,6 +14,8 @@ use std::sync::Arc;
 
 const TEST_GAS_LIMIT: i64 = 3_000_000_000;
 
+use neo_core::smart_contract::call_flags::CallFlags;
+
 fn protocol_settings_with_faun() -> ProtocolSettings {
     let mut settings = ProtocolSettings::default();
     let mut hardforks = HashMap::new();
@@ -792,6 +794,117 @@ fn nft_index_updates_after_burn() {
     assert!(
         owner_nft_keys.is_empty(),
         "getNFTsOfOwner should be empty after burn"
+    );
+}
+
+#[test]
+fn get_nfts_excludes_burned_nft_in_same_overlay() {
+    let settings = protocol_settings_with_faun();
+    let snapshot = make_snapshot_with_genesis(&settings);
+    let token_mgmt = TokenManagement::new();
+    let owner = sample_account(0x01);
+    let holder = sample_account(0x50);
+
+    let block = make_block(1);
+    let mut engine = ApplicationEngine::new(
+        TriggerType::Application,
+        None,
+        Arc::clone(&snapshot),
+        Some(block),
+        settings.clone(),
+        TEST_GAS_LIMIT,
+        None,
+    )
+    .expect("engine");
+
+    let create_args = vec![owner.to_bytes(), b"OverlayBurnNFT".to_vec(), b"OBN".to_vec(), vec![1]];
+    let result = engine
+        .call_native_contract(token_mgmt.hash(), "createNonFungible", &create_args)
+        .expect("createNonFungible call");
+    let asset_id = UInt160::from_bytes(&result).expect("asset id");
+
+    engine.set_current_script_hash(Some(owner));
+    engine.set_calling_script_hash(Some(owner));
+
+    let mint_args = vec![asset_id.to_bytes(), holder.to_bytes()];
+    let nft_result = engine
+        .call_native_contract(token_mgmt.hash(), "mintNFT", &mint_args)
+        .expect("mintNFT call");
+    let nft_id = UInt160::from_bytes(&nft_result).expect("nft id");
+
+    engine
+        .load_script(vec![neo_vm::OpCode::RET as u8], CallFlags::ALL, None)
+        .expect("load overlay script");
+    engine.set_calling_script_hash(Some(holder));
+
+    let burn_args = vec![nft_id.to_bytes()];
+    let burn_result = engine
+        .call_native_contract(token_mgmt.hash(), "burnNFT", &burn_args)
+        .expect("burnNFT call");
+    assert_eq!(burn_result, vec![1]);
+
+    let get_nfts_args = vec![asset_id.to_bytes()];
+    let asset_nfts_result = engine
+        .call_native_contract(token_mgmt.hash(), "getNFTs", &get_nfts_args)
+        .expect("getNFTs call");
+    let asset_nft_keys = collect_iterator_keys(&mut engine, &asset_nfts_result);
+    assert!(asset_nft_keys.is_empty(), "getNFTs should be empty after overlay burn");
+}
+
+#[test]
+fn get_nfts_of_owner_excludes_burned_nft_in_same_overlay() {
+    let settings = protocol_settings_with_faun();
+    let snapshot = make_snapshot_with_genesis(&settings);
+    let token_mgmt = TokenManagement::new();
+    let owner = sample_account(0x01);
+    let holder = sample_account(0x51);
+
+    let block = make_block(1);
+    let mut engine = ApplicationEngine::new(
+        TriggerType::Application,
+        None,
+        Arc::clone(&snapshot),
+        Some(block),
+        settings.clone(),
+        TEST_GAS_LIMIT,
+        None,
+    )
+    .expect("engine");
+
+    let create_args = vec![owner.to_bytes(), b"OverlayOwnerNFT".to_vec(), b"OWN".to_vec(), vec![1]];
+    let result = engine
+        .call_native_contract(token_mgmt.hash(), "createNonFungible", &create_args)
+        .expect("createNonFungible call");
+    let asset_id = UInt160::from_bytes(&result).expect("asset id");
+
+    engine.set_current_script_hash(Some(owner));
+    engine.set_calling_script_hash(Some(owner));
+
+    let mint_args = vec![asset_id.to_bytes(), holder.to_bytes()];
+    let nft_result = engine
+        .call_native_contract(token_mgmt.hash(), "mintNFT", &mint_args)
+        .expect("mintNFT call");
+    let nft_id = UInt160::from_bytes(&nft_result).expect("nft id");
+
+    engine
+        .load_script(vec![neo_vm::OpCode::RET as u8], CallFlags::ALL, None)
+        .expect("load overlay script");
+    engine.set_calling_script_hash(Some(holder));
+
+    let burn_args = vec![nft_id.to_bytes()];
+    let burn_result = engine
+        .call_native_contract(token_mgmt.hash(), "burnNFT", &burn_args)
+        .expect("burnNFT call");
+    assert_eq!(burn_result, vec![1]);
+
+    let get_owner_nfts_args = vec![holder.to_bytes()];
+    let owner_nfts_result = engine
+        .call_native_contract(token_mgmt.hash(), "getNFTsOfOwner", &get_owner_nfts_args)
+        .expect("getNFTsOfOwner call");
+    let owner_nft_keys = collect_iterator_keys(&mut engine, &owner_nfts_result);
+    assert!(
+        owner_nft_keys.is_empty(),
+        "getNFTsOfOwner should be empty after overlay burn"
     );
 }
 
