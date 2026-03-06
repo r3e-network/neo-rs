@@ -164,6 +164,69 @@ fn get_assets_of_owner_vm_call_returns_iterator_interface() {
 }
 
 #[test]
+fn direct_invoke_transfer_requires_data_argument() {
+    let settings = protocol_settings_with_faun();
+    let snapshot = make_snapshot_with_genesis(&settings);
+    let token_mgmt = TokenManagement::new();
+    let owner = sample_account(0x01);
+    let holder = sample_account(0x05);
+    let recipient = sample_account(0x06);
+
+    let block = make_block(1);
+    let mut engine = ApplicationEngine::new(
+        TriggerType::Application,
+        None,
+        Arc::clone(&snapshot),
+        Some(block),
+        settings.clone(),
+        TEST_GAS_LIMIT,
+        None,
+    )
+    .expect("engine");
+
+    let create_args = vec![
+        vec![0],
+        owner.to_bytes(),
+        b"StrictTransferToken".to_vec(),
+        b"STT".to_vec(),
+        vec![0],
+        Vec::new(),
+        vec![1],
+    ];
+    let asset_result = engine
+        .call_native_contract(token_mgmt.hash(), "create", &create_args)
+        .expect("create call");
+    let asset_id = UInt160::from_bytes(&asset_result).expect("asset id");
+
+    engine.set_current_script_hash(Some(owner));
+    engine.set_calling_script_hash(Some(owner));
+
+    let mint_args = vec![asset_id.to_bytes(), holder.to_bytes()];
+    let mint_result = engine
+        .call_native_contract(token_mgmt.hash(), "mint", &mint_args)
+        .expect("mint call");
+    assert_eq!(mint_result, vec![1]);
+
+    engine.set_calling_script_hash(Some(holder));
+
+    let err = token_mgmt
+        .invoke(
+            &mut engine,
+            "transfer",
+            &[
+                asset_id.to_bytes(),
+                holder.to_bytes(),
+                recipient.to_bytes(),
+                vec![1],
+            ],
+        )
+        .expect_err("direct invoke without data should fail arity validation");
+    assert!(err
+        .to_string()
+        .contains("TokenManagement.transfer: invalid arguments"));
+}
+
+#[test]
 
 fn get_assets_of_owner_excludes_fully_burned_asset_in_same_overlay() {
     let settings = protocol_settings_with_faun();

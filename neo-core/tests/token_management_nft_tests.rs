@@ -268,6 +268,65 @@ fn nft_transfer() {
 }
 
 #[test]
+fn direct_invoke_transfer_nft_rejects_extra_arguments() {
+    let settings = protocol_settings_with_faun();
+    let snapshot = make_snapshot_with_genesis(&settings);
+    let token_mgmt = TokenManagement::new();
+    let owner = sample_account(0x01);
+
+    let block = make_block(1);
+    let mut engine = ApplicationEngine::new(
+        TriggerType::Application,
+        None,
+        Arc::clone(&snapshot),
+        Some(block),
+        settings.clone(),
+        TEST_GAS_LIMIT,
+        None,
+    )
+    .expect("engine");
+
+    let create_args = vec![
+        owner.to_bytes(),
+        b"ExtraArgNFT".to_vec(),
+        b"EAN".to_vec(),
+        vec![1],
+    ];
+    let result = engine
+        .call_native_contract(token_mgmt.hash(), "createNonFungible", &create_args)
+        .expect("createNonFungible call");
+    let asset_id = UInt160::from_bytes(&result).expect("asset id");
+
+    engine.set_current_script_hash(Some(owner));
+    engine.set_calling_script_hash(Some(owner));
+
+    let holder = sample_account(0x02);
+    let recipient = sample_account(0x03);
+    let mint_args = vec![asset_id.to_bytes(), holder.to_bytes()];
+    let nft_result = engine
+        .call_native_contract(token_mgmt.hash(), "mintNFT", &mint_args)
+        .expect("mintNFT call");
+    let nft_id = UInt160::from_bytes(&nft_result).expect("nft id");
+
+    let err = token_mgmt
+        .invoke(
+            &mut engine,
+            "transferNFT",
+            &[
+                nft_id.to_bytes(),
+                holder.to_bytes(),
+                recipient.to_bytes(),
+                Vec::new(),
+                vec![0xFF],
+            ],
+        )
+        .expect_err("direct invoke with extra args should fail arity validation");
+    assert!(err
+        .to_string()
+        .contains("TokenManagement.transferNFT: invalid arguments"));
+}
+
+#[test]
 fn nft_get_nfts_of_owner() {
     let settings = protocol_settings_with_faun();
     let snapshot = make_snapshot_with_genesis(&settings);
@@ -784,7 +843,10 @@ fn nft_index_updates_after_burn() {
         .call_native_contract(token_mgmt.hash(), "getNFTs", &get_nfts_args)
         .expect("getNFTs call");
     let asset_nft_keys = collect_iterator_keys(&mut engine, &asset_nfts_result);
-    assert!(asset_nft_keys.is_empty(), "getNFTs should be empty after burn");
+    assert!(
+        asset_nft_keys.is_empty(),
+        "getNFTs should be empty after burn"
+    );
 
     let get_owner_nfts_args = vec![holder.to_bytes()];
     let owner_nfts_result = engine
@@ -817,7 +879,12 @@ fn get_nfts_excludes_burned_nft_in_same_overlay() {
     )
     .expect("engine");
 
-    let create_args = vec![owner.to_bytes(), b"OverlayBurnNFT".to_vec(), b"OBN".to_vec(), vec![1]];
+    let create_args = vec![
+        owner.to_bytes(),
+        b"OverlayBurnNFT".to_vec(),
+        b"OBN".to_vec(),
+        vec![1],
+    ];
     let result = engine
         .call_native_contract(token_mgmt.hash(), "createNonFungible", &create_args)
         .expect("createNonFungible call");
@@ -848,7 +915,10 @@ fn get_nfts_excludes_burned_nft_in_same_overlay() {
         .call_native_contract(token_mgmt.hash(), "getNFTs", &get_nfts_args)
         .expect("getNFTs call");
     let asset_nft_keys = collect_iterator_keys(&mut engine, &asset_nfts_result);
-    assert!(asset_nft_keys.is_empty(), "getNFTs should be empty after overlay burn");
+    assert!(
+        asset_nft_keys.is_empty(),
+        "getNFTs should be empty after overlay burn"
+    );
 }
 
 #[test]
@@ -871,7 +941,12 @@ fn get_nfts_of_owner_excludes_burned_nft_in_same_overlay() {
     )
     .expect("engine");
 
-    let create_args = vec![owner.to_bytes(), b"OverlayOwnerNFT".to_vec(), b"OWN".to_vec(), vec![1]];
+    let create_args = vec![
+        owner.to_bytes(),
+        b"OverlayOwnerNFT".to_vec(),
+        b"OWN".to_vec(),
+        vec![1],
+    ];
     let result = engine
         .call_native_contract(token_mgmt.hash(), "createNonFungible", &create_args)
         .expect("createNonFungible call");

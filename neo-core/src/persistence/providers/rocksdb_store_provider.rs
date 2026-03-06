@@ -19,7 +19,7 @@ use rocksdb::{
     BlockBasedOptions, Cache, DBIteratorWithThreadMode, Direction, IteratorMode, Options,
     ReadOptions, Snapshot as DbSnapshot, WriteBatch, WriteOptions, DB,
 };
-use std::{fs, mem, path::PathBuf, sync::Arc, time::Instant};
+use std::{collections::BTreeMap, fs, mem, path::PathBuf, sync::Arc, time::Instant};
 use tracing::{debug, error, warn};
 
 /// Re-export batch commit types from write_batch_buffer for backward compatibility.
@@ -500,6 +500,7 @@ struct RocksDbSnapshot {
     db: Arc<DB>,
     snapshot: DbSnapshot<'static>,
     write_batch: Mutex<WriteBatch>,
+    pending_changes: Mutex<BTreeMap<Vec<u8>, Option<Vec<u8>>>>,
     /// Optional read cache for this snapshot
     read_cache: Option<Arc<StorageReadCache>>,
     /// Read-ahead configuration
@@ -520,6 +521,7 @@ impl RocksDbSnapshot {
             db,
             snapshot,
             write_batch: Mutex::new(WriteBatch::default()),
+            pending_changes: Mutex::new(BTreeMap::new()),
             read_cache,
             read_ahead_config,
         }
@@ -559,10 +561,74 @@ impl RocksDbSnapshot {
             &self.read_ahead_config,
         )
     }
+
+    fn pending_change(&self, key: &[u8]) -> Option<Option<Vec<u8>>> {
+        self.pending_changes.lock().get(key).cloned()
+    }
+
+    fn merged_entries(
+        &self,
+        key_prefix: Option<&[u8]>,
+        direction: SeekDirection,
+    ) -> Option<Vec<(Vec<u8>, Vec<u8>)>> {
+        let prefix = key_prefix.unwrap_or(&[]);
+        let pending_changes = {
+            let pending = self.pending_changes.lock();
+            if pending.is_empty() {
+                return None;
+            }
+            pending
+                .iter()
+                .filter(|(key, _)| key.starts_with(prefix))
+                .map(|(key, value)| (key.clone(), value.clone()))
+                .collect::<Vec<_>>()
+        };
+
+        let mut items = BTreeMap::new();
+        let iterator = iterator_from(
+            self.db.as_ref(),
+            Some(self.read_options()),
+            prefix,
+            SeekDirection::Forward,
+            &self.read_ahead_config,
+        );
+        for res in iterator {
+            let (key, value) = match res {
+                Ok(entry) => entry,
+                Err(err) => {
+                    warn!(target: "neo", error = %err, "rocksdb iterator error");
+                    continue;
+                }
+            };
+            let key_vec = key.to_vec();
+            if !prefix.is_empty() && !key_vec.starts_with(prefix) {
+                break;
+            }
+            items.insert(key_vec, value.to_vec());
+        }
+
+        for (key, value) in pending_changes {
+            if let Some(value) = value {
+                items.insert(key, value);
+            } else {
+                items.remove(&key);
+            }
+        }
+
+        let mut entries: Vec<_> = items.into_iter().collect();
+        if direction == SeekDirection::Backward {
+            entries.reverse();
+        }
+        Some(entries)
+    }
 }
 
 impl IReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
     fn try_get(&self, key: &Vec<u8>) -> Option<Vec<u8>> {
+        if let Some(change) = self.pending_change(key.as_slice()) {
+            return change;
+        }
+
         self.db.get_opt(key, &self.read_options()).ok().flatten()
     }
 
@@ -571,6 +637,10 @@ impl IReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
         key_prefix: Option<&Vec<u8>>,
         direction: SeekDirection,
     ) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)> + '_> {
+        if let Some(items) = self.merged_entries(key_prefix.map(|k| k.as_slice()), direction) {
+            return Box::new(items.into_iter());
+        }
+
         if direction == SeekDirection::Backward {
             if let Some(prefix) = key_prefix {
                 let mut items = Vec::new();
@@ -614,6 +684,16 @@ impl IReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
 
 impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbSnapshot {
     fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {
+        let raw = key.to_array();
+        if let Some(change) = self.pending_change(raw.as_slice()) {
+            let result = change.map(StorageItem::from_bytes);
+            if let (Some(ref cache), Some(ref item)) = (&self.read_cache, &result) {
+                let size = item.get_value().len() + std::mem::size_of::<StorageKey>();
+                cache.put(key.clone(), item.clone(), size);
+            }
+            return result;
+        }
+
         // Check read cache first (bloom filter will be checked inside)
         if let Some(ref cache) = self.read_cache {
             if let Some(item) = cache.get(key) {
@@ -621,7 +701,6 @@ impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbSnapshot {
             }
         }
 
-        let raw = key.to_array();
         let result = self
             .db
             .get_opt(&raw, &self.read_options())
@@ -644,6 +723,19 @@ impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbSnapshot {
         direction: SeekDirection,
     ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
         let prefix_bytes = key_prefix.map(|k| k.to_array());
+
+        if let Some(items) = self.merged_entries(prefix_bytes.as_deref(), direction) {
+            let read_cache = self.read_cache.clone();
+            return Box::new(items.into_iter().map(move |(key_vec, value)| {
+                let storage_key = StorageKey::from_bytes(&key_vec);
+                let storage_item = StorageItem::from_bytes(value);
+                if let Some(ref cache) = read_cache {
+                    let size = storage_item.get_value().len() + std::mem::size_of::<StorageKey>();
+                    cache.put(storage_key.clone(), storage_item.clone(), size);
+                }
+                (storage_key, storage_item)
+            }));
+        }
 
         if direction == SeekDirection::Backward {
             if let Some(prefix) = prefix_bytes.as_ref() {
@@ -713,11 +805,21 @@ impl IReadOnlyStore for RocksDbSnapshot {}
 
 impl IWriteStore<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
     fn delete(&mut self, key: Vec<u8>) {
-        self.write_batch.lock().delete(key);
+        self.write_batch.lock().delete(key.clone());
+        self.pending_changes.lock().insert(key.clone(), None);
+        if let Some(ref cache) = self.read_cache {
+            cache.remove(&StorageKey::from_bytes(&key));
+        }
     }
 
     fn put(&mut self, key: Vec<u8>, value: Vec<u8>) {
-        self.write_batch.lock().put(key, value);
+        self.write_batch.lock().put(key.clone(), value.clone());
+        self.pending_changes
+            .lock()
+            .insert(key.clone(), Some(value.clone()));
+        if let Some(ref cache) = self.read_cache {
+            cache.remove(&StorageKey::from_bytes(&key));
+        }
     }
 }
 
@@ -730,13 +832,19 @@ impl IStoreSnapshot for RocksDbSnapshot {
         use crate::persistence::storage::StorageError;
 
         let mut batch_guard = self.write_batch.lock();
+        let mut pending_guard = self.pending_changes.lock();
 
         if batch_guard.is_empty() {
             return Ok(());
         }
 
+        let batch_data = batch_guard.data().to_vec();
+        let pending_snapshot = pending_guard.clone();
+
         let mut batch = WriteBatch::default();
         mem::swap(&mut *batch_guard, &mut batch);
+        pending_guard.clear();
+        drop(pending_guard);
         drop(batch_guard);
 
         let _start = Instant::now();
@@ -747,10 +855,17 @@ impl IStoreSnapshot for RocksDbSnapshot {
             write_opts.disable_wal(true);
         }
 
-        self.db.write_opt(batch, &write_opts).map_err(|err| {
+        if let Err(err) = self.db.write_opt(batch, &write_opts) {
+            let mut batch_guard = self.write_batch.lock();
+            let mut pending_guard = self.pending_changes.lock();
+            *batch_guard = WriteBatch::from_data(&batch_data);
+            *pending_guard = pending_snapshot;
             error!(target: "neo", error = %err, "rocksdb snapshot commit failed");
-            StorageError::CommitFailed(format!("RocksDB write failed: {}", err))
-        })?;
+            return Err(StorageError::CommitFailed(format!(
+                "RocksDB write failed: {}",
+                err
+            )));
+        }
 
         // Keep read cache coherent after writes. Without invalidation, callers can observe
         // stale values (e.g., current block pointer) across snapshots.
@@ -1076,6 +1191,47 @@ mod tests {
                 .get_value(),
             value2.get_value()
         );
+    }
+
+    #[test]
+    fn snapshot_reads_overlay_pending_writes_and_deletes() {
+        let tmp = TempDir::new().expect("tempdir");
+        let db_path = tmp.path().join("rocksdb-snapshot-overlay");
+        let cfg = StorageConfig {
+            path: db_path.clone(),
+            ..Default::default()
+        };
+
+        let provider = RocksDBStoreProvider::new(cfg);
+        let store = provider
+            .get_store(db_path.to_str().unwrap())
+            .expect("rocksdb store");
+
+        let existing_key = StorageKey::new(7, vec![0x01]).to_array();
+        let added_key = StorageKey::new(7, vec![0x02]).to_array();
+
+        let mut writer = StoreCache::new_from_store(store.clone(), false);
+        writer.add(
+            StorageKey::from_bytes(&existing_key),
+            StorageItem::from_bytes(vec![0xAA]),
+        );
+        writer.commit();
+
+        let mut snapshot = store.get_snapshot();
+        let snapshot_mut = Arc::get_mut(&mut snapshot).expect("exclusive snapshot");
+        snapshot_mut.delete(existing_key.clone());
+        snapshot_mut.put(added_key.clone(), vec![0xBB]);
+
+        assert_eq!(snapshot.try_get(&existing_key), None);
+        assert_eq!(snapshot.try_get(&added_key), Some(vec![0xBB]));
+
+        let entries: Vec<_> = snapshot
+            .find(
+                Some(&StorageKey::new(7, vec![]).to_array()),
+                SeekDirection::Forward,
+            )
+            .collect();
+        assert_eq!(entries, vec![(added_key, vec![0xBB])]);
     }
 
     #[test]

@@ -850,7 +850,7 @@ impl TokenManagement {
         engine: &mut ApplicationEngine,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
-        if args.is_empty() {
+        if args.len() != 1 {
             return Err(CoreError::native_contract(
                 "TokenManagement.getTokenInfo: invalid arguments",
             ));
@@ -876,7 +876,7 @@ impl TokenManagement {
         engine: &mut ApplicationEngine,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
-        if args.len() < 2 {
+        if args.len() != 2 {
             return Err(CoreError::native_contract(
                 "TokenManagement.balanceOf: invalid arguments",
             ));
@@ -900,7 +900,7 @@ impl TokenManagement {
         engine: &mut ApplicationEngine,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
-        if args.is_empty() {
+        if args.len() != 1 {
             return Err(CoreError::native_contract(
                 "TokenManagement.getAssetsOfOwner: invalid arguments",
             ));
@@ -941,7 +941,7 @@ impl TokenManagement {
         engine: &mut ApplicationEngine,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
-        if args.len() < 7 {
+        if args.len() != 7 {
             return Err(CoreError::native_contract(
                 "TokenManagement.create: invalid arguments",
             ));
@@ -1011,7 +1011,7 @@ impl TokenManagement {
         engine: &mut ApplicationEngine,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
-        if args.len() < 4 {
+        if args.len() != 4 {
             return Err(CoreError::native_contract(
                 "TokenManagement.createNonFungible: invalid arguments",
             ));
@@ -1062,7 +1062,7 @@ impl TokenManagement {
     }
 
     fn invoke_mint(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
-        if args.len() < 2 {
+        if !(2..=3).contains(&args.len()) {
             return Err(CoreError::native_contract(
                 "TokenManagement.mint: invalid arguments",
             ));
@@ -1135,7 +1135,7 @@ impl TokenManagement {
     }
 
     fn invoke_burn(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
-        if args.len() < 2 {
+        if !(2..=3).contains(&args.len()) {
             return Err(CoreError::native_contract(
                 "TokenManagement.burn: invalid arguments",
             ));
@@ -1214,7 +1214,7 @@ impl TokenManagement {
         engine: &mut ApplicationEngine,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
-        if args.len() < 2 {
+        if args.len() != 2 {
             return Err(CoreError::native_contract(
                 "TokenManagement.mintNFT: invalid arguments",
             ));
@@ -1319,7 +1319,7 @@ impl TokenManagement {
         engine: &mut ApplicationEngine,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
-        if args.is_empty() {
+        if args.len() != 1 {
             return Err(CoreError::native_contract(
                 "TokenManagement.burnNFT: invalid arguments",
             ));
@@ -1405,7 +1405,7 @@ impl TokenManagement {
         engine: &mut ApplicationEngine,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
-        if args.len() < 4 {
+        if args.len() != 4 {
             return Err(CoreError::native_contract(
                 "TokenManagement.transferNFT: invalid arguments",
             ));
@@ -1483,7 +1483,7 @@ impl TokenManagement {
         engine: &mut ApplicationEngine,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
-        if args.is_empty() {
+        if args.len() != 1 {
             return Err(CoreError::native_contract(
                 "TokenManagement.getNFTInfo: invalid arguments",
             ));
@@ -1508,7 +1508,7 @@ impl TokenManagement {
         engine: &mut ApplicationEngine,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
-        if args.is_empty() {
+        if args.len() != 1 {
             return Err(CoreError::native_contract(
                 "TokenManagement.getNFTs: invalid arguments",
             ));
@@ -1581,7 +1581,7 @@ impl TokenManagement {
         engine: &mut ApplicationEngine,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
-        if args.is_empty() {
+        if args.len() != 1 {
             return Err(CoreError::native_contract(
                 "TokenManagement.getNFTsOfOwner: invalid arguments",
             ));
@@ -1738,7 +1738,7 @@ impl TokenManagement {
         engine: &mut ApplicationEngine,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
-        if args.len() < 4 {
+        if args.len() != 5 {
             return Err(CoreError::native_contract(
                 "TokenManagement.transfer: invalid arguments",
             ));
