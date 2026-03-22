@@ -1,146 +1,106 @@
 name: CI
-
-"on":
+'on':
   push:
-    branches: [main, master]
+    branches:
+    - main
+    - master
   pull_request:
-    branches: [main, master]
-
-# Cancel superseded runs on the same branch / PR.
+    branches:
+    - main
+    - master
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
-
-# ── shared env ──────────────────────────────────────────────────────
 env:
   CARGO_INCREMENTAL: 0
   CARGO_TERM_COLOR: always
-
 jobs:
-  # ── 1. Format check (no compilation, ~10 s) ──────────────────────
   fmt:
     name: Format
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
-      - run: cargo fmt --all --check
-
-  # ── 2. Clippy lint ───────────────────────────────────────────────
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt
+    - run: cargo fmt --all --check
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+    - uses: actions/checkout@v4
+    - name: Reclaim runner disk space
+      run: 'sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet
 
-      - name: Reclaim runner disk space
-        run: |
-          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet
-          sudo docker image prune -af || true
+        sudo docker image prune -af || true
 
-      - name: Cache APT packages
-        uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: >-
-            build-essential clang cmake libbz2-dev libclang-dev liblz4-dev
-            librocksdb-dev libsnappy-dev libssl-dev libzstd-dev pkg-config
-            zlib1g-dev
-          version: 1.0
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-
-      - name: Setup sccache
-        uses: mozilla-actions/sccache-action@v0.0.7
-        continue-on-error: true
-
-      - name: Enable sccache (best-effort)
-        run: |
-          if sccache --start-server 2>/dev/null && sccache --show-stats 2>/dev/null; then
-            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-            echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
-            echo "::notice::sccache enabled"
-          else
-            echo "::warning::sccache unavailable — falling back to direct compilation"
-          fi
-
-      - name: Cache cargo registry & git
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: ci-lint
-
-      - name: Clippy
-        run: |
-          cargo clippy --workspace --all-targets --profile test -- \
-            -D clippy::all \
-            -A clippy::doc_overindented_list_items \
-            -A clippy::doc_lazy_continuation \
-            -A clippy::large_enum_variant \
-            -A clippy::module_inception \
-            -A clippy::type_complexity \
-            -A clippy::len_zero \
-            -A clippy::nonminimal_bool \
-            -A clippy::enum_variant_names \
-            -A clippy::too_many_arguments \
-            -A clippy::field_reassign_with_default \
-            -A clippy::assertions_on_constants
-
-  # ── 3. Tests ─────────────────────────────────────────────────────
+        '
+    - name: Cache APT packages
+      uses: awalsh128/cache-apt-pkgs-action@latest
+      with:
+        packages: build-essential clang cmake libbz2-dev libclang-dev liblz4-dev librocksdb-dev
+          libsnappy-dev libssl-dev libzstd-dev pkg-config zlib1g-dev
+        version: 1.0
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy
+    - name: Setup sccache
+      uses: mozilla-actions/sccache-action@v0.0.7
+      continue-on-error: true
+    - name: Enable sccache (best-effort)
+      run: "if sccache --start-server 2>/dev/null && sccache --show-stats 2>/dev/null;\
+        \ then\n  echo \"RUSTC_WRAPPER=sccache\" >> \"$GITHUB_ENV\"\n  echo \"SCCACHE_GHA_ENABLED=true\"\
+        \ >> \"$GITHUB_ENV\"\n  echo \"::notice::sccache enabled\"\nelse\n  echo \"\
+        ::warning::sccache unavailable — falling back to direct compilation\"\nfi\n"
+    - name: Cache cargo registry & git
+      uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: ci-lint
+    - name: Clippy
+      run: "cargo clippy --workspace --all-targets --profile test -- \\\n  -D clippy::all\
+        \ \\\n  -A clippy::doc_overindented_list_items \\\n  -A clippy::doc_lazy_continuation\
+        \ \\\n  -A clippy::large_enum_variant \\\n  -A clippy::module_inception \\\
+        \n  -A clippy::type_complexity \\\n  -A clippy::len_zero \\\n  -A clippy::nonminimal_bool\
+        \ \\\n  -A clippy::enum_variant_names \\\n  -A clippy::too_many_arguments\
+        \ \\\n  -A clippy::field_reassign_with_default \\\n  -A clippy::assertions_on_constants\n"
   test:
     name: Test
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+    - uses: actions/checkout@v4
+    - name: Reclaim runner disk space
+      run: 'sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet
 
-      - name: Reclaim runner disk space
-        run: |
-          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet
-          sudo docker image prune -af || true
+        sudo docker image prune -af || true
 
-      - name: Cache APT packages
-        uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: >-
-            build-essential clang cmake libbz2-dev libclang-dev liblz4-dev
-            librocksdb-dev libsnappy-dev libssl-dev libzstd-dev pkg-config
-            zlib1g-dev
-          version: 1.0
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - name: Setup sccache
-        uses: mozilla-actions/sccache-action@v0.0.7
-        continue-on-error: true
-
-      - name: Enable sccache (best-effort)
-        run: |
-          if sccache --start-server 2>/dev/null && sccache --show-stats 2>/dev/null; then
-            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-            echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
-            echo "::notice::sccache enabled"
-          else
-            echo "::warning::sccache unavailable — falling back to direct compilation"
-          fi
-
-      - name: Install cargo-nextest
-        uses: taiki-e/install-action@nextest
-
-      - name: Cache cargo registry & git
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: ci-test
-
-      - name: Build tests
-        run: cargo test --workspace --no-run
-
-      - name: Run tests
-        run: cargo nextest run --workspace --no-fail-fast
-
-      - name: Run doctests
-        run: cargo test --workspace --doc
+        '
+    - name: Cache APT packages
+      uses: awalsh128/cache-apt-pkgs-action@latest
+      with:
+        packages: build-essential clang cmake libbz2-dev libclang-dev liblz4-dev librocksdb-dev
+          libsnappy-dev libssl-dev libzstd-dev pkg-config zlib1g-dev
+        version: 1.0
+    - uses: dtolnay/rust-toolchain@stable
+    - name: Setup sccache
+      uses: mozilla-actions/sccache-action@v0.0.7
+      continue-on-error: true
+    - name: Enable sccache (best-effort)
+      run: "if sccache --start-server 2>/dev/null && sccache --show-stats 2>/dev/null;\
+        \ then\n  echo \"RUSTC_WRAPPER=sccache\" >> \"$GITHUB_ENV\"\n  echo \"SCCACHE_GHA_ENABLED=true\"\
+        \ >> \"$GITHUB_ENV\"\n  echo \"::notice::sccache enabled\"\nelse\n  echo \"\
+        ::warning::sccache unavailable — falling back to direct compilation\"\nfi\n"
+    - name: Install cargo-nextest
+      uses: taiki-e/install-action@nextest
+    - name: Cache cargo registry & git
+      uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: ci-test
+    - name: Build tests
+      run: cargo test --workspace --no-run
+    - name: Run tests
+      run: cargo nextest run --workspace --no-fail-fast
+    - name: Run doctests
+      run: cargo test --workspace --doc
