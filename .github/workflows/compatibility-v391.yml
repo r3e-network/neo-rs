@@ -1,5 +1,5 @@
 name: Neo v3.9.1 Consistency
-true:
+on:
   push:
     branches:
     - main
