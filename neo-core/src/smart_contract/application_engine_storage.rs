@@ -364,6 +364,9 @@ fn storage_find_local_handler(
             format!("Invalid FindOptions value: {options_bits}"),
         )
     })?;
+    options
+        .validate()
+        .map_err(|e| map_storage_error("System.Storage.Local.Find", e))?;
 
     let prefix = app
         .pop_bytes()
@@ -404,6 +407,9 @@ fn storage_find_handler(
             format!("Invalid FindOptions value: {options_bits}"),
         )
     })?;
+    options
+        .validate()
+        .map_err(|e| map_storage_error("System.Storage.Find", e))?;
 
     let iterator = app
         .storage_find(context, prefix.clone(), options)

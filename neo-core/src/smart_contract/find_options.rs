@@ -38,3 +38,27 @@ bitflags! {
                     Self::Backwards.bits();
     }
 }
+
+impl FindOptions {
+    /// Validates FindOptions for conflicting flags (matches C# validation)
+    pub fn validate(self) -> Result<(), String> {
+        // KeysOnly and ValuesOnly are mutually exclusive
+        if self.contains(Self::KeysOnly) && self.contains(Self::ValuesOnly) {
+            return Err("KeysOnly and ValuesOnly cannot be used together".to_string());
+        }
+
+        // PickField0 and PickField1 require DeserializeValues
+        if (self.contains(Self::PickField0) || self.contains(Self::PickField1))
+            && !self.contains(Self::DeserializeValues)
+        {
+            return Err("PickField0/PickField1 require DeserializeValues".to_string());
+        }
+
+        // PickField0 and PickField1 are mutually exclusive
+        if self.contains(Self::PickField0) && self.contains(Self::PickField1) {
+            return Err("PickField0 and PickField1 cannot be used together".to_string());
+        }
+
+        Ok(())
+    }
+}

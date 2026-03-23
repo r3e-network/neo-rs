@@ -172,7 +172,8 @@ impl ApplicationEngine {
             bytes
         };
 
-        let price: i64 = if aspid_enabled { 1 << 13 } else { 1 << 4 };
+        // C# v3.9.1: HF_Basilisk onwards uses 1<<4, before uses 1<<13
+        let price: i64 = if aspid_enabled { 1 << 4 } else { 1 << 13 };
         self.add_cpu_fee(price).map_err(|e| e.to_string())?;
 
         let bigint = BigInt::from_bytes_le(Sign::Plus, &buffer);
