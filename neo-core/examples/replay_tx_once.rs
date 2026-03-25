@@ -1,3 +1,4 @@
+use base64::Engine as _;
 use neo_core::persistence::data_cache::DataCacheConfig;
 use neo_core::persistence::{
     providers::RocksDBStoreProvider, DataCache, IStoreProvider, SeekDirection, StorageConfig,
@@ -7,13 +8,19 @@ use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::application_engine::{ApplicationEngine, TEST_MODE_GAS};
 use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::smart_contract::execution_context_state::ExecutionContextState;
+use neo_core::smart_contract::native::ledger_contract::PersistedTransactionState;
 use neo_core::smart_contract::native::ledger_contract::{HashOrIndex, LedgerContract};
+use neo_core::smart_contract::native::LedgerTransactionStates;
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::smart_contract::{StorageItem, StorageKey};
-use neo_core::{UInt256, IVerifiable};
+use neo_core::{IVerifiable, UInt256};
 use neo_vm::op_code::OpCode;
 use std::path::PathBuf;
 use std::sync::Arc;
+
+type StorageGetFn = Arc<dyn Fn(&StorageKey) -> Option<StorageItem> + Send + Sync>;
+type StorageFindFn =
+    Arc<dyn Fn(Option<&StorageKey>, SeekDirection) -> Vec<(StorageKey, StorageItem)> + Send + Sync>;
 
 fn print_instruction_window(context: &neo_vm::execution_context::ExecutionContext) {
     let script = context.script();
@@ -82,6 +89,68 @@ fn print_instruction_window(context: &neo_vm::execution_context::ExecutionContex
     }
 }
 
+fn should_dump_context_script() -> bool {
+    std::env::var("NEO_REPLAY_DUMP_CONTEXT_SCRIPT")
+        .ok()
+        .as_deref()
+        == Some("1")
+}
+
+fn should_dump_slots() -> bool {
+    std::env::var("NEO_REPLAY_PRINT_SLOTS").ok().as_deref() == Some("1")
+}
+
+fn should_dump_tracked_items() -> bool {
+    std::env::var("NEO_REPLAY_PRINT_TRACKED_ITEMS")
+        .ok()
+        .as_deref()
+        == Some("1")
+}
+
+fn replay_protocol_settings() -> ProtocolSettings {
+    match std::env::var("NEO_REPLAY_NETWORK")
+        .ok()
+        .unwrap_or_else(|| "mainnet".to_string())
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "testnet" => ProtocolSettings::testnet(),
+        _ => ProtocolSettings::mainnet(),
+    }
+}
+
+fn describe_item(item: &neo_vm::StackItem) -> String {
+    use neo_vm::StackItem;
+    match item {
+        StackItem::Null => "Null".to_string(),
+        StackItem::Boolean(v) => format!("Boolean({v})"),
+        StackItem::Integer(v) => format!("Integer({v})"),
+        StackItem::ByteString(v) => {
+            let preview_len = v.len().min(24);
+            format!(
+                "ByteString(len={}, hex=0x{})",
+                v.len(),
+                hex::encode(&v[..preview_len])
+            )
+        }
+        StackItem::Buffer(v) => {
+            let bytes = v.data();
+            let preview_len = bytes.len().min(24);
+            format!(
+                "Buffer(len={}, hex=0x{})",
+                bytes.len(),
+                hex::encode(&bytes[..preview_len])
+            )
+        }
+        StackItem::Array(v) => format!("Array(len={})", v.len()),
+        StackItem::Struct(v) => format!("Struct(len={})", v.len()),
+        StackItem::Map(v) => format!("Map(len={})", v.len()),
+        StackItem::Pointer(_) => "Pointer".to_string(),
+        StackItem::InteropInterface(_) => "InteropInterface".to_string(),
+    }
+}
+
 fn open_cache(path: &str) -> Result<StoreCache, Box<dyn std::error::Error>> {
     let config = StorageConfig {
         path: PathBuf::from(path),
@@ -95,15 +164,15 @@ fn open_cache(path: &str) -> Result<StoreCache, Box<dyn std::error::Error>> {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
-    let target_state_dir = args
-        .next()
-        .ok_or("usage: replay_tx_once <target_state_dir> <tx_source_dir> <tx_hash> [context_block_index]")?;
-    let tx_source_dir = args
-        .next()
-        .ok_or("usage: replay_tx_once <target_state_dir> <tx_source_dir> <tx_hash> [context_block_index]")?;
-    let tx_hash_raw = args
-        .next()
-        .ok_or("usage: replay_tx_once <target_state_dir> <tx_source_dir> <tx_hash> [context_block_index]")?;
+    let target_state_dir = args.next().ok_or(
+        "usage: replay_tx_once <target_state_dir> <tx_source_dir> <tx_hash> [context_block_index]",
+    )?;
+    let tx_source_dir = args.next().ok_or(
+        "usage: replay_tx_once <target_state_dir> <tx_source_dir> <tx_hash> [context_block_index]",
+    )?;
+    let tx_hash_raw = args.next().ok_or(
+        "usage: replay_tx_once <target_state_dir> <tx_source_dir> <tx_hash> [context_block_index]",
+    )?;
     let tx_hash = UInt256::parse(tx_hash_raw.trim_start_matches("0x"))?;
 
     let source_cache = open_cache(&tx_source_dir)?;
@@ -162,9 +231,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let base_snapshot = Arc::new(target_cache.data_cache().clone());
-    let protocol = ProtocolSettings::testnet();
+    let protocol = replay_protocol_settings();
     let block_ref = Arc::new(block);
 
+    let mut tx_states = LedgerTransactionStates::new(Vec::<PersistedTransactionState>::new());
     if !skip_on_persist {
         let mut on_persist_engine = ApplicationEngine::new_with_shared_block(
             TriggerType::OnPersist,
@@ -176,21 +246,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             None,
         )?;
         on_persist_engine.native_on_persist()?;
+        tx_states = on_persist_engine
+            .take_state::<LedgerTransactionStates>()
+            .unwrap_or_else(|| {
+                LedgerTransactionStates::new(Vec::<PersistedTransactionState>::new())
+            });
     } else {
         println!("on_persist=skipped");
     }
 
-    let tx_store_get: Arc<dyn Fn(&StorageKey) -> Option<StorageItem> + Send + Sync> = {
+    let tx_store_get: StorageGetFn = {
         let base = Arc::clone(&base_snapshot);
         Arc::new(move |key: &StorageKey| base.get(key))
     };
-    let tx_store_find: Arc<
-        dyn Fn(Option<&StorageKey>, SeekDirection) -> Vec<(StorageKey, StorageItem)> + Send + Sync,
-    > = {
+    let tx_store_find: StorageFindFn = {
         let base = Arc::clone(&base_snapshot);
-        Arc::new(move |prefix: Option<&StorageKey>, direction: SeekDirection| {
-            base.find(prefix, direction).collect::<Vec<_>>()
-        })
+        Arc::new(
+            move |prefix: Option<&StorageKey>, direction: SeekDirection| {
+                base.find(prefix, direction).collect::<Vec<_>>()
+            },
+        )
     };
     let tx_snapshot = Arc::new(DataCache::new_with_config(
         false,
@@ -214,6 +289,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         tx.system_fee(),
         None,
     )?;
+    tx_engine.set_state(tx_states);
     tx_engine.load_script(tx.script().to_vec(), CallFlags::ALL, None)?;
     let vm_state = tx_engine.execute_allow_fault();
 
@@ -222,18 +298,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "fault_exception={}",
         tx_engine.fault_exception().unwrap_or("<none>")
     );
-    println!(
-        "invocation_depth={}",
-        tx_engine.invocation_stack().len()
-    );
+    println!("invocation_depth={}", tx_engine.invocation_stack().len());
     for (index, context) in tx_engine.invocation_stack().iter().enumerate() {
         if std::env::var("NEO_REPLAY_PRINT_CONTEXT_TOKENS")
             .ok()
             .as_deref()
             == Some("1")
         {
-            let state_arc =
-                context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+            let state_arc = context
+                .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
             let state = state_arc.lock();
             if let Some(contract) = state.contract.as_ref() {
                 println!(
@@ -268,13 +341,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             context.local_variables().map(|slot| slot.len()).unwrap_or(0),
             context.static_fields_len(),
         );
+        if should_dump_context_script() {
+            println!(
+                "context[{index}] script_b64={}",
+                base64::engine::general_purpose::STANDARD.encode(context.script().as_bytes())
+            );
+        }
+        if should_dump_slots() {
+            if let Some(args) = context.arguments() {
+                for (slot_index, item) in args.iter().enumerate() {
+                    println!("context[{index}] arg[{slot_index}]={}", describe_item(item));
+                }
+            }
+            if let Some(locals) = context.local_variables() {
+                for (slot_index, item) in locals.iter().enumerate() {
+                    println!(
+                        "context[{index}] local[{slot_index}]={}",
+                        describe_item(item)
+                    );
+                }
+            }
+        }
         if std::env::var("NEO_REPLAY_PRINT_ALL_CONTEXT_WINDOWS")
             .ok()
             .as_deref()
             == Some("1")
+            || index + 1 == tx_engine.invocation_stack().len()
         {
-            print_instruction_window(context);
-        } else if index + 1 == tx_engine.invocation_stack().len() {
             print_instruction_window(context);
         }
     }
@@ -285,6 +378,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         tx_engine.exec_fee_factor_raw(),
         tx_engine.storage_price()
     );
+    let notifications = tx_engine.notifications();
+    println!("notifications={}", notifications.len());
+    for (idx, notification) in notifications.iter().enumerate().take(32) {
+        println!(
+            "notification[{idx}] contract={} event={} state_items={}",
+            notification.script_hash,
+            notification.event_name,
+            notification.state.len()
+        );
+        for (state_index, item) in notification.state.iter().enumerate().take(8) {
+            println!("  state[{state_index}]={}", describe_item(item));
+        }
+    }
+    if should_dump_tracked_items() {
+        let tracked = tx_engine.snapshot_cache().tracked_items();
+        println!("tracked_item_count={}", tracked.len());
+        for (key, tracked) in tracked.iter().take(64) {
+            let bytes = tracked.item.get_value();
+            let preview_len = bytes.len().min(24);
+            println!(
+                "tracked key=0x{} state={:?} value_preview=0x{}",
+                hex::encode(key.to_array()),
+                tracked.state,
+                hex::encode(&bytes[..preview_len]),
+            );
+        }
+    }
 
     Ok(())
 }

@@ -48,15 +48,18 @@ impl InteropHost for ApplicationEngine {
         let state_arc =
             context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
 
-        // Phase 1: Extract values and reset under a short-lived lock
+        // Phase 1: Extract values under a short-lived lock. Do not reset the
+        // shared state yet: same-script unloads (for example `_initialize`
+        // frames cloned from the real contract method) reuse the same
+        // ExecutionContextState, and clearing `is_dynamic_call` here would make
+        // the later cross-contract unload lose the null placeholder it needs to
+        // push for void dynamic calls.
         let (snapshot_cache, notification_count, is_dynamic_call, unloaded_script_hash) = {
-            let mut state = state_arc.lock();
+            let state = state_arc.lock();
             let snapshot = state.snapshot_cache.clone();
             let notif_count = state.notification_count;
             let dynamic_call = state.is_dynamic_call;
-            let script_hash = state.script_hash.clone();
-            state.notification_count = 0;
-            state.is_dynamic_call = false;
+            let script_hash = state.script_hash;
             (snapshot, notif_count, dynamic_call, script_hash)
         };
         // Lock is now dropped — safe to acquire caller's state lock
@@ -68,7 +71,7 @@ impl InteropHost for ApplicationEngine {
         let is_cross_contract_unload = engine.current_context().map_or(true, |current_ctx| {
             let current_state_arc = current_ctx
                 .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
-            let current_script_hash = current_state_arc.lock().script_hash.clone();
+            let current_script_hash = current_state_arc.lock().script_hash;
 
             match (unloaded_script_hash.as_ref(), current_script_hash.as_ref()) {
                 (Some(unloaded), Some(current)) => unloaded != current,
@@ -78,6 +81,12 @@ impl InteropHost for ApplicationEngine {
 
         // Phase 2: Commit snapshot and propagate state to caller (cross-contract only)
         if is_cross_contract_unload {
+            {
+                let mut state = state_arc.lock();
+                state.notification_count = 0;
+                state.is_dynamic_call = false;
+            }
+
             if engine.uncaught_exception().is_none() {
                 if let Some(snapshot) = snapshot_cache {
                     snapshot.commit();
@@ -85,7 +94,9 @@ impl InteropHost for ApplicationEngine {
 
                 if let Some(current_ctx) = engine.current_context() {
                     let current_state_arc = current_ctx
-                        .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+                        .get_state_with_factory::<ExecutionContextState, _>(
+                            ExecutionContextState::new,
+                        );
                     let mut current_state = current_state_arc.lock();
                     current_state.notification_count = current_state
                         .notification_count

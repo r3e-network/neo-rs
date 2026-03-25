@@ -12,7 +12,7 @@ use std::io::Cursor;
 /// Compresses data using the specified algorithm (production-ready implementation)
 pub fn compress(data: &[u8], algorithm: CompressionAlgorithm) -> crate::Result<Vec<u8>> {
     match algorithm {
-        CompressionAlgorithm::None => Ok(data.to_vec()),
+        CompressionAlgorithm::None => Ok(Vec::from(data)),
         CompressionAlgorithm::Lz4 => {
             use lz4_flex::compress_prepend_size;
             Ok(compress_prepend_size(data))
@@ -28,7 +28,7 @@ pub fn decompress(
     algorithm: CompressionAlgorithm,
 ) -> crate::Result<Vec<u8>> {
     match algorithm {
-        CompressionAlgorithm::None => Ok(compressed_data.to_vec()),
+        CompressionAlgorithm::None => Ok(Vec::from(compressed_data)),
         CompressionAlgorithm::Lz4 => {
             use lz4_flex::decompress_size_prepended;
             decompress_size_prepended(compressed_data)

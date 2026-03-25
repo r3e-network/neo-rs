@@ -1178,6 +1178,67 @@ fn runtime_get_calling_script_hash_matches_dynamic_caller() {
 }
 
 #[test]
+fn runtime_dynamic_void_call_with_initialize_leaves_null_placeholder() {
+    let snapshot = Arc::new(DataCache::new(false));
+
+    let callee_script = vec![OpCode::RET as u8, OpCode::RET as u8];
+    let init_method = ContractMethodDescriptor::new(
+        "_initialize".to_string(),
+        Vec::new(),
+        ContractParameterType::Void,
+        0,
+        false,
+    )
+    .expect("init method");
+    let void_method = ContractMethodDescriptor::new(
+        "voidMethod".to_string(),
+        Vec::new(),
+        ContractParameterType::Void,
+        1,
+        false,
+    )
+    .expect("void method");
+    let callee_manifest = manifest_with("callee", vec![init_method, void_method], Vec::new());
+    let callee_nef = NefFile::new("callee".to_string(), callee_script);
+    let callee_hash =
+        ContractState::calculate_hash(&UInt160::zero(), callee_nef.checksum, "callee");
+    let callee_contract = ContractState::new(1, callee_hash, callee_nef, callee_manifest);
+    add_contract_to_snapshot(snapshot.as_ref(), &callee_contract);
+
+    let mut engine = ApplicationEngine::new(
+        TriggerType::Application,
+        None,
+        Arc::clone(&snapshot),
+        None,
+        Default::default(),
+        400_000_000,
+        None,
+    )
+    .expect("engine");
+
+    let mut caller_builder = ScriptBuilder::new();
+    caller_builder.emit_opcode(OpCode::NEWARRAY0);
+    caller_builder.emit_push_int(i64::from(CallFlags::ALL.bits()));
+    caller_builder.emit_push_string("voidMethod");
+    caller_builder.emit_push_byte_array(&callee_hash.to_bytes());
+    caller_builder
+        .emit_syscall("System.Contract.Call")
+        .expect("contract call");
+    caller_builder.emit_opcode(OpCode::DROP);
+    caller_builder.emit_opcode(OpCode::PUSH1);
+    caller_builder.emit_opcode(OpCode::RET);
+
+    engine
+        .load_script(caller_builder.to_array(), CallFlags::ALL, None)
+        .expect("load script");
+    engine.execute().expect("execute");
+
+    assert_eq!(engine.state(), VMState::HALT);
+    let result = engine.result_stack().peek(0).expect("result item");
+    assert_eq!(result.as_int().expect("int"), 1.into());
+}
+
+#[test]
 fn runtime_check_witness_rejects_invalid_length() {
     let snapshot = Arc::new(DataCache::new(false));
     let mut engine = ApplicationEngine::new(

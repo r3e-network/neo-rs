@@ -20,7 +20,8 @@ fn test_find_options_pick_field_without_deserialize() {
 
 #[test]
 fn test_find_options_pick_field0_and_field1_conflict() {
-    let options = FindOptions::PickField0 | FindOptions::PickField1 | FindOptions::DeserializeValues;
+    let options =
+        FindOptions::PickField0 | FindOptions::PickField1 | FindOptions::DeserializeValues;
     let result = options.validate();
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("cannot be used together"));
@@ -42,4 +43,3 @@ fn test_find_options_valid_combinations() {
     let options = FindOptions::RemovePrefix | FindOptions::Backwards;
     assert!(options.validate().is_ok());
 }
-

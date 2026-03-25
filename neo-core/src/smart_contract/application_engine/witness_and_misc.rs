@@ -643,6 +643,12 @@ impl ApplicationEngine {
 
     /// Converts a VM stack item into bytes, mirroring the C# helper.
     pub fn stack_item_to_bytes(item: StackItem) -> Result<Vec<u8>, String> {
+        if matches!(item, StackItem::Null) {
+            return crate::smart_contract::binary_serializer::BinarySerializer::serialize(
+                &StackItem::null(),
+                &ExecutionEngineLimits::default(),
+            );
+        }
         match item.as_bytes() {
             Ok(bytes) => Ok(bytes),
             Err(_) => crate::smart_contract::binary_serializer::BinarySerializer::serialize(

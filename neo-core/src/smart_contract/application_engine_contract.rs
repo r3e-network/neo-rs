@@ -364,10 +364,19 @@ fn decode_native_result(
                 .into_bytes();
             Ok(Some(StackItem::from_byte_string(string_bytes)))
         }
-        ContractParameterType::Array | ContractParameterType::Map | ContractParameterType::Any => {
+        ContractParameterType::Array | ContractParameterType::Map => {
             if result.is_empty() {
                 // Neo native methods use an empty payload to encode `null` results
                 // for stack types such as Array/Map/Any (e.g., getContract miss).
+                return Ok(Some(StackItem::null()));
+            }
+            match BinarySerializer::deserialize(&result, &ExecutionEngineLimits::default(), None) {
+                Ok(item) => Ok(Some(item)),
+                Err(_) => Ok(Some(StackItem::from_byte_string(result))),
+            }
+        }
+        ContractParameterType::Any => {
+            if result.is_empty() {
                 return Ok(Some(StackItem::null()));
             }
             match BinarySerializer::deserialize(&result, &ExecutionEngineLimits::default(), None) {
@@ -439,6 +448,25 @@ mod tests {
             .expect("decode")
             .expect("stack item");
         assert!(item.is_null());
+    }
+
+    #[test]
+    fn decode_native_result_any_invalid_payload_preserves_raw_bytes() {
+        let item = decode_native_result(ContractParameterType::Any, vec![0xff])
+            .expect("decode")
+            .expect("stack item");
+        assert_eq!(item.as_bytes().expect("bytes"), vec![0xff]);
+    }
+
+    #[test]
+    fn decode_native_result_any_deserializes_stack_item_payloads() {
+        let original = StackItem::from_array(vec![StackItem::from_int(BigInt::from(1u8))]);
+        let encoded = BinarySerializer::serialize(&original, &ExecutionEngineLimits::default())
+            .expect("encode");
+        let decoded = decode_native_result(ContractParameterType::Any, encoded)
+            .expect("decode")
+            .expect("stack item");
+        assert!(matches!(decoded, StackItem::Array(_)));
     }
 
     #[test]

@@ -74,14 +74,10 @@ impl ApplicationEngine {
             state.calling_script_hash = prev_hash;
         })?;
 
-        if let Some(init) = contract
-            .manifest
-            .abi
-            .get_method_ref(
-                ContractBasicMethod::INITIALIZE,
-                ContractBasicMethod::INITIALIZE_P_COUNT as usize,
-            )
-        {
+        if let Some(init) = contract.manifest.abi.get_method_ref(
+            ContractBasicMethod::INITIALIZE,
+            ContractBasicMethod::INITIALIZE_P_COUNT as usize,
+        ) {
             if init.offset < 0 {
                 return Err(Error::invalid_operation(
                     "Initialization method offset cannot be negative".to_string(),
@@ -394,8 +390,8 @@ mod tests {
             UInt160::parse("0xc198d687cc67e244662c3b9c1325f095f8e663b1").expect("hash");
         assert_ne!(logical_contract_hash, vm_script_hash);
 
-        let state_arc =
-            entry_context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+        let state_arc = entry_context
+            .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
         state_arc.lock().script_hash = Some(logical_contract_hash);
         engine
             .refresh_context_tracking()
@@ -412,11 +408,14 @@ mod tests {
             .expect("load GAS balanceOf call");
 
         let gas_context = engine.current_context().cloned().expect("gas context");
-        let gas_state_arc =
-            gas_context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+        let gas_state_arc = gas_context
+            .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
         let gas_state = gas_state_arc.lock();
 
         assert_eq!(gas_state.calling_script_hash, Some(logical_contract_hash));
-        assert_eq!(engine.get_calling_script_hash(), Some(logical_contract_hash));
+        assert_eq!(
+            engine.get_calling_script_hash(),
+            Some(logical_contract_hash)
+        );
     }
 }

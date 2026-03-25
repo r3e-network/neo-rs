@@ -962,6 +962,16 @@ impl Actor for RemoteNode {
                     ctx.stop_self()?;
                     Ok(())
                 }
+                RemoteNodeCommand::RelayInventory(_inventory) => {
+                    // TODO: Implement inventory relay logic
+                    Ok(())
+                }
+                RemoteNodeCommand::SendInventory {
+                    inventory: _inventory,
+                } => {
+                    // TODO: Implement send inventory logic
+                    Ok(())
+                }
             },
             Err(other) => {
                 // Drop unknown message types quietly to avoid log spam and mismatched routing.
@@ -1007,6 +1017,8 @@ pub enum RemoteNodeCommand {
     Disconnect { reason: String },
     HandshakeTimeout,
     TimerTick,
+    RelayInventory(super::RelayInventory),
+    SendInventory { inventory: super::RelayInventory },
 }
 
 fn current_unix_timestamp() -> u64 {

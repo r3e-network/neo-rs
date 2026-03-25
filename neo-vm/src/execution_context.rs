@@ -54,9 +54,9 @@ impl SharedStates {
         let script = Arc::new(script);
         Self {
             script: Arc::clone(&script),
-            evaluation_stack: Arc::new(Mutex::new(
-                crate::evaluation_stack::EvaluationStack::new(reference_counter.clone()),
-            )),
+            evaluation_stack: Arc::new(Mutex::new(crate::evaluation_stack::EvaluationStack::new(
+                reference_counter.clone(),
+            ))),
             static_fields: Arc::new(Mutex::new(None)),
             reference_counter,
             states: Arc::new(RwLock::new(HashMap::new())),
@@ -82,8 +82,9 @@ impl SharedStates {
     }
 
     /// Returns the evaluation stack.
-    #[must_use]
-    pub fn evaluation_stack(&self) -> parking_lot::MutexGuard<'_, crate::evaluation_stack::EvaluationStack> {
+    pub fn evaluation_stack(
+        &self,
+    ) -> parking_lot::MutexGuard<'_, crate::evaluation_stack::EvaluationStack> {
         self.evaluation_stack.lock()
     }
 
@@ -303,7 +304,6 @@ impl ExecutionContext {
 
     /// Returns the evaluation stack for this context.
     /// This matches the C# implementation's `EvaluationStack` property.
-    #[must_use]
     pub fn evaluation_stack(&self) -> parking_lot::MutexGuard<'_, EvaluationStack> {
         self.shared_states.evaluation_stack()
     }
@@ -333,13 +333,15 @@ impl ExecutionContext {
     /// Returns true when both contexts share the same evaluation stack.
     #[must_use]
     pub fn shares_evaluation_stack_with(&self, other: &Self) -> bool {
-        self.shared_states.evaluation_stack_ptr_eq(&other.shared_states)
+        self.shared_states
+            .evaluation_stack_ptr_eq(&other.shared_states)
     }
 
     /// Returns true when both contexts share the same static field slot.
     #[must_use]
     pub fn shares_static_fields_with(&self, other: &Self) -> bool {
-        self.shared_states.static_fields_ptr_eq(&other.shared_states)
+        self.shared_states
+            .static_fields_ptr_eq(&other.shared_states)
     }
 
     /// Clears static field references for this context.
@@ -355,9 +357,7 @@ impl ExecutionContext {
     #[must_use]
     pub fn static_fields_len(&self) -> usize {
         self.with_static_fields_mut(|static_fields| {
-            static_fields
-                .as_ref()
-                .map_or(0, crate::slot::Slot::len)
+            static_fields.as_ref().map_or(0, crate::slot::Slot::len)
         })
     }
 

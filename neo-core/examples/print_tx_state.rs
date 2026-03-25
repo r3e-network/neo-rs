@@ -26,7 +26,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     match ledger.get_transaction_state(&cache, &hash)? {
         Some(state) => {
             println!("block_index={}", state.block_index());
-            println!("vm_state={:?} raw={}", state.vm_state(), state.vm_state_raw());
+            println!(
+                "vm_state={:?} raw={}",
+                state.vm_state(),
+                state.vm_state_raw()
+            );
             let tx = state.transaction();
             println!("sender={}", tx.sender().unwrap_or_default());
             println!("sys_fee={} net_fee={}", tx.system_fee(), tx.network_fee());

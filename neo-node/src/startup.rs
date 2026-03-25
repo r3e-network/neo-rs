@@ -427,22 +427,26 @@ mod tests {
 
     #[test]
     fn validate_allows_mempool_max_transactions_per_sender_for_compat() {
-        let mut cfg = NodeConfig::default();
-        cfg.mempool = Some(crate::config::MempoolSection {
-            max_transactions: Some(10_000),
-            max_transactions_per_sender: Some(100),
-        });
+        let cfg = NodeConfig {
+            mempool: Some(crate::config::MempoolSection {
+                max_transactions: Some(10_000),
+                max_transactions_per_sender: Some(100),
+            }),
+            ..Default::default()
+        };
         validate_node_config(&cfg, None, None, &cfg.protocol_settings(), false)
             .expect("mempool.max_transactions_per_sender should be accepted for compatibility");
     }
 
     #[test]
     fn validate_rejects_zero_mempool_max_transactions_per_sender() {
-        let mut cfg = NodeConfig::default();
-        cfg.mempool = Some(crate::config::MempoolSection {
-            max_transactions: Some(10_000),
-            max_transactions_per_sender: Some(0),
-        });
+        let cfg = NodeConfig {
+            mempool: Some(crate::config::MempoolSection {
+                max_transactions: Some(10_000),
+                max_transactions_per_sender: Some(0),
+            }),
+            ..Default::default()
+        };
         let err = validate_node_config(&cfg, None, None, &cfg.protocol_settings(), false)
             .expect_err("mempool.max_transactions_per_sender=0 should be rejected");
         assert!(

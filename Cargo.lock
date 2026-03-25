@@ -2131,6 +2131,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "neo-benches"
+version = "0.7.2"
+dependencies = [
+ "criterion",
+ "hex",
+ "neo-core",
+ "neo-io",
+ "neo-primitives",
+ "neo-vm",
+]
+
+[[package]]
 name = "neo-consensus"
 version = "0.7.2"
 dependencies = [

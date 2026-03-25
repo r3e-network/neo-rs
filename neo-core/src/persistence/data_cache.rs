@@ -1124,7 +1124,8 @@ impl DataCache {
             // results. This avoids scanning the full dictionary (which may contain
             // many read-tracked keys) and correctly applies deletes.
             let state = self.state.read();
-            let mut overlays: HashMap<StorageKey, Option<StorageItem>> = HashMap::new();
+            let mut overlays: HashMap<StorageKey, Option<StorageItem>> =
+                HashMap::with_capacity(state.change_set.len());
 
             for key in &state.change_set {
                 if let Some(prefix) = &prefix_bytes {

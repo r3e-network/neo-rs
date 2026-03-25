@@ -35,9 +35,8 @@ impl ApplicationEngine {
         let has_return_value = method.return_type != ContractParameterType::Void;
         let previous_context = self.vm_engine.engine().current_context().cloned();
         let previous_hash = if let Some(ref ctx) = previous_context {
-            let state_arc = ctx.get_state_with_factory::<ExecutionContextState, _>(
-                ExecutionContextState::new,
-            );
+            let state_arc =
+                ctx.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
             let hash_from_state = state_arc.lock().script_hash;
             Some(
                 hash_from_state
@@ -50,11 +49,12 @@ impl ApplicationEngine {
             None
         };
 
+        let param_count = method.parameters.len();
         self.load_contract_context(
-            contract.clone(),
-            method.clone(),
+            contract,
+            method,
             call_flags,
-            method.parameters.len(),
+            param_count,
             previous_context,
             previous_hash,
             has_return_value,
@@ -117,11 +117,10 @@ impl ApplicationEngine {
                 return state;
             }
 
-            let step = self.vm_engine.engine_mut().execute_next();
-            if let Err(err) = step {
+            if let Err(err) = self.vm_engine.engine_mut().execute_next() {
                 let message = err.to_string();
                 self.vm_engine.engine_mut().set_uncaught_exception(Some(
-                    StackItem::from_byte_string(message.clone().into_bytes()),
+                    StackItem::from_byte_string(message.into_bytes()),
                 ));
                 self.vm_engine.engine_mut().set_state(VMState::FAULT);
                 self.capture_fault_exception_from_vm();

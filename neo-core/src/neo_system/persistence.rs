@@ -8,6 +8,11 @@ use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 
 use super::converters::convert_payload_block;
+
+// Type aliases for complex closure types
+type StorageGetFn = Arc<dyn Fn(&StorageKey) -> Option<StorageItem> + Send + Sync>;
+type StorageFindFn =
+    Arc<dyn Fn(Option<&StorageKey>, SeekDirection) -> Vec<(StorageKey, StorageItem)> + Send + Sync>;
 use super::NeoSystem;
 use crate::error::{CoreError, CoreResult};
 use crate::events::PluginEvent;
@@ -71,26 +76,24 @@ fn persist_perf_enabled() -> bool {
 fn fault_trace_block_filter() -> Option<u32> {
     static FILTER: OnceLock<Option<u32>> = OnceLock::new();
     *FILTER.get_or_init(|| {
-        std::env::var("NEO_TRACE_FAULT_BLOCK")
-            .ok()
-            .and_then(|raw| {
-                let trimmed = raw.trim();
-                if trimmed.is_empty() {
-                    return None;
+        std::env::var("NEO_TRACE_FAULT_BLOCK").ok().and_then(|raw| {
+            let trimmed = raw.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+            match trimmed.parse::<u32>() {
+                Ok(value) => Some(value),
+                Err(err) => {
+                    warn!(
+                        target: "neo",
+                        raw = trimmed,
+                        error = %err,
+                        "invalid NEO_TRACE_FAULT_BLOCK; ignoring filter"
+                    );
+                    None
                 }
-                match trimmed.parse::<u32>() {
-                    Ok(value) => Some(value),
-                    Err(err) => {
-                        warn!(
-                            target: "neo",
-                            raw = trimmed,
-                            error = %err,
-                            "invalid NEO_TRACE_FAULT_BLOCK; ignoring filter"
-                        );
-                        None
-                    }
-                }
-            })
+            }
+        })
     })
 }
 
@@ -98,30 +101,28 @@ fn fault_trace_tx_filter() -> Option<&'static UInt256> {
     static FILTER: OnceLock<Option<UInt256>> = OnceLock::new();
     FILTER
         .get_or_init(|| {
-            std::env::var("NEO_TRACE_FAULT_TX")
-                .ok()
-                .and_then(|raw| {
-                    let trimmed = raw.trim();
-                    if trimmed.is_empty() {
-                        return None;
+            std::env::var("NEO_TRACE_FAULT_TX").ok().and_then(|raw| {
+                let trimmed = raw.trim();
+                if trimmed.is_empty() {
+                    return None;
+                }
+                let normalized = trimmed
+                    .strip_prefix("0x")
+                    .or_else(|| trimmed.strip_prefix("0X"))
+                    .unwrap_or(trimmed);
+                match UInt256::parse(normalized) {
+                    Ok(value) => Some(value),
+                    Err(err) => {
+                        warn!(
+                            target: "neo",
+                            raw = trimmed,
+                            error = %err,
+                            "invalid NEO_TRACE_FAULT_TX; ignoring filter"
+                        );
+                        None
                     }
-                    let normalized = trimmed
-                        .strip_prefix("0x")
-                        .or_else(|| trimmed.strip_prefix("0X"))
-                        .unwrap_or(trimmed);
-                    match UInt256::parse(normalized) {
-                        Ok(value) => Some(value),
-                        Err(err) => {
-                            warn!(
-                                target: "neo",
-                                raw = trimmed,
-                                error = %err,
-                                "invalid NEO_TRACE_FAULT_TX; ignoring filter"
-                            );
-                            None
-                        }
-                    }
-                })
+                }
+            })
         })
         .as_ref()
 }
@@ -207,15 +208,11 @@ impl NeoSystem {
             base_cache_config,
         );
         let base_snapshot = Arc::new(tx.cache().data_cache().clone());
-        let tx_store_get: Arc<dyn Fn(&StorageKey) -> Option<StorageItem> + Send + Sync> = {
+        let tx_store_get: StorageGetFn = {
             let base = Arc::clone(&base_snapshot);
             Arc::new(move |key: &StorageKey| base.get(key))
         };
-        let tx_store_find: Arc<
-            dyn Fn(Option<&StorageKey>, SeekDirection) -> Vec<(StorageKey, StorageItem)>
-                + Send
-                + Sync,
-        > = {
+        let tx_store_find: StorageFindFn = {
             let base = Arc::clone(&base_snapshot);
             Arc::new(
                 move |prefix: Option<&StorageKey>, direction: SeekDirection| {

@@ -11,7 +11,8 @@ use neo_vm::stack_item::map::Map as MapItem;
 use neo_vm::stack_item::struct_item::Struct as StructItem;
 use neo_vm::{StackItem, StackItemType};
 use num_bigint::BigInt;
-use std::collections::{BTreeMap, HashSet, VecDeque};
+use num_traits::Zero;
+use std::collections::{HashSet, VecDeque};
 
 /// Binary serializer helpers for VM stack items.
 pub struct BinarySerializer;
@@ -175,7 +176,7 @@ impl BinarySerializer {
                                 )
                             }
                             StackItemType::Map => {
-                                let mut entries = BTreeMap::new();
+                                let mut entries = Vec::with_capacity(container.element_count);
                                 for _ in 0..container.element_count {
                                     let key = constructed
                                         .pop()
@@ -183,7 +184,7 @@ impl BinarySerializer {
                                     let value = constructed.pop().ok_or_else(|| {
                                         "Invalid serialized map value".to_string()
                                     })?;
-                                    entries.insert(key, value);
+                                    entries.push((key, value));
                                 }
                                 StackItem::Map(
                                     MapItem::new(entries, rc.clone())
@@ -250,10 +251,11 @@ impl BinarySerializer {
                 }
                 StackItem::Integer(integer) => {
                     writer.push(StackItemType::Integer as u8);
-                    let mut bytes = integer.to_signed_bytes_le();
-                    if bytes.is_empty() {
-                        bytes.push(0);
-                    }
+                    let bytes = if integer.is_zero() {
+                        Vec::new()
+                    } else {
+                        integer.to_signed_bytes_le()
+                    };
                     Self::write_var_bytes(writer, &bytes)?;
                 }
                 StackItem::ByteString(bytes) => {
@@ -365,5 +367,51 @@ impl StackItemTypeExt for StackItemType {
             0x60 => Some(StackItemType::InteropInterface),
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use neo_vm::execution_engine_limits::ExecutionEngineLimits;
+
+    #[test]
+    fn deserialize_preserves_map_entry_order_for_roundtrip_bytes() {
+        let limits = ExecutionEngineLimits::default();
+
+        // Serialize a map with specific insertion order: (3,30), (1,10), (2,20)
+        let mut map_items = neo_vm::collections::VmOrderedDictionary::new();
+        map_items.insert(StackItem::Integer(3.into()), StackItem::Integer(30.into()));
+        map_items.insert(StackItem::Integer(1.into()), StackItem::Integer(10.into()));
+        map_items.insert(StackItem::Integer(2.into()), StackItem::Integer(20.into()));
+
+        let map = StackItem::Map(MapItem::new(map_items, None).unwrap());
+        let serialized = BinarySerializer::serialize(&map, &limits).unwrap();
+
+        // Deserialize and verify order is preserved
+        let deserialized = BinarySerializer::deserialize(&serialized, &limits, None).unwrap();
+
+        if let StackItem::Map(result_map) = deserialized {
+            let items = result_map.items();
+            assert_eq!(items.len(), 3);
+
+            // Verify insertion order: (3,30), (1,10), (2,20)
+            let items_vec: Vec<_> = items.iter().collect();
+            assert_eq!(items_vec[0].0, &StackItem::Integer(3.into()));
+            assert_eq!(items_vec[0].1, &StackItem::Integer(30.into()));
+            assert_eq!(items_vec[1].0, &StackItem::Integer(1.into()));
+            assert_eq!(items_vec[1].1, &StackItem::Integer(10.into()));
+            assert_eq!(items_vec[2].0, &StackItem::Integer(2.into()));
+            assert_eq!(items_vec[2].1, &StackItem::Integer(20.into()));
+        } else {
+            panic!("Expected Map");
+        }
+    }
+
+    #[test]
+    fn serialize_zero_integer_uses_empty_payload() {
+        let limits = ExecutionEngineLimits::default();
+        let serialized = BinarySerializer::serialize(&StackItem::from_int(0), &limits).unwrap();
+        assert_eq!(serialized, vec![StackItemType::Integer as u8, 0]);
     }
 }

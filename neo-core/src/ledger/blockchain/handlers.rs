@@ -9,14 +9,10 @@ impl Blockchain {
         ledger_contract: &LedgerContract,
         store_cache: &StoreCache,
     ) -> Option<(u32, UInt256)> {
-        if ledger_contract
+        ledger_contract
             .get_block_hash_by_index(store_cache, 1)
             .ok()
-            .flatten()
-            .is_none()
-        {
-            return None;
-        }
+            .flatten()?;
 
         let mut low = 1u32;
         let mut high = 1u32;
@@ -52,7 +48,7 @@ impl Blockchain {
         let mut left = low;
         let mut right = high.saturating_sub(1);
         while left < right {
-            let mid = left + (right - left + 1) / 2;
+            let mid = left + (right - left).div_ceil(2);
             if ledger_contract
                 .get_block_hash_by_index(store_cache, mid)
                 .ok()
@@ -225,7 +221,14 @@ impl Blockchain {
                 break;
             }
 
-            self.persist_block_via_system(&block);
+            if !self.persist_block_via_system(&block) {
+                tracing::warn!(
+                    target: "neo",
+                    height = index,
+                    "stopping import after block persist failure"
+                );
+                break;
+            }
             self.handle_persist_completed(PersistCompleted {
                 block: block.clone(),
             })
@@ -605,8 +608,14 @@ impl Blockchain {
         let genesis = context.genesis_block();
         let block = genesis.as_ref().clone();
         tracing::info!(target: "neo", "persisting genesis block during initialization");
-        self.persist_block_via_system(&block);
-        self.handle_persist_completed(PersistCompleted { block })
-            .await;
+        if self.persist_block_via_system(&block) {
+            self.handle_persist_completed(PersistCompleted { block })
+                .await;
+        } else {
+            tracing::warn!(
+                target: "neo",
+                "failed to persist genesis block during initialization"
+            );
+        }
     }
 }

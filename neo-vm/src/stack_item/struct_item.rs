@@ -32,9 +32,15 @@ struct StructInner {
 impl Struct {
     /// Creates a new struct with the specified items and reference counter.
     pub fn new(
-        items: Vec<StackItem>,
+        mut items: Vec<StackItem>,
         reference_counter: Option<ReferenceCounter>,
     ) -> VmResult<Self> {
+        if let Some(rc) = &reference_counter {
+            for item in &mut items {
+                item.attach_reference_counter(rc)?;
+            }
+        }
+
         let structure = Self {
             inner: Arc::new(Mutex::new(StructInner {
                 items,
@@ -110,7 +116,7 @@ impl Struct {
     }
 
     /// Sets the item at the specified index.
-    pub fn set(&self, index: usize, item: StackItem) -> VmResult<()> {
+    pub fn set(&self, index: usize, mut item: StackItem) -> VmResult<()> {
         let mut inner = self.inner.lock();
         if index >= inner.items.len() {
             return Err(VmError::invalid_operation_msg(format!(
@@ -120,6 +126,7 @@ impl Struct {
 
         Self::ensure_mutable(&inner)?;
         if let Some(rc) = &inner.reference_counter {
+            item.attach_reference_counter(rc)?;
             Self::validate_compound_reference(rc, &item)?;
             let parent = CompoundParent::Struct(inner.id);
             rc.remove_compound_reference(&inner.items[index], parent);
@@ -131,10 +138,11 @@ impl Struct {
     }
 
     /// Adds an item to the end of the struct.
-    pub fn push(&self, item: StackItem) -> VmResult<()> {
+    pub fn push(&self, mut item: StackItem) -> VmResult<()> {
         let mut inner = self.inner.lock();
         Self::ensure_mutable(&inner)?;
         if let Some(rc) = &inner.reference_counter {
+            item.attach_reference_counter(rc)?;
             Self::validate_compound_reference(rc, &item)?;
             rc.add_compound_reference(&item, CompoundParent::Struct(inner.id));
         }

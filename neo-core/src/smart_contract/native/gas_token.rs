@@ -169,13 +169,16 @@ impl GasToken {
         let data_item = if data_bytes.is_empty() {
             StackItem::null()
         } else {
-            StackItem::from_byte_string(data_bytes)
+            BinarySerializer::deserialize(&data_bytes, &ExecutionEngineLimits::default(), None)
+                .unwrap_or_else(|_| StackItem::from_byte_string(data_bytes))
         };
 
         // Validate amount is non-negative
         PermissionValidator::validate_non_negative(&amount, "Transfer amount")?;
 
-        let caller = engine.calling_script_hash();
+        let caller = engine
+            .current_script_hash()
+            .unwrap_or_else(|| engine.calling_script_hash());
         let watched_from = Self::is_watched_account(&from);
         let watched_to = Self::is_watched_account(&to);
         let from_matches_caller = from == caller;

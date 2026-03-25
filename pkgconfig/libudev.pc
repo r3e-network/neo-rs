@@ -1,0 +1,11 @@
+prefix=/usr
+exec_prefix=/usr
+libdir=${pcfiledir}/../.vendor/libudev-dev/usr/lib/x86_64-linux-gnu
+includedir=${pcfiledir}/../.vendor/libudev-dev/usr/include
+
+Name: libudev
+Description: Library to access udev device information
+Version: 255
+Libs: -L${libdir} -ludev
+Libs.private: -lrt -pthread
+Cflags: -I${includedir}

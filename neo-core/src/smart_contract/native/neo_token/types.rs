@@ -17,7 +17,7 @@ impl NeoAccountState {
         let value = item.value_bytes();
         let bytes = value.as_ref();
         let stack_item =
-            BinarySerializer::deserialize(&bytes, &ExecutionEngineLimits::default(), None)
+            BinarySerializer::deserialize(bytes, &ExecutionEngineLimits::default(), None)
                 .map_err(|err| format!("failed to deserialize NeoAccountState: {}", err))?;
         Self::from_stack_item(stack_item)
     }
@@ -121,7 +121,7 @@ impl CandidateState {
         }
 
         let stack_item =
-            BinarySerializer::deserialize(&bytes, &ExecutionEngineLimits::default(), None)
+            BinarySerializer::deserialize(bytes, &ExecutionEngineLimits::default(), None)
                 .map_err(|err| format!("failed to deserialize CandidateState: {}", err))?;
         Self::from_stack_item(stack_item)
     }

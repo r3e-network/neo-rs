@@ -14,9 +14,9 @@ use super::{
     providers::memory_store_provider::MemoryStoreProvider,
 };
 use crate::error::{CoreError, CoreResult};
+use hashbrown::HashMap;
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
-use hashbrown::HashMap;
 use std::sync::Arc;
 
 /// Global registry of store providers.

@@ -21,6 +21,11 @@ use std::any::Any;
 /// NeoSystem type which is now in neo-node. Implementations can downcast
 /// to the concrete type if needed.
 pub trait ICommittingHandler {
+    /// Indicates whether this handler should run during fast sync
+    fn run_during_fast_sync(&self) -> bool {
+        false
+    }
+
     /// This is the handler of Committing event from Blockchain
     /// Triggered when a new block is committing, and the state is still in the cache.
     /// Matches C# Blockchain_Committing_Handler method

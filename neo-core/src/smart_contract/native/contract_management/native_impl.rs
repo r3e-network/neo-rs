@@ -207,8 +207,9 @@ impl NativeContract for ContractManagement {
                 let method = String::from_utf8(args[1].clone()).map_err(|e| {
                     Error::invalid_argument(format!("Invalid method string: {}", e))
                 })?;
-                let pcount = Self::decode_storage_i32(&args[2])
-                    .ok_or_else(|| Error::invalid_argument("Invalid parameter count".to_string()))?;
+                let pcount = Self::decode_storage_i32(&args[2]).ok_or_else(|| {
+                    Error::invalid_argument("Invalid parameter count".to_string())
+                })?;
                 let result = self.has_method(&hash, &method, pcount)?;
                 Ok(vec![if result { 1 } else { 0 }])
             }

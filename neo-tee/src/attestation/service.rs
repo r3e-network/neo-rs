@@ -468,8 +468,8 @@ mod tests {
 
         // Test helper always uses a simulation enclave, so force testing config to
         // keep simulated attestation enabled even in sgx-hw builds.
-        let service = AttestationService::with_config(enclave, AttestationConfig::testing())
-            .unwrap();
+        let service =
+            AttestationService::with_config(enclave, AttestationConfig::testing()).unwrap();
         (temp, service)
     }
 

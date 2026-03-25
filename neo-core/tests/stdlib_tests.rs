@@ -5,6 +5,7 @@ use neo_core::network::p2p::payloads::{signer::Signer, transaction::Transaction}
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
+use neo_core::smart_contract::binary_serializer::BinarySerializer;
 use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::smart_contract::native::{NativeContract, StdLib};
 use neo_core::smart_contract::trigger_type::TriggerType;
@@ -281,6 +282,42 @@ fn stdlib_atoi_invalid_inputs_fault() {
             .expect("load script");
         assert!(engine.execute().is_err());
     }
+}
+
+#[test]
+fn stdlib_deserialize_returns_stack_item_shape_for_any_results() {
+    let stdlib = StdLib::new();
+    let original = StackItem::from_array(vec![
+        StackItem::from_int(1),
+        StackItem::from_byte_string(b"neo".to_vec()),
+    ]);
+    let encoded = BinarySerializer::serialize(&original, &neo_vm::ExecutionEngineLimits::default())
+        .expect("serialize array");
+
+    let mut sb = ScriptBuilder::new();
+    emit_stdlib_call(
+        &mut sb,
+        stdlib.hash(),
+        "deserialize",
+        vec![StackItem::from_byte_string(encoded)],
+    );
+    sb.emit_opcode(OpCode::RET);
+
+    let mut engine = make_engine();
+    engine
+        .load_script(sb.to_array(), CallFlags::ALL, None)
+        .expect("load script");
+    engine.execute().expect("execute");
+
+    assert_eq!(engine.result_stack().len(), 1);
+    let result = engine.result_stack().peek(0).unwrap().clone();
+    let StackItem::Array(array) = result else {
+        panic!("expected Array result from StdLib.deserialize, got {result:?}");
+    };
+    let items = array.items();
+    assert_eq!(items.len(), 2);
+    assert_eq!(items[0].as_int().unwrap().to_i32().unwrap(), 1);
+    assert_eq!(items[1].as_bytes().unwrap(), b"neo");
 }
 
 #[test]

@@ -294,3 +294,113 @@ async fn change_view_threshold_triggers_view_change() {
     assert_eq!(view_changed, Some((0, 1)));
     assert_eq!(service.context().view_number, 1);
 }
+
+#[tokio::test]
+async fn recovery_request_when_more_than_f_committed() {
+    let network = 0x4E454F;
+    let (tx, mut rx) = mpsc::channel(100);
+    let (validators, keys) = create_validators_with_keys(4);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+
+    service.start(0, 1_000, UInt256::zero(), 0).unwrap();
+    while rx.try_recv().is_ok() {}
+
+    // Simulate 2 nodes committed (F=1 for 4 validators, so 2 > F)
+    let block_hash = UInt256::from([0x55; 32]);
+    service.context.proposed_block_hash = Some(block_hash);
+    for validator_index in 1..=2 {
+        let signature = sign_commit(network, &block_hash, &keys[validator_index as usize]);
+        let commit = CommitMessage::new(0, 0, validator_index, signature);
+        let mut payload = ConsensusPayload::new(
+            network,
+            0,
+            validator_index,
+            0,
+            ConsensusMessageType::Commit,
+            commit.serialize(),
+        );
+        sign_payload(&service, &mut payload, &keys[validator_index as usize]);
+        service.process_message(payload).unwrap();
+    }
+
+    service
+        .request_change_view(ChangeViewReason::Timeout, 2_000)
+        .unwrap();
+
+    let mut recovery_sent = false;
+    while let Ok(event) = rx.try_recv() {
+        if let ConsensusEvent::BroadcastMessage(payload) = event {
+            if payload.message_type == ConsensusMessageType::RecoveryRequest {
+                recovery_sent = true;
+                break;
+            }
+        }
+    }
+
+    assert!(recovery_sent);
+}
+
+#[tokio::test]
+async fn no_view_change_after_commit_sent() {
+    let network = 0x4E454F;
+    let (tx, _rx) = mpsc::channel(100);
+    let (validators, keys) = create_validators_with_keys(4);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+
+    service.start(0, 1_000, UInt256::zero(), 0).unwrap();
+
+    let block_hash = UInt256::from([0x66; 32]);
+    service.context.proposed_block_hash = Some(block_hash);
+    let signature = sign_commit(network, &block_hash, &keys[0]);
+    service.context.commits.insert(0, signature);
+
+    let msg = ChangeViewMessage::new(0, 0, 1, 2_000, ChangeViewReason::Timeout);
+    let mut payload = ConsensusPayload::new(
+        network,
+        0,
+        1,
+        0,
+        ConsensusMessageType::ChangeView,
+        msg.serialize(),
+    );
+    sign_payload(&service, &mut payload, &keys[1]);
+
+    service.process_message(payload).unwrap();
+
+    assert_eq!(service.context.view_number, 0);
+    assert!(service.context.change_views.is_empty());
+}
+
+#[tokio::test]
+async fn m_minus_one_change_views_not_enough() {
+    let network = 0x4E454F;
+    let (tx, _rx) = mpsc::channel(100);
+    let (validators, keys) = create_validators_with_keys(4);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+
+    service.start(0, 1_000, UInt256::zero(), 0).unwrap();
+
+    // M = 4 - 1 = 3, send only 2 ChangeView messages (M-1)
+    for validator_index in 1..=2 {
+        let msg = ChangeViewMessage::new(
+            0,
+            0,
+            validator_index,
+            1_000 + validator_index as u64,
+            ChangeViewReason::Timeout,
+        );
+        let mut payload = ConsensusPayload::new(
+            network,
+            0,
+            validator_index,
+            0,
+            ConsensusMessageType::ChangeView,
+            msg.serialize(),
+        );
+        sign_payload(&service, &mut payload, &keys[validator_index as usize]);
+        service.process_message(payload).unwrap();
+    }
+
+    assert_eq!(service.context.view_number, 0);
+    assert_eq!(service.context.change_views.len(), 2);
+}

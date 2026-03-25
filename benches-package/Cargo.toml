@@ -1,0 +1,24 @@
+[package]
+name = "neo-benches"
+version = "0.7.2"
+edition = "2021"
+
+[dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+neo-core = { path = "../neo-core" }
+neo-vm = { path = "../neo-vm" }
+neo-io = { path = "../neo-io" }
+neo-primitives = { path = "../neo-primitives" }
+hex = "0.4"
+
+[[bench]]
+name = "block_processing"
+harness = false
+
+[[bench]]
+name = "state_root"
+harness = false
+
+[[bench]]
+name = "vm_execution"
+harness = false

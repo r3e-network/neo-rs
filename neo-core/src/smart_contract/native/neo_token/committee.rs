@@ -4,7 +4,7 @@
 
 use super::*;
 use std::cmp::Reverse;
-use std::collections::{BinaryHeap, BTreeMap, HashMap};
+use std::collections::{BTreeMap, BinaryHeap, HashMap};
 
 impl NeoToken {
     /// Determines whether the committee should be refreshed at the specified height.
@@ -222,7 +222,10 @@ impl NeoToken {
                 .standby_committee
                 .iter()
                 .map(|pk| {
-                    let votes = candidate_votes.get(pk).cloned().unwrap_or_else(BigInt::zero);
+                    let votes = candidate_votes
+                        .get(pk)
+                        .cloned()
+                        .unwrap_or_else(BigInt::zero);
                     (pk.clone(), votes)
                 })
                 .collect());

@@ -74,8 +74,8 @@ where
     pub fn new(capacity: usize) -> Self {
         Self {
             capacity,
-            data: HashMap::new(),
-            access_order: VecDeque::new(),
+            data: HashMap::with_capacity(capacity),
+            access_order: VecDeque::with_capacity(capacity),
             stats: CacheStats::default(),
             enable_stats: true,
         }
@@ -85,8 +85,8 @@ where
     pub fn with_config(config: &CacheConfig) -> Self {
         Self {
             capacity: config.max_entries,
-            data: HashMap::new(),
-            access_order: VecDeque::new(),
+            data: HashMap::with_capacity(config.max_entries),
+            access_order: VecDeque::with_capacity(config.max_entries),
             stats: CacheStats::default(),
             enable_stats: config.enable_stats,
         }

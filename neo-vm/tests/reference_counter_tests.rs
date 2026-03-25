@@ -88,6 +88,23 @@ fn array_compound_references_track_children() {
 }
 
 #[test]
+fn tracked_array_adopts_untracked_compound_children() {
+    let counter = ReferenceCounter::new();
+    let array = Array::new(Vec::new(), Some(counter.clone())).expect("failed to create array");
+
+    array
+        .push(StackItem::from_array(vec![StackItem::from_int(1)]))
+        .expect("tracked array should adopt untracked child arrays");
+
+    let child = array.get(0).expect("child");
+    let StackItem::Array(child_array) = child else {
+        panic!("expected nested array");
+    };
+    let child_counter = child_array.reference_counter().expect("reference counter");
+    assert!(child_counter.ptr_eq(&counter));
+}
+
+#[test]
 fn map_references_keys_and_values() {
     let counter = ReferenceCounter::new();
     let map = Map::new(BTreeMap::new(), Some(counter.clone())).expect("failed to create map");

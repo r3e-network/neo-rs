@@ -63,7 +63,7 @@ impl TaskSession {
             inv_tasks: HashMap::with_capacity(Self::MAX_PENDING_TASKS),
             index_tasks: HashMap::with_capacity(Self::MAX_PENDING_TASKS / 4),
             available_tasks: HashSet::with_capacity(Self::MAX_PENDING_TASKS),
-            received_block: HashMap::with_capacity(64),
+            received_block: HashMap::with_capacity(2048),
             is_full_node,
             last_block_index,
             mempool_sent: false,

@@ -5,8 +5,8 @@
 //! and intelligent pre-fetching for iteration.
 
 use crate::smart_contract::{StorageItem, StorageKey};
-use parking_lot::RwLock;
 use hashbrown::HashMap;
+use parking_lot::RwLock;
 use std::hash::Hash;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;

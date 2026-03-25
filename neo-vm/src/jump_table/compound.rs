@@ -116,6 +116,7 @@ fn new_array_t(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
         // Create a default value based on the type
         // Type bytes match C# StackItemType enum values
         let default_value = match type_byte {
+            0x00 => Ok(StackItem::Null),
             0x20 => Ok(StackItem::Boolean(false)),
             0x21 => Ok(StackItem::Integer(BigInt::from(0))),
             0x28 => Ok(StackItem::from_byte_string(Vec::<u8>::new())),
@@ -621,14 +622,23 @@ fn set_item(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult
 
     match collection {
         StackItem::Array(array) => {
+            if let Some(rc) = array.reference_counter() {
+                value.attach_reference_counter(&rc)?;
+            }
             let idx = normalize_index("VMArray", &key.get_integer()?, array.len())?;
             array.set(idx, value)?;
         }
         StackItem::Struct(structure) => {
+            if let Some(rc) = structure.reference_counter() {
+                value.attach_reference_counter(&rc)?;
+            }
             let idx = normalize_index("Struct", &key.get_integer()?, structure.len())?;
             structure.set(idx, value)?;
         }
         StackItem::Map(map) => {
+            if let Some(rc) = map.reference_counter() {
+                value.attach_reference_counter(&rc)?;
+            }
             map.set(key, value)?;
         }
         StackItem::Buffer(buffer) => {

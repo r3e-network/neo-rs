@@ -108,8 +108,8 @@ impl ExecutionEngine {
 
         self.current_context()
             .ok_or_else(|| VmError::InvalidOperation {
-                operation: "load_script".to_string(),
-                reason: "No current execution context after loading".to_string(),
+                operation: "load_script".into(),
+                reason: "No current execution context after loading".into(),
             })
     }
 }

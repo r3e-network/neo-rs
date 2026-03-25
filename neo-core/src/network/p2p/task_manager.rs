@@ -62,7 +62,7 @@ use super::payloads::{
     block::Block,
     get_block_by_index_payload::GetBlockByIndexPayload,
     header::Header,
-    inv_payload::{InvPayload, HEADER_PREFETCH_COUNT, MAX_HASHES_COUNT},
+    inv_payload::{InvPayload, MAX_HASHES_COUNT},
     InventoryType, VersionPayload,
 };
 use super::task_session::TaskSession;
@@ -84,19 +84,19 @@ use tracing::{trace, warn};
 /// Interval for task manager housekeeping.
 const TIMER_INTERVAL: Duration = Duration::from_secs(30);
 /// Timeout applied to in-flight inventory requests.
-const TASK_TIMEOUT: Duration = Duration::from_secs(20);
+const TASK_TIMEOUT: Duration = Duration::from_secs(60);
 /// Maximum concurrent tasks per peer.
-const MAX_CONCURRENT_TASKS: u32 = 3;
+const MAX_CONCURRENT_TASKS: u32 = 20;
 /// Maximum number of sequential block heights requested in a single getblkbyidx round.
 ///
 /// Smaller batches reduce head-of-line blocking when a slow peer gets assigned
 /// the earliest range needed by persistence.
-const MAX_BLOCK_INDEX_BATCH: u32 = 64;
+const MAX_BLOCK_INDEX_BATCH: u32 = 1000;
 /// Number of batch windows to keep in flight globally.
 ///
 /// This allows multiple peers to download disjoint height ranges concurrently
 /// without giving any single peer an excessively large assignment.
-const BLOCK_INDEX_WINDOW_MULTIPLIER: u32 = 8;
+const BLOCK_INDEX_WINDOW_MULTIPLIER: u32 = 40;
 const HEADER_TASK_HASH: UInt256 = UInt256 {
     value1: 0,
     value2: 0,
@@ -222,7 +222,13 @@ impl TaskManager {
         }
 
         if let Err(err) = ctx.watch(&actor) {
-            warn!(target: "neo", actor = %path, error = %err, "failed to watch peer session");
+            trace!(
+                target: "neo",
+                actor = %path,
+                error = %err,
+                "ignoring peer session that could not be watched"
+            );
+            return;
         }
 
         let session = TaskSession::new(&version);
@@ -233,6 +239,7 @@ impl TaskManager {
                 session,
             },
         );
+        trace!(target: "neo", actor = %path, "task session registered successfully");
         self.request_tasks_for_path(&path);
     }
 
@@ -305,6 +312,22 @@ impl TaskManager {
         let store_cache = system.store_cache();
         let ledger_contract = LedgerContract::new();
 
+        let current_height = ledger_contract
+            .current_index(&store_cache)
+            .unwrap_or(0)
+            .max(self.last_seen_persisted_index);
+
+        trace!(
+            target: "neo",
+            actor = %actor.path(),
+            current_height = current_height,
+            peer_height = session.last_block_index,
+            available_tasks = session.available_tasks.len(),
+            inv_tasks = session.inv_tasks.len(),
+            index_tasks = session.index_tasks.len(),
+            "requesting tasks from peer"
+        );
+
         if !session.available_tasks.is_empty() {
             session
                 .available_tasks
@@ -370,8 +393,7 @@ impl TaskManager {
         {
             session.register_inv_task(HEADER_TASK_HASH);
             session.record_header_request(header_request_start);
-            let payload =
-                GetBlockByIndexPayload::create(header_request_start, HEADER_PREFETCH_COUNT);
+            let payload = GetBlockByIndexPayload::create(header_request_start, -1);
             let message = NetworkMessage::new(ProtocolMessage::GetHeaders(payload));
             if let Err(error) = actor.tell(RemoteNodeCommand::Send(message)) {
                 warn!(
@@ -382,9 +404,9 @@ impl TaskManager {
                 );
                 self.decrement_inv_task(&HEADER_TASK_HASH);
                 session.complete_inv_task(&HEADER_TASK_HASH);
+            } else {
+                return;
             }
-            // Keep scheduling block-by-index tasks in the same pass so initial
-            // synchronization can progress on blocks while headers continue to advance.
         }
 
         if current_height < session.last_block_index {
@@ -400,6 +422,15 @@ impl TaskManager {
 
             let global_window = MAX_BLOCK_INDEX_BATCH.saturating_mul(BLOCK_INDEX_WINDOW_MULTIPLIER);
             let limit_height = current_height.saturating_add(global_window);
+
+            trace!(
+                target: "neo",
+                actor = %actor.path(),
+                start_height = start_height,
+                limit_height = limit_height,
+                peer_height = session.last_block_index,
+                "block index request check"
+            );
 
             if start_height <= session.last_block_index && start_height < limit_height {
                 let mut end_height = start_height;
@@ -582,21 +613,16 @@ impl TaskManager {
         self.request_tasks_for_path(&path);
     }
 
-    fn on_restart_tasks(&mut self, actor: &ActorRef, payload: InvPayload) {
-        let path = actor.path().to_string();
-        if !self.sessions.contains_key(&path) {
-            trace!(target: "neo", actor = %path, "ignoring RestartTasks from unknown session");
-            return;
-        }
-
-        let actor_ref = actor.clone();
-        let inventory_type = payload.inventory_type;
-        let hashes: Vec<UInt256> = payload.hashes.clone();
-        self.with_session_mut(&path, move |entry, this| {
+    fn restart_tasks_for_session(
+        &mut self,
+        path: &str,
+        inventory_type: InventoryType,
+        hashes: &[UInt256],
+    ) {
+        self.with_session_mut(path, move |entry, this| {
+            let actor_ref = entry.actor.clone();
             let mut scheduled = Vec::with_capacity(hashes.len());
-            for hash in hashes.iter().copied() {
-                this.forget_hash(&hash);
-                this.decrement_inv_task(&hash);
+            for &hash in hashes {
                 if this.increment_inv_task(hash) {
                     entry.session.register_inv_task(hash);
                     scheduled.push(hash);
@@ -617,8 +643,42 @@ impl TaskManager {
                 }
             }
         });
+    }
 
-        self.request_tasks_for_path(&path);
+    fn on_restart_tasks(&mut self, actor: Option<ActorRef>, payload: InvPayload) {
+        let inventory_type = payload.inventory_type;
+        let hashes: Vec<UInt256> = payload.hashes.clone();
+
+        if let Some(actor_ref) = actor {
+            let path = actor_ref.path().to_string();
+            if self.sessions.contains_key(&path) {
+                for hash in hashes.iter() {
+                    self.forget_hash(hash);
+                    self.decrement_inv_task(hash);
+                }
+                self.restart_tasks_for_session(&path, inventory_type, &hashes);
+                self.request_tasks_for_path(&path);
+                return;
+            }
+
+            trace!(
+                target: "neo",
+                actor = %path,
+                "broadcasting RestartTasks from unknown session"
+            );
+        }
+
+        for hash in hashes.iter() {
+            self.forget_hash(hash);
+            while self.global_inv_tasks.contains_key(hash) {
+                self.decrement_inv_task(hash);
+            }
+        }
+
+        let session_paths: Vec<String> = self.sessions.keys().cloned().collect();
+        for path in session_paths {
+            self.restart_tasks_for_session(&path, inventory_type, &hashes);
+        }
     }
 
     fn complete_inventory(
@@ -632,6 +692,15 @@ impl TaskManager {
             self.record_known_hash(hash);
         }
         self.remove_available_task_from_all(&hash);
+
+        trace!(
+            target: "neo",
+            actor = %actor.path(),
+            hash = %hash,
+            block_index = ?block_index,
+            has_block = block.is_some(),
+            "inventory completed"
+        );
 
         let path = actor.path().to_string();
         let Some(mut entry) = self.sessions.remove(&path) else {
@@ -892,9 +961,7 @@ impl Actor for TaskManagerActor {
                         }
                     }
                     TaskManagerCommand::RestartTasks { payload } => {
-                        if let Some(sender) = ctx.sender() {
-                            self.state.on_restart_tasks(&sender, payload);
-                        }
+                        self.state.on_restart_tasks(ctx.sender(), payload);
                     }
                     TaskManagerCommand::InventoryCompleted {
                         hash,

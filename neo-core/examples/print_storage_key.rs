@@ -49,19 +49,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let raw = item.get_value();
             println!("value_hex=0x{}", hex::encode(&raw));
             println!("value_bigint={}", item.to_bigint());
-            match BinarySerializer::deserialize(&raw, &ExecutionEngineLimits::default(), None) {
-                Ok(StackItem::Struct(_)) => {
-                    let mut account_state = AccountState::default();
-                    if account_state.from_stack_item(
-                        BinarySerializer::deserialize(&raw, &ExecutionEngineLimits::default(), None)
-                            .unwrap_or_else(|_| StackItem::null()),
+            if let Ok(StackItem::Struct(_)) =
+                BinarySerializer::deserialize(&raw, &ExecutionEngineLimits::default(), None)
+            {
+                let mut account_state = AccountState::default();
+                if account_state
+                    .from_stack_item(
+                        BinarySerializer::deserialize(
+                            &raw,
+                            &ExecutionEngineLimits::default(),
+                            None,
+                        )
+                        .unwrap_or_else(|_| StackItem::null()),
                     )
                     .is_ok()
-                    {
-                        println!("value_account_balance={}", account_state.balance);
-                    }
+                {
+                    println!("value_account_balance={}", account_state.balance);
                 }
-                _ => {}
             }
         }
         None => println!("value_hex=<none>"),

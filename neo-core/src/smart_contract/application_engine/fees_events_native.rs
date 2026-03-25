@@ -198,6 +198,8 @@ impl ApplicationEngine {
         method: &str,
         args: &[Vec<u8>],
     ) -> Result<Vec<u8>> {
+        self.refresh_context_tracking()?;
+
         let native = self
             .native_registry
             .get(&contract_hash)

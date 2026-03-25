@@ -39,9 +39,16 @@ impl Map {
     where
         T: Into<VmOrderedDictionary<StackItem, StackItem>>,
     {
+        let mut items = items.into();
+        if let Some(rc) = &reference_counter {
+            for (_, value) in items.iter_mut() {
+                value.attach_reference_counter(rc)?;
+            }
+        }
+
         let map = Self {
             inner: Arc::new(Mutex::new(MapInner {
-                items: items.into(),
+                items,
                 id: next_stack_item_id(),
                 reference_counter,
                 is_read_only: false,
@@ -118,12 +125,13 @@ impl Map {
     }
 
     /// Sets the value for the specified key.
-    pub fn set(&self, key: StackItem, value: StackItem) -> VmResult<()> {
+    pub fn set(&self, key: StackItem, mut value: StackItem) -> VmResult<()> {
         let mut inner = self.inner.lock();
         Self::ensure_mutable(&inner)?;
         self.validate_key(&key)?;
 
         if let Some(rc) = &inner.reference_counter {
+            value.attach_reference_counter(rc)?;
             Self::validate_compound_reference(rc, &value)?;
 
             let parent = CompoundParent::Map(inner.id);
