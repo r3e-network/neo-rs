@@ -89,24 +89,30 @@ const HASH_SIZE: usize = 32;
 ///    the `ExecutionEngine` that holds it).
 /// 2. **Exclusive access**: While the `ExecutionEngine` holds this pointer, no other code
 ///    should hold a mutable reference to the same `InteropHost`.
-/// 3. **Thread safety**: `HostPtr` is intentionally `!Send` and `!Sync` due to the raw
-///    pointer. Do not share across threads.
+/// 3. **Single-thread access**: The `ExecutionEngine` is not shared across threads
+///    concurrently. `HostPtr` implements `Send` so the engine can be *moved* between
+///    threads, but it is deliberately `!Sync` because the raw pointer must not be
+///    dereferenced from multiple threads simultaneously.
 /// 4. **Validity**: The pointer must not be dangling. The `Option` wrapper on the engine
 ///    field handles the null case.
 ///
-/// `HostPtr` is `Copy` because it wraps a raw pointer — this is required so that it can
+/// `HostPtr` is `Copy` because it wraps a raw pointer -- this is required so that it can
 /// be extracted from `&self` before passing `&mut self` to the host callback methods
 /// (mirroring the original `Option<*mut dyn InteropHost>` which was also `Copy`).
 #[derive(Clone, Copy)]
-pub(crate) struct HostPtr(*mut dyn InteropHost);
+pub(crate) struct HostPtr(
+    *mut dyn InteropHost,
+    /// Marker to make `HostPtr` `!Send` and `!Sync` by default so that the
+    /// manual `Send` impl below is the only path to thread-safety.
+    std::marker::PhantomData<*const ()>,
+);
 
-// SAFETY: `HostPtr` wraps a raw pointer whose safety invariants are already
-// enforced by the `unsafe fn new` contract: the pointee must be valid for the
-// lifetime of the `HostPtr` and must not be aliased mutably during callbacks.
-// All access is serialized through `&mut ExecutionEngine`, so sending the
-// pointer across threads is safe when the engine itself is behind a `Mutex`.
+// SAFETY: `ExecutionEngine` (the sole owner of `HostPtr`) is never shared
+// across threads (`!Sync`). Sending the engine to another thread is safe
+// because the pointed-to host moves with it (the host is the parent struct
+// that owns the engine). All mutable access is serialized through
+// `&mut ExecutionEngine`.
 unsafe impl Send for HostPtr {}
-unsafe impl Sync for HostPtr {}
 
 impl HostPtr {
     /// Creates a new `HostPtr` from a raw pointer.
@@ -116,7 +122,7 @@ impl HostPtr {
     /// The caller must guarantee that `ptr` is valid for the lifetime of this `HostPtr`
     /// and that no aliasing `&mut` references exist during method calls.
     pub(crate) unsafe fn new(ptr: *mut dyn InteropHost) -> Self {
-        Self(ptr)
+        Self(ptr, std::marker::PhantomData)
     }
 
     /// Returns the underlying raw pointer (for API compatibility with callers that
@@ -154,20 +160,18 @@ impl HostPtr {
     pub(crate) fn pre_execute_instruction(
         &self,
         engine: &mut ExecutionEngine,
-        context: &ExecutionContext,
         instruction: &Instruction,
     ) -> VmResult<()> {
-        unsafe { (*self.0).pre_execute_instruction(engine, context, instruction) }
+        unsafe { (*self.0).pre_execute_instruction(engine, instruction) }
     }
 
     /// Calls [`InteropHost::post_execute_instruction`] on the wrapped host.
     pub(crate) fn post_execute_instruction(
         &self,
         engine: &mut ExecutionEngine,
-        context: &ExecutionContext,
         instruction: &Instruction,
     ) -> VmResult<()> {
-        unsafe { (*self.0).post_execute_instruction(engine, context, instruction) }
+        unsafe { (*self.0).post_execute_instruction(engine, instruction) }
     }
 
     /// Calls [`InteropHost::invoke_syscall`] on the wrapped host.

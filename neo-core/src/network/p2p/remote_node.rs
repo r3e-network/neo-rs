@@ -29,6 +29,7 @@ use crate::cryptography::BloomFilter;
 use crate::ledger::blockchain::BlockchainCommand;
 use crate::network::error::NetworkError;
 use crate::network::p2p::messages::{NetworkMessage, ProtocolMessage};
+use crate::network::p2p::payloads::inv_payload::InvPayload;
 use crate::network::MessageCommand;
 use crate::{neo_system::NeoSystemContext, protocol_settings::ProtocolSettings, UInt256};
 use async_trait::async_trait;
@@ -962,15 +963,35 @@ impl Actor for RemoteNode {
                     ctx.stop_self()?;
                     Ok(())
                 }
-                RemoteNodeCommand::RelayInventory(_inventory) => {
-                    // TODO: Implement inventory relay logic
-                    Ok(())
+                RemoteNodeCommand::RelayInventory(mut inventory) => {
+                    // Relay by sending an INV announcement containing the hash.
+                    // The peer will respond with GETDATA if it needs the full payload.
+                    let hash = match &mut inventory {
+                        super::RelayInventory::Block(block) => block.hash(),
+                        super::RelayInventory::Transaction(tx) => tx.hash(),
+                        super::RelayInventory::Extensible(ext) => ext.hash(),
+                    };
+                    if self.should_skip_inventory(&hash) {
+                        return Ok(());
+                    }
+                    let inv = InvPayload::create(inventory.inventory_type(), &[hash]);
+                    self.enqueue_message(NetworkMessage::new(ProtocolMessage::Inv(inv)))
+                        .await
                 }
-                RemoteNodeCommand::SendInventory {
-                    inventory: _inventory,
-                } => {
-                    // TODO: Implement send inventory logic
-                    Ok(())
+                RemoteNodeCommand::SendInventory { inventory } => {
+                    // Send the full inventory payload directly (no INV/GETDATA dance).
+                    let message = match inventory {
+                        super::RelayInventory::Block(block) => {
+                            NetworkMessage::new(ProtocolMessage::Block(block))
+                        }
+                        super::RelayInventory::Transaction(tx) => {
+                            NetworkMessage::new(ProtocolMessage::Transaction(tx))
+                        }
+                        super::RelayInventory::Extensible(payload) => {
+                            NetworkMessage::new(ProtocolMessage::Extensible(payload))
+                        }
+                    };
+                    self.enqueue_message(message).await
                 }
             },
             Err(other) => {

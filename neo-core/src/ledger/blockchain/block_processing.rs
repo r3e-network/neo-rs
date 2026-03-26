@@ -73,6 +73,14 @@ impl Blockchain {
             if cache.contains_key(&hash) {
                 return VerifyResult::AlreadyExists;
             }
+            if cache.len() >= MAX_BLOCK_CACHE_SIZE {
+                tracing::warn!(
+                    target: "neo",
+                    cache_size = cache.len(),
+                    "block cache full, rejecting new block"
+                );
+                return VerifyResult::Invalid;
+            }
             cache.insert(hash, block.clone());
         }
 
@@ -93,6 +101,20 @@ impl Blockchain {
 
     async fn add_unverified_block(&self, block: Block) {
         let mut unverified = self._block_cache_unverified.write().await;
+        if unverified.len() >= MAX_UNVERIFIED_CACHE_SIZE {
+            tracing::warn!(
+                target: "neo",
+                cache_size = unverified.len(),
+                "unverified block cache full, dropping oldest entries"
+            );
+            // Evict entries with the lowest block indices (oldest blocks).
+            let mut indices: Vec<u32> = unverified.keys().copied().collect();
+            indices.sort_unstable();
+            let evict_count = unverified.len() / 4; // remove 25%
+            for &idx in indices.iter().take(evict_count) {
+                unverified.remove(&idx);
+            }
+        }
         let entry = unverified
             .entry(block.index())
             .or_insert_with(UnverifiedBlocksList::new);

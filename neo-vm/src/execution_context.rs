@@ -23,11 +23,24 @@ pub type Slot = crate::slot::Slot;
 
 /// Shared states for execution contexts that can be cloned and shared.
 /// This matches the C# implementation's `SharedStates` class exactly.
+///
+/// # Why `Arc<Mutex<EvaluationStack>>`?
+///
+/// The evaluation stack is wrapped in `Arc<Mutex<..>>` because:
+/// 1. **Sharing**: CALL instructions clone `SharedStates` so that caller and
+///    callee contexts share the same evaluation stack (see `clone_with_position`).
+///    `Arc` is needed for this shared ownership.
+/// 2. **Send + Sync**: `ExecutionEngine` (and `ApplicationEngine`) must be `Send`
+///    to cross `.await` points in async/tokio code (see `neo-rpc` session handling).
+///    Using `Rc<RefCell<..>>` would break `Send`.
+/// 3. **Low overhead**: `parking_lot::Mutex` on an uncontended lock is a single
+///    atomic CAS with no syscall, so the practical cost is negligible for the
+///    single-threaded VM execution path.
 #[derive(Clone)]
 pub struct SharedStates {
     /// Script being executed
     script: Arc<Script>,
-    /// Evaluation stack for this context
+    /// Evaluation stack for this context (shared across CALL clones; see struct doc)
     evaluation_stack: Arc<Mutex<crate::evaluation_stack::EvaluationStack>>,
     /// Static fields shared across all clones
     static_fields: Arc<Mutex<Option<Slot>>>,

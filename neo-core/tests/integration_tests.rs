@@ -42,13 +42,12 @@ fn to_hex(bytes: &[u8], little_endian: bool) -> String {
 
 #[test]
 fn test_uint160_creation_and_comparison() {
-    // Create UInt160 instance
-    let mut uint1 = UInt160::new();
-    uint1.value1 = 1;
-
     // Create UInt160 from bytes
     let mut data = [0u8; UINT160_SIZE];
     data[0] = 1;
+    let uint1 = UInt160::from_bytes(&data).unwrap();
+
+    // Create another UInt160 from the same bytes
     let uint2 = UInt160::from_bytes(&data).unwrap();
 
     // Compare UInt160 instances - they should be equal
@@ -61,12 +60,14 @@ fn test_uint160_creation_and_comparison() {
         assert_eq!(item, 0);
     }
 
-    // Test ordering
-    let mut uint4 = UInt160::new();
-    uint4.value3 = 1; // Most significant part
+    // Test ordering - set most significant bytes (offset 16..20)
+    let mut data4 = [0u8; UINT160_SIZE];
+    data4[16] = 1; // value3 least significant byte
+    let uint4 = UInt160::from_bytes(&data4).unwrap();
 
-    let mut uint5 = UInt160::new();
-    uint5.value3 = 2;
+    let mut data5 = [0u8; UINT160_SIZE];
+    data5[16] = 2;
+    let uint5 = UInt160::from_bytes(&data5).unwrap();
 
     assert!(uint4 < uint5);
 }
@@ -129,13 +130,12 @@ fn test_uint160_creation_and_comparison() {
 
 #[test]
 fn test_uint256_creation_and_comparison() {
-    // Create UInt256 instance
-    let mut uint1 = UInt256::new();
-    uint1.value1 = 1;
-
     // Create UInt256 from bytes
     let mut data = [0u8; UINT256_SIZE];
     data[0] = 1;
+    let uint1 = UInt256::from_bytes(&data).unwrap();
+
+    // Create another UInt256 from the same bytes
     let uint2 = UInt256::from_bytes(&data).unwrap();
 
     // Compare UInt256 instances
@@ -150,12 +150,14 @@ fn test_uint256_creation_and_comparison() {
         assert_eq!(item, 0);
     }
 
-    // Test ordering
-    let mut uint4 = UInt256::new();
-    uint4.value4 = 1; // Most significant part
+    // Test ordering - set most significant bytes (offset 24..32)
+    let mut data4 = [0u8; UINT256_SIZE];
+    data4[24] = 1; // value4 least significant byte
+    let uint4 = UInt256::from_bytes(&data4).unwrap();
 
-    let mut uint5 = UInt256::new();
-    uint5.value4 = 2;
+    let mut data5 = [0u8; UINT256_SIZE];
+    data5[24] = 2;
+    let uint5 = UInt256::from_bytes(&data5).unwrap();
 
     assert!(uint4 < uint5);
 }
@@ -218,8 +220,9 @@ fn test_byte_extensions() {
 #[test]
 fn test_uint160_extensions() {
     // Test UInt160Extensions
-    let mut uint = UInt160::new();
-    uint.value1 = 1;
+    let mut data = [0u8; UINT160_SIZE];
+    data[0] = 1;
+    let uint = UInt160::from_bytes(&data).unwrap();
 
     // Test to_array
     let array = uint.to_array();

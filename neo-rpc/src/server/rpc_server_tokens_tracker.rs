@@ -689,7 +689,9 @@ mod tests {
 
         let mut snapshot = store.get_snapshot();
         let snapshot = Arc::get_mut(&mut snapshot).expect("unique snapshot");
-        snapshot.put(key_bytes, value_bytes);
+        snapshot
+            .put(key_bytes, value_bytes)
+            .expect("storage put failed");
         snapshot.commit();
     }
 

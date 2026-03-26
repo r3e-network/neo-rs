@@ -4,6 +4,7 @@ use neo_core::chain::{BlockIndexEntry, ChainState};
 use neo_core::state::{MemoryWorldState, StateChanges, StorageItem, StorageKey, WorldState};
 use neo_core::{UInt160, UInt256};
 use neo_vm::{op_code::OpCode, ExecutionEngine, Script, VMState};
+use num_bigint::BigInt;
 
 // Setup test environment
 fn _setup_test_env() -> (ChainState, MemoryWorldState) {
@@ -38,8 +39,8 @@ fn test_vm_simple_push_and_return() {
     assert_eq!(state, VMState::HALT);
 
     let result = engine.result_stack().peek(0).unwrap();
-    let _val = result.as_int().unwrap();
-    // Value retrieved successfully
+    let val = result.as_int().unwrap();
+    assert_eq!(val, BigInt::from(1), "PUSH1 should produce 1");
 }
 
 #[test]
@@ -60,7 +61,8 @@ fn test_vm_arithmetic_add() {
     assert_eq!(state, VMState::HALT);
 
     let result = engine.result_stack().peek(0).unwrap();
-    let _val = result.as_int().unwrap();
+    let val = result.as_int().unwrap();
+    assert_eq!(val, BigInt::from(5), "PUSH2 + PUSH3 should equal 5");
 }
 
 #[test]
@@ -80,7 +82,8 @@ fn test_vm_arithmetic_sub() {
     assert_eq!(state, VMState::HALT);
 
     let result = engine.result_stack().peek(0).unwrap();
-    let _val = result.as_int().unwrap();
+    let val = result.as_int().unwrap();
+    assert_eq!(val, BigInt::from(-3), "PUSH5 - PUSH8 should equal -3");
 }
 
 #[test]
@@ -100,7 +103,8 @@ fn test_vm_arithmetic_mul() {
     assert_eq!(state, VMState::HALT);
 
     let result = engine.result_stack().peek(0).unwrap();
-    let _val = result.as_int().unwrap();
+    let val = result.as_int().unwrap();
+    assert_eq!(val, BigInt::from(42), "PUSH6 * PUSH7 should equal 42");
 }
 
 #[test]

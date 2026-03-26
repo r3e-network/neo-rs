@@ -59,6 +59,7 @@ pub(crate) fn convert_ledger_header(header: LedgerBlockHeader) -> Header {
         primary_index,
         next_consensus,
         witnesses,
+        ..
     } = header;
 
     let mut converted = Header::new();

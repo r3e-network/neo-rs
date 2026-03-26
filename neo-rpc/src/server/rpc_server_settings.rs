@@ -158,11 +158,11 @@ impl RpcServerConfig {
     }
 
     const fn default_max_requests_per_second() -> u32 {
-        0
+        100
     }
 
     const fn default_rate_limit_burst() -> u32 {
-        0
+        200
     }
 
     const fn default_enable_cors() -> bool {
@@ -383,6 +383,16 @@ impl RpcServerSettings {
     fn validate(&self) -> ExtensionResult<()> {
         for server in &self.servers {
             let _has_auth = !server.rpc_user.trim().is_empty();
+
+            if server.max_requests_per_second == 0 && !server.bind_address.is_loopback() {
+                tracing::warn!(
+                    target: "neo::rpc",
+                    bind_address = %server.bind_address,
+                    port = server.port,
+                    "RPC rate limiting is disabled (MaxRequestsPerSecond=0) on a non-localhost \
+                     bind address; this exposes the node to denial-of-service attacks"
+                );
+            }
         }
         Ok(())
     }

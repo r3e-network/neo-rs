@@ -124,12 +124,14 @@ impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for MemoryStore {
 }
 
 impl IWriteStore<Vec<u8>, Vec<u8>> for MemoryStore {
-    fn delete(&mut self, key: Vec<u8>) {
+    fn delete(&mut self, key: Vec<u8>) -> crate::error::CoreResult<()> {
         self.inner_data.write().remove(&key);
+        Ok(())
     }
 
-    fn put(&mut self, key: Vec<u8>, value: Vec<u8>) {
+    fn put(&mut self, key: Vec<u8>, value: Vec<u8>) -> crate::error::CoreResult<()> {
         self.inner_data.write().insert(key, value);
+        Ok(())
     }
 }
 

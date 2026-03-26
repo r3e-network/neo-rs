@@ -129,7 +129,9 @@ impl TrackerBase {
         };
         let key_bytes = Self::key(prefix, key)?;
         let value_bytes = value.to_array().map_err(|e| e.to_string())?;
-        snapshot.put(key_bytes, value_bytes);
+        snapshot
+            .put(key_bytes, value_bytes)
+            .map_err(|e| format!("storage put failed: {}", e))?;
         Ok(())
     }
 
@@ -142,7 +144,9 @@ impl TrackerBase {
             return Ok(());
         };
         let key_bytes = Self::key(prefix, key)?;
-        snapshot.delete(key_bytes);
+        snapshot
+            .delete(key_bytes)
+            .map_err(|e| format!("storage delete failed: {}", e))?;
         Ok(())
     }
 

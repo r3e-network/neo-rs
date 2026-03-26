@@ -20,11 +20,11 @@ pub const UINT160_SIZE: usize = ADDRESS_SIZE;
 #[repr(C)]
 pub struct UInt160 {
     /// First 8 bytes of the `UInt160` (least significant).
-    pub value1: u64,
+    pub(crate) value1: u64,
     /// Next 8 bytes of the `UInt160`.
-    pub value2: u64,
+    pub(crate) value2: u64,
     /// Last 4 bytes of the `UInt160` (most significant).
-    pub value3: u32,
+    pub(crate) value3: u32,
 }
 
 /// Zero value for `UInt160`.
@@ -48,8 +48,12 @@ impl UInt160 {
     /// Returns a zero `UInt160`.
     #[inline]
     #[must_use]
-    pub fn zero() -> Self {
-        Self::default()
+    pub const fn zero() -> Self {
+        Self {
+            value1: 0,
+            value2: 0,
+            value3: 0,
+        }
     }
 
     /// Checks if this `UInt160` is zero (matches C# `IsZero` property).
@@ -424,18 +428,12 @@ impl TryFrom<String> for UInt160 {
     }
 }
 
-impl AsRef<[u8; UINT160_SIZE]> for UInt160 {
-    #[inline]
-    fn as_ref(&self) -> &[u8; UINT160_SIZE] {
-        // SAFETY: UInt160 is repr(C, packed) with three fields that map to 20 bytes.
-        // We can safely reinterpret the struct as a byte array.
-        // This is safe because:
-        // 1. UInt160 is #[derive(Copy, Clone)] and has no padding between fields
-        // 2. We're only reading the bytes, not modifying them
-        // 3. The layout is well-defined as three little-endian fields
-        unsafe { &*(self as *const Self).cast::<[u8; UINT160_SIZE]>() }
-    }
-}
+// NOTE: The previous `AsRef<[u8; UINT160_SIZE]>` impl used an unsafe transmute
+// (`&*(self as *const Self).cast::<[u8; UINT160_SIZE]>()`) which was unsound:
+// UInt160 is `#[repr(C)]` with fields `(u64, u64, u32)` and has 4 bytes of
+// trailing padding on 64-bit platforms (size_of = 24, not 20). The transmute
+// would read padding bytes as data. Use `to_array()` instead, which safely
+// copies the field bytes into a `[u8; 20]`.
 
 // NOTE: Serializable implementation moved to neo-io::serializable::primitives
 // to keep neo-primitives as a Layer 0 crate with no neo-* dependencies
@@ -586,10 +584,10 @@ mod tests {
         }
 
         #[test]
-        fn test_as_ref_implementation(bytes in any::<[u8; UINT160_SIZE]>()) {
+        fn test_to_array_roundtrip(bytes in any::<[u8; UINT160_SIZE]>()) {
             let uint = UInt160::from_bytes(&bytes).unwrap();
-            let ref_bytes: &[u8] = uint.as_ref();
-            prop_assert_eq!(&bytes, ref_bytes);
+            let ref_bytes = uint.to_array();
+            prop_assert_eq!(bytes, ref_bytes);
         }
 
         #[test]

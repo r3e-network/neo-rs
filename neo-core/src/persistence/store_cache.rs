@@ -128,7 +128,9 @@ impl StoreCache {
         };
 
         if let Some(snapshot) = Arc::get_mut(&mut writer_snapshot) {
-            apply_tracked(&tracked, snapshot);
+            apply_tracked(&tracked, snapshot).map_err(|e| {
+                DataCacheError::CommitFailed(format!("storage write failed: {}", e))
+            })?;
             snapshot.commit();
             self.data_cache.commit();
         } else {
@@ -247,7 +249,8 @@ mod tests {
         // Persist a different key into the underlying store.
         let mut snapshot = store.get_snapshot();
         if let Some(snap) = Arc::get_mut(&mut snapshot) {
-            snap.put(StorageKey::new(1, b"other".to_vec()).to_array(), vec![2]);
+            snap.put(StorageKey::new(1, b"other".to_vec()).to_array(), vec![2])
+                .unwrap();
             snap.commit();
         }
 
@@ -275,7 +278,7 @@ mod tests {
 
         let mut snapshot = store.get_snapshot();
         if let Some(snap) = Arc::get_mut(&mut snapshot) {
-            snap.put(key.to_array(), value.get_value());
+            snap.put(key.to_array(), value.get_value()).unwrap();
             snap.commit();
         }
 
@@ -292,7 +295,7 @@ mod tests {
 
         let mut seeded = store.get_snapshot();
         if let Some(snap) = Arc::get_mut(&mut seeded) {
-            snap.put(key.to_array(), vec![9]);
+            snap.put(key.to_array(), vec![9]).unwrap();
             snap.commit();
         }
 
@@ -338,19 +341,23 @@ mod tests {
     }
 }
 
-pub fn apply_tracked<T>(tracked: &[(StorageKey, super::data_cache::Trackable)], writer: &mut T)
+pub fn apply_tracked<T>(
+    tracked: &[(StorageKey, super::data_cache::Trackable)],
+    writer: &mut T,
+) -> crate::error::CoreResult<()>
 where
     T: super::i_write_store::IWriteStore<Vec<u8>, Vec<u8>> + ?Sized,
 {
     for (key, trackable) in tracked {
         match trackable.state {
             TrackState::Added | TrackState::Changed => {
-                writer.put(key.to_array(), trackable.item.get_value());
+                writer.put(key.to_array(), trackable.item.get_value())?;
             }
-            TrackState::Deleted => writer.delete(key.to_array()),
+            TrackState::Deleted => writer.delete(key.to_array())?,
             TrackState::None | TrackState::NotFound => {}
         }
     }
+    Ok(())
 }
 
 impl IReadOnlyStore for StoreCache {}

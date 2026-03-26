@@ -1136,7 +1136,10 @@ impl ConsensusActor {
         let Some(snap) = Arc::get_mut(&mut snapshot) else {
             return false;
         };
-        snap.put_sync(CONSENSUS_STATE_KEY.to_vec(), data);
+        if let Err(err) = snap.put_sync(CONSENSUS_STATE_KEY.to_vec(), data) {
+            warn!(target: "neo", %err, "failed to write consensus recovery log");
+            return false;
+        }
         if let Err(err) = snap.try_commit() {
             warn!(target: "neo", %err, "failed to commit consensus recovery log");
             return false;

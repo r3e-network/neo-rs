@@ -152,14 +152,8 @@ impl ExecutionEngine {
 
         self.pre_execute_instruction(&instruction)?;
 
-        // Only clone the context when an interop host is present – the clone is
-        // expensive and the vast majority of instructions don't need it.
         if let Some(host) = self.interop_host {
-            let context_snapshot = self
-                .current_context()
-                .cloned()
-                .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-            host.pre_execute_instruction(self, &context_snapshot, &instruction)?;
+            host.pre_execute_instruction(self, &instruction)?;
         }
 
         // Execute the instruction - direct array access for optimal dispatch
@@ -243,9 +237,7 @@ impl ExecutionEngine {
     fn post_execute_instruction(&mut self, instruction: &Instruction) -> VmResult<()> {
         if self.reference_counter.count() < self.limits.max_stack_size as usize {
             if let Some(host) = self.interop_host {
-                if let Some(context) = self.current_context().cloned() {
-                    host.post_execute_instruction(self, &context, instruction)?;
-                }
+                host.post_execute_instruction(self, instruction)?;
             }
             return Ok(());
         }
@@ -260,9 +252,7 @@ impl ExecutionEngine {
         }
 
         if let Some(host) = self.interop_host {
-            if let Some(context) = self.current_context().cloned() {
-                host.post_execute_instruction(self, &context, instruction)?;
-            }
+            host.post_execute_instruction(self, instruction)?;
         }
 
         Ok(())

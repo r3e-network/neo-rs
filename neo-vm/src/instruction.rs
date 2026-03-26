@@ -5,6 +5,7 @@
 use crate::error::{VmError, VmResult};
 use crate::op_code::OpCode;
 use neo_io;
+use smallvec::SmallVec;
 // Hash size constant - used in future VM operations
 // const HASH_SIZE: usize = 32;
 
@@ -38,8 +39,8 @@ pub struct Instruction {
     /// The opcode of the instruction
     pub opcode: OpCode,
 
-    /// The operand data
-    pub operand: Vec<u8>,
+    /// The operand data (inline for up to 8 bytes, heap-allocated beyond that)
+    pub operand: SmallVec<[u8; 8]>,
 }
 
 impl Instruction {
@@ -76,7 +77,7 @@ impl Instruction {
                             script.len()
                         )));
                     }
-                    script[data_start..data_end].to_vec()
+                    SmallVec::from_slice(&script[data_start..data_end])
                 }
                 OpCode::PUSHDATA2 => {
                     if length_prefix_start + 1 >= script.len() {
@@ -97,7 +98,7 @@ impl Instruction {
                             script.len()
                         )));
                     }
-                    script[data_start..data_end].to_vec()
+                    SmallVec::from_slice(&script[data_start..data_end])
                 }
                 OpCode::PUSHDATA4 => {
                     if length_prefix_start + 3 >= script.len() {
@@ -122,7 +123,7 @@ impl Instruction {
                             script.len()
                         )));
                     }
-                    script[data_start..data_end].to_vec()
+                    SmallVec::from_slice(&script[data_start..data_end])
                 }
                 _ => {
                     return Err(VmError::parse(format!(
@@ -142,9 +143,9 @@ impl Instruction {
             }
 
             if operand_size.size() > 0 {
-                script[operand_start..operand_end].to_vec()
+                SmallVec::from_slice(&script[operand_start..operand_end])
             } else {
-                Vec::new()
+                SmallVec::new()
             }
         };
 
@@ -162,7 +163,7 @@ impl Instruction {
         Self {
             pointer: 0,
             opcode,
-            operand: operand.to_vec(),
+            operand: SmallVec::from_slice(operand),
         }
     }
 
@@ -186,18 +187,18 @@ impl Instruction {
                 OpCode::PUSHDATA1 => {
                     let length = reader.read_byte()? as usize;
                     if length == 0 {
-                        Vec::new()
+                        SmallVec::new()
                     } else {
-                        reader.read_bytes(length)?
+                        SmallVec::from_vec(reader.read_bytes(length)?)
                     }
                 }
                 OpCode::PUSHDATA2 => {
                     let length_bytes = reader.read_bytes(2)?;
                     let length = u16::from_le_bytes([length_bytes[0], length_bytes[1]]) as usize;
                     if length == 0 {
-                        Vec::new()
+                        SmallVec::new()
                     } else {
-                        reader.read_bytes(length)?
+                        SmallVec::from_vec(reader.read_bytes(length)?)
                     }
                 }
                 OpCode::PUSHDATA4 => {
@@ -209,9 +210,9 @@ impl Instruction {
                         length_bytes[3],
                     ]) as usize;
                     if length == 0 {
-                        Vec::new()
+                        SmallVec::new()
                     } else {
-                        reader.read_bytes(length)?
+                        SmallVec::from_vec(reader.read_bytes(length)?)
                     }
                 }
                 _ => {
@@ -223,9 +224,9 @@ impl Instruction {
         } else {
             let operand_size = Self::get_operand_size(opcode);
             if operand_size.size() > 0 {
-                reader.read_bytes(operand_size.size())?.clone()
+                SmallVec::from_vec(reader.read_bytes(operand_size.size())?)
             } else {
-                Vec::new()
+                SmallVec::new()
             }
         };
 
@@ -256,18 +257,18 @@ impl Instruction {
                 OpCode::PUSHDATA1 => {
                     let length = reader.read_byte()? as usize;
                     if length == 0 {
-                        Vec::new()
+                        SmallVec::new()
                     } else {
-                        reader.read_bytes(length)?
+                        SmallVec::from_vec(reader.read_bytes(length)?)
                     }
                 }
                 OpCode::PUSHDATA2 => {
                     let length_bytes = reader.read_bytes(2)?;
                     let length = u16::from_le_bytes([length_bytes[0], length_bytes[1]]) as usize;
                     if length == 0 {
-                        Vec::new()
+                        SmallVec::new()
                     } else {
-                        reader.read_bytes(length)?
+                        SmallVec::from_vec(reader.read_bytes(length)?)
                     }
                 }
                 OpCode::PUSHDATA4 => {
@@ -279,9 +280,9 @@ impl Instruction {
                         length_bytes[3],
                     ]) as usize;
                     if length == 0 {
-                        Vec::new()
+                        SmallVec::new()
                     } else {
-                        reader.read_bytes(length)?
+                        SmallVec::from_vec(reader.read_bytes(length)?)
                     }
                 }
                 _ => {
@@ -293,9 +294,9 @@ impl Instruction {
         } else {
             let operand_size = Self::get_operand_size(opcode);
             if operand_size.size() > 0 {
-                reader.read_bytes(operand_size.size())?.clone()
+                SmallVec::from_vec(reader.read_bytes(operand_size.size())?)
             } else {
-                Vec::new()
+                SmallVec::new()
             }
         };
 
@@ -483,7 +484,7 @@ impl Instruction {
         Self {
             pointer: 0,
             opcode: OpCode::RET,
-            operand: Vec::new(),
+            operand: SmallVec::new_const(),
         }
     }
 }

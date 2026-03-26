@@ -18,13 +18,13 @@ pub const UINT256_SIZE: usize = HASH_SIZE;
 #[repr(C)]
 pub struct UInt256 {
     /// First 8 bytes of the `UInt256` (least significant).
-    pub value1: u64,
+    pub(crate) value1: u64,
     /// Next 8 bytes of the `UInt256`.
-    pub value2: u64,
+    pub(crate) value2: u64,
     /// Next 8 bytes of the `UInt256`.
-    pub value3: u64,
+    pub(crate) value3: u64,
     /// Last 8 bytes of the `UInt256` (most significant).
-    pub value4: u64,
+    pub(crate) value4: u64,
 }
 
 /// Zero value for `UInt256`.
@@ -49,8 +49,13 @@ impl UInt256 {
     /// Returns a zero `UInt256`.
     #[inline]
     #[must_use]
-    pub fn zero() -> Self {
-        Self::default()
+    pub const fn zero() -> Self {
+        Self {
+            value1: 0,
+            value2: 0,
+            value3: 0,
+            value4: 0,
+        }
     }
 
     /// Checks if this `UInt256` is zero.
@@ -355,12 +360,16 @@ impl TryFrom<String> for UInt256 {
 impl AsRef<[u8; UINT256_SIZE]> for UInt256 {
     #[inline]
     fn as_ref(&self) -> &[u8; UINT256_SIZE] {
-        // SAFETY: UInt256 is repr(C) with four u64 fields that map to 32 bytes.
-        // We can safely reinterpret the struct as a byte array.
-        // This is safe because:
-        // 1. UInt256 is #[derive(Copy, Clone)] and has no padding between fields
-        // 2. We're only reading the bytes, not modifying them
-        // 3. The layout is well-defined as four little-endian fields
+        // UInt256 is #[repr(C)] with fields (u64, u64, u64, u64) = 32 bytes.
+        // All fields have the same alignment so repr(C) guarantees no padding.
+        // We add a compile-time assertion to guarantee this.
+        const _: () = assert!(
+            std::mem::size_of::<UInt256>() == UINT256_SIZE,
+            "UInt256 has unexpected padding; layout assumption violated"
+        );
+        // SAFETY: The compile-time assert above guarantees size_of::<UInt256>() == 32,
+        // meaning there is no padding. repr(C) guarantees field order. The pointer
+        // cast is therefore valid, and the returned reference borrows `self`.
         unsafe { &*(self as *const Self).cast::<[u8; UINT256_SIZE]>() }
     }
 }

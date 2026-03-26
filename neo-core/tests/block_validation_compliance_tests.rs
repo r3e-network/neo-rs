@@ -1,17 +1,24 @@
 //! Block validation protocol compliance tests
+//!
+//! These tests require real test vectors generated from a C# Neo node.
+//! They are marked `#[ignore]` because the vector files are currently empty/placeholder.
+//! To populate them, run the C# vector generation tool and update `block_vectors.json`
+//! and the genesis block hex.
 
 #[cfg(test)]
 mod tests {
 
     #[test]
+    #[ignore = "test vectors not populated - block_vectors.json contains '[]'"]
     fn test_block_validation_vectors() {
         // Load test vectors generated from C# node
         let vectors_json = include_str!("../../block_vectors.json");
 
-        if vectors_json.trim() == "[]" || vectors_json.is_empty() {
-            println!("WARN: No test vectors available yet");
-            return;
-        }
+        assert!(
+            vectors_json.trim() != "[]" && !vectors_json.is_empty(),
+            "Test vectors not populated - block_vectors.json is empty. \
+             Generate vectors from C# node before running this test."
+        );
 
         // Parse and validate each block vector
         let vectors: Vec<serde_json::Value> =
@@ -25,14 +32,16 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "test vectors not populated - genesis block hex is empty"]
     fn test_genesis_block_validation() {
         // Minimal test for genesis block structure
         let genesis_hex = ""; // TODO: Add from C# node
 
-        if genesis_hex.is_empty() {
-            println!("Skipping: genesis block hex not provided");
-            return;
-        }
+        assert!(
+            !genesis_hex.is_empty(),
+            "Genesis block hex not populated. \
+             Export genesis block from C# node before running this test."
+        );
 
         let bytes = hex::decode(genesis_hex).expect("Invalid hex");
         // TODO: Use proper deserialization method when available

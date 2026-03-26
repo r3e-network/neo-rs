@@ -95,7 +95,7 @@ readme = "README.md"
 
 [workspace.metadata]
 # Minimum supported Rust version policy
-msrv = "1.70.0"
+msrv = "1.75"
 
 [workspace.dependencies]
 # === Internal crates ===
@@ -130,6 +130,7 @@ neo-node = { path = "neo-node", version = "0.7.2" }
 
 # === Core dependencies ===
 # Async runtime
+# TODO: Reduce tokio features per-crate for faster compilation
 tokio = { version = "1.35", features = ["full"] }
 async-trait = "0.1"
 futures = "0.3"
@@ -187,6 +188,7 @@ once_cell = "1.19"
 num-bigint = { version = "0.4", features = ["serde"] }
 num-traits = "0.2"
 # === Data structures ===
+smallvec = { version = "1.13", features = ["const_new"] }
 bytes = "1.5"
 hashbrown = { version = "0.14", features = ["serde"] }
 indexmap = { version = "2.1", features = ["serde"] }

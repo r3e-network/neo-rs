@@ -312,13 +312,20 @@ pub enum VmError {
     #[error("ABORT is executed")]
     Abort,
 
+    /// Abort operation with message - ABORTMSG opcode was executed
+    #[error("ABORT is executed: {0}")]
+    AbortMsg(String),
+
     /// Assert failed - ASSERT opcode was executed with false condition
     #[error("ASSERT is executed with false result")]
     AssertFailed,
 
+    /// Assert failed with message - ASSERTMSG opcode was executed with false condition
+    #[error("ASSERT is executed with false result: {0}")]
+    AssertFailedMsg(String),
+
     /// Implementation provided I/O error (for testing)
     #[cfg(test)]
-    #[allow(dead_code)]
     #[error("Mock I/O error: {message}")]
     MockIo {
         /// Error message
@@ -513,7 +520,6 @@ impl VmError {
 
     /// Implementation provided I/O error (for testing)
     #[cfg(test)]
-    #[allow(dead_code)]
     pub fn real_io<S: Into<String>>(message: S) -> Self {
         Self::MockIo {
             message: message.into(),
@@ -581,7 +587,9 @@ impl VmError {
                 | Self::UnhandledException(_)
                 | Self::MaxTryNestingDepthExceeded
                 | Self::Abort
+                | Self::AbortMsg(_)
                 | Self::AssertFailed
+                | Self::AssertFailedMsg(_)
         )
     }
 
@@ -619,9 +627,10 @@ impl VmError {
             Self::InvalidJump(_) => "control",
             Self::UnhandledException(_) => "exception",
             Self::MaxTryNestingDepthExceeded => "resource",
-            Self::Abort | Self::AssertFailed => "control",
+            Self::Abort | Self::AbortMsg(_) | Self::AssertFailed | Self::AssertFailedMsg(_) => {
+                "control"
+            }
             #[cfg(test)]
-            #[allow(dead_code)]
             VmError::MockIo { .. } => "real_io",
         }
     }
@@ -740,7 +749,6 @@ impl VmError {
 }
 
 #[cfg(test)]
-#[allow(dead_code)]
 mod tests {
     use super::*;
 

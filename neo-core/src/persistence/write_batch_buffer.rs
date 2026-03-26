@@ -143,7 +143,7 @@ impl Default for WriteBatchConfig {
             min_operations: 10,
             max_batch_bytes: 4 * 1024 * 1024, // 4MB
             sync_on_flush: false,
-            disable_wal: true,
+            disable_wal: false,
         }
     }
 }

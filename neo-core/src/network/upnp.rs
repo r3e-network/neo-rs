@@ -19,6 +19,11 @@ use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 /// Provides methods for interacting with UPnP devices.
+///
+/// **Important:** All public methods in this type use blocking I/O (synchronous
+/// UDP sockets and `reqwest::blocking`). They must not be called directly from
+/// an async context on the Tokio runtime; use `tokio::task::spawn_blocking` if
+/// needed.
 pub struct UPnP;
 
 #[derive(Clone)]

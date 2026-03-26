@@ -105,7 +105,11 @@ impl ApplicationLogsService {
         key.push(prefix);
         key.extend_from_slice(&hash.to_bytes());
         match serde_json::to_vec(&value) {
-            Ok(bytes) => snapshot.put(key, bytes),
+            Ok(bytes) => {
+                if let Err(err) = snapshot.put(key, bytes) {
+                    warn!(target: "neo::application_logs", error = %err, "failed to write application log to storage");
+                }
+            }
             Err(err) => {
                 warn!(target: "neo::application_logs", error = %err, "failed to serialize application log")
             }

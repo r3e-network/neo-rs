@@ -153,14 +153,8 @@ fn sqrt(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
 
 fn not(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
-    let value = ctx.pop()?;
-    let result = match value {
-        StackItem::Boolean(b) => !b,
-        StackItem::Integer(i) => i.is_zero(),
-        StackItem::Null => true,
-        _ => false,
-    };
-    ctx.push(StackItem::from_bool(result))
+    let x = ctx.pop()?.as_bool()?;
+    ctx.push(StackItem::from_bool(!x))
 }
 
 fn nz(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
@@ -175,31 +169,11 @@ fn nz(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
 
 fn add(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
-    let b = ctx.pop()?;
-    let a = ctx.pop()?;
-
-    let result = match (a, b) {
-        (StackItem::Integer(a), StackItem::Integer(b)) => {
-            let sum = &a + &b;
-            check_bigint_size(&sum)?;
-            StackItem::from_int(sum)
-        }
-        (StackItem::ByteString(a), StackItem::ByteString(b)) => {
-            let mut result = a;
-            result.extend_from_slice(&b);
-            StackItem::from_byte_string(result)
-        }
-        (StackItem::Buffer(a), StackItem::Buffer(b)) => {
-            a.extend_from_slice(&b.data());
-            StackItem::Buffer(a)
-        }
-        (a, b) => {
-            let sum = a.as_int()? + b.as_int()?;
-            check_bigint_size(&sum)?;
-            StackItem::from_int(sum)
-        }
-    };
-    ctx.push(result)
+    let b = ctx.pop()?.as_int()?;
+    let a = ctx.pop()?.as_int()?;
+    let sum = a + b;
+    check_bigint_size(&sum)?;
+    ctx.push(StackItem::from_int(sum))
 }
 
 fn sub(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {

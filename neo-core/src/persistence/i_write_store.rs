@@ -9,16 +9,18 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
+use crate::error::CoreResult;
+
 /// This interface provides methods to write to the database.
 pub trait IWriteStore<TKey, TValue> {
     /// Deletes an entry from the store.
-    fn delete(&mut self, key: TKey);
+    fn delete(&mut self, key: TKey) -> CoreResult<()>;
 
     /// Puts an entry to the store.
-    fn put(&mut self, key: TKey, value: TValue);
+    fn put(&mut self, key: TKey, value: TValue) -> CoreResult<()>;
 
     /// Puts an entry to the database synchronously.
-    fn put_sync(&mut self, key: TKey, value: TValue) {
-        self.put(key, value);
+    fn put_sync(&mut self, key: TKey, value: TValue) -> CoreResult<()> {
+        self.put(key, value)
     }
 }

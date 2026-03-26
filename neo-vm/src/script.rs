@@ -43,14 +43,31 @@ use std::hash::{Hash, Hasher};
 use std::ptr;
 use std::sync::Arc;
 
+/// Instruction storage strategy.
+///
+/// - **Eager**: All instructions are pre-parsed at construction time and stored
+///   in an immutable `HashMap`. Lookups require no locking.
+/// - **Lazy**: Instructions are parsed on first access and cached behind a
+///   `RwLock` (only used for relaxed-mode scripts that skip up-front parsing).
+#[derive(Debug, Clone)]
+enum InstructionCache {
+    /// Pre-populated, immutable cache — no lock on the read path.
+    Eager(HashMap<usize, Instruction>),
+    /// Lazily populated cache — `RwLock` for concurrent reads, rare writes.
+    Lazy(Arc<RwLock<HashMap<usize, Instruction>>>),
+}
+
 /// Represents a script in the Neo VM.
 ///
 /// # Performance
 ///
-/// The instruction cache uses `RwLock` instead of `Mutex` so the hot
-/// `get_instruction()` path only acquires a shared read lock. For strict-mode
-/// scripts the cache is fully populated at construction time, meaning the write
-/// lock is never taken during execution.
+/// When constructed with strict mode (or via [`Script::new`] with
+/// `strict_mode = true`), all instructions are parsed eagerly and stored in a
+/// plain `HashMap`. The hot `get_instruction()` path then performs a single
+/// `HashMap::get` with **no locking**.
+///
+/// Scripts created with relaxed / no-validation constructors use a
+/// `RwLock<HashMap>` that lazily caches instructions on first access.
 ///
 /// The hash code is computed eagerly at construction time to avoid any
 /// synchronisation overhead on the `hash()` / `hash_code()` accessors.
@@ -59,8 +76,9 @@ pub struct Script {
     /// The script data
     script: Vec<u8>,
 
-    /// Cached instructions – `RwLock` for cheap concurrent reads on the hot path.
-    instructions: Arc<RwLock<HashMap<usize, Instruction>>>,
+    /// Cached instructions — either eagerly populated (lock-free) or lazily
+    /// populated behind a `RwLock`.
+    instructions: InstructionCache,
 
     /// Whether strict mode is enabled
     strict_mode: bool,
@@ -121,13 +139,15 @@ impl Script {
         let hash_code = Self::compute_hash(&script);
         let mut s = Self {
             script,
-            instructions: Arc::new(RwLock::new(HashMap::new())),
+            instructions: InstructionCache::Lazy(Arc::new(RwLock::new(HashMap::new()))),
             strict_mode: false, // Start with false to allow parsing
             hash_code,
         };
 
         if strict_mode {
-            s.populate_instruction_cache()?;
+            // Parse all instructions eagerly and promote to lock-free cache.
+            let map = s.parse_all_instructions()?;
+            s.instructions = InstructionCache::Eager(map);
             s.strict_mode = true;
             s.validate_strict()?;
         } else {
@@ -150,7 +170,7 @@ impl Script {
         let hash_code = Self::compute_hash(&script);
         Self {
             script,
-            instructions: Arc::new(RwLock::new(HashMap::new())),
+            instructions: InstructionCache::Lazy(Arc::new(RwLock::new(HashMap::new()))),
             strict_mode: false,
             hash_code,
         }
@@ -162,14 +182,15 @@ impl Script {
         let hash_code = Self::compute_hash(&script);
         Self {
             script,
-            instructions: Arc::new(RwLock::new(HashMap::new())),
+            instructions: InstructionCache::Lazy(Arc::new(RwLock::new(HashMap::new()))),
             strict_mode: false,
             hash_code,
         }
     }
 
-    /// Populates the instruction cache by parsing all instructions
-    fn populate_instruction_cache(&mut self) -> VmResult<()> {
+    /// Parses all instructions from the script into a `HashMap` keyed by byte
+    /// offset. Used during construction to build the eager (lock-free) cache.
+    fn parse_all_instructions(&self) -> VmResult<HashMap<usize, Instruction>> {
         let mut position = 0;
         let mut instructions = HashMap::new();
 
@@ -178,12 +199,12 @@ impl Script {
             reader.set_position(position)?;
             let instruction = Instruction::parse_from_neo_io_reader(&mut reader)?;
 
-            instructions.insert(position, instruction.clone());
-            position += instruction.size();
+            let size = instruction.size();
+            instructions.insert(position, instruction);
+            position += size;
         }
 
-        *self.instructions.write() = instructions;
-        Ok(())
+        Ok(instructions)
     }
 
     /// Validates the script.
@@ -208,7 +229,14 @@ impl Script {
 
     /// Validates the script in strict mode.
     pub fn validate_strict(&self) -> VmResult<()> {
-        let instructions = self.instructions.read();
+        let instructions = match &self.instructions {
+            InstructionCache::Eager(map) => map,
+            InstructionCache::Lazy(_) => {
+                return Err(VmError::invalid_operation_msg(
+                    "validate_strict requires an eagerly populated instruction cache",
+                ));
+            }
+        };
 
         // Validate jump targets
         for (&ip, instruction) in instructions.iter() {
@@ -340,6 +368,13 @@ impl Script {
     }
 
     /// Gets the instruction at the specified position.
+    ///
+    /// # Performance
+    ///
+    /// For strict-mode scripts the instruction cache is an immutable `HashMap`,
+    /// so this is a plain hash-lookup with **no locking**. For relaxed-mode
+    /// scripts a `RwLock`-guarded cache is used (read lock on hit, write lock
+    /// on miss).
     pub fn get_instruction(&self, position: usize) -> VmResult<Instruction> {
         if position >= self.script.len() {
             return Err(VmError::invalid_operation_msg(format!(
@@ -347,31 +382,38 @@ impl Script {
             )));
         }
 
-        // Fast path: read lock for cache hit (common case, especially in strict mode).
-        {
-            let instructions = self.instructions.read();
-            if let Some(instruction) = instructions.get(&position) {
-                return Ok(instruction.clone());
+        match &self.instructions {
+            // Fast path: lock-free lookup in the pre-populated cache.
+            InstructionCache::Eager(map) => match map.get(&position) {
+                Some(instruction) => Ok(instruction.clone()),
+                None => Err(VmError::invalid_operation_msg(format!(
+                    "Position {position} not found with strict mode"
+                ))),
+            },
+
+            // Relaxed-mode path: read lock for cache hit, write lock for miss.
+            InstructionCache::Lazy(cache) => {
+                // Try read lock first (common case after first access).
+                {
+                    let instructions = cache.read();
+                    if let Some(instruction) = instructions.get(&position) {
+                        return Ok(instruction.clone());
+                    }
+                }
+
+                // Cache miss — parse and insert under write lock.
+                let mut reader = MemoryReader::new(&self.script);
+                reader.set_position(position)?;
+                let instruction = Instruction::parse_from_neo_io_reader(&mut reader)?;
+
+                {
+                    let mut instructions = cache.write();
+                    instructions.insert(position, instruction.clone());
+                }
+
+                Ok(instruction)
             }
         }
-
-        if self.strict_mode {
-            return Err(VmError::invalid_operation_msg(format!(
-                "Position {position} not found with strict mode"
-            )));
-        }
-
-        // Slow path: parse and cache under write lock (relaxed mode only).
-        let mut reader = MemoryReader::new(&self.script);
-        reader.set_position(position)?;
-        let instruction = Instruction::parse_from_neo_io_reader(&mut reader)?;
-
-        {
-            let mut instructions = self.instructions.write();
-            instructions.insert(position, instruction.clone());
-        }
-
-        Ok(instruction)
     }
 
     /// Gets a byte at the specified position.

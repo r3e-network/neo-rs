@@ -2,9 +2,10 @@ use crate::cryptography::Crypto;
 use crate::neo_io::serializable::helper::{deserialize_array, get_var_size, serialize_array};
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::{UInt160, UInt256, Witness};
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct BlockHeader {
     pub version: u32,
     pub previous_hash: UInt256,
@@ -15,7 +16,44 @@ pub struct BlockHeader {
     pub primary_index: u8,
     pub next_consensus: UInt160,
     pub witnesses: Vec<Witness>,
+    /// Cached hash (computed lazily, skipped in serialization).
+    /// Internal cache field -- do not set manually.
+    #[serde(skip)]
+    pub _hash: Mutex<Option<UInt256>>,
 }
+
+impl Clone for BlockHeader {
+    fn clone(&self) -> Self {
+        Self {
+            version: self.version,
+            previous_hash: self.previous_hash,
+            merkle_root: self.merkle_root,
+            timestamp: self.timestamp,
+            nonce: self.nonce,
+            index: self.index,
+            primary_index: self.primary_index,
+            next_consensus: self.next_consensus,
+            witnesses: self.witnesses.clone(),
+            _hash: Mutex::new(*self._hash.lock()),
+        }
+    }
+}
+
+impl PartialEq for BlockHeader {
+    fn eq(&self, other: &Self) -> bool {
+        self.version == other.version
+            && self.previous_hash == other.previous_hash
+            && self.merkle_root == other.merkle_root
+            && self.timestamp == other.timestamp
+            && self.nonce == other.nonce
+            && self.index == other.index
+            && self.primary_index == other.primary_index
+            && self.next_consensus == other.next_consensus
+            && self.witnesses == other.witnesses
+    }
+}
+
+impl Eq for BlockHeader {}
 
 impl BlockHeader {
     #[allow(clippy::too_many_arguments)]
@@ -40,6 +78,7 @@ impl BlockHeader {
             primary_index,
             next_consensus,
             witnesses,
+            _hash: Mutex::new(None),
         }
     }
 
@@ -81,16 +120,26 @@ impl BlockHeader {
             primary_index,
             next_consensus,
             witnesses: Vec::new(),
+            _hash: Mutex::new(None),
         })
     }
 
     /// Computes the header hash (matches C# CalculateHash).
+    /// The result is cached; subsequent calls return the cached value.
     pub fn hash(&self) -> UInt256 {
+        let mut hash_guard = self._hash.lock();
+        if let Some(hash) = *hash_guard {
+            return hash;
+        }
         let mut writer = BinaryWriter::new();
+        // SAFETY: serialize_unsigned writes to an in-memory Vec<u8>, which
+        // cannot produce I/O errors under normal operation.
         self.serialize_unsigned(&mut writer)
-            .expect("block header serialization should not fail");
+            .expect("Vec<u8> write cannot fail");
         // Neo N3 block hashes use single SHA-256 over the unsigned header payload.
-        UInt256::from(Crypto::sha256(&writer.into_bytes()))
+        let hash = UInt256::from(Crypto::sha256(&writer.into_bytes()));
+        *hash_guard = Some(hash);
+        hash
     }
 
     /// Returns the index (height) of the block header.
@@ -111,6 +160,7 @@ impl Default for BlockHeader {
             primary_index: 0,
             next_consensus: UInt160::zero(),
             witnesses: Vec::new(),
+            _hash: Mutex::new(None),
         }
     }
 }

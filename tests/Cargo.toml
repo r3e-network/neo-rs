@@ -31,6 +31,7 @@ neo-rpc = { path = "../neo-rpc" }
 neo-telemetry = { path = "../neo-telemetry" }
 
 # Utilities
+num-bigint = "0.4"
 hex = "0.4"
 tokio = { version = "1", features = ["full", "test-util"] }
 tracing = "0.1"

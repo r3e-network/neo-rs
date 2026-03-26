@@ -13,6 +13,9 @@ pub struct LocalNodeActor {
     pub(super) state: Arc<LocalNode>,
     pub(super) peer: PeerState,
     pub(super) listener: Option<JoinHandle<()>>,
+    /// Tracked handles for spawned background tasks (connection attempts, reputation updates).
+    /// Aborted on actor shutdown to prevent leaked tasks.
+    pub(super) spawned_tasks: Vec<JoinHandle<()>>,
 }
 
 impl LocalNodeActor {
@@ -23,6 +26,7 @@ impl LocalNodeActor {
             state,
             peer,
             listener: None,
+            spawned_tasks: Vec::new(),
         }
     }
 
@@ -117,9 +121,9 @@ impl LocalNodeActor {
                     // SECURITY: Record successful handshake in reputation tracker
                     let tracker = self.state.reputation_tracker();
                     let ip = snapshot.remote_address.ip();
-                    tokio::spawn(async move {
+                    self.spawned_tasks.push(tokio::spawn(async move {
                         tracker.record_contribution(ip, "handshake_success").await;
-                    });
+                    }));
 
                     let _ = reply.send(true);
                 } else {
@@ -143,9 +147,9 @@ impl LocalNodeActor {
                 // SECURITY: Record connection failure in reputation tracker
                 let tracker = self.state.reputation_tracker();
                 let ip = endpoint.ip();
-                tokio::spawn(async move {
+                self.spawned_tasks.push(tokio::spawn(async move {
                     tracker.record_violation(ip, "handshake_failure").await;
-                });
+                }));
 
                 if was_pending {
                     self.requeue_endpoint(endpoint);
@@ -409,9 +413,17 @@ impl LocalNodeActor {
         Ok(())
     }
 
-    fn queue_outbound_connect(&self, ctx: &ActorContext, endpoint: SocketAddr, is_trusted: bool) {
+    fn queue_outbound_connect(
+        &mut self,
+        ctx: &ActorContext,
+        endpoint: SocketAddr,
+        is_trusted: bool,
+    ) {
+        // Prune completed tasks to avoid unbounded growth.
+        self.spawned_tasks.retain(|h| !h.is_finished());
+
         let actor = ctx.self_ref();
-        tokio::spawn(async move {
+        self.spawned_tasks.push(tokio::spawn(async move {
             match timeout(TCP_CONNECTION_TIMEOUT, TcpStream::connect(endpoint)).await {
                 Ok(Ok(stream)) => {
                     if let Err(err) = stream.set_nodelay(true) {
@@ -473,7 +485,7 @@ impl LocalNodeActor {
                     }
                 }
             }
-        });
+        }));
     }
 
     fn send_inventory_to_peers(
@@ -482,50 +494,34 @@ impl LocalNodeActor {
         block_index: Option<u32>,
         restrict_block_height: bool,
     ) {
-        match inventory {
-            RelayInventory::Block(block) => {
-                let target_index = block_index.unwrap_or(block.index());
-                for entry in self.state.remote_entries() {
-                    if restrict_block_height && entry.snapshot.last_block_index >= target_index {
+        for entry in self.state.remote_entries() {
+            // For blocks, optionally skip peers that already have this block height.
+            if restrict_block_height {
+                if let RelayInventory::Block(block) = inventory {
+                    let target_index = block_index.unwrap_or(block.index());
+                    if entry.snapshot.last_block_index >= target_index {
                         continue;
                     }
+                }
+            }
 
-                    let message = NetworkMessage::new(ProtocolMessage::Block(block.clone()));
-                    if let Err(error) = entry.actor.tell(RemoteNodeCommand::Send(message)) {
-                        warn!(
-                            target: "neo",
-                            remote = %entry.snapshot.remote_address,
-                            %error,
-                            "failed to relay block to peer"
-                        );
-                    }
+            let command = if restrict_block_height {
+                // Relay: send INV announcement so the peer can request via GETDATA.
+                RemoteNodeCommand::RelayInventory(inventory.clone())
+            } else {
+                // Direct send: push the full payload immediately.
+                RemoteNodeCommand::SendInventory {
+                    inventory: inventory.clone(),
                 }
-            }
-            RelayInventory::Transaction(tx) => {
-                for entry in self.state.remote_entries() {
-                    let message = NetworkMessage::new(ProtocolMessage::Transaction(tx.clone()));
-                    if let Err(error) = entry.actor.tell(RemoteNodeCommand::Send(message)) {
-                        warn!(
-                            target: "neo",
-                            remote = %entry.snapshot.remote_address,
-                            %error,
-                            "failed to relay transaction to peer"
-                        );
-                    }
-                }
-            }
-            RelayInventory::Extensible(payload) => {
-                for entry in self.state.remote_entries() {
-                    let message = NetworkMessage::new(ProtocolMessage::Extensible(payload.clone()));
-                    if let Err(error) = entry.actor.tell(RemoteNodeCommand::Send(message)) {
-                        warn!(
-                            target: "neo",
-                            remote = %entry.snapshot.remote_address,
-                            %error,
-                            "failed to relay extensible payload to peer"
-                        );
-                    }
-                }
+            };
+
+            if let Err(error) = entry.actor.tell(command) {
+                warn!(
+                    target: "neo",
+                    remote = %entry.snapshot.remote_address,
+                    %error,
+                    "failed to send inventory to peer"
+                );
             }
         }
     }

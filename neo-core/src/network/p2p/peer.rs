@@ -403,6 +403,14 @@ impl PeerState {
         self.timer = Some(handle);
     }
 
+    /// Performs UPnP discovery and port forwarding using blocking I/O.
+    ///
+    /// **Note:** This method uses `reqwest::blocking` and synchronous UDP sockets
+    /// internally, which will block the calling thread. It is called only once
+    /// during initial peer configuration (startup), so the brief blocking window
+    /// is acceptable. If this is ever moved into a hot path or called from an
+    /// async context on the Tokio runtime, wrap the call in
+    /// `tokio::task::spawn_blocking`.
     #[cfg(feature = "upnp")]
     fn configure_upnp(&mut self) {
         use crate::network::u_pn_p::UPnP;

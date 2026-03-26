@@ -38,7 +38,7 @@ fn bench_memory_store_read_write(c: &mut Criterion) {
                 let key = create_storage_key(0);
                 let raw_key = key.to_array();
                 let raw_value = random_bytes(size);
-                store.put(raw_key, raw_value);
+                store.put(raw_key, raw_value).unwrap();
                 black_box(store)
             });
         });
@@ -50,7 +50,7 @@ fn bench_memory_store_read_write(c: &mut Criterion) {
         let key = create_storage_key(0);
         let raw_key = key.to_array();
         let raw_value = random_bytes(*size);
-        store.put(raw_key.clone(), raw_value);
+        store.put(raw_key.clone(), raw_value).unwrap();
 
         group.throughput(Throughput::Bytes(*size as u64));
         group.bench_with_input(BenchmarkId::new("read", size), size, |b, _| {
@@ -69,8 +69,8 @@ fn bench_memory_store_read_write(c: &mut Criterion) {
             let data = random_bytes(256);
             let raw_key = key.to_array();
             let raw_value = data;
-            store.put(raw_key.clone(), raw_value);
-            store.delete(black_box(raw_key));
+            store.put(raw_key.clone(), raw_value).unwrap();
+            store.delete(black_box(raw_key)).unwrap();
             black_box(())
         });
     });
@@ -145,7 +145,7 @@ fn bench_batch_operations(c: &mut Criterion) {
                 let data = random_bytes(256);
                 let raw_key = key.to_array();
                 let raw_value = data;
-                store.put(raw_key, raw_value);
+                store.put(raw_key, raw_value).unwrap();
             }
             black_box(())
         });
@@ -159,7 +159,7 @@ fn bench_batch_operations(c: &mut Criterion) {
                 let data = random_bytes(256);
                 let raw_key = key.to_array();
                 let raw_value = data;
-                store.put(raw_key, raw_value);
+                store.put(raw_key, raw_value).unwrap();
             }
             black_box(())
         });
@@ -173,7 +173,7 @@ fn bench_batch_operations(c: &mut Criterion) {
                 let data = random_bytes(256);
                 let raw_key = key.to_array();
                 let raw_value = data;
-                store.put(raw_key.clone(), raw_value);
+                store.put(raw_key.clone(), raw_value).unwrap();
                 raw_key
             })
             .collect();
@@ -194,7 +194,7 @@ fn bench_batch_operations(c: &mut Criterion) {
                 let data = random_bytes(256);
                 let raw_key = key.to_array();
                 let raw_value = data;
-                store.put(raw_key.clone(), raw_value);
+                store.put(raw_key.clone(), raw_value).unwrap();
                 raw_key
             })
             .collect();
@@ -222,7 +222,7 @@ fn bench_seek_operations(c: &mut Criterion) {
             let data = random_bytes(256);
             let raw_key = key.to_array();
             let raw_value = data;
-            store.put(raw_key, raw_value);
+            store.put(raw_key, raw_value).unwrap();
         }
 
         let start_key = create_storage_key(0);
@@ -249,7 +249,7 @@ fn bench_seek_operations(c: &mut Criterion) {
             let data = random_bytes(256);
             let raw_key = key.to_array();
             let raw_value = data;
-            store.put(raw_key, raw_value);
+            store.put(raw_key, raw_value).unwrap();
         }
 
         let start_key = create_storage_key(99);

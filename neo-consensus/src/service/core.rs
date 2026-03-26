@@ -13,7 +13,6 @@ pub struct ConsensusService {
     pub(super) network: u32,
     /// Private key for signing consensus messages (secp256r1 ECDSA).
     /// Wrapped in `Zeroizing` so key material is wiped from memory on drop.
-    #[allow(dead_code)]
     pub(super) private_key: Zeroizing<Vec<u8>>,
     /// Optional signer for consensus messages (wallet/HSM/external signer).
     pub(super) signer: Option<Arc<dyn ConsensusSigner>>,
@@ -34,7 +33,7 @@ impl ConsensusService {
         event_tx: mpsc::Sender<ConsensusEvent>,
     ) -> Self {
         Self {
-            context: ConsensusContext::new(0, validators, my_index),
+            context: ConsensusContext::new(0, validators, my_index, None),
             network,
             private_key: Zeroizing::new(private_key),
             signer: None,

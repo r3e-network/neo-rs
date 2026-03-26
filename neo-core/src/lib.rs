@@ -209,7 +209,7 @@ pub mod wallets;
 /// Transaction signing and signature handling.
 ///
 /// Matches C# `Neo.Sign` namespace.
-pub mod sign;
+pub(crate) mod sign;
 
 /// Event handler interfaces.
 ///
@@ -229,7 +229,7 @@ pub mod events;
 /// I/O abstractions and helpers.
 ///
 /// Matches C# `Neo.IO` namespace.
-pub mod io;
+pub(crate) mod io;
 
 /// RPC models and utilities.
 pub mod rpc;

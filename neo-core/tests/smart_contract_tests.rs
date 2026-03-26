@@ -282,61 +282,21 @@ fn create_signature_redeem_script(public_key: &[u8]) -> Vec<u8> {
 }
 
 // ============================================================================
-// ✅ Advanced Smart Contract Tests - Future test organization improvement
+// Future Smart Contract Test Categories
 // ============================================================================
-
-// The following test categories will be implemented in the VM and smart_contract crates:
-
-#[test]
-#[ignore] // Ignore until VM infrastructure is ready
-fn test_vm_execution_engine() {
-    // - Basic VM execution
-    // - OpCode operations
-    // - Stack management
-    // - Script execution
-}
-
-#[test]
-#[ignore] // Ignore until smart contract infrastructure is ready
-fn test_application_engine() {
-    // - ApplicationEngine creation
-    // - Interop service calls
-    // - Gas consumption
-    // - Trigger types
-}
-
-#[test]
-#[ignore] // Ignore until storage infrastructure is ready
-fn test_storage_operations() {
-    // - Storage context management
-    // - Get/Put/Delete operations
-    // - Read-only contexts
-    // - Storage permissions
-}
-
-#[test]
-#[ignore] // Ignore until contract infrastructure is ready
-fn test_contract_operations() {
-    // - Contract deployment
-    // - Contract calls
-    // - Contract destruction
-    // - Contract permissions
-}
-
-#[test]
-#[ignore] // Ignore until notification system is ready
-fn test_notification_system() {
-    // - Event emission
-    // - Notification retrieval
-    // - Event filtering
-    // - Contract event descriptors
-}
-
-#[test]
-#[ignore] // Ignore until blockchain infrastructure is ready
-fn test_blockchain_queries() {
-    // - Block queries
-    // - Transaction queries
-    // - Height queries
-    // - Contract queries
-}
+//
+// The following test categories should be implemented once the corresponding
+// infrastructure is ready. Each maps to a component in the VM / smart_contract
+// crates:
+//
+//  1. VM Execution Engine: basic execution, opcode operations, stack management,
+//     script execution.
+//  2. Application Engine: creation, interop service calls, gas consumption,
+//     trigger types.
+//  3. Storage Operations: context management, get/put/delete, read-only
+//     contexts, storage permissions.
+//  4. Contract Operations: deployment, calls, destruction, permissions.
+//  5. Notification System: event emission, retrieval, filtering,
+//     contract event descriptors.
+//  6. Blockchain Queries: block queries, transaction queries, height queries,
+//     contract queries.

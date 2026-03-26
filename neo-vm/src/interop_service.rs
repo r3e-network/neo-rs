@@ -82,20 +82,26 @@ pub trait InteropHost {
     }
 
     /// Called before executing an instruction. Allows the host to intercept execution.
+    ///
+    /// If the host needs the current execution context it can obtain it via
+    /// `engine.current_context()` — this avoids an expensive per-instruction
+    /// `ExecutionContext` clone.
     fn pre_execute_instruction(
         &mut self,
         _engine: &mut ExecutionEngine,
-        _context: &ExecutionContext,
         _instruction: &Instruction,
     ) -> VmResult<()> {
         Ok(())
     }
 
     /// Called after executing an instruction. Allows the host to perform post-processing.
+    ///
+    /// If the host needs the current execution context it can obtain it via
+    /// `engine.current_context()` — this avoids an expensive per-instruction
+    /// `ExecutionContext` clone.
     fn post_execute_instruction(
         &mut self,
         _engine: &mut ExecutionEngine,
-        _context: &ExecutionContext,
         _instruction: &Instruction,
     ) -> VmResult<()> {
         Ok(())

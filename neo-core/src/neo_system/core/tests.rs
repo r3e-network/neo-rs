@@ -109,7 +109,7 @@ fn hydrate_ledger_restores_height_and_headers() {
         let key =
             crate::smart_contract::native::ledger_contract::keys::block_hash_storage_key(-4, index)
                 .to_array();
-        snapshot.put(key, hash.to_bytes().to_vec());
+        snapshot.put(key, hash.to_bytes().to_vec()).unwrap();
 
         let block_key =
             crate::smart_contract::native::ledger_contract::keys::block_storage_key(-4, &hash)
@@ -119,7 +119,7 @@ fn hydrate_ledger_restores_height_and_headers() {
         trimmed
             .serialize(&mut writer)
             .expect("trimmed block serialize");
-        snapshot.put(block_key, writer.to_bytes());
+        snapshot.put(block_key, writer.to_bytes()).unwrap();
         hash
     };
 
@@ -133,7 +133,7 @@ fn hydrate_ledger_restores_height_and_headers() {
     let mut current_state = Vec::with_capacity(36);
     current_state.extend_from_slice(&hash.to_bytes());
     current_state.extend_from_slice(&1u32.to_le_bytes());
-    snapshot.put(current_key, current_state);
+    snapshot.put(current_key, current_state).unwrap();
     snapshot.commit();
 
     let store_cache = StoreCache::new_from_store(store, true);
@@ -172,7 +172,7 @@ fn hydrate_ledger_respects_bounded_window() {
         let key =
             crate::smart_contract::native::ledger_contract::keys::block_hash_storage_key(-4, index)
                 .to_array();
-        snapshot.put(key, hash.to_bytes().to_vec());
+        snapshot.put(key, hash.to_bytes().to_vec()).unwrap();
 
         let block_key =
             crate::smart_contract::native::ledger_contract::keys::block_storage_key(-4, &hash)
@@ -180,7 +180,7 @@ fn hydrate_ledger_respects_bounded_window() {
         let mut writer = crate::neo_io::BinaryWriter::new();
         let trimmed = TrimmedBlock::from_block(&block);
         trimmed.serialize(&mut writer).expect("serialize block");
-        snapshot.put(block_key, writer.to_bytes());
+        snapshot.put(block_key, writer.to_bytes()).unwrap();
         last_hash = hash;
     }
 
@@ -191,7 +191,7 @@ fn hydrate_ledger_respects_bounded_window() {
     let mut current_state = Vec::with_capacity(36);
     current_state.extend_from_slice(&last_hash.to_bytes());
     current_state.extend_from_slice(&total_blocks.to_le_bytes());
-    snapshot.put(current_key, current_state);
+    snapshot.put(current_key, current_state).unwrap();
     snapshot.commit();
 
     let store_cache = StoreCache::new_from_store(store, true);
@@ -227,6 +227,7 @@ fn sample_ledger_header() -> LedgerBlockHeader {
         primary_index: 3,
         next_consensus: sample_u160(5),
         witnesses: vec![witness],
+        ..Default::default()
     }
 }
 

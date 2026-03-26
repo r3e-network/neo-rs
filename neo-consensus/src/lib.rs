@@ -214,8 +214,8 @@
 //! - **Liveness**: If the network is synchronous and < 1/3 nodes are faulty, blocks are eventually committed
 //! - **Accountability**: All consensus actions are signed and auditable
 
-// Documentation warnings deferred — tracked for incremental doc coverage
-#![allow(missing_docs)]
+// Documentation warnings enabled — incremental doc coverage in progress
+#![warn(missing_docs)]
 #![warn(rustdoc::missing_crate_level_docs)]
 
 // ============================================================================
@@ -263,7 +263,10 @@ pub use signer::ConsensusSigner;
 // Public Re-exports - Context
 // ============================================================================
 
-pub use context::{ConsensusContext, ConsensusState, ValidatorInfo, BLOCK_TIME_MS, MAX_VALIDATORS};
+pub use context::{
+    ConsensusContext, ConsensusState, ValidatorInfo, BLOCK_TIME_MS, DEFAULT_BLOCK_TIME_MS,
+    MAX_VALIDATORS,
+};
 
 // ============================================================================
 // Public Re-exports - Messages

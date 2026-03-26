@@ -151,7 +151,6 @@ impl InteropHost for ApplicationEngine {
     fn pre_execute_instruction(
         &mut self,
         _engine: &mut ExecutionEngine,
-        _context: &ExecutionContext,
         instruction: &Instruction,
     ) -> VmResult<()> {
         let opcode_price = Self::get_opcode_price(instruction.opcode as u8);
@@ -169,7 +168,6 @@ impl InteropHost for ApplicationEngine {
     fn post_execute_instruction(
         &mut self,
         _engine: &mut ExecutionEngine,
-        _context: &ExecutionContext,
         instruction: &Instruction,
     ) -> VmResult<()> {
         if let Some(diagnostic) = self.diagnostic.as_mut() {

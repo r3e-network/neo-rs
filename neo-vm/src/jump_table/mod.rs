@@ -174,15 +174,21 @@ impl JumpTable {
 impl std::ops::Index<OpCode> for JumpTable {
     type Output = InstructionHandler;
 
+    /// # Panics
+    ///
+    /// Panics if no handler is registered for `opcode`. Production code should
+    /// use [`JumpTable::execute`] instead, which returns a `VmResult`.
     #[inline]
     fn index(&self, opcode: OpCode) -> &Self::Output {
         debug_assert!((opcode as usize) < self.handlers.len());
         // SAFETY: OpCode is a u8 enum (0..=255) and handlers has exactly 256 entries.
+        // The Option::expect is acceptable here because Index must return a reference
+        // and cannot return Result; the execute() method is the safe alternative.
         unsafe {
             self.handlers
                 .get_unchecked(opcode as usize)
                 .as_ref()
-                .expect("Unsupported opcode")
+                .expect("No handler registered for opcode; use JumpTable::execute() in production")
         }
     }
 }
@@ -205,11 +211,12 @@ impl std::ops::IndexMut<OpCode> for JumpTable {
                 );
             }
 
-            // Now we can safely get a mutable reference
+            // SAFETY: The branch above guarantees the slot is now Some, so
+            // this unwrap is infallible.
             self.handlers
                 .get_unchecked_mut(idx)
                 .as_mut()
-                .expect("Unsupported opcode")
+                .expect("slot was just initialised to Some")
         }
     }
 }
@@ -303,7 +310,7 @@ mod tests {
         let instruction = Instruction {
             pointer: 0,
             opcode: OpCode::NOP,
-            operand: vec![],
+            operand: smallvec::smallvec![],
         };
 
         let mut jump_table = jump_table.clone();

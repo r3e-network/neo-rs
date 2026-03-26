@@ -3,6 +3,8 @@
 //! `neo-node` is a long-running daemon: it runs the Neo N3 protocol, syncs the chain over P2P,
 //! and (optionally) exposes a JSON-RPC server for external clients.
 
+#![warn(missing_docs)]
+
 mod cli;
 mod config;
 mod consensus;
@@ -55,6 +57,8 @@ use rpc_consensus::RpcServerConsensus;
 use serde_json::Value;
 use std::{fs, path::PathBuf, sync::Arc};
 use tokio::signal;
+#[cfg(unix)]
+use tokio::signal::unix::SignalKind;
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};
 use wallet_provider::NodeWalletProvider;
@@ -64,6 +68,12 @@ use zeroize::Zeroizing;
 static GLOBAL_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 fn main() -> Result<()> {
+    // Parse CLI and set environment variables *before* creating the multi-threaded
+    // Tokio runtime.  `std::env::set_var` is unsafe in multi-threaded programs
+    // (Rust 2024 edition), so we must do it while we are still single-threaded.
+    let cli = NodeCli::parse();
+    maybe_enable_import_batch_profile(&cli);
+
     let rt = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(num_cpus::get().max(4))
         .max_blocking_threads(512)
@@ -73,11 +83,10 @@ fn main() -> Result<()> {
         .thread_stack_size(2 * 1024 * 1024)
         .build()?;
 
-    rt.block_on(inner_main())
+    rt.block_on(inner_main(cli))
 }
 
-async fn inner_main() -> Result<()> {
-    let cli = NodeCli::parse();
+async fn inner_main(cli: NodeCli) -> Result<()> {
     let mut node_config = NodeConfig::load(&cli.config)?;
     apply_cli_overrides(&cli, &mut node_config);
 
@@ -102,8 +111,6 @@ async fn inner_main() -> Result<()> {
         &protocol_settings,
         cli.rpc_hardened,
     )?;
-
-    maybe_enable_import_batch_profile(&cli);
 
     if cli.check_all {
         startup::check_storage_access(
@@ -412,10 +419,30 @@ async fn inner_main() -> Result<()> {
     });
 
     info!(target: "neo", "node running, press Ctrl+C to stop");
-    if let Err(err) = signal::ctrl_c().await {
-        error!(target: "neo", error = %err, "failed to wait for shutdown signal");
-    } else {
-        info!(target: "neo", "shutdown signal received (Ctrl+C)");
+
+    #[cfg(unix)]
+    {
+        let mut sigterm = tokio::signal::unix::signal(SignalKind::terminate())
+            .expect("failed to install SIGTERM handler");
+        tokio::select! {
+            result = signal::ctrl_c() => {
+                match result {
+                    Ok(()) => info!(target: "neo", "received SIGINT, shutting down"),
+                    Err(err) => error!(target: "neo", error = %err, "failed to wait for SIGINT"),
+                }
+            }
+            _ = sigterm.recv() => {
+                info!(target: "neo", "received SIGTERM, shutting down");
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        if let Err(err) = signal::ctrl_c().await {
+            error!(target: "neo", error = %err, "failed to wait for shutdown signal");
+        } else {
+            info!(target: "neo", "shutdown signal received (Ctrl+C)");
+        }
     }
 
     let _ = pump_shutdown_tx.send(true);
@@ -435,11 +462,13 @@ async fn inner_main() -> Result<()> {
         }
     }
 
-    system
-        .shutdown()
-        .await
-        .map_err(|e| anyhow::anyhow!(e.to_string()))
-        .context("failed to shut down NeoSystem")?;
+    match tokio::time::timeout(std::time::Duration::from_secs(30), system.shutdown()).await {
+        Ok(Ok(_)) => info!(target: "neo", "system shutdown complete"),
+        Ok(Err(e)) => {
+            return Err(anyhow::anyhow!(e.to_string())).context("failed to shut down NeoSystem");
+        }
+        Err(_) => warn!(target: "neo", "system shutdown timed out after 30s, forcing exit"),
+    }
 
     info!(target: "neo", "shutdown complete");
     Ok(())

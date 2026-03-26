@@ -28,6 +28,7 @@ lazy_static = { workspace = true }
 once_cell = { workspace = true }
 xxhash-rust = { workspace = true }
 parking_lot = { workspace = true }
+smallvec = { workspace = true }
 
 # Internal dependencies
 neo-io = { path = "../neo-io" }

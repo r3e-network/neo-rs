@@ -86,12 +86,14 @@ impl IReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MemorySnapshot {
 }
 
 impl IWriteStore<Vec<u8>, Vec<u8>> for MemorySnapshot {
-    fn delete(&mut self, key: Vec<u8>) {
+    fn delete(&mut self, key: Vec<u8>) -> crate::error::CoreResult<()> {
         self.write_batch.write().insert(key, None);
+        Ok(())
     }
 
-    fn put(&mut self, key: Vec<u8>, value: Vec<u8>) {
+    fn put(&mut self, key: Vec<u8>, value: Vec<u8>) -> crate::error::CoreResult<()> {
         self.write_batch.write().insert(key, Some(value));
+        Ok(())
     }
 }
 

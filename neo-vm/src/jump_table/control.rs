@@ -107,9 +107,9 @@ pub fn jmpifnot_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> Vm
 
 /// JMPEQ - Jump if equal
 pub fn jmpeq(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    let b = engine.pop()?;
-    let a = engine.pop()?;
-    if a.equals_with_limits(&b, engine.limits())? {
+    let x2 = engine.pop()?.get_integer()?;
+    let x1 = engine.pop()?.get_integer()?;
+    if x1 == x2 {
         let offset = i32::from(instruction.token_i8());
         engine.execute_jump_offset(offset)?;
     }
@@ -118,9 +118,9 @@ pub fn jmpeq(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
 
 /// `JMPEQ_L` - Jump if equal (32-bit)
 pub fn jmpeq_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    let b = engine.pop()?;
-    let a = engine.pop()?;
-    if a.equals_with_limits(&b, engine.limits())? {
+    let x2 = engine.pop()?.get_integer()?;
+    let x1 = engine.pop()?.get_integer()?;
+    if x1 == x2 {
         let offset = instruction.token_i32();
         engine.execute_jump_offset(offset)?;
     }
@@ -129,9 +129,9 @@ pub fn jmpeq_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
 
 /// JMPNE - Jump if not equal
 pub fn jmpne(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    let b = engine.pop()?;
-    let a = engine.pop()?;
-    if !a.equals_with_limits(&b, engine.limits())? {
+    let x2 = engine.pop()?.get_integer()?;
+    let x1 = engine.pop()?.get_integer()?;
+    if x1 != x2 {
         let offset = i32::from(instruction.token_i8());
         engine.execute_jump_offset(offset)?;
     }
@@ -140,9 +140,9 @@ pub fn jmpne(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
 
 /// `JMPNE_L` - Jump if not equal (32-bit)
 pub fn jmpne_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    let b = engine.pop()?;
-    let a = engine.pop()?;
-    if !a.equals_with_limits(&b, engine.limits())? {
+    let x2 = engine.pop()?.get_integer()?;
+    let x1 = engine.pop()?.get_integer()?;
+    if x1 != x2 {
         let offset = instruction.token_i32();
         engine.execute_jump_offset(offset)?;
     }
@@ -311,9 +311,11 @@ pub fn abort(_engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRes
 }
 
 /// ABORTMSG - Abort execution with message
-pub fn abortmsg(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    let _ = engine.pop();
-    abort(engine, instruction)
+pub fn abortmsg(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let msg_item = engine.pop()?;
+    let msg_bytes = msg_item.as_bytes()?;
+    let msg = String::from_utf8_lossy(&msg_bytes).into_owned();
+    Err(VmError::AbortMsg(msg))
 }
 
 /// ASSERT - Assert condition
@@ -325,9 +327,14 @@ pub fn assert(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRes
 }
 
 /// ASSERTMSG - Assert condition with message
-pub fn assertmsg(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    let _ = engine.pop();
-    assert(engine, instruction)
+pub fn assertmsg(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let msg_item = engine.pop()?;
+    let msg_bytes = msg_item.as_bytes()?;
+    let msg = String::from_utf8_lossy(&msg_bytes).into_owned();
+    if !engine.pop()?.get_boolean()? {
+        return Err(VmError::AssertFailedMsg(msg));
+    }
+    Ok(())
 }
 
 /// THROW - Throw exception

@@ -29,60 +29,31 @@ pub fn register_handlers(jump_table: &mut JumpTable) {
 
 fn invert(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
-    let value = ctx.pop()?;
-    let result = match value {
-        StackItem::Integer(i) => StackItem::from_int(!i),
-        StackItem::Boolean(b) => StackItem::from_bool(!b),
-        _ => StackItem::from_bool(!value.as_bool()?),
-    };
-    ctx.push(result)
+    let x = ctx.pop()?.as_int()?;
+    ctx.push(StackItem::from_int(!x))
 }
 
 /// Helper for binary bitwise operations (AND, OR, XOR)
-fn binary_bitwise<F, G>(
-    engine: &mut ExecutionEngine,
-    op_name: &str,
-    int_op: F,
-    bool_op: G,
-) -> VmResult<()>
+fn binary_bitwise<F>(engine: &mut ExecutionEngine, int_op: F) -> VmResult<()>
 where
     F: FnOnce(num_bigint::BigInt, num_bigint::BigInt) -> num_bigint::BigInt,
-    G: FnOnce(bool, bool) -> bool,
 {
     let ctx = require_context(engine)?;
-    let b = ctx.pop()?;
-    let a = ctx.pop()?;
-
-    let result = match (&a, &b) {
-        (StackItem::Integer(a), StackItem::Integer(b)) => {
-            StackItem::from_int(int_op(a.clone(), b.clone()))
-        }
-        (StackItem::Boolean(a), StackItem::Boolean(b)) => StackItem::from_bool(bool_op(*a, *b)),
-        (StackItem::ByteString(_), StackItem::ByteString(_)) => {
-            StackItem::from_int(int_op(a.as_int()?, b.as_int()?))
-        }
-        _ => {
-            return Err(VmError::invalid_operation_msg(format!(
-                "{} operation not supported for types: {:?} and {:?}",
-                op_name,
-                a.stack_item_type(),
-                b.stack_item_type()
-            )));
-        }
-    };
-    ctx.push(result)
+    let b = ctx.pop()?.as_int()?;
+    let a = ctx.pop()?.as_int()?;
+    ctx.push(StackItem::from_int(int_op(a, b)))
 }
 
 fn and(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    binary_bitwise(engine, "AND", |a, b| a & b, |a, b| a && b)
+    binary_bitwise(engine, |a, b| a & b)
 }
 
 fn or(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    binary_bitwise(engine, "OR", |a, b| a | b, |a, b| a || b)
+    binary_bitwise(engine, |a, b| a | b)
 }
 
 fn xor(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    binary_bitwise(engine, "XOR", |a, b| a ^ b, |a, b| a != b)
+    binary_bitwise(engine, |a, b| a ^ b)
 }
 
 fn equal(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {

@@ -279,9 +279,17 @@ impl StateStoreBackend for SnapshotBackedStateStoreBackend {
         };
 
         for (key, value) in pending.drain() {
-            match value {
+            let result = match value {
                 Some(v) => snapshot_mut.put(key, v),
                 None => snapshot_mut.delete(key),
+            };
+            if let Err(e) = result {
+                tracing::error!(
+                    target: "neo",
+                    error = %e,
+                    "state service commit: storage write failed"
+                );
+                return;
             }
         }
         snapshot_mut.commit();

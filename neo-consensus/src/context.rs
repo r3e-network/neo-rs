@@ -8,8 +8,13 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 
-/// Block time in milliseconds (15 seconds for Neo N3)
-pub const BLOCK_TIME_MS: u64 = 15_000;
+/// Default block time in milliseconds (15 seconds for Neo N3).
+/// Post-Echidna, `MillisecondsPerBlock` is a committee-configurable policy
+/// setting.  Use this only as a fallback when no policy value is available.
+pub const DEFAULT_BLOCK_TIME_MS: u64 = 15_000;
+
+/// Backwards-compatible alias (deprecated - prefer `DEFAULT_BLOCK_TIME_MS`).
+pub const BLOCK_TIME_MS: u64 = DEFAULT_BLOCK_TIME_MS;
 
 /// Maximum validators in dBFT
 pub const MAX_VALIDATORS: usize = 21;
@@ -160,9 +165,21 @@ pub struct ConsensusContext {
 }
 
 impl ConsensusContext {
-    /// Creates a new consensus context
+    /// Creates a new consensus context.
+    ///
+    /// `block_time_ms` sets the expected block interval. Pass `None` (or `0`)
+    /// to fall back to [`DEFAULT_BLOCK_TIME_MS`].
     #[must_use]
-    pub fn new(block_index: u32, validators: Vec<ValidatorInfo>, my_index: Option<u8>) -> Self {
+    pub fn new(
+        block_index: u32,
+        validators: Vec<ValidatorInfo>,
+        my_index: Option<u8>,
+        block_time_ms: Option<u64>,
+    ) -> Self {
+        let effective_block_time = match block_time_ms {
+            Some(t) if t > 0 => t,
+            _ => DEFAULT_BLOCK_TIME_MS,
+        };
         Self {
             block_index,
             view_number: 0,
@@ -170,7 +187,7 @@ impl ConsensusContext {
             my_index,
             state: ConsensusState::Initial,
             view_start_time: 0,
-            expected_block_time: 0,
+            expected_block_time: effective_block_time,
             version: 0,
             prev_hash: UInt256::zero(),
             proposed_block_hash: None,
@@ -396,7 +413,7 @@ impl ConsensusContext {
         let base = if self.expected_block_time > 0 {
             self.expected_block_time
         } else {
-            BLOCK_TIME_MS
+            DEFAULT_BLOCK_TIME_MS
         };
         base << (self.view_number + 1).min(5)
     }
@@ -722,7 +739,7 @@ mod tests {
     #[test]
     fn test_consensus_context_new() {
         let validators = create_test_validators(7);
-        let ctx = ConsensusContext::new(100, validators, Some(0));
+        let ctx = ConsensusContext::new(100, validators, Some(0), None);
 
         assert_eq!(ctx.block_index, 100);
         assert_eq!(ctx.view_number, 0);
@@ -734,19 +751,19 @@ mod tests {
     fn test_f_and_m_calculations() {
         // 7 validators: f = 2, M = 5
         let validators = create_test_validators(7);
-        let ctx = ConsensusContext::new(0, validators, None);
+        let ctx = ConsensusContext::new(0, validators, None, None);
         assert_eq!(ctx.f(), 2);
         assert_eq!(ctx.m(), 5);
 
         // 4 validators: f = 1, M = 3
         let validators = create_test_validators(4);
-        let ctx = ConsensusContext::new(0, validators, None);
+        let ctx = ConsensusContext::new(0, validators, None, None);
         assert_eq!(ctx.f(), 1);
         assert_eq!(ctx.m(), 3);
 
         // 21 validators: f = 6, M = 15
         let validators = create_test_validators(21);
-        let ctx = ConsensusContext::new(0, validators, None);
+        let ctx = ConsensusContext::new(0, validators, None, None);
         assert_eq!(ctx.f(), 6);
         assert_eq!(ctx.m(), 15);
     }
@@ -754,7 +771,7 @@ mod tests {
     #[test]
     fn test_primary_index() {
         let validators = create_test_validators(7);
-        let mut ctx = ConsensusContext::new(0, validators, Some(0));
+        let mut ctx = ConsensusContext::new(0, validators, Some(0), None);
 
         // Block 0, view 0: primary = 0
         assert_eq!(ctx.primary_index(), 0);
@@ -774,7 +791,7 @@ mod tests {
     #[test]
     fn test_has_enough_responses() {
         let validators = create_test_validators(7);
-        let mut ctx = ConsensusContext::new(0, validators, Some(0));
+        let mut ctx = ConsensusContext::new(0, validators, Some(0), None);
 
         // Need M = 5 responses
         assert!(!ctx.has_enough_prepare_responses());
@@ -792,7 +809,7 @@ mod tests {
     #[test]
     fn test_reset_for_new_view() {
         let validators = create_test_validators(7);
-        let mut ctx = ConsensusContext::new(0, validators, Some(1));
+        let mut ctx = ConsensusContext::new(0, validators, Some(1), None);
 
         ctx.prepare_request_received = true;
         ctx.prepare_responses.insert(0, vec![0]);
@@ -811,7 +828,7 @@ mod tests {
     #[test]
     fn test_timeout_calculation() {
         let validators = create_test_validators(7);
-        let mut ctx = ConsensusContext::new(0, validators, None);
+        let mut ctx = ConsensusContext::new(0, validators, None, None);
 
         // View 0: base << 1 = 30s (matches C# shift by ViewNumber+1)
         assert_eq!(ctx.get_timeout(), BLOCK_TIME_MS * 2);
@@ -835,7 +852,7 @@ mod tests {
 
         // Create a test context with some state
         let validators = create_test_validators(7);
-        let mut ctx = ConsensusContext::new(100, validators.clone(), Some(0));
+        let mut ctx = ConsensusContext::new(100, validators.clone(), None, Some(0));
 
         // Set up some consensus state
         ctx.view_number = 2;
@@ -975,7 +992,7 @@ mod tests {
 
         // Create a minimal context
         let validators = create_test_validators(4);
-        let ctx = ConsensusContext::new(0, validators.clone(), None);
+        let ctx = ConsensusContext::new(0, validators.clone(), None, None);
 
         // Save to a temporary file
         let temp_dir = env::temp_dir();
@@ -1010,7 +1027,7 @@ mod tests {
         use std::env;
 
         let validators = create_test_validators(4);
-        let ctx = ConsensusContext::new(42, validators, Some(1));
+        let ctx = ConsensusContext::new(42, validators, Some(1), None);
 
         let temp_dir = env::temp_dir();
         let temp_path = temp_dir.join("test_consensus_atomic.bin");
@@ -1073,7 +1090,7 @@ mod tests {
     #[test]
     fn test_count_committed() {
         let validators = create_test_validators(7);
-        let mut ctx = ConsensusContext::new(100, validators, Some(0));
+        let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
 
         // Initially no commits
         assert_eq!(ctx.count_committed(), 0);
@@ -1090,7 +1107,7 @@ mod tests {
     #[test]
     fn test_count_failed_empty() {
         let validators = create_test_validators(7);
-        let ctx = ConsensusContext::new(100, validators, Some(0));
+        let ctx = ConsensusContext::new(100, validators, Some(0), None);
 
         // No last_seen_messages tracked yet
         assert_eq!(ctx.count_failed(), 0);
@@ -1099,7 +1116,7 @@ mod tests {
     #[test]
     fn test_count_failed_with_old_messages() {
         let validators = create_test_validators(7);
-        let mut ctx = ConsensusContext::new(100, validators, Some(0));
+        let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
 
         // Simulate messages from validators at different block heights
         ctx.last_seen_messages.insert(0, 100); // Current block - not failed
@@ -1115,7 +1132,7 @@ mod tests {
     #[test]
     fn test_count_failed_threshold() {
         let validators = create_test_validators(4);
-        let mut ctx = ConsensusContext::new(10, validators, Some(0));
+        let mut ctx = ConsensusContext::new(10, validators, Some(0), None);
 
         // Block 10, threshold is 9 (block_index - 1)
         // Messages at block 9 or higher are OK
@@ -1133,7 +1150,7 @@ mod tests {
     fn test_more_than_f_nodes_committed_or_lost() {
         // 7 validators: f = 2, M = 5
         let validators = create_test_validators(7);
-        let mut ctx = ConsensusContext::new(100, validators, Some(0));
+        let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
 
         // Initially: committed=0, failed=0, total=0, f=2
         // 0 > 2? No
@@ -1155,7 +1172,7 @@ mod tests {
     fn test_not_accepting_payloads_due_to_view_changing() {
         // 4 validators: f = 1, M = 3
         let validators = create_test_validators(4);
-        let mut ctx = ConsensusContext::new(100, validators, Some(1));
+        let mut ctx = ConsensusContext::new(100, validators, Some(1), None);
 
         assert!(!ctx.view_changing());
         assert!(!ctx.not_accepting_payloads_due_to_view_changing());
@@ -1176,7 +1193,7 @@ mod tests {
     fn test_more_than_f_nodes_with_failed() {
         // 7 validators: f = 2, M = 5
         let validators = create_test_validators(7);
-        let mut ctx = ConsensusContext::new(100, validators, Some(0));
+        let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
 
         // Simulate 2 commits and 1 failed node
         ctx.commits.insert(0, vec![0x11]);
@@ -1201,7 +1218,7 @@ mod tests {
     fn test_more_than_f_nodes_edge_case() {
         // 4 validators: f = 1, M = 3
         let validators = create_test_validators(4);
-        let mut ctx = ConsensusContext::new(50, validators, Some(0));
+        let mut ctx = ConsensusContext::new(50, validators, Some(0), None);
 
         // committed=1, failed=0, total=1, f=1
         // 1 > 1? No
@@ -1222,7 +1239,7 @@ mod tests {
     #[test]
     fn test_update_last_seen_message() {
         let validators = create_test_validators(4);
-        let mut ctx = ConsensusContext::new(100, validators, Some(0));
+        let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
 
         assert!(ctx.last_seen_messages.is_empty());
 
@@ -1240,7 +1257,7 @@ mod tests {
     #[test]
     fn test_message_hash_caching() {
         let validators = create_test_validators(4);
-        let mut ctx = ConsensusContext::new(100, validators, Some(0));
+        let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
 
         // Create test message hashes
         let hash1 = UInt256::from_bytes(&[1u8; 32]).unwrap();
@@ -1268,7 +1285,7 @@ mod tests {
     #[test]
     fn test_message_cache_cleared_on_new_block() {
         let validators = create_test_validators(4);
-        let mut ctx = ConsensusContext::new(100, validators, Some(0));
+        let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
 
         // Add some message hashes
         let hash1 = UInt256::from_bytes(&[1u8; 32]).unwrap();
@@ -1290,7 +1307,7 @@ mod tests {
     #[test]
     fn test_message_cache_not_cleared_on_view_change() {
         let validators = create_test_validators(4);
-        let mut ctx = ConsensusContext::new(100, validators, Some(0));
+        let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
 
         // Add some message hashes
         let hash1 = UInt256::from_bytes(&[1u8; 32]).unwrap();
@@ -1308,7 +1325,7 @@ mod tests {
     #[test]
     fn test_message_cache_prevents_replay() {
         let validators = create_test_validators(7);
-        let mut ctx = ConsensusContext::new(100, validators, Some(0));
+        let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
 
         // Simulate receiving the same message twice
         let msg_hash = UInt256::from_bytes(&[0xaa; 32]).unwrap();
@@ -1324,7 +1341,7 @@ mod tests {
     #[test]
     fn test_message_cache_lru_limit() {
         let validators = create_test_validators(4);
-        let mut ctx = ConsensusContext::new(100, validators, Some(0));
+        let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
 
         // Fill the cache to just below the limit
         for i in 0..100 {

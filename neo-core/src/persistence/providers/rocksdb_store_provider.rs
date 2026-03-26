@@ -39,17 +39,6 @@ impl BatchCommitter {
 
         Self { buffer }
     }
-
-    #[allow(dead_code)]
-    fn flush(&self) -> Option<WriteBatch> {
-        // The buffer flushes automatically, but we can force it here
-        if self.buffer.has_pending() {
-            if let Err(e) = self.buffer.force_flush() {
-                error!(target: "neo", error = %e, "batch committer flush failed");
-            }
-        }
-        None
-    }
 }
 
 /// RocksDB-backed store provider compatible with Neo's `IStore`.
@@ -241,16 +230,6 @@ impl RocksDbStore {
             &self.read_ahead_config,
         )
     }
-
-    /// Flush any pending batch commits to RocksDB.
-    #[allow(dead_code)]
-    pub fn flush_batch_commits(&self) {
-        if let Some(batch) = self.batch_committer.flush() {
-            if let Err(err) = self.db.write(batch) {
-                error!(target: "neo", error = %err, "rocksdb batch flush failed");
-            }
-        }
-    }
 }
 
 impl IReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbStore {
@@ -398,45 +377,45 @@ impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbStore {
 impl IReadOnlyStore for RocksDbStore {}
 
 impl IWriteStore<Vec<u8>, Vec<u8>> for RocksDbStore {
-    fn delete(&mut self, key: Vec<u8>) {
-        match self.db.delete(key) {
-            Ok(()) => {
-                if let Some(ref cache) = self.read_cache {
-                    cache.clear();
-                }
+    fn delete(&mut self, key: Vec<u8>) -> CoreResult<()> {
+        self.db.delete(&key).map_err(|err| {
+            error!(target: "neo", error = %err, "rocksdb delete failed");
+            CoreError::Io {
+                message: format!("RocksDB delete failed: {}", err),
             }
-            Err(err) => {
-                warn!(target: "neo", error = %err, "rocksdb delete failed");
-            }
+        })?;
+        if let Some(ref cache) = self.read_cache {
+            cache.remove(&StorageKey::from_bytes(&key));
         }
+        Ok(())
     }
 
-    fn put(&mut self, key: Vec<u8>, value: Vec<u8>) {
-        match self.db.put(key, value) {
-            Ok(()) => {
-                if let Some(ref cache) = self.read_cache {
-                    cache.clear();
-                }
+    fn put(&mut self, key: Vec<u8>, value: Vec<u8>) -> CoreResult<()> {
+        self.db.put(&key, &value).map_err(|err| {
+            error!(target: "neo", error = %err, "rocksdb put failed");
+            CoreError::Io {
+                message: format!("RocksDB put failed: {}", err),
             }
-            Err(err) => {
-                warn!(target: "neo", error = %err, "rocksdb put failed");
-            }
+        })?;
+        if let Some(ref cache) = self.read_cache {
+            cache.remove(&StorageKey::from_bytes(&key));
         }
+        Ok(())
     }
 
-    fn put_sync(&mut self, key: Vec<u8>, value: Vec<u8>) {
+    fn put_sync(&mut self, key: Vec<u8>, value: Vec<u8>) -> CoreResult<()> {
         let mut options = WriteOptions::default();
         options.set_sync(true);
-        match self.db.put_opt(key, value, &options) {
-            Ok(()) => {
-                if let Some(ref cache) = self.read_cache {
-                    cache.clear();
-                }
+        self.db.put_opt(&key, &value, &options).map_err(|err| {
+            error!(target: "neo", error = %err, "rocksdb put_sync failed");
+            CoreError::Io {
+                message: format!("RocksDB put_sync failed: {}", err),
             }
-            Err(err) => {
-                warn!(target: "neo", error = %err, "rocksdb put_sync failed");
-            }
+        })?;
+        if let Some(ref cache) = self.read_cache {
+            cache.remove(&StorageKey::from_bytes(&key));
         }
+        Ok(())
     }
 }
 
@@ -491,6 +470,18 @@ impl Clone for RocksDbStore {
             batch_config: self.batch_config,
             read_cache: self.read_cache.clone(),
             read_ahead_config: self.read_ahead_config,
+        }
+    }
+}
+
+impl Drop for RocksDbStore {
+    fn drop(&mut self) {
+        if let Err(err) = self.flush_batch_writes() {
+            warn!(
+                target: "neo",
+                error = %err,
+                "RocksDbStore: failed to flush pending batch writes during drop"
+            );
         }
     }
 }
@@ -804,15 +795,16 @@ impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbSnapshot {
 impl IReadOnlyStore for RocksDbSnapshot {}
 
 impl IWriteStore<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
-    fn delete(&mut self, key: Vec<u8>) {
+    fn delete(&mut self, key: Vec<u8>) -> CoreResult<()> {
         self.write_batch.lock().delete(key.clone());
         self.pending_changes.lock().insert(key.clone(), None);
         if let Some(ref cache) = self.read_cache {
             cache.remove(&StorageKey::from_bytes(&key));
         }
+        Ok(())
     }
 
-    fn put(&mut self, key: Vec<u8>, value: Vec<u8>) {
+    fn put(&mut self, key: Vec<u8>, value: Vec<u8>) -> CoreResult<()> {
         self.write_batch.lock().put(key.clone(), value.clone());
         self.pending_changes
             .lock()
@@ -820,6 +812,7 @@ impl IWriteStore<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
         if let Some(ref cache) = self.read_cache {
             cache.remove(&StorageKey::from_bytes(&key));
         }
+        Ok(())
     }
 }
 
@@ -867,11 +860,9 @@ impl IStoreSnapshot for RocksDbSnapshot {
             )));
         }
 
-        // Keep read cache coherent after writes. Without invalidation, callers can observe
-        // stale values (e.g., current block pointer) across snapshots.
-        if let Some(ref cache) = self.read_cache {
-            cache.clear();
-        }
+        // Point-invalidation is already performed in put() and delete(), so a full
+        // cache.clear() is unnecessary here. Each mutated key was removed from the
+        // read cache at mutation time, ensuring no stale entries survive the commit.
 
         Ok(())
     }
@@ -1219,8 +1210,8 @@ mod tests {
 
         let mut snapshot = store.get_snapshot();
         let snapshot_mut = Arc::get_mut(&mut snapshot).expect("exclusive snapshot");
-        snapshot_mut.delete(existing_key.clone());
-        snapshot_mut.put(added_key.clone(), vec![0xBB]);
+        snapshot_mut.delete(existing_key.clone()).unwrap();
+        snapshot_mut.put(added_key.clone(), vec![0xBB]).unwrap();
 
         assert_eq!(snapshot.try_get(&existing_key), None);
         assert_eq!(snapshot.try_get(&added_key), Some(vec![0xBB]));

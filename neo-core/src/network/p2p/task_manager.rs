@@ -97,12 +97,7 @@ const MAX_BLOCK_INDEX_BATCH: u32 = 1000;
 /// This allows multiple peers to download disjoint height ranges concurrently
 /// without giving any single peer an excessively large assignment.
 const BLOCK_INDEX_WINDOW_MULTIPLIER: u32 = 40;
-const HEADER_TASK_HASH: UInt256 = UInt256 {
-    value1: 0,
-    value2: 0,
-    value3: 0,
-    value4: 0,
-};
+const HEADER_TASK_HASH: UInt256 = UInt256::zero();
 struct SessionEntry {
     actor: ActorRef,
     session: TaskSession,
