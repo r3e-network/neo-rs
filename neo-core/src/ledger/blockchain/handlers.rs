@@ -595,27 +595,16 @@ impl Blockchain {
             return;
         }
 
-        if persisted_index > 0 || !persisted_hash.is_zero() {
-            tracing::debug!(
-                target: "neo",
-                persisted_index,
-                persisted_hash = %persisted_hash,
-                "ledger already initialized in storage; skipping genesis initialization"
-            );
-            return;
-        }
-
-        let genesis = context.genesis_block();
-        let block = genesis.as_ref().clone();
-        tracing::info!(target: "neo", "persisting genesis block during initialization");
-        if self.persist_block_via_system(&block) {
-            self.handle_persist_completed(PersistCompleted { block })
-                .await;
-        } else {
-            tracing::warn!(
-                target: "neo",
-                "failed to persist genesis block during initialization"
-            );
-        }
+        // Genesis block is already persisted by NeoSystem::new before the
+        // Blockchain actor receives the Initialize command.  Attempting to
+        // persist it a second time here would cause the state-service commit
+        // handler to fire twice, producing duplicate MPT trie entries and an
+        // incorrect state root.  We therefore only log the current state.
+        tracing::debug!(
+            target: "neo",
+            persisted_index,
+            persisted_hash = %persisted_hash,
+            "blockchain actor initialized; genesis already persisted by NeoSystem"
+        );
     }
 }

@@ -76,7 +76,7 @@ pub(crate) enum MailboxCommand {
 ///
 /// P2P sync can produce short-lived bursts of actor traffic (headers + blocks + inventory). A
 /// larger bound reduces avoidable `try_send` backpressure drops during those bursts.
-const MAILBOX_CAPACITY: usize = 8192;
+const MAILBOX_CAPACITY: usize = 65536;
 
 /// Internal registry entry for an actor.
 ///

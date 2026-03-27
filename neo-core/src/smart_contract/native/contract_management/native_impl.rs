@@ -277,7 +277,7 @@ impl NativeContract for ContractManagement {
 
         let context = engine.get_native_storage_context(&self.hash)?;
         let native_contracts = engine.native_contracts();
-        let mut contract_count_changed = false;
+        let mut _contract_count_changed = false;
 
         for contract in native_contracts {
             let contract_hash = contract.hash();
@@ -311,7 +311,7 @@ impl NativeContract for ContractManagement {
                         .contract_ids
                         .insert(contract_state.id, contract_hash);
                     storage.contract_count = storage.contract_count.saturating_add(1);
-                    contract_count_changed = true;
+                    _contract_count_changed = true;
                 } else {
                     storage
                         .contracts
@@ -356,12 +356,11 @@ impl NativeContract for ContractManagement {
             )?;
         }
 
-        let (min_fee_bytes, next_id_bytes, count_bytes) = {
+        let (min_fee_bytes, next_id_bytes) = {
             let storage = self.storage.read();
             (
                 Self::encode_storage_i64(storage.minimum_deployment_fee),
                 Self::encode_storage_i32(storage.next_id),
-                Self::encode_storage_u32(storage.contract_count),
             )
         };
 
@@ -384,13 +383,11 @@ impl NativeContract for ContractManagement {
             put_storage_if_changed(engine, &context, &Self::next_id_key(), &next_id_bytes)?;
         }
 
-        if contract_count_changed
-            || engine
-                .get_storage_item(&context, &Self::contract_count_key())
-                .is_none()
-        {
-            put_storage_if_changed(engine, &context, &Self::contract_count_key(), &count_bytes)?;
-        }
+        // NOTE: C# ContractManagement does NOT persist a separate contract_count
+        // storage entry.  The count is derived at runtime from the contracts
+        // collection.  Writing it here would add an extra PREFIX_CONTRACT_COUNT
+        // (0x10) key that breaks state-root consensus with the reference
+        // implementation.
 
         Ok(())
     }

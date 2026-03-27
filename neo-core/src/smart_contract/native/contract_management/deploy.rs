@@ -149,7 +149,7 @@ impl ContractManagement {
         let contract_hash_bytes = contract_hash.as_bytes();
 
         // Store contract in in-memory cache and prepare metadata snapshots
-        let (contract_count_bytes, next_id_bytes, min_fee_bytes) = {
+        let (next_id_bytes, min_fee_bytes) = {
             let mut storage = self.storage.write();
 
             storage.contracts.insert(contract_hash, contract.clone());
@@ -157,13 +157,13 @@ impl ContractManagement {
             storage.contract_count += 1;
 
             (
-                Self::encode_storage_u32(storage.contract_count),
                 Self::encode_storage_i32(storage.next_id),
                 Self::encode_storage_i64(storage.minimum_deployment_fee),
             )
         };
 
-        // Persist contract metadata in native storage so it survives engine reloads
+        // Persist contract metadata in native storage so it survives engine reloads.
+        // NOTE: contract_count is NOT persisted — C# derives it at runtime.
         let context = engine.get_native_storage_context(&self.hash)?;
         engine.put_storage_item(
             &context,
@@ -175,7 +175,6 @@ impl ContractManagement {
             &Self::contract_id_storage_key(contract_id),
             contract_hash_bytes.as_ref(),
         )?;
-        engine.put_storage_item(&context, &Self::contract_count_key(), &contract_count_bytes)?;
         engine.put_storage_item(&context, &Self::next_id_key(), &next_id_bytes)?;
         engine.put_storage_item(
             &context,

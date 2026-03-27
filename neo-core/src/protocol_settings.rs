@@ -221,6 +221,14 @@ impl ProtocolSettings {
             .unwrap_or(false)
     }
 
+    /// Returns whether the hardfork is configured (has an activation height defined),
+    /// regardless of whether it has been activated yet. Used for native contract state
+    /// generation — methods from defined hardforks are included in the contract's
+    /// NEF/ABI even before their activation height.
+    pub fn is_hardfork_defined(&self, hardfork: Hardfork) -> bool {
+        self.hardforks.contains_key(&hardfork)
+    }
+
     /// Searches for a file in the given path. If not found, checks in the executable directory.
     /// Matches C# FindFile method
     pub fn find_file(file_name: &str, path: &str) -> Option<String> {

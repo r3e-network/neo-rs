@@ -380,8 +380,8 @@ where
                 if path.is_empty() {
                     *node = val;
                 } else {
-                    // Persist the newly introduced child node so the extension node's hashed child
-                    // reference can be resolved after committing.
+                    // C# uses extension node to store the remaining path,
+                    // pointing to the leaf which stores only the value.
                     cache.put_node(val.clone())?;
                     let ext = Node::new_extension(path.to_vec(), val)?;
                     cache.put_node(ext.clone())?;

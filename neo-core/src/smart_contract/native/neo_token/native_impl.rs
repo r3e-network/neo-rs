@@ -208,6 +208,15 @@ impl NativeContract for NeoToken {
             )
             .map_err(CoreError::native_contract)?;
             engine.set_storage(account_key, StorageItem::from_bytes(bytes))?;
+
+            // Write total supply (matches C# FungibleToken.Mint which updates TotalSupply)
+            let total_supply_key =
+                StorageKey::create(Self::ID, crate::smart_contract::native::fungible_token::PREFIX_TOTAL_SUPPLY);
+            let total_supply = BigInt::from(Self::TOTAL_SUPPLY);
+            engine.set_storage(
+                total_supply_key,
+                StorageItem::from_bytes(Self::encode_amount(&total_supply)),
+            )?;
         }
 
         Ok(())

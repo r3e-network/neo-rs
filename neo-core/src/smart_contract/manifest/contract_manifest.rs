@@ -641,11 +641,16 @@ impl IInteroperable for ContractManifest {
             }
         };
 
-        let extra_bytes = match &self.extra {
-            Some(extra) => serde_json::to_string(extra)
-                .unwrap_or_else(|_| "null".to_string())
-                .into_bytes(),
-            None => "null".as_bytes().to_vec(),
+        // C# reference: `ContractManifest.ToStackItem()`
+        // extra is serialized as ByteString(json_bytes) where json_bytes = extra.ToByteArray(false)
+        // When extra is null/None, C# produces ByteString("null") (the JSON literal string)
+        let extra_item = {
+            let json_bytes = match &self.extra {
+                Some(extra) => serde_json::to_string(extra)
+                    .unwrap_or_else(|_| "null".to_string()),
+                None => "null".to_string(),
+            };
+            StackItem::from_byte_string(json_bytes.into_bytes())
         };
 
         Ok(StackItem::from_struct(vec![
@@ -656,7 +661,7 @@ impl IInteroperable for ContractManifest {
             self.abi.to_stack_item()?,
             StackItem::from_array(permission_items),
             trusts_item,
-            StackItem::from_byte_string(extra_bytes),
+            extra_item,
         ]))
     }
 

@@ -90,6 +90,9 @@ impl ContractPermissionDescriptor {
     }
 
     /// Converts the descriptor to its stack item representation.
+    ///
+    /// C# reference: `ContractPermissionDescriptor.ToStackItem()`
+    /// Wildcard produces `Null` in BinarySerializer output (verified against mainnet state root).
     pub fn to_stack_item(&self) -> StackItem {
         match self {
             ContractPermissionDescriptor::Wildcard => StackItem::null(),
@@ -123,6 +126,10 @@ impl ContractPermissionDescriptor {
 
     /// Builds a descriptor from raw bytes.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+        // C# encodes Wildcard as ByteString("*") (single byte 0x2A)
+        if bytes == b"*" {
+            return Ok(Self::create_wildcard());
+        }
         match bytes.len() {
             0 => Ok(Self::create_wildcard()),
             20 => Ok(Self::create_hash(

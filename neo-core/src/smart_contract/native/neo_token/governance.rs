@@ -668,16 +668,16 @@ impl NeoToken {
             self.write_candidate_state(&context, engine, &old_vote, &old_state)?;
         }
 
-        // Update LastGasPerVote for new vote target.
-        if let Some(ref pk) = vote_to {
-            if state_account.vote_to.as_ref() != Some(pk) {
-                let latest = self.latest_gas_per_vote(snapshot_ref, pk);
-                state_account.last_gas_per_vote = latest;
-            }
-        }
-
         let from = state_account.vote_to.clone();
         state_account.vote_to = vote_to.clone();
+
+        // C# Vote unconditionally updates LastGasPerVote for the new candidate.
+        // (DistributeGas only updates it for the OLD vote target.)
+        // When unvoting (vote_to=None), LastGasPerVote keeps its old value.
+        if let Some(ref pk) = vote_to {
+            let snapshot = engine.snapshot_cache();
+            state_account.last_gas_per_vote = self.latest_gas_per_vote(snapshot.as_ref(), pk);
+        }
 
         if let Some(mut new_state) = validator_new {
             // Use safe arithmetic
@@ -687,8 +687,6 @@ impl NeoToken {
             StateValidator::validate_candidate_state(new_state.registered, &new_state.votes)?;
 
             self.write_candidate_state(&context, engine, vote_to.as_ref().unwrap(), &new_state)?;
-        } else {
-            state_account.last_gas_per_vote = BigInt::zero();
         }
 
         self.write_account_state(&context, engine, account, &state_account)?;

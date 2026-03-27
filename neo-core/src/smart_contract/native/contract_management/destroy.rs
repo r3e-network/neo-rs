@@ -23,8 +23,8 @@ impl ContractManagement {
                 .ok_or_else(|| Error::invalid_operation("Contract not found"))?
         };
 
-        // Call contract's _destroy method if it exists
-        let (contract_count_bytes, next_id_bytes, min_fee_bytes) = {
+        // Update in-memory cache and prepare metadata snapshots
+        let (next_id_bytes, min_fee_bytes) = {
             let mut storage = self.storage.write();
 
             storage.contracts.remove(&contract_hash);
@@ -32,17 +32,16 @@ impl ContractManagement {
             storage.contract_count = storage.contract_count.saturating_sub(1);
 
             (
-                Self::encode_storage_u32(storage.contract_count),
                 Self::encode_storage_i32(storage.next_id),
                 Self::encode_storage_i64(storage.minimum_deployment_fee),
             )
         };
 
+        // NOTE: contract_count is NOT persisted — C# derives it at runtime.
         let context = engine.get_native_storage_context(&self.hash)?;
         engine.delete_storage_item(&context, &Self::contract_storage_key(&contract_hash))?;
         engine.delete_storage_item(&context, &Self::contract_id_storage_key(contract.id))?;
         engine.delete_storage_item(&context, &Self::contract_id_storage_key_legacy(contract.id))?;
-        engine.put_storage_item(&context, &Self::contract_count_key(), &contract_count_bytes)?;
         engine.put_storage_item(&context, &Self::next_id_key(), &next_id_bytes)?;
         engine.put_storage_item(
             &context,

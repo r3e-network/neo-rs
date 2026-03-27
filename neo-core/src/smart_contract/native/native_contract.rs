@@ -464,6 +464,15 @@ fn build_native_contract_state<T: NativeContract + ?Sized>(
     let syscall_hash = ScriptBuilder::hash_syscall("System.Contract.CallNative")
         .expect("System.Contract.CallNative syscall hash must be computable");
 
+    // Native contract state generation: include a method if either:
+    // 1. It has no ActiveIn (always present), OR
+    // 2. Its ActiveIn hardfork activation height has been reached, OR
+    // 3. Its ActiveIn hardfork activation height is 0 (part of genesis config)
+    //
+    // In C#, native contracts are UPDATED at each hardfork activation height.
+    // Methods added in later hardforks (e.g., HfEchidna) are only included
+    // once that hardfork height is reached. This matches the C# behavior where
+    // the method simply didn't exist in the source code until that release.
     let mut methods: Vec<&NativeMethod> = contract
         .methods()
         .iter()
@@ -480,6 +489,11 @@ fn build_native_contract_state<T: NativeContract + ?Sized>(
 
     for method in methods {
         let offset = builder.len() as i32;
+        // C# pushes 0 (the version number, not the method index):
+        //   sb.EmitPush(0);  // version
+        //   sb.EmitSysCall(ApplicationEngine.System_Contract_CallNative);
+        //   sb.Emit(OpCode.RET);
+        // The method is resolved by the instruction pointer offset, not this value.
         builder.emit_push_int(0);
         builder.emit_syscall_hash(syscall_hash);
         builder.emit_opcode(OpCode::RET);

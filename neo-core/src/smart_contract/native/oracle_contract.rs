@@ -972,16 +972,24 @@ impl NativeContract for OracleContract {
     }
 
     fn initialize(&self, engine: &mut ApplicationEngine) -> Result<()> {
-        let snapshot_arc = engine.snapshot_cache();
-        let snapshot = snapshot_arc.as_ref();
-        let key = self.price_key();
-        if snapshot.try_get(&key).is_none() {
-            self.put_item(
-                snapshot,
-                key,
-                StorageItem::from_bytes(DEFAULT_PRICE.to_le_bytes().to_vec()),
+        let snapshot = engine.snapshot_cache();
+        let snapshot_ref = snapshot.as_ref();
+
+        if snapshot_ref.try_get(&self.request_id_key()).is_none() {
+            snapshot_ref.add(
+                self.request_id_key(),
+                StorageItem::from_bytes(Vec::new()),
             );
         }
+
+        if snapshot_ref.try_get(&self.price_key()).is_none() {
+            let price_bytes = BigInt::from(DEFAULT_PRICE).to_signed_bytes_le();
+            snapshot_ref.add(
+                self.price_key(),
+                StorageItem::from_bytes(price_bytes),
+            );
+        }
+
         Ok(())
     }
 

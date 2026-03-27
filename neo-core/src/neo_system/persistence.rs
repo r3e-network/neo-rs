@@ -451,10 +451,9 @@ impl NeoSystem {
             executed.push(post_persist_exec);
         }
 
-        // Skip expensive handler calls during fast sync
-        if emit_detailed_execution {
-            self.invoke_committing(&ledger_block, base_snapshot.as_ref(), &executed);
-        }
+        // State root handlers must always run to keep the state trie up to date.
+        // Other expensive handlers (application logs, etc.) are skipped during fast sync.
+        self.invoke_committing(&ledger_block, base_snapshot.as_ref(), &executed);
 
         let apply_tracked_started = if perf_enabled {
             Some(Instant::now())
@@ -498,6 +497,9 @@ impl NeoSystem {
                 .record_tip(ledger_block.index());
         }
 
+        // State root committed handler must always run.
+        self.invoke_committed(&ledger_block);
+
         // Skip expensive plugin events during fast sync
         if emit_detailed_execution {
             // Notify plugins that a block has been persisted, matching the C# event ordering.
@@ -508,8 +510,6 @@ impl NeoSystem {
                     block_hash,
                     block_height,
                 });
-
-            self.invoke_committed(&ledger_block);
         }
 
         if let Some(started) = block_started {

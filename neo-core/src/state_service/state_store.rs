@@ -742,6 +742,9 @@ impl StateStore {
                 match state {
                     TrackState::Added | TrackState::Changed => {
                         let value_bytes = item.get_value();
+                        if height == 0 && value_bytes.len() <= 30 {
+                            tracing::warn!(target: "stateroot", "genesis_small id={} key={} vlen={} val={}", key.id, hex::encode(&key_bytes), value_bytes.len(), hex::encode(&value_bytes));
+                        }
                         let _ = snapshot.trie.put(&key_bytes, &value_bytes);
                     }
                     TrackState::Deleted => {

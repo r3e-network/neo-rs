@@ -108,14 +108,14 @@ impl StdLib {
                 vec![ContractParameterType::String],
                 ContractParameterType::String,
             )
-            .with_active_in(Hardfork::HfEchidna),
+            .with_active_in(Hardfork::HfCockatrice),
             NativeMethod::safe(
                 "base64UrlDecode".to_string(),
                 1 << 5,
                 vec![ContractParameterType::String],
                 ContractParameterType::String,
             )
-            .with_active_in(Hardfork::HfEchidna),
+            .with_active_in(Hardfork::HfCockatrice),
             NativeMethod::safe(
                 "base58Encode".to_string(),
                 1 << 13,
@@ -203,7 +203,8 @@ impl StdLib {
                 1 << 8,
                 vec![ContractParameterType::String, ContractParameterType::String],
                 ContractParameterType::Array,
-            ),
+            )
+            ,
             // stringSplit overloads (3 params)
             NativeMethod::safe(
                 "stringSplit".to_string(),

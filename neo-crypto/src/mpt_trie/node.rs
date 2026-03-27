@@ -356,6 +356,9 @@ impl Node {
     }
 
     fn serialize_leaf(&self, writer: &mut BinaryWriter) -> IoResult<()> {
+        // C# LeafNode serialization writes only the value.
+        // The path to the leaf is encoded in the trie structure
+        // (extension keys + branch positions), NOT in the leaf itself.
         writer.write_var_bytes(&self.value)
     }
 

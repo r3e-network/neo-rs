@@ -369,7 +369,8 @@ impl ContractManagement {
                     ContractParameterType::Integer,
                 ],
                 ContractParameterType::Boolean,
-            ),
+            )
+            ,
             NativeMethod::new(
                 "getContractById".to_string(),
                 1 << 15,
@@ -377,7 +378,8 @@ impl ContractManagement {
                 0x01,
                 vec![ContractParameterType::Integer],
                 ContractParameterType::Array,
-            ),
+            )
+            ,
             NativeMethod::new(
                 "isContract".to_string(),
                 1 << 14,
