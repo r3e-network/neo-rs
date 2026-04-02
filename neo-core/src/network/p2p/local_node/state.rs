@@ -307,13 +307,25 @@ impl LocalNode {
     }
 
     /// Returns a list of network addresses used to respond to `GetAddr` messages.
+    /// Groups entries by IP address (not socket address) and returns one entry per
+    /// unique IP, using the version timestamp rather than the snapshot timestamp.
     pub fn address_book(&self) -> Vec<NetworkAddressWithTime> {
         let guard = self.remote_nodes.read();
 
+        // Group by IP address, keeping the first entry seen per unique IP.
+        let mut seen_ips: HashMap<IpAddr, &RemoteActorEntry> = HashMap::new();
+        for entry in guard.values() {
+            if entry.snapshot.listen_tcp_port == 0 {
+                continue;
+            }
+            let ip = entry.snapshot.remote_address.ip();
+            seen_ips.entry(ip).or_insert(entry);
+        }
+
         let mut rng = thread_rng();
-        guard
+        seen_ips
             .values()
-            .filter(|entry| entry.snapshot.listen_tcp_port > 0)
+            .copied()
             .choose_multiple(&mut rng, MAX_COUNT_TO_SEND)
             .into_iter()
             .map(|entry| {
@@ -332,7 +344,7 @@ impl LocalNode {
                     capabilities.push(NodeCapability::tcp_server(entry.snapshot.listen_tcp_port));
                 }
 
-                NetworkAddressWithTime::new(entry.snapshot.timestamp as u32, ip, capabilities)
+                NetworkAddressWithTime::new(entry.version.timestamp, ip, capabilities)
             })
             .collect()
     }

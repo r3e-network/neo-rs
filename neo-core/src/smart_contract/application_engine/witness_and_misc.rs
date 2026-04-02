@@ -307,9 +307,25 @@ impl ApplicationEngine {
 
     /// Sets the calling script hash.
     /// This is primarily used for testing purposes to simulate contract callers.
+    ///
+    /// When a current execution context exists, the hash is also stored in the
+    /// context state's `native_calling_script_hash` so that
+    /// [`refresh_context_tracking`] preserves it across native contract calls.
     #[doc(hidden)]
     pub fn set_calling_script_hash(&mut self, hash: Option<UInt160>) {
         self.calling_script_hash = hash;
+        // Propagate into the execution context state so that
+        // refresh_context_tracking() (which re-derives calling_script_hash
+        // from the context) does not discard the value.
+        if let Some(ctx) = self.vm_engine.engine().current_context() {
+            let state_arc = ctx
+                .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+            state_arc.lock().native_calling_script_hash = hash;
+        }
+        // Also store as an override so refresh_context_tracking preserves it
+        // when no execution context exists (e.g. direct call_native_contract
+        // invocations in tests).
+        self.native_calling_override = hash;
     }
 
     fn allocate_iterator_id(&mut self) -> Result<u32> {
@@ -518,7 +534,9 @@ impl ApplicationEngine {
                 context_snapshot.unwrap_or_else(|| Arc::clone(&self.original_snapshot_cache));
         } else {
             self.current_script_hash = None;
-            self.calling_script_hash = None;
+            // Preserve an explicitly set calling_script_hash override when no
+            // execution context is loaded (e.g. direct call_native_contract).
+            self.calling_script_hash = self.native_calling_override;
             self.entry_script_hash = None;
             self.call_flags = CallFlags::ALL;
             self.snapshot_cache = Arc::clone(&self.original_snapshot_cache);

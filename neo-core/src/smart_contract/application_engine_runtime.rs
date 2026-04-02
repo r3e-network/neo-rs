@@ -110,7 +110,23 @@ impl ApplicationEngine {
 
     /// Gets the calling script hash
     pub fn runtime_get_calling_script_hash(&mut self) -> Result<(), String> {
-        if let Some(hash) = self.get_calling_script_hash() {
+        let hash = self.get_calling_script_hash();
+        // DIAG: trace calling_script_hash for unlock contract at block 82623
+        let diag_block = self.persisting_block().map(|b| b.index()).unwrap_or(0);
+        if diag_block == 82623 {
+            if let Some(current) = self.current_script_hash() {
+                if current.to_bytes()[..4] == [0xcb, 0x56, 0x94, 0x53] {
+                    tracing::warn!(
+                        target: "neo",
+                        block_index = 82623,
+                        current_hash = %current,
+                        calling_hash = ?hash.map(|h| h.to_string()),
+                        "DIAG: GetCallingScriptHash in unlock contract"
+                    );
+                }
+            }
+        }
+        if let Some(hash) = hash {
             self.push_bytes(hash.to_bytes())
         } else {
             self.push_null()
@@ -146,6 +162,21 @@ impl ApplicationEngine {
             }
         };
 
+        // DIAG: trace CheckWitness for unlock contract at block 82623
+        let diag_block = self.persisting_block().map(|b| b.index()).unwrap_or(0);
+        if diag_block == 82623 {
+            if let Some(current) = self.current_script_hash() {
+                if current.to_bytes()[..4] == [0xcb, 0x56, 0x94, 0x53] {
+                    tracing::warn!(
+                        target: "neo",
+                        block_index = 82623,
+                        witness_arg = hex::encode(&hash_or_pubkey),
+                        result,
+                        "DIAG: CheckWitness in unlock contract"
+                    );
+                }
+            }
+        }
         self.push_boolean(result)
     }
 

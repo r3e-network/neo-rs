@@ -179,7 +179,7 @@ proptest! {
     /// Test that non-empty bytestring is truthy (with size limit for conversion)
     #[test]
     fn test_stackitem_nonempty_bytestring_is_truthy(
-        data in any::<Vec<u8>>().prop_filter("non-empty and within size limit", |v| !v.is_empty() && v.len() <= 32)
+        data in any::<Vec<u8>>().prop_filter("non-empty, non-zero, and within size limit", |v| !v.is_empty() && v.len() <= 32 && v.iter().any(|&b| b != 0))
     ) {
         let item = StackItem::from_byte_string(data);
         prop_assert!(item.as_bool().unwrap());

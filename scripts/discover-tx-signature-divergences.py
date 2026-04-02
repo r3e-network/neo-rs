@@ -7,13 +7,18 @@ import sys
 import urllib.request
 
 
+import gzip
+
 def rpc_call(url: str, method: str, params: list):
     """Make JSON-RPC call."""
     payload = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode()
     req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
-            result = json.loads(resp.read().decode())
+            raw = resp.read()
+            if raw.startswith(b"\x1f\x8b"):
+                raw = gzip.decompress(raw)
+            result = json.loads(raw.decode())
         return result.get("result")
     except Exception as e:
         return {"error": str(e)}

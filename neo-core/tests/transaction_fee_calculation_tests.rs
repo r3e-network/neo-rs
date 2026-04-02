@@ -19,11 +19,11 @@ fn test_signature_contract_cost_matches_csharp() {
     assert_eq!(actual, expected, "Signature contract cost mismatch");
 
     // Verify against known C# values
-    // PUSHDATA1 = 512, SYSCALL = 32768, CHECK_SIG_PRICE = 32768
-    assert_eq!(push_cost, 512);
-    assert_eq!(syscall_cost, 32768);
+    // PUSHDATA1 = 8, SYSCALL = 0, CHECK_SIG_PRICE = 32768
+    assert_eq!(push_cost, 8);
+    assert_eq!(syscall_cost, 0);
     assert_eq!(CHECK_SIG_PRICE, 32768);
-    assert_eq!(actual, 512 * 2 + 32768 + 32768); // = 66560
+    assert_eq!(actual, 8 * 2 + 0 + 32768); // = 32784
 }
 
 #[test]

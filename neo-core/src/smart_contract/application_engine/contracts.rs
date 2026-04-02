@@ -229,6 +229,9 @@ impl ApplicationEngine {
         call_flags: CallFlags,
         args: Vec<StackItem>,
     ) -> Result<()> {
+        let block_idx = self.persisting_block().map(|b| b.index()).unwrap_or(0);
+        let diag = (82620..=82630).contains(&block_idx);
+
         if method.starts_with('_') {
             return Err(Error::invalid_operation(format!(
                 "Method name '{}' cannot start with underscore.",
@@ -237,12 +240,21 @@ impl ApplicationEngine {
         }
 
         let contract = self.fetch_contract(contract_hash)?;
+        if diag {
+            tracing::warn!(target: "neo", block_index = block_idx, %contract_hash, method, args_len = args.len(), "DIAG: call_contract_dynamic fetched contract");
+        }
         let method_descriptor = contract
             .manifest
             .abi
             .get_method_ref(method, args.len())
             .cloned()
             .ok_or_else(|| {
+                if diag {
+                    let available: Vec<String> = contract.manifest.abi.methods.iter()
+                        .map(|m| format!("{}({})", m.name, m.parameters.len()))
+                        .collect();
+                    tracing::warn!(target: "neo", block_index = block_idx, %contract_hash, method, args_len = args.len(), ?available, "DIAG: method NOT FOUND in ABI");
+                }
                 Error::invalid_operation(format!(
                     "Method '{}' with {} parameter(s) doesn't exist in the contract {:?}.",
                     method,
@@ -251,6 +263,9 @@ impl ApplicationEngine {
                 ))
             })?;
 
+        if diag {
+            tracing::warn!(target: "neo", block_index = block_idx, %contract_hash, method, offset = method_descriptor.offset, "DIAG: method found, calling internal");
+        }
         let has_return_value = method_descriptor.return_type != ContractParameterType::Void;
         let context = self.call_contract_internal(
             &contract,

@@ -6,12 +6,17 @@ import json
 import urllib.request
 
 
+import gzip
+
 def rpc_call(url: str, method: str, params: list):
     """Make JSON-RPC call."""
     payload = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode("utf-8")
     req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
     with urllib.request.urlopen(req, timeout=20) as resp:
-        result = json.loads(resp.read().decode("utf-8"))
+        raw = resp.read()
+        if raw.startswith(b"\x1f\x8b"):
+            raw = gzip.decompress(raw)
+        result = json.loads(raw.decode("utf-8"))
     return result.get("result") if "result" in result else result
 
 

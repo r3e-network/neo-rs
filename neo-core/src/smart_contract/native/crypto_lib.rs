@@ -324,7 +324,7 @@ impl CryptoLib {
                         "message".to_string(),
                         "pubkey".to_string(),
                         "signature".to_string(),
-                        "curve".to_string(),
+                        "curveHash".to_string(),
                     ]),
                     ("verifyWithEd25519", 3) => method.with_parameter_names(vec![
                         "message".to_string(),

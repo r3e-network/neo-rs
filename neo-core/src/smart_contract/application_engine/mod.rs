@@ -238,6 +238,9 @@ pub struct ApplicationEngine {
     next_iterator_id: u32,
     current_script_hash: Option<UInt160>,
     calling_script_hash: Option<UInt160>,
+    /// Explicitly set calling script hash override that persists across
+    /// `refresh_context_tracking` when no execution context exists.
+    native_calling_override: Option<UInt160>,
     entry_script_hash: Option<UInt160>,
     invocation_counter: HashMap<UInt160, u32>,
     pending_native_calls: Vec<PendingNativeCall>,

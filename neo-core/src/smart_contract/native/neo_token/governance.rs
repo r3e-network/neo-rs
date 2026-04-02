@@ -564,7 +564,9 @@ impl NeoToken {
         }
 
         let account = self.read_account(&args[0])?;
-        let vote_to = if args[1].is_empty() {
+        // A Null StackItem is serialized as [0x00] (BinarySerializer type tag for Any/Null).
+        // Check for both empty and the serialized-null sentinel.
+        let vote_to = if args[1].is_empty() || args[1] == [0x00] {
             None
         } else {
             Some(self.read_public_key(&args[1])?)
@@ -654,39 +656,49 @@ impl NeoToken {
 
         let gas_distribution = self.distribute_gas(engine, account, &mut state_account)?;
 
-        // Remove votes from previous candidate.
-        if let Some(old_vote) = state_account.vote_to.clone() {
-            let mut old_state = self
-                .get_candidate_state(snapshot_ref, &old_vote)?
-                .unwrap_or_default();
+        let from = state_account.vote_to.clone();
 
-            // Validate state before modification
-            StateValidator::validate_candidate_state(old_state.registered, &old_state.votes)?;
+        // In C#, candidate vote modifications use shared mutable references via
+        // GetAndChange. For re-votes (same candidate), subtract + add cancel out
+        // through the shared object, producing zero net change. Since Rust uses
+        // value copies, we must only modify candidate votes when actually changing.
+        if from.as_ref() != vote_to.as_ref() {
+            // Remove votes from previous candidate.
+            if let Some(old_vote) = from.as_ref() {
+                let mut old_state = self
+                    .get_candidate_state(snapshot_ref, old_vote)?
+                    .unwrap_or_default();
+                StateValidator::validate_candidate_state(old_state.registered, &old_state.votes)?;
+                old_state.votes =
+                    SafeArithmetic::safe_sub(&old_state.votes, &state_account.balance)?;
+                self.write_candidate_state(&context, engine, old_vote, &old_state)?;
+            }
 
-            // Use safe arithmetic
-            old_state.votes = SafeArithmetic::safe_sub(&old_state.votes, &state_account.balance)?;
-            self.write_candidate_state(&context, engine, &old_vote, &old_state)?;
+            // Add votes to new candidate.
+            if let Some(mut new_state) = validator_new {
+                new_state.votes =
+                    SafeArithmetic::safe_add(&new_state.votes, &state_account.balance)?;
+                StateValidator::validate_candidate_state(new_state.registered, &new_state.votes)?;
+                self.write_candidate_state(
+                    &context,
+                    engine,
+                    vote_to.as_ref().unwrap(),
+                    &new_state,
+                )?;
+            }
         }
 
-        let from = state_account.vote_to.clone();
         state_account.vote_to = vote_to.clone();
 
-        // C# Vote unconditionally updates LastGasPerVote for the new candidate.
-        // (DistributeGas only updates it for the OLD vote target.)
-        // When unvoting (vote_to=None), LastGasPerVote keeps its old value.
+        // C# Vote updates LastGasPerVote based on the new vote target:
+        // - Voting for a candidate: set to latest accumulated reward for that candidate
+        // - Unvoting (null): reset to 0
+        // (DistributeGas separately updates lgpv for the OLD vote target before this.)
         if let Some(ref pk) = vote_to {
             let snapshot = engine.snapshot_cache();
             state_account.last_gas_per_vote = self.latest_gas_per_vote(snapshot.as_ref(), pk);
-        }
-
-        if let Some(mut new_state) = validator_new {
-            // Use safe arithmetic
-            new_state.votes = SafeArithmetic::safe_add(&new_state.votes, &state_account.balance)?;
-
-            // Validate final state
-            StateValidator::validate_candidate_state(new_state.registered, &new_state.votes)?;
-
-            self.write_candidate_state(&context, engine, vote_to.as_ref().unwrap(), &new_state)?;
+        } else {
+            state_account.last_gas_per_vote = BigInt::zero();
         }
 
         self.write_account_state(&context, engine, account, &state_account)?;

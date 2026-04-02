@@ -114,9 +114,9 @@ fn test_buffer_stack_item() {
     assert!(buffer.equals(&buffer).unwrap());
     assert!(!buffer.equals(&empty_buffer).unwrap());
 
-    // Test equality with ByteString
+    // Buffer uses reference equality — never equals ByteString (C# parity)
     let byte_string = StackItem::from_byte_string(bytes.clone());
-    assert!(buffer.equals(&byte_string).unwrap());
+    assert!(!buffer.equals(&byte_string).unwrap());
 }
 
 #[test]

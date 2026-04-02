@@ -54,6 +54,7 @@ pub struct PeerState {
     local_addresses: HashSet<IpAddr>,
     timer: Option<Cancelable>,
     upnp_configured: bool,
+    configured: bool,
 }
 
 impl fmt::Debug for PeerState {
@@ -86,6 +87,7 @@ impl PeerState {
             local_addresses: collect_local_addresses(),
             timer: None,
             upnp_configured: false,
+            configured: false,
         }
     }
 
@@ -94,6 +96,7 @@ impl PeerState {
     pub fn configure(&mut self, config: ChannelsConfig, ctx: &mut ActorContext) {
         self.listener_tcp_port = config.tcp.map(|endpoint| endpoint.port()).unwrap_or(0);
         self.config = config;
+        self.configured = true;
         self.configure_upnp();
         self.ensure_timer(ctx);
     }
@@ -101,6 +104,11 @@ impl PeerState {
     /// Returns the active channel configuration.
     pub fn config(&self) -> &ChannelsConfig {
         &self.config
+    }
+
+    /// Returns whether `configure()` has been called at least once.
+    pub fn is_configured(&self) -> bool {
+        self.configured
     }
 
     /// Cancels the scheduled maintenance timer.

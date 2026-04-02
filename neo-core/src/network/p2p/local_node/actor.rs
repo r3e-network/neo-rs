@@ -16,6 +16,8 @@ pub struct LocalNodeActor {
     /// Tracked handles for spawned background tasks (connection attempts, reputation updates).
     /// Aborted on actor shutdown to prevent leaked tasks.
     pub(super) spawned_tasks: Vec<JoinHandle<()>>,
+    /// Connect requests received before Configure; replayed once Configure arrives.
+    pub(super) deferred_connects: Vec<(SocketAddr, bool)>,
 }
 
 impl LocalNodeActor {
@@ -27,6 +29,7 @@ impl LocalNodeActor {
             peer,
             listener: None,
             spawned_tasks: Vec::new(),
+            deferred_connects: Vec::new(),
         }
     }
 
@@ -40,6 +43,16 @@ impl LocalNodeActor {
                 self.peer.configure(config, ctx);
                 self.state.apply_channels_config(self.peer.config());
                 self.start_listener(ctx);
+                // Process any connect requests that arrived before Configure.
+                let deferred = std::mem::take(&mut self.deferred_connects);
+                for (endpoint, is_trusted) in deferred {
+                    if self.peer.begin_connect(endpoint, is_trusted) {
+                        if !self.state.is_pending(&endpoint) {
+                            self.state.track_pending(endpoint);
+                            self.queue_outbound_connect(ctx, endpoint, is_trusted);
+                        }
+                    }
+                }
                 self.handle_peer_timer(ctx).await
             }
             PeerCommand::AddPeers { endpoints } => {
@@ -50,6 +63,10 @@ impl LocalNodeActor {
                 endpoint,
                 is_trusted,
             } => {
+                if !self.peer.is_configured() {
+                    self.deferred_connects.push((endpoint, is_trusted));
+                    return Ok(());
+                }
                 if self.peer.begin_connect(endpoint, is_trusted) {
                     if self.state.is_pending(&endpoint) {
                         return Ok(());
@@ -140,7 +157,6 @@ impl LocalNodeActor {
                 Ok(())
             }
             PeerCommand::ConnectionFailed { endpoint } => {
-                let was_pending = self.state.is_pending(&endpoint);
                 self.peer.connection_failed(endpoint);
                 self.state.clear_pending(&endpoint);
 
@@ -151,9 +167,6 @@ impl LocalNodeActor {
                     tracker.record_violation(ip, "handshake_failure").await;
                 }));
 
-                if was_pending {
-                    self.requeue_endpoint(endpoint);
-                }
                 Ok(())
             }
             PeerCommand::ConnectionTerminated { actor } => self.handle_terminated(actor, ctx).await,
@@ -311,7 +324,7 @@ impl LocalNodeActor {
             }
             LocalNodeCommand::OutboundTcpFailed {
                 endpoint,
-                is_trusted,
+                is_trusted: _,
                 error,
                 timed_out,
                 permission_denied,
@@ -323,11 +336,6 @@ impl LocalNodeActor {
                         timeout_secs = TCP_CONNECTION_TIMEOUT.as_secs(),
                         "connection attempt timed out"
                     );
-                    self.peer.connection_failed(endpoint);
-                    self.state.clear_pending(&endpoint);
-                    if !is_trusted {
-                        self.requeue_endpoint(endpoint);
-                    }
                 } else if permission_denied {
                     error!(
                         target: "neo",
@@ -335,8 +343,6 @@ impl LocalNodeActor {
                         error = %error,
                         "permission denied opening outbound connection; not retrying"
                     );
-                    self.peer.connection_failed(endpoint);
-                    self.state.clear_pending(&endpoint);
                 } else {
                     debug!(
                         target: "neo",
@@ -344,12 +350,9 @@ impl LocalNodeActor {
                         error = %error,
                         "connection attempt failed"
                     );
-                    self.peer.connection_failed(endpoint);
-                    self.state.clear_pending(&endpoint);
-                    if !is_trusted {
-                        self.requeue_endpoint(endpoint);
-                    }
                 }
+                self.peer.connection_failed(endpoint);
+                self.state.clear_pending(&endpoint);
             }
         }
         Ok(())
@@ -365,13 +368,9 @@ impl LocalNodeActor {
             return Ok(());
         }
 
-        // Keep a healthy candidate pool. Re-queued failed endpoints can keep this
-        // non-empty while still starving discovery, so replenish whenever the pool
-        // is smaller than what the current deficit needs.
-        let unconnected = self.peer.unconnected_count();
-        let target_unconnected = deficit.saturating_mul(4).max(MAX_COUNT_FROM_SEED_LIST);
-        if unconnected < target_unconnected {
-            self.need_more_peers(ctx, target_unconnected - unconnected)
+        // Only request more peers when the unconnected pool is empty.
+        if self.peer.unconnected_count() == 0 {
+            self.need_more_peers(ctx, MAX_COUNT_FROM_SEED_LIST)
                 .await?;
         }
 
@@ -383,9 +382,8 @@ impl LocalNodeActor {
                 }
                 self.state.track_pending(endpoint);
                 self.queue_outbound_connect(ctx, endpoint, false);
-            } else {
-                self.requeue_endpoint(endpoint);
             }
+            // Rejected connect attempts are dropped, not requeued.
         }
 
         Ok(())
@@ -595,6 +593,7 @@ impl LocalNodeActor {
         let requested = count.max(MAX_COUNT_FROM_SEED_LIST);
 
         if self.peer.connected_count() > 0 {
+            // When we already have connected peers, rely on GetAddr only.
             trace!(target: "neo", requested, "requesting additional peers from network");
             let message = NetworkMessage::new(ProtocolMessage::GetAddr);
             for entry in self.state.remote_entries() {
@@ -607,13 +606,13 @@ impl LocalNodeActor {
                     );
                 }
             }
+            return Ok(());
         }
 
+        // No connected peers -- fall back to seed list.
         let seeds = self.resolve_seed_endpoints().await;
         if seeds.is_empty() {
-            if self.peer.connected_count() == 0 {
-                warn!(target: "neo", "no seeds available to satisfy peer request");
-            }
+            warn!(target: "neo", "no seeds available to satisfy peer request");
             return Ok(());
         }
 

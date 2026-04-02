@@ -85,7 +85,7 @@ impl RpcClientBuilder {
     }
 
     pub fn build(self) -> Result<RpcClient, RpcError> {
-        let mut client_builder = Client::builder().timeout(self.timeout);
+        let mut client_builder = Client::builder().no_proxy().timeout(self.timeout);
 
         if let (Some(user), Some(pass)) = (self.rpc_user, self.rpc_pass) {
             // Credentials are in Zeroizing<String>, they will be securely cleared on drop

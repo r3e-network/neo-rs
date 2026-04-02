@@ -54,6 +54,10 @@ impl StateServiceCommitHandlers {
 }
 
 impl ICommittingHandler for StateServiceCommitHandlers {
+    fn run_during_fast_sync(&self) -> bool {
+        true
+    }
+
     fn blockchain_committing_handler(
         &self,
         _system: &dyn Any,

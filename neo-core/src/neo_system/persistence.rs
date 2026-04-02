@@ -175,7 +175,12 @@ impl NeoSystem {
         block: Block,
         update_runtime_cache: bool,
     ) -> CoreResult<Vec<ApplicationExecuted>> {
-        let emit_detailed_execution = !self.context().is_fast_sync_mode();
+        let is_fast_sync = self.context().is_fast_sync_mode();
+        let has_fast_sync_handlers = is_fast_sync && {
+            let handlers = self.context().committing_handlers().read().clone();
+            handlers.iter().any(|h| h.run_during_fast_sync())
+        };
+        let emit_detailed_execution = !is_fast_sync || has_fast_sync_handlers;
         let perf_enabled = persist_perf_enabled();
         let block_started = if perf_enabled {
             Some(Instant::now())
@@ -334,6 +339,33 @@ impl NeoSystem {
                 None
             };
             let vm_state = tx_engine.execute_allow_fault();
+            // Diagnostic: log execution details for blocks near divergence point
+            if (82620..=82630).contains(&ledger_block.index()) || ledger_block.index() == 152684 {
+                let gas_consumed = tx_engine.gas_consumed();
+                let notif_count = tx_engine.notifications().len();
+                let exception = tx_engine.fault_exception().map(|s| s.to_string());
+                warn!(
+                    target: "neo",
+                    block_index = ledger_block.index(),
+                    %tx_hash,
+                    ?vm_state,
+                    gas_consumed,
+                    notif_count,
+                    exception = ?exception,
+                    "DIAG: tx execution result"
+                );
+                for (i, notif) in tx_engine.notifications().iter().enumerate() {
+                    warn!(
+                        target: "neo",
+                        block_index = ledger_block.index(),
+                        %tx_hash,
+                        notif_idx = i,
+                        contract = %notif.script_hash,
+                        event = %notif.event_name,
+                        "DIAG: notification"
+                    );
+                }
+            }
             if let Some(started) = tx_exec_started {
                 persist_perf_stats()
                     .tx_execute_ns
@@ -587,8 +619,12 @@ impl NeoSystem {
         snapshot: &DataCache,
         application_executed: &[ApplicationExecuted],
     ) {
+        let is_fast_sync = self.context().is_fast_sync_mode();
         let handlers = { self.context().committing_handlers().read().clone() };
         for handler in handlers {
+            if is_fast_sync && !handler.run_during_fast_sync() {
+                continue;
+            }
             handler.blockchain_committing_handler(self, block, snapshot, application_executed);
         }
     }

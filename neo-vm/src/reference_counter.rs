@@ -307,7 +307,10 @@ impl ReferenceCounter {
         if let Some(item_id) = ItemId::from(item) {
             if let Some(record) = inner.tracked_items.get_mut(&item_id) {
                 record.remove_parent(&parent_id);
-                if record.total_references() == 0 {
+                // C# parity: add to zero_referred when stack_references == 0
+                // (not total_references == 0). This allows the GC to detect
+                // items only reachable through parent chains.
+                if record.stack_references == 0 {
                     inner.zero_referred.insert(item_id);
                 }
             }

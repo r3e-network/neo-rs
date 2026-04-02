@@ -639,7 +639,8 @@ impl OtlpExporter {
     }
 
     pub async fn send(&self, payload: String) -> MonitoringResult<()> {
-        let client = Client::new();
+        let client = Client::builder().no_proxy().build()
+            .map_err(|e| MonitoringError::Exporter(e.to_string()))?;
         let response = client
             .post(&self.endpoint)
             .header("Content-Type", self.content_type())
