@@ -418,6 +418,10 @@ impl TaskManager {
             let global_window = MAX_BLOCK_INDEX_BATCH.saturating_mul(BLOCK_INDEX_WINDOW_MULTIPLIER);
             let limit_height = current_height.saturating_add(global_window);
 
+            let debug_global_index_tasks = self.global_index_tasks.len();
+            let debug_session_received = session.received_block.len();
+            let debug_session_index = session.index_tasks.len();
+            let debug_session_inv = session.inv_tasks.len();
             trace!(
                 target: "neo",
                 actor = %actor.path(),
@@ -806,6 +810,23 @@ impl TaskManager {
 
         for path in to_request {
             self.request_tasks_for_path(&path);
+        }
+
+        // Clean up stale global_index_tasks below the current persisted height.
+        // These may accumulate from sessions that disconnected or timed out
+        // without delivering their assigned blocks.
+        self.global_index_tasks.retain(|&idx, _| idx > index);
+
+        // Re-evaluate all sessions after cleanup. Sessions with stale
+        // index_tasks below the persisted height should have those cleaned
+        // up too, so they can request new blocks.
+        let session_paths: Vec<String> = self.sessions.keys().cloned().collect();
+        for path in session_paths {
+            self.with_session_mut(&path, |entry, this| {
+                // Clean up stale per-session index tasks
+                entry.session.index_tasks.retain(|&idx, _| idx > index);
+                this.request_tasks_entry(entry);
+            });
         }
     }
 

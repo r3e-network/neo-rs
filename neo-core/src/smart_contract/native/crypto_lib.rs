@@ -320,11 +320,21 @@ impl CryptoLib {
                     ]),
                     ("ripemd160", 1) => method.with_parameter_names(vec!["data".to_string()]),
                     ("sha256", 1) => method.with_parameter_names(vec!["data".to_string()]),
+                    // C# has two verifyWithECDsa methods: V0 (pre-Cockatrice, param name "curve")
+                    // and V1 (post-Cockatrice, param name "curveHash"). Distinguish by active_in.
+                    ("verifyWithECDsa", 4) if method.active_in.is_some() => {
+                        method.with_parameter_names(vec![
+                            "message".to_string(),
+                            "pubkey".to_string(),
+                            "signature".to_string(),
+                            "curveHash".to_string(),
+                        ])
+                    }
                     ("verifyWithECDsa", 4) => method.with_parameter_names(vec![
                         "message".to_string(),
                         "pubkey".to_string(),
                         "signature".to_string(),
-                        "curveHash".to_string(),
+                        "curve".to_string(),
                     ]),
                     ("verifyWithEd25519", 3) => method.with_parameter_names(vec![
                         "message".to_string(),

@@ -103,7 +103,7 @@ impl Default for OracleConfig {
             max_response_length: MAX_SCRIPT_SIZE,
             request_timeout: 144, // ~24 hours at 10 second blocks
             min_response_gas: 10_000_000,
-            max_response_gas: 50_000_000,
+            max_response_gas: i64::MAX,
         }
     }
 }

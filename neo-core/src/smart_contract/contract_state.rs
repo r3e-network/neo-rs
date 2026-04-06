@@ -248,7 +248,7 @@ impl NefFile {
 
 impl IInteroperable for ContractState {
     fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
-        let items = match stack_item {
+        let items = match &stack_item {
             StackItem::Array(array) => array.items(),
             StackItem::Struct(struct_item) => struct_item.items(),
             other => {

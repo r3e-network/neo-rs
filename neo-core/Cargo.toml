@@ -186,3 +186,15 @@ required-features = ["rocksdb"]
 [[example]]
 name = "scan_sender_txs"
 required-features = ["rocksdb"]
+
+[[example]]
+name = "dump_genesis_trie"
+required-features = ["rocksdb"]
+
+[[example]]
+name = "rebuild_trie_4410"
+required-features = ["rocksdb"]
+
+[[example]]
+name = "list_raw_prefix"
+required-features = ["rocksdb"]

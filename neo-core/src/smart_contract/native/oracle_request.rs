@@ -56,8 +56,8 @@ impl OracleRequest {
 
 impl IInteroperable for OracleRequest {
     fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
-        if let StackItem::Struct(struct_item) = stack_item {
-            let items = struct_item.items();
+        if let StackItem::Array(array_item) = stack_item {
+            let items = array_item.items();
             if items.len() < 7 {
                 return Ok(());
             }
@@ -112,7 +112,7 @@ impl IInteroperable for OracleRequest {
     }
 
     fn to_stack_item(&self) -> Result<StackItem, CoreError> {
-        Ok(StackItem::from_struct(vec![
+        Ok(StackItem::from_array(vec![
             StackItem::from_byte_string(self.original_tx_id.to_bytes()),
             StackItem::from_int(self.gas_for_response),
             StackItem::from_byte_string(self.url.as_bytes()),

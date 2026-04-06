@@ -995,4 +995,79 @@ fn test_genesis_state_root_matches_reference() {
     assert_eq!(root_hex, "e881de01a3172b4988a8cd6194b82ab18eec47171f2931f6abee997e7b15a558", "genesis state root must match C# reference (LE bytes)");
 }
 
+#[test]
+fn test_genesis_state_root_with_full_state_true() {
+    // Verify full_state=true produces the same root as full_state=false for genesis
+    let entries: Vec<(&str, &str)> = vec![
+        ("f7ffffff05", "80f0fa02"),
+        ("f7ffffff09", ""),
+        ("f9ffffff0a", "e803"),
+        ("f9ffffff12", "1e"),
+        ("f9ffffff13", "a08601"),
+        ("faffffff0b", "80f0cf5b5f7912"),
+        ("faffffff146b123dd8bec718648852bbc78595e3536a058f9f", "410121070000d5585f7912"),
+        ("faffffff1496949ed482e7c60aaeec691550f1b3d599146194", "4101210480f0fa02"),
+        ("fbffffff01", ""),
+        ("fbffffff0b", "00e1f505"),
+        ("fbffffff0d", "00e8764817"),
+        ("ffffffff0f", "01"),
+        ("ffffffff14", "00ca9a3b"),
+    ];
+
+    let store1 = Arc::new(MockStore::new());
+    let mut trie1 = Trie::new(store1, None, false);
+    let store2 = Arc::new(MockStore::new());
+    let mut trie2 = Trie::new(store2, None, true);
+
+    for (k, v) in &entries {
+        let key = hex::decode(k).unwrap();
+        let val = hex::decode(v).unwrap();
+        trie1.put(&key, &val).unwrap();
+        trie2.put(&key, &val).unwrap();
+    }
+
+    let hash1 = trie1.root_hash().expect("trie1 should have root");
+    let hash2 = trie2.root_hash().expect("trie2 should have root");
+
+    assert_eq!(
+        hex::encode(hash1.to_bytes()),
+        hex::encode(hash2.to_bytes()),
+        "full_state=true and full_state=false must produce the same genesis root"
+    );
+}
+
+#[test]
+fn test_genesis_state_root_diagnostic() {
+    // Build genesis trie entry-by-entry, printing root hash after each insertion
+    let entries: Vec<(&str, &str)> = vec![
+        ("f7ffffff05", "80f0fa02"),
+        ("f7ffffff09", ""),
+        ("f9ffffff0a", "e803"),
+        ("f9ffffff12", "1e"),
+        ("f9ffffff13", "a08601"),
+        ("faffffff0b", "80f0cf5b5f7912"),
+        ("faffffff146b123dd8bec718648852bbc78595e3536a058f9f", "410121070000d5585f7912"),
+        ("faffffff1496949ed482e7c60aaeec691550f1b3d599146194", "4101210480f0fa02"),
+        ("fbffffff01", ""),
+        ("fbffffff0b", "00e1f505"),
+        ("fbffffff0d", "00e8764817"),
+        ("ffffffff0f", "01"),
+        ("ffffffff14", "00ca9a3b"),
+    ];
+
+    let store = Arc::new(MockStore::new());
+    let mut trie = Trie::new(store, None, false);
+
+    for (i, (k, v)) in entries.iter().enumerate() {
+        let key = hex::decode(k).unwrap();
+        let val = hex::decode(v).unwrap();
+        trie.put(&key, &val).unwrap();
+        if let Some(h) = trie.root_hash() {
+            eprintln!("after entry {}: key={} root={}", i, k, hex::encode(h.to_bytes()));
+        } else {
+            eprintln!("after entry {}: key={} root=None", i, k);
+        }
+    }
+}
+
 }

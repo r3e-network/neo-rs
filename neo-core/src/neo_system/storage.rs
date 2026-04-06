@@ -26,11 +26,15 @@ pub(crate) fn init_store(
         let state_db = store_provider.get_store(&state_settings.path)?;
         let backend = Arc::new(SnapshotBackedStateStoreBackend::new(state_db));
         let verifier = StateRootVerifier::from_store(store.clone(), settings);
-        Arc::new(StateStore::new_with_verifier(
+        let ss = Arc::new(StateStore::new_with_verifier(
             backend,
             state_settings,
             Some(verifier),
-        ))
+        ));
+        // Populate the trie with current blockchain storage if the trie is empty.
+        // Without this, only block deltas would be in the trie, producing wrong roots.
+        ss.initialize_trie_from_store(&store);
+        ss
     } else {
         // Disabled by default: keep an in-memory store instance but do not expose it via the
         // NeoSystemContext unless explicitly enabled.

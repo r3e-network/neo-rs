@@ -33,6 +33,7 @@ impl NeoAccountState {
                 let balance = entries[0]
                     .as_int()
                     .map_err(|err| format!("invalid balance: {}", err))?;
+
                 let balance_height_big = entries[1]
                     .as_int()
                     .map_err(|err| format!("invalid balance height: {}", err))?;

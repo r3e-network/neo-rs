@@ -58,7 +58,7 @@ use crate::error::{CoreError, CoreResult};
 use crate::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use crate::persistence::{
     data_cache::DataCache, i_store::IStore, i_store_provider::IStoreProvider,
-    store_cache::StoreCache, TrackState,
+    seek_direction::SeekDirection, store_cache::StoreCache, TrackState,
 };
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::native::LedgerContract;
@@ -68,7 +68,7 @@ use crate::UInt256;
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 /// Maximum number of state roots to cache before persistence.
 pub const MAX_CACHE_COUNT: usize = 100;
@@ -550,6 +550,91 @@ impl StateStore {
     /// Opens a transactional view over the underlying state store backend.
     pub fn begin_transaction(&self) -> StateStoreTransaction {
         StateStoreTransaction::new(self.store.clone())
+    }
+
+    /// Initializes the MPT trie from the current blockchain storage state.
+    ///
+    /// This must be called once when state root computation is first enabled on a node
+    /// that already has synced blocks. Without this, the trie starts empty and only
+    /// contains block deltas, producing incorrect state roots.
+    ///
+    /// If the trie already has a stored root (i.e. state roots were previously computed),
+    /// this is a no-op.
+    pub fn initialize_trie_from_store(&self, blockchain_store: &Arc<dyn IStore>) {
+        // Check if we already have a stored root — if so, no initialization needed.
+        if self.local_root_index().is_some() {
+            info!(target: "neo", "state trie already initialized, skipping population");
+            return;
+        }
+
+        info!(target: "neo", "initializing state trie from current blockchain storage");
+
+        // Determine the current block height so the initial state root can be
+        // recorded at the correct index.  Without this metadata subsequent
+        // snapshots will start from an empty trie after restart, causing every
+        // state root to diverge from the C# reference.
+        //
+        // The current-block key is: contract_id (4 LE bytes) + prefix byte 12.
+        // The value is: block_hash (32 bytes) + index (4 LE bytes).
+        let current_height = {
+            let bc_snapshot = blockchain_store.get_snapshot();
+            let mut cb_key = LedgerContract::ID.to_le_bytes().to_vec();
+            cb_key.push(12u8); // PREFIX_CURRENT_BLOCK
+            bc_snapshot
+                .try_get(&cb_key)
+                .and_then(|v: Vec<u8>| {
+                    if v.len() >= 36 {
+                        Some(u32::from_le_bytes([v[32], v[33], v[34], v[35]]))
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or(0)
+        };
+
+        let snapshot = blockchain_store.get_snapshot();
+        let mut state_snap = self.get_snapshot();
+        let mut count: u64 = 0;
+
+        // Iterate over ALL storage entries and insert into the trie,
+        // excluding LedgerContract storage (matching C# behavior).
+        // The raw find returns (Vec<u8>, Vec<u8>) where values are stored
+        // as get_value() output (raw bytes without is_constant prefix).
+        let entries: Vec<_> = snapshot.find(None, SeekDirection::Forward).collect();
+        for (key_bytes, value_bytes) in entries {
+            let key = StorageKey::from_bytes(&key_bytes);
+            if key.id == LedgerContract::ID {
+                continue;
+            }
+            if let Err(e) = state_snap.trie.put(&key_bytes, &value_bytes) {
+                warn!(target: "neo", "failed to insert key into trie during init: {:?}", e);
+            }
+            count += 1;
+        }
+
+        // Compute and store the root hash for the current state.
+        let root_hash = state_snap.trie.root_hash().unwrap_or_else(UInt256::zero);
+        info!(target: "neo",
+            "state trie initialized with {} entries, root hash: {:?}, height: {}",
+            count,
+            root_hash,
+            current_height
+        );
+
+        // Record the state root metadata BEFORE committing so the backend's
+        // pending buffer includes both trie nodes and root metadata.  Without
+        // this, get_snapshot() after restart cannot locate the root and creates
+        // an empty trie.
+        let state_root = StateRoot::new_current(current_height, root_hash);
+        if let Err(e) = state_snap.add_local_state_root(&state_root) {
+            warn!(target: "neo", "failed to store initial state root metadata: {:?}", e);
+        }
+
+        // Commit the populated trie AND the root metadata to the backend.
+        state_snap.commit().expect("commit initial trie");
+
+        // Update current snapshot to reflect the initialized state.
+        *self.current_snapshot.write() = Some(self.get_snapshot());
     }
 
     /// Gets the current local root hash.

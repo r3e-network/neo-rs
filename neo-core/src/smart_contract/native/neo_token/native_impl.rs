@@ -7,7 +7,9 @@ use crate::smart_contract::native::security_fixes::{SafeArithmetic, StateValidat
 
 /// NeoAccountState helper methods
 impl NeoAccountState {
-    /// Converts account state to a StackItem for serialization
+    /// Converts account state to a StackItem for serialization.
+    /// Matches C# NeoAccountState.ToStackItem: 4-field struct
+    /// {Balance, BalanceHeight, VoteTo, LastGasPerVote}.
     pub(super) fn to_stack_item(&self) -> StackItem {
         StackItem::from_struct(vec![
             StackItem::from_int(self.balance.clone()),

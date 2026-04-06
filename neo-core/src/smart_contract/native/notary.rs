@@ -241,9 +241,7 @@ impl Notary {
 
     /// Gets storage key for a deposit.
     fn deposit_key(account: &UInt160) -> StorageKey {
-        let mut key = vec![PREFIX_DEPOSIT];
-        key.extend_from_slice(&account.to_bytes());
-        StorageKey::from_bytes(&key)
+        StorageKey::create_with_uint160(Self::ID, PREFIX_DEPOSIT, account)
     }
 
     /// Gets storage key for max not valid before delta.
