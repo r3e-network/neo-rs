@@ -52,8 +52,6 @@ struct PendingRequest {
     callback_contract: UInt160,
     callback_method: String,
     user_data: Vec<u8>,
-    block_height: u32,
-    timestamp: u64,
 }
 
 /// The Oracle native contract.
@@ -381,12 +379,6 @@ impl OracleContract {
             .script_container()
             .and_then(|container| container.as_transaction().map(|tx| tx.hash()))
             .unwrap_or_else(UInt256::zero);
-        let block_height = engine.current_block_index();
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|e| Error::runtime_error(e.to_string()))?
-            .as_secs();
-
         let price = self.get_price_value(snapshot);
         let price_u64 = u64::try_from(price)
             .map_err(|_| Error::invalid_operation("Oracle price cannot be converted to u64"))?;
@@ -407,8 +399,6 @@ impl OracleContract {
             callback_contract: calling_contract,
             callback_method: callback,
             user_data,
-            block_height,
-            timestamp,
         };
 
         self.write_request(snapshot, &request)?;

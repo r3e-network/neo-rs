@@ -57,5 +57,10 @@ max_files = 10
 block_time = 15000  # 15 seconds in milliseconds
 max_transactions_per_block = 512
 
+[state_service]
+enabled = true
+path = "Data_MPT_{0}"
+full_state = true
+
 [mempool]
 max_transactions = 50000
