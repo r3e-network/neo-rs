@@ -329,6 +329,11 @@ impl StateSnapshot {
         let data = store.try_get(&key)?;
         let mut reader = MemoryReader::new(&data);
         let state_root = StateRoot::deserialize(&mut reader).ok()?;
+        // A zero root hash must be treated as "no root" so that Trie::new
+        // creates an Empty node instead of a HashNode that fails to resolve.
+        if state_root.root_hash.is_zero() {
+            return None;
+        }
         Some(state_root.root_hash)
     }
 
@@ -827,10 +832,26 @@ impl StateStore {
                 match state {
                     TrackState::Added | TrackState::Changed => {
                         let value_bytes = item.get_value();
-                        let _ = snapshot.trie.put(&key_bytes, &value_bytes);
+                        if let Err(e) = snapshot.trie.put(&key_bytes, &value_bytes) {
+                            tracing::error!(
+                                target: "neo::state_service",
+                                height,
+                                contract_id = key.id,
+                                error = %e,
+                                "trie.put failed"
+                            );
+                        }
                     }
                     TrackState::Deleted => {
-                        let _ = snapshot.trie.delete(&key_bytes);
+                        if let Err(e) = snapshot.trie.delete(&key_bytes) {
+                            tracing::error!(
+                                target: "neo::state_service",
+                                height,
+                                contract_id = key.id,
+                                error = %e,
+                                "trie.delete failed"
+                            );
+                        }
                     }
                     TrackState::None | TrackState::NotFound => {}
                 }

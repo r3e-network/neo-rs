@@ -127,15 +127,15 @@ fn fault_trace_tx_filter() -> Option<&'static UInt256> {
         .as_ref()
 }
 
-fn should_trace_fault(block_index: u32, tx_hash: &UInt256) -> bool {
+fn should_trace_fault(block_index: u32, _tx_hash: &UInt256) -> bool {
     let block_filter = fault_trace_block_filter();
     let tx_filter = fault_trace_tx_filter();
     match (block_filter, tx_filter) {
         (None, None) => false,
         (Some(expected_block), None) => block_index == expected_block,
-        (None, Some(expected_tx)) => tx_hash == expected_tx,
+        (None, Some(expected_tx)) => _tx_hash == expected_tx,
         (Some(expected_block), Some(expected_tx)) => {
-            block_index == expected_block && tx_hash == expected_tx
+            block_index == expected_block && _tx_hash == expected_tx
         }
     }
 }

@@ -50,6 +50,15 @@ Practical checks and routines for running `neo-cli` in production.
 - Set `--health-max-header-lag` / `NEO_HEALTH_MAX_HEADER_LAG` (default 20; set 0 to disable) so `/healthz` returns 503 if headers are far ahead of persisted blocks (sync lag).
 - For offline verification, you can open storage in read-only mode with `NEO_STORAGE_READONLY=1` and `--check-storage/--check-all`; the node will not start normally in read-only mode.
 - `/readyz` is available alongside `/healthz` when the health server is enabled (same checks).
+- For continuous state-root parity against official Neo RPC seeds, run:
+  `python3 scripts/continuous-stateroot-validation.py --local-config neo_mainnet_node.toml`
+- Override the local RPC explicitly when needed:
+  `python3 scripts/continuous-stateroot-validation.py --local http://127.0.0.1:20332 --local-user "$NEO_RPC_USER" --local-pass "$NEO_RPC_PASS"`
+- Override reference RPCs with repeated or comma-separated `--reference` flags. By default the validator rotates across `seed1` through `seed5`.
+- The validator persists the last fully compared block to `/tmp/stateroot-last-validated` and writes structured status JSON to `/tmp/stateroot-validation.json` unless `--resume-file` / `--status-file` are overridden.
+- Use `--once` to validate only up to the current local state-root height and exit, or `--stop-at <height>` for a bounded replay window.
+- The compatibility shell entrypoint delegates to the Python validator and accepts environment overrides such as `LOCAL_CONFIG`, `LOCAL_RPC`, `REFERENCE_RPCS`, `STATUS_FILE`, and `RESUME_FILE`:
+  `scripts/validate-stateroot-continuous.sh 500 5`
 
 ## Configuration changes
 - Edit the TOML and restart the service to apply changes.
@@ -91,6 +100,15 @@ Practical checks and routines for running `neo-cli` in production.
   - Process memory and FD count (`nofile` should allow >= 65535)
 - Use the optional Grafana compose profile (`make compose-monitor` or `docker compose --profile monitoring up -d neo-monitor`) as a starting point; wire in dashboards that show height lag and peer counts.
 - See `docs/MONITORING.md` for signals/alerts to implement.
+
+## Continuous State Root Validation
+Continuous state root validation is handled by the scripts in `scripts/`. The Python validator `scripts/continuous-stateroot-validation.py` continuously compares every local root returned by `getstateroot` to an official Neo RPC snapshot (defaults to `http://seed1.neo.org:10332`) and writes a JSON status file (default `--output /tmp/stateroot-validation.json`) containing `total_compared`, `total_mismatched`, `rate_per_second`, and the last 100 mismatches. Run it with `python3 scripts/continuous-stateroot-validation.py --local http://127.0.0.1:10332 --reference http://seed1.neo.org:10332 --batch 500 --workers 8 --output /tmp/stateroot-validation.json`. The validator will pause when the local node lags, report progress to stdout, and stop automatically if more than 10 mismatches are detected so you can inspect the JSON and log output for the first divergence.
+
+If the node is running with RPC authentication (`--rpc-hardened` / `NEO_RPC_USER` + `NEO_RPC_PASS`), keep the validator on the node host so it can reach `http://127.0.0.1:10332` without a proxy. You can either allow an unauthenticated loopback interface or wrap the validator in a helper that injects the `Authorization: Basic` header before each request; the script itself uses `http.client` so it must see the same request headers you would hit the RPC with manually.
+
+For an operator-friendly long-lived process, use `scripts/validate-stateroot-continuous.sh`. It batches a range of heights (default 1,000 blocks per iteration), compares each local root to `http://seed1.neo.org:10332`, and writes progress to `/tmp/stateroot-validation.log` while storing the next block to validate in `/tmp/stateroot-last-validated`. Export `LOCAL_RPC="http://127.0.0.1:20332"` and `REF_RPC="http://seed1.neo.org:10332"` before running `./scripts/validate-stateroot-continuous.sh [batch_size] [sleep_seconds]`. The script shells out to `curl -s --compressed` for each RPC call, so enable Basic auth by adding `-u "$NEO_RPC_USER:$NEO_RPC_PASS"` to the `curl` command inside the helper if your local node enforces credentials on loopback.
+
+The shell wrapper logs every mismatch (first one is kept in `FIRST_MISMATCH` and the loop aborts if there are 10+ mismatches) and appends JSON-friendly status information to the log file. The resume file lets you restart the validator without rechecking previously validated blocks; read `/tmp/stateroot-last-validated` after a restart to confirm where the next batch begins. For post-mortem analysis, check both `stateroot-validation.log` and the JSON summary from the Python validator, and keep the official Neo seed list (`seed1`–`seed5`) handy in case you need to rotate the reference RPC to avoid throttling.
 
 ## Incident response basics
 - If out of sync: restart, then check peers/ports and compare network magic/seed list. If the DB is corrupt, restore from the latest good backup and resync.

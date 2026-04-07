@@ -48,7 +48,9 @@ impl ApplicationEngine {
         let existing = self.snapshot_cache.get(&storage_key);
         let value_len = value.len();
         let new_data_size = if let Some(existing_item) = &existing {
-            let old_len = existing_item.size();
+            // Use raw value byte length to match C# item.Value.Length.
+            // StorageItem.size() includes a var-length prefix which is wrong here.
+            let old_len = existing_item.value_bytes().len();
             if value_len == 0 {
                 0
             } else if value_len <= old_len && value_len > 0 {
