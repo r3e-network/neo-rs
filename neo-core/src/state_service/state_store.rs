@@ -831,7 +831,7 @@ impl StateStore {
                 let key_bytes = key.to_array();
                 match state {
                     TrackState::Added | TrackState::Changed => {
-                        let value_bytes = item.get_value();
+                        let value_bytes = item.value_bytes();
                         if let Err(e) = snapshot.trie.put(&key_bytes, &value_bytes) {
                             tracing::error!(
                                 target: "neo::state_service",
