@@ -61,10 +61,10 @@ fn convert(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
             (item, StackItemType::Integer) => StackItem::from_int(item.into_int()?),
 
             // Convert to ByteString
-            (item, StackItemType::ByteString) => StackItem::from_byte_string(item.as_bytes()?),
+            (item, StackItemType::ByteString) => StackItem::from_byte_string(item.into_bytes()?),
 
             // Convert to Buffer
-            (item, StackItemType::Buffer) => StackItem::from_buffer(item.as_bytes()?),
+            (item, StackItemType::Buffer) => StackItem::from_buffer(item.into_bytes()?),
 
             // Convert to Array/Struct
             (StackItem::Struct(items), StackItemType::Array) => StackItem::Array(Array::new(

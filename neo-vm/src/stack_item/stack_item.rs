@@ -336,6 +336,20 @@ impl StackItem {
         }
     }
 
+    /// Consuming version of `as_bytes` — moves the Vec out of ByteString
+    /// instead of cloning. Use when the StackItem is already owned (e.g., after `pop()`).
+    #[inline]
+    pub fn into_bytes(self) -> VmResult<Vec<u8>> {
+        match self {
+            Self::Null => Ok(Vec::new()),
+            Self::Boolean(b) => Ok(vec![u8::from(b)]),
+            Self::Integer(i) => Ok(normalize_bigint_bytes(&i)),
+            Self::ByteString(b) => Ok(b), // MOVE — no clone!
+            Self::Buffer(b) => Ok(b.data()),
+            _ => Err(VmError::invalid_type_simple("Cannot convert to ByteArray")),
+        }
+    }
+
     /// Returns a borrowed byte slice for variants that own contiguous bytes
     /// (`ByteString`). For other convertible variants the caller should fall
     /// back to [`as_bytes`](Self::as_bytes).

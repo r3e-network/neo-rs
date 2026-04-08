@@ -135,8 +135,8 @@ fn cat(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
 
     // Match C# semantics: CAT always creates a brand-new buffer and never mutates
     // either operand in place.
-    let x2 = context.pop()?.as_bytes()?;
-    let x1 = context.pop()?.as_bytes()?;
+    let x2 = context.pop()?.into_bytes()?;
+    let x1 = context.pop()?.into_bytes()?;
 
     let length = x1.len().saturating_add(x2.len());
     if length > max_item_size {
@@ -173,7 +173,7 @@ fn substr(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
         .to_usize()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid offset"))?;
     let value = context.pop()?;
-    let data = value.as_bytes()?;
+    let data = value.into_bytes()?;
     if offset + count > data.len() {
         return Err(VmError::invalid_operation_msg(format!(
             "Substring out of bounds: {} + {} > {}",
@@ -203,7 +203,7 @@ fn left(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
         .to_usize()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid count"))?;
     let value = context.pop()?;
-    let data = value.as_bytes()?;
+    let data = value.into_bytes()?;
     if count > data.len() {
         return Err(VmError::invalid_operation_msg(format!(
             "Left out of bounds: {} > {}",
@@ -232,7 +232,7 @@ fn right(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<(
         .to_usize()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid count"))?;
     let value = context.pop()?;
-    let data = value.as_bytes()?;
+    let data = value.into_bytes()?;
     if count > data.len() {
         return Err(VmError::invalid_operation_msg(format!(
             "Right out of bounds: {} > {}",

@@ -320,7 +320,7 @@ pub fn abort(_engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRes
 /// ABORTMSG - Abort execution with message
 pub fn abortmsg(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     let msg_item = engine.pop()?;
-    let msg_bytes = msg_item.as_bytes()?;
+    let msg_bytes = msg_item.into_bytes()?;
     let msg = String::from_utf8_lossy(&msg_bytes).into_owned();
     Err(VmError::AbortMsg(msg))
 }
@@ -336,7 +336,7 @@ pub fn assert(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRes
 /// ASSERTMSG - Assert condition with message
 pub fn assertmsg(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     let msg_item = engine.pop()?;
-    let msg_bytes = msg_item.as_bytes()?;
+    let msg_bytes = msg_item.into_bytes()?;
     let msg = String::from_utf8_lossy(&msg_bytes).into_owned();
     if !engine.pop()?.get_boolean()? {
         return Err(VmError::AssertFailedMsg(msg));
