@@ -363,7 +363,7 @@ pub(super) fn diagnostic_storage_changes(engine: &ApplicationEngine) -> Value {
             json!({
                 "state": format!("{:?}", trackable.state),
                 "key": BASE64_STANDARD.encode(key.to_array()),
-                "value": BASE64_STANDARD.encode(trackable.item.get_value()),
+                "value": BASE64_STANDARD.encode(&*trackable.item.value_bytes()),
             })
         })
         .collect::<Vec<_>>();

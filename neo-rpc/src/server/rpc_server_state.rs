@@ -79,7 +79,7 @@ impl RpcServerState {
             .get_proof(root_hash, &storage_key)
             .ok_or_else(|| RpcException::from(RpcError::unknown_storage_item()))?;
 
-        let proof_bytes = StateStore::encode_proof_payload(&storage_key.to_array(), &proof_nodes);
+        let proof_bytes = StateStore::encode_proof_payload(&storage_key.as_bytes(), &proof_nodes);
         Ok(Value::String(BASE64_STANDARD.encode(proof_bytes)))
     }
 
@@ -109,7 +109,7 @@ impl RpcServerState {
         let mut trie = state_store.trie_for_root(root_hash);
         let storage_key = StorageKey::new(contract_id, key);
         let value = trie
-            .get(&storage_key.to_array())
+            .get(&storage_key.as_bytes())
             .map_err(|e| {
                 RpcException::from(RpcError::internal_server_error().with_data(e.to_string()))
             })?
@@ -248,7 +248,7 @@ impl RpcServerState {
         let storage_key = StorageKey::new(contract_id, key.to_vec());
         state_store.get_proof(root_hash, &storage_key).map(|proof| {
             BASE64_STANDARD.encode(StateStore::encode_proof_payload(
-                &storage_key.to_array(),
+                &storage_key.as_bytes(),
                 &proof,
             ))
         })
@@ -327,14 +327,14 @@ impl RpcServerState {
         );
         let mut trie = state_store.trie_for_root(root_hash);
         let value = trie
-            .get(&storage_key.to_array())
+            .get(&storage_key.as_bytes())
             .map_err(|e| {
                 RpcException::from(RpcError::internal_server_error().with_data(e.to_string()))
             })?
             .ok_or_else(|| RpcException::from(RpcError::unknown_contract()))?;
         let mut item = StorageItem::new();
         item.deserialize_from_bytes(&value);
-        let contract = ContractManagement::deserialize_contract_state(&item.get_value())
+        let contract = ContractManagement::deserialize_contract_state(&item.value_bytes())
             .map_err(internal_error)?;
         Ok(contract.id)
     }
@@ -551,7 +551,7 @@ mod tests {
         let mut snapshot = state_store.get_snapshot();
         snapshot
             .trie
-            .put(&storage_key.to_array(), &value)
+            .put(&storage_key.as_bytes(), &value)
             .expect("trie put");
         let root_hash = snapshot
             .trie
@@ -566,12 +566,12 @@ mod tests {
         // Build a proof directly from the snapshot and verify it via the handler.
         let proof_nodes: Vec<Vec<u8>> = snapshot
             .trie
-            .try_get_proof(&storage_key.to_array())
+            .try_get_proof(&storage_key.as_bytes())
             .expect("proof exists")
             .expect("proof set present")
             .into_iter()
             .collect();
-        let encoded_proof = StateStore::encode_proof_payload(&storage_key.to_array(), &proof_nodes);
+        let encoded_proof = StateStore::encode_proof_payload(&storage_key.as_bytes(), &proof_nodes);
         let decoded_value = RpcServerState::verify_proof(
             &server,
             &[

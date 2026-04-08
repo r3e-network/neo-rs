@@ -828,7 +828,7 @@ impl StateStore {
                 if key.id == LedgerContract::ID {
                     continue;
                 }
-                let key_bytes = key.to_array();
+                let key_bytes = key.as_bytes();
                 match state {
                     TrackState::Added | TrackState::Changed => {
                         let value_bytes = item.value_bytes();
@@ -905,7 +905,7 @@ impl StateStore {
     pub fn get_proof(&self, root: UInt256, key: &StorageKey) -> Option<Vec<Vec<u8>>> {
         let snapshot = StateStoreSnapshot::new(Arc::clone(&self.store));
         let mut trie = Trie::new(Arc::new(snapshot), Some(root), self.settings.full_state);
-        let key_bytes = key.to_array();
+        let key_bytes = key.as_bytes();
         trie.try_get_proof(&key_bytes)
             .ok()
             .flatten()
