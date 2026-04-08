@@ -12,6 +12,7 @@ impl ExecutionEngine {
     ///
     /// # Errors
     /// Returns an error if the position is out of bounds or no context exists.
+    #[inline]
     pub fn execute_jump(&mut self, position: i32) -> VmResult<()> {
         let script_len = self
             .current_context()
@@ -37,6 +38,7 @@ impl ExecutionEngine {
     ///
     /// # Errors
     /// Returns an error if the resulting position is out of bounds.
+    #[inline]
     pub fn execute_jump_offset(&mut self, offset: i32) -> VmResult<()> {
         let current_ip = self
             .current_context()

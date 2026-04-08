@@ -53,23 +53,27 @@ pub fn register_handlers(jump_table: &mut crate::jump_table::JumpTable) {
 }
 
 /// NOP - No operation
+#[inline]
 pub fn nop(_engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     Ok(())
 }
 
 /// JMP - Jump with signed byte offset
+#[inline]
 pub fn jmp(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let offset = i32::from(instruction.token_i8());
     engine.execute_jump_offset(offset)
 }
 
 /// `JMP_L` - Jump with 32-bit offset
+#[inline]
 pub fn jmp_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let offset = instruction.token_i32();
     engine.execute_jump_offset(offset)
 }
 
 /// JMPIF - Jump if true
+#[inline]
 pub fn jmpif(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     if engine.pop()?.get_boolean()? {
         let offset = i32::from(instruction.token_i8());
@@ -79,6 +83,7 @@ pub fn jmpif(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
 }
 
 /// `JMPIF_L` - Jump if true (32-bit)
+#[inline]
 pub fn jmpif_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     if engine.pop()?.get_boolean()? {
         let offset = instruction.token_i32();
@@ -88,6 +93,7 @@ pub fn jmpif_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
 }
 
 /// JMPIFNOT - Jump if false
+#[inline]
 pub fn jmpifnot(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     if !engine.pop()?.get_boolean()? {
         let offset = i32::from(instruction.token_i8());
@@ -97,6 +103,7 @@ pub fn jmpifnot(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRe
 }
 
 /// `JMPIFNOT_L` - Jump if false (32-bit)
+#[inline]
 pub fn jmpifnot_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     if !engine.pop()?.get_boolean()? {
         let offset = instruction.token_i32();
