@@ -98,7 +98,7 @@ pub fn register_handlers(jump_table: &mut JumpTable) {
 fn inc(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
     let value = ctx.pop()?.into_int()?;
-    let result = value + BigInt::one();
+    let result = value + 1;
     check_bigint_size(&result)?;
     ctx.push(StackItem::from_int(result))
 }
@@ -107,7 +107,7 @@ fn inc(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
 fn dec(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
     let value = ctx.pop()?.into_int()?;
-    let result = value - BigInt::one();
+    let result = value - 1;
     check_bigint_size(&result)?;
     ctx.push(StackItem::from_int(result))
 }
@@ -115,14 +115,14 @@ fn dec(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
 fn sign(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
     let value = ctx.pop()?.into_int()?;
-    let result = if value.is_zero() {
-        BigInt::zero()
+    let sign_val: i32 = if value.is_zero() {
+        0
     } else if value.is_positive() {
-        BigInt::one()
+        1
     } else {
-        -BigInt::one()
+        -1
     };
-    ctx.push(StackItem::from_int(result))
+    ctx.push(StackItem::from_int(sign_val))
 }
 
 fn negate(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
@@ -360,8 +360,14 @@ fn numequal(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
         (StackItem::Null, StackItem::Null) => true,
         (StackItem::Null, _) | (_, StackItem::Null) => false,
         (StackItem::Boolean(a_bool), StackItem::Boolean(b_bool)) => a_bool == b_bool,
-        (StackItem::Boolean(a_bool), _) => BigInt::from(i32::from(*a_bool)) == b.as_int()?,
-        (_, StackItem::Boolean(b_bool)) => a.as_int()? == BigInt::from(i32::from(*b_bool)),
+        (StackItem::Boolean(a_bool), _) => {
+            let bi = b.as_int()?;
+            if *a_bool { bi.is_one() } else { bi.is_zero() }
+        }
+        (_, StackItem::Boolean(b_bool)) => {
+            let ai = a.as_int()?;
+            if *b_bool { ai.is_one() } else { ai.is_zero() }
+        }
         _ => a.as_int()? == b.as_int()?,
     };
     ctx.push(StackItem::from_bool(result))
@@ -379,8 +385,14 @@ fn numnotequal(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
         (StackItem::Null, StackItem::Null) => false,
         (StackItem::Null, _) | (_, StackItem::Null) => true,
         (StackItem::Boolean(a_bool), StackItem::Boolean(b_bool)) => a_bool != b_bool,
-        (StackItem::Boolean(a_bool), _) => BigInt::from(i32::from(*a_bool)) != b.as_int()?,
-        (_, StackItem::Boolean(b_bool)) => a.as_int()? != BigInt::from(i32::from(*b_bool)),
+        (StackItem::Boolean(a_bool), _) => {
+            let bi = b.as_int()?;
+            if *a_bool { !bi.is_one() } else { !bi.is_zero() }
+        }
+        (_, StackItem::Boolean(b_bool)) => {
+            let ai = a.as_int()?;
+            if *b_bool { !ai.is_one() } else { !ai.is_zero() }
+        }
         _ => a.as_int()? != b.as_int()?,
     };
     ctx.push(StackItem::from_bool(result))
