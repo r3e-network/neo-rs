@@ -210,19 +210,24 @@ impl Map {
     /// Returns an iterator over the key/value pairs.
     #[must_use]
     pub fn iter(&self) -> std::vec::IntoIter<(StackItem, StackItem)> {
-        self.items()
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect::<Vec<_>>()
-            .into_iter()
+        self.with_items(|items| {
+            items
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect::<Vec<_>>()
+        })
+        .into_iter()
     }
 
     /// Creates a deep copy of the map.
     pub fn deep_copy(&self, reference_counter: Option<ReferenceCounter>) -> VmResult<Self> {
-        let mut items = VmOrderedDictionary::new();
-        for (k, v) in self.items().iter() {
-            items.insert(k.deep_clone(), v.deep_clone());
-        }
+        let items = self.with_items(|items| {
+            let mut new_items = VmOrderedDictionary::new();
+            for (k, v) in items.iter() {
+                new_items.insert(k.deep_clone(), v.deep_clone());
+            }
+            new_items
+        });
         let copy = Self::new(items, reference_counter)?;
         copy.set_read_only(true);
         Ok(copy)
@@ -245,9 +250,9 @@ impl Map {
     }
 
     fn add_reference_for_entries(&self, rc: &ReferenceCounter) -> VmResult<()> {
-        let items = self.items();
-        let parent = CompoundParent::Map(self.id());
-        for (key, value) in items.iter() {
+        let inner = self.inner.lock();
+        let parent = CompoundParent::Map(inner.id);
+        for (key, value) in inner.items.iter() {
             Self::validate_compound_reference(rc, value)?;
             rc.add_compound_reference(key, parent);
             rc.add_compound_reference(value, parent);

@@ -233,13 +233,10 @@ impl Struct {
 
     /// Creates a deep copy of the struct.
     pub fn deep_copy(&self, reference_counter: Option<ReferenceCounter>) -> VmResult<Self> {
-        let copy = Self::new(
-            self.items()
-                .into_iter()
-                .map(|item| item.deep_clone())
-                .collect(),
-            reference_counter,
-        )?;
+        let items = self.with_items(|items| {
+            items.iter().map(|item| item.deep_clone()).collect()
+        });
+        let copy = Self::new(items, reference_counter)?;
         copy.set_read_only(true);
         Ok(copy)
     }
@@ -316,9 +313,9 @@ impl Struct {
     }
 
     fn add_reference_for_items(&self, rc: &ReferenceCounter) -> VmResult<()> {
-        let items = self.items();
-        let parent = CompoundParent::Struct(self.id());
-        for item in &items {
+        let inner = self.inner.lock();
+        let parent = CompoundParent::Struct(inner.id);
+        for item in &inner.items {
             Self::validate_compound_reference(rc, item)?;
             rc.add_compound_reference(item, parent);
         }

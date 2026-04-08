@@ -80,7 +80,7 @@ impl StoreCache {
                 .map(StorageItem::from_bytes)
         });
         let snapshot_find: Arc<StoreFindFn> = Arc::new(move |prefix, direction| {
-            let prefix_bytes = prefix.map(|key| key.to_array());
+            let prefix_bytes = prefix.map(|key| key.as_bytes().into_owned());
             snapshot_for_find
                 .find(prefix_bytes.as_ref(), direction)
                 .map(|(key, value)| (StorageKey::from_bytes(&key), StorageItem::from_bytes(value)))

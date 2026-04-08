@@ -332,7 +332,7 @@ impl RpcServerBlockchain {
         let value = store
             .get(&storage_key)
             .ok_or_else(|| RpcException::from(RpcError::unknown_storage_item()))?;
-        Ok(Value::String(BASE64_STANDARD.encode(value.get_value())))
+        Ok(Value::String(BASE64_STANDARD.encode(&*value.value_bytes())))
     }
 
     fn find_storage(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
@@ -392,7 +392,7 @@ impl RpcServerBlockchain {
 
             results.push(json!({
                 "key": BASE64_STANDARD.encode(key.suffix()),
-                "value": BASE64_STANDARD.encode(value.get_value()),
+                "value": BASE64_STANDARD.encode(&*value.value_bytes()),
             }));
         }
 

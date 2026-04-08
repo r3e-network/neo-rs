@@ -6,6 +6,7 @@ use super::{ExecutionEngine, StackItem, VmError, VmResult, DEFAULT_GAS_LIMIT};
 
 impl ExecutionEngine {
     /// Returns the item at the specified index from the top of the current stack without removing it.
+    #[inline]
     pub fn peek(&self, index: usize) -> VmResult<StackItem> {
         let context = self
             .current_context()
@@ -14,6 +15,7 @@ impl ExecutionEngine {
     }
 
     /// Removes and returns the item at the top of the current stack.
+    #[inline]
     pub fn pop(&mut self) -> VmResult<StackItem> {
         let context = self
             .current_context_mut()
@@ -22,6 +24,7 @@ impl ExecutionEngine {
     }
 
     /// Pushes an item onto the top of the current stack.
+    #[inline]
     pub fn push(&mut self, item: StackItem) -> VmResult<()> {
         let context = self
             .current_context_mut()

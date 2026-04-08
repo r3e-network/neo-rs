@@ -263,18 +263,20 @@ impl StackItem {
                     return Ok(BigInt::from(0));
                 }
 
-                let bytes = b.data();
-                let is_negative = (bytes[bytes.len() - 1] & 0x80) != 0;
-                if is_negative {
-                    let mut bytes_copy = bytes;
-                    let len = bytes_copy.len();
-                    bytes_copy[len - 1] &= 0x7F;
-                    let positive_value = BigInt::from_bytes_le(num_bigint::Sign::Plus, &bytes_copy);
-                    let sign_bit_value = BigInt::from(1) << (len * 8 - 1);
-                    Ok(-(sign_bit_value - positive_value))
-                } else {
-                    Ok(BigInt::from_bytes_le(num_bigint::Sign::Plus, &bytes))
-                }
+                b.with_data(|data| {
+                    let is_negative = (data[data.len() - 1] & 0x80) != 0;
+                    if is_negative {
+                        let mut bytes_copy = data.to_vec();
+                        let len = bytes_copy.len();
+                        bytes_copy[len - 1] &= 0x7F;
+                        let positive_value =
+                            BigInt::from_bytes_le(num_bigint::Sign::Plus, &bytes_copy);
+                        let sign_bit_value = BigInt::from(1) << (len * 8 - 1);
+                        Ok(-(sign_bit_value - positive_value))
+                    } else {
+                        Ok(BigInt::from_bytes_le(num_bigint::Sign::Plus, data))
+                    }
+                })
             }
             _ => Err(VmError::invalid_type_simple("Cannot convert to Integer")),
         }
@@ -484,7 +486,7 @@ impl StackItem {
             Self::Boolean(b) => i32::from(*b),
             Self::Integer(i) => hash_bytes(&i.to_signed_bytes_le()),
             Self::ByteString(b) => hash_bytes(b),
-            Self::Buffer(b) => hash_bytes(&b.data()),
+            Self::Buffer(b) => b.with_data(hash_bytes),
             Self::Array(array) => {
                 let mut hash = combine_hash(17, array.len() as i32);
                 for item in array {
@@ -723,8 +725,12 @@ impl Ord for StackItem {
             (Self::Integer(a), Self::Integer(b)) => a.cmp(b),
             (Self::ByteString(a), Self::ByteString(b)) => a.cmp(b),
             (Self::Buffer(a), Self::Buffer(b)) => a.cmp(b),
-            (Self::ByteString(a), Self::Buffer(b)) => a.as_slice().cmp(b.data().as_slice()),
-            (Self::Buffer(a), Self::ByteString(b)) => a.data().as_slice().cmp(b.as_slice()),
+            (Self::ByteString(a), Self::Buffer(b)) => {
+                b.with_data(|data| a.as_slice().cmp(data))
+            }
+            (Self::Buffer(a), Self::ByteString(b)) => {
+                a.with_data(|data| data.cmp(b.as_slice()))
+            }
             (Self::Pointer(a), Self::Pointer(b)) => a.cmp(b),
             (Self::Array(a), Self::Array(b)) => {
                 let len_cmp = a.len().cmp(&b.len());

@@ -192,11 +192,9 @@ impl Array {
 
     /// Creates a deep copy of the array.
     pub fn deep_copy(&self, reference_counter: Option<ReferenceCounter>) -> VmResult<Self> {
-        let items = self
-            .items()
-            .into_iter()
-            .map(|item| item.deep_clone())
-            .collect();
+        let items = self.with_items(|items| {
+            items.iter().map(|item| item.deep_clone()).collect()
+        });
         let copy = Self::new(items, reference_counter)?;
         copy.set_read_only(true);
         Ok(copy)
@@ -290,9 +288,9 @@ impl Array {
     }
 
     fn add_reference_for_items(&self, rc: &ReferenceCounter) -> VmResult<()> {
-        let items = self.items();
-        let parent = CompoundParent::Array(self.id());
-        for item in &items {
+        let inner = self.inner.lock();
+        let parent = CompoundParent::Array(inner.id);
+        for item in &inner.items {
             Self::validate_compound_reference(rc, item)?;
             rc.add_compound_reference(item, parent);
         }

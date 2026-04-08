@@ -299,11 +299,11 @@ impl AccessPatternTracker {
     /// Record an access and update pattern detection.
     fn record_access(&mut self, key: &StorageKey, seq: u64) -> PrefetchPattern {
         if let Some(ref last) = self.last_key {
-            let key_bytes = key.to_array();
-            let last_bytes = last.to_array();
+            let key_bytes = key.as_bytes();
+            let last_bytes = last.as_bytes();
 
             // Check for sequential access patterns
-            if key_bytes > last_bytes {
+            if *key_bytes > *last_bytes {
                 // Potential forward sequential
                 if self.pattern == PrefetchPattern::SequentialForward {
                     self.sequential_count += 1;
@@ -676,7 +676,7 @@ impl DataCache {
             if let Some(item) = getter(key) {
                 // Cache in read cache for future access
                 if let Some(ref cache) = self.read_cache {
-                    let size = item.get_value().len() + std::mem::size_of::<StorageKey>();
+                    let size = item.value_bytes().len() + std::mem::size_of::<StorageKey>();
                     cache.put(key.clone(), item.clone(), size);
                 }
 
@@ -852,7 +852,7 @@ impl DataCache {
 
         // Update read cache with new value
         if let Some(ref cache) = self.read_cache {
-            let size = value.get_value().len() + std::mem::size_of::<StorageKey>();
+            let size = value.value_bytes().len() + std::mem::size_of::<StorageKey>();
             cache.put(key.clone(), value.clone(), size);
         }
 
@@ -1103,7 +1103,7 @@ impl DataCache {
             let cache_items: Vec<_> = items
                 .into_iter()
                 .map(|(k, v)| {
-                    let size = v.get_value().len() + std::mem::size_of::<StorageKey>();
+                    let size = v.value_bytes().len() + std::mem::size_of::<StorageKey>();
                     (k, v, size)
                 })
                 .collect();
@@ -1117,7 +1117,7 @@ impl DataCache {
         key_prefix: Option<&StorageKey>,
         direction: SeekDirection,
     ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
-        let prefix_bytes = key_prefix.map(|k| k.to_array());
+        let prefix_bytes = key_prefix.map(|k| k.as_bytes().into_owned());
 
         if let Some(store_find) = &self.store_find {
             // Overlay only pending changes from the change-set onto backing-store
@@ -1129,7 +1129,7 @@ impl DataCache {
 
             for key in &state.change_set {
                 if let Some(prefix) = &prefix_bytes {
-                    if !key.to_array().starts_with(prefix) {
+                    if !key.as_bytes().starts_with(prefix) {
                         continue;
                     }
                 }
@@ -1158,7 +1158,7 @@ impl DataCache {
                 return Box::new(store_find(key_prefix, direction).into_iter().filter(
                     move |(key, _)| {
                         if let Some(prefix) = &prefix_bytes {
-                            key.to_array().starts_with(prefix)
+                            key.as_bytes().starts_with(prefix)
                         } else {
                             true
                         }
@@ -1169,7 +1169,7 @@ impl DataCache {
             let mut merged = Vec::new();
             for (key, item) in store_find(key_prefix, direction) {
                 if let Some(prefix) = &prefix_bytes {
-                    if !key.to_array().starts_with(prefix) {
+                    if !key.as_bytes().starts_with(prefix) {
                         continue;
                     }
                 }
@@ -1199,7 +1199,7 @@ impl DataCache {
             .filter(|(_, t)| t.state != TrackState::Deleted && t.state != TrackState::NotFound)
             .filter(|(k, _)| {
                 if let Some(prefix) = &prefix_bytes {
-                    k.to_array().starts_with(prefix)
+                    k.as_bytes().starts_with(prefix)
                 } else {
                     true
                 }

@@ -118,23 +118,23 @@ impl Buffer {
 
     /// Converts the buffer to an integer.
     pub fn to_integer(&self) -> VmResult<BigInt> {
-        let data = self.data();
-        if data.is_empty() {
-            return Ok(BigInt::from(0));
-        }
+        self.with_data(|data| {
+            if data.is_empty() {
+                return Ok(BigInt::from(0));
+            }
 
-        let bytes = &data;
-        let is_negative = (bytes[bytes.len() - 1] & 0x80) != 0;
+            let is_negative = (data[data.len() - 1] & 0x80) != 0;
 
-        if is_negative {
-            let mut magnitude_bytes = bytes.clone();
-            let len = magnitude_bytes.len();
-            magnitude_bytes[len - 1] &= 0x7F;
-            let magnitude = BigInt::from_bytes_le(num_bigint::Sign::Plus, &magnitude_bytes);
-            Ok(-magnitude)
-        } else {
-            Ok(BigInt::from_bytes_le(num_bigint::Sign::Plus, bytes))
-        }
+            if is_negative {
+                let mut magnitude_bytes = data.to_vec();
+                let len = magnitude_bytes.len();
+                magnitude_bytes[len - 1] &= 0x7F;
+                let magnitude = BigInt::from_bytes_le(num_bigint::Sign::Plus, &magnitude_bytes);
+                Ok(-magnitude)
+            } else {
+                Ok(BigInt::from_bytes_le(num_bigint::Sign::Plus, data))
+            }
+        })
     }
 
     /// Converts the buffer to a boolean.
@@ -169,6 +169,7 @@ impl PartialOrd for Buffer {
 
 impl Ord for Buffer {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.data().cmp(&other.data())
+        let self_data = self.data();
+        other.with_data(|other_data| self_data.as_slice().cmp(other_data))
     }
 }

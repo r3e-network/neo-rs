@@ -417,7 +417,8 @@ fn keys(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
     // Get the keys from the map
     match map {
         StackItem::Map(map) => {
-            let keys: Vec<StackItem> = map.iter().map(|(k, _)| k).collect();
+            let keys: Vec<StackItem> =
+                map.with_items(|items| items.iter().map(|(k, _)| k.clone()).collect());
             let array = Array::new(keys, Some(context.reference_counter().clone()))?;
             context.push(StackItem::Array(array))?;
         }
@@ -440,7 +441,8 @@ fn values(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
     // Get the values from the map
     match map {
         StackItem::Map(map) => {
-            let values: Vec<StackItem> = map.iter().map(|(_, v)| v).collect();
+            let values: Vec<StackItem> =
+                map.with_items(|items| items.iter().map(|(_, v)| v.clone()).collect());
             let array = Array::new(values, Some(context.reference_counter().clone()))?;
             context.push(StackItem::Array(array))?;
         }
@@ -538,26 +540,42 @@ fn unpack(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
     // Pop the array from the stack
     let array = context.pop()?;
 
-    // Unpack the array
+    // Unpack the array - collect items first to avoid holding locks during push
     match array {
         StackItem::Array(array) => {
-            for item in array.iter().rev() {
-                context.push(item.clone())?;
+            let len = array.len();
+            let items: Vec<StackItem> = array.with_items(|items| {
+                items.iter().rev().cloned().collect()
+            });
+            for item in items {
+                context.push(item)?;
             }
-            context.push(StackItem::from_int(array.len()))?;
+            context.push(StackItem::from_int(len))?;
         }
         StackItem::Struct(structure) => {
-            for item in structure.iter().rev() {
-                context.push(item.clone())?;
+            let len = structure.len();
+            let items: Vec<StackItem> = structure.with_items(|items| {
+                items.iter().rev().cloned().collect()
+            });
+            for item in items {
+                context.push(item)?;
             }
-            context.push(StackItem::from_int(structure.len()))?;
+            context.push(StackItem::from_int(len))?;
         }
         StackItem::Map(map) => {
-            for (key, value) in map.iter().rev() {
-                context.push(value.clone())?;
-                context.push(key.clone())?;
+            let len = map.len();
+            let pairs: Vec<(StackItem, StackItem)> = map.with_items(|items| {
+                items
+                    .iter()
+                    .rev()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect()
+            });
+            for (key, value) in pairs {
+                context.push(value)?;
+                context.push(key)?;
             }
-            context.push(StackItem::from_int(map.len()))?;
+            context.push(StackItem::from_int(len))?;
         }
         _ => return Err(VmError::invalid_type_simple("Expected Array or Struct")),
     }

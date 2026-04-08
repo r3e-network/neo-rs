@@ -52,9 +52,9 @@ use std::sync::Arc;
 #[derive(Debug, Clone)]
 enum InstructionCache {
     /// Pre-populated, immutable cache — no lock on the read path.
-    Eager(HashMap<usize, Instruction>),
+    Eager(HashMap<usize, Arc<Instruction>>),
     /// Lazily populated cache — `RwLock` for concurrent reads, rare writes.
-    Lazy(Arc<RwLock<HashMap<usize, Instruction>>>),
+    Lazy(Arc<RwLock<HashMap<usize, Arc<Instruction>>>>),
 }
 
 /// Represents a script in the Neo VM.
@@ -108,7 +108,7 @@ pub struct InstructionIterator<'a> {
 }
 
 impl Iterator for InstructionIterator<'_> {
-    type Item = VmResult<(usize, Instruction)>;
+    type Item = VmResult<(usize, Arc<Instruction>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.position >= self.script.len() {
@@ -190,14 +190,14 @@ impl Script {
 
     /// Parses all instructions from the script into a `HashMap` keyed by byte
     /// offset. Used during construction to build the eager (lock-free) cache.
-    fn parse_all_instructions(&self) -> VmResult<HashMap<usize, Instruction>> {
+    fn parse_all_instructions(&self) -> VmResult<HashMap<usize, Arc<Instruction>>> {
         let mut position = 0;
         let mut instructions = HashMap::new();
 
         while position < self.script.len() {
             let mut reader = MemoryReader::new(&self.script);
             reader.set_position(position)?;
-            let instruction = Instruction::parse_from_neo_io_reader(&mut reader)?;
+            let instruction = Arc::new(Instruction::parse_from_neo_io_reader(&mut reader)?);
 
             let size = instruction.size();
             instructions.insert(position, instruction);
@@ -375,7 +375,7 @@ impl Script {
     /// so this is a plain hash-lookup with **no locking**. For relaxed-mode
     /// scripts a `RwLock`-guarded cache is used (read lock on hit, write lock
     /// on miss).
-    pub fn get_instruction(&self, position: usize) -> VmResult<Instruction> {
+    pub fn get_instruction(&self, position: usize) -> VmResult<Arc<Instruction>> {
         if position >= self.script.len() {
             return Err(VmError::invalid_operation_msg(format!(
                 "Position {position} is beyond script bounds"
@@ -384,8 +384,9 @@ impl Script {
 
         match &self.instructions {
             // Fast path: lock-free lookup in the pre-populated cache.
+            // Arc::clone is just an atomic increment — no data copying.
             InstructionCache::Eager(map) => match map.get(&position) {
-                Some(instruction) => Ok(instruction.clone()),
+                Some(instruction) => Ok(Arc::clone(instruction)),
                 None => Err(VmError::invalid_operation_msg(format!(
                     "Position {position} not found with strict mode"
                 ))),
@@ -397,18 +398,18 @@ impl Script {
                 {
                     let instructions = cache.read();
                     if let Some(instruction) = instructions.get(&position) {
-                        return Ok(instruction.clone());
+                        return Ok(Arc::clone(instruction));
                     }
                 }
 
-                // Cache miss — parse and insert under write lock.
+                // Cache miss — parse, wrap in Arc, and insert under write lock.
                 let mut reader = MemoryReader::new(&self.script);
                 reader.set_position(position)?;
-                let instruction = Instruction::parse_from_neo_io_reader(&mut reader)?;
+                let instruction = Arc::new(Instruction::parse_from_neo_io_reader(&mut reader)?);
 
                 {
                     let mut instructions = cache.write();
-                    instructions.insert(position, instruction.clone());
+                    instructions.insert(position, Arc::clone(&instruction));
                 }
 
                 Ok(instruction)
@@ -610,7 +611,7 @@ impl Script {
     /// # Returns
     ///
     /// A tuple of (instruction, `next_position`)
-    pub fn get_next_instruction(&self, position: usize) -> VmResult<(Instruction, usize)> {
+    pub fn get_next_instruction(&self, position: usize) -> VmResult<(Arc<Instruction>, usize)> {
         let instruction = self.get_instruction(position)?;
         let next_position = position + instruction.size();
         Ok((instruction, next_position))

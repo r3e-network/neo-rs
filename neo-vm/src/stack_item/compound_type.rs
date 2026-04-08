@@ -42,9 +42,9 @@ impl<'a> CompoundType<'a> {
     #[must_use]
     pub fn sub_items(&self) -> Vec<StackItem> {
         match self.item {
-            StackItem::Array(array) => array.iter().collect(),
-            StackItem::Struct(structure) => structure.items(),
-            StackItem::Map(map) => map.items().values().cloned().collect(),
+            StackItem::Array(array) => array.with_items(|items| items.to_vec()),
+            StackItem::Struct(structure) => structure.with_items(|items| items.to_vec()),
+            StackItem::Map(map) => map.with_items(|items| items.values().cloned().collect()),
             _ => Vec::new(),
         }
     }

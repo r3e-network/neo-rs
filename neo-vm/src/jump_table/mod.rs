@@ -307,11 +307,7 @@ mod tests {
 
         // Create a mock engine and instruction
         let mut engine = ExecutionEngine::new(None);
-        let instruction = Instruction {
-            pointer: 0,
-            opcode: OpCode::NOP,
-            operand: smallvec::smallvec![],
-        };
+        let instruction = Instruction::new(OpCode::NOP, &[]);
 
         let mut jump_table = jump_table.clone();
         jump_table.handlers[OpCode::NOP as usize] = None;

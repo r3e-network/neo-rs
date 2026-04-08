@@ -150,6 +150,9 @@ impl ExecutionEngine {
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
             .current_instruction()?;
 
+        // Cache instruction size before execution to avoid re-fetching in move_next.
+        let instruction_size = instruction.size();
+
         self.pre_execute_instruction(&instruction)?;
 
         if let Some(host) = self.interop_host {
@@ -184,7 +187,7 @@ impl ExecutionEngine {
 
         if !self.is_jumping {
             if let Some(context) = self.invocation_stack.get_mut(context_index) {
-                let _ = context.move_next(); // Ignore errors here
+                context.advance_ip(instruction_size);
             }
         }
         self.is_jumping = false;

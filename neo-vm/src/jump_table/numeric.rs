@@ -94,6 +94,7 @@ pub fn register_handlers(jump_table: &mut JumpTable) {
 // Unary Operations
 // ============================================================================
 
+#[inline]
 fn inc(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
     let value = ctx.pop()?.as_int()?;
@@ -102,6 +103,7 @@ fn inc(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     ctx.push(StackItem::from_int(result))
 }
 
+#[inline]
 fn dec(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
     let value = ctx.pop()?.as_int()?;
@@ -167,6 +169,7 @@ fn nz(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
 // Binary Arithmetic Operations
 // ============================================================================
 
+#[inline]
 fn add(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
     let b = ctx.pop()?.as_int()?;
@@ -176,6 +179,7 @@ fn add(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     ctx.push(StackItem::from_int(sum))
 }
 
+#[inline]
 fn sub(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
     let b = ctx.pop()?.as_int()?;
@@ -185,6 +189,7 @@ fn sub(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     ctx.push(StackItem::from_int(result))
 }
 
+#[inline]
 fn mul(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
     let b = ctx.pop()?.as_int()?;
@@ -323,18 +328,22 @@ where
     ctx.push(StackItem::from_bool(result))
 }
 
+#[inline]
 fn lt(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     compare_with_null(engine, false, true, false, |a, b| a < b)
 }
 
+#[inline]
 fn le(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     compare_with_null(engine, true, true, false, |a, b| a <= b)
 }
 
+#[inline]
 fn gt(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     compare_with_null(engine, false, false, true, |a, b| a > b)
 }
 
+#[inline]
 fn ge(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     compare_with_null(engine, true, false, true, |a, b| a >= b)
 }

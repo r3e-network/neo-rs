@@ -59,24 +59,28 @@ fn require_context(
 }
 
 /// Implements the PUSHINT8 operation.
+#[inline]
 fn push_int8(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let value = instruction.read_i8_operand()?;
     require_context(engine)?.push(StackItem::from_int(value))
 }
 
 /// Implements the PUSHINT16 operation.
+#[inline]
 fn push_int16(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let value = instruction.read_i16_operand()?;
     require_context(engine)?.push(StackItem::from_int(value))
 }
 
 /// Implements the PUSHINT32 operation.
+#[inline]
 fn push_int32(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let value = instruction.read_i32_operand()?;
     require_context(engine)?.push(StackItem::from_int(value))
 }
 
 /// Implements the PUSHINT64 operation.
+#[inline]
 fn push_int64(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let value = instruction.read_i64_operand()?;
     require_context(engine)?.push(StackItem::from_int(value))

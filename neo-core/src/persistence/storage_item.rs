@@ -60,7 +60,13 @@ impl StorageItem {
 
     /// Returns the encoded size (var-size prefix + payload).
     pub fn size(&self) -> usize {
-        get_var_size_bytes(&self.get_value())
+        get_var_size_bytes(&self.value_bytes())
+    }
+
+    /// Returns a reference to the raw byte value (empty if only cache is populated).
+    #[inline]
+    pub fn value(&self) -> &[u8] {
+        &self.value
     }
 
     /// Gets the byte-array value.
@@ -137,7 +143,7 @@ impl StorageItem {
         match &self.cache {
             Some(StorageCache::BigInteger(value)) => value.clone(),
             _ => {
-                let bytes = self.get_value();
+                let bytes = self.value_bytes();
                 if bytes.is_empty() {
                     return BigInt::ZERO;
                 }

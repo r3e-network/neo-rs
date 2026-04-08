@@ -214,7 +214,20 @@ impl StorageKey {
         &self.key
     }
 
-    /// Converts the storage key to a byte array for storage.
+    /// Returns the full key bytes as a slice (zero-copy when cache is populated).
+    ///
+    /// Callers that only need to read the bytes should prefer this over `to_array()`
+    /// to avoid an allocation.
+    #[must_use]
+    pub fn as_bytes(&self) -> std::borrow::Cow<'_, [u8]> {
+        if let Some(ref cache) = self.cache {
+            std::borrow::Cow::Borrowed(cache)
+        } else {
+            std::borrow::Cow::Owned(self.build())
+        }
+    }
+
+    /// Converts the storage key to an owned byte array for storage.
     #[must_use]
     pub fn to_array(&self) -> Vec<u8> {
         if let Some(ref cache) = self.cache {

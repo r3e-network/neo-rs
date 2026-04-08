@@ -44,15 +44,11 @@ fn dup(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
 /// Implements the SWAP operation.
 #[inline]
 fn swap(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    // Pop the top two items from the stack
-    let b = engine.pop()?;
-    let a = engine.pop()?;
-
-    // Push them back in reverse order
-    engine.push(b)?;
-    engine.push(a)?;
-
-    Ok(())
+    // Swap in-place — no pop/push, no reference counter churn.
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    context.evaluation_stack_mut().swap(0, 1)
 }
 
 /// Implements the TUCK operation.
@@ -66,14 +62,10 @@ fn tuck(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
         return Err(VmError::stack_underflow_msg(0, 0));
     }
 
-    // Pop the top two items from the stack
-    let b = context.pop()?;
-    let a = context.pop()?;
-
-    // Push them back in the order: b, a, b
-    context.push(b.clone())?;
-    context.push(a)?;
-    context.push(b)?;
+    // Insert a copy of the top item before the second-to-top item.
+    // Stack [... a b] -> [... b a b] using one insert instead of 2 pops + 3 pushes.
+    let top_clone = context.peek(0)?.clone();
+    context.insert(2, top_clone)?;
 
     Ok(())
 }
@@ -100,7 +92,9 @@ fn over(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
 
 /// Implements the ROT operation.
 fn rot(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    // Get the current context
+    // ROT: [... a b c] → [... b c a]
+    // Remove item at index 2 from top (a) and push to top.
+    // 2 RC ops instead of 6.
     let context = engine
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
@@ -109,17 +103,8 @@ fn rot(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
         return Err(VmError::stack_underflow_msg(0, 0));
     }
 
-    // Pop the top three items from the stack
-    let c = context.pop()?;
-    let b = context.pop()?;
-    let a = context.pop()?;
-
-    // Push them back in the order: b, c, a
-    context.push(b)?;
-    context.push(c)?;
-    context.push(a)?;
-
-    Ok(())
+    let item = context.evaluation_stack_mut().remove(2)?;
+    context.push(item)
 }
 
 /// Implements the DEPTH operation.
@@ -148,7 +133,7 @@ fn drop(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
 
 /// Implements the NIP operation.
 fn nip(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    // Get the current context
+    // NIP: remove the second-to-top item. 1 RC op instead of 3.
     let context = engine
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
@@ -157,24 +142,17 @@ fn nip(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
         return Err(VmError::stack_underflow_msg(0, 0));
     }
 
-    // Pop the top two items from the stack
-    let b = context.pop()?;
-    let _a = context.pop()?;
-
-    // Push the top item back onto the stack
-    context.push(b)?;
-
+    context.evaluation_stack_mut().remove(1)?;
     Ok(())
 }
 
 /// Implements the XDROP operation.
 fn xdrop(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    // Get the current context
+    // XDROP: remove the item at index n from top. 2 RC ops instead of 2n+1.
     let context = engine
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    // Pop the index from the stack
     let n = context
         .pop()?
         .as_int()?
@@ -185,20 +163,7 @@ fn xdrop(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<(
         return Err(VmError::stack_underflow_msg(0, 0));
     }
 
-    // Remove the item at the specified index
-    let mut items = Vec::with_capacity(n);
-    for _i in 0..n {
-        items.push(context.pop()?);
-    }
-
-    // Pop the item to be removed
-    context.pop()?;
-
-    // Push the items back onto the stack in reverse order
-    for item in items.into_iter().rev() {
-        context.push(item)?;
-    }
-
+    context.evaluation_stack_mut().remove(n)?;
     Ok(())
 }
 
@@ -244,12 +209,12 @@ fn pick(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
 
 /// Implements the ROLL operation.
 fn roll(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    // Get the current context
+    // ROLL: remove the item at index n from top and push it to the top.
+    // 3 RC ops instead of 2n+2.
     let context = engine
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    // Pop the index from the stack
     let n = context.pop()?.as_int()?;
 
     if n.sign() == Sign::Minus {
@@ -270,24 +235,8 @@ fn roll(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
         return Err(VmError::stack_underflow_msg(0, 0));
     }
 
-    // Remove the item at the specified index and push it to the top
-    let mut items = Vec::with_capacity(n);
-    for _ in 0..n {
-        items.push(context.pop()?);
-    }
-
-    // Pop the item to be moved to the top
-    let item_to_roll = context.pop()?;
-
-    // Push the items back onto the stack in reverse order
-    for item in items.into_iter().rev() {
-        context.push(item)?;
-    }
-
-    // Push the rolled item to the top
-    context.push(item_to_roll)?;
-
-    Ok(())
+    let item = context.evaluation_stack_mut().remove(n)?;
+    context.push(item)
 }
 
 /// Implements the REVERSE3 operation.

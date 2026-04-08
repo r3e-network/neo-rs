@@ -243,22 +243,25 @@ impl ScriptBuilder {
                 self.emit_push(&bytes);
             }
             StackItem::Buffer(buffer) => {
-                let data = buffer.data();
-                self.emit_push(&data);
+                buffer.with_data(|data| self.emit_push(data));
             }
             StackItem::Array(array) => {
-                let items = array.items();
-                let items_len = items.len();
-                for item in items.into_iter().rev() {
+                let items_len = array.len();
+                let items: Vec<StackItem> = array.with_items(|items| {
+                    items.iter().rev().cloned().collect()
+                });
+                for item in items {
                     self.emit_push_stack_item(item)?;
                 }
                 self.emit_push_int(items_len as i64);
                 self.emit_pack();
             }
             StackItem::Struct(structure) => {
-                let items = structure.items();
-                let items_len = items.len();
-                for item in items.into_iter().rev() {
+                let items_len = structure.len();
+                let items: Vec<StackItem> = structure.with_items(|items| {
+                    items.iter().rev().cloned().collect()
+                });
+                for item in items {
                     self.emit_push_stack_item(item)?;
                 }
                 self.emit_push_int(items_len as i64);

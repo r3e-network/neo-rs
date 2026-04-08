@@ -181,7 +181,13 @@ impl KeyBuilder {
         crate::smart_contract::StorageKey::from_bytes(key_data)
     }
 
-    /// Gets the built key as bytes
+    /// Gets the built key as a byte slice (zero-copy).
+    #[inline]
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.cache_data[..self.key_length]
+    }
+
+    /// Gets the built key as an owned byte vector.
     #[inline]
     pub fn to_bytes(&self) -> Vec<u8> {
         self.cache_data[..self.key_length].to_vec()

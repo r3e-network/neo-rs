@@ -297,7 +297,7 @@ impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbStore {
 
         // Cache the result if found
         if let (Some(ref cache), Some(ref item)) = (&self.read_cache, &result) {
-            let size = item.get_value().len() + std::mem::size_of::<StorageKey>();
+            let size = item.value_bytes().len() + std::mem::size_of::<StorageKey>();
             cache.put(key.clone(), item.clone(), size);
         }
 
@@ -330,7 +330,7 @@ impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbStore {
                     let storage_item = StorageItem::from_bytes(value.into());
                     if let Some(ref cache) = self.read_cache {
                         let size =
-                            storage_item.get_value().len() + std::mem::size_of::<StorageKey>();
+                            storage_item.value_bytes().len() + std::mem::size_of::<StorageKey>();
                         cache.put(storage_key.clone(), storage_item.clone(), size);
                     }
                     items.push((storage_key, storage_item));
@@ -365,7 +365,7 @@ impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbStore {
 
             // Cache the result
             if let Some(ref cache) = read_cache {
-                let size = storage_item.get_value().len() + std::mem::size_of::<StorageKey>();
+                let size = storage_item.value_bytes().len() + std::mem::size_of::<StorageKey>();
                 cache.put(storage_key.clone(), storage_item.clone(), size);
             }
 
@@ -679,7 +679,7 @@ impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbSnapshot {
         if let Some(change) = self.pending_change(raw.as_slice()) {
             let result = change.map(StorageItem::from_bytes);
             if let (Some(ref cache), Some(ref item)) = (&self.read_cache, &result) {
-                let size = item.get_value().len() + std::mem::size_of::<StorageKey>();
+                let size = item.value_bytes().len() + std::mem::size_of::<StorageKey>();
                 cache.put(key.clone(), item.clone(), size);
             }
             return result;
@@ -701,7 +701,7 @@ impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbSnapshot {
 
         // Cache the result if found and cache is configured
         if let (Some(ref cache), Some(ref item)) = (&self.read_cache, &result) {
-            let size = item.get_value().len() + std::mem::size_of::<StorageKey>();
+            let size = item.value_bytes().len() + std::mem::size_of::<StorageKey>();
             cache.put(key.clone(), item.clone(), size);
         }
 
@@ -721,7 +721,7 @@ impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbSnapshot {
                 let storage_key = StorageKey::from_bytes(&key_vec);
                 let storage_item = StorageItem::from_bytes(value);
                 if let Some(ref cache) = read_cache {
-                    let size = storage_item.get_value().len() + std::mem::size_of::<StorageKey>();
+                    let size = storage_item.value_bytes().len() + std::mem::size_of::<StorageKey>();
                     cache.put(storage_key.clone(), storage_item.clone(), size);
                 }
                 (storage_key, storage_item)
@@ -748,7 +748,7 @@ impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbSnapshot {
                     let storage_item = StorageItem::from_bytes(value.into());
                     if let Some(ref cache) = self.read_cache {
                         let size =
-                            storage_item.get_value().len() + std::mem::size_of::<StorageKey>();
+                            storage_item.value_bytes().len() + std::mem::size_of::<StorageKey>();
                         cache.put(storage_key.clone(), storage_item.clone(), size);
                     }
                     items.push((storage_key, storage_item));
@@ -783,7 +783,7 @@ impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbSnapshot {
 
             // Cache the result
             if let Some(ref cache) = read_cache {
-                let size = storage_item.get_value().len() + std::mem::size_of::<StorageKey>();
+                let size = storage_item.value_bytes().len() + std::mem::size_of::<StorageKey>();
                 cache.put(storage_key.clone(), storage_item.clone(), size);
             }
 

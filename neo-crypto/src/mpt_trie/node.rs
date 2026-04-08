@@ -66,32 +66,53 @@ impl Clone for Node {
     /// enabling O(1) subtree sharing while the data itself remains immutable.
     fn clone(&self) -> Self {
         let cached_hash = *self.hash.read();
-        let mut node = Self {
-            node_type: self.node_type,
-            reference: self.reference,
-            hash: RwLock::new(None),
-            children: Vec::new(),
-            key: self.key.clone(),
-            next: None,
-            value: self.value.clone(),
-        };
-
         match self.node_type {
-            NodeType::BranchNode => {
-                // Structural sharing: clone the Arc pointers, not the nodes
-                node.children = self.children.iter().map(Arc::clone).collect();
-            }
-            NodeType::ExtensionNode => {
-                // Structural sharing: clone the Arc pointer, not the node
-                node.next = self.next.as_ref().map(Arc::clone);
-            }
-            NodeType::LeafNode | NodeType::Empty => {}
-            NodeType::HashNode => {
-                *node.hash.write() = cached_hash;
-            }
+            NodeType::BranchNode => Self {
+                node_type: self.node_type,
+                reference: self.reference,
+                hash: RwLock::new(None),
+                children: self.children.iter().map(Arc::clone).collect(),
+                key: Vec::new(),
+                next: None,
+                value: Vec::new(),
+            },
+            NodeType::ExtensionNode => Self {
+                node_type: self.node_type,
+                reference: self.reference,
+                hash: RwLock::new(None),
+                children: Vec::new(),
+                key: self.key.clone(),
+                next: self.next.as_ref().map(Arc::clone),
+                value: Vec::new(),
+            },
+            NodeType::LeafNode => Self {
+                node_type: self.node_type,
+                reference: self.reference,
+                hash: RwLock::new(None),
+                children: Vec::new(),
+                key: self.key.clone(),
+                next: None,
+                value: self.value.clone(),
+            },
+            NodeType::HashNode => Self {
+                node_type: self.node_type,
+                reference: self.reference,
+                hash: RwLock::new(cached_hash),
+                children: Vec::new(),
+                key: Vec::new(),
+                next: None,
+                value: Vec::new(),
+            },
+            NodeType::Empty => Self {
+                node_type: self.node_type,
+                reference: self.reference,
+                hash: RwLock::new(None),
+                children: Vec::new(),
+                key: Vec::new(),
+                next: None,
+                value: Vec::new(),
+            },
         }
-
-        node
     }
 }
 

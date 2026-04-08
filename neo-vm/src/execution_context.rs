@@ -278,7 +278,7 @@ impl ExecutionContext {
     /// Returns the current instruction or None if at the end of the script.
     /// This matches the C# implementation's `CurrentInstruction` property.
     #[inline]
-    pub fn current_instruction(&self) -> VmResult<Instruction> {
+    pub fn current_instruction(&self) -> VmResult<std::sync::Arc<Instruction>> {
         let ip = self.instruction_pointer;
         let script = self.script();
         if ip >= script.len() {
@@ -291,7 +291,7 @@ impl ExecutionContext {
 
     /// Returns the next instruction or None if at the end of the script.
     /// This matches the C# implementation's `NextInstruction` property.
-    pub fn next_instruction(&self) -> VmResult<Instruction> {
+    pub fn next_instruction(&self) -> VmResult<std::sync::Arc<Instruction>> {
         let current = self.current_instruction()?;
         let next_position = self.instruction_pointer + current.size();
 
@@ -469,6 +469,13 @@ impl ExecutionContext {
         Ok(())
     }
 
+    /// Advances the instruction pointer by the given size without re-fetching
+    /// the instruction. Use when the caller already knows the instruction size.
+    #[inline]
+    pub fn advance_ip(&mut self, instruction_size: usize) {
+        self.instruction_pointer += instruction_size;
+    }
+
     /// Gets a state value for the specified type, creating it if it doesn't exist.
     /// Mirrors the C# ExecutionContext.GetState\<T>() helper.
     #[must_use]
@@ -508,6 +515,18 @@ impl ExecutionContext {
     #[inline(always)]
     pub fn peek(&self, index: usize) -> VmResult<crate::stack_item::StackItem> {
         self.shared_states.evaluation_stack().peek(index).cloned()
+    }
+
+    /// Insert an item at the specified index from the top of the evaluation stack.
+    #[inline]
+    pub fn insert(
+        &mut self,
+        index_from_top: usize,
+        item: crate::stack_item::StackItem,
+    ) -> VmResult<()> {
+        self.shared_states
+            .evaluation_stack_mut()
+            .insert(index_from_top, item)
     }
 
     /// Clones the context with a new reference counter.

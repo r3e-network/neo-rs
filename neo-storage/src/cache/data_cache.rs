@@ -140,26 +140,22 @@ impl DataCache {
             }
         }
 
-        // Try backing store
-        if let Some(ref store_get) = self.store_get {
-            if let Some(item) = store_get(key) {
-                // Cache the result
-                let mut dict = self.dictionary.write();
+        // Try backing store and update cache with a single write lock
+        let store_result = self.store_get.as_ref().and_then(|f| f(key));
+        let mut dict = self.dictionary.write();
+        match store_result {
+            Some(item) => {
                 dict.insert(key.clone(), Trackable::unchanged(item.clone()));
-                return Some(item);
+                Some(item)
+            }
+            None => {
+                dict.insert(
+                    key.clone(),
+                    Trackable::new(StorageItem::default(), TrackState::NotFound),
+                );
+                None
             }
         }
-
-        // Mark as not found in cache
-        {
-            let mut dict = self.dictionary.write();
-            dict.insert(
-                key.clone(),
-                Trackable::new(StorageItem::default(), TrackState::NotFound),
-            );
-        }
-
-        None
     }
 
     /// Gets an item, returning an error if not found.

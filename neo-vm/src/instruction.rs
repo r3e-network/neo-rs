@@ -41,9 +41,25 @@ pub struct Instruction {
 
     /// The operand data (inline for up to 8 bytes, heap-allocated beyond that)
     pub operand: SmallVec<[u8; 8]>,
+
+    /// Cached total size in bytes (opcode + length prefix + operand).
+    /// Computed once at parse time to avoid repeated match + len() on hot path.
+    cached_size: u16,
 }
 
 impl Instruction {
+    /// Computes the total byte size of an instruction from its opcode and operand length.
+    #[inline]
+    fn compute_size(opcode: OpCode, operand_len: usize) -> u16 {
+        let total = match opcode {
+            OpCode::PUSHDATA1 => 1 + 1 + operand_len,
+            OpCode::PUSHDATA2 => 1 + 2 + operand_len,
+            OpCode::PUSHDATA4 => 1 + 4 + operand_len,
+            _ => 1 + operand_len,
+        };
+        total as u16
+    }
+
     /// Parses an instruction from a byte array.
     pub fn parse(script: &[u8], position: usize) -> VmResult<Self> {
         if position >= script.len() {
@@ -149,10 +165,12 @@ impl Instruction {
             }
         };
 
+        let cached_size = Self::compute_size(opcode, operand.len());
         Ok(Self {
             pointer: position,
             opcode,
             operand,
+            cached_size,
         })
     }
 
@@ -160,10 +178,12 @@ impl Instruction {
     /// This is primarily used for testing.
     #[must_use]
     pub fn new(opcode: OpCode, operand: &[u8]) -> Self {
+        let cached_size = Self::compute_size(opcode, operand.len());
         Self {
             pointer: 0,
             opcode,
             operand: SmallVec::from_slice(operand),
+            cached_size,
         }
     }
 
@@ -230,10 +250,12 @@ impl Instruction {
             }
         };
 
+        let cached_size = Self::compute_size(opcode, operand.len());
         Ok(Self {
             pointer,
             opcode,
             operand,
+            cached_size,
         })
     }
 
@@ -300,10 +322,12 @@ impl Instruction {
             }
         };
 
+        let cached_size = Self::compute_size(opcode, operand.len());
         Ok(Self {
             pointer,
             opcode,
             operand,
+            cached_size,
         })
     }
 
@@ -363,15 +387,9 @@ impl Instruction {
 
     /// Returns the size of the instruction in bytes.
     #[must_use]
-    pub fn size(&self) -> usize {
-        match self.opcode {
-            OpCode::PUSHDATA1 => 1 + 1 + self.operand.len(),
-            OpCode::PUSHDATA2 => 1 + 2 + self.operand.len(),
-            OpCode::PUSHDATA4 => 1 + 4 + self.operand.len(),
-            _ => {
-                1 + self.operand.len() // Opcode + operand
-            }
-        }
+    #[inline]
+    pub const fn size(&self) -> usize {
+        self.cached_size as usize
     }
 
     /// Returns the operand size for the given opcode.
@@ -485,6 +503,7 @@ impl Instruction {
             pointer: 0,
             opcode: OpCode::RET,
             operand: SmallVec::new_const(),
+            cached_size: 1, // RET has no operand: 1 byte opcode
         }
     }
 }
