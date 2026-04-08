@@ -114,7 +114,7 @@ const MAX_UNVERIFIED_CACHE_SIZE: usize = 2048;
 pub struct Blockchain {
     ledger: Arc<LedgerContext>,
     system_context: Option<Arc<NeoSystemContext>>,
-    _block_cache: Arc<RwLock<HashMap<UInt256, Block>>>,
+    _block_cache: Arc<RwLock<HashMap<UInt256, Arc<Block>>>>,
     _block_cache_unverified: Arc<RwLock<HashMap<u32, UnverifiedBlocksList>>>,
     _extensible_witness_white_list: Arc<RwLock<HashSet<UInt160>>>,
     _inventory_cache: Arc<RwLock<HashMap<InventoryCacheKey, InventoryPayload>>>,
@@ -138,7 +138,7 @@ impl Blockchain {
         Props::new(move || Self::new(ledger.clone()))
     }
 
-    fn persist_block_via_system(&self, block: &Block) -> bool {
+    fn persist_block_via_system(&self, block: &Arc<Block>) -> bool {
         let Some(context) = &self.system_context else {
             return false;
         };
@@ -149,7 +149,7 @@ impl Blockchain {
 
         let hash = block.header.clone().hash();
 
-        match system.persist_block(block.clone()) {
+        match system.persist_block((**block).clone()) {
             Ok(_) => {
                 tracing::debug!(
                     target: "neo",

@@ -3,11 +3,12 @@
 //
 
 use super::*;
+use std::sync::Arc;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub(super) struct UnverifiedBlocksList {
-    pub(super) blocks: Vec<Block>,
+    pub(super) blocks: Vec<Arc<Block>>,
     nodes: HashSet<String>,
 }
 
@@ -22,10 +23,10 @@ impl UnverifiedBlocksList {
 }
 
 /// Notification that a block has been persisted to storage.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct PersistCompleted {
     /// The block that was persisted.
-    pub block: Block,
+    pub block: Arc<Block>,
 }
 
 /// Request to import blocks into the blockchain.
@@ -144,7 +145,7 @@ pub enum BlockchainCommand {
     /// Inventory block received.
     InventoryBlock {
         /// The block.
-        block: Block,
+        block: Arc<Block>,
         /// Whether to relay.
         relay: bool,
     },

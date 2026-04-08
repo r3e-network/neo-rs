@@ -996,7 +996,7 @@ impl ConsensusActor {
         if let Err(err) = self
             .system
             .blockchain_actor()
-            .tell(neo_core::ledger::BlockchainCommand::InventoryBlock { block, relay: true })
+            .tell(neo_core::ledger::BlockchainCommand::InventoryBlock { block: std::sync::Arc::new(block), relay: true })
         {
             warn!(target: "neo", %err, "failed to submit consensus block");
             return;
@@ -1178,7 +1178,9 @@ impl Actor for ConsensusActor {
     ) -> ActorResult {
         let envelope = match envelope.downcast::<PersistCompleted>() {
             Ok(message) => {
-                self.on_persist_completed(message.block, _ctx);
+                let block = std::sync::Arc::try_unwrap(message.block)
+                    .unwrap_or_else(|arc| (*arc).clone());
+                self.on_persist_completed(block, _ctx);
                 return Ok(());
             }
             Err(envelope) => envelope,

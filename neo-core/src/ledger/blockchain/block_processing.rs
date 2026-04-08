@@ -5,7 +5,7 @@
 use super::*;
 
 impl Blockchain {
-    pub(super) async fn on_new_block(&self, block: &Block, verify: bool) -> VerifyResult {
+    pub(super) async fn on_new_block(&self, block: Arc<Block>, verify: bool) -> VerifyResult {
         let Some(context) = &self.system_context else {
             return VerifyResult::Invalid;
         };
@@ -28,7 +28,7 @@ impl Blockchain {
         }
 
         if block_index > header_height + 1 {
-            self.add_unverified_block(block.clone()).await;
+            self.add_unverified_block(Arc::clone(&block)).await;
             return VerifyResult::UnableToVerify;
         }
 
@@ -81,11 +81,11 @@ impl Blockchain {
                 );
                 return VerifyResult::Invalid;
             }
-            cache.insert(hash, block.clone());
+            cache.insert(hash, Arc::clone(&block));
         }
 
         if block_index == current_height + 1 {
-            if self.persist_block_sequence(block.clone()).await {
+            if self.persist_block_sequence(Arc::clone(&block)).await {
                 VerifyResult::Succeed
             } else {
                 VerifyResult::Invalid
@@ -94,12 +94,12 @@ impl Blockchain {
             if block_index == header_height + 1 {
                 header_cache.add(block.header.clone());
             }
-            self.add_unverified_block(block.clone()).await;
+            self.add_unverified_block(Arc::clone(&block)).await;
             VerifyResult::Succeed
         }
     }
 
-    async fn add_unverified_block(&self, block: Block) {
+    async fn add_unverified_block(&self, block: Arc<Block>) {
         let mut unverified = self._block_cache_unverified.write().await;
         if unverified.len() >= MAX_UNVERIFIED_CACHE_SIZE {
             tracing::warn!(
@@ -121,7 +121,7 @@ impl Blockchain {
         entry.blocks.push(block);
     }
 
-    async fn persist_block_sequence(&self, block: Block) -> bool {
+    async fn persist_block_sequence(&self, block: Arc<Block>) -> bool {
         let mut next_index = block.index().saturating_add(1);
 
         // Process the first block
@@ -158,7 +158,7 @@ impl Blockchain {
 
             let succeeded = self.persist_block_via_system(&next_block);
             if succeeded {
-                self.handle_persist_completed(PersistCompleted { block: next_block })
+                self.handle_persist_completed(PersistCompleted { block: Arc::clone(&next_block) })
                     .await;
             } else {
                 warn!(

@@ -16,6 +16,7 @@ use crate::network::p2p::task_manager::TaskManagerCommand;
 use crate::smart_contract::native::ledger_contract::LedgerContract;
 use crate::UInt160;
 use crate::UInt256;
+use std::sync::Arc;
 use tracing::{trace, warn};
 
 impl RemoteNode {
@@ -237,7 +238,7 @@ impl RemoteNode {
             .system
             .blockchain
             .tell_from_async(
-                BlockchainCommand::InventoryBlock { block, relay: true },
+                BlockchainCommand::InventoryBlock { block: Arc::new(block), relay: true },
                 Some(ctx.self_ref()),
             )
             .await

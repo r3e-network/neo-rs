@@ -69,8 +69,8 @@ impl Blockchain {
     }
 
     pub(super) async fn handle_persist_completed(&self, persist: PersistCompleted) {
-        let PersistCompleted { mut block } = persist;
-        let hash = block.hash();
+        let PersistCompleted { block } = persist;
+        let hash = block.header.clone().hash();
         let index = block.index();
         let tx_count = block.transactions.len();
         tracing::debug!(
@@ -83,7 +83,7 @@ impl Blockchain {
 
         {
             let mut cache = self._block_cache.write().await;
-            cache.insert(hash, block.clone());
+            cache.insert(hash, Arc::clone(&block));
 
             let prev_hash = *block.prev_hash();
             if !prev_hash.is_zero() {
@@ -91,7 +91,7 @@ impl Blockchain {
             }
         }
 
-        self.ledger.insert_block(block.clone());
+        self.ledger.insert_block((*block).clone());
 
         for transaction in &block.transactions {
             let tx_hash = transaction.hash();
@@ -124,7 +124,7 @@ impl Blockchain {
                 .actor_system
                 .event_stream()
                 .publish(PersistCompleted {
-                    block: block.clone(),
+                    block: Arc::clone(&block),
                 });
         }
 
@@ -221,7 +221,8 @@ impl Blockchain {
                 break;
             }
 
-            if !self.persist_block_via_system(&block) {
+            let arc_block = Arc::new(block);
+            if !self.persist_block_via_system(&arc_block) {
                 tracing::warn!(
                     target: "neo",
                     height = index,
@@ -230,7 +231,7 @@ impl Blockchain {
                 break;
             }
             self.handle_persist_completed(PersistCompleted {
-                block: block.clone(),
+                block: Arc::clone(&arc_block),
             })
             .await;
             current_height = index;
@@ -331,7 +332,7 @@ impl Blockchain {
     async fn handle_reverify_payload(&self, payload: InventoryPayload, ctx: &ActorContext) {
         match payload {
             InventoryPayload::Block(block) => {
-                if let Err(error) = self.handle_block_inventory(*block, false, ctx).await {
+                if let Err(error) = self.handle_block_inventory(Arc::new(*block), false, ctx).await {
                     tracing::debug!(
                         target: "neo",
                         %error,
@@ -357,18 +358,18 @@ impl Blockchain {
 
     pub(super) async fn handle_block_inventory(
         &self,
-        mut block: Block,
+        block: Arc<Block>,
         relay: bool,
         ctx: &ActorContext,
     ) -> ActorResult {
-        let hash = block.hash();
+        let hash = block.header.clone().hash();
         let index = block.index();
 
-        let result = self.on_new_block(&block, true).await;
+        let result = self.on_new_block(Arc::clone(&block), true).await;
 
         if let Some(context) = &self.system_context {
             let inventory = if relay && result == VerifyResult::Succeed {
-                Some(RelayInventory::Block(block.clone()))
+                Some(RelayInventory::Block((*block).clone()))
             } else {
                 None
             };
