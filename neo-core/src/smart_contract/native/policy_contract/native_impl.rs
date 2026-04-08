@@ -125,7 +125,7 @@ impl NativeContract for PolicyContract {
                     // Keep this branch idempotent so repeated initialization against the
                     // same snapshot cannot over-scale the stored value.
                     if let Some(item) = snapshot_ref.try_get(&Self::exec_fee_factor_key()) {
-                        let value = BigInt::from_signed_bytes_le(&item.get_value())
+                        let value = BigInt::from_signed_bytes_le(&item.value_bytes())
                             .to_u32()
                             .ok_or_else(|| {
                                 Error::native_contract(

@@ -467,9 +467,9 @@ impl OracleContract {
         snapshot
             .try_get(&key)
             .and_then(|item| {
-                let bytes = item.get_value();
+                let bytes = item.value_bytes();
                 if bytes.len() == 8 {
-                    Some(i64::from_le_bytes(bytes.try_into().ok()?))
+                    Some(i64::from_le_bytes(bytes.as_ref().try_into().ok()?))
                 } else {
                     None
                 }
@@ -519,9 +519,9 @@ impl OracleContract {
         let current = snapshot
             .try_get(&key)
             .and_then(|item| {
-                let bytes = item.get_value();
+                let bytes = item.value_bytes();
                 if bytes.len() == 8 {
-                    Some(u64::from_be_bytes(bytes.try_into().ok()?))
+                    Some(u64::from_be_bytes(bytes.as_ref().try_into().ok()?))
                 } else {
                     None
                 }
@@ -567,7 +567,7 @@ impl OracleContract {
         let key = self.request_storage_key(id);
         snapshot
             .try_get(&key)
-            .map(|item| self.deserialize_request(&item.get_value()))
+            .map(|item| self.deserialize_request(&item.value_bytes()))
             .transpose()
     }
 
@@ -594,7 +594,7 @@ impl OracleContract {
     fn read_id_list(&self, snapshot: &DataCache, hash: &[u8; 20]) -> Result<Vec<u64>> {
         let key = self.id_list_key(hash);
         if let Some(item) = snapshot.try_get(&key) {
-            self.deserialize_id_list(&item.get_value())
+            self.deserialize_id_list(&item.value_bytes())
         } else {
             Ok(Vec::new())
         }
@@ -918,7 +918,7 @@ impl OracleContract {
                 Some(value) => value,
                 None => continue,
             };
-            let request = self.deserialize_request(&item.get_value())?;
+            let request = self.deserialize_request(&item.value_bytes())?;
             results.push((id, self.to_public_request(&request)));
         }
         Ok(results)

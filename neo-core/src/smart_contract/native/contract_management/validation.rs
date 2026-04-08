@@ -136,7 +136,7 @@ impl ContractManagement {
             let Some((prefix, rest)) = key_bytes.split_first() else {
                 continue;
             };
-            let value = item.get_value();
+            let value = item.value_bytes();
             match *prefix {
                 PREFIX_CONTRACT => {
                     if let Ok(contract_hash) = UInt160::from_bytes(rest) {

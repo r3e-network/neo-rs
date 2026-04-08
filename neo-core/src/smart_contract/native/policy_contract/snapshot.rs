@@ -13,7 +13,7 @@ impl PolicyContract {
         let key = Self::max_traceable_blocks_key();
         snapshot
             .try_get(&key)
-            .and_then(|item| BigInt::from_signed_bytes_le(&item.get_value()).to_u32())
+            .and_then(|item| BigInt::from_signed_bytes_le(&item.value_bytes()).to_u32())
     }
 
     /// Reads the MillisecondsPerBlock value directly from storage.
@@ -24,7 +24,7 @@ impl PolicyContract {
         let key = Self::milliseconds_per_block_key();
         snapshot
             .try_get(&key)
-            .and_then(|item| BigInt::from_signed_bytes_le(&item.get_value()).to_u32())
+            .and_then(|item| BigInt::from_signed_bytes_le(&item.value_bytes()).to_u32())
     }
 
     /// Reads FeePerByte from a snapshot, falling back to defaults if not configured.
@@ -34,7 +34,7 @@ impl PolicyContract {
     {
         let key = Self::fee_per_byte_key();
         match snapshot.try_get(&key) {
-            Some(item) => BigInt::from_signed_bytes_le(&item.get_value())
+            Some(item) => BigInt::from_signed_bytes_le(&item.value_bytes())
                 .to_i64()
                 .ok_or_else(|| Error::native_contract("FeePerByte exceeds i64 capacity")),
             None => Ok(Self::DEFAULT_FEE_PER_BYTE as i64),
@@ -54,7 +54,7 @@ impl PolicyContract {
         let key = Self::exec_fee_factor_key();
         match snapshot.try_get(&key) {
             Some(item) => {
-                let value = BigInt::from_signed_bytes_le(&item.get_value())
+                let value = BigInt::from_signed_bytes_le(&item.value_bytes())
                     .to_u32()
                     .ok_or_else(|| Error::native_contract("ExecFeeFactor exceeds u32 capacity"))?;
                 if settings.is_hardfork_enabled(Hardfork::HfFaun, block_height) {
@@ -90,7 +90,7 @@ impl PolicyContract {
 
         let key = Self::attribute_fee_key(attribute_type);
         match snapshot.try_get(&key) {
-            Some(item) => BigInt::from_signed_bytes_le(&item.get_value())
+            Some(item) => BigInt::from_signed_bytes_le(&item.value_bytes())
                 .to_i64()
                 .ok_or_else(|| Error::native_contract("AttributeFee exceeds i64 capacity")),
             None => Ok(Self::DEFAULT_ATTRIBUTE_FEE as i64),
@@ -108,7 +108,7 @@ impl PolicyContract {
     {
         let key = Self::max_valid_until_block_increment_key();
         match snapshot.try_get(&key) {
-            Some(item) => BigInt::from_signed_bytes_le(&item.get_value())
+            Some(item) => BigInt::from_signed_bytes_le(&item.value_bytes())
                 .to_u32()
                 .ok_or_else(|| {
                     Error::native_contract(
@@ -184,7 +184,7 @@ impl PolicyContract {
 
                 // Check storage
                 if let Some(item) = snapshot.try_get(&key) {
-                    let bytes = item.get_value();
+                    let bytes = item.value_bytes();
                     if bytes.is_empty() {
                         return Ok(None);
                     }

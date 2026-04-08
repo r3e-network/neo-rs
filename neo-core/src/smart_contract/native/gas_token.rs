@@ -362,7 +362,7 @@ impl GasToken {
     }
 
     fn account_state_from_item(item: &StorageItem) -> AccountState {
-        let bytes = item.get_value();
+        let bytes = item.value_bytes();
         if bytes.is_empty() {
             return AccountState::default();
         }

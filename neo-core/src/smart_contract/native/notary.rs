@@ -326,7 +326,7 @@ impl Notary {
         let key = Self::deposit_key(account);
         match snapshot.try_get(&key) {
             Some(item) => {
-                let data = item.get_value();
+                let data = item.value_bytes();
                 match deserialize_deposit(&data) {
                     Ok(deposit) => deposit.amount,
                     Err(_) => BigInt::zero(),
@@ -346,7 +346,7 @@ impl Notary {
         let key = Self::deposit_key(account);
         match snapshot.try_get(&key) {
             Some(item) => {
-                let data = item.get_value();
+                let data = item.value_bytes();
                 match deserialize_deposit(&data) {
                     Ok(deposit) => deposit.till,
                     Err(_) => 0,
@@ -366,7 +366,7 @@ impl Notary {
         let key = Self::max_delta_key();
         match snapshot.try_get(&key) {
             Some(item) => {
-                let data = item.get_value();
+                let data = item.value_bytes();
                 if data.len() >= 4 {
                     u32::from_le_bytes([data[0], data[1], data[2], data[3]])
                 } else {
@@ -456,7 +456,7 @@ impl Notary {
 
         let key = Self::deposit_key(&deposit_owner);
         let (mut deposit, has_existing_deposit) = match snapshot.as_ref().try_get(&key) {
-            Some(item) => (deserialize_deposit(&item.get_value())?, true),
+            Some(item) => (deserialize_deposit(&item.value_bytes())?, true),
             None => (Deposit::new(BigInt::zero(), 0), false),
         };
 
@@ -528,7 +528,7 @@ impl Notary {
         let key = Self::deposit_key(&account);
 
         let current_deposit = match snapshot.as_ref().try_get(&key) {
-            Some(item) => deserialize_deposit(&item.get_value())?,
+            Some(item) => deserialize_deposit(&item.value_bytes())?,
             None => {
                 return Ok(vec![0]);
             }
@@ -579,7 +579,7 @@ impl Notary {
         let key = Self::deposit_key(&from);
 
         let deposit = match snapshot.as_ref().try_get(&key) {
-            Some(item) => deserialize_deposit(&item.get_value())?,
+            Some(item) => deserialize_deposit(&item.value_bytes())?,
             None => {
                 return Ok(vec![0]);
             }
@@ -760,7 +760,7 @@ impl Notary {
             let deposit = snapshot
                 .as_ref()
                 .try_get(&Self::deposit_key(&payer))
-                .and_then(|item| deserialize_deposit(&item.get_value()).ok());
+                .and_then(|item| deserialize_deposit(&item.value_bytes()).ok());
             let Some(deposit) = deposit else {
                 return Ok(vec![0]);
             };
@@ -876,7 +876,7 @@ impl NativeContract for Notary {
                     let payer = tx.signers()[1].account;
                     let key = Self::deposit_key(&payer);
                     if let Some(item) = snapshot_ref.try_get(&key) {
-                        let mut deposit = deserialize_deposit(&item.get_value())?;
+                        let mut deposit = deserialize_deposit(&item.value_bytes())?;
                         deposit.amount -= BigInt::from(tx.system_fee() + tx.network_fee());
                         if deposit.amount.is_zero() {
                             snapshot.delete(&key);

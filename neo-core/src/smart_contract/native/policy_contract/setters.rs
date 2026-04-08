@@ -437,7 +437,7 @@ impl PolicyContract {
             snapshot.delete(&key);
             count += 1;
 
-            let bytes = item.get_value();
+            let bytes = item.value_bytes();
             if bytes.is_empty() {
                 continue;
             }

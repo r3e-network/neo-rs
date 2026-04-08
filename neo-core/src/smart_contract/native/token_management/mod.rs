@@ -580,7 +580,7 @@ impl TokenManagement {
         let Some(item) = snapshot.as_ref().try_get(&key) else {
             return Ok(None);
         };
-        let bytes = item.get_value();
+        let bytes = item.value_bytes();
         if bytes.is_empty() {
             return Ok(None);
         }
@@ -609,7 +609,7 @@ impl TokenManagement {
         let Some(item) = snapshot.as_ref().try_get(&key) else {
             return Ok(None);
         };
-        let bytes = item.get_value();
+        let bytes = item.value_bytes();
         if bytes.is_empty() {
             return Ok(None);
         }

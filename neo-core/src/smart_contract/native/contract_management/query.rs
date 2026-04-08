@@ -27,7 +27,7 @@ impl ContractManagement {
             return Ok(None);
         };
 
-        let bytes = item.get_value();
+        let bytes = item.value_bytes();
         if bytes.is_empty() {
             return Ok(None);
         }
@@ -46,7 +46,7 @@ impl ContractManagement {
             return Ok(None);
         };
 
-        let bytes = item.get_value();
+        let bytes = item.value_bytes();
         if bytes.is_empty() {
             return Ok(None);
         }
@@ -91,7 +91,7 @@ impl ContractManagement {
             return Ok(None);
         };
 
-        let bytes = item.get_value();
+        let bytes = item.value_bytes();
         if bytes.is_empty() {
             return Ok(None);
         }
@@ -171,7 +171,7 @@ impl ContractManagement {
         let prefix = StorageKey::new(Self::ID, vec![PREFIX_CONTRACT]);
         let mut contracts = Vec::<ContractState>::new();
         for (_, item) in snapshot.find(Some(&prefix), SeekDirection::Forward) {
-            let bytes = item.get_value();
+            let bytes = item.value_bytes();
             let contract = Self::deserialize_contract_state(&bytes)?;
             if contract.id >= 0 {
                 contracts.push(contract);

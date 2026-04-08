@@ -84,7 +84,7 @@ impl IIterator for StorageIterator {
         }
 
         // Get value
-        let raw_value = value.get_value();
+        let raw_value = value.value_bytes();
         let mut value_item = if self.options.contains(FindOptions::DeserializeValues) {
             match BinarySerializer::deserialize(&raw_value, &ExecutionEngineLimits::default(), None)
             {

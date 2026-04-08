@@ -151,7 +151,7 @@ impl LedgerContract {
     {
         let key = current_block_storage_key(self.id);
         if let Some(item) = snapshot.try_get(&key) {
-            let state = deserialize_hash_index_state(&item.get_value())?;
+            let state = deserialize_hash_index_state(&item.value_bytes())?;
             return Ok(state.hash);
         }
         Ok(UInt256::default())
@@ -164,7 +164,7 @@ impl LedgerContract {
     {
         let key = current_block_storage_key(self.id);
         if let Some(item) = snapshot.try_get(&key) {
-            let state = deserialize_hash_index_state(&item.get_value())?;
+            let state = deserialize_hash_index_state(&item.value_bytes())?;
             return Ok(state.index);
         }
         Ok(0)
@@ -279,7 +279,7 @@ impl LedgerContract {
             None => return Ok(None),
         };
 
-        let trimmed = deserialize_trimmed_block(&item.get_value())?;
+        let trimmed = deserialize_trimmed_block(&item.value_bytes())?;
         let mut transactions = Vec::with_capacity(trimmed.hashes.len());
         for tx_hash in &trimmed.hashes {
             if let Some(state) = self.try_read_transaction_state(snapshot, tx_hash)? {
@@ -328,7 +328,7 @@ impl LedgerContract {
             return Ok(None);
         };
 
-        let trimmed = deserialize_trimmed_block(&item.get_value())?;
+        let trimmed = deserialize_trimmed_block(&item.value_bytes())?;
         Ok(Some(trimmed))
     }
 
@@ -357,7 +357,7 @@ impl LedgerContract {
     {
         snapshot
             .try_get(key)
-            .map(|item| deserialize_transaction_record(&item.get_value()))
+            .map(|item| deserialize_transaction_record(&item.value_bytes()))
             .transpose()
     }
 
