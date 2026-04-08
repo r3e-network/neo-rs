@@ -25,8 +25,8 @@ impl Actor for Blockchain {
                     self.handle_fill_memory_pool(fill, ctx).await
                 }
                 BlockchainCommand::Reverify(reverify) => self.handle_reverify(reverify, ctx).await,
-                BlockchainCommand::InventoryBlock { block, relay } => {
-                    self.handle_block_inventory(block, relay, ctx).await?
+                BlockchainCommand::InventoryBlock { block, relay, pre_verified } => {
+                    self.handle_block_inventory(block, relay, pre_verified, ctx).await?
                 }
                 BlockchainCommand::InventoryExtensible { payload, relay } => {
                     self.handle_extensible_inventory(payload, relay, ctx)

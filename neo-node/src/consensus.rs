@@ -996,7 +996,7 @@ impl ConsensusActor {
         if let Err(err) = self
             .system
             .blockchain_actor()
-            .tell(neo_core::ledger::BlockchainCommand::InventoryBlock { block: std::sync::Arc::new(block), relay: true })
+            .tell(neo_core::ledger::BlockchainCommand::InventoryBlock { block: std::sync::Arc::new(block), relay: true, pre_verified: false })
         {
             warn!(target: "neo", %err, "failed to submit consensus block");
             return;

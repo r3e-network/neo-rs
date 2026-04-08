@@ -234,11 +234,33 @@ impl RemoteNode {
             "block received from remote node"
         );
 
+        // Pre-verify block signatures off the actor thread.
+        // This is pure computation (ECDSA) with no state dependency.
+        let settings = self.system.settings();
+        let block = Arc::new(block);
+        {
+            use rayon::prelude::*;
+            let txs = &block.transactions;
+            let failed = txs.par_iter().enumerate().find_any(|(_, tx)| {
+                tx.verify_state_independent(&settings) != crate::ledger::VerifyResult::Succeed
+            });
+            if let Some((idx, tx)) = failed {
+                tracing::debug!(
+                    target: "neo",
+                    block_index = block.index(),
+                    tx_index = idx,
+                    tx_hash = %tx.hash(),
+                    "block dropped: transaction failed pre-verification"
+                );
+                return Ok(());
+            }
+        }
+
         if let Err(err) = self
             .system
             .blockchain
             .tell_from_async(
-                BlockchainCommand::InventoryBlock { block: Arc::new(block), relay: true },
+                BlockchainCommand::InventoryBlock { block, relay: true, pre_verified: true },
                 Some(ctx.self_ref()),
             )
             .await

@@ -148,6 +148,8 @@ pub enum BlockchainCommand {
         block: Arc<Block>,
         /// Whether to relay.
         relay: bool,
+        /// Whether state-independent verification (signatures) was already performed.
+        pre_verified: bool,
     },
     /// Extensible payload received.
     InventoryExtensible {

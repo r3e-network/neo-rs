@@ -223,7 +223,7 @@ impl RpcServerNode {
                 .system()
                 .blockchain_actor()
                 .tell_from(
-                    BlockchainCommand::InventoryBlock { block: Arc::new(block), relay: true },
+                    BlockchainCommand::InventoryBlock { block: Arc::new(block), relay: true, pre_verified: false },
                     Some(sender),
                 )
                 .map_err(|err| internal_error(err.to_string()))
