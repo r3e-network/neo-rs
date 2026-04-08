@@ -1039,8 +1039,12 @@ fn build_db_options(config: &StorageConfig, enable_bloom_filters: bool) -> Optio
         options.set_max_open_files(4000);
     }
 
-    options.set_max_background_jobs(16);
-    options.set_bytes_per_sync(0);
+    if let Ok(parallelism) = std::thread::available_parallelism() {
+        options.set_max_background_jobs(parallelism.get() as i32);
+    } else {
+        options.set_max_background_jobs(16);
+    }
+    options.set_bytes_per_sync(1048576); // 1MB — smooth I/O instead of bursty
     // Enable optimize_filters_for_hits when bloom filters are enabled
     // This reduces filter block size at the cost of slightly more disk seeks on negative lookups
     options.set_optimize_filters_for_hits(enable_bloom_filters);
@@ -1048,16 +1052,20 @@ fn build_db_options(config: &StorageConfig, enable_bloom_filters: bool) -> Optio
     if let Some(write_buffer) = config.write_buffer_size {
         options.set_write_buffer_size(write_buffer);
     } else {
-        options.set_write_buffer_size(64 * 1024 * 1024);
+        options.set_write_buffer_size(256 * 1024 * 1024); // 256MB for fewer flushes during sync
     }
-    options.set_max_write_buffer_number(4);
+    options.set_max_write_buffer_number(6);
     options.set_min_write_buffer_number_to_merge(2);
 
     // Advanced Performance Tuning
     options.set_allow_mmap_reads(true);
     options.set_allow_mmap_writes(false);
     options.set_enable_pipelined_write(true);
-    options.set_memtable_prefix_bloom_ratio(0.02);
+    options.set_memtable_prefix_bloom_ratio(0.1); // better hit rate on memtable lookups
+    // Delay write stalls during heavy initial sync
+    options.set_level_zero_slowdown_writes_trigger(30);
+    options.set_level_zero_stop_writes_trigger(48);
+    options.set_max_total_wal_size(512 * 1024 * 1024); // 512MB WAL cap
 
     // Configure block cache and bloom filters
     let cache_size = config.cache_size.unwrap_or(256 * 1024 * 1024);
