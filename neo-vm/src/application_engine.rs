@@ -350,8 +350,8 @@ impl InteropHost for VmApplicationEngine {
                 let key = context.evaluation_stack_mut().pop()?;
                 let _context = context.evaluation_stack_mut().pop()?;
 
-                let key_bytes = key.as_bytes()?.clone();
-                let value_bytes = value.as_bytes()?.clone();
+                let key_bytes = key.into_bytes()?;
+                let value_bytes = value.into_bytes()?;
                 self.storage.insert(key_bytes, value_bytes);
                 let _ = self.consume_gas(1);
                 Ok(())
@@ -364,7 +364,7 @@ impl InteropHost for VmApplicationEngine {
                     .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
                 let key = context.evaluation_stack_mut().pop()?;
                 let _context = context.evaluation_stack_mut().pop()?;
-                let key_bytes = key.as_bytes()?.clone();
+                let key_bytes = key.into_bytes()?;
 
                 if let Some(value) = self.storage.get(&key_bytes) {
                     context.push(StackItem::from_byte_string(value.clone()))?;
