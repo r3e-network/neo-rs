@@ -174,12 +174,15 @@ impl DataCache {
     /// If the key already exists, this will update it with `Changed` state.
     pub fn add(&self, key: StorageKey, value: StorageItem) {
         let mut dict = self.dictionary.write();
-        let state = if dict.contains_key(&key) {
-            TrackState::Changed
-        } else {
-            TrackState::Added
-        };
-        dict.insert(key.clone(), Trackable::new(value, state));
+        // Single HashMap lookup via entry() instead of contains_key() + insert().
+        match dict.entry(key.clone()) {
+            std::collections::hash_map::Entry::Occupied(mut e) => {
+                *e.get_mut() = Trackable::new(value, TrackState::Changed);
+            }
+            std::collections::hash_map::Entry::Vacant(e) => {
+                e.insert(Trackable::new(value, TrackState::Added));
+            }
+        }
 
         if let Some(ref change_set) = self.change_set {
             change_set.write().insert(key);
@@ -198,11 +201,20 @@ impl DataCache {
     /// Updates an existing item in the cache.
     pub fn update(&self, key: StorageKey, value: StorageItem) {
         let mut dict = self.dictionary.write();
-        let state = match dict.get(&key) {
-            Some(existing) if existing.state == TrackState::Added => TrackState::Added,
-            _ => TrackState::Changed,
-        };
-        dict.insert(key.clone(), Trackable::new(value, state));
+        // Single HashMap lookup via entry() instead of get() + insert().
+        match dict.entry(key.clone()) {
+            std::collections::hash_map::Entry::Occupied(mut e) => {
+                let state = if e.get().state == TrackState::Added {
+                    TrackState::Added
+                } else {
+                    TrackState::Changed
+                };
+                *e.get_mut() = Trackable::new(value, state);
+            }
+            std::collections::hash_map::Entry::Vacant(e) => {
+                e.insert(Trackable::new(value, TrackState::Changed));
+            }
+        }
 
         if let Some(ref change_set) = self.change_set {
             change_set.write().insert(key);
