@@ -29,7 +29,7 @@ pub fn register_handlers(jump_table: &mut JumpTable) {
 
 fn invert(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
-    let x = ctx.pop()?.as_int()?;
+    let x = ctx.pop()?.into_int()?;
     ctx.push(StackItem::from_int(!x))
 }
 
@@ -39,8 +39,8 @@ where
     F: FnOnce(num_bigint::BigInt, num_bigint::BigInt) -> num_bigint::BigInt,
 {
     let ctx = require_context(engine)?;
-    let b = ctx.pop()?.as_int()?;
-    let a = ctx.pop()?.as_int()?;
+    let b = ctx.pop()?.into_int()?;
+    let a = ctx.pop()?.into_int()?;
     ctx.push(StackItem::from_int(int_op(a, b)))
 }
 

@@ -114,8 +114,8 @@ pub fn jmpifnot_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> Vm
 
 /// JMPEQ - Jump if equal
 pub fn jmpeq(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    let x2 = engine.pop()?.get_integer()?;
-    let x1 = engine.pop()?.get_integer()?;
+    let x2 = engine.pop()?.into_int()?;
+    let x1 = engine.pop()?.into_int()?;
     if x1 == x2 {
         let offset = i32::from(instruction.token_i8());
         engine.execute_jump_offset(offset)?;
@@ -125,8 +125,8 @@ pub fn jmpeq(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
 
 /// `JMPEQ_L` - Jump if equal (32-bit)
 pub fn jmpeq_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    let x2 = engine.pop()?.get_integer()?;
-    let x1 = engine.pop()?.get_integer()?;
+    let x2 = engine.pop()?.into_int()?;
+    let x1 = engine.pop()?.into_int()?;
     if x1 == x2 {
         let offset = instruction.token_i32();
         engine.execute_jump_offset(offset)?;
@@ -136,8 +136,8 @@ pub fn jmpeq_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
 
 /// JMPNE - Jump if not equal
 pub fn jmpne(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    let x2 = engine.pop()?.get_integer()?;
-    let x1 = engine.pop()?.get_integer()?;
+    let x2 = engine.pop()?.into_int()?;
+    let x1 = engine.pop()?.into_int()?;
     if x1 != x2 {
         let offset = i32::from(instruction.token_i8());
         engine.execute_jump_offset(offset)?;
@@ -147,8 +147,8 @@ pub fn jmpne(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
 
 /// `JMPNE_L` - Jump if not equal (32-bit)
 pub fn jmpne_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    let x2 = engine.pop()?.get_integer()?;
-    let x1 = engine.pop()?.get_integer()?;
+    let x2 = engine.pop()?.into_int()?;
+    let x1 = engine.pop()?.into_int()?;
     if x1 != x2 {
         let offset = instruction.token_i32();
         engine.execute_jump_offset(offset)?;
@@ -160,8 +160,8 @@ pub fn jmpne_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
 pub fn jmpgt(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let b = engine.pop()?;
     let a = engine.pop()?;
-    let a_int = a.get_integer()?;
-    let b_int = b.get_integer()?;
+    let a_int = a.into_int()?;
+    let b_int = b.into_int()?;
     if a_int > b_int {
         let offset = i32::from(instruction.token_i8());
         engine.execute_jump_offset(offset)?;
@@ -173,8 +173,8 @@ pub fn jmpgt(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
 pub fn jmpgt_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let b = engine.pop()?;
     let a = engine.pop()?;
-    let a_int = a.get_integer()?;
-    let b_int = b.get_integer()?;
+    let a_int = a.into_int()?;
+    let b_int = b.into_int()?;
     if a_int > b_int {
         let offset = instruction.token_i32();
         engine.execute_jump_offset(offset)?;
@@ -186,8 +186,8 @@ pub fn jmpgt_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
 pub fn jmpge(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let b = engine.pop()?;
     let a = engine.pop()?;
-    let a_int = a.get_integer()?;
-    let b_int = b.get_integer()?;
+    let a_int = a.into_int()?;
+    let b_int = b.into_int()?;
     if a_int >= b_int {
         let offset = i32::from(instruction.token_i8());
         engine.execute_jump_offset(offset)?;
@@ -199,8 +199,8 @@ pub fn jmpge(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
 pub fn jmpge_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let b = engine.pop()?;
     let a = engine.pop()?;
-    let a_int = a.get_integer()?;
-    let b_int = b.get_integer()?;
+    let a_int = a.into_int()?;
+    let b_int = b.into_int()?;
     if a_int >= b_int {
         let offset = instruction.token_i32();
         engine.execute_jump_offset(offset)?;
@@ -212,8 +212,8 @@ pub fn jmpge_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
 pub fn jmplt(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let b = engine.pop()?;
     let a = engine.pop()?;
-    let a_int = a.get_integer()?;
-    let b_int = b.get_integer()?;
+    let a_int = a.into_int()?;
+    let b_int = b.into_int()?;
     if a_int < b_int {
         let offset = i32::from(instruction.token_i8());
         engine.execute_jump_offset(offset)?;
@@ -225,8 +225,8 @@ pub fn jmplt(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
 pub fn jmplt_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let b = engine.pop()?;
     let a = engine.pop()?;
-    let a_int = a.get_integer()?;
-    let b_int = b.get_integer()?;
+    let a_int = a.into_int()?;
+    let b_int = b.into_int()?;
     if a_int < b_int {
         let offset = instruction.token_i32();
         engine.execute_jump_offset(offset)?;
@@ -238,8 +238,8 @@ pub fn jmplt_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
 pub fn jmple(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let b = engine.pop()?;
     let a = engine.pop()?;
-    let a_int = a.get_integer()?;
-    let b_int = b.get_integer()?;
+    let a_int = a.into_int()?;
+    let b_int = b.into_int()?;
     if a_int <= b_int {
         let offset = i32::from(instruction.token_i8());
         engine.execute_jump_offset(offset)?;
@@ -251,8 +251,8 @@ pub fn jmple(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
 pub fn jmple_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let b = engine.pop()?;
     let a = engine.pop()?;
-    let a_int = a.get_integer()?;
-    let b_int = b.get_integer()?;
+    let a_int = a.into_int()?;
+    let b_int = b.into_int()?;
     if a_int <= b_int {
         let offset = instruction.token_i32();
         engine.execute_jump_offset(offset)?;

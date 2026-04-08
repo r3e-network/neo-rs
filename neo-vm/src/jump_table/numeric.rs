@@ -97,7 +97,7 @@ pub fn register_handlers(jump_table: &mut JumpTable) {
 #[inline]
 fn inc(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
-    let value = ctx.pop()?.as_int()?;
+    let value = ctx.pop()?.into_int()?;
     let result = value + BigInt::one();
     check_bigint_size(&result)?;
     ctx.push(StackItem::from_int(result))
@@ -106,7 +106,7 @@ fn inc(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
 #[inline]
 fn dec(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
-    let value = ctx.pop()?.as_int()?;
+    let value = ctx.pop()?.into_int()?;
     let result = value - BigInt::one();
     check_bigint_size(&result)?;
     ctx.push(StackItem::from_int(result))
@@ -114,7 +114,7 @@ fn dec(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
 
 fn sign(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
-    let value = ctx.pop()?.as_int()?;
+    let value = ctx.pop()?.into_int()?;
     let result = if value.is_zero() {
         BigInt::zero()
     } else if value.is_positive() {
@@ -127,7 +127,7 @@ fn sign(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
 
 fn negate(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
-    let value = ctx.pop()?.as_int()?;
+    let value = ctx.pop()?.into_int()?;
     let result = -value;
     check_bigint_size(&result)?;
     ctx.push(StackItem::from_int(result))
@@ -135,7 +135,7 @@ fn negate(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
 
 fn abs(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
-    let value = ctx.pop()?.as_int()?;
+    let value = ctx.pop()?.into_int()?;
     let result = value.abs();
     check_bigint_size(&result)?;
     ctx.push(StackItem::from_int(result))
@@ -143,7 +143,7 @@ fn abs(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
 
 fn sqrt(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
-    let value = ctx.pop()?.as_int()?;
+    let value = ctx.pop()?.into_int()?;
     if value.is_negative() {
         return Err(VmError::invalid_operation_msg(
             "Square root of negative number",
@@ -161,7 +161,7 @@ fn not(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
 
 fn nz(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
-    let value = ctx.pop()?.as_int()?;
+    let value = ctx.pop()?.into_int()?;
     ctx.push(StackItem::from_bool(!value.is_zero()))
 }
 
@@ -172,8 +172,8 @@ fn nz(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
 #[inline]
 fn add(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
-    let b = ctx.pop()?.as_int()?;
-    let a = ctx.pop()?.as_int()?;
+    let b = ctx.pop()?.into_int()?;
+    let a = ctx.pop()?.into_int()?;
     let sum = a + b;
     check_bigint_size(&sum)?;
     ctx.push(StackItem::from_int(sum))
@@ -182,8 +182,8 @@ fn add(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
 #[inline]
 fn sub(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
-    let b = ctx.pop()?.as_int()?;
-    let a = ctx.pop()?.as_int()?;
+    let b = ctx.pop()?.into_int()?;
+    let a = ctx.pop()?.into_int()?;
     let result = a - b;
     check_bigint_size(&result)?;
     ctx.push(StackItem::from_int(result))
@@ -192,8 +192,8 @@ fn sub(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
 #[inline]
 fn mul(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
-    let b = ctx.pop()?.as_int()?;
-    let a = ctx.pop()?.as_int()?;
+    let b = ctx.pop()?.into_int()?;
+    let a = ctx.pop()?.into_int()?;
     let result = a * b;
     check_bigint_size(&result)?;
     ctx.push(StackItem::from_int(result))
@@ -201,8 +201,8 @@ fn mul(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
 
 fn div(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
-    let b = ctx.pop()?.as_int()?;
-    let a = ctx.pop()?.as_int()?;
+    let b = ctx.pop()?.into_int()?;
+    let a = ctx.pop()?.into_int()?;
     if b.is_zero() {
         return Err(VmError::invalid_operation_msg("Division by zero"));
     }
@@ -211,8 +211,8 @@ fn div(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
 
 fn modulo(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
-    let b = ctx.pop()?.as_int()?;
-    let a = ctx.pop()?.as_int()?;
+    let b = ctx.pop()?.into_int()?;
+    let a = ctx.pop()?.into_int()?;
     if b.is_zero() {
         return Err(VmError::invalid_operation_msg("Division by zero"));
     }
@@ -222,8 +222,8 @@ fn modulo(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
 fn pow(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let limits = *engine.limits();
     let ctx = require_context(engine)?;
-    let b = ctx.pop()?.as_int()?;
-    let a = ctx.pop()?.as_int()?;
+    let b = ctx.pop()?.into_int()?;
+    let a = ctx.pop()?.into_int()?;
 
     let exponent_i32 = b
         .to_i32()
@@ -238,8 +238,8 @@ fn pow(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
 fn shl(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let limits = *engine.limits();
     let ctx = require_context(engine)?;
-    let b = ctx.pop()?.as_int()?;
-    let a = ctx.pop()?.as_int()?;
+    let b = ctx.pop()?.into_int()?;
+    let a = ctx.pop()?.into_int()?;
 
     let shift_i32 = b
         .to_i32()
@@ -258,8 +258,8 @@ fn shl(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
 fn shr(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let limits = *engine.limits();
     let ctx = require_context(engine)?;
-    let b = ctx.pop()?.as_int()?;
-    let a = ctx.pop()?.as_int()?;
+    let b = ctx.pop()?.into_int()?;
+    let a = ctx.pop()?.into_int()?;
 
     let shift_i32 = b
         .to_i32()
@@ -277,15 +277,15 @@ fn shr(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
 
 fn min(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
-    let b = ctx.pop()?.as_int()?;
-    let a = ctx.pop()?.as_int()?;
+    let b = ctx.pop()?.into_int()?;
+    let a = ctx.pop()?.into_int()?;
     ctx.push(StackItem::from_int(if a < b { a } else { b }))
 }
 
 fn max(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
-    let b = ctx.pop()?.as_int()?;
-    let a = ctx.pop()?.as_int()?;
+    let b = ctx.pop()?.into_int()?;
+    let a = ctx.pop()?.into_int()?;
     ctx.push(StackItem::from_int(if a > b { a } else { b }))
 }
 
@@ -295,9 +295,9 @@ fn max(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
 
 fn within(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
-    let b = ctx.pop()?.as_int()?;
-    let a = ctx.pop()?.as_int()?;
-    let x = ctx.pop()?.as_int()?;
+    let b = ctx.pop()?.into_int()?;
+    let a = ctx.pop()?.into_int()?;
+    let x = ctx.pop()?.into_int()?;
     ctx.push(StackItem::from_bool(a <= x && x < b))
 }
 
@@ -410,9 +410,9 @@ fn boolor(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
 
 fn modmul(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
-    let modulus = ctx.pop()?.as_int()?;
-    let b = ctx.pop()?.as_int()?;
-    let a = ctx.pop()?.as_int()?;
+    let modulus = ctx.pop()?.into_int()?;
+    let b = ctx.pop()?.into_int()?;
+    let a = ctx.pop()?.into_int()?;
 
     if modulus.is_zero() {
         return Err(VmError::division_by_zero_msg("division"));
@@ -425,9 +425,9 @@ fn modmul(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
 
 fn modpow(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
-    let modulus = ctx.pop()?.as_int()?;
-    let exponent = ctx.pop()?.as_int()?;
-    let base = ctx.pop()?.as_int()?;
+    let modulus = ctx.pop()?.into_int()?;
+    let exponent = ctx.pop()?.into_int()?;
+    let base = ctx.pop()?.into_int()?;
 
     // Exponent == -1 triggers modular inverse
     if exponent == -BigInt::one() {

@@ -221,7 +221,7 @@ impl StackItem {
         }
     }
 
-    /// Converts the stack item to an integer.
+    /// Converts the stack item to an integer (borrowing).
     #[inline]
     pub fn as_int(&self) -> VmResult<BigInt> {
         match self {
@@ -230,56 +230,75 @@ impl StackItem {
             )),
             Self::Boolean(b) => Ok(BigInt::from(i32::from(*b))),
             Self::Integer(i) => Ok(i.clone()),
-            Self::ByteString(b) => {
-                if b.len() > crate::stack_item::integer::Integer::MAX_SIZE {
-                    return Err(VmError::invalid_type_simple(
-                        "Cannot convert ByteString to Integer",
-                    ));
-                }
-                if b.is_empty() {
-                    return Ok(BigInt::from(0));
-                }
-
-                let bytes = b.clone();
-                let is_negative = (bytes[bytes.len() - 1] & 0x80) != 0;
-                if is_negative {
-                    let mut bytes_copy = bytes;
-                    let len = bytes_copy.len();
-                    bytes_copy[len - 1] &= 0x7F;
-                    let positive_value = BigInt::from_bytes_le(num_bigint::Sign::Plus, &bytes_copy);
-                    let sign_bit_value = BigInt::from(1) << (len * 8 - 1);
-                    Ok(-(sign_bit_value - positive_value))
-                } else {
-                    Ok(BigInt::from_bytes_le(num_bigint::Sign::Plus, &bytes))
-                }
-            }
-            Self::Buffer(b) => {
-                if b.len() > crate::stack_item::integer::Integer::MAX_SIZE {
+            Self::ByteString(b) => Self::bytestring_to_bigint(b),
+            Self::Buffer(buf) => {
+                if buf.len() > crate::stack_item::integer::Integer::MAX_SIZE {
                     return Err(VmError::invalid_type_simple(
                         "Cannot convert Buffer to Integer",
                     ));
                 }
-                if b.is_empty() {
+                if buf.is_empty() {
                     return Ok(BigInt::from(0));
                 }
-
-                b.with_data(|data| {
-                    let is_negative = (data[data.len() - 1] & 0x80) != 0;
-                    if is_negative {
-                        let mut bytes_copy = data.to_vec();
-                        let len = bytes_copy.len();
-                        bytes_copy[len - 1] &= 0x7F;
-                        let positive_value =
-                            BigInt::from_bytes_le(num_bigint::Sign::Plus, &bytes_copy);
-                        let sign_bit_value = BigInt::from(1) << (len * 8 - 1);
-                        Ok(-(sign_bit_value - positive_value))
-                    } else {
-                        Ok(BigInt::from_bytes_le(num_bigint::Sign::Plus, data))
-                    }
-                })
+                buf.with_data(|data| Ok(Self::bytes_to_bigint(data)))
             }
             _ => Err(VmError::invalid_type_simple("Cannot convert to Integer")),
         }
+    }
+
+    /// Consuming version of `as_int` — moves the BigInt out of an Integer
+    /// variant instead of cloning. Use when the StackItem is already owned
+    /// (e.g., after `pop()`).
+    #[inline]
+    pub fn into_int(self) -> VmResult<BigInt> {
+        match self {
+            Self::Null => Err(VmError::invalid_type_simple(
+                "Cannot convert Null to Integer",
+            )),
+            Self::Boolean(b) => Ok(BigInt::from(i32::from(b))),
+            Self::Integer(i) => Ok(i), // MOVE — no clone!
+            Self::ByteString(b) => Self::bytestring_to_bigint(&b),
+            Self::Buffer(buf) => {
+                if buf.len() > crate::stack_item::integer::Integer::MAX_SIZE {
+                    return Err(VmError::invalid_type_simple(
+                        "Cannot convert Buffer to Integer",
+                    ));
+                }
+                if buf.is_empty() {
+                    return Ok(BigInt::from(0));
+                }
+                Ok(buf.with_data(|data| Self::bytes_to_bigint(data)))
+            }
+            _ => Err(VmError::invalid_type_simple("Cannot convert to Integer")),
+        }
+    }
+
+    /// Shared helper: convert byte slice to BigInt with sign handling.
+    fn bytes_to_bigint(data: &[u8]) -> BigInt {
+        let is_negative = (data[data.len() - 1] & 0x80) != 0;
+        if is_negative {
+            let mut bytes_copy = data.to_vec();
+            let len = bytes_copy.len();
+            bytes_copy[len - 1] &= 0x7F;
+            let positive_value = BigInt::from_bytes_le(num_bigint::Sign::Plus, &bytes_copy);
+            let sign_bit_value = BigInt::from(1) << (len * 8 - 1);
+            -(sign_bit_value - positive_value)
+        } else {
+            BigInt::from_bytes_le(num_bigint::Sign::Plus, data)
+        }
+    }
+
+    /// Shared helper: convert ByteString (Vec<u8>) to BigInt.
+    fn bytestring_to_bigint(b: &[u8]) -> VmResult<BigInt> {
+        if b.len() > crate::stack_item::integer::Integer::MAX_SIZE {
+            return Err(VmError::invalid_type_simple(
+                "Cannot convert ByteString to Integer",
+            ));
+        }
+        if b.is_empty() {
+            return Ok(BigInt::from(0));
+        }
+        Ok(Self::bytes_to_bigint(b))
     }
 
     /// Returns the boolean value represented by the stack item.
