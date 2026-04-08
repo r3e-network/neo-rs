@@ -54,9 +54,8 @@ impl Slot {
     pub fn new(count: usize, reference_counter: ReferenceCounter) -> Self {
         let items = vec![StackItem::Null; count];
 
-        for _ in 0..count {
-            reference_counter.add_stack_reference(&StackItem::Null, 1);
-        }
+        // Batch: single atomic add for all Null items instead of N individual adds.
+        reference_counter.add_stack_reference(&StackItem::Null, count);
 
         Self {
             reference_counter,
@@ -72,9 +71,8 @@ impl Slot {
         let mut items = Vec::with_capacity(capacity);
         items.resize(capacity, StackItem::Null);
 
-        for _ in 0..capacity {
-            reference_counter.add_stack_reference(&StackItem::Null, 1);
-        }
+        // Batch: single atomic add instead of N individual adds.
+        reference_counter.add_stack_reference(&StackItem::Null, capacity);
 
         Self {
             reference_counter,
