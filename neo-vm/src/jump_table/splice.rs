@@ -31,7 +31,7 @@ fn new_buffer(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRes
     // Pop the size from the stack
     let size = context
         .pop()?
-        .as_int()?
+        .into_int()?
         .to_usize()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid buffer size"))?;
 
@@ -55,18 +55,18 @@ fn memcpy(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
     // Pop order matches C#: count, src_index, src, dst_index, dst
     let count = context
         .pop()?
-        .as_int()?
+        .into_int()?
         .to_usize()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid count"))?;
     let src_offset = context
         .pop()?
-        .as_int()?
+        .into_int()?
         .to_usize()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid source offset"))?;
     let src = context.pop()?;
     let dst_offset = context
         .pop()?
-        .as_int()?
+        .into_int()?
         .to_usize()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid destination offset"))?;
     let dst = context.pop()?;
@@ -164,12 +164,12 @@ fn substr(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
     // Pop the values from the stack
     let count = context
         .pop()?
-        .as_int()?
+        .into_int()?
         .to_usize()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid count"))?;
     let offset = context
         .pop()?
-        .as_int()?
+        .into_int()?
         .to_usize()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid offset"))?;
     let value = context.pop()?;
@@ -199,7 +199,7 @@ fn left(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
     // Pop the values from the stack
     let count = context
         .pop()?
-        .as_int()?
+        .into_int()?
         .to_usize()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid count"))?;
     let value = context.pop()?;
@@ -228,7 +228,7 @@ fn right(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<(
     // Pop the values from the stack
     let count = context
         .pop()?
-        .as_int()?
+        .into_int()?
         .to_usize()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid count"))?;
     let value = context.pop()?;

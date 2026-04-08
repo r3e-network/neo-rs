@@ -155,7 +155,7 @@ fn xdrop(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<(
 
     let n = context
         .pop()?
-        .as_int()?
+        .into_int()?
         .to_usize()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid index"))?;
 
@@ -190,7 +190,7 @@ fn pick(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
     // Pop the index from the stack
     let n = context
         .pop()?
-        .as_int()?
+        .into_int()?
         .to_usize()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid index"))?;
 
@@ -215,7 +215,7 @@ fn roll(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    let n = context.pop()?.as_int()?;
+    let n = context.pop()?.into_int()?;
 
     if n.sign() == Sign::Minus {
         return Err(VmError::invalid_operation_msg(format!(
@@ -271,7 +271,7 @@ fn reversen(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResul
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the count from the stack
-    let n = context.pop()?.as_int()?;
+    let n = context.pop()?.into_int()?;
 
     if n.sign() == Sign::Minus {
         return Err(VmError::invalid_operation_msg(format!(

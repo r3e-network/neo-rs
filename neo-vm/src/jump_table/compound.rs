@@ -75,7 +75,7 @@ fn new_array(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
     // Pop the count from the stack
     let count = context
         .pop()?
-        .as_int()?
+        .into_int()?
         .to_usize()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid array size"))?;
 
@@ -100,7 +100,7 @@ fn new_array_t(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
     // Pop the count from the stack
     let count = context
         .pop()?
-        .as_int()?
+        .into_int()?
         .to_usize()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid array size"))?;
 
@@ -170,7 +170,7 @@ fn new_struct(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRes
     // Pop the count from the stack
     let count = context
         .pop()?
-        .as_int()?
+        .into_int()?
         .to_usize()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid struct size"))?;
 
@@ -462,7 +462,7 @@ fn pack_map(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResul
     // Pop the count from the stack
     let count = context
         .pop()?
-        .as_int()?
+        .into_int()?
         .to_usize()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid map size"))?;
 
@@ -489,7 +489,7 @@ fn pack_struct(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRe
     // Pop the count from the stack
     let count = context
         .pop()?
-        .as_int()?
+        .into_int()?
         .to_usize()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid struct size"))?;
 
@@ -514,7 +514,7 @@ fn pack(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
     // Pop the count from the stack
     let count = context
         .pop()?
-        .as_int()?
+        .into_int()?
         .to_usize()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid array size"))?;
 

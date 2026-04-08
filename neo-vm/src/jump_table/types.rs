@@ -58,7 +58,7 @@ fn convert(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
             (item, StackItemType::Boolean) => StackItem::from_bool(item.as_bool()?),
 
             // Convert to Integer
-            (item, StackItemType::Integer) => StackItem::from_int(item.as_int()?),
+            (item, StackItemType::Integer) => StackItem::from_int(item.into_int()?),
 
             // Convert to ByteString
             (item, StackItemType::ByteString) => StackItem::from_byte_string(item.as_bytes()?),
