@@ -146,7 +146,7 @@ impl ApplicationEngine {
     /// Helper to pop an integer from the stack
     pub fn pop_integer(&mut self) -> Result<i64, String> {
         let item = self.pop()?;
-        let integer = item.as_int().map_err(|e| e.to_string())?;
+        let integer = item.into_int().map_err(|e| e.to_string())?;
         integer
             .to_i64()
             .ok_or_else(|| "Integer too large".to_string())

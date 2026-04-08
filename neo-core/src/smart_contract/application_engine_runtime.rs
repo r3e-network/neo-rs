@@ -564,7 +564,7 @@ fn runtime_burn_gas_handler(
 ) -> VmResult<()> {
     let amount_item = engine.pop()?;
     let amount = amount_item
-        .as_int()?
+        .into_int()?
         .to_i64()
         .ok_or_else(|| VmError::InteropService {
             service: "System.Runtime.BurnGas".to_string(),

@@ -5,7 +5,7 @@ impl ApplicationEngine {
         let storage_key = StorageKey::new(context.id, key.to_vec());
         self.snapshot_cache
             .get(&storage_key)
-            .map(|item| item.get_value())
+            .map(|item| item.value_bytes().into_owned())
     }
 
     pub(super) fn validate_find_options(&self, options: FindOptions) -> Result<(), String> {
@@ -105,7 +105,7 @@ impl ApplicationEngine {
             return Err("Invalid iterator interop interface".to_string());
         }
         let identifier = item
-            .as_int()
+            .into_int()
             .map_err(|e| e.to_string())?
             .to_u32()
             .ok_or_else(|| "Iterator identifier out of range".to_string())?;
