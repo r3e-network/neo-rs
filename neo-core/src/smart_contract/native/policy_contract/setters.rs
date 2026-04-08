@@ -351,8 +351,8 @@ impl PolicyContract {
                 vec![
                     StackItem::ByteString(contract_hash.to_bytes().to_vec()),
                     StackItem::ByteString(method.as_bytes().to_vec()),
-                    StackItem::Integer(BigInt::from(arg_count)),
-                    StackItem::Integer(BigInt::from(fixed_fee)),
+                    StackItem::from_int(arg_count),
+                    StackItem::from_int(fixed_fee),
                 ],
             )
             .map_err(Error::native_contract)?;
@@ -412,7 +412,7 @@ impl PolicyContract {
                 vec![
                     StackItem::ByteString(contract_hash.to_bytes().to_vec()),
                     StackItem::ByteString(method.as_bytes().to_vec()),
-                    StackItem::Integer(BigInt::from(arg_count)),
+                    StackItem::from_int(arg_count),
                     StackItem::Null,
                 ],
             )
@@ -464,7 +464,7 @@ impl PolicyContract {
                     vec![
                         StackItem::ByteString(contract.hash.to_bytes().to_vec()),
                         StackItem::ByteString(whitelist.method.as_bytes().to_vec()),
-                        StackItem::Integer(BigInt::from(whitelist.arg_count)),
+                        StackItem::from_int(whitelist.arg_count),
                         StackItem::Null,
                     ],
                 )

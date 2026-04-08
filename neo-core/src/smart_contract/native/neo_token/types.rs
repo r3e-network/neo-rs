@@ -72,7 +72,7 @@ impl NeoAccountState {
                 })
             }
             StackItem::Integer(balance) => Ok(Self {
-                balance,
+                balance: balance.into_bigint(),
                 balance_height: 0,
                 vote_to: None,
                 last_gas_per_vote: BigInt::zero(),
@@ -132,9 +132,11 @@ impl CandidateState {
             StackItem::Struct(structure) => structure.items(),
             StackItem::Array(array) => array.items(),
             StackItem::Integer(votes) => {
+                let sign = votes.sign();
+                let votes_bi = votes.into_bigint();
                 return Ok(Self {
-                    registered: votes.sign() != num_bigint::Sign::Minus,
-                    votes: votes.max(BigInt::zero()),
+                    registered: sign != num_bigint::Sign::Minus,
+                    votes: votes_bi.max(BigInt::zero()),
                 })
             }
             other => {

@@ -46,6 +46,7 @@ pub use pointer::Pointer;
 pub use primitive_type::{PrimitiveType, PrimitiveTypeExt};
 pub use stack_item::InteropInterface;
 pub use stack_item::StackItem;
+pub use stack_item::VmInteger;
 pub use stack_item_type::StackItemType;
 pub use stack_item_vertex::next_stack_item_id;
 pub use struct_item::Struct;
