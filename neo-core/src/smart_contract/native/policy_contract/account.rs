@@ -250,7 +250,7 @@ impl PolicyContract {
             .as_int()
             .map_err(|e| Error::native_contract(format!("Invalid balanceOf result: {e}")))?;
 
-        if balance > BigInt::zero() {
+        if balance > num_bigint::BigInt::ZERO {
             let original_depth = engine.invocation_stack().len();
             engine.call_from_native_contract_dynamic(
                 &account,

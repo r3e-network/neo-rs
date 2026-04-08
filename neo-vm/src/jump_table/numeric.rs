@@ -475,7 +475,7 @@ fn modpow(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
 
 /// Integer square root using Newton's method (matches C# BigInteger.Sqrt)
 fn integer_sqrt(value: &BigInt) -> BigInt {
-    if value <= &BigInt::one() {
+    if value.is_zero() || value.is_one() {
         return value.clone();
     }
 
@@ -491,12 +491,12 @@ fn integer_sqrt(value: &BigInt) -> BigInt {
 
 /// Computes the modular inverse of `value` modulo `modulus`.
 fn mod_inverse(value: &BigInt, modulus: &BigInt) -> VmResult<BigInt> {
-    if value <= &BigInt::zero() {
+    if !value.is_positive() {
         return Err(VmError::invalid_operation_msg(
             "Modular inverse requires positive value",
         ));
     }
-    if modulus < &BigInt::from(2u8) {
+    if modulus.is_zero() || modulus.is_one() {
         return Err(VmError::invalid_operation_msg(
             "Modular inverse requires modulus >= 2",
         ));
@@ -507,7 +507,7 @@ fn mod_inverse(value: &BigInt, modulus: &BigInt) -> VmResult<BigInt> {
     let mut s = BigInt::one();
     let mut old_s = BigInt::zero();
 
-    while r > BigInt::zero() {
+    while !r.is_zero() {
         let q = &old_r / &r;
         let new_r = &old_r % &r;
         old_r = r;
@@ -523,7 +523,7 @@ fn mod_inverse(value: &BigInt, modulus: &BigInt) -> VmResult<BigInt> {
         result += modulus;
     }
 
-    if (value * &result) % modulus != BigInt::one() {
+    if !((value * &result) % modulus).is_one() {
         return Err(VmError::invalid_operation_msg(
             "No modular inverse exists for the given inputs",
         ));
