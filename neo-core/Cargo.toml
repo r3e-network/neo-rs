@@ -60,6 +60,7 @@ bincode = { workspace = true }
 scrypt = "0.11"
 parking_lot = { workspace = true }
 lz4_flex = { workspace = true }
+dashmap = { workspace = true }
 hashbrown = { workspace = true }
 indexmap = { workspace = true }
 toml = { workspace = true }

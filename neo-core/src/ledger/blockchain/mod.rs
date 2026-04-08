@@ -72,8 +72,9 @@ use crate::state_service::{StateRoot, STATE_SERVICE_CATEGORY};
 use crate::{UInt160, UInt256};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use dashmap::DashMap;
 use std::any::Any;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, warn};
@@ -114,10 +115,10 @@ const MAX_UNVERIFIED_CACHE_SIZE: usize = 2048;
 pub struct Blockchain {
     ledger: Arc<LedgerContext>,
     system_context: Option<Arc<NeoSystemContext>>,
-    _block_cache: Arc<RwLock<HashMap<UInt256, Arc<Block>>>>,
-    _block_cache_unverified: Arc<RwLock<HashMap<u32, UnverifiedBlocksList>>>,
+    _block_cache: Arc<DashMap<UInt256, Arc<Block>>>,
+    _block_cache_unverified: Arc<DashMap<u32, UnverifiedBlocksList>>,
     _extensible_witness_white_list: Arc<RwLock<HashSet<UInt160>>>,
-    _inventory_cache: Arc<RwLock<HashMap<InventoryCacheKey, InventoryPayload>>>,
+    _inventory_cache: Arc<DashMap<InventoryCacheKey, InventoryPayload>>,
     _inventory_cache_order: Arc<RwLock<VecDeque<InventoryCacheKey>>>,
 }
 
@@ -126,10 +127,10 @@ impl Blockchain {
         Self {
             ledger,
             system_context: None,
-            _block_cache: Arc::new(RwLock::new(HashMap::with_capacity(1024))),
-            _block_cache_unverified: Arc::new(RwLock::new(HashMap::with_capacity(256))),
+            _block_cache: Arc::new(DashMap::with_capacity(1024)),
+            _block_cache_unverified: Arc::new(DashMap::with_capacity(256)),
             _extensible_witness_white_list: Arc::new(RwLock::new(HashSet::new())),
-            _inventory_cache: Arc::new(RwLock::new(HashMap::with_capacity(2048))),
+            _inventory_cache: Arc::new(DashMap::with_capacity(2048)),
             _inventory_cache_order: Arc::new(RwLock::new(VecDeque::with_capacity(2048))),
         }
     }
@@ -182,23 +183,22 @@ impl Blockchain {
         T::deserialize(&mut reader).ok()
     }
 
-    async fn inventory_cache_get(&self, key: &InventoryCacheKey) -> Option<InventoryPayload> {
-        self._inventory_cache.read().await.get(key).cloned()
+    fn inventory_cache_get(&self, key: &InventoryCacheKey) -> Option<InventoryPayload> {
+        self._inventory_cache.get(key).map(|r| r.clone())
     }
 
     async fn inventory_cache_insert(&self, key: InventoryCacheKey, payload: InventoryPayload) {
-        let mut cache = self._inventory_cache.write().await;
-        if cache.contains_key(&key) {
+        if self._inventory_cache.contains_key(&key) {
             return;
         }
 
         let mut order = self._inventory_cache_order.write().await;
-        cache.insert(key, payload);
+        self._inventory_cache.insert(key, payload);
         order.push_back(key);
 
         while order.len() > MAX_REVERIFY_INVENTORY_CACHE {
             if let Some(evicted) = order.pop_front() {
-                cache.remove(&evicted);
+                self._inventory_cache.remove(&evicted);
             }
         }
     }

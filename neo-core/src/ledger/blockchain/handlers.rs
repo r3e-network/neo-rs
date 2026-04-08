@@ -82,12 +82,11 @@ impl Blockchain {
         );
 
         {
-            let mut cache = self._block_cache.write().await;
-            cache.insert(hash, Arc::clone(&block));
+            self._block_cache.insert(hash, Arc::clone(&block));
 
             let prev_hash = *block.prev_hash();
             if !prev_hash.is_zero() {
-                cache.remove(&prev_hash);
+                self._block_cache.remove(&prev_hash);
             }
         }
 
@@ -129,8 +128,7 @@ impl Blockchain {
         }
 
         {
-            let mut unverified = self._block_cache_unverified.write().await;
-            unverified.remove(&index);
+            self._block_cache_unverified.remove(&index);
         }
 
         if let Some(context) = &self.system_context {
@@ -292,7 +290,7 @@ impl Blockchain {
             match item.payload {
                 InventoryPayload::Raw(inventory_type, payload) => {
                     let cache_key = InventoryCacheKey::new(inventory_type, &payload);
-                    if let Some(cached) = self.inventory_cache_get(&cache_key).await {
+                    if let Some(cached) = self.inventory_cache_get(&cache_key) {
                         self.handle_reverify_payload(cached, ctx).await;
                         continue;
                     }

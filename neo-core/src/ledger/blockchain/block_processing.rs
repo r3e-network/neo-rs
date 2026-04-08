@@ -66,22 +66,21 @@ impl Blockchain {
             }
         }
 
-        // Use write lock directly to prevent race condition where another
-        // thread could insert the same block between read check and write insert.
+        // Use DashMap entry API to atomically check-and-insert per shard,
+        // preventing races where two threads insert the same block concurrently.
         {
-            let mut cache = self._block_cache.write().await;
-            if cache.contains_key(&hash) {
+            if self._block_cache.contains_key(&hash) {
                 return VerifyResult::AlreadyExists;
             }
-            if cache.len() >= MAX_BLOCK_CACHE_SIZE {
+            if self._block_cache.len() >= MAX_BLOCK_CACHE_SIZE {
                 tracing::warn!(
                     target: "neo",
-                    cache_size = cache.len(),
+                    cache_size = self._block_cache.len(),
                     "block cache full, rejecting new block"
                 );
                 return VerifyResult::Invalid;
             }
-            cache.insert(hash, Arc::clone(&block));
+            self._block_cache.insert(hash, Arc::clone(&block));
         }
 
         if block_index == current_height + 1 {
@@ -100,25 +99,24 @@ impl Blockchain {
     }
 
     async fn add_unverified_block(&self, block: Arc<Block>) {
-        let mut unverified = self._block_cache_unverified.write().await;
-        if unverified.len() >= MAX_UNVERIFIED_CACHE_SIZE {
+        if self._block_cache_unverified.len() >= MAX_UNVERIFIED_CACHE_SIZE {
             tracing::warn!(
                 target: "neo",
-                cache_size = unverified.len(),
+                cache_size = self._block_cache_unverified.len(),
                 "unverified block cache full, dropping oldest entries"
             );
             // Evict entries with the lowest block indices (oldest blocks).
-            let mut indices: Vec<u32> = unverified.keys().copied().collect();
+            let mut indices: Vec<u32> = self._block_cache_unverified.iter().map(|r| *r.key()).collect();
             indices.sort_unstable();
-            let evict_count = unverified.len() / 4; // remove 25%
+            let evict_count = self._block_cache_unverified.len() / 4; // remove 25%
             for &idx in indices.iter().take(evict_count) {
-                unverified.remove(&idx);
+                self._block_cache_unverified.remove(&idx);
             }
         }
-        let entry = unverified
+        self._block_cache_unverified
             .entry(block.index())
-            .or_insert_with(UnverifiedBlocksList::new);
-        entry.blocks.push(block);
+            .or_insert_with(UnverifiedBlocksList::new)
+            .blocks.push(block);
     }
 
     async fn persist_block_sequence(&self, block: Arc<Block>) -> bool {
@@ -136,17 +134,14 @@ impl Blockchain {
         // Process subsequent blocks from the unverified cache
         loop {
             let maybe_block = {
-                let mut unverified = self._block_cache_unverified.write().await;
-                if let Some(entry) = unverified.get_mut(&next_index) {
-                    if let Some(next_block) = entry.blocks.pop() {
-                        if entry.blocks.is_empty() {
-                            unverified.remove(&next_index);
-                        }
-                        Some(next_block)
-                    } else {
-                        unverified.remove(&next_index);
-                        None
+                if let Some(mut entry) = self._block_cache_unverified.get_mut(&next_index) {
+                    let next_block = entry.blocks.pop();
+                    let is_empty = entry.blocks.is_empty();
+                    drop(entry); // release shard lock before remove
+                    if is_empty {
+                        self._block_cache_unverified.remove(&next_index);
                     }
+                    next_block
                 } else {
                     None
                 }
