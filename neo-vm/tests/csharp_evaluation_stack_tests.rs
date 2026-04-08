@@ -23,13 +23,13 @@ mod tests {
 
         // Test push operations
         stack
-            .push(StackItem::Integer(BigInt::from(1)))
+            .push(StackItem::from_int(1))
             .expect("push should succeed");
         assert_eq!(stack.len(), 1, "Stack should have 1 item after push");
         assert!(!stack.is_empty(), "Stack should not be empty after push");
 
         stack
-            .push(StackItem::Integer(BigInt::from(2)))
+            .push(StackItem::from_int(2))
             .expect("push should succeed");
         assert_eq!(
             stack.len(),
@@ -38,7 +38,7 @@ mod tests {
         );
 
         stack
-            .push(StackItem::Integer(BigInt::from(3)))
+            .push(StackItem::from_int(3))
             .expect("push should succeed");
         assert_eq!(stack.len(), 3, "Stack should have 3 items after third push");
 
@@ -103,7 +103,7 @@ mod tests {
         // Note: The actual C# implementation has a limit of 2048, but we'll test with smaller number
         for i in 0..100 {
             stack
-                .push(StackItem::Integer(BigInt::from(i)))
+                .push(StackItem::from_int(i))
                 .expect("push should succeed");
         }
 
@@ -126,10 +126,10 @@ mod tests {
 
         // Push some items
         stack
-            .push(StackItem::Integer(BigInt::from(1)))
+            .push(StackItem::from_int(1))
             .expect("push should succeed");
         stack
-            .push(StackItem::Integer(BigInt::from(2)))
+            .push(StackItem::from_int(2))
             .expect("push should succeed");
 
         // Test valid peek
@@ -166,13 +166,13 @@ mod tests {
 
         // Push some items
         stack
-            .push(StackItem::Integer(BigInt::from(1)))
+            .push(StackItem::from_int(1))
             .expect("push should succeed");
         stack
-            .push(StackItem::Integer(BigInt::from(2)))
+            .push(StackItem::from_int(2))
             .expect("push should succeed");
         stack
-            .push(StackItem::Integer(BigInt::from(3)))
+            .push(StackItem::from_int(3))
             .expect("push should succeed");
 
         assert_eq!(stack.len(), 3, "Stack should have 3 items");
@@ -192,17 +192,17 @@ mod tests {
 
         // Push some items
         stack
-            .push(StackItem::Integer(BigInt::from(1)))
+            .push(StackItem::from_int(1))
             .expect("push should succeed");
         stack
-            .push(StackItem::Integer(BigInt::from(2)))
+            .push(StackItem::from_int(2))
             .expect("push should succeed");
         stack
-            .push(StackItem::Integer(BigInt::from(3)))
+            .push(StackItem::from_int(3))
             .expect("push should succeed");
 
         stack
-            .insert(1, StackItem::Integer(BigInt::from(99)))
+            .insert(1, StackItem::from_int(99))
             .unwrap();
 
         assert_eq!(stack.len(), 4, "Stack should have 4 items after insert");
@@ -223,13 +223,13 @@ mod tests {
 
         // Push some items
         stack
-            .push(StackItem::Integer(BigInt::from(1)))
+            .push(StackItem::from_int(1))
             .expect("push should succeed");
         stack
-            .push(StackItem::Integer(BigInt::from(2)))
+            .push(StackItem::from_int(2))
             .expect("push should succeed");
         stack
-            .push(StackItem::Integer(BigInt::from(3)))
+            .push(StackItem::from_int(3))
             .expect("push should succeed");
 
         let removed = stack.remove(1).unwrap();
@@ -248,16 +248,16 @@ mod tests {
 
         // Push some items
         stack
-            .push(StackItem::Integer(BigInt::from(1)))
+            .push(StackItem::from_int(1))
             .expect("push should succeed");
         stack
-            .push(StackItem::Integer(BigInt::from(2)))
+            .push(StackItem::from_int(2))
             .expect("push should succeed");
         stack
-            .push(StackItem::Integer(BigInt::from(3)))
+            .push(StackItem::from_int(3))
             .expect("push should succeed");
         stack
-            .push(StackItem::Integer(BigInt::from(4)))
+            .push(StackItem::from_int(4))
             .expect("push should succeed");
 
         // Reverse top 3 items
@@ -282,13 +282,13 @@ mod tests {
 
         // Push some items
         stack1
-            .push(StackItem::Integer(BigInt::from(1)))
+            .push(StackItem::from_int(1))
             .expect("push should succeed");
         stack1
-            .push(StackItem::Integer(BigInt::from(2)))
+            .push(StackItem::from_int(2))
             .expect("push should succeed");
         stack1
-            .push(StackItem::Integer(BigInt::from(3)))
+            .push(StackItem::from_int(3))
             .expect("push should succeed");
 
         // Copy to another stack
@@ -317,7 +317,7 @@ mod tests {
             .push(StackItem::Boolean(true))
             .expect("push should succeed");
         stack
-            .push(StackItem::Integer(BigInt::from(42)))
+            .push(StackItem::from_int(42))
             .expect("push should succeed");
         stack
             .push(StackItem::from_byte_string("Hello"))

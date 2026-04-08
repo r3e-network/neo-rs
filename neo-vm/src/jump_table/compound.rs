@@ -118,7 +118,7 @@ fn new_array_t(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
         let default_value = match type_byte {
             0x00 => Ok(StackItem::Null),
             0x20 => Ok(StackItem::Boolean(false)),
-            0x21 => Ok(StackItem::Integer(BigInt::from(0))),
+            0x21 => Ok(StackItem::from_i64(0)),
             0x28 => Ok(StackItem::from_byte_string(Vec::<u8>::new())),
             0x30 => Ok(StackItem::from_buffer(Vec::<u8>::new())),
             0x40 => Ok(StackItem::Array(Array::new(

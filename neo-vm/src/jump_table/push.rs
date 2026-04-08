@@ -147,75 +147,75 @@ fn push_data(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
 // Small integer push operations - all use the same pattern
 #[inline]
 fn push_m1(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    engine.push(StackItem::from_int(-1))
+    engine.push(StackItem::from_i64(-1))
 }
 #[inline]
 fn push_0(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    engine.push(StackItem::from_int(0))
+    engine.push(StackItem::from_i64(0))
 }
 #[inline]
 fn push_1(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    engine.push(StackItem::from_int(1))
+    engine.push(StackItem::from_i64(1))
 }
 #[inline]
 fn push_2(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    engine.push(StackItem::from_int(2))
+    engine.push(StackItem::from_i64(2))
 }
 #[inline]
 fn push_3(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    engine.push(StackItem::from_int(3))
+    engine.push(StackItem::from_i64(3))
 }
 #[inline]
 fn push_4(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    engine.push(StackItem::from_int(4))
+    engine.push(StackItem::from_i64(4))
 }
 #[inline]
 fn push_5(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    engine.push(StackItem::from_int(5))
+    engine.push(StackItem::from_i64(5))
 }
 #[inline]
 fn push_6(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    engine.push(StackItem::from_int(6))
+    engine.push(StackItem::from_i64(6))
 }
 #[inline]
 fn push_7(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    engine.push(StackItem::from_int(7))
+    engine.push(StackItem::from_i64(7))
 }
 #[inline]
 fn push_8(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    engine.push(StackItem::from_int(8))
+    engine.push(StackItem::from_i64(8))
 }
 #[inline]
 fn push_9(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    engine.push(StackItem::from_int(9))
+    engine.push(StackItem::from_i64(9))
 }
 #[inline]
 fn push_10(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    engine.push(StackItem::from_int(10))
+    engine.push(StackItem::from_i64(10))
 }
 #[inline]
 fn push_11(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    engine.push(StackItem::from_int(11))
+    engine.push(StackItem::from_i64(11))
 }
 #[inline]
 fn push_12(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    engine.push(StackItem::from_int(12))
+    engine.push(StackItem::from_i64(12))
 }
 #[inline]
 fn push_13(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    engine.push(StackItem::from_int(13))
+    engine.push(StackItem::from_i64(13))
 }
 #[inline]
 fn push_14(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    engine.push(StackItem::from_int(14))
+    engine.push(StackItem::from_i64(14))
 }
 #[inline]
 fn push_15(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    engine.push(StackItem::from_int(15))
+    engine.push(StackItem::from_i64(15))
 }
 #[inline]
 fn push_16(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    engine.push(StackItem::from_int(16))
+    engine.push(StackItem::from_i64(16))
 }
 
 /// Implements the PUSHT operation.

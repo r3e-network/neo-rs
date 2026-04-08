@@ -237,7 +237,7 @@ impl ScriptBuilder {
                 self.emit_push_bool(b);
             }
             StackItem::Integer(i) => {
-                self.emit_push_bigint(i)?;
+                self.emit_push_bigint(i.into_bigint())?;
             }
             StackItem::ByteString(bytes) => {
                 self.emit_push(&bytes);

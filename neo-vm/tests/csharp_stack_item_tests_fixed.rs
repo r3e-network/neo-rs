@@ -58,63 +58,63 @@ mod tests {
     #[test]
     fn test_cast() {
         // Test signed byte
-        let item = StackItem::Integer(BigInt::from(i8::MAX));
+        let item = StackItem::from_int(i8::MAX);
         assert!(matches!(item, StackItem::Integer(_)));
         if let StackItem::Integer(value) = item {
             assert_eq!(value, BigInt::from(i8::MAX));
         }
 
         // Test unsigned byte
-        let item = StackItem::Integer(BigInt::from(u8::MAX));
+        let item = StackItem::from_int(u8::MAX);
         assert!(matches!(item, StackItem::Integer(_)));
         if let StackItem::Integer(value) = item {
             assert_eq!(value, BigInt::from(u8::MAX));
         }
 
         // Test signed short
-        let item = StackItem::Integer(BigInt::from(i16::MAX));
+        let item = StackItem::from_int(i16::MAX);
         assert!(matches!(item, StackItem::Integer(_)));
         if let StackItem::Integer(value) = item {
             assert_eq!(value, BigInt::from(i16::MAX));
         }
 
         // Test unsigned short
-        let item = StackItem::Integer(BigInt::from(u16::MAX));
+        let item = StackItem::from_int(u16::MAX);
         assert!(matches!(item, StackItem::Integer(_)));
         if let StackItem::Integer(value) = item {
             assert_eq!(value, BigInt::from(u16::MAX));
         }
 
         // Test signed integer
-        let item = StackItem::Integer(BigInt::from(i32::MAX));
+        let item = StackItem::from_int(i32::MAX);
         assert!(matches!(item, StackItem::Integer(_)));
         if let StackItem::Integer(value) = item {
             assert_eq!(value, BigInt::from(i32::MAX));
         }
 
         // Test unsigned integer
-        let item = StackItem::Integer(BigInt::from(u32::MAX));
+        let item = StackItem::from_int(u32::MAX);
         assert!(matches!(item, StackItem::Integer(_)));
         if let StackItem::Integer(value) = item {
             assert_eq!(value, BigInt::from(u32::MAX));
         }
 
         // Test signed long
-        let item = StackItem::Integer(BigInt::from(i64::MAX));
+        let item = StackItem::from_int(i64::MAX);
         assert!(matches!(item, StackItem::Integer(_)));
         if let StackItem::Integer(value) = item {
             assert_eq!(value, BigInt::from(i64::MAX));
         }
 
         // Test unsigned long
-        let item = StackItem::Integer(BigInt::from(u64::MAX));
+        let item = StackItem::from_int(u64::MAX);
         assert!(matches!(item, StackItem::Integer(_)));
         if let StackItem::Integer(value) = item {
             assert_eq!(value, BigInt::from(u64::MAX));
         }
 
         // Test BigInteger
-        let item = StackItem::Integer(BigInt::from(-1));
+        let item = StackItem::from_int(-1);
         assert!(matches!(item, StackItem::Integer(_)));
         if let StackItem::Integer(value) = item {
             assert_eq!(value, BigInt::from(-1));
@@ -151,7 +151,7 @@ mod tests {
             "Boolean deep copy should be equal"
         );
 
-        let int_item = StackItem::Integer(BigInt::from(42));
+        let int_item = StackItem::from_int(42);
         let int_copy = int_item.deep_clone();
         assert!(
             int_item.equals(&int_copy).unwrap(),
@@ -181,7 +181,7 @@ mod tests {
         // Test 3: Array without Buffer - deep copies should be equal
         let array_no_buffer = StackItem::from_array(vec![
             StackItem::Boolean(true),
-            StackItem::Integer(BigInt::from(1)),
+            StackItem::from_int(1),
             StackItem::from_byte_string(vec![1u8]),
             StackItem::Null,
         ]);
@@ -193,9 +193,9 @@ mod tests {
 
         // Test 4: Struct - deep copies should be equal (when containing only value types)
         let struct_item = StackItem::from_struct(vec![
-            StackItem::Integer(BigInt::from(1)),
-            StackItem::Integer(BigInt::from(2)),
-            StackItem::Integer(BigInt::from(3)),
+            StackItem::from_int(1),
+            StackItem::from_int(2),
+            StackItem::from_int(3),
         ]);
         let struct_copy = struct_item.deep_clone();
         assert!(
@@ -206,12 +206,12 @@ mod tests {
         // Test 5: Map - deep copies should be equal (when containing only value types)
         let mut map = BTreeMap::new();
         map.insert(
-            StackItem::Integer(BigInt::from(0)),
-            StackItem::Integer(BigInt::from(1)),
+            StackItem::from_int(0),
+            StackItem::from_int(1),
         );
         map.insert(
-            StackItem::Integer(BigInt::from(2)),
-            StackItem::Integer(BigInt::from(3)),
+            StackItem::from_int(2),
+            StackItem::from_int(3),
         );
         let map_item = StackItem::from_map(map);
         let map_copy = map_item.deep_clone();
@@ -223,7 +223,7 @@ mod tests {
         // Test 6: Complex nested structure with Buffer - NOT equal due to Buffer reference semantics
         let mut map2 = BTreeMap::new();
         map2.insert(
-            StackItem::Integer(BigInt::from(0)),
+            StackItem::from_int(0),
             StackItem::from_buffer(vec![1u8]),
         );
         let array_with_buffer = StackItem::from_array(vec![
@@ -249,9 +249,9 @@ mod tests {
         assert!(!StackItem::Boolean(false).as_bool().unwrap());
 
         // Test integer values
-        assert!(StackItem::Integer(BigInt::from(1)).as_bool().unwrap());
-        assert!(!StackItem::Integer(BigInt::from(0)).as_bool().unwrap());
-        assert!(StackItem::Integer(BigInt::from(-1)).as_bool().unwrap());
+        assert!(StackItem::from_int(1).as_bool().unwrap());
+        assert!(!StackItem::from_int(0).as_bool().unwrap());
+        assert!(StackItem::from_int(-1).as_bool().unwrap());
 
         assert!(StackItem::from_byte_string(vec![1u8]).as_bool().unwrap());
         assert!(!StackItem::from_byte_string(Vec::<u8>::new())
@@ -284,7 +284,7 @@ mod tests {
 
         // Test map values
         let mut map = BTreeMap::new();
-        map.insert(StackItem::Integer(BigInt::from(0)), StackItem::Null);
+        map.insert(StackItem::from_int(0), StackItem::Null);
         assert!(StackItem::from_map(map).as_bool().unwrap());
         assert!(StackItem::from_map(BTreeMap::new()).as_bool().unwrap());
     }
@@ -298,11 +298,11 @@ mod tests {
 
         // Test integer values
         assert_eq!(
-            StackItem::Integer(BigInt::from(42)).as_int().unwrap(),
+            StackItem::from_int(42).as_int().unwrap(),
             BigInt::from(42)
         );
         assert_eq!(
-            StackItem::Integer(BigInt::from(-42)).as_int().unwrap(),
+            StackItem::from_int(-42).as_int().unwrap(),
             BigInt::from(-42)
         );
 
@@ -349,15 +349,15 @@ mod tests {
 
         // Test integer to bytes
         assert_eq!(
-            StackItem::Integer(BigInt::from(0)).as_bytes().unwrap(),
+            StackItem::from_int(0).as_bytes().unwrap(),
             Vec::<u8>::new()
         );
         assert_eq!(
-            StackItem::Integer(BigInt::from(1)).as_bytes().unwrap(),
+            StackItem::from_int(1).as_bytes().unwrap(),
             vec![1u8]
         );
         assert_eq!(
-            StackItem::Integer(BigInt::from(256)).as_bytes().unwrap(),
+            StackItem::from_int(256).as_bytes().unwrap(),
             vec![0u8, 1u8]
         );
 
@@ -380,29 +380,29 @@ mod tests {
     #[test]
     fn test_array() {
         let array = StackItem::from_array(vec![
-            StackItem::Integer(BigInt::from(1)),
-            StackItem::Integer(BigInt::from(2)),
-            StackItem::Integer(BigInt::from(3)),
+            StackItem::from_int(1),
+            StackItem::from_int(2),
+            StackItem::from_int(3),
         ]);
 
         let array_ref = array.as_array().unwrap();
         assert_eq!(array_ref.len(), 3);
-        assert_eq!(array_ref[0], StackItem::Integer(BigInt::from(1)));
-        assert_eq!(array_ref[1], StackItem::Integer(BigInt::from(2)));
-        assert_eq!(array_ref[2], StackItem::Integer(BigInt::from(3)));
+        assert_eq!(array_ref[0], StackItem::from_int(1));
+        assert_eq!(array_ref[1], StackItem::from_int(2));
+        assert_eq!(array_ref[2], StackItem::from_int(3));
 
         let struct_item = StackItem::from_struct(vec![
-            StackItem::Integer(BigInt::from(4)),
-            StackItem::Integer(BigInt::from(5)),
+            StackItem::from_int(4),
+            StackItem::from_int(5),
         ]);
 
         let struct_ref = struct_item.as_array().unwrap();
         assert_eq!(struct_ref.len(), 2);
-        assert_eq!(struct_ref[0], StackItem::Integer(BigInt::from(4)));
-        assert_eq!(struct_ref[1], StackItem::Integer(BigInt::from(5)));
+        assert_eq!(struct_ref[0], StackItem::from_int(4));
+        assert_eq!(struct_ref[1], StackItem::from_int(5));
 
         // Test non-array should fail
-        assert!(StackItem::Integer(BigInt::from(1)).as_array().is_err());
+        assert!(StackItem::from_int(1).as_array().is_err());
     }
 
     /// Test map operations (matches C# TestMap)
@@ -410,11 +410,11 @@ mod tests {
     fn test_map() {
         let mut map = BTreeMap::new();
         map.insert(
-            StackItem::Integer(BigInt::from(1)),
+            StackItem::from_int(1),
             StackItem::from_byte_string("one"),
         );
         map.insert(
-            StackItem::Integer(BigInt::from(2)),
+            StackItem::from_int(2),
             StackItem::from_byte_string("two"),
         );
 
@@ -423,15 +423,15 @@ mod tests {
 
         assert_eq!(map_ref.len(), 2);
         assert_eq!(
-            map_ref.get(&StackItem::Integer(BigInt::from(1))),
+            map_ref.get(&StackItem::from_int(1)),
             Some(&StackItem::from_byte_string("one"))
         );
         assert_eq!(
-            map_ref.get(&StackItem::Integer(BigInt::from(2))),
+            map_ref.get(&StackItem::from_int(2)),
             Some(&StackItem::from_byte_string("two"))
         );
 
         // Test non-map should fail
-        assert!(StackItem::Integer(BigInt::from(1)).as_map().is_err());
+        assert!(StackItem::from_int(1).as_map().is_err());
     }
 }
