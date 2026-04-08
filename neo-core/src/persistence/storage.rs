@@ -71,8 +71,8 @@ impl Default for StorageConfig {
             compression_algorithm: CompressionAlgorithm::Lz4,
             compaction_strategy: CompactionStrategy::Level,
             max_open_files: Some(1000),
-            cache_size: Some(64 * 1024 * 1024),
-            write_buffer_size: Some(16 * 1024 * 1024),
+            cache_size: Some(512 * 1024 * 1024),      // 512MB block cache
+            write_buffer_size: Some(256 * 1024 * 1024), // 256MB write buffer (matches build_db_options)
             enable_statistics: false,
             read_only: false,
         }
