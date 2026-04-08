@@ -161,7 +161,7 @@ struct RocksDbStore {
     db: Arc<DB>,
     on_new_snapshot: Arc<RwLock<Vec<OnNewSnapshotDelegate>>>,
     batch_committer: Arc<BatchCommitter>,
-    batch_config: WriteBatchConfig,
+    batch_config: RwLock<WriteBatchConfig>,
     /// Optional read cache for frequently accessed keys
     read_cache: Option<Arc<StorageReadCache>>,
     /// Read-ahead configuration
@@ -211,7 +211,7 @@ impl RocksDbStore {
             db,
             on_new_snapshot: Arc::new(RwLock::new(Vec::new())),
             batch_committer,
-            batch_config,
+            batch_config: RwLock::new(batch_config),
             read_cache,
             read_ahead_config,
         })
@@ -467,7 +467,7 @@ impl Clone for RocksDbStore {
             db: self.db.clone(),
             on_new_snapshot: Arc::new(RwLock::new(Vec::new())),
             batch_committer: Arc::clone(&self.batch_committer),
-            batch_config: self.batch_config,
+            batch_config: RwLock::new(*self.batch_config.read()),
             read_cache: self.read_cache.clone(),
             read_ahead_config: self.read_ahead_config,
         }
@@ -843,10 +843,12 @@ impl IStoreSnapshot for RocksDbSnapshot {
         let _start = Instant::now();
 
         let mut write_opts = WriteOptions::default();
-        write_opts.set_sync(self.store.batch_config.sync_on_flush);
-        if self.store.batch_config.disable_wal {
+        let batch_config = self.store.batch_config.read();
+        write_opts.set_sync(batch_config.sync_on_flush);
+        if batch_config.disable_wal {
             write_opts.disable_wal(true);
         }
+        drop(batch_config);
 
         if let Err(err) = self.db.write_opt(batch, &write_opts) {
             let mut batch_guard = self.write_batch.lock();
@@ -876,23 +878,27 @@ impl IStoreSnapshot for RocksDbSnapshot {
 impl RocksDbStore {
     /// Enables fast sync mode optimizations (disable WAL, reduce fsync).
     pub fn enable_fast_sync_mode(&self) {
-        let mut opts = Options::default();
-        opts.set_disable_auto_compactions(true);
+        // Switch to high-throughput batch config (disable WAL, no fsync)
+        *self.batch_config.write() = WriteBatchConfig::high_throughput();
+
         if let Err(err) = self.db.set_options(&[("disable_auto_compactions", "true")]) {
             warn!(target: "neo", error = %err, "failed to disable auto compactions");
         }
-        debug!(target: "neo", "enabled fast sync mode optimizations");
+        debug!(target: "neo", "enabled fast sync mode optimizations (WAL disabled, auto compaction disabled)");
     }
 
     /// Disables fast sync mode optimizations.
     pub fn disable_fast_sync_mode(&self) {
+        // Restore balanced batch config (WAL enabled)
+        *self.batch_config.write() = WriteBatchConfig::balanced();
+
         if let Err(err) = self
             .db
             .set_options(&[("disable_auto_compactions", "false")])
         {
             warn!(target: "neo", error = %err, "failed to enable auto compactions");
         }
-        debug!(target: "neo", "disabled fast sync mode optimizations");
+        debug!(target: "neo", "disabled fast sync mode optimizations (WAL restored)");
     }
 
     /// Force flush all memtables to disk.
