@@ -212,18 +212,41 @@ impl Block {
     /// Verifies all transactions in the block using full validation (state-independent
     /// and state-dependent) against the current ledger snapshot.
     fn verify_transactions(&self, settings: &ProtocolSettings, store_cache: &StoreCache) -> bool {
+        use rayon::prelude::*;
+
+        // Phase 1: parallel state-independent verification (includes signatures).
+        // This is pure computation with no shared mutable state.
+        let block_index = self.header.index();
+        let failed = self.transactions
+            .par_iter()
+            .enumerate()
+            .find_any(|(_, tx)| tx.verify_state_independent(settings) != VerifyResult::Succeed);
+
+        if let Some((index, tx)) = failed {
+            tracing::warn!(
+                target: "neo::block",
+                block_index,
+                tx_index = index,
+                tx_hash = %tx.hash(),
+                result = ?tx.verify_state_independent(settings),
+                "Transaction failed state-independent verification"
+            );
+            return false;
+        }
+
+        // Phase 2: sequential state-dependent verification (needs shared context).
         let snapshot = store_cache.data_cache();
         let mut context = TransactionVerificationContext::new();
         for (index, tx) in self.transactions.iter().enumerate() {
-            let result = tx.verify(settings, snapshot, Some(&context), &[]);
+            let result = tx.verify_state_dependent(settings, snapshot, Some(&context), &[]);
             if result != VerifyResult::Succeed {
                 tracing::warn!(
                     target: "neo::block",
-                    block_index = self.header.index(),
+                    block_index,
                     tx_index = index,
                     tx_hash = %tx.hash(),
                     result = ?result,
-                    "Transaction failed verification"
+                    "Transaction failed state-dependent verification"
                 );
                 return false;
             }
