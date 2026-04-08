@@ -23,7 +23,7 @@ impl ValidatorAttribute for MaxLengthAttribute {
             StackItem::Boolean(_) => 1,
             StackItem::Integer(_) => item.as_bytes().map(|bytes| bytes.len()).unwrap_or(0),
             StackItem::ByteString(bytes) => bytes.len(),
-            StackItem::Buffer(buffer) => buffer.data().len(),
+            StackItem::Buffer(buffer) => buffer.len(),
             StackItem::Array(array) => array.len(),
             StackItem::Struct(struct_item) => struct_item.len(),
             StackItem::Map(map) => map.len(),

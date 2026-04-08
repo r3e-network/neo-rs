@@ -38,7 +38,7 @@ impl ValidatorAttribute for MaxLengthValidator {
                 "ByteString exceeds maximum length of {}",
                 self.max_length
             )),
-            StackItem::Buffer(buffer) if buffer.data().len() > self.max_length => Err(format!(
+            StackItem::Buffer(buffer) if buffer.len() > self.max_length => Err(format!(
                 "Buffer exceeds maximum length of {}",
                 self.max_length
             )),

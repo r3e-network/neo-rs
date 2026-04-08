@@ -298,7 +298,7 @@ impl LedgerContract {
     {
         let key = block_hash_storage_key(self.id, index);
         if let Some(item) = snapshot.try_get(&key) {
-            let bytes = item.get_value();
+            let bytes = item.value_bytes();
             let hash = UInt256::from_bytes(&bytes)
                 .map_err(|e| Error::invalid_data(format!("Invalid block hash bytes: {e}")))?;
             return Ok(Some(hash));
