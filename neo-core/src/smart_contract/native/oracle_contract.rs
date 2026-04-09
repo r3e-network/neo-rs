@@ -889,6 +889,14 @@ impl OracleContract {
             ],
         )?;
 
+        // Burn the pre-deposited GAS from the Oracle contract.
+        // Matches C# Neo Oracle.Finish(): GAS.Burn(engine, Hash, request.GasForResponse)
+        GasToken::new().burn(
+            engine,
+            &self.hash,
+            &num_bigint::BigInt::from(request.gas_for_response),
+        )?;
+
         Ok(Vec::new())
     }
 
