@@ -2217,6 +2217,7 @@ dependencies = [
  "chrono",
  "cipher",
  "criterion",
+ "dashmap 5.5.3",
  "derive_more",
  "dirs",
  "futures",

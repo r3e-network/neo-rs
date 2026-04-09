@@ -330,12 +330,9 @@ impl OracleContract {
         let callback = String::from_utf8(args[2].clone())
             .map_err(|_| Error::invalid_operation("Invalid callback"))?;
         let user_data = args[3].clone();
-        let gas_for_response = i64::from_le_bytes(
-            args[4]
-                .as_slice()
-                .try_into()
-                .map_err(|_| Error::invalid_operation("Invalid gas amount"))?,
-        );
+        let gas_for_response = num_bigint::BigInt::from_signed_bytes_le(&args[4])
+            .to_i64()
+            .ok_or_else(|| Error::invalid_operation("Invalid gas amount: out of i64 range"))?;
 
         if url.len() > self.config.max_url_length {
             return Err(Error::invalid_operation("URL too long"));
