@@ -15,7 +15,7 @@ impl NeoToken {
             return false;
         }
         let count_u32 = u32::try_from(committee_members_count).unwrap_or(u32::MAX);
-        height % count_u32 == count_u32 - 1
+        height % count_u32 == 0
     }
 
     /// Attempts to read the current committee from the snapshot-backed storage used by the
