@@ -96,6 +96,17 @@ impl NativeRegistry {
         // Register standard native contracts
         registry.register_standard_contracts();
 
+        // Sort by ascending contract ID to match C# Neo's SortedDictionary<int, NativeContract>
+        // which iterates contracts in ID order: -9, -8, -7, -6, -5, -4, -3, -2, -1.
+        // This determines the execution order during OnPersist and PostPersist.
+        registry.contract_order.sort_by_key(|hash| {
+            registry
+                .contracts
+                .get(hash)
+                .map(|c| c.id())
+                .unwrap_or(0)
+        });
+
         registry
     }
 
@@ -237,20 +248,21 @@ mod tests {
             .map(|contract| contract.name().to_string())
             .collect();
 
-        // Keep this order aligned with neo-project/neo NativeContract.Contracts.
+        // Matches C# Neo's SortedDictionary<int, NativeContract> — ascending by contract ID.
+        // This is the execution order for OnPersist and PostPersist.
         let expected = vec![
-            "ContractManagement".to_string(),
-            "StdLib".to_string(),
-            "CryptoLib".to_string(),
-            "LedgerContract".to_string(),
-            "NeoToken".to_string(),
-            "GasToken".to_string(),
-            "PolicyContract".to_string(),
-            "RoleManagement".to_string(),
-            "OracleContract".to_string(),
-            "Notary".to_string(),
-            "Treasury".to_string(),
-            "TokenManagement".to_string(),
+            "TokenManagement".to_string(),  // -12
+            "Treasury".to_string(),          // -11
+            "Notary".to_string(),            // -10
+            "OracleContract".to_string(),    // -9
+            "RoleManagement".to_string(),    // -8
+            "PolicyContract".to_string(),    // -7
+            "GasToken".to_string(),          // -6
+            "NeoToken".to_string(),          // -5
+            "LedgerContract".to_string(),    // -4
+            "CryptoLib".to_string(),         // -3
+            "StdLib".to_string(),            // -2
+            "ContractManagement".to_string(), // -1
         ];
 
         assert_eq!(names, expected);
