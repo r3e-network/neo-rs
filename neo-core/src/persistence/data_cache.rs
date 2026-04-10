@@ -1054,17 +1054,6 @@ impl DataCache {
         state.change_set.clear();
     }
 
-    /// Resets the cache for reuse, clearing all tracked entries while retaining
-    /// allocated capacity. Much cheaper than drop + new for repeated use within
-    /// a block's transaction loop.
-    pub fn reset(&self) {
-        let mut state = self.state.write();
-        state.dictionary.clear();
-        state.change_set.clear();
-        drop(state);
-        *self.pattern_tracker.write() = AccessPatternTracker::new();
-    }
-
     /// Gets all tracked items for persistence.
     pub fn tracked_items(&self) -> Vec<(StorageKey, Trackable)> {
         let state = self.state.read();

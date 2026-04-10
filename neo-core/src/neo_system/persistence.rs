@@ -294,12 +294,6 @@ impl NeoSystem {
                 LedgerTransactionStates::new(Vec::<PersistedTransactionState>::new())
             });
 
-        let tx_snapshot = Arc::new(DataCache::new_with_config(
-            false,
-            Some(Arc::clone(&tx_store_get)),
-            Some(Arc::clone(&tx_store_find)),
-            tx_cache_config,
-        ));
         for tx in &ledger_block.transactions {
             let tx_hash = tx.hash();
             set_storage_watch_context(
@@ -312,7 +306,12 @@ impl NeoSystem {
             } else {
                 None
             };
-            tx_snapshot.reset();
+            let tx_snapshot = Arc::new(DataCache::new_with_config(
+                false,
+                Some(Arc::clone(&tx_store_get)),
+                Some(Arc::clone(&tx_store_find)),
+                tx_cache_config,
+            ));
             let container: Arc<dyn crate::IVerifiable> = Arc::new(tx.clone());
             let mut tx_engine = ApplicationEngine::new_with_preloaded_native(
                 TriggerType::Application,
