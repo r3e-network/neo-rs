@@ -2,64 +2,13 @@ use super::*;
 
 impl InteropHost for ApplicationEngine {
     fn invoke_syscall(&mut self, engine: &mut ExecutionEngine, hash: u32) -> VmResult<()> {
-        let diag_block = self.persisting_block().map(|b| b.index()).unwrap_or(u32::MAX);
-        let diag = diag_block == 152684;
-        if diag {
-            let trigger = format!("{:?}", self.trigger());
-            let script_hash = self.current_script_hash
-                .as_ref()
-                .map(|h| format!("{h}"))
-                .unwrap_or_else(|| "?".to_string());
-            let ip = engine.current_context()
-                .map(|c| c.instruction_pointer())
-                .unwrap_or(0);
-            let stack_depth = engine.current_context()
-                .map(|c| c.evaluation_stack().len())
-                .unwrap_or(0);
-            let ref_count = engine.reference_counter().count();
-            tracing::warn!(
-                target: "neo",
-                block_index = diag_block,
-                syscall_hash = format!("0x{hash:08x}"),
-                trigger = %trigger,
-                script = %script_hash,
-                ip,
-                stack_depth,
-                ref_count,
-                "SYSCALL-TRACE: invoke"
-            );
-        }
-
         if let Some(entry) = self.interop_handlers.get(&hash).copied() {
             if entry.price > 0 {
                 self.add_cpu_fee(entry.price)
                     .map_err(map_core_error_to_vm_error)?;
             }
-            let result = (entry.handler)(self, engine);
-            if diag {
-                let ok = result.is_ok();
-                let err_msg = result.as_ref().err().map(|e| format!("{e:?}")).unwrap_or_default();
-                let ref_count = engine.reference_counter().count();
-                tracing::warn!(
-                    target: "neo",
-                    block_index = diag_block,
-                    syscall_hash = format!("0x{hash:08x}"),
-                    ok,
-                    ref_count,
-                    err = %err_msg,
-                    "SYSCALL-TRACE: result"
-                );
-            }
-            result
+            (entry.handler)(self, engine)
         } else {
-            if diag {
-                tracing::warn!(
-                    target: "neo",
-                    block_index = 82623,
-                    syscall_hash = format!("0x{hash:08x}"),
-                    "SYSCALL-TRACE: handler NOT registered!"
-                );
-            }
             Err(VmError::InteropService {
                 service: format!("0x{hash:08x}"),
                 error: "Interop handler not registered".to_string(),
@@ -129,24 +78,6 @@ impl InteropHost for ApplicationEngine {
                 _ => !std::sync::Arc::ptr_eq(&current_ctx.script_arc(), &context.script_arc()),
             }
         });
-
-        // DIAG: trace exceptions on cross-contract unload during diagnostic blocks
-        let diag_block = self.persisting_block().map(|b| b.index()).unwrap_or(0);
-        if is_cross_contract_unload && (82620..=82630).contains(&diag_block) {
-            let has_exception = engine.uncaught_exception().is_some();
-            let exception_str = engine.uncaught_exception()
-                .map(|e| format!("{:?}", e))
-                .unwrap_or_else(|| "None".to_string());
-            tracing::warn!(
-                target: "neo",
-                block_index = diag_block,
-                unloaded_hash = ?unloaded_script_hash,
-                has_exception,
-                exception = %exception_str,
-                notif_count = notification_count,
-                "DIAG: cross-contract unload"
-            );
-        }
 
         // Phase 2: Commit snapshot and propagate state to caller (cross-contract only)
         if is_cross_contract_unload {
@@ -226,69 +157,6 @@ impl InteropHost for ApplicationEngine {
         if opcode_price > 0 {
             self.add_cpu_fee(opcode_price)
                 .map_err(map_core_error_to_vm_error)?;
-        }
-
-        // DIAG: trace opcodes for the unlock contract (hash 0x385501cb...) at block 82623.
-        // Only trace SYSCALL, THROW, and conditional jumps to keep output manageable.
-        let diag_block = self.persisting_block().map(|b| b.index()).unwrap_or(0);
-        if diag_block == 82623 {
-            if let Some(hash) = &self.current_script_hash {
-                if hash.to_bytes()[..4] == [0xcb, 0x56, 0x94, 0x53] {
-                    let op = instruction.opcode as u8;
-                    // Log SYSCALL, THROW, ABORT, JMPIF*, JMPIFNOT*, EQUAL, NOTEQUAL, NZ
-                    // Also log ALL opcodes to get complete execution trace
-                    let trace = matches!(op,
-                        0x41 | // SYSCALL
-                        0x3A | // THROW
-                        0x3B | // ABORT
-                        0x21 | 0x22 | // JMPIF, JMPIF_L
-                        0x23 | 0x24 | // JMPIFNOT, JMPIFNOT_L
-                        0x25 | 0x26 | // JMPEQ, JMPEQ_L
-                        0x27 | 0x28 | // JMPNE, JMPNE_L
-                        0x97 |        // EQUAL
-                        0x98 |        // NOTEQUAL
-                        0xB1          // NZ
-                    );
-                    if trace {
-                        let ip = _engine.current_context()
-                            .map(|c| c.instruction_pointer())
-                            .unwrap_or(0);
-                        let stack_depth = _engine.current_context()
-                            .map(|c| c.evaluation_stack().len())
-                            .unwrap_or(0);
-                        // At EQUAL/NOTEQUAL opcodes, dump the top 2 stack items
-                        let stack_vals = if (op == 0x97 || op == 0x98) {
-                            if let Some(ctx) = _engine.current_context() {
-                                let items: Vec<String> = (0..2).map(|i| {
-                                    ctx.evaluation_stack().peek(i)
-                                        .map(|item| {
-                                            let t = item.stack_item_type();
-                                            let v = item.as_bytes()
-                                                .map(|b| hex::encode(&b))
-                                                .unwrap_or_else(|_| format!("{:?}", item));
-                                            format!("type={t:?} val={v}")
-                                        })
-                                        .unwrap_or_else(|_| "?".to_string())
-                                }).collect();
-                                format!(" TOP=[{}] SECOND=[{}]", items[0], items[1])
-                            } else {
-                                String::new()
-                            }
-                        } else {
-                            String::new()
-                        };
-                        tracing::warn!(
-                            target: "neo",
-                            block_index = 82623,
-                            ip,
-                            opcode = format!("0x{:02x}", op),
-                            stack_depth,
-                            extra = %stack_vals,
-                            "DIAG: unlock opcode"
-                        );
-                    }
-                }
-            }
         }
 
         if let Some(diagnostic) = self.diagnostic.as_mut() {

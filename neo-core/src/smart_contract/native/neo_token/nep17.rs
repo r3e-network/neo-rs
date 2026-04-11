@@ -88,9 +88,8 @@ impl NeoToken {
         // Validate amount is non-negative
         PermissionValidator::validate_non_negative(&amount, "Transfer amount")?;
 
-        let caller = engine
-            .current_script_hash()
-            .unwrap_or_else(|| engine.calling_script_hash());
+        // C# parity: FungibleToken.Transfer uses engine.CallingScriptHash
+        let caller = engine.calling_script_hash();
         if from != caller {
             let witnessed = engine.check_witness_hash(&from)?;
             if !witnessed {

@@ -140,6 +140,10 @@ fn should_trace_fault(block_index: u32, _tx_hash: &UInt256) -> bool {
     }
 }
 
+fn should_trace_block(block_index: u32) -> bool {
+    crate::smart_contract::application_engine::ApplicationEngine::should_trace_block(block_index)
+}
+
 fn saturating_ns(duration: std::time::Duration) -> u64 {
     let nanos = duration.as_nanos();
     nanos.min(u128::from(u64::MAX)) as u64
@@ -340,8 +344,8 @@ impl NeoSystem {
                 None
             };
             let vm_state = tx_engine.execute_allow_fault();
-            // Diagnostic: log execution details for blocks near divergence point
-            if (82620..=82630).contains(&ledger_block.index()) || ledger_block.index() == 152684 {
+            // Diagnostic: log execution details for traced blocks (NEO_TRACE_BLOCK env var)
+            if should_trace_block(ledger_block.index()) {
                 let gas_consumed = tx_engine.gas_consumed();
                 let notif_count = tx_engine.notifications().len();
                 let exception = tx_engine.fault_exception().map(|s| s.to_string());
@@ -353,17 +357,29 @@ impl NeoSystem {
                     gas_consumed,
                     notif_count,
                     exception = ?exception,
-                    "DIAG: tx execution result"
+                    "TRACE: tx execution result"
                 );
-                for (i, notif) in tx_engine.notifications().iter().enumerate() {
+                for (idx, notif) in tx_engine.notifications().iter().enumerate() {
+                    let state_items: Vec<String> = notif
+                        .state
+                        .iter()
+                        .map(|item| match item {
+                            neo_vm::StackItem::Null => "null".to_string(),
+                            neo_vm::StackItem::Boolean(b) => format!("bool:{}", b),
+                            neo_vm::StackItem::Integer(n) => format!("int:{}", n),
+                            neo_vm::StackItem::ByteString(b) => format!("bytes:0x{}", hex::encode(b)),
+                            _ => format!("{:?}", item.stack_item_type()),
+                        })
+                        .collect();
                     warn!(
                         target: "neo",
                         block_index = ledger_block.index(),
                         %tx_hash,
-                        notif_idx = i,
+                        notif_idx = idx,
                         contract = %notif.script_hash,
                         event = %notif.event_name,
-                        "DIAG: notification"
+                        state = ?state_items,
+                        "TRACE: notification"
                     );
                 }
             }

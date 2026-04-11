@@ -231,21 +231,6 @@ fn storage_get_handler(app: &mut ApplicationEngine, _engine: &mut ExecutionEngin
         .storage_get(context, key.clone())
         .map_err(|e| map_storage_error("System.Storage.Get", e))?;
 
-    // DIAG: trace storage reads for the unlock contract (ID=3) at diagnostic blocks
-    let diag_block = app.persisting_block().map(|b| b.index()).unwrap_or(0);
-    if trace_context_id == 3 && (82620..=82630).contains(&diag_block) {
-        let key_hex = key.iter().map(|b| format!("{b:02x}")).collect::<String>();
-        let val_hex = value.as_ref().map(|v| v.iter().map(|b| format!("{b:02x}")).collect::<String>()).unwrap_or_else(|| "NULL".to_string());
-        tracing::warn!(
-            target: "neo",
-            block_index = diag_block,
-            contract_id = trace_context_id,
-            key = %key_hex,
-            value = %val_hex,
-            "DIAG: Storage.Get unlock contract"
-        );
-    }
-
     if trace_enabled {
         eprintln!(
             "trace storage.get: ctx_id={} readonly={} key_len={} key_prefix={} hit={} value_len={}",

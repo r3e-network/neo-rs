@@ -176,9 +176,10 @@ impl GasToken {
         // Validate amount is non-negative
         PermissionValidator::validate_non_negative(&amount, "Transfer amount")?;
 
-        let caller = engine
-            .current_script_hash()
-            .unwrap_or_else(|| engine.calling_script_hash());
+        // C# parity: FungibleToken.Transfer uses engine.CallingScriptHash, NOT
+        // CurrentScriptHash.  CallingScriptHash is the contract that invoked
+        // this native method; CurrentScriptHash is the native contract itself.
+        let caller = engine.calling_script_hash();
         let watched_from = Self::is_watched_account(&from);
         let watched_to = Self::is_watched_account(&to);
         let from_matches_caller = from == caller;

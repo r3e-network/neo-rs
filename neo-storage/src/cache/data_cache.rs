@@ -349,7 +349,9 @@ impl DataCache {
         let dict = self.dictionary.read();
         for (key, trackable) in dict.iter() {
             if let Some(prefix_key) = prefix {
-                if !key.key().starts_with(prefix_key.key()) {
+                // Must match contract ID AND key prefix (C# parity: Find filters
+                // by StorageKey which includes the contract ID).
+                if key.id != prefix_key.id || !key.key().starts_with(prefix_key.key()) {
                     continue;
                 }
             }

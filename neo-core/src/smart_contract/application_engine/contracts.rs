@@ -1,7 +1,33 @@
 use super::*;
 use crate::smart_contract::contract_basic_method::ContractBasicMethod;
+use std::sync::OnceLock;
+
+fn trace_block_range() -> Option<(u32, u32)> {
+    static RANGE: OnceLock<Option<(u32, u32)>> = OnceLock::new();
+    *RANGE.get_or_init(|| {
+        std::env::var("NEO_TRACE_BLOCK").ok().and_then(|raw| {
+            let trimmed = raw.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+            if let Some((start, end)) = trimmed.split_once('-') {
+                let start = start.trim().parse::<u32>().ok()?;
+                let end = end.trim().parse::<u32>().ok()?;
+                Some((start, end))
+            } else {
+                let block = trimmed.parse::<u32>().ok()?;
+                Some((block, block))
+            }
+        })
+    })
+}
 
 impl ApplicationEngine {
+    pub(crate) fn should_trace_block(block_idx: u32) -> bool {
+        trace_block_range()
+            .map(|(start, end)| block_idx >= start && block_idx <= end)
+            .unwrap_or(false)
+    }
     pub(super) fn fetch_contract(&mut self, hash: &UInt160) -> Result<ContractState> {
         if let Some(contract) = self.contracts.get(hash) {
             return Ok(contract.clone());
@@ -230,7 +256,7 @@ impl ApplicationEngine {
         args: Vec<StackItem>,
     ) -> Result<()> {
         let block_idx = self.persisting_block().map(|b| b.index()).unwrap_or(0);
-        let diag = (82620..=82630).contains(&block_idx);
+        let diag = Self::should_trace_block(block_idx);
 
         if method.starts_with('_') {
             return Err(Error::invalid_operation(format!(
@@ -241,7 +267,9 @@ impl ApplicationEngine {
 
         let contract = self.fetch_contract(contract_hash)?;
         if diag {
-            tracing::warn!(target: "neo", block_index = block_idx, %contract_hash, method, args_len = args.len(), "DIAG: call_contract_dynamic fetched contract");
+            let caller = self.get_calling_script_hash().map(|h| h.to_string()).unwrap_or_else(|| "none".to_string());
+            let current = self.current_script_hash().map(|h| h.to_string()).unwrap_or_else(|| "none".to_string());
+            tracing::warn!(target: "neo", block_index = block_idx, %contract_hash, method, args_len = args.len(), caller, current, "TRACE: call_contract_dynamic");
         }
         let method_descriptor = contract
             .manifest
@@ -249,11 +277,11 @@ impl ApplicationEngine {
             .get_method_ref(method, args.len())
             .cloned()
             .ok_or_else(|| {
+                let available: Vec<String> = contract.manifest.abi.methods.iter()
+                    .map(|m| format!("{}({})", m.name, m.parameters.len()))
+                    .collect();
                 if diag {
-                    let available: Vec<String> = contract.manifest.abi.methods.iter()
-                        .map(|m| format!("{}({})", m.name, m.parameters.len()))
-                        .collect();
-                    tracing::warn!(target: "neo", block_index = block_idx, %contract_hash, method, args_len = args.len(), ?available, "DIAG: method NOT FOUND in ABI");
+                    tracing::warn!(target: "neo", block_index = block_idx, %contract_hash, method, args_len = args.len(), ?available, "TRACE: method NOT FOUND in ABI");
                 }
                 Error::invalid_operation(format!(
                     "Method '{}' with {} parameter(s) doesn't exist in the contract {:?}.",
@@ -264,7 +292,7 @@ impl ApplicationEngine {
             })?;
 
         if diag {
-            tracing::warn!(target: "neo", block_index = block_idx, %contract_hash, method, offset = method_descriptor.offset, "DIAG: method found, calling internal");
+            tracing::warn!(target: "neo", block_index = block_idx, %contract_hash, method, offset = method_descriptor.offset, "TRACE: method found, calling internal");
         }
         let has_return_value = method_descriptor.return_type != ContractParameterType::Void;
         let context = self.call_contract_internal(

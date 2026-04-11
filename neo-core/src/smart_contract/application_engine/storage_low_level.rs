@@ -56,12 +56,15 @@ impl ApplicationEngine {
             } else if value_len <= old_len && value_len > 0 {
                 ((value_len.saturating_sub(1)) / 4) + 1
             } else if old_len == 0 {
-                value_len
+                // Matches C# else branch: (0-1)/4 + 1 + newLen - 0 = 1 + newLen
+                // (C# uses truncated integer division so (-1)/4 = 0)
+                value_len + 1
             } else {
                 ((old_len.saturating_sub(1)) / 4) + 1 + value_len.saturating_sub(old_len)
             }
         } else {
-            key.len() + value_len
+            // New storage item: C# uses key.Length + newValue.Length + 1
+            key.len() + value_len + 1
         };
 
         // Native contracts (negative contract IDs) are charged through native

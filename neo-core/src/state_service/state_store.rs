@@ -572,8 +572,6 @@ impl StateStore {
             return;
         }
 
-        info!(target: "neo", "initializing state trie from current blockchain storage");
-
         // Determine the current block height so the initial state root can be
         // recorded at the correct index.  Without this metadata subsequent
         // snapshots will start from an empty trie after restart, causing every
@@ -596,6 +594,18 @@ impl StateStore {
                 })
                 .unwrap_or(0)
         };
+
+        // When importing from genesis (block 0), the trie must start EMPTY and
+        // build incrementally as each block is persisted.  Pre-populating from
+        // current storage would include all future state, making every historical
+        // state root incorrect and causing contract storage divergence.
+        if current_height == 0 {
+            info!(target: "neo",
+                "blockchain at genesis — starting state trie empty for incremental computation");
+            return;
+        }
+
+        info!(target: "neo", "initializing state trie from current blockchain storage at height {}", current_height);
 
         let snapshot = blockchain_store.get_snapshot();
         let mut state_snap = self.get_snapshot();
