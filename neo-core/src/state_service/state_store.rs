@@ -472,6 +472,8 @@ pub struct StateStore {
     current_snapshot: RwLock<Option<StateSnapshot>>,
     state_snapshot: RwLock<Option<StateSnapshot>>,
     verifier: Option<StateRootVerifier>,
+    /// Reference state roots for validation (loaded from JSONL file).
+    reference_roots: HashMap<u32, UInt256>,
 }
 
 impl StateStore {
@@ -495,6 +497,7 @@ impl StateStore {
             current_snapshot: RwLock::new(Some(snapshot)),
             state_snapshot: RwLock::new(None),
             verifier,
+            reference_roots: HashMap::new(),
         }
     }
 
@@ -502,6 +505,62 @@ impl StateStore {
     pub fn new_in_memory() -> Self {
         let backend = Arc::new(MemoryStateStoreBackend::new());
         Self::new(backend, StateServiceSettings::default())
+    }
+
+    /// Loads reference state roots from a JSONL file for validation.
+    /// Each line: {"height": N, "roothash": "0x..."}
+    pub fn load_reference_roots(&mut self, path: &str) {
+        let file = match std::fs::File::open(path) {
+            Ok(f) => f,
+            Err(e) => {
+                warn!(target: "neo::state_service", "reference roots file not found: {path}: {e}");
+                return;
+            }
+        };
+        let reader = std::io::BufReader::new(file);
+        use std::io::BufRead;
+        let mut count = 0u32;
+        for line in reader.lines() {
+            let Ok(line) = line else { continue };
+            // Parse {"height": N, "roothash": "0x..."}
+            let Some(h_start) = line.find("\"height\"") else {
+                continue;
+            };
+            let h_rest = &line[h_start + 8..];
+            let h_rest = h_rest.trim_start_matches(|c: char| c == ':' || c.is_whitespace());
+            let h_end = h_rest
+                .find(|c: char| !c.is_ascii_digit())
+                .unwrap_or(h_rest.len());
+            let Ok(height) = h_rest[..h_end].parse::<u32>() else {
+                continue;
+            };
+            let Some(r_start) = line.find("\"roothash\"") else {
+                continue;
+            };
+            let r_rest = &line[r_start + 10..];
+            let Some(q1) = r_rest.find('"') else {
+                continue;
+            };
+            let r_rest = &r_rest[q1 + 1..];
+            let Some(q2) = r_rest.find('"') else {
+                continue;
+            };
+            let hash_str = r_rest[..q2].trim_start_matches("0x");
+            if hash_str.len() != 64 {
+                continue;
+            }
+            let Ok(hash_bytes) = hex::decode(hash_str) else {
+                continue;
+            };
+            // C# displays hashes in BE; convert to LE for UInt256
+            let mut le_bytes = hash_bytes;
+            le_bytes.reverse();
+            if let Ok(hash) = UInt256::from_bytes(&le_bytes) {
+                self.reference_roots.insert(height, hash);
+                count += 1;
+            }
+        }
+        info!(target: "neo::state_service", "loaded {count} reference state roots for validation");
     }
 
     /// Returns whether the state store keeps full historical state.
@@ -828,14 +887,27 @@ impl StateStore {
         height: u32,
         change_set: impl Iterator<Item = (StorageKey, StorageItem, TrackState)>,
     ) {
+        // Skip blocks that have already been processed (e.g., after node restart).
+        // The C# StateService does the same check: if local root index >= block height, skip.
+        if let Some(current_index) = self.local_root_index() {
+            if height <= current_index {
+                return;
+            }
+        }
+
         let mut state_snap = self.state_snapshot.write();
         *state_snap = Some(self.get_snapshot());
         if let Some(ref mut snapshot) = *state_snap {
             // Apply changes to trie
+            let mut put_count: u32 = 0;
+            let mut del_count: u32 = 0;
+            let mut _skip_count: u32 = 0;
+            let mut _ledger_skip: u32 = 0;
             for (key, item, state) in change_set {
                 // Match Neo.Plugins.StateService behaviour: exclude ledger contract storage
                 // from trie updates to keep state root consensus-compatible.
                 if key.id == LedgerContract::ID {
+                    _ledger_skip += 1;
                     continue;
                 }
                 let key_bytes = key.as_bytes();
@@ -851,6 +923,7 @@ impl StateStore {
                                 "trie.put failed"
                             );
                         }
+                        put_count += 1;
                     }
                     TrackState::Deleted => {
                         if let Err(e) = snapshot.trie.delete(&key_bytes) {
@@ -862,13 +935,49 @@ impl StateStore {
                                 "trie.delete failed"
                             );
                         }
+                        del_count += 1;
                     }
-                    TrackState::None | TrackState::NotFound => {}
+                    TrackState::None | TrackState::NotFound => {
+                        _skip_count += 1;
+                    }
                 }
             }
 
             // Get new root hash
             let root_hash = snapshot.trie.root_hash().unwrap_or_else(UInt256::zero);
+
+            // Validate against reference if available
+            if let Some(expected) = self.reference_roots.get(&height) {
+                if root_hash == *expected {
+                    if height % 5000 == 0 {
+                        tracing::info!(
+                            target: "neo::state_service",
+                            height,
+                            root_hash = %root_hash,
+                            "state root MATCH (checkpoint)"
+                        );
+                    }
+                } else {
+                    tracing::error!(
+                        target: "neo::state_service",
+                        height,
+                        computed = %root_hash,
+                        expected = %expected,
+                        put_count,
+                        del_count,
+                        "STATE ROOT MISMATCH"
+                    );
+                }
+            } else if height % 5000 == 0 {
+                tracing::info!(
+                    target: "neo::state_service",
+                    height,
+                    put_count,
+                    del_count,
+                    root_hash = %root_hash,
+                    "state root computed (no reference)"
+                );
+            }
 
             // Create and store state root
             let state_root = StateRoot::new_current(height, root_hash);

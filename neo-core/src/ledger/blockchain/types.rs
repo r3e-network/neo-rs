@@ -168,6 +168,11 @@ pub enum BlockchainCommand {
     RelayResult(RelayResult),
     /// Initialize the blockchain actor.
     Initialize,
+    /// Check unverified cache and persist any ready consecutive blocks.
+    /// Self-scheduled by the actor when blocks are parked in the unverified cache
+    /// to ensure persistence continues even when the specific InventoryBlock message
+    /// for the next-to-persist block is delayed in the mailbox.
+    DrainUnverified,
     /// Attach the system context.
     AttachSystem(Arc<NeoSystemContext>),
 }

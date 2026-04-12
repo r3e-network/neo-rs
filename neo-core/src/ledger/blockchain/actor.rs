@@ -4,9 +4,23 @@
 
 use super::*;
 
+/// Interval at which the blockchain actor checks its unverified cache for
+/// blocks that are ready to persist.  Without this timer, a stall can occur
+/// when the TaskManager stops sending InventoryBlock messages (e.g. because
+/// all blocks in the window are already in `received_block`) — the drain
+/// would never run again.
+const DRAIN_TIMER_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
+
 #[async_trait]
 impl Actor for Blockchain {
-    async fn pre_start(&mut self, _ctx: &mut ActorContext) -> ActorResult {
+    async fn pre_start(&mut self, ctx: &mut ActorContext) -> ActorResult {
+        ctx.schedule_tell_repeatedly_cancelable(
+            DRAIN_TIMER_INTERVAL,
+            DRAIN_TIMER_INTERVAL,
+            &ctx.self_ref(),
+            BlockchainCommand::DrainUnverified,
+            None,
+        );
         Ok(())
     }
 
@@ -39,6 +53,7 @@ impl Actor for Blockchain {
                     self.handle_headers(headers);
                 }
                 BlockchainCommand::Idle => self.handle_idle(ctx).await,
+                BlockchainCommand::DrainUnverified => self.handle_drain_unverified(ctx).await,
                 BlockchainCommand::FillCompleted => {}
                 BlockchainCommand::RelayResult(result) => self.handle_relay_result(result).await,
                 BlockchainCommand::Initialize => self.initialize().await,

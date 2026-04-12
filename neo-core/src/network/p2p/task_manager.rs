@@ -85,8 +85,11 @@ use tracing::{trace, warn};
 const TIMER_INTERVAL: Duration = Duration::from_secs(30);
 /// Timeout applied to in-flight inventory requests.
 const TASK_TIMEOUT: Duration = Duration::from_secs(60);
-/// Maximum concurrent tasks per peer.
-const MAX_CONCURRENT_TASKS: u32 = 20;
+/// Maximum concurrent sessions that may share the same inventory hash task.
+/// Matches C# `MaxConCurrentTasks = 3`.  Keeping this low ensures that only
+/// a few peers request headers concurrently; the rest fall through to block
+/// index requests, preventing header fetching from starving block sync.
+const MAX_CONCURRENT_TASKS: u32 = 3;
 /// Maximum number of sequential block heights requested in a single getblkbyidx round.
 ///
 /// Smaller batches reduce head-of-line blocking when a slow peer gets assigned
@@ -96,7 +99,7 @@ const MAX_BLOCK_INDEX_BATCH: u32 = 1000;
 ///
 /// This allows multiple peers to download disjoint height ranges concurrently
 /// without giving any single peer an excessively large assignment.
-const BLOCK_INDEX_WINDOW_MULTIPLIER: u32 = 40;
+const BLOCK_INDEX_WINDOW_MULTIPLIER: u32 = 10;
 const HEADER_TASK_HASH: UInt256 = UInt256::zero();
 struct SessionEntry {
     actor: ActorRef,
@@ -256,6 +259,9 @@ impl TaskManager {
                 self.decrement_index_task(*index);
             }
         }
+        // Re-evaluate all remaining sessions so blocks assigned to the
+        // disconnected peer can be re-requested from someone else.
+        self.request_tasks_all();
     }
 
     fn is_known_hash(&self, hash: &UInt256) -> bool {
@@ -399,16 +405,20 @@ impl TaskManager {
                 );
                 self.decrement_inv_task(&HEADER_TASK_HASH);
                 session.complete_inv_task(&HEADER_TASK_HASH);
-            } else {
-                return;
             }
+            // Do NOT return here — fall through to block requests.
+            // In fast sync the node is millions of headers behind; returning
+            // would starve block downloads until all headers are fetched.
         }
 
         if current_height < session.last_block_index {
+            // Find the first height that isn't already in-flight.
+            // We intentionally skip ONLY global_index_tasks (blocks being fetched
+            // by another session), NOT received_block.  Blocks in received_block
+            // have already been delivered to the blockchain actor so they don't
+            // need re-requesting, but they should NOT consume window slots.
             let mut start_height = current_height + 1;
-            while self.global_index_tasks.contains_key(&start_height)
-                || session.received_block.contains_key(&start_height)
-            {
+            while self.global_index_tasks.contains_key(&start_height) {
                 start_height = start_height.saturating_add(1);
                 if start_height > session.last_block_index {
                     break;
@@ -418,25 +428,23 @@ impl TaskManager {
             let global_window = MAX_BLOCK_INDEX_BATCH.saturating_mul(BLOCK_INDEX_WINDOW_MULTIPLIER);
             let limit_height = current_height.saturating_add(global_window);
 
-            let debug_global_index_tasks = self.global_index_tasks.len();
-            let debug_session_received = session.received_block.len();
-            let debug_session_index = session.index_tasks.len();
-            let debug_session_inv = session.inv_tasks.len();
-            trace!(
-                target: "neo",
-                actor = %actor.path(),
-                start_height = start_height,
-                limit_height = limit_height,
-                peer_height = session.last_block_index,
-                "block index request check"
-            );
+            if self.global_index_tasks.is_empty() {
+                tracing::info!(
+                    target: "neo",
+                    actor = %actor.path(),
+                    start_height = start_height,
+                    limit_height = limit_height,
+                    peer_height = session.last_block_index,
+                    current_height = current_height,
+                    "block index request — pipeline empty"
+                );
+            }
 
             if start_height <= session.last_block_index && start_height < limit_height {
                 let mut end_height = start_height;
                 while end_height < session.last_block_index
                     && end_height + 1 < limit_height
                     && !self.global_index_tasks.contains_key(&(end_height + 1))
-                    && !session.received_block.contains_key(&(end_height + 1))
                 {
                     end_height += 1;
                 }
@@ -728,7 +736,14 @@ impl TaskManager {
         let mut disconnect_peer = false;
 
         if let Some(block_payload) = block {
-            should_request = false;
+            // In C# should_request is false for blocks — the theory is that
+            // new requests will be triggered by PersistCompleted events.
+            // However, during fast sync blocks arrive faster than persistence
+            // can consume them, leaving long gaps where no new blocks are
+            // requested.  Setting should_request=true ensures immediate
+            // request chaining after each delivered block, keeping the download
+            // pipeline full.
+            should_request = true;
             let mut block_payload = block_payload;
             let index = block_payload.index();
             let incoming_hash = block_payload.hash();
@@ -881,6 +896,17 @@ impl TaskManager {
 
     fn prune_timeouts(&mut self) {
         let timeout = self.task_timeout;
+
+        // Periodic sync status — helps diagnose stalls.
+        tracing::info!(
+            target: "neo",
+            persisted_height = self.last_seen_persisted_index,
+            global_index_tasks = self.global_index_tasks.len(),
+            global_inv_tasks = self.global_inv_tasks.len(),
+            sessions = self.sessions.len(),
+            "task_manager timer tick"
+        );
+
         let session_paths: Vec<String> = self.sessions.keys().cloned().collect();
         for path in session_paths {
             self.with_session_mut(&path, |entry, this| {
@@ -893,6 +919,16 @@ impl TaskManager {
                 for index in expired_indexes {
                     this.decrement_index_task(index);
                 }
+
+                // Prune received_block entries at or below the persisted height.
+                // These blocks have already been persisted so keeping them around
+                // only prevents the start_height scan in request_tasks_entry from
+                // finding fresh ranges to request.
+                let persisted = this.last_seen_persisted_index;
+                entry
+                    .session
+                    .received_block
+                    .retain(|&idx, _| idx > persisted);
             });
         }
         self.request_tasks_all();

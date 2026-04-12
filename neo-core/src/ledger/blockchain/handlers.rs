@@ -366,6 +366,18 @@ impl Blockchain {
 
         let result = self.on_new_block(Arc::clone(&block), true).await;
 
+        // Opportunistically drain unverified cache inline. Scheduling via
+        // self_ref().tell() can silently fail when the mailbox is full (try_send),
+        // so we call handle_drain_unverified directly to ensure the next-to-persist
+        // block gets processed immediately.
+        if let Some(context) = &self.system_context {
+            let current_height = context.ledger().current_height();
+            let next_index = current_height.saturating_add(1);
+            if self._block_cache_unverified.contains_key(&next_index) {
+                self.handle_drain_unverified(ctx).await;
+            }
+        }
+
         if let Some(context) = &self.system_context {
             let inventory = if relay && result == VerifyResult::Succeed {
                 Some(RelayInventory::Block((*block).clone()))

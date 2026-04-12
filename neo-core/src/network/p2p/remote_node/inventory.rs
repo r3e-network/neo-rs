@@ -215,7 +215,31 @@ impl RemoteNode {
         mut block: Block,
         ctx: &mut crate::akka::ActorContext,
     ) -> crate::akka::ActorResult {
+        let block_idx = block.index();
         let hash = block.hash();
+        let current_height = self.system.current_block_index();
+
+        // Skip blocks already persisted (safe to consume hash — won't be needed)
+        if block_idx <= current_height {
+            self.known_hashes.try_add(hash);
+            return Ok(());
+        }
+
+        // Limit how far ahead we forward to the blockchain actor.
+        // Must match TaskManager's global window (MAX_BLOCK_INDEX_BATCH *
+        // BLOCK_INDEX_WINDOW_MULTIPLIER = 10,000) so blocks requested by
+        // multiple sessions are never silently filtered here.
+        // DON'T consume known_hashes so the block can be re-processed later
+        // when current_height advances and the block falls within the window.
+        let max_ahead = if self.system.is_fast_sync_mode() {
+            10_000u32
+        } else {
+            MAX_HASHES_COUNT as u32
+        };
+        if block_idx > current_height.saturating_add(max_ahead) {
+            return Ok(());
+        }
+
         if !self.known_hashes.try_add(hash) {
             return Ok(());
         }
@@ -223,44 +247,14 @@ impl RemoteNode {
         self.last_block_index = block.index();
         let block_clone = block.clone();
         self.notify_inventory_completed(hash, Some(block_clone), Some(block.index()), ctx);
-        let current_height = self.system.current_block_index();
-        if block.index() > current_height.saturating_add(MAX_HASHES_COUNT as u32) {
-            return Ok(());
-        }
-        trace!(
-            target: "neo",
-            index = block.index(),
-            hash = %hash,
-            "block received from remote node"
-        );
 
-        // Pre-verify block signatures off the actor thread.
-        // This is pure computation (ECDSA) with no state dependency.
-        let settings = self.system.settings();
         let block = Arc::new(block);
-        {
-            use rayon::prelude::*;
-            let txs = &block.transactions;
-            let failed = txs.par_iter().enumerate().find_any(|(_, tx)| {
-                tx.verify_state_independent(&settings) != crate::ledger::VerifyResult::Succeed
-            });
-            if let Some((idx, tx)) = failed {
-                tracing::debug!(
-                    target: "neo",
-                    block_index = block.index(),
-                    tx_index = idx,
-                    tx_hash = %tx.hash(),
-                    "block dropped: transaction failed pre-verification"
-                );
-                return Ok(());
-            }
-        }
 
         if let Err(err) = self
             .system
             .blockchain
             .tell_from_async(
-                BlockchainCommand::InventoryBlock { block, relay: true, pre_verified: true },
+                BlockchainCommand::InventoryBlock { block, relay: true, pre_verified: false },
                 Some(ctx.self_ref()),
             )
             .await

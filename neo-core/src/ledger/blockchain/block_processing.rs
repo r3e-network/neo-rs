@@ -4,6 +4,11 @@
 
 use super::*;
 
+/// Maximum blocks to persist in a single drain pass.
+/// After this many, the actor yields to process queued messages and
+/// self-schedules another DrainUnverified to continue the sequence.
+const DRAIN_BATCH_SIZE: usize = 50;
+
 impl Blockchain {
     pub(super) async fn on_new_block(&self, block: Arc<Block>, verify: bool) -> VerifyResult {
         let Some(context) = &self.system_context else {
@@ -22,6 +27,16 @@ impl Blockchain {
             .last()
             .map(|header| header.index())
             .unwrap_or(current_height);
+
+        if block_index % 10000 == 0 {
+            tracing::info!(
+                target: "neo",
+                block_index,
+                current_height,
+                header_height,
+                "on_new_block milestone"
+            );
+        }
 
         if block_index <= current_height {
             return VerifyResult::AlreadyExists;
@@ -46,11 +61,6 @@ impl Blockchain {
                 }
             } else {
                 let Some(mut header) = header_cache.get(block_index) else {
-                    tracing::warn!(
-                        target: "neo",
-                        index = block_index,
-                        "header entry missing for block"
-                    );
                     return VerifyResult::Invalid;
                 };
 
@@ -72,13 +82,15 @@ impl Blockchain {
             if self._block_cache.contains_key(&hash) {
                 return VerifyResult::AlreadyExists;
             }
-            if self._block_cache.len() >= MAX_BLOCK_CACHE_SIZE {
-                tracing::warn!(
-                    target: "neo",
-                    cache_size = self._block_cache.len(),
-                    "block cache full, rejecting new block"
-                );
-                return VerifyResult::Invalid;
+            if self._block_cache.len() >= MAX_BLOCK_CACHE_SIZE
+                && block_index != current_height + 1
+            {
+                // Cache is full but this isn't the next block to persist.
+                // Park it in the unverified cache so persist_block_sequence
+                // can pick it up later, and return OutOfMemory (not Invalid)
+                // so the task manager does not disconnect the peer.
+                self.add_unverified_block(Arc::clone(&block)).await;
+                return VerifyResult::OutOfMemory;
             }
             self._block_cache.insert(hash, Arc::clone(&block));
         }
@@ -87,6 +99,9 @@ impl Blockchain {
             if self.persist_block_sequence(Arc::clone(&block)).await {
                 VerifyResult::Succeed
             } else {
+                // Persistence failed — remove from block cache so the block
+                // can be retried if it arrives again (e.g. from another peer).
+                self._block_cache.remove(&hash);
                 VerifyResult::Invalid
             }
         } else {
@@ -105,11 +120,13 @@ impl Blockchain {
                 cache_size = self._block_cache_unverified.len(),
                 "unverified block cache full, dropping oldest entries"
             );
-            // Evict entries with the lowest block indices (oldest blocks).
+            // Evict entries with the highest block indices (furthest from persistence).
+            // Keeping the lowest indices ensures persist_block_sequence can drain
+            // consecutive blocks without gaps.
             let mut indices: Vec<u32> = self._block_cache_unverified.iter().map(|r| *r.key()).collect();
             indices.sort_unstable();
             let evict_count = self._block_cache_unverified.len() / 4; // remove 25%
-            for &idx in indices.iter().take(evict_count) {
+            for &idx in indices.iter().rev().take(evict_count) {
                 self._block_cache_unverified.remove(&idx);
             }
         }
@@ -121,6 +138,7 @@ impl Blockchain {
 
     async fn persist_block_sequence(&self, block: Arc<Block>) -> bool {
         let mut next_index = block.index().saturating_add(1);
+        let mut persisted_count = 1usize; // count the first block
 
         // Process the first block
         let first_succeeded = self.persist_block_via_system(&block);
@@ -133,19 +151,20 @@ impl Blockchain {
 
         // Process subsequent blocks from the unverified cache
         loop {
-            let maybe_block = {
-                if let Some(mut entry) = self._block_cache_unverified.get_mut(&next_index) {
-                    let next_block = entry.blocks.pop();
-                    let is_empty = entry.blocks.is_empty();
-                    drop(entry); // release shard lock before remove
-                    if is_empty {
-                        self._block_cache_unverified.remove(&next_index);
-                    }
-                    next_block
-                } else {
-                    None
-                }
-            };
+            // Batch limit: yield control back to the actor so queued messages
+            // (new InventoryBlock, headers, etc.) can be processed.
+            // A DrainUnverified will continue the sequence.
+            if persisted_count >= DRAIN_BATCH_SIZE {
+                tracing::debug!(
+                    target: "neo",
+                    persisted_count,
+                    next_index,
+                    "persist_block_sequence: batch limit reached, yielding to actor"
+                );
+                break;
+            }
+
+            let maybe_block = self.pop_from_unverified(next_index);
 
             let Some(next_block) = maybe_block else {
                 break;
@@ -155,6 +174,7 @@ impl Blockchain {
             if succeeded {
                 self.handle_persist_completed(PersistCompleted { block: Arc::clone(&next_block) })
                     .await;
+                persisted_count += 1;
             } else {
                 warn!(
                     target: "neo",
@@ -166,6 +186,100 @@ impl Blockchain {
             next_index = next_index.saturating_add(1);
         }
         true
+    }
+
+    /// Drain consecutive blocks from the unverified cache starting at current_height+1.
+    /// Self-schedules another DrainUnverified if more blocks remain after the batch limit.
+    /// This ensures persistence continues even when the specific InventoryBlock message
+    /// for the next block is delayed behind stale messages in the actor mailbox.
+    pub(super) async fn handle_drain_unverified(&self, ctx: &ActorContext) {
+        let Some(context) = &self.system_context else {
+            return;
+        };
+
+        let mut current_height = context.ledger().current_height();
+        let mut persisted = 0usize;
+
+        while persisted < DRAIN_BATCH_SIZE {
+            let next_index = current_height.saturating_add(1);
+            // Try unverified cache first, then fall back to block cache.
+            // Blocks may land in block_cache but miss the unverified cache
+            // if they arrived as current_height+1 but persistence was busy.
+            let next_block = self.pop_from_unverified(next_index).or_else(|| {
+                self.find_block_in_cache_by_index(context, next_index)
+            });
+            let Some(block) = next_block else {
+                break;
+            };
+
+            // Also insert into block_cache for dedup (matches on_new_block path)
+            let hash = block.header.clone().hash();
+            self._block_cache.insert(hash, Arc::clone(&block));
+
+            let succeeded = self.persist_block_via_system(&block);
+            if succeeded {
+                self.handle_persist_completed(PersistCompleted {
+                    block: Arc::clone(&block),
+                })
+                .await;
+                current_height = next_index;
+                persisted += 1;
+            } else {
+                warn!(
+                    target: "neo",
+                    index = next_index,
+                    "drain_unverified: block persist failed"
+                );
+                break;
+            }
+        }
+
+        if persisted > 0 {
+            tracing::info!(
+                target: "neo",
+                persisted,
+                current_height,
+                "drain_unverified: persisted blocks from unverified cache"
+            );
+        }
+
+        // If we hit the batch limit and the next block is available, schedule continuation
+        if persisted >= DRAIN_BATCH_SIZE {
+            let next_index = current_height.saturating_add(1);
+            if self._block_cache_unverified.contains_key(&next_index) {
+                let _ = ctx.self_ref().tell(BlockchainCommand::DrainUnverified);
+            }
+        }
+    }
+
+    /// Search the block cache (hash-keyed) for a block at the given index.
+    /// This is a linear scan but only runs when the unverified cache misses,
+    /// which is rare during normal operation.
+    fn find_block_in_cache_by_index(
+        &self,
+        _context: &Arc<NeoSystemContext>,
+        index: u32,
+    ) -> Option<Arc<Block>> {
+        for entry in self._block_cache.iter() {
+            if entry.value().index() == index {
+                let hash = *entry.key();
+                drop(entry);
+                return self._block_cache.remove(&hash).map(|(_, block)| block);
+            }
+        }
+        None
+    }
+
+    /// Pop a single block from the unverified cache at the given index.
+    fn pop_from_unverified(&self, index: u32) -> Option<Arc<Block>> {
+        let mut entry = self._block_cache_unverified.get_mut(&index)?;
+        let block = entry.blocks.pop();
+        let is_empty = entry.blocks.is_empty();
+        drop(entry);
+        if is_empty {
+            self._block_cache_unverified.remove(&index);
+        }
+        block
     }
 
     pub(super) async fn on_new_extensible(&self, payload: ExtensiblePayload) -> VerifyResult {

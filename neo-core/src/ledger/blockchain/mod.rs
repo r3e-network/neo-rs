@@ -106,10 +106,13 @@ impl InventoryCacheKey {
 
 /// Maximum number of verified blocks to keep in the block cache.
 /// Prevents unbounded memory growth from out-of-order or attacker-injected blocks.
-const MAX_BLOCK_CACHE_SIZE: usize = 2048;
+/// Sized to accommodate the fast sync download window without backpressure.
+const MAX_BLOCK_CACHE_SIZE: usize = 20000;
 
 /// Maximum number of index entries in the unverified block cache.
-const MAX_UNVERIFIED_CACHE_SIZE: usize = 2048;
+/// Sized at 2x the sync window to prevent eviction of blocks near the
+/// persistence front when multiple sessions deliver overlapping ranges.
+const MAX_UNVERIFIED_CACHE_SIZE: usize = 20000;
 
 /// Rust analogue of `Neo.Ledger.Blockchain` (actor based on Akka).
 pub struct Blockchain {

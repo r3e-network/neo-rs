@@ -847,17 +847,10 @@ impl RemoteNode {
     }
 
     async fn on_headers(&mut self, payload: HeadersPayload, ctx: &ActorContext) {
-        if let Some(last) = payload.headers.last() {
-            self.last_block_index = last.index();
-            if let Err(err) = self.system.task_manager.tell_from(
-                TaskManagerCommand::Update {
-                    last_block_index: last.index(),
-                },
-                Some(ctx.self_ref()),
-            ) {
-                warn!(target: "neo", error = %err, "failed to report header progress to task manager");
-            }
-        }
+        // NOTE: Do NOT update last_block_index from headers — the peer's
+        // actual chain height comes from the handshake and Ping messages.
+        // Overwriting it with the header index would cap the session at the
+        // header frontier, preventing block requests beyond that point.
 
         if !payload.headers.is_empty() {
             let headers = payload.headers.clone();

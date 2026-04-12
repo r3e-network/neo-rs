@@ -26,11 +26,14 @@ pub(crate) fn init_store(
         let state_db = store_provider.get_store(&state_settings.path)?;
         let backend = Arc::new(SnapshotBackedStateStoreBackend::new(state_db));
         let verifier = StateRootVerifier::from_store(store.clone(), settings);
-        let ss = Arc::new(StateStore::new_with_verifier(
+        let mut ss = StateStore::new_with_verifier(
             backend,
             state_settings,
             Some(verifier),
-        ));
+        );
+        // Load reference state roots for validation if available.
+        ss.load_reference_roots("data/reference_stateroots.jsonl");
+        let ss = Arc::new(ss);
         // Populate the trie with current blockchain storage if the trie is empty.
         // Without this, only block deltas would be in the trie, producing wrong roots.
         ss.initialize_trie_from_store(&store);
