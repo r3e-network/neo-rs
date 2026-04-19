@@ -86,3 +86,4 @@ neo-csharp-latest/
 /tools/sgx-evidence-helper/Enclave/Enclave_t.h
 /tools/sgx-evidence-helper/Enclave/*.o
 /tools/sgx-evidence-helper/Enclave/Enclave_private_test.pem
+.omx/

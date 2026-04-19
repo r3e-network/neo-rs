@@ -903,7 +903,19 @@ impl StateStore {
             let mut del_count: u32 = 0;
             let mut _skip_count: u32 = 0;
             let mut _ledger_skip: u32 = 0;
+            let debug_dump = height == 172613 || height == 182902 || height == 203262 || height == 274157;
             for (key, item, state) in change_set {
+                if debug_dump {
+                    tracing::warn!(
+                        target: "neo::state_service",
+                        height,
+                        contract_id = key.id,
+                        key = %hex::encode(&key.as_bytes()),
+                        state = ?state,
+                        value = %hex::encode(item.value_bytes()),
+                        "DEBUG_WRITE"
+                    );
+                }
                 // Match Neo.Plugins.StateService behaviour: exclude ledger contract storage
                 // from trie updates to keep state root consensus-compatible.
                 if key.id == LedgerContract::ID {

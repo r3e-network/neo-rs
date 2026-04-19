@@ -512,25 +512,28 @@ impl OracleContract {
     }
 
     fn next_request_id(&self, snapshot: &DataCache) -> Result<u64> {
+        // C# parity: request ID counter is stored as a BigInt via StorageItem,
+        // encoded as signed little-endian bytes (Integer format).
         let key = self.request_id_key();
         let current = snapshot
             .try_get(&key)
             .and_then(|item| {
                 let bytes = item.value_bytes();
-                if bytes.len() == 8 {
-                    Some(u64::from_be_bytes(bytes.as_ref().try_into().ok()?))
+                if bytes.is_empty() {
+                    Some(0u64)
                 } else {
-                    None
+                    BigInt::from_signed_bytes_le(&bytes).to_u64()
                 }
             })
             .unwrap_or(0);
         let next = current
             .checked_add(1)
             .ok_or_else(|| Error::runtime_error("Next request id overflowed"))?;
+        let next_bytes = BigInt::from(next).to_signed_bytes_le();
         self.put_item(
             snapshot,
             key,
-            StorageItem::from_bytes(next.to_be_bytes().to_vec()),
+            StorageItem::from_bytes(next_bytes),
         );
         Ok(current)
     }
@@ -581,11 +584,81 @@ impl OracleContract {
     }
 
     fn serialize_request(&self, request: &PendingRequest) -> Result<Vec<u8>> {
-        bincode::serialize(request).map_err(|err| Error::serialization(err.to_string()))
+        // C# parity: OracleRequest stored as StackItem Array(7) via BinarySerializer.
+        // Items: [OriginalTxid(32B), GasForResponse(int), Url(str), Filter(str|null),
+        //         CallbackContract(20B), CallbackMethod(str), UserData(bytes)]
+        let stack_item = StackItem::from_array(vec![
+            StackItem::from_byte_string(request.original_tx_id.to_bytes()),
+            StackItem::from_int(request.gas_for_response),
+            StackItem::from_byte_string(request.url.as_bytes()),
+            match &request.filter {
+                Some(filter) => StackItem::from_byte_string(filter.as_bytes()),
+                None => StackItem::null(),
+            },
+            StackItem::from_byte_string(request.callback_contract.to_bytes()),
+            StackItem::from_byte_string(request.callback_method.as_bytes()),
+            StackItem::from_byte_string(request.user_data.clone()),
+        ]);
+        BinarySerializer::serialize(&stack_item, &ExecutionEngineLimits::default())
+            .map_err(Error::serialization)
     }
 
     fn deserialize_request(&self, bytes: &[u8]) -> Result<PendingRequest> {
-        bincode::deserialize(bytes).map_err(|err| Error::serialization(err.to_string()))
+        let stack_item = BinarySerializer::deserialize(
+            bytes,
+            &ExecutionEngineLimits::default(),
+            None,
+        )
+        .map_err(Error::serialization)?;
+        let array = match &stack_item {
+            StackItem::Array(arr) => arr.items().clone(),
+            _ => return Err(Error::serialization("OracleRequest must be an Array")),
+        };
+        if array.len() < 7 {
+            return Err(Error::serialization(format!(
+                "OracleRequest expected 7 items, got {}",
+                array.len()
+            )));
+        }
+        let original_tx_id = {
+            let b = array[0].as_bytes().map_err(|e| Error::serialization(e.to_string()))?;
+            UInt256::from_bytes(&b).map_err(|e| Error::serialization(e.to_string()))?
+        };
+        let gas_for_response = array[1]
+            .as_int()
+            .map_err(|e| Error::serialization(e.to_string()))?
+            .to_i64()
+            .ok_or_else(|| Error::serialization("gas_for_response overflow".to_string()))?;
+        let url = {
+            let b = array[2].as_bytes().map_err(|e| Error::serialization(e.to_string()))?;
+            String::from_utf8(b).map_err(|e| Error::serialization(e.to_string()))?
+        };
+        let filter = if matches!(array[3], StackItem::Null) {
+            None
+        } else {
+            let b = array[3].as_bytes().map_err(|e| Error::serialization(e.to_string()))?;
+            Some(String::from_utf8(b).map_err(|e| Error::serialization(e.to_string()))?)
+        };
+        let callback_contract = {
+            let b = array[4].as_bytes().map_err(|e| Error::serialization(e.to_string()))?;
+            UInt160::from_bytes(&b).map_err(|e| Error::serialization(e.to_string()))?
+        };
+        let callback_method = {
+            let b = array[5].as_bytes().map_err(|e| Error::serialization(e.to_string()))?;
+            String::from_utf8(b).map_err(|e| Error::serialization(e.to_string()))?
+        };
+        let user_data = array[6].as_bytes().map_err(|e| Error::serialization(e.to_string()))?;
+
+        Ok(PendingRequest {
+            id: 0, // id is encoded in the storage key, not the value
+            original_tx_id,
+            gas_for_response,
+            url,
+            filter,
+            callback_contract,
+            callback_method,
+            user_data,
+        })
     }
 
     fn read_id_list(&self, snapshot: &DataCache, hash: &[u8; 20]) -> Result<Vec<u64>> {

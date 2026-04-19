@@ -68,16 +68,16 @@ impl InteropHost for ApplicationEngine {
         // trigger child snapshot commit and dynamic-call return normalization.
         // Compare script hashes first because this engine may materialize fresh
         // script objects for equivalent contracts during load.
+        // Match C# `ContextUnloaded`: `context.Script != CurrentContext?.Script` uses
+        // reference equality, so a contract invoking itself via `System.Contract.Call`
+        // is treated as a cross-contract unload (each LoadContract creates a fresh Script
+        // instance). Using script_hash equality here would incorrectly skip the dynamic-call
+        // null placeholder push for self-calls, causing stack underflow at the caller's
+        // post-SYSCALL DROP.
         let is_cross_contract_unload = engine.current_context().map_or(true, |current_ctx| {
-            let current_state_arc = current_ctx
-                .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
-            let current_script_hash = current_state_arc.lock().script_hash;
-
-            match (unloaded_script_hash.as_ref(), current_script_hash.as_ref()) {
-                (Some(unloaded), Some(current)) => unloaded != current,
-                _ => !std::sync::Arc::ptr_eq(&current_ctx.script_arc(), &context.script_arc()),
-            }
+            !std::sync::Arc::ptr_eq(&current_ctx.script_arc(), &context.script_arc())
         });
+        let _ = unloaded_script_hash;
 
         // Phase 2: Commit snapshot and propagate state to caller (cross-contract only)
         if is_cross_contract_unload {

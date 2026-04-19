@@ -122,18 +122,8 @@ impl Buffer {
             if data.is_empty() {
                 return Ok(BigInt::from(0));
             }
-
-            let is_negative = (data[data.len() - 1] & 0x80) != 0;
-
-            if is_negative {
-                let mut magnitude_bytes = data.to_vec();
-                let len = magnitude_bytes.len();
-                magnitude_bytes[len - 1] &= 0x7F;
-                let magnitude = BigInt::from_bytes_le(num_bigint::Sign::Plus, &magnitude_bytes);
-                Ok(-magnitude)
-            } else {
-                Ok(BigInt::from_bytes_le(num_bigint::Sign::Plus, data))
-            }
+            // Matches C# `new BigInteger(byte[])`: signed little-endian two's complement.
+            Ok(BigInt::from_signed_bytes_le(data))
         })
     }
 

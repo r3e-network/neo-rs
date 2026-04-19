@@ -63,34 +63,14 @@ impl ByteString {
 
     /// Converts the byte string to an integer.
     ///
-    /// This matches the C# Neo implementation exactly:
-    /// - Uses little-endian byte order (no reversal needed)
-    /// - Handles negative numbers using .NET `BigInteger` format (not two's complement)
+    /// Matches C# `new BigInteger(byte[])` exactly: interprets bytes as a signed
+    /// little-endian two's-complement integer (the format used by .NET BigInteger
+    /// since it wraps Microsoft's signed byte encoding).
     pub fn to_integer(&self) -> VmResult<BigInt> {
         if self.data.is_empty() {
             return Ok(BigInt::from(0));
         }
-
-        // The C# BigInteger constructor interprets the bytes as signed little-endian
-        // but uses a special format where the sign bit indicates negativity
-        let bytes = &self.data;
-
-        let is_negative = (bytes[bytes.len() - 1] & 0x80) != 0;
-
-        if is_negative {
-            // The magnitude is stored in the bytes with the sign bit cleared
-            let mut magnitude_bytes = bytes.clone();
-            let len = magnitude_bytes.len();
-            magnitude_bytes[len - 1] &= 0x7F; // Clear the sign bit
-
-            // Create the positive magnitude
-            let magnitude = BigInt::from_bytes_le(num_bigint::Sign::Plus, &magnitude_bytes);
-
-            // Return the negative value
-            Ok(-magnitude)
-        } else {
-            Ok(BigInt::from_bytes_le(num_bigint::Sign::Plus, bytes))
-        }
+        Ok(BigInt::from_signed_bytes_le(&self.data))
     }
 
     /// Converts the byte string to a boolean.
@@ -166,9 +146,9 @@ mod tests {
         let larger_byte_string = ByteString::new(vec![0xCD, 0xAB, 0, 0]);
         assert_eq!(larger_byte_string.to_integer()?, BigInt::from(0xABCD));
 
-        // Test negative number
+        // Test negative number (signed little-endian two's complement, matches C# BigInteger)
         let negative_byte_string = ByteString::new(vec![1, 0, 0, 0x80]);
-        assert_eq!(negative_byte_string.to_integer()?, BigInt::from(-1));
+        assert_eq!(negative_byte_string.to_integer()?, BigInt::from(-2_147_483_647i64));
         Ok(())
     }
 
