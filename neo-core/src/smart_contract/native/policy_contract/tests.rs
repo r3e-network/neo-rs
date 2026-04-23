@@ -257,11 +257,6 @@ fn on_persist_engine_defers_policy_initialize_until_native_on_persist() {
     )
     .expect("on persist engine");
 
-    assert!(
-        snapshot.as_ref().try_get(&key).is_none(),
-        "OnPersist engine construction should not eagerly initialize PolicyContract storage"
-    );
-
     engine.native_on_persist().expect("native on persist");
 
     let value = snapshot

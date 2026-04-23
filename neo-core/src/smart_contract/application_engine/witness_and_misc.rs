@@ -567,10 +567,6 @@ impl ApplicationEngine {
                 }
             }
 
-            if self.trigger == TriggerType::OnPersist {
-                continue;
-            }
-
             if let Err(error) = contract.initialize(self) {
                 if let Some(container) = &self.script_container {
                     let log_event = LogEventArgs::new(
