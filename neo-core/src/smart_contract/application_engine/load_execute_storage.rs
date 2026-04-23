@@ -284,8 +284,11 @@ impl ApplicationEngine {
         self.storage_price as usize
     }
 
+    /// Returns remaining gas in datoshi (matches C# `GasLeft`).
     pub(crate) fn gas_left(&self) -> i64 {
-        self.fee_amount.saturating_sub(self.fee_consumed)
+        self.fee_amount
+            .saturating_sub(self.fee_consumed)
+            .saturating_div(FEE_FACTOR)
     }
 
     pub(crate) fn nonce_bytes(&self) -> &[u8; 16] {

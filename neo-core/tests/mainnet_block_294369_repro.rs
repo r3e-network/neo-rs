@@ -270,15 +270,25 @@ fn replay_block_294369_debug() {
             .expect("load");
 
         let vm_state = tx_engine.execute_allow_fault();
+        let gas = tx_engine.gas_consumed();
+        let exception = tx_engine.fault_exception();
+        let notifs = tx_engine.notifications();
         eprintln!(
-            "\n=== tx{} result ===\nvm_state={vm_state:?} gas={} exception={:?}",
+            "\n=== tx{} result ===\nvm_state={vm_state:?} gas={gas} exception={exception:?}",
             idx + 1,
-            tx_engine.gas_consumed(),
-            tx_engine.fault_exception()
         );
-        eprintln!("notifications ({}):", tx_engine.notifications().len());
-        for (i, n) in tx_engine.notifications().iter().enumerate() {
+        eprintln!("notifications ({}):", notifs.len());
+        for (i, n) in notifs.iter().enumerate() {
             eprintln!("  [{}] contract={} event={}", i, n.script_hash, n.event_name);
         }
+
+        // Both txs must FAULT on mainnet — if either HALTs, gas metering is wrong
+        // and the resulting state writes would cascade through subsequent blocks.
+        assert_eq!(
+            vm_state,
+            neo_vm::VMState::FAULT,
+            "tx{} must FAULT (gas={gas}) — HALT means gas is under-counted",
+            idx + 1,
+        );
     }
 }

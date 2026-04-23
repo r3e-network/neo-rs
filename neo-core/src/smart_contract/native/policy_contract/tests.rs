@@ -1106,10 +1106,7 @@ fn test_white_list_fee() {
         .as_int()
         .expect("int");
     assert!(result.is_zero());
-    assert_eq!(
-        engine.fee_consumed(),
-        2_028_330 * PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64 / 30 / 30
-    );
+    assert_eq!(engine.fee_consumed(), 2_028_330);
     assert_eq!(
         policy
             .clean_whitelist(
@@ -1162,10 +1159,7 @@ fn test_white_list_fee() {
         .as_int()
         .expect("int");
     assert!(result.is_zero());
-    assert_eq!(
-        engine.fee_consumed(),
-        1_045_260 * PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64 / 30 / 30
-    );
+    assert_eq!(engine.fee_consumed(), 1_045_260);
 
     // Clean whitelist.
     let mut engine = make_engine(
