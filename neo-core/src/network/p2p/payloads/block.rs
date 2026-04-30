@@ -235,10 +235,20 @@ impl Block {
         }
 
         // Phase 2: sequential state-dependent verification (needs shared context).
+        // Pass `block.index() - 1` as the explicit current_height to avoid the
+        // fast-sync snapshot bug where `Ledger.current_index(snapshot)` spuriously
+        // returns 0, wrongly rejecting valid txs as Expired.
         let snapshot = store_cache.data_cache();
+        let block_height_for_expiry = self.header.index().saturating_sub(1);
         let mut context = TransactionVerificationContext::new();
         for (index, tx) in self.transactions.iter().enumerate() {
-            let result = tx.verify_state_dependent(settings, snapshot, Some(&context), &[]);
+            let result = tx.verify_state_dependent_at_height(
+                settings,
+                snapshot,
+                block_height_for_expiry,
+                Some(&context),
+                &[],
+            );
             if result != VerifyResult::Succeed {
                 tracing::warn!(
                     target: "neo::block",

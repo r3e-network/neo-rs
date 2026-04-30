@@ -778,32 +778,23 @@ impl StackItem {
             visited_key = Some((self_id, other_id));
         }
 
-        // C# Neo VM PrimitiveType.Equals: converts both operands to their
-        // Span<byte> representation and compares bytewise.  This allows
-        // ByteString([0x01]) == Integer(1) to be true.
-        fn primitive_bytes(item: &StackItem) -> Option<Vec<u8>> {
-            match item {
-                StackItem::Boolean(b) => Some(if *b { vec![1] } else { vec![] }),
-                StackItem::Integer(i) => {
-                    if i.is_zero() {
-                        Some(vec![])
-                    } else {
-                        Some(i.to_signed_bytes_le()) // VmInteger has this method
-                    }
-                }
-                StackItem::ByteString(b) => Some(b.to_vec()),
-                StackItem::Buffer(b) => Some(b.data()),
-                _ => None,
-            }
-        }
-
+        // C# Neo VM PrimitiveType.Equals is TYPE-STRICT: only items of the SAME
+        // concrete primitive type (Integer, ByteString, Boolean) compare equal,
+        // and only by value within that type. Cross-type comparison (e.g.
+        // `Integer(1) == ByteString([0x01])`) returns FALSE in C#, even when
+        // the byte representations match. Verified via mainnet RPC invokescript
+        // against C# v3.9.1.
         let result = match (self, other) {
             (Self::Null, Self::Null) => Ok(true),
             // Buffer uses reference equality (compound type in C# Neo VM).
             // Buffer == Buffer → same reference only; Buffer == anything_else → false.
             (Self::Buffer(a), Self::Buffer(b)) => Ok(a.id() == b.id()),
             (Self::Buffer(_), _) | (_, Self::Buffer(_)) => Ok(false),
-            // Primitive-type cross-comparison (Boolean, Integer, ByteString)
+            // Same-type primitive comparisons (TYPE-STRICT, matches C# PrimitiveType.Equals).
+            (Self::Boolean(a), Self::Boolean(b)) => Ok(a == b),
+            (Self::Integer(a), Self::Integer(b)) => Ok(a.to_bigint() == b.to_bigint()),
+            (Self::ByteString(a), Self::ByteString(b)) => Ok(a == b),
+            // Cross-type primitive comparison: always FALSE (no byte-wise coercion).
             (a, b)
                 if matches!(
                     a,
@@ -813,9 +804,7 @@ impl StackItem {
                     Self::Boolean(_) | Self::Integer(_) | Self::ByteString(_)
                 ) =>
             {
-                let ab = primitive_bytes(a).unwrap();
-                let bb = primitive_bytes(b).unwrap();
-                Ok(ab == bb)
+                Ok(false)
             }
             (Self::Pointer(a), Self::Pointer(b)) => Ok(a == b),
             (Self::InteropInterface(a), Self::InteropInterface(b)) => Ok(Arc::ptr_eq(a, b)),

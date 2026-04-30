@@ -108,15 +108,17 @@
 //!
 //! ## Network Protocol
 //!
-//! Neo uses a custom P2P protocol over TCP. Messages follow this structure:
+//! Neo uses a custom P2P protocol over TCP. Each message is framed as:
 //!
 //! ```text
-//! ┌──────────┬──────────┬──────────┬──────────┐
-//! │  Magic   │ Command  │  Length  │ Payload  │
-//! │ (4 bytes)│ (12 bytes│ (4 bytes)│  (var)   │
-//! │          │  ASCII)  │          │          │
-//! └──────────┴──────────┴──────────┴──────────┘
+//! ┌──────────┬──────────┬──────────────┬──────────┐
+//! │  Flags   │ Command  │    Length    │ Payload  │
+//! │ (1 byte) │ (1 byte) │ (var_int LE) │  (var)   │
+//! └──────────┴──────────┴──────────────┴──────────┘
 //! ```
+//!
+//! No per-message magic prefix or checksum — the network magic is carried in
+//! the [`VersionPayload`] at handshake time, and integrity relies on TCP.
 //!
 //! ### Message Commands
 //!
@@ -124,19 +126,27 @@
 //! |---------|-------|-------------|
 //! | `Version` | 0x00 | Protocol version handshake |
 //! | `Verack` | 0x01 | Version acknowledgment |
-//! | `GetAddr` | 0x02 | Request peer addresses |
-//! | `Addr` | 0x03 | Peer address list |
+//! | `GetAddr` | 0x10 | Request peer addresses |
+//! | `Addr` | 0x11 | Peer address list |
 //! | `Ping` | 0x18 | Keepalive ping |
 //! | `Pong` | 0x19 | Keepalive pong |
 //! | `GetHeaders` | 0x20 | Request block headers |
 //! | `Headers` | 0x21 | Block header list |
-//! | `GetBlocks` | 0x22 | Request blocks |
-//! | `Block` | 0x2a | Block data |
-//! | `Tx` | 0x2b | Transaction |
-//! | `Consensus` | 0x2c | dBFT consensus message |
+//! | `GetBlocks` | 0x24 | Request blocks |
+//! | `Mempool` | 0x25 | Request mempool contents |
 //! | `Inv` | 0x27 | Inventory announcement |
 //! | `GetData` | 0x28 | Request inventory data |
-//! | `Reject` | 0x26 | Reject message |
+//! | `GetBlockByIndex` | 0x29 | Request blocks by index range |
+//! | `NotFound` | 0x2a | Requested data unavailable |
+//! | `Transaction` | 0x2b | Transaction |
+//! | `Block` | 0x2c | Block data |
+//! | `Extensible` | 0x2e | Extensible payload (dBFT consensus, etc.) |
+//! | `Reject` | 0x2f | Reject message |
+//! | `FilterLoad` | 0x30 | Load Bloom filter |
+//! | `FilterAdd` | 0x31 | Add pattern to Bloom filter |
+//! | `FilterClear` | 0x32 | Clear Bloom filter |
+//! | `MerkleBlock` | 0x38 | Filtered block |
+//! | `Alert` | 0x40 | Network alert |
 //!
 //! ## Feature Flags
 //!

@@ -142,6 +142,10 @@ impl ContractManagement {
             &contract_bytes,
         )?;
 
+        // Refresh the engine's per-tx contract cache so the queued _deploy
+        // invocation picks up the new NEF/manifest (matches C# behavior).
+        engine.put_contract_cache(contract_hash, contract.clone());
+
         // Call contract's _update method if it exists
         if contract
             .manifest

@@ -39,9 +39,11 @@ members = [
     # Actor runtime merged into neo-core/src/akka/
     # "neo-akka",
 
-    # Plugins (matches C# Neo.Plugins)
-    # TEMPORARILY EXCLUDED: Being refactored - functionality to be inlined to target modules
-    # "neo-plugins",
+    # NOTE: C# Neo's plugin set has been inlined:
+    #   ApplicationLogs → neo-core/src/application_logs
+    #   DBFTPlugin      → neo-consensus
+    #   RpcServer       → neo-rpc/src/server
+    #   TokensTracker   → neo-core/src/tokens_tracker
 
     # TEE (Trusted Execution Environment) support
     # Optional feature-gated integration via neo-node (`--features tee`)

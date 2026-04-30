@@ -462,6 +462,16 @@ async fn inner_main(cli: NodeCli) -> Result<()> {
         }
     }
 
+    // Flush RocksDB memtables to disk BEFORE shutting down the actor system.
+    // Without this, fast-sync mode (which disables WAL per commit 2bdb2b85) loses
+    // all in-memory blocks on graceful shutdown — confirmed iter 19 by losing
+    // 173k synced blocks. The IStore::flush() default is a no-op; the RocksDB
+    // impl calls flush_batch_writes() + flush_memtables().
+    let store = system.store();
+    info!(target: "neo", "flushing storage before shutdown");
+    store.flush();
+    info!(target: "neo", "storage flush complete");
+
     match tokio::time::timeout(std::time::Duration::from_secs(30), system.shutdown()).await {
         Ok(Ok(_)) => info!(target: "neo", "system shutdown complete"),
         Ok(Err(e)) => {

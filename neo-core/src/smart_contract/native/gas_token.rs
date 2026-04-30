@@ -1,6 +1,7 @@
 use super::contract_management::ContractManagement;
 use super::fungible_token::{FungibleToken, PREFIX_ACCOUNT as ACCOUNT_PREFIX, PREFIX_TOTAL_SUPPLY};
 use super::helpers::NativeHelpers;
+use super::ledger_contract::LedgerContract;
 use super::native_contract::{NativeContract, NativeMethod};
 use super::neo_token::NeoToken;
 use super::policy_contract::PolicyContract;
@@ -834,6 +835,15 @@ impl NativeContract for GasToken {
                 );
             }
             if pre_balance < burn_amount {
+                // Diagnostic: dump key state to understand why sender has insufficient GAS
+                let total_supply = self.total_supply_snapshot(snapshot_ref);
+                let bft_account = {
+                    let validators = engine.protocol_settings().standby_validators();
+                    crate::smart_contract::native::helpers::NativeHelpers::get_bft_address(&validators)
+                };
+                let bft_balance = self.balance_of_snapshot(snapshot_ref, &bft_account);
+                let ledger = LedgerContract::new();
+                let current_idx = ledger.current_index(snapshot_ref).unwrap_or(999999);
                 tracing::warn!(
                     target: "neo",
                     block_index = block.index(),
@@ -844,6 +854,10 @@ impl NativeContract for GasToken {
                     network_fee = tx.network_fee(),
                     burn_amount = %burn_amount,
                     pre_balance = %pre_balance,
+                    total_supply = %total_supply,
+                    bft_address = %bft_account,
+                    bft_balance = %bft_balance,
+                    ledger_current_index = current_idx,
                     "insufficient sender balance before gas burn"
                 );
             }

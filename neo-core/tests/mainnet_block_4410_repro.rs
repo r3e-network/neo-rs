@@ -233,5 +233,12 @@ fn replay_block_4410_onpersist_postpersist() {
     }
     let new_root = trie_guard.root_hash().unwrap_or_else(neo_core::UInt256::zero);
     eprintln!("applied={} skipped_ledger={} new_root={}", applied, skipped, new_root);
-    eprintln!("expected C# root at 4410: 0x750c662a633387c5dece78ba7f71384cc10427089c9e7321e19841c93efb9b81");
+    let expected_csharp_root = neo_core::UInt256::parse(
+        "0x750c662a633387c5dece78ba7f71384cc10427089c9e7321e19841c93efb9b81",
+    )
+    .expect("parse expected C# root");
+    assert_eq!(
+        new_root, expected_csharp_root,
+        "block 4410 OnPersist+PostPersist state root must match C# v3.9.1",
+    );
 }

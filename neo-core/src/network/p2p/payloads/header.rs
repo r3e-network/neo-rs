@@ -253,10 +253,12 @@ impl Header {
 
         let verification_gas = gas_limit.min(Helper::MAX_VERIFICATION_GAS);
 
-        if neo_vm::Script::new(witness.invocation_script.clone(), true).is_err() {
-            debug!(
+        if let Err(e) = neo_vm::Script::new(witness.invocation_script.clone(), true) {
+            tracing::warn!(
                 target: "neo",
                 %script_hash,
+                error = %e,
+                invocation_len = witness.invocation_script.len(),
                 "invocation script is invalid"
             );
             return false;
@@ -275,10 +277,11 @@ impl Header {
             None,
         ) {
             Ok(engine) => engine,
-            Err(_) => {
-                debug!(
+            Err(e) => {
+                tracing::warn!(
                     target: "neo",
                     %script_hash,
+                    error = %e,
                     "failed to create application engine"
                 );
                 return false;
@@ -347,7 +350,7 @@ impl Header {
                 "comparing witness script hash with expected script hash"
             );
             if witness_script_hash != *script_hash {
-                debug!(
+                tracing::warn!(
                     target: "neo",
                     %witness_script_hash,
                     %script_hash,
@@ -356,10 +359,12 @@ impl Header {
                 return false;
             }
 
-            if neo_vm::Script::new(verification_script.clone(), true).is_err() {
-                debug!(
+            if let Err(e) = neo_vm::Script::new(verification_script.clone(), true) {
+                tracing::warn!(
                     target: "neo",
                     %script_hash,
+                    error = %e,
+                    verification_len = verification_script.len(),
                     "verification script is invalid"
                 );
                 return false;
@@ -395,8 +400,13 @@ impl Header {
             return false;
         }
 
-        if engine.execute().is_err() {
-            debug!(target: "neo", %script_hash, "engine execution failed");
+        if let Err(e) = engine.execute() {
+            tracing::warn!(
+                target: "neo",
+                %script_hash,
+                error = %e,
+                "engine execution failed"
+            );
             return false;
         }
 
@@ -574,7 +584,7 @@ impl Header {
     ) -> bool {
         // Step 1: Validate timestamp bounds
         if let Err(e) = validate_timestamp_bounds(self.timestamp) {
-            debug!(
+            tracing::warn!(
                 target: "neo",
                 index = self.index,
                 timestamp = self.timestamp,
@@ -586,7 +596,7 @@ impl Header {
 
         // Step 2: Validate primary index
         if let Err(e) = validate_primary_index(self.primary_index, settings.validators_count) {
-            debug!(
+            tracing::warn!(
                 target: "neo",
                 index = self.index,
                 primary_index = self.primary_index,
@@ -599,7 +609,7 @@ impl Header {
 
         // Step 3: Validate witness scripts
         if let Err(e) = validate_witness_scripts(self) {
-            debug!(
+            tracing::warn!(
                 target: "neo",
                 index = self.index,
                 error = %e,
@@ -634,7 +644,7 @@ impl Header {
             if let Err(reason) =
                 self.validate_against_previous(settings, prev_index, &prev_hash, prev_timestamp)
             {
-                debug!(
+                tracing::warn!(
                     target: "neo",
                     index = self.index,
                     %prev_hash,
@@ -664,7 +674,7 @@ impl Header {
             );
 
             if !verified {
-                debug!(
+                tracing::warn!(
                     target: "neo",
                     index = self.index,
                     %script_hash,
@@ -679,6 +689,11 @@ impl Header {
         }
 
         // Fall back to full verification if cache is empty
+        tracing::warn!(
+            target: "neo",
+            index = self.index,
+            "header_cache empty, falling back to full verification"
+        );
         self.verify(settings, store_cache)
     }
 }

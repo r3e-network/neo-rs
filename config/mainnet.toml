@@ -28,7 +28,7 @@ enabled = true
 port = 10332
 bind_address = "127.0.0.1"
 cors_enabled = false
-auth_enabled = true
+auth_enabled = false
 max_gas_invoke = 50000000
 max_iterator_results = 100
 disabled_methods = ["openwallet"]
@@ -56,3 +56,12 @@ max_transactions_per_block = 512
 
 [mempool]
 max_transactions = 50000
+
+# Enable StateService so fresh sync populates the state-root MPT trie that
+# `mainnet_state_roots_vs_csharp` bulk-test reads from. Path is absolute
+# (`data/mainnet/StateRoot`) so it matches the existing 812MB clean-data
+# layout used by all the mainnet_block_*_repro tests.
+[state_service]
+enabled = true
+full_state = true
+path = "../mainnet/StateRoot"

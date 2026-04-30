@@ -376,7 +376,7 @@ fn has_key(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
     let key = context.pop()?;
     let collection = context.pop()?;
 
-    let result = match collection {
+    let result = match &collection {
         StackItem::Array(array) => {
             let index = key
                 .as_int()?
@@ -392,9 +392,23 @@ fn has_key(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
             index < structure.len()
         }
         StackItem::Map(map) => map.contains_key(&key)?,
+        StackItem::ByteString(data) => {
+            let index = key
+                .as_int()?
+                .to_isize()
+                .ok_or_else(|| VmError::invalid_operation_msg("Invalid index"))?;
+            index >= 0 && (index as usize) < data.len()
+        }
+        StackItem::Buffer(data) => {
+            let index = key
+                .as_int()?
+                .to_isize()
+                .ok_or_else(|| VmError::invalid_operation_msg("Invalid index"))?;
+            index >= 0 && (index as usize) < data.len()
+        }
         _ => {
             return Err(VmError::invalid_type_simple(
-                "Expected Array, Struct, or Map",
+                "Expected Array, Struct, Map, ByteString, or Buffer",
             ));
         }
     };
@@ -592,6 +606,7 @@ fn pick_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
     let key = context.pop()?;
     let collection = context.pop()?;
 
+
     let result = match collection {
         StackItem::Array(array) => {
             let idx = normalize_index("VMArray", &key.get_integer()?, array.len())?;
@@ -605,6 +620,21 @@ fn pick_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
         }
         StackItem::Map(map) => map.get(&key)?,
         StackItem::ByteString(bytes) => {
+            let idx = normalize_index("PrimitiveType", &key.get_integer()?, bytes.len())?;
+            StackItem::from_int(i64::from(bytes[idx]))
+        }
+        // C# Neo VM PICKITEM on PrimitiveType (Integer, Boolean, ByteString) reads
+        // the bytewise GetSpan() representation. Apply the same to Integer/Boolean
+        // by converting via primitive bytes (Integer → minimal LE; Boolean →
+        // [0x01] for true, [] for false to match C# Boolean.GetSpan).
+        StackItem::Integer(ref _i) => {
+            let bytes = collection.as_bytes()?;
+            let idx = normalize_index("PrimitiveType", &key.get_integer()?, bytes.len())?;
+            StackItem::from_int(i64::from(bytes[idx]))
+        }
+        StackItem::Boolean(b) => {
+            // C# Boolean.GetSpan(): true → [0x01], false → empty span
+            let bytes: Vec<u8> = if b { vec![1] } else { Vec::new() };
             let idx = normalize_index("PrimitiveType", &key.get_integer()?, bytes.len())?;
             StackItem::from_int(i64::from(bytes[idx]))
         }
@@ -708,7 +738,7 @@ fn size(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
     let collection = context.pop()?;
 
     // Get the size of the collection
-    let size = match collection {
+    let size = match &collection {
         StackItem::Array(array) => array.len(),
         StackItem::Struct(structure) => structure.len(),
         StackItem::Map(map) => map.len(),

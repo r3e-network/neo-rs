@@ -33,27 +33,57 @@ impl ApplicationEngine {
             return Ok(contract.clone());
         }
 
-        if let Some(contract) =
-            ContractManagement::get_contract_from_snapshot(self.snapshot_cache.as_ref(), hash)
-                .map_err(|e| Error::invalid_operation(e.to_string()))?
-        {
-            self.contracts.insert(*hash, contract.clone());
-            return Ok(contract);
+        let block_idx = self.persisting_block().map(|b| b.index()).unwrap_or(0);
+        let diag = Self::should_trace_block(block_idx);
+
+        match ContractManagement::get_contract_from_snapshot(self.snapshot_cache.as_ref(), hash) {
+            Ok(Some(contract)) => {
+                if diag {
+                    tracing::warn!(target: "neo", block_index = block_idx, %hash, id = contract.id, "TRACE: fetch_contract found in snapshot");
+                }
+                self.contracts.insert(*hash, contract.clone());
+                return Ok(contract);
+            }
+            Ok(None) => {
+                if diag {
+                    tracing::warn!(target: "neo", block_index = block_idx, %hash, "TRACE: fetch_contract NOT found in snapshot (None)");
+                }
+            }
+            Err(e) => {
+                if diag {
+                    tracing::warn!(target: "neo", block_index = block_idx, %hash, error = %e, "TRACE: fetch_contract snapshot error");
+                }
+                return Err(Error::invalid_operation(e.to_string()));
+            }
         }
 
         if let Some(native) = self.native_registry.get(hash) {
             let block_height = self.current_block_index();
             if let Some(contract) = native.contract_state(&self.protocol_settings, block_height) {
+                if diag {
+                    tracing::warn!(target: "neo", block_index = block_idx, %hash, id = contract.id, "TRACE: fetch_contract found as native");
+                }
                 self.contracts.insert(*hash, contract.clone());
                 return Ok(contract);
             }
         }
 
+        if diag {
+            tracing::warn!(target: "neo", block_index = block_idx, %hash, "TRACE: fetch_contract FAILED - not found anywhere");
+        }
         Err(Error::not_found(format!("Contract not found: {hash:?}")))
     }
 
     fn is_contract_blocked(&mut self, contract_hash: &UInt160) -> Result<bool> {
         PolicyContract::new().is_blocked_snapshot(self.snapshot_cache.as_ref(), contract_hash)
+    }
+
+    /// Refreshes the engine's per-tx contract cache after ContractManagement
+    /// mutates a contract record. Without this, a queued `_deploy` invocation
+    /// would re-fetch the OLD cached `ContractState` and execute the previous
+    /// NEF/manifest, producing different `_initialize` static fields than C#.
+    pub fn put_contract_cache(&mut self, hash: UInt160, contract: ContractState) {
+        self.contracts.insert(hash, contract);
     }
 
     #[allow(clippy::too_many_arguments)]

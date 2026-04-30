@@ -319,14 +319,14 @@ impl OracleContract {
 
         let url = String::from_utf8(args[0].clone())
             .map_err(|_| Error::invalid_operation("Invalid URL"))?;
-        let filter = if args[1].is_empty() {
-            None
-        } else {
-            Some(
-                String::from_utf8(args[1].clone())
-                    .map_err(|_| Error::invalid_operation("Invalid filter"))?,
-            )
-        };
+        // C# parity: filter is stored as ByteString("") when caller passes empty string,
+        // and only as Null when caller passes StackItem.Null. Our args layer flattens both
+        // to empty Vec<u8>, so we conservatively treat empty bytes as Some("") — matching
+        // typical contract callers (e.g. n3trader) which use PUSHDATA1 0 for "no filter".
+        let filter = Some(
+            String::from_utf8(args[1].clone())
+                .map_err(|_| Error::invalid_operation("Invalid filter"))?,
+        );
         let callback = String::from_utf8(args[2].clone())
             .map_err(|_| Error::invalid_operation("Invalid callback"))?;
         let user_data = args[3].clone();
@@ -460,15 +460,17 @@ impl OracleContract {
     }
 
     fn get_price_value(&self, snapshot: &DataCache) -> i64 {
+        // C# parity: stored as variable-width signed-LE BigInteger bytes (StorageItem.Value),
+        // not a fixed 8-byte i64. Empty bytes ⇒ 0; parse via BigInt::from_signed_bytes_le.
         let key = self.price_key();
         snapshot
             .try_get(&key)
             .and_then(|item| {
                 let bytes = item.value_bytes();
-                if bytes.len() == 8 {
-                    Some(i64::from_le_bytes(bytes.as_ref().try_into().ok()?))
+                if bytes.is_empty() {
+                    Some(0)
                 } else {
-                    None
+                    BigInt::from_signed_bytes_le(&bytes).to_i64()
                 }
             })
             .unwrap_or(DEFAULT_PRICE)
@@ -505,7 +507,7 @@ impl OracleContract {
         self.put_item(
             snapshot,
             self.price_key(),
-            StorageItem::from_bytes(price.to_le_bytes().to_vec()),
+            StorageItem::from_bytes(BigInt::from(price).to_signed_bytes_le()),
         );
 
         Ok(Vec::new())
@@ -874,50 +876,28 @@ impl OracleContract {
     }
 
     fn resolve_oracle_accounts(&self, engine: &mut ApplicationEngine, index: u32) -> Vec<UInt160> {
-        let role_hash = RoleManagement::new().hash();
-        let role_arg = vec![Role::Oracle as u8];
-        let index_arg = index.to_le_bytes().to_vec();
-        match engine.call_native_contract(role_hash, "getDesignatedByRole", &[role_arg, index_arg])
-        {
-            Ok(bytes) => self.parse_designated_accounts(&bytes),
+        // Use the typed RoleManagement API directly. The previous implementation
+        // round-tripped through `call_native_contract` and parsed raw bytes, but
+        // `getDesignatedByRole` returns a BinarySerializer-encoded `Array<ByteString(33)>`
+        // (see `RoleManagement::serialize_public_keys`), not concatenated 33-byte points.
+        // Misparsing left only the first key decodable, funneling all rewards to
+        // recipients[0] and breaking the response_id % count distribution at block 754,772.
+        let role_mgmt = RoleManagement::new();
+        let snapshot_arc = engine.snapshot_cache();
+        let snapshot = snapshot_arc.as_ref();
+        match role_mgmt.get_designated_by_role_at(snapshot, Role::Oracle, index) {
+            Ok(public_keys) => public_keys
+                .into_iter()
+                .filter_map(|pk| {
+                    let script = Contract::create_signature_redeem_script(pk);
+                    UInt160::from_bytes(&NeoHash::hash160(&script)).ok()
+                })
+                .collect(),
             Err(err) => {
                 tracing::debug!("failed to fetch designated oracle nodes: {}", err);
                 Vec::new()
             }
         }
-    }
-
-    fn parse_designated_accounts(&self, bytes: &[u8]) -> Vec<UInt160> {
-        if bytes.len() < 4 {
-            return Vec::new();
-        }
-
-        let count = u32::from_le_bytes(bytes[0..4].try_into().unwrap_or([0; 4]));
-        let count_usize = count as usize;
-        // Cap to prevent excessive allocation from malformed data
-        let safe_count = count_usize.min((bytes.len().saturating_sub(4)) / 33);
-        let mut offset = 4;
-        let mut accounts = Vec::with_capacity(safe_count);
-
-        for _ in 0..count {
-            if offset + 33 > bytes.len() {
-                break;
-            }
-            let mut compressed = [0u8; 33];
-            compressed.copy_from_slice(&bytes[offset..offset + 33]);
-            if let Ok(point) = crate::cryptography::ECPoint::decode_compressed_with_curve(
-                crate::cryptography::ECCurve::secp256r1(),
-                &compressed,
-            ) {
-                let script = Contract::create_signature_redeem_script(point);
-                if let Ok(hash) = UInt160::from_bytes(&NeoHash::hash160(&script)) {
-                    accounts.push(hash);
-                }
-            }
-            offset += 33;
-        }
-
-        accounts
     }
 
     fn process_response(

@@ -414,4 +414,67 @@ mod tests {
         let serialized = BinarySerializer::serialize(&StackItem::from_int(0), &limits).unwrap();
         assert_eq!(serialized, vec![StackItemType::Integer as u8, 0]);
     }
+
+    #[test]
+    fn nep17_data_array_roundtrips_losslessly() {
+        // Reproduces the `data` payload pushed by tx
+        // 0x4e2d76756fe4253ed19ae68a99b3557b2dedfa3e8e204fddf61163c9334a7e17
+        // (mainnet block 676,050) where N3Trader's onNEP17Payment diverges.
+        // data = [Integer(0), [BS(""), BS("")], [GAS, GAS], [Int(100M), Int(100M)],
+        //        [Integer(0), Integer(1)], Integer(-1)]
+        let limits = ExecutionEngineLimits::default();
+        let gas_hash =
+            hex::decode("cf76e28bd0062c4a478ee35561011319f3cfa4d2").expect("gas hash");
+
+        let inner_hashes = StackItem::from_array(vec![
+            StackItem::from_byte_string(gas_hash.clone()),
+            StackItem::from_byte_string(gas_hash.clone()),
+        ]);
+        let inner_amounts = StackItem::from_array(vec![
+            StackItem::from_int(100_000_000i64),
+            StackItem::from_int(100_000_000i64),
+        ]);
+        let inner_empty = StackItem::from_array(vec![
+            StackItem::from_byte_string(Vec::new()),
+            StackItem::from_byte_string(Vec::new()),
+        ]);
+        let inner_zero_one = StackItem::from_array(vec![
+            StackItem::from_int(0i64),
+            StackItem::from_int(1i64),
+        ]);
+
+        let data = StackItem::from_array(vec![
+            StackItem::from_int(0i64),
+            inner_empty.clone(),
+            inner_hashes.clone(),
+            inner_amounts.clone(),
+            inner_zero_one.clone(),
+            StackItem::from_int(-1i64),
+        ]);
+
+        let serialized = BinarySerializer::serialize(&data, &limits).expect("serialize");
+        let deserialized =
+            BinarySerializer::deserialize(&serialized, &limits, None).expect("deserialize");
+
+        assert_eq!(
+            deserialized.stack_item_type(),
+            StackItemType::Array,
+            "Top-level type must roundtrip as Array"
+        );
+        let arr = match &deserialized {
+            StackItem::Array(a) => a.clone(),
+            _ => panic!("Expected Array"),
+        };
+        assert_eq!(arr.len(), 6, "Array must have 6 elements");
+        assert_eq!(arr.get(0).unwrap(), StackItem::from_int(0i64));
+        assert_eq!(arr.get(5).unwrap(), StackItem::from_int(-1i64));
+
+        // Re-serialize the deserialized form and confirm bytes match.
+        let reserialized =
+            BinarySerializer::serialize(&deserialized, &limits).expect("reserialize");
+        assert_eq!(
+            serialized, reserialized,
+            "Roundtrip must produce identical bytes"
+        );
+    }
 }

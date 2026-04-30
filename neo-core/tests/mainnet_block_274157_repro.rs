@@ -42,7 +42,12 @@ fn open_state_store() -> StateStore {
         .parent()
         .expect("repo root")
         .to_path_buf();
-    let state_root_path = repo_root.join("data/mainnet/StateRoot");
+    // Set NEO_REPRO_DB_PATH to point at a richer backup that has block 274,156
+    // (e.g. data/mainnet.pre-274157-fix-20260419/StateRoot).
+    let state_root_path = match std::env::var("NEO_REPRO_DB_PATH").ok() {
+        Some(p) if !p.is_empty() => Path::new(&p).to_path_buf(),
+        _ => repo_root.join("data/mainnet/StateRoot"),
+    };
     let provider = RocksDBStoreProvider::new(StorageConfig {
         path: state_root_path.clone(),
         read_only: true,
@@ -69,7 +74,12 @@ fn replay_block_274157_debug() {
 
     let state_store = open_state_store();
     let Some(root_274156) = state_store.get_state_root(274_156).map(|r| r.root_hash) else {
-        eprintln!("state root 274156 not present; sync is not yet there");
+        eprintln!(
+            "[SKIPPED] mainnet_block_274157_repro: state root 274156 not present. \
+             Set NEO_REPRO_DB_PATH=data/mainnet.pre-274157-fix-20260419/StateRoot \
+             to point at a backup with block 274,156 (and exercise the C# state-root \
+             assertion). Reported as PASS but assertions did NOT run."
+        );
         return;
     };
     let trie = Arc::new(Mutex::new(state_store.trie_for_root(root_274156)));
@@ -125,10 +135,13 @@ fn replay_block_274157_debug() {
 
     let mut tx = Transaction::new();
     tx.set_version(0);
-    tx.set_nonce(0); // placeholder; should match real tx but nonce doesn't affect execution directly
+    // Values from mainnet RPC getblock(274157) — using exact values matters because
+    // OnPersist burns (system_fee + network_fee) from sender and mints network_fee
+    // to primary validator, so any discrepancy directly affects final GAS balances.
+    tx.set_nonce(2_531_694_446);
     tx.set_system_fee(6_644_246);
-    tx.set_network_fee(1_000_000); // approximate (not critical for local replay)
-    tx.set_valid_until_block(274_200);
+    tx.set_network_fee(122_752);
+    tx.set_valid_until_block(274_396);
     tx.set_signers(vec![signer]);
     tx.set_attributes(Vec::new());
     // script: transfer 1 BurgerNEO from user to contract (self)
@@ -207,8 +220,8 @@ fn replay_block_274157_debug() {
         Some(Arc::clone(&block)),
         ProtocolSettings::mainnet(),
         tx.system_fee(),
-        seeded_contracts,
-        seeded_native_cache,
+        seeded_contracts.clone(),
+        Arc::clone(&seeded_native_cache),
         None,
     )
     .expect("tx engine");
@@ -296,10 +309,15 @@ fn replay_block_274157_debug() {
     }
     eprintln!("total base_cache writes: {}", base_writes);
 
-    // Commit tx_snapshot back to base_cache (simulating full block persist)
-    tx_snapshot.commit();
+    // Mirror persist_block_internal: HALT merges tx_snapshot writes into
+    // base_cache; FAULT discards them. The earlier `tx_snapshot.commit()` was
+    // a no-op because tx_snapshot has no commit_apply wired.
+    if matches!(vm_state, neo_vm::VMState::HALT) {
+        let tracked = tx_snapshot.tracked_items();
+        base_cache.merge_tracked_items(&tracked);
+    }
     let mut post_commit_writes = 0;
-    eprintln!("\nbase_cache tracked items (after commit):");
+    eprintln!("\nbase_cache tracked items (after merge):");
     for (key, trackable) in base_cache.tracked_items() {
         let state_str = format!("{:?}", trackable.state);
         if state_str == "None" || state_str == "NotFound" { continue; }
@@ -312,5 +330,74 @@ fn replay_block_274157_debug() {
             hex::encode(trackable.item.value_bytes())
         );
     }
-    eprintln!("total base_cache writes after commit: {}", post_commit_writes);
+    eprintln!("total base_cache writes after merge: {}", post_commit_writes);
+
+    // Take ledger tx_states from tx_engine before PostPersist needs them.
+    let tx_states_after = tx_engine
+        .take_state::<LedgerTransactionStates>()
+        .unwrap_or_else(|| LedgerTransactionStates::new(Vec::new()));
+    drop(tx_engine);
+
+    // Run PostPersist on base_cache (mirrors persist_block_internal).
+    let mut post_persist_engine = ApplicationEngine::new_with_preloaded_native(
+        TriggerType::PostPersist,
+        None,
+        Arc::clone(&base_cache),
+        Some(Arc::clone(&block)),
+        ProtocolSettings::mainnet(),
+        neo_core::smart_contract::application_engine::TEST_MODE_GAS,
+        seeded_contracts,
+        seeded_native_cache,
+        None,
+    )
+    .expect("post persist engine");
+    post_persist_engine.set_state(tx_states_after);
+    post_persist_engine.native_post_persist().expect("post persist");
+    drop(post_persist_engine);
+
+    // Apply non-Ledger storage changes to trie and assert root matches C# v3.9.1.
+    let mut applied = 0usize;
+    let mut skipped_ledger = 0usize;
+    let mut all: Vec<_> = base_cache.tracked_items().into_iter().collect();
+    all.sort_by(|a, b| (a.0.id, a.0.key()).cmp(&(b.0.id, b.0.key())));
+    let mut trie_guard = trie.lock();
+    for (key, trackable) in all.iter() {
+        let state_str = format!("{:?}", trackable.state);
+        if state_str == "None" || state_str == "NotFound" {
+            continue;
+        }
+        if key.id == -4 {
+            skipped_ledger += 1;
+            continue;
+        }
+        let key_bytes = key.to_array();
+        match state_str.as_str() {
+            "Added" | "Changed" => {
+                trie_guard
+                    .put(&key_bytes, &trackable.item.value_bytes())
+                    .expect("trie.put");
+                applied += 1;
+            }
+            "Deleted" => {
+                trie_guard.delete(&key_bytes).expect("trie.delete");
+                applied += 1;
+            }
+            _ => {}
+        }
+    }
+    let new_root = trie_guard
+        .root_hash()
+        .unwrap_or_else(neo_core::UInt256::zero);
+    eprintln!(
+        "applied={} skipped_ledger={} new_root={}",
+        applied, skipped_ledger, new_root
+    );
+    let expected_csharp_root = UInt256::parse(
+        "0xb757b3a61363c6f851d035048fd77b03254e712ae91728189a5d5bdb1e306a5d",
+    )
+    .expect("parse expected C# root");
+    assert_eq!(
+        new_root, expected_csharp_root,
+        "block 274157 OnPersist + BurgerNEO-FAULT + PostPersist state root must match C# v3.9.1",
+    );
 }

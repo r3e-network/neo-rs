@@ -307,4 +307,12 @@ fn replay_block_172613_against_root_172612() {
     eprintln!("our computed root: {}", new_root);
     eprintln!("stored our root:   0xa512a1ce9f29dfdbf93d456b2f57de441ee968c22daf0ba137c9167188c270b5");
     eprintln!("C# root:           0x6493dab848dce8bce8c1196e61365dba872d1efa0406f06ff3fc964318680e47");
+    let expected_csharp_root = neo_core::UInt256::parse(
+        "0x6493dab848dce8bce8c1196e61365dba872d1efa0406f06ff3fc964318680e47",
+    )
+    .expect("parse expected C# root");
+    assert_eq!(
+        new_root, expected_csharp_root,
+        "block 172613 NEO.Transfer + GAS mint state root must match C# v3.9.1",
+    );
 }

@@ -1,25 +1,40 @@
 #![cfg(feature = "rocksdb")]
 
-// Reproducer for block 294,369 divergence.
+// Reproducer for block 676,050 divergence (third post-fix bug).
 //
-// Block 294,369 has 2 transactions, both FAULT on mainnet:
-//   tx1 0xfdeae91c7963e8be969116bf2c7dfd99a60b05e9f2164f0418e08dfab5c8ad81
-//       sender NRXVSJJ17zMJfox4FttA2G7PRZnk6Ka3kT (0x655efe92db0406b9246341881d45fa878b70903d)
-//       FAULT at instruction 106 (THROW): "EndSaleInternal NEP17 transfer failed"
-//       calls GhostMarket (0xcc638d55d99fc81295daccbaf722b84f179fb9c4) "bidToken"
-//       1 GAS Transfer notification before fault
+// Block 676,050 has 2 transactions, both HALT on mainnet (C# Neo v3.9.1):
+//   tx0 0x4e2d76756fe4253ed19ae68a99b3557b2dedfa3e8e204fddf61163c9334a7e17
+//       sender NMPZugBZX26sdUXPT29WAwkHmDeUcXeToZ (0x33a7d61afbb73d3890143a30e2047af683573010)
+//       Calls GAS.transfer(sender, 0x3978a4f9...n3trader, 10_000_000, data) where data
+//       is a 6-element nested Array. GAS.transfer triggers onNEP17Payment on N3Trader,
+//       which is supposed to write 6 storage entries (key 02=0x01, plus 5 trade records).
+//       gasconsumed = 7,342,529, result = Boolean(true), 2 notifications emitted on C#.
 //
-//   tx2 0xe179950c1151c9ca93f32894ff3c04224d7daba2327f02661a90fa0c5747db49
-//       sender NcwZ2DLFxpmUR7UL4uhKPsaSCtf7WHNBoM (0x8de346448f3b7044d7aaf11ab6bd06bc78ccc6ba)
-//       FAULT at instruction 1923 (SYSCALL System.Runtime.Notify): insufficient gas
-//       calls Neoverse NFT (0xcd10d9f697230b04d9ebb8594a1ffe18fa95d9ad) "listToken"
-//       2 notifications before fault (DebugEvent + Transfer "Fragment E #1380")
+//   tx1 0x0340aafd0d7ac0ed9369705dee8bc23c83f230db602c049bf24492d5288a9037
+//       sender 0x1e072998c04cc53a70b1e761a7024bd2a1325424 scope=CustomContracts
+//       Calls FlamingoSwapPair.swapTokenInForTokenOut on 0x171d791c... .
+//       gasconsumed = 8,011,896, result HALT.
 //
-// Our sync produces wrong state root at 294,369:
-//   local:    0x9bb5d06bd3d486b1ac9f05d7b94a1208ec9f8239b3f6188154e271d8741d3dfa
-//   expected: 0x14de672b83fd13e8296edc7badf3e33a221eb5eb06d62e16f46966613bfa0b49
-//   put_count=11, del_count=1
-// This introduces a 729-block cascade through 295,097 that blocks sync at 295,098.
+// Our Rust sync produces wrong state root at 676,050:
+//   local:    0xad6328fe377f40fa9270f081b6b59804d3f63b575f3613bc5b1214064c5674a3
+//   expected: 0x7f71b288568a951c5da2a953c127547d7bb1e1fee0d9772a32deb3db5c518399
+//   put_count=11, del_count=0
+//
+// On Rust the N3Trader contract storage shows only key 02 with EMPTY value, while C#
+// has 6 keys (02=0x01 plus 5 trade records). FlamingoSwapPair, FLM, and GAS contracts
+// match. Only N3Trader diverges. Both nodes execute the same NEF (verified via byte-
+// identical contract record at block 676,049).
+//
+// This reproducer replays just block 676,050 against the local DB at the 676,049
+// snapshot and asserts:
+//   - tx0 HALTs with VMState::HALT, returns Boolean(true)
+//   - tx0 emits 2 notifications: GAS Transfer + N3Trader TradeCreated
+//   - resulting state root matches C# expected value
+//
+// Run with: cargo test --release -p neo-core --test mainnet_block_676050_repro -- --ignored --nocapture
+//
+// Useful tracing env vars:
+//   NEO_TRACE_STORAGE_PUT=1     trace every Storage.Put SYSCALL with key/value preview
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use neo_core::ledger::{Block, BlockHeader};
@@ -85,18 +100,18 @@ fn open_state_store() -> StateStore {
 }
 
 #[test]
-#[ignore = "requires local mainnet full-state data synced to 294,368 (clean) then applies block 294,369"]
-fn replay_block_294369_debug() {
+#[ignore = "requires local mainnet full-state data synced to 676,049 (clean) then applies block 676,050"]
+fn replay_block_676050_debug() {
     let state_store = open_state_store();
-    let Some(root_294368) = state_store.get_state_root(294_368).map(|r| r.root_hash) else {
+    let Some(root_676049) = state_store.get_state_root(676_049).map(|r| r.root_hash) else {
         eprintln!(
-            "[SKIPPED] mainnet_block_294369_repro: state root 294368 not present in \
+            "[SKIPPED] mainnet_block_676050_repro: state root 676049 not present in \
              data/mainnet/StateRoot. This test is a no-op until the local DB has been \
-             synced past height 294_368. Reported as PASS but assertions did NOT run."
+             synced past height 676_049. Reported as PASS but assertions did NOT run."
         );
         return;
     };
-    let trie = Arc::new(Mutex::new(state_store.trie_for_root(root_294368)));
+    let trie = Arc::new(Mutex::new(state_store.trie_for_root(root_676049)));
 
     let store_get = {
         let trie = Arc::clone(&trie);
@@ -141,74 +156,73 @@ fn replay_block_294369_debug() {
         },
     ));
 
-    // Build tx1: bidToken on GhostMarket
+    // Build tx0: GAS.transfer → N3Trader.onNEP17Payment (the diverging tx)
+    let mut tx0 = Transaction::new();
+    tx0.set_version(0);
+    tx0.set_nonce(3_999_507_682);
+    tx0.set_system_fee(7_342_529);
+    tx0.set_network_fee(130_362);
+    tx0.set_valid_until_block(676_080);
+    let tx0_signer = Signer::new(
+        u160("0x33a7d61afbb73d3890143a30e2047af683573010"),
+        neo_core::WitnessScope::CALLED_BY_ENTRY,
+    );
+    tx0.set_signers(vec![tx0_signer]);
+    tx0.set_attributes(Vec::new());
+    tx0.set_script(
+        BASE64
+            .decode("CxEQEsACAOH1BQIA4fUFEsAMFM924ovQBixKR47jVWEBExnzz6TSDBTPduKL0AYsSkeO41VhARMZ88+k0hLADAAMABLAEBbAAoCWmAAMFGNG8Qvi9v7Fhd3FRpricxj5pHg5DBQQMFeD9noE4jA6FJA4Pbf7GtanMxTAHwwIdHJhbnNmZXIMFM924ovQBixKR47jVWEBExnzz6TSQWJ9W1I=")
+            .expect("tx0 script"),
+    );
+    tx0.set_witnesses(vec![witness(
+        "DEAYeti0d4LHXqXlBO6fSfjQ+ous64FxZWwpmtJoyMxT0O1talVI+ikRstbPfJWbm3gfCf3nTsC+YNvFUU/BdgiI",
+        "DCECgDCKOy+uAaG9ybWHrFryynwyw5nWY2uVMZNMxBGHsnBBVuezJw==",
+    )]);
+
+    // Build tx1: FlamingoSwapPair.swapTokenInForTokenOut (DEX swap)
     let mut tx1 = Transaction::new();
     tx1.set_version(0);
-    tx1.set_nonce(3_958_463_389);
-    tx1.set_system_fee(8_500_825);
-    tx1.set_network_fee(127_462);
-    tx1.set_valid_until_block(294_399);
+    tx1.set_nonce(22_305_112);
+    tx1.set_system_fee(8_011_896);
+    tx1.set_network_fee(140_752);
+    tx1.set_valid_until_block(676_080);
     let mut tx1_signer = Signer::new(
-        u160("0x655efe92db0406b9246341881d45fa878b70903d"),
+        u160("0x1e072998c04cc53a70b1e761a7024bd2a1325424"),
         neo_core::WitnessScope::CUSTOM_CONTRACTS,
     );
     tx1_signer.allowed_contracts = vec![
-        u160("0xcc638d55d99fc81295daccbaf722b84f179fb9c4"),
-        u160("0xcd10d9f697230b04d9ebb8594a1ffe18fa95d9ad"),
+        u160("0xf970f4ccecd765b63732b821775dc38c25d74f23"),
+        u160("0xfb75a5314069b56e136713d38477f647a13991b4"),
+        u160("0xca2d20610d7982ebe0bed124ee7e9b2d580a6efc"),
+        u160("0xf0151f528127558851b39c2cd8aa47da7418ab28"),
+        u160("0x171d791c0301c332cfe95c6371ee32965e34b606"),
         u160("0xd2a4cff31913016155e38e474a2c06d08be276cf"),
     ];
     tx1.set_signers(vec![tx1_signer]);
     tx1.set_attributes(Vec::new());
     tx1.set_script(
         BASE64
-            .decode("AgDvHA0MAvYHDBQ9kHCLh/pFHYhBYyS5BgTbkv5eZRPAHwwIYmlkVG9rZW4MFMS5nxdPuCL3uszalRLIn9lVjWPMQWJ9W1I=")
+            .decode("A5Ev9Ht9AQAADBTPduKL0AYsSkeO41VhARMZ88+k0gwUKKsYdNpHqtgsnLNRiFUngVIfFfASwAIb3YgLA0+DYq4AAAAADBQkVDKh0ksCp2HnsXA6xUzAmCkHHhXAHwwWc3dhcFRva2VuSW5Gb3JUb2tlbk91dAwUI0/XJYzDXXchuDI3tmXX7Mz0cPlBYn1bUg==")
             .expect("tx1 script"),
     );
     tx1.set_witnesses(vec![witness(
-        "DEDu4vaAX3uJ/zDMGTd098L+cQ18Fm/44LCt4SAenlniwJ6eT3PCC17RxKFtCOC+GFiw4MIFCIGsJ/CabqMSDbcu",
-        "DCECgH+8wXUMh9pCLrX7byk9HS+7XwWFRgoQxMhUXSliOylBVuezJw==",
+        "DEAweDDeSBgMAgMSJ7A/sfWYaYYoMu+DKz8Bgv+vT/sisoXbY6xTbjp7SVzjul36baGjubJJMiA/+Wb62NViRAAk",
+        "DCECgFoeBWSjendx6LiVtrPJjJW2TdCqvySY8m/Af+6qg/JBVuezJw==",
     )]);
 
-    // Build tx2: listToken on Neoverse (calls GhostMarket)
-    let mut tx2 = Transaction::new();
-    tx2.set_version(0);
-    tx2.set_nonce(2_957_850_199);
-    tx2.set_system_fee(7_871_080);
-    tx2.set_network_fee(133_552);
-    tx2.set_valid_until_block(294_398);
-    let mut tx2_signer = Signer::new(
-        u160("0x8de346448f3b7044d7aaf11ab6bd06bc78ccc6ba"),
-        neo_core::WitnessScope::CUSTOM_CONTRACTS,
-    );
-    tx2_signer.allowed_contracts = vec![
-        u160("0xcc638d55d99fc81295daccbaf722b84f179fb9c4"),
-        u160("0xcd10d9f697230b04d9ebb8594a1ffe18fa95d9ad"),
-    ];
-    tx2.set_signers(vec![tx2_signer]);
-    tx2.set_attributes(Vec::new());
-    tx2.set_script(
-        BASE64
-            .decode("EgFYAgNdUAKyfAEAAANdiIMXfAEAABACAKPhEQwQRnJhZ21lbnQgRSAjMTM4MAwUz3bii9AGLEpHjuNVYQETGfPPpNIMFLrGzHi8Br22GvGq10RwO49ERuONDBSt2ZX6GP4fSlm469kECyOX9tkQzRrAHwwJbGlzdFRva2VuDBTEuZ8XT7gi97rM2pUSyJ/ZVY1jzEFifVtS")
-            .expect("tx2 script"),
-    );
-    tx2.set_witnesses(vec![witness(
-        "DEBw078K6tBlOBaPuu2RyJkKIn92DzwVq1DSV51ARu9X5CC3w4sYOHbX3X+st7zbURZLGRAulRDMPOJ9Pophqtu5",
-        "DCECkf4LoKb28yA3juQibtUAP7tL5KwqnVW1j1gPGY2b82JBVuezJw==",
-    )]);
-
-    // Block 294,369 from mainnet RPC getblock
+    // Block 676,050 from mainnet RPC getblock
     let header = BlockHeader::new(
         0,
-        u256("0x0bfb4028cce5f3914d103e4cc38370baf38cdf0895be5dec2dc51321b565c650"),
+        u256("0x3fdcf2547f8a402a62eb4dcf42219e0c9cce2fb153c439067291d7b7df114cfb"),
         u256("0x0000000000000000000000000000000000000000000000000000000000000000"), // filled by block
-        1_632_482_072_785,
-        0x3D4B003C3B9E67D7,
-        294_369,
-        5,
+        1_638_461_566_416,
+        0x86CF46A7A1AB8C43,
+        676_050,
+        4,
         UInt160::from_address("NSiVJYZej4XsxG5CUpdwn7VRQk8iiiDMPM").expect("nextconsensus"),
         vec![],
     );
-    let block = Arc::new(Block::new(header, vec![tx1.clone(), tx2.clone()]));
+    let block = Arc::new(Block::new(header, vec![tx0.clone(), tx1.clone()]));
 
     let mut on_persist_engine = ApplicationEngine::new_with_shared_block(
         TriggerType::OnPersist,
@@ -228,14 +242,14 @@ fn replay_block_294369_debug() {
         .take_state::<LedgerTransactionStates>()
         .unwrap_or_else(|| {
             LedgerTransactionStates::new(vec![
+                PersistedTransactionState::new(&tx0, block.index()),
                 PersistedTransactionState::new(&tx1, block.index()),
-                PersistedTransactionState::new(&tx2, block.index()),
             ])
         });
     drop(on_persist_engine);
 
     // Execute each tx and dump state
-    for (idx, tx) in [&tx1, &tx2].iter().enumerate() {
+    for (idx, tx) in [&tx0, &tx1].iter().enumerate() {
         let tx_store_get = {
             let base = Arc::clone(&base_cache);
             Arc::new(move |key: &neo_core::smart_contract::StorageKey| base.get(key))
@@ -279,31 +293,34 @@ fn replay_block_294369_debug() {
 
         let vm_state = tx_engine.execute_allow_fault();
         let gas = tx_engine.gas_consumed();
-        let exception = tx_engine.fault_exception();
-        let notifs = tx_engine.notifications();
-        eprintln!(
-            "\n=== tx{} result ===\nvm_state={vm_state:?} gas={gas} exception={exception:?}",
-            idx + 1,
-        );
-        eprintln!("notifications ({}):", notifs.len());
-        for (i, n) in notifs.iter().enumerate() {
-            eprintln!("  [{}] contract={} event={}", i, n.script_hash, n.event_name);
+        {
+            let exception = tx_engine.fault_exception();
+            let notifs = tx_engine.notifications();
+            eprintln!(
+                "\n=== tx{} result ===\nvm_state={vm_state:?} gas={gas} exception={exception:?}",
+                idx,
+            );
+            eprintln!("notifications ({}):", notifs.len());
+            for (i, n) in notifs.iter().enumerate() {
+                eprintln!("  [{}] contract={} event={}", i, n.script_hash, n.event_name);
+            }
         }
 
         tx_states = tx_engine
             .take_state::<LedgerTransactionStates>()
             .unwrap_or_else(|| LedgerTransactionStates::new(Vec::new()));
 
-        // Both txs must FAULT on mainnet — if either HALTs, gas metering is wrong
-        // and the resulting state writes would cascade through subsequent blocks.
+        // Both txs HALT on mainnet — if either FAULTs, we have a divergence
         assert_eq!(
             vm_state,
-            neo_vm::VMState::FAULT,
-            "tx{} must FAULT (gas={gas}) — HALT means gas is under-counted",
-            idx + 1,
+            neo_vm::VMState::HALT,
+            "tx{} must HALT (gas={gas})",
+            idx,
         );
-        // FAULT path: tx_snapshot writes are discarded (no merge into base_cache),
-        // matching production persist_block_internal behavior.
+
+        // Merge tx writes into base_cache (HALT path)
+        let tracked: Vec<_> = tx_snapshot.tracked_items().into_iter().collect();
+        base_cache.merge_tracked_items(&tracked);
     }
 
     // Run PostPersist on the block-level base_cache (mirrors persist_block_internal).
@@ -329,6 +346,29 @@ fn replay_block_294369_debug() {
     let mut all: Vec<_> = base_cache.tracked_items().into_iter().collect();
     all.sort_by(|a, b| (a.0.id, a.0.key()).cmp(&(b.0.id, b.0.key())));
     let mut trie_guard = trie.lock();
+
+    // Dump N3Trader storage changes specifically (id we look up dynamically;
+    // the contract has updateCounter=0 so id is whatever was assigned at deploy)
+    let n3trader_hash = u160("0x3978a4f91873e29a46c5dd85c5fef6e20bf14663");
+    eprintln!("\n=== N3Trader storage changes ===");
+    for (key, trackable) in all.iter() {
+        let state_str = format!("{:?}", trackable.state);
+        // N3Trader id=43 per RPC inspection
+        if key.id == 43 {
+            let val_hex = hex::encode(trackable.item.value_bytes());
+            eprintln!(
+                "  state={state_str} contract_id={} key={} value={}",
+                key.id,
+                hex::encode(key.key()),
+                if val_hex.len() > 80 {
+                    format!("{}...({} bytes)", &val_hex[..80], val_hex.len() / 2)
+                } else {
+                    format!("{} ({} bytes)", val_hex, val_hex.len() / 2)
+                },
+            );
+        }
+    }
+
     for (key, trackable) in all.iter() {
         let state_str = format!("{:?}", trackable.state);
         if state_str == "None" || state_str == "NotFound" {
@@ -356,16 +396,17 @@ fn replay_block_294369_debug() {
     let new_root = trie_guard
         .root_hash()
         .unwrap_or_else(neo_core::UInt256::zero);
+    let _ = n3trader_hash; // silence unused if we don't use it elsewhere
     eprintln!(
-        "applied={} skipped_ledger={} new_root={}",
+        "\napplied={} skipped_ledger={} new_root={}",
         applied, skipped_ledger, new_root
     );
     let expected_csharp_root = UInt256::parse(
-        "0x14de672b83fd13e8296edc7badf3e33a221eb5eb06d62e16f46966613bfa0b49",
+        "0x7f71b288568a951c5da2a953c127547d7bb1e1fee0d9772a32deb3db5c518399",
     )
     .expect("parse expected C# root");
     assert_eq!(
         new_root, expected_csharp_root,
-        "block 294369 OnPersist + 2-FAULT-tx + PostPersist state root must match C# v3.9.1",
+        "block 676050 OnPersist + 2-HALT-tx + PostPersist state root must match C# v3.9.1",
     );
 }

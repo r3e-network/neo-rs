@@ -9,7 +9,7 @@ use neo_vm::{StackItem, StackItemType};
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use serde_json::{Map as JsonMap, Number as JsonNumber, Value as JsonValue};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
 
 /// JSON serialization utilities for VM stack items.
 pub struct JsonSerializer;
@@ -175,13 +175,17 @@ impl JsonSerializer {
                 Ok(StackItem::from_array(items))
             }
             JsonValue::Object(obj) => {
-                let mut map = BTreeMap::new();
+                // C# parity: JSON object → StackItem::Map preserves insertion order.
+                // serde_json's `preserve_order` feature is enabled (workspace Cargo.toml),
+                // so iterating `obj` already yields entries in source order. Construct via
+                // Vec<(K, V)> instead of BTreeMap (which would alphabetically sort the keys).
+                let mut entries = Vec::with_capacity(obj.len());
                 for (key, element) in obj {
                     let key_item = StackItem::from_byte_string(key.as_bytes());
                     let value_item = Self::deserialize_internal(element, depth + 1, max_depth)?;
-                    map.insert(key_item, value_item);
+                    entries.push((key_item, value_item));
                 }
-                Ok(StackItem::Map(MapItem::new_untracked(map)))
+                Ok(StackItem::Map(MapItem::new_untracked(entries)))
             }
         }
     }

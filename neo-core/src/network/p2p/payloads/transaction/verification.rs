@@ -20,7 +20,13 @@ impl Transaction {
         self.verify_state_dependent(settings, snapshot, context, conflicts_list)
     }
 
-    /// Verifies the state-dependent part of the transaction.
+    /// Verifies the state-dependent part of the transaction by reading the
+    /// current height from the snapshot. Use this for mempool admission /
+    /// reverify; for block verification prefer `verify_state_dependent_at_height`
+    /// (passing `block.index() - 1`) — during fast-sync the snapshot's
+    /// `current_index` can spuriously read 0 (memtable visibility / WAL-disabled
+    /// interaction), causing every legit tx with `valid_until_block > 5760` to
+    /// be wrongly rejected as Expired.
     pub fn verify_state_dependent(
         &self,
         settings: &ProtocolSettings,
@@ -28,9 +34,31 @@ impl Transaction {
         context: Option<&crate::ledger::TransactionVerificationContext>,
         conflicts_list: &[Transaction],
     ) -> VerifyResult {
-        let ledger = LedgerContract::new();
+        let height = LedgerContract::new()
+            .current_index(snapshot)
+            .unwrap_or(0);
+        self.verify_state_dependent_at_height(
+            settings,
+            snapshot,
+            height,
+            context,
+            conflicts_list,
+        )
+    }
+
+    /// Verifies the state-dependent part of the transaction with an explicit
+    /// `current_height`. Pass `block.index() - 1` when verifying for inclusion
+    /// in block N.
+    pub fn verify_state_dependent_at_height(
+        &self,
+        settings: &ProtocolSettings,
+        snapshot: &DataCache,
+        current_height: u32,
+        context: Option<&crate::ledger::TransactionVerificationContext>,
+        conflicts_list: &[Transaction],
+    ) -> VerifyResult {
         let policy = PolicyContract::new();
-        let height = ledger.current_index(snapshot).unwrap_or(0);
+        let height = current_height;
         let max_increment = policy
             .get_max_valid_until_block_increment_snapshot(snapshot, settings)
             .unwrap_or(settings.max_valid_until_block_increment);
@@ -321,9 +349,12 @@ impl Transaction {
             return false;
         }
 
-        if witness.script_hash() != *hash {
-            return false;
-        }
+        // The script_hash != hash check belongs in the non-empty branch only.
+        // Empty verification scripts (Oracle response txs, native-contract
+        // signers) are valid: they trigger the contract-lookup path below.
+        // C# Helper.cs:334-345 has this ordering — checking script_hash up front
+        // wrongly rejects valid Oracle response txs whose first witness is empty
+        // because the Oracle native contract verifies via OracleResponse.Verify.
 
         let verification_gas = gas.min(Helper::MAX_VERIFICATION_GAS);
 
@@ -375,6 +406,13 @@ impl Transaction {
                 return false;
             }
         } else {
+            // C# Helper.cs:344-345: native contracts must use empty verification
+            // script (their verification logic is built-in); reject any non-empty
+            // verification script for native-contract signers, AND verify the
+            // script hash matches the signer hash.
+            if witness.script_hash() != *hash {
+                return false;
+            }
             if neo_vm::Script::new(verification_script.clone(), true).is_err() {
                 return false;
             }

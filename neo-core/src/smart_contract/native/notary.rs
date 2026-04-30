@@ -363,14 +363,18 @@ impl Notary {
 
     /// Gets the maximum NotValidBefore delta.
     pub fn get_max_not_valid_before_delta(&self, snapshot: &DataCache) -> u32 {
+        // C# parity: stored as variable-width signed-LE BigInteger bytes (StorageItem.Value),
+        // not a fixed 4-byte u32. Empty bytes ⇒ 0; parse via BigInt::from_signed_bytes_le.
         let key = Self::max_delta_key();
         match snapshot.try_get(&key) {
             Some(item) => {
                 let data = item.value_bytes();
-                if data.len() >= 4 {
-                    u32::from_le_bytes([data[0], data[1], data[2], data[3]])
+                if data.is_empty() {
+                    0
                 } else {
-                    DEFAULT_MAX_NOT_VALID_BEFORE_DELTA
+                    BigInt::from_signed_bytes_le(&data)
+                        .to_u32()
+                        .unwrap_or(DEFAULT_MAX_NOT_VALID_BEFORE_DELTA)
                 }
             }
             None => DEFAULT_MAX_NOT_VALID_BEFORE_DELTA,
@@ -707,10 +711,11 @@ impl Notary {
         }
 
         let key = Self::max_delta_key();
+        let value_bytes = BigInt::from(value).to_signed_bytes_le();
         if snapshot.as_ref().try_get(&key).is_some() {
-            snapshot.update(key, StorageItem::from_bytes(value.to_le_bytes().to_vec()));
+            snapshot.update(key, StorageItem::from_bytes(value_bytes));
         } else {
-            snapshot.add(key, StorageItem::from_bytes(value.to_le_bytes().to_vec()));
+            snapshot.add(key, StorageItem::from_bytes(value_bytes));
         }
 
         Ok(vec![])
@@ -845,7 +850,9 @@ impl NativeContract for Notary {
         if snapshot.as_ref().try_get(&key).is_none() {
             snapshot.add(
                 key,
-                StorageItem::from_bytes(DEFAULT_MAX_NOT_VALID_BEFORE_DELTA.to_le_bytes().to_vec()),
+                StorageItem::from_bytes(
+                    BigInt::from(DEFAULT_MAX_NOT_VALID_BEFORE_DELTA).to_signed_bytes_le(),
+                ),
             );
         }
         Ok(())
