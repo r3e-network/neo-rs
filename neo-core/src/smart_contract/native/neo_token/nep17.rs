@@ -79,10 +79,15 @@ impl NeoToken {
         let to = self.read_account(&args[1])?;
         let amount = Self::decode_amount(&args[2]);
         let data_bytes = args[3].clone();
+        // C# parity: data is parameter type Any — System.Contract.CallNative
+        // serialized the original StackItem via BinarySerializer. Deserialize back
+        // so the queued onNEP17Payment receives the same StackItem type as C#
+        // (e.g. Integer(90) from PUSHINT8 90, not ByteString of 3 serialized bytes).
         let data_item = if data_bytes.is_empty() {
             StackItem::null()
         } else {
-            StackItem::from_byte_string(data_bytes)
+            BinarySerializer::deserialize(&data_bytes, &ExecutionEngineLimits::default(), None)
+                .unwrap_or_else(|_| StackItem::from_byte_string(data_bytes))
         };
 
         // Validate amount is non-negative
