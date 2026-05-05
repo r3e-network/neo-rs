@@ -20,13 +20,98 @@ impl JsonSerializer {
     pub const MIN_SAFE_INTEGER: i64 = -9007199254740991;
 
     /// Serializes a [`StackItem`] to a UTF-8 JSON byte vector.
+    ///
+    /// String escape behavior matches C# Neo's `StdLib.jsonSerialize`, which uses
+    /// .NET's `System.Text.Json.JsonSerializer` with default `JavaScriptEncoder.Default`.
+    /// The default encoder escapes `"`, `\`, control chars, all non-ASCII, plus
+    /// `<`, `>`, `&`, `'`, `+`, `` ` ``. This differs from serde_json's minimal escape
+    /// set, so we bypass serde_json's string output and write our own JSON encoder.
     pub fn serialize_to_byte_array(item: &StackItem, max_size: u32) -> Result<Vec<u8>, String> {
         let json = Self::serialize_to_json(item)?;
-        let payload = serde_json::to_vec(&json).map_err(|e| e.to_string())?;
+        let mut payload = Vec::new();
+        Self::write_json_value(&json, &mut payload);
         if payload.len() > max_size as usize {
             return Err("JSON output too large".to_string());
         }
         Ok(payload)
+    }
+
+    /// Writes a [`JsonValue`] using C#-compatible escape semantics.
+    fn write_json_value(value: &JsonValue, out: &mut Vec<u8>) {
+        match value {
+            JsonValue::Null => out.extend_from_slice(b"null"),
+            JsonValue::Bool(true) => out.extend_from_slice(b"true"),
+            JsonValue::Bool(false) => out.extend_from_slice(b"false"),
+            JsonValue::Number(n) => out.extend_from_slice(n.to_string().as_bytes()),
+            JsonValue::String(s) => Self::write_json_string(s, out),
+            JsonValue::Array(items) => {
+                out.push(b'[');
+                for (i, item) in items.iter().enumerate() {
+                    if i > 0 {
+                        out.push(b',');
+                    }
+                    Self::write_json_value(item, out);
+                }
+                out.push(b']');
+            }
+            JsonValue::Object(obj) => {
+                out.push(b'{');
+                for (i, (k, v)) in obj.iter().enumerate() {
+                    if i > 0 {
+                        out.push(b',');
+                    }
+                    Self::write_json_string(k, out);
+                    out.push(b':');
+                    Self::write_json_value(v, out);
+                }
+                out.push(b'}');
+            }
+        }
+    }
+
+    /// Writes a JSON string with .NET `JavaScriptEncoder.Default`-compatible escaping.
+    /// Escapes: `"`, `\`, control chars (<0x20), DEL (0x7F), all non-ASCII (≥0x80),
+    /// plus `<` `>` `&` `'` `+` `` ` `` (the JS-safe additional set).
+    fn write_json_string(s: &str, out: &mut Vec<u8>) {
+        out.push(b'"');
+        for c in s.chars() {
+            match c {
+                '"' => out.extend_from_slice(b"\\\""),
+                '\\' => out.extend_from_slice(b"\\\\"),
+                '\u{0008}' => out.extend_from_slice(b"\\b"),
+                '\u{000C}' => out.extend_from_slice(b"\\f"),
+                '\n' => out.extend_from_slice(b"\\n"),
+                '\r' => out.extend_from_slice(b"\\r"),
+                '\t' => out.extend_from_slice(b"\\t"),
+                c if (c as u32) < 0x20
+                    || (c as u32) == 0x7F
+                    || (c as u32) > 0x7F
+                    || matches!(c, '<' | '>' | '&' | '\'' | '+' | '`') =>
+                {
+                    let cp = c as u32;
+                    if cp <= 0xFFFF {
+                        let _ = std::io::Write::write_fmt(
+                            out,
+                            format_args!("\\u{:04X}", cp),
+                        );
+                    } else {
+                        // Encode supplementary chars as UTF-16 surrogate pair.
+                        let v = cp - 0x10000;
+                        let hi = 0xD800 + (v >> 10);
+                        let lo = 0xDC00 + (v & 0x3FF);
+                        let _ = std::io::Write::write_fmt(
+                            out,
+                            format_args!("\\u{:04X}\\u{:04X}", hi, lo),
+                        );
+                    }
+                }
+                c => {
+                    // ASCII-safe printable char.
+                    out.push(c as u8);
+                }
+            }
+        }
+        out.push(b'"');
     }
 
     /// Serializes a stack item to a [`JsonValue`].

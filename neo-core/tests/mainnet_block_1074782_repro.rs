@@ -379,6 +379,37 @@ fn replay_block_1074782_debug() {
         applied, skipped_ledger, new_root
     );
 
+    // Dump all tracked storage writes to /tmp/blk1074782_rust_storage.txt for diff vs C#.
+    if let Ok(out_path) = std::env::var("NEO_DUMP_STORAGE_PATH") {
+        use std::io::Write;
+        let mut f = std::fs::File::create(&out_path).expect("open dump file");
+        for (key, trackable) in all.iter() {
+            let state_str = format!("{:?}", trackable.state);
+            if state_str == "None" || state_str == "NotFound" {
+                continue;
+            }
+            if key.id == -4 {
+                continue;
+            }
+            let key_bytes = key.to_array();
+            let value_bytes: Vec<u8> = match state_str.as_str() {
+                "Added" | "Changed" => trackable.item.value_bytes().to_vec(),
+                "Deleted" => Vec::new(),
+                _ => continue,
+            };
+            writeln!(
+                f,
+                "{} id={} keyhex={} valhex={}",
+                state_str,
+                key.id,
+                hex::encode(&key_bytes),
+                hex::encode(&value_bytes),
+            )
+            .expect("write");
+        }
+        eprintln!("storage writes dumped to {}", out_path);
+    }
+
     // C# state root @ 1,074,782 (from mainnet1.neo.coz.io:443 getstateroot).
     let expected_csharp_root = UInt256::parse(
         "0xe80f656842033904bb2e69106765633e190ee5bbe733655c6eda13c3478d6c38",
