@@ -611,10 +611,15 @@ impl IInteroperable for ContractManifest {
 
         let mut features_map = BTreeMap::new();
         for (key, value) in &self.features {
-            let json_text = serde_json::to_string(value).unwrap_or_else(|_| "null".to_string());
+            // C# parity: feature values use System.Text.Json default
+            // (JavaScriptEncoder.Default), which escapes `<`, `>`, `&`, `'`,
+            // `+`, `` ` ``, and all non-ASCII chars. serde_json's default uses
+            // the minimal RFC-8259 escape set, which produces byte-different
+            // output for those characters.
+            let json_bytes = crate::smart_contract::json_serializer::JsonSerializer::encode_value_csharp_compatible(value);
             features_map.insert(
                 StackItem::from_byte_string(key.as_bytes()),
-                StackItem::from_byte_string(json_text.into_bytes()),
+                StackItem::from_byte_string(json_bytes),
             );
         }
 
@@ -641,16 +646,21 @@ impl IInteroperable for ContractManifest {
             }
         };
 
-        // C# reference: `ContractManifest.ToStackItem()`
-        // extra is serialized as ByteString(json_bytes) where json_bytes = extra.ToByteArray(false)
-        // When extra is null/None, C# produces ByteString("null") (the JSON literal string)
+        // C# reference: `ContractManifest.ToStackItem()` — extra is serialized
+        // as ByteString(json_bytes) where json_bytes = extra.ToByteArray(false).
+        // C#'s `JObject.ToByteArray(indent=false)` uses System.Text.Json with
+        // the default JavaScriptEncoder, which escapes `<`, `>`, `&`, `'`, `+`,
+        // `` ` ``, and all non-ASCII codepoints. serde_json's default minimal
+        // RFC-8259 escape set produces byte-different output, breaking state
+        // root parity for any manifest whose `extra` JSON contains those
+        // characters (e.g. NEP-11 deploys with `&` in description text — bug
+        // #10 surfaced via FTWSmith createNEP11 at block 1,208,916).
         let extra_item = {
-            let json_bytes = match &self.extra {
-                Some(extra) => serde_json::to_string(extra)
-                    .unwrap_or_else(|_| "null".to_string()),
-                None => "null".to_string(),
+            let json_bytes: Vec<u8> = match &self.extra {
+                Some(extra) => crate::smart_contract::json_serializer::JsonSerializer::encode_value_csharp_compatible(extra),
+                None => b"null".to_vec(),
             };
-            StackItem::from_byte_string(json_bytes.into_bytes())
+            StackItem::from_byte_string(json_bytes)
         };
 
         Ok(StackItem::from_struct(vec![
@@ -682,6 +692,42 @@ impl Default for ContractManifest {
             trusts: WildCardContainer::Wildcard,
             extra: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod manifest_extra_escape_tests {
+    use super::*;
+    use crate::smart_contract::IInteroperable;
+
+    /// Bug #10 regression — manifest `extra` JSON must use C# JavaScriptEncoder.Default
+    /// escape semantics. serde_json's minimal RFC-8259 escape set produces wrong bytes
+    /// for `&`, `<`, `>`, `'`, `+`, `` ` ``, and all non-ASCII. Block 1,208,916 deploy
+    /// of "Three Orange Hearts" NEP-11 had `&` in the description; serde_json kept it
+    /// literal, C# escaped it to `&`, state roots diverged from that block onward.
+    #[test]
+    fn extra_with_ampersand_uses_csharp_escape() {
+        let mut m = ContractManifest::default();
+        m.extra = Some(serde_json::json!({
+            "description": "NEO, GAS, & FLM on Neo N3"
+        }));
+        let stack = m.to_stack_item().expect("to_stack_item");
+        let StackItem::Struct(s) = stack else { panic!("expected Struct") };
+        let items = s.items();
+        // extra is the last (8th) field per to_stack_item layout.
+        let extra_item = &items[7];
+        let extra_bytes = extra_item.as_bytes().expect("extra bytes");
+        let extra_str = std::str::from_utf8(&extra_bytes).expect("utf-8");
+        // Output must contain the escape sequence (6 ASCII chars: \, u, 0, 0, 2, 6)
+        // and must NOT contain a literal `&`.
+        assert!(
+            extra_str.contains("\\u0026"),
+            "expected `&` to be escaped as `\\u0026`, got: {extra_str}"
+        );
+        assert!(
+            !extra_str.contains('&'),
+            "raw `&` must NOT appear in C#-compatible output, got: {extra_str}"
+        );
     }
 }
 

@@ -36,6 +36,17 @@ impl JsonSerializer {
         Ok(payload)
     }
 
+    /// Encodes a `serde_json::Value` to UTF-8 JSON bytes using .NET
+    /// `System.Text.Json.JsonSerializer` default semantics — i.e. with
+    /// `JavaScriptEncoder.Default` escaping. Use this anywhere a contract
+    /// manifest, native ABI member, or other persisted JSON payload must
+    /// be byte-identical with C# Neo v3.x.
+    pub fn encode_value_csharp_compatible(value: &JsonValue) -> Vec<u8> {
+        let mut out = Vec::new();
+        Self::write_json_value(value, &mut out);
+        out
+    }
+
     /// Writes a [`JsonValue`] using C#-compatible escape semantics.
     fn write_json_value(value: &JsonValue, out: &mut Vec<u8>) {
         match value {
