@@ -737,16 +737,39 @@ fn size(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
     // Pop the collection from the stack
     let collection = context.pop()?;
 
-    // Get the size of the collection
+    // Get the size of the collection.
+    // C# Neo VM SIZE accepts CompoundType (Count), PrimitiveType (Size), and Buffer (Size).
+    // PrimitiveType subclasses are ByteString, Integer, Boolean — all expose Size.
     let size = match &collection {
         StackItem::Array(array) => array.len(),
         StackItem::Struct(structure) => structure.len(),
         StackItem::Map(map) => map.len(),
         StackItem::ByteString(data) => data.len(),
         StackItem::Buffer(data) => data.len(),
+        StackItem::Integer(vi) => {
+            // Matches C# Integer.Size = BigInteger.GetByteCount(false), i.e. the
+            // minimal two's-complement encoded byte count (0 for zero).
+            if vi.is_zero() {
+                0
+            } else {
+                let bi = vi.to_bigint();
+                let mut bytes = bi.to_signed_bytes_le();
+                let negative = bi.sign() == num_bigint::Sign::Minus;
+                if let Some(last) = bytes.last() {
+                    let sign_bit_set = last & 0x80 != 0;
+                    if !negative && sign_bit_set {
+                        bytes.push(0);
+                    } else if negative && !sign_bit_set {
+                        bytes.push(0xFF);
+                    }
+                }
+                bytes.len()
+            }
+        }
+        StackItem::Boolean(_) => 1,
         _ => {
             return Err(VmError::invalid_type_simple(
-                "Expected Array, Struct, Map, ByteString, or Buffer",
+                "Expected Array, Struct, Map, ByteString, Buffer, Integer, or Boolean",
             ));
         }
     };
