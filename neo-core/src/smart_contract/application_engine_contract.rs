@@ -179,12 +179,16 @@ fn contract_create_multisig_account_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
 ) -> VmResult<()> {
-    let public_keys_items = app.pop_array().map_err(|e| VmError::InteropService {
+    // C# parity (Neo.SmartContract.ApplicationEngine.Contract.cs):
+    //   CreateMultisigAccount(int m, ECPoint[] pubKeys)
+    // Parameters are consumed in declaration order: pop m first (top of stack),
+    // then pubKeys. Caller's SWAP between LDLOC0/LDARG0 confirms m-on-top layout.
+    let m = app.pop_integer().map_err(|e| VmError::InteropService {
         service: "System.Contract.CreateMultisigAccount".to_string(),
         error: e,
     })?;
 
-    let m = app.pop_integer().map_err(|e| VmError::InteropService {
+    let public_keys_items = app.pop_array().map_err(|e| VmError::InteropService {
         service: "System.Contract.CreateMultisigAccount".to_string(),
         error: e,
     })?;

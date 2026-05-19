@@ -443,8 +443,9 @@ impl ApplicationEngine {
         }
 
         let m = required_signatures as usize;
+        // C# parity (Contract.CreateMultiSigRedeemScript): up to 1024 pubkeys.
         if public_keys_items.is_empty()
-            || public_keys_items.len() > 16
+            || public_keys_items.len() > 1024
             || m > public_keys_items.len()
         {
             return Err(Error::invalid_operation(

@@ -86,8 +86,10 @@ fn contract_create_multisig_account_matches_redeem_script_hash() {
     .expect("engine");
 
     let mut script = ScriptBuilder::new();
-    script.emit_push_int(2);
+    // C# convention: SYSCALL pops parameters in declaration order — `m` first
+    // (top of stack), then `pubKeys`. So push pubKeys first, then m.
     emit_byte_array_array(&mut script, &pubkey_bytes);
+    script.emit_push_int(2);
     script
         .emit_syscall("System.Contract.CreateMultisigAccount")
         .expect("syscall");
