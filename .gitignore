@@ -55,6 +55,10 @@ Thumbs.db
 *.orig
 *.rej
 
+# Python tooling caches
+__pycache__/
+*.pyc
+
 # Large test data
 /chain.*
 blockchain_data/

@@ -893,6 +893,99 @@ impl PartialEq for StackItem {
 
 impl Eq for StackItem {}
 
+impl TryFrom<neo_vm_rs::StackValue> for StackItem {
+    type Error = VmError;
+
+    fn try_from(value: neo_vm_rs::StackValue) -> VmResult<Self> {
+        match value {
+            neo_vm_rs::StackValue::Integer(value) => Ok(Self::from_i64(value)),
+            neo_vm_rs::StackValue::BigInteger(bytes) => {
+                Ok(Self::from_int(BigInt::from_signed_bytes_le(&bytes)))
+            }
+            neo_vm_rs::StackValue::ByteString(bytes) => Ok(Self::from_byte_string(bytes)),
+            neo_vm_rs::StackValue::Buffer(bytes) => Ok(Self::from_buffer(bytes)),
+            neo_vm_rs::StackValue::Boolean(value) => Ok(Self::from_bool(value)),
+            neo_vm_rs::StackValue::Array(items) => {
+                let items = items
+                    .into_iter()
+                    .map(Self::try_from)
+                    .collect::<VmResult<Vec<_>>>()?;
+                Ok(Self::from_array(items))
+            }
+            neo_vm_rs::StackValue::Struct(items) => {
+                let items = items
+                    .into_iter()
+                    .map(Self::try_from)
+                    .collect::<VmResult<Vec<_>>>()?;
+                Ok(Self::from_struct(items))
+            }
+            neo_vm_rs::StackValue::Map(entries) => {
+                let mut map = VmOrderedDictionary::with_capacity(entries.len());
+                for (key, value) in entries {
+                    map.insert(Self::try_from(key)?, Self::try_from(value)?);
+                }
+                Ok(Self::from_map(map))
+            }
+            neo_vm_rs::StackValue::Null => Ok(Self::Null),
+            neo_vm_rs::StackValue::Pointer(_)
+            | neo_vm_rs::StackValue::Interop(_)
+            | neo_vm_rs::StackValue::Iterator(_) => Err(VmError::invalid_operation_msg(format!(
+                "Cannot convert {:?} into neo-vm StackItem without host runtime identity",
+                value
+            ))),
+        }
+    }
+}
+
+impl TryFrom<StackItem> for neo_vm_rs::StackValue {
+    type Error = VmError;
+
+    fn try_from(value: StackItem) -> VmResult<Self> {
+        match value {
+            StackItem::Null => Ok(Self::Null),
+            StackItem::Boolean(value) => Ok(Self::Boolean(value)),
+            StackItem::Integer(value) => match value.to_i64() {
+                Some(value) => Ok(Self::Integer(value)),
+                None => Ok(Self::BigInteger(value.to_signed_bytes_le())),
+            },
+            StackItem::ByteString(bytes) => Ok(Self::ByteString(bytes)),
+            StackItem::Buffer(buffer) => Ok(Self::Buffer(buffer.data())),
+            StackItem::Array(array) => {
+                let items = array
+                    .items()
+                    .into_iter()
+                    .map(Self::try_from)
+                    .collect::<VmResult<Vec<_>>>()?;
+                Ok(Self::Array(items))
+            }
+            StackItem::Struct(structure) => {
+                let items = structure
+                    .items()
+                    .into_iter()
+                    .map(Self::try_from)
+                    .collect::<VmResult<Vec<_>>>()?;
+                Ok(Self::Struct(items))
+            }
+            StackItem::Map(map) => {
+                let entries = map
+                    .iter()
+                    .map(|(key, value)| Ok((Self::try_from(key)?, Self::try_from(value)?)))
+                    .collect::<VmResult<Vec<_>>>()?;
+                Ok(Self::Map(entries))
+            }
+            StackItem::Pointer(pointer) => {
+                let position = i64::try_from(pointer.position()).map_err(|_| {
+                    VmError::overflow("StackItem pointer position does not fit neo-vm-rs i64")
+                })?;
+                Ok(Self::Pointer(position))
+            }
+            StackItem::InteropInterface(_) => Err(VmError::invalid_operation_msg(
+                "Cannot convert InteropInterface into neo-vm-rs StackValue without a host handle",
+            )),
+        }
+    }
+}
+
 // Implement PartialOrd and Ord to allow stack items to be used as keys in BTreeMap
 // Production-ready implementation matching C# StackItem comparison exactly
 impl PartialOrd for StackItem {

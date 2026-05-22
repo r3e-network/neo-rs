@@ -3,6 +3,16 @@
 ///
 /// Reference: https://github.com/neo-project/neo-vm/blob/master/src/Neo.VM/OpCode.cs
 use neo_vm::op_code::OpCode;
+use std::any::TypeId;
+
+#[test]
+fn opcode_type_is_sourced_from_neo_vm_rs() {
+    assert_eq!(
+        TypeId::of::<OpCode>(),
+        TypeId::of::<neo_vm_rs::OpCode>(),
+        "neo_vm::OpCode should be the shared neo-vm-rs opcode type"
+    );
+}
 
 #[test]
 fn test_opcode_values_match_csharp() {
@@ -175,26 +185,26 @@ fn test_opcode_values_match_csharp() {
 #[test]
 fn test_opcode_from_byte_critical_values() {
     // Test the critical splice opcodes that were previously broken
-    assert_eq!(OpCode::from_byte(0x88), Some(OpCode::NEWBUFFER));
-    assert_eq!(OpCode::from_byte(0x89), Some(OpCode::MEMCPY));
-    assert_eq!(OpCode::from_byte(0x8A), None); // Not used in C# Neo
-    assert_eq!(OpCode::from_byte(0x8B), Some(OpCode::CAT));
-    assert_eq!(OpCode::from_byte(0x8C), Some(OpCode::SUBSTR));
-    assert_eq!(OpCode::from_byte(0x8D), Some(OpCode::LEFT));
-    assert_eq!(OpCode::from_byte(0x8E), Some(OpCode::RIGHT));
+    assert_eq!(OpCode::from_u8(0x88), Some(OpCode::NEWBUFFER));
+    assert_eq!(OpCode::from_u8(0x89), Some(OpCode::MEMCPY));
+    assert_eq!(OpCode::from_u8(0x8A), None); // Not used in C# Neo
+    assert_eq!(OpCode::from_u8(0x8B), Some(OpCode::CAT));
+    assert_eq!(OpCode::from_u8(0x8C), Some(OpCode::SUBSTR));
+    assert_eq!(OpCode::from_u8(0x8D), Some(OpCode::LEFT));
+    assert_eq!(OpCode::from_u8(0x8E), Some(OpCode::RIGHT));
 
     // Test some other important values
-    assert_eq!(OpCode::from_byte(0x00), Some(OpCode::PUSHINT8));
-    assert_eq!(OpCode::from_byte(0x41), Some(OpCode::SYSCALL));
-    assert_eq!(OpCode::from_byte(0x4C), None); // TOALTSTACK not in C#
-    assert_eq!(OpCode::from_byte(0x4F), None); // FROMALTSTACK not in C#
+    assert_eq!(OpCode::from_u8(0x00), Some(OpCode::PUSHINT8));
+    assert_eq!(OpCode::from_u8(0x41), Some(OpCode::SYSCALL));
+    assert_eq!(OpCode::from_u8(0x4C), None); // TOALTSTACK not in C#
+    assert_eq!(OpCode::from_u8(0x4F), None); // FROMALTSTACK not in C#
 }
 
 #[test]
 fn test_no_invalid_opcodes() {
     // Ensure we don't have TOALTSTACK or FROMALTSTACK
     for i in 0u8..=255 {
-        if let Some(opcode) = OpCode::from_byte(i) {
+        if let Some(opcode) = OpCode::from_u8(i) {
             // Make sure we don't have any invalid opcodes
             match i {
                 0x4C | 0x4F => panic!("Found invalid opcode at 0x{:02X}: {:?}", i, opcode),
@@ -207,9 +217,9 @@ fn test_no_invalid_opcodes() {
 #[test]
 fn test_opcode_roundtrip() {
     // Test that all valid opcodes can be converted to byte and back
-    for opcode in OpCode::iter() {
+    for opcode in OpCode::ALL {
         let byte = opcode as u8;
-        let from_byte = OpCode::from_byte(byte);
+        let from_byte = OpCode::from_u8(byte);
         assert_eq!(
             from_byte,
             Some(opcode),

@@ -484,7 +484,9 @@ async fn invokescript_push1_reports_csharp_gas_units() {
         .get("gasconsumed")
         .and_then(|value| value.as_str())
         .expect("gasconsumed");
-    assert_eq!(gas, "1");
+    // PUSH1 feeUnits=1 * default ExecFeeFactor=30 = 30 datoshi (matches C#).
+    // Test pre-dated commit 4f599eb2 which corrected the 30× cpu_fee undercharge.
+    assert_eq!(gas, "30");
 
     let stack = result
         .get("stack")

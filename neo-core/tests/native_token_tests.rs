@@ -164,8 +164,12 @@ fn gas_transfer_uses_current_contract_hash_for_contract_sender_authorization() {
     let amount = BigInt::from(1_000_000);
 
     let mut engine = make_engine(Arc::clone(&snapshot), entry_hash);
-    engine.set_current_script_hash(Some(contract_hash));
-    engine.set_calling_script_hash(Some(entry_hash));
+    // C# parity (FungibleToken.Transfer): authorization auto-succeeds when
+    // `from == engine.CallingScriptHash`. In a real System.Contract.Call flow
+    // GAS.transfer is invoked in a new context whose calling_script_hash is the
+    // contract that issued the call — so the contract IS the calling script.
+    engine.set_current_script_hash(Some(GasToken::new().hash()));
+    engine.set_calling_script_hash(Some(contract_hash));
 
     let gas = GasToken::new();
     gas.mint(&mut engine, &contract_hash, &amount, false)
@@ -219,10 +223,14 @@ fn call_native_contract_refreshes_contract_sender_context_before_gas_transfer() 
         .get_state_with_factory::<neo_core::smart_contract::execution_context_state::ExecutionContextState, _>(
             neo_core::smart_contract::execution_context_state::ExecutionContextState::new,
         );
+    // C# parity: when contract X is the calling context invoking GAS.transfer,
+    // the context's calling_script_hash IS X. refresh_context_tracking copies
+    // that into engine.calling_script_hash, so transfer auto-authorizes when
+    // from == X.
     {
         let mut state = state_arc.lock();
         state.script_hash = Some(contract_hash);
-        state.calling_script_hash = Some(entry_hash);
+        state.calling_script_hash = Some(contract_hash);
     }
 
     let transfer_args = vec![

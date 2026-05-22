@@ -15,6 +15,16 @@ use std::sync::OnceLock;
 
 const SYSTEM_CONTRACT_CALL_PRICE: i64 = 1 << 15;
 
+/// Bitmask tracking which native-call args were originally `StackItem::Null`.
+///
+/// Bit `i` (LSB) is set if arg index `i` was popped as `StackItem::Null`.
+/// The dispatcher in [`contract_call_native_handler`] populates this state
+/// before invoking the native method, and the handler can query it via
+/// `ApplicationEngine::get_state::<NativeArgNullMask>()` to distinguish
+/// `Null` from `ByteString("")` (both of which collapse to ambiguous bytes
+/// at the `Vec<u8>` args layer — see `OracleContract::request` filter handling).
+pub struct NativeArgNullMask(pub u32);
+
 fn native_call_trace_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| {
@@ -271,8 +281,12 @@ fn contract_call_native_handler(
         }
 
         let mut args = Vec::with_capacity(arg_count);
+        let mut null_mask: u32 = 0;
         for index in 0..arg_count {
             let item = engine.pop().map_err(|e| e.to_string())?;
+            if matches!(item, StackItem::Null) && index < 32 {
+                null_mask |= 1u32 << index;
+            }
             if native_call_trace_enabled() {
                 let stack_type = item.stack_item_type();
                 let bytes_len = item.as_bytes().ok().map(|value| value.len());
@@ -300,9 +314,10 @@ fn contract_call_native_handler(
             args.push(bytes);
         }
 
-        let result_bytes = app
-            .call_native_contract(script_hash, &method_name, &args)
-            .map_err(|e| e.to_string())?;
+        app.set_state(NativeArgNullMask(null_mask));
+        let call_result = app.call_native_contract(script_hash, &method_name, &args);
+        app.take_state::<NativeArgNullMask>();
+        let result_bytes = call_result.map_err(|e| e.to_string())?;
 
         if native_call_trace_enabled() {
             let preview_len = result_bytes.len().min(24);

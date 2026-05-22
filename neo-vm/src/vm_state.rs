@@ -86,3 +86,26 @@ impl VMState {
         self.contains(Self::BREAK)
     }
 }
+
+impl From<neo_vm_rs::VmState> for VMState {
+    fn from(value: neo_vm_rs::VmState) -> Self {
+        match value {
+            neo_vm_rs::VmState::Halt => Self::HALT,
+            neo_vm_rs::VmState::Fault => Self::FAULT,
+        }
+    }
+}
+
+impl TryFrom<VMState> for neo_vm_rs::VmState {
+    type Error = crate::VmError;
+
+    fn try_from(value: VMState) -> Result<Self, Self::Error> {
+        match value {
+            VMState::HALT => Ok(Self::Halt),
+            VMState::FAULT => Ok(Self::Fault),
+            VMState::NONE | VMState::BREAK => Err(crate::VmError::invalid_operation_msg(
+                format!("{value:?} is not a final neo-vm-rs VM state"),
+            )),
+        }
+    }
+}

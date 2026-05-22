@@ -373,6 +373,10 @@ pub use i_reference_counter::IReferenceCounter;
 pub use instruction::Instruction;
 pub use interop_service::{InteropService, VmInteropDescriptor as InteropDescriptor};
 pub use jump_table::{InstructionHandler, JumpTable};
+pub use neo_vm_rs::{
+    ExecutionResult, StackValue, SyscallProvider, VmContext, VmState, interpret, interop_hash,
+    syscall_arg_count,
+};
 pub use op_code::OpCode;
 pub use reference_counter::{CompoundParent, ReferenceCounter};
 pub use script::Script;

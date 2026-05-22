@@ -320,13 +320,22 @@ impl OracleContract {
         let url = String::from_utf8(args[0].clone())
             .map_err(|_| Error::invalid_operation("Invalid URL"))?;
         // C# parity: filter is stored as ByteString("") when caller passes empty string,
-        // and only as Null when caller passes StackItem.Null. Our args layer flattens both
-        // to empty Vec<u8>, so we conservatively treat empty bytes as Some("") — matching
-        // typical contract callers (e.g. n3trader) which use PUSHDATA1 0 for "no filter".
-        let filter = Some(
-            String::from_utf8(args[1].clone())
-                .map_err(|_| Error::invalid_operation("Invalid filter"))?,
-        );
+        // and as Null when caller passes StackItem.Null. Our Vec<u8> args layer can't
+        // tell `Null` from `ByteString("\x00")` (both produce `[0x00]`), so we consult
+        // the dispatcher-populated NativeArgNullMask to detect the Null case explicitly.
+        // See application_engine_contract.rs NativeArgNullMask.
+        let filter_was_null = engine
+            .get_state::<crate::smart_contract::application_engine_contract::NativeArgNullMask>()
+            .map(|m| (m.0 >> 1) & 1 == 1)
+            .unwrap_or(false);
+        let filter = if filter_was_null {
+            None
+        } else {
+            Some(
+                String::from_utf8(args[1].clone())
+                    .map_err(|_| Error::invalid_operation("Invalid filter"))?,
+            )
+        };
         let callback = String::from_utf8(args[2].clone())
             .map_err(|_| Error::invalid_operation("Invalid callback"))?;
         let user_data = args[3].clone();

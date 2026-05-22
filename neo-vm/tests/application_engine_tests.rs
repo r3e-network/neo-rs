@@ -529,14 +529,14 @@ fn test_division_operation_directly() {
 #[test]
 fn test_opcode_parsing() {
     // Test OpCode parsing directly
-    println!("Testing OpCode::from_byte(99): {:?}", OpCode::from_byte(99));
+    println!("Testing OpCode::from_u8(99): {:?}", OpCode::from_u8(99));
     println!("Testing OpCode::try_from(99): {:?}", OpCode::try_from(99u8));
 
     // Test specific opcodes
-    assert_eq!(OpCode::from_byte(0x13), Some(OpCode::PUSH3));
-    assert_eq!(OpCode::from_byte(0x12), Some(OpCode::PUSH2));
-    assert_eq!(OpCode::from_byte(0x63), Some(OpCode::STSFLD3));
-    assert_eq!(OpCode::from_byte(0x3D), Some(OpCode::ENDTRY));
+    assert_eq!(OpCode::from_u8(0x13), Some(OpCode::PUSH3));
+    assert_eq!(OpCode::from_u8(0x12), Some(OpCode::PUSH2));
+    assert_eq!(OpCode::from_u8(0x63), Some(OpCode::STSFLD3));
+    assert_eq!(OpCode::from_u8(0x3D), Some(OpCode::ENDTRY));
 
     // Test script bytes
     let mut builder = ScriptBuilder::new();
@@ -556,7 +556,7 @@ fn test_opcode_parsing() {
             i,
             byte,
             byte,
-            OpCode::from_byte(byte)
+            OpCode::from_u8(byte)
         );
     }
 }
@@ -588,7 +588,7 @@ fn test_simple_arithmetic() {
     );
 
     // Test OpCode parsing directly
-    println!("Testing OpCode::from_byte(99): {:?}", OpCode::from_byte(99));
+    println!("Testing OpCode::from_u8(99): {:?}", OpCode::from_u8(99));
     println!("Testing OpCode::try_from(99): {:?}", OpCode::try_from(99u8));
 
     // Test each byte in the script
@@ -598,7 +598,7 @@ fn test_simple_arithmetic() {
             i,
             byte,
             byte,
-            OpCode::from_byte(byte)
+            OpCode::from_u8(byte)
         );
     }
 

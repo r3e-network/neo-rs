@@ -394,58 +394,7 @@ impl Instruction {
 
     /// Returns the operand size for the given opcode.
     const fn get_operand_size(opcode: OpCode) -> OperandSizePrefix {
-        match opcode {
-            // PUSH instructions with fixed operand sizes
-            OpCode::PUSHINT8 => OperandSizePrefix(1),
-            OpCode::PUSHINT16 => OperandSizePrefix(2),
-            OpCode::PUSHINT32 => OperandSizePrefix(4),
-            OpCode::PUSHINT64 => OperandSizePrefix(8),
-            OpCode::PUSHINT128 => OperandSizePrefix(16),
-            OpCode::PUSHINT256 => OperandSizePrefix(32),
-            OpCode::PUSHA => OperandSizePrefix(4),
-            OpCode::PUSHDATA1 => OperandSizePrefix(1),
-            OpCode::PUSHDATA2 => OperandSizePrefix(2),
-            OpCode::PUSHDATA4 => OperandSizePrefix(4),
-            OpCode::TRY => OperandSizePrefix(2),
-            // Jump instructions with 1-byte offset
-            OpCode::JMP
-            | OpCode::JMPIF
-            | OpCode::JMPIFNOT
-            | OpCode::CALL
-            | OpCode::JMPEQ
-            | OpCode::JMPNE
-            | OpCode::JMPGT
-            | OpCode::JMPGE
-            | OpCode::JMPLT
-            | OpCode::JMPLE
-            | OpCode::ENDTRY => OperandSizePrefix(1),
-            OpCode::CALLT => OperandSizePrefix(2),
-            // Jump instructions with 4-byte offset
-            OpCode::JMP_L
-            | OpCode::JMPIF_L
-            | OpCode::JMPIFNOT_L
-            | OpCode::CALL_L
-            | OpCode::JMPEQ_L
-            | OpCode::JMPNE_L
-            | OpCode::JMPGT_L
-            | OpCode::JMPGE_L
-            | OpCode::JMPLT_L
-            | OpCode::JMPLE_L
-            | OpCode::ENDTRY_L => OperandSizePrefix(4),
-            OpCode::TRY_L => OperandSizePrefix(8),
-            OpCode::SYSCALL => OperandSizePrefix(4),
-            // Slot operations with operands
-            OpCode::INITSLOT => OperandSizePrefix(2), // local_count (1 byte) + argument_count (1 byte)
-            OpCode::INITSSLOT => OperandSizePrefix(1), // static_count (1 byte)
-            OpCode::LDSFLD | OpCode::STSFLD => OperandSizePrefix(1), // index (1 byte)
-            OpCode::LDLOC | OpCode::STLOC => OperandSizePrefix(1), // index (1 byte)
-            OpCode::LDARG | OpCode::STARG => OperandSizePrefix(1), // index (1 byte)
-            // Type operations with operands
-            OpCode::CONVERT | OpCode::ISTYPE => OperandSizePrefix(1), // type (1 byte)
-            // Compound operations with operands
-            OpCode::NEWARRAY_T => OperandSizePrefix(1), // type (1 byte)
-            _ => OperandSizePrefix(0),
-        }
+        OperandSizePrefix(opcode.operand_size() as u8)
     }
 
     /// Creates a RET instruction.

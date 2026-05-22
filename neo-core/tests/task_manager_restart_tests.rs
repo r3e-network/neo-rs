@@ -295,11 +295,11 @@ async fn register_peer_requests_headers_with_default_count_sentinel() {
         other => panic!("expected getheaders payload, got {other:?}"),
     }
 
-    let no_extra = timeout(Duration::from_millis(300), rx.recv()).await;
-    assert!(
-        no_extra.is_err(),
-        "header request pass should not also enqueue block-by-index immediately"
-    );
+    // Fast sync (commit 2358182c) intentionally pipelines GetBlockByIndex
+    // alongside GetHeaders to overlap header download with block download.
+    // The original `no_extra` assertion was from the pre-fast-sync era and is
+    // no longer valid — the sentinel-count GetHeaders is what this test really
+    // verifies, and that assertion remains.
 
     system.shutdown().await.expect("shutdown");
     neo_system.shutdown().await.expect("shutdown");

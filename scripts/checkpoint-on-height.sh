@@ -105,7 +105,7 @@ fi
 fetch_height() {
   # getblockcount returns count = height + 1 ; we want height (= count - 1).
   local resp count
-  resp=$(curl -s -m 3 -X POST -H 'Content-Type: application/json' \
+  resp=$(curl -s --compressed -m 3 -X POST -H 'Content-Type: application/json' \
         --data '{"jsonrpc":"2.0","id":1,"method":"getblockcount","params":[]}' \
         "$RPC_URL" 2>/dev/null) || return 1
   count=$(printf '%s' "$resp" | sed -n 's/.*"result"[[:space:]]*:[[:space:]]*\([0-9]\+\).*/\1/p')

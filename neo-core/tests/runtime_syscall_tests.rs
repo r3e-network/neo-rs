@@ -930,35 +930,27 @@ fn persist_oracle_request(snapshot: &DataCache, id: u64, original_tx_id: UInt256
     const ORACLE_ID: i32 = -9;
     const PREFIX_REQUEST: u8 = 0x07;
 
-    #[derive(serde::Serialize)]
-    struct PendingRequestRecord {
-        id: u64,
-        original_tx_id: UInt256,
-        gas_for_response: i64,
-        url: String,
-        filter: Option<String>,
-        callback_contract: UInt160,
-        callback_method: String,
-        user_data: Vec<u8>,
-        block_height: u32,
-        timestamp: u64,
-    }
-
-    let request = PendingRequestRecord {
-        id,
-        original_tx_id,
-        gas_for_response: 10_000_000,
-        url: "https://example.com".to_string(),
-        filter: None,
-        callback_contract: UInt160::zero(),
-        callback_method: "callback".to_string(),
-        user_data: Vec::new(),
-        block_height: 0,
-        timestamp: 0,
-    };
+    // C# parity (Neo.SmartContract.Native.OracleContract): the request is stored
+    // as a 7-item StackItem Array serialized via BinarySerializer — NOT a serde/
+    // bincode payload. Items: [original_tx_id(32B), gas_for_response(int),
+    // url(str), filter(str|null), callback_contract(20B), callback_method(str),
+    // user_data(bytes)].
+    let stack_item = neo_vm::StackItem::from_array(vec![
+        neo_vm::StackItem::from_byte_string(original_tx_id.to_bytes()),
+        neo_vm::StackItem::from_int(10_000_000i64),
+        neo_vm::StackItem::from_byte_string(b"https://example.com".to_vec()),
+        neo_vm::StackItem::from_byte_string(Vec::<u8>::new()),
+        neo_vm::StackItem::from_byte_string(UInt160::zero().to_bytes()),
+        neo_vm::StackItem::from_byte_string(b"callback".to_vec()),
+        neo_vm::StackItem::from_byte_string(Vec::<u8>::new()),
+    ]);
+    let bytes = neo_core::smart_contract::binary_serializer::BinarySerializer::serialize(
+        &stack_item,
+        &neo_vm::ExecutionEngineLimits::default(),
+    )
+    .expect("serialize oracle request");
 
     let key = StorageKey::create_with_bytes(ORACLE_ID, PREFIX_REQUEST, &id.to_be_bytes());
-    let bytes = bincode::serialize(&request).expect("serialize request");
     snapshot.add(key, StorageItem::from_bytes(bytes));
 }
 

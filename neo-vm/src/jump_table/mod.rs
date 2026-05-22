@@ -231,7 +231,7 @@ mod tests {
         let jump_table = JumpTable::new();
 
         // Check that all opcodes have handlers
-        for opcode in OpCode::iter() {
+        for opcode in OpCode::ALL {
             assert!(
                 jump_table.get(opcode).is_some(),
                 "No handler for opcode: {:?}",
@@ -292,7 +292,7 @@ mod tests {
         let jump_table = JumpTable::default();
 
         // Check that all opcodes have handlers
-        for opcode in OpCode::iter() {
+        for opcode in OpCode::ALL {
             assert!(
                 jump_table.get(opcode).is_some(),
                 "No handler for opcode: {:?}",

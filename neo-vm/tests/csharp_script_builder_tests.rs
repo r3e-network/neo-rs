@@ -89,7 +89,7 @@ fn test_emit_jump() {
     let offset_i8 = i8::MAX as i32;
     let offset_i32 = i32::MAX;
 
-    for opcode in OpCode::iter() {
+    for opcode in OpCode::ALL {
         let mut builder = ScriptBuilder::new();
         if !matches_jump_opcode(opcode) {
             assert!(builder.emit_jump(opcode, offset_i8).is_err());
@@ -111,7 +111,7 @@ fn test_emit_jump() {
     let offset_i8 = i8::MIN as i32;
     let offset_i32 = i32::MIN;
 
-    for opcode in OpCode::iter() {
+    for opcode in OpCode::ALL {
         let mut builder = ScriptBuilder::new();
         if !matches_jump_opcode(opcode) {
             assert!(builder.emit_jump(opcode, offset_i8).is_err());

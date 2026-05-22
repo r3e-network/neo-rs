@@ -250,7 +250,11 @@ fn test_signature_contract_engine_fee_consumed() {
     assert!(pre_exec_count.load(Ordering::Relaxed) > 0);
     assert_eq!(opcode_units.load(Ordering::Relaxed), expected_opcode_units);
 
-    let expected_fee = Helper::signature_contract_cost();
+    // Helper::signature_contract_cost() returns raw fee units; engine.fee_consumed()
+    // is in datoshi (= units * ExecFeeFactor). Test pre-dated commit 4f599eb2
+    // which corrected the 30× cpu_fee undercharge.
+    let exec_fee_factor = neo_core::smart_contract::native::PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64;
+    let expected_fee = Helper::signature_contract_cost() * exec_fee_factor;
     assert_eq!(engine.fee_consumed(), expected_fee);
 }
 
@@ -363,7 +367,12 @@ fn test_multi_signature_contract_engine_fee_consumed() {
     assert!(pre_exec_count.load(Ordering::Relaxed) > 0);
     assert_eq!(opcode_units.load(Ordering::Relaxed), expected_opcode_units);
 
-    let expected_fee = Helper::multi_signature_contract_cost(2, public_keys.len() as i32);
+    // Helper::multi_signature_contract_cost returns raw fee units; engine.fee_consumed()
+    // is in datoshi (= units * ExecFeeFactor). Test pre-dated commit 4f599eb2.
+    let exec_fee_factor =
+        neo_core::smart_contract::native::PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64;
+    let expected_fee = Helper::multi_signature_contract_cost(2, public_keys.len() as i32)
+        * exec_fee_factor;
     assert_eq!(engine.fee_consumed(), expected_fee);
 }
 

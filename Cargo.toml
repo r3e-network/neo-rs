@@ -111,6 +111,7 @@ neo-json = { path = "neo-json", version = "0.7.2" }
 # Core layer
 neo-core = { path = "neo-core", version = "0.7.2" }
 neo-vm = { path = "neo-vm", version = "0.7.2" }
+neo-vm-rs = { git = "https://github.com/r3e-network/neo-vm-rs.git", rev = "b45ece83ca57f7164c0ccd746632b595fce8469e" }
 neo-p2p = { path = "neo-p2p", version = "0.7.2" }
 neo-rpc = { path = "neo-rpc", version = "0.7.2" }
 neo-consensus = { path = "neo-consensus", version = "0.7.2" }

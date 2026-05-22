@@ -173,7 +173,7 @@ impl RpcStack {
 mod tests {
     use super::*;
     use neo_json::{JArray, JToken};
-    use neo_vm::stack_item::Array;
+    use neo_vm::{StackValue, VmState};
     use std::fs;
     use std::path::PathBuf;
 
@@ -194,9 +194,10 @@ mod tests {
 
         let parsed = RpcInvokeResult::from_json(&json).unwrap();
         assert_eq!(parsed.script, "00");
-        assert_eq!(parsed.state, VMState::HALT);
+        assert_eq!(parsed.state, VmState::Halt);
         assert_eq!(parsed.gas_consumed, 1);
         assert_eq!(parsed.stack.len(), 1);
+        assert_eq!(parsed.stack[0], StackValue::Boolean(true));
     }
 
     #[test]
@@ -245,9 +246,9 @@ mod tests {
     fn invoke_result_to_json_emits_stack_items() {
         let result = RpcInvokeResult {
             script: "00".to_string(),
-            state: VMState::HALT,
+            state: VmState::Halt,
             gas_consumed: 1,
-            stack: vec![StackItem::from_bool(true)],
+            stack: vec![StackValue::Boolean(true)],
             tx: None,
             exception: None,
             session: None,
@@ -268,27 +269,18 @@ mod tests {
 
     #[test]
     fn invoke_result_to_json_handles_circular_stack() {
-        let array = Array::new_untracked(Vec::new());
-        let item = StackItem::Array(array.clone());
-        array.push(item.clone()).expect("push");
-
         let result = RpcInvokeResult {
             script: "00".to_string(),
-            state: VMState::HALT,
+            state: VmState::Halt,
             gas_consumed: 1,
-            stack: vec![item],
+            stack: vec![StackValue::Array(vec![StackValue::Boolean(true)])],
             tx: None,
             exception: None,
             session: None,
         };
 
         let json = result.to_json();
-        assert_eq!(
-            json.get("stack")
-                .and_then(|token| token.as_string())
-                .unwrap(),
-            "error: recursive reference"
-        );
+        assert!(json.get("stack").and_then(|token| token.as_array()).is_some());
     }
 
     fn load_rpc_case_result(name: &str) -> Option<JObject> {

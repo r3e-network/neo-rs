@@ -7,7 +7,6 @@ use crate::op_code::OpCode;
 use crate::script::Script;
 use num_bigint::{BigInt, Sign};
 use num_traits::ToPrimitive;
-use sha2::{Digest, Sha256};
 
 /// Helps construct VM scripts programmatically.
 pub struct ScriptBuilder {
@@ -356,12 +355,7 @@ impl ScriptBuilder {
             )));
         }
 
-        let mut hasher = Sha256::new();
-        hasher.update(api.as_bytes());
-        let digest = hasher.finalize();
-        Ok(u32::from_le_bytes([
-            digest[0], digest[1], digest[2], digest[3],
-        ]))
+        Ok(neo_vm_rs::interop_hash(api))
     }
 
     /// Emits an append operation.
