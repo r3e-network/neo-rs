@@ -7,8 +7,7 @@ use crate::neo_vm::error::VmResult;
 use crate::neo_vm::execution_engine::ExecutionEngine;
 use crate::neo_vm::jump_table::JumpTable;
 use crate::neo_vm::stack_item::StackItem;
-use neo_vm_rs::Instruction;
-use neo_vm_rs::OpCode;
+use neo_vm_rs::{semantics::splice as splice_rules, Instruction, OpCode};
 use num_traits::ToPrimitive;
 
 /// Registers the splice operation handlers.
@@ -58,54 +57,32 @@ fn memcpy(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
     let count = context
         .pop()?
         .into_int()?
-        .to_usize()
+        .to_i64()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid count"))?;
     let src_offset = context
         .pop()?
         .into_int()?
-        .to_usize()
+        .to_i64()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid source offset"))?;
     let src = context.pop()?;
     let dst_offset = context
         .pop()?
         .into_int()?
-        .to_usize()
+        .to_i64()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid destination offset"))?;
     let dst = context.pop()?;
 
     let src_value = neo_vm_rs::StackValue::try_from(src)
         .map_err(|_| VmError::invalid_type_simple("Expected ByteString or Buffer for source"))?;
-    let src_view = neo_vm_rs::byte_sequence_bytes(&src_value)
-        .ok_or_else(|| VmError::invalid_type_simple("Expected ByteString or Buffer for source"))?;
-
-    // Check bounds
-    if src_offset + count > src_view.len() {
-        return Err(VmError::invalid_operation_msg(format!(
-            "Source out of bounds: {} + {} > {}",
-            src_offset,
-            count,
-            src_view.len()
-        )));
-    }
 
     // Get the destination data
     match dst {
         StackItem::Buffer(buffer) => {
-            // Check bounds
-            if dst_offset + count > buffer.len() {
-                return Err(VmError::invalid_operation_msg(format!(
-                    "Destination out of bounds: {} + {} > {}",
-                    dst_offset,
-                    count,
-                    buffer.len()
-                )));
-            }
-
-            // Copy the data
-            buffer.with_data_mut(|dst_data| {
-                dst_data[dst_offset..dst_offset + count]
-                    .copy_from_slice(&src_view[src_offset..src_offset + count]);
-            });
+            buffer
+                .with_data_mut(|dst_data| {
+                    splice_rules::memcpy_bytes(dst_data, dst_offset, &src_value, src_offset, count)
+                })
+                .map_err(VmError::invalid_operation_msg)?;
         }
         _ => {
             return Err(VmError::invalid_type_simple(
@@ -128,24 +105,22 @@ fn cat(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    // Match C# semantics: CAT always creates a brand-new buffer and never mutates
-    // either operand in place.
-    let x2 = context.pop()?.into_bytes()?;
-    let x1 = context.pop()?.into_bytes()?;
+    let x2 = neo_vm_rs::StackValue::try_from(context.pop()?)
+        .map_err(|_| VmError::invalid_type_simple("Expected GetSpan-compatible CAT operand"))?;
+    let x1 = neo_vm_rs::StackValue::try_from(context.pop()?)
+        .map_err(|_| VmError::invalid_type_simple("Expected GetSpan-compatible CAT operand"))?;
 
-    let length = x1.len().saturating_add(x2.len());
-    if length > max_item_size {
+    let result = splice_rules::cat_values(&x1, &x2).map_err(VmError::invalid_operation_msg)?;
+    let result_len = match &result {
+        neo_vm_rs::StackValue::Buffer(bytes) => bytes.len(),
+        _ => 0,
+    };
+    if result_len > max_item_size {
         return Err(VmError::invalid_operation_msg(format!(
             "MaxItemSize exceed: {}/{}",
-            length, max_item_size
+            result_len, max_item_size
         )));
     }
-
-    let result = neo_vm_rs::concat_byte_sequences(
-        neo_vm_rs::StackValue::Buffer(x1),
-        neo_vm_rs::StackValue::Buffer(x2),
-    )
-    .ok_or_else(|| VmError::invalid_type_simple("Expected ByteString or Buffer"))?;
     context.push(StackItem::try_from(result)?)?;
 
     Ok(())
@@ -162,27 +137,18 @@ fn substr(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
     let count = context
         .pop()?
         .into_int()?
-        .to_usize()
+        .to_i64()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid count"))?;
     let offset = context
         .pop()?
         .into_int()?
-        .to_usize()
+        .to_i64()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid offset"))?;
     let value = context.pop()?;
-    let data = value.into_bytes()?;
-    if offset + count > data.len() {
-        return Err(VmError::invalid_operation_msg(format!(
-            "Substring out of bounds: {} + {} > {}",
-            offset,
-            count,
-            data.len()
-        )));
-    }
-
-    let substring =
-        neo_vm_rs::slice_byte_sequence(neo_vm_rs::StackValue::Buffer(data), offset, count)
-            .ok_or_else(|| VmError::invalid_operation_msg("Substring out of bounds"))?;
+    let value = neo_vm_rs::StackValue::try_from(value)
+        .map_err(|_| VmError::invalid_type_simple("Expected GetSpan-compatible SUBSTR value"))?;
+    let substring = splice_rules::substr_value(&value, offset, count)
+        .map_err(VmError::invalid_operation_msg)?;
     context.push(StackItem::try_from(substring)?)?;
 
     Ok(())
@@ -199,20 +165,12 @@ fn left(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
     let count = context
         .pop()?
         .into_int()?
-        .to_usize()
+        .to_i64()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid count"))?;
     let value = context.pop()?;
-    let data = value.into_bytes()?;
-    if count > data.len() {
-        return Err(VmError::invalid_operation_msg(format!(
-            "Left out of bounds: {} > {}",
-            count,
-            data.len()
-        )));
-    }
-
-    let left = neo_vm_rs::slice_byte_sequence(neo_vm_rs::StackValue::Buffer(data), 0, count)
-        .ok_or_else(|| VmError::invalid_operation_msg("Left out of bounds"))?;
+    let value = neo_vm_rs::StackValue::try_from(value)
+        .map_err(|_| VmError::invalid_type_simple("Expected GetSpan-compatible LEFT value"))?;
+    let left = splice_rules::left_value(&value, count).map_err(VmError::invalid_operation_msg)?;
     context.push(StackItem::try_from(left)?)?;
 
     Ok(())
@@ -229,21 +187,12 @@ fn right(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<(
     let count = context
         .pop()?
         .into_int()?
-        .to_usize()
+        .to_i64()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid count"))?;
     let value = context.pop()?;
-    let data = value.into_bytes()?;
-    if count > data.len() {
-        return Err(VmError::invalid_operation_msg(format!(
-            "Right out of bounds: {} > {}",
-            count,
-            data.len()
-        )));
-    }
-
-    let start = data.len() - count;
-    let right = neo_vm_rs::slice_byte_sequence(neo_vm_rs::StackValue::Buffer(data), start, count)
-        .ok_or_else(|| VmError::invalid_operation_msg("Right out of bounds"))?;
+    let value = neo_vm_rs::StackValue::try_from(value)
+        .map_err(|_| VmError::invalid_type_simple("Expected GetSpan-compatible RIGHT value"))?;
+    let right = splice_rules::right_value(&value, count).map_err(VmError::invalid_operation_msg)?;
     context.push(StackItem::try_from(right)?)?;
 
     Ok(())

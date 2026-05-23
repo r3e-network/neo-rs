@@ -3458,8 +3458,8 @@ fn memcpy_source_reuses_neo_vm_rs_byte_sequence_semantics() {
         fs::read_to_string(workspace.join("neo-core/src/neo_vm/jump_table/splice.rs")).unwrap();
 
     assert!(
-        splice.contains("neo_vm_rs::byte_sequence_bytes"),
-        "MEMCPY source classification should reuse neo-vm-rs byte-sequence semantics"
+        splice.contains("splice_rules::memcpy_bytes"),
+        "MEMCPY source classification and bounds should reuse neo-vm-rs splice semantics"
     );
     assert!(
         !splice.contains("StackItem::ByteString(data) => std::borrow::Cow::Borrowed"),
@@ -3474,12 +3474,14 @@ fn splice_byte_sequence_ops_reuse_neo_vm_rs_helpers() {
         fs::read_to_string(workspace.join("neo-core/src/neo_vm/jump_table/splice.rs")).unwrap();
 
     assert!(
-        splice.contains("neo_vm_rs::concat_byte_sequences"),
-        "CAT should reuse neo-vm-rs byte-sequence concatenation after local max-size checks"
+        splice.contains("splice_rules::cat_values"),
+        "CAT should reuse neo-vm-rs opcode-level splice concatenation"
     );
     assert!(
-        splice.matches("neo_vm_rs::slice_byte_sequence").count() >= 3,
-        "SUBSTR, LEFT, and RIGHT should reuse neo-vm-rs byte-sequence slicing"
+        splice.contains("splice_rules::substr_value")
+            && splice.contains("splice_rules::left_value")
+            && splice.contains("splice_rules::right_value"),
+        "SUBSTR, LEFT, and RIGHT should reuse neo-vm-rs opcode-level splice slicing"
     );
     assert!(
         !splice.contains("result.extend_from_slice(&x1);")
