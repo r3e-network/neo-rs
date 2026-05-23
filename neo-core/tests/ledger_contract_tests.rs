@@ -2,18 +2,21 @@ use neo_core::constants::GENESIS_TIMESTAMP_MS;
 use neo_core::ledger::block_header::BlockHeader;
 use neo_core::ledger::Block;
 use neo_core::neo_io::{BinaryWriter, Serializable};
+use neo_core::neo_vm::StackItem;
 use neo_core::network::p2p::payloads::{Signer, Transaction, WitnessScope};
 use neo_core::persistence::{DataCache, StorageItem, StorageKey};
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::script_builder::ScriptBuilder;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
+use neo_core::smart_contract::binary_serializer::BinarySerializer;
 use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::smart_contract::native::ledger_contract::HashOrIndex;
 use neo_core::smart_contract::native::{LedgerContract, NativeContract, NativeHelpers};
 use neo_core::smart_contract::trigger_type::TriggerType;
+use neo_core::smart_contract::ContractParameterType;
 use neo_core::{UInt160, UInt256, Witness};
-use neo_vm_rs::OpCode;
 use neo_vm_rs::VmState as VMState;
+use neo_vm_rs::{ExecutionEngineLimits, OpCode};
 use num_traits::ToPrimitive;
 use std::sync::Arc;
 
@@ -101,6 +104,24 @@ fn persist_block(snapshot: &Arc<DataCache>, block: &Block, settings: ProtocolSet
         .expect("native post persist");
 }
 
+fn application_engine(snapshot: &Arc<DataCache>) -> ApplicationEngine {
+    ApplicationEngine::new(
+        TriggerType::Application,
+        None,
+        Arc::clone(snapshot),
+        None,
+        ProtocolSettings::default(),
+        400_000_000,
+        None,
+    )
+    .expect("application engine")
+}
+
+fn deserialize_ledger_item(bytes: &[u8]) -> StackItem {
+    BinarySerializer::deserialize(bytes, &ExecutionEngineLimits::default(), None)
+        .expect("deserialize ledger result")
+}
+
 fn serialize_transaction_state_record(
     block_index: u32,
     vm_state: VMState,
@@ -117,6 +138,122 @@ fn serialize_transaction_state_record(
         .write_var_bytes(&tx_writer.into_bytes())
         .expect("transaction bytes");
     writer.into_bytes()
+}
+
+#[test]
+fn ledger_method_metadata_matches_protocol() {
+    let ledger = LedgerContract::new();
+    let expected_methods: &[(
+        &str,
+        i64,
+        u8,
+        &[ContractParameterType],
+        ContractParameterType,
+        &[&str],
+    )] = &[
+        (
+            "currentHash",
+            1 << 15,
+            CallFlags::READ_STATES.bits(),
+            &[],
+            ContractParameterType::Hash256,
+            &[],
+        ),
+        (
+            "currentIndex",
+            1 << 15,
+            CallFlags::READ_STATES.bits(),
+            &[],
+            ContractParameterType::Integer,
+            &[],
+        ),
+        (
+            "getBlock",
+            1 << 15,
+            CallFlags::READ_STATES.bits(),
+            &[ContractParameterType::ByteArray],
+            ContractParameterType::Array,
+            &["indexOrHash"],
+        ),
+        (
+            "getTransaction",
+            1 << 15,
+            CallFlags::READ_STATES.bits(),
+            &[ContractParameterType::Hash256],
+            ContractParameterType::Array,
+            &["hash"],
+        ),
+        (
+            "getTransactionFromBlock",
+            1 << 16,
+            CallFlags::READ_STATES.bits(),
+            &[
+                ContractParameterType::ByteArray,
+                ContractParameterType::Integer,
+            ],
+            ContractParameterType::Array,
+            &["blockIndexOrHash", "txIndex"],
+        ),
+        (
+            "getTransactionHeight",
+            1 << 15,
+            CallFlags::READ_STATES.bits(),
+            &[ContractParameterType::Hash256],
+            ContractParameterType::Integer,
+            &["hash"],
+        ),
+        (
+            "getTransactionSigners",
+            1 << 15,
+            CallFlags::READ_STATES.bits(),
+            &[ContractParameterType::Hash256],
+            ContractParameterType::Array,
+            &["hash"],
+        ),
+        (
+            "getTransactionVMState",
+            1 << 15,
+            CallFlags::READ_STATES.bits(),
+            &[ContractParameterType::Hash256],
+            ContractParameterType::Integer,
+            &["hash"],
+        ),
+    ];
+
+    assert_eq!(ledger.id(), -4);
+    assert_eq!(
+        ledger.hash(),
+        UInt160::parse("0xda65b600f7124ce6c79950c1772a36403104f2be").unwrap()
+    );
+    assert_eq!(ledger.name(), "LedgerContract");
+    assert_eq!(ledger.methods().len(), expected_methods.len());
+    assert!(
+        !ledger
+            .methods()
+            .iter()
+            .any(|method| method.name == "getHeader"),
+        "LedgerContract must not grow a getHeader ABI entry without protocol review"
+    );
+
+    for (method, (name, cpu_fee, flags, parameters, return_type, parameter_names)) in
+        ledger.methods().iter().zip(expected_methods.iter())
+    {
+        assert_eq!(method.name.as_str(), *name);
+        assert_eq!(method.cpu_fee, *cpu_fee, "{name}");
+        assert_eq!(method.storage_fee, 0, "{name}");
+        assert!(method.safe, "{name}");
+        assert_eq!(method.required_call_flags, *flags, "{name}");
+        assert_eq!(method.parameters.as_slice(), *parameters, "{name}");
+        assert_eq!(&method.return_type, return_type, "{name}");
+        assert_eq!(method.active_in, None, "{name}");
+        assert_eq!(method.deprecated_in, None, "{name}");
+        let actual_names = method
+            .parameter_names
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        assert_eq!(actual_names, *parameter_names, "{name}");
+    }
 }
 
 #[test]
@@ -302,16 +439,7 @@ fn ledger_contract_call_get_transaction_height() {
     let block = make_block(0, vec![tx.clone()]);
     persist_block(&snapshot, &block, ProtocolSettings::default());
 
-    let mut engine = ApplicationEngine::new(
-        TriggerType::Application,
-        None,
-        Arc::clone(&snapshot),
-        None,
-        ProtocolSettings::default(),
-        400_000_000,
-        None,
-    )
-    .expect("application engine");
+    let mut engine = application_engine(&snapshot);
 
     let mut script = ScriptBuilder::new();
     script.emit_push(&tx.hash().to_bytes());
@@ -337,6 +465,192 @@ fn ledger_contract_call_get_transaction_height() {
         .to_u32()
         .expect("height fits u32");
     assert_eq!(height, 0);
+}
+
+#[test]
+fn ledger_get_transaction_from_block_keeps_missing_null_and_bad_index_error() {
+    let snapshot = Arc::new(DataCache::new(false));
+    let ledger = LedgerContract::new();
+
+    let tx = make_transaction(6);
+    let block = make_block(0, vec![tx]);
+    persist_block(&snapshot, &block, ProtocolSettings::default());
+
+    let mut engine = application_engine(&snapshot);
+
+    let missing_hash = UInt256::from_bytes(&[9u8; 32]).expect("hash");
+    let missing = ledger
+        .invoke(
+            &mut engine,
+            "getTransactionFromBlock",
+            &[
+                missing_hash.to_bytes().to_vec(),
+                0_i32.to_le_bytes().to_vec(),
+            ],
+        )
+        .expect("missing block should return Null");
+    let missing_item = deserialize_ledger_item(&missing);
+    assert!(missing_item.is_null());
+
+    let error = ledger
+        .invoke(
+            &mut engine,
+            "getTransactionFromBlock",
+            &[
+                block.hash().to_bytes().to_vec(),
+                1_i32.to_le_bytes().to_vec(),
+            ],
+        )
+        .expect_err("existing block with bad tx index should fail");
+    assert!(
+        error.to_string().contains("Transaction index out of range"),
+        "{error}"
+    );
+}
+
+#[test]
+fn ledger_invoke_read_methods_keep_result_shapes() {
+    let snapshot = Arc::new(DataCache::new(false));
+    let ledger = LedgerContract::new();
+
+    let tx = make_transaction(7);
+    let block = make_block(0, vec![tx.clone()]);
+    persist_block(&snapshot, &block, ProtocolSettings::default());
+    ledger
+        .update_transaction_vm_state(snapshot.as_ref(), &tx.hash(), VMState::HALT)
+        .expect("mark vm state");
+
+    let mut engine = application_engine(&snapshot);
+
+    let current_hash = ledger
+        .invoke(&mut engine, "currentHash", &[])
+        .expect("currentHash");
+    assert_eq!(current_hash, block.hash().to_bytes());
+
+    let current_index = ledger
+        .invoke(&mut engine, "currentIndex", &[])
+        .expect("currentIndex");
+    assert_eq!(current_index, 0_u32.to_le_bytes());
+
+    let block_item = deserialize_ledger_item(
+        &ledger
+            .invoke(&mut engine, "getBlock", &[block.hash().to_bytes().to_vec()])
+            .expect("getBlock"),
+    );
+    assert!(!block_item.is_null());
+    assert!(!block_item.as_array().expect("block array").is_empty());
+
+    let tx_item = deserialize_ledger_item(
+        &ledger
+            .invoke(
+                &mut engine,
+                "getTransaction",
+                &[tx.hash().to_bytes().to_vec()],
+            )
+            .expect("getTransaction"),
+    );
+    assert!(!tx_item.is_null());
+    assert!(!tx_item.as_array().expect("transaction array").is_empty());
+
+    let signers_item = deserialize_ledger_item(
+        &ledger
+            .invoke(
+                &mut engine,
+                "getTransactionSigners",
+                &[tx.hash().to_bytes().to_vec()],
+            )
+            .expect("getTransactionSigners"),
+    );
+    assert_eq!(signers_item.as_array().expect("signers").len(), 1);
+
+    let vm_state = ledger
+        .invoke(
+            &mut engine,
+            "getTransactionVMState",
+            &[tx.hash().to_bytes().to_vec()],
+        )
+        .expect("getTransactionVMState");
+    assert_eq!(vm_state, vec![VMState::HALT.to_byte()]);
+}
+
+#[test]
+fn ledger_invoke_missing_data_and_argument_errors_stay_distinct() {
+    let snapshot = Arc::new(DataCache::new(false));
+    let ledger = LedgerContract::new();
+
+    let tx = make_transaction(8);
+    let block = make_block(0, vec![tx]);
+    persist_block(&snapshot, &block, ProtocolSettings::default());
+
+    let mut engine = application_engine(&snapshot);
+    let missing_hash = UInt256::from_bytes(&[10u8; 32]).expect("hash");
+
+    let missing_block = deserialize_ledger_item(
+        &ledger
+            .invoke(&mut engine, "getBlock", &[missing_hash.to_bytes().to_vec()])
+            .expect("missing block"),
+    );
+    assert!(missing_block.is_null());
+
+    let missing_tx = deserialize_ledger_item(
+        &ledger
+            .invoke(
+                &mut engine,
+                "getTransaction",
+                &[missing_hash.to_bytes().to_vec()],
+            )
+            .expect("missing transaction"),
+    );
+    assert!(missing_tx.is_null());
+
+    let missing_signers = deserialize_ledger_item(
+        &ledger
+            .invoke(
+                &mut engine,
+                "getTransactionSigners",
+                &[missing_hash.to_bytes().to_vec()],
+            )
+            .expect("missing transaction signers"),
+    );
+    assert!(missing_signers.is_null());
+
+    let missing_vm_state = ledger
+        .invoke(
+            &mut engine,
+            "getTransactionVMState",
+            &[missing_hash.to_bytes().to_vec()],
+        )
+        .expect("missing transaction vm state");
+    assert_eq!(missing_vm_state, vec![0]);
+
+    for (method, args, expected_error) in [
+        ("currentHash", vec![vec![0]], "requires no arguments"),
+        ("currentIndex", vec![vec![0]], "requires no arguments"),
+        ("getBlock", vec![vec![0; 33]], "Invalid indexOrHash length"),
+        (
+            "getTransaction",
+            vec![vec![0; 31]],
+            "Invalid transaction hash",
+        ),
+        (
+            "getTransactionSigners",
+            vec![vec![0; 31]],
+            "Invalid transaction hash",
+        ),
+        (
+            "getTransactionVMState",
+            vec![vec![0; 31]],
+            "Invalid transaction hash",
+        ),
+    ] {
+        let error = ledger
+            .invoke(&mut engine, method, &args)
+            .expect_err("invalid invoke arguments should fail");
+        assert!(
+            error.to_string().contains(expected_error),
+            "{method}: {error}"
+        );
+    }
 }
 
 #[test]

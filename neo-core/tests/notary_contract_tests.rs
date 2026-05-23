@@ -18,7 +18,7 @@ use neo_core::smart_contract::native::{
     RoleManagement,
 };
 use neo_core::smart_contract::trigger_type::TriggerType;
-use neo_core::smart_contract::{Contract, StorageItem, StorageKey};
+use neo_core::smart_contract::{Contract, ContractParameterType, StorageItem, StorageKey};
 use neo_core::wallets::KeyPair;
 use neo_core::{IVerifiable, Result as CoreResult, UInt160, UInt256, WitnessScope};
 use neo_vm_rs::ExecutionEngineLimits;
@@ -289,32 +289,119 @@ fn test_notary_contract_hash() {
 #[test]
 fn test_notary_methods() {
     let notary = Notary::new();
-    let methods = notary.methods();
+    let expected_methods: &[(
+        &str,
+        i64,
+        bool,
+        u8,
+        &[ContractParameterType],
+        ContractParameterType,
+        &[&str],
+    )] = &[
+        (
+            "balanceOf",
+            1 << 15,
+            true,
+            CallFlags::READ_STATES.bits(),
+            &[ContractParameterType::Hash160],
+            ContractParameterType::Integer,
+            &["account"],
+        ),
+        (
+            "expirationOf",
+            1 << 15,
+            true,
+            CallFlags::READ_STATES.bits(),
+            &[ContractParameterType::Hash160],
+            ContractParameterType::Integer,
+            &["account"],
+        ),
+        (
+            "getMaxNotValidBeforeDelta",
+            1 << 15,
+            true,
+            CallFlags::READ_STATES.bits(),
+            &[],
+            ContractParameterType::Integer,
+            &[],
+        ),
+        (
+            "verify",
+            1 << 15,
+            true,
+            CallFlags::READ_STATES.bits(),
+            &[ContractParameterType::ByteArray],
+            ContractParameterType::Boolean,
+            &["signature"],
+        ),
+        (
+            "onNEP17Payment",
+            1 << 15,
+            false,
+            CallFlags::STATES.bits(),
+            &[
+                ContractParameterType::Hash160,
+                ContractParameterType::Integer,
+                ContractParameterType::Any,
+            ],
+            ContractParameterType::Void,
+            &["from", "amount", "data"],
+        ),
+        (
+            "lockDepositUntil",
+            1 << 15,
+            false,
+            CallFlags::STATES.bits(),
+            &[
+                ContractParameterType::Hash160,
+                ContractParameterType::Integer,
+            ],
+            ContractParameterType::Boolean,
+            &["account", "till"],
+        ),
+        (
+            "withdraw",
+            1 << 15,
+            false,
+            CallFlags::ALL.bits(),
+            &[
+                ContractParameterType::Hash160,
+                ContractParameterType::Hash160,
+            ],
+            ContractParameterType::Boolean,
+            &["from", "to"],
+        ),
+        (
+            "setMaxNotValidBeforeDelta",
+            1 << 15,
+            false,
+            CallFlags::STATES.bits(),
+            &[ContractParameterType::Integer],
+            ContractParameterType::Void,
+            &["value"],
+        ),
+    ];
 
-    let method_names: Vec<&str> = methods.iter().map(|m| m.name.as_str()).collect();
-
-    assert!(method_names.contains(&"balanceOf"), "Should have balanceOf");
-    assert!(
-        method_names.contains(&"expirationOf"),
-        "Should have expirationOf"
-    );
-    assert!(
-        method_names.contains(&"getMaxNotValidBeforeDelta"),
-        "Should have getMaxNotValidBeforeDelta"
-    );
-    assert!(
-        method_names.contains(&"onNEP17Payment"),
-        "Should have onNEP17Payment"
-    );
-    assert!(
-        method_names.contains(&"lockDepositUntil"),
-        "Should have lockDepositUntil"
-    );
-    assert!(method_names.contains(&"withdraw"), "Should have withdraw");
-    assert!(
-        method_names.contains(&"setMaxNotValidBeforeDelta"),
-        "Should have setMaxNotValidBeforeDelta"
-    );
+    assert_eq!(notary.methods().len(), expected_methods.len());
+    for (method, (name, cpu_fee, safe, flags, parameters, return_type, parameter_names)) in
+        notary.methods().iter().zip(expected_methods.iter())
+    {
+        assert_eq!(method.name.as_str(), *name);
+        assert_eq!(method.cpu_fee, *cpu_fee, "{name}");
+        assert_eq!(method.storage_fee, 0, "{name}");
+        assert_eq!(method.safe, *safe, "{name}");
+        assert_eq!(method.required_call_flags, *flags, "{name}");
+        assert_eq!(method.parameters.as_slice(), *parameters, "{name}");
+        assert_eq!(&method.return_type, return_type, "{name}");
+        assert_eq!(method.active_in, None, "{name}");
+        assert_eq!(method.deprecated_in, None, "{name}");
+        let actual_names = method
+            .parameter_names
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        assert_eq!(actual_names, *parameter_names, "{name}");
+    }
 }
 
 /// Tests Deposit struct creation

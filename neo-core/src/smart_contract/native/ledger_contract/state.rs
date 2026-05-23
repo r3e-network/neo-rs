@@ -53,7 +53,12 @@ impl PersistedTransactionState {
     }
 
     pub fn transaction_hash(&self) -> UInt256 {
-        self.transaction.hash()
+        self.try_transaction_hash()
+            .expect("persisted transaction hash must be serializable")
+    }
+
+    pub fn try_transaction_hash(&self) -> Result<UInt256> {
+        self.transaction.try_hash()
     }
 }
 
@@ -73,18 +78,37 @@ impl LedgerTransactionStates {
 
     pub fn mark_vm_state(&mut self, hash: &UInt256, vm_state: VMState) -> bool {
         for state in &mut self.states {
-            if &state.transaction_hash() == hash {
-                state.set_vm_state(vm_state);
-                return true;
+            match state.try_transaction_hash() {
+                Ok(tx_hash) if &tx_hash == hash => {
+                    state.set_vm_state(vm_state);
+                    return true;
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    tracing::warn!(
+                        target: "neo",
+                        block_index = state.block_index(),
+                        %error,
+                        "skipping transaction VM-state mark because transaction hash failed"
+                    );
+                }
             }
         }
         false
     }
 
     pub fn into_updates(self) -> Vec<(UInt256, VMState)> {
+        self.try_into_updates()
+            .expect("persisted transaction hashes must be serializable")
+    }
+
+    pub fn try_into_updates(self) -> Result<Vec<(UInt256, VMState)>> {
         self.states
             .into_iter()
-            .map(|state| (state.transaction_hash(), state.vm_state()))
+            .map(|state| {
+                let hash = state.try_transaction_hash()?;
+                Ok((hash, state.vm_state()))
+            })
             .collect()
     }
 }

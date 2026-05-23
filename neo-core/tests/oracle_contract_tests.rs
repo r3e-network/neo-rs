@@ -10,6 +10,7 @@ use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::script_builder::ScriptBuilder;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
+use neo_core::smart_contract::application_engine_contract::NativeArgNullMask;
 use neo_core::smart_contract::binary_serializer::BinarySerializer;
 use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::smart_contract::contract_state::{ContractState, NefFile};
@@ -18,7 +19,7 @@ use neo_core::smart_contract::manifest::{
     ContractParameterDefinition, ContractPermission, WildCardContainer,
 };
 use neo_core::smart_contract::native::{
-    GasToken, LedgerContract, NativeContract, OracleContract, Role, RoleManagement,
+    GasToken, LedgerContract, NativeContract, NativeHelpers, OracleContract, Role, RoleManagement,
 };
 use neo_core::smart_contract::storage_item::StorageItem;
 use neo_core::smart_contract::storage_key::StorageKey;
@@ -49,6 +50,131 @@ fn serialize_nodes(nodes: &[ECPoint]) -> Vec<u8> {
     let array = StackItem::from_array(items);
     BinarySerializer::serialize(&array, &ExecutionEngineLimits::default())
         .expect("serialize node list")
+}
+
+#[test]
+fn oracle_method_and_event_metadata_snapshot() {
+    let oracle = OracleContract::new();
+    let expected_methods: &[(
+        &str,
+        i64,
+        bool,
+        u8,
+        &[ContractParameterType],
+        ContractParameterType,
+        &[&str],
+    )] = &[
+        (
+            "request",
+            0,
+            false,
+            (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
+            &[
+                ContractParameterType::String,
+                ContractParameterType::String,
+                ContractParameterType::String,
+                ContractParameterType::Any,
+                ContractParameterType::Integer,
+            ],
+            ContractParameterType::Void,
+            &["url", "filter", "callback", "userData", "gasForResponse"],
+        ),
+        (
+            "getPrice",
+            1 << 15,
+            true,
+            CallFlags::READ_STATES.bits(),
+            &[],
+            ContractParameterType::Integer,
+            &[],
+        ),
+        (
+            "setPrice",
+            1 << 15,
+            false,
+            CallFlags::STATES.bits(),
+            &[ContractParameterType::Integer],
+            ContractParameterType::Void,
+            &["price"],
+        ),
+        (
+            "finish",
+            0,
+            false,
+            (CallFlags::STATES | CallFlags::ALLOW_CALL | CallFlags::ALLOW_NOTIFY).bits(),
+            &[],
+            ContractParameterType::Void,
+            &[],
+        ),
+        (
+            "verify",
+            1 << 15,
+            true,
+            0,
+            &[],
+            ContractParameterType::Boolean,
+            &[],
+        ),
+    ];
+
+    assert_eq!(oracle.id(), -9);
+    assert_eq!(
+        oracle.hash(),
+        UInt160::parse("0xfe924b7cfe89ddd271abaf7210a80a7e11178758").unwrap()
+    );
+    assert_eq!(oracle.name(), "OracleContract");
+    assert_eq!(oracle.methods().len(), expected_methods.len());
+
+    for (method, (name, cpu_fee, safe, flags, parameters, return_type, parameter_names)) in
+        oracle.methods().iter().zip(expected_methods.iter())
+    {
+        assert_eq!(method.name.as_str(), *name);
+        assert_eq!(method.cpu_fee, *cpu_fee, "{name}");
+        assert_eq!(method.storage_fee, 0, "{name}");
+        assert_eq!(method.safe, *safe, "{name}");
+        assert_eq!(method.required_call_flags, *flags, "{name}");
+        assert_eq!(method.parameters.as_slice(), *parameters, "{name}");
+        assert_eq!(&method.return_type, return_type, "{name}");
+        assert_eq!(method.active_in, None, "{name}");
+        assert_eq!(method.deprecated_in, None, "{name}");
+        let actual_names = method
+            .parameter_names
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        assert_eq!(actual_names, *parameter_names, "{name}");
+    }
+
+    let events = oracle.events(&ProtocolSettings::default_settings(), 0);
+    let expected_events: &[(&str, &[(&str, ContractParameterType)])] = &[
+        (
+            "OracleRequest",
+            &[
+                ("Id", ContractParameterType::Integer),
+                ("RequestContract", ContractParameterType::Hash160),
+                ("Url", ContractParameterType::String),
+                ("Filter", ContractParameterType::String),
+            ],
+        ),
+        (
+            "OracleResponse",
+            &[
+                ("Id", ContractParameterType::Integer),
+                ("OriginalTx", ContractParameterType::Hash256),
+            ],
+        ),
+    ];
+    assert_eq!(events.len(), expected_events.len());
+    for (event, (name, parameters)) in events.iter().zip(expected_events.iter()) {
+        assert_eq!(event.name, *name);
+        assert_eq!(event.parameters.len(), parameters.len(), "{name}");
+        for (parameter, (parameter_name, parameter_type)) in
+            event.parameters.iter().zip(*parameters)
+        {
+            assert_eq!(parameter.name, *parameter_name, "{name}");
+            assert_eq!(&parameter.param_type, parameter_type, "{name}");
+        }
+    }
 }
 
 fn setup_post_persist_engine(snapshot: Arc<DataCache>, block: Block) -> ApplicationEngine {
@@ -232,6 +358,19 @@ fn make_response_engine(snapshot: Arc<DataCache>, tx: Transaction) -> Applicatio
     engine
 }
 
+fn make_engine_without_container(snapshot: Arc<DataCache>) -> ApplicationEngine {
+    ApplicationEngine::new(
+        TriggerType::Application,
+        None,
+        snapshot,
+        None,
+        ProtocolSettings::default_settings(),
+        2_000_000_000,
+        None,
+    )
+    .expect("engine")
+}
+
 fn seed_pending_request(
     snapshot: Arc<DataCache>,
     calling_contract: &ContractState,
@@ -263,6 +402,220 @@ fn seed_pending_request(
     engine.snapshot_cache()
 }
 
+fn seed_pending_request_bytes(
+    snapshot: Arc<DataCache>,
+    calling_contract: &ContractState,
+    url: &str,
+    user_data_bytes: Vec<u8>,
+) -> Arc<DataCache> {
+    add_contract_to_snapshot(snapshot.as_ref(), calling_contract);
+
+    let oracle = OracleContract::new();
+    let mut engine = make_request_engine(snapshot);
+    engine.set_current_script_hash(Some(oracle.hash()));
+    engine.set_calling_script_hash(Some(calling_contract.hash));
+
+    let args = vec![
+        url.as_bytes().to_vec(),
+        Vec::new(),
+        b"callback".to_vec(),
+        user_data_bytes,
+        10_000_000i64.to_le_bytes().to_vec(),
+    ];
+
+    engine
+        .call_native_contract(oracle.hash(), "request", &args)
+        .expect("oracle request should succeed");
+
+    engine.snapshot_cache()
+}
+
+#[test]
+fn oracle_set_price_requires_committee_and_stores_signed_le_bigint_price() {
+    let snapshot = Arc::new(DataCache::new(false));
+    let oracle = OracleContract::new();
+    let new_price = 123_456_789i64;
+    let price_bytes = BigInt::from(new_price).to_signed_bytes_le();
+
+    let mut unauthorized = make_request_engine(Arc::clone(&snapshot));
+    let err = oracle
+        .invoke_method(
+            &mut unauthorized,
+            "setPrice",
+            std::slice::from_ref(&price_bytes),
+        )
+        .expect_err("setPrice without committee witness should fail");
+    assert!(
+        err.to_string().contains("Committee authorization"),
+        "unexpected error: {err}"
+    );
+    assert_eq!(
+        oracle.get_price(unauthorized.snapshot_cache().as_ref()),
+        50_000_000,
+        "unauthorized setPrice must not mutate the stored price"
+    );
+
+    let mut authorized = make_request_engine(Arc::clone(&snapshot));
+    let authorized_snapshot = authorized.snapshot_cache();
+    let committee = NativeHelpers::committee_address(
+        authorized.protocol_settings(),
+        Some(authorized_snapshot.as_ref()),
+    );
+    authorized.set_calling_script_hash(Some(committee));
+
+    oracle
+        .invoke_method(&mut authorized, "setPrice", &[price_bytes])
+        .expect("committee witness should allow setPrice");
+
+    assert_eq!(
+        oracle.get_price(authorized.snapshot_cache().as_ref()),
+        new_price,
+        "setPrice must round-trip through signed little-endian BigInteger storage"
+    );
+}
+
+#[test]
+fn oracle_verify_returns_false_without_transaction_container() {
+    let oracle = OracleContract::new();
+    let mut engine = make_engine_without_container(Arc::new(DataCache::new(false)));
+
+    let result = oracle
+        .invoke_method(&mut engine, "verify", &[])
+        .expect("verify without tx should return false byte");
+
+    assert_eq!(result, vec![0]);
+}
+
+#[test]
+fn oracle_verify_accepts_fixed_oracle_response_transaction() {
+    let oracle = OracleContract::new();
+    let tx = make_response_transaction(0, OracleResponseCode::Success, Vec::new());
+    let mut engine = make_response_engine(Arc::new(DataCache::new(false)), tx);
+
+    let result = oracle
+        .invoke_method(&mut engine, "verify", &[])
+        .expect("fixed oracle response should verify");
+
+    assert_eq!(result, vec![1]);
+}
+
+#[test]
+fn oracle_finish_rejects_direct_invocation_outside_fixed_response_script() {
+    let oracle = OracleContract::new();
+    let mut engine = make_request_engine(Arc::new(DataCache::new(false)));
+
+    let err = oracle
+        .invoke_method(&mut engine, "finish", &[])
+        .expect_err("finish must reject direct native invocation");
+
+    assert!(
+        err.to_string().contains("fixed response script"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn oracle_finish_rejects_fixed_script_without_oracle_response_attribute() {
+    let mut tx = Transaction::new();
+    tx.set_script(OracleResponse::get_fixed_script());
+    let mut engine = make_response_engine(Arc::new(DataCache::new(false)), tx);
+
+    let err = engine
+        .execute()
+        .expect_err("finish should reject transaction without OracleResponse attribute");
+
+    assert!(
+        err.to_string()
+            .contains("Oracle response attribute missing"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn oracle_finish_rejects_unknown_request_before_callback() {
+    let tx = make_response_transaction(99, OracleResponseCode::Success, Vec::new());
+    let mut engine = make_response_engine(Arc::new(DataCache::new(false)), tx);
+
+    let err = engine
+        .execute()
+        .expect_err("finish should reject responses for unknown requests");
+
+    assert!(
+        err.to_string().contains("Request not found"),
+        "unexpected error: {err}"
+    );
+    let oracle_response_events = engine
+        .notifications()
+        .iter()
+        .filter(|notification| {
+            notification.script_hash == OracleContract::new().hash()
+                && notification.event_name == "OracleResponse"
+        })
+        .count();
+    assert_eq!(
+        oracle_response_events, 0,
+        "unknown requests must not emit OracleResponse notifications"
+    );
+    let callback_events = engine
+        .notifications()
+        .iter()
+        .filter(|notification| notification.event_name == "Callback")
+        .count();
+    assert_eq!(
+        callback_events, 0,
+        "unknown requests must not invoke callbacks"
+    );
+}
+
+#[test]
+fn oracle_finish_emits_response_before_rejecting_bad_user_data() {
+    let snapshot = Arc::new(DataCache::new(false));
+    let callback_contract = make_callback_contract(1, "oracleCallback");
+    let oracle = OracleContract::new();
+    let snapshot = seed_pending_request_bytes(
+        Arc::clone(&snapshot),
+        &callback_contract,
+        "https://example.com/bad-user-data",
+        vec![0xff],
+    );
+
+    let tx = make_response_transaction(0, OracleResponseCode::Success, Vec::new());
+    let mut engine = make_response_engine(snapshot, tx);
+    let err = engine
+        .execute()
+        .expect_err("finish should reject invalid serialized user data before callback");
+
+    assert!(
+        err.to_string().contains("Invalid") || err.to_string().contains("invalid"),
+        "unexpected error: {err}"
+    );
+
+    let oracle_response_events = engine
+        .notifications()
+        .iter()
+        .filter(|notification| {
+            notification.script_hash == oracle.hash() && notification.event_name == "OracleResponse"
+        })
+        .count();
+    let callback_events = engine
+        .notifications()
+        .iter()
+        .filter(|notification| {
+            notification.script_hash == callback_contract.hash
+                && notification.event_name == "Callback"
+        })
+        .count();
+
+    assert_eq!(
+        oracle_response_events, 1,
+        "OracleResponse event must be emitted before userData deserialization"
+    );
+    assert_eq!(
+        callback_events, 0,
+        "invalid userData must stop before callback invocation"
+    );
+}
+
 #[test]
 fn oracle_request_requires_registered_calling_contract() {
     let snapshot = Arc::new(DataCache::new(false));
@@ -292,6 +645,26 @@ fn oracle_request_requires_registered_calling_contract() {
             .expect("get requests")
             .is_empty(),
         "request should not be persisted when no contract caller exists"
+    );
+
+    let mut unknown_contract_engine = make_request_engine(Arc::clone(&snapshot));
+    unknown_contract_engine.set_current_script_hash(Some(oracle.hash()));
+    unknown_contract_engine.set_calling_script_hash(Some(
+        UInt160::parse("0x0102030405060708090a0b0c0d0e0f1011121314").unwrap(),
+    ));
+    let err = unknown_contract_engine
+        .call_native_contract(oracle.hash(), "request", &args)
+        .expect_err("oracle request from unregistered contract hash should fail");
+    assert!(
+        err.to_string().contains("contract"),
+        "unexpected error: {err}"
+    );
+    assert!(
+        oracle
+            .get_requests(unknown_contract_engine.snapshot_cache().as_ref())
+            .expect("get requests")
+            .is_empty(),
+        "request should not be persisted for an unknown calling contract hash"
     );
 }
 
@@ -330,6 +703,185 @@ fn oracle_request_escrows_gas_for_response_to_oracle_contract_balance() {
 
     let escrow = gas.balance_of_snapshot(engine_snapshot.as_ref(), &oracle.hash());
     assert_eq!(escrow, BigInt::from(10_000_000));
+}
+
+#[test]
+fn oracle_request_distinguishes_null_filter_from_empty_filter() {
+    let snapshot = Arc::new(DataCache::new(false));
+    let calling_contract = make_test_contract(1, "oracleRequester");
+    add_contract_to_snapshot(snapshot.as_ref(), &calling_contract);
+
+    let oracle = OracleContract::new();
+    let request_args = |url: &[u8], filter: Vec<u8>| {
+        vec![
+            url.to_vec(),
+            filter,
+            b"callback".to_vec(),
+            b"payload".to_vec(),
+            BigInt::from(10_000_000i64).to_signed_bytes_le(),
+        ]
+    };
+
+    let mut null_filter_engine = make_request_engine(Arc::clone(&snapshot));
+    null_filter_engine.set_current_script_hash(Some(oracle.hash()));
+    null_filter_engine.set_calling_script_hash(Some(calling_contract.hash));
+    null_filter_engine.set_state(NativeArgNullMask(1 << 1));
+    let result = null_filter_engine
+        .call_native_contract(
+            oracle.hash(),
+            "request",
+            &request_args(b"https://example.com/null", Vec::new()),
+        )
+        .expect("request with null filter should succeed");
+    assert_eq!(result, Vec::<u8>::new());
+
+    let mut empty_filter_engine = make_request_engine(null_filter_engine.snapshot_cache());
+    empty_filter_engine.set_current_script_hash(Some(oracle.hash()));
+    empty_filter_engine.set_calling_script_hash(Some(calling_contract.hash));
+    empty_filter_engine
+        .call_native_contract(
+            oracle.hash(),
+            "request",
+            &request_args(b"https://example.com/empty", Vec::new()),
+        )
+        .expect("request with empty filter should succeed");
+
+    let engine_snapshot = empty_filter_engine.snapshot_cache();
+    let null_filter_request = oracle
+        .get_request(engine_snapshot.as_ref(), 0)
+        .expect("get null-filter request")
+        .expect("null-filter request should be persisted");
+    let empty_filter_request = oracle
+        .get_request(engine_snapshot.as_ref(), 1)
+        .expect("get empty-filter request")
+        .expect("empty-filter request should be persisted");
+
+    assert_eq!(null_filter_request.filter, None);
+    assert_eq!(empty_filter_request.filter, Some(String::new()));
+}
+
+#[test]
+fn oracle_request_rejects_full_url_list_before_mutating_state() {
+    let mut snapshot = Arc::new(DataCache::new(false));
+    let calling_contract = make_test_contract(1, "oracleRequester");
+    add_contract_to_snapshot(snapshot.as_ref(), &calling_contract);
+
+    let oracle = OracleContract::new();
+    let gas = GasToken::new();
+    let url = b"https://example.com/full-list";
+    let args = vec![
+        url.to_vec(),
+        Vec::new(),
+        b"callback".to_vec(),
+        b"payload".to_vec(),
+        BigInt::from(10_000_000i64).to_signed_bytes_le(),
+    ];
+
+    for _ in 0..256 {
+        let mut engine = make_request_engine(Arc::clone(&snapshot));
+        engine.set_current_script_hash(Some(oracle.hash()));
+        engine.set_calling_script_hash(Some(calling_contract.hash));
+        engine
+            .call_native_contract(oracle.hash(), "request", &args)
+            .expect("request should fill URL pending list");
+        snapshot = engine.snapshot_cache();
+    }
+
+    assert_eq!(
+        oracle
+            .get_requests_by_url(snapshot.as_ref(), std::str::from_utf8(url).unwrap())
+            .expect("get requests by url")
+            .len(),
+        256
+    );
+    let balance_before = gas.balance_of_snapshot(snapshot.as_ref(), &oracle.hash());
+
+    let mut engine = make_request_engine(Arc::clone(&snapshot));
+    engine.set_current_script_hash(Some(oracle.hash()));
+    engine.set_calling_script_hash(Some(calling_contract.hash));
+    let err = engine
+        .call_native_contract(oracle.hash(), "request", &args)
+        .expect_err("full URL pending list should reject the next request");
+    assert!(
+        err.to_string().contains("too many pending responses"),
+        "unexpected error: {err}"
+    );
+
+    let failed_snapshot = engine.snapshot_cache();
+    assert_eq!(
+        gas.balance_of_snapshot(failed_snapshot.as_ref(), &oracle.hash()),
+        balance_before,
+        "full URL list rejection must not escrow additional GAS"
+    );
+    assert!(
+        oracle
+            .get_request(failed_snapshot.as_ref(), 256)
+            .expect("get rejected request id")
+            .is_none(),
+        "full URL list rejection must not persist the rejected request"
+    );
+    assert_eq!(
+        oracle
+            .get_requests_by_url(failed_snapshot.as_ref(), std::str::from_utf8(url).unwrap())
+            .expect("get requests by url after rejection")
+            .len(),
+        256,
+        "full URL list rejection must not append another pending id"
+    );
+}
+
+#[test]
+fn oracle_request_rejects_invalid_callback_and_gas_without_persisting() {
+    let snapshot = Arc::new(DataCache::new(false));
+    let calling_contract = make_test_contract(1, "oracleRequester");
+    add_contract_to_snapshot(snapshot.as_ref(), &calling_contract);
+
+    let oracle = OracleContract::new();
+    let mut engine = make_request_engine(Arc::clone(&snapshot));
+    engine.set_current_script_hash(Some(oracle.hash()));
+    engine.set_calling_script_hash(Some(calling_contract.hash));
+
+    let mut args = vec![
+        b"https://example.com".to_vec(),
+        Vec::new(),
+        b"_callback".to_vec(),
+        b"payload".to_vec(),
+        BigInt::from(10_000_000i64).to_signed_bytes_le(),
+    ];
+    let err = engine
+        .call_native_contract(oracle.hash(), "request", &args)
+        .expect_err("callback names starting with underscore should fail");
+    assert!(
+        err.to_string().contains("underscore"),
+        "unexpected error: {err}"
+    );
+
+    args[2] = Vec::new();
+    let err = engine
+        .call_native_contract(oracle.hash(), "request", &args)
+        .expect_err("empty callback names should fail");
+    assert!(
+        err.to_string().contains("Callback name too long"),
+        "unexpected error: {err}"
+    );
+
+    args[2] = b"callback".to_vec();
+    args[4] = BigInt::from(9_999_999i64).to_signed_bytes_le();
+    let err = engine
+        .call_native_contract(oracle.hash(), "request", &args)
+        .expect_err("gas below minimum response gas should fail");
+    assert!(
+        err.to_string().contains("Invalid gas amount"),
+        "unexpected error: {err}"
+    );
+
+    assert!(
+        oracle
+            .get_requests(engine.snapshot_cache().as_ref())
+            .expect("get requests")
+            .is_empty(),
+        "invalid requests must not be persisted"
+    );
 }
 
 #[test]

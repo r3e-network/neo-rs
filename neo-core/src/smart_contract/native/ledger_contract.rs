@@ -13,24 +13,16 @@ use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
 use crate::hardfork::Hardfork;
 use crate::ledger::Block;
-use crate::neo_vm::StackItem;
-use crate::network::p2p::payloads::transaction_attribute::TransactionAttribute;
 #[cfg(test)]
 use crate::network::p2p::payloads::Transaction;
 use crate::persistence::{i_read_only_store::IReadOnlyStoreGeneric, DataCache};
 use crate::protocol_settings::ProtocolSettings;
-use crate::smart_contract::application_engine::ApplicationEngine;
-use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::native::{
-    policy_contract::PolicyContract, trimmed_block::TrimmedBlock, NativeContract, NativeMethod,
+    policy_contract::PolicyContract, trimmed_block::TrimmedBlock, NativeMethod,
 };
-use crate::smart_contract::ContractParameterType;
-use crate::smart_contract::IInteroperable;
 use crate::smart_contract::{StorageItem, StorageKey};
 use crate::{UInt160, UInt256};
-use neo_vm_rs::{ExecutionEngineLimits, VmState as VMState};
-use num_bigint::BigInt;
-use num_traits::ToPrimitive;
+use neo_vm_rs::VmState as VMState;
 
 /// Prefix for block-hash-by-index storage
 const PREFIX_BLOCK_HASH: u8 = 9;
@@ -42,6 +34,8 @@ const PREFIX_TRANSACTION: u8 = 11;
 const PREFIX_CURRENT_BLOCK: u8 = 12;
 
 pub(crate) mod keys;
+mod metadata;
+mod native_impl;
 mod state;
 pub use state::{LedgerTransactionStates, PersistedTransactionState};
 
@@ -61,86 +55,10 @@ impl LedgerContract {
         let hash = UInt160::parse("0xda65b600f7124ce6c79950c1772a36403104f2be")
             .expect("Valid LedgerContract hash");
 
-        let methods = vec![
-            NativeMethod::new(
-                "currentHash".to_string(),
-                1 << 15,
-                true,
-                0x01,
-                Vec::new(),
-                ContractParameterType::Hash256,
-            ),
-            NativeMethod::new(
-                "currentIndex".to_string(),
-                1 << 15,
-                true,
-                0x01,
-                Vec::new(),
-                ContractParameterType::Integer,
-            ),
-            NativeMethod::new(
-                "getBlock".to_string(),
-                1 << 15,
-                true,
-                0x01,
-                vec![ContractParameterType::ByteArray],
-                ContractParameterType::Array,
-            )
-            .with_parameter_names(vec!["indexOrHash".to_string()]),
-            NativeMethod::new(
-                "getTransaction".to_string(),
-                1 << 15,
-                true,
-                0x01,
-                vec![ContractParameterType::Hash256],
-                ContractParameterType::Array,
-            )
-            .with_parameter_names(vec!["hash".to_string()]),
-            NativeMethod::new(
-                "getTransactionFromBlock".to_string(),
-                1 << 16,
-                true,
-                0x01,
-                vec![
-                    ContractParameterType::ByteArray,
-                    ContractParameterType::Integer,
-                ],
-                ContractParameterType::Array,
-            )
-            .with_parameter_names(vec!["blockIndexOrHash".to_string(), "txIndex".to_string()]),
-            NativeMethod::new(
-                "getTransactionHeight".to_string(),
-                1 << 15,
-                true,
-                0x01,
-                vec![ContractParameterType::Hash256],
-                ContractParameterType::Integer,
-            )
-            .with_parameter_names(vec!["hash".to_string()]),
-            NativeMethod::new(
-                "getTransactionSigners".to_string(),
-                1 << 15,
-                true,
-                0x01,
-                vec![ContractParameterType::Hash256],
-                ContractParameterType::Array,
-            )
-            .with_parameter_names(vec!["hash".to_string()]),
-            NativeMethod::new(
-                "getTransactionVMState".to_string(),
-                1 << 15,
-                true,
-                0x01,
-                vec![ContractParameterType::Hash256],
-                ContractParameterType::Integer,
-            )
-            .with_parameter_names(vec!["hash".to_string()]),
-        ];
-
         Self {
             id: Self::ID,
             hash,
-            methods,
+            methods: Self::native_methods(),
         }
     }
 
@@ -380,6 +298,9 @@ impl LedgerContract {
     ) -> Result<()> {
         let block_hash = block.hash();
         let index = block.index();
+        let trimmed = TrimmedBlock::try_from_block(block)?;
+        let block_bytes = serialize_trimmed_block(&trimmed)?;
+        let tx_records = self.prepare_transaction_records(tx_states)?;
 
         // Persist block hash (index -> hash)
         let hash_key = block_hash_storage_key(self.id, index);
@@ -397,8 +318,6 @@ impl LedgerContract {
             storage_key = %hex::encode(block_key.to_array()),
             "persisting trimmed block to storage"
         );
-        let trimmed = TrimmedBlock::from_block(block);
-        let block_bytes = serialize_trimmed_block(&trimmed)?;
         put_item(snapshot, block_key, StorageItem::from_bytes(block_bytes));
         tracing::debug!(
             contract_id = self.id,
@@ -408,7 +327,8 @@ impl LedgerContract {
 
         debug_assert_eq!(block.transactions.len(), tx_states.len());
 
-        self.persist_transaction_states(snapshot, tx_states)
+        self.put_transaction_records(snapshot, tx_records);
+        Ok(())
     }
 
     fn update_current_block_state(
@@ -433,27 +353,50 @@ impl LedgerContract {
         self.update_current_block_state(snapshot, hash, index)
     }
 
+    #[allow(dead_code)]
     pub(crate) fn persist_transaction_states(
         &self,
         snapshot: &DataCache,
         states: &[PersistedTransactionState],
     ) -> Result<()> {
-        for state in states {
-            self.persist_transaction_state(snapshot, state)?;
-        }
+        let tx_records = self.prepare_transaction_records(states)?;
+        self.put_transaction_records(snapshot, tx_records);
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub(crate) fn persist_transaction_state(
         &self,
         snapshot: &DataCache,
         state: &PersistedTransactionState,
     ) -> Result<()> {
-        let tx_hash = state.transaction_hash();
+        let tx_hash = state.try_transaction_hash()?;
         let tx_key = transaction_storage_key(self.id, &tx_hash);
         let tx_bytes = serialize_transaction_record(&TransactionStateRecord::Full(state.clone()))?;
         put_item(snapshot, tx_key, StorageItem::from_bytes(tx_bytes));
         Ok(())
+    }
+
+    fn prepare_transaction_records(
+        &self,
+        states: &[PersistedTransactionState],
+    ) -> Result<Vec<(UInt256, Vec<u8>)>> {
+        states
+            .iter()
+            .map(|state| {
+                let hash = state.try_transaction_hash()?;
+                let bytes =
+                    serialize_transaction_record(&TransactionStateRecord::Full(state.clone()))?;
+                Ok((hash, bytes))
+            })
+            .collect()
+    }
+
+    fn put_transaction_records(&self, snapshot: &DataCache, records: Vec<(UInt256, Vec<u8>)>) {
+        for (tx_hash, tx_bytes) in records {
+            let tx_key = transaction_storage_key(self.id, &tx_hash);
+            put_item(snapshot, tx_key, StorageItem::from_bytes(tx_bytes));
+        }
     }
 
     pub fn update_transaction_vm_state(
@@ -512,304 +455,6 @@ pub enum HashOrIndex {
     Index(u32),
 }
 
-impl NativeContract for LedgerContract {
-    fn id(&self) -> i32 {
-        self.id
-    }
-
-    fn name(&self) -> &str {
-        "LedgerContract"
-    }
-
-    fn hash(&self) -> UInt160 {
-        self.hash
-    }
-
-    fn methods(&self) -> &[NativeMethod] {
-        &self.methods
-    }
-
-    fn invoke(
-        &self,
-        engine: &mut ApplicationEngine,
-        method: &str,
-        args: &[Vec<u8>],
-    ) -> Result<Vec<u8>> {
-        let snapshot_arc = engine.snapshot_cache();
-        let snapshot = snapshot_arc.as_ref();
-        let current_index = self.current_index(snapshot)?;
-        let max_traceable_blocks = self.resolve_max_traceable_blocks(engine, snapshot);
-
-        match method {
-            "currentHash" => {
-                if !args.is_empty() {
-                    return Err(Error::invalid_argument(
-                        "currentHash requires no arguments".to_string(),
-                    ));
-                }
-                let hash = self.current_hash(snapshot)?;
-                Ok(hash.to_bytes().to_vec())
-            }
-            "currentIndex" => {
-                if !args.is_empty() {
-                    return Err(Error::invalid_argument(
-                        "currentIndex requires no arguments".to_string(),
-                    ));
-                }
-                let index = current_index;
-                Ok(index.to_le_bytes().to_vec())
-            }
-            "getBlock" => {
-                if args.len() != 1 {
-                    return Err(Error::invalid_argument(
-                        "getBlock requires 1 argument".to_string(),
-                    ));
-                }
-                let selector = &args[0];
-                let target = self.parse_index_or_hash(selector, "indexOrHash")?;
-
-                let maybe_trimmed = match &target {
-                    HashOrIndex::Hash(hash) => self.get_trimmed_block(snapshot, hash)?,
-                    HashOrIndex::Index(index) => {
-                        if let Some(hash) = self.load_block_hash(snapshot, *index)? {
-                            self.get_trimmed_block(snapshot, &hash)?
-                        } else {
-                            None
-                        }
-                    }
-                };
-
-                let item = match maybe_trimmed {
-                    Some(trimmed)
-                        if Self::is_traceable_block(
-                            current_index,
-                            trimmed.index(),
-                            max_traceable_blocks,
-                        ) =>
-                    {
-                        trimmed.to_stack_item()?
-                    }
-                    _ => StackItem::null(),
-                };
-                Self::serialize_stack_item(item)
-            }
-            "getTransaction" => {
-                if args.len() != 1 {
-                    return Err(Error::invalid_argument(
-                        "getTransaction requires 1 argument".to_string(),
-                    ));
-                }
-                let hash = UInt256::from_bytes(&args[0]).map_err(|e| {
-                    Error::invalid_argument(format!("Invalid transaction hash: {e}"))
-                })?;
-                let item = if let Some(state) = self.get_transaction_state_if_traceable(
-                    snapshot,
-                    &hash,
-                    current_index,
-                    max_traceable_blocks,
-                )? {
-                    state.transaction().to_stack_item()?
-                } else {
-                    StackItem::null()
-                };
-                Self::serialize_stack_item(item)
-            }
-            "getTransactionFromBlock" => {
-                if args.len() != 2 {
-                    return Err(Error::invalid_argument(
-                        "getTransactionFromBlock requires 2 arguments".to_string(),
-                    ));
-                }
-                let target = self.parse_index_or_hash(&args[0], "blockIndexOrHash")?;
-                let tx_index =
-                    BigInt::from_signed_bytes_le(&args[1])
-                        .to_i32()
-                        .ok_or_else(|| {
-                            Error::invalid_argument("Invalid transaction index".to_string())
-                        })?;
-                if tx_index < 0 {
-                    return Err(Error::invalid_argument(
-                        "Transaction index out of range".to_string(),
-                    ));
-                }
-
-                let block_hash = match target {
-                    HashOrIndex::Hash(hash) => Some(hash),
-                    HashOrIndex::Index(index) => self.load_block_hash(snapshot, index)?,
-                };
-
-                let item = if let Some(block_hash) = block_hash {
-                    if let Some(tx) = self.get_transaction_from_block(
-                        snapshot,
-                        &block_hash,
-                        tx_index as u32,
-                        current_index,
-                        max_traceable_blocks,
-                    )? {
-                        tx.transaction().to_stack_item()?
-                    } else {
-                        StackItem::null()
-                    }
-                } else {
-                    StackItem::null()
-                };
-
-                Self::serialize_stack_item(item)
-            }
-            "getTransactionHeight" => {
-                if args.len() != 1 {
-                    return Err(Error::invalid_argument(
-                        "getTransactionHeight requires 1 argument".to_string(),
-                    ));
-                }
-                let hash = UInt256::from_bytes(&args[0]).map_err(|e| {
-                    Error::invalid_argument(format!("Invalid transaction hash: {e}"))
-                })?;
-                let bytes = if let Some(state) = self.get_transaction_state_if_traceable(
-                    snapshot,
-                    &hash,
-                    current_index,
-                    max_traceable_blocks,
-                )? {
-                    BigInt::from(state.block_index()).to_signed_bytes_le()
-                } else {
-                    BigInt::from(-1).to_signed_bytes_le()
-                };
-                Ok(bytes)
-            }
-            "getTransactionSigners" => {
-                if args.len() != 1 {
-                    return Err(Error::invalid_argument(
-                        "getTransactionSigners requires 1 argument".to_string(),
-                    ));
-                }
-                let hash = UInt256::from_bytes(&args[0]).map_err(|e| {
-                    Error::invalid_argument(format!("Invalid transaction hash: {e}"))
-                })?;
-                let item = if let Some(state) = self.get_transaction_state_if_traceable(
-                    snapshot,
-                    &hash,
-                    current_index,
-                    max_traceable_blocks,
-                )? {
-                    let items = state
-                        .transaction()
-                        .signers()
-                        .iter()
-                        .map(|signer| signer.to_stack_item())
-                        .collect::<std::result::Result<Vec<_>, _>>()?;
-                    StackItem::from_array(items)
-                } else {
-                    StackItem::null()
-                };
-                Self::serialize_stack_item(item)
-            }
-            "getTransactionVMState" => {
-                if args.len() != 1 {
-                    return Err(Error::invalid_argument(
-                        "getTransactionVMState requires 1 argument".to_string(),
-                    ));
-                }
-                let hash = UInt256::from_bytes(&args[0]).map_err(|e| {
-                    Error::invalid_argument(format!("Invalid transaction hash: {e}"))
-                })?;
-                if let Some(state) = self.get_transaction_state_if_traceable(
-                    snapshot,
-                    &hash,
-                    current_index,
-                    max_traceable_blocks,
-                )? {
-                    Ok(vec![state.vm_state_raw()])
-                } else {
-                    Ok(vec![0])
-                }
-            }
-            _ => Err(Error::native_contract(format!(
-                "Method {} not found",
-                method
-            ))),
-        }
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn initialize(&self, _engine: &mut ApplicationEngine) -> Result<()> {
-        Ok(())
-    }
-
-    fn on_persist(&self, engine: &mut ApplicationEngine) -> Result<()> {
-        let snapshot = engine.snapshot_cache();
-        let block = engine
-            .persisting_block()
-            .cloned()
-            .ok_or_else(|| Error::native_contract("No current block available for persistence"))?;
-        let tx_states: Vec<PersistedTransactionState> = block
-            .transactions
-            .iter()
-            .map(|tx| PersistedTransactionState::new(tx, block.index()))
-            .collect();
-        engine.set_state(LedgerTransactionStates::new(tx_states.clone()));
-        self.store_block_state(snapshot.as_ref(), &block, &tx_states)?;
-
-        for tx in &block.transactions {
-            let conflicts: Vec<UInt256> = tx
-                .attributes()
-                .iter()
-                .filter_map(|attr| match attr {
-                    TransactionAttribute::Conflicts(conflict) => Some(conflict.hash),
-                    _ => None,
-                })
-                .collect();
-
-            if conflicts.is_empty() {
-                continue;
-            }
-
-            let signer_accounts: Vec<UInt160> =
-                tx.signers().iter().map(|signer| signer.account).collect();
-
-            for conflict_hash in conflicts {
-                self.persist_conflict_stub(
-                    snapshot.as_ref(),
-                    &conflict_hash,
-                    block.index(),
-                    &signer_accounts,
-                )?;
-            }
-        }
-
-        Ok(())
-    }
-
-    fn post_persist(&self, engine: &mut ApplicationEngine) -> Result<()> {
-        let snapshot = engine.snapshot_cache();
-        let block = engine
-            .persisting_block()
-            .ok_or_else(|| Error::native_contract("No current block available for persistence"))?;
-        let block_clone = block.clone();
-        let hash = block_clone.hash();
-        let index = block_clone.index();
-        self.update_current_block_state(snapshot.as_ref(), &hash, index)?;
-
-        if let Some(state_cache) = engine.take_state::<LedgerTransactionStates>() {
-            let updates = state_cache.into_updates();
-            if !updates.is_empty() {
-                self.update_transaction_vm_states(snapshot.as_ref(), &updates)?;
-            }
-        }
-
-        Ok(())
-    }
-}
-
-impl Default for LedgerContract {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 fn put_item(snapshot: &DataCache, key: StorageKey, item: StorageItem) {
     if snapshot.get(&key).is_some() {
         snapshot.update(key, item);
@@ -831,10 +476,12 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ledger::{Block, BlockHeader};
     use crate::network::p2p::payloads::signer::Signer;
     use crate::network::p2p::payloads::witness::Witness;
     use crate::UInt160;
     use crate::WitnessScope;
+    use neo_vm_rs::OpCode;
 
     fn make_signed_transaction() -> Transaction {
         let mut tx = Transaction::new();
@@ -844,6 +491,12 @@ mod tests {
             WitnessScope::CALLED_BY_ENTRY,
         ));
         tx.add_witness(Witness::new());
+        tx
+    }
+
+    fn make_unserializable_transaction() -> Transaction {
+        let mut tx = make_signed_transaction();
+        tx.set_script(vec![OpCode::NOP.byte(); u16::MAX as usize + 1]);
         tx
     }
 
@@ -919,112 +572,65 @@ mod tests {
         let mut states = LedgerTransactionStates::new(vec![PersistedTransactionState::new(&tx, 0)]);
         let updated = states.mark_vm_state(&hash, VMState::FAULT);
         assert!(updated);
-        let updates = states.into_updates();
+        let updates = states.try_into_updates().expect("updates");
         assert_eq!(updates.len(), 1);
         assert_eq!(updates[0].1, VMState::FAULT);
+    }
+
+    #[test]
+    fn persist_transaction_state_rejects_unserializable_hash_without_zero_key() {
+        let ledger = LedgerContract::new();
+        let snapshot = DataCache::new(false);
+        let tx = make_unserializable_transaction();
+        let state = PersistedTransactionState::new(&tx, 42);
+
+        assert!(ledger.persist_transaction_state(&snapshot, &state).is_err());
+
+        let zero_key = transaction_storage_key(ledger.id, &UInt256::zero());
+        assert!(snapshot.get(&zero_key).is_none());
+        assert!(snapshot.tracked_items().is_empty());
+    }
+
+    #[test]
+    fn store_block_state_rejects_unserializable_transaction_before_tracking_writes() {
+        let ledger = LedgerContract::new();
+        let snapshot = DataCache::new(false);
+        let tx = make_unserializable_transaction();
+        let block = Block::new(BlockHeader::default(), vec![tx.clone()]);
+        let tx_states = vec![PersistedTransactionState::new(&tx, block.index())];
+
+        assert!(ledger
+            .store_block_state(&snapshot, &block, &tx_states)
+            .is_err());
+
+        let block_hash = block.hash();
+        assert!(snapshot
+            .get(&block_hash_storage_key(ledger.id, block.index()))
+            .is_none());
+        assert!(snapshot
+            .get(&block_storage_key(ledger.id, &block_hash))
+            .is_none());
+        assert!(snapshot
+            .get(&transaction_storage_key(ledger.id, &UInt256::zero()))
+            .is_none());
+        assert!(snapshot.tracked_items().is_empty());
+    }
+
+    #[test]
+    fn ledger_transaction_states_try_into_updates_rejects_unserializable_hash() {
+        let tx = make_unserializable_transaction();
+        let states = LedgerTransactionStates::new(vec![PersistedTransactionState::new(&tx, 0)]);
+
+        assert!(states.try_into_updates().is_err());
     }
 }
 
 impl LedgerContract {
-    fn parse_index_or_hash(&self, data: &[u8], name: &str) -> Result<HashOrIndex> {
-        if data.len() == 32 {
-            let hash = UInt256::from_bytes(data)
-                .map_err(|e| Error::invalid_argument(format!("Invalid {name}: {e}")))?;
-            Ok(HashOrIndex::Hash(hash))
-        } else if data.len() < 32 {
-            let index = BigInt::from_signed_bytes_le(data)
-                .to_u32()
-                .ok_or_else(|| Error::invalid_argument(format!("Invalid {name} value")))?;
-            Ok(HashOrIndex::Index(index))
-        } else {
-            Err(Error::invalid_argument(format!(
-                "Invalid {name} length: {}",
-                data.len()
-            )))
-        }
-    }
-
-    fn serialize_stack_item(item: StackItem) -> Result<Vec<u8>> {
-        BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
-            .map_err(|e| Error::serialization(format!("Failed to serialize ledger result: {e}")))
-    }
-
-    fn resolve_max_traceable_blocks<S>(&self, engine: &ApplicationEngine, snapshot: &S) -> u32
-    where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
-    {
-        let settings = engine.protocol_settings();
-        let mut value = if engine.is_hardfork_enabled(Hardfork::HfEchidna) {
-            max_traceable_blocks_from_snapshot(snapshot, settings.max_traceable_blocks)
-        } else {
-            settings.max_traceable_blocks
-        };
-
-        if value == 0 {
-            value = settings.max_traceable_blocks;
-        }
-
-        value = value.min(PolicyContract::MAX_MAX_TRACEABLE_BLOCKS);
-        value.max(1)
-    }
-
     fn is_traceable_block(current_index: u32, target_index: u32, max_traceable: u32) -> bool {
         if target_index > current_index {
             return false;
         }
         let window_end = target_index.saturating_add(max_traceable);
         window_end > current_index
-    }
-
-    fn get_transaction_state_if_traceable<S>(
-        &self,
-        snapshot: &S,
-        hash: &UInt256,
-        current_index: u32,
-        max_traceable: u32,
-    ) -> Result<Option<PersistedTransactionState>>
-    where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
-    {
-        if let Some(state) = self.try_read_transaction_state(snapshot, hash)? {
-            if Self::is_traceable_block(current_index, state.block_index(), max_traceable) {
-                return Ok(Some(state));
-            }
-        }
-        Ok(None)
-    }
-
-    fn get_transaction_from_block<S>(
-        &self,
-        snapshot: &S,
-        block_hash: &UInt256,
-        tx_index: u32,
-        current_index: u32,
-        max_traceable: u32,
-    ) -> Result<Option<PersistedTransactionState>>
-    where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
-    {
-        if let Some(block) = self.try_read_block(snapshot, block_hash)? {
-            if !Self::is_traceable_block(current_index, block.index(), max_traceable) {
-                return Ok(None);
-            }
-
-            let tx_index = tx_index as usize;
-            if tx_index >= block.transactions.len() {
-                return Err(Error::invalid_argument(
-                    "Transaction index out of range".to_string(),
-                ));
-            }
-
-            let tx = &block.transactions[tx_index];
-            return self.get_transaction_state_if_traceable(
-                snapshot,
-                &tx.hash(),
-                current_index,
-                max_traceable,
-            );
-        }
-        Ok(None)
     }
 }

@@ -1691,9 +1691,10 @@ fn native_pure_data_states_project_through_neo_vm_rs_stack_value() {
     let oracle_request =
         fs::read_to_string(workspace.join("neo-core/src/smart_contract/native/oracle_request.rs"))
             .unwrap();
-    let oracle_contract =
-        fs::read_to_string(workspace.join("neo-core/src/smart_contract/native/oracle_contract.rs"))
-            .unwrap();
+    let oracle_storage = fs::read_to_string(
+        workspace.join("neo-core/src/smart_contract/native/oracle_contract/storage.rs"),
+    )
+    .unwrap();
     assert!(
         oracle_request.contains("use neo_vm_rs::StackValue;"),
         "OracleRequest should import neo_vm_rs::StackValue directly for native data projection"
@@ -1727,7 +1728,7 @@ fn native_pure_data_states_project_through_neo_vm_rs_stack_value() {
              neo_vm_rs::StackValue first"
         );
     }
-    let oracle_request_storage_section = oracle_contract
+    let oracle_request_storage_section = oracle_storage
         .split("fn read_id_list")
         .next()
         .expect("Oracle request storage section");
@@ -3634,8 +3635,25 @@ fn historical_vm_bug_fixes_stay_guarded_at_neo_vm_rs_boundary() {
     .unwrap();
     let oracle_contract =
         read_source(workspace.join("neo-core/src/smart_contract/native/oracle_contract.rs"));
+    let oracle_storage = read_source(
+        workspace.join("neo-core/src/smart_contract/native/oracle_contract/storage.rs"),
+    );
+    let oracle_post_persist = read_source(
+        workspace.join("neo-core/src/smart_contract/native/oracle_contract/post_persist.rs"),
+    );
+    let oracle_pricing = read_source(
+        workspace.join("neo-core/src/smart_contract/native/oracle_contract/pricing.rs"),
+    );
+    let oracle_request = read_source(
+        workspace.join("neo-core/src/smart_contract/native/oracle_contract/request.rs"),
+    );
+    let oracle_contract_sources =
+        format!("{oracle_contract}\n{oracle_storage}\n{oracle_post_persist}\n{oracle_pricing}\n{oracle_request}");
     let notary =
         fs::read_to_string(workspace.join("neo-core/src/smart_contract/native/notary.rs")).unwrap();
+    let notary_native_impl =
+        read_source(workspace.join("neo-core/src/smart_contract/native/notary/native_impl.rs"));
+    let notary_sources = format!("{notary}\n{notary_native_impl}");
     let contract_update = fs::read_to_string(
         workspace.join("neo-core/src/smart_contract/native/contract_management/update.rs"),
     )
@@ -3823,25 +3841,25 @@ fn historical_vm_bug_fixes_stay_guarded_at_neo_vm_rs_boundary() {
     // b4f8bbb6: non-VM native parity fixes are not neo-vm-rs behavior, so keep
     // source-level tripwires where neo-core owns the boundary.
     assert!(
-        oracle_contract.contains("BigInt::from_signed_bytes_le(&bytes).to_i64()")
-            && oracle_contract
+        oracle_contract_sources.contains("BigInt::from_signed_bytes_le(&bytes).to_i64()")
+            && oracle_contract_sources
                 .contains("StorageItem::from_bytes(BigInt::from(price).to_signed_bytes_le())")
-            && oracle_contract.contains("BigInt::from_signed_bytes_le(&args[4])")
-            && oracle_contract.contains("BigInt::from_signed_bytes_le(&bytes).to_u64()"),
+            && oracle_contract_sources.contains("BigInt::from_signed_bytes_le(&args[4])")
+            && oracle_contract_sources.contains("BigInt::from_signed_bytes_le(&bytes).to_u64()"),
         "Oracle price/request-id/gas integer paths must stay on C# signed little-endian \
          BigInteger encoding"
     );
     assert!(
-        oracle_contract.contains("NativeArgNullMask")
-            && oracle_contract.contains("let filter = if filter_was_null")
-            && oracle_contract
+        oracle_contract_sources.contains("NativeArgNullMask")
+            && oracle_contract_sources.contains("let filter = if filter_was_null")
+            && oracle_contract_sources
                 .contains("Some(\n                String::from_utf8(args[1].clone())"),
         "Oracle request filter storage must distinguish StackItem.Null from ByteString(\"\")"
     );
     assert!(
-        notary.contains("BigInt::from_signed_bytes_le(&data)")
-            && notary.contains("BigInt::from(value).to_signed_bytes_le()")
-            && notary
+        notary_sources.contains("BigInt::from_signed_bytes_le(&data)")
+            && notary_sources.contains("BigInt::from(value).to_signed_bytes_le()")
+            && notary_sources
                 .contains("BigInt::from(DEFAULT_MAX_NOT_VALID_BEFORE_DELTA).to_signed_bytes_le()"),
         "Notary maxDelta storage must stay on C# signed little-endian BigInteger encoding"
     );
@@ -3859,7 +3877,8 @@ fn historical_vm_bug_fixes_stay_guarded_at_neo_vm_rs_boundary() {
         "JsonSerializer.deserialize must preserve JSON object insertion order"
     );
     assert!(
-        oracle_contract.contains("get_designated_by_role_at(snapshot, Role::Oracle, index)"),
+        oracle_contract_sources
+            .contains("get_designated_by_role_at(snapshot, Role::Oracle, index)"),
         "Oracle post-persist rewards must use RoleManagement's typed BinarySerializer decoder"
     );
     assert!(
