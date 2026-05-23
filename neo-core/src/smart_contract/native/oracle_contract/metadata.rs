@@ -1,67 +1,18 @@
 use super::OracleContract;
-use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::manifest::{ContractEventDescriptor, ContractParameterDefinition};
+use crate::smart_contract::native::method_macros::neo_native_methods;
 use crate::smart_contract::native::NativeMethod;
 use crate::smart_contract::ContractParameterType;
 
 impl OracleContract {
     pub(super) fn native_methods() -> Vec<NativeMethod> {
-        let methods = vec![
-            NativeMethod::unsafe_method(
-                "request".to_string(),
-                0,
-                (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
-                vec![
-                    ContractParameterType::String,
-                    ContractParameterType::String,
-                    ContractParameterType::String,
-                    ContractParameterType::Any,
-                    ContractParameterType::Integer,
-                ],
-                ContractParameterType::Void,
-            ),
-            NativeMethod::safe(
-                "getPrice".to_string(),
-                1 << 15,
-                Vec::new(),
-                ContractParameterType::Integer,
-            )
-            .with_required_call_flags(CallFlags::READ_STATES),
-            NativeMethod::unsafe_method(
-                "setPrice".to_string(),
-                1 << 15,
-                CallFlags::STATES.bits(),
-                vec![ContractParameterType::Integer],
-                ContractParameterType::Void,
-            ),
-            NativeMethod::unsafe_method(
-                "finish".to_string(),
-                0,
-                (CallFlags::STATES | CallFlags::ALLOW_CALL | CallFlags::ALLOW_NOTIFY).bits(),
-                Vec::new(),
-                ContractParameterType::Void,
-            ),
-            NativeMethod::safe(
-                "verify".to_string(),
-                1 << 15,
-                Vec::new(),
-                ContractParameterType::Boolean,
-            ),
-        ];
-        methods
-            .into_iter()
-            .map(|method| match method.name.as_str() {
-                "request" => method.with_parameter_names(vec![
-                    "url".to_string(),
-                    "filter".to_string(),
-                    "callback".to_string(),
-                    "userData".to_string(),
-                    "gasForResponse".to_string(),
-                ]),
-                "setPrice" => method.with_parameter_names(vec!["price".to_string()]),
-                _ => method,
-            })
-            .collect()
+        neo_native_methods![
+            unsafe "request", fee = 0, flags = [STATES, ALLOW_NOTIFY], params = [String, String, String, Any, Integer], returns = Void, names = ["url", "filter", "callback", "userData", "gasForResponse"];
+            safe "getPrice", fee = 1 << 15, flags = [READ_STATES], params = [], returns = Integer;
+            unsafe "setPrice", fee = 1 << 15, flags = [STATES], params = [Integer], returns = Void, names = ["price"];
+            unsafe "finish", fee = 0, flags = [STATES, ALLOW_CALL, ALLOW_NOTIFY], params = [], returns = Void;
+            safe "verify", fee = 1 << 15, flags = [], params = [], returns = Boolean;
+        ]
     }
 
     pub(super) fn event_descriptors() -> Vec<ContractEventDescriptor> {
