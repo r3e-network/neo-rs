@@ -16,7 +16,10 @@
 //!
 //! ## Architecture
 //!
-//! The VM follows a layered architecture:
+//! The module follows an adapter-oriented architecture. Canonical opcode
+//! metadata, instruction parsing, and ABI-level value semantics live in
+//! `neo-vm-rs`; `neo_core::neo_vm` keeps the stateful host surface needed by
+//! neo-rs.
 //!
 //! ```text
 //! ┌─────────────────────────────────────────────────────────────────┐
@@ -33,7 +36,7 @@
 //!                              ▼
 //! ┌─────────────────────────────────────────────────────────────────┐
 //! │                    JumpTable                                     │
-//! │            (Opcode implementations and dispatch)                 │
+//! │      (Stateful dispatch adapters over neo-vm-rs semantics)       │
 //! └─────────────────────────────────────────────────────────────────┘
 //! ```
 //!
@@ -58,12 +61,12 @@
 //! | [`ExecutionEngine`] | Core VM execution loop | `ExecutionEngine` |
 //! | [`EvaluationStack`] | Operand stack | `EvaluationStack` |
 //! | [`ExecutionContext`] | Script execution context | `ExecutionContext` |
-//! | [`JumpTable`] | Opcode dispatch | `JumpTable` |
+//! | [`JumpTable`] | Stateful opcode dispatch adapters | `JumpTable` |
 //! | [`StackItem`] | VM value types | `StackItem` |
 //!
 //! ## Features
 //!
-//! - **Complete Opcode Support**: All Neo VM opcodes with precise semantics matching C# implementation
+//! - **Shared NeoVM Semantics**: Opcode metadata and ABI-level behavior come from `neo-vm-rs`
 //! - **Stack-Based Execution**: Type-safe evaluation stack with reference counting
 //! - **Gas Metering**: Precise execution cost tracking
 //! - **Exception Handling**: Comprehensive try-catch-finally support
@@ -169,9 +172,10 @@ pub mod execution_engine;
 /// [`InteropService`] manages native contract methods accessible via SYSCALL.
 pub mod interop_service;
 
-/// Opcode implementations and instruction dispatch.
+/// Stateful opcode dispatch adapters.
 ///
-/// The [`JumpTable`] contains implementations for all VM opcodes.
+/// The [`JumpTable`] handles neo-rs execution state and delegates shared opcode
+/// metadata and ABI-level behavior to `neo-vm-rs` wherever possible.
 pub mod jump_table;
 
 /// Reference counting for garbage collection.

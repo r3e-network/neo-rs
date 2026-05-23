@@ -2390,6 +2390,28 @@ fn contract_management_uses_direct_script_validation_for_nef_abi_checks() {
 }
 
 #[test]
+fn neo_vm_module_docs_do_not_claim_local_canonical_opcode_semantics() {
+    let workspace = workspace_root();
+    let module_docs = fs::read_to_string(workspace.join("neo-core/src/neo_vm/mod.rs")).unwrap();
+
+    for forbidden in [
+        "Complete Opcode Support",
+        "Opcode implementations and dispatch",
+        "contains implementations for all VM opcodes",
+    ] {
+        assert!(
+            !module_docs.contains(forbidden),
+            "neo-core::neo_vm docs must not imply local canonical NeoVM semantics: {forbidden}"
+        );
+    }
+
+    assert!(
+        module_docs.contains("Opcode metadata and ABI-level semantics are imported directly from `neo-vm-rs`"),
+        "neo-core::neo_vm docs should state that canonical opcode metadata and ABI semantics live in neo-vm-rs"
+    );
+}
+
+#[test]
 fn newbuffer_reuses_neo_vm_rs_collection_semantics() {
     let workspace = workspace_root();
     let splice =
