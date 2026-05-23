@@ -26,11 +26,7 @@ pub(crate) fn init_store(
         let state_db = store_provider.get_store(&state_settings.path)?;
         let backend = Arc::new(SnapshotBackedStateStoreBackend::new(state_db));
         let verifier = StateRootVerifier::from_store(store.clone(), settings);
-        let mut ss = StateStore::new_with_verifier(
-            backend,
-            state_settings,
-            Some(verifier),
-        );
+        let mut ss = StateStore::new_with_verifier(backend, state_settings, Some(verifier));
         // Load reference state roots for validation if available.
         ss.load_reference_roots("data/reference_stateroots.jsonl");
         let ss = Arc::new(ss);

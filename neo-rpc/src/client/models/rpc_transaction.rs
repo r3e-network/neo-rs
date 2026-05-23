@@ -14,7 +14,7 @@ use neo_core::config::ProtocolSettings;
 use neo_core::Transaction;
 use neo_json::JObject;
 use neo_primitives::UInt256;
-use neo_vm::VMState;
+use neo_vm_rs::VmState;
 
 /// RPC transaction information matching C# `RpcTransaction`
 #[derive(Debug, Clone)]
@@ -32,7 +32,7 @@ pub struct RpcTransaction {
     pub block_time: Option<u64>,
 
     /// VM execution state
-    pub vm_state: Option<VMState>,
+    pub vm_state: Option<VmState>,
 }
 
 impl RpcTransaction {

@@ -1,0 +1,135 @@
+//! VM state - Execution status of the Neo Virtual Machine.
+//!
+//! This module provides the `VMState` enum which tracks the execution status
+//! of the Neo VM, matching the C# Neo.VM.VMState implementation.
+//!
+//! ## States
+//!
+//! | State | Description |
+//! |-------|-------------|
+//! | `NONE` | Execution has not started or is in progress |
+//! | `HALT` | Execution completed successfully |
+//! | `FAULT` | Execution failed with an uncaught exception |
+//! | `BREAK` | Execution paused at a breakpoint |
+//!
+//! ## State Combinations
+//!
+//! States can be combined using bitwise operations:
+//! - `HALT | FAULT` - Both halt and fault conditions
+//! - `HALT | BREAK` - Halted at a breakpoint
+//!
+//! ## Example
+//!
+//! ```rust
+//! use neo_core::neo_vm::VMState;
+//!
+//! // Check execution result
+//! let state = VMState::HALT;
+//! assert!(state.is_halt());
+//! assert!(!state.is_fault());
+//!
+//! // Check for any completion state
+//! let completed = state.contains(VMState::HALT);
+//! ```
+
+/// namespace Neo.VM -> public enum `VMState` : byte
+/// Indicates the status of the VM.
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VMState {
+    /// Indicates that the execution is in progress or has not yet begun.
+    NONE = 0,
+
+    /// Indicates that the execution has been completed successfully.
+    HALT = 1 << 0,
+
+    /// Indicates that the execution has ended, and an exception that cannot be caught is thrown.
+    FAULT = 1 << 1,
+
+    /// Indicates that a breakpoint is currently being hit.
+    BREAK = 1 << 2,
+}
+
+impl VMState {
+    /// Checks if this state contains the specified flag.
+    #[inline]
+    #[must_use]
+    pub const fn contains(self, flag: Self) -> bool {
+        (self.to_byte() & flag.to_byte()) != 0
+    }
+
+    /// Returns the C# Neo.VM byte tag for this state.
+    #[inline]
+    #[must_use]
+    pub const fn to_byte(self) -> u8 {
+        match self {
+            Self::NONE => 0,
+            Self::HALT => 1 << 0,
+            Self::FAULT => 1 << 1,
+            Self::BREAK => 1 << 2,
+        }
+    }
+
+    /// Decodes a persisted C# Neo.VM state byte.
+    #[inline]
+    #[must_use]
+    pub const fn from_byte(value: u8) -> Self {
+        match value {
+            value if value == Self::HALT.to_byte() => Self::HALT,
+            value if value == Self::FAULT.to_byte() => Self::FAULT,
+            value if value == Self::BREAK.to_byte() => Self::BREAK,
+            _ => Self::NONE,
+        }
+    }
+
+    /// Returns true if the state is NONE (execution in progress or not started).
+    #[inline]
+    #[must_use]
+    pub fn is_none(self) -> bool {
+        self == Self::NONE
+    }
+
+    /// Returns true if the state contains HALT (execution completed successfully).
+    #[inline]
+    #[must_use]
+    pub fn is_halt(self) -> bool {
+        self.contains(Self::HALT)
+    }
+
+    /// Returns true if the state contains FAULT (execution ended with exception).
+    #[inline]
+    #[must_use]
+    pub fn is_fault(self) -> bool {
+        self.contains(Self::FAULT)
+    }
+
+    /// Returns true if the state contains BREAK (breakpoint hit).
+    #[inline]
+    #[must_use]
+    pub fn is_break(self) -> bool {
+        self.contains(Self::BREAK)
+    }
+}
+
+impl From<neo_vm_rs::VmState> for VMState {
+    fn from(value: neo_vm_rs::VmState) -> Self {
+        match value {
+            neo_vm_rs::VmState::Halt => Self::HALT,
+            neo_vm_rs::VmState::Fault => Self::FAULT,
+        }
+    }
+}
+
+impl TryFrom<VMState> for neo_vm_rs::VmState {
+    type Error = crate::neo_vm::VmError;
+
+    fn try_from(value: VMState) -> Result<Self, Self::Error> {
+        match value {
+            VMState::HALT => Ok(Self::Halt),
+            VMState::FAULT => Ok(Self::Fault),
+            VMState::NONE | VMState::BREAK => Err(crate::neo_vm::VmError::invalid_operation_msg(
+                format!("{value:?} is not a final neo-vm-rs VM state"),
+            )),
+        }
+    }
+}

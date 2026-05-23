@@ -12,7 +12,7 @@ use crate::wallets::helper::Helper;
 use crate::wallets::key_pair::KeyPair;
 use crate::wallets::wallet::{WalletError, WalletResult};
 use crate::UInt160;
-use neo_vm::op_code::OpCode;
+use neo_vm_rs::OpCode;
 use std::sync::Arc;
 
 /// Common interface shared by all wallet-backed accounts.
@@ -286,7 +286,7 @@ impl WalletAccount for StandardWalletAccount {
         };
 
         let mut invocation = Vec::with_capacity(signature.len() + 2);
-        invocation.push(OpCode::PUSHDATA1 as u8);
+        invocation.push(OpCode::PUSHDATA1.byte());
         invocation.push(signature.len() as u8);
         invocation.extend_from_slice(&signature);
 

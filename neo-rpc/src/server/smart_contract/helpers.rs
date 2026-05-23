@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::convert::TryFrom;
 use std::sync::Arc;
 
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
@@ -10,6 +11,9 @@ use neo_core::smart_contract::notify_event_args::NotifyEventArgs;
 use neo_core::smart_contract::ApplicationEngine;
 use neo_core::UInt160;
 use neo_json::JToken;
+use neo_vm_rs::StackValue;
+use neo_vm_rs::VmState as RpcVmState;
+use num_traits::ToPrimitive;
 use parking_lot::Mutex;
 use serde_json::{json, Map, Number as JsonNumber, Value};
 use uuid::Uuid;
@@ -23,8 +27,7 @@ use crate::server::rpc_server::RpcServer;
 use crate::server::session::Session;
 use crate::server::tree_node::TreeNode;
 
-use neo_vm::stack_item::StackItem;
-use neo_vm::OrderedDictionary;
+use neo_core::neo_vm::stack_item::StackItem;
 
 const INVALID_OPERATION_CODE: i32 = -2146233079;
 
@@ -46,6 +49,17 @@ pub(super) fn parse_contract_parameters(
             .collect(),
         Some(_) => Err(invalid_params("args must be an array")),
     }
+}
+
+pub(super) fn final_rpc_vm_state_string(
+    state: neo_core::neo_vm::vm_state::VMState,
+) -> Result<String, RpcException> {
+    let final_state = RpcVmState::try_from(state).map_err(|err| internal_error(err.to_string()))?;
+    Ok(match final_state {
+        RpcVmState::Halt => "HALT",
+        RpcVmState::Fault => "FAULT",
+    }
+    .to_string())
 }
 
 #[allow(clippy::type_complexity)]
@@ -80,20 +94,20 @@ pub(super) fn build_dynamic_call_script(
 ) -> Result<Vec<u8>, RpcException> {
     let args = parameters
         .iter()
-        .map(contract_parameter_to_stack_item)
+        .map(contract_parameter_to_stack_value)
         .collect::<Result<Vec<_>, _>>()?;
-    let mut builder = neo_vm::script_builder::ScriptBuilder::new();
+    let mut builder = neo_core::script_builder::ScriptBuilder::new();
 
     if args.is_empty() {
-        builder.emit_opcode(neo_vm::op_code::OpCode::NEWARRAY0);
+        builder.emit_opcode(neo_vm_rs::OpCode::NEWARRAY0);
     } else {
         for item in args.iter().rev() {
             builder
-                .emit_push_stack_item(item.clone())
+                .emit_push_stack_value(item)
                 .map_err(|err| internal_error(err.to_string()))?;
         }
         builder.emit_push_int(args.len() as i64);
-        builder.emit_opcode(neo_vm::op_code::OpCode::PACK);
+        builder.emit_opcode(neo_vm_rs::OpCode::PACK);
     }
 
     builder.emit_push_int(i64::from(CallFlags::ALL.bits()));
@@ -106,42 +120,44 @@ pub(super) fn build_dynamic_call_script(
     Ok(builder.to_array())
 }
 
-pub(super) fn contract_parameter_to_stack_item(
+pub(super) fn contract_parameter_to_stack_value(
     parameter: &ContractParameter,
-) -> Result<StackItem, RpcException> {
+) -> Result<StackValue, RpcException> {
     match &parameter.value {
-        ContractParameterValue::Any | ContractParameterValue::Void => Ok(StackItem::Null),
-        ContractParameterValue::Boolean(value) => Ok(StackItem::from_bool(*value)),
-        ContractParameterValue::Integer(value) => Ok(StackItem::from_int(value.clone())),
-        ContractParameterValue::Hash160(value) => Ok(StackItem::from_byte_string(value.to_bytes())),
+        ContractParameterValue::Any | ContractParameterValue::Void => Ok(StackValue::Null),
+        ContractParameterValue::Boolean(value) => Ok(StackValue::Boolean(*value)),
+        ContractParameterValue::Integer(value) => Ok(if let Some(value) = value.to_i64() {
+            StackValue::Integer(value)
+        } else {
+            StackValue::BigInteger(value.to_signed_bytes_le())
+        }),
+        ContractParameterValue::Hash160(value) => Ok(StackValue::ByteString(value.to_bytes())),
         ContractParameterValue::Hash256(value) => {
-            Ok(StackItem::from_byte_string(value.to_array().to_vec()))
+            Ok(StackValue::ByteString(value.to_array().to_vec()))
         }
         ContractParameterValue::ByteArray(bytes) | ContractParameterValue::Signature(bytes) => {
-            Ok(StackItem::from_byte_string(bytes.clone()))
+            Ok(StackValue::ByteString(bytes.clone()))
         }
-        ContractParameterValue::PublicKey(point) => {
-            Ok(StackItem::from_byte_string(point.encoded()))
-        }
+        ContractParameterValue::PublicKey(point) => Ok(StackValue::ByteString(point.encoded())),
         ContractParameterValue::String(value) => {
-            Ok(StackItem::from_byte_string(value.as_bytes().to_vec()))
+            Ok(StackValue::ByteString(value.as_bytes().to_vec()))
         }
         ContractParameterValue::Array(items) => {
             let converted = items
                 .iter()
-                .map(contract_parameter_to_stack_item)
+                .map(contract_parameter_to_stack_value)
                 .collect::<Result<Vec<_>, _>>()?;
-            Ok(StackItem::from_array(converted))
+            Ok(StackValue::Array(converted))
         }
         ContractParameterValue::Map(entries) => {
-            #[allow(clippy::mutable_key_type)]
-            let mut map = OrderedDictionary::new();
+            let mut map = Vec::with_capacity(entries.len());
             for (key, value) in entries {
-                let key_item = contract_parameter_to_stack_item(key)?;
-                let value_item = contract_parameter_to_stack_item(value)?;
-                map.insert(key_item, value_item);
+                map.push((
+                    contract_parameter_to_stack_value(key)?,
+                    contract_parameter_to_stack_value(value)?,
+                ));
             }
-            Ok(StackItem::from_map(map))
+            Ok(StackValue::Map(map))
         }
         ContractParameterValue::InteropInterface => Err(invalid_params(
             "InteropInterface parameters are not supported in invoke RPCs",

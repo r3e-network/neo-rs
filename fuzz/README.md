@@ -35,7 +35,7 @@ cargo fuzz run fuzz_transaction_parse
 
 Tests VM script parsing and validation.
 
-**Target:** `neo_vm::Script`
+**Target:** `neo_core::script_validation::validate_script`
 
 **Vulnerabilities it finds:**
 - Invalid opcode sequences

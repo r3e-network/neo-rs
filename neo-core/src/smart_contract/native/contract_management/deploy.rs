@@ -4,12 +4,12 @@
 
 use super::*;
 use crate::hardfork::Hardfork;
+use crate::script_validation;
 use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::manifest::contract_manifest::MAX_MANIFEST_LENGTH;
 use crate::smart_contract::native::security_fixes::{
     PermissionValidator, ReentrancyGuardType, SafeArithmetic, SecurityContext,
 };
-use neo_vm::Script;
 
 impl ContractManagement {
     /// Deploys a new contract
@@ -84,7 +84,7 @@ impl ContractManagement {
         Self::validate_manifest_serialization(&manifest, engine.execution_limits())?;
 
         let strict = engine.is_hardfork_enabled(Hardfork::HfBasilisk);
-        let script = Script::new(nef.script.clone(), strict)
+        let script = script_validation::validate_script(&nef.script, strict)
             .map_err(|e| Error::invalid_data(format!("Invalid contract script: {e}")))?;
         Self::validate_script_and_abi(&script, &manifest.abi)?;
 

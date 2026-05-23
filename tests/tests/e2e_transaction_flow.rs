@@ -8,7 +8,7 @@ use neo_core::state::{
     AccountState, MemoryWorldState, StateChanges, StorageItem, StorageKey, WorldState,
 };
 use neo_core::{UInt160, UInt256};
-use neo_vm::op_code::OpCode;
+use neo_vm_rs::OpCode;
 
 // Creates a test account with NEO and GAS balances
 fn create_test_account(neo_balance: u64, gas_balance: u64) -> (UInt160, AccountState) {
@@ -63,7 +63,7 @@ fn setup_test_env() -> (ChainState, MemoryWorldState, Mempool) {
 #[test]
 fn test_transaction_creation_basic() {
     let (sender, _) = create_test_account(1000, 10000);
-    let script = vec![OpCode::PUSH1 as u8, OpCode::RET as u8];
+    let script = vec![OpCode::PUSH1.byte(), OpCode::RET.byte()];
 
     let tx = create_signed_transaction(sender, script.clone(), 100, 1000, 500);
 
@@ -80,12 +80,12 @@ fn test_transaction_creation_basic() {
 fn test_transaction_hash_unique() {
     let (sender, _) = create_test_account(1000, 10000);
 
-    let tx1 = create_signed_transaction(sender, vec![OpCode::PUSH1 as u8], 100, 1000, 500);
+    let tx1 = create_signed_transaction(sender, vec![OpCode::PUSH1.byte()], 100, 1000, 500);
     let mut tx2 = Transaction::new();
     tx2.set_valid_until_block(100);
     tx2.set_system_fee(1000);
     tx2.set_network_fee(500);
-    tx2.set_script(vec![OpCode::PUSH1 as u8]);
+    tx2.set_script(vec![OpCode::PUSH1.byte()]);
 
     let signer = Signer::new(sender, WitnessScope::CalledByEntry);
     tx2.add_signer(signer);
@@ -103,10 +103,10 @@ fn test_transaction_serialization_roundtrip() {
 
     let (sender, _) = create_test_account(1000, 10000);
     let script = vec![
-        OpCode::PUSH1 as u8,
-        OpCode::PUSH2 as u8,
-        OpCode::ADD as u8,
-        OpCode::RET as u8,
+        OpCode::PUSH1.byte(),
+        OpCode::PUSH2.byte(),
+        OpCode::ADD.byte(),
+        OpCode::RET.byte(),
     ];
 
     let mut original = create_signed_transaction(sender, script, 100, 1000, 500);
@@ -127,12 +127,12 @@ fn test_transaction_serialization_roundtrip() {
 fn test_transaction_validation_fees() {
     let (sender, _) = create_test_account(1000, 10000);
 
-    let tx_no_fees = create_signed_transaction(sender, vec![OpCode::RET as u8], 100, 0, 0);
+    let tx_no_fees = create_signed_transaction(sender, vec![OpCode::RET.byte()], 100, 0, 0);
     assert_eq!(tx_no_fees.system_fee(), 0);
     assert_eq!(tx_no_fees.network_fee(), 0);
 
     let tx_with_fees =
-        create_signed_transaction(sender, vec![OpCode::RET as u8], 100, 1000000, 50000);
+        create_signed_transaction(sender, vec![OpCode::RET.byte()], 100, 1000000, 50000);
     assert!(tx_with_fees.system_fee() > 0);
     assert!(tx_with_fees.network_fee() > 0);
 }
@@ -216,7 +216,7 @@ fn test_full_transaction_lifecycle() {
     changes.accounts.insert(sender, Some(sender_account));
     world_state.commit(changes).unwrap();
 
-    let script = vec![OpCode::RET as u8];
+    let script = vec![OpCode::RET.byte()];
     let tx = create_signed_transaction(sender, script, 1000, 1000000, 50000);
     let tx_hash = tx.hash();
 
@@ -264,7 +264,7 @@ async fn test_concurrent_transaction_processing() {
 fn test_transaction_fee_calculation() {
     let (sender, _) = create_test_account(1000, 10000);
 
-    let tx = create_signed_transaction(sender, vec![OpCode::RET as u8], 100, 1_000_000, 500_000);
+    let tx = create_signed_transaction(sender, vec![OpCode::RET.byte()], 100, 1_000_000, 500_000);
 
     let total_fees = tx.system_fee() + tx.network_fee();
     assert_eq!(
@@ -279,7 +279,7 @@ fn test_transaction_with_multiple_signers() {
     let sender2 = UInt160::from([0x02u8; 20]);
 
     let mut tx = Transaction::new();
-    tx.set_script(vec![OpCode::RET as u8]);
+    tx.set_script(vec![OpCode::RET.byte()]);
 
     let signer1 = Signer::new(sender1, WitnessScope::CalledByEntry);
     let signer2 = Signer::new(sender2, WitnessScope::Global);
@@ -296,7 +296,7 @@ fn test_transaction_with_high_priority_attribute() {
     let (sender, _) = create_test_account(1000, 10000);
 
     let mut tx = Transaction::new();
-    tx.set_script(vec![OpCode::RET as u8]);
+    tx.set_script(vec![OpCode::RET.byte()]);
 
     let signer = Signer::new(sender, WitnessScope::CalledByEntry);
     tx.add_signer(signer);
@@ -321,7 +321,7 @@ fn test_empty_transaction_rejected() {
 fn test_transaction_valid_until_far_future() {
     let (sender, _) = create_test_account(1000, 10000);
 
-    let tx = create_signed_transaction(sender, vec![OpCode::RET as u8], u32::MAX, 1000, 500);
+    let tx = create_signed_transaction(sender, vec![OpCode::RET.byte()], u32::MAX, 1000, 500);
 
     assert_eq!(tx.valid_until_block(), u32::MAX);
 }

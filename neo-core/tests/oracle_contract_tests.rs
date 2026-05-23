@@ -1,12 +1,15 @@
 use neo_core::cryptography::{ECCurve, ECPoint, NeoHash, Secp256r1Crypto};
 use neo_core::ledger::{block::Block, block_header::BlockHeader};
 use neo_core::neo_io::BinaryWriter;
+use neo_core::neo_vm::execution_engine_limits::ExecutionEngineLimits;
+use neo_core::neo_vm::StackItem;
 use neo_core::network::p2p::payloads::{
     oracle_response::OracleResponse, oracle_response_code::OracleResponseCode,
     transaction::Transaction, transaction_attribute::TransactionAttribute,
 };
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
+use neo_core::script_builder::ScriptBuilder;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::binary_serializer::BinarySerializer;
 use neo_core::smart_contract::call_flags::CallFlags;
@@ -23,8 +26,7 @@ use neo_core::smart_contract::storage_key::StorageKey;
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::smart_contract::{Contract, ContractParameterType};
 use neo_core::{IVerifiable, UInt160};
-use neo_vm::execution_engine_limits::ExecutionEngineLimits;
-use neo_vm::{OpCode, ScriptBuilder, StackItem};
+use neo_vm_rs::OpCode;
 use num_bigint::BigInt;
 use std::sync::Arc;
 
@@ -162,7 +164,7 @@ fn add_contract_to_snapshot(snapshot: &DataCache, contract: &ContractState) {
 }
 
 fn make_test_contract(id: i32, name: &str) -> ContractState {
-    let nef = NefFile::new(name.to_string(), vec![OpCode::RET as u8]);
+    let nef = NefFile::new(name.to_string(), vec![OpCode::RET.byte()]);
     let hash = ContractState::calculate_hash(&UInt160::zero(), nef.checksum, name);
     ContractState::new(id, hash, nef, default_manifest(name))
 }
@@ -195,7 +197,7 @@ fn make_request_engine(snapshot: Arc<DataCache>) -> ApplicationEngine {
     )
     .expect("engine");
     engine
-        .load_script(vec![OpCode::RET as u8], CallFlags::ALL, None)
+        .load_script(vec![OpCode::RET.byte()], CallFlags::ALL, None)
         .expect("load dummy script");
     engine
 }

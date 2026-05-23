@@ -78,7 +78,7 @@
 - ✅ Release build successful (7m 47s)
 - ✅ Clippy clean with `-D warnings` (1m 48s)
 - ✅ All tests pass (1,955 tests, 8 ignored)
-    - neo-vm: 105 passed
+    - neo-core VM compatibility module: 105 passed
     - neo-core: 626 passed
     - neo-rpc: 512 passed (6.91s)
     - neo-primitives: 213 passed

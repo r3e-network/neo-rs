@@ -1,13 +1,14 @@
 use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::persistence::{DataCache, StorageItem, StorageKey};
 use neo_core::protocol_settings::ProtocolSettings;
+use neo_core::script_builder::ScriptBuilder;
 use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::smart_contract::native::fungible_token::PREFIX_ACCOUNT;
 use neo_core::smart_contract::native::{GasToken, NativeContract, NeoToken};
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::wallets::{Nep6Wallet, Wallet, WalletError};
 use neo_core::{UInt160, WitnessScope};
-use neo_vm::{OpCode, ScriptBuilder};
+use neo_vm_rs::OpCode;
 use num_bigint::BigInt;
 use std::sync::Arc;
 

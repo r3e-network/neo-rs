@@ -1,22 +1,18 @@
-use neo_vm::VMState;
+use neo_vm_rs::VmState;
 
-pub fn vm_state_to_string(state: VMState) -> String {
+pub fn vm_state_to_string(state: VmState) -> String {
     match state {
-        VMState::NONE => "NONE",
-        VMState::HALT => "HALT",
-        VMState::FAULT => "FAULT",
-        VMState::BREAK => "BREAK",
+        VmState::Halt => "HALT",
+        VmState::Fault => "FAULT",
     }
     .to_string()
 }
 
-pub fn vm_state_from_str(value: &str) -> Option<VMState> {
+pub fn vm_state_from_str(value: &str) -> Option<VmState> {
     let normalized = value.trim().to_ascii_uppercase();
     match normalized.as_str() {
-        "NONE" => Some(VMState::NONE),
-        "HALT" => Some(VMState::HALT),
-        "FAULT" => Some(VMState::FAULT),
-        "BREAK" => Some(VMState::BREAK),
+        "HALT" => Some(VmState::Halt),
+        "FAULT" => Some(VmState::Fault),
         _ => None,
     }
 }
@@ -26,17 +22,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_vm_state_case_insensitive() {
-        assert_eq!(vm_state_from_str("halt"), Some(VMState::HALT));
-        assert_eq!(vm_state_from_str("FAULT"), Some(VMState::FAULT));
-        assert_eq!(vm_state_from_str(" Break "), Some(VMState::BREAK));
-        assert_eq!(vm_state_from_str("none"), Some(VMState::NONE));
+    fn parses_final_vm_state_case_insensitive() {
+        assert_eq!(vm_state_from_str("halt"), Some(VmState::Halt));
+        assert_eq!(vm_state_from_str("FAULT"), Some(VmState::Fault));
+        assert!(vm_state_from_str("running").is_none());
+        assert!(vm_state_from_str("paused").is_none());
         assert!(vm_state_from_str("unknown").is_none());
     }
 
     #[test]
     fn vm_state_to_string_roundtrip() {
-        for state in [VMState::HALT, VMState::FAULT, VMState::BREAK, VMState::NONE] {
+        for state in [VmState::Halt, VmState::Fault] {
             let text = vm_state_to_string(state);
             assert_eq!(vm_state_from_str(&text), Some(state));
         }

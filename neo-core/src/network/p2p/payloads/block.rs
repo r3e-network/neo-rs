@@ -217,7 +217,8 @@ impl Block {
         // Phase 1: parallel state-independent verification (includes signatures).
         // This is pure computation with no shared mutable state.
         let block_index = self.header.index();
-        let failed = self.transactions
+        let failed = self
+            .transactions
             .par_iter()
             .enumerate()
             .find_any(|(_, tx)| tx.verify_state_independent(settings) != VerifyResult::Succeed);

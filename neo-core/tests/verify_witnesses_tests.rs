@@ -12,7 +12,7 @@ use neo_core::smart_contract::manifest::{
 use neo_core::smart_contract::native::trimmed_block::TrimmedBlock;
 use neo_core::smart_contract::ContractParameterType;
 use neo_core::{IVerifiable, UInt160, UInt256, Witness};
-use neo_vm::op_code::OpCode;
+use neo_vm_rs::OpCode;
 
 const CONTRACT_MANAGEMENT_ID: i32 = -1;
 const LEDGER_CONTRACT_ID: i32 = -4;
@@ -178,7 +178,7 @@ fn verify_witnesses_fails_with_invalid_verify_method() {
         ContractBasicMethod::VERIFY,
         ContractParameterType::Integer,
     );
-    let contract = make_contract(next_consensus, vec![OpCode::PUSH1 as u8], manifest);
+    let contract = make_contract(next_consensus, vec![OpCode::PUSH1.byte()], manifest);
     store_contract(&snapshot, next_consensus, contract);
 
     let mut header = Header::new();
@@ -203,7 +203,7 @@ fn verify_witnesses_succeeds_with_verify_method() {
         ContractBasicMethod::VERIFY,
         ContractParameterType::Boolean,
     );
-    let script = vec![OpCode::PUSH1 as u8, OpCode::RET as u8];
+    let script = vec![OpCode::PUSH1.byte(), OpCode::RET.byte()];
     let contract = make_contract(next_consensus, script, manifest);
     store_contract(&snapshot, next_consensus, contract);
 
@@ -240,7 +240,7 @@ fn verify_witnesses_succeeds_with_manual_verifiable() {
 
     let contract = make_contract(
         contract_hash,
-        vec![OpCode::PUSH1 as u8, OpCode::RET as u8],
+        vec![OpCode::PUSH1.byte(), OpCode::RET.byte()],
         manifest,
     );
     store_contract(&snapshot, contract_hash, contract);

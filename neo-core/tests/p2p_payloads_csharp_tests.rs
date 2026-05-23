@@ -3,6 +3,7 @@ use neo_core::cryptography::bloom_filter::BloomFilter;
 use neo_core::cryptography::{ECCurve, ECPoint, NeoHash};
 use neo_core::ledger::create_genesis_block;
 use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable, SerializableExt};
+use neo_core::neo_vm::VMState;
 use neo_core::network::p2p::capabilities::{NodeCapability, NodeCapabilityType};
 use neo_core::network::p2p::payloads::headers_payload::MAX_HEADERS_COUNT;
 use neo_core::network::p2p::payloads::inv_payload::MAX_HASHES_COUNT;
@@ -18,7 +19,7 @@ use neo_core::persistence::{DataCache, StorageItem, StorageKey};
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::native::{LedgerContract, NativeContract, PolicyContract};
 use neo_core::{IVerifiable, UInt160, UInt256};
-use neo_vm::{OpCode, VMState};
+use neo_vm_rs::OpCode;
 use serde_json::json;
 use std::net::{IpAddr, Ipv4Addr};
 
@@ -226,7 +227,7 @@ fn transaction_record_full(block_index: u32, tx: &Transaction, vm_state: VMState
     let mut writer = BinaryWriter::new();
     writer.write_u8(0x01).expect("write record kind");
     writer.write_u32(block_index).expect("write block index");
-    writer.write_u8(vm_state as u8).expect("write vm state");
+    writer.write_u8(vm_state.to_byte()).expect("write vm state");
 
     let mut tx_writer = BinaryWriter::new();
     tx.serialize(&mut tx_writer).expect("serialize tx");
@@ -444,7 +445,7 @@ fn csharp_ut_transaction_serialize_deserialize_simple() {
     tx.set_valid_until_block(0x01020304);
     tx.set_signers(vec![Signer::new(UInt160::zero(), WitnessScope::NONE)]);
     tx.set_attributes(Vec::new());
-    tx.set_script(vec![OpCode::PUSH1 as u8]);
+    tx.set_script(vec![OpCode::PUSH1.byte()]);
     tx.set_witnesses(vec![Witness::empty()]);
 
     let bytes = tx.to_array().expect("serialize");
@@ -460,7 +461,7 @@ fn csharp_ut_transaction_serialize_deserialize_simple() {
     assert_eq!(clone.signers().len(), 1);
     assert_eq!(clone.signers()[0].account, UInt160::zero());
     assert!(clone.attributes().is_empty());
-    assert_eq!(clone.script(), &[OpCode::PUSH1 as u8]);
+    assert_eq!(clone.script(), &[OpCode::PUSH1.byte()]);
     assert_eq!(clone.witnesses().len(), 1);
     assert!(clone.witnesses()[0].invocation_script.is_empty());
     assert!(clone.witnesses()[0].verification_script.is_empty());
@@ -489,7 +490,7 @@ fn csharp_ut_transaction_too_many_signers_rejected() {
     }
     tx.set_signers(signers.clone());
     tx.set_attributes(Vec::new());
-    tx.set_script(vec![OpCode::PUSH1 as u8]);
+    tx.set_script(vec![OpCode::PUSH1.byte()]);
     tx.set_witnesses(vec![Witness::empty(); signers.len()]);
 
     let bytes = tx.to_array().expect("serialize");
@@ -512,7 +513,7 @@ fn csharp_ut_transaction_max_signers_witness_mismatch_rejected() {
     }
     tx.set_signers(signers);
     tx.set_attributes(Vec::new());
-    tx.set_script(vec![OpCode::PUSH1 as u8]);
+    tx.set_script(vec![OpCode::PUSH1.byte()]);
     tx.set_witnesses(vec![Witness::empty()]);
 
     let bytes = tx.to_array().expect("serialize");
@@ -531,7 +532,7 @@ fn csharp_ut_transaction_serialize_deserialize_simple_hex() {
     tx.set_valid_until_block(0x01020304);
     tx.set_signers(vec![Signer::new(UInt160::zero(), WitnessScope::NONE)]);
     tx.set_attributes(Vec::new());
-    tx.set_script(vec![OpCode::PUSH1 as u8]);
+    tx.set_script(vec![OpCode::PUSH1.byte()]);
     tx.set_witnesses(vec![Witness::empty()]);
 
     let bytes = tx.to_array().expect("serialize");
@@ -596,7 +597,7 @@ fn csharp_ut_transaction_to_json_includes_sender_and_witnesses() {
     tx.set_valid_until_block(42);
     tx.set_signers(vec![signer.clone()]);
     tx.set_attributes(Vec::new());
-    tx.set_script(vec![OpCode::PUSH1 as u8]);
+    tx.set_script(vec![OpCode::PUSH1.byte()]);
     tx.set_witnesses(vec![witness.clone()]);
 
     let json = tx.to_json(&settings);
@@ -620,7 +621,7 @@ fn csharp_ut_transaction_to_json_sender_null_without_signers() {
     tx.set_valid_until_block(1);
     tx.set_signers(Vec::new());
     tx.set_attributes(Vec::new());
-    tx.set_script(vec![OpCode::PUSH1 as u8]);
+    tx.set_script(vec![OpCode::PUSH1.byte()]);
     tx.set_witnesses(Vec::new());
 
     let json = tx.to_json(&settings);

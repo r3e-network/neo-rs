@@ -1,8 +1,7 @@
 use neo_core::cryptography::ECPoint;
 use neo_core::smart_contract::Contract;
 use neo_core::wallets::key_pair::KeyPair;
-use neo_vm::op_code::OpCode;
-use neo_vm::script_builder::ScriptBuilder;
+use neo_vm_rs::OpCode;
 
 fn fixed_keypair(hex_privkey_32: &str) -> KeyPair {
     let bytes = hex::decode(hex_privkey_32).expect("hex private key");
@@ -22,12 +21,12 @@ fn signature_redeem_script_matches_opcode_layout() {
     let pubkey_point = ECPoint::decode_secp256r1(&pubkey_bytes).expect("pubkey point");
     let script = Contract::create_signature_redeem_script(pubkey_point);
 
-    let syscall_hash = ScriptBuilder::hash_syscall("System.Crypto.CheckSig").expect("syscall hash");
+    let syscall_hash = neo_vm_rs::interop_hash("System.Crypto.CheckSig");
     let mut expected = Vec::with_capacity(1 + 1 + 33 + 1 + 4);
-    expected.push(OpCode::PUSHDATA1 as u8);
+    expected.push(OpCode::PUSHDATA1.byte());
     expected.push(0x21);
     expected.extend_from_slice(&pubkey_bytes);
-    expected.push(OpCode::SYSCALL as u8);
+    expected.push(OpCode::SYSCALL.byte());
     expected.extend_from_slice(&syscall_hash.to_le_bytes());
 
     assert_eq!(script, expected);
@@ -47,20 +46,19 @@ fn multisig_redeem_script_sorts_pubkeys_like_csharp() {
 
     let script = Contract::create_multi_sig_redeem_script(2, &keys);
 
-    let syscall_hash =
-        ScriptBuilder::hash_syscall("System.Crypto.CheckMultisig").expect("syscall hash");
+    let syscall_hash = neo_vm_rs::interop_hash("System.Crypto.CheckMultisig");
     let mut expected = Vec::with_capacity(1 + (1 + 1 + 33) * 2 + 1 + 1 + 4);
-    expected.push(OpCode::PUSH2 as u8);
+    expected.push(OpCode::PUSH2.byte());
 
     for pk in &keys {
         let pk = pk.encode_point(true).expect("compressed pubkey");
-        expected.push(OpCode::PUSHDATA1 as u8);
+        expected.push(OpCode::PUSHDATA1.byte());
         expected.push(0x21);
         expected.extend_from_slice(&pk);
     }
 
-    expected.push(OpCode::PUSH2 as u8);
-    expected.push(OpCode::SYSCALL as u8);
+    expected.push(OpCode::PUSH2.byte());
+    expected.push(OpCode::SYSCALL.byte());
     expected.extend_from_slice(&syscall_hash.to_le_bytes());
 
     assert_eq!(script, expected);

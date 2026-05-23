@@ -63,6 +63,8 @@ lz4_flex = { workspace = true }
 dashmap = { workspace = true }
 hashbrown = { workspace = true }
 indexmap = { workspace = true }
+log = { workspace = true }
+smallvec = { workspace = true }
 toml = { workspace = true }
 dirs = "5.0"
 if-addrs = "0.10"
@@ -82,7 +84,7 @@ rayon = { workspace = true }
 # Internal dependencies
 chrono.workspace = true
 futures.workspace = true
-neo-vm = { path = "../neo-vm" }
+neo-vm-rs = { workspace = true }
 # neo-akka merged into neo-core/src/akka/ - no longer an external dependency
 neo_io_crate = { path = "../neo-io", package = "neo-io" }
 inventory = "0.3"

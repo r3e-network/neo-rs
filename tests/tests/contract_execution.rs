@@ -3,7 +3,7 @@
 use neo_core::chain::{BlockIndexEntry, ChainState};
 use neo_core::state::{MemoryWorldState, StateChanges, StorageItem, StorageKey, WorldState};
 use neo_core::{UInt160, UInt256};
-use neo_vm::{op_code::OpCode, ExecutionEngine, Script, VMState};
+use neo_vm_rs::{interpret, ExecutionResult, OpCode, StackValue, VmState};
 use num_bigint::BigInt;
 
 // Setup test environment
@@ -27,19 +27,24 @@ fn _setup_test_env() -> (ChainState, MemoryWorldState) {
     (chain, world_state)
 }
 
+fn run_script(script: &[u8]) -> ExecutionResult {
+    interpret(script).expect("neo-vm-rs interpreter should execute script")
+}
+
+fn top_int(result: &ExecutionResult) -> BigInt {
+    match result.stack.last().expect("result stack item") {
+        StackValue::Integer(value) => BigInt::from(*value),
+        StackValue::BigInteger(bytes) => BigInt::from_signed_bytes_le(bytes),
+        item => panic!("expected integer stack value, got {item:?}"),
+    }
+}
+
 #[test]
 fn test_vm_simple_push_and_return() {
-    let script = vec![OpCode::PUSH1 as u8, OpCode::RET as u8];
-    let script_obj = Script::new(script, false).unwrap();
-
-    let mut engine = ExecutionEngine::new(None);
-    engine.load_script(script_obj, -1, 0).unwrap();
-
-    let state = engine.execute();
-    assert_eq!(state, VMState::HALT);
-
-    let result = engine.result_stack().peek(0).unwrap();
-    let val = result.as_int().unwrap();
+    let script = vec![OpCode::PUSH1.byte(), OpCode::RET.byte()];
+    let result = run_script(&script);
+    assert_eq!(result.state, VmState::Halt);
+    let val = top_int(&result);
     assert_eq!(val, BigInt::from(1), "PUSH1 should produce 1");
 }
 
@@ -47,63 +52,42 @@ fn test_vm_simple_push_and_return() {
 fn test_vm_arithmetic_add() {
     // PUSH2, PUSH3, ADD, RET
     let script = vec![
-        OpCode::PUSH2 as u8,
-        OpCode::PUSH3 as u8,
-        OpCode::ADD as u8,
-        OpCode::RET as u8,
+        OpCode::PUSH2.byte(),
+        OpCode::PUSH3.byte(),
+        OpCode::ADD.byte(),
+        OpCode::RET.byte(),
     ];
-    let script_obj = Script::new(script, false).unwrap();
-
-    let mut engine = ExecutionEngine::new(None);
-    engine.load_script(script_obj, -1, 0).unwrap();
-
-    let state = engine.execute();
-    assert_eq!(state, VMState::HALT);
-
-    let result = engine.result_stack().peek(0).unwrap();
-    let val = result.as_int().unwrap();
+    let result = run_script(&script);
+    assert_eq!(result.state, VmState::Halt);
+    let val = top_int(&result);
     assert_eq!(val, BigInt::from(5), "PUSH2 + PUSH3 should equal 5");
 }
 
 #[test]
 fn test_vm_arithmetic_sub() {
     let script = vec![
-        OpCode::PUSH5 as u8,
-        OpCode::PUSH8 as u8,
-        OpCode::SUB as u8,
-        OpCode::RET as u8,
+        OpCode::PUSH5.byte(),
+        OpCode::PUSH8.byte(),
+        OpCode::SUB.byte(),
+        OpCode::RET.byte(),
     ];
-    let script_obj = Script::new(script, false).unwrap();
-
-    let mut engine = ExecutionEngine::new(None);
-    engine.load_script(script_obj, -1, 0).unwrap();
-
-    let state = engine.execute();
-    assert_eq!(state, VMState::HALT);
-
-    let result = engine.result_stack().peek(0).unwrap();
-    let val = result.as_int().unwrap();
+    let result = run_script(&script);
+    assert_eq!(result.state, VmState::Halt);
+    let val = top_int(&result);
     assert_eq!(val, BigInt::from(-3), "PUSH5 - PUSH8 should equal -3");
 }
 
 #[test]
 fn test_vm_arithmetic_mul() {
     let script = vec![
-        OpCode::PUSH6 as u8,
-        OpCode::PUSH7 as u8,
-        OpCode::MUL as u8,
-        OpCode::RET as u8,
+        OpCode::PUSH6.byte(),
+        OpCode::PUSH7.byte(),
+        OpCode::MUL.byte(),
+        OpCode::RET.byte(),
     ];
-    let script_obj = Script::new(script, false).unwrap();
-
-    let mut engine = ExecutionEngine::new(None);
-    engine.load_script(script_obj, -1, 0).unwrap();
-
-    let state = engine.execute();
-    assert_eq!(state, VMState::HALT);
-
-    let result = engine.result_stack().peek(0).unwrap();
-    let val = result.as_int().unwrap();
+    let result = run_script(&script);
+    assert_eq!(result.state, VmState::Halt);
+    let val = top_int(&result);
     assert_eq!(val, BigInt::from(42), "PUSH6 * PUSH7 should equal 42");
 }
 
@@ -167,46 +151,28 @@ fn test_contract_storage_deletion() {
 #[test]
 fn test_vm_gas_consumption_basic() {
     let script = vec![
-        OpCode::PUSH1 as u8,
-        OpCode::PUSH2 as u8,
-        OpCode::ADD as u8,
-        OpCode::RET as u8,
+        OpCode::PUSH1.byte(),
+        OpCode::PUSH2.byte(),
+        OpCode::ADD.byte(),
+        OpCode::RET.byte(),
     ];
-    let script_obj = Script::new(script, false).unwrap();
-
-    let mut engine = ExecutionEngine::new(None);
-    engine.load_script(script_obj, -1, 0).unwrap();
-
-    let initial_gas = engine.gas_consumed();
-    let _state = engine.execute();
-    let final_gas = engine.gas_consumed();
-
-    assert!(final_gas >= initial_gas);
+    let result = run_script(&script);
+    assert_eq!(result.state, VmState::Halt);
+    assert_eq!(result.fee_consumed_pico, 0);
+    assert!(result.fault_message.is_none());
 }
 
 #[test]
 fn test_vm_stack_underflow() {
-    let script = vec![OpCode::ADD as u8, OpCode::RET as u8];
-    let script_obj = Script::new(script, false).unwrap();
-
-    let mut engine = ExecutionEngine::new(None);
-    engine.load_script(script_obj, -1, 0).unwrap();
-
-    let state = engine.execute();
-    assert_eq!(state, VMState::FAULT);
+    let script = vec![OpCode::ADD.byte(), OpCode::RET.byte()];
+    assert!(interpret(&script).is_err());
 }
 
 #[test]
 #[ignore = "VM opcode test needs investigation - pre-existing issue"]
 fn test_vm_invalid_opcode() {
-    let script = vec![0xFF, 0xFF, OpCode::RET as u8];
-    let script_obj = Script::new(script, false).unwrap();
-
-    let mut engine = ExecutionEngine::new(None);
-    engine.load_script(script_obj, -1, 0).unwrap();
-
-    let state = engine.execute();
-    assert_eq!(state, VMState::FAULT);
+    let script = vec![0xFF, 0xFF, OpCode::RET.byte()];
+    assert!(interpret(&script).is_err());
 }
 
 #[test]

@@ -10,13 +10,13 @@
 // modifications are permitted.
 
 use super::models::{RpcContractState, RpcNep17TokenInfo, RpcNep17Transfers};
-use crate::{ContractClient, RpcClient, RpcError, TransactionManagerFactory};
+use crate::{ContractClient, RpcClient, RpcError, RpcUtility, TransactionManagerFactory};
+use neo_core::script_builder::ScriptBuilder;
 use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::{Contract, ECPoint, KeyPair, Signer, Transaction};
 use neo_primitives::{UInt160, WitnessScope};
-use neo_vm::op_code::OpCode;
-use neo_vm::{stack_item::StackItem, ScriptBuilder};
+use neo_vm_rs::OpCode;
 use num_bigint::BigInt;
 use num_traits::cast::ToPrimitive;
 use std::sync::Arc;
@@ -66,7 +66,7 @@ impl Nep17Api {
         // Get the single stack item and convert to integer
         let stack_item = result.stack.first().ok_or("No result returned")?;
 
-        Ok(stack_item.get_integer()?)
+        Ok(RpcUtility::stack_value_to_bigint(stack_item)?)
     }
 
     /// Get symbol of NEP17 token
@@ -79,7 +79,7 @@ impl Nep17Api {
 
         let stack_item = result.stack.first().ok_or("No result returned")?;
 
-        stack_item_to_string(stack_item)
+        Ok(RpcUtility::stack_value_to_string(stack_item)?)
     }
 
     /// Get decimals of NEP17 token
@@ -92,7 +92,7 @@ impl Nep17Api {
 
         let stack_item = result.stack.first().ok_or("No result returned")?;
 
-        let value = stack_item.get_integer()?;
+        let value = RpcUtility::stack_value_to_bigint(stack_item)?;
         Ok(value.to_u8().ok_or("Invalid decimals value")?)
     }
 
@@ -106,7 +106,7 @@ impl Nep17Api {
 
         let stack_item = result.stack.first().ok_or("No result returned")?;
 
-        Ok(stack_item.get_integer()?)
+        Ok(RpcUtility::stack_value_to_bigint(stack_item)?)
     }
 
     /// Get token information in one rpc call
@@ -374,7 +374,8 @@ impl Nep17Api {
         sb.emit_push_int(i64::from(CallFlags::ALL.bits()));
         sb.emit_push(b"transfer");
         sb.emit_push(&script_hash.to_array());
-        sb.emit_syscall("System.Contract.Call")?;
+        sb.emit_syscall("System.Contract.Call")
+            .map_err(|err| RpcError::invalid_params(err.to_string()))?;
         if add_assert {
             sb.emit_opcode(OpCode::ASSERT);
         }
@@ -402,16 +403,16 @@ impl Nep17Api {
             name,
             symbol: stack
                 .first()
-                .and_then(|s| stack_item_to_string(s).ok())
+                .and_then(|s| RpcUtility::stack_value_to_string(s).ok())
                 .unwrap_or_default(),
             decimals: stack
                 .get(1)
-                .and_then(|s| s.get_integer().ok())
+                .and_then(|s| RpcUtility::stack_value_to_bigint(s).ok())
                 .and_then(|i| i.to_u8())
                 .unwrap_or(0),
             total_supply: stack
                 .get(2)
-                .and_then(|s| s.get_integer().ok())
+                .and_then(|s| RpcUtility::stack_value_to_bigint(s).ok())
                 .unwrap_or_else(|| BigInt::from(0)),
             balance: None,
             last_updated_block: None,
@@ -439,7 +440,8 @@ impl Nep17Api {
         sb.emit_push_int(i64::from(CallFlags::ALL.bits()));
         sb.emit_push(operation.as_bytes());
         sb.emit_push(&script_hash.to_array());
-        sb.emit_syscall("System.Contract.Call")?;
+        sb.emit_syscall("System.Contract.Call")
+            .map_err(|err| RpcError::invalid_params(err.to_string()))?;
 
         Ok(sb.to_array())
     }
@@ -483,26 +485,16 @@ impl Nep17Api {
     }
 }
 
-fn stack_item_to_string(item: &StackItem) -> Result<String, RpcError> {
-    match item {
-        StackItem::ByteString(bytes) => Ok(String::from_utf8(bytes.clone())?),
-        StackItem::Buffer(buffer) => Ok(String::from_utf8(buffer.data())?),
-        StackItem::Integer(int) => Ok(int.to_string()),
-        StackItem::Boolean(b) => Ok(b.to_string()),
-        _ => Err("Unsupported stack item for string conversion".into()),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use base64::{engine::general_purpose, Engine as _};
     use mockito::{Matcher, Server};
+    use neo_core::script_builder::ScriptBuilder;
     use neo_core::smart_contract::native::GasToken;
     use neo_core::NativeContract;
     use neo_json::{JArray, JObject, JToken};
-    use neo_vm::op_code::OpCode;
-    use neo_vm::ScriptBuilder;
+    use neo_vm_rs::OpCode;
     use regex::escape;
     use reqwest::Url;
     use std::fs;

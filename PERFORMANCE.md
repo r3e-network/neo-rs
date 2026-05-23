@@ -10,7 +10,7 @@
 
 ### 2. VM引擎初始化
 
-- **位置**: `neo-vm/src/execution_engine/core.rs`
+- **位置**: `neo-core/src/neo_vm/execution_engine/core.rs`
 - **优化**: 优化 ReferenceCounter Arc clone 顺序
 - **收益**: 减少一次Arc引用计数操作
 
@@ -22,7 +22,7 @@
 
 ### 4. 错误消息
 
-- **位置**: `neo-vm/src/execution_engine/context.rs`
+- **位置**: `neo-core/src/neo_vm/execution_engine/context.rs`
 - **优化**: `.to_string()` → `.into()`
 - **收益**: 更惯用的转换
 

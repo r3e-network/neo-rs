@@ -752,6 +752,7 @@ mod tests {
     use crate::server::rpc_server_settings::RpcServerConfig;
     use neo_core::neo_io::BinaryWriter;
     use neo_core::neo_system::NeoSystem;
+    use neo_core::neo_vm::vm_state::VMState;
     use neo_core::network::p2p::helper::get_sign_data_vec;
     use neo_core::network::p2p::payloads::signer::Signer;
     use neo_core::network::p2p::payloads::transaction::Transaction;
@@ -761,8 +762,7 @@ mod tests {
     use neo_core::smart_contract::{StorageItem, StorageKey};
     use neo_core::wallets::KeyPair;
     use neo_core::WitnessScope;
-    use neo_vm::op_code::OpCode;
-    use neo_vm::vm_state::VMState;
+    use neo_vm_rs::OpCode;
     use parking_lot::RwLock;
     use std::sync::Arc;
 
@@ -1130,7 +1130,7 @@ mod tests {
         tx.set_network_fee(1_0000_0000);
         tx.set_system_fee(system_fee);
         tx.set_valid_until_block(1);
-        tx.set_script(vec![OpCode::PUSH1 as u8]);
+        tx.set_script(vec![OpCode::PUSH1.byte()]);
         tx.set_signers(vec![Signer::new(
             keypair.get_script_hash(),
             WitnessScope::GLOBAL,
@@ -1139,7 +1139,7 @@ mod tests {
         let sign_data = get_sign_data_vec(&tx, settings.network).expect("sign data");
         let signature = keypair.sign(&sign_data).expect("sign");
         let mut invocation = Vec::with_capacity(signature.len() + 2);
-        invocation.push(OpCode::PUSHDATA1 as u8);
+        invocation.push(OpCode::PUSHDATA1.byte());
         invocation.push(signature.len() as u8);
         invocation.extend_from_slice(&signature);
         let verification_script = keypair.get_verification_script();
@@ -1163,7 +1163,7 @@ mod tests {
             .write_u8(RECORD_KIND_TRANSACTION)
             .expect("record kind");
         writer.write_u32(block_index).expect("block index");
-        writer.write_u8(VMState::NONE as u8).expect("vm state");
+        writer.write_u8(VMState::NONE.to_byte()).expect("vm state");
         let tx_bytes = tx.to_bytes();
         writer.write_var_bytes(&tx_bytes).expect("tx bytes");
 

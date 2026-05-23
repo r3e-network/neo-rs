@@ -8,8 +8,9 @@ use crate::network::p2p::payloads::{
     Conflicts, NotValidBefore, OracleResponse, OracleResponseCode, Signer, Transaction,
     TransactionAttribute, Witness, WitnessCondition, WitnessRule, WitnessRuleAction,
 };
+use crate::script_builder::ScriptBuilder;
 use crate::{cryptography::ECPoint, UInt160, UInt256, WitnessScope};
-use neo_vm::{op_code::OpCode, script_builder::ScriptBuilder};
+use neo_vm_rs::OpCode;
 
 /// Convenience builder for constructing transactions in tests.
 #[derive(Default)]
@@ -22,7 +23,7 @@ impl TransactionBuilder {
     /// Creates a builder seeded with an empty transaction.
     pub fn new() -> Self {
         let mut tx = Transaction::new();
-        tx.set_script(vec![OpCode::RET as u8]);
+        tx.set_script(vec![OpCode::RET.byte()]);
         Self { inner: tx }
     }
 

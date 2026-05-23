@@ -36,7 +36,6 @@ COPY neo-storage/ neo-storage/
 COPY neo-io/ neo-io/
 COPY neo-json/ neo-json/
 COPY neo-core/ neo-core/
-COPY neo-vm/ neo-vm/
 COPY neo-p2p/ neo-p2p/
 COPY neo-rpc/ neo-rpc/
 COPY neo-consensus/ neo-consensus/

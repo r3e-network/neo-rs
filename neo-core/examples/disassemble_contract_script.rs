@@ -1,6 +1,6 @@
 use base64::Engine as _;
-use neo_vm::op_code::OpCode;
-use neo_vm::Script;
+use neo_core::script_validation::parse_script_instructions;
+use neo_vm_rs::OpCode;
 
 fn format_ascii_preview(bytes: &[u8]) -> String {
     let mut out = String::with_capacity(bytes.len());
@@ -31,7 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or(120);
 
     let script_bytes = base64::engine::general_purpose::STANDARD.decode(script_b64)?;
-    let script = Script::new(script_bytes.clone(), false)?;
+    let instructions = parse_script_instructions(&script_bytes)?;
 
     println!(
         "script_len={} start_offset={} instruction_limit={}",
@@ -40,12 +40,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         instruction_limit
     );
 
-    let mut offset = start_offset;
-    let mut emitted = 0usize;
-    while offset < script.len() && emitted < instruction_limit {
-        let instruction = script
-            .get_instruction(offset)
-            .map_err(|err| format!("failed to decode instruction at {offset}: {err}"))?;
+    for instruction in instructions
+        .iter()
+        .filter(|instruction| instruction.pointer() >= start_offset)
+        .take(instruction_limit)
+    {
+        let offset = instruction.pointer();
         let opcode = instruction.opcode();
         let size = instruction.size();
 
@@ -109,8 +109,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if size == 0 {
             return Err(format!("decoded zero-size instruction at offset {offset}").into());
         }
-        offset += size;
-        emitted += 1;
     }
 
     Ok(())

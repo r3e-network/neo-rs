@@ -4,6 +4,7 @@
 
 use neo_core::hardfork::HardforkManager;
 use neo_core::ledger::{create_genesis_block, Block, BlockHeader};
+use neo_core::neo_vm::{ExecutionEngineLimits, StackItem};
 use neo_core::network::p2p::payloads::{NotaryAssisted, Signer, Transaction, TransactionAttribute};
 use neo_core::persistence::DataCache;
 use neo_core::persistence::IReadOnlyStoreGeneric;
@@ -20,7 +21,7 @@ use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::smart_contract::{Contract, StorageItem, StorageKey};
 use neo_core::wallets::KeyPair;
 use neo_core::{IVerifiable, Result as CoreResult, UInt160, UInt256, WitnessScope};
-use neo_vm::{ExecutionEngineLimits, OpCode, StackItem};
+use neo_vm_rs::OpCode;
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
 use std::collections::HashMap;
@@ -102,7 +103,7 @@ fn make_persisting_block(index: u32, transactions: Vec<Transaction>) -> Block {
 fn make_tx_with_signer(account: UInt160) -> Transaction {
     let mut tx = Transaction::new();
     tx.set_signers(vec![Signer::new(account, WitnessScope::GLOBAL)]);
-    tx.set_script(vec![OpCode::RET as u8]);
+    tx.set_script(vec![OpCode::RET.byte()]);
     tx
 }
 
@@ -146,7 +147,7 @@ fn try_token_transfer(
         None,
     )?;
     engine
-        .load_script(vec![OpCode::RET as u8], CallFlags::ALL, None)
+        .load_script(vec![OpCode::RET.byte()], CallFlags::ALL, None)
         .expect("load dummy script");
     engine.set_current_script_hash(Some(contract_hash));
     let args = vec![
@@ -214,7 +215,7 @@ fn call_notary_int(
     )
     .expect("engine");
     engine
-        .load_script(vec![OpCode::RET as u8], CallFlags::ALL, None)
+        .load_script(vec![OpCode::RET.byte()], CallFlags::ALL, None)
         .expect("load dummy script");
     engine.set_current_script_hash(Some(Notary::new().hash()));
     let result = engine
@@ -243,7 +244,7 @@ fn call_notary_bool(
     )
     .expect("engine");
     engine
-        .load_script(vec![OpCode::RET as u8], CallFlags::ALL, None)
+        .load_script(vec![OpCode::RET.byte()], CallFlags::ALL, None)
         .expect("load dummy script");
     engine.set_current_script_hash(Some(Notary::new().hash()));
     let result = engine
@@ -340,16 +341,17 @@ fn test_deposit_default() {
     assert_eq!(deposit.till, 0, "Default till should be 0");
 }
 
-/// Tests Deposit to/from StackItem conversion
+/// Tests Deposit to/from StackValue conversion
 #[test]
-fn test_deposit_stack_item_roundtrip() {
-    use neo_core::smart_contract::i_interoperable::IInteroperable;
+fn test_deposit_stack_value_roundtrip() {
+    use neo_vm_rs::StackValue;
 
     let original = Deposit::new(BigInt::from(500), 100);
-    let stack_item = original.to_stack_item().unwrap();
+    let stack_value = original.to_stack_value();
+    assert!(matches!(stack_value, StackValue::Struct(_)));
 
     let mut recovered = Deposit::default();
-    recovered.from_stack_item(stack_item).unwrap();
+    recovered.from_stack_value(stack_value).unwrap();
 
     assert_eq!(recovered.amount, original.amount, "Amount should roundtrip");
     assert_eq!(recovered.till, original.till, "Till should roundtrip");
@@ -914,7 +916,7 @@ fn check_balance_of() {
 
     // Build Notary-assisted transaction to charge deposit on persist.
     let mut tx1 = Transaction::new();
-    tx1.set_script(vec![OpCode::RET as u8]);
+    tx1.set_script(vec![OpCode::RET.byte()]);
     tx1.set_signers(vec![
         Signer::new(notary_hash, WitnessScope::NONE),
         Signer::new(from, WitnessScope::GLOBAL),
@@ -1134,7 +1136,7 @@ fn check_on_persist_fee_per_key_update() {
 
     let from = NativeHelpers::get_bft_address(&settings.standby_validators());
     let mut tx2 = Transaction::new();
-    tx2.set_script(vec![OpCode::RET as u8]);
+    tx2.set_script(vec![OpCode::RET.byte()]);
     tx2.set_signers(vec![Signer::new(from, WitnessScope::GLOBAL)]);
     tx2.set_attributes(vec![TransactionAttribute::NotaryAssisted(
         NotaryAssisted::new(4),
@@ -1220,7 +1222,7 @@ fn check_on_persist_notary_rewards() {
     let from = NativeHelpers::get_bft_address(&settings.standby_validators());
 
     let mut tx1 = Transaction::new();
-    tx1.set_script(vec![OpCode::RET as u8]);
+    tx1.set_script(vec![OpCode::RET.byte()]);
     tx1.set_signers(vec![Signer::new(from, WitnessScope::GLOBAL)]);
     tx1.set_attributes(vec![TransactionAttribute::NotaryAssisted(
         NotaryAssisted::new(4),
@@ -1228,7 +1230,7 @@ fn check_on_persist_notary_rewards() {
     tx1.set_network_fee(1_0000_0000);
 
     let mut tx2 = Transaction::new();
-    tx2.set_script(vec![OpCode::RET as u8]);
+    tx2.set_script(vec![OpCode::RET.byte()]);
     tx2.set_signers(vec![Signer::new(from, WitnessScope::GLOBAL)]);
     tx2.set_attributes(vec![TransactionAttribute::NotaryAssisted(
         NotaryAssisted::new(6),

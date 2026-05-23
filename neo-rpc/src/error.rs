@@ -72,11 +72,6 @@ pub enum RpcError {
     #[error("Invalid header: {0}")]
     InvalidHeader(#[from] reqwest::header::InvalidHeaderValue),
 
-    /// VM execution error.
-    #[cfg(feature = "client")]
-    #[error("VM error: {0}")]
-    Vm(#[from] neo_vm::VmError),
-
     /// Core domain error.
     #[cfg(feature = "client")]
     #[error("Core error: {0}")]

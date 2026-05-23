@@ -7,7 +7,7 @@ use neo_core::smart_contract::helper::Helper as ContractHelper;
 use neo_core::smart_contract::ContractParametersContext;
 use neo_core::wallets::key_pair::KeyPair;
 use neo_core::{Transaction, UInt160, WitnessScope};
-use neo_vm::op_code::OpCode;
+use neo_vm_rs::OpCode;
 use std::sync::Arc;
 
 use neo_core::persistence::DataCache;
@@ -19,7 +19,7 @@ fn make_tx_for_contract(contract_hash: UInt160) -> Transaction {
     tx.set_system_fee(0);
     tx.set_network_fee(0);
     tx.set_valid_until_block(1);
-    tx.set_script(vec![OpCode::PUSH1 as u8]);
+    tx.set_script(vec![OpCode::PUSH1.byte()]);
     tx.set_signers(vec![Signer::new(contract_hash, WitnessScope::GLOBAL)]);
     tx.set_attributes(Vec::new());
     tx.set_witnesses(Vec::new());

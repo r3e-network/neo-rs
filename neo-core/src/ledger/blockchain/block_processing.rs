@@ -82,8 +82,7 @@ impl Blockchain {
             if self._block_cache.contains_key(&hash) {
                 return VerifyResult::AlreadyExists;
             }
-            if self._block_cache.len() >= MAX_BLOCK_CACHE_SIZE
-                && block_index != current_height + 1
+            if self._block_cache.len() >= MAX_BLOCK_CACHE_SIZE && block_index != current_height + 1
             {
                 // Cache is full but this isn't the next block to persist.
                 // Park it in the unverified cache so persist_block_sequence
@@ -123,7 +122,11 @@ impl Blockchain {
             // Evict entries with the highest block indices (furthest from persistence).
             // Keeping the lowest indices ensures persist_block_sequence can drain
             // consecutive blocks without gaps.
-            let mut indices: Vec<u32> = self._block_cache_unverified.iter().map(|r| *r.key()).collect();
+            let mut indices: Vec<u32> = self
+                ._block_cache_unverified
+                .iter()
+                .map(|r| *r.key())
+                .collect();
             indices.sort_unstable();
             let evict_count = self._block_cache_unverified.len() / 4; // remove 25%
             for &idx in indices.iter().rev().take(evict_count) {
@@ -133,7 +136,8 @@ impl Blockchain {
         self._block_cache_unverified
             .entry(block.index())
             .or_insert_with(UnverifiedBlocksList::new)
-            .blocks.push(block);
+            .blocks
+            .push(block);
     }
 
     async fn persist_block_sequence(&self, block: Arc<Block>) -> bool {
@@ -172,8 +176,10 @@ impl Blockchain {
 
             let succeeded = self.persist_block_via_system(&next_block);
             if succeeded {
-                self.handle_persist_completed(PersistCompleted { block: Arc::clone(&next_block) })
-                    .await;
+                self.handle_persist_completed(PersistCompleted {
+                    block: Arc::clone(&next_block),
+                })
+                .await;
                 persisted_count += 1;
             } else {
                 warn!(
@@ -205,9 +211,9 @@ impl Blockchain {
             // Try unverified cache first, then fall back to block cache.
             // Blocks may land in block_cache but miss the unverified cache
             // if they arrived as current_height+1 but persistence was busy.
-            let next_block = self.pop_from_unverified(next_index).or_else(|| {
-                self.find_block_in_cache_by_index(context, next_index)
-            });
+            let next_block = self
+                .pop_from_unverified(next_index)
+                .or_else(|| self.find_block_in_cache_by_index(context, next_index));
             let Some(block) = next_block else {
                 break;
             };

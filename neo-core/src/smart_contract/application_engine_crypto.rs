@@ -1,9 +1,9 @@
 //! ApplicationEngine.Crypto - matches C# Neo.SmartContract.ApplicationEngine.Crypto.cs
 
+use crate::neo_vm::execution_engine::ExecutionEngine;
+use crate::neo_vm::VmResult;
 use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::ApplicationEngine;
-use neo_vm::execution_engine::ExecutionEngine;
-use neo_vm::VmResult;
 use sha2::{Digest, Sha256};
 
 /// The price of CheckSig in GAS (1 << 15 = 32768 * 30 = 983040)
@@ -95,7 +95,7 @@ impl ApplicationEngine {
         let item = self.pop()?;
 
         match &item {
-            neo_vm::stack_item::StackItem::Array(arr) => {
+            crate::neo_vm::stack_item::StackItem::Array(arr) => {
                 // Array format: extract all byte arrays
                 let items = arr.items();
                 let mut result = Vec::with_capacity(items.len());
@@ -182,13 +182,14 @@ fn crypto_check_sig_handler(
     _engine: &mut ExecutionEngine,
 ) -> VmResult<()> {
     match app.crypto_check_sig() {
-        Ok(result) => app
-            .push_boolean(result)
-            .map_err(|e| neo_vm::VmError::InteropService {
-                service: "System.Crypto.CheckSig".to_string(),
-                error: e,
-            }),
-        Err(e) => Err(neo_vm::VmError::InteropService {
+        Ok(result) => {
+            app.push_boolean(result)
+                .map_err(|e| crate::neo_vm::VmError::InteropService {
+                    service: "System.Crypto.CheckSig".to_string(),
+                    error: e,
+                })
+        }
+        Err(e) => Err(crate::neo_vm::VmError::InteropService {
             service: "System.Crypto.CheckSig".to_string(),
             error: e,
         }),
@@ -200,13 +201,14 @@ fn crypto_check_multisig_handler(
     _engine: &mut ExecutionEngine,
 ) -> VmResult<()> {
     match app.crypto_check_multisig() {
-        Ok(result) => app
-            .push_boolean(result)
-            .map_err(|e| neo_vm::VmError::InteropService {
-                service: "System.Crypto.CheckMultisig".to_string(),
-                error: e,
-            }),
-        Err(e) => Err(neo_vm::VmError::InteropService {
+        Ok(result) => {
+            app.push_boolean(result)
+                .map_err(|e| crate::neo_vm::VmError::InteropService {
+                    service: "System.Crypto.CheckMultisig".to_string(),
+                    error: e,
+                })
+        }
+        Err(e) => Err(crate::neo_vm::VmError::InteropService {
             service: "System.Crypto.CheckMultisig".to_string(),
             error: e,
         }),

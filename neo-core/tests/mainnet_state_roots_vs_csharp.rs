@@ -28,8 +28,8 @@
 
 const MAX_CLEAN_HEIGHT_DEFAULT: u32 = 172_612;
 
-use neo_core::persistence::{i_store_provider::IStoreProvider, providers::RocksDBStoreProvider};
 use neo_core::persistence::StorageConfig;
+use neo_core::persistence::{i_store_provider::IStoreProvider, providers::RocksDBStoreProvider};
 use neo_core::state_service::state_store::{
     SnapshotBackedStateStoreBackend, StateServiceSettings, StateStore,
 };

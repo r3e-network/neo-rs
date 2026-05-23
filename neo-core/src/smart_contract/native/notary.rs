@@ -7,6 +7,7 @@
 use crate::cryptography::Crypto;
 use crate::error::{CoreError, CoreError as Error, CoreResult as Result};
 use crate::hardfork::Hardfork;
+use crate::neo_vm::{ExecutionEngineLimits, StackItem};
 use crate::network::p2p::payloads::{Transaction, TransactionAttribute, TransactionAttributeType};
 use crate::persistence::i_read_only_store::IReadOnlyStoreGeneric;
 use crate::persistence::DataCache;
@@ -15,7 +16,6 @@ use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::helper::Helper;
-use crate::smart_contract::i_interoperable::IInteroperable;
 use crate::smart_contract::native::helpers::NativeHelpers;
 use crate::smart_contract::native::{
     gas_token::GasToken, ledger_contract::LedgerContract, policy_contract::PolicyContract,
@@ -26,7 +26,7 @@ use crate::smart_contract::Contract;
 use crate::smart_contract::ContractParameterType;
 use crate::smart_contract::StorageItem;
 use crate::UInt160;
-use neo_vm::{ExecutionEngineLimits, StackItem};
+use neo_vm_rs::StackValue;
 use num_bigint::BigInt;
 use num_traits::{Signed, ToPrimitive, Zero};
 use std::any::Any;
@@ -57,38 +57,59 @@ impl Deposit {
     pub fn new(amount: BigInt, till: u32) -> Self {
         Self { amount, till }
     }
-}
 
-impl IInteroperable for Deposit {
-    fn from_stack_item(&mut self, stack_item: StackItem) -> std::result::Result<(), CoreError> {
-        if let StackItem::Struct(struct_item) = stack_item {
-            let items = struct_item.items();
+    fn stack_value_to_bigint(value: &StackValue) -> Option<BigInt> {
+        match value {
+            StackValue::Integer(value) => Some(BigInt::from(*value)),
+            StackValue::Boolean(value) => Some(BigInt::from(i32::from(*value))),
+            StackValue::BigInteger(bytes) => Some(BigInt::from_signed_bytes_le(bytes)),
+            StackValue::ByteString(bytes) | StackValue::Buffer(bytes) if bytes.len() <= 32 => {
+                Some(BigInt::from_signed_bytes_le(bytes))
+            }
+            _ => None,
+        }
+    }
+
+    fn stack_value_to_u32(value: &StackValue) -> Option<u32> {
+        match value {
+            StackValue::Integer(value) => u32::try_from(*value).ok(),
+            StackValue::Boolean(value) => Some(u32::from(*value)),
+            StackValue::BigInteger(bytes) => BigInt::from_signed_bytes_le(bytes).to_u32(),
+            StackValue::ByteString(bytes) | StackValue::Buffer(bytes) if bytes.len() <= 32 => {
+                BigInt::from_signed_bytes_le(bytes).to_u32()
+            }
+            _ => None,
+        }
+    }
+
+    /// Converts to a neo-vm-rs stack value.
+    pub fn to_stack_value(&self) -> StackValue {
+        StackValue::Struct(vec![
+            StackValue::BigInteger(self.amount.to_signed_bytes_le()),
+            StackValue::Integer(i64::from(self.till)),
+        ])
+    }
+
+    /// Updates this deposit from a neo-vm-rs stack value.
+    pub fn from_stack_value(
+        &mut self,
+        stack_value: StackValue,
+    ) -> std::result::Result<(), CoreError> {
+        if let StackValue::Struct(items) = stack_value {
             if items.len() < 2 {
                 return Ok(());
             }
 
-            if let Ok(integer) = items[0].as_int() {
-                self.amount = integer;
+            if let Some(amount) = Self::stack_value_to_bigint(&items[0]) {
+                self.amount = amount;
             }
 
-            if let Ok(integer) = items[1].as_int() {
-                if let Some(till) = integer.to_u32() {
-                    self.till = till;
-                }
+            if let Some(till) = Self::stack_value_to_u32(&items[1]) {
+                self.till = till;
             }
         }
+
         Ok(())
-    }
-
-    fn to_stack_item(&self) -> std::result::Result<StackItem, CoreError> {
-        Ok(StackItem::from_struct(vec![
-            StackItem::from_int(self.amount.clone()),
-            StackItem::from_int(self.till),
-        ]))
-    }
-
-    fn clone_box(&self) -> Box<dyn IInteroperable> {
-        Box::new(self.clone())
     }
 }
 
@@ -1005,6 +1026,7 @@ impl NativeContract for Notary {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use neo_vm_rs::StackValue;
 
     #[test]
     fn test_notary_creation() {
@@ -1023,12 +1045,31 @@ mod tests {
     }
 
     #[test]
-    fn test_deposit_to_stack_item() {
+    fn deposit_projects_to_neo_vm_rs_stack_value() {
         let deposit = Deposit::new(BigInt::from(500), 100);
-        let item = deposit.to_stack_item().unwrap();
-        let mut new_deposit = Deposit::default();
-        new_deposit.from_stack_item(item).unwrap();
-        assert_eq!(new_deposit.amount, deposit.amount);
-        assert_eq!(new_deposit.till, deposit.till);
+
+        assert_eq!(
+            deposit.to_stack_value(),
+            StackValue::Struct(vec![
+                StackValue::BigInteger(BigInt::from(500).to_signed_bytes_le()),
+                StackValue::Integer(100),
+            ])
+        );
+    }
+
+    #[test]
+    fn deposit_reads_from_neo_vm_rs_stack_value() {
+        let mut deposit = Deposit::default();
+        let amount = BigInt::from(987_654_321i64);
+
+        deposit
+            .from_stack_value(StackValue::Struct(vec![
+                StackValue::BigInteger(amount.to_signed_bytes_le()),
+                StackValue::Integer(222),
+            ]))
+            .unwrap();
+
+        assert_eq!(deposit.amount, amount);
+        assert_eq!(deposit.till, 222);
     }
 }

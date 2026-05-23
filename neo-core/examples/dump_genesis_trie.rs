@@ -1,7 +1,5 @@
 use neo_core::persistence::{providers::RocksDBStoreProvider, IStoreProvider, StorageConfig};
-use neo_core::state_service::state_store::{
-    SnapshotBackedStateStoreBackend, StateStoreSnapshot,
-};
+use neo_core::state_service::state_store::{SnapshotBackedStateStoreBackend, StateStoreSnapshot};
 use neo_crypto::mpt_trie::Trie;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -11,10 +9,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let path = args
         .next()
         .unwrap_or_else(|| "data/Plugins/StateService/Data_MPT_334F454E".to_string());
-    let target_index: u32 = args
-        .next()
-        .unwrap_or_else(|| "0".to_string())
-        .parse()?;
+    let target_index: u32 = args.next().unwrap_or_else(|| "0".to_string()).parse()?;
 
     let config = StorageConfig {
         path: PathBuf::from(&path),

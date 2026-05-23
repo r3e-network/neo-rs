@@ -903,7 +903,8 @@ impl StateStore {
             let mut del_count: u32 = 0;
             let mut _skip_count: u32 = 0;
             let mut _ledger_skip: u32 = 0;
-            let debug_dump = height == 172613 || height == 182902 || height == 203262 || height == 274157;
+            let debug_dump =
+                height == 172613 || height == 182902 || height == 203262 || height == 274157;
             for (key, item, state) in change_set {
                 if debug_dump {
                     tracing::warn!(
@@ -1434,7 +1435,7 @@ mod tests {
     use crate::smart_contract::native::{role_management::RoleManagement, NativeContract, Role};
     use crate::smart_contract::Contract;
     use crate::wallets::KeyPair;
-    use neo_vm::op_code::OpCode;
+    use neo_vm_rs::OpCode;
     use std::sync::Arc;
 
     fn cache_with_designated_state_validators(
@@ -1660,7 +1661,7 @@ mod tests {
         let signature = keypair.sign(&sign_data).expect("sign state root");
 
         let mut invocation = Vec::with_capacity(signature.len() + 2);
-        invocation.push(OpCode::PUSHDATA1 as u8);
+        invocation.push(OpCode::PUSHDATA1.byte());
         invocation.push(signature.len() as u8);
         invocation.extend_from_slice(&signature);
 
@@ -1758,7 +1759,7 @@ mod tests {
         let signature = keypair.sign(&sign_data).expect("sign state root");
 
         let mut invocation = Vec::with_capacity(signature.len() + 2);
-        invocation.push(OpCode::PUSHDATA1 as u8);
+        invocation.push(OpCode::PUSHDATA1.byte());
         invocation.push(signature.len() as u8);
         invocation.extend_from_slice(&signature);
 

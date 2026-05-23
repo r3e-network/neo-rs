@@ -1,7 +1,7 @@
 //! IDiagnostic - matches C# Neo.SmartContract.IDiagnostic exactly
 
-use neo_vm::execution_context::ExecutionContext;
-use neo_vm::instruction::Instruction;
+use crate::neo_vm::execution_context::ExecutionContext;
+use crate::neo_vm::instruction::Instruction;
 
 /// Diagnostic interface for ApplicationEngine (matches C# IDiagnostic)
 pub trait IDiagnostic: std::fmt::Debug + Send {

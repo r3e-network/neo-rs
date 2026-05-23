@@ -4,8 +4,8 @@
 // from the DB at NEO_REPRO_DB_PATH. Useful to verify whether a backup's
 // predecessor for a reproducer test matches the C# canonical value.
 
-use neo_core::persistence::{i_store_provider::IStoreProvider, providers::RocksDBStoreProvider};
 use neo_core::persistence::StorageConfig;
+use neo_core::persistence::{i_store_provider::IStoreProvider, providers::RocksDBStoreProvider};
 use neo_core::state_service::state_store::{
     SnapshotBackedStateStoreBackend, StateServiceSettings, StateStore,
 };
@@ -44,7 +44,12 @@ fn print_height_root() {
         },
     );
     match store.get_state_root(height) {
-        Some(r) => eprintln!("db={} height={} root={}", db_path.display(), height, r.root_hash),
+        Some(r) => eprintln!(
+            "db={} height={} root={}",
+            db_path.display(),
+            height,
+            r.root_hash
+        ),
         None => eprintln!("db={} height={} root=ABSENT", db_path.display(), height),
     }
 }

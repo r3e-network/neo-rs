@@ -4,6 +4,7 @@ use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
 use crate::hardfork::Hardfork;
 use crate::protocol_settings::ProtocolSettings;
+use crate::script_builder::ScriptBuilder;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::manifest::{
     ContractAbi, ContractEventDescriptor, ContractMethodDescriptor, ContractParameterDefinition,
@@ -11,7 +12,7 @@ use crate::smart_contract::manifest::{
 use crate::smart_contract::native::IHardforkActivable;
 use crate::smart_contract::{ContractManifest, ContractParameterType, ContractState, NefFile};
 use crate::UInt160;
-use neo_vm::{OpCode, ScriptBuilder};
+use neo_vm_rs::OpCode;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::collections::HashMap;
@@ -461,8 +462,7 @@ fn build_native_contract_state<T: NativeContract + ?Sized>(
     settings: &ProtocolSettings,
     block_height: u32,
 ) -> ContractState {
-    let syscall_hash = ScriptBuilder::hash_syscall("System.Contract.CallNative")
-        .expect("System.Contract.CallNative syscall hash must be computable");
+    let syscall_hash = neo_vm_rs::interop_hash("System.Contract.CallNative");
 
     // Native contract state generation: include a method if either:
     // 1. It has no ActiveIn (always present), OR

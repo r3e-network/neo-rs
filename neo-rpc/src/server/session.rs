@@ -6,6 +6,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use neo_core::neo_system::NeoSystem;
+use neo_core::neo_vm::stack_item::InteropInterface as VmInteropInterface;
+use neo_core::neo_vm::stack_item::StackItem;
 use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::transaction::Transaction;
 use neo_core::network::p2p::payloads::transaction_attribute::TransactionAttribute;
@@ -17,8 +19,6 @@ use neo_core::smart_contract::native::ledger_contract::LedgerContract;
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::smart_contract::ApplicationEngine;
 use neo_core::IVerifiable;
-use neo_vm::stack_item::InteropInterface as VmInteropInterface;
-use neo_vm::stack_item::StackItem;
 use rand::random;
 use uuid::Uuid;
 
@@ -251,7 +251,7 @@ mod tests {
     use neo_core::persistence::{StorageItem, StorageKey};
     use neo_core::smart_contract::find_options::FindOptions;
     use neo_core::{NeoSystem, ProtocolSettings};
-    use neo_vm::op_code::OpCode;
+    use neo_vm_rs::OpCode;
 
     #[tokio::test(flavor = "multi_thread")]
     async fn session_registers_and_traverses_storage_iterator() {
@@ -259,7 +259,7 @@ mod tests {
         let system = NeoSystem::new(settings, None, None).expect("system");
         let session = Session::new(
             system,
-            vec![OpCode::RET as u8],
+            vec![OpCode::RET.byte()],
             None,
             None,
             100_000_000,

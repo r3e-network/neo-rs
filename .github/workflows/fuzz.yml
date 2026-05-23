@@ -6,7 +6,6 @@ name: Fuzzing
     - master
     paths:
     - neo-core/**
-    - neo-vm/**
     - neo-io/**
     - neo-p2p/**
     - neo-primitives/**
@@ -18,7 +17,6 @@ name: Fuzzing
     - master
     paths:
     - neo-core/**
-    - neo-vm/**
     - neo-io/**
     - neo-p2p/**
     - neo-primitives/**

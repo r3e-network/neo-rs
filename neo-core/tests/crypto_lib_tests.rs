@@ -14,12 +14,13 @@ use neo_core::network::p2p::helper::get_sign_data_vec;
 use neo_core::network::p2p::payloads::{Signer, Transaction, Witness, WitnessScope};
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
+use neo_core::script_builder::ScriptBuilder;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::native::crypto_lib::CryptoLib;
 use neo_core::smart_contract::native::NativeContract;
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::UInt160;
-use neo_vm::{OpCode, ScriptBuilder};
+use neo_vm_rs::OpCode;
 use num_bigint::BigInt;
 use p256::ecdsa::SigningKey as P256SigningKey;
 use p256::ecdsa::{signature::hazmat::PrehashSigner, Signature as P256Signature};
@@ -821,7 +822,7 @@ fn crypto_lib_verify_with_ecdsa_custom_tx_witness_single_sig() {
     let mut tx = Transaction::new();
     tx.set_network_fee(1_0000_0000);
     tx.set_valid_until_block(10);
-    tx.set_script(vec![OpCode::PUSH1 as u8]);
+    tx.set_script(vec![OpCode::PUSH1.byte()]);
     tx.add_signer(Signer::new(account, WitnessScope::NONE));
 
     let sign_data = get_sign_data_vec(&tx, settings.network).expect("sign data");
@@ -991,7 +992,7 @@ fn crypto_lib_verify_with_ecdsa_custom_tx_witness_multi_sig() {
     let mut tx = Transaction::new();
     tx.set_network_fee(1_0000_0000);
     tx.set_valid_until_block(10);
-    tx.set_script(vec![OpCode::PUSH1 as u8]);
+    tx.set_script(vec![OpCode::PUSH1.byte()]);
     tx.add_signer(Signer::new(account, WitnessScope::NONE));
 
     let sign_data = get_sign_data_vec(&tx, settings.network).expect("sign data");

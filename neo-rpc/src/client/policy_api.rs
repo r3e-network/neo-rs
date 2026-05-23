@@ -9,7 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use crate::{ContractClient, RpcClient, RpcError};
+use crate::{ContractClient, RpcClient, RpcError, RpcUtility};
 use neo_core::smart_contract::native::PolicyContract;
 use neo_core::NativeContract;
 use neo_primitives::UInt160;
@@ -46,7 +46,7 @@ impl PolicyApi {
 
         let stack_item = result.stack.first().ok_or("No result returned")?;
 
-        let value = stack_item.get_integer()?;
+        let value = RpcUtility::stack_value_to_bigint(stack_item)?;
         Ok(value.to_u32().ok_or("Invalid fee factor value")?)
     }
 
@@ -60,7 +60,7 @@ impl PolicyApi {
 
         let stack_item = result.stack.first().ok_or("No result returned")?;
 
-        let value = stack_item.get_integer()?;
+        let value = RpcUtility::stack_value_to_bigint(stack_item)?;
         Ok(value.to_u32().ok_or("Invalid storage price value")?)
     }
 
@@ -74,7 +74,7 @@ impl PolicyApi {
 
         let stack_item = result.stack.first().ok_or("No result returned")?;
 
-        let value = stack_item.get_integer()?;
+        let value = RpcUtility::stack_value_to_bigint(stack_item)?;
         Ok(value.to_i64().ok_or("Invalid fee per byte value")?)
     }
 
@@ -92,7 +92,7 @@ impl PolicyApi {
 
         let stack_item = result.stack.first().ok_or("No result returned")?;
 
-        Ok(stack_item.get_boolean()?)
+        Ok(RpcUtility::stack_value_to_bool(stack_item))
     }
 }
 
@@ -101,9 +101,9 @@ mod tests {
     use super::*;
     use base64::{engine::general_purpose, Engine as _};
     use mockito::{Matcher, Server};
+    use neo_core::script_builder::ScriptBuilder;
     use neo_json::{JArray, JObject, JToken};
-    use neo_vm::op_code::OpCode;
-    use neo_vm::ScriptBuilder;
+    use neo_vm_rs::OpCode;
     use regex::escape;
     use reqwest::Url;
     use std::net::TcpListener;

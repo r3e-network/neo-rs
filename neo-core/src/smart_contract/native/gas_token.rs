@@ -10,6 +10,8 @@ use super::security_fixes::{
 };
 use super::AccountState;
 use crate::error::{CoreError, CoreResult};
+use crate::neo_vm::execution_engine_limits::ExecutionEngineLimits;
+use crate::neo_vm::StackItem;
 use crate::network::p2p::payloads::{Transaction, TransactionAttribute, TransactionAttributeType};
 use crate::persistence::i_read_only_store::IReadOnlyStoreGeneric;
 use crate::protocol_settings::ProtocolSettings;
@@ -20,12 +22,10 @@ use crate::smart_contract::manifest::{ContractEventDescriptor, ContractParameter
 use crate::smart_contract::storage_context::StorageContext;
 use crate::smart_contract::storage_key::StorageKey;
 use crate::smart_contract::ContractParameterType;
-use crate::smart_contract::IInteroperable;
 use crate::smart_contract::StorageItem;
 use crate::UInt160;
 use lazy_static::lazy_static;
-use neo_vm::execution_engine_limits::ExecutionEngineLimits;
-use neo_vm::StackItem;
+use neo_vm_rs::StackValue;
 use num_bigint::BigInt;
 use num_traits::{Signed, Zero};
 use std::any::Any;
@@ -369,17 +369,15 @@ impl GasToken {
             return AccountState::default();
         }
 
-        if let Ok(stack_item) =
-            BinarySerializer::deserialize(&bytes, &ExecutionEngineLimits::default(), None)
+        if let Ok(stack_value @ StackValue::Struct(_)) =
+            BinarySerializer::deserialize_stack_value(bytes.as_ref())
         {
-            if matches!(stack_item, StackItem::Struct(_)) {
-                let mut state = AccountState::default();
-                if let Err(e) = state.from_stack_item(stack_item) {
-                    tracing::warn!("Failed to deserialize AccountState from stack item: {e}");
-                    return AccountState::default();
-                }
-                return state;
+            let mut state = AccountState::default();
+            if let Err(e) = state.from_stack_value(stack_value) {
+                tracing::warn!("Failed to deserialize AccountState from stack value: {e}");
+                return AccountState::default();
             }
+            return state;
         }
 
         AccountState::with_balance(item.to_bigint())
@@ -490,8 +488,8 @@ impl GasToken {
             }
         } else {
             let state = AccountState::with_balance(balance.clone());
-            let bytes = BinarySerializer::serialize(
-                &state.to_stack_item()?,
+            let bytes = BinarySerializer::serialize_stack_value(
+                &state.to_stack_value(),
                 &ExecutionEngineLimits::default(),
             )
             .map_err(CoreError::native_contract)?;
@@ -839,7 +837,9 @@ impl NativeContract for GasToken {
                 let total_supply = self.total_supply_snapshot(snapshot_ref);
                 let bft_account = {
                     let validators = engine.protocol_settings().standby_validators();
-                    crate::smart_contract::native::helpers::NativeHelpers::get_bft_address(&validators)
+                    crate::smart_contract::native::helpers::NativeHelpers::get_bft_address(
+                        &validators,
+                    )
                 };
                 let bft_balance = self.balance_of_snapshot(snapshot_ref, &bft_account);
                 let ledger = LedgerContract::new();

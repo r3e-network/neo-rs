@@ -19,8 +19,8 @@ neo-primitives = { workspace = true }
 neo-crypto = { workspace = true }
 neo-io = { workspace = true }
 neo-core = { path = "../neo-core", optional = true, features = ["runtime"] }
-neo-vm = { path = "../neo-vm", optional = true }
 neo-json = { path = "../neo-json", optional = true }
+neo-vm-rs = { workspace = true, optional = true }
 # neo-config merged into neo-core
 
 # Async runtime
@@ -86,8 +86,8 @@ default = []
 server = [
     "client",  # Server uses client models for JSON serialization
     "dep:neo-core",
-    "dep:neo-vm",
     "dep:neo-json",
+    "dep:neo-vm-rs",
     "dep:warp",
     "dep:hyper",
     "dep:uuid",
@@ -117,7 +117,7 @@ server = [
 client = [
     "dep:neo-core",
     "dep:neo-json",
-    "dep:neo-vm",
+    "dep:neo-vm-rs",
     "dep:reqwest",
     "dep:hyper",
     "dep:anyhow",

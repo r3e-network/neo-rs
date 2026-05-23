@@ -3,9 +3,7 @@ use neo_core::persistence::{
     providers::RocksDBStoreProvider, IStoreProvider, SeekDirection, StorageConfig, StorageKey,
     StoreCache,
 };
-use neo_core::smart_contract::binary_serializer::BinarySerializer;
 use neo_core::smart_contract::contract_state::ContractState;
-use neo_core::smart_contract::i_interoperable::IInteroperable;
 use neo_core::smart_contract::native::ContractManagement;
 use neo_core::UInt160;
 use num_bigint::BigInt;
@@ -114,24 +112,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 state.id, state.update_counter, state.nef.checksum, state.manifest.name
             ),
             Err(err) => println!("deserialize_contract_state: err={err}"),
-        }
-
-        match BinarySerializer::deserialize(&bytes, &neo_vm::ExecutionEngineLimits::default(), None)
-        {
-            Ok(stack) => {
-                let mut from_stack = ContractState::default();
-                match from_stack.from_stack_item(stack) {
-                    Ok(()) => println!(
-                        "from_stack_item: id={} updatecounter={} nef_checksum={} manifest_name={}",
-                        from_stack.id,
-                        from_stack.update_counter,
-                        from_stack.nef.checksum,
-                        from_stack.manifest.name
-                    ),
-                    Err(err) => println!("from_stack_item: err={err}"),
-                }
-            }
-            Err(err) => println!("binary_deserialize: err={err}"),
         }
 
         let mut reader = MemoryReader::new(&bytes);

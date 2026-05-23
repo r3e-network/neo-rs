@@ -223,7 +223,11 @@ impl RpcServerNode {
                 .system()
                 .blockchain_actor()
                 .tell_from(
-                    BlockchainCommand::InventoryBlock { block: Arc::new(block), relay: true, pre_verified: false },
+                    BlockchainCommand::InventoryBlock {
+                        block: Arc::new(block),
+                        relay: true,
+                        pre_verified: false,
+                    },
                     Some(sender),
                 )
                 .map_err(|err| internal_error(err.to_string()))
@@ -392,6 +396,7 @@ mod tests {
     use neo_core::extensions::io::serializable::SerializableExtensions;
     use neo_core::ledger::TransactionVerificationContext;
     use neo_core::neo_io::BinaryWriter;
+    use neo_core::neo_vm::vm_state::VMState;
     use neo_core::network::p2p::helper::get_sign_data_vec;
     use neo_core::network::p2p::payloads::oracle_response::{OracleResponse, MAX_RESULT_SIZE};
     use neo_core::network::p2p::payloads::oracle_response_code::OracleResponseCode;
@@ -414,8 +419,7 @@ mod tests {
     use neo_core::wallets::KeyPair;
     use neo_core::{IVerifiable, NeoSystem, UInt160, UInt256, WitnessScope};
     use neo_json::JToken;
-    use neo_vm::op_code::OpCode;
-    use neo_vm::vm_state::VMState;
+    use neo_vm_rs::OpCode;
     use num_bigint::BigInt;
     use std::sync::Arc;
 
@@ -454,7 +458,7 @@ mod tests {
         let sign_data = get_sign_data_vec(&tx, settings.network).expect("sign data");
         let signature = keypair.sign(&sign_data).expect("sign");
         let mut invocation = Vec::with_capacity(signature.len() + 2);
-        invocation.push(OpCode::PUSHDATA1 as u8);
+        invocation.push(OpCode::PUSHDATA1.byte());
         invocation.push(signature.len() as u8);
         invocation.extend_from_slice(&signature);
         let verification_script = keypair.get_verification_script();
@@ -477,7 +481,7 @@ mod tests {
             nonce,
             system_fee,
             1_0000_0000,
-            vec![OpCode::PUSH1 as u8],
+            vec![OpCode::PUSH1.byte()],
         )
     }
 
@@ -507,7 +511,7 @@ mod tests {
         let sign_data = get_sign_data_vec(&tx, settings.network).expect("sign data");
         let signature = keypair.sign(&sign_data).expect("sign");
         let mut invocation = Vec::with_capacity(signature.len() + 2);
-        invocation.push(OpCode::PUSHDATA1 as u8);
+        invocation.push(OpCode::PUSHDATA1.byte());
         invocation.push(signature.len() as u8);
         invocation.extend_from_slice(&signature);
         let verification_script = keypair.get_verification_script();
@@ -563,7 +567,7 @@ mod tests {
         let sign_data = get_sign_data_vec(&block.header, settings.network).expect("sign data");
         let signature = validator.sign(&sign_data).expect("sign header");
         let mut invocation = Vec::with_capacity(signature.len() + 2);
-        invocation.push(OpCode::PUSHDATA1 as u8);
+        invocation.push(OpCode::PUSHDATA1.byte());
         invocation.push(signature.len() as u8);
         invocation.extend_from_slice(&signature);
         let verification_script = Contract::create_multi_sig_redeem_script(1, &validators);
@@ -610,7 +614,7 @@ mod tests {
             .write_u8(RECORD_KIND_TRANSACTION)
             .expect("record kind");
         writer.write_u32(block_index).expect("block index");
-        writer.write_u8(VMState::NONE as u8).expect("vm state");
+        writer.write_u8(VMState::NONE.to_byte()).expect("vm state");
         let tx_bytes = tx.to_bytes();
         writer.write_var_bytes(&tx_bytes).expect("tx bytes");
 
@@ -979,7 +983,7 @@ mod tests {
         tx.set_attributes(vec![TransactionAttribute::OracleResponse(
             OracleResponse::new(1, OracleResponseCode::Success, vec![0u8; MAX_RESULT_SIZE]),
         )]);
-        tx.set_script(vec![OpCode::PUSH0 as u8; u16::MAX as usize]);
+        tx.set_script(vec![OpCode::PUSH0.byte(); u16::MAX as usize]);
         tx.set_witnesses(vec![Witness::empty()]);
 
         let payload = BASE64_STANDARD.encode(tx.to_bytes());
@@ -1044,7 +1048,7 @@ mod tests {
             0,
             1_0000_0000,
             1,
-            vec![OpCode::PUSH1 as u8],
+            vec![OpCode::PUSH1.byte()],
             attributes,
         );
         let payload = BASE64_STANDARD.encode(tx.to_bytes());
@@ -1071,7 +1075,7 @@ mod tests {
             0,
             1_0000_0000,
             0,
-            vec![OpCode::PUSH1 as u8],
+            vec![OpCode::PUSH1.byte()],
             Vec::new(),
         );
         let payload = BASE64_STANDARD.encode(tx.to_bytes());
@@ -1105,7 +1109,7 @@ mod tests {
             0,
             1_0000_0000,
             1,
-            vec![OpCode::PUSH1 as u8],
+            vec![OpCode::PUSH1.byte()],
             Vec::new(),
         );
         let payload = BASE64_STANDARD.encode(tx.to_bytes());
@@ -1231,7 +1235,7 @@ mod tests {
             1,
             1_0000_0000,
             1_0000_0000,
-            vec![OpCode::PUSH1 as u8],
+            vec![OpCode::PUSH1.byte()],
         );
         let snapshot = store.data_cache();
         let verification = tx.verify(
@@ -1278,7 +1282,7 @@ mod tests {
             2,
             1_0000_0000,
             1_0000_0000,
-            vec![OpCode::PUSH1 as u8],
+            vec![OpCode::PUSH1.byte()],
         );
         let store = system.context().store_cache();
         let mut block = build_signed_block(&settings, &store, &validator, vec![tx]);
@@ -1318,7 +1322,7 @@ mod tests {
             3,
             1_0000_0000,
             1_0000_0000,
-            vec![OpCode::PUSH1 as u8],
+            vec![OpCode::PUSH1.byte()],
         );
         let store = system.context().store_cache();
         let mut block = build_signed_block(&settings, &store, &validator, vec![tx]);
@@ -1358,7 +1362,7 @@ mod tests {
             4,
             1_0000_0000,
             1_0000_0000,
-            vec![OpCode::PUSH1 as u8],
+            vec![OpCode::PUSH1.byte()],
         );
         let store = system.context().store_cache();
         let mut block = build_signed_block(&settings, &store, &validator, vec![tx]);
@@ -1397,7 +1401,7 @@ mod tests {
             5,
             1_0000_0000,
             1_0000_0000,
-            vec![OpCode::PUSH1 as u8],
+            vec![OpCode::PUSH1.byte()],
         );
         let store = system.context().store_cache();
         let mut block = build_signed_block(&settings, &store, &validator, vec![tx]);

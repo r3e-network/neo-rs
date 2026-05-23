@@ -21,9 +21,6 @@ members = [
     # Core (matches C# Neo.csproj)
     "neo-core",
 
-    # VM (matches C# Neo.VM)
-    "neo-vm",
-
     # P2P networking
     "neo-p2p",
 
@@ -110,7 +107,6 @@ neo-json = { path = "neo-json", version = "0.7.2" }
 
 # Core layer
 neo-core = { path = "neo-core", version = "0.7.2" }
-neo-vm = { path = "neo-vm", version = "0.7.2" }
 neo-vm-rs = { git = "https://github.com/r3e-network/neo-vm-rs.git", rev = "b45ece83ca57f7164c0ccd746632b595fce8469e" }
 neo-p2p = { path = "neo-p2p", version = "0.7.2" }
 neo-rpc = { path = "neo-rpc", version = "0.7.2" }

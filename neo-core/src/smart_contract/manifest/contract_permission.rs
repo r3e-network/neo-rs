@@ -5,12 +5,13 @@
 use super::{ContractManifest, ContractPermissionDescriptor, WildCardContainer};
 use crate::error::CoreError;
 use crate::error::CoreError as Error;
-use crate::error::CoreResult as Result;
+use crate::error::CoreResult;
 use crate::smart_contract::i_interoperable::IInteroperable;
 use crate::ECPoint;
 use crate::UInt160;
 // Removed neo_cryptography dependency - using external crypto crates directly
-use neo_vm::StackItem;
+use crate::neo_vm::StackItem;
+use neo_vm_rs::StackValue;
 use serde::{Deserialize, Serialize};
 
 /// Represents a permission that a contract requires.
@@ -88,7 +89,7 @@ impl ContractPermission {
     }
 
     /// Validates the permission.
-    pub fn validate(&self) -> Result<()> {
+    pub fn validate(&self) -> CoreResult<()> {
         match &self.contract {
             ContractPermissionDescriptor::Wildcard | ContractPermissionDescriptor::Hash(_) => {}
             ContractPermissionDescriptor::Group(pubkey) => {
@@ -115,47 +116,121 @@ impl ContractPermission {
 
         Ok(())
     }
-}
 
-impl IInteroperable for ContractPermission {
-    fn from_stack_item(&mut self, stack_item: StackItem) -> std::result::Result<(), CoreError> {
-        let struct_item = match stack_item {
-            StackItem::Struct(struct_item) => struct_item,
-            other => {
-                return Err(CoreError::invalid_format(format!(
-                    "ContractPermission expects Struct stack item, found {:?}",
-                    other.stack_item_type()
-                )));
-            }
+    /// Converts to a neo-vm-rs stack value (matches C# `ContractPermission.ToStackItem` layout).
+    pub fn to_stack_value(&self) -> StackValue {
+        StackValue::Struct(vec![
+            self.contract.to_stack_value(),
+            self.methods.to_stack_value(),
+        ])
+    }
+
+    /// Updates this permission from a neo-vm-rs stack value.
+    pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError> {
+        let StackValue::Struct(items) = stack_value else {
+            return Err(CoreError::invalid_format(
+                "ContractPermission expects Struct stack value",
+            ));
         };
 
-        let items = struct_item.items();
         if items.len() < 2 {
             return Err(CoreError::invalid_format(format!(
-                "ContractPermission stack item must contain 2 elements, found {}",
+                "ContractPermission stack value must contain 2 elements, found {}",
                 items.len()
             )));
         }
 
-        self.contract = ContractPermissionDescriptor::from_stack_item(&items[0]).map_err(|e| {
-            CoreError::invalid_format(format!("Invalid contract descriptor in stack item: {}", e))
-        })?;
+        self.contract =
+            ContractPermissionDescriptor::from_stack_value(items[0].clone()).map_err(|e| {
+                CoreError::invalid_format(format!(
+                    "Invalid contract descriptor in stack value: {}",
+                    e
+                ))
+            })?;
 
-        self.methods = WildCardContainer::from_stack_item(&items[1]).map_err(|e| {
-            CoreError::invalid_format(format!("Invalid methods container in stack item: {}", e))
+        self.methods = WildCardContainer::from_stack_value(items[1].clone()).map_err(|e| {
+            CoreError::invalid_format(format!("Invalid methods container in stack value: {}", e))
         })?;
 
         Ok(())
     }
+}
+
+impl IInteroperable for ContractPermission {
+    fn from_stack_item(&mut self, stack_item: StackItem) -> std::result::Result<(), CoreError> {
+        self.from_stack_value(StackValue::try_from(stack_item).map_err(|error| {
+            CoreError::invalid_format(format!(
+                "Failed to convert ContractPermission StackItem to StackValue: {error}"
+            ))
+        })?)
+    }
 
     fn to_stack_item(&self) -> std::result::Result<StackItem, CoreError> {
-        Ok(StackItem::from_struct(vec![
-            self.contract.to_stack_item(),
-            self.methods.to_stack_item(),
-        ]))
+        StackItem::try_from(self.to_stack_value()).map_err(|error| {
+            CoreError::invalid_operation(format!(
+                "Failed to convert ContractPermission StackValue to StackItem: {error}"
+            ))
+        })
     }
 
     fn clone_box(&self) -> Box<dyn IInteroperable> {
         Box::new(self.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::smart_contract::i_interoperable::IInteroperable;
+    use neo_vm_rs::StackValue;
+
+    #[test]
+    fn contract_permission_projects_to_neo_vm_rs_stack_value() {
+        let hash = UInt160::from_bytes(&[0x44; 20]).expect("hash");
+        let permission = ContractPermission::for_contract(
+            hash,
+            WildCardContainer::create(vec!["transfer".to_string(), "balanceOf".into()]),
+        );
+
+        assert_eq!(
+            permission.to_stack_value(),
+            StackValue::Struct(vec![
+                StackValue::ByteString(hash.to_bytes()),
+                StackValue::Array(vec![
+                    StackValue::ByteString(b"transfer".to_vec()),
+                    StackValue::ByteString(b"balanceOf".to_vec()),
+                ]),
+            ])
+        );
+    }
+
+    #[test]
+    fn contract_permission_stack_item_projection_matches_stack_value_projection() {
+        let permission = ContractPermission::default_wildcard();
+        let expected = StackItem::try_from(permission.to_stack_value()).unwrap();
+
+        assert_eq!(permission.to_stack_item().unwrap(), expected);
+    }
+
+    #[test]
+    fn contract_permission_reads_from_neo_vm_rs_stack_value() {
+        let hash = UInt160::from_bytes(&[0x55; 20]).expect("hash");
+        let mut permission = ContractPermission::default_wildcard();
+
+        permission
+            .from_stack_value(StackValue::Struct(vec![
+                StackValue::ByteString(hash.to_bytes()),
+                StackValue::Array(vec![StackValue::ByteString(b"mint".to_vec())]),
+            ]))
+            .unwrap();
+
+        assert_eq!(
+            permission.contract,
+            ContractPermissionDescriptor::Hash(hash)
+        );
+        assert_eq!(
+            permission.methods,
+            WildCardContainer::create(vec!["mint".to_string()])
+        );
     }
 }

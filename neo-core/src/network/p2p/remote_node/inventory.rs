@@ -254,7 +254,11 @@ impl RemoteNode {
             .system
             .blockchain
             .tell_from_async(
-                BlockchainCommand::InventoryBlock { block, relay: true, pre_verified: false },
+                BlockchainCommand::InventoryBlock {
+                    block,
+                    relay: true,
+                    pre_verified: false,
+                },
                 Some(ctx.self_ref()),
             )
             .await

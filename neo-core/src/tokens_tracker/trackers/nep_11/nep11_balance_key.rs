@@ -4,8 +4,8 @@
 
 use super::super::super::extensions::bytes_var_size;
 use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
+use crate::neo_vm::stack_item::ByteString;
 use crate::UInt160;
-use neo_vm::stack_item::ByteString;
 use num_bigint::BigInt;
 use num_traits::Zero;
 use serde::{Deserialize, Serialize};

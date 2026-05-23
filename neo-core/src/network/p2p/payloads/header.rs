@@ -253,7 +253,8 @@ impl Header {
 
         let verification_gas = gas_limit.min(Helper::MAX_VERIFICATION_GAS);
 
-        if let Err(e) = neo_vm::Script::new(witness.invocation_script.clone(), true) {
+        if let Err(e) = crate::script_validation::validate_strict_script(&witness.invocation_script)
+        {
             tracing::warn!(
                 target: "neo",
                 %script_hash,
@@ -359,7 +360,7 @@ impl Header {
                 return false;
             }
 
-            if let Err(e) = neo_vm::Script::new(verification_script.clone(), true) {
+            if let Err(e) = crate::script_validation::validate_strict_script(&verification_script) {
                 tracing::warn!(
                     target: "neo",
                     %script_hash,
@@ -830,13 +831,13 @@ mod tests {
     use crate::smart_contract::storage_key::StorageKey;
     use crate::smart_contract::StorageItem;
     use crate::Witness as LedgerWitness;
-    use neo_vm::op_code::OpCode;
+    use neo_vm_rs::OpCode;
     use std::sync::Arc;
 
     const LEDGER_CONTRACT_ID: i32 = -4;
 
     fn sample_witness() -> Witness {
-        Witness::new_with_scripts(Vec::new(), vec![OpCode::PUSH1 as u8])
+        Witness::new_with_scripts(Vec::new(), vec![OpCode::PUSH1.byte()])
     }
 
     fn sample_settings() -> ProtocolSettings {
@@ -889,7 +890,7 @@ mod tests {
         prev_header.set_primary_index(0);
 
         let deterministic_witness =
-            Witness::new_with_scripts(Vec::new(), vec![OpCode::PUSHT as u8, OpCode::RET as u8]);
+            Witness::new_with_scripts(Vec::new(), vec![OpCode::PUSHT.byte(), OpCode::RET.byte()]);
         let consensus = deterministic_witness.script_hash();
         prev_header.witness = deterministic_witness.clone();
         prev_header.set_next_consensus(consensus);

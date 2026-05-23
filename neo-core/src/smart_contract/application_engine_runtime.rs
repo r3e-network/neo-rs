@@ -3,16 +3,16 @@
 use crate::cryptography::crypto_utils::NeoHash;
 use crate::hardfork::Hardfork;
 use crate::neo_config::{ADDRESS_SIZE, HASH_SIZE};
+use crate::neo_vm::{ExecutionEngine, StackItem, StackItemType, VmError, VmResult};
 use crate::smart_contract::application_engine::{
     ApplicationEngine, MAX_EVENT_NAME, MAX_NOTIFICATION_SIZE,
 };
+use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::contract_parameter_type::ContractParameterType;
 use crate::smart_contract::log_event_args::LogEventArgs;
 use crate::smart_contract::ContractParameterDefinition;
 use crate::smart_contract::IInteroperable;
 use crate::UInt160;
-use neo_vm::call_flags::CallFlags;
-use neo_vm::{ExecutionEngine, StackItem, StackItemType, VmError, VmResult};
 use num_bigint::{BigInt, Sign};
 use num_traits::ToPrimitive;
 use std::convert::TryFrom;

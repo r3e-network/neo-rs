@@ -1,8 +1,10 @@
 use neo_core::hardfork::{Hardfork, HardforkManager};
 use neo_core::ledger::{create_genesis_block, Block, BlockHeader};
+use neo_core::neo_vm::VMState;
 use neo_core::network::p2p::payloads::Witness;
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
+use neo_core::script_builder::ScriptBuilder;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::smart_contract::contract_state::ContractState;
@@ -14,7 +16,7 @@ use neo_core::smart_contract::native::{
 };
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::{UInt160, UInt256};
-use neo_vm::{OpCode, ScriptBuilder, VMState};
+use neo_vm_rs::OpCode;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;

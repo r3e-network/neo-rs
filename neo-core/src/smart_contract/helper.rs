@@ -2,9 +2,11 @@
 
 use crate::cryptography::ECPoint;
 use crate::error::{CoreError, CoreResult};
+use crate::neo_vm::VMState;
 use crate::network::p2p::payloads::Witness;
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
+use crate::script_builder::ScriptBuilder;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::contract::Contract;
@@ -14,9 +16,7 @@ use crate::smart_contract::native::NativeRegistry;
 use crate::smart_contract::trigger_type::TriggerType;
 use crate::smart_contract::ContractParameterType;
 use crate::{IVerifiable, UInt160, UInt256};
-use neo_crypto::Crypto;
-use neo_vm::VMState;
-use neo_vm::{op_code::OpCode, ScriptBuilder};
+use neo_vm_rs::OpCode;
 use std::any::Any;
 use std::sync::Arc;
 
@@ -29,14 +29,14 @@ impl Helper {
 
     /// Calculates the verification cost for a single-signature contract (in datoshi).
     pub fn signature_contract_cost() -> i64 {
-        let push_cost = ApplicationEngine::get_opcode_price(OpCode::PUSHDATA1 as u8);
-        let syscall_cost = ApplicationEngine::get_opcode_price(OpCode::SYSCALL as u8);
+        let push_cost = ApplicationEngine::get_opcode_price(OpCode::PUSHDATA1.byte());
+        let syscall_cost = ApplicationEngine::get_opcode_price(OpCode::SYSCALL.byte());
         push_cost * 2 + syscall_cost + crate::smart_contract::application_engine::CHECK_SIG_PRICE
     }
 
     /// Calculates the verification cost for a multi-signature contract (in datoshi).
     pub fn multi_signature_contract_cost(m: i32, n: i32) -> i64 {
-        let push_cost = ApplicationEngine::get_opcode_price(OpCode::PUSHDATA1 as u8);
+        let push_cost = ApplicationEngine::get_opcode_price(OpCode::PUSHDATA1.byte());
         let mut fee = push_cost * (m as i64 + n as i64);
 
         let mut builder = ScriptBuilder::new();
@@ -45,7 +45,7 @@ impl Helper {
             .to_array()
             .first()
             .copied()
-            .unwrap_or(OpCode::PUSH0 as u8);
+            .unwrap_or(OpCode::PUSH0.byte());
         fee += ApplicationEngine::get_opcode_price(m_opcode);
 
         let mut builder_n = ScriptBuilder::new();
@@ -54,10 +54,10 @@ impl Helper {
             .to_array()
             .first()
             .copied()
-            .unwrap_or(OpCode::PUSH0 as u8);
+            .unwrap_or(OpCode::PUSH0.byte());
         fee += ApplicationEngine::get_opcode_price(n_opcode);
 
-        fee += ApplicationEngine::get_opcode_price(OpCode::SYSCALL as u8);
+        fee += ApplicationEngine::get_opcode_price(OpCode::SYSCALL.byte());
         fee += crate::smart_contract::application_engine::CHECK_SIG_PRICE * n as i64;
         fee
     }
@@ -88,8 +88,8 @@ impl Helper {
 
         // Check basic pattern for multi-sig
         let _m = match script[0] {
-            value if (OpCode::PUSH1 as u8..=OpCode::PUSH16 as u8).contains(&value) => {
-                value - OpCode::PUSH0 as u8
+            value if (OpCode::PUSH1.byte()..=OpCode::PUSH16.byte()).contains(&value) => {
+                value - OpCode::PUSH0.byte()
             }
             _ => return false,
         };
@@ -164,8 +164,7 @@ impl Helper {
 
     /// Computes syscall hash
     fn syscall_hash(name: &str) -> [u8; 4] {
-        let result = Crypto::sha256(name.as_bytes());
-        [result[0], result[1], result[2], result[3]]
+        neo_vm_rs::interop_hash(name).to_le_bytes()
     }
 
     /// Computes the hash of a deployed contract.
@@ -182,7 +181,7 @@ impl Helper {
     /// Parses a multi-signature contract script, returning the required signature count and
     /// the ordered public keys when the script matches the canonical Neo multi-sig format.
     pub fn parse_multi_sig_contract(script: &[u8]) -> Option<(usize, Vec<Vec<u8>>)> {
-        use neo_vm::op_code::OpCode;
+        use neo_vm_rs::OpCode;
 
         if script.len() < 42 {
             return None;
@@ -190,15 +189,15 @@ impl Helper {
 
         let mut offset = 0usize;
         let first = script[offset];
-        if !(OpCode::PUSH1 as u8..=OpCode::PUSH16 as u8).contains(&first) {
+        if !(OpCode::PUSH1.byte()..=OpCode::PUSH16.byte()).contains(&first) {
             return None;
         }
-        let m = (first - OpCode::PUSH0 as u8) as usize;
+        let m = (first - OpCode::PUSH0.byte()) as usize;
         offset += 1;
 
         let mut public_keys = Vec::new();
         while offset < script.len() {
-            if script[offset] != OpCode::PUSHDATA1 as u8 {
+            if script[offset] != OpCode::PUSHDATA1.byte() {
                 break;
             }
             offset += 1;
@@ -219,7 +218,7 @@ impl Helper {
         }
         let n = public_keys.len();
 
-        if offset >= script.len() || script[offset] != (OpCode::PUSH0 as u8).wrapping_add(n as u8) {
+        if offset >= script.len() || script[offset] != OpCode::PUSH0.byte().wrapping_add(n as u8) {
             return None;
         }
         offset += 1;
@@ -227,7 +226,7 @@ impl Helper {
         if script.len() != offset + 5 {
             return None;
         }
-        if script[offset] != OpCode::SYSCALL as u8 {
+        if script[offset] != OpCode::SYSCALL.byte() {
             return None;
         }
         if script[offset + 1..offset + 5] != Self::check_multisig_hash() {
@@ -247,7 +246,7 @@ impl Helper {
         invocation: &[u8],
         required_signatures: usize,
     ) -> Option<Vec<Vec<u8>>> {
-        use neo_vm::op_code::OpCode;
+        use neo_vm_rs::OpCode;
 
         if required_signatures == 0 {
             return None;
@@ -256,7 +255,7 @@ impl Helper {
         let mut signatures = Vec::with_capacity(required_signatures);
         let mut offset = 0usize;
         while offset < invocation.len() {
-            if invocation[offset] != OpCode::PUSHDATA1 as u8 {
+            if invocation[offset] != OpCode::PUSHDATA1.byte() {
                 return None;
             }
             offset += 1;

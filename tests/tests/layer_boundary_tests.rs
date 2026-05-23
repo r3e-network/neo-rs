@@ -5,7 +5,7 @@
 //! ```text
 //! Layer 0 (Foundation - no neo-* deps): neo-primitives, neo-json, neo-storage, neo-io
 //! Layer 1 (Crypto): neo-crypto (depends on Layer 0)
-//! Layer 2 (Protocol): neo-vm, neo-p2p, neo-consensus, neo-core
+//! Layer 2 (Protocol): neo-core (including VM compatibility), neo-p2p, neo-consensus
 //! Layer 3 (State): neo-state, neo-mempool, neo-chain
 //! Layer 4 (Services): neo-rpc, neo-config, neo-telemetry
 //! Layer 5 (Application): neo-node, neo-cli
@@ -36,7 +36,7 @@ impl Layer {
             // Layer 1: Crypto (depends on Layer 0 only)
             "neo-crypto" => Some(Layer::Crypto),
             // Layer 2: Protocol
-            "neo-vm" | "neo-p2p" | "neo-consensus" | "neo-core" => Some(Layer::Protocol),
+            "neo-p2p" | "neo-consensus" | "neo-core" => Some(Layer::Protocol),
             // Layer 3: State
             "neo-state" | "neo-mempool" | "neo-chain" => Some(Layer::State),
             // Layer 4: Services
@@ -79,7 +79,7 @@ fn parse_neo_dependencies(cargo_toml_path: &Path) -> Vec<String> {
         // Only check [dependencies], not [dev-dependencies]
         if in_dependencies && !in_dev_dependencies {
             // Match lines like: neo-primitives = { workspace = true }
-            // or: neo-vm = { path = "../neo-vm" }
+            // or: neo-p2p = { path = "../neo-p2p" }
             if trimmed.starts_with("neo-") {
                 if let Some(name) = trimmed.split('=').next() {
                     let dep_name = name.trim().to_string();

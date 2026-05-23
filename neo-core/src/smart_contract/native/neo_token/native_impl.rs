@@ -5,24 +5,6 @@
 use super::*;
 use crate::smart_contract::native::security_fixes::{SafeArithmetic, StateValidator};
 
-/// NeoAccountState helper methods
-impl NeoAccountState {
-    /// Converts account state to a StackItem for serialization.
-    /// Matches C# NeoAccountState.ToStackItem: 4-field struct
-    /// {Balance, BalanceHeight, VoteTo, LastGasPerVote}.
-    pub(super) fn to_stack_item(&self) -> StackItem {
-        StackItem::from_struct(vec![
-            StackItem::from_int(self.balance.clone()),
-            StackItem::from_int(self.balance_height),
-            match &self.vote_to {
-                Some(pk) => StackItem::from_byte_string(pk.as_bytes().to_vec()),
-                None => StackItem::Null,
-            },
-            StackItem::from_int(self.last_gas_per_vote.clone()),
-        ])
-    }
-}
-
 impl NativeContract for NeoToken {
     fn id(&self) -> i32 {
         Self::ID
@@ -204,16 +186,18 @@ impl NativeContract for NeoToken {
                 vote_to: None,
                 last_gas_per_vote: BigInt::zero(),
             };
-            let bytes = BinarySerializer::serialize(
-                &state.to_stack_item(),
+            let bytes = BinarySerializer::serialize_stack_value(
+                &state.to_stack_value(),
                 &ExecutionEngineLimits::default(),
             )
             .map_err(CoreError::native_contract)?;
             engine.set_storage(account_key, StorageItem::from_bytes(bytes))?;
 
             // Write total supply (matches C# FungibleToken.Mint which updates TotalSupply)
-            let total_supply_key =
-                StorageKey::create(Self::ID, crate::smart_contract::native::fungible_token::PREFIX_TOTAL_SUPPLY);
+            let total_supply_key = StorageKey::create(
+                Self::ID,
+                crate::smart_contract::native::fungible_token::PREFIX_TOTAL_SUPPLY,
+            );
             let total_supply = BigInt::from(Self::TOTAL_SUPPLY);
             engine.set_storage(
                 total_supply_key,

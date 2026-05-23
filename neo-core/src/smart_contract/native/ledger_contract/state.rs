@@ -1,12 +1,12 @@
 //! Ledger contract state types and serialization helpers.
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::neo_io::{BinaryWriter, MemoryReader, Serializable};
+use crate::neo_vm::vm_state::VMState;
 use crate::network::p2p::payloads::transaction::{Transaction, MAX_TRANSACTION_SIZE};
 use crate::smart_contract::native::{
     hash_index_state::HashIndexState, trimmed_block::TrimmedBlock,
 };
 use crate::UInt256;
-use neo_vm::vm_state::VMState;
 use serde::{Deserialize, Serialize};
 
 const RECORD_KIND_TRANSACTION: u8 = 0x01;
@@ -23,7 +23,7 @@ impl PersistedTransactionState {
     pub fn new(tx: &Transaction, block_index: u32) -> Self {
         Self {
             block_index,
-            vm_state: VMState::NONE as u8,
+            vm_state: VMState::NONE.to_byte(),
             transaction: tx.clone(),
         }
     }
@@ -37,16 +37,11 @@ impl PersistedTransactionState {
     }
 
     pub fn vm_state(&self) -> VMState {
-        match self.vm_state {
-            value if value == VMState::HALT as u8 => VMState::HALT,
-            value if value == VMState::FAULT as u8 => VMState::FAULT,
-            value if value == VMState::BREAK as u8 => VMState::BREAK,
-            _ => VMState::NONE,
-        }
+        VMState::from_byte(self.vm_state)
     }
 
     pub fn set_vm_state(&mut self, vm_state: VMState) {
-        self.vm_state = vm_state as u8;
+        self.vm_state = vm_state.to_byte();
     }
 
     pub fn transaction(&self) -> &Transaction {
@@ -180,12 +175,7 @@ pub fn deserialize_transaction_record(bytes: &[u8]) -> Result<TransactionStateRe
                 .map_err(|e| Error::serialization(e.to_string()))?;
 
             let mut state = PersistedTransactionState::new(&tx, block_index);
-            state.set_vm_state(match vm_state {
-                value if value == VMState::HALT as u8 => VMState::HALT,
-                value if value == VMState::FAULT as u8 => VMState::FAULT,
-                value if value == VMState::BREAK as u8 => VMState::BREAK,
-                _ => VMState::NONE,
-            });
+            state.set_vm_state(VMState::from_byte(vm_state));
             Ok(TransactionStateRecord::Full(state))
         }
         RECORD_KIND_CONFLICT_STUB => {

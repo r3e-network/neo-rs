@@ -33,7 +33,9 @@ fn u256(hex: &str) -> UInt256 {
 fn witness(invocation_b64: &str, verification_b64: &str) -> Witness {
     Witness::new_with_scripts(
         BASE64.decode(invocation_b64).expect("base64 invocation"),
-        BASE64.decode(verification_b64).expect("base64 verification"),
+        BASE64
+            .decode(verification_b64)
+            .expect("base64 verification"),
     )
 }
 
@@ -97,9 +99,7 @@ fn replay_block_274157_debug() {
         let trie = Arc::clone(&trie);
         Arc::new(
             move |prefix: Option<&neo_core::smart_contract::StorageKey>, _dir: SeekDirection| {
-                let prefix_bytes = prefix
-                    .map(|k| k.to_array().to_owned())
-                    .unwrap_or_default();
+                let prefix_bytes = prefix.map(|k| k.to_array().to_owned()).unwrap_or_default();
                 let mut trie = trie.lock();
                 trie.find(&prefix_bytes, None)
                     .expect("trie find")
@@ -244,7 +244,10 @@ fn replay_block_274157_debug() {
         for m in &contract.manifest.abi.methods {
             eprintln!(
                 "  method: name={} offset={} params={} return_type={:?}",
-                m.name, m.offset, m.parameters.len(), m.return_type
+                m.name,
+                m.offset,
+                m.parameters.len(),
+                m.return_type
             );
         }
     } else {
@@ -269,7 +272,10 @@ fn replay_block_274157_debug() {
 
     eprintln!("notifications ({}):", tx_engine.notifications().len());
     for (i, n) in tx_engine.notifications().iter().enumerate() {
-        eprintln!("  [{}] contract={} event={}", i, n.script_hash, n.event_name);
+        eprintln!(
+            "  [{}] contract={} event={}",
+            i, n.script_hash, n.event_name
+        );
         for s in &n.state {
             eprintln!("      {:?}", s);
         }
@@ -280,7 +286,9 @@ fn replay_block_274157_debug() {
     eprintln!("\ntx writes (from tx_snapshot):");
     for (key, trackable) in tx_snapshot.tracked_items() {
         let state_str = format!("{:?}", trackable.state);
-        if state_str == "None" || state_str == "NotFound" { continue; }
+        if state_str == "None" || state_str == "NotFound" {
+            continue;
+        }
         tx_writes += 1;
         eprintln!(
             "  id={} key={} state={:?} val={}",
@@ -297,7 +305,9 @@ fn replay_block_274157_debug() {
     eprintln!("\nbase_cache tracked items (after tx):");
     for (key, trackable) in base_cache.tracked_items() {
         let state_str = format!("{:?}", trackable.state);
-        if state_str == "None" || state_str == "NotFound" { continue; }
+        if state_str == "None" || state_str == "NotFound" {
+            continue;
+        }
         base_writes += 1;
         eprintln!(
             "  id={} key={} state={:?} val={}",
@@ -312,7 +322,7 @@ fn replay_block_274157_debug() {
     // Mirror persist_block_internal: HALT merges tx_snapshot writes into
     // base_cache; FAULT discards them. The earlier `tx_snapshot.commit()` was
     // a no-op because tx_snapshot has no commit_apply wired.
-    if matches!(vm_state, neo_vm::VMState::HALT) {
+    if matches!(vm_state, neo_core::neo_vm::VMState::HALT) {
         let tracked = tx_snapshot.tracked_items();
         base_cache.merge_tracked_items(&tracked);
     }
@@ -320,7 +330,9 @@ fn replay_block_274157_debug() {
     eprintln!("\nbase_cache tracked items (after merge):");
     for (key, trackable) in base_cache.tracked_items() {
         let state_str = format!("{:?}", trackable.state);
-        if state_str == "None" || state_str == "NotFound" { continue; }
+        if state_str == "None" || state_str == "NotFound" {
+            continue;
+        }
         post_commit_writes += 1;
         eprintln!(
             "  id={} key={} state={:?} val={}",
@@ -330,7 +342,10 @@ fn replay_block_274157_debug() {
             hex::encode(trackable.item.value_bytes())
         );
     }
-    eprintln!("total base_cache writes after merge: {}", post_commit_writes);
+    eprintln!(
+        "total base_cache writes after merge: {}",
+        post_commit_writes
+    );
 
     // Take ledger tx_states from tx_engine before PostPersist needs them.
     let tx_states_after = tx_engine
@@ -352,7 +367,9 @@ fn replay_block_274157_debug() {
     )
     .expect("post persist engine");
     post_persist_engine.set_state(tx_states_after);
-    post_persist_engine.native_post_persist().expect("post persist");
+    post_persist_engine
+        .native_post_persist()
+        .expect("post persist");
     drop(post_persist_engine);
 
     // Apply non-Ledger storage changes to trie and assert root matches C# v3.9.1.
@@ -392,10 +409,9 @@ fn replay_block_274157_debug() {
         "applied={} skipped_ledger={} new_root={}",
         applied, skipped_ledger, new_root
     );
-    let expected_csharp_root = UInt256::parse(
-        "0xb757b3a61363c6f851d035048fd77b03254e712ae91728189a5d5bdb1e306a5d",
-    )
-    .expect("parse expected C# root");
+    let expected_csharp_root =
+        UInt256::parse("0xb757b3a61363c6f851d035048fd77b03254e712ae91728189a5d5bdb1e306a5d")
+            .expect("parse expected C# root");
     assert_eq!(
         new_root, expected_csharp_root,
         "block 274157 OnPersist + BurgerNEO-FAULT + PostPersist state root must match C# v3.9.1",

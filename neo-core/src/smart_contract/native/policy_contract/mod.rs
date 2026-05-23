@@ -6,9 +6,11 @@
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::hardfork::Hardfork;
 use crate::neo_config::ADDRESS_SIZE;
+use crate::neo_vm::{ExecutionEngineLimits, StackItem};
 use crate::persistence::i_read_only_store::IReadOnlyStoreGeneric;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::application_engine::ApplicationEngine;
+use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::find_options::FindOptions;
 use crate::smart_contract::manifest::{ContractEventDescriptor, ContractParameterDefinition};
@@ -17,12 +19,10 @@ use crate::smart_contract::storage_key::StorageKey;
 use crate::smart_contract::{ContractParameterType, StorageItem};
 use crate::UInt160;
 use neo_primitives::TransactionAttributeType;
-use neo_vm::StackItem;
+use neo_vm_rs::StackValue;
 use num_bigint::{BigInt, Sign};
 use num_traits::{ToPrimitive, Zero};
 use std::any::Any;
-
-use crate::smart_contract::i_interoperable::IInteroperable;
 
 /// Whitelisted fee contract info.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,60 +48,88 @@ impl Default for WhitelistedContract {
     }
 }
 
-impl IInteroperable for WhitelistedContract {
-    fn from_stack_item(&mut self, stack_item: StackItem) -> Result<()> {
-        let StackItem::Struct(struct_item) = stack_item else {
+impl WhitelistedContract {
+    fn stack_value_to_bigint(value: &StackValue) -> Option<BigInt> {
+        match value {
+            StackValue::Integer(value) => Some(BigInt::from(*value)),
+            StackValue::Boolean(value) => Some(BigInt::from(i32::from(*value))),
+            StackValue::BigInteger(bytes) => Some(BigInt::from_signed_bytes_le(bytes)),
+            StackValue::ByteString(bytes) | StackValue::Buffer(bytes) if bytes.len() <= 32 => {
+                Some(BigInt::from_signed_bytes_le(bytes))
+            }
+            _ => None,
+        }
+    }
+
+    /// Converts to a neo-vm-rs stack value.
+    pub fn to_stack_value(&self) -> StackValue {
+        StackValue::Struct(vec![
+            StackValue::ByteString(self.contract_hash.to_bytes()),
+            StackValue::ByteString(self.method.as_bytes().to_vec()),
+            StackValue::Integer(i64::from(self.arg_count)),
+            StackValue::Integer(self.fixed_fee),
+        ])
+    }
+
+    /// Updates this whitelisted contract from a neo-vm-rs stack value.
+    pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<()> {
+        let StackValue::Struct(items) = stack_value else {
             return Err(Error::invalid_format(
-                "WhitelistedContract expects Struct stack item",
+                "WhitelistedContract expects Struct stack value",
             ));
         };
 
-        let items = struct_item.items();
         if items.len() < 4 {
             return Err(Error::invalid_format(format!(
-                "WhitelistedContract stack item must contain 4 elements, found {}",
+                "WhitelistedContract stack value must contain 4 elements, found {}",
                 items.len()
             )));
         }
 
-        if let Ok(bytes) = items[0].as_bytes() {
+        if let Some(bytes) = items[0].to_byte_string_bytes() {
             if let Ok(hash) = UInt160::from_bytes(&bytes) {
                 self.contract_hash = hash;
             }
         }
 
-        if let Ok(bytes) = items[1].as_bytes() {
+        if let Some(bytes) = items[1].to_byte_string_bytes() {
             if let Ok(method) = String::from_utf8(bytes) {
                 self.method = method;
             }
         }
 
-        if let Ok(value) = items[2].as_int() {
-            if let Some(count) = value.to_u32() {
-                self.arg_count = count;
-            }
+        if let Some(count) = Self::stack_value_to_bigint(&items[2]).and_then(|value| value.to_u32())
+        {
+            self.arg_count = count;
         }
 
-        if let Ok(value) = items[3].as_int() {
-            if let Some(fee) = value.to_i64() {
-                self.fixed_fee = fee;
-            }
+        if let Some(fee) = Self::stack_value_to_bigint(&items[3]).and_then(|value| value.to_i64()) {
+            self.fixed_fee = fee;
         }
 
         Ok(())
     }
+}
 
-    fn to_stack_item(&self) -> Result<StackItem> {
-        Ok(StackItem::from_struct(vec![
-            StackItem::from_byte_string(self.contract_hash.to_bytes()),
-            StackItem::from_byte_string(self.method.as_bytes().to_vec()),
-            StackItem::from_int(self.arg_count as i64),
-            StackItem::from_int(self.fixed_fee),
-        ]))
+impl PolicyContract {
+    fn serialize_whitelisted_contract(whitelisted: &WhitelistedContract) -> Result<Vec<u8>> {
+        BinarySerializer::serialize_stack_value(
+            &whitelisted.to_stack_value(),
+            &ExecutionEngineLimits::default(),
+        )
+        .map_err(|e| Error::native_contract(format!("Failed to serialize whitelist info: {e}")))
     }
 
-    fn clone_box(&self) -> Box<dyn IInteroperable> {
-        Box::new(self.clone())
+    fn deserialize_whitelisted_contract(bytes: &[u8]) -> Result<WhitelistedContract> {
+        let stack_value = BinarySerializer::deserialize_stack_value(bytes).map_err(|e| {
+            Error::native_contract(format!("Failed to deserialize whitelist info: {e}"))
+        })?;
+
+        let mut whitelist = WhitelistedContract::default();
+        whitelist.from_stack_value(stack_value).map_err(|e| {
+            Error::native_contract(format!("Failed to deserialize WhitelistedContract: {e}"))
+        })?;
+        Ok(whitelist)
     }
 }
 

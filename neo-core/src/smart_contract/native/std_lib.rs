@@ -7,12 +7,12 @@ use crate::cryptography::{Base58, Hex};
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
 use crate::hardfork::Hardfork;
+use crate::neo_vm::StackItem;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::native::{NativeContract, NativeMethod};
 use crate::smart_contract::{BinarySerializer, ContractParameterType, JsonSerializer};
 use crate::UInt160;
 use base64::{engine::general_purpose, Engine as _};
-use neo_vm::StackItem;
 use num_bigint::{BigInt, Sign};
 use num_traits::{Num, ToPrimitive, Zero};
 use unicode_segmentation::UnicodeSegmentation;
@@ -203,8 +203,7 @@ impl StdLib {
                 1 << 8,
                 vec![ContractParameterType::String, ContractParameterType::String],
                 ContractParameterType::Array,
-            )
-            ,
+            ),
             // stringSplit overloads (3 params)
             NativeMethod::safe(
                 "stringSplit".to_string(),

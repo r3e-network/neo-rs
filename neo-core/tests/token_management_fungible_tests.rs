@@ -1,15 +1,17 @@
 use neo_core::hardfork::Hardfork;
 use neo_core::ledger::block_header::BlockHeader;
 use neo_core::ledger::Block;
+use neo_core::neo_vm::StackItem;
 use neo_core::network::p2p::payloads::Witness;
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
+use neo_core::script_builder::ScriptBuilder;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::smart_contract::native::{NativeContract, TokenManagement};
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::{UInt160, UInt256};
-use neo_vm::{OpCode, ScriptBuilder, StackItem};
+use neo_vm_rs::OpCode;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -86,7 +88,8 @@ fn emit_contract_call(
 ) {
     let arg_count = args.len();
     for arg in args.drain(..).rev() {
-        sb.emit_push_stack_item(arg).expect("emit arg");
+        let value = neo_vm_rs::StackValue::try_from(arg).expect("convert arg");
+        sb.emit_push_stack_value(&value).expect("emit arg");
     }
     sb.emit_push_int(arg_count as i64);
     sb.emit_opcode(OpCode::PACK);
@@ -271,7 +274,7 @@ fn get_assets_of_owner_excludes_fully_burned_asset_in_same_overlay() {
     assert_eq!(mint_result, vec![1]);
 
     engine
-        .load_script(vec![neo_vm::OpCode::RET as u8], CallFlags::ALL, None)
+        .load_script(vec![neo_vm_rs::OpCode::RET.byte()], CallFlags::ALL, None)
         .expect("load overlay script");
     engine.set_calling_script_hash(Some(holder));
 

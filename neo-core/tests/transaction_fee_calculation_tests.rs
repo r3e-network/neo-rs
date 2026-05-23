@@ -5,13 +5,13 @@
 use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::application_engine::CHECK_SIG_PRICE;
 use neo_core::smart_contract::helper::Helper;
-use neo_vm::OpCode;
+use neo_vm_rs::OpCode;
 
 #[test]
 fn test_signature_contract_cost_matches_csharp() {
     // C# formula: PUSHDATA1 * 2 + SYSCALL + CHECK_SIG_PRICE
-    let push_cost = ApplicationEngine::get_opcode_price(OpCode::PUSHDATA1 as u8);
-    let syscall_cost = ApplicationEngine::get_opcode_price(OpCode::SYSCALL as u8);
+    let push_cost = ApplicationEngine::get_opcode_price(OpCode::PUSHDATA1.byte());
+    let syscall_cost = ApplicationEngine::get_opcode_price(OpCode::SYSCALL.byte());
     let expected = push_cost * 2 + syscall_cost + CHECK_SIG_PRICE;
 
     let actual = Helper::signature_contract_cost();
@@ -36,10 +36,10 @@ fn test_multi_signature_contract_cost_matches_csharp() {
 
     // C# formula:
     // PUSHDATA1 * (m + n) + PUSH_m + PUSH_n + SYSCALL + CHECK_SIG_PRICE * n
-    let push_cost = ApplicationEngine::get_opcode_price(OpCode::PUSHDATA1 as u8);
-    let push2_cost = ApplicationEngine::get_opcode_price(OpCode::PUSH2 as u8);
-    let push3_cost = ApplicationEngine::get_opcode_price(OpCode::PUSH3 as u8);
-    let syscall_cost = ApplicationEngine::get_opcode_price(OpCode::SYSCALL as u8);
+    let push_cost = ApplicationEngine::get_opcode_price(OpCode::PUSHDATA1.byte());
+    let push2_cost = ApplicationEngine::get_opcode_price(OpCode::PUSH2.byte());
+    let push3_cost = ApplicationEngine::get_opcode_price(OpCode::PUSH3.byte());
+    let syscall_cost = ApplicationEngine::get_opcode_price(OpCode::SYSCALL.byte());
 
     let expected = push_cost * (m + n) as i64
         + push2_cost

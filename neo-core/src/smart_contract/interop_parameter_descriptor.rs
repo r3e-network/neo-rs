@@ -1,8 +1,11 @@
 //! InteropParameterDescriptor - matches C# Neo.SmartContract.InteropParameterDescriptor exactly
 
 use crate::smart_contract::validator_attribute::ValidatorAttribute;
-use neo_vm::StackItem;
+use neo_vm_rs::StackValue;
+use num_bigint::BigInt;
 use num_traits::ToPrimitive;
+
+const MAX_INTEGER_SIZE: usize = 32;
 
 /// Type of parameter for interop methods
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -127,7 +130,7 @@ impl InteropParameterDescriptor {
     }
 
     /// Validates a stack item against this parameter descriptor
-    pub fn validate(&self, item: &StackItem) -> Result<(), String> {
+    pub fn validate(&self, item: &StackValue) -> Result<(), String> {
         // Run all validators
         for validator in &self.validators {
             validator.validate(item)?;
@@ -136,8 +139,10 @@ impl InteropParameterDescriptor {
     }
 
     /// Converts a stack item to the appropriate type
-    pub fn convert(&self, item: &StackItem) -> Result<ConvertedValue, String> {
-        if item.is_null() && !matches!(self.param_type, InteropParameterType::StackItem) {
+    pub fn convert(&self, item: &StackValue) -> Result<ConvertedValue, String> {
+        if matches!(item, StackValue::Null)
+            && !matches!(self.param_type, InteropParameterType::StackItem)
+        {
             if !self.is_nullable {
                 let name = if self.name.is_empty() {
                     "value"
@@ -150,74 +155,73 @@ impl InteropParameterDescriptor {
         }
 
         match self.param_type {
-            InteropParameterType::StackItem => Ok(ConvertedValue::StackItem(item.clone())),
+            InteropParameterType::StackItem => Ok(ConvertedValue::StackValue(item.clone())),
             InteropParameterType::Boolean => match item {
-                StackItem::Boolean(value) => Ok(ConvertedValue::Boolean(*value)),
+                StackValue::Boolean(value) => Ok(ConvertedValue::Boolean(*value)),
                 _ => Err("Expected boolean".to_string()),
             },
             InteropParameterType::Int => {
-                let integer = item.as_int().map_err(|_| "Expected integer".to_string())?;
+                let integer = stack_value_bigint(item)?;
                 integer
                     .to_i32()
                     .map(ConvertedValue::Int)
                     .ok_or_else(|| "Integer out of range".to_string())
             }
             InteropParameterType::String => match item {
-                StackItem::Null => Ok(ConvertedValue::String(String::new())),
-                StackItem::ByteString(bytes) => String::from_utf8(bytes.clone())
+                StackValue::Null => Ok(ConvertedValue::String(String::new())),
+                StackValue::ByteString(bytes) => String::from_utf8(bytes.clone())
                     .map(ConvertedValue::String)
                     .map_err(|_| "Invalid UTF-8 string".to_string()),
-                StackItem::Buffer(buffer) => String::from_utf8(buffer.data())
+                StackValue::Buffer(buffer) => String::from_utf8(buffer.clone())
                     .map(ConvertedValue::String)
                     .map_err(|_| "Invalid UTF-8 string".to_string()),
                 _ => Err("Expected string".to_string()),
             },
             InteropParameterType::ByteArray => match item {
-                StackItem::Null => Ok(ConvertedValue::ByteArray(Vec::new())),
-                StackItem::ByteString(bytes) => Ok(ConvertedValue::ByteArray(bytes.clone())),
-                StackItem::Buffer(buffer) => Ok(ConvertedValue::ByteArray(buffer.data())),
+                StackValue::Null => Ok(ConvertedValue::ByteArray(Vec::new())),
+                StackValue::ByteString(bytes) | StackValue::Buffer(bytes) => {
+                    Ok(ConvertedValue::ByteArray(bytes.clone()))
+                }
                 _ => Err("Expected byte array".to_string()),
             },
             InteropParameterType::UInt160 => match item {
-                StackItem::Null => Ok(ConvertedValue::UInt160(crate::UInt160::default())),
-                StackItem::ByteString(bytes) if bytes.len() == 20 => {
+                StackValue::Null => Ok(ConvertedValue::UInt160(crate::UInt160::default())),
+                StackValue::ByteString(bytes) | StackValue::Buffer(bytes) if bytes.len() == 20 => {
                     let mut arr = [0u8; 20];
                     arr.copy_from_slice(bytes);
                     let value = crate::UInt160::from_bytes(&arr).map_err(|e| e.to_string())?;
                     Ok(ConvertedValue::UInt160(value))
                 }
-                StackItem::Buffer(buffer) if buffer.len() == 20 => {
-                    buffer.with_data(|data| {
-                        let mut arr = [0u8; 20];
-                        arr.copy_from_slice(data);
-                        crate::UInt160::from_bytes(&arr)
-                            .map(ConvertedValue::UInt160)
-                            .map_err(|e| e.to_string())
-                    })
-                }
                 _ => Err("Expected UInt160".to_string()),
             },
             InteropParameterType::UInt256 => match item {
-                StackItem::Null => Ok(ConvertedValue::UInt256(crate::UInt256::default())),
-                StackItem::ByteString(bytes) if bytes.len() == 32 => {
+                StackValue::Null => Ok(ConvertedValue::UInt256(crate::UInt256::default())),
+                StackValue::ByteString(bytes) | StackValue::Buffer(bytes) if bytes.len() == 32 => {
                     let mut arr = [0u8; 32];
                     arr.copy_from_slice(bytes);
                     let value = crate::UInt256::from_bytes(&arr).map_err(|e| e.to_string())?;
                     Ok(ConvertedValue::UInt256(value))
                 }
-                StackItem::Buffer(buffer) if buffer.len() == 32 => {
-                    buffer.with_data(|data| {
-                        let mut arr = [0u8; 32];
-                        arr.copy_from_slice(data);
-                        crate::UInt256::from_bytes(&arr)
-                            .map(ConvertedValue::UInt256)
-                            .map_err(|e| e.to_string())
-                    })
-                }
                 _ => Err("Expected UInt256".to_string()),
             },
-            _ => Ok(ConvertedValue::StackItem(item.clone())),
+            _ => Ok(ConvertedValue::StackValue(item.clone())),
         }
+    }
+}
+
+fn stack_value_bigint(item: &StackValue) -> Result<BigInt, String> {
+    match item {
+        StackValue::Boolean(value) => Ok(BigInt::from(i32::from(*value))),
+        StackValue::Integer(value) => Ok(BigInt::from(*value)),
+        StackValue::BigInteger(bytes)
+        | StackValue::ByteString(bytes)
+        | StackValue::Buffer(bytes) => {
+            if bytes.len() > MAX_INTEGER_SIZE {
+                return Err("Expected integer".to_string());
+            }
+            Ok(BigInt::from_signed_bytes_le(bytes))
+        }
+        _ => Err("Expected integer".to_string()),
     }
 }
 
@@ -227,7 +231,7 @@ pub enum ConvertedValue {
     /// A null value preserved for nullable interop parameters.
     Null,
     /// A generic stack item.
-    StackItem(StackItem),
+    StackValue(StackValue),
     /// A boolean value.
     Boolean(bool),
     /// A 32-bit integer.
@@ -245,6 +249,7 @@ pub enum ConvertedValue {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use neo_vm_rs::StackValue;
 
     #[test]
     fn non_nullable_string_rejects_null() {
@@ -252,9 +257,39 @@ mod tests {
             InteropParameterDescriptor::new("value".to_string(), InteropParameterType::String);
 
         let err = descriptor
-            .convert(&StackItem::Null)
+            .convert(&StackValue::Null)
             .expect_err("non-nullable strings must reject null");
 
         assert!(err.contains("null"));
+    }
+
+    #[test]
+    fn converts_primitive_stack_values_without_local_stack_item() {
+        let int_descriptor =
+            InteropParameterDescriptor::new("value".to_string(), InteropParameterType::Int);
+        assert!(matches!(
+            int_descriptor
+                .convert(&StackValue::BigInteger(vec![42]))
+                .unwrap(),
+            ConvertedValue::Int(42)
+        ));
+
+        let string_descriptor =
+            InteropParameterDescriptor::new("value".to_string(), InteropParameterType::String);
+        assert!(matches!(
+            string_descriptor
+                .convert(&StackValue::ByteString(b"neo".to_vec()))
+                .unwrap(),
+            ConvertedValue::String(value) if value == "neo"
+        ));
+
+        let generic_descriptor =
+            InteropParameterDescriptor::new("value".to_string(), InteropParameterType::StackItem);
+        assert!(matches!(
+            generic_descriptor
+                .convert(&StackValue::Array(vec![StackValue::Boolean(true)]))
+                .unwrap(),
+            ConvertedValue::StackValue(StackValue::Array(values)) if values == vec![StackValue::Boolean(true)]
+        ));
     }
 }

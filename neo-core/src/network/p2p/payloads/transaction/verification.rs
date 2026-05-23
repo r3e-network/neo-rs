@@ -34,16 +34,8 @@ impl Transaction {
         context: Option<&crate::ledger::TransactionVerificationContext>,
         conflicts_list: &[Transaction],
     ) -> VerifyResult {
-        let height = LedgerContract::new()
-            .current_index(snapshot)
-            .unwrap_or(0);
-        self.verify_state_dependent_at_height(
-            settings,
-            snapshot,
-            height,
-            context,
-            conflicts_list,
-        )
+        let height = LedgerContract::new().current_index(snapshot).unwrap_or(0);
+        self.verify_state_dependent_at_height(settings, snapshot, height, context, conflicts_list)
     }
 
     /// Verifies the state-dependent part of the transaction with an explicit
@@ -233,7 +225,7 @@ impl Transaction {
             return VerifyResult::OverSize;
         }
 
-        if neo_vm::Script::new(self.script.clone(), true).is_err() {
+        if crate::script_validation::validate_strict_script(&self.script).is_err() {
             return VerifyResult::InvalidScript;
         }
 
@@ -358,7 +350,7 @@ impl Transaction {
 
         let verification_gas = gas.min(Helper::MAX_VERIFICATION_GAS);
 
-        if neo_vm::Script::new(witness.invocation_script.clone(), true).is_err() {
+        if crate::script_validation::validate_strict_script(&witness.invocation_script).is_err() {
             return false;
         }
 
@@ -413,7 +405,7 @@ impl Transaction {
             if witness.script_hash() != *hash {
                 return false;
             }
-            if neo_vm::Script::new(verification_script.clone(), true).is_err() {
+            if crate::script_validation::validate_strict_script(&verification_script).is_err() {
                 return false;
             }
             if engine
@@ -475,7 +467,7 @@ impl Transaction {
         if invocation.len() != 66 {
             return None;
         }
-        if invocation[0] != OpCode::PUSHDATA1 as u8 || invocation[1] != 0x40 {
+        if invocation[0] != OpCode::PUSHDATA1.byte() || invocation[1] != 0x40 {
             return None;
         }
         Some(&invocation[2..66])

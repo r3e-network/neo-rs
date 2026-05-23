@@ -19,13 +19,14 @@ use crate::server::diagnostic::Diagnostic;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_server::RpcServer;
 use crate::server::session::Session;
-use neo_vm::stack_item::StackItem;
-use neo_vm::vm_state::VMState;
+use neo_core::neo_vm::stack_item::StackItem;
+use neo_core::neo_vm::vm_state::VMState;
 
 use super::helpers::{
     build_dynamic_call_script, diagnostic_invocation_to_json, diagnostic_storage_changes,
-    expect_string_param, internal_error, invalid_params, notification_to_json,
-    parse_contract_parameters, parse_signers_and_witnesses, stack_item_to_json,
+    expect_string_param, final_rpc_vm_state_string, internal_error, invalid_params,
+    notification_to_json, parse_contract_parameters, parse_signers_and_witnesses,
+    stack_item_to_json,
 };
 
 const TRANSACTION_TYPE_NAME: &str = "Neo.Network.P2P.Payloads.Transaction";
@@ -106,7 +107,7 @@ fn execute_script(
     ) = {
         let engine = session.engine();
         let vm_state = engine.state();
-        let engine_state = format!("{vm_state:?}");
+        let engine_state = final_rpc_vm_state_string(vm_state)?;
         let system_fee = engine.fee_consumed();
         let exception_value = engine.fault_exception().map_or(Value::Null, |msg| {
             Value::String(normalize_fault_message(msg))

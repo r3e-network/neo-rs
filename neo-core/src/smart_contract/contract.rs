@@ -2,9 +2,9 @@
 
 use crate::cryptography::{ECPoint, NeoHash};
 use crate::error::CoreError;
+use crate::script_builder::ScriptBuilder;
 use crate::smart_contract::ContractParameterType;
 use crate::UInt160;
-use neo_vm::ScriptBuilder;
 use std::sync::OnceLock;
 
 /// Error type for multi-signature contract creation.

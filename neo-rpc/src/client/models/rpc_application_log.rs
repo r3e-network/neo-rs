@@ -16,7 +16,8 @@ use neo_core::config::ProtocolSettings;
 use neo_core::smart_contract::TriggerType;
 use neo_json::{JArray, JObject, JToken};
 use neo_primitives::{UInt160, UInt256};
-use neo_vm::{StackItem, VMState};
+use neo_vm_rs::StackValue;
+use neo_vm_rs::VmState;
 /// Application log information matching C# `RpcApplicationLog`
 #[derive(Debug, Clone)]
 pub struct RpcApplicationLog {
@@ -97,7 +98,7 @@ pub struct Execution {
     pub trigger: TriggerType,
 
     /// VM state
-    pub vm_state: VMState,
+    pub vm_state: VmState,
 
     /// Gas consumed
     pub gas_consumed: i64,
@@ -106,7 +107,7 @@ pub struct Execution {
     pub exception_message: Option<String>,
 
     /// Stack items
-    pub stack: Vec<StackItem>,
+    pub stack: Vec<StackValue>,
 
     /// Notifications
     pub notifications: Vec<RpcNotifyEventArgs>,
@@ -229,7 +230,7 @@ pub struct RpcNotifyEventArgs {
     pub event_name: String,
 
     /// Event state/data
-    pub state: StackItem,
+    pub state: StackValue,
 }
 
 impl RpcNotifyEventArgs {
@@ -359,7 +360,7 @@ mod tests {
         assert_eq!(parsed.executions.len(), 1);
         let exec = &parsed.executions[0];
         assert_eq!(exec.trigger, TriggerType::ON_PERSIST);
-        assert_eq!(exec.vm_state, VMState::HALT);
+        assert_eq!(exec.vm_state, VmState::Halt);
         assert_eq!(exec.gas_consumed, 1);
         assert_eq!(exec.stack.len(), 1);
         assert_eq!(exec.notifications.len(), 1);

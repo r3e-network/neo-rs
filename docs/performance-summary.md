@@ -10,7 +10,7 @@
 
 ### 2. VM Engine Construction
 
-- **File**: `neo-vm/src/execution_engine/core.rs`
+- **File**: `neo-core/src/neo_vm/execution_engine/core.rs`
 - **Change**: Optimized ReferenceCounter Arc clone order
 - **Impact**: One less Arc increment per engine creation
 
@@ -22,14 +22,14 @@
 
 ### 4. VM Error Messages
 
-- **File**: `neo-vm/src/execution_engine/context.rs`
+- **File**: `neo-core/src/neo_vm/execution_engine/context.rs`
 - **Change**: `.to_string()` → `.into()` for static strings
 - **Impact**: More idiomatic Rust conversion
 
 ## Verification Results
 
 ✅ **Build**: 2m 00s (release mode)
-✅ **Tests**: 731 passed (neo-core + neo-vm)
+✅ **Tests**: 731 passed (neo-core, including VM compatibility module)
 ✅ **Regressions**: None
 
 ## Next Steps

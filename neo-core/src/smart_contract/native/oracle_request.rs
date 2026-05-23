@@ -1,10 +1,8 @@
 //! OracleRequest - matches C# Neo.SmartContract.Native.OracleRequest exactly
 
 use crate::error::CoreError;
-use crate::smart_contract::i_interoperable::IInteroperable;
 use crate::{UInt160, UInt256};
-use neo_vm::StackItem;
-use num_traits::ToPrimitive;
+use neo_vm_rs::StackValue;
 
 /// Oracle request state (matches C# OracleRequest)
 #[derive(Clone, Debug)]
@@ -52,17 +50,31 @@ impl OracleRequest {
             user_data,
         }
     }
-}
 
-impl IInteroperable for OracleRequest {
-    fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
-        if let StackItem::Array(array_item) = stack_item {
-            let items = array_item.items();
+    /// Converts to a neo-vm-rs stack value.
+    pub fn to_stack_value(&self) -> StackValue {
+        StackValue::Array(vec![
+            StackValue::ByteString(self.original_tx_id.to_bytes()),
+            StackValue::Integer(self.gas_for_response),
+            StackValue::ByteString(self.url.as_bytes().to_vec()),
+            match &self.filter {
+                Some(filter) => StackValue::ByteString(filter.as_bytes().to_vec()),
+                None => StackValue::Null,
+            },
+            StackValue::ByteString(self.callback_contract.to_bytes()),
+            StackValue::ByteString(self.callback_method.as_bytes().to_vec()),
+            StackValue::ByteString(self.user_data.clone()),
+        ])
+    }
+
+    /// Updates this oracle request from a neo-vm-rs stack value.
+    pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError> {
+        if let StackValue::Array(items) = stack_value {
             if items.len() < 7 {
                 return Ok(());
             }
 
-            if let Ok(bytes) = items[0].as_bytes() {
+            if let Some(bytes) = items[0].to_byte_string_bytes() {
                 if bytes.len() == 32 {
                     if let Ok(hash) = UInt256::from_bytes(&bytes) {
                         self.original_tx_id = hash;
@@ -70,27 +82,28 @@ impl IInteroperable for OracleRequest {
                 }
             }
 
-            if let Ok(integer) = items[1].as_int() {
-                if let Some(value) = integer.to_i64() {
-                    self.gas_for_response = value;
-                }
+            if let Some(value) = items[1]
+                .to_i128()
+                .and_then(|integer| i64::try_from(integer).ok())
+            {
+                self.gas_for_response = value;
             }
 
-            if let Ok(bytes) = items[2].as_bytes() {
+            if let Some(bytes) = items[2].to_byte_string_bytes() {
                 if let Ok(url) = String::from_utf8(bytes) {
                     self.url = url;
                 }
             }
 
-            if matches!(items[3], StackItem::Null) {
+            if matches!(items[3], StackValue::Null) {
                 self.filter = None;
-            } else if let Ok(bytes) = items[3].as_bytes() {
+            } else if let Some(bytes) = items[3].to_byte_string_bytes() {
                 if let Ok(filter) = String::from_utf8(bytes) {
                     self.filter = Some(filter);
                 }
             }
 
-            if let Ok(bytes) = items[4].as_bytes() {
+            if let Some(bytes) = items[4].to_byte_string_bytes() {
                 if bytes.len() == 20 {
                     if let Ok(hash) = UInt160::from_bytes(&bytes) {
                         self.callback_contract = hash;
@@ -98,35 +111,84 @@ impl IInteroperable for OracleRequest {
                 }
             }
 
-            if let Ok(bytes) = items[5].as_bytes() {
+            if let Some(bytes) = items[5].to_byte_string_bytes() {
                 if let Ok(method) = String::from_utf8(bytes) {
                     self.callback_method = method;
                 }
             }
 
-            if let Ok(bytes) = items[6].as_bytes() {
+            if let Some(bytes) = items[6].to_byte_string_bytes() {
                 self.user_data = bytes;
             }
         }
+
         Ok(())
     }
+}
 
-    fn to_stack_item(&self) -> Result<StackItem, CoreError> {
-        Ok(StackItem::from_array(vec![
-            StackItem::from_byte_string(self.original_tx_id.to_bytes()),
-            StackItem::from_int(self.gas_for_response),
-            StackItem::from_byte_string(self.url.as_bytes()),
-            match &self.filter {
-                Some(filter) => StackItem::from_byte_string(filter.as_bytes()),
-                None => StackItem::null(),
-            },
-            StackItem::from_byte_string(self.callback_contract.to_bytes()),
-            StackItem::from_byte_string(self.callback_method.as_bytes()),
-            StackItem::from_byte_string(self.user_data.clone()),
-        ]))
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use neo_vm_rs::StackValue;
+
+    fn sample_request(filter: Option<&str>) -> OracleRequest {
+        OracleRequest::new(
+            UInt256::from_bytes(&[1u8; 32]).unwrap(),
+            1_000,
+            "https://oracle.test/data".to_string(),
+            filter.map(str::to_string),
+            UInt160::from_bytes(&[2u8; 20]).unwrap(),
+            "callback".to_string(),
+            vec![3, 4, 5],
+        )
     }
 
-    fn clone_box(&self) -> Box<dyn IInteroperable> {
-        Box::new(self.clone())
+    #[test]
+    fn oracle_request_projects_to_neo_vm_rs_stack_value() {
+        let request = sample_request(Some("$.price"));
+
+        assert_eq!(
+            request.to_stack_value(),
+            StackValue::Array(vec![
+                StackValue::ByteString(vec![1u8; 32]),
+                StackValue::Integer(1_000),
+                StackValue::ByteString(b"https://oracle.test/data".to_vec()),
+                StackValue::ByteString(b"$.price".to_vec()),
+                StackValue::ByteString(vec![2u8; 20]),
+                StackValue::ByteString(b"callback".to_vec()),
+                StackValue::ByteString(vec![3, 4, 5]),
+            ])
+        );
+    }
+
+    #[test]
+    fn oracle_request_reads_from_neo_vm_rs_stack_value() {
+        let mut request = sample_request(Some("old"));
+
+        request
+            .from_stack_value(StackValue::Array(vec![
+                StackValue::ByteString(vec![9u8; 32]),
+                StackValue::Integer(99),
+                StackValue::ByteString(b"https://new.test".to_vec()),
+                StackValue::Null,
+                StackValue::ByteString(vec![8u8; 20]),
+                StackValue::ByteString(b"updated".to_vec()),
+                StackValue::ByteString(vec![7, 6]),
+            ]))
+            .unwrap();
+
+        assert_eq!(
+            request.original_tx_id,
+            UInt256::from_bytes(&[9u8; 32]).unwrap()
+        );
+        assert_eq!(request.gas_for_response, 99);
+        assert_eq!(request.url, "https://new.test");
+        assert_eq!(request.filter, None);
+        assert_eq!(
+            request.callback_contract,
+            UInt160::from_bytes(&[8u8; 20]).unwrap()
+        );
+        assert_eq!(request.callback_method, "updated");
+        assert_eq!(request.user_data, vec![7, 6]);
     }
 }

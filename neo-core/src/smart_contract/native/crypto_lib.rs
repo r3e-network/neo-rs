@@ -8,11 +8,11 @@ use crate::cryptography::{Crypto, Ed25519Crypto, HashAlgorithm, NamedCurveHash};
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
 use crate::hardfork::Hardfork;
+use crate::neo_vm::stack_item::InteropInterface as VmInteropInterface;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::native::{NativeContract, NativeMethod};
 use crate::smart_contract::ContractParameterType;
 use crate::UInt160;
-use neo_vm::stack_item::InteropInterface as VmInteropInterface;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use std::any::Any;
@@ -322,14 +322,13 @@ impl CryptoLib {
                     ("sha256", 1) => method.with_parameter_names(vec!["data".to_string()]),
                     // C# has two verifyWithECDsa methods: V0 (pre-Cockatrice, param name "curve")
                     // and V1 (post-Cockatrice, param name "curveHash"). Distinguish by active_in.
-                    ("verifyWithECDsa", 4) if method.active_in.is_some() => {
-                        method.with_parameter_names(vec![
+                    ("verifyWithECDsa", 4) if method.active_in.is_some() => method
+                        .with_parameter_names(vec![
                             "message".to_string(),
                             "pubkey".to_string(),
                             "signature".to_string(),
                             "curveHash".to_string(),
-                        ])
-                    }
+                        ]),
                     ("verifyWithECDsa", 4) => method.with_parameter_names(vec![
                         "message".to_string(),
                         "pubkey".to_string(),
@@ -1089,5 +1088,4 @@ mod tests {
         let result = lib.ripemd160(&[data]).unwrap();
         assert_eq!(result.len(), 20);
     }
-
 }

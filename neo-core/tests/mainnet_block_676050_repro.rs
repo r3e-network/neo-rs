@@ -69,7 +69,9 @@ fn u256(hex: &str) -> UInt256 {
 fn witness(invocation_b64: &str, verification_b64: &str) -> Witness {
     Witness::new_with_scripts(
         BASE64.decode(invocation_b64).expect("base64 invocation"),
-        BASE64.decode(verification_b64).expect("base64 verification"),
+        BASE64
+            .decode(verification_b64)
+            .expect("base64 verification"),
     )
 }
 
@@ -126,9 +128,7 @@ fn replay_block_676050_debug() {
         let trie = Arc::clone(&trie);
         Arc::new(
             move |prefix: Option<&neo_core::smart_contract::StorageKey>, _dir: SeekDirection| {
-                let prefix_bytes = prefix
-                    .map(|k| k.to_array().to_owned())
-                    .unwrap_or_default();
+                let prefix_bytes = prefix.map(|k| k.to_array().to_owned()).unwrap_or_default();
                 let mut trie = trie.lock();
                 trie.find(&prefix_bytes, None)
                     .expect("trie find")
@@ -302,7 +302,10 @@ fn replay_block_676050_debug() {
             );
             eprintln!("notifications ({}):", notifs.len());
             for (i, n) in notifs.iter().enumerate() {
-                eprintln!("  [{}] contract={} event={}", i, n.script_hash, n.event_name);
+                eprintln!(
+                    "  [{}] contract={} event={}",
+                    i, n.script_hash, n.event_name
+                );
             }
         }
 
@@ -313,7 +316,7 @@ fn replay_block_676050_debug() {
         // Both txs HALT on mainnet — if either FAULTs, we have a divergence
         assert_eq!(
             vm_state,
-            neo_vm::VMState::HALT,
+            neo_core::neo_vm::VMState::HALT,
             "tx{} must HALT (gas={gas})",
             idx,
         );
@@ -337,7 +340,9 @@ fn replay_block_676050_debug() {
     )
     .expect("post persist engine");
     post_persist_engine.set_state(tx_states);
-    post_persist_engine.native_post_persist().expect("post persist");
+    post_persist_engine
+        .native_post_persist()
+        .expect("post persist");
     drop(post_persist_engine);
 
     // Apply all non-Ledger storage changes to the trie and compute the new state root.
@@ -401,10 +406,9 @@ fn replay_block_676050_debug() {
         "\napplied={} skipped_ledger={} new_root={}",
         applied, skipped_ledger, new_root
     );
-    let expected_csharp_root = UInt256::parse(
-        "0x7f71b288568a951c5da2a953c127547d7bb1e1fee0d9772a32deb3db5c518399",
-    )
-    .expect("parse expected C# root");
+    let expected_csharp_root =
+        UInt256::parse("0x7f71b288568a951c5da2a953c127547d7bb1e1fee0d9772a32deb3db5c518399")
+            .expect("parse expected C# root");
     assert_eq!(
         new_root, expected_csharp_root,
         "block 676050 OnPersist + 2-HALT-tx + PostPersist state root must match C# v3.9.1",

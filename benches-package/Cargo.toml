@@ -6,9 +6,9 @@ edition = "2021"
 [dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
 neo-core = { path = "../neo-core" }
-neo-vm = { path = "../neo-vm" }
 neo-io = { path = "../neo-io" }
 neo-primitives = { path = "../neo-primitives" }
+neo-vm-rs = { workspace = true }
 hex = "0.4"
 
 [[bench]]

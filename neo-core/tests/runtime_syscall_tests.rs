@@ -3,9 +3,12 @@ use neo_core::cryptography::Secp256r1Crypto;
 use neo_core::ledger::block_header::BlockHeader;
 use neo_core::ledger::Block;
 use neo_core::neo_io::BinaryWriter;
+use neo_core::neo_vm::vm_state::VMState;
+use neo_core::neo_vm::StackItem;
 use neo_core::network::p2p::payloads::{Signer, Transaction, WitnessScope};
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
+use neo_core::script_builder::ScriptBuilder;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::smart_contract::contract_parameter_type::ContractParameterType;
@@ -18,8 +21,7 @@ use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::smart_contract::{StorageItem, StorageKey};
 use neo_core::wallets::KeyPair;
 use neo_core::{UInt160, UInt256};
-use neo_vm::vm_state::VMState;
-use neo_vm::{OpCode, ScriptBuilder, StackItem};
+use neo_vm_rs::OpCode;
 use num_traits::ToPrimitive;
 use std::sync::Arc;
 
@@ -172,7 +174,7 @@ fn runtime_current_signers_returns_null_without_container() {
 fn runtime_get_script_container_returns_stack_item() {
     let snapshot = Arc::new(DataCache::new(false));
     let mut tx = Transaction::new();
-    tx.set_script(vec![OpCode::PUSH1 as u8]);
+    tx.set_script(vec![OpCode::PUSH1.byte()]);
     let account = UInt160::from_bytes(&[1u8; 20]).expect("account");
     tx.add_signer(Signer::new(account, WitnessScope::NONE));
     let container: Arc<dyn neo_core::IVerifiable> = Arc::new(tx.clone());
@@ -337,7 +339,7 @@ fn runtime_log_emits_event() {
     .expect("engine");
 
     engine
-        .load_script(vec![OpCode::RET as u8], CallFlags::ALL, None)
+        .load_script(vec![OpCode::RET.byte()], CallFlags::ALL, None)
         .expect("load script");
     engine
         .push(StackItem::from_byte_string("hello".as_bytes()))
@@ -888,7 +890,7 @@ fn make_contract_with_group(
     name: &str,
     group: Option<neo_core::ECPoint>,
 ) -> ContractState {
-    let nef = NefFile::new(name.to_string(), vec![OpCode::RET as u8]);
+    let nef = NefFile::new(name.to_string(), vec![OpCode::RET.byte()]);
     let hash = ContractState::calculate_hash(&UInt160::zero(), nef.checksum, name);
     let mut manifest = ContractManifest::new(name.to_string());
     if let Some(group) = group {
@@ -919,7 +921,7 @@ fn persist_transaction_state(snapshot: &DataCache, tx: &Transaction, block_index
         .write_u8(RECORD_KIND_TRANSACTION)
         .expect("record kind");
     writer.write_u32(block_index).expect("block index");
-    writer.write_u8(VMState::NONE as u8).expect("vm state");
+    writer.write_u8(VMState::NONE.to_byte()).expect("vm state");
     writer
         .write_var_bytes(&tx_writer.into_bytes())
         .expect("tx bytes");
@@ -935,18 +937,18 @@ fn persist_oracle_request(snapshot: &DataCache, id: u64, original_tx_id: UInt256
     // bincode payload. Items: [original_tx_id(32B), gas_for_response(int),
     // url(str), filter(str|null), callback_contract(20B), callback_method(str),
     // user_data(bytes)].
-    let stack_item = neo_vm::StackItem::from_array(vec![
-        neo_vm::StackItem::from_byte_string(original_tx_id.to_bytes()),
-        neo_vm::StackItem::from_int(10_000_000i64),
-        neo_vm::StackItem::from_byte_string(b"https://example.com".to_vec()),
-        neo_vm::StackItem::from_byte_string(Vec::<u8>::new()),
-        neo_vm::StackItem::from_byte_string(UInt160::zero().to_bytes()),
-        neo_vm::StackItem::from_byte_string(b"callback".to_vec()),
-        neo_vm::StackItem::from_byte_string(Vec::<u8>::new()),
+    let stack_item = neo_core::neo_vm::StackItem::from_array(vec![
+        neo_core::neo_vm::StackItem::from_byte_string(original_tx_id.to_bytes()),
+        neo_core::neo_vm::StackItem::from_int(10_000_000i64),
+        neo_core::neo_vm::StackItem::from_byte_string(b"https://example.com".to_vec()),
+        neo_core::neo_vm::StackItem::from_byte_string(Vec::<u8>::new()),
+        neo_core::neo_vm::StackItem::from_byte_string(UInt160::zero().to_bytes()),
+        neo_core::neo_vm::StackItem::from_byte_string(b"callback".to_vec()),
+        neo_core::neo_vm::StackItem::from_byte_string(Vec::<u8>::new()),
     ]);
     let bytes = neo_core::smart_contract::binary_serializer::BinarySerializer::serialize(
         &stack_item,
-        &neo_vm::ExecutionEngineLimits::default(),
+        &neo_core::neo_vm::ExecutionEngineLimits::default(),
     )
     .expect("serialize oracle request");
 
@@ -1173,7 +1175,7 @@ fn runtime_get_calling_script_hash_matches_dynamic_caller() {
 fn runtime_dynamic_void_call_with_initialize_leaves_null_placeholder() {
     let snapshot = Arc::new(DataCache::new(false));
 
-    let callee_script = vec![OpCode::RET as u8, OpCode::RET as u8];
+    let callee_script = vec![OpCode::RET.byte(), OpCode::RET.byte()];
     let init_method = ContractMethodDescriptor::new(
         "_initialize".to_string(),
         Vec::new(),
@@ -1339,7 +1341,7 @@ fn runtime_get_notifications_reports_all_and_filtered() {
     let entry_event =
         ContractEventDescriptor::new("testEvent1".to_string(), Vec::new()).expect("event");
     let entry_manifest = manifest_with("entry", Vec::new(), vec![entry_event]);
-    let entry_nef = NefFile::new("entry".to_string(), vec![OpCode::RET as u8]);
+    let entry_nef = NefFile::new("entry".to_string(), vec![OpCode::RET.byte()]);
     let entry_hash = ContractState::calculate_hash(&UInt160::zero(), entry_nef.checksum, "entry");
     let entry_contract = ContractState::new(7, entry_hash, entry_nef, entry_manifest);
     let state_arc = engine.current_execution_state().expect("execution context");

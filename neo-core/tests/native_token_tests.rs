@@ -1,5 +1,7 @@
+use neo_core::neo_vm::ExecutionEngineLimits;
 use neo_core::network::p2p::payloads::{signer::Signer, transaction::Transaction};
 use neo_core::persistence::DataCache;
+use neo_core::script_builder::ScriptBuilder;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::binary_serializer::BinarySerializer;
 use neo_core::smart_contract::call_flags::CallFlags;
@@ -14,7 +16,7 @@ use neo_core::smart_contract::IInteroperable;
 use neo_core::wallets::KeyPair;
 use neo_core::witness::Witness;
 use neo_core::{IVerifiable, UInt160, WitnessScope};
-use neo_vm::{ExecutionEngineLimits, OpCode, ScriptBuilder};
+use neo_vm_rs::OpCode;
 use num_bigint::BigInt;
 use num_traits::Zero;
 use std::sync::Arc;
@@ -60,7 +62,7 @@ fn system_contract_call_can_invoke_native_gas_symbol() {
         .expect("symbol method descriptor");
     assert_eq!(
         state.nef.script[symbol_descriptor.offset as usize],
-        OpCode::PUSH0 as u8
+        OpCode::PUSH0.byte()
     );
     let mut sb = ScriptBuilder::new();
 
@@ -216,7 +218,7 @@ fn call_native_contract_refreshes_contract_sender_context_before_gas_transfer() 
         .expect("mint succeeds");
 
     engine
-        .load_script(vec![OpCode::RET as u8], CallFlags::ALL, None)
+        .load_script(vec![OpCode::RET.byte()], CallFlags::ALL, None)
         .expect("load dummy script");
     let current_context = engine.current_context().cloned().expect("current context");
     let state_arc = current_context
@@ -338,7 +340,7 @@ fn gas_transfer_triggers_on_nep17_payment_with_native_caller() {
     assert_eq!(transfer_result, vec![1]);
 
     engine
-        .load_script(vec![OpCode::RET as u8], CallFlags::ALL, None)
+        .load_script(vec![OpCode::RET.byte()], CallFlags::ALL, None)
         .expect("load dummy");
     engine
         .process_pending_native_calls()
@@ -447,7 +449,7 @@ fn gas_transfer_passes_raw_any_payload_into_on_nep17_payment() {
     assert_eq!(transfer_result, vec![1]);
 
     engine
-        .load_script(vec![OpCode::RET as u8], CallFlags::ALL, None)
+        .load_script(vec![OpCode::RET.byte()], CallFlags::ALL, None)
         .expect("load dummy");
     engine
         .process_pending_native_calls()

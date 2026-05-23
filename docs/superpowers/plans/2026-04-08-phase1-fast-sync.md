@@ -578,7 +578,7 @@ Expected: 169
 
 - [ ] **Step 2: Verify no regressions**
 
-Run: `cargo bench -p neo-vm --bench vm_execution -- --quick 2>&1 | tail -20`
+Run: `cargo bench -p neo-benches --bench vm_execution -- --quick 2>&1 | tail -20`
 Expected: VM benchmarks unchanged or improved
 
 - [ ] **Step 3: Push all commits**

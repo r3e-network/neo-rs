@@ -153,7 +153,7 @@ impl InteropHost for ApplicationEngine {
         _engine: &mut ExecutionEngine,
         instruction: &Instruction,
     ) -> VmResult<()> {
-        let opcode_price = Self::get_opcode_price(instruction.opcode as u8);
+        let opcode_price = Self::get_opcode_price(instruction.opcode.byte());
         if opcode_price > 0 {
             self.add_cpu_fee(opcode_price)
                 .map_err(map_core_error_to_vm_error)?;

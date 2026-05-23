@@ -61,7 +61,7 @@ fn calculate_network_fee_for_standard_signature() {
     tx.set_signers(vec![Signer::new(script_hash, WitnessScope::GLOBAL)]);
 
     let mut invocation = Vec::new();
-    invocation.push(neo_vm::op_code::OpCode::PUSHDATA1 as u8);
+    invocation.push(neo_vm_rs::OpCode::PUSHDATA1.byte());
     invocation.push(64);
     invocation.extend_from_slice(&[0u8; 64]);
 

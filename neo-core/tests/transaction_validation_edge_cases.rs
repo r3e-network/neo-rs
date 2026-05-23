@@ -12,6 +12,7 @@ use neo_core::neo_io::{BinaryWriter, Serializable};
 use neo_core::network::p2p::payloads::{signer::Signer, witness::Witness, InventoryType};
 use neo_core::persistence::{DataCache, StorageItem, StorageKey};
 use neo_core::protocol_settings::ProtocolSettings;
+use neo_core::script_builder::ScriptBuilder;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::application_engine::TEST_MODE_GAS;
 use neo_core::smart_contract::call_flags::CallFlags;
@@ -35,8 +36,7 @@ use neo_core::{
     network::p2p::helper::get_sign_data_vec, Transaction, TransactionAttribute,
     TransactionAttributeType, UInt160, WitnessScope, HEADER_SIZE, MAX_TRANSACTION_SIZE,
 };
-use neo_vm::op_code::OpCode;
-use neo_vm::ScriptBuilder;
+use neo_vm_rs::OpCode;
 use num_bigint::BigInt;
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
@@ -186,7 +186,7 @@ fn get_test_byte_array(size: usize, fill_byte: u8) -> Vec<u8> {
 
 fn make_signature_invocation_with(signature: &[u8]) -> Vec<u8> {
     let mut invocation = Vec::with_capacity(2 + signature.len());
-    invocation.push(OpCode::PUSHDATA1 as u8);
+    invocation.push(OpCode::PUSHDATA1.byte());
     invocation.push(signature.len() as u8);
     invocation.extend_from_slice(signature);
     invocation
@@ -199,7 +199,7 @@ fn make_signature_invocation() -> Vec<u8> {
 fn make_multi_sig_invocation(m: usize) -> Vec<u8> {
     let mut invocation = Vec::with_capacity(66 * m);
     for _ in 0..m {
-        invocation.push(OpCode::PUSHDATA1 as u8);
+        invocation.push(OpCode::PUSHDATA1.byte());
         invocation.push(64);
         invocation.extend_from_slice(&[0u8; 64]);
     }
@@ -209,7 +209,7 @@ fn make_multi_sig_invocation(m: usize) -> Vec<u8> {
 fn make_multi_sig_invocation_with(signatures: &[Vec<u8>]) -> Vec<u8> {
     let mut invocation = Vec::with_capacity(66 * signatures.len());
     for signature in signatures {
-        invocation.push(OpCode::PUSHDATA1 as u8);
+        invocation.push(OpCode::PUSHDATA1.byte());
         invocation.push(signature.len() as u8);
         invocation.extend_from_slice(signature);
     }
@@ -253,7 +253,7 @@ fn signature_fee_for_signer(signer: Signer, verification_script: Vec<u8>) -> i64
     tx.set_system_fee(0);
     tx.set_network_fee(0);
     tx.set_valid_until_block(1);
-    tx.set_script(vec![OpCode::PUSH1 as u8]);
+    tx.set_script(vec![OpCode::PUSH1.byte()]);
     tx.set_signers(vec![signer]);
     tx.set_attributes(Vec::new());
     tx.set_witnesses(Vec::new());
@@ -645,7 +645,7 @@ mod tests {
         tx.set_system_fee(0);
         tx.set_network_fee(0);
         tx.set_valid_until_block(1);
-        tx.set_script(vec![OpCode::PUSH1 as u8]);
+        tx.set_script(vec![OpCode::PUSH1.byte()]);
         tx.set_signers(vec![Signer::new(script_hash, WitnessScope::GLOBAL)]);
         tx.set_attributes(Vec::new());
         tx.set_witnesses(Vec::new());
@@ -705,7 +705,7 @@ mod tests {
         tx.set_system_fee(0);
         tx.set_network_fee(0);
         tx.set_valid_until_block(1);
-        tx.set_script(vec![OpCode::PUSH1 as u8]);
+        tx.set_script(vec![OpCode::PUSH1.byte()]);
         tx.set_signers(vec![Signer::new(script_hash, WitnessScope::GLOBAL)]);
         tx.set_attributes(Vec::new());
         tx.set_witnesses(Vec::new());
@@ -763,7 +763,7 @@ mod tests {
         tx.set_system_fee(0);
         tx.set_network_fee(0);
         tx.set_valid_until_block(1);
-        tx.set_script(vec![OpCode::PUSH1 as u8]);
+        tx.set_script(vec![OpCode::PUSH1.byte()]);
         tx.set_signers(vec![Signer::new(script_hash, WitnessScope::GLOBAL)]);
         tx.set_attributes(Vec::new());
         tx.set_witnesses(Vec::new());
@@ -821,7 +821,7 @@ mod tests {
         tx.set_system_fee(0);
         tx.set_network_fee(0);
         tx.set_valid_until_block(1);
-        tx.set_script(vec![OpCode::PUSH1 as u8]);
+        tx.set_script(vec![OpCode::PUSH1.byte()]);
         tx.set_signers(vec![Signer::new(script_hash, WitnessScope::GLOBAL)]);
         tx.set_attributes(Vec::new());
         tx.set_witnesses(Vec::new());
@@ -1122,7 +1122,7 @@ mod tests {
         let snapshot = DataCache::new(false);
         let settings = ProtocolSettings::default();
 
-        let script = vec![OpCode::PUSH1 as u8, OpCode::RET as u8];
+        let script = vec![OpCode::PUSH1.byte(), OpCode::RET.byte()];
         let contract_hash = UInt160::from_script(&script);
 
         let method = ContractMethodDescriptor::new(
@@ -1146,7 +1146,7 @@ mod tests {
         tx.set_system_fee(0);
         tx.set_network_fee(0);
         tx.set_valid_until_block(1);
-        tx.set_script(vec![OpCode::PUSH1 as u8]);
+        tx.set_script(vec![OpCode::PUSH1.byte()]);
         tx.set_signers(vec![Signer::new(contract_hash, WitnessScope::GLOBAL)]);
         tx.set_attributes(Vec::new());
         tx.set_witnesses(vec![Witness::new_with_scripts(Vec::new(), Vec::new())]);
@@ -1201,7 +1201,7 @@ mod tests {
         tx.set_system_fee(0);
         tx.set_network_fee(0);
         tx.set_valid_until_block(1);
-        tx.set_script(vec![OpCode::PUSH1 as u8]);
+        tx.set_script(vec![OpCode::PUSH1.byte()]);
         tx.set_signers(vec![Signer::new(signer_hash, WitnessScope::GLOBAL)]);
         tx.set_attributes(Vec::new());
 
@@ -1237,7 +1237,7 @@ mod tests {
         tx.set_system_fee(0);
         tx.set_network_fee(0);
         tx.set_valid_until_block(1);
-        tx.set_script(vec![OpCode::PUSH1 as u8]);
+        tx.set_script(vec![OpCode::PUSH1.byte()]);
         tx.set_signers(vec![Signer::new(signer_hash, WitnessScope::GLOBAL)]);
         tx.set_attributes(Vec::new());
 
@@ -1289,7 +1289,7 @@ mod tests {
         tx.set_witnesses(vec![Witness::empty()]);
 
         // PUSHDATA1 claims 2 bytes but only 1 byte follows.
-        tx.set_script(vec![OpCode::PUSHDATA1 as u8, 0x02, 0x01]);
+        tx.set_script(vec![OpCode::PUSHDATA1.byte(), 0x02, 0x01]);
         assert_eq!(
             tx.verify_state_independent(&settings),
             VerifyResult::InvalidScript
@@ -1310,12 +1310,12 @@ mod tests {
         tx.set_system_fee(0);
         tx.set_network_fee(0);
         tx.set_valid_until_block(1);
-        tx.set_script(vec![OpCode::PUSH1 as u8]);
+        tx.set_script(vec![OpCode::PUSH1.byte()]);
         tx.set_signers(vec![Signer::new(signer_hash, WitnessScope::GLOBAL)]);
         tx.set_attributes(Vec::new());
 
         // Missing 64-byte signature payload.
-        let invalid_invocation = vec![OpCode::PUSHDATA1 as u8, 0x40];
+        let invalid_invocation = vec![OpCode::PUSHDATA1.byte(), 0x40];
         tx.set_witnesses(vec![Witness::new_with_scripts(
             invalid_invocation,
             verification_script,
@@ -1375,7 +1375,7 @@ mod tests {
         tx.set_system_fee(0);
         tx.set_network_fee(0);
         tx.set_valid_until_block(1);
-        tx.set_script(vec![OpCode::PUSH1 as u8]);
+        tx.set_script(vec![OpCode::PUSH1.byte()]);
         tx.set_signers(vec![Signer::new(signer_hash, WitnessScope::GLOBAL)]);
         tx.set_attributes(Vec::new());
 
@@ -1427,7 +1427,7 @@ mod tests {
         tx.set_system_fee(0);
         tx.set_network_fee(0);
         tx.set_valid_until_block(1);
-        tx.set_script(vec![OpCode::PUSH1 as u8]);
+        tx.set_script(vec![OpCode::PUSH1.byte()]);
         tx.set_signers(vec![Signer::new(UInt160::zero(), WitnessScope::GLOBAL)]);
         tx.set_attributes(Vec::new());
         tx.set_witnesses(Vec::new());
@@ -1485,7 +1485,7 @@ mod tests {
         tx.set_system_fee(10);
         tx.set_network_fee(55_000);
         tx.set_valid_until_block(1);
-        tx.set_script(vec![OpCode::PUSH1 as u8]);
+        tx.set_script(vec![OpCode::PUSH1.byte()]);
         tx.set_signers(vec![Signer::new(signer_hash, WitnessScope::GLOBAL)]);
         tx.set_attributes(Vec::new());
         tx.set_witnesses(vec![Witness::new_with_scripts(

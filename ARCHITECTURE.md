@@ -74,7 +74,7 @@ Neo-rs follows a **strict layered architecture** with clear dependency boundarie
 │                         CORE LAYER (Layer 1)                                │
 │                                                                             │
 │   ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │
-│   │   neo-core   │  │    neo-vm    │  │   neo-p2p    │  │  neo-consensus│   │
+│   │   neo-core   │  │  VM module   │  │   neo-p2p    │  │  neo-consensus│   │
 │   │              │  │              │  │              │  │              │    │
 │   │ • Protocol   │  │ • Stack VM   │  │ • Messages   │  │ • dBFT 2.0   │    │
 │   │ • Ledger     │  │ • OpCodes    │  │ • Handshake  │  │ • Consensus  │    │
@@ -137,7 +137,8 @@ The core layer implements blockchain protocol logic. It depends only on the Foun
 | Crate | Purpose | Key Types |
 |-------|---------|-----------|
 | `neo-core` | Protocol implementation | `Block`, `Transaction`, `Witness`, `Contract` |
-| `neo-vm` | Virtual machine | `ExecutionEngine`, `OpCode`, `StackItem`, `Script` |
+| `neo-core::neo_vm` | Virtual machine compatibility module backed by `neo-vm-rs` where available | `ExecutionEngine`, `StackItem`, `Script` |
+| `neo-vm-rs` | Shared low-level VM primitives used directly by callers | `OpCode`, `interop_hash`, `encode_integer` |
 | `neo-p2p` | P2P networking | `MessageCommand`, `InventoryType`, `VerifyResult` |
 | `neo-consensus` | dBFT consensus | `ConsensusService`, `ConsensusContext`, `ConsensusMessage` |
 | `neo-rpc` | RPC communication | `RpcServer`, `RpcClient`, `RpcErrorCode` |
@@ -215,7 +216,7 @@ serde = "1.0"  // External crates only
 [dependencies]
 neo-primitives = { path = "../neo-primitives" }
 neo-crypto = { path = "../neo-crypto" }
-neo-vm = { path = "../neo-vm" }
+neo-vm-rs = { workspace = true }
 
 // ✅ CORRECT: Service layer depends on Core and Foundation
 // neo-chain/Cargo.toml:
@@ -314,9 +315,9 @@ pub mod services {      // Service traits
 }
 ```
 
-#### neo-vm
+#### `neo-core::neo_vm`
 
-Complete Neo Virtual Machine implementation.
+Neo Virtual Machine compatibility module. Shared low-level opcode, ABI, and interpreter primitives come from `neo-vm-rs`.
 
 ```rust
 // Core VM types
@@ -332,8 +333,8 @@ pub struct ScriptBuilder { ... }
 pub enum StackItem { ... }
 pub enum VMState { HALT, FAULT, BREAK, ... }
 
-// All opcodes
-pub enum OpCode { PUSH0, PUSH1, ADD, ... }
+// Shared opcode definitions are imported directly from neo-vm-rs.
+neo_vm_rs::OpCode
 ```
 
 ---
@@ -448,7 +449,7 @@ let transaction = TransactionBuilder::new()
 │  Service (neo-chain, neo-mempool)                               │
 │  └── ChainError, MempoolError                                   │
 │                                                                 │
-│  Core (neo-core, neo-vm, neo-p2p, neo-rpc, neo-consensus)       │
+│  Core (neo-core, neo-p2p, neo-rpc, neo-consensus)               │
 │  └── CoreError, VmError, P2PError, RpcError, ConsensusError     │
 │                                                                 │
 │  Foundation (neo-primitives, neo-crypto, neo-storage, neo-io)   │
@@ -587,7 +588,7 @@ pub fn my_function() -> Result<(), Error> { ... }
 | `Neo.Ledger` | `neo-core` | `neo_core::ledger` |
 | `Neo.Network.P2P` | `neo-p2p` | `neo_p2p` |
 | `Neo.SmartContract` | `neo-core` | `neo_core::smart_contract` |
-| `Neo.VM` | `neo-vm` | `neo_vm` |
+| `Neo.VM` | `neo-core` | `neo_core::neo_vm` |
 | `Neo.Wallets` | `neo-core` | `neo_core::wallets` |
 | `Neo.Plugins.RpcServer` | `neo-rpc` | `neo_rpc::server` |
 | `Neo.Plugins.DBFTPlugin` | `neo-consensus` | `neo_consensus` |

@@ -21,9 +21,9 @@ use neo_core::wallets::{KeyPair, StandardWalletAccount, WalletAccount};
 use neo_core::{NeoSystem, ProtocolSettings, UInt160, WitnessScope};
 
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
-use neo_vm::execution_engine_limits::ExecutionEngineLimits;
-use neo_vm::op_code::OpCode;
-use neo_vm::stack_item::InteropInterface as VmInteropInterface;
+use neo_core::neo_vm::execution_engine_limits::ExecutionEngineLimits;
+use neo_core::neo_vm::stack_item::InteropInterface as VmInteropInterface;
+use neo_vm_rs::OpCode;
 use num_bigint::BigInt;
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -187,7 +187,7 @@ fn deploy_verify_contract(system: &Arc<NeoSystem>) -> UInt160 {
     let mut store_cache = system.context().store_snapshot_cache();
     let snapshot = Arc::new(store_cache.data_cache().clone());
 
-    let mut builder = neo_vm::script_builder::ScriptBuilder::new();
+    let mut builder = neo_core::script_builder::ScriptBuilder::new();
     builder.emit_push_bool(true);
     builder.emit_opcode(OpCode::RET);
     let nef = NefFile::new("test".to_string(), builder.to_array());
@@ -250,7 +250,7 @@ async fn invokescript_returns_fault_state_in_result() {
     let handlers = RpcServerSmartContract::register_handlers();
     let invokescript = find_handler(&handlers, "invokescript");
 
-    let script = vec![OpCode::ABORT as u8];
+    let script = vec![OpCode::ABORT.byte()];
     let params = [Value::String(BASE64_STANDARD.encode(script))];
     let result = (invokescript.callback())(&server, &params).expect("invoke result");
 
@@ -598,7 +598,7 @@ async fn invokescript_faults_when_gas_limit_exceeded() {
     let handlers = RpcServerSmartContract::register_handlers();
     let invokescript = find_handler(&handlers, "invokescript");
 
-    let mut builder = neo_vm::script_builder::ScriptBuilder::new();
+    let mut builder = neo_core::script_builder::ScriptBuilder::new();
     builder.emit_jump(OpCode::JMP_L, 0).expect("jump loop");
     let script = builder.to_array();
 
@@ -827,7 +827,7 @@ async fn traverse_iterator_rejects_expired_session() {
 
     let session = Session::new(
         server.system(),
-        vec![OpCode::RET as u8],
+        vec![OpCode::RET.byte()],
         None,
         None,
         100_000_000,
@@ -894,7 +894,7 @@ async fn traverse_iterator_returns_items_and_can_terminate_session() {
 
     let session = Session::new(
         server.system(),
-        vec![OpCode::RET as u8],
+        vec![OpCode::RET.byte()],
         None,
         None,
         100_000_000,

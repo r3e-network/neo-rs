@@ -1,11 +1,11 @@
 //! ContractMethodDescriptor - matches C# Neo.SmartContract.Manifest.ContractMethodDescriptor exactly
 
 use crate::error::CoreError;
+use crate::neo_vm::StackItem;
 use crate::smart_contract::i_interoperable::IInteroperable;
 use crate::smart_contract::manifest::ContractParameterDefinition;
 use crate::smart_contract::ContractParameterType;
-use neo_vm::StackItem;
-use num_traits::ToPrimitive;
+use neo_vm_rs::StackValue;
 use serde::{Deserialize, Serialize};
 
 /// Represents a method in a smart contract ABI (matches C# ContractMethodDescriptor)
@@ -124,74 +124,199 @@ impl ContractMethodDescriptor {
         let params_size: usize = self.parameters.iter().map(|p| p.size()).sum();
         1 + self.name.len() + params_size + 1 + 4 + 1
     }
-}
 
-impl IInteroperable for ContractMethodDescriptor {
-    fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
-        let StackItem::Struct(struct_item) = stack_item else {
+    /// Converts to a neo-vm-rs stack value (matches C# `ContractMethodDescriptor.ToStackItem` layout).
+    pub fn to_stack_value(&self) -> StackValue {
+        StackValue::Struct(vec![
+            StackValue::ByteString(self.name.as_bytes().to_vec()),
+            StackValue::Array(
+                self.parameters
+                    .iter()
+                    .map(ContractParameterDefinition::to_stack_value)
+                    .collect(),
+            ),
+            StackValue::Integer(self.return_type as u8 as i64),
+            StackValue::Integer(i64::from(self.offset)),
+            StackValue::Boolean(self.safe),
+        ])
+    }
+
+    /// Updates this method descriptor from a neo-vm-rs stack value.
+    pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError> {
+        let StackValue::Struct(items) = stack_value else {
             return Err(CoreError::invalid_format(
-                "ContractMethodDescriptor expects Struct stack item",
+                "ContractMethodDescriptor expects Struct stack value",
             ));
         };
-        let items = struct_item.items();
+
         if items.len() < 5 {
             return Err(CoreError::invalid_format(format!(
-                "ContractMethodDescriptor stack item must contain 5 elements, found {}",
+                "ContractMethodDescriptor stack value must contain 5 elements, found {}",
                 items.len()
             )));
         }
 
-        if let Ok(bytes) = items[0].as_bytes() {
+        if let Some(bytes) = items[0].to_byte_string_bytes() {
             if let Ok(name) = String::from_utf8(bytes) {
                 self.name = name;
             }
         }
 
-        if let Ok(param_items) = items[1].as_array() {
+        if let StackValue::Array(param_items) | StackValue::Struct(param_items) = items[1].clone() {
             let mut params = Vec::new();
-            for item in param_items.iter() {
+            for item in param_items {
                 let mut param = ContractParameterDefinition::default();
-                param.from_stack_item(item.clone())?;
+                param.from_stack_value(item)?;
                 params.push(param);
             }
             self.parameters = params;
         }
 
-        if let Ok(integer) = items[2].as_int() {
-            if let Some(byte_val) = integer.to_u8() {
+        if let Some(integer) = items[2].to_i128() {
+            if let Ok(byte_val) = u8::try_from(integer) {
                 self.return_type = ContractParameterType::try_from_u8(byte_val)
                     .unwrap_or(ContractParameterType::Void);
             }
         }
 
-        if let Ok(integer) = items[3].as_int() {
-            if let Some(offset) = integer.to_i32() {
+        if let Some(integer) = items[3].to_i128() {
+            if let Ok(offset) = i32::try_from(integer) {
                 self.offset = offset;
             }
         }
 
-        if let Ok(flag) = items[4].as_bool() {
-            self.safe = flag;
-        }
+        self.safe = items[4].to_bool();
+
         Ok(())
+    }
+}
+
+impl IInteroperable for ContractMethodDescriptor {
+    fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
+        self.from_stack_value(StackValue::try_from(stack_item).map_err(|error| {
+            CoreError::invalid_format(format!(
+                "Failed to convert ContractMethodDescriptor StackItem to StackValue: {error}"
+            ))
+        })?)
     }
 
     fn to_stack_item(&self) -> Result<StackItem, CoreError> {
-        let params = self
-            .parameters
-            .iter()
-            .map(|p| p.to_stack_item())
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(StackItem::from_struct(vec![
-            StackItem::from_byte_string(self.name.as_bytes()),
-            StackItem::from_array(params),
-            StackItem::from_int(self.return_type as u8),
-            StackItem::from_int(self.offset),
-            StackItem::from_bool(self.safe),
-        ]))
+        StackItem::try_from(self.to_stack_value()).map_err(|error| {
+            CoreError::invalid_operation(format!(
+                "Failed to convert ContractMethodDescriptor StackValue to StackItem: {error}"
+            ))
+        })
     }
 
     fn clone_box(&self) -> Box<dyn IInteroperable> {
         Box::new(self.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use neo_vm_rs::StackValue;
+
+    fn parameter(name: &str, param_type: ContractParameterType) -> ContractParameterDefinition {
+        ContractParameterDefinition::new(name.to_string(), param_type).unwrap()
+    }
+
+    #[test]
+    fn method_descriptor_projects_to_neo_vm_rs_stack_value() {
+        let method = ContractMethodDescriptor::new(
+            "balanceOf".to_string(),
+            vec![parameter("account", ContractParameterType::Hash160)],
+            ContractParameterType::Integer,
+            42,
+            true,
+        )
+        .unwrap();
+
+        assert_eq!(
+            method.to_stack_value(),
+            StackValue::Struct(vec![
+                StackValue::ByteString(b"balanceOf".to_vec()),
+                StackValue::Array(vec![StackValue::Struct(vec![
+                    StackValue::ByteString(b"account".to_vec()),
+                    StackValue::Integer(ContractParameterType::Hash160 as u8 as i64),
+                ])]),
+                StackValue::Integer(ContractParameterType::Integer as u8 as i64),
+                StackValue::Integer(42),
+                StackValue::Boolean(true),
+            ])
+        );
+    }
+
+    #[test]
+    fn method_descriptor_stack_item_projection_matches_stack_value_projection() {
+        let method = ContractMethodDescriptor::new(
+            "transfer".to_string(),
+            vec![
+                parameter("to", ContractParameterType::Hash160),
+                parameter("amount", ContractParameterType::Integer),
+            ],
+            ContractParameterType::Boolean,
+            7,
+            false,
+        )
+        .unwrap();
+
+        let expected = StackItem::try_from(method.to_stack_value()).unwrap();
+        assert_eq!(method.to_stack_item().unwrap(), expected);
+    }
+
+    #[test]
+    fn method_descriptor_reads_from_neo_vm_rs_stack_value() {
+        let mut method = ContractMethodDescriptor::default();
+
+        method
+            .from_stack_value(StackValue::Struct(vec![
+                StackValue::ByteString(b"symbol".to_vec()),
+                StackValue::Array(vec![StackValue::Struct(vec![
+                    StackValue::ByteString(b"format".to_vec()),
+                    StackValue::Integer(ContractParameterType::String as u8 as i64),
+                ])]),
+                StackValue::Integer(ContractParameterType::String as u8 as i64),
+                StackValue::Integer(12),
+                StackValue::Boolean(true),
+            ]))
+            .unwrap();
+
+        assert_eq!(method.name, "symbol");
+        assert_eq!(
+            method.parameters,
+            vec![parameter("format", ContractParameterType::String)]
+        );
+        assert_eq!(method.return_type, ContractParameterType::String);
+        assert_eq!(method.offset, 12);
+        assert!(method.safe);
+    }
+
+    #[test]
+    fn method_descriptor_keeps_invalid_return_type_fallback() {
+        let mut method = ContractMethodDescriptor::new(
+            "initial".to_string(),
+            Vec::new(),
+            ContractParameterType::Boolean,
+            1,
+            false,
+        )
+        .unwrap();
+
+        method
+            .from_stack_value(StackValue::Struct(vec![
+                StackValue::ByteString(b"changed".to_vec()),
+                StackValue::Array(Vec::new()),
+                StackValue::Integer(0x7f),
+                StackValue::Integer(3),
+                StackValue::Boolean(true),
+            ]))
+            .unwrap();
+
+        assert_eq!(method.name, "changed");
+        assert_eq!(method.return_type, ContractParameterType::Void);
+        assert_eq!(method.offset, 3);
+        assert!(method.safe);
     }
 }

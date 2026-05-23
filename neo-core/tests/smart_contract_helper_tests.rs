@@ -2,11 +2,14 @@
 //! Converted from C# Neo.UnitTests.SmartContract.UT_SmartContractHelper.cs
 //! and C# Neo.UnitTests.SmartContract.UT_Helper.cs
 
+use neo_core::neo_vm::execution_context::ExecutionContext;
+use neo_core::neo_vm::instruction::Instruction;
 use neo_core::network::p2p::helper::get_sign_data_vec;
 use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::witness::Witness;
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
+use neo_core::script_builder::ScriptBuilder;
 use neo_core::smart_contract::application_engine::{ApplicationEngine, TEST_MODE_GAS};
 use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::smart_contract::helper::Helper;
@@ -14,10 +17,7 @@ use neo_core::smart_contract::i_diagnostic::IDiagnostic;
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::wallets::key_pair::KeyPair;
 use neo_core::{Transaction, UInt160, WitnessScope};
-use neo_vm::execution_context::ExecutionContext;
-use neo_vm::instruction::Instruction;
-use neo_vm::op_code::OpCode;
-use neo_vm::ScriptBuilder;
+use neo_vm_rs::OpCode;
 use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -41,7 +41,7 @@ impl IDiagnostic for OpcodeDiagnostic {
 
     fn pre_execute_instruction(&mut self, instruction: &Instruction) {
         self.pre_exec_count.fetch_add(1, Ordering::Relaxed);
-        let units = ApplicationEngine::get_opcode_price(instruction.opcode as u8);
+        let units = ApplicationEngine::get_opcode_price(instruction.opcode.byte());
         self.opcode_units.fetch_add(units, Ordering::Relaxed);
     }
 
@@ -199,7 +199,7 @@ fn test_signature_contract_engine_fee_consumed() {
     tx.set_system_fee(0);
     tx.set_network_fee(0);
     tx.set_valid_until_block(1);
-    tx.set_script(vec![OpCode::PUSH1 as u8]);
+    tx.set_script(vec![OpCode::PUSH1.byte()]);
     tx.set_signers(vec![Signer::new(script_hash, WitnessScope::GLOBAL)]);
     tx.set_attributes(Vec::new());
     tx.set_witnesses(Vec::new());
@@ -244,8 +244,8 @@ fn test_signature_contract_engine_fee_consumed() {
         .get_boolean()
         .unwrap_or(false));
 
-    let expected_opcode_units = ApplicationEngine::get_opcode_price(OpCode::PUSHDATA1 as u8) * 2
-        + ApplicationEngine::get_opcode_price(OpCode::SYSCALL as u8);
+    let expected_opcode_units = ApplicationEngine::get_opcode_price(OpCode::PUSHDATA1.byte()) * 2
+        + ApplicationEngine::get_opcode_price(OpCode::SYSCALL.byte());
     assert!(context_loaded_count.load(Ordering::Relaxed) > 0);
     assert!(pre_exec_count.load(Ordering::Relaxed) > 0);
     assert_eq!(opcode_units.load(Ordering::Relaxed), expected_opcode_units);
@@ -253,7 +253,8 @@ fn test_signature_contract_engine_fee_consumed() {
     // Helper::signature_contract_cost() returns raw fee units; engine.fee_consumed()
     // is in datoshi (= units * ExecFeeFactor). Test pre-dated commit 4f599eb2
     // which corrected the 30× cpu_fee undercharge.
-    let exec_fee_factor = neo_core::smart_contract::native::PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64;
+    let exec_fee_factor =
+        neo_core::smart_contract::native::PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64;
     let expected_fee = Helper::signature_contract_cost() * exec_fee_factor;
     assert_eq!(engine.fee_consumed(), expected_fee);
 }
@@ -302,7 +303,7 @@ fn test_multi_signature_contract_engine_fee_consumed() {
     tx.set_system_fee(0);
     tx.set_network_fee(0);
     tx.set_valid_until_block(1);
-    tx.set_script(vec![OpCode::PUSH1 as u8]);
+    tx.set_script(vec![OpCode::PUSH1.byte()]);
     tx.set_signers(vec![Signer::new(script_hash, WitnessScope::GLOBAL)]);
     tx.set_attributes(Vec::new());
     tx.set_witnesses(Vec::new());
@@ -358,10 +359,10 @@ fn test_multi_signature_contract_engine_fee_consumed() {
         .get_boolean()
         .unwrap_or(false));
 
-    let push_cost = ApplicationEngine::get_opcode_price(OpCode::PUSHDATA1 as u8);
-    let m_opcode = ApplicationEngine::get_opcode_price(OpCode::PUSH2 as u8);
-    let n_opcode = ApplicationEngine::get_opcode_price(OpCode::PUSH2 as u8);
-    let syscall_cost = ApplicationEngine::get_opcode_price(OpCode::SYSCALL as u8);
+    let push_cost = ApplicationEngine::get_opcode_price(OpCode::PUSHDATA1.byte());
+    let m_opcode = ApplicationEngine::get_opcode_price(OpCode::PUSH2.byte());
+    let n_opcode = ApplicationEngine::get_opcode_price(OpCode::PUSH2.byte());
+    let syscall_cost = ApplicationEngine::get_opcode_price(OpCode::SYSCALL.byte());
     let expected_opcode_units = push_cost * 4 + m_opcode + n_opcode + syscall_cost;
     assert!(context_loaded_count.load(Ordering::Relaxed) > 0);
     assert!(pre_exec_count.load(Ordering::Relaxed) > 0);
@@ -371,8 +372,8 @@ fn test_multi_signature_contract_engine_fee_consumed() {
     // is in datoshi (= units * ExecFeeFactor). Test pre-dated commit 4f599eb2.
     let exec_fee_factor =
         neo_core::smart_contract::native::PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64;
-    let expected_fee = Helper::multi_signature_contract_cost(2, public_keys.len() as i32)
-        * exec_fee_factor;
+    let expected_fee =
+        Helper::multi_signature_contract_cost(2, public_keys.len() as i32) * exec_fee_factor;
     assert_eq!(engine.fee_consumed(), expected_fee);
 }
 
@@ -498,7 +499,7 @@ fn test_multi_sig_redeem_script_creation() {
     let script = Helper::multi_sig_redeem_script(2, &public_keys);
 
     // Script should start with PUSH2 (Neo VM opcode 0x12)
-    assert_eq!(script[0], OpCode::PUSH2 as u8);
+    assert_eq!(script[0], OpCode::PUSH2.byte());
 
     // Should end with SYSCALL and CheckMultisig hash
     let len = script.len();

@@ -15,7 +15,7 @@ fn sample_timestamp() -> u64 {
 }
 
 fn sample_witness() -> Witness {
-    Witness::new_with_scripts(Vec::new(), vec![neo_vm::op_code::OpCode::PUSH1 as u8])
+    Witness::new_with_scripts(Vec::new(), vec![neo_vm_rs::OpCode::PUSH1.byte()])
 }
 
 fn trimmed_block_with_no_transactions() -> TrimmedBlock {

@@ -37,7 +37,7 @@ neo-core = { path = "../neo-core", features = ["full", "runtime"] }
 neo-consensus = { path = "../neo-consensus" }
 neo-p2p = { path = "../neo-p2p" }
 neo-crypto = { path = "../neo-crypto" }
-neo-vm = { path = "../neo-vm" }
+neo-vm-rs = { workspace = true }
 neo-rpc = { path = "../neo-rpc", features = ["server"] }
 
 # TEMPORARILY DISABLED: neo-plugins being refactored

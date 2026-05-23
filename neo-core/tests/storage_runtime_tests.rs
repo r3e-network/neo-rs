@@ -1,4 +1,5 @@
 use neo_core::neo_io::BinaryWriter;
+use neo_core::neo_vm::StackItem;
 use neo_core::persistence::DataCache;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::call_flags::CallFlags;
@@ -13,7 +14,7 @@ use neo_core::smart_contract::storage_context::StorageContext;
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::smart_contract::{StorageItem, StorageKey};
 use neo_core::{constants, UInt160};
-use neo_vm::{OpCode, StackItem};
+use neo_vm_rs::OpCode;
 use std::sync::Arc;
 
 const CONTRACT_MANAGEMENT_ID: i32 = -1;
@@ -80,12 +81,16 @@ fn make_engine(snapshot: Arc<DataCache>) -> ApplicationEngine {
 #[test]
 fn storage_contexts_match_contract_id() {
     let snapshot = Arc::new(DataCache::new(false));
-    let contract = make_contract(1, "storage", vec![OpCode::RET as u8]);
+    let contract = make_contract(1, "storage", vec![OpCode::RET.byte()]);
     add_contract_to_snapshot(snapshot.as_ref(), &contract);
 
     let mut engine = make_engine(Arc::clone(&snapshot));
     engine
-        .load_script(vec![OpCode::RET as u8], CallFlags::ALL, Some(contract.hash))
+        .load_script(
+            vec![OpCode::RET.byte()],
+            CallFlags::ALL,
+            Some(contract.hash),
+        )
         .expect("load script");
 
     let context = engine.get_storage_context().expect("context");
@@ -100,7 +105,7 @@ fn storage_contexts_match_contract_id() {
 #[test]
 fn storage_get_returns_value() {
     let snapshot = Arc::new(DataCache::new(false));
-    let contract = make_contract(2, "storage", vec![OpCode::RET as u8]);
+    let contract = make_contract(2, "storage", vec![OpCode::RET.byte()]);
     add_contract_to_snapshot(snapshot.as_ref(), &contract);
 
     let key = vec![0x01];
@@ -113,7 +118,7 @@ fn storage_get_returns_value() {
     let mut engine = make_engine(Arc::clone(&snapshot));
     engine
         .load_script(
-            vec![OpCode::RET as u8],
+            vec![OpCode::RET.byte()],
             CallFlags::READ_STATES,
             Some(contract.hash),
         )
@@ -127,12 +132,16 @@ fn storage_get_returns_value() {
 #[test]
 fn storage_put_validates_sizes_and_readonly() {
     let snapshot = Arc::new(DataCache::new(false));
-    let contract = make_contract(3, "storage", vec![OpCode::RET as u8]);
+    let contract = make_contract(3, "storage", vec![OpCode::RET.byte()]);
     add_contract_to_snapshot(snapshot.as_ref(), &contract);
 
     let mut engine = make_engine(Arc::clone(&snapshot));
     engine
-        .load_script(vec![OpCode::RET as u8], CallFlags::ALL, Some(contract.hash))
+        .load_script(
+            vec![OpCode::RET.byte()],
+            CallFlags::ALL,
+            Some(contract.hash),
+        )
         .expect("load script");
 
     let context = StorageContext::new(contract.id, false);
@@ -171,12 +180,16 @@ fn storage_put_validates_sizes_and_readonly() {
 #[test]
 fn storage_delete_rejects_readonly_context() {
     let snapshot = Arc::new(DataCache::new(false));
-    let contract = make_contract(4, "storage", vec![OpCode::RET as u8]);
+    let contract = make_contract(4, "storage", vec![OpCode::RET.byte()]);
     add_contract_to_snapshot(snapshot.as_ref(), &contract);
 
     let mut engine = make_engine(Arc::clone(&snapshot));
     engine
-        .load_script(vec![OpCode::RET as u8], CallFlags::ALL, Some(contract.hash))
+        .load_script(
+            vec![OpCode::RET.byte()],
+            CallFlags::ALL,
+            Some(contract.hash),
+        )
         .expect("load script");
 
     let context = StorageContext::new(contract.id, true);
@@ -189,7 +202,7 @@ fn storage_delete_rejects_readonly_context() {
 #[test]
 fn storage_find_values_only_returns_payload() {
     let snapshot = Arc::new(DataCache::new(false));
-    let contract = make_contract(5, "storage", vec![OpCode::RET as u8]);
+    let contract = make_contract(5, "storage", vec![OpCode::RET.byte()]);
     add_contract_to_snapshot(snapshot.as_ref(), &contract);
 
     snapshot.add(
@@ -200,7 +213,7 @@ fn storage_find_values_only_returns_payload() {
     let mut engine = make_engine(Arc::clone(&snapshot));
     engine
         .load_script(
-            vec![OpCode::RET as u8],
+            vec![OpCode::RET.byte()],
             CallFlags::READ_STATES,
             Some(contract.hash),
         )

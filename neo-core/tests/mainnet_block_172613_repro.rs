@@ -243,7 +243,10 @@ fn replay_block_172613_against_root_172612() {
 
     eprintln!("notifications ({}):", tx_engine.notifications().len());
     for (i, notif) in tx_engine.notifications().iter().enumerate() {
-        eprintln!("  [{}] contract={} event={}", i, notif.script_hash, notif.event_name);
+        eprintln!(
+            "  [{}] contract={} event={}",
+            i, notif.script_hash, notif.event_name
+        );
         for item in &notif.state {
             eprintln!("      {:?}", item);
         }
@@ -268,7 +271,9 @@ fn replay_block_172613_against_root_172612() {
         None,
     )
     .expect("post persist engine");
-    post_persist_engine.native_post_persist().expect("post persist");
+    post_persist_engine
+        .native_post_persist()
+        .expect("post persist");
 
     // Compare sender's GAS balance
     let sender_gas_key = hex::decode("faffffff14294b8203ea52553454f901687411a7d590544556").unwrap();
@@ -276,7 +281,10 @@ fn replay_block_172613_against_root_172612() {
     let sender_gas = base_cache.get(&sender_gas_sk);
     eprintln!(
         "\n==== sender GAS balance key ===\n  ours: {}\n  C#  : 41012105af0a315d05",
-        sender_gas.as_ref().map(|v| hex::encode(v.value_bytes())).unwrap_or("<none>".into())
+        sender_gas
+            .as_ref()
+            .map(|v| hex::encode(v.value_bytes()))
+            .unwrap_or("<none>".into())
     );
 
     // Apply all non-Ledger changes to the trie and compute new root
@@ -297,7 +305,9 @@ fn replay_block_172613_against_root_172612() {
         let key_bytes = key.to_array();
         match state_str.as_str() {
             "Added" | "Changed" => {
-                trie_guard.put(&key_bytes, &trackable.item.value_bytes()).expect("trie.put");
+                trie_guard
+                    .put(&key_bytes, &trackable.item.value_bytes())
+                    .expect("trie.put");
                 applied += 1;
             }
             "Deleted" => {
@@ -307,11 +317,17 @@ fn replay_block_172613_against_root_172612() {
             _ => {}
         }
     }
-    let new_root = trie_guard.root_hash().unwrap_or_else(neo_core::UInt256::zero);
+    let new_root = trie_guard
+        .root_hash()
+        .unwrap_or_else(neo_core::UInt256::zero);
     eprintln!("applied={} skipped_ledger={}", applied, skipped_ledger);
     eprintln!("our computed root: {}", new_root);
-    eprintln!("stored our root:   0xa512a1ce9f29dfdbf93d456b2f57de441ee968c22daf0ba137c9167188c270b5");
-    eprintln!("C# root:           0x6493dab848dce8bce8c1196e61365dba872d1efa0406f06ff3fc964318680e47");
+    eprintln!(
+        "stored our root:   0xa512a1ce9f29dfdbf93d456b2f57de441ee968c22daf0ba137c9167188c270b5"
+    );
+    eprintln!(
+        "C# root:           0x6493dab848dce8bce8c1196e61365dba872d1efa0406f06ff3fc964318680e47"
+    );
     let expected_csharp_root = neo_core::UInt256::parse(
         "0x6493dab848dce8bce8c1196e61365dba872d1efa0406f06ff3fc964318680e47",
     )

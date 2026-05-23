@@ -2,16 +2,18 @@ use neo_core::constants::GENESIS_TIMESTAMP_MS;
 use neo_core::ledger::block_header::BlockHeader;
 use neo_core::ledger::Block;
 use neo_core::neo_io::{BinaryWriter, Serializable};
+use neo_core::neo_vm::VMState;
 use neo_core::network::p2p::payloads::{Signer, Transaction, WitnessScope};
 use neo_core::persistence::{DataCache, StorageItem, StorageKey};
 use neo_core::protocol_settings::ProtocolSettings;
+use neo_core::script_builder::ScriptBuilder;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::smart_contract::native::ledger_contract::HashOrIndex;
 use neo_core::smart_contract::native::{LedgerContract, NativeContract, NativeHelpers};
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::{UInt160, UInt256, Witness};
-use neo_vm::{OpCode, ScriptBuilder, VMState};
+use neo_vm_rs::OpCode;
 use num_traits::ToPrimitive;
 use std::sync::Arc;
 
@@ -24,7 +26,7 @@ fn sample_account() -> UInt160 {
 fn make_transaction(nonce: u32) -> Transaction {
     let mut tx = Transaction::new();
     tx.set_nonce(nonce);
-    tx.set_script(vec![OpCode::RET as u8]);
+    tx.set_script(vec![OpCode::RET.byte()]);
     tx.set_signers(vec![Signer::new(sample_account(), WitnessScope::GLOBAL)]);
     tx.set_witnesses(vec![Witness::empty()]);
     tx
@@ -64,7 +66,7 @@ fn make_genesis_block(settings: &ProtocolSettings) -> Block {
         next_consensus,
         vec![Witness::new_with_scripts(
             Vec::new(),
-            vec![OpCode::PUSH1 as u8],
+            vec![OpCode::PUSH1.byte()],
         )],
     );
 
@@ -107,7 +109,7 @@ fn serialize_transaction_state_record(
     let mut writer = BinaryWriter::new();
     writer.write_u8(0x01).expect("record kind");
     writer.write_u32(block_index).expect("block index");
-    writer.write_u8(vm_state as u8).expect("vm state");
+    writer.write_u8(vm_state.to_byte()).expect("vm state");
 
     let mut tx_writer = BinaryWriter::new();
     tx.serialize(&mut tx_writer).expect("serialize tx");
@@ -216,7 +218,7 @@ fn ledger_get_block_reconstructs_from_trimmed_block_and_states() {
         UInt160::parse("0xa400ff00ff00ff00ff00ff00ff00ff00ff00ff01").unwrap(),
         vec![Witness::new_with_scripts(
             Vec::new(),
-            vec![OpCode::PUSH1 as u8],
+            vec![OpCode::PUSH1.byte()],
         )],
     );
     let trimmed = neo_core::smart_contract::native::trimmed_block::TrimmedBlock::create(

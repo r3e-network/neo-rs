@@ -66,7 +66,7 @@ This document provides comprehensive architecture documentation for the neo-rs p
 │                                     CORE LAYER                                              │
 │                                                                                             │
 │   ┌──────────────────────┐  ┌──────────────────────┐  ┌──────────────────────┐              │
-│   │      neo-core        │  │       neo-vm         │  │      neo-p2p         │              │
+│   │      neo-core        │  │    VM module         │  │      neo-p2p         │              │
 │   │                      │  │                      │  │                      │              │
 │   │  • Protocol types    │  │  • Execution engine  │  │  • Message types     │              │
 │   │  • Ledger (blocks/tx)│  │  • Instruction set   │  │  • P2P protocol      │              │
@@ -124,7 +124,7 @@ This document provides comprehensive architecture documentation for the neo-rs p
           │                       │                       │
           ▼                       ▼                       ▼
 ┌───────────────────┐   ┌───────────────────┐   ┌───────────────────┐
-│   neo-chain       │   │   neo-mempool     │   │     neo-vm        │
+│   neo-chain       │   │   neo-mempool     │   │ neo-core::neo_vm  │
 │                   │   │                   │   │                   │
 │ • Block storage   │   │ • Tx validation   │   │ • Script exec     │
 │ • Chain state     │   │ • Fee ordering    │   │ • Gas metering    │
@@ -732,17 +732,12 @@ neo-rs/
 │       ├── persistence/          # Storage abstractions
 │       └── actors/               # Actor runtime (optional)
 │
-├── neo-vm/                       # Core Layer
-│   └── src/
-│       ├── lib.rs
-│       ├── execution_engine.rs   # Core VM loop
-│       ├── application_engine.rs # Blockchain-aware VM
-│       ├── evaluation_stack.rs   # Operand stack
-│       ├── execution_context.rs  # Call frames
-│       ├── op_code/              # Opcode definitions
-│       │   ├── mod.rs
-│       │   └── op_code.rs        # All opcodes
-│       ├── jump_table/           # Opcode implementations
+│       ├── neo_vm/               # VM compatibility module backed by neo-vm-rs
+│       │   ├── execution_engine/ # Core VM loop
+│       │   ├── application_engine.rs
+│       │   ├── evaluation_stack.rs
+│       │   ├── execution_context.rs
+│       │   ├── jump_table/       # Opcode implementations
 │       │   ├── mod.rs
 │       │   ├── push.rs
 │       │   ├── control.rs
@@ -859,7 +854,8 @@ Layer 2 (Service)
 Layer 1 (Core)
 ┌─────────────────────────────────────────────────────────────────┐
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐        │
-│  │neo-core  │  │neo-vm    │  │neo-p2p   │  │neo-consensus│      │
+│  │neo-core  │  │neo_core::│  │neo-p2p   │  │neo-consensus│      │
+│  │          │  │neo_vm    │  │          │  │             │      │
 │  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘        │
 │  ┌──────────┐  ┌──────────┐                                     │
 │  │neo-rpc   │  │neo-hsm   │                                     │
@@ -882,8 +878,7 @@ Layer 0 (Foundation)
 Key Dependencies:
 • neo-cli ──▶ neo-core, neo-rpc(client)
 • neo-node ──▶ neo-core, neo-chain, neo-mempool, neo-consensus, neo-rpc(server)
-• neo-core ──▶ neo-primitives, neo-crypto, neo-storage, neo-io, neo-vm, neo-json
-• neo-vm ──▶ neo-primitives, neo-io
+• neo-core ──▶ neo-primitives, neo-crypto, neo-storage, neo-io, neo-json, neo-vm-rs
 • neo-consensus ──▶ neo-primitives, neo-crypto
 • neo-chain ──▶ neo-core, neo-state
 • neo-state ──▶ neo-primitives, neo-storage
@@ -897,7 +892,6 @@ Key Dependencies:
 | `neo-core` | `monitoring` | Metrics collection |
 | `neo-rpc` | `server` | RPC server functionality |
 | `neo-rpc` | `client` | RPC client functionality |
-| `neo-vm` | `debug` | Debugging support |
 | `neo-node` | `tee` | Trusted Execution Environment support |
 | `neo-node` | `hsm` | Hardware Security Module support |
 
@@ -1116,7 +1110,7 @@ pub enum WitnessCondition {
 | `Neo.Ledger` | `neo-core` | `neo_core::ledger` |
 | `Neo.Network.P2P` | `neo-p2p` | `neo_p2p` |
 | `Neo.SmartContract` | `neo-core` | `neo_core::smart_contract` |
-| `Neo.VM` | `neo-vm` | `neo_vm` |
+| `Neo.VM` | `neo-core` | `neo_core::neo_vm` |
 | `Neo.Wallets` | `neo-core` | `neo_core::wallets` |
 | `Neo.Plugins.RpcServer` | `neo-rpc` | `neo_rpc::server` |
 | `Neo.Plugins.DBFTPlugin` | `neo-consensus` | `neo_consensus` |
@@ -1166,7 +1160,7 @@ pub enum WitnessCondition {
 │                                                                  │
 │  Core Layer                                                      │
 │  ├── CoreError (neo-core)                                       │
-│  ├── VmError (neo-vm)                                           │
+│  ├── VmError (neo_core::neo_vm)                                 │
 │  ├── P2PError (neo-p2p)                                         │
 │  ├── RpcError (neo-rpc)                                         │
 │  └── ConsensusError (neo-consensus)                             │

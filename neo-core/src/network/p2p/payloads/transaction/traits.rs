@@ -4,6 +4,7 @@
 
 use super::*;
 use crate::error::CoreError;
+use neo_vm_rs::StackValue;
 
 impl IInventory for Transaction {
     fn inventory_type(&self) -> InventoryType {
@@ -88,6 +89,29 @@ impl crate::IVerifiable for Transaction {
     }
 }
 
+impl Transaction {
+    /// Converts the transaction to a neo-vm-rs stack value (matches C# `Transaction.ToStackItem` layout).
+    pub fn to_stack_value(&self) -> Result<StackValue, CoreError> {
+        let sender = self
+            .sender()
+            .ok_or_else(|| {
+                CoreError::invalid_argument("Sender is not specified in the transaction")
+            })?
+            .to_bytes();
+
+        Ok(StackValue::Array(vec![
+            StackValue::ByteString(self.hash().to_bytes()),
+            StackValue::Integer(i64::from(self.version)),
+            StackValue::Integer(i64::from(self.nonce)),
+            StackValue::ByteString(sender),
+            StackValue::Integer(self.system_fee),
+            StackValue::Integer(self.network_fee),
+            StackValue::Integer(i64::from(self.valid_until_block)),
+            StackValue::ByteString(self.script.clone()),
+        ]))
+    }
+}
+
 impl IInteroperable for Transaction {
     fn from_stack_item(&mut self, _stack_item: StackItem) -> Result<(), CoreError> {
         // This operation is not supported for Transaction.
@@ -98,23 +122,11 @@ impl IInteroperable for Transaction {
     }
 
     fn to_stack_item(&self) -> Result<StackItem, CoreError> {
-        if self.signers.is_empty() {
-            return Err(CoreError::invalid_argument(
-                "Sender is not specified in the transaction",
-            ));
-        }
-        let sender = self.signers[0].account.to_bytes();
-
-        Ok(StackItem::from_array(vec![
-            StackItem::from_byte_string(self.hash().to_bytes()),
-            StackItem::from_int(self.version as i64),
-            StackItem::from_int(self.nonce),
-            StackItem::from_byte_string(sender),
-            StackItem::from_int(self.system_fee),
-            StackItem::from_int(self.network_fee),
-            StackItem::from_int(self.valid_until_block),
-            StackItem::from_byte_string(self.script.clone()),
-        ]))
+        StackItem::try_from(self.to_stack_value()?).map_err(|error| {
+            CoreError::invalid_operation(format!(
+                "Failed to convert transaction StackValue to StackItem: {error}"
+            ))
+        })
     }
 
     fn clone_box(&self) -> Box<dyn IInteroperable> {

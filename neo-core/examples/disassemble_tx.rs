@@ -1,10 +1,10 @@
 use neo_core::persistence::{
     providers::RocksDBStoreProvider, IStoreProvider, StorageConfig, StoreCache,
 };
+use neo_core::script_validation::{parse_script_instructions, validate_script};
 use neo_core::smart_contract::native::ledger_contract::LedgerContract;
 use neo_core::UInt256;
-use neo_vm::op_code::OpCode;
-use neo_vm::Script;
+use neo_vm_rs::OpCode;
 use std::path::PathBuf;
 
 fn format_ascii_preview(bytes: &[u8]) -> String {
@@ -53,7 +53,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .ok_or("transaction not found")?;
     let tx = tx_state.transaction().clone();
     let script_bytes = tx.script().to_vec();
-    let script = Script::new(script_bytes.clone(), strict)?;
+    validate_script(&script_bytes, strict)?;
+    let instructions = parse_script_instructions(&script_bytes)?;
 
     println!(
         "tx={} block={} strict={} script_len={} sender={}",
@@ -66,11 +67,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap_or_else(|| "<none>".to_string())
     );
 
-    let mut offset = 0usize;
-    while offset < script.len() {
-        let instruction = script
-            .get_instruction(offset)
-            .map_err(|err| format!("failed to decode instruction at {offset}: {err}"))?;
+    for instruction in &instructions {
+        let offset = instruction.pointer();
         let opcode = instruction.opcode();
         let size = instruction.size();
 
@@ -105,7 +103,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if size == 0 {
             return Err(format!("decoded zero-size instruction at offset {offset}").into());
         }
-        offset += size;
     }
 
     Ok(())

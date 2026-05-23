@@ -317,7 +317,7 @@ mod multisig_verify_tests {
     use crate::smart_contract::Contract;
     use crate::smart_contract::{StorageItem, StorageKey};
     use crate::wallets::KeyPair;
-    use neo_vm::op_code::OpCode;
+    use neo_vm_rs::OpCode;
 
     #[test]
     fn verify_accepts_signatures_as_subsequence_of_sorted_keys() {
@@ -353,7 +353,7 @@ mod multisig_verify_tests {
         let mut invocation = Vec::new();
         for (_pubkey, keypair) in pairs.iter().skip(1).take(required) {
             let signature = keypair.sign(&sign_data).expect("sign state root");
-            invocation.push(OpCode::PUSHDATA1 as u8);
+            invocation.push(OpCode::PUSHDATA1.byte());
             invocation.push(signature.len() as u8);
             invocation.extend_from_slice(&signature);
         }

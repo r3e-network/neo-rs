@@ -11,7 +11,8 @@
 
 use super::vm_state_utils::{vm_state_from_str, vm_state_to_string};
 use neo_json::{JArray, JObject, JToken};
-use neo_vm::{StackItem, VMState};
+use neo_vm_rs::StackValue;
+use neo_vm_rs::VmState;
 
 /// RPC invoke result matching C# `RpcInvokeResult`
 #[derive(Debug, Clone)]
@@ -20,13 +21,13 @@ pub struct RpcInvokeResult {
     pub script: String,
 
     /// VM execution state
-    pub state: VMState,
+    pub state: VmState,
 
     /// Gas consumed during execution
     pub gas_consumed: i64,
 
     /// Stack items after execution
-    pub stack: Vec<StackItem>,
+    pub stack: Vec<StackValue>,
 
     /// Transaction if available
     pub tx: Option<String>,
@@ -173,7 +174,7 @@ impl RpcStack {
 mod tests {
     use super::*;
     use neo_json::{JArray, JToken};
-    use neo_vm::{StackValue, VmState};
+    use neo_vm_rs::{stack_value_as_bytes, StackValue, VmState};
     use std::fs;
     use std::path::PathBuf;
 
@@ -217,7 +218,7 @@ mod tests {
 
         let parsed = RpcInvokeResult::from_json(&json).unwrap();
         assert_eq!(parsed.stack.len(), 1);
-        assert_eq!(parsed.stack[0].as_bytes().unwrap(), b"hello");
+        assert_eq!(stack_value_as_bytes(&parsed.stack[0]).unwrap(), b"hello");
     }
 
     #[test]
@@ -280,7 +281,10 @@ mod tests {
         };
 
         let json = result.to_json();
-        assert!(json.get("stack").and_then(|token| token.as_array()).is_some());
+        assert!(json
+            .get("stack")
+            .and_then(|token| token.as_array())
+            .is_some());
     }
 
     fn load_rpc_case_result(name: &str) -> Option<JObject> {

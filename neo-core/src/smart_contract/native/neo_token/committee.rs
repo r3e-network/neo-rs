@@ -34,7 +34,7 @@ impl NeoToken {
     }
 
     pub(super) fn decode_committee_stack_item(item: StackItem) -> Result<Vec<ECPoint>, String> {
-        use neo_vm::stack_item::StackItem as VmStackItem;
+        use crate::neo_vm::stack_item::StackItem as VmStackItem;
 
         fn stack_item_to_bytes(item: &VmStackItem) -> Option<Vec<u8>> {
             match item {

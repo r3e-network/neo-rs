@@ -1,9 +1,9 @@
 //! NotifyEventArgs - matches C# Neo.SmartContract.NotifyEventArgs exactly
 
 use crate::error::CoreError;
+use crate::neo_vm::StackItem;
 use crate::smart_contract::i_interoperable::IInteroperable;
 use crate::{IVerifiable, UInt160};
-use neo_vm::StackItem;
 use std::fmt;
 use std::sync::Arc;
 

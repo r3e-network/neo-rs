@@ -22,7 +22,7 @@ use neo_primitives::{UInt160, UInt256, UINT160_SIZE, UINT256_SIZE};
 // use neo_core::smart_contract::trigger_type::TriggerType;
 // use neo_core::state_service::StateRoot;
 // use neo_core::WitnessScope;
-// use neo_vm::op_code::OpCode;
+// use neo_vm_rs::OpCode;
 // use std::net::SocketAddr;
 
 use num_bigint::BigInt;
@@ -84,7 +84,7 @@ fn test_uint160_creation_and_comparison() {
 //     let witness = WitnessBuilder::create_empty().build();
 //
 //     let tx = TransactionBuilder::create_empty()
-//         .script(vec![OpCode::PUSH1 as u8, OpCode::RET as u8])
+//         .script(vec![OpCode::PUSH1.byte(), OpCode::RET.byte()])
 //         .signers(vec![signer])
 //         .witnesses(vec![witness])
 //         .build();

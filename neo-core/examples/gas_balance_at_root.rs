@@ -1,10 +1,8 @@
-use neo_core::persistence::{
-    providers::RocksDBStoreProvider, IStoreProvider, StorageConfig,
-};
+use neo_core::persistence::{providers::RocksDBStoreProvider, IStoreProvider, StorageConfig};
+use neo_core::smart_contract::StorageKey;
 use neo_core::state_service::state_store::{
     SnapshotBackedStateStoreBackend, StateServiceSettings, StateStore,
 };
-use neo_core::smart_contract::StorageKey;
 use neo_core::{UInt160, UInt256};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -15,7 +13,9 @@ use std::sync::Arc;
 //     -- /home/neo/git/neo-rs/data/mainnet/StateRoot 1283520 0x673a663cebe612f6e63e9bf85a2076d601fe5fb9
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
-    let path = args.next().ok_or("usage: gas_balance_at_root <stateroot_db_path> <height> <account_hash>")?;
+    let path = args
+        .next()
+        .ok_or("usage: gas_balance_at_root <stateroot_db_path> <height> <account_hash>")?;
     let height: u32 = args.next().ok_or("missing height")?.parse()?;
     let account_raw = args.next().ok_or("missing account")?;
     let account = UInt160::parse(account_raw.trim_start_matches("0x"))?;
@@ -49,10 +49,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let key_bytes = key.to_array();
     match trie.get(&key_bytes)? {
         Some(value) => {
-            println!("account={} key=0x{} value=0x{}", account, hex::encode(&key_bytes), hex::encode(&value));
+            println!(
+                "account={} key=0x{} value=0x{}",
+                account,
+                hex::encode(&key_bytes),
+                hex::encode(&value)
+            );
         }
         None => {
-            println!("account={} key=0x{} value=<missing>", account, hex::encode(&key_bytes));
+            println!(
+                "account={} key=0x{} value=<missing>",
+                account,
+                hex::encode(&key_bytes)
+            );
         }
     }
     Ok(())

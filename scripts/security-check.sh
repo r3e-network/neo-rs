@@ -26,10 +26,10 @@ else
 fi
 
 echo ""
-echo "2. Checking BigInt size limits in VM..."
+echo "2. Checking BigInt size limits in VM compatibility module..."
 echo "----------------------------------------"
 
-if grep -q "check_bigint_size" neo-vm/src/jump_table/numeric.rs 2>/dev/null; then
+if grep -q "check_bigint_size" neo-core/src/neo_vm/jump_table/numeric.rs 2>/dev/null; then
     success "BigInt size checks are in place"
 else
     error "Missing BigInt size checks in numeric.rs"
@@ -39,8 +39,8 @@ echo ""
 echo "3. Checking for unsafe blocks count..."
 echo "---------------------------------------"
 
-UNSAFE_COUNT=$(grep -r "unsafe" --include="*.rs" neo-vm/src/ 2>/dev/null | wc -l)
-echo "Found $UNSAFE_COUNT unsafe usages in neo-vm"
+UNSAFE_COUNT=$(grep -r "unsafe" --include="*.rs" neo-core/src/neo_vm/ 2>/dev/null | wc -l)
+echo "Found $UNSAFE_COUNT unsafe usages in neo-core/src/neo_vm"
 
 if [ "$UNSAFE_COUNT" -gt 50 ]; then
     warn "High number of unsafe blocks"
@@ -52,7 +52,7 @@ echo ""
 echo "4. Verifying compilation..."
 echo "---------------------------"
 
-if cargo check -p neo-vm -p neo-core --quiet 2>/dev/null; then
+if cargo check -p neo-core --quiet 2>/dev/null; then
     success "Compilation passed"
 else
     error "Compilation failed"

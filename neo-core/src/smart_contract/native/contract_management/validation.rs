@@ -3,12 +3,11 @@
 //
 
 use super::*;
+use crate::neo_vm::ExecutionEngineLimits;
+use crate::script_validation::ValidatedScript;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::helper::Helper;
-use crate::smart_contract::i_interoperable::IInteroperable;
 use crate::smart_contract::manifest::ContractAbi;
-use neo_vm::ExecutionEngineLimits;
-use neo_vm::Script;
 use std::collections::{HashMap, HashSet};
 
 impl ContractManagement {
@@ -76,12 +75,15 @@ impl ContractManagement {
         manifest: &ContractManifest,
         limits: &ExecutionEngineLimits,
     ) -> Result<()> {
-        BinarySerializer::serialize(&manifest.to_stack_item()?, limits)
+        BinarySerializer::serialize_stack_value(&manifest.to_stack_value(), limits)
             .map_err(|e| Error::invalid_operation(format!("Invalid manifest: {e}")))?;
         Ok(())
     }
 
-    pub(super) fn validate_script_and_abi(script: &Script, abi: &ContractAbi) -> Result<()> {
+    pub(super) fn validate_script_and_abi(
+        script: &ValidatedScript,
+        abi: &ContractAbi,
+    ) -> Result<()> {
         let mut seen_methods: HashSet<(String, usize)> = HashSet::new();
         for method in &abi.methods {
             if method.offset < 0 {
@@ -90,9 +92,11 @@ impl ContractManagement {
                 ));
             }
             let offset = method.offset as usize;
-            script
-                .get_instruction(offset)
-                .map_err(|e| Error::invalid_data(format!("Invalid method offset: {e}")))?;
+            if !script.has_instruction_at(offset) {
+                return Err(Error::invalid_data(format!(
+                    "Invalid method offset: {offset}"
+                )));
+            }
 
             let key = (method.name.clone(), method.parameters.len());
             if !seen_methods.insert(key) {

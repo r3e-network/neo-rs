@@ -1,5 +1,5 @@
+use neo_core::neo_vm::StackItem;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
-use neo_vm::StackItem;
 
 #[test]
 fn stack_item_to_bytes_serializes_null_as_binary_null_payload() {

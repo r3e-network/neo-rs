@@ -5,6 +5,8 @@
 
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::hardfork::Hardfork;
+use crate::neo_vm::execution_engine_limits::ExecutionEngineLimits;
+use crate::neo_vm::StackItem;
 use crate::persistence::{DataCache, SeekDirection};
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;
@@ -14,8 +16,7 @@ use crate::smart_contract::native::{LedgerContract, NativeContract, NativeMethod
 use crate::smart_contract::storage_key::StorageKey;
 use crate::smart_contract::ContractParameterType;
 use crate::{ECCurve, ECPoint, UInt160};
-use neo_vm::execution_engine_limits::ExecutionEngineLimits;
-use neo_vm::StackItem;
+use neo_vm_rs::StackValue;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use std::convert::TryInto;
@@ -314,12 +315,13 @@ impl RoleManagement {
 
     /// Serializes public keys to bytes.
     pub(crate) fn serialize_public_keys(&self, public_keys: &[ECPoint]) -> Result<Vec<u8>> {
-        let items: Vec<StackItem> = public_keys
-            .iter()
-            .map(|pubkey| StackItem::from_byte_string(pubkey.as_bytes().to_vec()))
-            .collect();
-        let array = StackItem::from_array(items);
-        BinarySerializer::serialize(&array, &ExecutionEngineLimits::default())
+        let value = StackValue::Array(
+            public_keys
+                .iter()
+                .map(|pubkey| StackValue::ByteString(pubkey.as_bytes().to_vec()))
+                .collect(),
+        );
+        BinarySerializer::serialize_stack_value(&value, &ExecutionEngineLimits::default())
             .map_err(|e| Error::native_contract(format!("Failed to serialize public keys: {e}")))
     }
 
@@ -329,22 +331,21 @@ impl RoleManagement {
             return Ok(Vec::new());
         }
 
-        let item = BinarySerializer::deserialize(data, &ExecutionEngineLimits::default(), None)
-            .map_err(|e| {
-                Error::native_contract(format!("Failed to deserialize public keys: {e}"))
-            })?;
+        let value = BinarySerializer::deserialize_stack_value(data).map_err(|e| {
+            Error::native_contract(format!("Failed to deserialize public keys: {e}"))
+        })?;
 
-        let StackItem::Array(array) = item else {
+        let StackValue::Array(items) = value else {
             return Err(Error::native_contract(
                 "Public keys payload must be an array".to_string(),
             ));
         };
 
-        let mut keys = Vec::with_capacity(array.len());
-        for element in array.items() {
+        let mut keys = Vec::with_capacity(items.len());
+        for element in items {
             let bytes = element
-                .as_bytes()
-                .map_err(|_| Error::native_contract("Invalid public key item"))?;
+                .to_byte_string_bytes()
+                .ok_or_else(|| Error::native_contract("Invalid public key item"))?;
             let pubkey = ECPoint::decode_compressed_with_curve(ECCurve::secp256r1(), &bytes)
                 .map_err(|e| Error::native_contract(format!("Invalid public key encoding: {e}")))?;
             keys.push(pubkey);
@@ -453,13 +454,15 @@ mod tests {
     use crate::cryptography::Secp256r1Crypto;
     use crate::hardfork::HardforkManager;
     use crate::ledger::{Block, BlockHeader};
+    use crate::neo_vm::StackItem;
     use crate::network::p2p::payloads::{signer::Signer, transaction::Transaction};
     use crate::protocol_settings::ProtocolSettings;
+    use crate::script_builder::ScriptBuilder;
     use crate::smart_contract::trigger_type::TriggerType;
     use crate::smart_contract::{native::NativeHelpers, StorageItem};
     use crate::witness::Witness;
     use crate::{IVerifiable, UInt256, WitnessScope};
-    use neo_vm::{OpCode, ScriptBuilder, StackItem};
+    use neo_vm_rs::OpCode;
     use std::sync::Arc;
 
     fn sample_point(tag: u8) -> ECPoint {
@@ -529,7 +532,7 @@ mod tests {
         let mut tx = Transaction::new();
         tx.set_signers(signers);
         tx.set_witnesses(vec![Witness::empty(); tx.signers().len()]);
-        tx.set_script(vec![OpCode::RET as u8]);
+        tx.set_script(vec![OpCode::RET.byte()]);
 
         let script_container: Arc<dyn IVerifiable> = Arc::new(tx);
         ApplicationEngine::new(
@@ -556,7 +559,8 @@ mod tests {
     ) {
         let arg_count = args.len();
         for arg in args.drain(..).rev() {
-            sb.emit_push_stack_item(arg).expect("emit arg");
+            let value = neo_vm_rs::StackValue::try_from(arg).expect("convert arg");
+            sb.emit_push_stack_value(&value).expect("emit arg");
         }
         sb.emit_push_int(arg_count as i64);
         sb.emit_opcode(OpCode::PACK);

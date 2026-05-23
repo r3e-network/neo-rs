@@ -333,11 +333,7 @@ impl PolicyContract {
             fixed_fee,
         };
 
-        let bytes = crate::smart_contract::binary_serializer::BinarySerializer::serialize(
-            &whitelisted.to_stack_item()?,
-            &neo_vm::execution_engine_limits::ExecutionEngineLimits::default(),
-        )
-        .map_err(|e| Error::native_contract(format!("Failed to serialize whitelist info: {e}")))?;
+        let bytes = Self::serialize_whitelisted_contract(&whitelisted)?;
 
         let context = engine.get_native_storage_context(&self.hash)?;
         engine.put_storage_item(&context, key.suffix(), &bytes)?;
@@ -442,20 +438,7 @@ impl PolicyContract {
                 continue;
             }
 
-            let stack_item =
-                crate::smart_contract::binary_serializer::BinarySerializer::deserialize(
-                    &bytes,
-                    &neo_vm::execution_engine_limits::ExecutionEngineLimits::default(),
-                    None,
-                )
-                .map_err(|e| {
-                    Error::native_contract(format!("Failed to deserialize whitelist info: {e}"))
-                })?;
-
-            let mut whitelist = WhitelistedContract::default();
-            whitelist.from_stack_item(stack_item).map_err(|e| {
-                Error::native_contract(format!("Failed to deserialize WhitelistedContract: {e}"))
-            })?;
+            let whitelist = Self::deserialize_whitelisted_contract(&bytes)?;
 
             engine
                 .send_notification(

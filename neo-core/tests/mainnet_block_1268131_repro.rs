@@ -12,7 +12,9 @@
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use neo_core::ledger::{Block, BlockHeader};
-use neo_core::network::p2p::payloads::{signer::Signer, transaction::Transaction, witness::Witness};
+use neo_core::network::p2p::payloads::{
+    signer::Signer, transaction::Transaction, witness::Witness,
+};
 use neo_core::persistence::data_cache::{DataCache, DataCacheConfig};
 use neo_core::persistence::{i_store_provider::IStoreProvider, providers::RocksDBStoreProvider};
 use neo_core::persistence::{SeekDirection, StorageConfig};
@@ -41,7 +43,9 @@ fn u256(hex: &str) -> UInt256 {
 fn witness(invocation_b64: &str, verification_b64: &str) -> Witness {
     Witness::new_with_scripts(
         BASE64.decode(invocation_b64).expect("base64 invocation"),
-        BASE64.decode(verification_b64).expect("base64 verification"),
+        BASE64
+            .decode(verification_b64)
+            .expect("base64 verification"),
     )
 }
 
@@ -99,9 +103,7 @@ fn replay_block_1268131_assert_csharp_root() {
         let trie = Arc::clone(&trie);
         Arc::new(
             move |prefix: Option<&neo_core::smart_contract::StorageKey>, _dir: SeekDirection| {
-                let prefix_bytes = prefix
-                    .map(|k| k.to_array().to_owned())
-                    .unwrap_or_default();
+                let prefix_bytes = prefix.map(|k| k.to_array().to_owned()).unwrap_or_default();
                 let mut trie = trie.lock();
                 trie.find(&prefix_bytes, None)
                     .expect("trie find")
@@ -225,19 +227,20 @@ fn replay_block_1268131_assert_csharp_root() {
     let gas = tx_engine.gas_consumed();
     let exception = tx_engine.fault_exception();
     let notifs = tx_engine.notifications();
-    eprintln!(
-        "\n=== tx result ===\nvm_state={vm_state:?} gas={gas} exception={exception:?}"
-    );
+    eprintln!("\n=== tx result ===\nvm_state={vm_state:?} gas={gas} exception={exception:?}");
     eprintln!("notifications ({}):", notifs.len());
     for (i, n) in notifs.iter().take(20).enumerate() {
-        eprintln!("  [{}] contract={} event={}", i, n.script_hash, n.event_name);
+        eprintln!(
+            "  [{}] contract={} event={}",
+            i, n.script_hash, n.event_name
+        );
     }
     if notifs.len() > 20 {
         eprintln!("  ... +{} more", notifs.len() - 20);
     }
     assert_eq!(
         vm_state,
-        neo_vm::VMState::HALT,
+        neo_core::neo_vm::VMState::HALT,
         "tx must HALT (matches C# applog: HALT, gas=40436620, returns \"1\", emits Transfer)"
     );
 
@@ -262,7 +265,9 @@ fn replay_block_1268131_assert_csharp_root() {
     )
     .expect("post persist engine");
     post_persist_engine.set_state(tx_states);
-    post_persist_engine.native_post_persist().expect("post persist");
+    post_persist_engine
+        .native_post_persist()
+        .expect("post persist");
     drop(post_persist_engine);
 
     // Apply tracked changes to trie and compute new root

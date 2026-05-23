@@ -6,6 +6,7 @@ use neo_core::ledger::block::Block as LedgerBlock;
 use neo_core::ledger::block_header::BlockHeader as LedgerBlockHeader;
 use neo_core::ledger::VerifyResult;
 use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
+use neo_core::neo_vm::vm_state::VMState;
 use neo_core::network::p2p::helper::get_sign_data_vec;
 use neo_core::network::p2p::payloads::block::Block;
 use neo_core::network::p2p::payloads::signer::Signer;
@@ -22,8 +23,7 @@ use neo_core::smart_contract::{StorageItem, StorageKey};
 use neo_core::wallets::KeyPair;
 use neo_core::{IVerifiable, NeoSystem, UInt160, UInt256, Witness as LedgerWitness, WitnessScope};
 use neo_json::JToken;
-use neo_vm::op_code::OpCode;
-use neo_vm::vm_state::VMState;
+use neo_vm_rs::{OpCode, StackValue};
 use num_bigint::BigInt;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -51,7 +51,7 @@ fn build_signed_transaction(
     tx.set_network_fee(1_0000_0000);
     tx.set_system_fee(0);
     tx.set_valid_until_block(1);
-    tx.set_script(vec![OpCode::PUSH1 as u8]);
+    tx.set_script(vec![OpCode::PUSH1.byte()]);
     tx.set_signers(vec![Signer::new(
         keypair.get_script_hash(),
         WitnessScope::GLOBAL,
@@ -60,7 +60,7 @@ fn build_signed_transaction(
     let sign_data = get_sign_data_vec(&tx, settings.network).expect("sign data");
     let signature = keypair.sign(&sign_data).expect("sign");
     let mut invocation = Vec::with_capacity(signature.len() + 2);
-    invocation.push(OpCode::PUSHDATA1 as u8);
+    invocation.push(OpCode::PUSHDATA1.byte());
     invocation.push(signature.len() as u8);
     invocation.extend_from_slice(&signature);
     let verification_script = keypair.get_verification_script();
@@ -104,7 +104,7 @@ fn make_transaction(nonce: u32) -> Transaction {
     tx.set_network_fee(1_0000_0000);
     tx.set_system_fee(0);
     tx.set_valid_until_block(1);
-    tx.set_script(vec![OpCode::PUSH1 as u8]);
+    tx.set_script(vec![OpCode::PUSH1.byte()]);
     tx.set_signers(vec![Signer::new(
         UInt160::from_bytes(&[7u8; 20]).expect("account"),
         WitnessScope::GLOBAL,
@@ -173,7 +173,7 @@ fn store_block(store: &mut neo_core::persistence::StoreCache, block: &LedgerBloc
             .write_u8(RECORD_KIND_TRANSACTION)
             .expect("record kind");
         writer.write_u32(index).expect("block index");
-        writer.write_u8(VMState::NONE as u8).expect("vm state");
+        writer.write_u8(VMState::NONE.to_byte()).expect("vm state");
         writer.write_var_bytes(&tx.to_bytes()).expect("tx bytes");
 
         let mut tx_key_bytes = Vec::with_capacity(1 + 32);
@@ -241,6 +241,11 @@ fn store_storage_item(
     store.commit();
 }
 
+fn serialize_test_stack_value(value: &StackValue) -> Vec<u8> {
+    BinarySerializer::serialize_stack_value(value, &neo_core::neo_vm::ExecutionEngineLimits::default())
+        .expect("serialize stack value")
+}
+
 fn store_committee(
     store: &mut neo_core::persistence::StoreCache,
     committee: &[neo_core::cryptography::ECPoint],
@@ -251,18 +256,16 @@ fn store_committee(
         .expect("neo token")
         .id();
 
-    let items: Vec<neo_vm::StackItem> = committee
+    let items: Vec<StackValue> = committee
         .iter()
         .map(|pk| {
-            neo_vm::StackItem::from_struct(vec![
-                neo_vm::StackItem::from_byte_string(pk.as_bytes().to_vec()),
-                neo_vm::StackItem::from_int(BigInt::from(0)),
+            StackValue::Struct(vec![
+                StackValue::ByteString(pk.as_bytes().to_vec()),
+                StackValue::Integer(0),
             ])
         })
         .collect();
-    let array = neo_vm::StackItem::from_array(items);
-    let bytes = BinarySerializer::serialize(&array, &neo_vm::ExecutionEngineLimits::default())
-        .expect("serialize committee");
+    let bytes = serialize_test_stack_value(&StackValue::Array(items));
     let key = StorageKey::create(neo_token_id, PREFIX_COMMITTEE);
     store.add(key, StorageItem::from_bytes(bytes));
     store.commit();
@@ -274,12 +277,11 @@ fn store_candidate_state(
     registered: bool,
     votes: BigInt,
 ) {
-    let item = neo_vm::StackItem::from_struct(vec![
-        neo_vm::StackItem::from_bool(registered),
-        neo_vm::StackItem::from_int(votes),
+    let item = StackValue::Struct(vec![
+        StackValue::Boolean(registered),
+        StackValue::BigInteger(votes.to_signed_bytes_le()),
     ]);
-    let bytes = BinarySerializer::serialize(&item, &neo_vm::ExecutionEngineLimits::default())
-        .expect("serialize candidate");
+    let bytes = serialize_test_stack_value(&item);
     store_candidate_state_raw(store, candidate, bytes);
 }
 
@@ -313,7 +315,7 @@ fn store_blocked_account(store: &mut neo_core::persistence::StoreCache, account:
 }
 
 fn make_contract_state(id: i32, hash: UInt160, name: &str) -> ContractState {
-    let nef = NefFile::new("test".to_string(), vec![OpCode::PUSH1 as u8]);
+    let nef = NefFile::new("test".to_string(), vec![OpCode::PUSH1.byte()]);
     let manifest = ContractManifest::new(name.to_string());
     ContractState::new(id, hash, nef, manifest)
 }
@@ -1572,10 +1574,7 @@ async fn get_candidates_reports_internal_error_on_invalid_state() {
         .first()
         .expect("candidate")
         .clone();
-    let invalid_item = neo_vm::StackItem::from_byte_string(vec![0x01]);
-    let bytes =
-        BinarySerializer::serialize(&invalid_item, &neo_vm::ExecutionEngineLimits::default())
-            .expect("serialize invalid");
+    let bytes = serialize_test_stack_value(&StackValue::ByteString(vec![0x01]));
     let mut store = system.context().store_snapshot_cache();
     store_candidate_state_raw(&mut store, &candidate, bytes);
 

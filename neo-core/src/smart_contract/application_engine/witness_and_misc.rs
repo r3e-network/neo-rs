@@ -318,8 +318,8 @@ impl ApplicationEngine {
         // refresh_context_tracking() (which re-derives calling_script_hash
         // from the context) does not discard the value.
         if let Some(ctx) = self.vm_engine.engine().current_context() {
-            let state_arc = ctx
-                .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+            let state_arc =
+                ctx.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
             state_arc.lock().native_calling_script_hash = hash;
         }
         // Also store as an override so refresh_context_tracking preserves it

@@ -1,7 +1,7 @@
 use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
+use neo_core::neo_vm::ExecutionEngineLimits;
 use neo_core::smart_contract::contract_state::NefFile;
 use neo_core::smart_contract::method_token::MethodToken;
-use neo_vm::ExecutionEngineLimits;
 
 const NEF_MAGIC: u32 = 0x3346_454E;
 const COMPILER_LEN: usize = 64;

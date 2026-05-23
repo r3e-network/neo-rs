@@ -7,6 +7,8 @@ use crate::cryptography::NeoHash;
 use crate::error::CoreError;
 use crate::error::CoreResult;
 use crate::hardfork::Hardfork;
+use crate::neo_vm::execution_engine_limits::ExecutionEngineLimits;
+use crate::neo_vm::StackItem;
 use crate::persistence::i_read_only_store::IReadOnlyStoreGeneric;
 use crate::persistence::seek_direction::SeekDirection;
 use crate::protocol_settings::ProtocolSettings;
@@ -23,8 +25,7 @@ use crate::smart_contract::ContractParameterType;
 use crate::smart_contract::StorageItem;
 use crate::smart_contract::StorageKey;
 use crate::UInt160;
-use neo_vm::execution_engine_limits::ExecutionEngineLimits;
-use neo_vm::StackItem;
+use neo_vm_rs::StackValue;
 use num_bigint::BigInt;
 use num_traits::Signed;
 use num_traits::ToPrimitive;
@@ -32,6 +33,7 @@ use num_traits::Zero;
 use std::any::Any;
 
 const ID: i32 = -12;
+const MAX_VM_INTEGER_BYTES: usize = 32;
 const PREFIX_TOKEN_STATE: u8 = 10;
 const PREFIX_ACCOUNT_STATE: u8 = 12;
 
@@ -49,6 +51,72 @@ pub enum TokenType {
     Fungible = 0,
     /// Non-fungible token (unique, indivisible).
     NonFungible = 1,
+}
+
+fn stack_value_to_bigint(value: &StackValue) -> Result<BigInt, CoreError> {
+    match value {
+        StackValue::Integer(value) => Ok(BigInt::from(*value)),
+        StackValue::Boolean(value) => Ok(BigInt::from(i32::from(*value))),
+        StackValue::BigInteger(bytes) => Ok(BigInt::from_signed_bytes_le(bytes)),
+        StackValue::ByteString(bytes) | StackValue::Buffer(bytes)
+            if bytes.len() <= MAX_VM_INTEGER_BYTES =>
+        {
+            Ok(BigInt::from_signed_bytes_le(bytes))
+        }
+        _ => Err(CoreError::native_contract(
+            "cannot convert stack value to integer",
+        )),
+    }
+}
+
+fn stack_value_to_bytes(value: &StackValue) -> Result<Vec<u8>, CoreError> {
+    value
+        .to_byte_string_bytes()
+        .ok_or_else(|| CoreError::native_contract("cannot convert stack value to byte array"))
+}
+
+fn stack_value_to_bool(value: &StackValue) -> Result<bool, CoreError> {
+    match value {
+        StackValue::Null => Ok(false),
+        StackValue::Boolean(value) => Ok(*value),
+        StackValue::Integer(value) => Ok(*value != 0),
+        StackValue::BigInteger(bytes) => Ok(bytes.iter().any(|byte| *byte != 0)),
+        StackValue::ByteString(bytes) if bytes.len() <= MAX_VM_INTEGER_BYTES => {
+            Ok(bytes.iter().any(|byte| *byte != 0))
+        }
+        StackValue::ByteString(_) => Err(CoreError::native_contract(
+            "cannot convert oversized byte string to boolean",
+        )),
+        StackValue::Buffer(_) => Ok(true),
+        StackValue::Array(_)
+        | StackValue::Struct(_)
+        | StackValue::Map(_)
+        | StackValue::Pointer(_)
+        | StackValue::Interop(_)
+        | StackValue::Iterator(_) => Ok(true),
+    }
+}
+
+fn bigint_stack_value(value: &BigInt) -> StackValue {
+    StackValue::BigInteger(value.to_signed_bytes_le())
+}
+
+fn stack_item_to_stack_value(
+    stack_item: StackItem,
+    context: &str,
+) -> Result<StackValue, CoreError> {
+    StackValue::try_from(stack_item).map_err(|err| {
+        CoreError::native_contract(format!("failed to convert {context} StackItem: {err}"))
+    })
+}
+
+fn stack_value_to_stack_item(
+    stack_value: StackValue,
+    context: &str,
+) -> Result<StackItem, CoreError> {
+    StackItem::try_from(stack_value).map_err(|err| {
+        CoreError::native_contract(format!("failed to convert {context} StackValue: {err}"))
+    })
 }
 
 /// State of a registered token.
@@ -89,38 +157,51 @@ impl Default for TokenState {
 
 impl IInteroperable for TokenState {
     fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
-        if let StackItem::Struct(struct_item) = stack_item {
-            let items = struct_item.items();
+        self.from_stack_value(stack_item_to_stack_value(stack_item, "TokenState")?)
+    }
+
+    fn to_stack_item(&self) -> Result<StackItem, CoreError> {
+        stack_value_to_stack_item(self.to_stack_value(), "TokenState")
+    }
+
+    fn clone_box(&self) -> Box<dyn IInteroperable> {
+        Box::new(self.clone())
+    }
+}
+
+impl TokenState {
+    pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError> {
+        if let StackValue::Struct(items) = stack_value {
             if items.len() >= 7 {
-                if let Ok(token_type_int) = items[0].as_int() {
+                if let Ok(token_type_int) = stack_value_to_bigint(&items[0]) {
                     self.token_type = if token_type_int == BigInt::from(1) {
                         TokenType::NonFungible
                     } else {
                         TokenType::Fungible
                     };
                 }
-                if let Ok(bytes) = items[1].as_bytes() {
+                if let Ok(bytes) = stack_value_to_bytes(&items[1]) {
                     if let Ok(owner) = UInt160::from_bytes(&bytes) {
                         self.owner = owner;
                     }
                 }
-                if let Ok(bytes) = items[2].as_bytes() {
+                if let Ok(bytes) = stack_value_to_bytes(&items[2]) {
                     self.name = String::from_utf8_lossy(&bytes).to_string();
                 }
-                if let Ok(bytes) = items[3].as_bytes() {
+                if let Ok(bytes) = stack_value_to_bytes(&items[3]) {
                     self.symbol = String::from_utf8_lossy(&bytes).to_string();
                 }
-                if let Ok(decimals_int) = items[4].as_int() {
+                if let Ok(decimals_int) = stack_value_to_bigint(&items[4]) {
                     self.decimals = decimals_int.to_u8().unwrap_or(0);
                 }
-                if let Ok(total_supply) = items[5].as_int() {
+                if let Ok(total_supply) = stack_value_to_bigint(&items[5]) {
                     self.total_supply = total_supply;
                 }
-                if let Ok(max_supply) = items[6].as_int() {
+                if let Ok(max_supply) = stack_value_to_bigint(&items[6]) {
                     self.max_supply = max_supply;
                 }
                 if items.len() >= 8 {
-                    if let Ok(mintable) = items[7].get_boolean() {
+                    if let Ok(mintable) = stack_value_to_bool(&items[7]) {
                         if mintable {
                             self.mintable_address = Some(self.owner);
                         }
@@ -131,22 +212,17 @@ impl IInteroperable for TokenState {
         Ok(())
     }
 
-    fn to_stack_item(&self) -> Result<StackItem, CoreError> {
-        let items = vec![
-            StackItem::from_int(self.token_type as i32),
-            StackItem::from_byte_string(self.owner.to_bytes()),
-            StackItem::from_byte_string(self.name.as_bytes()),
-            StackItem::from_byte_string(self.symbol.as_bytes()),
-            StackItem::from_int(self.decimals as i32),
-            StackItem::from_int(self.total_supply.clone()),
-            StackItem::from_int(self.max_supply.clone()),
-            StackItem::from_bool(self.mintable_address.is_some()),
-        ];
-        Ok(StackItem::from_struct(items))
-    }
-
-    fn clone_box(&self) -> Box<dyn IInteroperable> {
-        Box::new(self.clone())
+    pub fn to_stack_value(&self) -> StackValue {
+        StackValue::Struct(vec![
+            StackValue::Integer(self.token_type as i64),
+            StackValue::ByteString(self.owner.to_bytes()),
+            StackValue::ByteString(self.name.as_bytes().to_vec()),
+            StackValue::ByteString(self.symbol.as_bytes().to_vec()),
+            StackValue::Integer(i64::from(self.decimals)),
+            bigint_stack_value(&self.total_supply),
+            bigint_stack_value(&self.max_supply),
+            StackValue::Boolean(self.mintable_address.is_some()),
+        ])
     }
 }
 
@@ -169,10 +245,23 @@ impl AccountState {
 
 impl IInteroperable for AccountState {
     fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
-        if let StackItem::Struct(struct_item) = stack_item {
-            let items = struct_item.items();
+        self.from_stack_value(stack_item_to_stack_value(stack_item, "AccountState")?)
+    }
+
+    fn to_stack_item(&self) -> Result<StackItem, CoreError> {
+        stack_value_to_stack_item(self.to_stack_value(), "AccountState")
+    }
+
+    fn clone_box(&self) -> Box<dyn IInteroperable> {
+        Box::new(self.clone())
+    }
+}
+
+impl AccountState {
+    pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError> {
+        if let StackValue::Struct(items) = stack_value {
             if let Some(first) = items.first() {
-                if let Ok(integer) = first.as_int() {
+                if let Ok(integer) = stack_value_to_bigint(first) {
                     self.balance = integer;
                 }
             }
@@ -180,14 +269,8 @@ impl IInteroperable for AccountState {
         Ok(())
     }
 
-    fn to_stack_item(&self) -> Result<StackItem, CoreError> {
-        Ok(StackItem::from_struct(vec![StackItem::from_int(
-            self.balance.clone(),
-        )]))
-    }
-
-    fn clone_box(&self) -> Box<dyn IInteroperable> {
-        Box::new(self.clone())
+    pub fn to_stack_value(&self) -> StackValue {
+        StackValue::Struct(vec![bigint_stack_value(&self.balance)])
     }
 }
 
@@ -206,29 +289,43 @@ impl NFTState {
 
 impl IInteroperable for NFTState {
     fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
-        if let StackItem::Struct(struct_item) = stack_item {
-            let items = struct_item.items();
+        self.from_stack_value(stack_item_to_stack_value(stack_item, "NFTState")?)
+    }
+
+    fn to_stack_item(&self) -> Result<StackItem, CoreError> {
+        stack_value_to_stack_item(self.to_stack_value(), "NFTState")
+    }
+
+    fn clone_box(&self) -> Box<dyn IInteroperable> {
+        Box::new(self.clone())
+    }
+}
+
+impl NFTState {
+    pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError> {
+        if let StackValue::Struct(items) = stack_value {
             if items.len() >= 2 {
-                if let Ok(bytes) = items[0].as_bytes() {
+                if let Ok(bytes) = stack_value_to_bytes(&items[0]) {
                     if let Ok(asset_id) = UInt160::from_bytes(&bytes) {
                         self.asset_id = asset_id;
                     }
                 }
-                if let Ok(bytes) = items[1].as_bytes() {
+                if let Ok(bytes) = stack_value_to_bytes(&items[1]) {
                     if let Ok(owner) = UInt160::from_bytes(&bytes) {
                         self.owner = owner;
                     }
                 }
                 if items.len() >= 3 {
-                    if let Ok(properties_array) = items[2].as_array() {
+                    if let StackValue::Array(properties_array)
+                    | StackValue::Struct(properties_array) = &items[2]
+                    {
                         self.properties = properties_array
                             .iter()
                             .filter_map(|prop| {
-                                if let StackItem::Struct(prop_struct) = prop {
-                                    let prop_items = prop_struct.items();
+                                if let StackValue::Struct(prop_items) = prop {
                                     if prop_items.len() >= 2 {
-                                        let key = prop_items[0].as_bytes().ok()?.to_vec();
-                                        let value = prop_items[1].as_bytes().ok()?.to_vec();
+                                        let key = stack_value_to_bytes(&prop_items[0]).ok()?;
+                                        let value = stack_value_to_bytes(&prop_items[1]).ok()?;
                                         Some((key, value))
                                     } else {
                                         None
@@ -245,26 +342,22 @@ impl IInteroperable for NFTState {
         Ok(())
     }
 
-    fn to_stack_item(&self) -> Result<StackItem, CoreError> {
-        let properties_items: Vec<StackItem> = self
+    pub fn to_stack_value(&self) -> StackValue {
+        let properties_items: Vec<StackValue> = self
             .properties
             .iter()
             .map(|(k, v)| {
-                StackItem::from_struct(vec![
-                    StackItem::from_byte_string(k.clone()),
-                    StackItem::from_byte_string(v.clone()),
+                StackValue::Struct(vec![
+                    StackValue::ByteString(k.clone()),
+                    StackValue::ByteString(v.clone()),
                 ])
             })
             .collect();
-        Ok(StackItem::from_struct(vec![
-            StackItem::from_byte_string(self.asset_id.to_bytes()),
-            StackItem::from_byte_string(self.owner.to_bytes()),
-            StackItem::from_array(properties_items),
-        ]))
-    }
-
-    fn clone_box(&self) -> Box<dyn IInteroperable> {
-        Box::new(self.clone())
+        StackValue::Struct(vec![
+            StackValue::ByteString(self.asset_id.to_bytes()),
+            StackValue::ByteString(self.owner.to_bytes()),
+            StackValue::Array(properties_items),
+        ])
     }
 }
 
@@ -570,6 +663,19 @@ impl NativeContract for TokenManagement {
 }
 
 impl TokenManagement {
+    fn deserialize_storage_stack_value(data: &[u8]) -> Result<StackValue, String> {
+        let limits = ExecutionEngineLimits::default();
+        BinarySerializer::deserialize_stack_value_with_limits(
+            data,
+            limits.max_item_size as usize,
+            limits.max_stack_size as usize,
+        )
+    }
+
+    fn serialize_storage_stack_value(value: &StackValue) -> Result<Vec<u8>, String> {
+        BinarySerializer::serialize_stack_value(value, &ExecutionEngineLimits::default())
+    }
+
     fn get_token_state(
         &self,
         engine: &ApplicationEngine,
@@ -584,11 +690,10 @@ impl TokenManagement {
         if bytes.is_empty() {
             return Ok(None);
         }
-        let stack_item =
-            BinarySerializer::deserialize(&bytes, &ExecutionEngineLimits::default(), None)
-                .map_err(CoreError::native_contract)?;
+        let stack_value =
+            Self::deserialize_storage_stack_value(&bytes).map_err(CoreError::native_contract)?;
         let mut token_state = TokenState::default();
-        token_state.from_stack_item(stack_item)?;
+        token_state.from_stack_value(stack_value)?;
         Ok(Some(token_state))
     }
 
@@ -613,11 +718,10 @@ impl TokenManagement {
         if bytes.is_empty() {
             return Ok(None);
         }
-        let stack_item =
-            BinarySerializer::deserialize(&bytes, &ExecutionEngineLimits::default(), None)
-                .map_err(CoreError::native_contract)?;
+        let stack_value =
+            Self::deserialize_storage_stack_value(&bytes).map_err(CoreError::native_contract)?;
         let mut account_state = AccountState::default();
-        account_state.from_stack_item(stack_item)?;
+        account_state.from_stack_value(stack_value)?;
         Ok(Some(account_state))
     }
 
@@ -639,8 +743,7 @@ impl TokenManagement {
         if state.balance.is_zero() {
             engine.delete_storage_item(context, key.suffix())?;
         } else {
-            let stack_item = state.to_stack_item()?;
-            let bytes = BinarySerializer::serialize(&stack_item, &ExecutionEngineLimits::default())
+            let bytes = Self::serialize_storage_stack_value(&state.to_stack_value())
                 .map_err(CoreError::native_contract)?;
             engine.put_storage_item(context, key.suffix(), &bytes)?;
         }
@@ -865,8 +968,7 @@ impl TokenManagement {
             ));
         };
 
-        let stack_item = token_state.to_stack_item()?;
-        let bytes = BinarySerializer::serialize(&stack_item, &ExecutionEngineLimits::default())
+        let bytes = Self::serialize_storage_stack_value(&token_state.to_stack_value())
             .map_err(CoreError::native_contract)?;
         Ok(bytes)
     }
@@ -996,8 +1098,7 @@ impl TokenManagement {
         let key = StorageKey::create_with_uint160(ID, PREFIX_TOKEN_STATE, &asset_id)
             .suffix()
             .to_vec();
-        let stack_item = token_state.to_stack_item()?;
-        let bytes = BinarySerializer::serialize(&stack_item, &ExecutionEngineLimits::default())
+        let bytes = Self::serialize_storage_stack_value(&token_state.to_stack_value())
             .map_err(CoreError::native_contract)?;
         engine.put_storage_item(&context, &key, &bytes)?;
 
@@ -1051,8 +1152,7 @@ impl TokenManagement {
         let key = StorageKey::create_with_uint160(ID, PREFIX_TOKEN_STATE, &asset_id)
             .suffix()
             .to_vec();
-        let stack_item = token_state.to_stack_item()?;
-        let bytes = BinarySerializer::serialize(&stack_item, &ExecutionEngineLimits::default())
+        let bytes = Self::serialize_storage_stack_value(&token_state.to_stack_value())
             .map_err(CoreError::native_contract)?;
         engine.put_storage_item(&context, &key, &bytes)?;
 
@@ -1124,8 +1224,7 @@ impl TokenManagement {
         let key = StorageKey::create_with_uint160(ID, PREFIX_TOKEN_STATE, &asset_id)
             .suffix()
             .to_vec();
-        let stack_item = token_state.to_stack_item()?;
-        let bytes = BinarySerializer::serialize(&stack_item, &ExecutionEngineLimits::default())
+        let bytes = Self::serialize_storage_stack_value(&token_state.to_stack_value())
             .map_err(CoreError::native_contract)?;
         engine.put_storage_item(&context, &key, &bytes)?;
 
@@ -1199,8 +1298,7 @@ impl TokenManagement {
         let key = StorageKey::create_with_uint160(ID, PREFIX_TOKEN_STATE, &asset_id)
             .suffix()
             .to_vec();
-        let stack_item = token_state.to_stack_item()?;
-        let bytes = BinarySerializer::serialize(&stack_item, &ExecutionEngineLimits::default())
+        let bytes = Self::serialize_storage_stack_value(&token_state.to_stack_value())
             .map_err(CoreError::native_contract)?;
         engine.put_storage_item(&context, &key, &bytes)?;
 
@@ -1269,9 +1367,8 @@ impl TokenManagement {
         let mut updated_token_state = token_state.clone();
         updated_token_state.total_supply = new_supply;
 
-        let token_stack_item = updated_token_state.to_stack_item()?;
         let token_bytes =
-            BinarySerializer::serialize(&token_stack_item, &ExecutionEngineLimits::default())
+            Self::serialize_storage_stack_value(&updated_token_state.to_stack_value())
                 .map_err(CoreError::native_contract)?;
         engine.put_storage_item(&context, &token_key, &token_bytes)?;
 
@@ -1280,10 +1377,8 @@ impl TokenManagement {
             owner: account,
             properties: Vec::new(),
         };
-        let nft_stack_item = nft_state.to_stack_item()?;
-        let nft_bytes =
-            BinarySerializer::serialize(&nft_stack_item, &ExecutionEngineLimits::default())
-                .map_err(CoreError::native_contract)?;
+        let nft_bytes = Self::serialize_storage_stack_value(&nft_state.to_stack_value())
+            .map_err(CoreError::native_contract)?;
         let nft_key = StorageKey::create_with_uint160(ID, PREFIX_NFT_STATE, &unique_id)
             .suffix()
             .to_vec();
@@ -1382,10 +1477,8 @@ impl TokenManagement {
         };
 
         token_state.total_supply -= 1;
-        let token_stack_item = token_state.to_stack_item()?;
-        let token_bytes =
-            BinarySerializer::serialize(&token_stack_item, &ExecutionEngineLimits::default())
-                .map_err(CoreError::native_contract)?;
+        let token_bytes = Self::serialize_storage_stack_value(&token_state.to_stack_value())
+            .map_err(CoreError::native_contract)?;
         engine.put_storage_item(&context, &token_key, &token_bytes)?;
 
         self.update_account_balance(&context, engine, &nft_state.owner, &nft_state.asset_id, -1)?;
@@ -1461,10 +1554,8 @@ impl TokenManagement {
         }
 
         nft_state.owner = to;
-        let nft_stack_item = nft_state.to_stack_item()?;
-        let nft_bytes =
-            BinarySerializer::serialize(&nft_stack_item, &ExecutionEngineLimits::default())
-                .map_err(CoreError::native_contract)?;
+        let nft_bytes = Self::serialize_storage_stack_value(&nft_state.to_stack_value())
+            .map_err(CoreError::native_contract)?;
         engine.put_storage_item(&context, &nft_key, &nft_bytes)?;
 
         self.remove_nft_from_owner_index(&context, engine, &from, &nft_id)?;
@@ -1682,10 +1773,10 @@ impl TokenManagement {
     }
 
     fn deserialize_token_state(data: &[u8]) -> Option<TokenState> {
-        match BinarySerializer::deserialize(data, &ExecutionEngineLimits::default(), None) {
-            Ok(stack_item) => {
+        match Self::deserialize_storage_stack_value(data) {
+            Ok(stack_value) => {
                 let mut state = TokenState::default();
-                state.from_stack_item(stack_item).ok()?;
+                state.from_stack_value(stack_value).ok()?;
                 Some(state)
             }
             Err(_) => None,
@@ -1693,10 +1784,10 @@ impl TokenManagement {
     }
 
     fn deserialize_account_state(data: &[u8]) -> Option<AccountState> {
-        match BinarySerializer::deserialize(data, &ExecutionEngineLimits::default(), None) {
-            Ok(stack_item) => {
+        match Self::deserialize_storage_stack_value(data) {
+            Ok(stack_value) => {
                 let mut state = AccountState::default();
-                state.from_stack_item(stack_item).ok()?;
+                state.from_stack_value(stack_value).ok()?;
                 Some(state)
             }
             Err(_) => None,
@@ -1704,10 +1795,10 @@ impl TokenManagement {
     }
 
     fn deserialize_nft_state(data: &[u8]) -> Option<NFTState> {
-        match BinarySerializer::deserialize(data, &ExecutionEngineLimits::default(), None) {
-            Ok(stack_item) => {
+        match Self::deserialize_storage_stack_value(data) {
+            Ok(stack_value) => {
                 let mut state = NFTState::default();
-                state.from_stack_item(stack_item).ok()?;
+                state.from_stack_value(stack_value).ok()?;
                 Some(state)
             }
             Err(_) => None,
@@ -1812,6 +1903,144 @@ impl TokenManagement {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use neo_vm_rs::StackValue;
+
+    fn sample_uint160(seed: u8) -> UInt160 {
+        UInt160::from_bytes(&[seed; 20]).expect("valid UInt160")
+    }
+
+    #[test]
+    fn token_state_projects_to_stack_value() {
+        let owner = sample_uint160(1);
+        let state = TokenState {
+            token_type: TokenType::NonFungible,
+            owner,
+            name: "Token".to_string(),
+            symbol: "TKN".to_string(),
+            decimals: 8,
+            total_supply: BigInt::from(123_456),
+            max_supply: BigInt::from(999_999),
+            mintable_address: Some(owner),
+        };
+
+        assert_eq!(
+            state.to_stack_value(),
+            StackValue::Struct(vec![
+                StackValue::Integer(1),
+                StackValue::ByteString(owner.to_bytes()),
+                StackValue::ByteString(b"Token".to_vec()),
+                StackValue::ByteString(b"TKN".to_vec()),
+                StackValue::Integer(8),
+                StackValue::BigInteger(BigInt::from(123_456).to_signed_bytes_le()),
+                StackValue::BigInteger(BigInt::from(999_999).to_signed_bytes_le()),
+                StackValue::Boolean(true),
+            ])
+        );
+    }
+
+    #[test]
+    fn token_state_reads_stack_value() {
+        let owner = sample_uint160(2);
+        let mut state = TokenState::default();
+
+        state
+            .from_stack_value(StackValue::Struct(vec![
+                StackValue::Integer(0),
+                StackValue::ByteString(owner.to_bytes()),
+                StackValue::ByteString(b"Name".to_vec()),
+                StackValue::ByteString(b"SYM".to_vec()),
+                StackValue::Integer(9),
+                StackValue::BigInteger(BigInt::from(42).to_signed_bytes_le()),
+                StackValue::BigInteger(BigInt::from(84).to_signed_bytes_le()),
+                StackValue::Boolean(true),
+            ]))
+            .expect("parse token state");
+
+        assert_eq!(state.token_type, TokenType::Fungible);
+        assert_eq!(state.owner, owner);
+        assert_eq!(state.name, "Name");
+        assert_eq!(state.symbol, "SYM");
+        assert_eq!(state.decimals, 9);
+        assert_eq!(state.total_supply, BigInt::from(42));
+        assert_eq!(state.max_supply, BigInt::from(84));
+        assert_eq!(state.mintable_address, Some(owner));
+    }
+
+    #[test]
+    fn account_state_projects_to_stack_value() {
+        let state = AccountState::with_balance(BigInt::from(77));
+
+        assert_eq!(
+            state.to_stack_value(),
+            StackValue::Struct(vec![StackValue::BigInteger(
+                BigInt::from(77).to_signed_bytes_le()
+            )])
+        );
+    }
+
+    #[test]
+    fn account_state_reads_stack_value() {
+        let mut state = AccountState::default();
+
+        state
+            .from_stack_value(StackValue::Struct(vec![StackValue::BigInteger(
+                BigInt::from(88).to_signed_bytes_le(),
+            )]))
+            .expect("parse account state");
+
+        assert_eq!(state.balance, BigInt::from(88));
+    }
+
+    #[test]
+    fn nft_state_projects_to_stack_value() {
+        let asset_id = sample_uint160(3);
+        let owner = sample_uint160(4);
+        let state = NFTState {
+            asset_id,
+            owner,
+            properties: vec![(b"name".to_vec(), b"value".to_vec())],
+        };
+
+        assert_eq!(
+            state.to_stack_value(),
+            StackValue::Struct(vec![
+                StackValue::ByteString(asset_id.to_bytes()),
+                StackValue::ByteString(owner.to_bytes()),
+                StackValue::Array(vec![StackValue::Struct(vec![
+                    StackValue::ByteString(b"name".to_vec()),
+                    StackValue::ByteString(b"value".to_vec()),
+                ])]),
+            ])
+        );
+    }
+
+    #[test]
+    fn nft_state_reads_stack_value() {
+        let asset_id = sample_uint160(5);
+        let owner = sample_uint160(6);
+        let mut state = NFTState::default();
+
+        state
+            .from_stack_value(StackValue::Struct(vec![
+                StackValue::ByteString(asset_id.to_bytes()),
+                StackValue::ByteString(owner.to_bytes()),
+                StackValue::Array(vec![
+                    StackValue::Struct(vec![
+                        StackValue::ByteString(b"color".to_vec()),
+                        StackValue::ByteString(b"blue".to_vec()),
+                    ]),
+                    StackValue::Boolean(true),
+                ]),
+            ]))
+            .expect("parse nft state");
+
+        assert_eq!(state.asset_id, asset_id);
+        assert_eq!(state.owner, owner);
+        assert_eq!(
+            state.properties,
+            vec![(b"color".to_vec(), b"blue".to_vec())]
+        );
+    }
 
     #[test]
     fn test_token_state_default() {

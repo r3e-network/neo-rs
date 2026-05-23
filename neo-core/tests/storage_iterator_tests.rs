@@ -1,9 +1,9 @@
+use neo_core::neo_vm::StackItem;
 use neo_core::smart_contract::find_options::FindOptions;
 use neo_core::smart_contract::iterators::i_iterator::IIterator;
 use neo_core::smart_contract::iterators::storage_iterator::StorageIterator;
 use neo_core::smart_contract::storage_item::StorageItem;
 use neo_core::smart_contract::storage_key::StorageKey;
-use neo_vm::StackItem;
 
 #[test]
 fn storage_iterator_dispose_is_safe() {

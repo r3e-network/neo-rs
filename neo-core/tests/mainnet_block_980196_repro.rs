@@ -57,7 +57,9 @@ fn u256(hex: &str) -> UInt256 {
 fn witness(invocation_b64: &str, verification_b64: &str) -> Witness {
     Witness::new_with_scripts(
         BASE64.decode(invocation_b64).expect("base64 invocation"),
-        BASE64.decode(verification_b64).expect("base64 verification"),
+        BASE64
+            .decode(verification_b64)
+            .expect("base64 verification"),
     )
 }
 
@@ -115,9 +117,7 @@ fn replay_block_980196_debug() {
         let trie = Arc::clone(&trie);
         Arc::new(
             move |prefix: Option<&neo_core::smart_contract::StorageKey>, _dir: SeekDirection| {
-                let prefix_bytes = prefix
-                    .map(|k| k.to_array().to_owned())
-                    .unwrap_or_default();
+                let prefix_bytes = prefix.map(|k| k.to_array().to_owned()).unwrap_or_default();
                 let mut trie = trie.lock();
                 trie.find(&prefix_bytes, None)
                     .expect("trie find")
@@ -286,7 +286,10 @@ fn replay_block_980196_debug() {
             );
             eprintln!("notifications ({}):", notifs.len());
             for (i, n) in notifs.iter().enumerate() {
-                eprintln!("  [{}] contract={} event={}", i, n.script_hash, n.event_name);
+                eprintln!(
+                    "  [{}] contract={} event={}",
+                    i, n.script_hash, n.event_name
+                );
             }
         }
 
@@ -295,7 +298,7 @@ fn replay_block_980196_debug() {
             .unwrap_or_else(|| LedgerTransactionStates::new(Vec::new()));
 
         // tx0 must HALT for the C# state root to match. If it FAULTs we have repro'd bug #8.
-        if vm_state != neo_vm::VMState::HALT {
+        if vm_state != neo_core::neo_vm::VMState::HALT {
             eprintln!(
                 "\n!!! tx{} FAULTed at block 980,196 — bug #8 reproduced (gas={gas}) !!!",
                 idx,
@@ -319,7 +322,9 @@ fn replay_block_980196_debug() {
     )
     .expect("post persist engine");
     post_persist_engine.set_state(tx_states);
-    post_persist_engine.native_post_persist().expect("post persist");
+    post_persist_engine
+        .native_post_persist()
+        .expect("post persist");
     drop(post_persist_engine);
 
     let mut applied = 0usize;
@@ -360,10 +365,9 @@ fn replay_block_980196_debug() {
     );
 
     // C# expected root for block 980,196.
-    let expected_csharp_root = UInt256::parse(
-        "0xdf3e98ea20e700c91fce1b5f273891c499b70da890b670c0ab71722624072682",
-    )
-    .expect("parse expected C# root");
+    let expected_csharp_root =
+        UInt256::parse("0xdf3e98ea20e700c91fce1b5f273891c499b70da890b670c0ab71722624072682")
+            .expect("parse expected C# root");
     assert_eq!(
         new_root, expected_csharp_root,
         "block 980196 OnPersist + 2-tx + PostPersist state root must match C# v3.9.1",

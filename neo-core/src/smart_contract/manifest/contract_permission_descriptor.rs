@@ -2,8 +2,9 @@
 
 use super::contract_group::ContractGroup;
 use crate::cryptography::ECPoint;
+use crate::neo_vm::StackItem;
 use crate::UInt160;
-use neo_vm::StackItem;
+use neo_vm_rs::StackValue;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -93,14 +94,12 @@ impl ContractPermissionDescriptor {
     ///
     /// C# reference: `ContractPermissionDescriptor.ToStackItem()`
     /// Wildcard produces `Null` in BinarySerializer output (verified against mainnet state root).
-    pub fn to_stack_item(&self) -> StackItem {
+    pub fn to_stack_value(&self) -> StackValue {
         match self {
-            ContractPermissionDescriptor::Wildcard => StackItem::null(),
-            ContractPermissionDescriptor::Hash(hash) => {
-                StackItem::from_byte_string(hash.to_bytes())
-            }
+            ContractPermissionDescriptor::Wildcard => StackValue::Null,
+            ContractPermissionDescriptor::Hash(hash) => StackValue::ByteString(hash.to_bytes()),
             ContractPermissionDescriptor::Group(group) => {
-                StackItem::from_byte_string(group.encode_point(true).unwrap_or_else(|e| {
+                StackValue::ByteString(group.encode_point(true).unwrap_or_else(|e| {
                     tracing::error!("Failed to encode group key: {}", e);
                     group.to_bytes()
                 }))
@@ -108,20 +107,32 @@ impl ContractPermissionDescriptor {
         }
     }
 
-    /// Creates a descriptor from a stack item encoded form.
-    pub fn from_stack_item(item: &StackItem) -> Result<Self, String> {
-        match item {
-            StackItem::Null => Ok(Self::create_wildcard()),
-            StackItem::ByteString(bytes) => Self::from_bytes(bytes),
-            StackItem::Buffer(buffer) => {
-                let data = buffer.data();
-                Self::from_bytes(&data)
-            }
+    /// Converts the descriptor to its stack item representation.
+    pub fn to_stack_item(&self) -> StackItem {
+        StackItem::try_from(self.to_stack_value())
+            .expect("permission descriptor StackValue projection must be StackItem-compatible")
+    }
+
+    /// Creates a descriptor from a neo-vm-rs stack value encoded form.
+    pub fn from_stack_value(stack_value: StackValue) -> Result<Self, String> {
+        match stack_value {
+            StackValue::Null => Ok(Self::create_wildcard()),
+            StackValue::ByteString(bytes) | StackValue::Buffer(bytes) => Self::from_bytes(&bytes),
             other => Err(format!(
-                "Unsupported stack item type for ContractPermissionDescriptor: {:?}",
-                other.stack_item_type()
+                "Unsupported stack value type for ContractPermissionDescriptor: {:?}",
+                other
             )),
         }
+    }
+
+    /// Creates a descriptor from a stack item encoded form.
+    pub fn from_stack_item(item: &StackItem) -> Result<Self, String> {
+        Self::from_stack_value(StackValue::try_from(item.clone()).map_err(|_| {
+            format!(
+                "Unsupported stack item type for ContractPermissionDescriptor: {:?}",
+                item.stack_item_type()
+            )
+        })?)
     }
 
     /// Builds a descriptor from raw bytes.
@@ -174,5 +185,74 @@ impl<'de> Deserialize<'de> for ContractPermissionDescriptor {
     {
         let value = Value::deserialize(deserializer)?;
         ContractPermissionDescriptor::from_json(&value).map_err(serde::de::Error::custom)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::wallets::KeyPair;
+    use neo_vm_rs::StackValue;
+
+    fn group_key() -> ECPoint {
+        KeyPair::new(vec![1u8; 32])
+            .expect("keypair")
+            .get_public_key_point()
+            .expect("pubkey")
+    }
+
+    #[test]
+    fn permission_descriptor_projects_to_neo_vm_rs_stack_value() {
+        let hash = UInt160::from_bytes(&[0x11; 20]).expect("hash");
+        let group = group_key();
+
+        assert_eq!(
+            ContractPermissionDescriptor::create_wildcard().to_stack_value(),
+            StackValue::Null
+        );
+        assert_eq!(
+            ContractPermissionDescriptor::create_hash(hash).to_stack_value(),
+            StackValue::ByteString(hash.to_bytes())
+        );
+        assert_eq!(
+            ContractPermissionDescriptor::create_group(group.clone()).to_stack_value(),
+            StackValue::ByteString(group.encode_point(true).expect("compressed key"))
+        );
+    }
+
+    #[test]
+    fn permission_descriptor_stack_item_projection_matches_stack_value_projection() {
+        let descriptor =
+            ContractPermissionDescriptor::create_hash(UInt160::from_bytes(&[0x22; 20]).unwrap());
+        let expected = StackItem::try_from(descriptor.to_stack_value()).unwrap();
+
+        assert_eq!(descriptor.to_stack_item(), expected);
+    }
+
+    #[test]
+    fn permission_descriptor_reads_from_neo_vm_rs_stack_value() {
+        let hash = UInt160::from_bytes(&[0x33; 20]).expect("hash");
+        let group = group_key();
+        let group_bytes = group.encode_point(true).expect("compressed key");
+
+        assert_eq!(
+            ContractPermissionDescriptor::from_stack_value(StackValue::Null).unwrap(),
+            ContractPermissionDescriptor::Wildcard
+        );
+        assert_eq!(
+            ContractPermissionDescriptor::from_stack_value(StackValue::ByteString(hash.to_bytes()))
+                .unwrap(),
+            ContractPermissionDescriptor::Hash(hash)
+        );
+        assert_eq!(
+            ContractPermissionDescriptor::from_stack_value(StackValue::Buffer(group_bytes))
+                .unwrap(),
+            ContractPermissionDescriptor::Group(group)
+        );
+        assert_eq!(
+            ContractPermissionDescriptor::from_stack_value(StackValue::ByteString(b"*".to_vec()))
+                .unwrap(),
+            ContractPermissionDescriptor::Wildcard
+        );
     }
 }

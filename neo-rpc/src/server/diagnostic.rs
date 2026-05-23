@@ -1,10 +1,10 @@
 use crate::server::{tree::Tree, tree_node::TreeNode};
+use neo_core::neo_vm::execution_context::ExecutionContext;
+use neo_core::neo_vm::instruction::Instruction;
 use neo_core::smart_contract::execution_context_state::ExecutionContextState;
 use neo_core::smart_contract::i_diagnostic::IDiagnostic;
 use neo_core::smart_contract::ApplicationEngine;
 use neo_core::UInt160;
-use neo_vm::execution_context::ExecutionContext;
-use neo_vm::instruction::Instruction;
 use parking_lot::Mutex;
 use std::fmt;
 use std::sync::Arc;

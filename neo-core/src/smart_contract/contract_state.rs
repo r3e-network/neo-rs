@@ -10,6 +10,7 @@ use crate::neo_io::serializable::helper::{
     get_var_size_bytes, get_var_size_serializable_slice, get_var_size_str,
 };
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use crate::neo_vm::StackItem;
 use crate::smart_contract::{
     helper::Helper, i_interoperable::IInteroperable, manifest::ContractManifest,
     method_token::MethodToken, CallFlags,
@@ -17,7 +18,7 @@ use crate::smart_contract::{
 use crate::UInt160;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::Engine;
-use neo_vm::StackItem;
+use neo_vm_rs::StackValue;
 use num_traits::ToPrimitive;
 use serde_json::{json, Value};
 
@@ -57,6 +58,24 @@ pub struct NefFile {
 
     /// The checksum of the NEF file.
     pub checksum: u32,
+}
+
+fn stack_value_to_bigint(value: &StackValue) -> Result<num_bigint::BigInt, CoreError> {
+    match value {
+        StackValue::Integer(value) => Ok(num_bigint::BigInt::from(*value)),
+        StackValue::Boolean(value) => Ok(num_bigint::BigInt::from(i32::from(*value))),
+        StackValue::BigInteger(bytes) => Ok(num_bigint::BigInt::from_signed_bytes_le(bytes)),
+        StackValue::ByteString(bytes) | StackValue::Buffer(bytes) if bytes.len() <= 32 => {
+            Ok(num_bigint::BigInt::from_signed_bytes_le(bytes))
+        }
+        _ => Err(CoreError::invalid_format(
+            "ContractState field must be Integer-compatible",
+        )),
+    }
+}
+
+fn stack_value_to_bytes(value: &StackValue) -> Option<Vec<u8>> {
+    value.to_byte_string_bytes()
 }
 
 impl ContractState {
@@ -248,72 +267,73 @@ impl NefFile {
 
 impl IInteroperable for ContractState {
     fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
-        let items = match &stack_item {
-            StackItem::Array(array) => array.items(),
-            StackItem::Struct(struct_item) => struct_item.items(),
+        self.from_stack_value(StackValue::try_from(stack_item).map_err(|error| {
+            CoreError::invalid_format(format!(
+                "ContractState expects Array/Struct stack item: {error}"
+            ))
+        })?)
+    }
+
+    fn to_stack_item(&self) -> Result<StackItem, CoreError> {
+        StackItem::try_from(self.to_stack_value()).map_err(|error| {
+            CoreError::invalid_format(format!(
+                "ContractState StackValue conversion failed: {error}"
+            ))
+        })
+    }
+
+    fn clone_box(&self) -> Box<dyn IInteroperable> {
+        Box::new(self.clone())
+    }
+}
+
+impl ContractState {
+    pub fn to_stack_value(&self) -> StackValue {
+        StackValue::Array(vec![
+            StackValue::Integer(self.id as i64),
+            StackValue::Integer(i64::from(self.update_counter)),
+            StackValue::ByteString(self.hash.to_bytes().to_vec()),
+            StackValue::ByteString(self.nef.to_bytes()),
+            self.manifest.to_stack_value(),
+        ])
+    }
+
+    pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError> {
+        let items = match stack_value {
+            StackValue::Array(items) | StackValue::Struct(items) => items,
             other => {
                 return Err(CoreError::invalid_format(format!(
-                    "ContractState expects Array/Struct stack item, found {:?}",
-                    other.stack_item_type()
+                    "ContractState expects Array/Struct stack value, found {:?}",
+                    other.compact_type_tag()
                 )));
             }
         };
 
         if items.len() < 5 {
             return Err(CoreError::invalid_format(format!(
-                "ContractState stack item must contain 5 elements, found {}",
+                "ContractState stack value must contain 5 elements, found {}",
                 items.len()
             )));
         }
 
-        let id = match items[0].as_int() {
-            Ok(value) => value.to_i32().unwrap_or_default(),
-            Err(_) => {
-                return Err(CoreError::invalid_format(
-                    "ContractState id must be Integer",
-                ));
-            }
-        };
-
-        let update_counter = match items[1].as_int() {
-            Ok(value) => value.to_u16().unwrap_or_default(),
-            Err(_) => {
-                return Err(CoreError::invalid_format(
-                    "ContractState update counter must be Integer",
-                ));
-            }
-        };
-
-        let hash_bytes = match items[2].as_bytes() {
-            Ok(bytes) => bytes,
-            Err(_) => {
-                return Err(CoreError::invalid_format(
-                    "ContractState hash must be ByteString",
-                ));
-            }
-        };
-        let Ok(hash) = UInt160::from_bytes(&hash_bytes) else {
-            return Err(CoreError::invalid_format(
-                "ContractState hash must be valid UInt160 bytes",
-            ));
-        };
-
-        let nef_bytes = match items[3].as_bytes() {
-            Ok(bytes) => bytes,
-            Err(_) => {
-                return Err(CoreError::invalid_format(
-                    "ContractState NEF must be ByteString",
-                ));
-            }
-        };
-        let Ok(nef) = NefFile::parse(&nef_bytes) else {
-            return Err(CoreError::invalid_format(
-                "ContractState NEF bytes failed to parse",
-            ));
-        };
+        let id = stack_value_to_bigint(&items[0])?
+            .to_i32()
+            .unwrap_or_default();
+        let update_counter = stack_value_to_bigint(&items[1])?
+            .to_u16()
+            .unwrap_or_default();
+        let hash_bytes = stack_value_to_bytes(&items[2])
+            .ok_or_else(|| CoreError::invalid_format("ContractState hash must be ByteString"))?;
+        let hash = UInt160::from_bytes(&hash_bytes).map_err(|_| {
+            CoreError::invalid_format("ContractState hash must be valid UInt160 bytes")
+        })?;
+        let nef_bytes = stack_value_to_bytes(&items[3])
+            .ok_or_else(|| CoreError::invalid_format("ContractState NEF must be ByteString"))?;
+        let nef = NefFile::parse(&nef_bytes)
+            .map_err(|_| CoreError::invalid_format("ContractState NEF bytes failed to parse"))?;
 
         let mut manifest = ContractManifest::new(String::new());
-        manifest.from_stack_item(items[4].clone())?;
+        manifest.from_stack_value(items[4].clone())?;
 
         self.id = id;
         self.update_counter = update_counter;
@@ -321,20 +341,6 @@ impl IInteroperable for ContractState {
         self.nef = nef;
         self.manifest = manifest;
         Ok(())
-    }
-
-    fn to_stack_item(&self) -> Result<StackItem, CoreError> {
-        Ok(StackItem::from_array(vec![
-            StackItem::from_int(self.id),
-            StackItem::from_int(self.update_counter),
-            StackItem::from_byte_string(self.hash.to_bytes().to_vec()),
-            StackItem::from_byte_string(self.nef.to_bytes()),
-            self.manifest.to_stack_item()?,
-        ]))
-    }
-
-    fn clone_box(&self) -> Box<dyn IInteroperable> {
-        Box::new(self.clone())
     }
 }
 
@@ -384,7 +390,7 @@ impl Serializable for NefFile {
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
-        use neo_vm::ExecutionEngineLimits;
+        use crate::neo_vm::ExecutionEngineLimits;
 
         writer.write_u32(Self::MAGIC)?;
 
@@ -443,7 +449,7 @@ impl Serializable for NefFile {
     }
 
     fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
-        use neo_vm::ExecutionEngineLimits;
+        use crate::neo_vm::ExecutionEngineLimits;
 
         let start_position = reader.position();
 
@@ -563,6 +569,7 @@ impl Serializable for MethodToken {
 mod tests {
     use super::*;
     use crate::smart_contract::manifest::ContractManifest;
+    use neo_vm_rs::StackValue;
 
     #[test]
     fn contract_state_roundtrip_matches_signed_id() {
@@ -583,5 +590,60 @@ mod tests {
         assert_eq!(parsed.nef.script, nef.script);
         assert_eq!(parsed.manifest.name, manifest.name);
         assert_eq!(bytes.len(), state.size());
+    }
+
+    #[test]
+    fn contract_state_projects_to_stack_value() {
+        let hash = UInt160::from_bytes(&[1u8; 20]).expect("hash");
+        let nef = NefFile::new("compiler".to_string(), vec![1, 2, 3]);
+        let manifest = ContractManifest::new("test".to_string());
+        let mut state = ContractState::new(-7, hash, nef.clone(), manifest.clone());
+        state.update_counter = 9;
+
+        assert_eq!(
+            state.to_stack_value(),
+            StackValue::Array(vec![
+                StackValue::Integer(-7),
+                StackValue::Integer(9),
+                StackValue::ByteString(hash.to_bytes()),
+                StackValue::ByteString(nef.to_bytes()),
+                manifest.to_stack_value(),
+            ])
+        );
+    }
+
+    #[test]
+    fn contract_state_reads_stack_value() {
+        let hash = UInt160::from_bytes(&[2u8; 20]).expect("hash");
+        let nef = NefFile::new("compiler".to_string(), vec![4, 5, 6]);
+        let manifest = ContractManifest::new("parsed".to_string());
+
+        let mut state = ContractState::default();
+        state
+            .from_stack_value(StackValue::Array(vec![
+                StackValue::Integer(11),
+                StackValue::Integer(3),
+                StackValue::ByteString(hash.to_bytes()),
+                StackValue::ByteString(nef.to_bytes()),
+                manifest.to_stack_value(),
+            ]))
+            .expect("contract state from stack value");
+
+        assert_eq!(state.id, 11);
+        assert_eq!(state.update_counter, 3);
+        assert_eq!(state.hash, hash);
+        assert_eq!(state.nef.script, nef.script);
+        assert_eq!(state.manifest.name, manifest.name);
+    }
+
+    #[test]
+    fn contract_state_stack_item_projection_matches_stack_value_projection() {
+        let hash = UInt160::from_bytes(&[3u8; 20]).expect("hash");
+        let nef = NefFile::new("compiler".to_string(), vec![7, 8, 9]);
+        let manifest = ContractManifest::new("adapter".to_string());
+        let state = ContractState::new(4, hash, nef, manifest);
+        let expected = StackItem::try_from(state.to_stack_value()).unwrap();
+
+        assert_eq!(state.to_stack_item().unwrap(), expected);
     }
 }

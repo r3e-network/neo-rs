@@ -10,7 +10,8 @@ use crate::{ECCurve, ECPoint};
 use base64::{engine::general_purpose, Engine as _};
 use std::convert::TryFrom;
 // Removed neo_cryptography dependency - using external crypto crates directly
-use neo_vm::StackItem;
+use crate::neo_vm::StackItem;
+use neo_vm_rs::StackValue;
 use serde::{Deserialize, Serialize};
 
 /// Represents a set of mutually trusted contracts.
@@ -79,35 +80,34 @@ impl ContractGroup {
         }
     }
 
-    /// Builds a contract group from a VM stack item.
+    /// Builds a contract group from a neo-vm-rs stack value.
     ///
     /// # Errors
     ///
-    /// Returns `Error` if the stack item is not a valid struct with two elements.
-    pub fn try_from_stack_item_value(stack_item: &StackItem) -> Result<Self> {
-        let struct_item = match stack_item {
-            StackItem::Struct(struct_item) => struct_item,
+    /// Returns `Error` if the stack value is not a valid struct with two elements.
+    pub fn try_from_stack_value(stack_value: StackValue) -> Result<Self> {
+        let items = match stack_value {
+            StackValue::Struct(items) => items,
             other => {
                 return Err(Error::invalid_data(format!(
-                    "ContractGroup expects struct stack item, found {:?}",
-                    other.stack_item_type()
+                    "ContractGroup expects struct stack value, found {:?}",
+                    other.compact_type_tag()
                 )));
             }
         };
 
-        let items = struct_item.items();
         if items.len() < 2 {
             return Err(Error::invalid_data(
-                "ContractGroup stack item must contain two elements",
+                "ContractGroup stack value must contain two elements",
             ));
         }
 
         let pub_key_bytes = items[0]
-            .as_bytes()
-            .map_err(|_| Error::invalid_data("ContractGroup public key must be byte string"))?;
+            .to_byte_string_bytes()
+            .ok_or_else(|| Error::invalid_data("ContractGroup public key must be byte string"))?;
         let signature_bytes = items[1]
-            .as_bytes()
-            .map_err(|_| Error::invalid_data("ContractGroup signature must be byte string"))?;
+            .to_byte_string_bytes()
+            .ok_or_else(|| Error::invalid_data("ContractGroup signature must be byte string"))?;
 
         let pub_key = ECPoint::from_bytes(&pub_key_bytes)
             .map_err(|e| Error::invalid_data(format!("Failed to decode ECPoint: {}", e)))?;
@@ -116,6 +116,32 @@ impl ContractGroup {
             pub_key,
             signature: signature_bytes,
         })
+    }
+
+    /// Converts to a neo-vm-rs stack value.
+    pub fn to_stack_value(&self) -> StackValue {
+        let pub_key_bytes = self.pub_key.encode_point(true).unwrap_or_else(|e| {
+            tracing::error!("Failed to encode ECPoint: {}", e);
+            self.pub_key.to_bytes()
+        });
+
+        StackValue::Struct(vec![
+            StackValue::ByteString(pub_key_bytes),
+            StackValue::ByteString(self.signature.clone()),
+        ])
+    }
+
+    /// Builds a contract group from a VM stack item.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error` if the stack item is not a valid struct with two elements.
+    pub fn try_from_stack_item_value(stack_item: &StackItem) -> Result<Self> {
+        Self::try_from_stack_value(StackValue::try_from(stack_item.clone()).map_err(|error| {
+            Error::invalid_data(format!(
+                "Failed to convert ContractGroup StackItem to StackValue: {error}"
+            ))
+        })?)
     }
 
     /// Builds a contract group from a VM stack item (panics on error).
@@ -150,7 +176,14 @@ impl Serialize for ContractGroup {
 
 impl IInteroperable for ContractGroup {
     fn from_stack_item(&mut self, stack_item: StackItem) -> std::result::Result<(), Error> {
-        match Self::try_from_stack_item_value(&stack_item) {
+        match StackValue::try_from(stack_item)
+            .map_err(|error| {
+                Error::invalid_data(format!(
+                    "Failed to convert ContractGroup StackItem to StackValue: {error}"
+                ))
+            })
+            .and_then(Self::try_from_stack_value)
+        {
             Ok(group) => *self = group,
             Err(e) => {
                 tracing::error!("Failed to parse ContractGroup from stack item: {}", e);
@@ -160,15 +193,11 @@ impl IInteroperable for ContractGroup {
     }
 
     fn to_stack_item(&self) -> std::result::Result<StackItem, Error> {
-        let pub_key_bytes = self.pub_key.encode_point(true).unwrap_or_else(|e| {
-            tracing::error!("Failed to encode ECPoint: {}", e);
-            self.pub_key.to_bytes()
-        });
-
-        Ok(StackItem::from_struct(vec![
-            StackItem::from_byte_string(pub_key_bytes),
-            StackItem::from_byte_string(self.signature.clone()),
-        ]))
+        StackItem::try_from(self.to_stack_value()).map_err(|error| {
+            Error::invalid_operation(format!(
+                "Failed to convert ContractGroup StackValue to StackItem: {error}"
+            ))
+        })
     }
 
     fn clone_box(&self) -> Box<dyn IInteroperable> {
@@ -201,4 +230,55 @@ struct ContractGroupSerde {
     #[serde(rename = "pubkey")]
     pub pubkey: String,
     pub signature: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_group() -> ContractGroup {
+        let encoded =
+            hex::decode("03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c")
+                .expect("hex");
+        let pub_key = ECPoint::decode(&encoded, ECCurve::secp256r1()).expect("valid ECPoint");
+
+        ContractGroup::new(pub_key, vec![0xAB; 64])
+    }
+
+    #[test]
+    fn contract_group_projects_to_neo_vm_rs_stack_value() {
+        let group = sample_group();
+        let pub_key_bytes = group.pub_key.encode_point(true).expect("compressed key");
+
+        assert_eq!(
+            group.to_stack_value(),
+            StackValue::Struct(vec![
+                StackValue::ByteString(pub_key_bytes),
+                StackValue::ByteString(vec![0xAB; 64]),
+            ])
+        );
+    }
+
+    #[test]
+    fn contract_group_stack_item_projection_matches_stack_value_projection() {
+        let group = sample_group();
+        let expected = StackItem::try_from(group.to_stack_value()).unwrap();
+
+        assert_eq!(group.to_stack_item().unwrap(), expected);
+    }
+
+    #[test]
+    fn contract_group_reads_from_neo_vm_rs_stack_value() {
+        let group = sample_group();
+        let pub_key_bytes = group.pub_key.encode_point(true).expect("compressed key");
+
+        let decoded = ContractGroup::try_from_stack_value(StackValue::Struct(vec![
+            StackValue::ByteString(pub_key_bytes),
+            StackValue::ByteString(vec![0xCD; 64]),
+        ]))
+        .unwrap();
+
+        assert_eq!(decoded.pub_key, group.pub_key);
+        assert_eq!(decoded.signature, vec![0xCD; 64]);
+    }
 }

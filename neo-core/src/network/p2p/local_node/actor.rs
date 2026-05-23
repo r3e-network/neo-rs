@@ -370,8 +370,7 @@ impl LocalNodeActor {
 
         // Only request more peers when the unconnected pool is empty.
         if self.peer.unconnected_count() == 0 {
-            self.need_more_peers(ctx, MAX_COUNT_FROM_SEED_LIST)
-                .await?;
+            self.need_more_peers(ctx, MAX_COUNT_FROM_SEED_LIST).await?;
         }
 
         let targets = self.peer.take_connect_targets(deficit);

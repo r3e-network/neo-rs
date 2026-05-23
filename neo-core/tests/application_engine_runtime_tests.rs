@@ -1,9 +1,12 @@
 use neo_core::hardfork::Hardfork;
 use neo_core::ledger::{Block, BlockHeader};
+use neo_core::neo_vm::stack_item::{Array, Pointer};
+use neo_core::neo_vm::{Script, StackItem, StackItemType};
 use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::transaction::Transaction;
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
+use neo_core::script_builder::ScriptBuilder;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::smart_contract::contract_parameter_type::ContractParameterType;
@@ -15,8 +18,7 @@ use neo_core::smart_contract::manifest::{
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::witness::Witness;
 use neo_core::{IVerifiable, UInt160, WitnessScope};
-use neo_vm::stack_item::{Array, Pointer};
-use neo_vm::{OpCode, Script, ScriptBuilder, StackItem, StackItemType};
+use neo_vm_rs::OpCode;
 use num_bigint::BigInt;
 use std::any::Any;
 use std::str::FromStr;
@@ -25,7 +27,7 @@ use std::sync::Arc;
 #[derive(Debug)]
 struct DummyInterop;
 
-impl neo_vm::stack_item::InteropInterface for DummyInterop {
+impl neo_core::neo_vm::stack_item::InteropInterface for DummyInterop {
     fn interface_type(&self) -> &str {
         "DummyInterop"
     }
@@ -38,7 +40,7 @@ impl neo_vm::stack_item::InteropInterface for DummyInterop {
 fn make_test_transaction(sender: UInt160) -> Transaction {
     let mut tx = Transaction::new();
     tx.set_nonce(0);
-    tx.set_script(vec![OpCode::PUSH2 as u8]);
+    tx.set_script(vec![OpCode::PUSH2.byte()]);
     tx.set_attributes(Vec::new());
     tx.set_signers(vec![Signer::new(sender, WitnessScope::CALLED_BY_ENTRY)]);
     tx.set_witnesses(vec![Witness::empty()]);
@@ -101,7 +103,7 @@ fn install_notify_contract(engine: &mut ApplicationEngine, param_type: ContractP
         trusts: WildCardContainer::create_wildcard(),
         extra: None,
     };
-    let nef = NefFile::new("notify".to_string(), vec![OpCode::RET as u8]);
+    let nef = NefFile::new("notify".to_string(), vec![OpCode::RET.byte()]);
     let hash = ContractState::calculate_hash(&UInt160::zero(), nef.checksum, "notify");
     let contract = ContractState::new(1, hash, nef, manifest);
 
@@ -218,7 +220,7 @@ fn runtime_log_rejects_invalid_utf8() {
     )
     .expect("engine");
     engine
-        .load_script(vec![OpCode::RET as u8], CallFlags::NONE, None)
+        .load_script(vec![OpCode::RET.byte()], CallFlags::NONE, None)
         .expect("load script");
 
     let msg = vec![
@@ -248,7 +250,7 @@ fn runtime_notify_rejects_circular_state() {
     )
     .expect("engine");
     engine
-        .load_script(vec![OpCode::RET as u8], CallFlags::ALL, None)
+        .load_script(vec![OpCode::RET.byte()], CallFlags::ALL, None)
         .expect("load script");
     install_notify_contract(&mut engine, ContractParameterType::Array);
 
@@ -278,7 +280,7 @@ fn runtime_notify_coerces_buffer_to_byte_string() {
     )
     .expect("engine");
     engine
-        .load_script(vec![OpCode::RET as u8], CallFlags::ALL, None)
+        .load_script(vec![OpCode::RET.byte()], CallFlags::ALL, None)
         .expect("load script");
     install_notify_contract(&mut engine, ContractParameterType::ByteArray);
 
@@ -311,7 +313,7 @@ fn runtime_notify_rejects_pointer_argument() {
     )
     .expect("engine");
     engine
-        .load_script(vec![OpCode::RET as u8], CallFlags::ALL, None)
+        .load_script(vec![OpCode::RET.byte()], CallFlags::ALL, None)
         .expect("load script");
     install_notify_contract(&mut engine, ContractParameterType::ByteArray);
 
@@ -340,7 +342,7 @@ fn runtime_notify_rejects_interop_interface_argument() {
     )
     .expect("engine");
     engine
-        .load_script(vec![OpCode::RET as u8], CallFlags::ALL, None)
+        .load_script(vec![OpCode::RET.byte()], CallFlags::ALL, None)
         .expect("load script");
     install_notify_contract(&mut engine, ContractParameterType::InteropInterface);
 

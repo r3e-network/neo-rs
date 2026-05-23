@@ -21,7 +21,6 @@ neo-crypto = { path = "../neo-crypto" }
 # Layer 2 - Protocol
 neo-consensus = { path = "../neo-consensus" }
 neo-core = { path = "../neo-core" }
-neo-vm = { path = "../neo-vm" }
 neo-p2p = { path = "../neo-p2p" }
 
 # NOTE: neo-state, neo-mempool, neo-chain, neo-config merged into neo-core
@@ -29,6 +28,7 @@ neo-p2p = { path = "../neo-p2p" }
 # Layer 4 - Services
 neo-rpc = { path = "../neo-rpc" }
 neo-telemetry = { path = "../neo-telemetry" }
+neo-vm-rs = { workspace = true }
 
 # Utilities
 num-bigint = "0.4"
@@ -78,8 +78,11 @@ path = "tests/p2p_message_exchange.rs"
 name = "contract_execution"
 path = "tests/contract_execution.rs"
 
+[[test]]
+name = "no_local_neo_vm_dependency"
+path = "tests/no_local_neo_vm_dependency.rs"
+
 [[bench]]
 name = "performance_benchmarks"
 path = "benches/performance_benchmarks.rs"
 harness = false
-

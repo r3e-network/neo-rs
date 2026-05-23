@@ -5,7 +5,7 @@ use neo_core::network::p2p::payloads::{
     TransactionAttribute, WitnessCondition, WitnessRuleAction, WitnessScope,
 };
 use neo_core::{UInt160, UInt256};
-use neo_vm::op_code::OpCode;
+use neo_vm_rs::OpCode;
 
 #[test]
 fn transaction_builder_new() {
@@ -55,7 +55,7 @@ fn transaction_builder_attaches_script() {
             sb.emit_opcode(OpCode::NOP);
         })
         .build();
-    assert_eq!(tx.script(), &[OpCode::NOP as u8]);
+    assert_eq!(tx.script(), &[OpCode::NOP.byte()]);
 }
 
 #[test]

@@ -183,9 +183,11 @@ mod tests {
 
     fn seed_neo_account(snapshot: &DataCache, account: &UInt160, state: NeoAccountState) {
         let key = StorageKey::create_with_uint160(NeoToken::ID, PREFIX_ACCOUNT, account);
-        let bytes =
-            BinarySerializer::serialize(&state.to_stack_item(), &ExecutionEngineLimits::default())
-                .expect("serialize NeoAccountState");
+        let bytes = BinarySerializer::serialize_stack_value(
+            &state.to_stack_value(),
+            &ExecutionEngineLimits::default(),
+        )
+        .expect("serialize NeoAccountState");
         snapshot.add(key, StorageItem::from_bytes(bytes));
     }
 
@@ -302,7 +304,11 @@ mod tests {
         let reward = neo
             .calculate_bonus(&snapshot, &state, 100)
             .expect("calculate_bonus");
-        assert_eq!(reward, BigInt::from(50i64), "1 NEO for 100 blocks = 50 datoshi");
+        assert_eq!(
+            reward,
+            BigInt::from(50i64),
+            "1 NEO for 100 blocks = 50 datoshi"
+        );
     }
 
     /// Verify holder reward with balance that causes truncation.
@@ -349,14 +355,14 @@ mod tests {
         let voter_reward_ratio = BigInt::from(80i64);
         let datoshi_factor = BigInt::from(100_000_000i64);
         let m = BigInt::from(21i64); // committee_count
-        let n = BigInt::from(7i64);  // validators_count
+        let n = BigInt::from(7i64); // validators_count
         let hundred = BigInt::from(100i64);
         let votes = BigInt::from(1_000_000i64);
 
         // C# left-to-right evaluation:
         // gasPerBlock * VoterRewardRatio * 100000000L * m / (m + n) / 100
-        let voter_reward_each = &gas_per_block * &voter_reward_ratio
-            * &datoshi_factor * &m / (&m + &n) / &hundred;
+        let voter_reward_each =
+            &gas_per_block * &voter_reward_ratio * &datoshi_factor * &m / (&m + &n) / &hundred;
         assert_eq!(
             voter_reward_each,
             BigInt::from(30_000_000_000_000_000i64),
@@ -403,8 +409,8 @@ mod tests {
         let n = BigInt::from(7i64);
         let hundred = BigInt::from(100i64);
 
-        let voter_reward_each = &gas_per_block * &voter_reward_ratio
-            * &datoshi_factor * &m / (&m + &n) / &hundred;
+        let voter_reward_each =
+            &gas_per_block * &voter_reward_ratio * &datoshi_factor * &m / (&m + &n) / &hundred;
 
         // votes = 7 (a tricky divisor that doesn't evenly divide)
         let votes = BigInt::from(7i64);
@@ -452,10 +458,9 @@ mod tests {
         //           lastGasPerVote  = 0
         let vote_pubkey_bytes = vec![
             0x02, // compressed point prefix
-            0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-            0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-            0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-            0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+            0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+            0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+            0x01, 0x01, 0x01, 0x01,
         ];
         let vote_pubkey = ECPoint::from_bytes(&vote_pubkey_bytes);
         // Skip this test if the test public key is not on the curve
@@ -564,9 +569,7 @@ mod tests {
         //
         // numerator = 100000000 * 45000000000 * 10 / 100 = 450000000000000000
         // result = 450000000000000000 / 100000000 = 4500000000
-        let reward = neo
-            .calculate_bonus(&snapshot, &state, 150)
-            .expect("bonus");
+        let reward = neo.calculate_bonus(&snapshot, &state, 150).expect("bonus");
         assert_eq!(
             reward,
             BigInt::from(4_500_000_000i64),
@@ -590,20 +593,12 @@ mod tests {
         for val in &values {
             let encoded = NeoToken::encode_amount(val);
             let decoded = BigInt::from_signed_bytes_le(&encoded);
-            assert_eq!(
-                &decoded, val,
-                "roundtrip failed for {}",
-                val
-            );
+            assert_eq!(&decoded, val, "roundtrip failed for {}", val);
 
             // Also verify via StorageItem.to_bigint()
             let item = StorageItem::from_bytes(encoded);
             let decoded2 = item.to_bigint();
-            assert_eq!(
-                &decoded2, val,
-                "StorageItem roundtrip failed for {}",
-                val
-            );
+            assert_eq!(&decoded2, val, "StorageItem roundtrip failed for {}", val);
         }
     }
 
@@ -713,7 +708,7 @@ mod tests {
         let voter_reward_ratio = 80i64;
         let datoshi_factor = 100_000_000i64;
         let m = 21i64; // committee_count
-        let n = 7i64;  // validators_count
+        let n = 7i64; // validators_count
 
         // Simulate post_persist voter reward computation
         // C#: voterRewardOfEachCommittee = gasPerBlock * VoterRewardRatio * 100000000L * m / (m + n) / 100
@@ -735,7 +730,8 @@ mod tests {
         let accumulated = &per_epoch_increment * BigInt::from(n_epochs);
 
         // Alternative: single computation of the total
-        let total_direct = BigInt::from(factor) * &voter_reward_each * BigInt::from(n_epochs) / &votes;
+        let total_direct =
+            BigInt::from(factor) * &voter_reward_each * BigInt::from(n_epochs) / &votes;
 
         // The accumulated version has truncation at each epoch step.
         // The direct version has truncation only once.
@@ -748,7 +744,8 @@ mod tests {
         assert!(
             diff >= BigInt::from(0i64) && diff < BigInt::from(n_epochs),
             "truncation error must be bounded: diff={}, n_epochs={}",
-            diff, n_epochs
+            diff,
+            n_epochs
         );
 
         // Now compute the voter reward as calculate_bonus does:
@@ -757,7 +754,10 @@ mod tests {
         let voter_reward = &balance * &accumulated / BigInt::from(datoshi_factor);
 
         // Verify it's reasonable (positive and bounded)
-        assert!(voter_reward > BigInt::from(0i64), "voter reward must be positive");
+        assert!(
+            voter_reward > BigInt::from(0i64),
+            "voter reward must be positive"
+        );
 
         // The key insight: if our code and C# both truncate per-epoch identically,
         // the accumulated value will match exactly. This test verifies our truncation

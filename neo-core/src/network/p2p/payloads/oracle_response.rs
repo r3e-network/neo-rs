@@ -15,11 +15,12 @@ use crate::neo_io::serializable::helper::get_var_size;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
+use crate::script_builder::ScriptBuilder;
 use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::native::{oracle_contract::OracleContract, NativeContract};
 use crate::WitnessScope;
 use lazy_static::lazy_static;
-use neo_vm::{op_code::OpCode, ScriptBuilder};
+use neo_vm_rs::OpCode;
 use serde::{Deserialize, Serialize};
 use tracing::error;
 

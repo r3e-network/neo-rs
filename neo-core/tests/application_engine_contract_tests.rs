@@ -1,11 +1,13 @@
+use neo_core::neo_vm::VMState;
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
+use neo_core::script_builder::ScriptBuilder;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::smart_contract::contract::Contract;
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::UInt160;
-use neo_vm::{OpCode, ScriptBuilder, VMState};
+use neo_vm_rs::OpCode;
 use std::sync::Arc;
 
 fn emit_byte_array_array(builder: &mut ScriptBuilder, items: &[Vec<u8>]) {

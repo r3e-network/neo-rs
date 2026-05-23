@@ -330,7 +330,10 @@ impl Blockchain {
     async fn handle_reverify_payload(&self, payload: InventoryPayload, ctx: &ActorContext) {
         match payload {
             InventoryPayload::Block(block) => {
-                if let Err(error) = self.handle_block_inventory(Arc::new(*block), false, false, ctx).await {
+                if let Err(error) = self
+                    .handle_block_inventory(Arc::new(*block), false, false, ctx)
+                    .await
+                {
                     tracing::debug!(
                         target: "neo",
                         %error,

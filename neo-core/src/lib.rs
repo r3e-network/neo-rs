@@ -109,6 +109,15 @@ pub mod big_decimal;
 /// Contains builders for `Transaction`, `Signer`, `Witness`, and witness conditions.
 pub mod builders;
 
+/// Script bytecode construction helpers.
+///
+/// This is exposed outside the VM facade so callers that only need to build
+/// scripts do not depend on the local VM runtime surface.
+pub mod script_builder;
+
+/// Script bytecode validation helpers backed by external NeoVM metadata.
+pub mod script_validation;
+
 /// System-wide protocol constants.
 ///
 /// Network magic numbers, port defaults, fee constants, and size limits.
@@ -413,13 +422,11 @@ pub mod neo_io {
 }
 
 // ============================================================================
-// VM Re-export
+// VM Compatibility Surface
 // ============================================================================
 
-/// Re-export of Neo Virtual Machine types used internally by neo-core modules.
-pub mod neo_vm {
-    pub use neo_vm::{CallFlags, OpCode, ScriptBuilder, StackItem, VMState};
-}
+/// Neo VM compatibility types used by core and downstream crates.
+pub mod neo_vm;
 
 // ============================================================================
 // Ledger Re-export

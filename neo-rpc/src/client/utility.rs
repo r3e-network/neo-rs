@@ -20,7 +20,7 @@ mod witness_rule;
 pub use attributes::attribute_from_json;
 #[allow(unused_imports)]
 pub use parsing::{
-    jobject_to_serde, jtoken_to_serde, parse_base64_token, parse_i64_token, parse_nonce_token,
+    jtoken_to_serde, parse_base64_token, parse_i64_token, parse_nonce_token,
     parse_oracle_response_code, parse_u32_token, parse_u64_token,
 };
 #[allow(unused_imports)]
@@ -36,7 +36,8 @@ use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::{Block, BlockHeader, Contract, ECCurve, ECPoint, KeyPair, Transaction, Witness};
 use neo_json::{JObject, JToken};
 use neo_primitives::{UInt160, UInt256};
-use neo_vm::StackItem;
+use neo_vm_rs::StackValue;
+use num_bigint::BigInt;
 use std::sync::OnceLock;
 
 /// Utility functions for RPC client
@@ -253,14 +254,30 @@ impl RpcUtility {
         tx_json::transaction_from_json(json, protocol_settings)
     }
 
-    /// Converts a `neo-json` representation of a stack item back into a VM stack item.
-    pub fn stack_item_from_json(json: &JObject) -> Result<StackItem, String> {
+    /// Converts a `neo-json` representation of a stack item into `neo-vm-rs`.
+    pub fn stack_item_from_json(json: &JObject) -> Result<StackValue, String> {
         stack::stack_item_from_json(json)
     }
 
-    /// Converts a VM stack item into a `neo-json` representation.
-    pub fn stack_item_to_json(item: &StackItem) -> Result<JObject, String> {
+    /// Converts a `neo-vm-rs` stack value into a `neo-json` representation.
+    pub fn stack_item_to_json(item: &StackValue) -> Result<JObject, String> {
         stack::stack_item_to_json(item)
+    }
+
+    /// Converts an RPC stack value using the same integer rules as local VM clients.
+    pub fn stack_value_to_bigint(value: &StackValue) -> Result<BigInt, String> {
+        stack::stack_value_to_bigint(value)
+    }
+
+    /// Converts an RPC stack value using NeoVM truthiness rules.
+    #[must_use]
+    pub fn stack_value_to_bool(value: &StackValue) -> bool {
+        stack::stack_value_to_bool(value)
+    }
+
+    /// Converts an RPC stack value to a display/API string.
+    pub fn stack_value_to_string(value: &StackValue) -> Result<String, String> {
+        stack::stack_value_to_string(value)
     }
 
     /// Creates a witness from JSON (invocation/verification scripts encoded as base64).
@@ -300,11 +317,11 @@ pub fn transaction_from_json(
     RpcUtility::transaction_from_json(json, protocol_settings)
 }
 
-pub fn stack_item_from_json(json: &JObject) -> Result<StackItem, String> {
+pub fn stack_item_from_json(json: &JObject) -> Result<StackValue, String> {
     RpcUtility::stack_item_from_json(json)
 }
 
-pub fn stack_item_to_json(item: &StackItem) -> Result<JObject, String> {
+pub fn stack_item_to_json(item: &StackValue) -> Result<JObject, String> {
     RpcUtility::stack_item_to_json(item)
 }
 
@@ -443,7 +460,7 @@ mod tests {
         obj.insert("value".to_string(), JToken::Boolean(true));
 
         let item = RpcUtility::stack_item_from_json(&obj).expect("stack item");
-        assert!(item.as_bool().unwrap());
+        assert!(matches!(item, StackValue::Boolean(true)));
     }
 
     #[test]
@@ -456,7 +473,7 @@ mod tests {
         obj.insert("id".to_string(), JToken::String("iter-1".to_string()));
 
         let item = RpcUtility::stack_item_from_json(&obj).expect("stack item");
-        assert!(matches!(item, StackItem::InteropInterface(_)));
+        assert!(matches!(item, StackValue::Interop(0)));
     }
 
     #[test]
@@ -484,13 +501,12 @@ mod tests {
         pointer.insert("value".to_string(), JToken::String("7".to_string()));
 
         let item = RpcUtility::stack_item_from_json(&pointer).expect("pointer");
-        let pointer_item = item.get_pointer().expect("pointer item");
-        assert_eq!(pointer_item.position(), 7);
+        assert!(matches!(item, StackValue::Pointer(7)));
 
         let mut any = JObject::new();
         any.insert("type".to_string(), JToken::String("Any".to_string()));
         let item = RpcUtility::stack_item_from_json(&any).expect("any");
-        assert!(matches!(item, StackItem::Null));
+        assert!(matches!(item, StackValue::Null));
     }
 
     #[test]
@@ -514,7 +530,7 @@ mod tests {
         let mut empty = JObject::new();
         empty.insert("type".to_string(), JToken::String("Unknown".to_string()));
         let item = RpcUtility::stack_item_from_json(&empty).expect("fallback null");
-        assert!(matches!(item, StackItem::Null));
+        assert!(matches!(item, StackValue::Null));
     }
 
     #[test]
@@ -749,13 +765,19 @@ mod tests {
         array_obj.insert("value".to_string(), JToken::Array(array.clone()));
 
         let item_array = RpcUtility::stack_item_from_json(&array_obj).unwrap();
-        assert_eq!(item_array.as_array().unwrap().len(), 1);
+        let StackValue::Array(array_items) = item_array else {
+            panic!("expected array");
+        };
+        assert_eq!(array_items.len(), 1);
 
         let mut struct_obj = JObject::new();
         struct_obj.insert("type".to_string(), JToken::String("Struct".to_string()));
         struct_obj.insert("value".to_string(), JToken::Array(array));
         let item_struct = RpcUtility::stack_item_from_json(&struct_obj).unwrap();
-        assert_eq!(item_struct.as_array().unwrap().len(), 1);
+        let StackValue::Struct(struct_items) = item_struct else {
+            panic!("expected struct");
+        };
+        assert_eq!(struct_items.len(), 1);
     }
 
     #[test]
@@ -781,8 +803,9 @@ mod tests {
         map_obj.insert("value".to_string(), JToken::Array(map_array));
 
         let item_map = RpcUtility::stack_item_from_json(&map_obj).unwrap();
-        #[allow(clippy::mutable_key_type)]
-        let map = item_map.as_map().unwrap();
+        let StackValue::Map(map) = item_map else {
+            panic!("expected map");
+        };
         assert_eq!(map.len(), 1);
     }
 

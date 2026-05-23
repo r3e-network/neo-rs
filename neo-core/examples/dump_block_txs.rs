@@ -35,7 +35,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let block = ledger
         .get_block(&cache, HashOrIndex::Index(block_idx))?
         .ok_or("block not found")?;
-    println!("block_index={} hash=0x{}", block_idx, hex::encode(block.hash().as_bytes()));
+    println!(
+        "block_index={} hash=0x{}",
+        block_idx,
+        hex::encode(block.hash().as_bytes())
+    );
     println!("tx_count={}", block.transactions.len());
 
     for (i, tx) in block.transactions.iter().enumerate() {
@@ -52,7 +56,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
         println!(
             "  tx[{}] hash=0x{} sender={} sysfee={} netfee={} vm_state={} raw_state={}",
-            i, hex::encode(hash.as_bytes()), sender, sysfee, netfee, vm_state, raw_state
+            i,
+            hex::encode(hash.as_bytes()),
+            sender,
+            sysfee,
+            netfee,
+            vm_state,
+            raw_state
         );
     }
     Ok(())

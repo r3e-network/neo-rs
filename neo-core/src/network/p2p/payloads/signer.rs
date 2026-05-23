@@ -13,6 +13,7 @@ use crate::error::CoreError;
 use crate::macros::{OptionExt, ValidateLength};
 use crate::neo_io::serializable::helper::get_var_size;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use crate::neo_vm::StackItem;
 use crate::smart_contract::IInteroperable;
 use crate::witness_rule::{WitnessRule, WitnessRuleAction};
 use crate::{
@@ -21,7 +22,7 @@ use crate::{
 };
 use hex::{decode as hex_decode, encode as hex_encode};
 use neo_primitives::{UInt160, UINT160_SIZE};
-use neo_vm::StackItem;
+use neo_vm_rs::StackValue;
 use serde::{Deserialize, Serialize};
 // Hash and Hasher now provided by impl_hash_for_fields macro
 use std::str::FromStr;
@@ -255,6 +256,45 @@ impl Signer {
 
         Ok(signer)
     }
+
+    /// Converts the signer to a neo-vm-rs stack value (matches C# `Signer.ToStackItem` layout).
+    pub fn to_stack_value(&self) -> StackValue {
+        let allowed_contracts = if self.scopes.contains(WitnessScope::CUSTOM_CONTRACTS) {
+            self.allowed_contracts
+                .iter()
+                .copied()
+                .map(|hash| StackValue::ByteString(hash.to_bytes()))
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
+
+        let allowed_groups = if self.scopes.contains(WitnessScope::CUSTOM_GROUPS) {
+            self.allowed_groups
+                .iter()
+                .map(|group| StackValue::ByteString(group.to_bytes()))
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
+
+        let rules = if self.scopes.contains(WitnessScope::WITNESS_RULES) {
+            self.rules
+                .iter()
+                .map(WitnessRule::to_stack_value)
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
+
+        StackValue::Array(vec![
+            StackValue::ByteString(self.account.to_bytes()),
+            StackValue::Integer(i64::from(self.scopes.bits())),
+            StackValue::Array(allowed_contracts),
+            StackValue::Array(allowed_groups),
+            StackValue::Array(rules),
+        ])
+    }
 }
 
 impl Serializable for Signer {
@@ -401,47 +441,11 @@ impl IInteroperable for Signer {
     }
 
     fn to_stack_item(&self) -> Result<StackItem, CoreError> {
-        let allowed_contracts = if self.scopes.contains(WitnessScope::CUSTOM_CONTRACTS) {
-            StackItem::from_array(
-                self.allowed_contracts
-                    .iter()
-                    .copied()
-                    .map(|hash| StackItem::from_byte_string(hash.to_bytes()))
-                    .collect::<Vec<_>>(),
-            )
-        } else {
-            StackItem::from_array(Vec::new())
-        };
-
-        let allowed_groups = if self.scopes.contains(WitnessScope::CUSTOM_GROUPS) {
-            StackItem::from_array(
-                self.allowed_groups
-                    .iter()
-                    .map(|group| StackItem::from_byte_string(group.to_bytes()))
-                    .collect::<Vec<_>>(),
-            )
-        } else {
-            StackItem::from_array(Vec::new())
-        };
-
-        let rules = if self.scopes.contains(WitnessScope::WITNESS_RULES) {
-            StackItem::from_array(
-                self.rules
-                    .iter()
-                    .map(WitnessRule::to_stack_item)
-                    .collect::<Vec<_>>(),
-            )
-        } else {
-            StackItem::from_array(Vec::new())
-        };
-
-        Ok(StackItem::from_array(vec![
-            StackItem::from_byte_string(self.account.to_bytes()),
-            StackItem::from_int(i64::from(self.scopes.bits())),
-            allowed_contracts,
-            allowed_groups,
-            rules,
-        ]))
+        StackItem::try_from(self.to_stack_value()).map_err(|error| {
+            CoreError::invalid_operation(format!(
+                "Failed to convert signer StackValue to StackItem: {error}"
+            ))
+        })
     }
 
     fn clone_box(&self) -> Box<dyn IInteroperable> {
@@ -451,3 +455,44 @@ impl IInteroperable for Signer {
 
 // Use macro to reduce boilerplate for Hash implementation
 crate::impl_hash_for_fields!(Signer, account, scopes);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::smart_contract::IInteroperable;
+    use neo_vm_rs::StackValue;
+
+    #[test]
+    fn signer_projects_to_neo_vm_rs_stack_value() {
+        let account = UInt160::from_bytes(&[0x11; UINT160_SIZE]).unwrap();
+        let allowed_contract = UInt160::from_bytes(&[0x22; UINT160_SIZE]).unwrap();
+        let rule = WitnessRule::new(
+            WitnessRuleAction::Allow,
+            WitnessCondition::Boolean { value: true },
+        );
+        let scopes = WitnessScope::CUSTOM_CONTRACTS | WitnessScope::WITNESS_RULES;
+        let mut signer = Signer::new(account, scopes);
+        signer.allowed_contracts.push(allowed_contract);
+        signer.rules.push(rule.clone());
+
+        assert_eq!(
+            signer.to_stack_value(),
+            StackValue::Array(vec![
+                StackValue::ByteString(account.to_bytes()),
+                StackValue::Integer(i64::from(scopes.bits())),
+                StackValue::Array(vec![StackValue::ByteString(allowed_contract.to_bytes())]),
+                StackValue::Array(Vec::new()),
+                StackValue::Array(vec![rule.to_stack_value()]),
+            ])
+        );
+    }
+
+    #[test]
+    fn signer_stack_item_projection_matches_stack_value_projection() {
+        let account = UInt160::from_bytes(&[0x33; UINT160_SIZE]).unwrap();
+        let signer = Signer::new(account, WitnessScope::CALLED_BY_ENTRY);
+
+        let expected = StackItem::try_from(signer.to_stack_value()).unwrap();
+        assert_eq!(signer.to_stack_item().unwrap(), expected);
+    }
+}

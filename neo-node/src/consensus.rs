@@ -23,6 +23,7 @@ use neo_core::network::p2p::{
 };
 use neo_core::persistence::IStore;
 use neo_core::prelude::Serializable;
+use neo_core::script_builder::ScriptBuilder;
 use neo_core::smart_contract::contract::Contract;
 use neo_core::smart_contract::native::ledger_contract::HashOrIndex;
 use neo_core::smart_contract::native::{helpers::NativeHelpers, LedgerContract, NeoToken};
@@ -30,8 +31,7 @@ use neo_core::smart_contract::ContractParametersContext;
 use neo_core::time_provider::TimeProvider;
 use neo_core::wallets::Wallet;
 use neo_core::{ContainsTransactionType, UInt160, UInt256};
-use neo_vm::op_code::OpCode;
-use neo_vm::ScriptBuilder;
+use neo_vm_rs::OpCode;
 use parking_lot::Mutex;
 use std::any::Any;
 use std::collections::{HashMap, HashSet};
@@ -993,11 +993,13 @@ impl ConsensusActor {
         };
         block.rebuild_merkle_root();
 
-        if let Err(err) = self
-            .system
-            .blockchain_actor()
-            .tell(neo_core::ledger::BlockchainCommand::InventoryBlock { block: std::sync::Arc::new(block), relay: true, pre_verified: false })
-        {
+        if let Err(err) = self.system.blockchain_actor().tell(
+            neo_core::ledger::BlockchainCommand::InventoryBlock {
+                block: std::sync::Arc::new(block),
+                relay: true,
+                pre_verified: false,
+            },
+        ) {
             warn!(target: "neo", %err, "failed to submit consensus block");
             return;
         }
@@ -1178,8 +1180,8 @@ impl Actor for ConsensusActor {
     ) -> ActorResult {
         let envelope = match envelope.downcast::<PersistCompleted>() {
             Ok(message) => {
-                let block = std::sync::Arc::try_unwrap(message.block)
-                    .unwrap_or_else(|arc| (*arc).clone());
+                let block =
+                    std::sync::Arc::try_unwrap(message.block).unwrap_or_else(|arc| (*arc).clone());
                 self.on_persist_completed(block, _ctx);
                 return Ok(());
             }
@@ -1250,7 +1252,7 @@ fn extract_signature(witness: &Witness) -> Option<Vec<u8>> {
     if invocation.len() != 66 {
         return None;
     }
-    if invocation[0] != OpCode::PUSHDATA1 as u8 || invocation[1] != 0x40 {
+    if invocation[0] != OpCode::PUSHDATA1.byte() || invocation[1] != 0x40 {
         return None;
     }
     Some(invocation[2..66].to_vec())

@@ -16,9 +16,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let path = args.next().ok_or("missing state root db path")?;
     let root_hex = args.next().ok_or("missing root hash hex")?;
     let id: i32 = args.next().ok_or("missing contract id")?.parse()?;
-    let prefix_byte: Option<u8> = args.next().map(|s| {
-        u8::from_str_radix(s.strip_prefix("0x").unwrap_or(&s), 16).expect("hex prefix")
-    });
+    let prefix_byte: Option<u8> = args
+        .next()
+        .map(|s| u8::from_str_radix(s.strip_prefix("0x").unwrap_or(&s), 16).expect("hex prefix"));
 
     let provider = RocksDBStoreProvider::new(StorageConfig {
         path: PathBuf::from(&path),
@@ -70,7 +70,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     println!("first {} entries:", sample.len());
     for (k, v) in &sample {
-        println!("  key={} val={} ({}B)", hex::encode(k), hex::encode(&v[..v.len().min(48)]), v.len());
+        println!(
+            "  key={} val={} ({}B)",
+            hex::encode(k),
+            hex::encode(&v[..v.len().min(48)]),
+            v.len()
+        );
     }
 
     Ok(())

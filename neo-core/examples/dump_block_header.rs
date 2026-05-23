@@ -8,8 +8,13 @@ use std::path::PathBuf;
 // Dump block header fields for use in a reproducer.
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
-    let path = args.next().ok_or("usage: dump_block_header <db_path> <index>")?;
-    let block_idx: u32 = args.next().ok_or("usage: dump_block_header <db_path> <index>")?.parse()?;
+    let path = args
+        .next()
+        .ok_or("usage: dump_block_header <db_path> <index>")?;
+    let block_idx: u32 = args
+        .next()
+        .ok_or("usage: dump_block_header <db_path> <index>")?
+        .parse()?;
     let config = StorageConfig {
         path: PathBuf::from(path),
         read_only: true,
@@ -20,7 +25,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let snapshot = store.get_snapshot();
     let cache = StoreCache::new_from_snapshot(snapshot);
     let ledger = LedgerContract::new();
-    let block = ledger.get_block(&cache, HashOrIndex::Index(block_idx))?.ok_or("block not found")?;
+    let block = ledger
+        .get_block(&cache, HashOrIndex::Index(block_idx))?
+        .ok_or("block not found")?;
     let h = &block.header;
     println!("version={}", h.version);
     println!("prev_hash=0x{}", hex::encode(h.previous_hash.as_bytes()));

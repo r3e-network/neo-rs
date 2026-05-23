@@ -14,6 +14,7 @@ use crate::neo_io::serializable::helper::{
 };
 use crate::network::p2p::payloads::signer::Signer;
 use crate::network::p2p::payloads::transaction::HEADER_SIZE;
+use crate::script_builder::ScriptBuilder;
 use crate::IVerifiable as CoreIVerifiable;
 use crate::{
     network::p2p,
@@ -36,7 +37,7 @@ use crate::{
 };
 use neo_primitives::UInt256;
 use neo_primitives::WitnessScope;
-use neo_vm::{op_code::OpCode, ScriptBuilder};
+use neo_vm_rs::OpCode;
 use num_bigint::{BigInt, Sign};
 use rand::rngs::OsRng;
 use rand::RngCore;
@@ -320,7 +321,7 @@ impl Helper {
         engine
             .execute()
             .map_err(|e| WalletError::TransactionCreationFailed(e.to_string()))?;
-        if engine.state() == neo_vm::vm_state::VMState::FAULT {
+        if engine.state() == crate::neo_vm::vm_state::VMState::FAULT {
             return Err(WalletError::TransactionCreationFailed(
                 "Smart contract execution failed.".to_string(),
             ));
@@ -430,7 +431,7 @@ impl Helper {
             engine
                 .execute()
                 .map_err(|e| WalletError::TransactionCreationFailed(e.to_string()))?;
-            if engine.state() == neo_vm::vm_state::VMState::FAULT {
+            if engine.state() == crate::neo_vm::vm_state::VMState::FAULT {
                 return Err(WalletError::TransactionCreationFailed(
                     "Smart contract execution failed.".to_string(),
                 ));
@@ -787,16 +788,16 @@ fn parse_multi_sig_contract(script: &[u8]) -> Option<(usize, usize)> {
     }
 
     let first = OpCode::try_from(script[0]).ok()?;
-    let first_byte = first as u8;
-    if !((OpCode::PUSH1 as u8)..=(OpCode::PUSH16 as u8)).contains(&first_byte) {
+    let first_byte = first.byte();
+    if !(OpCode::PUSH1.byte()..=OpCode::PUSH16.byte()).contains(&first_byte) {
         return None;
     }
-    let m = (first as u8 - OpCode::PUSH0 as u8) as usize;
+    let m = (first.byte() - OpCode::PUSH0.byte()) as usize;
 
     let mut offset = 1;
     let mut n = 0usize;
     while offset < script.len() {
-        if script[offset] != OpCode::PUSHDATA1 as u8 {
+        if script[offset] != OpCode::PUSHDATA1.byte() {
             break;
         }
         if offset + 2 >= script.len() {
@@ -815,11 +816,11 @@ fn parse_multi_sig_contract(script: &[u8]) -> Option<(usize, usize)> {
     }
 
     let push_n = OpCode::try_from(script[offset]).ok()?;
-    let opcode_value = push_n as u8;
-    if !((OpCode::PUSH1 as u8)..=(OpCode::PUSH16 as u8)).contains(&opcode_value) {
+    let opcode_value = push_n.byte();
+    if !(OpCode::PUSH1.byte()..=OpCode::PUSH16.byte()).contains(&opcode_value) {
         return None;
     }
-    if (push_n as u8 - OpCode::PUSH0 as u8) as usize != n {
+    if (push_n.byte() - OpCode::PUSH0.byte()) as usize != n {
         return None;
     }
     offset += 1;
@@ -827,7 +828,7 @@ fn parse_multi_sig_contract(script: &[u8]) -> Option<(usize, usize)> {
     if offset + 5 != script.len() {
         return None;
     }
-    if script[offset] != OpCode::SYSCALL as u8 {
+    if script[offset] != OpCode::SYSCALL.byte() {
         return None;
     }
 

@@ -12,7 +12,7 @@ use neo_core::wallets::wallet_account::WalletAccount;
 use neo_core::wallets::{KeyPair, Version, Wallet, WalletError, WalletResult};
 use neo_core::{UInt160, UInt256};
 use neo_tee::{SealedKey, TeeError, TeeWallet as EnclaveWallet};
-use neo_vm::op_code::OpCode;
+use neo_vm_rs::OpCode;
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -567,7 +567,7 @@ fn signature_invocation(signature: &[u8]) -> WalletResult<Vec<u8>> {
     }
 
     let mut invocation = Vec::with_capacity(signature.len() + 2);
-    invocation.push(OpCode::PUSHDATA1 as u8);
+    invocation.push(OpCode::PUSHDATA1.byte());
     invocation.push(signature.len() as u8);
     invocation.extend_from_slice(signature);
     Ok(invocation)
@@ -625,7 +625,7 @@ mod tests {
         );
 
         let mut tx = Transaction::new();
-        tx.set_script(vec![OpCode::PUSH1 as u8]);
+        tx.set_script(vec![OpCode::PUSH1.byte()]);
         tx.set_valid_until_block(1);
         tx.add_signer(Signer::new(script_hash, WitnessScope::CALLED_BY_ENTRY));
         wallet.sign_transaction(&mut tx).await.expect("sign tx");
@@ -635,7 +635,7 @@ mod tests {
         let expected_verification = ContractHelper::signature_redeem_script(&key.public_key);
         assert_eq!(witness.verification_script, expected_verification);
 
-        assert_eq!(witness.invocation_script[0], OpCode::PUSHDATA1 as u8);
+        assert_eq!(witness.invocation_script[0], OpCode::PUSHDATA1.byte());
         let sig_len = witness.invocation_script[1] as usize;
         assert_eq!(sig_len, 64);
         let sig_slice = &witness.invocation_script[2..2 + sig_len];

@@ -1,9 +1,11 @@
 use neo_core::hardfork::Hardfork;
 use neo_core::ledger::block_header::BlockHeader;
 use neo_core::ledger::Block;
+use neo_core::neo_vm::StackItem;
 use neo_core::network::p2p::payloads::{signer::Signer, transaction::Transaction};
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
+use neo_core::script_builder::ScriptBuilder;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::binary_serializer::BinarySerializer;
 use neo_core::smart_contract::call_flags::CallFlags;
@@ -11,7 +13,7 @@ use neo_core::smart_contract::native::{NativeContract, StdLib};
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::witness::Witness;
 use neo_core::{IVerifiable, UInt160, WitnessScope};
-use neo_vm::{OpCode, ScriptBuilder, StackItem};
+use neo_vm_rs::OpCode;
 use num_traits::ToPrimitive;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
@@ -71,7 +73,8 @@ fn emit_stdlib_call(
 ) {
     let arg_count = args.len();
     for arg in args.drain(..).rev() {
-        sb.emit_push_stack_item(arg).expect("emit arg");
+        let value = neo_vm_rs::StackValue::try_from(arg).expect("convert arg");
+        sb.emit_push_stack_value(&value).expect("emit arg");
     }
     sb.emit_push_int(arg_count as i64);
     sb.emit_opcode(OpCode::PACK);
@@ -291,8 +294,11 @@ fn stdlib_deserialize_returns_stack_item_shape_for_any_results() {
         StackItem::from_int(1),
         StackItem::from_byte_string(b"neo".to_vec()),
     ]);
-    let encoded = BinarySerializer::serialize(&original, &neo_vm::ExecutionEngineLimits::default())
-        .expect("serialize array");
+    let encoded = BinarySerializer::serialize(
+        &original,
+        &neo_core::neo_vm::ExecutionEngineLimits::default(),
+    )
+    .expect("serialize array");
 
     let mut sb = ScriptBuilder::new();
     emit_stdlib_call(

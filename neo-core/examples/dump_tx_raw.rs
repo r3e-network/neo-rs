@@ -34,8 +34,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .ok_or("transaction not found")?;
     let tx = tx_state.transaction();
     println!("block={}", tx_state.block_index());
-    println!("vm_state={:?} raw_state={}", tx_state.vm_state(), tx_state.vm_state_raw());
-    println!("sender={}", tx.sender().map(|s| s.to_string()).unwrap_or_default());
+    println!(
+        "vm_state={:?} raw_state={}",
+        tx_state.vm_state(),
+        tx_state.vm_state_raw()
+    );
+    println!(
+        "sender={}",
+        tx.sender().map(|s| s.to_string()).unwrap_or_default()
+    );
     println!("sysfee={} netfee={}", tx.system_fee(), tx.network_fee());
     println!("script_hex={}", hex::encode(tx.script()));
     println!("script_len={}", tx.script().len());

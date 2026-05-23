@@ -10,7 +10,7 @@ use neo_core::wallets::wallet::WalletResult;
 use neo_core::wallets::{KeyPair, Nep6Wallet, Wallet};
 use neo_core::WitnessScope;
 use neo_crypto::Secp256r1Crypto;
-use neo_vm::op_code::OpCode;
+use neo_vm_rs::OpCode;
 use rand::RngCore;
 use tokio::runtime::Runtime;
 
@@ -58,7 +58,7 @@ fn nep6_wallet_imports_and_signs() -> WalletResult<()> {
 
     // Sign transaction and ensure witness is produced
     let mut transaction = Transaction::new();
-    transaction.set_script(vec![OpCode::PUSH1 as u8]);
+    transaction.set_script(vec![OpCode::PUSH1.byte()]);
     transaction.set_valid_until_block(1);
     transaction.add_signer(Signer::new(script_hash, WitnessScope::CALLED_BY_ENTRY));
     rt.block_on(wallet.sign_transaction(&mut transaction))

@@ -2,11 +2,9 @@ use neo_core::persistence::{
     providers::RocksDBStoreProvider, IStoreProvider, StorageConfig, StoreCache,
 };
 use neo_core::smart_contract::binary_serializer::BinarySerializer;
-use neo_core::smart_contract::i_interoperable::IInteroperable;
-use neo_core::smart_contract::native::account_state::AccountState;
 use neo_core::smart_contract::StorageKey;
-use neo_vm::execution_engine_limits::ExecutionEngineLimits;
-use neo_vm::StackItem;
+use neo_vm_rs::StackValue;
+use num_bigint::BigInt;
 use std::path::PathBuf;
 
 fn decode_hex(input: &str) -> Result<Vec<u8>, String> {
@@ -18,6 +16,25 @@ fn decode_hex(input: &str) -> Result<Vec<u8>, String> {
         return Ok(Vec::new());
     }
     hex::decode(trimmed).map_err(|err| format!("invalid hex `{input}`: {err}"))
+}
+
+fn stack_value_bigint(value: &StackValue) -> Option<BigInt> {
+    match value {
+        StackValue::Integer(value) => Some(BigInt::from(*value)),
+        StackValue::BigInteger(bytes)
+        | StackValue::ByteString(bytes)
+        | StackValue::Buffer(bytes) => Some(BigInt::from_signed_bytes_le(bytes)),
+        StackValue::Boolean(value) => Some(BigInt::from(u8::from(*value))),
+        StackValue::Null => Some(BigInt::from(0)),
+        _ => None,
+    }
+}
+
+fn account_balance_from_stack_value(value: &StackValue) -> Option<BigInt> {
+    match value {
+        StackValue::Struct(entries) => entries.first().and_then(stack_value_bigint),
+        _ => None,
+    }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -49,22 +66,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let raw = item.get_value();
             println!("value_hex=0x{}", hex::encode(&raw));
             println!("value_bigint={}", item.to_bigint());
-            if let Ok(StackItem::Struct(_)) =
-                BinarySerializer::deserialize(&raw, &ExecutionEngineLimits::default(), None)
-            {
-                let mut account_state = AccountState::default();
-                if account_state
-                    .from_stack_item(
-                        BinarySerializer::deserialize(
-                            &raw,
-                            &ExecutionEngineLimits::default(),
-                            None,
-                        )
-                        .unwrap_or_else(|_| StackItem::null()),
-                    )
-                    .is_ok()
-                {
-                    println!("value_account_balance={}", account_state.balance);
+            if let Ok(stack_value) = BinarySerializer::deserialize_stack_value(&raw) {
+                if let Some(balance) = account_balance_from_stack_value(&stack_value) {
+                    println!("value_account_balance={balance}");
                 }
             }
         }

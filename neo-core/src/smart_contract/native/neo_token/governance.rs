@@ -63,11 +63,11 @@ impl NeoToken {
         let snapshot = engine.snapshot_cache();
         match self.get_account_state(snapshot.as_ref(), &account)? {
             Some(state) => {
-                // Return serialized account state
-                let stack_item = state.to_stack_item();
-                let bytes =
-                    BinarySerializer::serialize(&stack_item, &ExecutionEngineLimits::default())
-                        .map_err(CoreError::native_contract)?;
+                let bytes = BinarySerializer::serialize_stack_value(
+                    &state.to_stack_value(),
+                    &ExecutionEngineLimits::default(),
+                )
+                .map_err(CoreError::native_contract)?;
                 Ok(bytes)
             }
             None => Ok(vec![]), // Null for non-existent account
@@ -229,9 +229,11 @@ impl NeoToken {
             return Ok(());
         }
 
-        let bytes =
-            BinarySerializer::serialize(&state.to_stack_item(), &ExecutionEngineLimits::default())
-                .map_err(CoreError::native_contract)?;
+        let bytes = BinarySerializer::serialize_stack_value(
+            &state.to_stack_value(),
+            &ExecutionEngineLimits::default(),
+        )
+        .map_err(CoreError::native_contract)?;
         engine.put_storage_item(context, &candidate_suffix, &bytes)?;
         Ok(())
     }

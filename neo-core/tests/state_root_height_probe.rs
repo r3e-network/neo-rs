@@ -6,8 +6,8 @@
 // This test reports presence/absence so the harness operator can tell which
 // reproducers will exercise their assertions.
 
-use neo_core::persistence::{i_store_provider::IStoreProvider, providers::RocksDBStoreProvider};
 use neo_core::persistence::StorageConfig;
+use neo_core::persistence::{i_store_provider::IStoreProvider, providers::RocksDBStoreProvider};
 use neo_core::state_service::state_store::{
     SnapshotBackedStateStoreBackend, StateServiceSettings, StateStore,
 };
@@ -73,7 +73,10 @@ fn report_present_heights() {
                 hi = mid - 1;
             }
         }
-        eprintln!("highest contiguous-or-present height ≤ {}: {}", max_probe, lo);
+        eprintln!(
+            "highest contiguous-or-present height ≤ {}: {}",
+            max_probe, lo
+        );
     } else {
         eprintln!("genesis (height 0) not present — DB is empty or corrupt");
     }

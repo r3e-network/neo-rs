@@ -11,14 +11,14 @@
 
 use super::models::RpcInvokeResult;
 use crate::{RpcClient, RpcError};
+use neo_core::script_builder::ScriptBuilder;
 use neo_core::smart_contract::native::ContractManagement;
 use neo_core::{
     smart_contract::call_flags::CallFlags, ContractManifest, KeyPair, Signer, Transaction,
     WitnessScope,
 };
 use neo_primitives::UInt160;
-use neo_vm::op_code::OpCode;
-use neo_vm::ScriptBuilder;
+use neo_vm_rs::OpCode;
 use std::sync::Arc;
 
 /// Contract related operations through RPC API
@@ -99,7 +99,8 @@ impl ContractClient {
         sb.emit_push_int(i64::from(call_flags.bits()));
         sb.emit_push(method.as_bytes());
         sb.emit_push(&script_hash.to_array());
-        sb.emit_syscall("System.Contract.Call")?;
+        sb.emit_syscall("System.Contract.Call")
+            .map_err(|err| RpcError::invalid_params(err.to_string()))?;
 
         Ok(sb.to_array())
     }
@@ -125,7 +126,8 @@ impl ContractClient {
         // EmitPush(scriptHash)
         sb.emit_push(&ContractManagement::contract_hash().to_array());
         // Syscall
-        sb.emit_syscall("System.Contract.Call")?;
+        sb.emit_syscall("System.Contract.Call")
+            .map_err(|err| RpcError::invalid_params(err.to_string()))?;
 
         Ok(sb.to_array())
     }
@@ -170,8 +172,9 @@ impl ContractClient {
     }
 }
 
-// NOTE: Script byte layout parity tests live in `neo-vm/tests/*` so they run in
-// CI without requiring the optional `neo-rpc/client` feature.
+// NOTE: Script byte layout parity tests live with the VM compatibility module
+// in neo-core, so they run in CI without requiring the optional `neo-rpc/client`
+// feature.
 
 #[cfg(test)]
 mod tests {
@@ -179,11 +182,12 @@ mod tests {
     use base64::{engine::general_purpose, Engine as _};
     use mockito::{Matcher, Server};
     use neo_core::config::ProtocolSettings;
+    use neo_core::script_builder::ScriptBuilder;
     use neo_core::smart_contract::native::{GasToken, NativeContract};
     use neo_core::{ContractManifest, KeyPair};
     use neo_json::{JArray, JObject, JToken};
     use neo_primitives::UInt160;
-    use neo_vm::{OpCode, ScriptBuilder};
+    use neo_vm_rs::{OpCode, StackValue};
     use num_bigint::BigInt;
     use regex::escape;
     use reqwest::Url;
@@ -358,12 +362,9 @@ mod tests {
             .await
             .expect("invoke");
 
-        let value = result
-            .stack
-            .first()
-            .expect("stack item")
-            .get_integer()
-            .expect("integer");
+        let value =
+            crate::RpcUtility::stack_value_to_bigint(result.stack.first().expect("stack item"))
+                .expect("integer");
         assert_eq!(value, BigInt::from(30_000_000_000_000i64));
     }
 
@@ -433,16 +434,29 @@ mod tests {
             .await
             .expect("invoke");
 
-        let map = result.stack[0].as_map().expect("map");
+        let StackValue::Map(map) = &result.stack[0] else {
+            panic!("expected map");
+        };
         assert_eq!(map.len(), 1);
-        let (key, value) = map.iter().next().expect("entry");
+        let (key, value) = map.first().expect("entry");
         assert_eq!(key.as_bytes().expect("key bytes"), b"key");
-        assert_eq!(value.get_integer().expect("value int"), BigInt::from(42));
+        assert_eq!(
+            crate::RpcUtility::stack_value_to_bigint(value).expect("value int"),
+            BigInt::from(42)
+        );
 
-        let structure = result.stack[1].as_array().expect("struct");
+        let StackValue::Struct(structure) = &result.stack[1] else {
+            panic!("expected struct");
+        };
         assert_eq!(structure.len(), 2);
-        assert_eq!(structure[0].get_integer().unwrap(), BigInt::from(1));
-        assert_eq!(structure[1].get_integer().unwrap(), BigInt::from(2));
+        assert_eq!(
+            crate::RpcUtility::stack_value_to_bigint(&structure[0]).unwrap(),
+            BigInt::from(1)
+        );
+        assert_eq!(
+            crate::RpcUtility::stack_value_to_bigint(&structure[1]).unwrap(),
+            BigInt::from(2)
+        );
     }
 
     #[tokio::test]

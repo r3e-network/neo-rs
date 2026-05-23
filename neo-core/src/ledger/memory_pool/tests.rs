@@ -1,4 +1,5 @@
 use super::*;
+use crate::neo_vm::execution_engine_limits::ExecutionEngineLimits;
 use crate::network::p2p::helper::get_sign_data_vec;
 use crate::network::p2p::payloads::block::Block;
 use crate::network::p2p::payloads::conflicts::Conflicts;
@@ -11,11 +12,10 @@ use crate::smart_contract::native::fungible_token::PREFIX_ACCOUNT;
 use crate::smart_contract::native::gas_token::GasToken;
 use crate::smart_contract::native::native_contract::NativeContract;
 use crate::smart_contract::native::AccountState;
-use crate::smart_contract::{IInteroperable, StorageItem, StorageKey};
+use crate::smart_contract::{StorageItem, StorageKey};
 use crate::wallets::KeyPair;
 use crate::WitnessScope;
-use neo_vm::execution_engine_limits::ExecutionEngineLimits;
-use neo_vm::op_code::OpCode;
+use neo_vm_rs::OpCode;
 use num_bigint::BigInt;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
@@ -32,8 +32,8 @@ fn test_balance_pool(settings: &ProtocolSettings) -> MemoryPool {
 fn set_gas_balance(snapshot: &DataCache, account: UInt160, amount: i64) {
     let key = StorageKey::create_with_uint160(GasToken::new().id(), PREFIX_ACCOUNT, &account);
     let state = AccountState::with_balance(BigInt::from(amount));
-    let bytes = BinarySerializer::serialize(
-        &state.to_stack_item().expect("to_stack_item"),
+    let bytes = BinarySerializer::serialize_stack_value(
+        &state.to_stack_value(),
         &ExecutionEngineLimits::default(),
     )
     .expect("serialize account state");
@@ -52,7 +52,7 @@ fn build_signed_transaction(
     tx.set_network_fee(network_fee);
     tx.set_system_fee(system_fee);
     tx.set_valid_until_block(1);
-    tx.set_script(vec![OpCode::PUSH1 as u8]);
+    tx.set_script(vec![OpCode::PUSH1.byte()]);
     tx.set_signers(vec![Signer::new(
         keypair.get_script_hash(),
         WitnessScope::GLOBAL,
@@ -62,7 +62,7 @@ fn build_signed_transaction(
     let sign_data = get_sign_data_vec(&tx, settings.network).expect("sign data");
     let signature = keypair.sign(&sign_data).expect("sign");
     let mut invocation = Vec::with_capacity(signature.len() + 2);
-    invocation.push(OpCode::PUSHDATA1 as u8);
+    invocation.push(OpCode::PUSHDATA1.byte());
     invocation.push(signature.len() as u8);
     invocation.extend_from_slice(&signature);
     let verification_script = keypair.get_verification_script();

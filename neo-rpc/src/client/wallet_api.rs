@@ -69,7 +69,7 @@ impl WalletApi {
 
         let stack_item = result.stack.first().ok_or("No result returned")?;
 
-        let balance = stack_item.get_integer()?;
+        let balance = RpcUtility::stack_value_to_bigint(stack_item)?;
         let gas_factor = gas_factor();
 
         Ok(balance.to_f64().unwrap_or(0.0) / gas_factor as f64)
@@ -442,10 +442,10 @@ mod tests {
     use base64::{engine::general_purpose, Engine as _};
     use mockito::{Matcher, Server};
     use neo_core::config::ProtocolSettings;
+    use neo_core::script_builder::ScriptBuilder;
     use neo_json::{JObject, JToken};
     use neo_primitives::UInt256;
-    use neo_vm::op_code::OpCode;
-    use neo_vm::ScriptBuilder;
+    use neo_vm_rs::OpCode;
     use regex::escape;
     use reqwest::Url;
     use std::fs;
@@ -899,7 +899,7 @@ mod tests {
             .claim_gas_with_assert(&key, false)
             .await
             .expect("claim gas");
-        assert_ne!(tx.script().last().copied(), Some(OpCode::ASSERT as u8));
+        assert_ne!(tx.script().last().copied(), Some(OpCode::ASSERT.byte()));
     }
 
     #[tokio::test]
@@ -928,7 +928,7 @@ mod tests {
             .claim_gas_from_key_with_assert(wif, false)
             .await
             .expect("claim gas");
-        assert_ne!(tx.script().last().copied(), Some(OpCode::ASSERT as u8));
+        assert_ne!(tx.script().last().copied(), Some(OpCode::ASSERT.byte()));
     }
 
     #[tokio::test]
@@ -971,7 +971,7 @@ mod tests {
             .await
             .expect("transfer");
         assert_eq!(hash, expected_hash.to_string());
-        assert_eq!(tx.script().last().copied(), Some(OpCode::ASSERT as u8));
+        assert_eq!(tx.script().last().copied(), Some(OpCode::ASSERT.byte()));
     }
 
     #[tokio::test]
@@ -1045,7 +1045,7 @@ mod tests {
 
         assert_eq!(hash, expected_hash.to_string());
         assert_eq!(tx.script(), transfer_script.as_slice());
-        assert_eq!(tx.script().last().copied(), Some(OpCode::ASSERT as u8));
+        assert_eq!(tx.script().last().copied(), Some(OpCode::ASSERT.byte()));
     }
 
     #[tokio::test]
@@ -1118,7 +1118,7 @@ mod tests {
             .expect("multi-sig transfer");
 
         assert_eq!(hash, expected_hash.to_string());
-        assert_eq!(tx.script().last().copied(), Some(OpCode::ASSERT as u8));
+        assert_eq!(tx.script().last().copied(), Some(OpCode::ASSERT.byte()));
     }
 
     #[tokio::test]
@@ -1191,7 +1191,7 @@ mod tests {
 
         assert_eq!(hash, expected_hash.to_string());
         assert_eq!(tx.script(), script.as_slice());
-        assert_eq!(tx.script().last().copied(), Some(OpCode::ASSERT as u8));
+        assert_eq!(tx.script().last().copied(), Some(OpCode::ASSERT.byte()));
     }
 
     #[tokio::test]

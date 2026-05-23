@@ -277,12 +277,15 @@ impl RpcServerBlockchain {
             obj.insert("confirmations".to_string(), json!(confirmations));
 
             let vmstate_str = match state.vm_state() {
-                neo_vm::VMState::HALT => "HALT",
-                neo_vm::VMState::FAULT => "FAULT",
-                neo_vm::VMState::BREAK => "BREAK",
-                neo_vm::VMState::NONE => "NONE",
+                neo_core::neo_vm::VMState::HALT => "HALT",
+                neo_core::neo_vm::VMState::FAULT => "FAULT",
+                neo_core::neo_vm::VMState::BREAK => "BREAK",
+                neo_core::neo_vm::VMState::NONE => "NONE",
             };
-            obj.insert("vmstate".to_string(), Value::String(vmstate_str.to_string()));
+            obj.insert(
+                "vmstate".to_string(),
+                Value::String(vmstate_str.to_string()),
+            );
 
             if let Some(block_hash) = ledger
                 .get_block_hash_by_index(&store, block_index)

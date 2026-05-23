@@ -1,7 +1,7 @@
 //! StorageContext - matches C# Neo.SmartContract.StorageContext exactly
 
-use neo_vm::stack_item::InteropInterface;
-use neo_vm::StackItem;
+use crate::neo_vm::stack_item::InteropInterface;
+use crate::neo_vm::StackItem;
 use num_traits::ToPrimitive;
 
 /// The storage context used to read and write data in smart contracts (matches C# StorageContext)

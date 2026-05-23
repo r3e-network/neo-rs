@@ -3,7 +3,7 @@
 use neo_consensus::BlockData;
 use neo_core::network::p2p::payloads::Block;
 use neo_crypto::{ecc::generate_keypair, ECCurve};
-use neo_vm::op_code::OpCode;
+use neo_vm_rs::OpCode;
 
 #[tokio::test]
 async fn test_complete_block_assembly_workflow() {
@@ -53,7 +53,7 @@ async fn test_complete_block_assembly_workflow() {
     assert_eq!(witness.invocation_script.len(), 198);
 
     // Verify verification script format
-    assert_eq!(witness.verification_script[0], OpCode::PUSH3 as u8); // PUSH3 for M=3
+    assert_eq!(witness.verification_script[0], OpCode::PUSH3.byte()); // PUSH3 for M=3
 
     println!("✓ Block assembly test passed");
     println!("  Block index: {}", block.index());
@@ -71,7 +71,7 @@ async fn test_complete_block_assembly_workflow() {
 async fn assemble_test_block(block_data: BlockData) -> anyhow::Result<Block> {
     use neo_core::network::p2p::payloads::{Block, Header, Witness};
     use neo_core::smart_contract::helper::Helper;
-    use neo_vm::op_code::OpCode;
+    use neo_vm_rs::OpCode;
 
     // Build invocation script
     let mut invocation = Vec::new();
@@ -79,7 +79,7 @@ async fn assemble_test_block(block_data: BlockData) -> anyhow::Result<Block> {
     sorted_sigs.sort_by_key(|(idx, _)| *idx);
 
     for (_, signature) in &sorted_sigs {
-        invocation.push(OpCode::PUSHDATA1 as u8);
+        invocation.push(OpCode::PUSHDATA1.byte());
         invocation.push(signature.len() as u8);
         invocation.extend_from_slice(signature);
     }

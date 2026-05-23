@@ -5,14 +5,14 @@
 
 use neo_core::ledger::{TransactionVerificationContext, VerifyResult};
 use neo_core::neo_io::Serializable;
+use neo_core::neo_vm::StackItem;
 use neo_core::network::p2p::payloads::{signer::Signer, witness::Witness, InventoryType};
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::{
     Transaction, TransactionAttribute, UInt160, WitnessScope, HEADER_SIZE, MAX_TRANSACTION_SIZE,
 };
-use neo_vm::op_code::OpCode;
-use neo_vm::StackItem;
+use neo_vm_rs::OpCode;
 
 // ============================================================================
 // Test Helper Functions
@@ -48,6 +48,7 @@ mod tests {
     use neo_core::network::p2p::payloads::i_inventory::IInventory;
     use neo_core::smart_contract::IInteroperable;
     use neo_core::IVerifiable;
+    use neo_vm_rs::StackValue;
     use num_traits::ToPrimitive;
     use std::str::FromStr;
 
@@ -160,6 +161,55 @@ mod tests {
         assert_eq!(array[5].as_int().expect("netfee").to_i64().unwrap(), 9);
         assert_eq!(array[6].as_int().expect("vub").to_i64().unwrap(), 10);
         assert_eq!(array[7].as_bytes().expect("script"), vec![0x01, 0x02]);
+    }
+
+    /// Test direct neo-vm-rs StackValue projection for ToStackItem data layout.
+    #[test]
+    fn test_to_stack_value_includes_sender() {
+        let mut tx = Transaction::new();
+        tx.set_version(0);
+        tx.set_nonce(42);
+        tx.set_system_fee(7);
+        tx.set_network_fee(9);
+        tx.set_valid_until_block(10);
+        tx.set_script(vec![0x01, 0x02]);
+        tx.set_signers(vec![Signer::new(
+            UInt160::zero(),
+            WitnessScope::CALLED_BY_ENTRY,
+        )]);
+
+        assert_eq!(
+            tx.to_stack_value().unwrap(),
+            StackValue::Array(vec![
+                StackValue::ByteString(tx.hash().to_bytes()),
+                StackValue::Integer(0),
+                StackValue::Integer(42),
+                StackValue::ByteString(UInt160::zero().to_bytes()),
+                StackValue::Integer(7),
+                StackValue::Integer(9),
+                StackValue::Integer(10),
+                StackValue::ByteString(vec![0x01, 0x02]),
+            ])
+        );
+    }
+
+    /// Test local StackItem projection stays a thin adapter from the StackValue layout.
+    #[test]
+    fn test_to_stack_item_matches_stack_value_projection() {
+        let mut tx = Transaction::new();
+        tx.set_version(0);
+        tx.set_nonce(7);
+        tx.set_system_fee(11);
+        tx.set_network_fee(13);
+        tx.set_valid_until_block(17);
+        tx.set_script(vec![0x51]);
+        tx.set_signers(vec![Signer::new(
+            UInt160::zero(),
+            WitnessScope::CALLED_BY_ENTRY,
+        )]);
+
+        let expected = StackItem::try_from(tx.to_stack_value().unwrap()).unwrap();
+        assert_eq!(tx.to_stack_item().unwrap(), expected);
     }
 
     /// Test ToStackItem returns error when sender is missing (matches C# ArgumentException).
@@ -372,7 +422,7 @@ mod tests {
         tx.set_network_fee(1);
         tx.set_system_fee(100_000_000);
         tx.set_valid_until_block(1);
-        tx.set_script(vec![OpCode::PUSH1 as u8]);
+        tx.set_script(vec![OpCode::PUSH1.byte()]);
         tx.set_signers(vec![Signer::new(
             UInt160::from_bytes(&[0x01; 20]).expect("signer"),
             WitnessScope::GLOBAL,
@@ -401,7 +451,7 @@ mod tests {
             WitnessScope::GLOBAL,
         )]);
         tx.set_attributes(Vec::new());
-        tx.set_script(vec![OpCode::PUSH1 as u8]);
+        tx.set_script(vec![OpCode::PUSH1.byte()]);
         tx.set_witnesses(Vec::new());
 
         let hashes = tx.get_script_hashes_for_verifying(&snapshot);

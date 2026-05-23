@@ -5,12 +5,14 @@ use neo_core::big_decimal::BigDecimal;
 use neo_core::cryptography::{ECCurve, ECPoint};
 use neo_core::ledger::{RelayResult, VerifyResult};
 use neo_core::neo_system::TransactionRouterMessage;
+use neo_core::neo_vm::vm_state::VMState;
 use neo_core::network::p2p::payloads::conflicts::Conflicts;
 use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::transaction::Transaction;
 use neo_core::network::p2p::payloads::transaction_attribute::TransactionAttribute;
 use neo_core::persistence::DataCache;
 use neo_core::prelude::Serializable;
+use neo_core::script_builder::ScriptBuilder;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::smart_contract::contract::Contract;
@@ -26,9 +28,7 @@ use neo_core::wallets::{
     WalletAccount, WalletError, WalletResult,
 };
 use neo_core::{UInt160, UInt256, WitnessScope};
-use neo_vm::op_code::OpCode;
-use neo_vm::script_builder::ScriptBuilder;
-use neo_vm::vm_state::VMState;
+use neo_vm_rs::OpCode;
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
 use serde_json::{json, Map, Value};
@@ -467,7 +467,7 @@ impl RpcServerWallet {
         }
 
         let conflict_attr = TransactionAttribute::Conflicts(Conflicts::new(txid));
-        let script = vec![OpCode::RET as u8];
+        let script = vec![OpCode::RET.byte()];
         let snapshot_arc = Arc::new(snapshot.clone());
         let mut tx = Helper::make_transaction(
             wallet.as_ref(),

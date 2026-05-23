@@ -281,7 +281,9 @@ fn replay_block_203262_against_root_203261() {
     )
     .expect("post persist engine");
     post_persist_engine.set_state(tx_states);
-    post_persist_engine.native_post_persist().expect("post persist");
+    post_persist_engine
+        .native_post_persist()
+        .expect("post persist");
     drop(post_persist_engine);
 
     // Apply non-Ledger storage changes to trie and assert root matches C#.
@@ -321,10 +323,9 @@ fn replay_block_203262_against_root_203261() {
         "applied={} skipped_ledger={} new_root={}",
         applied, skipped_ledger, new_root
     );
-    let expected_csharp_root = UInt256::parse(
-        "0x0febf7e861702ec0491e59938a7f76baf9c850f6c9ea25635c7b6f23e798fe46",
-    )
-    .expect("parse expected C# root");
+    let expected_csharp_root =
+        UInt256::parse("0x0febf7e861702ec0491e59938a7f76baf9c850f6c9ea25635c7b6f23e798fe46")
+            .expect("parse expected C# root");
     assert_eq!(
         new_root, expected_csharp_root,
         "block 203262 OnPersist + FAULT-tx + PostPersist state root must match C# v3.9.1",

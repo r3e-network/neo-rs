@@ -1,3 +1,4 @@
+use neo_core::neo_vm::ExecutionEngineLimits;
 use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::transaction::Transaction;
 use neo_core::persistence::DataCache;
@@ -13,7 +14,7 @@ use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::smart_contract::IInteroperable;
 use neo_core::witness::Witness;
 use neo_core::{IVerifiable, NativeContract, UInt160, WitnessScope};
-use neo_vm::{ExecutionEngineLimits, OpCode};
+use neo_vm_rs::OpCode;
 use std::sync::Arc;
 
 fn default_manifest() -> ContractManifest {
@@ -63,7 +64,7 @@ fn make_engine(
 fn deploy_contract(
     engine: &mut neo_core::smart_contract::application_engine::ApplicationEngine,
 ) -> ContractState {
-    let nef = NefFile::new("test".to_string(), vec![OpCode::RET as u8]);
+    let nef = NefFile::new("test".to_string(), vec![OpCode::RET.byte()]);
     let manifest = default_manifest();
     let manifest_json = manifest.to_json().expect("manifest json");
     let manifest_bytes = serde_json::to_vec(&manifest_json).expect("manifest bytes");
@@ -97,7 +98,11 @@ fn storage_context_matches_contract_id() {
     let contract = deploy_contract(&mut engine);
 
     engine
-        .load_script(vec![OpCode::RET as u8], CallFlags::ALL, Some(contract.hash))
+        .load_script(
+            vec![OpCode::RET.byte()],
+            CallFlags::ALL,
+            Some(contract.hash),
+        )
         .expect("load script");
 
     let context = engine.get_storage_context().expect("storage context");
@@ -118,7 +123,11 @@ fn storage_get_put_delete_roundtrip() {
     let contract = deploy_contract(&mut engine);
 
     engine
-        .load_script(vec![OpCode::RET as u8], CallFlags::ALL, Some(contract.hash))
+        .load_script(
+            vec![OpCode::RET.byte()],
+            CallFlags::ALL,
+            Some(contract.hash),
+        )
         .expect("load script");
     let context = StorageContext::new(contract.id, false);
 
@@ -146,7 +155,11 @@ fn storage_put_rejects_readonly_context() {
     let contract = deploy_contract(&mut engine);
 
     engine
-        .load_script(vec![OpCode::RET as u8], CallFlags::ALL, Some(contract.hash))
+        .load_script(
+            vec![OpCode::RET.byte()],
+            CallFlags::ALL,
+            Some(contract.hash),
+        )
         .expect("load script");
     let context = StorageContext::new(contract.id, true);
 

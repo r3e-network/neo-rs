@@ -99,7 +99,7 @@ NEO_RPC_USER=neo NEO_RPC_PASS='change-this' \
 │  neo-chain (Blockchain)   │  neo-mempool (Transaction Pool) │
 ├─────────────────────────────────────────────────────────────┤
 │                    Core Layer                               │
-│  neo-core (Core Logic)  │  neo-vm (Virtual Machine)         │
+│  neo-core (Core Logic + VM compatibility)                    │
 │  neo-consensus (dBFT)   │  neo-p2p (P2P Network)            │
 │  neo-rpc (RPC Server)                                       │
 ├─────────────────────────────────────────────────────────────┤
@@ -334,7 +334,7 @@ cargo test --workspace
 For faster iterations you can target a specific crate or test:
 
 ```bash
-cargo test -p neo-vm --test vm_integration_tests
+cargo test -p neo-core
 ```
 
 ## Neo v3.9.1 Consistency Validation

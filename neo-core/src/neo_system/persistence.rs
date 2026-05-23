@@ -18,6 +18,7 @@ use crate::error::{CoreError, CoreResult};
 use crate::events::PluginEvent;
 use crate::ledger::block::Block as LedgerBlock;
 use crate::ledger::blockchain_application_executed::ApplicationExecuted;
+use crate::neo_vm::vm_state::VMState;
 use crate::network::p2p::payloads::block::Block;
 use crate::persistence::data_cache::{
     clear_storage_watch_context, set_storage_watch_context, DataCache, DataCacheConfig,
@@ -34,7 +35,6 @@ use crate::smart_contract::native::ledger_contract::{
 use crate::smart_contract::trigger_type::TriggerType;
 use crate::smart_contract::{StorageItem, StorageKey};
 use crate::UInt256;
-use neo_vm::vm_state::VMState;
 use tracing::{debug, info, warn};
 
 #[derive(Default)]
@@ -364,10 +364,12 @@ impl NeoSystem {
                         .state
                         .iter()
                         .map(|item| match item {
-                            neo_vm::StackItem::Null => "null".to_string(),
-                            neo_vm::StackItem::Boolean(b) => format!("bool:{}", b),
-                            neo_vm::StackItem::Integer(n) => format!("int:{}", n),
-                            neo_vm::StackItem::ByteString(b) => format!("bytes:0x{}", hex::encode(b)),
+                            crate::neo_vm::StackItem::Null => "null".to_string(),
+                            crate::neo_vm::StackItem::Boolean(b) => format!("bool:{}", b),
+                            crate::neo_vm::StackItem::Integer(n) => format!("int:{}", n),
+                            crate::neo_vm::StackItem::ByteString(b) => {
+                                format!("bytes:0x{}", hex::encode(b))
+                            }
                             _ => format!("{:?}", item.stack_item_type()),
                         })
                         .collect();

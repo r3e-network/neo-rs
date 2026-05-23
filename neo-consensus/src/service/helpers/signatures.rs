@@ -1,7 +1,8 @@
 use super::super::ConsensusService;
 use crate::{ConsensusError, ConsensusResult};
+use neo_core::script_builder::ScriptBuilder;
 use neo_primitives::{UInt160, UInt256};
-use neo_vm::{op_code::OpCode, script_builder::ScriptBuilder};
+use neo_vm_rs::OpCode;
 use tracing::{debug, warn};
 
 pub(in crate::service) fn invocation_script_from_signature(signature: &[u8]) -> Vec<u8> {
@@ -19,7 +20,7 @@ pub(in crate::service) fn signature_from_invocation_script(invocation: &[u8]) ->
     if invocation.len() != 66 {
         return None;
     }
-    if invocation[0] != OpCode::PUSHDATA1 as u8 || invocation[1] != 0x40 {
+    if invocation[0] != OpCode::PUSHDATA1.byte() || invocation[1] != 0x40 {
         return None;
     }
     // Return a slice instead of allocating a new Vec.

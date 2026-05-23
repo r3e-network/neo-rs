@@ -3,6 +3,7 @@ use neo_core::ledger::{
     block::Block as LedgerBlock, block_header::BlockHeader as LedgerBlockHeader,
 };
 use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable, SerializableExt};
+use neo_core::neo_vm::vm_state::VMState;
 use neo_core::network::p2p::payloads::{
     signer::Signer, transaction::Transaction, witness::Witness as PayloadWitness,
 };
@@ -10,7 +11,6 @@ use neo_core::smart_contract::native::{trimmed_block::TrimmedBlock, LedgerContra
 use neo_core::smart_contract::storage_key::StorageKey;
 use neo_core::{UInt160, UInt256, Witness as LedgerWitness, WitnessScope};
 use neo_rpc::server::{RpcHandler, RpcServer, RpcServerBlockchain, RpcServerConfig};
-use neo_vm::vm_state::VMState;
 use serde_json::Value;
 
 fn find_handler<'a>(handlers: &'a [RpcHandler], name: &str) -> &'a RpcHandler {

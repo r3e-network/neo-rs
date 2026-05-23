@@ -1,3 +1,4 @@
+use neo_core::neo_vm::StackItem;
 use neo_core::network::p2p::helper::get_sign_data_vec;
 use neo_core::network::p2p::payloads::transaction::Transaction;
 use neo_core::persistence::DataCache;
@@ -7,13 +8,12 @@ use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::wallets::KeyPair;
 use neo_core::IVerifiable;
-use neo_vm::op_code::OpCode;
-use neo_vm::StackItem;
+use neo_vm_rs::OpCode;
 use std::sync::Arc;
 
 fn sample_transaction() -> Transaction {
     let mut tx = Transaction::new();
-    tx.set_script(vec![OpCode::PUSH1 as u8]);
+    tx.set_script(vec![OpCode::PUSH1.byte()]);
     tx.set_valid_until_block(1);
     tx
 }
@@ -32,7 +32,7 @@ fn make_engine(tx: Transaction, settings: ProtocolSettings) -> ApplicationEngine
     )
     .expect("engine");
     engine
-        .load_script(vec![OpCode::RET as u8], CallFlags::NONE, None)
+        .load_script(vec![OpCode::RET.byte()], CallFlags::NONE, None)
         .expect("load script");
     engine
 }

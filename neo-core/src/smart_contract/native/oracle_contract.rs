@@ -6,6 +6,7 @@
 use crate::cryptography::NeoHash;
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::neo_config::{BLOCK_MAX_TX_WIRE_LIMIT, HASH_SIZE, MAX_SCRIPT_SIZE};
+use crate::neo_vm::{ExecutionEngineLimits, StackItem};
 use crate::network::p2p::payloads::{
     oracle_response::OracleResponse as TxOracleResponse,
     transaction_attribute::TransactionAttribute,
@@ -26,14 +27,10 @@ use crate::smart_contract::storage_key::StorageKey;
 use crate::smart_contract::ContractParameterType;
 use crate::smart_contract::StorageItem;
 use crate::{UInt160, UInt256};
-use bincode;
-use neo_vm::{ExecutionEngineLimits, StackItem};
+use neo_vm_rs::StackValue;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::convert::TryInto;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 const DEFAULT_PRICE: i64 = 50_000_000;
 const PREFIX_PRICE: u8 = 0x05;
@@ -42,7 +39,7 @@ const PREFIX_ID_LIST: u8 = 0x06;
 const PREFIX_REQUEST_ID: u8 = 0x09;
 const MAX_PENDING_PER_URL: usize = 256;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 struct PendingRequest {
     id: u64,
     original_tx_id: UInt256,
@@ -541,11 +538,7 @@ impl OracleContract {
             .checked_add(1)
             .ok_or_else(|| Error::runtime_error("Next request id overflowed"))?;
         let next_bytes = BigInt::from(next).to_signed_bytes_le();
-        self.put_item(
-            snapshot,
-            key,
-            StorageItem::from_bytes(next_bytes),
-        );
+        self.put_item(snapshot, key, StorageItem::from_bytes(next_bytes));
         Ok(current)
     }
 
@@ -595,70 +588,63 @@ impl OracleContract {
     }
 
     fn serialize_request(&self, request: &PendingRequest) -> Result<Vec<u8>> {
-        // C# parity: OracleRequest stored as StackItem Array(7) via BinarySerializer.
+        // C# parity: OracleRequest stored as Array(7) via BinarySerializer.
         // Items: [OriginalTxid(32B), GasForResponse(int), Url(str), Filter(str|null),
         //         CallbackContract(20B), CallbackMethod(str), UserData(bytes)]
-        let stack_item = StackItem::from_array(vec![
-            StackItem::from_byte_string(request.original_tx_id.to_bytes()),
-            StackItem::from_int(request.gas_for_response),
-            StackItem::from_byte_string(request.url.as_bytes()),
-            match &request.filter {
-                Some(filter) => StackItem::from_byte_string(filter.as_bytes()),
-                None => StackItem::null(),
-            },
-            StackItem::from_byte_string(request.callback_contract.to_bytes()),
-            StackItem::from_byte_string(request.callback_method.as_bytes()),
-            StackItem::from_byte_string(request.user_data.clone()),
-        ]);
-        BinarySerializer::serialize(&stack_item, &ExecutionEngineLimits::default())
+        let request_value = OracleRequest::new(
+            request.original_tx_id,
+            request.gas_for_response,
+            request.url.clone(),
+            request.filter.clone(),
+            request.callback_contract,
+            request.callback_method.clone(),
+            request.user_data.clone(),
+        )
+        .to_stack_value();
+        BinarySerializer::serialize_stack_value(&request_value, &ExecutionEngineLimits::default())
             .map_err(Error::serialization)
     }
 
     fn deserialize_request(&self, bytes: &[u8]) -> Result<PendingRequest> {
-        let stack_item = BinarySerializer::deserialize(
-            bytes,
-            &ExecutionEngineLimits::default(),
-            None,
-        )
-        .map_err(Error::serialization)?;
-        let array = match &stack_item {
-            StackItem::Array(arr) => arr.items().clone(),
+        let stack_value =
+            BinarySerializer::deserialize_stack_value(bytes).map_err(Error::serialization)?;
+        let items = match stack_value {
+            StackValue::Array(items) => items,
             _ => return Err(Error::serialization("OracleRequest must be an Array")),
         };
-        if array.len() < 7 {
+        if items.len() < 7 {
             return Err(Error::serialization(format!(
                 "OracleRequest expected 7 items, got {}",
-                array.len()
+                items.len()
             )));
         }
         let original_tx_id = {
-            let b = array[0].as_bytes().map_err(|e| Error::serialization(e.to_string()))?;
+            let b = Self::request_bytes(&items[0])?;
             UInt256::from_bytes(&b).map_err(|e| Error::serialization(e.to_string()))?
         };
-        let gas_for_response = array[1]
-            .as_int()
-            .map_err(|e| Error::serialization(e.to_string()))?
-            .to_i64()
+        let gas_for_response = items[1]
+            .to_i128()
+            .and_then(|integer| i64::try_from(integer).ok())
             .ok_or_else(|| Error::serialization("gas_for_response overflow".to_string()))?;
         let url = {
-            let b = array[2].as_bytes().map_err(|e| Error::serialization(e.to_string()))?;
+            let b = Self::request_bytes(&items[2])?;
             String::from_utf8(b).map_err(|e| Error::serialization(e.to_string()))?
         };
-        let filter = if matches!(array[3], StackItem::Null) {
+        let filter = if matches!(items[3], StackValue::Null) {
             None
         } else {
-            let b = array[3].as_bytes().map_err(|e| Error::serialization(e.to_string()))?;
+            let b = Self::request_bytes(&items[3])?;
             Some(String::from_utf8(b).map_err(|e| Error::serialization(e.to_string()))?)
         };
         let callback_contract = {
-            let b = array[4].as_bytes().map_err(|e| Error::serialization(e.to_string()))?;
+            let b = Self::request_bytes(&items[4])?;
             UInt160::from_bytes(&b).map_err(|e| Error::serialization(e.to_string()))?
         };
         let callback_method = {
-            let b = array[5].as_bytes().map_err(|e| Error::serialization(e.to_string()))?;
+            let b = Self::request_bytes(&items[5])?;
             String::from_utf8(b).map_err(|e| Error::serialization(e.to_string()))?
         };
-        let user_data = array[6].as_bytes().map_err(|e| Error::serialization(e.to_string()))?;
+        let user_data = Self::request_bytes(&items[6])?;
 
         Ok(PendingRequest {
             id: 0, // id is encoded in the storage key, not the value
@@ -670,6 +656,12 @@ impl OracleContract {
             callback_method,
             user_data,
         })
+    }
+
+    fn request_bytes(value: &StackValue) -> Result<Vec<u8>> {
+        value
+            .to_byte_string_bytes()
+            .ok_or_else(|| Error::serialization("Cannot convert to ByteArray"))
     }
 
     fn read_id_list(&self, snapshot: &DataCache, hash: &[u8; 20]) -> Result<Vec<u64>> {
@@ -1025,18 +1017,12 @@ impl NativeContract for OracleContract {
         let snapshot_ref = snapshot.as_ref();
 
         if snapshot_ref.try_get(&self.request_id_key()).is_none() {
-            snapshot_ref.add(
-                self.request_id_key(),
-                StorageItem::from_bytes(Vec::new()),
-            );
+            snapshot_ref.add(self.request_id_key(), StorageItem::from_bytes(Vec::new()));
         }
 
         if snapshot_ref.try_get(&self.price_key()).is_none() {
             let price_bytes = BigInt::from(DEFAULT_PRICE).to_signed_bytes_le();
-            snapshot_ref.add(
-                self.price_key(),
-                StorageItem::from_bytes(price_bytes),
-            );
+            snapshot_ref.add(self.price_key(), StorageItem::from_bytes(price_bytes));
         }
 
         Ok(())

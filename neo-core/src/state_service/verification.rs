@@ -504,7 +504,7 @@ impl StateVerificationActor {
         let signature = self.wallet.sign(&sign_data, &sender).await.ok()?;
 
         let mut invocation = Vec::with_capacity(signature.len() + 2);
-        invocation.push(neo_vm::op_code::OpCode::PUSHDATA1 as u8);
+        invocation.push(neo_vm_rs::OpCode::PUSHDATA1.byte());
         invocation.push(signature.len() as u8);
         invocation.extend_from_slice(&signature);
         payload.witness = crate::network::p2p::payloads::witness::Witness::new_with_scripts(

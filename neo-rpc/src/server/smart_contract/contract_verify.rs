@@ -17,11 +17,11 @@ use crate::server::rpc_error::RpcError;
 use crate::server::rpc_error_factory;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_server::RpcServer;
-use neo_vm::op_code::OpCode;
+use neo_vm_rs::OpCode;
 
 use super::helpers::{
-    internal_error, invalid_params, parse_contract_parameters, parse_signers_and_witnesses,
-    stack_item_to_json_limited,
+    final_rpc_vm_state_string, internal_error, invalid_params, parse_contract_parameters,
+    parse_signers_and_witnesses, stack_item_to_json_limited,
 };
 
 pub(super) fn invoke_contract_verify(
@@ -88,7 +88,7 @@ pub(super) fn invoke_contract_verify(
     tx.set_signers(signers);
     tx.set_attributes(Vec::<TransactionAttribute>::new());
     tx.set_witnesses(witnesses);
-    tx.set_script(vec![OpCode::RET as u8]);
+    tx.set_script(vec![OpCode::RET.byte()]);
 
     let tx_container = Arc::new(tx) as Arc<dyn neo_core::IVerifiable>;
     let mut engine = ApplicationEngine::new(
@@ -113,7 +113,7 @@ pub(super) fn invoke_contract_verify(
 
     engine.execute_allow_fault();
 
-    let state = engine.state();
+    let state = final_rpc_vm_state_string(engine.state())?;
     let mut exception = engine
         .fault_exception()
         .map_or(Value::Null, |message| Value::String(message.to_string()));
@@ -135,7 +135,7 @@ pub(super) fn invoke_contract_verify(
 
     let mut result = json!({
         "script": BASE64_STANDARD.encode(&invocation_script),
-        "state": format!("{:?}", state),
+        "state": state,
         "gasconsumed": engine.fee_consumed().to_string(),
         "exception": exception,
     });
@@ -151,11 +151,11 @@ pub(super) fn invoke_contract_verify(
 fn build_verification_invocation_script(
     parameters: &[neo_core::smart_contract::contract_parameter::ContractParameter],
 ) -> Result<Vec<u8>, RpcException> {
-    let mut builder = neo_vm::script_builder::ScriptBuilder::new();
+    let mut builder = neo_core::script_builder::ScriptBuilder::new();
     for parameter in parameters.iter().rev() {
-        let item = super::helpers::contract_parameter_to_stack_item(parameter)?;
+        let item = super::helpers::contract_parameter_to_stack_value(parameter)?;
         builder
-            .emit_push_stack_item(item)
+            .emit_push_stack_value(&item)
             .map_err(|err| internal_error(err.to_string()))?;
     }
     Ok(builder.to_array())

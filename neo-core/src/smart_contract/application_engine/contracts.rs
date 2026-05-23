@@ -297,8 +297,14 @@ impl ApplicationEngine {
 
         let contract = self.fetch_contract(contract_hash)?;
         if diag {
-            let caller = self.get_calling_script_hash().map(|h| h.to_string()).unwrap_or_else(|| "none".to_string());
-            let current = self.current_script_hash().map(|h| h.to_string()).unwrap_or_else(|| "none".to_string());
+            let caller = self
+                .get_calling_script_hash()
+                .map(|h| h.to_string())
+                .unwrap_or_else(|| "none".to_string());
+            let current = self
+                .current_script_hash()
+                .map(|h| h.to_string())
+                .unwrap_or_else(|| "none".to_string());
             tracing::warn!(target: "neo", block_index = block_idx, %contract_hash, method, args_len = args.len(), caller, current, "TRACE: call_contract_dynamic");
         }
         let method_descriptor = contract
@@ -436,7 +442,7 @@ impl ApplicationEngine {
 mod tests {
     use super::*;
     use crate::smart_contract::native::GasToken;
-    use neo_vm::OpCode;
+    use neo_vm_rs::OpCode;
 
     #[test]
     fn call_contract_uses_execution_state_script_hash_for_caller() {
@@ -453,7 +459,7 @@ mod tests {
         .expect("engine");
 
         engine
-            .load_script(vec![OpCode::RET as u8], CallFlags::ALL, None)
+            .load_script(vec![OpCode::RET.byte()], CallFlags::ALL, None)
             .expect("load entry script");
 
         let entry_context = engine.current_context().cloned().expect("entry context");

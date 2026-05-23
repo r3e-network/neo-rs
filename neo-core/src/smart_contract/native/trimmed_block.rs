@@ -4,9 +4,11 @@ use crate::ledger::{block_header::BlockHeader, Block};
 use crate::neo_io::{
     serializable::helper::get_var_size, BinaryWriter, IoResult, MemoryReader, Serializable,
 };
+use crate::neo_vm::StackItem;
 use crate::smart_contract::i_interoperable::IInteroperable;
 use crate::UInt256;
-use neo_vm::StackItem;
+use neo_vm_rs::StackValue;
+use num_bigint::BigInt;
 
 /// A trimmed block containing only the header and transaction hashes (matches C# TrimmedBlock)
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -43,6 +45,34 @@ impl TrimmedBlock {
     pub fn hashes(&self) -> &[UInt256] {
         &self.hashes
     }
+
+    fn u64_stack_integer(value: u64) -> StackValue {
+        i64::try_from(value)
+            .map(StackValue::Integer)
+            .unwrap_or_else(|_| StackValue::BigInteger(BigInt::from(value).to_signed_bytes_le()))
+    }
+
+    fn usize_stack_integer(value: usize) -> StackValue {
+        i64::try_from(value)
+            .map(StackValue::Integer)
+            .unwrap_or_else(|_| StackValue::BigInteger(BigInt::from(value).to_signed_bytes_le()))
+    }
+
+    /// Converts to a neo-vm-rs stack value.
+    pub fn to_stack_value(&self) -> StackValue {
+        StackValue::Array(vec![
+            StackValue::ByteString(self.hash().to_bytes()),
+            StackValue::Integer(i64::from(self.header.version)),
+            StackValue::ByteString(self.header.previous_hash.to_bytes()),
+            StackValue::ByteString(self.header.merkle_root.to_bytes()),
+            Self::u64_stack_integer(self.header.timestamp),
+            Self::u64_stack_integer(self.header.nonce),
+            StackValue::Integer(i64::from(self.header.index)),
+            StackValue::Integer(i64::from(self.header.primary_index)),
+            StackValue::ByteString(self.header.next_consensus.to_bytes()),
+            Self::usize_stack_integer(self.hashes.len()),
+        ])
+    }
 }
 
 impl Serializable for TrimmedBlock {
@@ -73,21 +103,74 @@ impl IInteroperable for TrimmedBlock {
     }
 
     fn to_stack_item(&self) -> Result<StackItem, CoreError> {
-        Ok(StackItem::from_array(vec![
-            StackItem::from_byte_string(self.hash().to_bytes()),
-            StackItem::from_int(self.header.version),
-            StackItem::from_byte_string(self.header.previous_hash.to_bytes()),
-            StackItem::from_byte_string(self.header.merkle_root.to_bytes()),
-            StackItem::from_int(self.header.timestamp),
-            StackItem::from_int(self.header.nonce),
-            StackItem::from_int(self.header.index),
-            StackItem::from_int(self.header.primary_index as u32),
-            StackItem::from_byte_string(self.header.next_consensus.to_bytes()),
-            StackItem::from_int(self.hashes.len() as u32),
-        ]))
+        StackItem::try_from(self.to_stack_value()).map_err(|error| {
+            CoreError::invalid_operation(format!(
+                "Failed to convert TrimmedBlock StackValue to StackItem: {error}"
+            ))
+        })
     }
 
     fn clone_box(&self) -> Box<dyn IInteroperable> {
         Box::new(self.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ledger::BlockHeader;
+    use crate::smart_contract::IInteroperable;
+    use crate::{UInt160, UInt256, Witness};
+    use neo_vm_rs::StackValue;
+
+    fn sample_block() -> TrimmedBlock {
+        let header = BlockHeader::new(
+            0,
+            UInt256::from_bytes(&[1u8; 32]).unwrap(),
+            UInt256::from_bytes(&[2u8; 32]).unwrap(),
+            1_234,
+            5_678,
+            9,
+            1,
+            UInt160::from_bytes(&[3u8; 20]).unwrap(),
+            vec![Witness::empty()],
+        );
+
+        TrimmedBlock::create(
+            header,
+            vec![
+                UInt256::from_bytes(&[4u8; 32]).unwrap(),
+                UInt256::from_bytes(&[5u8; 32]).unwrap(),
+            ],
+        )
+    }
+
+    #[test]
+    fn trimmed_block_projects_to_neo_vm_rs_stack_value() {
+        let block = sample_block();
+
+        assert_eq!(
+            block.to_stack_value(),
+            StackValue::Array(vec![
+                StackValue::ByteString(block.hash().to_bytes()),
+                StackValue::Integer(0),
+                StackValue::ByteString(vec![1u8; 32]),
+                StackValue::ByteString(vec![2u8; 32]),
+                StackValue::Integer(1_234),
+                StackValue::Integer(5_678),
+                StackValue::Integer(9),
+                StackValue::Integer(1),
+                StackValue::ByteString(vec![3u8; 20]),
+                StackValue::Integer(2),
+            ])
+        );
+    }
+
+    #[test]
+    fn trimmed_block_stack_item_projection_matches_stack_value_projection() {
+        let block = sample_block();
+        let expected = StackItem::try_from(block.to_stack_value()).unwrap();
+
+        assert_eq!(block.to_stack_item().unwrap(), expected);
     }
 }

@@ -2,10 +2,10 @@
 
 //! JsonSerializer - mirrors `Neo.SmartContract.JsonSerializer`.
 
-use neo_vm::stack_item::array::Array as ArrayItem;
-use neo_vm::stack_item::map::Map as MapItem;
-use neo_vm::stack_item::struct_item::Struct as StructItem;
-use neo_vm::{StackItem, StackItemType};
+use crate::neo_vm::stack_item::array::Array as ArrayItem;
+use crate::neo_vm::stack_item::map::Map as MapItem;
+use crate::neo_vm::stack_item::struct_item::Struct as StructItem;
+use crate::neo_vm::{StackItem, StackItemType};
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use serde_json::{Map as JsonMap, Number as JsonNumber, Value as JsonValue};
@@ -101,10 +101,7 @@ impl JsonSerializer {
                 {
                     let cp = c as u32;
                     if cp <= 0xFFFF {
-                        let _ = std::io::Write::write_fmt(
-                            out,
-                            format_args!("\\u{:04X}", cp),
-                        );
+                        let _ = std::io::Write::write_fmt(out, format_args!("\\u{:04X}", cp));
                     } else {
                         // Encode supplementary chars as UTF-16 surrogate pair.
                         let v = cp - 0x10000;

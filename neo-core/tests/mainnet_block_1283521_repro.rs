@@ -20,7 +20,9 @@
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use neo_core::ledger::{Block, BlockHeader};
-use neo_core::network::p2p::payloads::{signer::Signer, transaction::Transaction, witness::Witness};
+use neo_core::network::p2p::payloads::{
+    signer::Signer, transaction::Transaction, witness::Witness,
+};
 use neo_core::persistence::data_cache::{DataCache, DataCacheConfig};
 use neo_core::persistence::{i_store_provider::IStoreProvider, providers::RocksDBStoreProvider};
 use neo_core::persistence::{SeekDirection, StorageConfig};
@@ -49,7 +51,9 @@ fn u256(hex: &str) -> UInt256 {
 fn witness(invocation_b64: &str, verification_b64: &str) -> Witness {
     Witness::new_with_scripts(
         BASE64.decode(invocation_b64).expect("base64 invocation"),
-        BASE64.decode(verification_b64).expect("base64 verification"),
+        BASE64
+            .decode(verification_b64)
+            .expect("base64 verification"),
     )
 }
 
@@ -113,9 +117,7 @@ fn replay_block_1283521_debug() {
         let trie = Arc::clone(&trie);
         Arc::new(
             move |prefix: Option<&neo_core::smart_contract::StorageKey>, _dir: SeekDirection| {
-                let prefix_bytes = prefix
-                    .map(|k| k.to_array().to_owned())
-                    .unwrap_or_default();
+                let prefix_bytes = prefix.map(|k| k.to_array().to_owned()).unwrap_or_default();
                 let mut trie = trie.lock();
                 trie.find(&prefix_bytes, None)
                     .expect("trie find")
@@ -145,8 +147,7 @@ fn replay_block_1283521_debug() {
 
     // Pre-replay: confirm receiver has no GAS entry
     let receiver = u160(RECEIVER_HEX);
-    let receiver_key =
-        neo_core::smart_contract::StorageKey::create_with_uint160(-6, 20, &receiver);
+    let receiver_key = neo_core::smart_contract::StorageKey::create_with_uint160(-6, 20, &receiver);
     let pre_state = base_cache.get(&receiver_key);
     eprintln!(
         "PRE-REPLAY receiver GAS entry: {}",
@@ -262,9 +263,7 @@ fn replay_block_1283521_debug() {
     let gas = tx_engine.gas_consumed();
     let exception = tx_engine.fault_exception();
     let notifs = tx_engine.notifications();
-    eprintln!(
-        "\n=== tx result ===\nvm_state={vm_state:?} gas={gas} exception={exception:?}"
-    );
+    eprintln!("\n=== tx result ===\nvm_state={vm_state:?} gas={gas} exception={exception:?}");
     eprintln!("notifications ({}):", notifs.len());
     for (i, n) in notifs.iter().enumerate() {
         eprintln!(
@@ -287,17 +286,14 @@ fn replay_block_1283521_debug() {
         let key_bytes = key.to_array();
         let key_hex = hex::encode(&key_bytes);
         // Highlight receiver key
-        let highlight = if key.id == -6
-            && key_hex.contains("9bc33d9930c034b2f4752c3ab2c757fac8649fe6")
-        {
-            " <<< RECEIVER GAS KEY"
-        } else if key.id == -6
-            && key_hex.contains("b95ffe01d676205af89b3ee6f612e6eb3c663a67")
-        {
-            " <<< SENDER GAS KEY"
-        } else {
-            ""
-        };
+        let highlight =
+            if key.id == -6 && key_hex.contains("9bc33d9930c034b2f4752c3ab2c757fac8649fe6") {
+                " <<< RECEIVER GAS KEY"
+            } else if key.id == -6 && key_hex.contains("b95ffe01d676205af89b3ee6f612e6eb3c663a67") {
+                " <<< SENDER GAS KEY"
+            } else {
+                ""
+            };
         eprintln!(
             "  state={} id={} keyhex=0x{} valhex=0x{}{}",
             state_str,
@@ -323,7 +319,9 @@ fn replay_block_1283521_debug() {
     )
     .expect("post persist engine");
     post_persist_engine.set_state(tx_states);
-    post_persist_engine.native_post_persist().expect("post persist");
+    post_persist_engine
+        .native_post_persist()
+        .expect("post persist");
     drop(post_persist_engine);
     eprintln!("\nPostPersist completed");
 

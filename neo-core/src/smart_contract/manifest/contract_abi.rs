@@ -1,9 +1,10 @@
 //! ContractAbi - matches C# Neo.SmartContract.Manifest.ContractAbi exactly
 
 use crate::error::CoreError;
+use crate::neo_vm::StackItem;
 use crate::smart_contract::i_interoperable::IInteroperable;
 use crate::smart_contract::manifest::{ContractEventDescriptor, ContractMethodDescriptor};
-use neo_vm::StackItem;
+use neo_vm_rs::StackValue;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -123,6 +124,79 @@ impl ContractAbi {
         let events_size: usize = self.events.iter().map(|e| e.size()).sum();
         methods_size + events_size
     }
+
+    /// Converts to a neo-vm-rs stack value (matches C# `ContractAbi.ToStackItem` layout).
+    pub fn to_stack_value(&self) -> StackValue {
+        StackValue::Struct(vec![
+            StackValue::Array(
+                self.methods
+                    .iter()
+                    .map(ContractMethodDescriptor::to_stack_value)
+                    .collect(),
+            ),
+            StackValue::Array(
+                self.events
+                    .iter()
+                    .map(ContractEventDescriptor::to_stack_value)
+                    .collect(),
+            ),
+        ])
+    }
+
+    /// Updates this ABI from a neo-vm-rs stack value.
+    pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError> {
+        let StackValue::Struct(items) = stack_value else {
+            return Err(CoreError::invalid_format(
+                "ContractAbi expects Struct stack value",
+            ));
+        };
+
+        if items.len() < 2 {
+            return Err(CoreError::invalid_format(format!(
+                "ContractAbi stack value must contain 2 elements, found {}",
+                items.len()
+            )));
+        }
+
+        let methods = match items[0].clone() {
+            StackValue::Array(method_items) | StackValue::Struct(method_items) => Some(
+                method_items
+                    .into_iter()
+                    .map(|item| {
+                        let mut method = ContractMethodDescriptor::default();
+                        method.from_stack_value(item)?;
+                        Ok(method)
+                    })
+                    .collect::<Result<Vec<_>, CoreError>>()?,
+            ),
+            _ => None,
+        };
+
+        let events = match items[1].clone() {
+            StackValue::Array(event_items) | StackValue::Struct(event_items) => Some(
+                event_items
+                    .into_iter()
+                    .map(|item| {
+                        let mut event = ContractEventDescriptor::default();
+                        event.from_stack_value(item)?;
+                        Ok(event)
+                    })
+                    .collect::<Result<Vec<_>, CoreError>>()?,
+            ),
+            _ => None,
+        };
+
+        if let Some(methods) = methods {
+            self.methods = methods;
+        }
+        if let Some(events) = events {
+            self.events = events;
+        }
+        self.method_dictionary = None;
+
+        Ok(())
+    }
+
     /// Validates the ABI structure.
     pub fn validate(&self) -> Result<(), String> {
         if self.methods.is_empty() {
@@ -134,62 +208,90 @@ impl ContractAbi {
 
 impl IInteroperable for ContractAbi {
     fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
-        let StackItem::Struct(struct_item) = stack_item else {
-            return Err(CoreError::invalid_format(
-                "ContractAbi expects Struct stack item",
-            ));
-        };
-        let items = struct_item.items();
-        if items.len() < 2 {
-            return Err(CoreError::invalid_format(format!(
-                "ContractAbi stack item must contain 2 elements, found {}",
-                items.len()
-            )));
-        }
-
-        if let Ok(method_items) = items[0].as_array() {
-            self.methods = method_items
-                .iter()
-                .map(|item| {
-                    let mut method = ContractMethodDescriptor::default();
-                    method.from_stack_item(item.clone())?;
-                    Ok(method)
-                })
-                .collect::<Result<Vec<_>, CoreError>>()?;
-        }
-
-        if let Ok(event_items) = items[1].as_array() {
-            self.events = event_items
-                .iter()
-                .map(|item| {
-                    let mut event = ContractEventDescriptor::default();
-                    event.from_stack_item(item.clone())?;
-                    Ok(event)
-                })
-                .collect::<Result<Vec<_>, CoreError>>()?;
-        }
-        Ok(())
+        self.from_stack_value(StackValue::try_from(stack_item).map_err(|error| {
+            CoreError::invalid_format(format!(
+                "Failed to convert ContractAbi StackItem to StackValue: {error}"
+            ))
+        })?)
     }
 
     fn to_stack_item(&self) -> Result<StackItem, CoreError> {
-        let methods = self
-            .methods
-            .iter()
-            .map(|method| method.to_stack_item())
-            .collect::<Result<Vec<_>, _>>()?;
-        let events = self
-            .events
-            .iter()
-            .map(|event| event.to_stack_item())
-            .collect::<Result<Vec<_>, _>>()?;
-
-        Ok(StackItem::from_struct(vec![
-            StackItem::from_array(methods),
-            StackItem::from_array(events),
-        ]))
+        StackItem::try_from(self.to_stack_value()).map_err(|error| {
+            CoreError::invalid_operation(format!(
+                "Failed to convert ContractAbi StackValue to StackItem: {error}"
+            ))
+        })
     }
 
     fn clone_box(&self) -> Box<dyn IInteroperable> {
         Box::new(self.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::smart_contract::ContractParameterType;
+    use neo_vm_rs::StackValue;
+
+    fn method(name: &str) -> ContractMethodDescriptor {
+        ContractMethodDescriptor::new(
+            name.to_string(),
+            Vec::new(),
+            ContractParameterType::Void,
+            7,
+            true,
+        )
+        .unwrap()
+    }
+
+    fn event(name: &str) -> ContractEventDescriptor {
+        ContractEventDescriptor::new(name.to_string(), Vec::new()).unwrap()
+    }
+
+    #[test]
+    fn contract_abi_projects_to_neo_vm_rs_stack_value() {
+        let abi = ContractAbi::new(vec![method("main")], vec![event("Notify")]);
+
+        assert_eq!(
+            abi.to_stack_value(),
+            StackValue::Struct(vec![
+                StackValue::Array(vec![StackValue::Struct(vec![
+                    StackValue::ByteString(b"main".to_vec()),
+                    StackValue::Array(Vec::new()),
+                    StackValue::Integer(ContractParameterType::Void as u8 as i64),
+                    StackValue::Integer(7),
+                    StackValue::Boolean(true),
+                ])]),
+                StackValue::Array(vec![StackValue::Struct(vec![
+                    StackValue::ByteString(b"Notify".to_vec()),
+                    StackValue::Array(Vec::new()),
+                ])]),
+            ])
+        );
+    }
+
+    #[test]
+    fn contract_abi_stack_item_projection_matches_stack_value_projection() {
+        let abi = ContractAbi::new(vec![method("transfer")], Vec::new());
+        let expected = StackItem::try_from(abi.to_stack_value()).unwrap();
+
+        assert_eq!(abi.to_stack_item().unwrap(), expected);
+    }
+
+    #[test]
+    fn contract_abi_reads_from_neo_vm_rs_stack_value_and_clears_method_cache() {
+        let mut abi = ContractAbi::new(vec![method("old")], Vec::new());
+        assert!(abi.get_method("old", 0).is_some());
+
+        abi.from_stack_value(StackValue::Struct(vec![
+            StackValue::Array(vec![method("new").to_stack_value()]),
+            StackValue::Array(vec![event("Updated").to_stack_value()]),
+        ]))
+        .unwrap();
+
+        assert!(abi.get_method("old", 0).is_none());
+        assert!(abi.get_method("new", 0).is_some());
+        assert_eq!(abi.events, vec![event("Updated")]);
     }
 }

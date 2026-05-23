@@ -12,6 +12,7 @@ mod tests {
         StateRoot, VerifyResult, STATE_SERVICE_CATEGORY,
     };
     use crate::neo_io::BinaryWriter;
+    use crate::neo_vm::execution_engine_limits::ExecutionEngineLimits;
     use crate::network::p2p::payloads::extensible_payload::ExtensiblePayload;
     use crate::network::p2p::payloads::witness::Witness as PayloadWitness;
     use crate::network::p2p::{
@@ -30,13 +31,12 @@ mod tests {
         role_management::RoleManagement, AccountState, NativeContract, Role,
     };
     use crate::smart_contract::Contract;
-    use crate::smart_contract::{IInteroperable, StorageItem, StorageKey};
+    use crate::smart_contract::{StorageItem, StorageKey};
     use crate::state_service::state_store::StateServiceSettings;
     use crate::wallets::KeyPair;
     use crate::WitnessScope;
     use crate::{neo_io::Serializable, NeoSystem, ProtocolSettings, UInt160, UInt256};
-    use neo_vm::execution_engine_limits::ExecutionEngineLimits;
-    use neo_vm::op_code::OpCode;
+    use neo_vm_rs::OpCode;
     use num_bigint::BigInt;
     use tokio::time::{sleep, timeout, Duration};
 
@@ -53,7 +53,7 @@ mod tests {
         let signature = keypair.sign(&sign_data).expect("sign payload");
 
         let mut invocation = Vec::with_capacity(signature.len() + 2);
-        invocation.push(OpCode::PUSHDATA1 as u8);
+        invocation.push(OpCode::PUSHDATA1.byte());
         invocation.push(signature.len() as u8);
         invocation.extend_from_slice(&signature);
         payload.witness =
@@ -74,7 +74,7 @@ mod tests {
         tx.set_network_fee(1_0000_0000);
         tx.set_system_fee(30);
         tx.set_valid_until_block(valid_until_block);
-        tx.set_script(vec![OpCode::PUSH1 as u8]);
+        tx.set_script(vec![OpCode::PUSH1.byte()]);
         tx.set_signers(vec![Signer::new(
             keypair.get_script_hash(),
             WitnessScope::GLOBAL,
@@ -84,7 +84,7 @@ mod tests {
         let sign_data = get_sign_data_vec(&tx, settings.network).expect("sign data");
         let signature = keypair.sign(&sign_data).expect("sign");
         let mut invocation = Vec::with_capacity(signature.len() + 2);
-        invocation.push(OpCode::PUSHDATA1 as u8);
+        invocation.push(OpCode::PUSHDATA1.byte());
         invocation.push(signature.len() as u8);
         invocation.extend_from_slice(&signature);
         tx.set_witnesses(vec![Witness::new_with_scripts(
@@ -97,8 +97,8 @@ mod tests {
     fn seed_gas_balance(store: &mut StoreCache, account: UInt160, amount: i64) {
         let key = StorageKey::create_with_uint160(GasToken::new().id(), PREFIX_ACCOUNT, &account);
         let state = AccountState::with_balance(BigInt::from(amount));
-        let bytes = BinarySerializer::serialize(
-            &state.to_stack_item().expect("to_stack_item"),
+        let bytes = BinarySerializer::serialize_stack_value(
+            &state.to_stack_value(),
             &ExecutionEngineLimits::default(),
         )
         .expect("serialize account state");
@@ -231,7 +231,7 @@ mod tests {
         sign_data.extend_from_slice(&hash.to_array());
         let signature = keypair.sign(&sign_data).expect("sign state root");
         let mut invocation = Vec::with_capacity(signature.len() + 2);
-        invocation.push(OpCode::PUSHDATA1 as u8);
+        invocation.push(OpCode::PUSHDATA1.byte());
         invocation.push(signature.len() as u8);
         invocation.extend_from_slice(&signature);
         let verification_script = Contract::create_multi_sig_redeem_script(1, &[validator]);

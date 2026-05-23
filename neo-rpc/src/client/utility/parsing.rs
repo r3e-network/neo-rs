@@ -1,6 +1,6 @@
 use base64::{engine::general_purpose, Engine as _};
 use neo_core::network::payloads::oracle_response_code::OracleResponseCode;
-use neo_json::{JObject, JToken};
+use neo_json::JToken;
 use serde_json::Value as JsonValue;
 
 /// Parses a base64-encoded string token.
@@ -114,8 +114,4 @@ pub const fn oracle_response_code_to_str(code: OracleResponseCode) -> &'static s
 
 pub fn jtoken_to_serde(token: &JToken) -> Result<JsonValue, String> {
     serde_json::from_str(&token.to_string()).map_err(|err| err.to_string())
-}
-
-pub fn jobject_to_serde(obj: &JObject) -> Result<JsonValue, String> {
-    serde_json::from_str(&obj.to_string()).map_err(|err| err.to_string())
 }

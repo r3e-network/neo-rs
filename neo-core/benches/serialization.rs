@@ -6,8 +6,8 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use neo_core::{
     extensions::SerializableExtensions,
-    prelude::{BinaryWriter, MemoryReader, Serializable},
     network::p2p::payloads::{transaction::Transaction, Header, Signer, Witness},
+    prelude::{BinaryWriter, MemoryReader, Serializable},
 };
 use neo_primitives::{UInt160, UInt256};
 use rand::{rngs::OsRng, RngCore};

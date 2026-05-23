@@ -1,5 +1,6 @@
 use super::*;
 use crate::neo_io::BinaryWriter;
+use crate::neo_vm::StackItem;
 use crate::network::p2p::payloads::signer::Signer;
 use crate::network::p2p::payloads::transaction::Transaction;
 use crate::persistence::providers::memory_store::MemoryStore;
@@ -14,13 +15,10 @@ use crate::smart_contract::manifest::{
     ContractParameterDefinition, ContractPermission, WildCardContainer,
 };
 use crate::smart_contract::trigger_type::TriggerType;
-use crate::smart_contract::IInteroperable;
 use crate::wallets::KeyPair;
 use crate::witness::Witness;
 use crate::{IVerifiable, UInt160, WitnessScope};
-use neo_vm::execution_engine_limits::ExecutionEngineLimits;
-use neo_vm::OpCode;
-use neo_vm::StackItem;
+use neo_vm_rs::OpCode;
 use std::sync::Arc;
 
 fn default_manifest() -> ContractManifest {
@@ -56,10 +54,12 @@ fn make_nef(script: Vec<u8>) -> NefFile {
 }
 
 fn contract_from_bytes(bytes: &[u8]) -> ContractState {
-    let item = BinarySerializer::deserialize(bytes, &ExecutionEngineLimits::default(), None)
-        .expect("deserialize contract state stack item");
+    let value =
+        BinarySerializer::deserialize_stack_value(bytes).expect("deserialize contract state value");
     let mut contract = ContractState::default();
-    let _ = contract.from_stack_item(item);
+    contract
+        .from_stack_value(value)
+        .expect("parse contract state value");
     contract
 }
 
@@ -122,7 +122,7 @@ fn make_engine(
 fn deploy_rejects_missing_sender_and_invalid_payloads() {
     let snapshot = Arc::new(DataCache::new(false));
     let cm_hash = ContractManagement::new().hash();
-    let nef = make_nef(vec![OpCode::RET as u8; u8::MAX as usize]);
+    let nef = make_nef(vec![OpCode::RET.byte(); u8::MAX as usize]);
     let nef_bytes = nef.to_bytes();
     let manifest = default_manifest();
     let manifest_payload = manifest_bytes(&manifest);
@@ -186,7 +186,7 @@ fn deploy_rejects_missing_sender_and_invalid_payloads() {
 fn deploy_returns_expected_hash_and_prevents_duplicates() {
     let snapshot = Arc::new(DataCache::new(false));
     let cm_hash = ContractManagement::new().hash();
-    let nef = make_nef(vec![OpCode::RET as u8; u8::MAX as usize]);
+    let nef = make_nef(vec![OpCode::RET.byte(); u8::MAX as usize]);
     let nef_bytes = nef.to_bytes();
     let manifest = default_manifest();
     let manifest_payload = manifest_bytes(&manifest);
@@ -220,7 +220,7 @@ fn deploy_returns_expected_hash_and_prevents_duplicates() {
 fn deploy_accepts_manifest_with_empty_permissions() {
     let snapshot = Arc::new(DataCache::new(false));
     let cm_hash = ContractManagement::new().hash();
-    let nef = make_nef(vec![OpCode::RET as u8; u8::MAX as usize]);
+    let nef = make_nef(vec![OpCode::RET.byte(); u8::MAX as usize]);
     let nef_bytes = nef.to_bytes();
     let mut manifest = default_manifest();
     manifest.permissions.clear();
@@ -265,7 +265,7 @@ fn deploy_reads_next_contract_id_from_variable_length_storage_integer() {
         StorageItem::from_bytes(vec![0x20]), // 32
     );
 
-    let nef = make_nef(vec![OpCode::RET as u8; u8::MAX as usize]);
+    let nef = make_nef(vec![OpCode::RET.byte(); u8::MAX as usize]);
     let manifest = default_manifest();
     let manifest_payload = manifest_bytes(&manifest);
 
@@ -288,7 +288,7 @@ fn deploy_increments_contract_id_after_store_roundtrip() {
     let mut cache = StoreCache::new_from_store(Arc::clone(&store), false);
     let snapshot = Arc::new(cache.data_cache().clone());
     let cm_hash = ContractManagement::new().hash();
-    let nef = make_nef(vec![OpCode::RET as u8]);
+    let nef = make_nef(vec![OpCode::RET.byte()]);
     let manifest = default_manifest();
     let manifest_payload = manifest_bytes(&manifest);
 
@@ -332,7 +332,7 @@ fn update_preserves_storage_and_increments_counter() {
     let snapshot = Arc::new(DataCache::new(false));
     let cm_hash = ContractManagement::new().hash();
 
-    let initial_nef = make_nef(vec![OpCode::RET as u8]);
+    let initial_nef = make_nef(vec![OpCode::RET.byte()]);
     let manifest = default_manifest();
     let manifest_payload = manifest_bytes(&manifest);
 
@@ -357,7 +357,7 @@ fn update_preserves_storage_and_increments_counter() {
     let pub_key = key.get_public_key_point().expect("pubkey");
     updated_manifest.groups = vec![ContractGroup::new(pub_key, signature)];
 
-    let updated_nef = make_nef(vec![OpCode::NOP as u8, OpCode::RET as u8]);
+    let updated_nef = make_nef(vec![OpCode::NOP.byte(), OpCode::RET.byte()]);
     let update_payload = vec![
         updated_nef.to_bytes(),
         manifest_bytes(&updated_manifest),
@@ -366,7 +366,11 @@ fn update_preserves_storage_and_increments_counter() {
 
     let mut update_engine = make_engine(Arc::clone(&snapshot), None, 50_000_000_000);
     update_engine
-        .load_script(vec![OpCode::RET as u8], CallFlags::ALL, Some(contract.hash))
+        .load_script(
+            vec![OpCode::RET.byte()],
+            CallFlags::ALL,
+            Some(contract.hash),
+        )
         .expect("load script");
     let state = update_engine
         .current_execution_state()
@@ -405,7 +409,7 @@ fn update_preserves_storage_and_increments_counter() {
 fn update_requires_calling_context() {
     let snapshot = Arc::new(DataCache::new(false));
     let cm_hash = ContractManagement::new().hash();
-    let nef = make_nef(vec![OpCode::RET as u8]);
+    let nef = make_nef(vec![OpCode::RET.byte()]);
     let method = ContractMethodDescriptor::new(
         "testMethod".to_string(),
         Vec::new(),
@@ -433,7 +437,7 @@ fn update_requires_calling_context() {
 fn update_rejects_empty_payloads() {
     let snapshot = Arc::new(DataCache::new(false));
     let cm_hash = ContractManagement::new().hash();
-    let nef = make_nef(vec![OpCode::RET as u8]);
+    let nef = make_nef(vec![OpCode::RET.byte()]);
     let manifest = default_manifest();
 
     let mut deploy_engine =
@@ -449,7 +453,11 @@ fn update_rejects_empty_payloads() {
 
     let mut update_engine = make_engine(Arc::clone(&snapshot), None, 50_000_000_000);
     update_engine
-        .load_script(vec![OpCode::RET as u8], CallFlags::ALL, Some(contract.hash))
+        .load_script(
+            vec![OpCode::RET.byte()],
+            CallFlags::ALL,
+            Some(contract.hash),
+        )
         .expect("load script");
     let state = update_engine
         .current_execution_state()
@@ -472,7 +480,7 @@ fn update_rejects_empty_payloads() {
 fn update_rejects_oversized_manifest() {
     let snapshot = Arc::new(DataCache::new(false));
     let cm_hash = ContractManagement::new().hash();
-    let nef = make_nef(vec![OpCode::RET as u8]);
+    let nef = make_nef(vec![OpCode::RET.byte()]);
     let manifest = default_manifest();
 
     let mut deploy_engine =
@@ -488,7 +496,11 @@ fn update_rejects_oversized_manifest() {
 
     let mut update_engine = make_engine(Arc::clone(&snapshot), None, 50_000_000_000);
     update_engine
-        .load_script(vec![OpCode::RET as u8], CallFlags::ALL, Some(contract.hash))
+        .load_script(
+            vec![OpCode::RET.byte()],
+            CallFlags::ALL,
+            Some(contract.hash),
+        )
         .expect("load script");
     let state = update_engine
         .current_execution_state()
@@ -517,7 +529,7 @@ fn is_contract_and_list_contracts_filter_native() {
     let snapshot = Arc::new(DataCache::new(false));
     let cm = ContractManagement::new();
     let manifest = default_manifest();
-    let nef = make_nef(vec![OpCode::RET as u8]);
+    let nef = make_nef(vec![OpCode::RET.byte()]);
     let contract = ContractState::new(1, UInt160::zero(), nef, manifest);
     add_contract_to_snapshot(snapshot.as_ref(), &contract);
 
@@ -553,7 +565,7 @@ fn list_contracts_rejects_malformed_contract_payload() {
 fn validate_snapshot_integrity_rejects_duplicate_non_native_ids() {
     let snapshot = Arc::new(DataCache::new(false));
     let manifest = default_manifest();
-    let nef = make_nef(vec![OpCode::RET as u8]);
+    let nef = make_nef(vec![OpCode::RET.byte()]);
 
     let contract_a = ContractState::new(
         1,
@@ -582,7 +594,7 @@ fn validate_snapshot_integrity_rejects_duplicate_non_native_ids() {
 fn hydrate_from_engine_rejects_duplicate_non_native_ids() {
     let snapshot = Arc::new(DataCache::new(false));
     let manifest = default_manifest();
-    let nef = make_nef(vec![OpCode::RET as u8]);
+    let nef = make_nef(vec![OpCode::RET.byte()]);
     let cm = ContractManagement::new();
 
     let contract_a = ContractState::new(
@@ -626,7 +638,7 @@ fn has_method_accepts_any_parameter_count() {
         Vec::new(),
     );
 
-    let nef = make_nef(vec![OpCode::RET as u8]);
+    let nef = make_nef(vec![OpCode::RET.byte()]);
     let contract = ContractState::new(7, UInt160::zero(), nef, manifest);
     {
         let mut storage = cm.storage.write();
@@ -643,7 +655,7 @@ fn has_method_accepts_any_parameter_count() {
 fn contract_hashes_sorted_and_non_native() {
     let cm = ContractManagement::new();
     let manifest = default_manifest();
-    let nef = make_nef(vec![OpCode::RET as u8]);
+    let nef = make_nef(vec![OpCode::RET.byte()]);
 
     let contract_a = ContractState::new(
         2,
@@ -687,7 +699,7 @@ fn get_contract_hashes_returns_iterator() {
     let snapshot = Arc::new(DataCache::new(false));
     let cm_hash = ContractManagement::new().hash();
     let manifest = default_manifest();
-    let nef = make_nef(vec![OpCode::RET as u8]);
+    let nef = make_nef(vec![OpCode::RET.byte()]);
 
     let contract_a = ContractState::new(
         1,
@@ -736,7 +748,7 @@ fn destroy_removes_contract_and_storage() {
 
     let mut engine = make_engine(Arc::clone(&snapshot), Some(UInt160::zero()), 50_000_000_000);
 
-    let nef = make_nef(vec![OpCode::RET as u8]);
+    let nef = make_nef(vec![OpCode::RET.byte()]);
     let manifest = default_manifest();
     let manifest_payload = manifest_bytes(&manifest);
 
@@ -753,7 +765,7 @@ fn destroy_removes_contract_and_storage() {
     snapshot.add(storage_key, StorageItem::from_bytes(vec![0x01]));
 
     engine
-        .load_script(vec![OpCode::RET as u8], CallFlags::ALL, None)
+        .load_script(vec![OpCode::RET.byte()], CallFlags::ALL, None)
         .expect("load script");
     engine
         .call_contract_dynamic(&contract.hash, "testMethod", CallFlags::ALL, Vec::new())
@@ -792,7 +804,7 @@ fn get_contract_hashes_excludes_destroyed_contract_in_same_snapshot() {
 
     let mut engine = make_engine(Arc::clone(&snapshot), Some(UInt160::zero()), 50_000_000_000);
 
-    let nef = make_nef(vec![OpCode::RET as u8]);
+    let nef = make_nef(vec![OpCode::RET.byte()]);
     let manifest = default_manifest();
     let manifest_payload = manifest_bytes(&manifest);
 
@@ -806,7 +818,7 @@ fn get_contract_hashes_excludes_destroyed_contract_in_same_snapshot() {
     let contract = contract_from_bytes(&contract_bytes);
 
     engine
-        .load_script(vec![OpCode::RET as u8], CallFlags::ALL, None)
+        .load_script(vec![OpCode::RET.byte()], CallFlags::ALL, None)
         .expect("load script");
     engine
         .call_contract_dynamic(&contract.hash, "testMethod", CallFlags::ALL, Vec::new())

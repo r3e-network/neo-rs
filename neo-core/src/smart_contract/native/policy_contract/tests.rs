@@ -1,9 +1,11 @@
 use super::*;
 use crate::hardfork::HardforkManager;
 use crate::ledger::{create_genesis_block, Block, BlockHeader};
+use crate::neo_vm::{execution_engine_limits::ExecutionEngineLimits, StackItem, VMState};
 use crate::network::p2p::payloads::{Signer, Transaction, Witness, WitnessScope};
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
+use crate::script_builder::ScriptBuilder;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::call_flags::CallFlags;
@@ -16,18 +18,15 @@ use crate::smart_contract::native::{
 };
 use crate::smart_contract::storage_key::StorageKey;
 use crate::smart_contract::trigger_type::TriggerType;
-use crate::smart_contract::IInteroperable;
 use crate::{IVerifiable, UInt160, UInt256};
 use neo_primitives::TransactionAttributeType;
-use neo_vm::{
-    execution_engine_limits::ExecutionEngineLimits, OpCode, ScriptBuilder, StackItem, VMState,
-};
+use neo_vm_rs::{OpCode, StackValue};
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
 use std::sync::Arc;
 
 #[test]
-fn test_whitelist_stack_item_roundtrip() {
+fn test_whitelist_stack_value_roundtrip() {
     let bytes = hex::decode("1122334455667788990011223344556677889900").unwrap();
     let contract_hash = UInt160::from_bytes(&bytes).unwrap();
     let method = "testMethod";
@@ -41,15 +40,60 @@ fn test_whitelist_stack_item_roundtrip() {
         fixed_fee,
     };
 
-    let item = wl.to_stack_item().unwrap();
-    let bytes = BinarySerializer::serialize(&item, &ExecutionEngineLimits::default()).unwrap();
-    let decoded_item =
-        BinarySerializer::deserialize(&bytes, &ExecutionEngineLimits::default(), None).unwrap();
+    let bytes = BinarySerializer::serialize_stack_value(
+        &wl.to_stack_value(),
+        &ExecutionEngineLimits::default(),
+    )
+    .unwrap();
+    let decoded_value = BinarySerializer::deserialize_stack_value(&bytes).unwrap();
 
     let mut decoded = WhitelistedContract::default();
-    decoded.from_stack_item(decoded_item).unwrap();
+    decoded.from_stack_value(decoded_value).unwrap();
 
     assert_eq!(wl, decoded);
+}
+
+#[test]
+fn whitelisted_contract_projects_to_neo_vm_rs_stack_value() {
+    let bytes = hex::decode("1122334455667788990011223344556677889900").unwrap();
+    let contract_hash = UInt160::from_bytes(&bytes).unwrap();
+    let contract = WhitelistedContract {
+        contract_hash,
+        method: "transfer".to_string(),
+        arg_count: 3,
+        fixed_fee: 123456789,
+    };
+
+    assert_eq!(
+        contract.to_stack_value(),
+        StackValue::Struct(vec![
+            StackValue::ByteString(contract_hash.to_bytes()),
+            StackValue::ByteString(b"transfer".to_vec()),
+            StackValue::Integer(3),
+            StackValue::Integer(123456789),
+        ])
+    );
+}
+
+#[test]
+fn whitelisted_contract_reads_from_neo_vm_rs_stack_value() {
+    let bytes = hex::decode("3344556677889900112233445566778899001122").unwrap();
+    let contract_hash = UInt160::from_bytes(&bytes).unwrap();
+    let mut contract = WhitelistedContract::default();
+
+    contract
+        .from_stack_value(StackValue::Struct(vec![
+            StackValue::ByteString(contract_hash.to_bytes()),
+            StackValue::ByteString(b"balanceOf".to_vec()),
+            StackValue::Integer(1),
+            StackValue::Integer(42),
+        ]))
+        .unwrap();
+
+    assert_eq!(contract.contract_hash, contract_hash);
+    assert_eq!(contract.method, "balanceOf");
+    assert_eq!(contract.arg_count, 1);
+    assert_eq!(contract.fixed_fee, 42);
 }
 
 const TEST_GAS_LIMIT: i64 = 5_000_000_000;
@@ -124,7 +168,7 @@ fn make_engine(
         let mut tx = Transaction::new();
         tx.set_signers(signers);
         tx.set_witnesses(vec![Witness::empty(); tx.signers().len()]);
-        tx.set_script(vec![OpCode::NOP as u8]);
+        tx.set_script(vec![OpCode::NOP.byte()]);
         Some(Arc::new(tx) as Arc<dyn IVerifiable>)
     };
 
@@ -509,7 +553,7 @@ fn recover_fund_requires_allow_call_permissions() {
         settings,
         Vec::new(),
         Some(block),
-        vec![OpCode::RET as u8],
+        vec![OpCode::RET.byte()],
     );
 
     let state = engine.current_execution_state().expect("execution state");
@@ -590,8 +634,8 @@ fn check_recover_funds_complete_flow() {
         &blocked_account,
     );
     let gas_state = AccountState::with_balance(gas_balance.clone());
-    let gas_bytes = BinarySerializer::serialize(
-        &gas_state.to_stack_item().unwrap(),
+    let gas_bytes = BinarySerializer::serialize_stack_value(
+        &gas_state.to_stack_value(),
         &ExecutionEngineLimits::default(),
     )
     .expect("serialize account state");
@@ -610,7 +654,7 @@ fn check_recover_funds_complete_flow() {
         settings.clone(),
         vec![Signer::new(almost_full, WitnessScope::GLOBAL)],
         Some(block_finish.clone()),
-        vec![OpCode::NOP as u8],
+        vec![OpCode::NOP.byte()],
     );
     let recover_ret = engine
         .call_native_contract(

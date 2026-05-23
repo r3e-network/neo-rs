@@ -6,17 +6,17 @@
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
 use crate::neo_io::{MemoryReader, Serializable};
+use crate::neo_vm::{ExecutionEngineLimits, StackItem};
 use crate::persistence::{DataCache, StoreCache};
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::contract_state::{ContractState, NefFile};
-use crate::smart_contract::i_interoperable::IInteroperable;
 use crate::smart_contract::manifest::ContractManifest;
 use crate::smart_contract::native::{NativeContract, NativeMethod, PolicyContract};
 use crate::smart_contract::ContractParameterType;
 use crate::smart_contract::StorageKey;
 use crate::UInt160;
-use neo_vm::{ExecutionEngineLimits, StackItem};
+use neo_vm_rs::StackValue;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use parking_lot::RwLock;
@@ -168,11 +168,9 @@ impl ContractManagement {
     }
 
     pub(super) fn serialize_contract_state(contract: &ContractState) -> Result<Vec<u8>> {
-        BinarySerializer::serialize(
-            &contract.to_stack_item()?,
-            &ExecutionEngineLimits::default(),
-        )
-        .map_err(|e| Error::serialization(format!("Failed to serialize contract state: {e}")))
+        let value: StackValue = contract.to_stack_value();
+        BinarySerializer::serialize_stack_value(&value, &ExecutionEngineLimits::default())
+            .map_err(|e| Error::serialization(format!("Failed to serialize contract state: {e}")))
     }
 
     pub fn deserialize_contract_state(bytes: &[u8]) -> Result<ContractState> {
@@ -182,10 +180,9 @@ impl ContractManagement {
             ));
         }
 
-        if let Ok(item) =
-            BinarySerializer::deserialize(bytes, &ExecutionEngineLimits::default(), None)
-        {
-            if let Ok(contract) = Self::contract_state_from_stack_item(item) {
+        if let Ok(value) = BinarySerializer::deserialize_stack_value(bytes) {
+            let mut contract = ContractState::default();
+            if contract.from_stack_value(value).is_ok() {
                 return Ok(contract);
             }
         }
@@ -193,69 +190,6 @@ impl ContractManagement {
         let mut reader = MemoryReader::new(bytes);
         <ContractState as Serializable>::deserialize(&mut reader).map_err(|e| {
             Error::deserialization(format!("Failed to deserialize contract state: {e}"))
-        })
-    }
-
-    fn contract_state_from_stack_item(item: StackItem) -> Result<ContractState> {
-        let items = match item {
-            StackItem::Array(array) => array.items(),
-            StackItem::Struct(struct_item) => struct_item.items(),
-            _ => {
-                return Err(Error::deserialization(
-                    "ContractState stack item must be array or struct".to_string(),
-                ))
-            }
-        };
-
-        if items.len() < 5 {
-            return Err(Error::deserialization(
-                "ContractState stack item must contain five elements".to_string(),
-            ));
-        }
-
-        let id = items[0]
-            .as_int()
-            .map_err(|e| Error::deserialization(format!("ContractState id: {e}")))?;
-        let id = id
-            .to_i32()
-            .ok_or_else(|| Error::deserialization("ContractState id out of range".to_string()))?;
-
-        let update_counter = items[1]
-            .as_int()
-            .map_err(|e| Error::deserialization(format!("ContractState update counter: {e}")))?;
-        let update_counter = update_counter.to_u16().ok_or_else(|| {
-            Error::deserialization("ContractState update counter out of range".to_string())
-        })?;
-
-        let hash_bytes = items[2]
-            .as_bytes()
-            .map_err(|e| Error::deserialization(format!("ContractState hash: {e}")))?;
-        let hash = UInt160::from_bytes(&hash_bytes)
-            .map_err(|e| Error::deserialization(format!("ContractState hash: {e}")))?;
-
-        let nef_bytes = items[3]
-            .as_bytes()
-            .map_err(|e| Error::deserialization(format!("ContractState NEF: {e}")))?;
-        let nef = NefFile::parse(&nef_bytes)
-            .map_err(|e| Error::deserialization(format!("ContractState NEF parse: {e}")))?;
-
-        let mut manifest = ContractManifest::new(String::new());
-        manifest
-            .from_stack_item(items[4].clone())
-            .map_err(|e| Error::deserialization(format!("ContractState manifest: {e}")))?;
-
-        if hash.is_zero() || nef.script.is_empty() || manifest.name.is_empty() {
-            return Err(Error::deserialization(
-                "ContractState stack item is invalid".to_string(),
-            ));
-        }
-
-        Ok(ContractState {
-            id,
-            update_counter,
-            hash,
-            nef,
-            manifest,
         })
     }
 
@@ -369,8 +303,7 @@ impl ContractManagement {
                     ContractParameterType::Integer,
                 ],
                 ContractParameterType::Boolean,
-            )
-            ,
+            ),
             NativeMethod::new(
                 "getContractById".to_string(),
                 1 << 15,
@@ -378,8 +311,7 @@ impl ContractManagement {
                 0x01,
                 vec![ContractParameterType::Integer],
                 ContractParameterType::Array,
-            )
-            ,
+            ),
             NativeMethod::new(
                 "isContract".to_string(),
                 1 << 14,

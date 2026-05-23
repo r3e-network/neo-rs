@@ -1,6 +1,6 @@
+use neo_core::neo_vm::StackItem;
 use neo_core::smart_contract::{IInteroperable, NotifyEventArgs};
 use neo_core::UInt160;
-use neo_vm::StackItem;
 
 #[test]
 fn notify_event_args_to_stack_item_deep_copies_state() {

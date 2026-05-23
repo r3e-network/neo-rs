@@ -1,6 +1,7 @@
 use super::*;
 use crate::server::rpc_server_settings::RpcServerConfig;
 use neo_core::neo_io::BinaryWriter;
+use neo_core::neo_vm::vm_state::VMState;
 use neo_core::network::p2p::helper::get_sign_data_vec;
 use neo_core::network::p2p::payloads::conflicts::Conflicts;
 use neo_core::network::p2p::payloads::signer::Signer;
@@ -15,7 +16,6 @@ use neo_core::NeoSystem;
 use neo_core::UInt256;
 use neo_core::Witness;
 use neo_crypto::Secp256r1Crypto;
-use neo_vm::vm_state::VMState;
 use num_bigint::BigInt;
 use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -143,7 +143,7 @@ fn build_signed_transaction_custom(
     let sign_data = get_sign_data_vec(&tx, settings.network).expect("sign data");
     let signature = keypair.sign(&sign_data).expect("sign");
     let mut invocation = Vec::with_capacity(signature.len() + 2);
-    invocation.push(OpCode::PUSHDATA1 as u8);
+    invocation.push(OpCode::PUSHDATA1.byte());
     invocation.push(signature.len() as u8);
     invocation.extend_from_slice(&signature);
     let verification_script = keypair.get_verification_script();
@@ -163,7 +163,7 @@ fn persist_transaction_record(store: &mut neo_core::persistence::StoreCache, tx:
         .write_u8(RECORD_KIND_TRANSACTION)
         .expect("record kind");
     writer.write_u32(0).expect("block index");
-    writer.write_u8(VMState::NONE as u8).expect("vm state");
+    writer.write_u8(VMState::NONE.to_byte()).expect("vm state");
     let tx_bytes = tx.to_bytes();
     writer.write_var_bytes(&tx_bytes).expect("tx bytes");
 
@@ -818,7 +818,7 @@ async fn cancel_transaction_rejects_confirmed_transaction() {
         7,
         0,
         1,
-        vec![OpCode::PUSH1 as u8],
+        vec![OpCode::PUSH1.byte()],
     );
     let mut store = server.system().context().store_snapshot_cache();
     persist_transaction_record(&mut store, &confirmed);
@@ -952,7 +952,7 @@ async fn cancel_transaction_applies_extra_fee() {
     let base_tx = Helper::make_transaction(
         server.wallet().expect("wallet").as_ref(),
         snapshot_arc.as_ref(),
-        &[OpCode::RET as u8],
+        &[OpCode::RET.byte()],
         Some(signers[0].account),
         Some(&signers),
         Some(std::slice::from_ref(&conflict)),
@@ -1009,7 +1009,7 @@ async fn cancel_transaction_bumps_fee_for_mempool_conflict() {
         1,
         0,
         200_000_000,
-        vec![OpCode::PUSH1 as u8],
+        vec![OpCode::PUSH1.byte()],
     );
     let txid = conflict_tx.hash();
     let store_cache = server.system().store_cache();
@@ -1657,7 +1657,7 @@ fn calculate_network_fee_returns_network_fee() {
     let settings = ProtocolSettings::default();
     let keypair = KeyPair::from_private_key(&[0x66u8; 32]).expect("keypair");
     let tx =
-        build_signed_transaction_custom(&settings, &keypair, 1, 0, 0, vec![OpCode::PUSH1 as u8]);
+        build_signed_transaction_custom(&settings, &keypair, 1, 0, 0, vec![OpCode::PUSH1.byte()]);
     let payload = BASE64_STANDARD.encode(tx.to_bytes());
 
     let params = [Value::String(payload)];

@@ -50,10 +50,11 @@
 use crate::neo_config::ADDRESS_SIZE;
 use crate::neo_io::serializable::helper::get_var_size;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use crate::neo_vm::StackItem;
 use crate::UInt160;
 use crate::{ECCurve, ECPoint};
 use hex::{decode as hex_decode, encode as hex_encode};
-use neo_vm::StackItem;
+use neo_vm_rs::StackValue;
 use serde::de::Error as SerdeDeError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{json, Value};
@@ -479,36 +480,43 @@ impl WitnessCondition {
         }
     }
 
-    /// Converts the witness condition to a VM stack item (matches C# `WitnessCondition.ToStackItem`).
-    pub fn to_stack_item(&self) -> StackItem {
-        let mut items = vec![StackItem::from_int(i64::from(
+    /// Converts the witness condition to a neo-vm-rs stack value (matches C# `WitnessCondition.ToStackItem` layout).
+    pub fn to_stack_value(&self) -> StackValue {
+        let mut items = vec![StackValue::Integer(i64::from(
             self.condition_type().to_byte(),
         ))];
 
         match self {
             WitnessCondition::Boolean { value } => {
-                items.push(StackItem::from_bool(*value));
+                items.push(StackValue::Boolean(*value));
             }
             WitnessCondition::Not { condition } => {
-                items.push(condition.to_stack_item());
+                items.push(condition.to_stack_value());
             }
             WitnessCondition::And { conditions } | WitnessCondition::Or { conditions } => {
                 let expressions = conditions
                     .iter()
-                    .map(WitnessCondition::to_stack_item)
+                    .map(WitnessCondition::to_stack_value)
                     .collect::<Vec<_>>();
-                items.push(StackItem::from_array(expressions));
+                items.push(StackValue::Array(expressions));
             }
             WitnessCondition::ScriptHash { hash } | WitnessCondition::CalledByContract { hash } => {
-                items.push(StackItem::from_byte_string(hash.to_bytes()));
+                items.push(StackValue::ByteString(hash.to_bytes()));
             }
             WitnessCondition::Group { group } | WitnessCondition::CalledByGroup { group } => {
-                items.push(StackItem::from_byte_string(group.clone()));
+                items.push(StackValue::ByteString(group.clone()));
             }
             WitnessCondition::CalledByEntry => {}
         }
 
-        StackItem::from_array(items)
+        StackValue::Array(items)
+    }
+
+    /// Converts the witness condition to a VM stack item (matches C# `WitnessCondition.ToStackItem`).
+    pub fn to_stack_item(&self) -> StackItem {
+        StackItem::try_from(self.to_stack_value()).expect(
+            "witness condition StackValue projection uses only VM StackItem-compatible values",
+        )
     }
 }
 
@@ -551,12 +559,18 @@ impl WitnessRule {
         Ok(Self { action, condition })
     }
 
+    /// Converts the witness rule to a neo-vm-rs stack value (matches C# `WitnessRule.ToStackItem` layout).
+    pub fn to_stack_value(&self) -> StackValue {
+        StackValue::Array(vec![
+            StackValue::Integer(i64::from(self.action.to_byte())),
+            self.condition.to_stack_value(),
+        ])
+    }
+
     /// Converts the witness rule to a VM stack item (matches C# `WitnessRule.ToStackItem`).
     pub fn to_stack_item(&self) -> StackItem {
-        StackItem::from_array(vec![
-            StackItem::from_int(i64::from(self.action.to_byte())),
-            self.condition.to_stack_item(),
-        ])
+        StackItem::try_from(self.to_stack_value())
+            .expect("witness rule StackValue projection uses only VM StackItem-compatible values")
     }
 }
 
@@ -891,5 +905,56 @@ mod tests {
         assert_eq!(json["group"], hex_encode(&bytes));
         let decoded = WitnessCondition::from_json(&json).unwrap();
         assert_eq!(decoded, condition);
+    }
+
+    #[test]
+    fn witness_rule_projects_to_neo_vm_rs_stack_value() {
+        let hash = UInt160::from_bytes(&[0x11; ADDRESS_SIZE]).unwrap();
+        let rule = WitnessRule::new(
+            WitnessRuleAction::Allow,
+            WitnessCondition::And {
+                conditions: vec![
+                    WitnessCondition::Boolean { value: true },
+                    WitnessCondition::ScriptHash { hash },
+                ],
+            },
+        );
+
+        assert_eq!(
+            rule.to_stack_value(),
+            neo_vm_rs::StackValue::Array(vec![
+                neo_vm_rs::StackValue::Integer(WitnessRuleAction::Allow.to_byte().into()),
+                neo_vm_rs::StackValue::Array(vec![
+                    neo_vm_rs::StackValue::Integer(WitnessConditionType::And.to_byte().into()),
+                    neo_vm_rs::StackValue::Array(vec![
+                        neo_vm_rs::StackValue::Array(vec![
+                            neo_vm_rs::StackValue::Integer(
+                                WitnessConditionType::Boolean.to_byte().into()
+                            ),
+                            neo_vm_rs::StackValue::Boolean(true),
+                        ]),
+                        neo_vm_rs::StackValue::Array(vec![
+                            neo_vm_rs::StackValue::Integer(
+                                WitnessConditionType::ScriptHash.to_byte().into()
+                            ),
+                            neo_vm_rs::StackValue::ByteString(hash.to_bytes()),
+                        ]),
+                    ]),
+                ]),
+            ])
+        );
+    }
+
+    #[test]
+    fn witness_rule_stack_item_projection_matches_stack_value_projection() {
+        let rule = WitnessRule::new(
+            WitnessRuleAction::Deny,
+            WitnessCondition::Not {
+                condition: Box::new(WitnessCondition::CalledByEntry),
+            },
+        );
+
+        let expected = StackItem::try_from(rule.to_stack_value()).unwrap();
+        assert_eq!(rule.to_stack_item(), expected);
     }
 }

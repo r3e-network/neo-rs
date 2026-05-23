@@ -5,6 +5,7 @@ use neo_core::persistence::{
     StoreCache,
 };
 use neo_core::protocol_settings::ProtocolSettings;
+use neo_core::script_validation;
 use neo_core::smart_contract::application_engine::{ApplicationEngine, TEST_MODE_GAS};
 use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::smart_contract::execution_context_state::ExecutionContextState;
@@ -14,7 +15,7 @@ use neo_core::smart_contract::native::LedgerTransactionStates;
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::smart_contract::{StorageItem, StorageKey};
 use neo_core::{IVerifiable, UInt256};
-use neo_vm::op_code::OpCode;
+use neo_vm_rs::OpCode;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -22,40 +23,37 @@ type StorageGetFn = Arc<dyn Fn(&StorageKey) -> Option<StorageItem> + Send + Sync
 type StorageFindFn =
     Arc<dyn Fn(Option<&StorageKey>, SeekDirection) -> Vec<(StorageKey, StorageItem)> + Send + Sync>;
 
-fn print_instruction_window(context: &neo_vm::execution_context::ExecutionContext) {
-    let script = context.script();
-    let target_ip = context.instruction_pointer();
-    let mut decoded = Vec::new();
-    let mut position = 0usize;
-
-    while position < script.len() {
-        let instruction = match script.get_instruction(position) {
-            Ok(instruction) => instruction,
-            Err(_) => break,
-        };
-        let opcode = instruction.opcode();
-        let size = instruction.size();
-        decoded.push((position, opcode, size));
-        if size == 0 {
-            break;
+fn print_instruction_window(script: &[u8], target_ip: usize) {
+    let decoded = match script_validation::parse_script_instructions(script) {
+        Ok(decoded) => decoded,
+        Err(err) => {
+            println!("context script window around ip={target_ip}: <decode error: {err}>");
+            return;
         }
-        position += size;
+    };
+    if decoded.is_empty() {
+        println!("context script window around ip={target_ip}: <empty>");
+        return;
     }
 
     let center = decoded
         .iter()
-        .position(|(offset, _, _)| *offset == target_ip)
+        .position(|instruction| instruction.pointer() == target_ip)
         .unwrap_or_else(|| decoded.len().saturating_sub(1));
     let nearest_initslot = decoded
         .iter()
         .rev()
-        .find(|(offset, opcode, _)| {
-            *offset <= target_ip
-                && (*opcode == neo_vm::op_code::OpCode::INITSLOT
-                    || *opcode == neo_vm::op_code::OpCode::INITSSLOT)
+        .find(|instruction| {
+            instruction.pointer() <= target_ip
+                && matches!(
+                    instruction.opcode(),
+                    neo_vm_rs::OpCode::INITSLOT | neo_vm_rs::OpCode::INITSSLOT
+                )
         })
         .copied();
-    if let Some((offset, opcode, _)) = nearest_initslot {
+    if let Some(instruction) = nearest_initslot {
+        let offset = instruction.pointer();
+        let opcode = instruction.opcode();
         println!("nearest slot init before fault: offset={offset} opcode={opcode:?}");
     } else {
         println!("nearest slot init before fault: <none>");
@@ -63,26 +61,21 @@ fn print_instruction_window(context: &neo_vm::execution_context::ExecutionContex
     let start = center.saturating_sub(3);
     let end = (center + 4).min(decoded.len());
     println!("context script window around ip={target_ip}:");
-    for (offset, opcode, size) in decoded[start..end].iter().copied() {
+    for instruction in decoded[start..end].iter().copied() {
+        let offset = instruction.pointer();
+        let opcode = instruction.opcode();
+        let size = instruction.size();
         let marker = if offset == target_ip { ">>" } else { "  " };
         if opcode == OpCode::SYSCALL {
-            if let Ok(instruction) = script.get_instruction(offset) {
-                println!(
-                    "{marker} offset={offset} opcode={opcode:?} size={size} syscall=0x{:08x}",
-                    instruction.token_u32()
-                );
-            } else {
-                println!("{marker} offset={offset} opcode={opcode:?} size={size}");
-            }
+            println!(
+                "{marker} offset={offset} opcode={opcode:?} size={size} syscall=0x{:08x}",
+                instruction.token_u32()
+            );
         } else if opcode == OpCode::CALLT {
-            if let Ok(instruction) = script.get_instruction(offset) {
-                println!(
-                    "{marker} offset={offset} opcode={opcode:?} size={size} token_id={}",
-                    instruction.token_u16()
-                );
-            } else {
-                println!("{marker} offset={offset} opcode={opcode:?} size={size}");
-            }
+            println!(
+                "{marker} offset={offset} opcode={opcode:?} size={size} token_id={}",
+                instruction.token_u16()
+            );
         } else {
             println!("{marker} offset={offset} opcode={opcode:?} size={size}");
         }
@@ -120,8 +113,8 @@ fn replay_protocol_settings() -> ProtocolSettings {
     }
 }
 
-fn describe_item(item: &neo_vm::StackItem) -> String {
-    use neo_vm::StackItem;
+fn describe_item(item: &neo_core::neo_vm::StackItem) -> String {
+    use neo_core::neo_vm::StackItem;
     match item {
         StackItem::Null => "Null".to_string(),
         StackItem::Boolean(v) => format!("Boolean({v})"),
@@ -368,7 +361,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             == Some("1")
             || index + 1 == tx_engine.invocation_stack().len()
         {
-            print_instruction_window(context);
+            print_instruction_window(context.script().as_bytes(), context.instruction_pointer());
         }
     }
     println!(

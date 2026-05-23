@@ -10,7 +10,6 @@ on:
     - neo-core/**
     - neo-node/**
     - neo-rpc/**
-    - neo-vm/**
     - neo-p2p/**
   pull_request:
     branches:
@@ -22,7 +21,6 @@ on:
     - neo-core/**
     - neo-node/**
     - neo-rpc/**
-    - neo-vm/**
     - neo-p2p/**
   schedule:
   - cron: 0 */12 * * *

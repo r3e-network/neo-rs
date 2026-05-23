@@ -89,7 +89,8 @@ fn replay_block_4410_onpersist_postpersist() {
     let store_find = {
         let trie = Arc::clone(&trie);
         Arc::new(
-            move |prefix: Option<&neo_core::smart_contract::StorageKey>, _direction: SeekDirection| {
+            move |prefix: Option<&neo_core::smart_contract::StorageKey>,
+                  _direction: SeekDirection| {
                 let prefix_bytes = prefix
                     .map(|key| key.to_array().to_owned())
                     .unwrap_or_default();
@@ -226,7 +227,9 @@ fn replay_block_4410_onpersist_postpersist() {
         let key_bytes = key.to_array();
         match state_str.as_str() {
             "Added" | "Changed" => {
-                trie_guard.put(&key_bytes, &trackable.item.value_bytes()).expect("trie.put");
+                trie_guard
+                    .put(&key_bytes, &trackable.item.value_bytes())
+                    .expect("trie.put");
                 applied += 1;
             }
             "Deleted" => {
@@ -236,8 +239,13 @@ fn replay_block_4410_onpersist_postpersist() {
             _ => {}
         }
     }
-    let new_root = trie_guard.root_hash().unwrap_or_else(neo_core::UInt256::zero);
-    eprintln!("applied={} skipped_ledger={} new_root={}", applied, skipped, new_root);
+    let new_root = trie_guard
+        .root_hash()
+        .unwrap_or_else(neo_core::UInt256::zero);
+    eprintln!(
+        "applied={} skipped_ledger={} new_root={}",
+        applied, skipped, new_root
+    );
     let expected_csharp_root = neo_core::UInt256::parse(
         "0x750c662a633387c5dece78ba7f71384cc10427089c9e7321e19841c93efb9b81",
     )

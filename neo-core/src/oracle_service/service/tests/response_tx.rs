@@ -1,6 +1,7 @@
 use super::super::{OracleService, OracleServiceSettings};
 use crate::cryptography::{ECCurve, ECPoint, Secp256r1Crypto};
 use crate::neo_io::{BinaryWriter, Serializable};
+use crate::neo_vm::VMState;
 use crate::network::p2p::payloads::{
     OracleResponse, OracleResponseCode, Signer, Transaction, Witness,
 };
@@ -10,7 +11,6 @@ use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::native::{LedgerContract, OracleRequest};
 use crate::smart_contract::StorageItem;
 use crate::{UInt160, UInt256, WitnessScope};
-use neo_vm::VMState;
 
 fn sample_point(byte: u8) -> ECPoint {
     let mut private_key = [0u8; 32];
@@ -29,7 +29,7 @@ fn seed_transaction_state(
     let mut writer = BinaryWriter::new();
     writer.write_u8(0x01).expect("transaction record marker");
     writer.write_u32(block_index).expect("block index");
-    writer.write_u8(VMState::NONE as u8).expect("vm state");
+    writer.write_u8(VMState::NONE.to_byte()).expect("vm state");
     let mut tx_writer = BinaryWriter::new();
     tx.serialize(&mut tx_writer).expect("serialize tx");
     writer
@@ -60,7 +60,7 @@ fn create_response_tx_matches_csharp_fee_math() {
     origin_tx.set_signers(vec![Signer::new(UInt160::zero(), WitnessScope::NONE)]);
     origin_tx.set_attributes(Vec::new());
     origin_tx.set_valid_until_block(1);
-    origin_tx.set_script(vec![neo_vm::op_code::OpCode::RET as u8]);
+    origin_tx.set_script(vec![neo_vm_rs::OpCode::RET.byte()]);
     origin_tx.set_witnesses(vec![Witness::empty()]);
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
