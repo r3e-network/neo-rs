@@ -86,8 +86,7 @@ fn bench_script_parse(c: &mut Criterion) {
 
         group.bench_function(format!("{size}_bytes"), |b| {
             b.iter(|| {
-                let script = validate_strict_script(black_box(&bytes)).expect("valid script");
-                black_box(script);
+                validate_strict_script(black_box(&bytes)).expect("valid script");
             });
         });
     }

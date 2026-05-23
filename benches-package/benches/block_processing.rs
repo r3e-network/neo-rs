@@ -61,7 +61,7 @@ fn bench_header_roundtrip(c: &mut Criterion) {
 
 /// Benchmark block header hash computation.
 fn bench_header_hash(c: &mut Criterion) {
-    let mut header = make_sample_header();
+    let header = make_sample_header();
 
     c.bench_function("header_hash", |b| {
         b.iter(|| {

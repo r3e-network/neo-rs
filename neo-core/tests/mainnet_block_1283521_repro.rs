@@ -151,11 +151,10 @@ fn replay_block_1283521_debug() {
     let pre_state = base_cache.get(&receiver_key);
     eprintln!(
         "PRE-REPLAY receiver GAS entry: {}",
-        if pre_state.is_some() {
-            format!("{} bytes", pre_state.as_ref().unwrap().value_bytes().len())
-        } else {
-            "<missing>".to_string()
-        }
+        pre_state
+            .as_ref()
+            .map(|state| format!("{} bytes", state.value_bytes().len()))
+            .unwrap_or_else(|| "<missing>".to_string())
     );
     let sender = u160(SENDER_HEX);
     let sender_key = neo_core::smart_contract::StorageKey::create_with_uint160(-6, 20, &sender);

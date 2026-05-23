@@ -1612,10 +1612,10 @@ mod tests {
             "rpc config should be written under NEO_PLUGINS_DIR"
         );
 
-        let metadata = fs::metadata(&path).expect("metadata");
         #[cfg(unix)]
         {
             use std::os::unix::fs::MetadataExt;
+            let metadata = fs::metadata(&path).expect("metadata");
             assert_eq!(metadata.mode() & 0o777, 0o600);
         }
 

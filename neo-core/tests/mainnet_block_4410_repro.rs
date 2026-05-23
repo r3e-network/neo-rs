@@ -48,11 +48,13 @@ fn open_state_store() -> StateStore {
 }
 
 fn block_4410() -> Block {
-    let mut header = BlockHeader::default();
-    header.index = 4410;
-    header.timestamp = 1_627_972_036_949;
-    header.primary_index = 6;
-    header.next_consensus = u160_from_address("NVg7LjGcUSrgxgjX3zEgqaksfMaiS8Z6e1");
+    let header = BlockHeader {
+        index: 4410,
+        timestamp: 1_627_972_036_949,
+        primary_index: 6,
+        next_consensus: u160_from_address("NVg7LjGcUSrgxgjX3zEgqaksfMaiS8Z6e1"),
+        ..Default::default()
+    };
     Block::new(header, Vec::new())
 }
 

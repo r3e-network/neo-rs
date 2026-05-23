@@ -66,7 +66,7 @@ fn report_present_heights() {
     let (mut lo, mut hi) = (0u32, max_probe);
     if store.get_state_root(0).is_some() {
         while lo < hi {
-            let mid = lo + (hi - lo + 1) / 2;
+            let mid = lo + (hi - lo).div_ceil(2);
             if store.get_state_root(mid).is_some() {
                 lo = mid;
             } else {
