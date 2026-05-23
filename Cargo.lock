@@ -2307,7 +2307,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "smallvec",
  "subtle",
  "sysinfo",
  "tempfile",
@@ -2620,7 +2619,6 @@ dependencies = [
 [[package]]
 name = "neo-vm-rs"
 version = "0.1.0"
-source = "git+https://github.com/r3e-network/neo-vm-rs.git?rev=b45ece83ca57f7164c0ccd746632b595fce8469e#b45ece83ca57f7164c0ccd746632b595fce8469e"
 dependencies = [
  "num-bigint",
  "num-traits",

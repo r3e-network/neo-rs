@@ -911,7 +911,7 @@ impl StateStore {
                         target: "neo::state_service",
                         height,
                         contract_id = key.id,
-                        key = %hex::encode(&key.as_bytes()),
+                        key = %hex::encode(key.as_bytes()),
                         state = ?state,
                         value = %hex::encode(item.value_bytes()),
                         "DEBUG_WRITE"

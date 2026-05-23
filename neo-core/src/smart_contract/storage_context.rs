@@ -81,7 +81,7 @@ impl StorageContext {
     pub fn from_stack_item(item: &StackItem) -> Result<Self, String> {
         match item {
             StackItem::ByteString(bytes) => Self::from_bytes(bytes),
-            StackItem::Buffer(buffer) => buffer.with_data(|data| Self::from_bytes(data)),
+            StackItem::Buffer(buffer) => buffer.with_data(Self::from_bytes),
             StackItem::InteropInterface(interface) => interface
                 .as_any()
                 .downcast_ref::<StorageContext>()

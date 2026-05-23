@@ -6,7 +6,7 @@
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::hardfork::Hardfork;
 use crate::neo_config::ADDRESS_SIZE;
-use crate::neo_vm::{ExecutionEngineLimits, StackItem};
+use crate::neo_vm::StackItem;
 use crate::persistence::i_read_only_store::IReadOnlyStoreGeneric;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::application_engine::ApplicationEngine;
@@ -19,7 +19,7 @@ use crate::smart_contract::storage_key::StorageKey;
 use crate::smart_contract::{ContractParameterType, StorageItem};
 use crate::UInt160;
 use neo_primitives::TransactionAttributeType;
-use neo_vm_rs::StackValue;
+use neo_vm_rs::{ExecutionEngineLimits, StackValue};
 use num_bigint::{BigInt, Sign};
 use num_traits::{ToPrimitive, Zero};
 use std::any::Any;

@@ -4,23 +4,24 @@
 //!
 //! This module provides the stack item implementations used in the Neo VM.
 
-use crate::neo_vm::collections::VmOrderedDictionary;
 use crate::neo_vm::error::VmError;
 use crate::neo_vm::error::VmResult;
-use crate::neo_vm::execution_engine_limits::ExecutionEngineLimits;
 use crate::neo_vm::reference_counter::ReferenceCounter;
 use crate::neo_vm::script::Script;
 use crate::neo_vm::stack_item::array::Array as ArrayItem;
 use crate::neo_vm::stack_item::buffer::Buffer as BufferItem;
 use crate::neo_vm::stack_item::map::Map as MapItem;
 use crate::neo_vm::stack_item::pointer::Pointer as PointerItem;
-use crate::neo_vm::stack_item::stack_item_type::StackItemType;
 use crate::neo_vm::stack_item::struct_item::Struct as StructItem;
-use neo_vm_rs::StackValue;
+use neo_vm_rs::ExecutionEngineLimits;
+use neo_vm_rs::StackItemType;
+use neo_vm_rs::{StackValue, VmOrderedDictionary};
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
 use std::fmt;
 use std::sync::Arc;
+
+const VM_INTEGER_MAX_SIZE: usize = 32;
 
 /// VM integer that avoids heap allocation for values fitting in i64.
 #[derive(Debug, Clone)]
@@ -398,7 +399,7 @@ impl StackItem {
             Self::Boolean(b) => Ok(stack_value_truthy(StackValue::Boolean(*b))),
             Self::Integer(i) => Ok(stack_value_truthy(vm_integer_stack_value(i))),
             Self::ByteString(b) => {
-                if b.len() > crate::neo_vm::stack_item::integer::Integer::MAX_SIZE {
+                if b.len() > VM_INTEGER_MAX_SIZE {
                     return Err(VmError::invalid_type_simple(
                         "Cannot convert ByteString to Boolean",
                     ));
@@ -425,7 +426,7 @@ impl StackItem {
             Self::Integer(i) => Ok(i.to_bigint()),
             Self::ByteString(b) => Self::bytestring_to_bigint(b),
             Self::Buffer(buf) => {
-                if buf.len() > crate::neo_vm::stack_item::integer::Integer::MAX_SIZE {
+                if buf.len() > VM_INTEGER_MAX_SIZE {
                     return Err(VmError::invalid_type_simple(
                         "Cannot convert Buffer to Integer",
                     ));
@@ -452,7 +453,7 @@ impl StackItem {
             Self::Integer(i) => Ok(i.into_bigint()), // MOVE — no clone for Small!
             Self::ByteString(b) => Self::bytestring_to_bigint(&b),
             Self::Buffer(buf) => {
-                if buf.len() > crate::neo_vm::stack_item::integer::Integer::MAX_SIZE {
+                if buf.len() > VM_INTEGER_MAX_SIZE {
                     return Err(VmError::invalid_type_simple(
                         "Cannot convert Buffer to Integer",
                     ));
@@ -483,7 +484,7 @@ impl StackItem {
 
     /// Shared helper: convert ByteString (Vec<u8>) to BigInt.
     fn bytestring_to_bigint(b: &[u8]) -> VmResult<BigInt> {
-        if b.len() > crate::neo_vm::stack_item::integer::Integer::MAX_SIZE {
+        if b.len() > VM_INTEGER_MAX_SIZE {
             return Err(VmError::invalid_type_simple(
                 "Cannot convert ByteString to Integer",
             ));
@@ -769,7 +770,7 @@ impl StackItem {
                 target_type @ StackItemType::Boolean,
             ) => {
                 if let Self::ByteString(bytes) = self {
-                    if bytes.len() > crate::neo_vm::stack_item::integer::Integer::MAX_SIZE {
+                    if bytes.len() > VM_INTEGER_MAX_SIZE {
                         return Err(VmError::invalid_type_simple(
                             "Cannot convert ByteString to Boolean",
                         ));
@@ -1268,7 +1269,10 @@ mod tests {
             assert_eq!(converted, StackItem::Boolean(expected));
         }
 
-        assert_boolean(StackItem::Null, false);
+        assert_eq!(
+            StackItem::Null.convert_to(StackItemType::Boolean).unwrap(),
+            StackItem::Null
+        );
         assert_boolean(StackItem::from_int(0), false);
         assert_boolean(StackItem::from_int(1), true);
         assert_boolean(StackItem::from_byte_string(vec![0]), false);
@@ -1279,11 +1283,7 @@ mod tests {
         assert_boolean(StackItem::from_array(Vec::<StackItem>::new()), true);
         assert_boolean(StackItem::from_struct(Vec::<StackItem>::new()), true);
 
-        let too_large = StackItem::from_byte_string(vec![
-            0;
-            crate::neo_vm::stack_item::integer::Integer::MAX_SIZE
-                + 1
-        ]);
+        let too_large = StackItem::from_byte_string(vec![0; VM_INTEGER_MAX_SIZE + 1]);
         assert!(too_large.convert_to(StackItemType::Boolean).is_err());
     }
 

@@ -318,7 +318,7 @@ fn replay_block_1074782_debug() {
             .unwrap_or_else(|| LedgerTransactionStates::new(Vec::new()));
 
         // tx2 is expected to HALT (gasconsumed=1820391692 in C# applog).
-        if vm_state != neo_core::neo_vm::VMState::HALT {
+        if vm_state != neo_vm_rs::VmState::HALT {
             eprintln!(
                 "\n!!! tx{} did not HALT — bug #9 reproduced (gas={gas}) !!!",
                 idx,

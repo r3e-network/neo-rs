@@ -253,7 +253,7 @@ fn replay_block_172613_against_root_172612() {
     }
 
     // Merge tx changes to base_cache on HALT
-    if vm_state == neo_core::neo_vm::VMState::HALT {
+    if vm_state == neo_vm_rs::VmState::HALT {
         let tracked = tx_snapshot.tracked_items();
         base_cache.merge_tracked_items(&tracked);
     }

@@ -124,7 +124,7 @@ impl OracleService {
         engine
             .execute()
             .map_err(|err| OracleServiceError::Processing(err.to_string()))?;
-        if engine.state() != crate::neo_vm::VMState::HALT {
+        if engine.state() != neo_vm_rs::VmState::HALT {
             return Err(OracleServiceError::BuildFailed(
                 "oracle verify failed".to_string(),
             ));

@@ -1,6 +1,6 @@
 //! ApplicationEngine.Contract - ports Neo.SmartContract.ApplicationEngine.Contract.cs
 
-use crate::neo_vm::{ExecutionEngine, ExecutionEngineLimits, StackItem, VmError, VmResult};
+use crate::neo_vm::{ExecutionEngine, StackItem, VmError, VmResult};
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::call_flags::CallFlags;
@@ -9,6 +9,7 @@ use crate::smart_contract::execution_context_state::ExecutionContextState;
 use crate::smart_contract::iterators::IteratorInterop;
 use crate::smart_contract::native::crypto_lib::Bls12381Interop;
 use crate::UInt160;
+use neo_vm_rs::ExecutionEngineLimits;
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
 use std::sync::OnceLock;

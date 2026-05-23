@@ -2,9 +2,9 @@
 
 use crate::neo_vm::error::{VmError, VmResult};
 use crate::neo_vm::execution_engine::ExecutionEngine;
-use crate::neo_vm::instruction::Instruction;
-use crate::neo_vm::vm_state::VMState;
+use neo_vm_rs::Instruction;
 use neo_vm_rs::OpCode;
+use neo_vm_rs::VmState as VMState;
 
 /// Register all control handlers
 pub fn register_handlers(jump_table: &mut crate::neo_vm::jump_table::JumpTable) {
@@ -461,7 +461,7 @@ pub fn syscall(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
 pub mod exception_handling {
     use crate::neo_vm::error::VmResult;
     use crate::neo_vm::execution_engine::ExecutionEngine;
-    use crate::neo_vm::instruction::Instruction;
+    use neo_vm_rs::Instruction;
 
     /// Executes the TRY opcode for exception handling.
     pub fn try_op(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {

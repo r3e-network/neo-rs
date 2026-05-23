@@ -1,9 +1,10 @@
+#![cfg(feature = "server")]
+
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use neo_core::ledger::{
     block::Block as LedgerBlock, block_header::BlockHeader as LedgerBlockHeader,
 };
 use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable, SerializableExt};
-use neo_core::neo_vm::vm_state::VMState;
 use neo_core::network::p2p::payloads::{
     signer::Signer, transaction::Transaction, witness::Witness as PayloadWitness,
 };
@@ -11,6 +12,7 @@ use neo_core::smart_contract::native::{trimmed_block::TrimmedBlock, LedgerContra
 use neo_core::smart_contract::storage_key::StorageKey;
 use neo_core::{UInt160, UInt256, Witness as LedgerWitness, WitnessScope};
 use neo_rpc::server::{RpcHandler, RpcServer, RpcServerBlockchain, RpcServerConfig};
+use neo_vm_rs::VmState as VMState;
 use serde_json::Value;
 
 fn find_handler<'a>(handlers: &'a [RpcHandler], name: &str) -> &'a RpcHandler {
@@ -104,7 +106,7 @@ fn store_block(store: &mut neo_core::persistence::StoreCache, block: &LedgerBloc
             .write_u8(RECORD_KIND_TRANSACTION)
             .expect("record kind");
         writer.write_u32(index).expect("block index");
-        writer.write_u8(VMState::HALT as u8).expect("vm state");
+        writer.write_u8(VMState::HALT.to_byte()).expect("vm state");
         writer.write_var_bytes(&tx.to_bytes()).expect("tx bytes");
 
         let mut tx_key_bytes = Vec::with_capacity(1 + 32);

@@ -321,7 +321,7 @@ impl Helper {
         engine
             .execute()
             .map_err(|e| WalletError::TransactionCreationFailed(e.to_string()))?;
-        if engine.state() == crate::neo_vm::vm_state::VMState::FAULT {
+        if engine.state() == neo_vm_rs::VmState::FAULT {
             return Err(WalletError::TransactionCreationFailed(
                 "Smart contract execution failed.".to_string(),
             ));
@@ -431,7 +431,7 @@ impl Helper {
             engine
                 .execute()
                 .map_err(|e| WalletError::TransactionCreationFailed(e.to_string()))?;
-            if engine.state() == crate::neo_vm::vm_state::VMState::FAULT {
+            if engine.state() == neo_vm_rs::VmState::FAULT {
                 return Err(WalletError::TransactionCreationFailed(
                     "Smart contract execution failed.".to_string(),
                 ));

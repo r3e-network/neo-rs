@@ -3,12 +3,12 @@
 //
 
 use super::*;
-use crate::neo_vm::execution_engine_limits::ExecutionEngineLimits;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::i_interoperable::IInteroperable;
 use crate::smart_contract::manifest::{ContractEventDescriptor, ContractParameterDefinition};
 use crate::smart_contract::storage_context::StorageContext;
+use neo_vm_rs::ExecutionEngineLimits;
 
 fn put_storage_if_changed(
     engine: &mut ApplicationEngine,

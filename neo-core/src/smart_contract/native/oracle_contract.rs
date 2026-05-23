@@ -6,7 +6,7 @@
 use crate::cryptography::NeoHash;
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::neo_config::{BLOCK_MAX_TX_WIRE_LIMIT, HASH_SIZE, MAX_SCRIPT_SIZE};
-use crate::neo_vm::{ExecutionEngineLimits, StackItem};
+use crate::neo_vm::StackItem;
 use crate::network::p2p::payloads::{
     oracle_response::OracleResponse as TxOracleResponse,
     transaction_attribute::TransactionAttribute,
@@ -27,6 +27,7 @@ use crate::smart_contract::storage_key::StorageKey;
 use crate::smart_contract::ContractParameterType;
 use crate::smart_contract::StorageItem;
 use crate::{UInt160, UInt256};
+use neo_vm_rs::ExecutionEngineLimits;
 use neo_vm_rs::StackValue;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;

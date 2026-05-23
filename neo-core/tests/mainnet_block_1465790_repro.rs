@@ -204,7 +204,7 @@ fn run_tx_engine(
 
     // Only merge tracked items on HALT (matches C# behavior: faulted tx
     // discards application changes, keeps only fee burn from on_persist).
-    if vm_state == neo_core::neo_vm::VMState::HALT {
+    if vm_state == neo_vm_rs::VmState::HALT {
         let tracked: Vec<_> = tx_snapshot.tracked_items().into_iter().collect();
         eprintln!("  merging {} tracked items from {label}", tracked.len());
         base_cache.merge_tracked_items(&tracked);

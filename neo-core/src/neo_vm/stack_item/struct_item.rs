@@ -4,9 +4,9 @@
 
 use crate::neo_vm::error::{VmError, VmResult};
 use crate::neo_vm::reference_counter::{CompoundParent, ReferenceCounter};
-use crate::neo_vm::stack_item::stack_item_type::StackItemType;
-use crate::neo_vm::stack_item::stack_item_vertex::next_stack_item_id;
 use crate::neo_vm::stack_item::StackItem;
+use neo_vm_rs::next_stack_item_id;
+use neo_vm_rs::StackItemType;
 use parking_lot::Mutex;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -240,10 +240,7 @@ impl Struct {
     }
 
     /// Clones the struct respecting execution limits (mirrors C# Struct.Clone).
-    pub fn clone_with_limits(
-        &self,
-        limits: &crate::neo_vm::execution_engine_limits::ExecutionEngineLimits,
-    ) -> VmResult<Self> {
+    pub fn clone_with_limits(&self, limits: &neo_vm_rs::ExecutionEngineLimits) -> VmResult<Self> {
         let mut remaining = i64::from(limits.max_stack_size) - 1;
         let mut visited = HashSet::new();
         self.clone_with_remaining(&mut remaining, &mut visited)

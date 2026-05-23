@@ -3,11 +3,11 @@
 //
 
 use super::*;
-use crate::neo_vm::ExecutionEngineLimits;
 use crate::script_validation::ValidatedScript;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::helper::Helper;
 use crate::smart_contract::manifest::ContractAbi;
+use neo_vm_rs::ExecutionEngineLimits;
 use std::collections::{HashMap, HashSet};
 
 impl ContractManagement {
@@ -152,18 +152,16 @@ impl ContractManagement {
                         }
                     }
                 }
-                PREFIX_CONTRACT_HASH => {
-                    if rest.len() == 4 {
-                        if let Ok(hash) = UInt160::from_bytes(&value) {
-                            let contract_id = storage.contracts.get(&hash).map(|c| c.id);
-                            if let Some(contract_id) = contract_id {
-                                storage.contract_ids.entry(contract_id).or_insert(hash);
-                            } else {
-                                let mut id_bytes = [0u8; 4];
-                                id_bytes.copy_from_slice(rest);
-                                let id = i32::from_be_bytes(id_bytes);
-                                storage.contract_ids.entry(id).or_insert(hash);
-                            }
+                PREFIX_CONTRACT_HASH if rest.len() == 4 => {
+                    if let Ok(hash) = UInt160::from_bytes(&value) {
+                        let contract_id = storage.contracts.get(&hash).map(|c| c.id);
+                        if let Some(contract_id) = contract_id {
+                            storage.contract_ids.entry(contract_id).or_insert(hash);
+                        } else {
+                            let mut id_bytes = [0u8; 4];
+                            id_bytes.copy_from_slice(rest);
+                            let id = i32::from_be_bytes(id_bytes);
+                            storage.contract_ids.entry(id).or_insert(hash);
                         }
                     }
                 }

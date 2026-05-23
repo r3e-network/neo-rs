@@ -688,6 +688,32 @@ impl Default for ContractManifest {
     }
 }
 
+fn parse_extra_bytes(bytes: &[u8]) -> Option<Value> {
+    if bytes.is_empty() {
+        return None;
+    }
+
+    let text = match std::str::from_utf8(bytes) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::error!("ContractManifest extra must be UTF-8: {}", e);
+            return None;
+        }
+    };
+
+    if text == "null" {
+        None
+    } else {
+        match serde_json::from_str(text) {
+            Ok(value) => Some(value),
+            Err(e) => {
+                tracing::error!("Invalid JSON in manifest extra: {}", e);
+                None
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod manifest_extra_escape_tests {
     use super::*;
@@ -701,10 +727,12 @@ mod manifest_extra_escape_tests {
     /// literal, C# escaped it to `&`, state roots diverged from that block onward.
     #[test]
     fn extra_with_ampersand_uses_csharp_escape() {
-        let mut m = ContractManifest::default();
-        m.extra = Some(serde_json::json!({
-            "description": "NEO, GAS, & FLM on Neo N3"
-        }));
+        let m = ContractManifest {
+            extra: Some(serde_json::json!({
+                "description": "NEO, GAS, & FLM on Neo N3"
+            })),
+            ..Default::default()
+        };
         let stack = m.to_stack_item().expect("to_stack_item");
         let StackItem::Struct(s) = stack else {
             panic!("expected Struct")
@@ -807,31 +835,5 @@ mod manifest_extra_escape_tests {
         let expected = StackItem::try_from(manifest.to_stack_value()).unwrap();
 
         assert_eq!(manifest.to_stack_item().unwrap(), expected);
-    }
-}
-
-fn parse_extra_bytes(bytes: &[u8]) -> Option<Value> {
-    if bytes.is_empty() {
-        return None;
-    }
-
-    let text = match std::str::from_utf8(bytes) {
-        Ok(s) => s,
-        Err(e) => {
-            tracing::error!("ContractManifest extra must be UTF-8: {}", e);
-            return None;
-        }
-    };
-
-    if text == "null" {
-        None
-    } else {
-        match serde_json::from_str(text) {
-            Ok(value) => Some(value),
-            Err(e) => {
-                tracing::error!("Invalid JSON in manifest extra: {}", e);
-                None
-            }
-        }
     }
 }

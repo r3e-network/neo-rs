@@ -23,7 +23,7 @@ fn test_signature_contract_cost_matches_csharp() {
     assert_eq!(push_cost, 8);
     assert_eq!(syscall_cost, 0);
     assert_eq!(CHECK_SIG_PRICE, 32768);
-    assert_eq!(actual, 8 * 2 + 0 + 32768); // = 32784
+    assert_eq!(actual, 8 * 2 + 32768); // = 32784
 }
 
 #[test]

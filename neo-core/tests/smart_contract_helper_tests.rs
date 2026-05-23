@@ -3,7 +3,6 @@
 //! and C# Neo.UnitTests.SmartContract.UT_Helper.cs
 
 use neo_core::neo_vm::execution_context::ExecutionContext;
-use neo_core::neo_vm::instruction::Instruction;
 use neo_core::network::p2p::helper::get_sign_data_vec;
 use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::witness::Witness;
@@ -17,6 +16,7 @@ use neo_core::smart_contract::i_diagnostic::IDiagnostic;
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::wallets::key_pair::KeyPair;
 use neo_core::{Transaction, UInt160, WitnessScope};
+use neo_vm_rs::Instruction;
 use neo_vm_rs::OpCode;
 use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
 use std::sync::Arc;

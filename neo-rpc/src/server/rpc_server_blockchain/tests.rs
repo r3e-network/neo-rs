@@ -6,7 +6,6 @@ use neo_core::ledger::block::Block as LedgerBlock;
 use neo_core::ledger::block_header::BlockHeader as LedgerBlockHeader;
 use neo_core::ledger::VerifyResult;
 use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
-use neo_core::neo_vm::vm_state::VMState;
 use neo_core::network::p2p::helper::get_sign_data_vec;
 use neo_core::network::p2p::payloads::block::Block;
 use neo_core::network::p2p::payloads::signer::Signer;
@@ -23,6 +22,7 @@ use neo_core::smart_contract::{StorageItem, StorageKey};
 use neo_core::wallets::KeyPair;
 use neo_core::{IVerifiable, NeoSystem, UInt160, UInt256, Witness as LedgerWitness, WitnessScope};
 use neo_json::JToken;
+use neo_vm_rs::{ExecutionEngineLimits, VmState as VMState};
 use neo_vm_rs::{OpCode, StackValue};
 use num_bigint::BigInt;
 use std::collections::{HashMap, HashSet};
@@ -242,11 +242,8 @@ fn store_storage_item(
 }
 
 fn serialize_test_stack_value(value: &StackValue) -> Vec<u8> {
-    BinarySerializer::serialize_stack_value(
-        value,
-        &neo_core::neo_vm::ExecutionEngineLimits::default(),
-    )
-    .expect("serialize stack value")
+    BinarySerializer::serialize_stack_value(value, &ExecutionEngineLimits::default())
+        .expect("serialize stack value")
 }
 
 fn store_committee(

@@ -1,7 +1,7 @@
 use neo_core::hardfork::Hardfork;
 use neo_core::ledger::{Block, BlockHeader};
 use neo_core::neo_vm::stack_item::{Array, Pointer};
-use neo_core::neo_vm::{Script, StackItem, StackItemType};
+use neo_core::neo_vm::{Script, StackItem};
 use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::transaction::Transaction;
 use neo_core::persistence::DataCache;
@@ -19,6 +19,7 @@ use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::witness::Witness;
 use neo_core::{IVerifiable, UInt160, WitnessScope};
 use neo_vm_rs::OpCode;
+use neo_vm_rs::StackItemType;
 use num_bigint::BigInt;
 use std::any::Any;
 use std::str::FromStr;

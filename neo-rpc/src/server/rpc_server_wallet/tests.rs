@@ -1,7 +1,6 @@
 use super::*;
 use crate::server::rpc_server_settings::RpcServerConfig;
 use neo_core::neo_io::BinaryWriter;
-use neo_core::neo_vm::vm_state::VMState;
 use neo_core::network::p2p::helper::get_sign_data_vec;
 use neo_core::network::p2p::payloads::conflicts::Conflicts;
 use neo_core::network::p2p::payloads::signer::Signer;
@@ -16,6 +15,7 @@ use neo_core::NeoSystem;
 use neo_core::UInt256;
 use neo_core::Witness;
 use neo_crypto::Secp256r1Crypto;
+use neo_vm_rs::VmState as VMState;
 use num_bigint::BigInt;
 use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};

@@ -5,9 +5,9 @@
 use crate::neo_vm::stack_item::array::Array as ArrayItem;
 use crate::neo_vm::stack_item::map::Map as MapItem;
 use crate::neo_vm::stack_item::struct_item::Struct as StructItem;
-use crate::neo_vm::{StackItem, StackItemType};
+use crate::neo_vm::StackItem;
+use neo_vm_rs::StackItemType;
 use num_bigint::BigInt;
-use num_traits::ToPrimitive;
 use serde_json::{Map as JsonMap, Number as JsonNumber, Value as JsonValue};
 use std::collections::HashSet;
 

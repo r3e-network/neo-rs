@@ -6,7 +6,7 @@
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
 use crate::neo_io::{MemoryReader, Serializable};
-use crate::neo_vm::{ExecutionEngineLimits, StackItem};
+use crate::neo_vm::StackItem;
 use crate::persistence::{DataCache, StoreCache};
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;
@@ -16,7 +16,7 @@ use crate::smart_contract::native::{NativeContract, NativeMethod, PolicyContract
 use crate::smart_contract::ContractParameterType;
 use crate::smart_contract::StorageKey;
 use crate::UInt160;
-use neo_vm_rs::StackValue;
+use neo_vm_rs::{ExecutionEngineLimits, StackValue};
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use parking_lot::RwLock;
@@ -94,6 +94,7 @@ impl ContractManagement {
         Self::storage_key(PREFIX_CONTRACT_HASH, bytes.as_ref())
     }
 
+    #[cfg(test)]
     #[inline]
     fn contract_count_key() -> Vec<u8> {
         vec![PREFIX_CONTRACT_COUNT]
@@ -125,11 +126,6 @@ impl ContractManagement {
 
     #[inline]
     fn encode_storage_i64(value: i64) -> Vec<u8> {
-        Self::encode_storage_bigint(BigInt::from(value))
-    }
-
-    #[inline]
-    fn encode_storage_u32(value: u32) -> Vec<u8> {
         Self::encode_storage_bigint(BigInt::from(value))
     }
 

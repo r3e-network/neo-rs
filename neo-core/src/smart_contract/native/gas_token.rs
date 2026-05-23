@@ -10,7 +10,6 @@ use super::security_fixes::{
 };
 use super::AccountState;
 use crate::error::{CoreError, CoreResult};
-use crate::neo_vm::execution_engine_limits::ExecutionEngineLimits;
 use crate::neo_vm::StackItem;
 use crate::network::p2p::payloads::{Transaction, TransactionAttribute, TransactionAttributeType};
 use crate::persistence::i_read_only_store::IReadOnlyStoreGeneric;
@@ -25,6 +24,7 @@ use crate::smart_contract::ContractParameterType;
 use crate::smart_contract::StorageItem;
 use crate::UInt160;
 use lazy_static::lazy_static;
+use neo_vm_rs::ExecutionEngineLimits;
 use neo_vm_rs::StackValue;
 use num_bigint::BigInt;
 use num_traits::{Signed, Zero};

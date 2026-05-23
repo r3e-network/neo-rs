@@ -72,7 +72,8 @@
 //! ## Quick Start
 //!
 //! ```rust,ignore
-//! use neo_core::neo_vm::{ExecutionEngine, Script, VMState, VmResult};
+//! use neo_core::neo_vm::{ExecutionEngine, Script, VmResult};
+//! use neo_vm_rs::VmState as VMState;
 //! use neo_vm_rs::OpCode;
 //!
 //! # fn example() -> VmResult<()> {
@@ -136,9 +137,6 @@
 // Core VM Modules
 // ============================================================================
 
-/// Collection types for VM stack items.
-pub mod collections;
-
 /// VM error types and result handling.
 pub mod error;
 
@@ -147,12 +145,6 @@ pub mod error;
 /// The [`EvaluationStack`] is the primary operand stack for VM operations.
 /// It provides type-safe operations and automatic reference counting.
 pub mod evaluation_stack;
-
-/// Exception handling context for try-catch-finally.
-pub mod exception_handling_context;
-
-/// Exception handling state tracking.
-pub mod exception_handling_state;
 
 /// Script execution context with local variables.
 ///
@@ -171,17 +163,6 @@ pub mod execution_context;
 /// - Handles the instruction cycle
 /// - Tracks gas consumption
 pub mod execution_engine;
-
-/// Configurable execution limits.
-///
-/// [`ExecutionEngineLimits`] controls:
-/// - Max stack size
-/// - Max item size
-/// - Max invocation stack size
-pub mod execution_engine_limits;
-
-/// VM instruction representation.
-pub mod instruction;
 
 /// Interop service registry.
 ///
@@ -210,37 +191,20 @@ pub mod slot;
 /// - Special types (Pointer, InteropInterface)
 pub mod stack_item;
 
-/// Tarjan's algorithm for garbage collection.
-pub mod strongly_connected_components;
-
-/// VM execution states.
-///
-/// - `HALT`: Execution completed successfully
-/// - `FAULT`: Execution failed
-/// - `BREAK`: Hit a breakpoint
-/// - `NONE`: Not started
-pub mod vm_state;
-
 // ============================================================================
 // Public Re-exports
 // ============================================================================
 
-pub use collections::VmOrderedDictionary as OrderedDictionary;
 pub use error::{VmError, VmResult};
 pub use evaluation_stack::EvaluationStack;
-pub use exception_handling_context::ExceptionHandlingContext;
-pub use exception_handling_state::ExceptionHandlingState;
 pub use execution_context::ExecutionContext;
 pub use execution_engine::ExecutionEngine;
-pub use execution_engine_limits::ExecutionEngineLimits;
-pub use instruction::Instruction;
 pub use interop_service::InteropService;
 pub use jump_table::JumpTable;
 pub use reference_counter::{CompoundParent, ReferenceCounter};
 pub use script::Script;
 pub use slot::Slot;
-pub use stack_item::{StackItem, StackItemType};
-pub use vm_state::VMState;
+pub use stack_item::StackItem;
 
 // ============================================================================
 // I/O Abstraction

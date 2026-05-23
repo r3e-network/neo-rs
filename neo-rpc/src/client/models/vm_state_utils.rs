@@ -1,11 +1,10 @@
 use neo_vm_rs::VmState;
 
 pub fn vm_state_to_string(state: VmState) -> String {
-    match state {
-        VmState::Halt => "HALT",
-        VmState::Fault => "FAULT",
-    }
-    .to_string()
+    state
+        .final_name()
+        .expect("RPC VM state must be final")
+        .to_string()
 }
 
 pub fn vm_state_from_str(value: &str) -> Option<VmState> {

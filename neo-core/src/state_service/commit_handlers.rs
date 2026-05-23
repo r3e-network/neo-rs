@@ -56,6 +56,7 @@ impl StateServiceCommitHandlers {
     }
 
     /// Blocks until any pending background MPT computation completes.
+    #[allow(dead_code)]
     pub fn flush(&self) {
         if let Some(handle) = self.pending_task.lock().take() {
             let _ = handle.join();

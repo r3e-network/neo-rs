@@ -80,18 +80,19 @@ impl NeoToken {
         let candidates = self.get_candidates_internal(snapshot.as_ref())?;
         // Return as serialized array (limited to 256 candidates per C# spec)
         let limited: Vec<_> = candidates.into_iter().take(256).collect();
-        let items: Vec<StackItem> = limited
+        let items: Vec<StackValue> = limited
             .iter()
             .map(|(pk, votes)| {
-                StackItem::from_struct(vec![
-                    StackItem::from_byte_string(pk.as_bytes().to_vec()),
-                    StackItem::from_int(votes.clone()),
+                StackValue::Struct(vec![
+                    StackValue::ByteString(pk.as_bytes().to_vec()),
+                    StackValue::BigInteger(votes.to_signed_bytes_le()),
                 ])
             })
             .collect();
-        let array = StackItem::from_array(items);
-        let bytes = BinarySerializer::serialize(&array, &ExecutionEngineLimits::default())
-            .map_err(CoreError::native_contract)?;
+        let array = StackValue::Array(items);
+        let bytes =
+            BinarySerializer::serialize_stack_value(&array, &ExecutionEngineLimits::default())
+                .map_err(CoreError::native_contract)?;
         Ok(bytes)
     }
 
@@ -297,13 +298,14 @@ impl NeoToken {
             self.committee_from_cache_with_votes(snapshot.as_ref(), engine.protocol_settings())?;
         let mut keys: Vec<ECPoint> = committee.into_iter().map(|(pk, _)| pk).collect();
         keys.sort();
-        let items: Vec<StackItem> = keys
+        let items: Vec<StackValue> = keys
             .iter()
-            .map(|pk| StackItem::from_byte_string(pk.as_bytes().to_vec()))
+            .map(|pk| StackValue::ByteString(pk.as_bytes().to_vec()))
             .collect();
-        let array = StackItem::from_array(items);
-        let bytes = BinarySerializer::serialize(&array, &ExecutionEngineLimits::default())
-            .map_err(CoreError::native_contract)?;
+        let array = StackValue::Array(items);
+        let bytes =
+            BinarySerializer::serialize_stack_value(&array, &ExecutionEngineLimits::default())
+                .map_err(CoreError::native_contract)?;
         Ok(bytes)
     }
 
@@ -335,13 +337,14 @@ impl NeoToken {
             usize::try_from(engine.protocol_settings().validators_count.max(0)).unwrap_or(0),
             engine.protocol_settings(),
         )?;
-        let items: Vec<StackItem> = validators
+        let items: Vec<StackValue> = validators
             .iter()
-            .map(|pk| StackItem::from_byte_string(pk.as_bytes().to_vec()))
+            .map(|pk| StackValue::ByteString(pk.as_bytes().to_vec()))
             .collect();
-        let array = StackItem::from_array(items);
-        let bytes = BinarySerializer::serialize(&array, &ExecutionEngineLimits::default())
-            .map_err(CoreError::native_contract)?;
+        let array = StackValue::Array(items);
+        let bytes =
+            BinarySerializer::serialize_stack_value(&array, &ExecutionEngineLimits::default())
+                .map_err(CoreError::native_contract)?;
         Ok(bytes)
     }
 

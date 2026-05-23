@@ -64,7 +64,6 @@ dashmap = { workspace = true }
 hashbrown = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
-smallvec = { workspace = true }
 toml = { workspace = true }
 dirs = "5.0"
 if-addrs = "0.10"
@@ -147,7 +146,35 @@ name = "check_unclaimed_gas"
 required-features = ["rocksdb"]
 
 [[example]]
+name = "check_local_roots"
+required-features = ["rocksdb"]
+
+[[example]]
+name = "count_state_at_root"
+required-features = ["rocksdb"]
+
+[[example]]
 name = "disassemble_tx"
+required-features = ["rocksdb"]
+
+[[example]]
+name = "dump_block_header"
+required-features = ["rocksdb"]
+
+[[example]]
+name = "dump_block_txs"
+required-features = ["rocksdb"]
+
+[[example]]
+name = "dump_state_root"
+required-features = ["rocksdb"]
+
+[[example]]
+name = "dump_tx_full"
+required-features = ["rocksdb"]
+
+[[example]]
+name = "dump_tx_raw"
 required-features = ["rocksdb"]
 
 [[example]]
@@ -159,7 +186,19 @@ name = "find_txs_by_script_text"
 required-features = ["rocksdb"]
 
 [[example]]
+name = "gas_balance_at_root"
+required-features = ["rocksdb"]
+
+[[example]]
+name = "get_state_at_root"
+required-features = ["rocksdb"]
+
+[[example]]
 name = "inspect_contract_state"
+required-features = ["rocksdb"]
+
+[[example]]
+name = "inspect_gas_balance"
 required-features = ["rocksdb"]
 
 [[example]]

@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::convert::TryFrom;
 use std::sync::Arc;
 
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
@@ -11,8 +10,7 @@ use neo_core::smart_contract::notify_event_args::NotifyEventArgs;
 use neo_core::smart_contract::ApplicationEngine;
 use neo_core::UInt160;
 use neo_json::JToken;
-use neo_vm_rs::StackValue;
-use neo_vm_rs::VmState as RpcVmState;
+use neo_vm_rs::{StackValue, VmState};
 use num_traits::ToPrimitive;
 use parking_lot::Mutex;
 use serde_json::{json, Map, Number as JsonNumber, Value};
@@ -51,15 +49,11 @@ pub(super) fn parse_contract_parameters(
     }
 }
 
-pub(super) fn final_rpc_vm_state_string(
-    state: neo_core::neo_vm::vm_state::VMState,
-) -> Result<String, RpcException> {
-    let final_state = RpcVmState::try_from(state).map_err(|err| internal_error(err.to_string()))?;
-    Ok(match final_state {
-        RpcVmState::Halt => "HALT",
-        RpcVmState::Fault => "FAULT",
-    }
-    .to_string())
+pub(super) fn final_rpc_vm_state_string(state: VmState) -> Result<String, RpcException> {
+    state
+        .final_name()
+        .map(str::to_string)
+        .ok_or_else(|| internal_error(format!("{state:?} is not a final VM state")))
 }
 
 #[allow(clippy::type_complexity)]

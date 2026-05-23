@@ -14,7 +14,7 @@ use neo_primitives::{UInt160, UInt256, UINT160_SIZE, UINT256_SIZE};
 
 // Imports for tests moved to neo-node (Phase 2 refactoring):
 // use neo_core::protocol_settings::ProtocolSettings;
-// use neo_core::neo_vm::VMState;
+// use neo_vm_rs::VmState as VMState;
 // use neo_core::network::p2p::payloads::{Block, Header, Transaction};
 // use neo_core::network::p2p::local_node::BroadcastEvent;
 // use neo_core::network::p2p::RelayInventory;

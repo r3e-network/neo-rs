@@ -90,7 +90,9 @@ impl ApplicationEngine {
         // Keep the engine host pointer aligned with this instance across moves.
         self.attach_host();
 
-        let state = self.vm_engine.engine_mut().execute();
+        let state = self
+            .try_execute_with_external_vm()
+            .unwrap_or_else(|| self.vm_engine.engine_mut().execute());
         if state == VMState::FAULT {
             self.capture_fault_exception_from_vm();
         }

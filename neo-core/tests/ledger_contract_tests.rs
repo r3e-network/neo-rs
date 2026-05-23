@@ -2,7 +2,6 @@ use neo_core::constants::GENESIS_TIMESTAMP_MS;
 use neo_core::ledger::block_header::BlockHeader;
 use neo_core::ledger::Block;
 use neo_core::neo_io::{BinaryWriter, Serializable};
-use neo_core::neo_vm::VMState;
 use neo_core::network::p2p::payloads::{Signer, Transaction, WitnessScope};
 use neo_core::persistence::{DataCache, StorageItem, StorageKey};
 use neo_core::protocol_settings::ProtocolSettings;
@@ -14,6 +13,7 @@ use neo_core::smart_contract::native::{LedgerContract, NativeContract, NativeHel
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::{UInt160, UInt256, Witness};
 use neo_vm_rs::OpCode;
+use neo_vm_rs::VmState as VMState;
 use num_traits::ToPrimitive;
 use std::sync::Arc;
 

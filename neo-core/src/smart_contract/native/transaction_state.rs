@@ -2,9 +2,8 @@
 
 use crate::error::CoreError;
 use crate::neo_io::{BinaryWriter, MemoryReader, Serializable};
-use crate::neo_vm::VMState;
 use crate::network::p2p::payloads::transaction::Transaction;
-use neo_vm_rs::StackValue;
+use neo_vm_rs::{StackValue, VmState as VMState};
 use tracing::warn;
 
 /// State of a transaction in the ledger (matches C# TransactionState).
@@ -107,13 +106,10 @@ impl TransactionState {
 #[cfg(test)]
 mod tests {
     use super::TransactionState;
-    use crate::neo_vm::execution_engine_limits::ExecutionEngineLimits;
-    use crate::neo_vm::VMState;
     use crate::network::p2p::payloads::{signer::Signer, transaction::Transaction};
     use crate::smart_contract::BinarySerializer;
     use crate::{UInt160, Witness, WitnessScope};
-    use neo_vm_rs::OpCode;
-    use neo_vm_rs::StackValue;
+    use neo_vm_rs::{ExecutionEngineLimits, OpCode, StackValue, VmState as VMState};
 
     fn sample_transaction(nonce: u32, network_fee: i64) -> Transaction {
         let mut tx = Transaction::new();

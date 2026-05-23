@@ -11,6 +11,7 @@
 //! without the risk of mutex poisoning that comes with `std::sync::Mutex`.
 
 use crate::neo_vm::stack_item::StackItem;
+use neo_vm_rs::Tarjan;
 use parking_lot::Mutex;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
@@ -151,7 +152,7 @@ impl ReferenceCounter {
 
         let candidate_filter: HashSet<ItemId> = tracked.zero_referred.drain().collect();
 
-        let mut tarjan = crate::neo_vm::strongly_connected_components::Tarjan::new();
+        let mut tarjan = Tarjan::new();
         for id in tracked.tracked_items.keys() {
             tarjan.add_vertex(*id);
         }

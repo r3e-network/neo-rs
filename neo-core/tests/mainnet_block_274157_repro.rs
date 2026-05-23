@@ -322,7 +322,7 @@ fn replay_block_274157_debug() {
     // Mirror persist_block_internal: HALT merges tx_snapshot writes into
     // base_cache; FAULT discards them. The earlier `tx_snapshot.commit()` was
     // a no-op because tx_snapshot has no commit_apply wired.
-    if matches!(vm_state, neo_core::neo_vm::VMState::HALT) {
+    if matches!(vm_state, neo_vm_rs::VmState::HALT) {
         let tracked = tx_snapshot.tracked_items();
         base_cache.merge_tracked_items(&tracked);
     }

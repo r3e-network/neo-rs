@@ -249,7 +249,7 @@ fn replay_block_203262_against_root_203261() {
         tx_engine.fault_exception(),
     );
 
-    assert_eq!(vm_state, neo_core::neo_vm::VMState::FAULT);
+    assert_eq!(vm_state, neo_vm_rs::VmState::FAULT);
     let fault_msg = tx_engine
         .fault_exception()
         .map(|s| s.to_string())

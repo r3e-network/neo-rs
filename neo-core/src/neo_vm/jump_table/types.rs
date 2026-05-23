@@ -5,10 +5,10 @@
 use crate::neo_vm::error::VmError;
 use crate::neo_vm::error::VmResult;
 use crate::neo_vm::execution_engine::ExecutionEngine;
-use crate::neo_vm::instruction::Instruction;
 use crate::neo_vm::jump_table::JumpTable;
-use crate::neo_vm::stack_item::stack_item_type::StackItemType;
 use crate::neo_vm::stack_item::{Array, StackItem, Struct};
+use neo_vm_rs::Instruction;
+use neo_vm_rs::StackItemType;
 use neo_vm_rs::{OpCode, StackValue};
 
 /// Registers the type operation handlers.

@@ -1,9 +1,21 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-use neo_core::neo_vm::{ExecutionEngine, Script, VMState};
+use neo_core::neo_vm::{ExecutionEngine, Script, StackItem};
+use neo_core::network::p2p::payloads::signer::Signer;
+use neo_core::network::p2p::payloads::transaction::Transaction;
+use neo_core::persistence::DataCache;
+use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::script_builder::ScriptBuilder;
-use neo_vm_rs::{OpCode, StackValue};
+use neo_core::smart_contract::application_engine::{ApplicationEngine, TEST_MODE_GAS};
+use neo_core::smart_contract::call_flags::CallFlags;
+use neo_core::smart_contract::trigger_type::TriggerType;
+use neo_core::{UInt160, WitnessScope};
+use neo_vm_rs::{
+    ExceptionHandlingContext, ExceptionHandlingState, ExecutionEngineLimits, Instruction, OpCode,
+    StackValue, VmOrderedDictionary, VmState as VMState,
+};
 use num_bigint::BigInt;
 
 #[test]
@@ -38,24 +50,390 @@ fn workspace_uses_external_neo_vm_rs_without_local_neo_vm() {
 }
 
 #[test]
-fn neo_core_limits_reuse_neo_vm_rs_defaults_where_semantics_match() {
+fn application_engine_executes_syscall_free_scripts_through_neo_vm_rs() {
     let workspace = workspace_root();
-    let limits_source =
-        fs::read_to_string(workspace.join("neo-core/src/neo_vm/execution_engine_limits.rs"))
-            .unwrap();
+    let load_execute = read_source(
+        workspace.join("neo-core/src/smart_contract/application_engine/load_execute_storage.rs"),
+    );
+    let external_vm = read_source(
+        workspace.join("neo-core/src/smart_contract/application_engine/external_vm.rs"),
+    );
 
     assert!(
-        limits_source.contains("neo_vm_rs::DEFAULT_MAX_STACK_DEPTH"),
+        load_execute.contains("try_execute_with_external_vm()"),
+        "ApplicationEngine::execute_allow_fault should try the neo-vm-rs execution boundary"
+    );
+    assert!(
+        external_vm.contains("interpret_with_stack_and_syscalls_at")
+            && external_vm.contains("impl SyscallProvider for ExternalVmHost"),
+        "the external execution boundary should use neo-vm-rs interpreter APIs directly"
+    );
+    assert!(
+        external_vm.contains("parse_script_instructions")
+            && !external_vm.contains("let mut position = 0"),
+        "the external execution boundary should use neo-vm-rs script parsing for \
+         eligibility scans instead of local instruction-walking loops"
+    );
+
+    let mut builder = ScriptBuilder::new();
+    builder.emit_push_int(2);
+    builder.emit_push_int(5);
+    builder.emit_opcode(OpCode::ADD);
+    builder.emit_opcode(OpCode::RET);
+
+    let mut engine = ApplicationEngine::new(
+        TriggerType::Application,
+        None,
+        Arc::new(DataCache::new(false)),
+        None,
+        ProtocolSettings::default(),
+        TEST_MODE_GAS,
+        None,
+    )
+    .expect("application engine");
+    engine
+        .load_script(builder.to_array(), CallFlags::NONE, None)
+        .expect("load script");
+
+    assert_eq!(engine.execute_allow_fault(), VMState::HALT);
+    assert_eq!(
+        engine.result_stack().peek(0).unwrap().as_int().unwrap(),
+        BigInt::from(7)
+    );
+}
+
+#[test]
+fn application_engine_routes_simple_runtime_syscalls_through_neo_vm_rs() {
+    let workspace = workspace_root();
+    let external_vm = read_source(
+        workspace.join("neo-core/src/smart_contract/application_engine/external_vm.rs"),
+    );
+
+    assert!(
+        external_vm.contains("handle_runtime_syscall"),
+        "the external VM host should bridge supported runtime syscalls directly"
+    );
+    assert!(
+        external_vm.contains("System.Runtime.GetTrigger")
+            && external_vm.contains("System.Runtime.GetNetwork")
+            && external_vm.contains("System.Runtime.GetAddressVersion")
+            && external_vm.contains("System.Runtime.GetInvocationCounter")
+            && external_vm.contains("System.Runtime.GetExecutingScriptHash")
+            && external_vm.contains("System.Runtime.GetEntryScriptHash")
+            && external_vm.contains("System.Runtime.GetCallingScriptHash")
+            && external_vm.contains("System.Runtime.BurnGas")
+            && external_vm.contains("System.Runtime.CheckWitness")
+            && external_vm.contains("System.Runtime.GetRandom")
+            && external_vm.contains("System.Runtime.CurrentSigners"),
+        "simple no-argument runtime syscalls should be admitted into the neo-vm-rs path"
+    );
+    assert!(
+        external_vm.contains("stack_value_as_i64") && external_vm.contains("runtime_burn_gas"),
+        "stack-consuming runtime syscalls should decode arguments from neo-vm-rs StackValue \
+         and delegate host accounting to ApplicationEngine"
+    );
+    assert!(
+        external_vm.contains("pop_vm_bytes") && external_vm.contains("check_witness_hash"),
+        "CheckWitness should decode a byte argument from neo-vm-rs StackValue and delegate \
+         witness evaluation to ApplicationEngine"
+    );
+
+    let settings = ProtocolSettings::default();
+    let mut builder = ScriptBuilder::new();
+    builder.emit_push_int(2);
+    builder
+        .emit_syscall("System.Runtime.BurnGas")
+        .expect("burn gas syscall");
+    builder.emit_push(&[0u8; 20]);
+    builder
+        .emit_syscall("System.Runtime.CheckWitness")
+        .expect("check witness syscall");
+    builder
+        .emit_syscall("System.Runtime.GetRandom")
+        .expect("get random syscall");
+    builder
+        .emit_syscall("System.Runtime.CurrentSigners")
+        .expect("current signers syscall");
+    builder
+        .emit_syscall("System.Runtime.GetTrigger")
+        .expect("get trigger syscall");
+    builder
+        .emit_syscall("System.Runtime.GetNetwork")
+        .expect("get network syscall");
+    builder
+        .emit_syscall("System.Runtime.GetAddressVersion")
+        .expect("get address version syscall");
+    builder
+        .emit_syscall("System.Runtime.GetInvocationCounter")
+        .expect("get invocation counter syscall");
+    builder
+        .emit_syscall("System.Runtime.GetExecutingScriptHash")
+        .expect("get executing script hash syscall");
+    builder
+        .emit_syscall("System.Runtime.GetEntryScriptHash")
+        .expect("get entry script hash syscall");
+    builder
+        .emit_syscall("System.Runtime.GetCallingScriptHash")
+        .expect("get calling script hash syscall");
+    builder.emit_opcode(OpCode::RET);
+    let script = builder.to_array();
+    let expected_script_hash = UInt160::from_script(&script).to_bytes();
+
+    let mut engine = ApplicationEngine::new(
+        TriggerType::Application,
+        None,
+        Arc::new(DataCache::new(false)),
+        None,
+        settings.clone(),
+        TEST_MODE_GAS,
+        None,
+    )
+    .expect("application engine");
+    engine
+        .load_script(script, CallFlags::NONE, None)
+        .expect("load script");
+
+    assert_eq!(engine.execute_allow_fault(), VMState::HALT);
+    assert_eq!(engine.result_stack().len(), 10);
+    assert!(engine.result_stack().peek(0).unwrap().is_null());
+    assert_eq!(
+        engine.result_stack().peek(1).unwrap().as_bytes().unwrap(),
+        expected_script_hash
+    );
+    assert_eq!(
+        engine.result_stack().peek(2).unwrap().as_bytes().unwrap(),
+        expected_script_hash
+    );
+    assert_eq!(
+        engine.result_stack().peek(3).unwrap().as_int().unwrap(),
+        BigInt::from(1)
+    );
+    assert_eq!(
+        engine.result_stack().peek(4).unwrap().as_int().unwrap(),
+        BigInt::from(i64::from(settings.address_version))
+    );
+    assert_eq!(
+        engine.result_stack().peek(5).unwrap().as_int().unwrap(),
+        BigInt::from(settings.network as i64)
+    );
+    assert_eq!(
+        engine.result_stack().peek(6).unwrap().as_int().unwrap(),
+        BigInt::from(i64::from(TriggerType::Application.bits()))
+    );
+    assert!(engine.result_stack().peek(7).unwrap().is_null());
+    assert!(engine.result_stack().peek(8).unwrap().as_int().is_ok());
+    assert!(!engine.result_stack().peek(9).unwrap().as_bool().unwrap());
+}
+
+#[test]
+fn application_engine_routes_script_container_through_neo_vm_rs() {
+    let workspace = workspace_root();
+    let external_vm = read_source(
+        workspace.join("neo-core/src/smart_contract/application_engine/external_vm.rs"),
+    );
+    assert!(
+        external_vm.contains("System.Runtime.GetScriptContainer")
+            && external_vm.contains("to_stack_value()"),
+        "script container projection should be handled directly through neo-vm-rs StackValue"
+    );
+
+    let mut transaction = Transaction::new();
+    transaction.set_script(vec![OpCode::PUSH1.byte()]);
+    let account = UInt160::from_bytes(&[1u8; 20]).expect("account");
+    transaction.add_signer(Signer::new(account, WitnessScope::NONE));
+    let expected_hash = transaction.hash().to_bytes();
+
+    let mut builder = ScriptBuilder::new();
+    builder
+        .emit_syscall("System.Runtime.GetScriptContainer")
+        .expect("script container syscall");
+    builder.emit_opcode(OpCode::RET);
+
+    let mut engine = ApplicationEngine::new(
+        TriggerType::Application,
+        Some(Arc::new(transaction)),
+        Arc::new(DataCache::new(false)),
+        None,
+        ProtocolSettings::default(),
+        TEST_MODE_GAS,
+        None,
+    )
+    .expect("application engine");
+    engine
+        .load_script(builder.to_array(), CallFlags::NONE, None)
+        .expect("load script");
+
+    assert_eq!(engine.execute_allow_fault(), VMState::HALT);
+    let result = engine.result_stack().peek(0).expect("result item");
+    let StackItem::Array(array) = result else {
+        panic!("expected transaction stack array");
+    };
+    assert_eq!(array.len(), 8);
+    assert_eq!(array.items()[0].as_bytes().unwrap(), expected_hash);
+}
+
+#[test]
+fn application_engine_routes_runtime_log_through_neo_vm_rs() {
+    let workspace = workspace_root();
+    let external_vm = read_source(
+        workspace.join("neo-core/src/smart_contract/application_engine/external_vm.rs"),
+    );
+    assert!(
+        external_vm.contains("System.Runtime.Log") && external_vm.contains("emit_log_event"),
+        "Runtime.Log should be handled directly by the neo-vm-rs syscall host"
+    );
+    assert!(
+        external_vm.contains("required_call_flags") && external_vm.contains("has_call_flags"),
+        "the direct neo-vm-rs syscall host should enforce registered syscall call flags"
+    );
+
+    let mut transaction = Transaction::new();
+    transaction.set_script(vec![OpCode::PUSH1.byte()]);
+
+    let mut builder = ScriptBuilder::new();
+    builder.emit_push_string("hello");
+    builder
+        .emit_syscall("System.Runtime.Log")
+        .expect("runtime log syscall");
+    builder.emit_opcode(OpCode::RET);
+
+    let mut engine = ApplicationEngine::new(
+        TriggerType::Application,
+        Some(Arc::new(transaction)),
+        Arc::new(DataCache::new(false)),
+        None,
+        ProtocolSettings::default(),
+        TEST_MODE_GAS,
+        None,
+    )
+    .expect("application engine");
+    engine
+        .load_script(builder.to_array(), CallFlags::ALLOW_NOTIFY, None)
+        .expect("load script");
+
+    assert_eq!(engine.execute_allow_fault(), VMState::HALT);
+    assert_eq!(engine.logs().len(), 1);
+    assert_eq!(engine.logs()[0].message, "hello");
+}
+
+#[test]
+fn execution_engine_limits_facade_is_removed() {
+    let workspace = workspace_root();
+    let limits_path = workspace.join("neo-core/src/neo_vm/execution_engine_limits.rs");
+    let vm_module = read_source(workspace.join("neo-core/src/neo_vm/mod.rs"));
+    let engine_module = read_source(workspace.join("neo-core/src/neo_vm/execution_engine/mod.rs"));
+    let limits = ExecutionEngineLimits::default();
+
+    assert!(
+        !limits_path.exists()
+            && !vm_module.contains("pub mod execution_engine_limits")
+            && !vm_module.contains("pub use execution_engine_limits::ExecutionEngineLimits"),
+        "neo-core should not keep a local ExecutionEngineLimits facade"
+    );
+    assert!(
+        engine_module.contains("use neo_vm_rs::{ExecutionEngineLimits, VmState as VMState};"),
+        "local execution engine internals should import ExecutionEngineLimits directly \
+         from neo-vm-rs"
+    );
+    assert_eq!(
+        limits.max_stack_size,
+        neo_vm_rs::DEFAULT_MAX_STACK_DEPTH as u32,
         "ExecutionEngineLimits should use neo-vm-rs for the default stack depth"
     );
-    assert!(
-        limits_source.contains("neo_vm_rs::DEFAULT_MAX_INVOCATION_DEPTH"),
+    assert_eq!(
+        limits.max_invocation_stack_size,
+        neo_vm_rs::DEFAULT_MAX_INVOCATION_DEPTH as u32,
         "ExecutionEngineLimits should use neo-vm-rs for the default invocation depth"
     );
+    assert_eq!(
+        limits.max_item_size,
+        u16::MAX as u32,
+        "ExecutionEngineLimits must keep Neo N3's 65535-byte item-size limit"
+    );
+    assert_eq!(limits.max_comparable_size, u16::MAX as u32);
+    assert_eq!(limits.max_shift, 256);
+    assert_eq!(limits.max_try_nesting_depth, 16);
+    assert!(limits.catch_engine_exceptions);
+}
+
+#[test]
+fn exception_handling_facades_are_removed() {
+    let workspace = workspace_root();
+    let context_path = workspace.join("neo-core/src/neo_vm/exception_handling_context.rs");
+    let state_path = workspace.join("neo-core/src/neo_vm/exception_handling_state.rs");
+    let vm_module = read_source(workspace.join("neo-core/src/neo_vm/mod.rs"));
+    let execution_context = read_source(workspace.join("neo-core/src/neo_vm/execution_context.rs"));
+    let exception_runtime =
+        read_source(workspace.join("neo-core/src/neo_vm/execution_engine/exception.rs"));
+    let mut context = ExceptionHandlingContext::new(-1, 42);
+
     assert!(
-        limits_source.contains("max_item_size: u16::MAX as u32"),
-        "ExecutionEngineLimits must keep Neo N3's 65535-byte item-size limit; \
-         neo-vm-rs::MAX_ITEM_SIZE is currently larger"
+        !context_path.exists()
+            && !state_path.exists()
+            && !vm_module.contains("pub mod exception_handling_context")
+            && !vm_module.contains("pub mod exception_handling_state")
+            && !vm_module.contains("ExceptionHandlingContext")
+            && !vm_module.contains("ExceptionHandlingState"),
+        "neo-core should not keep local exception handling facades"
+    );
+    assert!(
+        execution_context.contains("use neo_vm_rs::ExceptionHandlingContext;")
+            && execution_context.contains("use neo_vm_rs::ExceptionHandlingState;")
+            && exception_runtime.contains("use neo_vm_rs::ExceptionHandlingContext;")
+            && exception_runtime.contains("use neo_vm_rs::ExceptionHandlingState;"),
+        "local runtime should import exception frame types directly from neo-vm-rs"
+    );
+
+    assert_eq!(context.catch_pointer(), -1);
+    assert_eq!(context.finally_pointer(), 42);
+    assert_eq!(context.state(), ExceptionHandlingState::Try);
+    context.set_state(ExceptionHandlingState::Finally);
+    assert!(context.is_in_exception());
+}
+
+#[test]
+fn neo_core_ordered_dictionary_facade_is_removed() {
+    let workspace = workspace_root();
+    let dictionary_path = workspace.join("neo-core/src/neo_vm/collections/ordered_dictionary.rs");
+    let collections_module_path = workspace.join("neo-core/src/neo_vm/collections/mod.rs");
+    let vm_module = read_source(workspace.join("neo-core/src/neo_vm/mod.rs"));
+    let map_source = read_source(workspace.join("neo-core/src/neo_vm/stack_item/map.rs"));
+    let stack_item_source =
+        read_source(workspace.join("neo-core/src/neo_vm/stack_item/stack_item.rs"));
+    let helper_source =
+        read_source(workspace.join("neo-core/src/smart_contract/application_engine_helper.rs"));
+    let serializer_source =
+        read_source(workspace.join("neo-core/src/smart_contract/binary_serializer.rs"));
+
+    let mut dictionary = VmOrderedDictionary::new();
+    dictionary.insert(3, 30);
+    dictionary.insert(1, 10);
+    dictionary.insert(2, 20);
+
+    assert!(
+        !dictionary_path.exists()
+            && !collections_module_path.exists()
+            && !vm_module.contains("pub mod collections")
+            && !vm_module.contains("OrderedDictionary"),
+        "neo-core should not keep a local VmOrderedDictionary facade under neo_vm"
+    );
+    assert_eq!(
+        dictionary
+            .iter()
+            .map(|(key, value)| (*key, *value))
+            .collect::<Vec<_>>(),
+        vec![(3, 30), (1, 10), (2, 20)],
+        "shared VmOrderedDictionary should preserve insertion order"
+    );
+    assert!(
+        map_source.contains("use neo_vm_rs::VmOrderedDictionary;")
+            && stack_item_source.contains("use neo_vm_rs::{StackValue, VmOrderedDictionary};"),
+        "local stack item map code should use neo-vm-rs VmOrderedDictionary directly"
+    );
+    assert!(
+        helper_source.contains("use neo_vm_rs::VmOrderedDictionary;")
+            && serializer_source.contains("neo_vm_rs::VmOrderedDictionary::new()"),
+        "smart-contract helpers should not allocate maps through the local ordered dictionary copy"
     );
 }
 
@@ -141,7 +519,6 @@ fn neo_core_vm_facade_only_reexports_opcode_from_neo_vm_rs() {
         "StackValue",
         "SyscallProvider",
         "VmContext",
-        "VmState",
         "interpret",
         "interop_hash",
         "syscall_arg_count",
@@ -418,21 +795,21 @@ fn workspace_script_bytes_use_neo_vm_rs_opcode_metadata() {
 }
 
 #[test]
-fn vm_state_byte_serialization_uses_explicit_local_mapping() {
+fn vm_state_byte_serialization_uses_neo_vm_rs_mapping() {
     let workspace = workspace_root();
-    let vm_state = fs::read_to_string(workspace.join("neo-core/src/neo_vm/vm_state.rs")).unwrap();
+    let vm_state_path = workspace.join("neo-core/src/neo_vm/vm_state.rs");
+    let vm_module = read_source(workspace.join("neo-core/src/neo_vm/mod.rs"));
+    let engine_module = read_source(workspace.join("neo-core/src/neo_vm/execution_engine/mod.rs"));
 
     assert!(
-        vm_state.contains("pub const fn to_byte"),
-        "VMState should expose an explicit byte mapping instead of relying on repr casts"
+        !vm_state_path.exists()
+            && !vm_module.contains("pub mod vm_state")
+            && !vm_module.contains("pub use vm_state::VMState"),
+        "neo-core should not keep a local VMState facade"
     );
     assert!(
-        vm_state.contains("pub const fn from_byte"),
-        "VMState should decode persisted bytes through one explicit local mapping"
-    );
-    assert!(
-        !vm_state.contains("self as u8"),
-        "VMState methods should not rely on the local enum representation"
+        engine_module.contains("use neo_vm_rs::{ExecutionEngineLimits, VmState as VMState};"),
+        "local execution engine internals should import VmState directly from neo-vm-rs"
     );
 
     for relative in [
@@ -462,6 +839,119 @@ fn vm_state_byte_serialization_uses_explicit_local_mapping() {
             );
         }
     }
+}
+
+#[test]
+fn non_vm_layers_import_shared_vm_scalars_directly() {
+    let workspace = workspace_root();
+    let mut offenders = Vec::new();
+
+    for root in [
+        workspace.join("neo-core/src"),
+        workspace.join("neo-core/tests"),
+        workspace.join("neo-rpc/src"),
+        workspace.join("neo-rpc/tests"),
+    ] {
+        let mut files = Vec::new();
+        collect_rs_files(&root, &mut files);
+        for path in files {
+            let relative = path.strip_prefix(&workspace).unwrap().to_string_lossy();
+            let normalized_relative = relative.replace('\\', "/");
+            if normalized_relative.starts_with("neo-core/src/neo_vm") {
+                continue;
+            }
+
+            let source = read_source(&path);
+            let imports_local_vm_state = source.contains("crate::neo_vm::vm_state::VMState")
+                || source.contains("crate::neo_vm::VMState")
+                || source.contains("neo_core::neo_vm::vm_state::VMState")
+                || source.contains("neo_core::neo_vm::VMState")
+                || contains_braced_neo_vm_import(&source, "crate::neo_vm::{", "VMState")
+                || contains_braced_neo_vm_import(&source, "neo_core::neo_vm::{", "VMState");
+            let imports_local_limits = source
+                .contains("crate::neo_vm::execution_engine_limits::ExecutionEngineLimits")
+                || source.contains("crate::neo_vm::ExecutionEngineLimits")
+                || source
+                    .contains("neo_core::neo_vm::execution_engine_limits::ExecutionEngineLimits")
+                || source.contains("neo_core::neo_vm::ExecutionEngineLimits")
+                || contains_braced_neo_vm_import(
+                    &source,
+                    "crate::neo_vm::{",
+                    "ExecutionEngineLimits",
+                )
+                || contains_braced_neo_vm_import(
+                    &source,
+                    "neo_core::neo_vm::{",
+                    "ExecutionEngineLimits",
+                );
+            let imports_local_exception_frames = source
+                .contains("crate::neo_vm::exception_handling_context::ExceptionHandlingContext")
+                || source
+                    .contains("crate::neo_vm::exception_handling_state::ExceptionHandlingState")
+                || source.contains(
+                    "neo_core::neo_vm::exception_handling_context::ExceptionHandlingContext",
+                )
+                || source
+                    .contains("neo_core::neo_vm::exception_handling_state::ExceptionHandlingState")
+                || source.contains("crate::neo_vm::ExceptionHandlingContext")
+                || source.contains("crate::neo_vm::ExceptionHandlingState")
+                || source.contains("neo_core::neo_vm::ExceptionHandlingContext")
+                || source.contains("neo_core::neo_vm::ExceptionHandlingState")
+                || contains_braced_neo_vm_import(
+                    &source,
+                    "crate::neo_vm::{",
+                    "ExceptionHandlingContext",
+                )
+                || contains_braced_neo_vm_import(
+                    &source,
+                    "crate::neo_vm::{",
+                    "ExceptionHandlingState",
+                )
+                || contains_braced_neo_vm_import(
+                    &source,
+                    "neo_core::neo_vm::{",
+                    "ExceptionHandlingContext",
+                )
+                || contains_braced_neo_vm_import(
+                    &source,
+                    "neo_core::neo_vm::{",
+                    "ExceptionHandlingState",
+                );
+            let imports_local_stack_item_type = source
+                .contains("crate::neo_vm::stack_item::stack_item_type::StackItemType")
+                || source.contains("crate::neo_vm::stack_item::StackItemType")
+                || source.contains("crate::neo_vm::StackItemType")
+                || source.contains("neo_core::neo_vm::stack_item::stack_item_type::StackItemType")
+                || source.contains("neo_core::neo_vm::stack_item::StackItemType")
+                || source.contains("neo_core::neo_vm::StackItemType")
+                || contains_braced_neo_vm_import(&source, "crate::neo_vm::{", "StackItemType")
+                || contains_braced_neo_vm_import(&source, "neo_core::neo_vm::{", "StackItemType")
+                || contains_braced_neo_vm_import(
+                    &source,
+                    "crate::neo_vm::stack_item::{",
+                    "StackItemType",
+                )
+                || contains_braced_neo_vm_import(
+                    &source,
+                    "neo_core::neo_vm::stack_item::{",
+                    "StackItemType",
+                );
+
+            if imports_local_vm_state
+                || imports_local_limits
+                || imports_local_exception_frames
+                || imports_local_stack_item_type
+            {
+                offenders.push(normalized_relative);
+            }
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "non-VM layers should import shared VM scalar types from neo_vm_rs directly: \
+         {offenders:?}"
+    );
 }
 
 #[test]
@@ -1064,7 +1554,8 @@ fn contract_management_persisted_contract_state_uses_neo_vm_rs_stack_value() {
         .expect("contract-management ContractState storage read section");
 
     assert!(
-        source.contains("use neo_vm_rs::StackValue;"),
+        source.contains("use neo_vm_rs::StackValue;")
+            || source.contains("use neo_vm_rs::{ExecutionEngineLimits, StackValue};"),
         "ContractManagement persisted ContractState storage should import neo_vm_rs::StackValue"
     );
     assert!(
@@ -1127,7 +1618,8 @@ fn native_pure_data_states_project_through_neo_vm_rs_stack_value() {
     )
     .unwrap();
     assert!(
-        transaction_state.contains("use neo_vm_rs::StackValue;"),
+        transaction_state.contains("use neo_vm_rs::StackValue;")
+            || transaction_state.contains("use neo_vm_rs::{StackValue, VmState as VMState};"),
         "TransactionState should import neo_vm_rs::StackValue directly for native data projection"
     );
     assert!(
@@ -1344,7 +1836,8 @@ fn native_pure_data_states_project_through_neo_vm_rs_stack_value() {
         .and_then(|tail| tail.split("/// The Policy native contract.").next())
         .expect("Policy WhitelistedContract section");
     assert!(
-        policy_contract.contains("use neo_vm_rs::StackValue;"),
+        policy_contract.contains("use neo_vm_rs::StackValue;")
+            || policy_contract.contains("use neo_vm_rs::{ExecutionEngineLimits, StackValue};"),
         "Policy WhitelistedContract should import neo_vm_rs::StackValue directly for \
          native policy data projection"
     );
@@ -1533,14 +2026,10 @@ fn neo_token_states_project_through_neo_vm_rs_stack_value() {
 #[test]
 fn neo_token_committee_payloads_use_neo_vm_rs_stack_value() {
     let workspace = workspace_root();
-    let committee = fs::read_to_string(
-        workspace.join("neo-core/src/smart_contract/native/neo_token/committee.rs"),
-    )
-    .unwrap();
-    let governance = fs::read_to_string(
-        workspace.join("neo-core/src/smart_contract/native/neo_token/governance.rs"),
-    )
-    .unwrap();
+    let committee =
+        read_source(workspace.join("neo-core/src/smart_contract/native/neo_token/committee.rs"));
+    let governance =
+        read_source(workspace.join("neo-core/src/smart_contract/native/neo_token/governance.rs"));
 
     assert!(
         committee.contains("BinarySerializer::deserialize_stack_value(&bytes)")
@@ -1601,10 +2090,8 @@ fn neo_token_committee_payloads_use_neo_vm_rs_stack_value() {
 #[test]
 fn token_management_states_project_through_neo_vm_rs_stack_value() {
     let workspace = workspace_root();
-    let source = fs::read_to_string(
-        workspace.join("neo-core/src/smart_contract/native/token_management/mod.rs"),
-    )
-    .unwrap();
+    let source =
+        read_source(workspace.join("neo-core/src/smart_contract/native/token_management/mod.rs"));
     let state_section = source
         .split("#[derive(Debug, Clone)]\npub struct TokenManagement")
         .next()
@@ -1782,28 +2269,62 @@ fn local_vm_docs_do_not_advertise_deleted_neo_vm_crate() {
 #[test]
 fn instruction_parsing_uses_neo_vm_rs_opcode_operand_metadata_directly() {
     let workspace = workspace_root();
-    let instruction =
-        fs::read_to_string(workspace.join("neo-core/src/neo_vm/instruction.rs")).unwrap();
+    let instruction_path = workspace.join("neo-core/src/neo_vm/instruction.rs");
+    let neo_vm_mod = read_source(workspace.join("neo-core/src/neo_vm/mod.rs"));
+    let script = read_source(workspace.join("neo-core/src/neo_vm/script.rs"));
+    let vm_error = read_source(workspace.join("neo-core/src/neo_vm/error.rs"));
+    let parsed = Instruction::parse(&[OpCode::JMP.byte(), 0x10], 0).expect("JMP parses");
+    let mut local_instruction_imports = Vec::new();
+
+    for root in [
+        workspace.join("neo-core/src"),
+        workspace.join("neo-core/tests"),
+        workspace.join("neo-rpc/src"),
+        workspace.join("neo-rpc/tests"),
+    ] {
+        let mut files = Vec::new();
+        collect_rs_files(&root, &mut files);
+        for path in files {
+            let relative = path.strip_prefix(&workspace).unwrap().to_string_lossy();
+            let normalized_relative = relative.replace('\\', "/");
+            let source = read_source(&path);
+            if source.contains("crate::neo_vm::instruction::Instruction")
+                || source.contains("neo_core::neo_vm::instruction::Instruction")
+                || contains_braced_neo_vm_import(&source, "crate::neo_vm::{", "Instruction")
+                || contains_braced_neo_vm_import(&source, "neo_core::neo_vm::{", "Instruction")
+                || contains_braced_neo_vm_import(&source, "super::{", "Instruction")
+            {
+                local_instruction_imports.push(normalized_relative);
+            }
+        }
+    }
 
     assert!(
-        instruction.contains("opcode.operand_size()"),
-        "Instruction parsing should use neo-vm-rs OpCode::operand_size metadata directly"
+        !instruction_path.exists()
+            && !neo_vm_mod.contains("pub mod instruction")
+            && !neo_vm_mod.contains("pub use instruction::Instruction"),
+        "neo-core should not keep a local Instruction facade"
     );
     assert!(
-        instruction.contains("opcode.operand_prefix()"),
-        "Instruction sizing should use neo-vm-rs OpCode::operand_prefix metadata directly"
+        local_instruction_imports.is_empty(),
+        "callers should import neo_vm_rs::Instruction directly: {local_instruction_imports:?}"
     );
     assert!(
-        !instruction.contains("struct OperandSizePrefix"),
-        "Instruction parsing should not keep a local operand-size wrapper"
+        script.contains("parse_script_instructions")
+            && !script.contains("let mut position = 0")
+            && !script.contains("while position < self.script.len()")
+            && !script.contains("parse_from_neo_io_reader")
+            && !script.contains("parse_from_reader"),
+        "local Script should delegate bulk bytecode parsing and validation to \
+         neo-vm-rs instead of keeping local instruction-walking loops"
     );
     assert!(
-        !instruction.contains("fn get_operand_size"),
-        "Instruction parsing should not keep a local operand-size shim"
+        vm_error.contains("impl From<neo_vm_rs::InstructionError> for VmError"),
+        "neo-core should map shared Instruction errors at the VM boundary"
     );
     assert!(
-        !instruction.contains("OpCode::PUSHDATA1 => 1 + 1 + operand_len"),
-        "Instruction sizing should not duplicate PUSHDATA prefix widths locally"
+        parsed.opcode() == OpCode::JMP && parsed.size() == 2 && parsed.operand_as::<i8>() == Ok(16),
+        "neo-vm-rs Instruction should expose the operand decoding used by local dispatch"
     );
 }
 
@@ -1828,13 +2349,19 @@ fn p2p_validation_uses_direct_neo_vm_rs_script_validation() {
         );
     }
 
-    let validator =
-        fs::read_to_string(workspace.join("neo-core/src/script_validation.rs")).unwrap_or_default();
+    let validator = read_source(workspace.join("neo-core/src/script_validation.rs"));
     assert!(
-        validator.contains("neo_vm_rs::OpCode")
-            && validator.contains("opcode.operand_size()")
-            && validator.contains("opcode.operand_prefix()"),
-        "script_validation should parse bytecode directly from neo-vm-rs opcode metadata"
+        validator.contains("pub use neo_vm_rs::{")
+            && validator.contains("parse_script_instructions")
+            && validator.contains("validate_script")
+            && validator.contains("validate_strict_script")
+            && validator.contains("ScriptInstruction")
+            && validator.contains("ValidatedScript")
+            && !validator.contains("opcode.operand_size()")
+            && !validator.contains("opcode.operand_prefix()")
+            && !validator.contains("Instruction::parse(script, position)"),
+        "neo-core script_validation should re-export neo-vm-rs validation instead of \
+         duplicating instruction parsing or opcode operand metadata"
     );
 }
 
@@ -2028,11 +2555,12 @@ fn stack_item_convert_to_boolean_reuses_neo_vm_rs_for_safe_sources_only() {
 }
 
 #[test]
-fn stack_item_type_byte_tags_use_neo_vm_rs_constants_without_repr_casts() {
+fn stack_item_type_facade_is_removed_and_byte_tags_use_neo_vm_rs() {
     let workspace = workspace_root();
-    let stack_item_type =
-        fs::read_to_string(workspace.join("neo-core/src/neo_vm/stack_item/stack_item_type.rs"))
-            .unwrap();
+    let stack_item_type_path = workspace.join("neo-core/src/neo_vm/stack_item/stack_item_type.rs");
+    let stack_item_mod =
+        fs::read_to_string(workspace.join("neo-core/src/neo_vm/stack_item/mod.rs")).unwrap();
+    let neo_vm_mod = fs::read_to_string(workspace.join("neo-core/src/neo_vm/mod.rs")).unwrap();
     let serializer =
         fs::read_to_string(workspace.join("neo-core/src/smart_contract/binary_serializer.rs"))
             .unwrap();
@@ -2040,13 +2568,17 @@ fn stack_item_type_byte_tags_use_neo_vm_rs_constants_without_repr_casts() {
         fs::read_to_string(workspace.join("neo-core/src/neo_vm/stack_item/stack_item.rs")).unwrap();
 
     assert!(
-        stack_item_type.contains("neo_vm_rs::NEOVM_STACK_ITEM_TYPE_INTEGER")
-            && stack_item_type.contains("neo_vm_rs::NEOVM_STACK_ITEM_TYPE_INTEROP_INTERFACE"),
-        "StackItemType byte tags should stay pinned to neo-vm-rs constants"
+        !stack_item_type_path.exists(),
+        "neo-rs should not keep a local StackItemType facade file"
     );
     assert!(
-        !stack_item_type.contains("self as u8"),
-        "StackItemType::to_byte should not rely on the local enum representation"
+        !stack_item_mod.contains("pub mod stack_item_type")
+            && !stack_item_mod.contains("pub use stack_item_type::StackItemType"),
+        "neo-rs stack_item module should not expose a local StackItemType facade"
+    );
+    assert!(
+        !neo_vm_mod.contains("StackItemType"),
+        "neo_vm should not re-export StackItemType; callers should import neo_vm_rs::StackItemType"
     );
     for cast in [
         "StackItemType::Any as u8",
@@ -2077,10 +2609,9 @@ fn size_primitive_lengths_reuse_neo_vm_rs_byte_string_rules() {
         fs::read_to_string(workspace.join("neo-core/src/neo_vm/jump_table/compound.rs")).unwrap();
 
     assert!(
-        compound.contains(".to_byte_string_bytes()")
-            && compound.contains(".map(|bytes| bytes.len())"),
-        "SIZE for primitive Integer/Boolean values should reuse neo-vm-rs byte-string \
-         length semantics"
+        compound.contains("neo_vm_rs::semantics::collections::size(&value)"),
+        "SIZE for primitive Integer/Boolean values should reuse neo-vm-rs collection \
+         semantics"
     );
     assert!(
         !compound.contains("minimal two's-complement encoded byte count"),
@@ -2809,8 +3340,7 @@ fn bitwise_opcodes_reuse_neo_vm_rs_i64_semantics_with_bigint_fallback() {
 #[test]
 fn isnull_reuses_neo_vm_rs_null_predicate() {
     let workspace = workspace_root();
-    let types =
-        fs::read_to_string(workspace.join("neo-core/src/neo_vm/jump_table/types.rs")).unwrap();
+    let types = read_source(workspace.join("neo-core/src/neo_vm/jump_table/types.rs"));
 
     assert!(
         types.contains("neo_vm_rs::semantics::comparison::is_null"),
@@ -3046,8 +3576,7 @@ fn historical_vm_bug_fixes_stay_guarded_at_neo_vm_rs_boundary() {
     )
     .unwrap();
     let oracle_contract =
-        fs::read_to_string(workspace.join("neo-core/src/smart_contract/native/oracle_contract.rs"))
-            .unwrap();
+        read_source(workspace.join("neo-core/src/smart_contract/native/oracle_contract.rs"));
     let notary =
         fs::read_to_string(workspace.join("neo-core/src/smart_contract/native/notary.rs")).unwrap();
     let contract_update = fs::read_to_string(
@@ -3065,9 +3594,9 @@ fn historical_vm_bug_fixes_stay_guarded_at_neo_vm_rs_boundary() {
         fs::read_to_string(workspace.join("neo-core/src/network/p2p/payloads/block.rs")).unwrap();
 
     assert!(
-        root_manifest.contains("rev = \"b45ece83ca57f7164c0ccd746632b595fce8469e\""),
-        "neo-vm-rs bug audit was performed against the pinned revision; re-audit old \
-         VM bug fixes before changing the dependency revision"
+        root_manifest.contains("neo-vm-rs = { path = \"../neo-vm-rs\" }"),
+        "neo-rs should consume the sibling neo-vm-rs crate while this cross-repo VM \
+         replacement is in progress"
     );
 
     // de5acd8f: ByteString/Buffer integer conversion must be signed little-endian
@@ -3095,46 +3624,74 @@ fn historical_vm_bug_fixes_stay_guarded_at_neo_vm_rs_boundary() {
         "C# Boolean.Memory is one byte even for false"
     );
 
-    // The pinned public ABI collection helpers do not yet cover the primitive
-    // SIZE/PICKITEM cases from bugs #4/#11, so neo-core must keep the runtime
-    // adapter for Integer/Boolean instead of routing those paths directly.
+    // The sibling neo-vm-rs public ABI collection helpers cover the primitive
+    // SIZE/PICKITEM cases from bugs #4/#11, so neo-core can route those paths
+    // through shared semantics instead of keeping a separate local table.
     assert_eq!(
         neo_vm_rs::semantics::collections::size(&StackValue::Integer(128)),
-        Err("SIZE: unsupported type".to_string())
+        Ok(2)
     );
     assert_eq!(
         neo_vm_rs::semantics::collections::size(&StackValue::Boolean(false)),
-        Err("SIZE: unsupported type".to_string())
+        Ok(1)
     );
     assert_eq!(
         neo_vm_rs::semantics::collections::pick_item(
             &StackValue::Integer(128),
             &StackValue::Integer(0)
         ),
-        Err("PICKITEM: unsupported types".to_string())
+        Ok(StackValue::Integer(128))
+    );
+    assert_eq!(
+        neo_vm_rs::semantics::collections::pick_item(
+            &StackValue::Integer(128),
+            &StackValue::Integer(-1)
+        ),
+        Err("PICKITEM: byte index out of range".to_string())
+    );
+    assert_eq!(
+        neo_vm_rs::semantics::collections::pick_item(
+            &StackValue::Integer(128),
+            &StackValue::Integer(2)
+        ),
+        Err("PICKITEM: byte index out of range".to_string())
     );
     assert_eq!(
         neo_vm_rs::semantics::collections::pick_item(
             &StackValue::Boolean(false),
             &StackValue::Integer(0)
         ),
-        Err("PICKITEM: unsupported types".to_string())
+        Ok(StackValue::Integer(0))
+    );
+    assert_eq!(
+        neo_vm_rs::semantics::collections::pick_item(
+            &StackValue::Boolean(false),
+            &StackValue::Integer(-1)
+        ),
+        Err("PICKITEM: byte index out of range".to_string())
+    );
+    assert_eq!(
+        neo_vm_rs::semantics::collections::pick_item(
+            &StackValue::Boolean(false),
+            &StackValue::Integer(1)
+        ),
+        Err("PICKITEM: byte index out of range".to_string())
     );
     assert!(
-        !compound.contains("neo_vm_rs::semantics::collections::size"),
-        "SIZE must not use neo-vm-rs public collection semantics until that API \
-         supports Integer and Boolean PrimitiveType.Size"
+        compound.contains("neo_vm_rs::semantics::collections::size"),
+        "SIZE should use neo-vm-rs public collection semantics now that it supports \
+         Integer and Boolean PrimitiveType.Size"
     );
     assert!(
-        compound.contains("StackItem::Integer(_) | StackItem::Boolean(_)"),
-        "SIZE must keep the local Integer/Boolean adapter for bug #11"
+        !compound.contains("stack_value_byte_string_len"),
+        "SIZE should not keep a second local primitive byte-length helper"
     );
     assert!(
         compound.contains("item @ (StackItem::Integer(_) | StackItem::Boolean(_))")
-            && compound
-                .contains("stack_value_byte_string_bytes(neo_vm_rs::StackValue::try_from(item)?)"),
-        "PICKITEM must keep the local primitive adapter for bug #4 Boolean/Integer spans \
-         while reusing neo-vm-rs byte conversion rules"
+            && compound.contains("neo_vm_rs::StackValue::try_from(item)?")
+            && compound.contains("neo_vm_rs::semantics::collections::pick_item"),
+        "PICKITEM should route primitive Boolean/Integer spans through neo-vm-rs \
+         collection semantics"
     );
     assert!(
         !compound.contains("if b { vec![1] } else { Vec::new() }"),
@@ -3173,6 +3730,27 @@ fn historical_vm_bug_fixes_stay_guarded_at_neo_vm_rs_boundary() {
     pick_false.emit_opcode(OpCode::PICKITEM);
     pick_false.emit_opcode(OpCode::RET);
     assert_eq!(execute_int(pick_false), BigInt::from(0));
+
+    let mut pick_int_negative = ScriptBuilder::new();
+    pick_int_negative.emit_push_int(128);
+    pick_int_negative.emit_push_int(-1);
+    pick_int_negative.emit_opcode(OpCode::PICKITEM);
+    pick_int_negative.emit_opcode(OpCode::RET);
+    assert_eq!(execute_state(pick_int_negative), VMState::FAULT);
+
+    let mut pick_int_out_of_range = ScriptBuilder::new();
+    pick_int_out_of_range.emit_push_int(128);
+    pick_int_out_of_range.emit_push_int(2);
+    pick_int_out_of_range.emit_opcode(OpCode::PICKITEM);
+    pick_int_out_of_range.emit_opcode(OpCode::RET);
+    assert_eq!(execute_state(pick_int_out_of_range), VMState::FAULT);
+
+    let mut pick_false_negative = ScriptBuilder::new();
+    pick_false_negative.emit_push_bool(false);
+    pick_false_negative.emit_push_int(-1);
+    pick_false_negative.emit_opcode(OpCode::PICKITEM);
+    pick_false_negative.emit_opcode(OpCode::RET);
+    assert_eq!(execute_state(pick_false_negative), VMState::FAULT);
 
     // Bug #10: ContractManifest StackValue projection must keep the same
     // C# JavaScriptEncoder.Default escaping as the old StackItem path.
@@ -3669,6 +4247,183 @@ fn local_vm_reference_counter_does_not_keep_unused_trait_shim() {
 }
 
 #[test]
+fn reference_graph_helpers_are_owned_by_neo_vm_rs() {
+    let workspace = workspace_root();
+    let vm_module = read_source(workspace.join("neo-core/src/neo_vm/mod.rs"));
+    let stack_item_module = read_source(workspace.join("neo-core/src/neo_vm/stack_item/mod.rs"));
+    let reference_counter = read_source(workspace.join("neo-core/src/neo_vm/reference_counter.rs"));
+
+    assert!(
+        !workspace
+            .join("neo-core/src/neo_vm/strongly_connected_components")
+            .exists()
+            && !vm_module.contains("pub mod strongly_connected_components"),
+        "neo-core should not keep a local strongly_connected_components facade"
+    );
+    assert!(
+        !workspace
+            .join("neo-core/src/neo_vm/stack_item/stack_item_vertex.rs")
+            .exists()
+            && !stack_item_module.contains("pub mod stack_item_vertex")
+            && !stack_item_module.contains("pub use stack_item_vertex"),
+        "compound stack item id allocation should not keep a local stack_item_vertex facade"
+    );
+    assert!(
+        reference_counter.contains("use neo_vm_rs::Tarjan;")
+            && !reference_counter
+                .contains("crate::neo_vm::strongly_connected_components::Tarjan::new()"),
+        "ReferenceCounter should use the shared Tarjan implementation directly"
+    );
+
+    for relative in [
+        "neo-core/src/neo_vm/stack_item/array.rs",
+        "neo-core/src/neo_vm/stack_item/buffer.rs",
+        "neo-core/src/neo_vm/stack_item/map.rs",
+        "neo-core/src/neo_vm/stack_item/struct_item.rs",
+    ] {
+        let source = read_source(workspace.join(relative));
+        assert!(
+            source.contains("next_stack_item_id")
+                && !source.contains("stack_item_vertex::next_stack_item_id"),
+            "{relative} should allocate compound ids through neo-vm-rs directly"
+        );
+    }
+
+    let mut shared_tarjan = neo_vm_rs::Tarjan::new();
+    shared_tarjan.add_edge(1, 2);
+    shared_tarjan.add_edge(2, 1);
+    assert_eq!(shared_tarjan.find_components().len(), 1);
+}
+
+#[test]
+fn local_stack_item_view_shims_are_removed() {
+    let workspace = workspace_root();
+    let stack_item_module = read_source(workspace.join("neo-core/src/neo_vm/stack_item/mod.rs"));
+    let compound_jump_table =
+        read_source(workspace.join("neo-core/src/neo_vm/jump_table/compound.rs"));
+
+    for relative in [
+        "neo-core/src/neo_vm/stack_item/primitive_type.rs",
+        "neo-core/src/neo_vm/stack_item/compound_type.rs",
+    ] {
+        assert!(
+            !workspace.join(relative).exists(),
+            "{relative} should be removed; VM value behavior belongs in StackItem or neo-vm-rs"
+        );
+    }
+
+    for symbol in [
+        "pub mod primitive_type",
+        "pub mod compound_type",
+        "PrimitiveTypeExt",
+        "CompoundTypeExt",
+        "PrimitiveType",
+        "CompoundType",
+    ] {
+        assert!(
+            !stack_item_module.contains(symbol),
+            "stack_item facade should not re-export local C# view shim {symbol}"
+        );
+    }
+
+    assert!(
+        !compound_jump_table.contains("as_primitive()")
+            && !compound_jump_table.contains("primitive_type::PrimitiveTypeExt"),
+        "compound opcode handlers should use StackItem/neo-vm-rs conversion helpers directly"
+    );
+}
+
+#[test]
+fn unused_primitive_stack_item_wrappers_are_removed() {
+    let workspace = workspace_root();
+    let stack_item_module = read_source(workspace.join("neo-core/src/neo_vm/stack_item/mod.rs"));
+    let stack_item = read_source(workspace.join("neo-core/src/neo_vm/stack_item/stack_item.rs"));
+
+    for relative in [
+        "neo-core/src/neo_vm/stack_item/boolean.rs",
+        "neo-core/src/neo_vm/stack_item/integer.rs",
+        "neo-core/src/neo_vm/stack_item/null.rs",
+    ] {
+        assert!(
+            !workspace.join(relative).exists(),
+            "{relative} should be removed; primitive values should use StackItem or \
+             neo_vm_rs::StackValue directly"
+        );
+    }
+
+    for symbol in [
+        "pub mod boolean",
+        "pub mod integer",
+        "pub mod null",
+        "pub use boolean::Boolean",
+        "pub use integer::Integer",
+        "pub use null::Null",
+    ] {
+        assert!(
+            !stack_item_module.contains(symbol),
+            "stack_item facade should not expose unused primitive wrapper {symbol}"
+        );
+    }
+
+    assert!(
+        !stack_item.contains("stack_item::integer::Integer::MAX_SIZE"),
+        "StackItem should keep the Neo integer byte limit locally instead of depending on \
+         an unused Integer wrapper"
+    );
+}
+
+#[test]
+fn unused_interop_interface_stack_item_wrapper_is_removed() {
+    let workspace = workspace_root();
+    let stack_item_module = read_source(workspace.join("neo-core/src/neo_vm/stack_item/mod.rs"));
+    let stack_item = read_source(workspace.join("neo-core/src/neo_vm/stack_item/stack_item.rs"));
+
+    assert!(
+        !workspace
+            .join("neo-core/src/neo_vm/stack_item/interop_interface.rs")
+            .exists()
+            && !stack_item_module.contains("pub mod interop_interface"),
+        "neo-core should not keep the unused InteropInterfaceItem wrapper module"
+    );
+    assert!(
+        stack_item.contains("pub trait InteropInterface")
+            && stack_item_module.contains("pub use stack_item::InteropInterface"),
+        "the live host-runtime InteropInterface trait should remain in StackItem"
+    );
+}
+
+#[test]
+fn nep11_token_ordering_does_not_use_local_bytestring_wrapper() {
+    let workspace = workspace_root();
+    let stack_item_module = read_source(workspace.join("neo-core/src/neo_vm/stack_item/mod.rs"));
+    let balance_key = read_source(
+        workspace.join("neo-core/src/tokens_tracker/trackers/nep_11/nep11_balance_key.rs"),
+    );
+    let transfer_key = read_source(
+        workspace.join("neo-core/src/tokens_tracker/trackers/nep_11/nep11_transfer_key.rs"),
+    );
+    let nep11_module =
+        read_source(workspace.join("neo-core/src/tokens_tracker/trackers/nep_11/mod.rs"));
+
+    assert!(
+        !workspace
+            .join("neo-core/src/neo_vm/stack_item/byte_string.rs")
+            .exists()
+            && !stack_item_module.contains("pub mod byte_string")
+            && !stack_item_module.contains("pub use byte_string::ByteString"),
+        "neo-core should not keep a local ByteString wrapper facade"
+    );
+    assert!(
+        !balance_key.contains("ByteString::new")
+            && !transfer_key.contains("ByteString::new")
+            && balance_key.contains("token_id_integer")
+            && transfer_key.contains("token_id_integer")
+            && nep11_module.contains("BigInt::from_signed_bytes_le"),
+        "NEP-11 token ordering should use direct signed little-endian token decoding"
+    );
+}
+
+#[test]
 fn local_vm_facade_does_not_keep_unused_debugger_module() {
     let workspace = workspace_root();
     let vm_module = fs::read_to_string(workspace.join("neo-core/src/neo_vm/mod.rs")).unwrap();
@@ -3782,7 +4537,7 @@ fn rpc_final_state_models_use_neo_vm_rs_vmstate_directly() {
         "RPC VM-state parsing should return neo_vm_rs::VmState directly"
     );
     assert!(
-        helper.contains("VmState::Halt") && helper.contains("VmState::Fault"),
+        helper.contains("final_name()"),
         "RPC final-state parsing must map HALT/FAULT through neo-vm-rs"
     );
     assert!(
@@ -3801,16 +4556,15 @@ fn rpc_server_final_state_formatting_uses_neo_vm_rs_boundary() {
         fs::read_to_string(workspace.join("neo-rpc/src/server/smart_contract/helpers.rs")).unwrap();
 
     assert!(
-        helper.contains("use neo_vm_rs::VmState"),
-        "server smart-contract helpers should use neo_vm_rs::VmState for final RPC VM states"
+        helper.contains(".final_name()"),
+        "server smart-contract helpers should use neo-vm-rs final-state helpers"
     );
     assert!(
         helper.contains("pub(super) fn final_rpc_vm_state_string"),
         "server smart-contract helpers should centralize final RPC VM-state formatting"
     );
     assert!(
-        helper.contains("neo_vm_rs::VmState::try_from(state)")
-            || helper.contains("RpcVmState::try_from(state)"),
+        helper.contains(".final_name()"),
         "server final-state formatting should project local runtime VMState through \
          neo-vm-rs final-state semantics"
     );
@@ -3988,6 +4742,13 @@ fn collect_rs_files(dir: &Path, files: &mut Vec<PathBuf>) {
             files.push(path);
         }
     }
+}
+
+fn read_source(path: impl AsRef<Path>) -> String {
+    fs::read_to_string(path)
+        .unwrap()
+        .replace("\r\n", "\n")
+        .replace('\r', "\n")
 }
 
 fn contains_neo_core_opcode_import(source: &str) -> bool {
@@ -4197,6 +4958,14 @@ fn execute_int(builder: ScriptBuilder) -> BigInt {
     assert_eq!(state, VMState::HALT);
 
     engine.result_stack().peek(0).unwrap().as_int().unwrap()
+}
+
+fn execute_state(builder: ScriptBuilder) -> VMState {
+    let mut engine = ExecutionEngine::new(None);
+    engine
+        .load_script(Script::new_relaxed(builder.to_array()), -1, 0)
+        .unwrap();
+    engine.execute()
 }
 
 fn execute_bytes(builder: ScriptBuilder) -> Vec<u8> {

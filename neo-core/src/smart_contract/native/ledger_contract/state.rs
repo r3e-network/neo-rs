@@ -1,12 +1,12 @@
 //! Ledger contract state types and serialization helpers.
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::neo_io::{BinaryWriter, MemoryReader, Serializable};
-use crate::neo_vm::vm_state::VMState;
 use crate::network::p2p::payloads::transaction::{Transaction, MAX_TRANSACTION_SIZE};
 use crate::smart_contract::native::{
     hash_index_state::HashIndexState, trimmed_block::TrimmedBlock,
 };
 use crate::UInt256;
+use neo_vm_rs::VmState as VMState;
 use serde::{Deserialize, Serialize};
 
 const RECORD_KIND_TRANSACTION: u8 = 0x01;

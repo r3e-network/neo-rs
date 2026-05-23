@@ -1,16 +1,22 @@
 //! Count storage entries at a specific state-root for a given native contract id.
 //! Usage: count_state_at_root <state_root_db_path> <root_hash_hex> <contract_id> [prefix_byte]
-#![cfg(feature = "rocksdb")]
 
+#[cfg(feature = "rocksdb")]
 use neo_core::persistence::providers::RocksDBStoreProvider;
+#[cfg(feature = "rocksdb")]
 use neo_core::persistence::{i_store_provider::IStoreProvider, StorageConfig};
+#[cfg(feature = "rocksdb")]
 use neo_core::state_service::state_store::{
     SnapshotBackedStateStoreBackend, StateServiceSettings, StateStore,
 };
+#[cfg(feature = "rocksdb")]
 use neo_core::UInt256;
+#[cfg(feature = "rocksdb")]
 use std::path::PathBuf;
+#[cfg(feature = "rocksdb")]
 use std::sync::Arc;
 
+#[cfg(feature = "rocksdb")]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
     let path = args.next().ok_or("missing state root db path")?;
@@ -79,4 +85,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+#[cfg(not(feature = "rocksdb"))]
+fn main() {
+    eprintln!("count_state_at_root requires the neo-core `rocksdb` feature.");
 }

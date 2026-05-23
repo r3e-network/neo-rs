@@ -7,8 +7,8 @@
 use crate::neo_vm::error::{VmError, VmResult};
 use crate::neo_vm::execution_context::ExecutionContext;
 use crate::neo_vm::execution_engine::ExecutionEngine;
-use crate::neo_vm::instruction::Instruction;
 use crate::smart_contract::call_flags::CallFlags;
+use neo_vm_rs::Instruction;
 use std::collections::HashMap;
 use std::str;
 

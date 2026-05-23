@@ -3,7 +3,7 @@
 use neo_core::ledger::{Block, BlockHeader};
 use neo_core::neo_ledger::ApplicationExecuted;
 use neo_core::neo_system::NeoSystem;
-use neo_core::neo_vm::{StackItem, VMState};
+use neo_core::neo_vm::StackItem;
 use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::transaction::Transaction;
 use neo_core::network::p2p::payloads::witness::Witness;
@@ -17,6 +17,7 @@ use neo_core::tokens_tracker::{
     find_prefix, Nep17Tracker, Nep17TransferKey, TokenTransfer, TokenTransferKeyView, Tracker,
 };
 use neo_core::{UInt160, WitnessScope};
+use neo_vm_rs::VmState as VMState;
 use num_bigint::BigInt;
 use std::sync::Arc;
 

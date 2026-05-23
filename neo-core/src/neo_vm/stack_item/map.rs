@@ -4,12 +4,12 @@
 //!
 //! This module provides the Map stack item implementation used in the Neo VM.
 
-use crate::neo_vm::collections::VmOrderedDictionary;
 use crate::neo_vm::error::{VmError, VmResult};
 use crate::neo_vm::reference_counter::{CompoundParent, ReferenceCounter};
-use crate::neo_vm::stack_item::stack_item_type::StackItemType;
-use crate::neo_vm::stack_item::stack_item_vertex::next_stack_item_id;
 use crate::neo_vm::stack_item::StackItem;
+use neo_vm_rs::next_stack_item_id;
+use neo_vm_rs::StackItemType;
+use neo_vm_rs::VmOrderedDictionary;
 use parking_lot::Mutex;
 use std::sync::Arc;
 

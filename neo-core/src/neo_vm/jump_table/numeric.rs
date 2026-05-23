@@ -6,9 +6,9 @@ use crate::neo_vm::error::VmError;
 use crate::neo_vm::error::VmResult;
 use crate::neo_vm::execution_context::ExecutionContext;
 use crate::neo_vm::execution_engine::ExecutionEngine;
-use crate::neo_vm::instruction::Instruction;
 use crate::neo_vm::jump_table::JumpTable;
 use crate::neo_vm::stack_item::StackItem;
+use neo_vm_rs::Instruction;
 use neo_vm_rs::{OpCode, StackValue};
 use num_bigint::BigInt;
 use num_traits::{One, Signed, ToPrimitive, Zero};
@@ -291,7 +291,9 @@ fn pow(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let exponent_i32 = b
         .to_i32()
         .ok_or_else(|| VmError::invalid_operation_msg("Exponent too large"))?;
-    limits.assert_shift(exponent_i32)?;
+    limits
+        .assert_shift(exponent_i32)
+        .map_err(VmError::invalid_operation_msg)?;
 
     let result = match (a.to_i64(), b.to_i64()) {
         (Some(base), Some(exponent))
@@ -317,7 +319,9 @@ fn shl(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let shift_i32 = b
         .to_i32()
         .ok_or_else(|| VmError::invalid_operation_msg("Shift amount too large"))?;
-    limits.assert_shift(shift_i32)?;
+    limits
+        .assert_shift(shift_i32)
+        .map_err(VmError::invalid_operation_msg)?;
 
     if shift_i32 == 0 {
         return ctx.push(StackItem::from_int(a));
@@ -348,7 +352,9 @@ fn shr(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let shift_i32 = b
         .to_i32()
         .ok_or_else(|| VmError::invalid_operation_msg("Shift amount too large"))?;
-    limits.assert_shift(shift_i32)?;
+    limits
+        .assert_shift(shift_i32)
+        .map_err(VmError::invalid_operation_msg)?;
 
     if shift_i32 == 0 {
         return ctx.push(StackItem::from_int(a));

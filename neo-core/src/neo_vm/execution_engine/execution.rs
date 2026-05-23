@@ -2,7 +2,8 @@
 // execution.rs - Main execution loop and instruction execution
 //
 
-use super::{ExecutionEngine, Instruction, StackItem, VMState, VmError, VmResult};
+use super::{ExecutionEngine, StackItem, VMState, VmError, VmResult};
+use neo_vm_rs::Instruction;
 
 impl ExecutionEngine {
     /// Starts execution of the VM.

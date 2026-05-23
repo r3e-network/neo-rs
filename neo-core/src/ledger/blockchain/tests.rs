@@ -12,7 +12,6 @@ mod tests {
         StateRoot, VerifyResult, STATE_SERVICE_CATEGORY,
     };
     use crate::neo_io::BinaryWriter;
-    use crate::neo_vm::execution_engine_limits::ExecutionEngineLimits;
     use crate::network::p2p::payloads::extensible_payload::ExtensiblePayload;
     use crate::network::p2p::payloads::witness::Witness as PayloadWitness;
     use crate::network::p2p::{
@@ -36,6 +35,7 @@ mod tests {
     use crate::wallets::KeyPair;
     use crate::WitnessScope;
     use crate::{neo_io::Serializable, NeoSystem, ProtocolSettings, UInt160, UInt256};
+    use neo_vm_rs::ExecutionEngineLimits;
     use neo_vm_rs::OpCode;
     use num_bigint::BigInt;
     use tokio::time::{sleep, timeout, Duration};

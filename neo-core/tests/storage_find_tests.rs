@@ -1,4 +1,3 @@
-use neo_core::neo_vm::execution_engine_limits::ExecutionEngineLimits;
 use neo_core::neo_vm::StackItem;
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
@@ -10,6 +9,7 @@ use neo_core::smart_contract::storage_context::StorageContext;
 use neo_core::smart_contract::storage_item::StorageItem;
 use neo_core::smart_contract::storage_key::StorageKey;
 use neo_core::smart_contract::trigger_type::TriggerType;
+use neo_vm_rs::ExecutionEngineLimits;
 use std::sync::Arc;
 
 #[test]

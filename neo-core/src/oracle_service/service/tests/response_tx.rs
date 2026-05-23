@@ -1,7 +1,6 @@
 use super::super::{OracleService, OracleServiceSettings};
 use crate::cryptography::{ECCurve, ECPoint, Secp256r1Crypto};
 use crate::neo_io::{BinaryWriter, Serializable};
-use crate::neo_vm::VMState;
 use crate::network::p2p::payloads::{
     OracleResponse, OracleResponseCode, Signer, Transaction, Witness,
 };
@@ -11,6 +10,7 @@ use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::native::{LedgerContract, OracleRequest};
 use crate::smart_contract::StorageItem;
 use crate::{UInt160, UInt256, WitnessScope};
+use neo_vm_rs::VmState as VMState;
 
 fn sample_point(byte: u8) -> ECPoint {
     let mut private_key = [0u8; 32];
@@ -92,7 +92,7 @@ fn create_response_tx_matches_csharp_fee_math() {
         .expect("response tx");
 
     assert_eq!(166, tx.size());
-    // Post-fix values (commit 4f599eb2 corrected 30× cpu_fee undercharge to match C#).
+    // Post-fix values (commit 4f599eb2 corrected 30Ã— cpu_fee undercharge to match C#).
     assert_eq!(2_198_650, tx.network_fee());
     assert_eq!(97_801_350, tx.system_fee());
 

@@ -4,7 +4,7 @@
 
 use neo_core::hardfork::HardforkManager;
 use neo_core::ledger::{create_genesis_block, Block, BlockHeader};
-use neo_core::neo_vm::{ExecutionEngineLimits, StackItem};
+use neo_core::neo_vm::StackItem;
 use neo_core::network::p2p::payloads::{NotaryAssisted, Signer, Transaction, TransactionAttribute};
 use neo_core::persistence::DataCache;
 use neo_core::persistence::IReadOnlyStoreGeneric;
@@ -21,6 +21,7 @@ use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::smart_contract::{Contract, StorageItem, StorageKey};
 use neo_core::wallets::KeyPair;
 use neo_core::{IVerifiable, Result as CoreResult, UInt160, UInt256, WitnessScope};
+use neo_vm_rs::ExecutionEngineLimits;
 use neo_vm_rs::OpCode;
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};

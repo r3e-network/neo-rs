@@ -155,7 +155,7 @@ impl NeoToken {
             }
             records.push((index, item.to_bigint()));
         }
-        records.sort_by(|a, b| b.0.cmp(&a.0));
+        records.sort_by_key(|entry| std::cmp::Reverse(entry.0));
         records
     }
 }

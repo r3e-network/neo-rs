@@ -194,8 +194,14 @@ impl ApplicationEngine {
             .interop_service_mut()
             .ok_or_else(|| VmError::invalid_operation_msg("Interop service not configured"))?;
         let hash = interop_service.register_host_descriptor(name, price, call_flags)?;
-        self.interop_handlers
-            .insert(hash, HostInteropHandler { price, handler });
+        self.interop_handlers.insert(
+            hash,
+            HostInteropHandler {
+                price,
+                required_call_flags: call_flags,
+                handler,
+            },
+        );
         Ok(())
     }
 

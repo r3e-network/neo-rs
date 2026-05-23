@@ -8,7 +8,6 @@
 //
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
-use crate::neo_vm::vm_state::VMState;
 use crate::script_builder::ScriptBuilder;
 use crate::{
     persistence::data_cache::DataCache,
@@ -22,6 +21,7 @@ use crate::{
 };
 use neo_primitives::UInt160;
 use neo_vm_rs::OpCode;
+use neo_vm_rs::VmState as VMState;
 use num_traits::ToPrimitive;
 use std::sync::Arc;
 

@@ -3,7 +3,7 @@
 use crate::cryptography::crypto_utils::NeoHash;
 use crate::hardfork::Hardfork;
 use crate::neo_vm::stack_item::{Array, Map, Struct};
-use crate::neo_vm::{OrderedDictionary, StackItem, VMState};
+use crate::neo_vm::StackItem;
 use crate::smart_contract::application_engine::{
     ApplicationEngine, MAX_NOTIFICATION_COUNT, MAX_NOTIFICATION_SIZE,
 };
@@ -12,6 +12,8 @@ use crate::smart_contract::i_interoperable::IInteroperable;
 use crate::smart_contract::notify_event_args::NotifyEventArgs;
 use crate::smart_contract::trigger_type::TriggerType;
 use crate::UInt160;
+use neo_vm_rs::VmOrderedDictionary;
+use neo_vm_rs::VmState as VMState;
 use num_traits::ToPrimitive;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
@@ -419,7 +421,7 @@ fn clone_stack_item_as_immutable(
             if let Some(existing) = seen.get(&key) {
                 return Ok(existing.clone());
             }
-            let cloned_map = Map::new_untracked(OrderedDictionary::new());
+            let cloned_map = Map::new_untracked(VmOrderedDictionary::new());
             let cloned_item = StackItem::Map(cloned_map.clone());
             seen.insert(key, cloned_item.clone());
             for (entry_key, entry_value) in map.items().iter() {

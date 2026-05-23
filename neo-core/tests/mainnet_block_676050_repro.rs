@@ -316,7 +316,7 @@ fn replay_block_676050_debug() {
         // Both txs HALT on mainnet — if either FAULTs, we have a divergence
         assert_eq!(
             vm_state,
-            neo_core::neo_vm::VMState::HALT,
+            neo_vm_rs::VmState::HALT,
             "tx{} must HALT (gas={gas})",
             idx,
         );

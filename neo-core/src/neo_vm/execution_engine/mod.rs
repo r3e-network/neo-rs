@@ -64,13 +64,13 @@ use crate::neo_vm::error::VmError;
 use crate::neo_vm::error::VmResult;
 use crate::neo_vm::evaluation_stack::EvaluationStack;
 use crate::neo_vm::execution_context::ExecutionContext;
-use crate::neo_vm::instruction::Instruction;
 use crate::neo_vm::interop_service::{InteropHost, InteropService};
 use crate::neo_vm::jump_table::JumpTable;
 use crate::neo_vm::reference_counter::ReferenceCounter;
 use crate::neo_vm::script::Script;
 use crate::neo_vm::stack_item::StackItem;
 use crate::smart_contract::call_flags::CallFlags;
+use neo_vm_rs::Instruction;
 
 use std::convert::TryFrom;
 
@@ -190,8 +190,7 @@ impl HostPtr {
 /// Value is in fractional GAS units where 1 GAS = 100_000_000 (10^8)
 pub const DEFAULT_GAS_LIMIT: u64 = 20_0000_0000; // 20 GAS
 
-pub use crate::neo_vm::execution_engine_limits::ExecutionEngineLimits;
-pub use crate::neo_vm::vm_state::VMState;
+use neo_vm_rs::{ExecutionEngineLimits, VmState as VMState};
 
 /// The execution engine for the Neo VM.
 pub struct ExecutionEngine {

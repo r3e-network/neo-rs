@@ -1,4 +1,3 @@
-use neo_core::neo_vm::ExecutionEngineLimits;
 use neo_core::network::p2p::payloads::{signer::Signer, transaction::Transaction};
 use neo_core::persistence::DataCache;
 use neo_core::script_builder::ScriptBuilder;
@@ -16,6 +15,7 @@ use neo_core::smart_contract::IInteroperable;
 use neo_core::wallets::KeyPair;
 use neo_core::witness::Witness;
 use neo_core::{IVerifiable, UInt160, WitnessScope};
+use neo_vm_rs::ExecutionEngineLimits;
 use neo_vm_rs::OpCode;
 use num_bigint::BigInt;
 use num_traits::Zero;

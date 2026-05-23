@@ -13,8 +13,7 @@ use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
 use crate::hardfork::Hardfork;
 use crate::ledger::Block;
-use crate::neo_vm::vm_state::VMState;
-use crate::neo_vm::{ExecutionEngineLimits, StackItem};
+use crate::neo_vm::StackItem;
 use crate::network::p2p::payloads::transaction_attribute::TransactionAttribute;
 #[cfg(test)]
 use crate::network::p2p::payloads::Transaction;
@@ -29,6 +28,7 @@ use crate::smart_contract::ContractParameterType;
 use crate::smart_contract::IInteroperable;
 use crate::smart_contract::{StorageItem, StorageKey};
 use crate::{UInt160, UInt256};
+use neo_vm_rs::{ExecutionEngineLimits, VmState as VMState};
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 

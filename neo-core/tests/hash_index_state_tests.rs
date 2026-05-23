@@ -1,7 +1,7 @@
-use neo_core::neo_vm::execution_engine_limits::ExecutionEngineLimits;
 use neo_core::smart_contract::native::hash_index_state::HashIndexState;
 use neo_core::smart_contract::BinarySerializer;
 use neo_core::UInt256;
+use neo_vm_rs::ExecutionEngineLimits;
 use neo_vm_rs::StackValue;
 
 #[test]

@@ -390,7 +390,7 @@ impl Serializable for NefFile {
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
-        use crate::neo_vm::ExecutionEngineLimits;
+        use neo_vm_rs::ExecutionEngineLimits;
 
         writer.write_u32(Self::MAGIC)?;
 
@@ -449,7 +449,7 @@ impl Serializable for NefFile {
     }
 
     fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
-        use crate::neo_vm::ExecutionEngineLimits;
+        use neo_vm_rs::ExecutionEngineLimits;
 
         let start_position = reader.position();
 

@@ -1,3 +1,5 @@
+#![cfg(feature = "runtime")]
+
 use neo_core::ledger::{BlockchainCommand, Import};
 use neo_core::network::p2p::helper::get_sign_data_vec;
 use neo_core::network::p2p::payloads::{block::Block, header::Header};

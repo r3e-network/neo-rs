@@ -4,8 +4,8 @@ use crate::neo_vm::error::VmError;
 use crate::neo_vm::error::VmResult;
 use crate::neo_vm::execution_context::ExecutionContext;
 use crate::neo_vm::execution_engine::ExecutionEngine;
-use crate::neo_vm::instruction::Instruction;
 use crate::neo_vm::jump_table::JumpTable;
+use neo_vm_rs::Instruction;
 use neo_vm_rs::OpCode;
 
 /// Helper to get current context or return error.

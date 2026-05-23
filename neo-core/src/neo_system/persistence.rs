@@ -18,7 +18,6 @@ use crate::error::{CoreError, CoreResult};
 use crate::events::PluginEvent;
 use crate::ledger::block::Block as LedgerBlock;
 use crate::ledger::blockchain_application_executed::ApplicationExecuted;
-use crate::neo_vm::vm_state::VMState;
 use crate::network::p2p::payloads::block::Block;
 use crate::persistence::data_cache::{
     clear_storage_watch_context, set_storage_watch_context, DataCache, DataCacheConfig,
@@ -35,6 +34,7 @@ use crate::smart_contract::native::ledger_contract::{
 use crate::smart_contract::trigger_type::TriggerType;
 use crate::smart_contract::{StorageItem, StorageKey};
 use crate::UInt256;
+use neo_vm_rs::VmState as VMState;
 use tracing::{debug, info, warn};
 
 #[derive(Default)]

@@ -5,7 +5,6 @@ use neo_core::big_decimal::BigDecimal;
 use neo_core::cryptography::{ECCurve, ECPoint};
 use neo_core::ledger::{RelayResult, VerifyResult};
 use neo_core::neo_system::TransactionRouterMessage;
-use neo_core::neo_vm::vm_state::VMState;
 use neo_core::network::p2p::payloads::conflicts::Conflicts;
 use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::transaction::Transaction;
@@ -29,6 +28,7 @@ use neo_core::wallets::{
 };
 use neo_core::{UInt160, UInt256, WitnessScope};
 use neo_vm_rs::OpCode;
+use neo_vm_rs::VmState as VMState;
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
 use serde_json::{json, Map, Value};

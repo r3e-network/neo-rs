@@ -7,7 +7,7 @@
 use crate::cryptography::Crypto;
 use crate::error::{CoreError, CoreError as Error, CoreResult as Result};
 use crate::hardfork::Hardfork;
-use crate::neo_vm::{ExecutionEngineLimits, StackItem};
+use crate::neo_vm::StackItem;
 use crate::network::p2p::payloads::{Transaction, TransactionAttribute, TransactionAttributeType};
 use crate::persistence::i_read_only_store::IReadOnlyStoreGeneric;
 use crate::persistence::DataCache;
@@ -26,6 +26,7 @@ use crate::smart_contract::Contract;
 use crate::smart_contract::ContractParameterType;
 use crate::smart_contract::StorageItem;
 use crate::UInt160;
+use neo_vm_rs::ExecutionEngineLimits;
 use neo_vm_rs::StackValue;
 use num_bigint::BigInt;
 use num_traits::{Signed, ToPrimitive, Zero};

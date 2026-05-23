@@ -294,11 +294,9 @@ fn stdlib_deserialize_returns_stack_item_shape_for_any_results() {
         StackItem::from_int(1),
         StackItem::from_byte_string(b"neo".to_vec()),
     ]);
-    let encoded = BinarySerializer::serialize(
-        &original,
-        &neo_core::neo_vm::ExecutionEngineLimits::default(),
-    )
-    .expect("serialize array");
+    let encoded =
+        BinarySerializer::serialize(&original, &neo_vm_rs::ExecutionEngineLimits::default())
+            .expect("serialize array");
 
     let mut sb = ScriptBuilder::new();
     emit_stdlib_call(

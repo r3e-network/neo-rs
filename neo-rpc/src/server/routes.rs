@@ -752,7 +752,6 @@ mod tests {
     use crate::server::rpc_server_settings::RpcServerConfig;
     use neo_core::neo_io::BinaryWriter;
     use neo_core::neo_system::NeoSystem;
-    use neo_core::neo_vm::vm_state::VMState;
     use neo_core::network::p2p::helper::get_sign_data_vec;
     use neo_core::network::p2p::payloads::signer::Signer;
     use neo_core::network::p2p::payloads::transaction::Transaction;
@@ -763,6 +762,7 @@ mod tests {
     use neo_core::wallets::KeyPair;
     use neo_core::WitnessScope;
     use neo_vm_rs::OpCode;
+    use neo_vm_rs::VmState as VMState;
     use parking_lot::RwLock;
     use std::sync::Arc;
 

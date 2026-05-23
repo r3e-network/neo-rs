@@ -5,7 +5,6 @@
 
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::hardfork::Hardfork;
-use crate::neo_vm::execution_engine_limits::ExecutionEngineLimits;
 use crate::neo_vm::StackItem;
 use crate::persistence::{DataCache, SeekDirection};
 use crate::smart_contract::application_engine::ApplicationEngine;
@@ -16,6 +15,7 @@ use crate::smart_contract::native::{LedgerContract, NativeContract, NativeMethod
 use crate::smart_contract::storage_key::StorageKey;
 use crate::smart_contract::ContractParameterType;
 use crate::{ECCurve, ECPoint, UInt160};
+use neo_vm_rs::ExecutionEngineLimits;
 use neo_vm_rs::StackValue;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;

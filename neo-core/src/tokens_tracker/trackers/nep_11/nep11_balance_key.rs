@@ -3,11 +3,10 @@
 //! Storage key for NEP-11 (NFT) balances.
 
 use super::super::super::extensions::bytes_var_size;
+use super::token_id_integer;
 use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
-use crate::neo_vm::stack_item::ByteString;
 use crate::UInt160;
 use num_bigint::BigInt;
-use num_traits::Zero;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 
@@ -33,9 +32,7 @@ impl Nep11BalanceKey {
     }
 
     fn token_integer(&self) -> BigInt {
-        ByteString::new(self.token.clone())
-            .to_integer()
-            .unwrap_or_else(|_| BigInt::zero())
+        token_id_integer(&self.token)
     }
 }
 

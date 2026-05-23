@@ -2,7 +2,6 @@
 
 use crate::cryptography::ECPoint;
 use crate::error::{CoreError, CoreResult};
-use crate::neo_vm::VMState;
 use crate::network::p2p::payloads::Witness;
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
@@ -17,6 +16,7 @@ use crate::smart_contract::trigger_type::TriggerType;
 use crate::smart_contract::ContractParameterType;
 use crate::{IVerifiable, UInt160, UInt256};
 use neo_vm_rs::OpCode;
+use neo_vm_rs::VmState as VMState;
 use std::any::Any;
 use std::sync::Arc;
 

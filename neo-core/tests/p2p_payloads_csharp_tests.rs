@@ -3,7 +3,6 @@ use neo_core::cryptography::bloom_filter::BloomFilter;
 use neo_core::cryptography::{ECCurve, ECPoint, NeoHash};
 use neo_core::ledger::create_genesis_block;
 use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable, SerializableExt};
-use neo_core::neo_vm::VMState;
 use neo_core::network::p2p::capabilities::{NodeCapability, NodeCapabilityType};
 use neo_core::network::p2p::payloads::headers_payload::MAX_HEADERS_COUNT;
 use neo_core::network::p2p::payloads::inv_payload::MAX_HASHES_COUNT;
@@ -20,6 +19,7 @@ use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::native::{LedgerContract, NativeContract, PolicyContract};
 use neo_core::{IVerifiable, UInt160, UInt256};
 use neo_vm_rs::OpCode;
+use neo_vm_rs::VmState as VMState;
 use serde_json::json;
 use std::net::{IpAddr, Ipv4Addr};
 

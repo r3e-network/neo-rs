@@ -300,7 +300,7 @@ fn replay_block_679779_debug() {
 
         assert_eq!(
             vm_state,
-            neo_core::neo_vm::VMState::HALT,
+            neo_vm_rs::VmState::HALT,
             "tx{} must HALT (gas={gas})",
             idx,
         );

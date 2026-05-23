@@ -262,7 +262,7 @@ fn replay_block_1394579_assert_csharp_root() {
     }
     assert_eq!(
         vm_state,
-        neo_core::neo_vm::VMState::HALT,
+        neo_vm_rs::VmState::HALT,
         "tx must HALT (matches C# applog: HALT, gas=85913699, emits Update event)"
     );
 

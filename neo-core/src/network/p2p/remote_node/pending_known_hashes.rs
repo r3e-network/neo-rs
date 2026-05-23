@@ -60,10 +60,7 @@ impl PendingKnownHashes {
 
     pub(crate) fn prune_older_than(&mut self, cutoff: Instant) -> usize {
         let mut removed = 0;
-        loop {
-            let Some(entry) = self.inner.first_or_default() else {
-                break;
-            };
+        while let Some(entry) = self.inner.first_or_default() {
             if entry.timestamp >= cutoff {
                 break;
             }

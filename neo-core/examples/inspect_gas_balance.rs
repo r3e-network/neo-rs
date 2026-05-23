@@ -1,13 +1,17 @@
+#[cfg(feature = "rocksdb")]
 use neo_core::persistence::{
     providers::RocksDBStoreProvider, IStoreProvider, StorageConfig, StorageKey, StoreCache,
 };
+#[cfg(feature = "rocksdb")]
 use neo_core::UInt160;
+#[cfg(feature = "rocksdb")]
 use std::path::PathBuf;
 
 // Print the GAS balance for an account from a read-only mainnet DB snapshot.
 // Usage:
 //   cargo run --release -p neo-core --example inspect_gas_balance \
 //     -- /home/neo/git/neo-rs/data/mainnet 0xe69f64c8fa57c7b23a2c75f4b234c030993dc39b
+#[cfg(feature = "rocksdb")]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
     let path = args
@@ -40,4 +44,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bal = item.to_bigint();
     println!("balance_datoshi={}", bal);
     Ok(())
+}
+
+#[cfg(not(feature = "rocksdb"))]
+fn main() {
+    eprintln!("inspect_gas_balance requires the neo-core `rocksdb` feature.");
 }

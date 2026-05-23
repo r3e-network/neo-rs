@@ -28,6 +28,7 @@ use neo_core::smart_contract::native::{
 use neo_core::smart_contract::storage_key::StorageKey;
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::{UInt160, UInt256, Witness as LedgerWitness};
+use neo_vm_rs::VmState as VMState;
 use num_traits::ToPrimitive;
 use serde_json::{json, Map, Value};
 use std::str::FromStr;
@@ -277,10 +278,10 @@ impl RpcServerBlockchain {
             obj.insert("confirmations".to_string(), json!(confirmations));
 
             let vmstate_str = match state.vm_state() {
-                neo_core::neo_vm::VMState::HALT => "HALT",
-                neo_core::neo_vm::VMState::FAULT => "FAULT",
-                neo_core::neo_vm::VMState::BREAK => "BREAK",
-                neo_core::neo_vm::VMState::NONE => "NONE",
+                VMState::HALT => "HALT",
+                VMState::FAULT => "FAULT",
+                VMState::BREAK => "BREAK",
+                VMState::NONE => "NONE",
             };
             obj.insert(
                 "vmstate".to_string(),
@@ -426,7 +427,7 @@ impl RpcServerBlockchain {
             }
         }
 
-        contract_states.sort_by(|left, right| right.id.cmp(&left.id));
+        contract_states.sort_by_key(|state| std::cmp::Reverse(state.id));
 
         Ok(Value::Array(
             contract_states.iter().map(contract_state_to_json).collect(),

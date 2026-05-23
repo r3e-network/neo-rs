@@ -3,13 +3,14 @@
 //! BinarySerializer - aligns with `Neo.SmartContract.BinarySerializer`.
 
 use crate::neo_io::{IoError, MemoryReader};
-use crate::neo_vm::execution_engine_limits::ExecutionEngineLimits;
 use crate::neo_vm::reference_counter::ReferenceCounter;
 use crate::neo_vm::stack_item::array::Array as ArrayItem;
 use crate::neo_vm::stack_item::buffer::Buffer as BufferItem;
 use crate::neo_vm::stack_item::map::Map as MapItem;
 use crate::neo_vm::stack_item::struct_item::Struct as StructItem;
-use crate::neo_vm::{StackItem, StackItemType};
+use crate::neo_vm::StackItem;
+use neo_vm_rs::ExecutionEngineLimits;
+use neo_vm_rs::StackItemType;
 use neo_vm_rs::StackValue;
 use num_bigint::BigInt;
 use std::collections::{HashSet, VecDeque};
@@ -535,14 +536,14 @@ impl BinarySerializer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::neo_vm::execution_engine_limits::ExecutionEngineLimits;
+    use neo_vm_rs::ExecutionEngineLimits;
 
     #[test]
     fn deserialize_preserves_map_entry_order_for_roundtrip_bytes() {
         let limits = ExecutionEngineLimits::default();
 
         // Serialize a map with specific insertion order: (3,30), (1,10), (2,20)
-        let mut map_items = crate::neo_vm::collections::VmOrderedDictionary::new();
+        let mut map_items = neo_vm_rs::VmOrderedDictionary::new();
         map_items.insert(StackItem::Integer(3.into()), StackItem::Integer(30.into()));
         map_items.insert(StackItem::Integer(1.into()), StackItem::Integer(10.into()));
         map_items.insert(StackItem::Integer(2.into()), StackItem::Integer(20.into()));

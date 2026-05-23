@@ -1,7 +1,6 @@
 use neo_core::cryptography::{ECCurve, ECPoint, NeoHash, Secp256r1Crypto};
 use neo_core::ledger::{block::Block, block_header::BlockHeader};
 use neo_core::neo_io::BinaryWriter;
-use neo_core::neo_vm::execution_engine_limits::ExecutionEngineLimits;
 use neo_core::neo_vm::StackItem;
 use neo_core::network::p2p::payloads::{
     oracle_response::OracleResponse, oracle_response_code::OracleResponseCode,
@@ -26,6 +25,7 @@ use neo_core::smart_contract::storage_key::StorageKey;
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::smart_contract::{Contract, ContractParameterType};
 use neo_core::{IVerifiable, UInt160};
+use neo_vm_rs::ExecutionEngineLimits;
 use neo_vm_rs::OpCode;
 use num_bigint::BigInt;
 use std::sync::Arc;

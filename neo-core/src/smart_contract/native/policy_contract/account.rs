@@ -228,7 +228,7 @@ impl PolicyContract {
         )?;
 
         let state = engine.execute_until_invocation_stack_depth(original_depth);
-        if state == crate::neo_vm::vm_state::VMState::FAULT {
+        if state == neo_vm_rs::VmState::FAULT {
             let message = engine
                 .fault_exception()
                 .unwrap_or("VM execution faulted during balanceOf")
@@ -270,7 +270,7 @@ impl PolicyContract {
             )?;
 
             let state = engine.execute_until_invocation_stack_depth(original_depth);
-            if state == crate::neo_vm::vm_state::VMState::FAULT {
+            if state == neo_vm_rs::VmState::FAULT {
                 let message = engine
                     .fault_exception()
                     .unwrap_or("VM execution faulted during transfer")

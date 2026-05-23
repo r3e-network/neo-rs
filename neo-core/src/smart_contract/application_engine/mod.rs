@@ -6,30 +6,30 @@
 //! # Architecture
 //!
 //! ```text
-//! ┌─────────────────────────────────────────────────────────────┐
-//! │                    ApplicationEngine                         │
-//! │  ┌─────────────────────────────────────────────────────────┐│
-//! │  │                   ExecutionEngine (VM)                   ││
-//! │  │  ┌──────────┐  ┌──────────┐  ┌──────────────────────┐  ││
-//! │  │  │ Script   │  │ Stack    │  │ Execution Contexts   │  ││
-//! │  │  │ Loader   │  │ Manager  │  │ (call stack)         │  ││
-//! │  │  └──────────┘  └──────────┘  └──────────────────────┘  ││
-//! │  └─────────────────────────────────────────────────────────┘│
-//! │  ┌─────────────────────────────────────────────────────────┐│
-//! │  │                  Interop Services                        ││
-//! │  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌─────────┐ ││
-//! │  │  │ Runtime  │  │ Storage  │  │ Crypto   │  │ Contract│ ││
-//! │  │  │ Interops │  │ Interops │  │ Interops │  │ Interops│ ││
-//! │  │  └──────────┘  └──────────┘  └──────────┘  └─────────┘ ││
-//! │  └─────────────────────────────────────────────────────────┘│
-//! │  ┌─────────────────────────────────────────────────────────┐│
-//! │  │                  Blockchain Context                      ││
-//! │  │  ┌──────────┐  ┌──────────┐  ┌──────────────────────┐  ││
-//! │  │  │ DataCache│  │ Settings │  │ Native Contracts     │  ││
-//! │  │  │ (state)  │  │ (proto)  │  │ (NEO, GAS, Policy)   │  ││
-//! │  │  └──────────┘  └──────────┘  └──────────────────────┘  ││
-//! │  └─────────────────────────────────────────────────────────┘│
-//! └─────────────────────────────────────────────────────────────┘
+//! +-------------------------------------------------------------+
+//! |                    ApplicationEngine                         |
+//! |  +---------------------------------------------------------+|
+//! |  |                   ExecutionEngine (VM)                   ||
+//! |  |  +----------+  +----------+  +----------------------+  ||
+//! |  |  | Script   |  | Stack    |  | Execution Contexts   |  ||
+//! |  |  | Loader   |  | Manager  |  | (call stack)         |  ||
+//! |  |  +----------+  +----------+  +----------------------+  ||
+//! |  +---------------------------------------------------------+|
+//! |  +---------------------------------------------------------+|
+//! |  |                  Interop Services                        ||
+//! |  |  +----------+  +----------+  +----------+  +---------+ ||
+//! |  |  | Runtime  |  | Storage  |  | Crypto   |  | Contract| ||
+//! |  |  | Interops |  | Interops |  | Interops |  | Interops| ||
+//! |  |  +----------+  +----------+  +----------+  +---------+ ||
+//! |  +---------------------------------------------------------+|
+//! |  +---------------------------------------------------------+|
+//! |  |                  Blockchain Context                      ||
+//! |  |  +----------+  +----------+  +----------------------+  ||
+//! |  |  | DataCache|  | Settings |  | Native Contracts     |  ||
+//! |  |  | (state)  |  | (proto)  |  | (NEO, GAS, Policy)   |  ||
+//! |  |  +----------+  +----------+  +----------------------+  ||
+//! |  +---------------------------------------------------------+|
+//! +-------------------------------------------------------------+
 //! ```
 //!
 //! # Key Components
@@ -75,13 +75,10 @@ use crate::ledger::Block;
 use crate::neo_config::HASH_SIZE;
 use crate::neo_vm::evaluation_stack::EvaluationStack;
 use crate::neo_vm::execution_context::ExecutionContext;
-use crate::neo_vm::execution_engine_limits::ExecutionEngineLimits;
-use crate::neo_vm::instruction::Instruction;
 use crate::neo_vm::interop_service::InteropHost;
 use crate::neo_vm::jump_table::JumpTable;
 use crate::neo_vm::script::Script;
 use crate::neo_vm::stack_item::InteropInterface as VmInteropInterface;
-use crate::neo_vm::vm_state::VMState;
 use crate::neo_vm::{ExecutionEngine, StackItem, VmError, VmResult};
 use crate::network::p2p::payloads::{Transaction, TransactionAttribute};
 use crate::persistence::data_cache::DataCache;
@@ -116,6 +113,14 @@ use crate::smart_contract::storage_key::StorageKey;
 use crate::smart_contract::trigger_type::TriggerType;
 use crate::IVerifiable;
 use crate::{UInt160, UInt256, WitnessCondition, WitnessRuleAction};
+use neo_vm_rs::interpret_with_stack_and_syscalls_at;
+use neo_vm_rs::interpret_with_stack_and_syscalls_at_with_result_limit;
+use neo_vm_rs::ExecutionEngineLimits;
+use neo_vm_rs::Instruction;
+use neo_vm_rs::OpCode;
+use neo_vm_rs::StackValue as VmStackValue;
+use neo_vm_rs::SyscallProvider;
+use neo_vm_rs::VmState as VMState;
 use num_traits::ToPrimitive;
 use parking_lot::Mutex;
 use std::any::{Any, TypeId};
@@ -136,6 +141,7 @@ type StdResult<T> = std::result::Result<T, String>;
 #[derive(Clone, Copy)]
 struct HostInteropHandler {
     price: i64,
+    required_call_flags: CallFlags,
     handler: InteropHandler,
 }
 
@@ -254,6 +260,7 @@ pub struct ApplicationEngine {
 
 mod contracts;
 mod drop;
+mod external_vm;
 mod fees_events_native;
 mod interop_host;
 mod load_execute_storage;

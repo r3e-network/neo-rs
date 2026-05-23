@@ -5,10 +5,10 @@
 use crate::neo_vm::error::VmError;
 use crate::neo_vm::error::VmResult;
 use crate::neo_vm::evaluation_stack::EvaluationStack;
-use crate::neo_vm::exception_handling_context::ExceptionHandlingContext;
-use crate::neo_vm::instruction::Instruction;
 use crate::neo_vm::reference_counter::ReferenceCounter;
 use crate::neo_vm::script::Script;
+use neo_vm_rs::ExceptionHandlingContext;
+use neo_vm_rs::Instruction;
 use parking_lot::{Mutex, RwLock};
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
@@ -802,8 +802,8 @@ mod tests {
         assert!(context.try_stack().is_none());
 
         // Create a try stack with one context
-        use crate::neo_vm::exception_handling_context::ExceptionHandlingContext;
-        use crate::neo_vm::exception_handling_state::ExceptionHandlingState;
+        use neo_vm_rs::ExceptionHandlingContext;
+        use neo_vm_rs::ExceptionHandlingState;
         let mut try_stack = Vec::new();
         let try_context = ExceptionHandlingContext::new(10, 20);
         try_stack.push(try_context);

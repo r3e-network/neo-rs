@@ -396,7 +396,6 @@ mod tests {
     use neo_core::extensions::io::serializable::SerializableExtensions;
     use neo_core::ledger::TransactionVerificationContext;
     use neo_core::neo_io::BinaryWriter;
-    use neo_core::neo_vm::vm_state::VMState;
     use neo_core::network::p2p::helper::get_sign_data_vec;
     use neo_core::network::p2p::payloads::oracle_response::{OracleResponse, MAX_RESULT_SIZE};
     use neo_core::network::p2p::payloads::oracle_response_code::OracleResponseCode;
@@ -420,6 +419,7 @@ mod tests {
     use neo_core::{IVerifiable, NeoSystem, UInt160, UInt256, WitnessScope};
     use neo_json::JToken;
     use neo_vm_rs::OpCode;
+    use neo_vm_rs::VmState as VMState;
     use num_bigint::BigInt;
     use std::sync::Arc;
 

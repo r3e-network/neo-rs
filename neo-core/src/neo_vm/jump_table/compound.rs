@@ -5,27 +5,17 @@
 use crate::neo_vm::error::VmError;
 use crate::neo_vm::error::VmResult;
 use crate::neo_vm::execution_engine::ExecutionEngine;
-use crate::neo_vm::instruction::Instruction;
 use crate::neo_vm::jump_table::JumpTable;
-use crate::neo_vm::stack_item::primitive_type::PrimitiveTypeExt;
-use crate::neo_vm::stack_item::{Array, Map, StackItem, StackItemType, Struct};
+use crate::neo_vm::stack_item::{Array, Map, StackItem, Struct};
+use neo_vm_rs::Instruction;
 use neo_vm_rs::OpCode;
+use neo_vm_rs::StackItemType;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use std::collections::BTreeMap;
 
 fn collection_stack_item(value: Result<neo_vm_rs::StackValue, String>) -> VmResult<StackItem> {
     StackItem::try_from(value.map_err(VmError::invalid_operation_msg)?)
-}
-
-fn stack_value_byte_string_len(value: neo_vm_rs::StackValue) -> VmResult<usize> {
-    stack_value_byte_string_bytes(value).map(|bytes| bytes.len())
-}
-
-fn stack_value_byte_string_bytes(value: neo_vm_rs::StackValue) -> VmResult<Vec<u8>> {
-    value
-        .to_byte_string_bytes()
-        .ok_or_else(|| VmError::invalid_type_simple("Cannot convert to ByteArray"))
 }
 
 fn normalize_index(type_name: &str, index: &BigInt, length: usize) -> VmResult<usize> {
@@ -620,11 +610,12 @@ fn pick_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
         // C# Neo VM PICKITEM on PrimitiveType reads the bytewise GetSpan()
         // representation. Use neo-vm-rs conversion rules so Boolean false
         // remains a one-byte span [0], matching C# Boolean.Memory.
-        item @ (StackItem::Integer(_) | StackItem::Boolean(_)) => {
-            let bytes = stack_value_byte_string_bytes(neo_vm_rs::StackValue::try_from(item)?)?;
-            let idx = normalize_index("PrimitiveType", &key.get_integer()?, bytes.len())?;
-            StackItem::from_int(i64::from(bytes[idx]))
-        }
+        item @ (StackItem::Integer(_) | StackItem::Boolean(_)) => pick_byte_sequence_item(
+            neo_vm_rs::StackValue::try_from(item)?,
+            key.get_integer()?
+                .to_usize()
+                .ok_or_else(|| VmError::invalid_operation_msg("Invalid primitive index"))?,
+        )?,
         StackItem::Buffer(buffer) => {
             let idx = normalize_index("Buffer", &key.get_integer()?, buffer.len())?;
             pick_byte_sequence_item(neo_vm_rs::StackValue::Buffer(buffer.data()), idx)?
@@ -678,13 +669,7 @@ fn set_item(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult
         }
         StackItem::Buffer(buffer) => {
             let idx = normalize_index("Buffer", &key.get_integer()?, buffer.len())?;
-            let primitive = value.as_primitive().map_err(|_| {
-                VmError::invalid_operation_msg(format!(
-                    "Only primitive type values can be set in Buffer in {:?}.",
-                    instruction.opcode()
-                ))
-            })?;
-            let byte = primitive.get_integer().map_err(|_| {
+            let byte = value.get_integer().map_err(|_| {
                 VmError::invalid_operation_msg(format!(
                     "Only primitive type values can be set in Buffer in {:?}.",
                     instruction.opcode()
@@ -734,7 +719,12 @@ fn size(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
         StackItem::ByteString(data) => data.len(),
         StackItem::Buffer(data) => data.len(),
         item @ (StackItem::Integer(_) | StackItem::Boolean(_)) => {
-            stack_value_byte_string_len(neo_vm_rs::StackValue::try_from(item)?)?
+            let value = neo_vm_rs::StackValue::try_from(item)?;
+            usize::try_from(
+                neo_vm_rs::semantics::collections::size(&value)
+                    .map_err(VmError::invalid_operation_msg)?,
+            )
+            .map_err(|_| VmError::invalid_operation_msg("Invalid primitive size"))?
         }
         _ => {
             return Err(VmError::invalid_type_simple(

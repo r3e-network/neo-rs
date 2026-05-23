@@ -13,10 +13,16 @@
 //!
 //! This module provides signing functionality matching the C# Neo.Sign namespace.
 
+#[allow(dead_code)]
 pub mod i_signer;
+#[allow(dead_code)]
 pub mod sign_exception;
+#[allow(dead_code)]
 pub mod signer_manager;
 
+#[allow(unused_imports)]
 pub use i_signer::ISigner;
+#[allow(unused_imports)]
 pub use sign_exception::SignException;
+#[allow(unused_imports)]
 pub use signer_manager::SignerManager;

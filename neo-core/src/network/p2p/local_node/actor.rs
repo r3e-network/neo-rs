@@ -46,11 +46,11 @@ impl LocalNodeActor {
                 // Process any connect requests that arrived before Configure.
                 let deferred = std::mem::take(&mut self.deferred_connects);
                 for (endpoint, is_trusted) in deferred {
-                    if self.peer.begin_connect(endpoint, is_trusted) {
-                        if !self.state.is_pending(&endpoint) {
-                            self.state.track_pending(endpoint);
-                            self.queue_outbound_connect(ctx, endpoint, is_trusted);
-                        }
+                    if self.peer.begin_connect(endpoint, is_trusted)
+                        && !self.state.is_pending(&endpoint)
+                    {
+                        self.state.track_pending(endpoint);
+                        self.queue_outbound_connect(ctx, endpoint, is_trusted);
                     }
                 }
                 self.handle_peer_timer(ctx).await

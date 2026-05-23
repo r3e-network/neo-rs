@@ -3,7 +3,6 @@ use neo_core::cryptography::Secp256r1Crypto;
 use neo_core::ledger::block_header::BlockHeader;
 use neo_core::ledger::Block;
 use neo_core::neo_io::BinaryWriter;
-use neo_core::neo_vm::vm_state::VMState;
 use neo_core::neo_vm::StackItem;
 use neo_core::network::p2p::payloads::{Signer, Transaction, WitnessScope};
 use neo_core::persistence::DataCache;
@@ -22,6 +21,7 @@ use neo_core::smart_contract::{StorageItem, StorageKey};
 use neo_core::wallets::KeyPair;
 use neo_core::{UInt160, UInt256};
 use neo_vm_rs::OpCode;
+use neo_vm_rs::VmState as VMState;
 use num_traits::ToPrimitive;
 use std::sync::Arc;
 
@@ -948,7 +948,7 @@ fn persist_oracle_request(snapshot: &DataCache, id: u64, original_tx_id: UInt256
     ]);
     let bytes = neo_core::smart_contract::binary_serializer::BinarySerializer::serialize(
         &stack_item,
-        &neo_core::neo_vm::ExecutionEngineLimits::default(),
+        &neo_vm_rs::ExecutionEngineLimits::default(),
     )
     .expect("serialize oracle request");
 

@@ -1,5 +1,4 @@
 use super::*;
-use crate::neo_vm::execution_engine_limits::ExecutionEngineLimits;
 use crate::network::p2p::helper::get_sign_data_vec;
 use crate::network::p2p::payloads::block::Block;
 use crate::network::p2p::payloads::conflicts::Conflicts;
@@ -15,6 +14,7 @@ use crate::smart_contract::native::AccountState;
 use crate::smart_contract::{StorageItem, StorageKey};
 use crate::wallets::KeyPair;
 use crate::WitnessScope;
+use neo_vm_rs::ExecutionEngineLimits;
 use neo_vm_rs::OpCode;
 use num_bigint::BigInt;
 use std::collections::HashSet;

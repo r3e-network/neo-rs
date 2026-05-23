@@ -1,7 +1,7 @@
 use super::*;
 use crate::hardfork::HardforkManager;
 use crate::ledger::{create_genesis_block, Block, BlockHeader};
-use crate::neo_vm::{execution_engine_limits::ExecutionEngineLimits, StackItem, VMState};
+use crate::neo_vm::StackItem;
 use crate::network::p2p::payloads::{Signer, Transaction, Witness, WitnessScope};
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
@@ -20,7 +20,7 @@ use crate::smart_contract::storage_key::StorageKey;
 use crate::smart_contract::trigger_type::TriggerType;
 use crate::{IVerifiable, UInt160, UInt256};
 use neo_primitives::TransactionAttributeType;
-use neo_vm_rs::{OpCode, StackValue};
+use neo_vm_rs::{ExecutionEngineLimits, OpCode, StackValue, VmState as VMState};
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
 use std::sync::Arc;

@@ -887,7 +887,7 @@ fn crypto_lib_verify_with_ecdsa_custom_tx_witness_multi_sig() {
             priv4,
         ),
     ];
-    keys.sort_by(|a, b| a.0.cmp(&b.0));
+    keys.sort_by_key(|entry| entry.0);
 
     let m = 3usize;
     let n = keys.len();
