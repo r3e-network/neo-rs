@@ -40,17 +40,13 @@ fn print_instruction_window(script: &[u8], target_ip: usize) {
         .iter()
         .position(|instruction| instruction.pointer() == target_ip)
         .unwrap_or_else(|| decoded.len().saturating_sub(1));
-    let nearest_initslot = decoded
-        .iter()
-        .rev()
-        .find(|instruction| {
-            instruction.pointer() <= target_ip
-                && matches!(
-                    instruction.opcode(),
-                    neo_vm_rs::OpCode::INITSLOT | neo_vm_rs::OpCode::INITSSLOT
-                )
-        })
-        .copied();
+    let nearest_initslot = decoded.iter().rev().find(|instruction| {
+        instruction.pointer() <= target_ip
+            && matches!(
+                instruction.opcode(),
+                neo_vm_rs::OpCode::INITSLOT | neo_vm_rs::OpCode::INITSSLOT
+            )
+    });
     if let Some(instruction) = nearest_initslot {
         let offset = instruction.pointer();
         let opcode = instruction.opcode();
@@ -61,7 +57,7 @@ fn print_instruction_window(script: &[u8], target_ip: usize) {
     let start = center.saturating_sub(3);
     let end = (center + 4).min(decoded.len());
     println!("context script window around ip={target_ip}:");
-    for instruction in decoded[start..end].iter().copied() {
+    for instruction in &decoded[start..end] {
         let offset = instruction.pointer();
         let opcode = instruction.opcode();
         let size = instruction.size();

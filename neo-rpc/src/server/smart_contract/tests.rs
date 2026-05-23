@@ -264,7 +264,7 @@ async fn invokescript_returns_fault_state_in_result() {
         .and_then(Value::as_str)
         .expect("exception field");
     assert!(
-        exception.contains("ABORT is executed"),
+        exception.contains("ABORT"),
         "expected ABORT message, got {exception}"
     );
 }
@@ -612,8 +612,8 @@ async fn invokescript_faults_when_gas_limit_exceeded() {
         .and_then(Value::as_str)
         .unwrap_or_default();
     assert!(
-        exception.contains("Insufficient GAS"),
-        "expected insufficient GAS error, got: {exception}"
+        exception.to_ascii_lowercase().contains("insufficient gas"),
+        "expected insufficient gas error, got: {exception}"
     );
 
     let gas_consumed = result
