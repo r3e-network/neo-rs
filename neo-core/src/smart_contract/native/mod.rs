@@ -13,11 +13,13 @@ pub mod crypto_lib;
 pub mod fungible_token;
 /// GAS token native contract.
 pub mod gas_token;
+/// Hardfork activation trait for native metadata.
+pub mod hardfork_activable;
 /// Hash index state for ledger.
 pub mod hash_index_state;
 /// Helper functions for native contracts.
 pub mod helpers;
-/// Hardfork activation interface.
+/// Compatibility module for the old C#-style hardfork activation trait name.
 pub mod i_hardfork_activable;
 /// Ledger native contract.
 pub mod ledger_contract;
@@ -57,6 +59,7 @@ pub use contract_management::ContractManagement;
 pub use crypto_lib::CryptoLib;
 pub use fungible_token::{DefaultTokenAccountState, FungibleToken, TokenAccountState};
 pub use gas_token::GasToken;
+pub use hardfork_activable::HardforkActivable;
 pub use helpers::NativeHelpers;
 pub use i_hardfork_activable::IHardforkActivable;
 pub use ledger_contract::{LedgerContract, LedgerTransactionStates};

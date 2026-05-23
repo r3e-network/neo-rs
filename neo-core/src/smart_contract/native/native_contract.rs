@@ -9,7 +9,7 @@ use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::manifest::{
     ContractAbi, ContractEventDescriptor, ContractMethodDescriptor, ContractParameterDefinition,
 };
-use crate::smart_contract::native::IHardforkActivable;
+use crate::smart_contract::native::HardforkActivable;
 use crate::smart_contract::{ContractManifest, ContractParameterType, ContractState, NefFile};
 use crate::UInt160;
 use neo_vm_rs::OpCode;
@@ -298,7 +298,7 @@ impl NativeMethod {
     }
 }
 
-impl IHardforkActivable for NativeMethod {
+impl HardforkActivable for NativeMethod {
     fn active_in(&self) -> Option<Hardfork> {
         self.active_in
     }
@@ -310,8 +310,8 @@ impl IHardforkActivable for NativeMethod {
 
 /// Checks whether a hardfork-activable item is active.
 ///
-/// Mirrors C# `NativeContract.IsActive(IHardforkActivable, ...)` exactly.
-pub fn is_active_for<T: IHardforkActivable>(
+/// Mirrors C# `NativeContract.IsActive(...)` hardfork activation semantics.
+pub fn is_active_for<T: HardforkActivable>(
     item: &T,
     hf_checker: impl Fn(Hardfork, u32) -> bool,
     block_height: u32,

@@ -9,7 +9,7 @@ use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::smart_contract::contract_state::ContractState;
 use neo_core::smart_contract::i_interoperable::IInteroperable;
 use neo_core::smart_contract::native::{
-    is_active_for, ContractManagement, CryptoLib, GasToken, IHardforkActivable, LedgerContract,
+    is_active_for, ContractManagement, CryptoLib, GasToken, HardforkActivable, LedgerContract,
     NativeContract, NativeRegistry, NeoToken, Notary, OracleContract, PolicyContract,
     RoleManagement, StdLib, TreasuryContract,
 };
@@ -146,7 +146,7 @@ struct TestActivable {
     deprecated_in: Option<Hardfork>,
 }
 
-impl IHardforkActivable for TestActivable {
+impl HardforkActivable for TestActivable {
     fn active_in(&self) -> Option<Hardfork> {
         self.active_in
     }
