@@ -18,7 +18,7 @@ use crate::smart_contract::{
 use crate::UInt160;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::Engine;
-use neo_vm_rs::StackValue;
+use neo_vm_rs::{OpCode, StackValue};
 use num_traits::ToPrimitive;
 use serde_json::{json, Value};
 
@@ -92,10 +92,7 @@ impl ContractState {
 
     /// Creates a new native contract state.
     pub fn new_native(id: i32, hash: UInt160, name: String) -> Self {
-        let nef = NefFile::new(
-            "native".to_string(),
-            vec![0x40], // RET opcode - native contracts don't have actual script
-        );
+        let nef = NefFile::new("native".to_string(), vec![OpCode::RET.byte()]);
 
         let manifest = ContractManifest::new_native(name);
 

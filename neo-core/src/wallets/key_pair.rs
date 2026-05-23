@@ -15,6 +15,7 @@ use cbc::{
     cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit},
     Decryptor, Encryptor,
 };
+use neo_vm_rs::OpCode;
 use rand::rngs::OsRng;
 use rand::RngCore;
 use scrypt::Params;
@@ -410,10 +411,10 @@ impl KeyPair {
             })?;
 
         let mut script = Vec::new();
-        script.push(0x0c); // PUSHDATA1
+        script.push(OpCode::PUSHDATA1.byte());
         script.push(compressed.len() as u8);
         script.extend_from_slice(&compressed);
-        script.push(0x41); // SYSCALL
+        script.push(OpCode::SYSCALL.byte());
         script.extend_from_slice(b"System.Crypto.CheckWitness");
         Ok(script)
     }

@@ -22,10 +22,11 @@
 //!
 //! ```rust
 //! use neo_core::Witness;
+//! use neo_vm_rs::OpCode;
 //!
 //! // Create a witness from scripts
-//! let invocation_script = vec![0x40, 0x01, 0x02]; // Signature data
-//! let verification_script = vec![0x0c, 0x21]; // Public key check
+//! let invocation_script = vec![OpCode::PUSHDATA1.byte(), 0x40, 0x01, 0x02];
+//! let verification_script = vec![OpCode::PUSHDATA1.byte(), 0x21];
 //! let witness = Witness::new_with_scripts(
 //!     invocation_script,
 //!     verification_script,
@@ -41,6 +42,7 @@ use crate::neo_io::Serializable;
 use crate::smart_contract::helper::Helper;
 use crate::UInt160;
 use base64::{engine::general_purpose, Engine as _};
+use neo_vm_rs::OpCode;
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 use std::{convert::TryInto, fmt};
@@ -312,8 +314,8 @@ impl Witness {
             });
         }
 
-        if self.invocation_script[0] != 0x0C ||  // OpCode.PUSHDATA1
-           self.invocation_script[1] != 0x40
+        if self.invocation_script[0] != OpCode::PUSHDATA1.byte()
+            || self.invocation_script[1] != 0x40
         {
             return Err(CoreError::InvalidData {
                 message: "Invalid invocation script format".to_string(),

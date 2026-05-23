@@ -50,6 +50,39 @@ fn workspace_uses_external_neo_vm_rs_without_local_neo_vm() {
 }
 
 #[test]
+fn production_script_helpers_use_shared_opcode_enum() {
+    let workspace = workspace_root();
+    for relative_path in [
+        "neo-core/src/witness.rs",
+        "neo-core/src/smart_contract/helper.rs",
+        "neo-core/src/smart_contract/contract_state.rs",
+        "neo-core/src/wallets/key_pair.rs",
+    ] {
+        let source = read_source(workspace.join(relative_path));
+
+        assert!(
+            source.contains("OpCode::"),
+            "{relative_path} should construct or validate VM scripts through neo-vm-rs::OpCode"
+        );
+        for duplicate in [
+            "0x0C ||  // OpCode.PUSHDATA1",
+            "script[0] == 0x0C",
+            "script[35] == 0x41",
+            "script[len - 5] == 0x41",
+            "script.push(0x0C)",
+            "script.push(0x0c)",
+            "script.push(0x41)",
+            "vec![0x40]",
+        ] {
+            assert!(
+                !source.contains(duplicate),
+                "{relative_path} must not duplicate NeoVM opcode bytes: {duplicate}"
+            );
+        }
+    }
+}
+
+#[test]
 fn application_engine_executes_syscall_free_scripts_through_neo_vm_rs() {
     let workspace = workspace_root();
     let load_execute = read_source(

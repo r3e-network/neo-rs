@@ -74,9 +74,9 @@ impl Helper {
         }
 
         // Check pattern: PUSHDATA1 (33 bytes pubkey) SYSCALL (CheckSig)
-        script[0] == 0x0C && // PUSHDATA1
+        script[0] == OpCode::PUSHDATA1.byte() &&
         script[1] == 33 &&   // 33 bytes
-        script[35] == 0x41 && // SYSCALL
+        script[35] == OpCode::SYSCALL.byte() &&
         script[36..40] == Self::check_sig_hash()
     }
 
@@ -96,8 +96,8 @@ impl Helper {
 
         // Verify ending with SYSCALL CheckMultisig
         let len = script.len();
-        script[len - 5] == 0x41 && // SYSCALL
-        script[len - 4..] == Self::check_multisig_hash()
+        script[len - 5] == OpCode::SYSCALL.byte()
+            && script[len - 4..] == Self::check_multisig_hash()
     }
 
     /// Gets the script hash from a contract
@@ -108,10 +108,10 @@ impl Helper {
     /// Creates a signature redeem script
     pub fn signature_redeem_script(public_key: &[u8]) -> Vec<u8> {
         let mut script = Vec::new();
-        script.push(0x0C); // PUSHDATA1
+        script.push(OpCode::PUSHDATA1.byte());
         script.push(public_key.len() as u8);
         script.extend_from_slice(public_key);
-        script.push(0x41); // SYSCALL
+        script.push(OpCode::SYSCALL.byte());
         script.extend_from_slice(&Self::check_sig_hash());
         script
     }
