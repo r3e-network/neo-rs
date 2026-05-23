@@ -1,84 +1,18 @@
 use super::LedgerContract;
-use crate::smart_contract::call_flags::CallFlags;
+use crate::smart_contract::native::method_macros::neo_native_methods;
 use crate::smart_contract::native::NativeMethod;
-use crate::smart_contract::ContractParameterType;
 
 impl LedgerContract {
     pub(super) fn native_methods() -> Vec<NativeMethod> {
-        vec![
-            NativeMethod::new(
-                "currentHash".to_string(),
-                1 << 15,
-                true,
-                CallFlags::READ_STATES.bits(),
-                Vec::new(),
-                ContractParameterType::Hash256,
-            ),
-            NativeMethod::new(
-                "currentIndex".to_string(),
-                1 << 15,
-                true,
-                CallFlags::READ_STATES.bits(),
-                Vec::new(),
-                ContractParameterType::Integer,
-            ),
-            NativeMethod::new(
-                "getBlock".to_string(),
-                1 << 15,
-                true,
-                CallFlags::READ_STATES.bits(),
-                vec![ContractParameterType::ByteArray],
-                ContractParameterType::Array,
-            )
-            .with_parameter_names(vec!["indexOrHash".to_string()]),
-            NativeMethod::new(
-                "getTransaction".to_string(),
-                1 << 15,
-                true,
-                CallFlags::READ_STATES.bits(),
-                vec![ContractParameterType::Hash256],
-                ContractParameterType::Array,
-            )
-            .with_parameter_names(vec!["hash".to_string()]),
-            NativeMethod::new(
-                "getTransactionFromBlock".to_string(),
-                1 << 16,
-                true,
-                CallFlags::READ_STATES.bits(),
-                vec![
-                    ContractParameterType::ByteArray,
-                    ContractParameterType::Integer,
-                ],
-                ContractParameterType::Array,
-            )
-            .with_parameter_names(vec!["blockIndexOrHash".to_string(), "txIndex".to_string()]),
-            NativeMethod::new(
-                "getTransactionHeight".to_string(),
-                1 << 15,
-                true,
-                CallFlags::READ_STATES.bits(),
-                vec![ContractParameterType::Hash256],
-                ContractParameterType::Integer,
-            )
-            .with_parameter_names(vec!["hash".to_string()]),
-            NativeMethod::new(
-                "getTransactionSigners".to_string(),
-                1 << 15,
-                true,
-                CallFlags::READ_STATES.bits(),
-                vec![ContractParameterType::Hash256],
-                ContractParameterType::Array,
-            )
-            .with_parameter_names(vec!["hash".to_string()]),
-            NativeMethod::new(
-                "getTransactionVMState".to_string(),
-                1 << 15,
-                true,
-                CallFlags::READ_STATES.bits(),
-                vec![ContractParameterType::Hash256],
-                ContractParameterType::Integer,
-            )
-            .with_parameter_names(vec!["hash".to_string()]),
+        neo_native_methods![
+            safe "currentHash", fee = 1 << 15, flags = [READ_STATES], params = [], returns = Hash256;
+            safe "currentIndex", fee = 1 << 15, flags = [READ_STATES], params = [], returns = Integer;
+            safe "getBlock", fee = 1 << 15, flags = [READ_STATES], params = [ByteArray], returns = Array, names = ["indexOrHash"];
+            safe "getTransaction", fee = 1 << 15, flags = [READ_STATES], params = [Hash256], returns = Array, names = ["hash"];
+            safe "getTransactionFromBlock", fee = 1 << 16, flags = [READ_STATES], params = [ByteArray, Integer], returns = Array, names = ["blockIndexOrHash", "txIndex"];
+            safe "getTransactionHeight", fee = 1 << 15, flags = [READ_STATES], params = [Hash256], returns = Integer, names = ["hash"];
+            safe "getTransactionSigners", fee = 1 << 15, flags = [READ_STATES], params = [Hash256], returns = Array, names = ["hash"];
+            safe "getTransactionVMState", fee = 1 << 15, flags = [READ_STATES], params = [Hash256], returns = Integer, names = ["hash"];
         ]
     }
 }

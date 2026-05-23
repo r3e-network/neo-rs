@@ -21,6 +21,7 @@ pub mod helpers;
 pub mod i_hardfork_activable;
 /// Ledger native contract.
 pub mod ledger_contract;
+pub(crate) mod method_macros;
 /// Base native contract implementation.
 pub mod native_contract;
 /// NEO token native contract.
