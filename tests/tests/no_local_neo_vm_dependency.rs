@@ -1531,6 +1531,74 @@ fn neo_token_states_project_through_neo_vm_rs_stack_value() {
 }
 
 #[test]
+fn neo_token_committee_payloads_use_neo_vm_rs_stack_value() {
+    let workspace = workspace_root();
+    let committee = fs::read_to_string(
+        workspace.join("neo-core/src/smart_contract/native/neo_token/committee.rs"),
+    )
+    .unwrap();
+    let governance = fs::read_to_string(
+        workspace.join("neo-core/src/smart_contract/native/neo_token/governance.rs"),
+    )
+    .unwrap();
+
+    assert!(
+        committee.contains("BinarySerializer::deserialize_stack_value(&bytes)")
+            && committee.contains("decode_committee_stack_value")
+            && committee.contains("decode_committee_with_votes_value"),
+        "NeoToken committee cache reads should deserialize direct neo_vm_rs::StackValue payloads"
+    );
+    assert!(
+        committee.contains("StackValue::Array")
+            && committee.contains("StackValue::Struct")
+            && committee.contains("StackValue::ByteString")
+            && committee.contains("StackValue::BigInteger")
+            && committee.contains("BinarySerializer::serialize_stack_value"),
+        "NeoToken committee cache writes should serialize direct StackValue arrays"
+    );
+    for local_path in [
+        "BinarySerializer::deserialize(&bytes",
+        "BinarySerializer::serialize(&array",
+        "decode_committee_stack_item",
+        "decode_committee_with_votes(stack_item)",
+        "StackItem::from_struct",
+        "StackItem::from_array",
+        "StackItem::from_int",
+        "StackItem::from_byte_string",
+    ] {
+        assert!(
+            !committee.contains(local_path),
+            "NeoToken committee cache should not use local StackItem path {local_path}"
+        );
+    }
+
+    for method in [
+        "pub(super) fn get_candidates",
+        "pub(super) fn get_committee",
+        "pub(super) fn get_next_block_validators",
+    ] {
+        let section = governance
+            .split(method)
+            .nth(1)
+            .and_then(|tail| tail.split("\n    pub(super) fn ").next())
+            .expect("NeoToken governance method section");
+        assert!(
+            section.contains("StackValue::Array")
+                && section.contains("BinarySerializer::serialize_stack_value"),
+            "{method} should serialize its ABI result through neo_vm_rs::StackValue"
+        );
+        assert!(
+            !section.contains("StackItem::from_array")
+                && !section.contains("StackItem::from_struct")
+                && !section.contains("StackItem::from_byte_string")
+                && !section.contains("StackItem::from_int")
+                && !section.contains("BinarySerializer::serialize(&array"),
+            "{method} should not hand-build local StackItem result payloads"
+        );
+    }
+}
+
+#[test]
 fn token_management_states_project_through_neo_vm_rs_stack_value() {
     let workspace = workspace_root();
     let source = fs::read_to_string(

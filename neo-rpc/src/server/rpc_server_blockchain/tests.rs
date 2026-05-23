@@ -242,8 +242,11 @@ fn store_storage_item(
 }
 
 fn serialize_test_stack_value(value: &StackValue) -> Vec<u8> {
-    BinarySerializer::serialize_stack_value(value, &neo_core::neo_vm::ExecutionEngineLimits::default())
-        .expect("serialize stack value")
+    BinarySerializer::serialize_stack_value(
+        value,
+        &neo_core::neo_vm::ExecutionEngineLimits::default(),
+    )
+    .expect("serialize stack value")
 }
 
 fn store_committee(

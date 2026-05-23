@@ -27,58 +27,40 @@ impl NeoToken {
         let key = StorageKey::create(Self::ID, Self::PREFIX_COMMITTEE);
         let item = snapshot.try_get(&key)?;
         let bytes = item.value_bytes();
-        let stack_item =
-            BinarySerializer::deserialize(&bytes, &ExecutionEngineLimits::default(), None).ok()?;
+        let stack_value = BinarySerializer::deserialize_stack_value(&bytes).ok()?;
 
-        Self::decode_committee_stack_item(stack_item).ok()
+        Self::decode_committee_stack_value(stack_value).ok()
     }
 
-    pub(super) fn decode_committee_stack_item(item: StackItem) -> Result<Vec<ECPoint>, String> {
-        use crate::neo_vm::stack_item::StackItem as VmStackItem;
-
-        fn stack_item_to_bytes(item: &VmStackItem) -> Option<Vec<u8>> {
-            match item {
-                VmStackItem::ByteString(bytes) => Some(bytes.clone()),
-                VmStackItem::Buffer(buffer) => Some(buffer.data()),
+    pub(super) fn decode_committee_stack_value(value: StackValue) -> Result<Vec<ECPoint>, String> {
+        fn stack_value_to_bytes(value: &StackValue) -> Option<Vec<u8>> {
+            match value {
+                StackValue::ByteString(bytes) | StackValue::Buffer(bytes) => Some(bytes.clone()),
                 _ => None,
             }
         }
 
-        fn decode_entry(entry: &VmStackItem) -> Result<Option<ECPoint>, String> {
-            let elements: Vec<VmStackItem> = match entry {
-                VmStackItem::Struct(structure) => structure.items(),
-                VmStackItem::Array(array) => array.items(),
+        fn decode_entry(entry: &StackValue) -> Result<Option<ECPoint>, String> {
+            let elements = match entry {
+                StackValue::Struct(items) | StackValue::Array(items) => items,
                 _ => return Ok(None),
             };
 
             let first = elements
                 .first()
                 .ok_or_else(|| "committee entry missing public key".to_string())?;
-            let key_bytes = stack_item_to_bytes(first)
+            let key_bytes = stack_value_to_bytes(first)
                 .ok_or_else(|| "committee entry public key must be byte array".to_string())?;
             let point = ECPoint::from_bytes(&key_bytes)
                 .map_err(|e| format!("invalid committee public key: {e}"))?;
             Ok(Some(point))
         }
 
-        match item {
-            VmStackItem::Array(array) => {
-                let mut committee = Vec::with_capacity(array.len());
-                for entry in array.items() {
-                    if let Some(point) = decode_entry(&entry)? {
-                        committee.push(point);
-                    }
-                }
-                if committee.is_empty() {
-                    Err("committee cache empty".to_string())
-                } else {
-                    Ok(committee)
-                }
-            }
-            VmStackItem::Struct(structure) => {
-                let mut committee = Vec::with_capacity(structure.len());
-                for entry in structure.items() {
-                    if let Some(point) = decode_entry(&entry)? {
+        match value {
+            StackValue::Array(items) | StackValue::Struct(items) => {
+                let mut committee = Vec::with_capacity(items.len());
+                for entry in &items {
+                    if let Some(point) = decode_entry(entry)? {
                         committee.push(point);
                     }
                 }
@@ -104,10 +86,8 @@ impl NeoToken {
         if let Some(item) = snapshot.try_get(&key) {
             let bytes = item.value_bytes();
             if !bytes.is_empty() {
-                if let Ok(stack_item) =
-                    BinarySerializer::deserialize(&bytes, &ExecutionEngineLimits::default(), None)
-                {
-                    if let Ok(values) = Self::decode_committee_with_votes(stack_item) {
+                if let Ok(stack_value) = BinarySerializer::deserialize_stack_value(&bytes) {
+                    if let Ok(values) = Self::decode_committee_with_votes_value(stack_value) {
                         if !values.is_empty() {
                             return Ok(values);
                         }
@@ -118,21 +98,30 @@ impl NeoToken {
         self.compute_committee_members(snapshot, settings)
     }
 
-    pub(super) fn decode_committee_with_votes(
-        item: StackItem,
+    pub(super) fn decode_committee_with_votes_value(
+        value: StackValue,
     ) -> Result<Vec<(ECPoint, BigInt)>, String> {
-        fn stack_item_to_bytes(item: &StackItem) -> Option<Vec<u8>> {
-            match item {
-                StackItem::ByteString(bytes) => Some(bytes.clone()),
-                StackItem::Buffer(buffer) => Some(buffer.data()),
+        fn stack_value_to_bytes(value: &StackValue) -> Option<Vec<u8>> {
+            match value {
+                StackValue::ByteString(bytes) | StackValue::Buffer(bytes) => Some(bytes.clone()),
                 _ => None,
             }
         }
 
-        fn decode_entry(entry: &StackItem) -> Result<Option<(ECPoint, BigInt)>, String> {
-            let elements: Vec<StackItem> = match entry {
-                StackItem::Struct(structure) => structure.items(),
-                StackItem::Array(array) => array.items(),
+        fn stack_value_to_bigint(value: &StackValue) -> Option<BigInt> {
+            match value {
+                StackValue::Integer(value) => Some(BigInt::from(*value)),
+                StackValue::Boolean(value) => Some(BigInt::from(i32::from(*value))),
+                StackValue::BigInteger(bytes)
+                | StackValue::ByteString(bytes)
+                | StackValue::Buffer(bytes) => Some(BigInt::from_signed_bytes_le(bytes)),
+                _ => None,
+            }
+        }
+
+        fn decode_entry(entry: &StackValue) -> Result<Option<(ECPoint, BigInt)>, String> {
+            let elements = match entry {
+                StackValue::Struct(items) | StackValue::Array(items) => items,
                 _ => return Ok(None),
             };
 
@@ -140,31 +129,21 @@ impl NeoToken {
                 return Ok(None);
             }
 
-            let key_bytes = stack_item_to_bytes(&elements[0])
+            let key_bytes = stack_value_to_bytes(&elements[0])
                 .ok_or_else(|| "committee entry public key must be byte array".to_string())?;
             let point = ECPoint::from_bytes(&key_bytes)
                 .map_err(|e| format!("invalid committee public key: {e}"))?;
-            let votes = elements[1]
-                .as_int()
-                .map_err(|e| format!("invalid committee votes: {e}"))?;
+            let votes = stack_value_to_bigint(&elements[1])
+                .ok_or_else(|| "invalid committee votes".to_string())?;
 
             Ok(Some((point, votes)))
         }
 
-        match item {
-            StackItem::Array(array) => {
-                let mut committee = Vec::with_capacity(array.len());
-                for entry in array.items() {
-                    if let Some(value) = decode_entry(&entry)? {
-                        committee.push(value);
-                    }
-                }
-                Ok(committee)
-            }
-            StackItem::Struct(structure) => {
-                let mut committee = Vec::with_capacity(structure.len());
-                for entry in structure.items() {
-                    if let Some(value) = decode_entry(&entry)? {
+        match value {
+            StackValue::Array(items) | StackValue::Struct(items) => {
+                let mut committee = Vec::with_capacity(items.len());
+                for entry in &items {
+                    if let Some(value) = decode_entry(entry)? {
                         committee.push(value);
                     }
                 }
@@ -177,17 +156,18 @@ impl NeoToken {
     pub(super) fn encode_committee_with_votes(
         committee: &[(ECPoint, BigInt)],
     ) -> CoreResult<Vec<u8>> {
-        let items: Vec<StackItem> = committee
-            .iter()
-            .map(|(pk, votes)| {
-                StackItem::from_struct(vec![
-                    StackItem::from_byte_string(pk.as_bytes().to_vec()),
-                    StackItem::from_int(votes.clone()),
-                ])
-            })
-            .collect();
-        let array = StackItem::from_array(items);
-        BinarySerializer::serialize(&array, &ExecutionEngineLimits::default())
+        let value = StackValue::Array(
+            committee
+                .iter()
+                .map(|(pk, votes)| {
+                    StackValue::Struct(vec![
+                        StackValue::ByteString(pk.as_bytes().to_vec()),
+                        StackValue::BigInteger(votes.to_signed_bytes_le()),
+                    ])
+                })
+                .collect(),
+        );
+        BinarySerializer::serialize_stack_value(&value, &ExecutionEngineLimits::default())
             .map_err(CoreError::native_contract)
     }
 
