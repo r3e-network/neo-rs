@@ -1,18 +1,7 @@
 //! Lightweight actor runtime inspired by Akka.NET.
 //!
-//! This module provides the primitives required by the neo-rs project to model
-//! the Akka-based architecture used in the C# implementation.  It offers
-//! asynchronous actors, hierarchical supervision, message passing and basic
-//! scheduling utilities built on top of **ractor**.
-//!
-//! ## Architecture
-//!
-//! This module maintains the same public API as before but uses ractor internally
-//! for actor spawning and message routing. The `Actor` trait signature remains
-//! unchanged (`&mut self` in handle), with interior mutability bridging to ractor's
-//! `&self` model.
-//!
-//! Previously in separate neo-akka crate, now inlined into neo-core with ractor backend.
+//! Provides asynchronous actors, hierarchical supervision, message passing,
+//! and basic scheduling utilities built on top of tokio channels.
 
 mod actor;
 mod actor_ref;
@@ -24,7 +13,6 @@ mod inbox;
 mod mailbox;
 mod message;
 mod props;
-mod ractor_bridge;
 mod scheduler;
 mod supervision;
 

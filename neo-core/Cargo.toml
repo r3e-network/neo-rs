@@ -71,8 +71,6 @@ cipher = "0.4"
 zeroize = { workspace = true }
 subtle = { workspace = true }
 
-# Actor framework removed (Phase 2 refactoring)
-ractor = { workspace = true, optional = true }
 
 # Parallel processing for bulk sync
 rayon = { workspace = true }
@@ -135,7 +133,7 @@ neofs-grpc = ["dep:tonic", "dep:prost", "oracle"]
 parallel = []
 # All optional features for full functionality
 full = ["rocksdb", "upnp", "monitoring", "oracle", "neofs-grpc", "parallel"]
-runtime = ["dep:ractor"]
+runtime = []
 performance-tests = []
 
 [[example]]

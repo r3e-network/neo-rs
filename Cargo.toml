@@ -212,9 +212,6 @@ reqwest = { version = "0.12", features = ["json", "blocking", "stream", "gzip"] 
 # Low-level networking
 socket2 = "0.5"
 
-# === Actor Framework ===
-ractor = "0.12"
-
 # === Utilities ===
 uuid = { version = "1.6", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }

@@ -7,13 +7,11 @@ use super::{
     mailbox::{default_mailbox_factory, Mailbox},
     message::{MailboxMessage, SystemMessage, Terminated},
     props::Props,
-    ractor_bridge::{ActorBridge, BridgeArgs, BridgeMessage},
     scheduler::Scheduler,
     supervision::{FailureTracker, SupervisorDirective, SupervisorStrategy},
 };
 use async_trait::async_trait;
 use parking_lot::RwLock;
-use ractor::{Actor as RactorActor, ActorRef as RactorActorRef};
 use std::{any::Any, collections::HashMap, fmt, sync::Arc};
 use tokio::sync::mpsc;
 
@@ -73,28 +71,13 @@ pub(crate) enum MailboxCommand {
 }
 
 /// Default mailbox capacity for bounded channels.
-///
-/// P2P sync can produce short-lived bursts of actor traffic (headers + blocks + inventory). A
-/// larger bound reduces avoidable `try_send` backpressure drops during those bursts.
 const MAILBOX_CAPACITY: usize = 65536;
-
-/// Internal registry entry for an actor.
-///
-/// Supports both legacy mailbox-based actors and ractor-based actors.
-enum ActorEntry {
-    /// Legacy mailbox channel (bounded for DoS protection).
-    Legacy(mpsc::Sender<MailboxCommand>),
-    /// Ractor-based actor reference.
-    Ractor(RactorActorRef<BridgeMessage>),
-}
 
 pub(crate) struct ActorSystemInner {
     pub name: String,
-    registry: RwLock<HashMap<String, ActorEntry>>,
+    registry: RwLock<HashMap<String, mpsc::Sender<MailboxCommand>>>,
     runtime: tokio::runtime::Handle,
     event_stream: Arc<EventStream>,
-    /// Whether to use ractor backend (default: true).
-    use_ractor: bool,
 }
 
 impl ActorSystemInner {
@@ -107,25 +90,6 @@ impl ActorSystemInner {
             registry: RwLock::new(HashMap::new()),
             runtime,
             event_stream: EventStream::new(),
-            // Default to legacy backend for compatibility with single-threaded runtime
-            // Use with_ractor() to enable ractor backend in multi-threaded environments
-            use_ractor: false,
-        }))
-    }
-
-    /// Creates a new ActorSystemInner with ractor backend enabled.
-    ///
-    /// Note: This requires a multi-threaded tokio runtime.
-    fn new_with_ractor(name: String) -> AkkaResult<Arc<Self>> {
-        let runtime = tokio::runtime::Handle::try_current()
-            .map_err(|_| AkkaError::system("Akka actor system requires a Tokio runtime"))?;
-
-        Ok(Arc::new(Self {
-            name,
-            registry: RwLock::new(HashMap::new()),
-            runtime,
-            event_stream: EventStream::new(),
-            use_ractor: true,
         }))
     }
 
@@ -147,8 +111,7 @@ impl ActorSystemInner {
         name: impl Into<String>,
     ) -> AkkaResult<ActorRef> {
         let path = ActorPath::root(self.name.clone(), name.into());
-        // Guardian always uses legacy spawn to avoid async issues
-        self.spawn_legacy_actor(None, props, path)
+        self.spawn_actor(None, props, path)
     }
 
     pub fn spawn_child(
@@ -159,63 +122,11 @@ impl ActorSystemInner {
     ) -> AkkaResult<ActorRef> {
         let child_name = name.unwrap_or_else(ActorRef::unique_child_name);
         let path = parent.path().child(child_name);
-        if self.use_ractor {
-            self.spawn_ractor_actor(Some(parent), props, path)
-        } else {
-            self.spawn_legacy_actor(Some(parent), props, path)
-        }
+        self.spawn_actor(Some(parent), props, path)
     }
 
-    /// Spawns an actor using the ractor backend.
-    fn spawn_ractor_actor(
-        self: &Arc<Self>,
-        parent: Option<ActorRef>,
-        props: Props,
-        path: ActorPath,
-    ) -> AkkaResult<ActorRef> {
-        // Check if actor already exists
-        {
-            let registry = self.registry.read();
-            let key = path.to_string();
-            if registry.contains_key(&key) {
-                return Err(AkkaError::system(format!("Actor {} already exists", path)));
-            }
-        }
-
-        let bridge = ActorBridge::new(Arc::clone(self), path.clone());
-        let args = BridgeArgs {
-            props,
-            parent,
-            system: Arc::clone(self),
-            self_path: path.clone(),
-        };
-
-        // Use block_in_place to safely block within async context
-        // This works even when called from within a tokio runtime
-        let ractor_ref = tokio::task::block_in_place(|| {
-            self.runtime.block_on(async {
-                RactorActor::spawn(Some(path.to_string()), bridge, args)
-                    .await
-                    .map(|(actor_ref, _join_handle)| actor_ref)
-            })
-        })
-        .map_err(|e| AkkaError::system(format!("Failed to spawn ractor actor: {}", e)))?;
-
-        // Register in the system
-        {
-            let mut registry = self.registry.write();
-            registry.insert(path.to_string(), ActorEntry::Ractor(ractor_ref.clone()));
-        }
-
-        Ok(ActorRef::from_ractor(
-            path,
-            ractor_ref,
-            Arc::downgrade(self),
-        ))
-    }
-
-    /// Spawns an actor using the legacy mailbox backend.
-    fn spawn_legacy_actor(
+    /// Spawns an actor using the mailbox backend.
+    fn spawn_actor(
         self: &Arc<Self>,
         parent: Option<ActorRef>,
         props: Props,
@@ -229,7 +140,7 @@ impl ActorSystemInner {
             if registry.contains_key(&key) {
                 return Err(AkkaError::system(format!("Actor {} already exists", path)));
             }
-            registry.insert(key, ActorEntry::Legacy(tx.clone()));
+            registry.insert(key, tx.clone());
         }
 
         let system = Arc::clone(self);
@@ -252,19 +163,12 @@ impl ActorSystemInner {
 
     pub fn resolve(self: &Arc<Self>, path: &ActorPath) -> Option<ActorRef> {
         let registry = self.registry.read();
-        let entry = registry.get(&path.to_string())?;
-        match entry {
-            ActorEntry::Legacy(mailbox) => Some(ActorRef::new(
-                path.clone(),
-                mailbox.clone(),
-                Arc::downgrade(self),
-            )),
-            ActorEntry::Ractor(ractor_ref) => Some(ActorRef::from_ractor(
-                path.clone(),
-                ractor_ref.clone(),
-                Arc::downgrade(self),
-            )),
-        }
+        let mailbox = registry.get(&path.to_string())?;
+        Some(ActorRef::new(
+            path.clone(),
+            mailbox.clone(),
+            Arc::downgrade(self),
+        ))
     }
 }
 
@@ -278,23 +182,6 @@ impl ActorSystem {
     pub fn new(name: impl Into<String>) -> AkkaResult<Self> {
         let name = name.into();
         let inner = ActorSystemInner::new(name.clone())?;
-        let guardian_props =
-            Props::new(|| Guardian).with_mailbox_factory(default_mailbox_factory());
-        let user_guardian = inner.clone().spawn_root(guardian_props, "user")?;
-
-        Ok(Self {
-            inner,
-            user_guardian,
-        })
-    }
-
-    /// Creates a new actor system with ractor backend enabled.
-    ///
-    /// Note: This requires a multi-threaded tokio runtime. Use `new()` for
-    /// compatibility with single-threaded runtimes.
-    pub fn new_ractor(name: impl Into<String>) -> AkkaResult<Self> {
-        let name = name.into();
-        let inner = ActorSystemInner::new_with_ractor(name.clone())?;
         let guardian_props =
             Props::new(|| Guardian).with_mailbox_factory(default_mailbox_factory());
         let user_guardian = inner.clone().spawn_root(guardian_props, "user")?;
