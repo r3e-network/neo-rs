@@ -1077,7 +1077,20 @@ fn script_builder_does_not_accept_local_stackitem_bridge() {
 #[test]
 fn witness_rules_project_through_neo_vm_rs_stack_value() {
     let workspace = workspace_root();
-    let witness_rule = fs::read_to_string(workspace.join("neo-core/src/witness_rule.rs")).unwrap();
+    let mut witness_sources = vec![read_source(workspace.join("neo-core/src/witness_rule.rs"))];
+    let mut witness_module_files = Vec::new();
+    collect_rs_files(
+        &workspace.join("neo-core/src/witness_rule"),
+        &mut witness_module_files,
+    );
+    witness_module_files.sort();
+    for path in witness_module_files {
+        if path.file_name().and_then(|name| name.to_str()) == Some("tests.rs") {
+            continue;
+        }
+        witness_sources.push(read_source(path));
+    }
+    let witness_rule = witness_sources.join("\n");
 
     assert!(
         witness_rule.contains("use neo_vm_rs::StackValue;"),
@@ -4119,7 +4132,7 @@ fn host_adapter_modules_use_vm_runtime_stack_items() {
     let workspace = workspace_root();
     for relative in [
         "neo-core/src/smart_contract/i_interoperable.rs",
-        "neo-core/src/witness_rule.rs",
+        "neo-core/src/witness_rule/stack_projection.rs",
         "neo-core/src/neo_system/persistence.rs",
         "neo-core/src/neo_system/core/tests.rs",
     ] {
