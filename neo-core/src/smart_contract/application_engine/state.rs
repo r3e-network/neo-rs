@@ -359,6 +359,13 @@ impl ApplicationEngine {
         self.persisting_block.as_deref()
     }
 
+    /// Returns the block currently being persisted, or an error if none.
+    pub fn get_persisting_block(&self) -> Result<Block> {
+        self.persisting_block()
+            .cloned()
+            .ok_or_else(|| Error::native_contract("No persisting block available"))
+    }
+
     /// Checks if a hardfork is enabled at the current block height.
     pub fn is_hardfork_enabled(&self, hardfork: Hardfork) -> bool {
         self.protocol_settings

@@ -106,10 +106,7 @@ impl NativeContract for NeoToken {
     /// OnPersist: Refresh committee if required.
     /// Matches C# NeoToken.OnPersistAsync.
     fn on_persist(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
-        let block = engine
-            .persisting_block()
-            .cloned()
-            .ok_or_else(|| CoreError::native_contract("No persisting block available"))?;
+        let block = engine.get_persisting_block()?;
 
         let committee_count = engine.protocol_settings().committee_members_count();
         if !Self::should_refresh_committee(block.index(), committee_count) {
@@ -162,10 +159,7 @@ impl NativeContract for NeoToken {
     /// PostPersist: Distribute GAS rewards to committee members.
     /// Matches C# NeoToken.PostPersistAsync.
     fn post_persist(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
-        let block = engine
-            .persisting_block()
-            .cloned()
-            .ok_or_else(|| CoreError::native_contract("No persisting block available"))?;
+        let block = engine.get_persisting_block()?;
 
         let committee_count = engine.protocol_settings().committee_members_count();
         let validators_count =

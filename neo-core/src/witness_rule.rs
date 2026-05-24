@@ -51,7 +51,6 @@ use crate::neo_config::ADDRESS_SIZE;
 use crate::neo_io::serializable::helper::get_var_size;
 use serde::de::Error as SerdeDeError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::str::FromStr;
 
 mod display;
 mod helpers;

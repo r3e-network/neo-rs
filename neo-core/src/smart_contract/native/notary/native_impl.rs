@@ -68,10 +68,7 @@ impl NativeContract for Notary {
     }
 
     fn on_persist(&self, engine: &mut ApplicationEngine) -> Result<()> {
-        let block = engine
-            .persisting_block()
-            .cloned()
-            .ok_or_else(|| Error::native_contract("No persisting block available"))?;
+        let block = engine.get_persisting_block()?;
 
         let snapshot = engine.snapshot_cache();
         let snapshot_ref = snapshot.as_ref();

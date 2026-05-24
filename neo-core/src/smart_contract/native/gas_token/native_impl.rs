@@ -55,10 +55,7 @@ impl NativeContract for GasToken {
     }
 
     fn on_persist(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
-        let block = engine
-            .persisting_block()
-            .cloned()
-            .ok_or_else(|| CoreError::native_contract("No persisting block available"))?;
+        let block = engine.get_persisting_block()?;
         let block_hash = block.header.clone().hash();
 
         let mut total_network_fee: i64 = 0;
