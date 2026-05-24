@@ -712,20 +712,6 @@ impl VmError {
         }
     }
 
-    /// Create `ExecutionHalted` from a single message
-    pub fn execution_halted_msg<S: Into<String>>(message: S) -> Self {
-        Self::ExecutionHalted {
-            reason: message.into(),
-        }
-    }
-
-    /// Create `UnsupportedOperation` from a single message
-    pub fn unsupported_operation_msg<S: Into<String>>(message: S) -> Self {
-        Self::UnsupportedOperation {
-            operation: message.into(),
-        }
-    }
-
     /// Create `InvalidScript` from a single message
     pub fn invalid_script_msg<S: Into<String>>(message: S) -> Self {
         Self::InvalidScript {
@@ -748,13 +734,6 @@ impl VmError {
         Self::InsufficientStackItems {
             required,
             available,
-        }
-    }
-
-    /// Create `DivisionByZero` from operation
-    pub fn division_by_zero_msg<S: Into<String>>(operation: S) -> Self {
-        Self::DivisionByZero {
-            operation: operation.into(),
         }
     }
 }

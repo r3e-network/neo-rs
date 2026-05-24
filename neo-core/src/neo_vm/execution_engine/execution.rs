@@ -165,7 +165,7 @@ impl ExecutionEngine {
         let handler = self.jump_table.get_handler_by_u8(opcode.byte());
         let result = match handler {
             Some(h) => h(self, &instruction),
-            None => Err(VmError::unsupported_operation_msg(format!(
+            None => Err(VmError::unsupported_operation(format!(
                 "Unsupported opcode: {opcode:?}"
             ))),
         };

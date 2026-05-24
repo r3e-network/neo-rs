@@ -137,7 +137,7 @@ impl JumpTable {
         _engine: &mut ExecutionEngine,
         instruction: &Instruction,
     ) -> VmResult<()> {
-        Err(VmError::unsupported_operation_msg(format!(
+        Err(VmError::unsupported_operation(format!(
             "Unsupported opcode: {:?}",
             instruction.opcode()
         )))
@@ -207,7 +207,7 @@ impl std::ops::IndexMut<OpCode> for JumpTable {
             if self.handlers.get_unchecked(idx).is_none() {
                 *self.handlers.get_unchecked_mut(idx) = Some(
                     |_engine: &mut ExecutionEngine, instruction: &Instruction| -> VmResult<()> {
-                        Err(VmError::unsupported_operation_msg(format!(
+                        Err(VmError::unsupported_operation(format!(
                             "Unsupported opcode: {:?}",
                             instruction.opcode()
                         )))
