@@ -4014,6 +4014,30 @@ fn workspace_tests_and_benches_do_not_import_local_vm_runtime() {
 }
 
 #[test]
+fn smart_contract_support_modules_use_vm_runtime_boundary() {
+    let workspace = workspace_root();
+    for relative in [
+        "neo-core/src/smart_contract/i_diagnostic.rs",
+        "neo-core/src/smart_contract/execution_context_state.rs",
+        "neo-core/src/smart_contract/application_engine_iterator.rs",
+        "neo-core/src/smart_contract/iterators/iterator_interop.rs",
+        "neo-core/src/smart_contract/iterators/storage_iterator.rs",
+        "neo-core/src/smart_contract/storage_context.rs",
+    ] {
+        let source = fs::read_to_string(workspace.join(relative)).unwrap();
+        assert!(
+            source.contains("crate::vm_runtime"),
+            "{relative} should import host-runtime-only local VM types through vm_runtime"
+        );
+        assert!(
+            !source.contains("crate::neo_vm"),
+            "{relative} should not import host-runtime-only local VM types through the \
+             neo_vm implementation tree"
+        );
+    }
+}
+
+#[test]
 fn fuzz_script_parser_uses_direct_script_validation() {
     let workspace = workspace_root();
     let target =

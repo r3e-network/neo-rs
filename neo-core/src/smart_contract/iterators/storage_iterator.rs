@@ -1,11 +1,11 @@
 //! StorageIterator - matches C# Neo.SmartContract.Iterators.StorageIterator exactly
 
-use crate::neo_vm::StackItem;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::find_options::FindOptions;
 use crate::smart_contract::iterators::i_iterator::IIterator;
 use crate::smart_contract::storage_item::StorageItem;
 use crate::smart_contract::storage_key::StorageKey;
+use crate::vm_runtime::StackItem;
 use neo_vm_rs::ExecutionEngineLimits;
 
 /// Storage iterator for iterating over storage items (matches C# StorageIterator)

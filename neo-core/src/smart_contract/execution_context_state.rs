@@ -1,10 +1,10 @@
 //! ExecutionContextState - matches C# Neo.SmartContract.ExecutionContextState exactly
 
-use crate::neo_vm::ExecutionContext;
 use crate::persistence::data_cache::DataCache;
 use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::contract_parameter_type::ContractParameterType;
 use crate::smart_contract::contract_state::ContractState;
+use crate::vm_runtime::ExecutionContext;
 use crate::UInt160;
 use std::sync::Arc;
 

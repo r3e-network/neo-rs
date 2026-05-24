@@ -1,4 +1,4 @@
-use crate::neo_vm::stack_item::InteropInterface as VmInteropInterface;
+use crate::vm_runtime::InteropInterface as VmInteropInterface;
 use std::any::Any;
 
 #[derive(Debug)]

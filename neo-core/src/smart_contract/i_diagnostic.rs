@@ -1,6 +1,6 @@
 //! IDiagnostic - matches C# Neo.SmartContract.IDiagnostic exactly
 
-use crate::neo_vm::execution_context::ExecutionContext;
+use crate::vm_runtime::ExecutionContext;
 use neo_vm_rs::Instruction;
 
 /// Diagnostic interface for ApplicationEngine (matches C# IDiagnostic)

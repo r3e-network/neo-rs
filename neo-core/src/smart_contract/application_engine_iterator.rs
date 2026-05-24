@@ -1,8 +1,8 @@
 //! ApplicationEngine.Iterator - matches C# Neo.SmartContract.ApplicationEngine.Iterator.cs
 
-use crate::neo_vm::{ExecutionEngine, VmError, VmResult};
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::call_flags::CallFlags;
+use crate::vm_runtime::{ExecutionEngine, VmError, VmResult};
 
 fn map_iterator_error(service: &str, error: String) -> VmError {
     VmError::InteropService {
