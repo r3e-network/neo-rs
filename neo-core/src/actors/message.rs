@@ -40,8 +40,6 @@ impl Envelope {
 #[derive(Debug)]
 pub enum SystemMessage {
     Stop,
-    Suspend,
-    Resume,
     Watch(ActorRef),
     Unwatch(ActorRef),
 }
@@ -55,16 +53,6 @@ pub struct Terminated {
 impl Terminated {
     pub fn new(actor: ActorRef) -> Self {
         Self { actor }
-    }
-}
-
-/// Idle signal used by priority mailboxes to notify actors about an empty queue.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Idle;
-
-impl Idle {
-    pub fn instance() -> Self {
-        Idle
     }
 }
 

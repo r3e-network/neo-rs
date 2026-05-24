@@ -1,13 +1,27 @@
 use super::{
     context::ActorContext,
     error::{AkkaError, AkkaResult},
-    supervision::SupervisorDirective,
 };
 use async_trait::async_trait;
 use std::any::Any;
 
 /// Result type alias used by actor lifecycle callbacks.
 pub type ActorResult = AkkaResult<()>;
+
+/// Directives returned by supervision strategies when an actor fails.
+#[derive(Debug, Clone)]
+pub enum SupervisorDirective {
+    Stop(String),
+    Resume,
+    Restart,
+    Escalate,
+}
+
+impl SupervisorDirective {
+    pub fn stop<E: ToString>(reason: E) -> Self {
+        SupervisorDirective::Stop(reason.to_string())
+    }
+}
 
 /// Core trait that must be implemented by all actors.
 #[async_trait]

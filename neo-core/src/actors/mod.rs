@@ -9,28 +9,24 @@ mod actor_system;
 mod context;
 mod error;
 mod event_stream;
-mod inbox;
 mod mailbox;
 mod message;
 mod props;
 mod scheduler;
-mod supervision;
 
-pub use actor::{Actor, ActorResult};
+pub use actor::{Actor, ActorResult, SupervisorDirective};
 pub use actor_ref::ActorRef;
 pub use actor_system::{ActorPath, ActorSystem, ActorSystemHandle};
 pub use context::ActorContext;
 pub use error::{AkkaError, AkkaResult};
 pub use event_stream::EventStreamHandle;
-pub use inbox::Inbox;
 pub use mailbox::{
     default_mailbox_factory, priority_mailbox_factory, Cancelable, DefaultMailbox, Mailbox,
     MailboxFactory, PriorityMailbox, PriorityMailboxConfig,
 };
-pub use message::{Envelope, Idle, MailboxMessage, SystemMessage, Terminated};
+pub use message::{Envelope, MailboxMessage, SystemMessage, Terminated};
 pub use props::Props;
 pub use scheduler::{ScheduleHandle, Scheduler};
-pub use supervision::{SupervisorDirective, SupervisorStrategy};
 
 #[cfg(test)]
 mod tests;

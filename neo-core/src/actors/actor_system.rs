@@ -1,5 +1,5 @@
 use super::{
-    actor::Actor,
+    actor::{Actor, SupervisorDirective},
     actor_ref::ActorRef,
     context::ActorContext,
     error::{AkkaError, AkkaResult},
@@ -8,7 +8,6 @@ use super::{
     message::{MailboxMessage, SystemMessage, Terminated},
     props::Props,
     scheduler::Scheduler,
-    supervision::{FailureTracker, SupervisorDirective, SupervisorStrategy},
 };
 use async_trait::async_trait;
 use parking_lot::RwLock;
@@ -244,8 +243,6 @@ struct ActorCell {
     commands: mpsc::Receiver<MailboxCommand>,
     self_ref: ActorRef,
     parent: Option<ActorRef>,
-    strategy: Option<SupervisorStrategy>,
-    failures: FailureTracker,
     watchers: Vec<ActorRef>,
 }
 
@@ -260,7 +257,6 @@ impl ActorCell {
         parent: Option<ActorRef>,
     ) -> Self {
         Self {
-            strategy: props.strategy.clone(),
             system,
             actor,
             props,
@@ -268,7 +264,6 @@ impl ActorCell {
             commands,
             self_ref,
             parent,
-            failures: FailureTracker::new(),
             watchers: Vec::new(),
         }
     }
@@ -328,8 +323,6 @@ impl ActorCell {
             }
             MailboxMessage::System(system_msg) => match system_msg {
                 SystemMessage::Stop => true,
-                SystemMessage::Suspend => false,
-                SystemMessage::Resume => false,
                 SystemMessage::Watch(watcher) => {
                     if watcher != self.self_ref
                         && !self.watchers.iter().any(|existing| existing == &watcher)
@@ -361,11 +354,7 @@ impl ActorCell {
     }
 
     async fn handle_failure(&mut self, error: AkkaError, ctx: &mut ActorContext) -> bool {
-        let directive = if let Some(strategy) = &self.strategy {
-            strategy.decide(&error, &mut self.failures)
-        } else {
-            self.actor.on_failure(ctx, &error).await
-        };
+        let directive = self.actor.on_failure(ctx, &error).await;
         match directive {
             SupervisorDirective::Stop(_) | SupervisorDirective::Escalate => false,
             SupervisorDirective::Resume => true,

@@ -1,4 +1,4 @@
-use super::message::{Envelope, Idle, MailboxMessage};
+use super::message::MailboxMessage;
 use std::collections::VecDeque;
 use std::sync::Arc;
 
@@ -86,7 +86,6 @@ pub struct PriorityMailbox {
     low: VecDeque<MailboxMessage>,
     dropper: Option<DropperFn>,
     priority: Option<PriorityFn>,
-    idle_permit: bool,
 }
 
 impl PriorityMailbox {
@@ -96,7 +95,6 @@ impl PriorityMailbox {
             low: VecDeque::new(),
             dropper: config.dropper,
             priority: config.priority,
-            idle_permit: true,
         }
     }
 
@@ -129,15 +127,6 @@ impl PriorityMailbox {
 
 impl Mailbox for PriorityMailbox {
     fn enqueue(&mut self, message: MailboxMessage) {
-        // Allow idle delivery once after each enqueue operation.
-        self.idle_permit = true;
-
-        if let MailboxMessage::User(ref envelope) = message {
-            if envelope.is::<Idle>() {
-                return;
-            }
-        }
-
         if self.should_drop(&message) {
             return;
         }
@@ -153,16 +142,7 @@ impl Mailbox for PriorityMailbox {
         if let Some(message) = self.high.pop_front() {
             return Some(message);
         }
-        if let Some(message) = self.low.pop_front() {
-            return Some(message);
-        }
-
-        if self.idle_permit {
-            self.idle_permit = false;
-            return Some(MailboxMessage::User(Envelope::new(Idle::instance(), None)));
-        }
-
-        None
+        self.low.pop_front()
     }
 
     fn is_empty(&self) -> bool {

@@ -1,4 +1,3 @@
-use super::supervision::SupervisorDirective;
 use super::*;
 use async_trait::async_trait;
 use parking_lot::Mutex;
@@ -293,29 +292,6 @@ async fn scheduler_repeated_messages_can_be_cancelled() -> AkkaResult<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn inbox_collects_messages() -> AkkaResult<()> {
-    let (system, counter) = counter_setup("akka-inbox").await?;
-    let inbox = Inbox::create(&system)?;
-
-    inbox.watch(&counter)?;
-    counter.stop()?;
-
-    let message = inbox
-        .receive(Duration::from_millis(500))
-        .await
-        .map_err(|_| AkkaError::AskTimeout)?;
-
-    let terminated = *message
-        .downcast::<Terminated>()
-        .map_err(|_| AkkaError::actor("unexpected inbox message"))?;
-
-    assert_eq!(terminated.actor.path(), counter.path());
-
-    system.shutdown().await?;
-    Ok(())
-}
-
 #[derive(Clone)]
 enum PriorityMsg {
     High(u32),
@@ -355,13 +331,15 @@ async fn priority_mailbox_delivers_high_priority_first() -> AkkaResult<()> {
     let props = Props::new(move || PriorityActor {
         log: log_clone.clone(),
     })
-    .with_priority_mailbox(PriorityMailboxConfig::default().with_priority(|message| {
-        message
-            .as_user()
-            .and_then(|env| env.downcast_ref::<PriorityMsg>())
-            .map(|msg| matches!(msg, PriorityMsg::High(_)))
-            .unwrap_or(false)
-    }));
+    .with_mailbox_factory(priority_mailbox_factory(
+        PriorityMailboxConfig::default().with_priority(|message| {
+            message
+                .as_user()
+                .and_then(|env| env.downcast_ref::<PriorityMsg>())
+                .map(|msg| matches!(msg, PriorityMsg::High(_)))
+                .unwrap_or(false)
+        }),
+    ));
 
     let actor = system.actor_of(props, "priority")?;
     let actor_high = actor.clone();
@@ -429,7 +407,6 @@ fn priority_mailbox_drops_duplicates() {
     let first = mailbox.dequeue().expect("first message");
     let second = mailbox.dequeue().expect("second message");
     let third = mailbox.dequeue();
-    let fourth = mailbox.dequeue();
 
     let extract = |message: MailboxMessage| -> DuplicateMsg {
         match message {
@@ -446,104 +423,5 @@ fn priority_mailbox_drops_duplicates() {
 
     assert_eq!(first_msg.0, 1);
     assert_eq!(second_msg.0, 2);
-    match third {
-        Some(MailboxMessage::User(envelope)) => {
-            assert!(envelope.is::<Idle>());
-        }
-        _ => panic!("expected idle envelope"),
-    }
-    assert!(fourth.is_none());
-}
-
-struct IdleActor {
-    notify: Arc<AsyncMutex<Option<oneshot::Sender<()>>>>,
-}
-
-#[async_trait]
-impl Actor for IdleActor {
-    async fn handle(
-        &mut self,
-        message: Box<dyn Any + Send>,
-        _ctx: &mut ActorContext,
-    ) -> ActorResult {
-        if message.downcast::<Idle>().is_ok() {
-            if let Some(sender) = self.notify.lock().await.take() {
-                let _ = sender.send(());
-            }
-        }
-        Ok(())
-    }
-}
-
-#[tokio::test]
-async fn priority_mailbox_emits_idle_signal() -> AkkaResult<()> {
-    let system = ActorSystem::new("akka-idle")?;
-    let (tx, rx) = oneshot::channel();
-    let notify = Arc::new(AsyncMutex::new(Some(tx)));
-
-    let _actor = system.actor_of(
-        Props::new({
-            let notify = notify.clone();
-            move || IdleActor {
-                notify: notify.clone(),
-            }
-        })
-        .with_priority_mailbox(PriorityMailboxConfig::default()),
-        "idle",
-    )?;
-
-    timeout(Duration::from_millis(200), rx)
-        .await
-        .map_err(|_| AkkaError::AskTimeout)?
-        .map_err(|_| AkkaError::AskTimeout)?;
-
-    system.shutdown().await?;
-    Ok(())
-}
-
-#[derive(Default)]
-struct FragileActor;
-
-#[async_trait]
-impl Actor for FragileActor {
-    async fn handle(
-        &mut self,
-        _message: Box<dyn Any + Send>,
-        _ctx: &mut ActorContext,
-    ) -> ActorResult {
-        Err(AkkaError::actor("boom"))
-    }
-}
-
-#[tokio::test]
-async fn supervisor_strategy_enforces_restart_budget() -> AkkaResult<()> {
-    let system = ActorSystem::new("akka-restart-budget")?;
-
-    let props = Props::new(FragileActor::default).with_strategy(SupervisorStrategy::one_for_one(
-        Some(1),
-        Some(Duration::from_millis(200)),
-        |_| SupervisorDirective::Restart,
-    ));
-
-    let actor = system.actor_of(props, "fragile")?;
-    let inbox = Inbox::create(&system)?;
-    inbox.watch(&actor)?;
-
-    actor.tell(())?;
-    sleep(Duration::from_millis(20)).await;
-    actor.tell(())?;
-
-    let message = inbox
-        .receive(Duration::from_millis(500))
-        .await
-        .map_err(|_| AkkaError::AskTimeout)?;
-
-    let terminated = *message
-        .downcast::<Terminated>()
-        .map_err(|_| AkkaError::actor("expected termination notification"))?;
-
-    assert_eq!(terminated.actor.path(), actor.path());
-
-    system.shutdown().await?;
-    Ok(())
+    assert!(third.is_none());
 }

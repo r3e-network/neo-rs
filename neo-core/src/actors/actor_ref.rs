@@ -3,7 +3,7 @@ use super::{
     error::{AkkaError, AkkaResult},
     message::{Envelope, MailboxMessage, SystemMessage},
 };
-use std::{any::Any, fmt, sync::Weak, time::Duration};
+use std::{any::Any, fmt, sync::Weak};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
@@ -94,7 +94,8 @@ impl ActorRef {
     /// Sends a message that expects a response.
     /// The `builder` closure is responsible for embedding the reply channel
     /// into a message type understood by the receiving actor.
-    pub async fn ask<R, F>(&self, builder: F, timeout: Duration) -> AkkaResult<R>
+    #[cfg(test)]
+    pub async fn ask<R, F>(&self, builder: F, timeout: std::time::Duration) -> AkkaResult<R>
     where
         R: Send + 'static,
         F: FnOnce(tokio::sync::oneshot::Sender<R>) -> Box<dyn Any + Send>,
