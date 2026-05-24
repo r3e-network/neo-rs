@@ -1,17 +1,15 @@
 use crate::UInt256;
-use std::collections::{HashSet, VecDeque};
+use indexmap::IndexSet;
 
 pub(super) struct KnownHashCache {
-    hashes: HashSet<UInt256>,
-    order: VecDeque<UInt256>,
+    hashes: IndexSet<UInt256>,
     capacity: usize,
 }
 
 impl KnownHashCache {
     pub(super) fn new(capacity: usize) -> Self {
         Self {
-            hashes: HashSet::with_capacity(capacity),
-            order: VecDeque::with_capacity(capacity),
+            hashes: IndexSet::with_capacity(capacity),
             capacity,
         }
     }
@@ -26,27 +24,16 @@ impl KnownHashCache {
 
     pub(super) fn remember(&mut self, hash: UInt256) -> bool {
         let inserted = self.hashes.insert(hash);
-        if inserted {
-            self.order.push_back(hash);
-        }
 
-        while self.order.len() > self.capacity {
-            if let Some(evicted) = self.order.pop_front() {
-                self.hashes.remove(&evicted);
-            } else {
-                break;
-            }
+        while self.hashes.len() > self.capacity {
+            self.hashes.shift_remove_index(0);
         }
 
         inserted
     }
 
     pub(super) fn forget(&mut self, hash: &UInt256) -> bool {
-        let removed = self.hashes.remove(hash);
-        if removed {
-            self.order.retain(|candidate| candidate != hash);
-        }
-        removed
+        self.hashes.shift_remove(hash)
     }
 }
 
