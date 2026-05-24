@@ -1,6 +1,6 @@
 use super::{
-    max_traceable_blocks_from_snapshot, HashOrIndex, LedgerContract, LedgerTransactionStates,
-    PersistedTransactionState,
+    storage::max_traceable_blocks_from_snapshot, HashOrIndex, LedgerContract,
+    LedgerTransactionStates, PersistedTransactionState,
 };
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::hardfork::Hardfork;
