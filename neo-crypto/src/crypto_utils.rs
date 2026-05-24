@@ -362,6 +362,48 @@ impl Ed25519Crypto {
     }
 }
 
+fn verify_ecdsa_raw64_with_hash(
+    data: &[u8],
+    signature: &[u8; 64],
+    public_key: &[u8],
+    curve: ECCurve,
+    hash_algorithm: HashAlgorithm,
+) -> CryptoResult<bool> {
+    match (curve, hash_algorithm) {
+        (ECCurve::Secp256k1, HashAlgorithm::Keccak256) => {
+            let sig = secp256k1::ecdsa::Signature::from_compact(signature)
+                .map_err(|e| CryptoError::invalid_signature(format!("Invalid signature: {e}")))?;
+            let pubkey = Secp256k1PublicKey::from_slice(public_key)
+                .map_err(|e| CryptoError::invalid_key(format!("Invalid public key: {e}")))?;
+            let hash = Crypto::keccak256(data);
+            let msg = Message::from_digest_slice(&hash)
+                .map_err(|e| CryptoError::invalid_argument(format!("Invalid message: {e}")))?;
+            Ok(Secp256k1::verification_only()
+                .verify_ecdsa(&msg, &sig, &pubkey)
+                .is_ok())
+        }
+        (ECCurve::Secp256r1, HashAlgorithm::Keccak256) => {
+            let public_key = P256PublicKey::from_sec1_bytes(public_key)
+                .map_err(|e| CryptoError::invalid_key(format!("Invalid public key: {e}")))?;
+            let verifying_key = VerifyingKey::from(public_key);
+            let signature = Signature::try_from(signature.as_slice())
+                .map_err(|e| CryptoError::invalid_signature(format!("Invalid signature: {e}")))?;
+            let hash = Crypto::keccak256(data);
+            Ok(verifying_key.verify_prehash(&hash, &signature).is_ok())
+        }
+        (ECCurve::Secp256k1, _) => {
+            let public_key: [u8; 33] = public_key
+                .try_into()
+                .map_err(|_| CryptoError::invalid_key("Invalid public key length"))?;
+            Secp256k1Crypto::verify(data, signature, &public_key)
+        }
+        (ECCurve::Secp256r1, _) => Secp256r1Crypto::verify(data, signature, public_key),
+        (ECCurve::Ed25519, _) => Err(CryptoError::invalid_argument(
+            "Ed25519 is not an ECDSA curve",
+        )),
+    }
+}
+
 /// ECDSA operations wrapper
 pub struct ECDsa;
 
@@ -392,10 +434,13 @@ impl ECDsa {
                 let sig_bytes: [u8; 64] = signature
                     .try_into()
                     .map_err(|_| CryptoError::invalid_signature("Invalid signature length"))?;
-                let pub_bytes: [u8; 33] = public_key
-                    .try_into()
-                    .map_err(|_| CryptoError::invalid_key("Invalid public key length"))?;
-                Secp256k1Crypto::verify(data, &sig_bytes, &pub_bytes)
+                verify_ecdsa_raw64_with_hash(
+                    data,
+                    &sig_bytes,
+                    public_key,
+                    ECCurve::Secp256k1,
+                    HashAlgorithm::Sha256,
+                )
             }
             ECCurve::Secp256r1 => {
                 if signature.len() != 64 {
@@ -404,7 +449,13 @@ impl ECDsa {
                 let sig_bytes: [u8; 64] = signature
                     .try_into()
                     .map_err(|_| CryptoError::invalid_signature("Invalid signature length"))?;
-                Secp256r1Crypto::verify(data, &sig_bytes, public_key)
+                verify_ecdsa_raw64_with_hash(
+                    data,
+                    &sig_bytes,
+                    public_key,
+                    ECCurve::Secp256r1,
+                    HashAlgorithm::Sha256,
+                )
             }
             ECCurve::Ed25519 => {
                 if signature.len() != 64 || public_key.len() != 32 {
@@ -479,46 +530,21 @@ impl Crypto {
         curve: &ECCurve,
         hash_algorithm: HashAlgorithm,
     ) -> bool {
-        match (curve, hash_algorithm) {
-            (ECCurve::Secp256k1, HashAlgorithm::Keccak256) => {
-                if signature.len() != 64 {
-                    return false;
-                }
-                let sig = match secp256k1::ecdsa::Signature::from_compact(signature) {
-                    Ok(sig) => sig,
-                    Err(_) => return false,
-                };
-                let pubkey = match Secp256k1PublicKey::from_slice(public_key) {
-                    Ok(key) => key,
-                    Err(_) => return false,
-                };
-                let hash = Self::keccak256(data);
-                let msg = match Message::from_digest_slice(&hash) {
-                    Ok(msg) => msg,
-                    Err(_) => return false,
-                };
-                Secp256k1::verification_only()
-                    .verify_ecdsa(&msg, &sig, &pubkey)
-                    .is_ok()
-            }
-            (ECCurve::Secp256r1, HashAlgorithm::Keccak256) => {
-                if signature.len() != 64 {
-                    return false;
-                }
-                let public_key = match P256PublicKey::from_sec1_bytes(public_key) {
-                    Ok(key) => key,
-                    Err(_) => return false,
-                };
-                let verifying_key = VerifyingKey::from(public_key);
-                let signature = match Signature::try_from(signature) {
-                    Ok(sig) => sig,
-                    Err(_) => return false,
-                };
-                let hash = Self::keccak256(data);
-                verifying_key.verify_prehash(&hash, &signature).is_ok()
-            }
-            _ => ECDsa::verify(data, signature, public_key, *curve).unwrap_or(false),
+        if *curve == ECCurve::Ed25519 {
+            return ECDsa::verify(data, signature, public_key, *curve).unwrap_or(false);
         }
+
+        if signature.len() != 64 {
+            return false;
+        }
+
+        let signature: [u8; 64] = match signature.try_into() {
+            Ok(signature) => signature,
+            Err(_) => return false,
+        };
+
+        verify_ecdsa_raw64_with_hash(data, &signature, public_key, *curve, hash_algorithm)
+            .unwrap_or(false)
     }
 
     /// Verifies a signature against the supplied public key, inferring the curve where possible.
