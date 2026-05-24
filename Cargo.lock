@@ -2196,6 +2196,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "neo-chain"
+version = "0.7.2"
+dependencies = [
+ "neo-primitives",
+ "parking_lot",
+ "serde",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "neo-config"
 version = "0.7.2"
 dependencies = [
@@ -2254,11 +2266,14 @@ dependencies = [
  "k256",
  "lz4_flex",
  "murmur3",
+ "neo-chain",
  "neo-config",
  "neo-crypto",
  "neo-io",
  "neo-json",
+ "neo-mempool",
  "neo-primitives",
+ "neo-state",
  "neo-storage",
  "neo-vm-rs",
  "num-bigint",
@@ -2386,6 +2401,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "neo-mempool"
+version = "0.7.2"
+dependencies = [
+ "hashbrown 0.14.5",
+ "neo-primitives",
+ "parking_lot",
+ "serde",
+ "thiserror 1.0.69",
+ "tracing",
+]
+
+[[package]]
 name = "neo-node"
 version = "0.7.2"
 dependencies = [
@@ -2503,6 +2530,21 @@ dependencies = [
  "uuid",
  "warp",
  "zeroize",
+]
+
+[[package]]
+name = "neo-state"
+version = "0.7.2"
+dependencies = [
+ "hashbrown 0.14.5",
+ "neo-crypto",
+ "neo-primitives",
+ "neo-storage",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tracing",
 ]
 
 [[package]]

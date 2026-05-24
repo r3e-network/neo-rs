@@ -17,7 +17,9 @@
 //! The MPT root hash represents the cryptographic commitment to the entire
 //! world state at a given block height.
 
-use crate::{StateChanges, StateError, StateResult, StorageKey};
+use super::world_state::StateChanges;
+use super::error::{StateError, StateResult};
+use super::contract_storage::StorageKey;
 use hashbrown::HashMap;
 use neo_crypto::mpt_trie::{MptResult, MptStoreSnapshot, Trie};
 use neo_primitives::UInt256;
@@ -227,7 +229,7 @@ impl StateTrieManager {
     }
 
     /// Serializes an `AccountState` to bytes for trie storage.
-    fn serialize_account(acc: &crate::AccountState) -> Vec<u8> {
+    fn serialize_account(acc: &super::account::AccountState) -> Vec<u8> {
         // Simple binary format: neo_balance (8) + gas_balance (8) + balance_height (4)
         let mut value = Vec::with_capacity(20);
         value.extend_from_slice(&acc.neo_balance.to_le_bytes());

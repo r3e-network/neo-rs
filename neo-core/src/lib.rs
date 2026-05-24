@@ -279,17 +279,17 @@ pub mod services;
 ///
 /// Provides lightweight mempool implementation for transaction management.
 /// For full C# parity, use `ledger::MemoryPool` instead.
-pub mod mempool;
+pub use neo_mempool as mempool;
 
 /// Blockchain state machine and chain management.
 ///
-/// Provides chain state, block indexing, fork choice, and validation.
-pub mod chain;
+/// Re-exported from the `neo_chain` crate.
+pub use neo_chain as chain;
 
 /// World state abstraction for Neo N3 blockchain.
 ///
-/// Provides account state, contract storage, snapshots, and state trie.
-pub mod state;
+/// Re-exported from the `neo_state` crate.
+pub use neo_state as state;
 
 /// Application logs plugin support (requires `runtime` feature).
 #[cfg(feature = "runtime")]

@@ -5,10 +5,9 @@
 //! ```text
 //! Layer 0 (Foundation - no neo-* deps): neo-primitives, neo-json, neo-storage, neo-io, neo-config
 //! Layer 1 (Crypto): neo-crypto (depends on Layer 0)
-//! Layer 2 (Protocol): neo-core (including VM compatibility), neo-p2p, neo-consensus
-//! Layer 3 (State): neo-state, neo-mempool, neo-chain
-//! Layer 4 (Services): neo-rpc, neo-telemetry
-//! Layer 5 (Application): neo-node, neo-cli
+//! Layer 2 (Protocol): neo-core, neo-p2p, neo-consensus, neo-state, neo-mempool, neo-chain
+//! Layer 3 (Services): neo-rpc, neo-telemetry, neo-tee
+//! Layer 4 (Application): neo-node, neo-cli
 //! ```
 
 use std::collections::{HashMap, HashSet};
@@ -21,9 +20,8 @@ enum Layer {
     Foundation = 0,
     Crypto = 1,
     Protocol = 2,
-    State = 3,
-    Services = 4,
-    Application = 5,
+    Services = 3,
+    Application = 4,
 }
 
 impl Layer {
@@ -35,11 +33,9 @@ impl Layer {
             "neo-io" => Some(Layer::Foundation),
             // Layer 1: Crypto (depends on Layer 0 only)
             "neo-crypto" => Some(Layer::Crypto),
-            // Layer 2: Protocol
-            "neo-p2p" | "neo-consensus" | "neo-core" => Some(Layer::Protocol),
-            // Layer 3: State
-            "neo-state" | "neo-mempool" | "neo-chain" => Some(Layer::State),
-            // Layer 4: Services
+            // Layer 2: Protocol (includes extracted sub-crates)
+            "neo-p2p" | "neo-consensus" | "neo-core" | "neo-state" | "neo-mempool" | "neo-chain" => Some(Layer::Protocol),
+            // Layer 3: Services
             "neo-rpc" | "neo-telemetry" | "neo-tee" => Some(Layer::Services),
             // Layer 5: Application
             "neo-node" | "neo-cli" => Some(Layer::Application),
