@@ -17,10 +17,19 @@ use neo_vm_rs::ExecutionEngineLimits;
 use neo_vm_rs::StackItemType;
 use neo_vm_rs::{StackValue, VmOrderedDictionary};
 use num_bigint::BigInt;
+use std::fmt;
 use std::sync::Arc;
 
-use super::interop_interface::InteropInterface;
 use super::vm_integer::{VmInteger, vm_integer_stack_value};
+
+/// A trait for interop interfaces that can be wrapped by a stack item.
+pub trait InteropInterface: fmt::Debug + Send + Sync {
+    /// Gets the type of the interop interface.
+    fn interface_type(&self) -> &str;
+
+    /// Allows downcasting to concrete types.
+    fn as_any(&self) -> &dyn std::any::Any;
+}
 
 const VM_INTEGER_MAX_SIZE: usize = 32;
 

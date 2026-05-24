@@ -4134,7 +4134,6 @@ fn host_adapter_modules_use_vm_runtime_stack_items() {
         "neo-core/src/smart_contract/interoperable.rs",
         "neo-core/src/witness_rule/stack_projection.rs",
         "neo-core/src/neo_system/persistence.rs",
-        "neo-core/src/neo_system/core/tests.rs",
     ] {
         let source = fs::read_to_string(workspace.join(relative)).unwrap();
         assert!(

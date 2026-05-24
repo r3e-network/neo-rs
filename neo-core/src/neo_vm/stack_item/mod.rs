@@ -6,8 +6,6 @@
 pub mod array;
 /// Buffer stack item type.
 pub mod buffer;
-/// Interop interface trait.
-pub mod interop_interface;
 /// Map stack item type.
 pub mod map;
 /// Pointer stack item type.
@@ -22,9 +20,9 @@ pub mod vm_integer;
 
 pub use array::Array;
 pub use buffer::Buffer;
-pub use interop_interface::InteropInterface;
 pub use map::Map;
 pub use pointer::Pointer;
+pub use stack_item::InteropInterface;
 pub use stack_item::StackItem;
 pub use struct_item::Struct;
 pub use vm_integer::VmInteger;
