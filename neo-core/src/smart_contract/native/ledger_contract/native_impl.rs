@@ -4,7 +4,6 @@ use super::{
 };
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::hardfork::Hardfork;
-use crate::neo_vm::StackItem;
 use crate::network::p2p::payloads::transaction_attribute::TransactionAttribute;
 use crate::persistence::i_read_only_store::IReadOnlyStoreGeneric;
 use crate::smart_contract::application_engine::ApplicationEngine;
@@ -13,6 +12,7 @@ use crate::smart_contract::native::{
     policy_contract::PolicyContract, NativeContract, NativeMethod,
 };
 use crate::smart_contract::{IInteroperable, StorageItem, StorageKey};
+use crate::vm_runtime::StackItem;
 use crate::{UInt160, UInt256};
 use neo_vm_rs::ExecutionEngineLimits;
 use num_bigint::BigInt;

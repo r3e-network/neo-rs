@@ -1,6 +1,5 @@
 use super::OracleContract;
 use crate::error::{CoreError as Error, CoreResult as Result};
-use crate::neo_vm::StackItem;
 use crate::network::p2p::payloads::{
     oracle_response::OracleResponse as TxOracleResponse,
     transaction_attribute::TransactionAttribute,
@@ -8,6 +7,7 @@ use crate::network::p2p::payloads::{
 use crate::persistence::DataCache;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;
+use crate::vm_runtime::StackItem;
 
 impl OracleContract {
     pub(super) fn finish(&self, engine: &mut ApplicationEngine) -> Result<Vec<u8>> {

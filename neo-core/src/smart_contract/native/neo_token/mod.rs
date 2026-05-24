@@ -20,7 +20,6 @@ use super::{
 use crate::cryptography::ECPoint;
 use crate::error::{CoreError, CoreResult};
 use crate::hardfork::Hardfork;
-use crate::neo_vm::stack_item::StackItem;
 use crate::persistence::{i_read_only_store::IReadOnlyStoreGeneric, seek_direction::SeekDirection};
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::application_engine::ApplicationEngine;
@@ -32,6 +31,7 @@ use crate::smart_contract::storage_context::StorageContext;
 use crate::smart_contract::storage_key::StorageKey;
 use crate::smart_contract::Contract;
 use crate::smart_contract::StorageItem;
+use crate::vm_runtime::StackItem;
 use crate::UInt160;
 use lazy_static::lazy_static;
 use neo_vm_rs::ExecutionEngineLimits;

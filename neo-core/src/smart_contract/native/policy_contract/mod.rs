@@ -6,7 +6,6 @@
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::hardfork::Hardfork;
 use crate::neo_config::ADDRESS_SIZE;
-use crate::neo_vm::StackItem;
 use crate::persistence::i_read_only_store::IReadOnlyStoreGeneric;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::application_engine::ApplicationEngine;
@@ -16,6 +15,7 @@ use crate::smart_contract::manifest::ContractEventDescriptor;
 use crate::smart_contract::native::{NativeContract, NativeMethod};
 use crate::smart_contract::storage_key::StorageKey;
 use crate::smart_contract::StorageItem;
+use crate::vm_runtime::StackItem;
 use crate::UInt160;
 use neo_primitives::TransactionAttributeType;
 use neo_vm_rs::{ExecutionEngineLimits, StackValue};

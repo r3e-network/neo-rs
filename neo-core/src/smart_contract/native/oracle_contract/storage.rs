@@ -4,12 +4,12 @@ use super::{
 };
 use crate::cryptography::NeoHash;
 use crate::error::{CoreError as Error, CoreResult as Result};
-use crate::neo_vm::StackItem;
 use crate::persistence::{i_read_only_store::IReadOnlyStoreGeneric, DataCache};
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::native::oracle_request::OracleRequest;
 use crate::smart_contract::storage_key::StorageKey;
 use crate::smart_contract::StorageItem;
+use crate::vm_runtime::StackItem;
 use crate::{UInt160, UInt256};
 use neo_vm_rs::ExecutionEngineLimits;
 use neo_vm_rs::StackValue;

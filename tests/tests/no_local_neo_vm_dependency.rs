@@ -4137,6 +4137,39 @@ fn host_adapter_modules_use_vm_runtime_stack_items() {
 }
 
 #[test]
+fn native_contract_modules_use_vm_runtime_stack_items() {
+    let workspace = workspace_root();
+    for relative in [
+        "neo-core/src/smart_contract/native/contract_management/mod.rs",
+        "neo-core/src/smart_contract/native/contract_management/tests.rs",
+        "neo-core/src/smart_contract/native/fungible_token.rs",
+        "neo-core/src/smart_contract/native/gas_token/mod.rs",
+        "neo-core/src/smart_contract/native/interoperable_list.rs",
+        "neo-core/src/smart_contract/native/ledger_contract/native_impl.rs",
+        "neo-core/src/smart_contract/native/neo_token/mod.rs",
+        "neo-core/src/smart_contract/native/notary.rs",
+        "neo-core/src/smart_contract/native/oracle_contract/response.rs",
+        "neo-core/src/smart_contract/native/oracle_contract/storage.rs",
+        "neo-core/src/smart_contract/native/policy_contract/mod.rs",
+        "neo-core/src/smart_contract/native/policy_contract/tests.rs",
+        "neo-core/src/smart_contract/native/role_management.rs",
+        "neo-core/src/smart_contract/native/std_lib/helpers.rs",
+        "neo-core/src/smart_contract/native/std_lib/strings.rs",
+    ] {
+        let source = fs::read_to_string(workspace.join(relative)).unwrap();
+        assert!(
+            source.contains("crate::vm_runtime::StackItem"),
+            "{relative} should import host StackItem through vm_runtime"
+        );
+        assert!(
+            !source.contains("crate::neo_vm::StackItem")
+                && !source.contains("crate::neo_vm::stack_item::StackItem"),
+            "{relative} should not import host StackItem through the neo_vm implementation tree"
+        );
+    }
+}
+
+#[test]
 fn fuzz_script_parser_uses_direct_script_validation() {
     let workspace = workspace_root();
     let target =

@@ -1,6 +1,5 @@
 use super::*;
 use crate::neo_io::BinaryWriter;
-use crate::neo_vm::StackItem;
 use crate::network::p2p::payloads::signer::Signer;
 use crate::network::p2p::payloads::transaction::Transaction;
 use crate::persistence::providers::memory_store::MemoryStore;
@@ -16,6 +15,7 @@ use crate::smart_contract::manifest::{
 };
 use crate::smart_contract::trigger_type::TriggerType;
 use crate::smart_contract::ContractParameterType;
+use crate::vm_runtime::StackItem;
 use crate::wallets::KeyPair;
 use crate::witness::Witness;
 use crate::{IVerifiable, UInt160, WitnessScope};

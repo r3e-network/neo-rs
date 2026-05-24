@@ -7,7 +7,6 @@ use super::security_fixes::{
 };
 use super::AccountState;
 use crate::error::{CoreError, CoreResult};
-use crate::neo_vm::StackItem;
 use crate::network::p2p::payloads::{Transaction, TransactionAttribute, TransactionAttributeType};
 use crate::persistence::i_read_only_store::IReadOnlyStoreGeneric;
 use crate::smart_contract::application_engine::ApplicationEngine;
@@ -16,6 +15,7 @@ use crate::smart_contract::helper::Helper;
 use crate::smart_contract::storage_context::StorageContext;
 use crate::smart_contract::storage_key::StorageKey;
 use crate::smart_contract::StorageItem;
+use crate::vm_runtime::StackItem;
 use crate::UInt160;
 use lazy_static::lazy_static;
 use neo_vm_rs::ExecutionEngineLimits;

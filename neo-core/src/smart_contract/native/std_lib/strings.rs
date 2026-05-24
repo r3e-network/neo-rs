@@ -1,9 +1,9 @@
 use super::StdLib;
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
-use crate::neo_vm::StackItem;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::BinarySerializer;
+use crate::vm_runtime::StackItem;
 use unicode_segmentation::UnicodeSegmentation;
 
 impl StdLib {

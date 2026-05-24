@@ -6,7 +6,6 @@
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
 use crate::neo_io::{MemoryReader, Serializable};
-use crate::neo_vm::StackItem;
 use crate::persistence::{DataCache, StoreCache};
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;
@@ -14,6 +13,7 @@ use crate::smart_contract::contract_state::{ContractState, NefFile};
 use crate::smart_contract::manifest::ContractManifest;
 use crate::smart_contract::native::{NativeContract, NativeMethod, PolicyContract};
 use crate::smart_contract::StorageKey;
+use crate::vm_runtime::StackItem;
 use crate::UInt160;
 use neo_vm_rs::{ExecutionEngineLimits, StackValue};
 use num_bigint::BigInt;
