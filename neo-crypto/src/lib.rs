@@ -51,12 +51,14 @@ pub mod mpt_trie;
 /// Murmur3 hash helpers used by Neo runtime and native contracts.
 pub mod murmur;
 pub mod named_curve_hash;
+/// Neo-specific hash facade.
+pub mod neo_hash;
 
 // Re-exports
 pub use bloom_filter::BloomFilter;
 pub use bls12381::Bls12381Crypto;
 pub use constant_time::ConstantTime;
-pub use crypto_utils::{ECDsa, Ed25519Crypto, NeoHash, Secp256k1Crypto, Secp256r1Crypto, ECC};
+pub use crypto_utils::{ECDsa, Ed25519Crypto, Secp256k1Crypto, Secp256r1Crypto, ECC};
 pub use ecc::{ECCurve, ECPoint};
 pub use encoding::{Base58, Hex};
 pub use error::{CryptoError, CryptoResult};
@@ -66,6 +68,7 @@ pub use mpt_trie::{
 };
 pub use murmur::{murmur128, murmur32};
 pub use named_curve_hash::NamedCurveHash;
+pub use neo_hash::NeoHash;
 
 #[cfg(test)]
 mod tests {
