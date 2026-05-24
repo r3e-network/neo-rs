@@ -1,20 +1,6 @@
-//! Transaction removal reason implementation.
+//! TransactionRemovalReason re-export from neo-primitives.
 //!
-//! This module provides the TransactionRemovalReason functionality exactly matching C# Neo TransactionRemovalReason.
+//! The `TransactionRemovalReason` enum is defined in [`neo_primitives`] as the single source of truth.
+//! This module re-exports it for backward compatibility.
 
-// No using directives in C# file
-
-/// namespace Neo.Ledger -> public enum TransactionRemovalReason : byte
-/// The reason a transaction was removed.
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TransactionRemovalReason {
-    /// The transaction was rejected since it was the lowest priority transaction and the memory pool capacity was exceeded.
-    CapacityExceeded = 0,
-
-    /// The transaction was rejected due to failing re-validation after a block was persisted.
-    NoLongerValid = 1,
-
-    /// The transaction was rejected due to conflict with higher priority transactions with Conflicts attribute.
-    Conflict = 2,
-}
+pub use neo_primitives::TransactionRemovalReason;
