@@ -67,3 +67,17 @@ impl Hex {
         hex::decode(s).map_err(|e| CryptoError::encoding_error(format!("Hex decode error: {e}")))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Base58;
+
+    #[test]
+    fn test_base58_encoding() {
+        let data = b"hello world";
+        let encoded = Base58::encode(data);
+        let decoded = Base58::decode(&encoded).unwrap();
+
+        assert_eq!(data, decoded.as_slice());
+    }
+}

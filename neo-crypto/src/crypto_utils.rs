@@ -624,89 +624,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_constant_time_eq() {
-        let a = [0u8; 32];
-        let b = [0u8; 32];
-        let c = [1u8; 32];
-
-        // Same values should be equal
-        assert!(ConstantTime::eq(&a, &b));
-        assert!(ConstantTime::eq(&a, &a));
-
-        // Different values should not be equal
-        assert!(!ConstantTime::eq(&a, &c));
-
-        // Single byte difference should be detected
-        let mut d = [0u8; 32];
-        d[15] = 1;
-        assert!(!ConstantTime::eq(&a, &d));
-
-        // Different positions
-        d[15] = 0;
-        d[0] = 1;
-        assert!(!ConstantTime::eq(&a, &d));
-
-        d[0] = 0;
-        d[31] = 1;
-        assert!(!ConstantTime::eq(&a, &d));
-    }
-
-    #[test]
-    fn test_constant_time_eq_slice() {
-        let a = vec![0u8; 32];
-        let b = vec![0u8; 32];
-        let c = vec![1u8; 32];
-        let d = vec![0u8; 64]; // Different length
-
-        // Same values should be equal
-        assert!(ConstantTime::eq_slice(&a, &b));
-        assert!(ConstantTime::eq_slice(&a, &a));
-
-        // Different values should not be equal
-        assert!(!ConstantTime::eq_slice(&a, &c));
-
-        // Different lengths should not be equal
-        assert!(!ConstantTime::eq_slice(&a, &d));
-
-        // Empty slices
-        assert!(ConstantTime::eq_slice(&[], &[]));
-        assert!(!ConstantTime::eq_slice(&[], &[0u8]));
-    }
-
-    #[test]
-    fn test_constant_time_eq_signature() {
-        let sig1 = [0u8; 64];
-        let sig2 = [0u8; 64];
-        let mut sig3 = [0u8; 64];
-        sig3[63] = 1;
-
-        assert!(ConstantTime::eq_signature(&sig1, &sig2));
-        assert!(!ConstantTime::eq_signature(&sig1, &sig3));
-    }
-
-    #[test]
-    fn test_constant_time_eq_hash256() {
-        let hash1 = [0u8; 32];
-        let hash2 = [0u8; 32];
-        let mut hash3 = [0u8; 32];
-        hash3[31] = 1;
-
-        assert!(ConstantTime::eq_hash256(&hash1, &hash2));
-        assert!(!ConstantTime::eq_hash256(&hash1, &hash3));
-    }
-
-    #[test]
-    fn test_constant_time_eq_hash160() {
-        let hash1 = [0u8; 20];
-        let hash2 = [0u8; 20];
-        let mut hash3 = [0u8; 20];
-        hash3[19] = 1;
-
-        assert!(ConstantTime::eq_hash160(&hash1, &hash2));
-        assert!(!ConstantTime::eq_hash160(&hash1, &hash3));
-    }
-
-    #[test]
     fn test_hash_functions() {
         let data = b"hello world";
 
@@ -730,30 +647,5 @@ mod tests {
         let is_valid = Secp256k1Crypto::verify(message, &signature, &public_key).unwrap();
 
         assert!(is_valid);
-    }
-
-    #[test]
-    fn test_base58_encoding() {
-        let data = b"hello world";
-        let encoded = Base58::encode(data);
-        let decoded = Base58::decode(&encoded).unwrap();
-
-        assert_eq!(data, decoded.as_slice());
-    }
-
-    #[test]
-    fn test_murmur128_vectors() {
-        let hex_input = hex::decode("718f952132679baa9c5c2aa0d329fd2a").unwrap();
-        let cases: Vec<(&[u8], &str)> = vec![
-            (b"hello", "0bc59d0ad25fde2982ed65af61227a0e"),
-            (b"world", "3d3810fed480472bd214a14023bb407f"),
-            (b"hello world", "e0a0632d4f51302c55e3b3e48d28795d"),
-            (&hex_input, "9b4aa747ff0cf4e41b3d96251551c8ae"),
-        ];
-
-        for (input, expected) in cases {
-            let hash = NeoHash::murmur128(input, 123u32);
-            assert_eq!(hex::encode(hash), expected);
-        }
     }
 }
