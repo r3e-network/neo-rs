@@ -33,7 +33,7 @@ use crate::wallets::{Version, Wallet, WalletAccount, WalletError, WalletResult};
 use crate::Witness;
 use crate::{IVerifiable, UInt160, UInt256};
 use async_trait::async_trait;
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use std::any::Any;
 use std::net::SocketAddr;
@@ -41,9 +41,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc};
 use tokio::time::{sleep, timeout, Duration};
 
-lazy_static! {
-    static ref LOG_TEST_MUTEX: Mutex<()> = Mutex::new(());
-}
+static LOG_TEST_MUTEX: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
 #[derive(Debug)]
 struct DummyService;

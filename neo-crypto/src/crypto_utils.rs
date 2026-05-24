@@ -38,7 +38,6 @@
 //! - Signature verification is constant-time to prevent timing attacks
 
 pub use crate::bls12381::Bls12381Crypto;
-pub use crate::constant_time::ConstantTime;
 pub use crate::encoding::{Base58, Hex};
 pub use crate::hash::Crypto;
 pub use crate::murmur;

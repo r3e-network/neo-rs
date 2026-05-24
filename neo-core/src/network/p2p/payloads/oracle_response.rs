@@ -19,7 +19,6 @@ use crate::script_builder::ScriptBuilder;
 use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::native::{oracle_contract::OracleContract, NativeContract};
 use crate::WitnessScope;
-use lazy_static::lazy_static;
 use neo_vm_rs::OpCode;
 use serde::{Deserialize, Serialize};
 use tracing::error;
@@ -48,8 +47,9 @@ impl OracleResponse {
 
     /// Get the fixed script for oracle response transactions.
     pub fn get_fixed_script() -> Vec<u8> {
-        lazy_static! {
-            static ref ORACLE_FINISH_SCRIPT: Vec<u8> = {
+        static ORACLE_FINISH_SCRIPT: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+        ORACLE_FINISH_SCRIPT
+            .get_or_init(|| {
                 let oracle_hash = OracleContract::new().hash();
                 let mut builder = ScriptBuilder::new();
                 builder.emit_opcode(OpCode::NEWARRAY0);
@@ -61,10 +61,8 @@ impl OracleResponse {
                     return Vec::new();
                 }
                 builder.to_array()
-            };
-        }
-
-        ORACLE_FINISH_SCRIPT.clone()
+            })
+            .clone()
     }
 
     /// Verify the oracle response attribute.

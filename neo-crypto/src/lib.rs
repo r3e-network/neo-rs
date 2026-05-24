@@ -39,8 +39,6 @@
 pub mod bloom_filter;
 /// BLS12-381 signature helpers for Neo.
 pub mod bls12381;
-/// Constant-time comparison helpers.
-pub mod constant_time;
 pub mod crypto_utils;
 pub mod ecc;
 /// Encoding helpers used by Neo cryptographic APIs.
@@ -57,7 +55,6 @@ pub mod signature;
 // Re-exports
 pub use bloom_filter::BloomFilter;
 pub use bls12381::Bls12381Crypto;
-pub use constant_time::ConstantTime;
 pub use ecc::{ECCurve, ECPoint};
 pub use encoding::{Base58, Hex};
 pub use error::{CryptoError, CryptoResult};

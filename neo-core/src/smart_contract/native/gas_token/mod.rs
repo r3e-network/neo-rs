@@ -17,16 +17,15 @@ use crate::smart_contract::storage_key::StorageKey;
 use crate::smart_contract::StorageItem;
 use crate::vm_runtime::StackItem;
 use crate::UInt160;
-use lazy_static::lazy_static;
 use neo_vm_rs::ExecutionEngineLimits;
 use neo_vm_rs::StackValue;
 use num_bigint::BigInt;
 use num_traits::{Signed, Zero};
+use once_cell::sync::Lazy;
 use std::sync::OnceLock;
 
-lazy_static! {
-    static ref GAS_HASH: UInt160 = Helper::get_contract_hash(&UInt160::zero(), 0, "GasToken");
-}
+static GAS_HASH: Lazy<UInt160> =
+    Lazy::new(|| Helper::get_contract_hash(&UInt160::zero(), 0, "GasToken"));
 
 /// GAS native token with NEP-17 compliant behaviour.
 pub struct GasToken {

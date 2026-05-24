@@ -33,16 +33,15 @@ use crate::smart_contract::Contract;
 use crate::smart_contract::StorageItem;
 use crate::vm_runtime::StackItem;
 use crate::UInt160;
-use lazy_static::lazy_static;
 use neo_vm_rs::ExecutionEngineLimits;
 use neo_vm_rs::StackValue;
 use num_bigint::BigInt;
 use num_traits::{Signed, ToPrimitive, Zero};
+use once_cell::sync::Lazy;
 use std::any::Any;
 
-lazy_static! {
-    static ref NEO_HASH: UInt160 = Helper::get_contract_hash(&UInt160::zero(), 0, "NeoToken");
-}
+static NEO_HASH: Lazy<UInt160> =
+    Lazy::new(|| Helper::get_contract_hash(&UInt160::zero(), 0, "NeoToken"));
 
 /// NEO native token contract implementation.
 ///

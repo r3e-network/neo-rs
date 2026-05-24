@@ -43,7 +43,7 @@ hyper = { workspace = true }
 chrono = { workspace = true }
 
 # Utilities
-lazy_static = { workspace = true }
+once_cell = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
