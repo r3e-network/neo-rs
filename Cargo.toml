@@ -5,6 +5,9 @@ members = [
     # Primitive types (UInt160, UInt256, BigDecimal)
     "neo-primitives",
 
+    # Config (zero cross-module deps)
+    "neo-config",
+
     # Cryptography (hashing, ECC, signatures)
     "neo-crypto",
 
@@ -70,6 +73,7 @@ members = [
 ]
 default-members = [
     "neo-primitives",
+    "neo-config",
     "neo-crypto",
     "neo-storage",
     "neo-io",
@@ -112,6 +116,7 @@ msrv = "1.75"
 # === Internal crates ===
 # Foundation layer
 neo-primitives = { path = "neo-primitives", version = "0.7.2" }
+neo-config = { path = "neo-config", version = "0.7.2" }
 neo-crypto = { path = "neo-crypto", version = "0.7.2" }
 neo-storage = { path = "neo-storage", version = "0.7.2" }
 neo-io = { path = "neo-io", version = "0.7.2" }

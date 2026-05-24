@@ -19,7 +19,7 @@ use super::super::ClientRpcError;
 use crate::RpcError;
 use base64::{engine::general_purpose, Engine as _};
 use neo_core::big_decimal::BigDecimal;
-use neo_core::config::ProtocolSettings;
+use neo_config::ProtocolSettings;
 use neo_core::network::p2p::payloads::block::Block;
 use neo_core::{Signer, Transaction};
 use neo_io::{BinaryWriter, Serializable};

@@ -441,7 +441,7 @@ mod tests {
     use super::*;
     use base64::{engine::general_purpose, Engine as _};
     use mockito::{Matcher, Server};
-    use neo_core::config::ProtocolSettings;
+    use neo_config::ProtocolSettings;
     use neo_core::script_builder::ScriptBuilder;
     use neo_json::{JObject, JToken};
     use neo_primitives::UInt256;

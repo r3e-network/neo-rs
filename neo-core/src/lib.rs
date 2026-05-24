@@ -87,6 +87,7 @@
 
 // Self-reference for macro exports
 extern crate self as neo_core;
+pub extern crate neo_config as neo_config_crate;
 
 // ============================================================================
 // Declarative Macros (must be declared before other modules)
@@ -280,11 +281,6 @@ pub mod services;
 /// For full C# parity, use `ledger::MemoryPool` instead.
 pub mod mempool;
 
-/// Configuration management for Neo N3 blockchain node.
-///
-/// Provides node settings, protocol parameters, and network configuration.
-pub mod config;
-
 /// Blockchain state machine and chain management.
 ///
 /// Provides chain state, block indexing, fork choice, and validation.
@@ -365,11 +361,6 @@ pub use chain::{
     BlockIndex, BlockIndexEntry, BlockValidator, ChainError, ChainEvent, ChainEventSubscriber,
     ChainResult, ChainState, ChainStateSnapshot, ForkChoice, ValidationResult,
 };
-pub use config::{
-    ConfigError, ConfigResult, ConsensusSettings, GenesisConfig, GenesisValidator, LoggingSettings,
-    NetworkConfig, NetworkType, NodeSettings, RpcSettings, Settings, StorageSettings,
-    TelemetrySettings, CONFIG_VERSION,
-};
 pub use mempool::{
     FeePolicy, Mempool, MempoolConfig, MempoolError, MempoolResult, TransactionEntry,
     TransactionEntryParams, DEFAULT_EXPIRATION_BLOCKS, DEFAULT_MAX_TRANSACTIONS,
@@ -393,6 +384,9 @@ pub use neo_system::NeoSystem;
 pub mod neo_config {
     pub use crate::constants::*;
 }
+
+/// Backward-compatible re-export of the `neo-config` crate.
+pub use neo_config_crate as config;
 
 // ============================================================================
 // Network Types

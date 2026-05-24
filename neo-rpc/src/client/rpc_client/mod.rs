@@ -22,7 +22,7 @@ use reqwest::{Client, Url};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
-use neo_core::config::ProtocolSettings;
+use neo_config::ProtocolSettings;
 
 pub use builder::RpcClientBuilder;
 pub use hooks::{RpcClientHooks, RpcRequestOutcome};

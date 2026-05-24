@@ -257,7 +257,7 @@ impl RpcNep17Transfer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_core::config::ProtocolSettings;
+use neo_config::ProtocolSettings;
     use neo_json::JToken;
     use std::fs;
     use std::path::PathBuf;

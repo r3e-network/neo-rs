@@ -3,11 +3,11 @@
 //! Validates the architectural layering of the neo-rs workspace:
 //!
 //! ```text
-//! Layer 0 (Foundation - no neo-* deps): neo-primitives, neo-json, neo-storage, neo-io
+//! Layer 0 (Foundation - no neo-* deps): neo-primitives, neo-json, neo-storage, neo-io, neo-config
 //! Layer 1 (Crypto): neo-crypto (depends on Layer 0)
 //! Layer 2 (Protocol): neo-core (including VM compatibility), neo-p2p, neo-consensus
 //! Layer 3 (State): neo-state, neo-mempool, neo-chain
-//! Layer 4 (Services): neo-rpc, neo-config, neo-telemetry
+//! Layer 4 (Services): neo-rpc, neo-telemetry
 //! Layer 5 (Application): neo-node, neo-cli
 //! ```
 
@@ -30,7 +30,7 @@ impl Layer {
     fn from_crate_name(name: &str) -> Option<Self> {
         match name {
             // Layer 0: Foundation (no neo-* dependencies allowed)
-            "neo-primitives" | "neo-json" | "neo-storage" => Some(Layer::Foundation),
+            "neo-primitives" | "neo-json" | "neo-storage" | "neo-config" => Some(Layer::Foundation),
             // neo-io is special: can depend on neo-primitives only
             "neo-io" => Some(Layer::Foundation),
             // Layer 1: Crypto (depends on Layer 0 only)
@@ -40,7 +40,7 @@ impl Layer {
             // Layer 3: State
             "neo-state" | "neo-mempool" | "neo-chain" => Some(Layer::State),
             // Layer 4: Services
-            "neo-rpc" | "neo-config" | "neo-telemetry" | "neo-tee" => Some(Layer::Services),
+            "neo-rpc" | "neo-telemetry" | "neo-tee" => Some(Layer::Services),
             // Layer 5: Application
             "neo-node" | "neo-cli" => Some(Layer::Application),
             _ => None,

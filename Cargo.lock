@@ -2196,6 +2196,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "neo-config"
+version = "0.7.2"
+dependencies = [
+ "dirs",
+ "serde",
+ "thiserror 1.0.69",
+ "toml",
+ "uuid",
+]
+
+[[package]]
 name = "neo-consensus"
 version = "0.7.2"
 dependencies = [
@@ -2243,6 +2254,7 @@ dependencies = [
  "k256",
  "lz4_flex",
  "murmur3",
+ "neo-config",
  "neo-crypto",
  "neo-io",
  "neo-json",
@@ -2459,6 +2471,7 @@ dependencies = [
  "hex",
  "hyper 0.14.32",
  "mockito",
+ "neo-config",
  "neo-core",
  "neo-crypto",
  "neo-io",

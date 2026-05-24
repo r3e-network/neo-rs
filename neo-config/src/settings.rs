@@ -1,6 +1,6 @@
 //! Main settings for Neo node configuration
 
-use super::{
+use crate::{
     ConfigError, ConfigResult, GenesisConfig, NetworkConfig, NetworkType, ProtocolSettings,
 };
 use serde::{Deserialize, Serialize};

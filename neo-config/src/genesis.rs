@@ -1,5 +1,6 @@
 //! Genesis block configuration
 
+use crate::{ConfigError, ConfigResult};
 use serde::{Deserialize, Serialize};
 
 /// Genesis block configuration
@@ -253,16 +254,16 @@ impl GenesisConfig {
     }
 
     /// Validate the genesis configuration
-    pub fn validate(&self) -> crate::ConfigResult<()> {
+    pub fn validate(&self) -> ConfigResult<()> {
         if self.validators.is_empty() {
-            return Err(crate::ConfigError::GenesisError(
+            return Err(ConfigError::GenesisError(
                 "At least one validator is required".to_string(),
             ));
         }
 
         for validator in &self.validators {
             if validator.public_key.len() != 66 {
-                return Err(crate::ConfigError::GenesisError(format!(
+                return Err(ConfigError::GenesisError(format!(
                     "Invalid validator public key length: {}",
                     validator.public_key
                 )));

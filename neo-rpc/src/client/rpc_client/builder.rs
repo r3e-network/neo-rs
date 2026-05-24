@@ -13,7 +13,7 @@ use super::hooks::RpcClientHooks;
 use super::{RpcClient, DEFAULT_HTTP_TIMEOUT};
 use crate::RpcError;
 use base64::{engine::general_purpose, Engine as _};
-use neo_core::config::ProtocolSettings;
+use neo_config::ProtocolSettings;
 use reqwest::{Client, Url};
 use std::sync::Arc;
 use std::time::Duration;

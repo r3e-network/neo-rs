@@ -18,6 +18,7 @@ description = "RPC server and client for Neo blockchain"
 neo-primitives = { workspace = true }
 neo-crypto = { workspace = true }
 neo-io = { workspace = true }
+neo-config = { workspace = true, optional = true }
 neo-core = { path = "../neo-core", optional = true, features = ["runtime"] }
 neo-json = { path = "../neo-json", optional = true }
 neo-vm-rs = { workspace = true, optional = true }
@@ -85,6 +86,7 @@ mockito = "1.0"
 default = []
 server = [
     "client",  # Server uses client models for JSON serialization
+    "dep:neo-config",
     "dep:neo-core",
     "dep:neo-json",
     "dep:neo-vm-rs",
@@ -115,6 +117,7 @@ server = [
     "dep:socket2",
 ]
 client = [
+    "dep:neo-config",
     "dep:neo-core",
     "dep:neo-json",
     "dep:neo-vm-rs",
