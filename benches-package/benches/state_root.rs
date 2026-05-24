@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use neo_core::crypto::Crypto;
+use neo_crypto::Crypto;
 
 /// Benchmark SHA-256 hashing with various input sizes.
 fn bench_sha256(c: &mut Criterion) {

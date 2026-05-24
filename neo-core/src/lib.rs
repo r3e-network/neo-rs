@@ -412,37 +412,11 @@ pub mod neo_ledger {
 // Foundation Crate Re-exports
 // ============================================================================
 
-/// Re-exports from [`neo_primitives`] crate.
-///
-/// Contains core primitive types like `UInt160`, `UInt256`.
-/// Kept for backward compatibility; no current downstream consumers.
-pub mod primitives {
-    pub use neo_primitives::{UInt160, UInt256};
-}
-
 /// Re-exports from [`neo_crypto`] crate.
-///
-/// Contains cryptographic primitives and hash functions.
-/// Kept for backward compatibility; no current downstream consumers.
-pub mod crypto {
-    pub use neo_crypto::{ct_hash_eq, ct_hash_slice_eq, Crypto, CryptoError, HashAlgorithm, ECC};
-}
+pub use neo_crypto::{ct_hash_eq, ct_hash_slice_eq, Crypto, CryptoError, HashAlgorithm, ECC};
 
 /// Re-exports from [`neo_storage`] crate.
-///
-/// Contains storage traits and abstractions.
-/// Kept for backward compatibility; no current downstream consumers.
-pub mod storage {
-    pub use neo_storage::{StorageItem, StorageKey};
-}
-
-/// Re-exports smart contract types for backward compatibility.
-///
-/// Note: `neo-contract` crate has been merged - types now live in [`smart_contract`] module.
-/// No current downstream consumers use this re-export path.
-pub mod contract {
-    pub use crate::smart_contract::*;
-}
+pub use neo_storage::{StorageItem, StorageKey};
 
 // ============================================================================
 // IVerifiable Trait
