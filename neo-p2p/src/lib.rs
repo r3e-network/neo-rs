@@ -73,7 +73,7 @@
 //! | [`MessageCommand`] | P2P message identifiers | `MessageCommand::GetBlocks` |
 //! | [`InventoryType`] | Inventory type codes | `InventoryType::Transaction` |
 //! | [`VerifyResult`] | Verification outcomes | `VerifyResult::Succeed` |
-//! | [`WitnessScope`] | Signature scopes | `WitnessScope::CalledByEntry` |
+//! | [`WitnessScope`] | Signature scopes | `WitnessScope::CALLED_BY_ENTRY` |
 //! | [`WitnessConditionType`] | Condition types | `WitnessConditionType::And` |
 //! | [`NodeCapabilityType`] | Node capabilities | `NodeCapabilityType::FullNode` |
 //! | [`OracleResponseCode`] | Oracle response codes | `OracleResponseCode::Success` |
@@ -102,7 +102,7 @@
 //! assert!(result.is_success());
 //!
 //! // Work with witness scopes
-//! let scope = WitnessScope::CalledByEntry;
+//! let scope = WitnessScope::CALLED_BY_ENTRY;
 //! assert!(scope.is_valid());
 //! ```
 //!

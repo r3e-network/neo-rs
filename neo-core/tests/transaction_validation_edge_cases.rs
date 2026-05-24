@@ -160,7 +160,7 @@ fn create_test_transaction() -> Transaction {
     tx.set_valid_until_block(0x01020304);
     tx.set_script(vec![0x11]); // PUSH1 opcode
 
-    let signer = Signer::new(UInt160::zero(), WitnessScope::CalledByEntry);
+    let signer = Signer::new(UInt160::zero(), WitnessScope::CALLED_BY_ENTRY);
     tx.set_signers(vec![signer]);
     tx.set_attributes(vec![]);
     tx.set_witnesses(vec![Witness::empty()]);
@@ -173,7 +173,7 @@ fn create_transaction_with_fee(network_fee: i64, system_fee: i64) -> Transaction
     tx.set_system_fee(system_fee);
     tx.set_script(vec![0x42; 16]); // Random script
 
-    let signer = Signer::new(UInt160::zero(), WitnessScope::CalledByEntry);
+    let signer = Signer::new(UInt160::zero(), WitnessScope::CALLED_BY_ENTRY);
     tx.set_signers(vec![signer]);
     tx.set_attributes(vec![]);
     tx.set_witnesses(vec![Witness::empty()]);
@@ -446,8 +446,8 @@ mod tests {
         // Create duplicate signers (same account, different scopes)
         let account = UInt160::from_str("0x0001020304050607080900010203040506070809").unwrap();
         let signers = vec![
-            Signer::new(account, WitnessScope::Global),
-            Signer::new(account, WitnessScope::CalledByEntry), // Duplicate account
+            Signer::new(account, WitnessScope::GLOBAL),
+            Signer::new(account, WitnessScope::CALLED_BY_ENTRY), // Duplicate account
         ];
         tx.set_signers(signers);
         tx.set_attributes(vec![]);
@@ -488,7 +488,7 @@ mod tests {
             let mut bytes = [0u8; 20];
             bytes[0] = i as u8;
             let account = UInt160::from_bytes(&bytes).unwrap();
-            signers.push(Signer::new(account, WitnessScope::CalledByEntry));
+            signers.push(Signer::new(account, WitnessScope::CALLED_BY_ENTRY));
         }
         tx.set_signers(signers);
         tx.set_attributes(vec![]);
@@ -513,24 +513,24 @@ mod tests {
         let account = UInt160::from_bytes(&[0x01; 20]).unwrap();
 
         // Test None scope (fee-only)
-        let signer_none = Signer::new(account, WitnessScope::None);
+        let signer_none = Signer::new(account, WitnessScope::NONE);
         tx.set_signers(vec![signer_none]);
-        assert_eq!(tx.signers()[0].scopes(), WitnessScope::None);
+        assert_eq!(tx.signers()[0].scopes(), WitnessScope::NONE);
 
         // Test Global scope
-        let signer_global = Signer::new(account, WitnessScope::Global);
+        let signer_global = Signer::new(account, WitnessScope::GLOBAL);
         tx.set_signers(vec![signer_global]);
-        assert_eq!(tx.signers()[0].scopes(), WitnessScope::Global);
+        assert_eq!(tx.signers()[0].scopes(), WitnessScope::GLOBAL);
 
         // Test CalledByEntry scope
-        let signer_entry = Signer::new(account, WitnessScope::CalledByEntry);
+        let signer_entry = Signer::new(account, WitnessScope::CALLED_BY_ENTRY);
         tx.set_signers(vec![signer_entry]);
-        assert_eq!(tx.signers()[0].scopes(), WitnessScope::CalledByEntry);
+        assert_eq!(tx.signers()[0].scopes(), WitnessScope::CALLED_BY_ENTRY);
 
         // Test CustomContracts scope
-        let signer_custom = Signer::new(account, WitnessScope::CustomContracts);
+        let signer_custom = Signer::new(account, WitnessScope::CUSTOM_CONTRACTS);
         tx.set_signers(vec![signer_custom]);
-        assert_eq!(tx.signers()[0].scopes(), WitnessScope::CustomContracts);
+        assert_eq!(tx.signers()[0].scopes(), WitnessScope::CUSTOM_CONTRACTS);
     }
 
     /// Test transaction serialization basics (matches C# UT_Transaction.Transaction_Serialize_Deserialize_Simple)
@@ -543,7 +543,7 @@ mod tests {
         tx.set_network_fee(1);
         tx.set_valid_until_block(0x01020304);
 
-        let signer = Signer::new(UInt160::zero(), WitnessScope::CalledByEntry);
+        let signer = Signer::new(UInt160::zero(), WitnessScope::CALLED_BY_ENTRY);
         tx.set_signers(vec![signer]);
         tx.set_attributes(vec![]);
         tx.set_script(vec![0x11]); // PUSH1
@@ -616,7 +616,7 @@ mod tests {
 
         // Create witness with invalid verification script
         let witness = Witness::new_with_scripts(vec![], vec![0x10, 0x75]); // PUSH0, DROP
-        let signer = Signer::new(witness.script_hash(), WitnessScope::CalledByEntry);
+        let signer = Signer::new(witness.script_hash(), WitnessScope::CALLED_BY_ENTRY);
         tx.set_witnesses(vec![witness]);
         tx.set_signers(vec![signer]);
 
@@ -1821,14 +1821,14 @@ mod tests {
 
         // Test with single signer
         let account1 = UInt160::from_bytes(&[0x01; 20]).unwrap();
-        tx.set_signers(vec![Signer::new(account1, WitnessScope::CalledByEntry)]);
+        tx.set_signers(vec![Signer::new(account1, WitnessScope::CALLED_BY_ENTRY)]);
         assert_eq!(tx.sender(), Some(account1));
 
         // Test with multiple signers (sender should be first)
         let account2 = UInt160::from_bytes(&[0x02; 20]).unwrap();
         tx.set_signers(vec![
-            Signer::new(account1, WitnessScope::CalledByEntry),
-            Signer::new(account2, WitnessScope::Global),
+            Signer::new(account1, WitnessScope::CALLED_BY_ENTRY),
+            Signer::new(account2, WitnessScope::GLOBAL),
         ]);
         assert_eq!(tx.sender(), Some(account1)); // First signer is sender
     }

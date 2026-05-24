@@ -31,7 +31,7 @@ fn create_signed_transaction(
     tx.set_network_fee(network_fee);
     tx.set_script(script);
 
-    let signer = Signer::new(sender, WitnessScope::CalledByEntry);
+    let signer = Signer::new(sender, WitnessScope::CALLED_BY_ENTRY);
     tx.add_signer(signer);
 
     tx
@@ -87,7 +87,7 @@ fn test_transaction_hash_unique() {
     tx2.set_network_fee(500);
     tx2.set_script(vec![OpCode::PUSH1.byte()]);
 
-    let signer = Signer::new(sender, WitnessScope::CalledByEntry);
+    let signer = Signer::new(sender, WitnessScope::CALLED_BY_ENTRY);
     tx2.add_signer(signer);
 
     assert_ne!(
@@ -281,8 +281,8 @@ fn test_transaction_with_multiple_signers() {
     let mut tx = Transaction::new();
     tx.set_script(vec![OpCode::RET.byte()]);
 
-    let signer1 = Signer::new(sender1, WitnessScope::CalledByEntry);
-    let signer2 = Signer::new(sender2, WitnessScope::Global);
+    let signer1 = Signer::new(sender1, WitnessScope::CALLED_BY_ENTRY);
+    let signer2 = Signer::new(sender2, WitnessScope::GLOBAL);
 
     tx.add_signer(signer1);
     tx.add_signer(signer2);
@@ -298,7 +298,7 @@ fn test_transaction_with_high_priority_attribute() {
     let mut tx = Transaction::new();
     tx.set_script(vec![OpCode::RET.byte()]);
 
-    let signer = Signer::new(sender, WitnessScope::CalledByEntry);
+    let signer = Signer::new(sender, WitnessScope::CALLED_BY_ENTRY);
     tx.add_signer(signer);
 
     let attr = TransactionAttribute::high_priority();

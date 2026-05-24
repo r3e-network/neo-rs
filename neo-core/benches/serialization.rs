@@ -35,7 +35,7 @@ fn bench_transaction_serialization(c: &mut Criterion) {
         for _ in 0..*signer_count {
             let signer = Signer::new(
                 UInt160::from_bytes(&random_bytes(20)).unwrap(),
-                neo_core::network::p2p::payloads::WitnessScope::None,
+                neo_core::network::p2p::payloads::WitnessScope::NONE,
             );
             tx.add_signer(signer);
 
@@ -159,7 +159,7 @@ fn bench_hash_computation(c: &mut Criterion) {
     // Add a signer and matching witness
     let signer = Signer::new(
         UInt160::from_bytes(&random_bytes(20)).unwrap(),
-        neo_core::network::p2p::payloads::WitnessScope::None,
+        neo_core::network::p2p::payloads::WitnessScope::NONE,
     );
     tx.add_signer(signer);
     let witness = Witness::new_with_scripts(random_bytes(32), random_bytes(32));

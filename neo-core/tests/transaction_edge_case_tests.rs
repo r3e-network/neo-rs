@@ -285,7 +285,7 @@ mod tests {
         assert_eq!(tx3.signers()[0].scopes, WitnessScope::CALLED_BY_ENTRY);
 
         // Test CustomContracts scope
-        let mut signer_custom = Signer::new(UInt160::zero(), WitnessScope::CustomContracts);
+        let mut signer_custom = Signer::new(UInt160::zero(), WitnessScope::CUSTOM_CONTRACTS);
         signer_custom.account = account;
         signer_custom.scopes = WitnessScope::CUSTOM_CONTRACTS;
 
