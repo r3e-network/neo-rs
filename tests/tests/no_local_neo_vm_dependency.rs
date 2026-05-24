@@ -2376,7 +2376,7 @@ fn instruction_parsing_uses_neo_vm_rs_opcode_operand_metadata_directly() {
 fn p2p_validation_uses_direct_neo_vm_rs_script_validation() {
     let workspace = workspace_root();
     for relative in [
-        "neo-core/src/network/p2p/payloads/header.rs",
+        "neo-core/src/network/p2p/payloads/header/verification.rs",
         "neo-core/src/network/p2p/payloads/transaction/verification.rs",
     ] {
         let source = fs::read_to_string(workspace.join(relative)).unwrap();

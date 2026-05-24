@@ -1,3 +1,4 @@
+use super::verification::HEADER_VERIFY_GAS;
 use super::*;
 use crate::ledger::block_header::BlockHeader as LedgerBlockHeader;
 use crate::ledger::HeaderCache;
@@ -5,7 +6,9 @@ use crate::neo_io::{BinaryWriter, Serializable};
 use crate::persistence::i_store::IStore;
 use crate::persistence::providers::memory_store::MemoryStore;
 use crate::persistence::StoreCache;
+use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::native::trimmed_block::TrimmedBlock;
+use crate::smart_contract::native::LedgerContract;
 use crate::smart_contract::storage_key::StorageKey;
 use crate::smart_contract::StorageItem;
 use crate::Witness as LedgerWitness;
