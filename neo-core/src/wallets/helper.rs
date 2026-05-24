@@ -17,6 +17,7 @@ use crate::network::p2p::payloads::transaction::HEADER_SIZE;
 use crate::script_builder::ScriptBuilder;
 use crate::IVerifiable as CoreIVerifiable;
 use crate::{
+    cryptography::{crypto_utils::Base58, CryptoError},
     network::p2p,
     persistence::DataCache,
     protocol_settings::ProtocolSettings,
@@ -852,21 +853,26 @@ pub trait Base58CheckDecode {
 
 impl Base58CheckDecode for str {
     fn base58_check_decode(&self) -> Result<Vec<u8>, String> {
-        let bytes = bs58::decode(self)
-            .into_vec()
-            .map_err(|e| format!("Invalid Base58 string: {}", e))?;
+        Base58::decode_check(self).map_err(map_base58_check_decode_error)
+    }
+}
 
-        if bytes.len() < 4 {
-            return Err("Invalid Base58Check format: decoded data length is too short (requires at least 4 checksum bytes).".to_string());
+fn map_base58_check_decode_error(err: CryptoError) -> String {
+    match err {
+        CryptoError::EncodingError { message } if message.starts_with("Base58 decode error: ") => {
+            format!(
+                "Invalid Base58 string: {}",
+                message.trim_start_matches("Base58 decode error: ")
+            )
         }
-
-        let (payload, checksum) = bytes.split_at(bytes.len() - 4);
-        let expected = crate::cryptography::crypto_utils::NeoHash::hash256(payload);
-        if checksum != &expected[..4] {
-            return Err("Invalid Base58Check checksum: provided checksum does not match calculated checksum.".to_string());
+        CryptoError::EncodingError { message } if message.contains("too short") => {
+            "Invalid Base58Check format: decoded data length is too short (requires at least 4 checksum bytes).".to_string()
         }
-
-        Ok(payload.to_vec())
+        CryptoError::EncodingError { message } if message.contains("checksum") => {
+            "Invalid Base58Check checksum: provided checksum does not match calculated checksum."
+                .to_string()
+        }
+        err => err.to_string(),
     }
 }
 pub type AccountScriptResolver<'a> = dyn Fn(&UInt160) -> Option<Vec<u8>> + 'a;

@@ -32,6 +32,30 @@ fn address_conversion_roundtrip() {
 }
 
 #[test]
+fn address_decode_errors_preserve_wallet_messages() {
+    let invalid_base58 = Helper::to_script_hash("0", 0x17).expect_err("invalid base58");
+    assert!(
+        invalid_base58.starts_with("Invalid Base58 string: "),
+        "unexpected invalid base58 error: {invalid_base58}"
+    );
+
+    let too_short = Helper::to_script_hash("1", 0x17).expect_err("too short");
+    assert_eq!(
+        too_short,
+        "Invalid Base58Check format: decoded data length is too short (requires at least 4 checksum bytes)."
+    );
+
+    let mut invalid_checksum = SAMPLE_ADDRESS.to_string();
+    invalid_checksum.pop();
+    invalid_checksum.push('B');
+    let checksum = Helper::to_script_hash(&invalid_checksum, 0x17).expect_err("bad checksum");
+    assert_eq!(
+        checksum,
+        "Invalid Base58Check checksum: provided checksum does not match calculated checksum."
+    );
+}
+
+#[test]
 fn verification_script_matches_contract_helper() {
     let key = KeyPair::from_wif(SAMPLE_WIF).expect("failed to parse sample WIF");
     let script = key.get_verification_script();
