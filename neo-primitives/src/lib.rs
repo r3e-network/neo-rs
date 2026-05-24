@@ -29,6 +29,7 @@
 
 pub mod blockchain;
 pub mod constants;
+pub mod macros;
 pub mod contract_parameter_type;
 pub mod error;
 pub mod hardfork;

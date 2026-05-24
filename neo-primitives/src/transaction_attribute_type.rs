@@ -1,87 +1,24 @@
 //! `TransactionAttributeType` - matches C# Neo.Network.P2P.Payloads.TransactionAttributeType exactly.
 
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::fmt;
+use crate::protocol_enum;
 
-/// Represents the type of a `TransactionAttribute`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[repr(u8)]
-pub enum TransactionAttributeType {
-    /// Indicates that the transaction is of high priority.
-    HighPriority = 0x01,
-    /// Indicates that the transaction is an oracle response.
-    OracleResponse = 0x11,
-    /// Indicates that the transaction is not valid before the specified block height.
-    NotValidBefore = 0x20,
-    /// Indicates that the transaction conflicts with the specified transaction.
-    Conflicts = 0x21,
-    /// Indicates that the transaction is notary assisted.
-    NotaryAssisted = 0x22,
+protocol_enum! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    /// Represents the type of a `TransactionAttribute`.
+    pub TransactionAttributeType {
+        HighPriority = 0x01,
+        OracleResponse = 0x11,
+        NotValidBefore = 0x20,
+        Conflicts = 0x21,
+        NotaryAssisted = 0x22,
+    }
 }
 
 impl TransactionAttributeType {
-    /// Converts to byte representation.
-    #[must_use]
-    pub const fn to_byte(self) -> u8 {
-        self as u8
-    }
-
-    /// Creates from byte representation.
-    #[must_use]
-    pub const fn from_byte(value: u8) -> Option<Self> {
-        match value {
-            0x01 => Some(Self::HighPriority),
-            0x11 => Some(Self::OracleResponse),
-            0x20 => Some(Self::NotValidBefore),
-            0x21 => Some(Self::Conflicts),
-            0x22 => Some(Self::NotaryAssisted),
-            _ => None,
-        }
-    }
-
-    /// Returns the string representation.
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::HighPriority => "HighPriority",
-            Self::OracleResponse => "OracleResponse",
-            Self::NotValidBefore => "NotValidBefore",
-            Self::Conflicts => "Conflicts",
-            Self::NotaryAssisted => "NotaryAssisted",
-        }
-    }
-
     /// Returns true if this attribute type allows multiple instances per transaction.
     #[must_use]
     pub const fn allows_multiple(self) -> bool {
         matches!(self, Self::Conflicts | Self::NotaryAssisted)
-    }
-}
-
-impl fmt::Display for TransactionAttributeType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.as_str())
-    }
-}
-
-impl Serialize for TransactionAttributeType {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_u8(self.to_byte())
-    }
-}
-
-impl<'de> Deserialize<'de> for TransactionAttributeType {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let byte = u8::deserialize(deserializer)?;
-        Self::from_byte(byte).ok_or_else(|| {
-            serde::de::Error::custom(format!("Invalid transaction attribute type byte: {byte}"))
-        })
     }
 }
 

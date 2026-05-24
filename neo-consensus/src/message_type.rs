@@ -1,96 +1,17 @@
 //! Consensus message types - dBFT protocol message identifiers.
-//!
-//! This module provides the `ConsensusMessageType` enum for identifying
-//! different message types in the dBFT consensus protocol.
-//!
-//! ## Message Types
-//!
-//! | Type | Value | Description |
-//! |------|-------|-------------|
-//! | `ChangeView` | 0x00 | Request view change |
-//! | `PrepareRequest` | 0x20 | Primary proposes block |
-//! | `PrepareResponse` | 0x21 | Validator acknowledges proposal |
-//! | `Commit` | 0x30 | Validator agrees to commit |
-//! | `RecoveryRequest` | 0x40 | Request state recovery |
-//! | `RecoveryMessage` | 0x41 | Provide state for recovery |
-//!
-//! ## Protocol Flow
-//!
-//! ```text
-//! 1. Primary sends PrepareRequest
-//! 2. Validators send PrepareResponse
-//! 3. Validators send Commit (after M responses)
-//! 4. If timeout: ChangeView to select new primary
-//! ```
-//!
-//! ## Example
-//!
-//! ```rust
-//! use neo_consensus::ConsensusMessageType;
-//!
-//! let msg_type = ConsensusMessageType::PrepareRequest;
-//! assert_eq!(msg_type.to_byte(), 0x20);
-//! assert_eq!(msg_type.to_string(), "PrepareRequest");
-//! ```
 
-use serde::{Deserialize, Serialize};
+use neo_primitives::protocol_enum;
 
-/// Consensus message type enum matching C# `ConsensusMessageType` exactly
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[repr(u8)]
-pub enum ConsensusMessageType {
-    /// Change view message - request to change the current view
-    ChangeView = 0x00,
-    /// Prepare request message - sent by the speaker to propose a block
-    PrepareRequest = 0x20,
-    /// Prepare response message - sent by validators to acknowledge the proposal
-    PrepareResponse = 0x21,
-    /// Commit message - sent when a validator is ready to commit the block
-    Commit = 0x30,
-    /// Recovery request message - request to recover consensus state
-    RecoveryRequest = 0x40,
-    /// Recovery message - response with consensus state for recovery
-    RecoveryMessage = 0x41,
-}
-
-impl ConsensusMessageType {
-    /// Converts from byte value
-    #[must_use]
-    pub const fn from_byte(value: u8) -> Option<Self> {
-        match value {
-            0x00 => Some(Self::ChangeView),
-            0x20 => Some(Self::PrepareRequest),
-            0x21 => Some(Self::PrepareResponse),
-            0x30 => Some(Self::Commit),
-            0x40 => Some(Self::RecoveryRequest),
-            0x41 => Some(Self::RecoveryMessage),
-            _ => None,
-        }
-    }
-
-    /// Converts to byte value
-    #[must_use]
-    pub const fn to_byte(self) -> u8 {
-        self as u8
-    }
-
-    /// Returns the string representation
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::ChangeView => "ChangeView",
-            Self::PrepareRequest => "PrepareRequest",
-            Self::PrepareResponse => "PrepareResponse",
-            Self::Commit => "Commit",
-            Self::RecoveryRequest => "RecoveryRequest",
-            Self::RecoveryMessage => "RecoveryMessage",
-        }
-    }
-}
-
-impl std::fmt::Display for ConsensusMessageType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_str())
+protocol_enum! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    /// Consensus message type enum matching C# `ConsensusMessageType` exactly
+    pub ConsensusMessageType {
+        ChangeView = 0x00,
+        PrepareRequest = 0x20,
+        PrepareResponse = 0x21,
+        Commit = 0x30,
+        RecoveryRequest = 0x40,
+        RecoveryMessage = 0x41,
     }
 }
 
