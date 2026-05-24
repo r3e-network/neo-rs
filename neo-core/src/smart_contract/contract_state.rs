@@ -10,11 +10,11 @@ use crate::neo_io::serializable::helper::{
     get_var_size_bytes, get_var_size_serializable_slice, get_var_size_str,
 };
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use crate::neo_vm::StackItem;
 use crate::smart_contract::{
     helper::Helper, i_interoperable::IInteroperable, manifest::ContractManifest,
     method_token::MethodToken, CallFlags,
 };
+use crate::vm_runtime::StackItem;
 use crate::UInt160;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::Engine;

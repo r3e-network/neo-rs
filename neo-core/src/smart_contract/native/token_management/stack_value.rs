@@ -1,5 +1,5 @@
 use crate::error::CoreError;
-use crate::neo_vm::StackItem;
+use crate::vm_runtime::StackItem;
 use neo_vm_rs::StackValue;
 use num_bigint::BigInt;
 
