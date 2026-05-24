@@ -1,47 +1,36 @@
-use hashbrown::HashMap;
+use lru::LruCache;
 use std::hash::Hash;
-use std::sync::atomic::{AtomicU64, Ordering};
 
-/// Optimized LRU tracking using a linked list approach with index map.
-/// This provides O(1) LRU operations instead of O(n) with a Vec.
+/// Tracks cache access order while leaving value storage and eviction accounting to `ReadCache`.
 pub(super) struct LruTracker<K> {
-    /// Map from key to its position/index in the access order
-    order: HashMap<K, u64>,
-    /// Counter for generating unique sequence numbers
-    sequence: AtomicU64,
+    order: LruCache<K, ()>,
 }
 
 impl<K: Clone + Eq + Hash> LruTracker<K> {
     pub(super) fn new() -> Self {
         Self {
-            order: HashMap::new(),
-            sequence: AtomicU64::new(0),
+            order: LruCache::unbounded(),
         }
     }
 
-    /// Record access and return the old sequence number if any
-    pub(super) fn record_access(&mut self, key: K) -> Option<u64> {
-        let new_seq = self.sequence.fetch_add(1, Ordering::Relaxed);
-        self.order.insert(key, new_seq)
+    /// Records an access and moves the key to the most-recently-used position.
+    pub(super) fn record_access(&mut self, key: K) -> bool {
+        self.order.put(key, ()).is_some()
     }
 
-    /// Remove a key from tracking
-    pub(super) fn remove(&mut self, key: &K) -> Option<u64> {
-        self.order.remove(key)
+    /// Removes a key from tracking.
+    pub(super) fn remove(&mut self, key: &K) -> bool {
+        self.order.pop(key).is_some()
     }
 
-    /// Find the least recently used key
+    /// Returns the least recently used key without updating access order.
     pub(super) fn find_lru(&self) -> Option<K> {
-        self.order
-            .iter()
-            .min_by_key(|(_, seq)| *seq)
-            .map(|(k, _)| k.clone())
+        self.order.peek_lru().map(|(key, _)| key.clone())
     }
 
-    /// Clear all tracking
+    /// Clears all tracking state.
     pub(super) fn clear(&mut self) {
         self.order.clear();
-        self.sequence.store(0, Ordering::Relaxed);
     }
 
     #[allow(dead_code)]

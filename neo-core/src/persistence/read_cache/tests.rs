@@ -47,6 +47,69 @@ fn read_cache_eviction() {
 }
 
 #[test]
+fn read_cache_get_refreshes_lru_order() {
+    let config = ReadCacheConfig {
+        max_entries: 2,
+        max_bytes: 1000,
+        enable_prefetch: false,
+        prefetch_count: 0,
+        prefetch_threshold: 0,
+        ttl: None,
+        enable_stats: true,
+        enable_bloom_filter: false,
+        bloom_filter_capacity: 1000,
+        bloom_filter_fpr: 0.01,
+    };
+
+    let cache = ReadCache::<String, String>::new(config);
+
+    cache.put("key1".to_string(), "value1".to_string(), 10);
+    cache.put("key2".to_string(), "value2".to_string(), 10);
+    assert_eq!(cache.get(&"key1".to_string()), Some("value1".to_string()));
+
+    cache.put("key3".to_string(), "value3".to_string(), 10);
+
+    assert_eq!(cache.len(), 2);
+    assert!(cache.contains(&"key1".to_string()));
+    assert!(!cache.contains(&"key2".to_string()));
+    assert!(cache.contains(&"key3".to_string()));
+}
+
+#[test]
+fn read_cache_remove_clears_lru_tracker_entry() {
+    let config = ReadCacheConfig {
+        max_entries: 2,
+        max_bytes: 1000,
+        enable_prefetch: false,
+        prefetch_count: 0,
+        prefetch_threshold: 0,
+        ttl: None,
+        enable_stats: true,
+        enable_bloom_filter: false,
+        bloom_filter_capacity: 1000,
+        bloom_filter_fpr: 0.01,
+    };
+
+    let cache = ReadCache::<String, String>::new(config);
+
+    cache.put("key1".to_string(), "value1".to_string(), 10);
+    cache.put("key2".to_string(), "value2".to_string(), 10);
+    assert_eq!(
+        cache.remove(&"key1".to_string()),
+        Some("value1".to_string())
+    );
+
+    cache.put("key3".to_string(), "value3".to_string(), 10);
+    cache.put("key4".to_string(), "value4".to_string(), 10);
+
+    assert_eq!(cache.len(), 2);
+    assert!(!cache.contains(&"key1".to_string()));
+    assert!(!cache.contains(&"key2".to_string()));
+    assert!(cache.contains(&"key3".to_string()));
+    assert!(cache.contains(&"key4".to_string()));
+}
+
+#[test]
 fn read_cache_byte_limit_eviction() {
     let config = ReadCacheConfig {
         max_entries: 100,
