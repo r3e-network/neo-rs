@@ -4,6 +4,8 @@
 //! Also provides lightweight `PluginEvent` for internal event broadcasting,
 //! replacing the removed plugin system with simple logging.
 
+pub mod handlers;
+
 use parking_lot::RwLock;
 use std::any::Any;
 use std::collections::HashMap;

@@ -1,6 +1,6 @@
 //! ApplicationEngine.Runtime - matches C# Neo.SmartContract.ApplicationEngine.Runtime.cs exactly
 
-use crate::cryptography::{Crypto, murmur128};
+use crate::cryptography::murmur128;
 use crate::hardfork::Hardfork;
 use crate::neo_config::{ADDRESS_SIZE, HASH_SIZE};
 use crate::neo_vm::{ExecutionEngine, StackItem, VmError, VmResult};

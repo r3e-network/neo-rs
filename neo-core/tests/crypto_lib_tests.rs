@@ -5,7 +5,7 @@
 use hex::decode as hex_decode;
 use hex::encode as hex_encode;
 use neo_core::cryptography::{
-    Bls12381Crypto, Crypto, Ed25519Crypto, NamedCurveHash, Crypto, Secp256k1Crypto,
+    Bls12381Crypto, Crypto, Ed25519Crypto, NamedCurveHash, Secp256k1Crypto,
     Secp256r1Crypto,
 };
 use neo_core::hardfork::{Hardfork, HardforkManager};

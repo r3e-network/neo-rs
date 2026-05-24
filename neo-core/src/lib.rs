@@ -223,10 +223,16 @@ pub mod wallets;
 /// Matches C# `Neo.Sign` namespace.
 pub(crate) mod sign;
 
-/// Event handler interfaces.
+/// Event handler interfaces (consolidated in events::handlers).
 ///
 /// Matches C# `Neo.IEventHandlers` namespace.
-pub mod i_event_handlers;
+pub mod i_event_handlers {
+    pub use crate::events::handlers::{
+        ICommittedHandler, ICommittingHandler, ILogHandler, ILoggingHandler,
+        IMessageReceivedHandler, INotifyHandler, IServiceAddedHandler,
+        ITransactionAddedHandler, ITransactionRemovedHandler, IWalletChangedHandler,
+    };
+}
 
 /// Extension methods and utilities.
 ///
