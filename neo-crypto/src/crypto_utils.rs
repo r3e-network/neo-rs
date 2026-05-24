@@ -38,16 +38,16 @@
 //! - Signature verification is constant-time to prevent timing attacks
 
 pub use crate::bls12381::Bls12381Crypto;
+pub use crate::constant_time::ConstantTime;
+pub use crate::encoding::{Base58, Hex};
 use crate::error::CryptoError;
 use crate::{Crypto, CryptoResult, ECCurve, ECPoint, HashAlgorithm};
-use bs58;
 use core::convert::TryFrom;
 use ed25519_dalek::{
     Signature as Ed25519Signature, SigningKey as Ed25519SigningKey,
     VerifyingKey as Ed25519VerifyingKey,
 };
 use ed25519_dalek::{Signer as _, Verifier as _};
-use hex;
 use p256::{
     ecdsa::{signature::hazmat::PrehashVerifier, Signature, SigningKey, VerifyingKey},
     PublicKey as P256PublicKey, SecretKey as P256SecretKey,
@@ -58,7 +58,6 @@ use secp256k1::{
     Message, PublicKey as Secp256k1PublicKey, Secp256k1, SecretKey as Secp256k1SecretKey,
 };
 use sha2::{Digest, Sha256};
-use subtle::ConstantTimeEq;
 use zeroize::Zeroizing;
 
 /// Neo-specific hash functions.
@@ -359,188 +358,6 @@ impl Ed25519Crypto {
             .map_err(|e| CryptoError::invalid_signature(format!("Invalid signature: {e}")))?;
 
         Ok(verifying_key.verify_strict(message, &signature).is_ok())
-    }
-}
-
-/// Base58 encoding/decoding utilities
-pub struct Base58;
-
-impl Base58 {
-    /// Encodes data to Base58 string
-    #[must_use]
-    pub fn encode(data: &[u8]) -> String {
-        bs58::encode(data).into_string()
-    }
-
-    /// Decodes Base58 string to bytes
-    pub fn decode(s: &str) -> CryptoResult<Vec<u8>> {
-        bs58::decode(s)
-            .into_vec()
-            .map_err(|e| CryptoError::encoding_error(format!("Base58 decode error: {e}")))
-    }
-
-    /// Encodes data to `Base58Check` string (Base58 with 4-byte checksum).
-    #[must_use]
-    pub fn encode_check(data: &[u8]) -> String {
-        let mut payload = Vec::with_capacity(data.len() + 4);
-        payload.extend_from_slice(data);
-        let checksum = NeoHash::hash256(data);
-        payload.extend_from_slice(&checksum[..4]);
-        bs58::encode(payload).into_string()
-    }
-
-    /// Decodes `Base58Check` string back to bytes, verifying the checksum.
-    pub fn decode_check(s: &str) -> CryptoResult<Vec<u8>> {
-        let bytes = bs58::decode(s)
-            .into_vec()
-            .map_err(|e| CryptoError::encoding_error(format!("Base58 decode error: {e}")))?;
-
-        if bytes.len() < 4 {
-            return Err(CryptoError::encoding_error(
-                "Invalid Base58Check payload: too short",
-            ));
-        }
-
-        let (payload, checksum) = bytes.split_at(bytes.len() - 4);
-        let expected = NeoHash::hash256(payload);
-        if checksum != &expected[..4] {
-            return Err(CryptoError::encoding_error("Invalid Base58Check checksum"));
-        }
-
-        Ok(payload.to_vec())
-    }
-}
-
-/// Hex encoding/decoding utilities
-pub struct Hex;
-
-impl Hex {
-    /// Encodes data to hex string
-    #[must_use]
-    pub fn encode(data: &[u8]) -> String {
-        hex::encode(data)
-    }
-
-    /// Decodes hex string to bytes
-    pub fn decode(s: &str) -> CryptoResult<Vec<u8>> {
-        hex::decode(s).map_err(|e| CryptoError::encoding_error(format!("Hex decode error: {e}")))
-    }
-}
-
-/// Constant-time comparison utilities for cryptographic operations.
-///
-/// These functions help prevent timing side-channel attacks when comparing
-/// sensitive values like hashes, signatures, or keys.
-pub struct ConstantTime;
-
-impl ConstantTime {
-    /// Compares two fixed-size byte arrays in constant time.
-    ///
-    /// This function performs a constant-time comparison of two byte arrays,
-    /// ensuring that the comparison takes the same amount of time regardless
-    /// of where the arrays differ. This is important for comparing hashes,
-    /// MACs, or other sensitive values.
-    ///
-    /// # Type Parameters
-    /// * `N` - The size of the byte arrays
-    ///
-    /// # Arguments
-    /// * `a` - First byte array
-    /// * `b` - Second byte array
-    ///
-    /// # Returns
-    /// `true` if the arrays are equal, `false` otherwise.
-    ///
-    /// # Example
-    /// ```
-    /// use neo_crypto::crypto_utils::ConstantTime;
-    ///
-    /// let a = [0u8; 32];
-    /// let b = [0u8; 32];
-    /// let c = [1u8; 32];
-    ///
-    /// assert!(ConstantTime::eq(&a, &b));
-    /// assert!(!ConstantTime::eq(&a, &c));
-    /// ```
-    #[must_use]
-    pub fn eq<const N: usize>(a: &[u8; N], b: &[u8; N]) -> bool {
-        a.ct_eq(b).into()
-    }
-
-    /// Compares two byte slices in constant time.
-    ///
-    /// Returns `false` immediately if the slices have different lengths.
-    /// Otherwise, performs a constant-time comparison of the contents.
-    ///
-    /// # Arguments
-    /// * `a` - First byte slice
-    /// * `b` - Second byte slice
-    ///
-    /// # Returns
-    /// `true` if the slices have the same length and content, `false` otherwise.
-    ///
-    /// # Example
-    /// ```
-    /// use neo_crypto::crypto_utils::ConstantTime;
-    ///
-    /// let a = vec![0u8; 32];
-    /// let b = vec![0u8; 32];
-    /// let c = vec![1u8; 32];
-    ///
-    /// assert!(ConstantTime::eq_slice(&a, &b));
-    /// assert!(!ConstantTime::eq_slice(&a, &c));
-    /// ```
-    #[must_use]
-    pub fn eq_slice(a: &[u8], b: &[u8]) -> bool {
-        if a.len() != b.len() {
-            return false;
-        }
-        a.ct_eq(b).into()
-    }
-
-    /// Compares two 64-byte signatures in constant time.
-    ///
-    /// This is a convenience wrapper for comparing ECDSA signatures.
-    ///
-    /// # Arguments
-    /// * `a` - First signature
-    /// * `b` - Second signature
-    ///
-    /// # Returns
-    /// `true` if the signatures are equal, `false` otherwise.
-    #[must_use]
-    pub fn eq_signature(a: &[u8; 64], b: &[u8; 64]) -> bool {
-        Self::eq(a, b)
-    }
-
-    /// Compares two 32-byte hash values in constant time.
-    ///
-    /// This is a convenience wrapper for comparing SHA-256 or similar hashes.
-    ///
-    /// # Arguments
-    /// * `a` - First hash value
-    /// * `b` - Second hash value
-    ///
-    /// # Returns
-    /// `true` if the hashes are equal, `false` otherwise.
-    #[must_use]
-    pub fn eq_hash256(a: &[u8; 32], b: &[u8; 32]) -> bool {
-        Self::eq(a, b)
-    }
-
-    /// Compares two 20-byte Hash160 values in constant time.
-    ///
-    /// This is a convenience wrapper for comparing RIPEMD-160 hashes.
-    ///
-    /// # Arguments
-    /// * `a` - First hash value
-    /// * `b` - Second hash value
-    ///
-    /// # Returns
-    /// `true` if the hashes are equal, `false` otherwise.
-    #[must_use]
-    pub fn eq_hash160(a: &[u8; 20], b: &[u8; 20]) -> bool {
-        Self::eq(a, b)
     }
 }
 
