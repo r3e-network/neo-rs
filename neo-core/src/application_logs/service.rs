@@ -7,15 +7,13 @@ use crate::neo_system::NeoSystem;
 use crate::persistence::{DataCache, IStore, IStoreSnapshot};
 use crate::smart_contract::{NotifyEventArgs, TriggerType};
 use crate::unhandled_exception_policy::UnhandledExceptionPolicy;
+use crate::vm_runtime::rpc_json::{stack_item_rpc_json, stack_items_rpc_json_per_item};
 use crate::vm_runtime::StackItem;
 use crate::UInt256;
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
-use neo_vm_rs::StackItemType;
 use neo_vm_rs::VmState as VMState;
 use parking_lot::Mutex;
 use serde_json::{Map, Value};
 use std::any::Any;
-use std::collections::HashSet;
 use std::panic::{self, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -167,12 +165,13 @@ impl ApplicationLogsService {
         );
 
         let mut exception = include_exception.then(|| exec.exception.clone()).flatten();
-        match stack_items_to_json(&exec.stack, self.settings.max_stack_size) {
+        let stack_items: &[StackItem] = &exec.stack;
+        match stack_items_rpc_json_per_item(stack_items, self.settings.max_stack_size) {
             Ok(stack) => {
                 trigger.insert("stack".to_string(), Value::Array(stack));
             }
             Err(err) => {
-                exception = Some(err);
+                exception = Some(err.to_string());
             }
         }
 
@@ -307,123 +306,6 @@ fn vm_state_to_string(state: VMState) -> &'static str {
     }
 }
 
-fn stack_items_to_json(items: &[StackItem], max_size: usize) -> Result<Vec<Value>, String> {
-    items
-        .iter()
-        .map(|item| {
-            let mut context = HashSet::new();
-            let mut remaining = isize::try_from(max_size).unwrap_or(isize::MAX);
-            stack_item_to_json(item, &mut context, &mut remaining)
-        })
-        .collect()
-}
-
-fn stack_item_to_json(
-    item: &StackItem,
-    context: &mut HashSet<(usize, StackItemType)>,
-    remaining: &mut isize,
-) -> Result<Value, String> {
-    let type_name = format!("{:?}", item.stack_item_type());
-    let mut json = Map::new();
-    json.insert("type".to_string(), Value::String(type_name.clone()));
-    subtract_size(remaining, 11 + type_name.len() as isize)?;
-
-    let mut json_value = None;
-    match item {
-        StackItem::Null | StackItem::InteropInterface(_) => {}
-        StackItem::Boolean(value) => {
-            subtract_size(remaining, if *value { 4 } else { 5 })?;
-            json_value = Some(Value::Bool(*value));
-        }
-        StackItem::Integer(value) => {
-            let text = value.to_string();
-            subtract_size(remaining, 2 + text.len() as isize)?;
-            json_value = Some(Value::String(text));
-        }
-        StackItem::ByteString(bytes) => {
-            let encoded = BASE64_STANDARD.encode(bytes);
-            subtract_size(remaining, 2 + encoded.len() as isize)?;
-            json_value = Some(Value::String(encoded));
-        }
-        StackItem::Buffer(buffer) => {
-            let data = buffer.data();
-            let encoded = BASE64_STANDARD.encode(data);
-            subtract_size(remaining, 2 + encoded.len() as isize)?;
-            json_value = Some(Value::String(encoded));
-        }
-        StackItem::Pointer(pointer) => {
-            let text = pointer.position().to_string();
-            subtract_size(remaining, text.len() as isize)?;
-            json_value = Some(Value::Number(serde_json::Number::from(
-                pointer.position() as u64
-            )));
-        }
-        StackItem::Array(array) => {
-            let id = array.id();
-            let key = (id, StackItemType::Array);
-            if !context.insert(key) {
-                return Err("Circular reference.".to_string());
-            }
-            let count = array.items().len();
-            subtract_size(remaining, 2 + count.saturating_sub(1) as isize)?;
-            let entries = array
-                .items()
-                .iter()
-                .map(|entry| stack_item_to_json(entry, context, remaining))
-                .collect::<Result<Vec<_>, _>>()?;
-            context.remove(&key);
-            json_value = Some(Value::Array(entries));
-        }
-        StackItem::Struct(structure) => {
-            let id = structure.id();
-            let key = (id, StackItemType::Struct);
-            if !context.insert(key) {
-                return Err("Circular reference.".to_string());
-            }
-            let count = structure.items().len();
-            subtract_size(remaining, 2 + count.saturating_sub(1) as isize)?;
-            let entries = structure
-                .items()
-                .iter()
-                .map(|entry| stack_item_to_json(entry, context, remaining))
-                .collect::<Result<Vec<_>, _>>()?;
-            context.remove(&key);
-            json_value = Some(Value::Array(entries));
-        }
-        StackItem::Map(map) => {
-            let id = map.id();
-            let key = (id, StackItemType::Map);
-            if !context.insert(key) {
-                return Err("Circular reference.".to_string());
-            }
-            let count = map.items().len();
-            subtract_size(remaining, 2 + count.saturating_sub(1) as isize)?;
-            let entries = map
-                .items()
-                .iter()
-                .map(|(key, value)| {
-                    subtract_size(remaining, 17)?;
-                    let key_json = stack_item_to_json(key, context, remaining)?;
-                    let value_json = stack_item_to_json(value, context, remaining)?;
-                    let mut entry = Map::new();
-                    entry.insert("key".to_string(), key_json);
-                    entry.insert("value".to_string(), value_json);
-                    Ok(Value::Object(entry))
-                })
-                .collect::<Result<Vec<_>, String>>()?;
-            context.remove(&key);
-            json_value = Some(Value::Array(entries));
-        }
-    }
-
-    if let Some(value) = json_value {
-        subtract_size(remaining, 9)?;
-        json.insert("value".to_string(), value);
-    }
-
-    Ok(Value::Object(json))
-}
-
 fn notification_to_json(event: &NotifyEventArgs) -> Value {
     let mut notification = Map::new();
     notification.insert(
@@ -438,11 +320,7 @@ fn notification_to_json(event: &NotifyEventArgs) -> Value {
     let state_values = event
         .state
         .iter()
-        .map(|item| {
-            let mut context = HashSet::new();
-            let mut remaining = isize::MAX;
-            stack_item_to_json(item, &mut context, &mut remaining)
-        })
+        .map(|item| stack_item_rpc_json(item, None))
         .collect::<Result<Vec<_>, _>>();
 
     let state = match state_values {
@@ -457,12 +335,4 @@ fn notification_to_json(event: &NotifyEventArgs) -> Value {
     notification.insert("state".to_string(), state);
 
     Value::Object(notification)
-}
-
-fn subtract_size(remaining: &mut isize, amount: isize) -> Result<(), String> {
-    *remaining = remaining.checked_sub(amount).unwrap_or(-1);
-    if *remaining < 0 {
-        return Err("Max size reached.".to_string());
-    }
-    Ok(())
 }

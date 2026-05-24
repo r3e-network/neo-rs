@@ -4,6 +4,8 @@
 //! that still live in `neo_core::neo_vm` while shared opcode and value semantics
 //! move to `neo-vm-rs`.
 
+pub mod rpc_json;
+
 pub use crate::neo_vm::error::{VmError, VmResult};
 pub use crate::neo_vm::evaluation_stack::EvaluationStack;
 pub use crate::neo_vm::execution_context::ExecutionContext;
