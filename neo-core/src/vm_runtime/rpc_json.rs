@@ -5,14 +5,15 @@ use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use neo_vm_rs::StackItemType;
 use serde_json::{Map, Number as JsonNumber, Value};
 use std::collections::HashSet;
-use std::fmt;
 
 /// Error returned while rendering a stack item as an RPC/application-log value.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum StackItemRpcJsonError {
     /// The stack item graph contains a circular compound reference.
+    #[error("Circular reference.")]
     CircularReference,
     /// Rendering would exceed the caller-provided size budget.
+    #[error("Max size reached.")]
     MaxSizeReached,
 }
 
@@ -26,17 +27,6 @@ struct RenderBudget {
     remaining: isize,
     size_check: SizeCheck,
 }
-
-impl fmt::Display for StackItemRpcJsonError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::CircularReference => f.write_str("Circular reference."),
-            Self::MaxSizeReached => f.write_str("Max size reached."),
-        }
-    }
-}
-
-impl std::error::Error for StackItemRpcJsonError {}
 
 /// Renders a single stack item as the Neo JSON-RPC stack envelope.
 pub fn stack_item_rpc_json(

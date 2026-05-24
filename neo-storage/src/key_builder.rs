@@ -4,14 +4,15 @@
 
 use crate::types::StorageKey;
 use neo_primitives::{UInt160, UInt256};
-use std::fmt;
 
 /// Error type for `KeyBuilder` operations.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum KeyBuilderError {
     /// The `max_length` parameter was zero.
+    #[error("max_length must be greater than zero")]
     InvalidMaxLength,
     /// The input data exceeds the maximum key length.
+    #[error("Input data too large: current={current}, adding={adding}, max={max}")]
     DataTooLarge {
         /// Current key length.
         current: usize,
@@ -21,26 +22,6 @@ pub enum KeyBuilderError {
         max: usize,
     },
 }
-
-impl fmt::Display for KeyBuilderError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidMaxLength => write!(f, "max_length must be greater than zero"),
-            Self::DataTooLarge {
-                current,
-                adding,
-                max,
-            } => {
-                write!(
-                    f,
-                    "Input data too large: current={current}, adding={adding}, max={max}"
-                )
-            }
-        }
-    }
-}
-
-impl std::error::Error for KeyBuilderError {}
 
 /// Used to build storage keys for native contracts (matches C# `KeyBuilder`).
 pub struct KeyBuilder {
