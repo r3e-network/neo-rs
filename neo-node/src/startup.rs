@@ -7,12 +7,12 @@
 
 use crate::config::{infer_magic_from_type, NodeConfig};
 use anyhow::{bail, Context, Result};
+#[cfg(feature = "full")]
+use neo_core::persistence::providers::{
+    rocksdb_store_provider::BatchCommitConfig, RocksDBStoreProvider,
+};
 use neo_core::{
-    persistence::{
-        providers::{rocksdb_store_provider::BatchCommitConfig, RocksDBStoreProvider},
-        storage::StorageConfig,
-        IStoreProvider,
-    },
+    persistence::{storage::StorageConfig, IStoreProvider},
     protocol_settings::ProtocolSettings,
 };
 use std::{fs, path::Path, sync::Arc};
@@ -33,15 +33,29 @@ pub fn select_store_provider(
     match normalized.as_str() {
         "" | "memory" | "mem" | "inmemory" => Ok(None),
         "rocksdb" | "rocksdbstore" | "rocksdb-store" => {
-            let batch_config = rocksdb_batch_config_from_env();
-            let provider: Arc<dyn IStoreProvider> =
-                Arc::new(RocksDBStoreProvider::new(storage_config).with_batch_config(batch_config));
-            Ok(Some(provider))
+            #[cfg(not(feature = "full"))]
+            {
+                let _ = storage_config;
+                bail!(
+                    "storage backend '{}' requires neo-node full feature support",
+                    name
+                );
+            }
+
+            #[cfg(feature = "full")]
+            {
+                let batch_config = rocksdb_batch_config_from_env();
+                let provider: Arc<dyn IStoreProvider> = Arc::new(
+                    RocksDBStoreProvider::new(storage_config).with_batch_config(batch_config),
+                );
+                Ok(Some(provider))
+            }
         }
         other => bail!("unsupported storage backend '{}'", other),
     }
 }
 
+#[cfg(feature = "full")]
 fn rocksdb_batch_config_from_env() -> BatchCommitConfig {
     let raw = std::env::var("NEO_ROCKSDB_BATCH_PROFILE").unwrap_or_default();
     match raw.trim().to_ascii_lowercase().as_str() {
@@ -310,7 +324,10 @@ pub fn check_storage_access(
 #[allow(clippy::useless_vec)]
 pub fn build_feature_summary() -> String {
     #[allow(unused_mut)]
-    let mut features = vec!["plugins: rpc-server,rocksdb-store,tokens-tracker,application-logs"];
+    let mut features = vec!["plugins: rpc-server,tokens-tracker,application-logs"];
+
+    #[cfg(feature = "full")]
+    features.push("storage: rocksdb");
 
     #[cfg(feature = "tee")]
     features.push("tee: enabled");
@@ -463,6 +480,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "full")]
     fn check_storage_succeeds_with_rocksdb_path() {
         let tmp = tempfile::TempDir::new().expect("temp dir");
         let db_path = tmp.path().join("rocksdb-check");

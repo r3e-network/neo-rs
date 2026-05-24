@@ -13,7 +13,36 @@ mod health;
 mod hsm_integration;
 #[cfg(feature = "hsm")]
 mod hsm_wallet;
+#[cfg(feature = "full")]
 mod import_acc;
+#[cfg(not(feature = "full"))]
+#[allow(missing_docs)]
+mod import_acc {
+    use anyhow::{bail, Result};
+    use neo_core::neo_system::NeoSystem;
+    use std::{path::Path, sync::Arc};
+
+    #[derive(Debug, Clone, Copy)]
+    pub struct ImportSummary {
+        pub declared_start: u32,
+        pub declared_count: u32,
+        pub imported: u64,
+        pub skipped: u64,
+        pub final_height: u32,
+        pub elapsed_secs: f64,
+    }
+
+    pub fn import_acc_file(
+        _system: &Arc<NeoSystem>,
+        path: &Path,
+        _storage_path: Option<&str>,
+    ) -> Result<ImportSummary> {
+        bail!(
+            "ACC import requires neo-node full feature support because it verifies RocksDB checkpoints: {}",
+            path.display()
+        )
+    }
+}
 mod logging;
 mod metrics;
 mod rpc_consensus;

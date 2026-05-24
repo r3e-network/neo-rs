@@ -18,7 +18,8 @@ name = "neo-node"
 path = "src/main.rs"
 
 [features]
-default = []
+default = ["full"]
+full = ["neo-core/full"]
 # Enable TEE (Trusted Execution Environment) support
 tee = ["neo-tee"]
 # Enable TEE with SGX hardware
@@ -33,7 +34,7 @@ hsm-pkcs11 = ["hsm", "neo-hsm/pkcs11"]
 [dependencies]
 # Enable full neo-core features for production node (rocksdb, upnp, monitoring, parallel)
 # NOTE: neo-state, neo-chain, neo-mempool merged into neo-core
-neo-core = { path = "../neo-core", features = ["full", "runtime"] }
+neo-core = { path = "../neo-core", features = ["runtime"] }
 neo-consensus = { path = "../neo-consensus" }
 neo-p2p = { path = "../neo-p2p" }
 neo-crypto = { path = "../neo-crypto" }
