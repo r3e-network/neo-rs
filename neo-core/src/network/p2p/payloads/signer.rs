@@ -13,8 +13,8 @@ use crate::error::CoreError;
 use crate::macros::{OptionExt, ValidateLength};
 use crate::neo_io::serializable::helper::get_var_size;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use crate::neo_vm::StackItem;
 use crate::smart_contract::IInteroperable;
+use crate::vm_runtime::StackItem;
 use crate::witness_rule::{WitnessRule, WitnessRuleAction};
 use crate::{
     cryptography::{ECCurve, ECPoint},

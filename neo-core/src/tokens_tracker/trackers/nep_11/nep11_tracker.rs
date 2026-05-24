@@ -15,6 +15,7 @@ use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::native::contract_management::ContractManagement;
 use crate::smart_contract::ApplicationEngine;
 use crate::smart_contract::TriggerType;
+use crate::vm_runtime::StackItem;
 use crate::{NeoSystem, UInt160};
 use neo_vm_rs::OpCode;
 use neo_vm_rs::VmState as VMState;
@@ -53,7 +54,7 @@ impl Nep11Tracker {
         &mut self,
         container: Option<&Arc<dyn crate::IVerifiable>>,
         asset: &UInt160,
-        state_items: &[crate::neo_vm::StackItem],
+        state_items: &[StackItem],
         transfers: &mut Vec<TransferRecord>,
         transfer_index: &mut u32,
     ) {

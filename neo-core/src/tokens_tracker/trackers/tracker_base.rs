@@ -6,8 +6,8 @@
 use crate::extensions::log_level::LogLevel;
 use crate::neo_io::{MemoryReader, Serializable, SerializableExt};
 use crate::neo_ledger::{ApplicationExecuted, Block};
-use crate::neo_vm::stack_item::StackItem;
 use crate::persistence::{DataCache, IStore, IStoreSnapshot, SeekDirection};
+use crate::vm_runtime::StackItem;
 use crate::{NeoSystem, UInt160};
 use num_bigint::BigInt;
 use serde_json::{json, Value};
