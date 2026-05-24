@@ -395,7 +395,7 @@ fn exception_handling_facades_are_removed() {
     let context_path = workspace.join("neo-core/src/neo_vm/exception_handling_context.rs");
     let state_path = workspace.join("neo-core/src/neo_vm/exception_handling_state.rs");
     let vm_module = read_source(workspace.join("neo-core/src/neo_vm/mod.rs"));
-    let execution_context = read_source(workspace.join("neo-core/src/neo_vm/execution_context.rs"));
+    let execution_context = read_source(workspace.join("neo-core/src/neo_vm/execution_context/context.rs"));
     let exception_runtime =
         read_source(workspace.join("neo-core/src/neo_vm/execution_engine/exception.rs"));
     let mut context = ExceptionHandlingContext::new(-1, 42);
