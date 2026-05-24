@@ -50,7 +50,7 @@
 use crate::neo_config::ADDRESS_SIZE;
 use crate::neo_io::serializable::helper::get_var_size;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use crate::neo_vm::StackItem;
+use crate::vm_runtime::StackItem;
 use crate::UInt160;
 use crate::{ECCurve, ECPoint};
 use hex::{decode as hex_decode, encode as hex_encode};

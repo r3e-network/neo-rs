@@ -33,6 +33,7 @@ use crate::smart_contract::native::ledger_contract::{
 };
 use crate::smart_contract::trigger_type::TriggerType;
 use crate::smart_contract::{StorageItem, StorageKey};
+use crate::vm_runtime::StackItem;
 use crate::UInt256;
 use neo_vm_rs::VmState as VMState;
 use tracing::{debug, info, warn};
@@ -364,10 +365,10 @@ impl NeoSystem {
                         .state
                         .iter()
                         .map(|item| match item {
-                            crate::neo_vm::StackItem::Null => "null".to_string(),
-                            crate::neo_vm::StackItem::Boolean(b) => format!("bool:{}", b),
-                            crate::neo_vm::StackItem::Integer(n) => format!("int:{}", n),
-                            crate::neo_vm::StackItem::ByteString(b) => {
+                            StackItem::Null => "null".to_string(),
+                            StackItem::Boolean(b) => format!("bool:{}", b),
+                            StackItem::Integer(n) => format!("int:{}", n),
+                            StackItem::ByteString(b) => {
                                 format!("bytes:0x{}", hex::encode(b))
                             }
                             _ => format!("{:?}", item.stack_item_type()),
