@@ -8,6 +8,32 @@ use num_bigint::{BigInt, Sign};
 use num_traits::{Num, ToPrimitive, Zero};
 
 impl StdLib {
+    /// Validate that `args` has at least one element and its length is within limits.
+    pub(super) fn validate_single_arg<'a>(
+        &self,
+        args: &'a [Vec<u8>],
+        method: &str,
+    ) -> Result<&'a [u8]> {
+        if args.is_empty() {
+            return Err(Error::native_contract(format!(
+                "{method} requires an argument"
+            )));
+        }
+        self.ensure_max_input_len(&args[0], method)?;
+        Ok(&args[0])
+    }
+
+    /// Validate a single arg and convert it to a UTF-8 string.
+    pub(super) fn validate_string_arg(
+        &self,
+        args: &[Vec<u8>],
+        method: &str,
+    ) -> Result<String> {
+        let data = self.validate_single_arg(args, method)?;
+        String::from_utf8(data.to_vec())
+            .map_err(|_| Error::native_contract("Invalid UTF-8 string"))
+    }
+
     pub(super) fn ensure_max_input_len(&self, data: &[u8], method: &str) -> Result<()> {
         if data.len() > Self::MAX_INPUT_LENGTH {
             return Err(Error::native_contract(format!(
