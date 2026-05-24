@@ -5,7 +5,7 @@
 //! ```text
 //! Layer 0 (Foundation - no neo-* deps): neo-primitives, neo-json, neo-storage, neo-io, neo-config
 //! Layer 1 (Crypto): neo-crypto (depends on Layer 0)
-//! Layer 2 (Protocol): neo-core, neo-p2p, neo-consensus, neo-state, neo-mempool, neo-chain
+//! Layer 2 (Protocol): neo-core, neo-p2p, neo-consensus, neo-state, neo-mempool
 //! Layer 3 (Services): neo-rpc, neo-telemetry, neo-tee
 //! Layer 4 (Application): neo-node, neo-cli
 //! ```
@@ -34,7 +34,7 @@ impl Layer {
             // Layer 1: Crypto (depends on Layer 0 only)
             "neo-crypto" => Some(Layer::Crypto),
             // Layer 2: Protocol (includes extracted sub-crates)
-            "neo-p2p" | "neo-consensus" | "neo-core" | "neo-state" | "neo-mempool" | "neo-chain" => Some(Layer::Protocol),
+            "neo-p2p" | "neo-consensus" | "neo-core" | "neo-state" | "neo-mempool" => Some(Layer::Protocol),
             // Layer 3: Services
             "neo-rpc" | "neo-telemetry" | "neo-tee" => Some(Layer::Services),
             // Layer 5: Application

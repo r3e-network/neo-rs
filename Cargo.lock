@@ -2196,18 +2196,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "neo-chain"
-version = "0.7.2"
-dependencies = [
- "neo-primitives",
- "parking_lot",
- "serde",
- "thiserror 1.0.69",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "neo-config"
 version = "0.7.2"
 dependencies = [
@@ -2266,7 +2254,6 @@ dependencies = [
  "k256",
  "lz4_flex",
  "murmur3",
- "neo-chain",
  "neo-config",
  "neo-crypto",
  "neo-io",

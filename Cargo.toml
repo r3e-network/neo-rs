@@ -27,9 +27,6 @@ members = [
     # Mempool (extracted from neo-core)
     "neo-mempool",
 
-    # Chain state machine (extracted from neo-core)
-    "neo-chain",
-
     # P2P networking
     "neo-p2p",
 
@@ -64,7 +61,7 @@ members = [
     "neo-telemetry",
 
     # === Application Layer ===
-    # NOTE: neo-config, neo-state, neo-mempool, neo-chain merged into neo-core
+    # NOTE: neo-config, neo-state, neo-mempool merged into neo-core
     # CLI client — removed: functionality merged into neo-node
     # "neo-cli",
 
@@ -86,7 +83,6 @@ default-members = [
     "neo-json",
     "neo-state",
     "neo-core",
-    "neo-chain",
     "neo-p2p",
     "neo-rpc",
     "neo-consensus",
@@ -134,7 +130,6 @@ neo-json = { path = "neo-json", version = "0.7.2" }
 neo-state = { path = "neo-state", version = "0.7.2" }
 neo-core = { path = "neo-core", version = "0.7.2" }
 neo-mempool = { path = "neo-mempool", version = "0.7.2" }
-neo-chain = { path = "neo-chain", version = "0.7.2" }
 neo-vm-rs = { path = "../neo-vm-rs" }
 neo-p2p = { path = "neo-p2p", version = "0.7.2" }
 neo-rpc = { path = "neo-rpc", version = "0.7.2" }
@@ -150,7 +145,6 @@ neo-hsm = { path = "neo-hsm", version = "0.7.2" }
 neo-telemetry = { path = "neo-telemetry", version = "0.7.2" }
 
 # NOTE: neo-config, neo-state, neo-mempool merged into neo-core
-# neo-chain extracted from neo-core into its own crate
 
 # Application layer
 # neo-cli removed: functionality merged into neo-node

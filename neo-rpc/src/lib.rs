@@ -40,7 +40,7 @@
 //! This crate is part of **Layer 1 (Core)** in the neo-rs architecture:
 //!
 //! ```text
-//! Layer 2 (Service): neo-chain, neo-mempool
+//! Layer 2 (Service): neo-mempool
 //!            │
 //!            ▼
 //! Layer 1 (Core):   neo-rpc ◄── YOU ARE HERE

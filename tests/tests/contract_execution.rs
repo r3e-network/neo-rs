@@ -1,31 +1,9 @@
 //! Smart Contract Execution Integration Tests
 
-use neo_core::chain::{BlockIndexEntry, ChainState};
 use neo_core::state::{MemoryWorldState, StateChanges, StorageItem, StorageKey, WorldState};
-use neo_core::{UInt160, UInt256};
+use neo_core::UInt160;
 use neo_vm_rs::{interpret, ExecutionResult, OpCode, StackValue, VmState};
 use num_bigint::BigInt;
-
-// Setup test environment
-fn _setup_test_env() -> (ChainState, MemoryWorldState) {
-    let chain = ChainState::new();
-    let world_state = MemoryWorldState::new();
-
-    let genesis = BlockIndexEntry {
-        hash: UInt256::from([0x01u8; 32]),
-        height: 0,
-        prev_hash: UInt256::zero(),
-        header: Vec::new(),
-        timestamp: 1468595301000,
-        tx_count: 0,
-        size: 100,
-        cumulative_difficulty: 1,
-        on_main_chain: true,
-    };
-    chain.init_genesis(genesis).unwrap();
-
-    (chain, world_state)
-}
 
 fn run_script(script: &[u8]) -> ExecutionResult {
     interpret(script).expect("neo-vm-rs interpreter should execute script")

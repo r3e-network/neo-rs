@@ -29,7 +29,7 @@
 //! This crate is part of **Layer 1 (Core)** in the neo-rs architecture:
 //!
 //! ```text
-//! Layer 2 (Service): neo-chain, neo-mempool
+//! Layer 2 (Service): neo-mempool
 //!            │
 //!            ▼
 //! Layer 1 (Core):   neo-core ◄── YOU ARE HERE
@@ -281,11 +281,6 @@ pub mod services;
 /// For full C# parity, use `ledger::MemoryPool` instead.
 pub use neo_mempool as mempool;
 
-/// Blockchain state machine and chain management.
-///
-/// Re-exported from the `neo_chain` crate.
-pub use neo_chain as chain;
-
 /// World state abstraction for Neo N3 blockchain.
 ///
 /// Re-exported from the `neo_state` crate.
@@ -357,10 +352,6 @@ pub use witness::Witness;
 pub use witness_rule::{WitnessCondition, WitnessConditionType, WitnessRule, WitnessRuleAction};
 
 // Merged module re-exports
-    pub use chain::{
-        BlockIndex, BlockIndexEntry,
-        ChainError, ChainResult, ChainState, ChainStateSnapshot,
-    };
 pub use mempool::{
     FeePolicy, Mempool, MempoolConfig, MempoolError, MempoolResult, TransactionEntry,
     TransactionEntryParams, DEFAULT_EXPIRATION_BLOCKS, DEFAULT_MAX_TRANSACTIONS,

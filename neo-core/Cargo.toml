@@ -91,7 +91,6 @@ neo-json = { path = "../neo-json" }
 neo-config = { workspace = true }
 neo-state = { workspace = true }
 neo-mempool = { workspace = true }
-neo-chain = { workspace = true }
 neo-primitives = { path = "../neo-primitives" }
 neo-crypto = { path = "../neo-crypto" }
 neo-storage = { path = "../neo-storage" }

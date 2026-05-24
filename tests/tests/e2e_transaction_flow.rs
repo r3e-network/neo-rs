@@ -1,6 +1,5 @@
 //! End-to-End Transaction Flow Integration Tests
 
-use neo_core::chain::{BlockIndexEntry, ChainState};
 use neo_core::network::p2p::payloads::{Signer, Transaction, TransactionAttribute, WitnessScope};
 
 use neo_core::mempool::{Mempool, MempoolConfig};
@@ -35,29 +34,6 @@ fn create_signed_transaction(
     tx.add_signer(signer);
 
     tx
-}
-
-// Setup test environment with genesis block
-fn setup_test_env() -> (ChainState, MemoryWorldState, Mempool) {
-    let chain = ChainState::new();
-    let world_state = MemoryWorldState::new();
-    let config = MempoolConfig::default();
-    let mempool = Mempool::with_config(config);
-
-    let genesis = BlockIndexEntry {
-        hash: UInt256::from([0x01u8; 32]),
-        height: 0,
-        prev_hash: UInt256::zero(),
-        header: Vec::new(),
-        timestamp: 1468595301000,
-        tx_count: 0,
-        size: 100,
-        cumulative_difficulty: 1,
-        on_main_chain: true,
-    };
-    chain.init_genesis(genesis).unwrap();
-
-    (chain, world_state, mempool)
 }
 
 #[test]
@@ -206,27 +182,7 @@ fn test_contract_storage_updates() {
 }
 
 #[test]
-fn test_full_transaction_lifecycle() {
-    let (chain, mut world_state, _mempool) = setup_test_env();
-
-    let sender = UInt160::from([0x01u8; 20]);
-    let sender_account = AccountState::with_balances(sender, 1000, 100_000_000);
-
-    let mut changes = StateChanges::new();
-    changes.accounts.insert(sender, Some(sender_account));
-    world_state.commit(changes).unwrap();
-
-    let script = vec![OpCode::RET.byte()];
-    let tx = create_signed_transaction(sender, script, 1000, 1000000, 50000);
-    let tx_hash = tx.hash();
-
-    assert_eq!(tx.hash(), tx_hash);
-    assert_eq!(chain.height(), 0);
-    assert!(chain.is_initialized());
-}
-
-#[tokio::test]
-async fn test_concurrent_transaction_processing() {
+fn test_concurrent_transaction_processing() {
     use std::sync::Arc;
     use tokio::sync::Mutex;
 
