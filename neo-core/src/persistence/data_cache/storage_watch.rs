@@ -1,4 +1,4 @@
-use super::TrackState;
+use crate::persistence::track_state::TrackState;
 use crate::smart_contract::{StorageItem, StorageKey};
 
 #[cfg(feature = "runtime")]
