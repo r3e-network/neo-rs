@@ -11,7 +11,6 @@ use crate::hardfork::Hardfork;
 use crate::neo_vm::stack_item::InteropInterface as VmInteropInterface;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::native::{NativeContract, NativeMethod};
-use crate::smart_contract::ContractParameterType;
 use crate::UInt160;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
@@ -27,6 +26,8 @@ const BLS_INTEROP_G1_PROJECTIVE: u8 = 0x02;
 const BLS_INTEROP_G2_AFFINE: u8 = 0x03;
 const BLS_INTEROP_G2_PROJECTIVE: u8 = 0x04;
 const BLS_INTEROP_GT: u8 = 0x05;
+
+mod metadata;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Bls12381Group {
@@ -161,194 +162,10 @@ impl CryptoLib {
         let hash = UInt160::parse("0x726cb6e0cd8628a1350a611384688911ab75f51b")
             .expect("Valid CryptoLib contract hash");
 
-        let methods = vec![
-            // Hash functions
-            NativeMethod::safe(
-                "recoverSecp256K1".to_string(),
-                1 << 15,
-                vec![
-                    ContractParameterType::ByteArray,
-                    ContractParameterType::ByteArray,
-                ],
-                ContractParameterType::ByteArray,
-            )
-            .with_active_in(Hardfork::HfEchidna),
-            NativeMethod::safe(
-                "sha256".to_string(),
-                1 << 15,
-                vec![ContractParameterType::ByteArray],
-                ContractParameterType::ByteArray,
-            ),
-            NativeMethod::safe(
-                "ripemd160".to_string(),
-                1 << 15,
-                vec![ContractParameterType::ByteArray],
-                ContractParameterType::ByteArray,
-            ),
-            NativeMethod::safe(
-                "murmur32".to_string(),
-                1 << 13,
-                vec![
-                    ContractParameterType::ByteArray,
-                    ContractParameterType::Integer,
-                ],
-                ContractParameterType::ByteArray,
-            ),
-            NativeMethod::safe(
-                "keccak256".to_string(),
-                1 << 15,
-                vec![ContractParameterType::ByteArray],
-                ContractParameterType::ByteArray,
-            )
-            .with_active_in(Hardfork::HfCockatrice),
-            // ECDSA functions
-            NativeMethod::safe(
-                "verifyWithECDsa".to_string(),
-                1 << 15,
-                vec![
-                    ContractParameterType::ByteArray,
-                    ContractParameterType::ByteArray,
-                    ContractParameterType::ByteArray,
-                    ContractParameterType::Integer,
-                ],
-                ContractParameterType::Boolean,
-            )
-            .with_deprecated_in(Hardfork::HfCockatrice),
-            NativeMethod::safe(
-                "verifyWithECDsa".to_string(),
-                1 << 15,
-                vec![
-                    ContractParameterType::ByteArray,
-                    ContractParameterType::ByteArray,
-                    ContractParameterType::ByteArray,
-                    ContractParameterType::Integer,
-                ],
-                ContractParameterType::Boolean,
-            )
-            .with_active_in(Hardfork::HfCockatrice),
-            NativeMethod::safe(
-                "verifyWithEd25519".to_string(),
-                1 << 15,
-                vec![
-                    ContractParameterType::ByteArray,
-                    ContractParameterType::ByteArray,
-                    ContractParameterType::ByteArray,
-                ],
-                ContractParameterType::Boolean,
-            )
-            .with_active_in(Hardfork::HfEchidna),
-            // BLS12-381 functions
-            NativeMethod::safe(
-                "bls12381Add".to_string(),
-                1 << 19,
-                vec![
-                    ContractParameterType::InteropInterface,
-                    ContractParameterType::InteropInterface,
-                ],
-                ContractParameterType::InteropInterface,
-            ),
-            NativeMethod::safe(
-                "bls12381Equal".to_string(),
-                1 << 5,
-                vec![
-                    ContractParameterType::InteropInterface,
-                    ContractParameterType::InteropInterface,
-                ],
-                ContractParameterType::Boolean,
-            ),
-            NativeMethod::safe(
-                "bls12381Mul".to_string(),
-                1 << 21,
-                vec![
-                    ContractParameterType::InteropInterface,
-                    ContractParameterType::ByteArray,
-                    ContractParameterType::Boolean,
-                ],
-                ContractParameterType::InteropInterface,
-            ),
-            NativeMethod::safe(
-                "bls12381Pairing".to_string(),
-                1 << 23,
-                vec![
-                    ContractParameterType::InteropInterface,
-                    ContractParameterType::InteropInterface,
-                ],
-                ContractParameterType::InteropInterface,
-            ),
-            NativeMethod::safe(
-                "bls12381Serialize".to_string(),
-                1 << 19,
-                vec![ContractParameterType::InteropInterface],
-                ContractParameterType::ByteArray,
-            ),
-            NativeMethod::safe(
-                "bls12381Deserialize".to_string(),
-                1 << 19,
-                vec![ContractParameterType::ByteArray],
-                ContractParameterType::InteropInterface,
-            ),
-        ];
-        let methods = methods
-            .into_iter()
-            .map(
-                |method| match (method.name.as_str(), method.parameters.len()) {
-                    ("bls12381Add", 2) => {
-                        method.with_parameter_names(vec!["x".to_string(), "y".to_string()])
-                    }
-                    ("bls12381Deserialize", 1) => {
-                        method.with_parameter_names(vec!["data".to_string()])
-                    }
-                    ("bls12381Equal", 2) => {
-                        method.with_parameter_names(vec!["x".to_string(), "y".to_string()])
-                    }
-                    ("bls12381Mul", 3) => method.with_parameter_names(vec![
-                        "x".to_string(),
-                        "mul".to_string(),
-                        "neg".to_string(),
-                    ]),
-                    ("bls12381Pairing", 2) => {
-                        method.with_parameter_names(vec!["g1".to_string(), "g2".to_string()])
-                    }
-                    ("bls12381Serialize", 1) => method.with_parameter_names(vec!["g".to_string()]),
-                    ("keccak256", 1) => method.with_parameter_names(vec!["data".to_string()]),
-                    ("murmur32", 2) => {
-                        method.with_parameter_names(vec!["data".to_string(), "seed".to_string()])
-                    }
-                    ("recoverSecp256K1", 2) => method.with_parameter_names(vec![
-                        "messageHash".to_string(),
-                        "signature".to_string(),
-                    ]),
-                    ("ripemd160", 1) => method.with_parameter_names(vec!["data".to_string()]),
-                    ("sha256", 1) => method.with_parameter_names(vec!["data".to_string()]),
-                    // C# has two verifyWithECDsa methods: V0 (pre-Cockatrice, param name "curve")
-                    // and V1 (post-Cockatrice, param name "curveHash"). Distinguish by active_in.
-                    ("verifyWithECDsa", 4) if method.active_in.is_some() => method
-                        .with_parameter_names(vec![
-                            "message".to_string(),
-                            "pubkey".to_string(),
-                            "signature".to_string(),
-                            "curveHash".to_string(),
-                        ]),
-                    ("verifyWithECDsa", 4) => method.with_parameter_names(vec![
-                        "message".to_string(),
-                        "pubkey".to_string(),
-                        "signature".to_string(),
-                        "curve".to_string(),
-                    ]),
-                    ("verifyWithEd25519", 3) => method.with_parameter_names(vec![
-                        "message".to_string(),
-                        "pubkey".to_string(),
-                        "signature".to_string(),
-                    ]),
-                    _ => method,
-                },
-            )
-            .collect();
-
         Self {
             id: Self::ID,
             hash,
-            methods,
+            methods: Self::native_methods(),
         }
     }
 

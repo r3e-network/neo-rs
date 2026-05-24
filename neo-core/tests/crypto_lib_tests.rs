@@ -8,7 +8,7 @@ use neo_core::cryptography::{
     Bls12381Crypto, Crypto, Ed25519Crypto, NamedCurveHash, NeoHash, Secp256k1Crypto,
     Secp256r1Crypto,
 };
-use neo_core::hardfork::HardforkManager;
+use neo_core::hardfork::{Hardfork, HardforkManager};
 use neo_core::ledger::{TransactionVerificationContext, VerifyResult};
 use neo_core::network::p2p::helper::get_sign_data_vec;
 use neo_core::network::p2p::payloads::{Signer, Transaction, Witness, WitnessScope};
@@ -17,8 +17,9 @@ use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::script_builder::ScriptBuilder;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::native::crypto_lib::CryptoLib;
-use neo_core::smart_contract::native::NativeContract;
+use neo_core::smart_contract::native::{NativeContract, NativeContractsCache};
 use neo_core::smart_contract::trigger_type::TriggerType;
+use neo_core::smart_contract::ContractParameterType;
 use neo_core::UInt160;
 use neo_vm_rs::OpCode;
 use num_bigint::BigInt;
@@ -437,26 +438,276 @@ fn test_hash256() {
 #[test]
 fn test_crypto_lib_methods() {
     let crypto = CryptoLib::new();
-    let methods = crypto.methods();
+    let expected_methods: &[(
+        &str,
+        i64,
+        &[ContractParameterType],
+        ContractParameterType,
+        Option<Hardfork>,
+        Option<Hardfork>,
+        &[&str],
+    )] = &[
+        (
+            "recoverSecp256K1",
+            1 << 15,
+            &[
+                ContractParameterType::ByteArray,
+                ContractParameterType::ByteArray,
+            ],
+            ContractParameterType::ByteArray,
+            Some(Hardfork::HfEchidna),
+            None,
+            &["messageHash", "signature"],
+        ),
+        (
+            "sha256",
+            1 << 15,
+            &[ContractParameterType::ByteArray],
+            ContractParameterType::ByteArray,
+            None,
+            None,
+            &["data"],
+        ),
+        (
+            "ripemd160",
+            1 << 15,
+            &[ContractParameterType::ByteArray],
+            ContractParameterType::ByteArray,
+            None,
+            None,
+            &["data"],
+        ),
+        (
+            "murmur32",
+            1 << 13,
+            &[
+                ContractParameterType::ByteArray,
+                ContractParameterType::Integer,
+            ],
+            ContractParameterType::ByteArray,
+            None,
+            None,
+            &["data", "seed"],
+        ),
+        (
+            "keccak256",
+            1 << 15,
+            &[ContractParameterType::ByteArray],
+            ContractParameterType::ByteArray,
+            Some(Hardfork::HfCockatrice),
+            None,
+            &["data"],
+        ),
+        (
+            "verifyWithECDsa",
+            1 << 15,
+            &[
+                ContractParameterType::ByteArray,
+                ContractParameterType::ByteArray,
+                ContractParameterType::ByteArray,
+                ContractParameterType::Integer,
+            ],
+            ContractParameterType::Boolean,
+            None,
+            Some(Hardfork::HfCockatrice),
+            &["message", "pubkey", "signature", "curve"],
+        ),
+        (
+            "verifyWithECDsa",
+            1 << 15,
+            &[
+                ContractParameterType::ByteArray,
+                ContractParameterType::ByteArray,
+                ContractParameterType::ByteArray,
+                ContractParameterType::Integer,
+            ],
+            ContractParameterType::Boolean,
+            Some(Hardfork::HfCockatrice),
+            None,
+            &["message", "pubkey", "signature", "curveHash"],
+        ),
+        (
+            "verifyWithEd25519",
+            1 << 15,
+            &[
+                ContractParameterType::ByteArray,
+                ContractParameterType::ByteArray,
+                ContractParameterType::ByteArray,
+            ],
+            ContractParameterType::Boolean,
+            Some(Hardfork::HfEchidna),
+            None,
+            &["message", "pubkey", "signature"],
+        ),
+        (
+            "bls12381Add",
+            1 << 19,
+            &[
+                ContractParameterType::InteropInterface,
+                ContractParameterType::InteropInterface,
+            ],
+            ContractParameterType::InteropInterface,
+            None,
+            None,
+            &["x", "y"],
+        ),
+        (
+            "bls12381Equal",
+            1 << 5,
+            &[
+                ContractParameterType::InteropInterface,
+                ContractParameterType::InteropInterface,
+            ],
+            ContractParameterType::Boolean,
+            None,
+            None,
+            &["x", "y"],
+        ),
+        (
+            "bls12381Mul",
+            1 << 21,
+            &[
+                ContractParameterType::InteropInterface,
+                ContractParameterType::ByteArray,
+                ContractParameterType::Boolean,
+            ],
+            ContractParameterType::InteropInterface,
+            None,
+            None,
+            &["x", "mul", "neg"],
+        ),
+        (
+            "bls12381Pairing",
+            1 << 23,
+            &[
+                ContractParameterType::InteropInterface,
+                ContractParameterType::InteropInterface,
+            ],
+            ContractParameterType::InteropInterface,
+            None,
+            None,
+            &["g1", "g2"],
+        ),
+        (
+            "bls12381Serialize",
+            1 << 19,
+            &[ContractParameterType::InteropInterface],
+            ContractParameterType::ByteArray,
+            None,
+            None,
+            &["g"],
+        ),
+        (
+            "bls12381Deserialize",
+            1 << 19,
+            &[ContractParameterType::ByteArray],
+            ContractParameterType::InteropInterface,
+            None,
+            None,
+            &["data"],
+        ),
+    ];
 
-    let method_names: Vec<&str> = methods.iter().map(|m| m.name.as_str()).collect();
+    assert_eq!(crypto.methods().len(), expected_methods.len());
+    for (method, (name, cpu_fee, parameters, return_type, active_in, deprecated_in, names)) in
+        crypto.methods().iter().zip(expected_methods.iter())
+    {
+        assert_eq!(method.name.as_str(), *name);
+        assert_eq!(method.cpu_fee, *cpu_fee, "{name}");
+        assert_eq!(method.storage_fee, 0, "{name}");
+        assert!(method.safe, "{name}");
+        assert_eq!(method.required_call_flags, 0, "{name}");
+        assert_eq!(method.parameters.as_slice(), *parameters, "{name}");
+        assert_eq!(&method.return_type, return_type, "{name}");
+        assert_eq!(method.active_in, *active_in, "{name}");
+        assert_eq!(method.deprecated_in, *deprecated_in, "{name}");
+        let actual_names = method
+            .parameter_names
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        assert_eq!(actual_names, *names, "{name}");
+    }
+}
 
-    assert!(method_names.contains(&"sha256"), "Should have sha256");
-    assert!(method_names.contains(&"ripemd160"), "Should have ripemd160");
-    assert!(method_names.contains(&"keccak256"), "Should have keccak256");
+#[test]
+fn crypto_lib_verify_with_ecdsa_hardfork_metadata_selects_single_version() {
+    let crypto = CryptoLib::new();
+    let mut settings = ProtocolSettings::default();
+    settings.hardforks = HashMap::from([
+        (Hardfork::HfAspidochelone, 0),
+        (Hardfork::HfBasilisk, 0),
+        (Hardfork::HfCockatrice, 20),
+        (Hardfork::HfDomovoi, 20),
+        (Hardfork::HfEchidna, 100),
+        (Hardfork::HfFaun, 100),
+        (Hardfork::HfGorgon, 100),
+    ]);
+
+    let mut cache = NativeContractsCache::default();
+    let entry = cache.get_or_build(&crypto);
+
+    let pre_cockatrice = entry
+        .get_method("verifyWithECDsa", 4, &settings, 19)
+        .expect("pre-Cockatrice cache lookup")
+        .expect("pre-Cockatrice verifyWithECDsa");
+    assert_eq!(pre_cockatrice.deprecated_in, Some(Hardfork::HfCockatrice));
+    assert_eq!(pre_cockatrice.active_in, None);
+    assert_eq!(pre_cockatrice.parameter_names[3], "curve");
+
+    let post_cockatrice = entry
+        .get_method("verifyWithECDsa", 4, &settings, 20)
+        .expect("post-Cockatrice cache lookup")
+        .expect("post-Cockatrice verifyWithECDsa");
+    assert_eq!(post_cockatrice.active_in, Some(Hardfork::HfCockatrice));
+    assert_eq!(post_cockatrice.deprecated_in, None);
+    assert_eq!(post_cockatrice.parameter_names[3], "curveHash");
+
+    let pre_state = crypto
+        .contract_state(&settings, 19)
+        .expect("pre-Cockatrice contract state");
+    let pre_manifest_methods = pre_state
+        .manifest
+        .abi
+        .methods
+        .iter()
+        .filter(|method| method.name == "verifyWithECDsa" && method.parameters.len() == 4)
+        .collect::<Vec<_>>();
+    assert_eq!(pre_manifest_methods.len(), 1);
+    let pre_manifest_method = pre_manifest_methods[0];
+    assert_eq!(pre_manifest_method.parameters[3].name, "curve");
     assert!(
-        method_names.contains(&"verifyWithECDsa"),
-        "Should have verifyWithECDsa"
+        !pre_state
+            .manifest
+            .abi
+            .methods
+            .iter()
+            .any(|method| method.name == "keccak256"),
+        "keccak256 must not appear before Cockatrice"
     );
+
+    let post_state = crypto
+        .contract_state(&settings, 20)
+        .expect("post-Cockatrice contract state");
+    let post_manifest_methods = post_state
+        .manifest
+        .abi
+        .methods
+        .iter()
+        .filter(|method| method.name == "verifyWithECDsa" && method.parameters.len() == 4)
+        .collect::<Vec<_>>();
+    assert_eq!(post_manifest_methods.len(), 1);
+    let post_manifest_method = post_manifest_methods[0];
+    assert_eq!(post_manifest_method.parameters[3].name, "curveHash");
     assert!(
-        method_names.contains(&"verifyWithEd25519"),
-        "Should have verifyWithEd25519"
+        post_state
+            .manifest
+            .abi
+            .methods
+            .iter()
+            .any(|method| method.name == "keccak256"),
+        "keccak256 must appear at Cockatrice"
     );
-    assert!(
-        method_names.contains(&"recoverSecp256K1"),
-        "Should have recoverSecp256K1"
-    );
-    assert!(method_names.contains(&"murmur32"), "Should have murmur32");
 }
 
 fn protocol_settings_all_active() -> ProtocolSettings {
