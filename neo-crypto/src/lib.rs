@@ -48,6 +48,8 @@ pub mod encoding;
 pub mod error;
 pub mod hash;
 pub mod mpt_trie;
+/// Murmur3 hash helpers used by Neo runtime and native contracts.
+pub mod murmur;
 pub mod named_curve_hash;
 
 // Re-exports
@@ -62,6 +64,7 @@ pub use hash::{ct_hash_eq, ct_hash_slice_eq, Crypto, HashAlgorithm};
 pub use mpt_trie::{
     Cache, MptCache, MptError, MptResult, MptStoreSnapshot, Node, NodeType, Trie, TrieEntry,
 };
+pub use murmur::{murmur128, murmur32};
 pub use named_curve_hash::NamedCurveHash;
 
 #[cfg(test)]
