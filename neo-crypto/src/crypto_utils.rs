@@ -492,30 +492,7 @@ impl Crypto {
 
 /// Convenience functions for Base58 encoding and decoding.
 pub mod base58 {
-    use super::Base58;
-    use crate::CryptoResult;
-
-    /// Encodes raw bytes as a Base58 string.
-    #[must_use]
-    pub fn encode(data: &[u8]) -> String {
-        Base58::encode(data)
-    }
-
-    /// Decodes a Base58 string into raw bytes.
-    pub fn decode(s: &str) -> CryptoResult<Vec<u8>> {
-        Base58::decode(s)
-    }
-
-    /// Encodes raw bytes as a Base58Check string (with checksum).
-    #[must_use]
-    pub fn encode_check(data: &[u8]) -> String {
-        Base58::encode_check(data)
-    }
-
-    /// Decodes a Base58Check string, verifying the embedded checksum.
-    pub fn decode_check(s: &str) -> CryptoResult<Vec<u8>> {
-        Base58::decode_check(s)
-    }
+    pub use crate::encoding::base58::*;
 }
 
 // NOTE: Removed duplicate `pub mod hash` - use `crate::hash` or `NeoHash` instead
