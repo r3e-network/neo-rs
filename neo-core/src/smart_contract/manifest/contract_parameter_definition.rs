@@ -1,9 +1,9 @@
 //! ContractParameterDefinition - matches C# Neo.SmartContract.Manifest.ContractParameterDefinition exactly
 
 use crate::error::CoreError;
-use crate::neo_vm::StackItem;
 use crate::smart_contract::i_interoperable::IInteroperable;
 use crate::smart_contract::ContractParameterType;
+use crate::vm_runtime::StackItem;
 use neo_vm_rs::StackValue;
 use serde::{Deserialize, Serialize};
 

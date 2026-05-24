@@ -7,10 +7,10 @@ use crate::error::CoreError;
 use crate::error::CoreError as Error;
 use crate::error::CoreResult;
 use crate::smart_contract::i_interoperable::IInteroperable;
+use crate::vm_runtime::StackItem;
 use crate::ECPoint;
 use crate::UInt160;
 // Removed neo_cryptography dependency - using external crypto crates directly
-use crate::neo_vm::StackItem;
 use neo_vm_rs::StackValue;
 use serde::{Deserialize, Serialize};
 

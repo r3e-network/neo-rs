@@ -1,9 +1,9 @@
 //! ContractAbi - matches C# Neo.SmartContract.Manifest.ContractAbi exactly
 
 use crate::error::CoreError;
-use crate::neo_vm::StackItem;
 use crate::smart_contract::i_interoperable::IInteroperable;
 use crate::smart_contract::manifest::{ContractEventDescriptor, ContractMethodDescriptor};
+use crate::vm_runtime::StackItem;
 use neo_vm_rs::StackValue;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

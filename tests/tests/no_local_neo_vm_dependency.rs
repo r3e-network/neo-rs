@@ -4063,6 +4063,33 @@ fn protocol_data_modules_use_vm_runtime_stack_items() {
 }
 
 #[test]
+fn manifest_modules_use_vm_runtime_stack_items() {
+    let workspace = workspace_root();
+    for relative in [
+        "neo-core/src/smart_contract/manifest/contract_abi.rs",
+        "neo-core/src/smart_contract/manifest/contract_event_descriptor.rs",
+        "neo-core/src/smart_contract/manifest/contract_group.rs",
+        "neo-core/src/smart_contract/manifest/contract_manifest.rs",
+        "neo-core/src/smart_contract/manifest/contract_method_descriptor.rs",
+        "neo-core/src/smart_contract/manifest/contract_parameter_definition.rs",
+        "neo-core/src/smart_contract/manifest/contract_permission.rs",
+        "neo-core/src/smart_contract/manifest/contract_permission_descriptor.rs",
+        "neo-core/src/smart_contract/manifest/wild_card_container.rs",
+    ] {
+        let source = fs::read_to_string(workspace.join(relative)).unwrap();
+        assert!(
+            source.contains("crate::vm_runtime::StackItem"),
+            "{relative} should import host StackItem through vm_runtime"
+        );
+        assert!(
+            !source.contains("crate::neo_vm::StackItem")
+                && !source.contains("crate::neo_vm::stack_item::StackItem"),
+            "{relative} should not import host StackItem through the neo_vm implementation tree"
+        );
+    }
+}
+
+#[test]
 fn fuzz_script_parser_uses_direct_script_validation() {
     let workspace = workspace_root();
     let target =

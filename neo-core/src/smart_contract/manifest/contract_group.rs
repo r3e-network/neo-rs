@@ -6,11 +6,11 @@ use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
 use crate::neo_config::ADDRESS_SIZE;
 use crate::smart_contract::i_interoperable::IInteroperable;
+use crate::vm_runtime::StackItem;
 use crate::{ECCurve, ECPoint};
 use base64::{engine::general_purpose, Engine as _};
 use std::convert::TryFrom;
 // Removed neo_cryptography dependency - using external crypto crates directly
-use crate::neo_vm::StackItem;
 use neo_vm_rs::StackValue;
 use serde::{Deserialize, Serialize};
 
