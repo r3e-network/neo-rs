@@ -65,7 +65,7 @@ use super::registry::ServiceRegistry;
 use super::relay::{RelayExtensibleCache, RELAY_CACHE_CAPACITY};
 use super::system::STATE_STORE_SERVICE;
 
-use crate::akka::{ActorRef, ActorSystem, EventStreamHandle};
+use crate::runtime::{ActorRef, ActorSystem, EventStreamHandle};
 
 use crate::error::{CoreError, CoreResult};
 use crate::events::{broadcast_plugin_event, PluginEvent};

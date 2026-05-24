@@ -63,7 +63,6 @@ use super::{
     peer::{PeerCommand, PeerState, PeerTimer, MAX_COUNT_FROM_SEED_LIST},
     remote_node::{RemoteNode, RemoteNodeCommand},
 };
-use crate::akka::{Actor, ActorContext, ActorRef, ActorResult, Props, Terminated};
 use crate::neo_io::{BinaryWriter, Serializable};
 use crate::network::p2p::payloads::{
     addr_payload::MAX_COUNT_TO_SEND, block::Block, extensible_payload::ExtensiblePayload,
@@ -71,6 +70,7 @@ use crate::network::p2p::payloads::{
     VersionPayload,
 };
 use crate::network::p2p::{NetworkMessage, ProtocolMessage};
+use crate::runtime::{Actor, ActorContext, ActorRef, ActorResult, Props, Terminated};
 use crate::services::PeerManagerService;
 use crate::{neo_system::NeoSystemContext, protocol_settings::ProtocolSettings};
 use async_trait::async_trait;

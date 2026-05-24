@@ -2,11 +2,11 @@
 //!
 //! Matches the behaviour of `Neo.Plugins.StateService.Verification`.
 
-use crate::akka::{Actor, ActorContext, ActorRef, ActorResult, Cancelable, Props};
 use crate::ledger::{BlockchainCommand, PersistCompleted, RelayResult, VerifyResult};
 use crate::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use crate::network::p2p::helper::get_sign_data_vec;
 use crate::network::p2p::payloads::extensible_payload::ExtensiblePayload;
+use crate::runtime::{Actor, ActorContext, ActorRef, ActorResult, Cancelable, Props};
 use crate::smart_contract::contract::Contract;
 use crate::smart_contract::contract_parameters_context::ContractParametersContext;
 use crate::smart_contract::native::role_management::RoleManagement;

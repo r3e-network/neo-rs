@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 use std::thread;
 
-use crate::akka::{ActorRef, ActorSystemHandle, EventStreamHandle};
+use crate::runtime::{ActorRef, ActorSystemHandle, EventStreamHandle};
 use tracing::{trace, warn};
 
 use super::converters::{convert_ledger_block, convert_ledger_header};

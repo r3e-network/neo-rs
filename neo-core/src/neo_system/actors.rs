@@ -11,7 +11,7 @@
 use std::any::Any;
 use std::sync::Arc;
 
-use crate::akka::{Actor, ActorContext, ActorRef, ActorResult, Props};
+use crate::runtime::{Actor, ActorContext, ActorRef, ActorResult, Props};
 use async_trait::async_trait;
 use tracing::warn;
 

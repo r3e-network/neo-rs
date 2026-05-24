@@ -1,7 +1,7 @@
 use super::peer_commands::send_get_data_groups;
 use super::TaskManager;
-use crate::akka::ActorRef;
 use crate::network::p2p::payloads::{inv_payload::InvPayload, InventoryType};
+use crate::runtime::ActorRef;
 use crate::UInt256;
 use tracing::trace;
 

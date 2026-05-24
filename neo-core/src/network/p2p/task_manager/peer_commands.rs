@@ -1,10 +1,10 @@
-use crate::akka::{ActorRef, AkkaResult};
 use crate::network::p2p::{
     payloads::{
         get_block_by_index_payload::GetBlockByIndexPayload, inv_payload::InvPayload, InventoryType,
     },
     NetworkMessage, ProtocolMessage, RemoteNodeCommand,
 };
+use crate::runtime::{ActorRef, AkkaResult};
 use crate::UInt256;
 use tracing::warn;
 

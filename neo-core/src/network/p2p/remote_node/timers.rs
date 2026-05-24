@@ -11,7 +11,7 @@ const PENDING_HASH_TTL: Duration = Duration::from_secs(60);
 const PING_INTERVAL: Duration = Duration::from_secs(60);
 
 impl RemoteNode {
-    pub(super) fn ensure_timer(&mut self, ctx: &mut crate::akka::ActorContext) {
+    pub(super) fn ensure_timer(&mut self, ctx: &mut crate::runtime::ActorContext) {
         if self.timer.is_some() {
             return;
         }
@@ -34,8 +34,8 @@ impl RemoteNode {
 
     pub(super) async fn on_timer(
         &mut self,
-        ctx: &mut crate::akka::ActorContext,
-    ) -> crate::akka::ActorResult {
+        ctx: &mut crate::runtime::ActorContext,
+    ) -> crate::runtime::ActorResult {
         let cutoff = Instant::now()
             .checked_sub(PENDING_HASH_TTL)
             .unwrap_or_else(Instant::now);

@@ -4,11 +4,11 @@ use super::scheduling::{
     plan_block_index_request, plan_header_request, AvailableInventoryPlan,
 };
 use super::{request_mempool_once, SessionEntry, TaskManager, HEADER_TASK_HASH};
-use crate::akka::ActorRef;
 use crate::network::p2p::payloads::{
     inv_payload::{InvPayload, MAX_HASHES_COUNT},
     InventoryType,
 };
+use crate::runtime::ActorRef;
 use crate::smart_contract::native::LedgerContract;
 use std::sync::Arc;
 use tracing::{trace, warn};

@@ -11,7 +11,7 @@ use super::{
     channels_config::ChannelsConfig, local_node::RemoteNodeSnapshot, payloads::VersionPayload,
     validate_peer_endpoint,
 };
-use crate::akka::{ActorContext, ActorRef, Cancelable};
+use crate::runtime::{ActorContext, ActorRef, Cancelable};
 use if_addrs::get_if_addrs;
 use rand::{seq::IteratorRandom, thread_rng};
 use std::collections::{HashMap, HashSet};

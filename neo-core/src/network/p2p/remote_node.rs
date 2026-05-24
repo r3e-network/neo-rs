@@ -22,10 +22,10 @@ use super::{
     peer::PeerCommand,
     task_manager::TaskManagerCommand,
 };
-use crate::akka::{Actor, ActorContext, ActorResult, Cancelable, Props};
 use crate::network::error::NetworkError;
 use crate::network::p2p::messages::{NetworkMessage, ProtocolMessage};
 use crate::network::p2p::payloads::inv_payload::InvPayload;
+use crate::runtime::{Actor, ActorContext, ActorResult, Cancelable, Props};
 use crate::{
     neo_system::NeoSystemContext, protocol_settings::ProtocolSettings, CoreResult, UInt256,
 };

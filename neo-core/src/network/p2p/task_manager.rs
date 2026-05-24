@@ -27,11 +27,11 @@
 
 use super::payloads::{block::Block, header::Header, inv_payload::InvPayload, VersionPayload};
 use super::task_session::TaskSession;
-use crate::akka::{
-    Actor, ActorContext, ActorRef, ActorResult, Cancelable, EventStreamHandle, Props, Terminated,
-};
 use crate::ledger::{PersistCompleted, RelayResult};
 use crate::neo_system::NeoSystemContext;
+use crate::runtime::{
+    Actor, ActorContext, ActorRef, ActorResult, Cancelable, EventStreamHandle, Props, Terminated,
+};
 use crate::UInt256;
 use async_trait::async_trait;
 use std::any::Any;

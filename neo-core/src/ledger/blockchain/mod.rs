@@ -50,7 +50,6 @@
 //! - **Unverified Cache**: Blocks received out of order, pending verification
 //! - **Extensible Whitelist**: Authorized senders for extensible payloads
 
-use crate::akka::{Actor, ActorContext, ActorResult, Props};
 use crate::error::CoreError;
 use crate::events::PluginEvent;
 use crate::ledger::LedgerContext;
@@ -67,6 +66,7 @@ use crate::network::p2p::{
 use crate::persistence::DataCache;
 use crate::persistence::StoreCache;
 use crate::protocol_settings::ProtocolSettings;
+use crate::runtime::{Actor, ActorContext, ActorResult, Props};
 use crate::smart_contract::native::LedgerContract;
 use crate::state_service::{StateRoot, STATE_SERVICE_CATEGORY};
 use crate::{CoreResult, UInt160, UInt256};

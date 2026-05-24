@@ -1,9 +1,9 @@
 //! Outbound message queueing and per-peer memory quota handling.
 
 use super::RemoteNode;
-use crate::akka::ActorResult;
 use crate::network::p2p::messages::{NetworkMessage, ProtocolMessage};
 use crate::network::MessageCommand;
+use crate::runtime::ActorResult;
 use std::collections::VecDeque;
 use std::time::Instant;
 use tracing::warn;

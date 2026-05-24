@@ -1,7 +1,7 @@
 use super::{SessionEntry, TaskManager};
-use crate::akka::{ActorContext, ActorRef};
 use crate::network::p2p::payloads::VersionPayload;
 use crate::network::p2p::task_session::TaskSession;
+use crate::runtime::{ActorContext, ActorRef};
 use tracing::trace;
 
 impl TaskManager {

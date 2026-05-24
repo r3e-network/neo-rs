@@ -1,9 +1,9 @@
 //! Protocol routing and wire message helpers for `RemoteNode`.
 use super::RemoteNode;
-use crate::akka::{ActorContext, ActorResult};
 use crate::network::p2p::messages::{NetworkMessage, ProtocolMessage};
 use crate::network::p2p::payloads::addr_payload::{AddrPayload, MAX_COUNT_TO_SEND};
 use crate::network::MessageCommand;
+use crate::runtime::{ActorContext, ActorResult};
 use rand::{seq::IteratorRandom, thread_rng};
 use tracing::trace;
 impl RemoteNode {
@@ -103,7 +103,7 @@ impl RemoteNode {
                 error = %err,
                 "failed to send message to peer"
             );
-            return Err(crate::akka::AkkaError::system(err.to_string()));
+            return Err(crate::runtime::AkkaError::system(err.to_string()));
         }
 
         // Flush every outbound message so protocol-critical requests (headers/getdata/etc.)
@@ -118,7 +118,7 @@ impl RemoteNode {
                 error = %err,
                 "failed to flush outbound message"
             );
-            return Err(crate::akka::AkkaError::system(err.to_string()));
+            return Err(crate::runtime::AkkaError::system(err.to_string()));
         }
 
         self.last_sent = std::time::Instant::now();

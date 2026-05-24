@@ -6,7 +6,7 @@
 use parking_lot::Mutex;
 use std::sync::Arc;
 
-use crate::akka::ActorRef;
+use crate::runtime::ActorRef;
 use tracing::debug;
 
 use super::context::NeoSystemContext;

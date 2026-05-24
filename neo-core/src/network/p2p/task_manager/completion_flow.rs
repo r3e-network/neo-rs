@@ -4,9 +4,9 @@ use super::block_validation::{
 };
 use super::peer_commands::disconnect as disconnect_peer;
 use super::{TaskManager, HEADER_TASK_HASH};
-use crate::akka::ActorRef;
 use crate::ledger::{RelayResult, VerifyResult};
 use crate::network::p2p::payloads::{block::Block, InventoryType};
+use crate::runtime::ActorRef;
 use crate::UInt256;
 use tracing::{trace, warn};
 

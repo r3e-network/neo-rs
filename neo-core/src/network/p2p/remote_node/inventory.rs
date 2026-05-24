@@ -19,7 +19,7 @@ use std::sync::Arc;
 use tracing::{trace, warn};
 
 impl RemoteNode {
-    pub(super) fn on_inv(&mut self, payload: &InvPayload, ctx: &mut crate::akka::ActorContext) {
+    pub(super) fn on_inv(&mut self, payload: &InvPayload, ctx: &mut crate::runtime::ActorContext) {
         if payload.is_empty() {
             return;
         }
@@ -123,7 +123,7 @@ impl RemoteNode {
         hash: UInt256,
         block: Option<Block>,
         block_index: Option<u32>,
-        ctx: &crate::akka::ActorContext,
+        ctx: &crate::runtime::ActorContext,
     ) {
         if let Err(err) = self.system.task_manager.tell_from(
             TaskManagerCommand::InventoryCompleted {
@@ -144,8 +144,8 @@ impl RemoteNode {
     pub(super) async fn on_transaction(
         &mut self,
         transaction: Transaction,
-        ctx: &mut crate::akka::ActorContext,
-    ) -> crate::akka::ActorResult {
+        ctx: &mut crate::runtime::ActorContext,
+    ) -> crate::runtime::ActorResult {
         // Validate transaction size before processing (matches C# MAX_TRANSACTION_SIZE)
         let tx_size = transaction.size();
         if tx_size > MAX_TRANSACTION_SIZE {
@@ -223,8 +223,8 @@ impl RemoteNode {
     pub(super) async fn on_block(
         &mut self,
         mut block: Block,
-        ctx: &mut crate::akka::ActorContext,
-    ) -> crate::akka::ActorResult {
+        ctx: &mut crate::runtime::ActorContext,
+    ) -> crate::runtime::ActorResult {
         let block_idx = block.index();
         let hash = match block.try_hash() {
             Ok(hash) => hash,
@@ -298,8 +298,8 @@ impl RemoteNode {
     pub(super) async fn on_extensible(
         &mut self,
         mut payload: ExtensiblePayload,
-        ctx: &mut crate::akka::ActorContext,
-    ) -> crate::akka::ActorResult {
+        ctx: &mut crate::runtime::ActorContext,
+    ) -> crate::runtime::ActorResult {
         let hash = match payload.try_hash() {
             Ok(hash) => hash,
             Err(error) => {
@@ -340,7 +340,7 @@ impl RemoteNode {
         Ok(())
     }
 
-    pub(super) async fn on_mempool(&mut self) -> crate::akka::ActorResult {
+    pub(super) async fn on_mempool(&mut self) -> crate::runtime::ActorResult {
         let hashes = self.system.mempool_transaction_hashes();
         if hashes.is_empty() {
             return Ok(());
@@ -354,7 +354,10 @@ impl RemoteNode {
         Ok(())
     }
 
-    pub(super) async fn on_get_data(&mut self, payload: &InvPayload) -> crate::akka::ActorResult {
+    pub(super) async fn on_get_data(
+        &mut self,
+        payload: &InvPayload,
+    ) -> crate::runtime::ActorResult {
         if payload.is_empty() {
             return Ok(());
         }
@@ -444,7 +447,7 @@ impl RemoteNode {
     pub(super) async fn on_get_blocks(
         &mut self,
         payload: GetBlocksPayload,
-    ) -> crate::akka::ActorResult {
+    ) -> crate::runtime::ActorResult {
         // Validate that the start hash exists in the ledger (matches C# behavior)
         if self.system.try_get_block(&payload.hash_start).is_none() {
             return Ok(());
@@ -468,7 +471,7 @@ impl RemoteNode {
     pub(super) async fn on_get_block_by_index(
         &mut self,
         payload: GetBlockByIndexPayload,
-    ) -> crate::akka::ActorResult {
+    ) -> crate::runtime::ActorResult {
         let count = Self::normalize_request(payload.count, MAX_HASHES_COUNT);
         if count == 0 {
             return Ok(());
@@ -509,7 +512,7 @@ impl RemoteNode {
         Ok(())
     }
 
-    pub(super) fn on_not_found(&mut self, payload: InvPayload, ctx: &crate::akka::ActorContext) {
+    pub(super) fn on_not_found(&mut self, payload: InvPayload, ctx: &crate::runtime::ActorContext) {
         for hash in &payload.hashes {
             self.pending_known_hashes.remove(hash);
         }

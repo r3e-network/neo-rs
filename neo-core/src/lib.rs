@@ -302,7 +302,11 @@ pub mod application_logs;
 #[cfg(feature = "runtime")]
 pub mod actors;
 
-/// Re-export actors as "akka" for C# compatibility (requires `runtime` feature).
+/// Neutral actor runtime facade for async node components (requires `runtime` feature).
+#[cfg(feature = "runtime")]
+pub use actors as runtime;
+
+/// Compatibility actor facade for older C#-ported call sites (requires `runtime` feature).
 #[cfg(feature = "runtime")]
 pub use actors as akka;
 

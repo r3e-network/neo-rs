@@ -28,7 +28,7 @@ pub(crate) fn initialise_plugins(system: &Arc<NeoSystem>) -> CoreResult<()> {
 }
 
 /// Converts an Akka actor system error into a CoreError.
-pub(crate) fn to_core_error(err: crate::akka::AkkaError) -> CoreError {
+pub(crate) fn to_core_error(err: crate::runtime::AkkaError) -> CoreError {
     CoreError::system(err.to_string())
 }
 
@@ -38,7 +38,7 @@ mod tests {
 
     #[test]
     fn to_core_error_preserves_message() {
-        let akka_err = crate::akka::AkkaError::actor("test_actor not found");
+        let akka_err = crate::runtime::AkkaError::actor("test_actor not found");
         let core_err = to_core_error(akka_err);
         let msg = format!("{}", core_err);
         assert!(msg.contains("test_actor"));

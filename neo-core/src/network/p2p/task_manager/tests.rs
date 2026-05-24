@@ -1,7 +1,7 @@
 use super::*;
-use crate::akka::ActorPath;
 use crate::neo_system::NeoSystem;
 use crate::protocol_settings::ProtocolSettings;
+use crate::runtime::ActorPath;
 use std::sync::Weak;
 use tokio::sync::mpsc;
 

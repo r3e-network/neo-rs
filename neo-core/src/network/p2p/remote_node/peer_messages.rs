@@ -1,7 +1,6 @@
 //! Lightweight peer protocol handlers for `RemoteNode`.
 
 use super::RemoteNode;
-use crate::akka::{ActorContext, ActorResult};
 use crate::ledger::blockchain::BlockchainCommand;
 use crate::network::p2p::messages::{NetworkMessage, ProtocolMessage};
 use crate::network::p2p::payloads::{
@@ -14,6 +13,7 @@ use crate::network::p2p::payloads::{
 use crate::network::p2p::peer::PeerCommand;
 use crate::network::p2p::task_manager::TaskManagerCommand;
 use crate::network::MessageCommand;
+use crate::runtime::{ActorContext, ActorResult};
 use std::collections::HashSet;
 use std::net::SocketAddr;
 use tracing::warn;
