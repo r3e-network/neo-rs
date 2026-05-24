@@ -1,4 +1,4 @@
-use crate::persistence::{data_cache::DataCache, i_store::IStore, store_cache::StoreCache};
+use crate::persistence::{data_cache::DataCache, store::IStore, store_cache::StoreCache};
 use crate::protocol_settings::ProtocolSettings;
 use crate::state_service::StateRoot;
 use std::sync::Arc;

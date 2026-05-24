@@ -1,6 +1,6 @@
 // Copyright (C) 2015-2025 The Neo Project.
 //
-// i_store_snapshot.rs file belongs to the neo project and is free
+// store_snapshot.rs file belongs to the neo project and is free
 // software distributed under the MIT software license, see the
 // accompanying file LICENSE in the main directory of the
 // repository or http://www.opensource.org/licenses/mit-license.php
@@ -10,7 +10,7 @@
 // modifications are permitted.
 
 use super::{
-    i_read_only_store::IReadOnlyStoreGeneric, i_store::IStore, i_write_store::IWriteStore,
+    read_only_store::IReadOnlyStoreGeneric, store::IStore, write_store::IWriteStore,
     storage::StorageError,
 };
 use std::sync::Arc;

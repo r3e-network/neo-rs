@@ -1,6 +1,6 @@
 //! IIterator - matches C# Neo.SmartContract.Iterators.IIterator exactly
 
-use crate::smart_contract::i_interoperable::SmartContractStackItem;
+use crate::smart_contract::interoperable::SmartContractStackItem;
 
 /// Represents iterators in smart contract (matches C# IIterator)
 pub trait IIterator: std::fmt::Debug {

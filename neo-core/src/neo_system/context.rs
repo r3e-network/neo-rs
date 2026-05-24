@@ -36,7 +36,7 @@ use crate::network::p2p::{
     },
     LocalNode,
 };
-use crate::persistence::{i_store::IStore, i_store_provider::IStoreProvider, StoreCache};
+use crate::persistence::{store::IStore, store_provider::IStoreProvider, StoreCache};
 use crate::protocol_settings::ProtocolSettings;
 use crate::services::SystemContext;
 use crate::services::{
@@ -409,7 +409,7 @@ impl NeoSystemContext {
         let handler_clone = handler.clone();
         self.wallet_changed_handlers.write().push(handler);
         let current = self.current_wallet.read().clone();
-        handler_clone.i_wallet_provider_wallet_changed_handler(self, current);
+        handler_clone.wallet_provider_wallet_changed_handler(self, current);
         Ok(())
     }
 
@@ -438,7 +438,7 @@ impl NeoSystemContext {
         *self.current_wallet.write() = wallet.clone();
         let handlers = { self.wallet_changed_handlers.read().clone() };
         for handler in handlers {
-            handler.i_wallet_provider_wallet_changed_handler(sender, wallet.clone());
+            handler.wallet_provider_wallet_changed_handler(sender, wallet.clone());
         }
         let wallet_name = wallet
             .as_ref()

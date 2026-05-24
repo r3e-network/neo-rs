@@ -1649,7 +1649,7 @@ fn contract_management_manifest_validation_uses_neo_vm_rs_stack_value() {
     assert!(
         !validation_section.contains("manifest.to_stack_item()")
             && !validation_section.contains("BinarySerializer::serialize(")
-            && !source.contains("use crate::smart_contract::i_interoperable::IInteroperable;"),
+            && !source.contains("use crate::smart_contract::interoperable::IInteroperable;"),
         "ContractManagement manifest validation should not bounce through local StackItem or \
          IInteroperable"
     );
@@ -1679,7 +1679,7 @@ fn native_pure_data_states_project_through_neo_vm_rs_stack_value() {
         "TransactionState should parse direct StackValue inputs"
     );
     assert!(
-        !transaction_state.contains("use crate::smart_contract::i_interoperable::IInteroperable")
+        !transaction_state.contains("use crate::smart_contract::interoperable::IInteroperable")
             && !transaction_state.contains("impl IInteroperable for TransactionState")
             && !transaction_state.contains("from_stack_item")
             && !transaction_state.contains("to_stack_item")
@@ -4030,7 +4030,7 @@ fn workspace_tests_and_benches_do_not_import_local_vm_runtime() {
 fn smart_contract_support_modules_use_vm_runtime_boundary() {
     let workspace = workspace_root();
     for relative in [
-        "neo-core/src/smart_contract/i_diagnostic.rs",
+        "neo-core/src/smart_contract/diagnostic.rs",
         "neo-core/src/smart_contract/execution_context_state.rs",
         "neo-core/src/smart_contract/application_engine_iterator.rs",
         "neo-core/src/smart_contract/iterators/iterator_interop.rs",
@@ -4131,7 +4131,7 @@ fn native_event_and_data_modules_use_vm_runtime_stack_items() {
 fn host_adapter_modules_use_vm_runtime_stack_items() {
     let workspace = workspace_root();
     for relative in [
-        "neo-core/src/smart_contract/i_interoperable.rs",
+        "neo-core/src/smart_contract/interoperable.rs",
         "neo-core/src/witness_rule/stack_projection.rs",
         "neo-core/src/neo_system/persistence.rs",
         "neo-core/src/neo_system/core/tests.rs",

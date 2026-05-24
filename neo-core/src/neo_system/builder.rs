@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use crate::error::CoreResult;
-use crate::persistence::i_store_provider::IStoreProvider;
+use crate::persistence::store_provider::IStoreProvider;
 use crate::protocol_settings::ProtocolSettings;
 
 use super::NeoSystem;

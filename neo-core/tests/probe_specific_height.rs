@@ -5,7 +5,7 @@
 // predecessor for a reproducer test matches the C# canonical value.
 
 use neo_core::persistence::StorageConfig;
-use neo_core::persistence::{i_store_provider::IStoreProvider, providers::RocksDBStoreProvider};
+use neo_core::persistence::{store_provider::IStoreProvider, providers::RocksDBStoreProvider};
 use neo_core::state_service::state_store::{
     SnapshotBackedStateStoreBackend, StateServiceSettings, StateStore,
 };

@@ -10,7 +10,7 @@
 // modifications are permitted.
 
 use super::{
-    i_inventory::IInventory, signer::Signer, transaction_attribute::TransactionAttribute,
+    inventory::IInventory, signer::Signer, transaction_attribute::TransactionAttribute,
     witness::Witness, InventoryType, TransactionAttributeType,
 };
 use crate::cryptography::{Crypto, Secp256r1Crypto};

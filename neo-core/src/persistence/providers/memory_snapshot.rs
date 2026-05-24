@@ -2,8 +2,8 @@
 
 use super::memory_store::MemoryStore;
 use crate::persistence::{
-    i_read_only_store::IReadOnlyStoreGeneric, i_store::IStore, i_store_snapshot::IStoreSnapshot,
-    i_write_store::IWriteStore, seek_direction::SeekDirection,
+    read_only_store::IReadOnlyStoreGeneric, store::IStore, store_snapshot::IStoreSnapshot,
+    write_store::IWriteStore, seek_direction::SeekDirection,
 };
 use parking_lot::RwLock;
 use std::collections::BTreeMap;
@@ -102,7 +102,7 @@ impl IStoreSnapshot for MemorySnapshot {
         self.store.clone()
     }
 
-    fn try_commit(&mut self) -> crate::persistence::i_store_snapshot::SnapshotCommitResult {
+    fn try_commit(&mut self) -> crate::persistence::store_snapshot::SnapshotCommitResult {
         {
             // Apply write batch to the store
             let batch = self.write_batch.read();

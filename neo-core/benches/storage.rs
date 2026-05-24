@@ -5,7 +5,7 @@
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use neo_core::persistence::{
-    i_read_only_store::IReadOnlyStoreGeneric, i_write_store::IWriteStore, providers::MemoryStore,
+    read_only_store::IReadOnlyStoreGeneric, write_store::IWriteStore, providers::MemoryStore,
     seek_direction::SeekDirection,
 };
 use neo_core::smart_contract::{StorageItem, StorageKey};

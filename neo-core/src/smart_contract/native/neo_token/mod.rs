@@ -20,7 +20,7 @@ use super::{
 use crate::cryptography::ECPoint;
 use crate::error::{CoreError, CoreResult};
 use crate::hardfork::Hardfork;
-use crate::persistence::{i_read_only_store::IReadOnlyStoreGeneric, seek_direction::SeekDirection};
+use crate::persistence::{read_only_store::IReadOnlyStoreGeneric, seek_direction::SeekDirection};
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;

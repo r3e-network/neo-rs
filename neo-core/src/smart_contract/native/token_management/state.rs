@@ -3,7 +3,7 @@ use super::stack_value::{
     stack_value_to_bytes, stack_value_to_stack_item,
 };
 use crate::error::CoreError;
-use crate::smart_contract::i_interoperable::IInteroperable;
+use crate::smart_contract::interoperable::IInteroperable;
 use crate::vm_runtime::StackItem;
 use crate::UInt160;
 use neo_vm_rs::StackValue;

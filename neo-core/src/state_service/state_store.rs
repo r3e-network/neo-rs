@@ -56,7 +56,7 @@ use super::state_root::StateRoot;
 use crate::error::CoreResult;
 use crate::neo_io::{BinaryWriter, Serializable};
 use crate::persistence::{
-    i_store::IStore, i_store_provider::IStoreProvider, seek_direction::SeekDirection, TrackState,
+    store::IStore, store_provider::IStoreProvider, seek_direction::SeekDirection, TrackState,
 };
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::native::LedgerContract;

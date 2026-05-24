@@ -1,9 +1,9 @@
 use super::*;
 use crate::network::p2p::payloads::Witness;
-use crate::persistence::i_read_only_store::{IReadOnlyStore, IReadOnlyStoreGeneric};
-use crate::persistence::i_store::{IStore, OnNewSnapshotDelegate};
-use crate::persistence::i_store_snapshot::IStoreSnapshot;
-use crate::persistence::i_write_store::IWriteStore;
+use crate::persistence::read_only_store::{IReadOnlyStore, IReadOnlyStoreGeneric};
+use crate::persistence::store::{IStore, OnNewSnapshotDelegate};
+use crate::persistence::store_snapshot::IStoreSnapshot;
+use crate::persistence::write_store::IWriteStore;
 use crate::persistence::providers::memory_store_provider::MemoryStoreProvider;
 use crate::persistence::storage::StorageError;
 use crate::persistence::DataCache;

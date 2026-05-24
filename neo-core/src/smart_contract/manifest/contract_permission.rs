@@ -6,7 +6,7 @@ use super::{ContractManifest, ContractPermissionDescriptor, WildCardContainer};
 use crate::error::CoreError;
 use crate::error::CoreError as Error;
 use crate::error::CoreResult;
-use crate::smart_contract::i_interoperable::IInteroperable;
+use crate::smart_contract::interoperable::IInteroperable;
 use crate::vm_runtime::StackItem;
 use crate::ECPoint;
 use crate::UInt160;
@@ -181,7 +181,7 @@ impl IInteroperable for ContractPermission {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::smart_contract::i_interoperable::IInteroperable;
+    use crate::smart_contract::interoperable::IInteroperable;
     use neo_vm_rs::StackValue;
 
     #[test]

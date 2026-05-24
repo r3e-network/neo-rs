@@ -45,7 +45,7 @@ fn get_test_byte_array(size: usize, fill_byte: u8) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_core::network::p2p::payloads::i_inventory::IInventory;
+    use neo_core::network::p2p::payloads::inventory::IInventory;
     use neo_core::smart_contract::IInteroperable;
     use neo_core::IVerifiable;
     use neo_vm_rs::StackValue;

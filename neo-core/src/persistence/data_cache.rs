@@ -5,7 +5,7 @@
 //! and intelligent prefetching for common access patterns.
 
 use super::{
-    i_read_only_store::{IReadOnlyStore, IReadOnlyStoreGeneric},
+    read_only_store::{IReadOnlyStore, IReadOnlyStoreGeneric},
     read_cache::{ReadCache, ReadCacheConfig, ReadCacheStatsSnapshot},
     seek_direction::SeekDirection,
     track_state::TrackState,

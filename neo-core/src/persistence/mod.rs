@@ -32,11 +32,11 @@
 pub mod cache;
 pub mod compression;
 pub mod data_cache;
-pub mod i_read_only_store;
-pub mod i_store;
-pub mod i_store_provider;
-pub mod i_store_snapshot;
-pub mod i_write_store;
+pub mod read_only_store;
+pub mod store;
+pub mod store_provider;
+pub mod store_snapshot;
+pub mod write_store;
 pub mod index;
 pub mod providers;
 pub mod read_cache;
@@ -52,11 +52,11 @@ pub mod transaction;
 pub mod write_batch_buffer;
 
 pub use data_cache::{DataCache, Trackable};
-pub use i_read_only_store::{IReadOnlyStore, IReadOnlyStoreGeneric};
-pub use i_store::IStore;
-pub use i_store_provider::IStoreProvider;
-pub use i_store_snapshot::IStoreSnapshot;
-pub use i_write_store::IWriteStore;
+pub use read_only_store::{IReadOnlyStore, IReadOnlyStoreGeneric};
+pub use store::IStore;
+pub use store_provider::IStoreProvider;
+pub use store_snapshot::IStoreSnapshot;
+pub use write_store::IWriteStore;
 pub use read_cache::{
     PrefetchHint, ReadCache, ReadCacheConfig, ReadCacheStats, ReadCacheStatsSnapshot,
     StorageReadCache,

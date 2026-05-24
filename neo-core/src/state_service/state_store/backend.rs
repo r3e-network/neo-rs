@@ -1,5 +1,5 @@
 use crate::cryptography::mpt_trie::{MptResult, MptStoreSnapshot};
-use crate::persistence::i_store::IStore;
+use crate::persistence::store::IStore;
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::sync::Arc;

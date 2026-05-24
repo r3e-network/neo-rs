@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use crate::ledger::{HeaderCache, LedgerContext};
-use crate::persistence::{i_store::IStore, StoreCache};
+use crate::persistence::{store::IStore, StoreCache};
 use crate::protocol_settings::ProtocolSettings;
 use crate::state_service::{
     state_store::{SnapshotBackedStateStoreBackend, StateRootVerifier, StateServiceSettings},
@@ -12,7 +12,7 @@ use crate::state_service::{
 
 /// Initializes store, cache, and state store from a provider and optional path.
 pub(crate) fn init_store(
-    store_provider: Arc<dyn crate::persistence::i_store_provider::IStoreProvider>,
+    store_provider: Arc<dyn crate::persistence::store_provider::IStoreProvider>,
     storage_path: Option<String>,
     settings: Arc<ProtocolSettings>,
     state_service_settings: Option<StateServiceSettings>,

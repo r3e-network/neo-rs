@@ -4,7 +4,7 @@ use crate::ledger::{block_header::BlockHeader, Block};
 use crate::neo_io::{
     serializable::helper::get_var_size, BinaryWriter, IoResult, MemoryReader, Serializable,
 };
-use crate::smart_contract::i_interoperable::IInteroperable;
+use crate::smart_contract::interoperable::IInteroperable;
 use crate::vm_runtime::StackItem;
 use crate::{CoreResult, UInt256};
 use neo_vm_rs::StackValue;

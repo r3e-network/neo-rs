@@ -3,7 +3,7 @@ use super::{
     PREFIX_TOKEN_STATE,
 };
 use crate::error::{CoreError, CoreResult};
-use crate::persistence::i_read_only_store::IReadOnlyStoreGeneric;
+use crate::persistence::read_only_store::IReadOnlyStoreGeneric;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::storage_context::StorageContext;

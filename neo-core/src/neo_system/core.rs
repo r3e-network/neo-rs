@@ -81,7 +81,7 @@ use crate::network::p2p::{
     payloads::block::Block, timeouts, LocalNode, TaskManager, TaskManagerCommand,
 };
 use crate::persistence::{
-    i_store::IStore, i_store_provider::IStoreProvider, StoreCache, StoreFactory,
+    store::IStore, store_provider::IStoreProvider, StoreCache, StoreFactory,
 };
 pub use crate::protocol_settings::ProtocolSettings;
 use crate::services::{LedgerService, MempoolService, PeerManagerService, StateStoreService};

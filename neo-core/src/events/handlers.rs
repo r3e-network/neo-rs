@@ -111,7 +111,7 @@ pub trait ITransactionRemovedHandler {
 /// Handler of WalletChanged event from the IWalletProvider.
 /// Triggered when a new wallet is assigned to the node.
 pub trait IWalletChangedHandler {
-    fn i_wallet_provider_wallet_changed_handler(
+    fn wallet_provider_wallet_changed_handler(
         &self,
         sender: &dyn Any,
         wallet: Option<Arc<dyn Wallet>>,

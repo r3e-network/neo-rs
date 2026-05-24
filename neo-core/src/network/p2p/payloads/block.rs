@@ -10,7 +10,7 @@
 // modifications are permitted.
 
 use super::{
-    header::Header, i_inventory::IInventory, transaction::Transaction, witness::Witness,
+    header::Header, inventory::IInventory, transaction::Transaction, witness::Witness,
     InventoryType,
 };
 use crate::constants::{MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK};

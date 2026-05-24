@@ -11,10 +11,10 @@
 
 use super::memory_snapshot::MemorySnapshot;
 use crate::persistence::{
-    i_read_only_store::{IReadOnlyStore, IReadOnlyStoreGeneric},
-    i_store::{IStore, OnNewSnapshotDelegate},
-    i_store_snapshot::IStoreSnapshot,
-    i_write_store::IWriteStore,
+    read_only_store::{IReadOnlyStore, IReadOnlyStoreGeneric},
+    store::{IStore, OnNewSnapshotDelegate},
+    store_snapshot::IStoreSnapshot,
+    write_store::IWriteStore,
     seek_direction::SeekDirection,
 };
 use crate::smart_contract::{storage_key::StorageKey, StorageItem};

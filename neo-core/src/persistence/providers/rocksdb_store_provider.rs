@@ -2,11 +2,11 @@
 use crate::{
     error::{CoreError, CoreResult},
     persistence::{
-        i_read_only_store::{IReadOnlyStore, IReadOnlyStoreGeneric},
-        i_store::{IStore, OnNewSnapshotDelegate},
-        i_store_provider::IStoreProvider,
-        i_store_snapshot::IStoreSnapshot,
-        i_write_store::IWriteStore,
+        read_only_store::{IReadOnlyStore, IReadOnlyStoreGeneric},
+        store::{IStore, OnNewSnapshotDelegate},
+        store_provider::IStoreProvider,
+        store_snapshot::IStoreSnapshot,
+        write_store::IWriteStore,
         read_cache::{ReadCacheConfig, StorageReadCache},
         seek_direction::SeekDirection,
         storage::{CompactionStrategy, CompressionAlgorithm, StorageConfig},
@@ -821,7 +821,7 @@ impl IStoreSnapshot for RocksDbSnapshot {
         self.store.clone() as Arc<dyn IStore>
     }
 
-    fn try_commit(&mut self) -> crate::persistence::i_store_snapshot::SnapshotCommitResult {
+    fn try_commit(&mut self) -> crate::persistence::store_snapshot::SnapshotCommitResult {
         use crate::persistence::storage::StorageError;
 
         let mut batch_guard = self.write_batch.lock();

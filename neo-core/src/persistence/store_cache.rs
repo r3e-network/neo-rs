@@ -2,9 +2,9 @@
 
 use super::{
     data_cache::{DataCache, DataCacheConfig, DataCacheError, DataCacheResult},
-    i_read_only_store::{IReadOnlyStore, IReadOnlyStoreGeneric},
-    i_store::IStore,
-    i_store_snapshot::IStoreSnapshot,
+    read_only_store::{IReadOnlyStore, IReadOnlyStoreGeneric},
+    store::IStore,
+    store_snapshot::IStoreSnapshot,
     seek_direction::SeekDirection,
     track_state::TrackState,
 };
@@ -194,8 +194,8 @@ mod tests {
     use super::*;
     use crate::persistence::providers::memory_store::MemoryStore;
     use crate::persistence::{
-        i_store::{IStore, OnNewSnapshotDelegate},
-        i_write_store::IWriteStore,
+        store::{IStore, OnNewSnapshotDelegate},
+        write_store::IWriteStore,
         storage::StorageError,
     };
     use std::any::Any;
@@ -464,7 +464,7 @@ pub fn apply_tracked<T>(
     writer: &mut T,
 ) -> crate::error::CoreResult<()>
 where
-    T: super::i_write_store::IWriteStore<Vec<u8>, Vec<u8>> + ?Sized,
+    T: super::write_store::IWriteStore<Vec<u8>, Vec<u8>> + ?Sized,
 {
     for (key, trackable) in tracked {
         match trackable.state {

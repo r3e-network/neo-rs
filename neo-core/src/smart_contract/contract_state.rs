@@ -11,7 +11,7 @@ use crate::neo_io::serializable::helper::{
 };
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::smart_contract::{
-    helper::Helper, i_interoperable::IInteroperable, manifest::ContractManifest,
+    helper::Helper, interoperable::IInteroperable, manifest::ContractManifest,
     method_token::MethodToken, CallFlags,
 };
 use crate::vm_runtime::StackItem;

@@ -2,7 +2,7 @@ use super::{OracleContract, DEFAULT_PRICE};
 use crate::error::CoreResult as Result;
 use crate::impl_native_contract;
 use crate::hardfork::Hardfork;
-use crate::persistence::i_read_only_store::IReadOnlyStoreGeneric;
+use crate::persistence::read_only_store::IReadOnlyStoreGeneric;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::manifest::ContractEventDescriptor;

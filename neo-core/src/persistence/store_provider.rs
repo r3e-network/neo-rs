@@ -1,6 +1,6 @@
 // Copyright (C) 2015-2025 The Neo Project.
 //
-// i_store_provider.rs file belongs to the neo project and is free
+// store_provider.rs file belongs to the neo project and is free
 // software distributed under the MIT software license, see the
 // accompanying file LICENSE in the main directory of the
 // repository or http://www.opensource.org/licenses/mit-license.php
@@ -9,7 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use super::i_store::IStore;
+use super::store::IStore;
 use crate::error::CoreResult;
 use std::any::Any;
 use std::sync::Arc;

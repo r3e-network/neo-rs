@@ -7,7 +7,7 @@
 use crate::neo_io::serializable::helper::get_var_size_bytes;
 use crate::neo_io::{IoResult, MemoryReader};
 use crate::smart_contract::binary_serializer::BinarySerializer;
-use crate::smart_contract::i_interoperable::IInteroperable;
+use crate::smart_contract::interoperable::IInteroperable;
 use neo_vm_rs::ExecutionEngineLimits;
 use num_bigint::BigInt;
 use std::borrow::Cow;

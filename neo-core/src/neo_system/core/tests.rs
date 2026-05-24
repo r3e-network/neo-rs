@@ -17,7 +17,7 @@ use crate::network::p2p::payloads::witness::Witness as PayloadWitness;
 use crate::network::p2p::payloads::Transaction;
 use crate::network::p2p::ChannelsConfig;
 use crate::persistence::data_cache::DataCache;
-use crate::persistence::i_store::IStore;
+use crate::persistence::store::IStore;
 use crate::persistence::providers::memory_store::MemoryStore;
 use crate::persistence::StoreCache;
 use crate::smart_contract::application_engine::{ApplicationEngine, TEST_MODE_GAS};
@@ -366,7 +366,7 @@ impl Drop for LoggingGuard {
 }
 
 impl IWalletChangedHandler for EventProbe {
-    fn i_wallet_provider_wallet_changed_handler(
+    fn wallet_provider_wallet_changed_handler(
         &self,
         _sender: &dyn Any,
         _wallet: Option<Arc<dyn Wallet>>,

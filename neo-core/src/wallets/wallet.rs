@@ -6,7 +6,7 @@
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::contract::Contract;
 use crate::wallets::{
-    i_wallet_factory::IWalletFactory, key_pair::KeyPair, wallet_account::WalletAccount, Version,
+    wallet_factory::IWalletFactory, key_pair::KeyPair, wallet_account::WalletAccount, Version,
 };
 use crate::Transaction;
 use crate::{UInt160, UInt256};

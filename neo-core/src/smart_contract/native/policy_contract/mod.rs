@@ -6,7 +6,7 @@
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::hardfork::Hardfork;
 use crate::neo_config::ADDRESS_SIZE;
-use crate::persistence::i_read_only_store::IReadOnlyStoreGeneric;
+use crate::persistence::read_only_store::IReadOnlyStoreGeneric;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;

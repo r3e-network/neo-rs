@@ -2,7 +2,7 @@
 
 use neo_core::ledger::{Block, BlockHeader};
 use neo_core::persistence::data_cache::{DataCache, DataCacheConfig, Trackable};
-use neo_core::persistence::{i_store_provider::IStoreProvider, providers::RocksDBStoreProvider};
+use neo_core::persistence::{store_provider::IStoreProvider, providers::RocksDBStoreProvider};
 use neo_core::persistence::{SeekDirection, StorageConfig};
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::application_engine::ApplicationEngine;

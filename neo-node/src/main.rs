@@ -1556,7 +1556,7 @@ mod tests {
     }
 
     impl IWalletChangedHandler for WalletChangeProbe {
-        fn i_wallet_provider_wallet_changed_handler(
+        fn wallet_provider_wallet_changed_handler(
             &self,
             _sender: &dyn Any,
             _wallet: Option<Arc<dyn CoreWallet>>,

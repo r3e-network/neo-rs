@@ -11,7 +11,7 @@ use super::{HashOrIndex, LedgerContract, PersistedTransactionState};
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::hardfork::Hardfork;
 use crate::ledger::Block;
-use crate::persistence::{i_read_only_store::IReadOnlyStoreGeneric, DataCache};
+use crate::persistence::{read_only_store::IReadOnlyStoreGeneric, DataCache};
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::native::{policy_contract::PolicyContract, trimmed_block::TrimmedBlock};
 use crate::smart_contract::{StorageItem, StorageKey};

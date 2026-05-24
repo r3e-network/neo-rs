@@ -10,7 +10,7 @@
 // modifications are permitted.
 
 use super::{
-    i_store::IStore, i_store_provider::IStoreProvider,
+    store::IStore, store_provider::IStoreProvider,
     providers::memory_store_provider::MemoryStoreProvider,
 };
 use crate::error::{CoreError, CoreResult};

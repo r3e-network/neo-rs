@@ -3,7 +3,7 @@
 #![cfg(feature = "rocksdb")]
 
 use neo_core::persistence::providers::RocksDBStoreProvider;
-use neo_core::persistence::{i_store_provider::IStoreProvider, StorageConfig};
+use neo_core::persistence::{store_provider::IStoreProvider, StorageConfig};
 use neo_core::state_service::state_store::{
     SnapshotBackedStateStoreBackend, StateServiceSettings, StateStore,
 };

@@ -37,7 +37,7 @@ pub mod headers_payload;
 /// High priority transaction attribute.
 pub mod high_priority_attribute;
 /// Inventory interface trait.
-pub mod i_inventory;
+pub mod inventory;
 /// Inventory payload for announcements.
 pub mod inv_payload;
 /// Inventory type enumeration.
@@ -85,7 +85,7 @@ pub use get_blocks_payload::GetBlocksPayload;
 pub use header::Header;
 pub use headers_payload::HeadersPayload;
 pub use high_priority_attribute::HighPriorityAttribute;
-pub use i_inventory::IInventory;
+pub use inventory::IInventory;
 pub use inv_payload::InvPayload;
 pub use inventory_type::InventoryType;
 pub use merkle_block_payload::MerkleBlockPayload;

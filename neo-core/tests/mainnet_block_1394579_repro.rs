@@ -17,7 +17,7 @@ use neo_core::network::p2p::payloads::{
     signer::Signer, transaction::Transaction, witness::Witness,
 };
 use neo_core::persistence::data_cache::{DataCache, DataCacheConfig};
-use neo_core::persistence::{i_store_provider::IStoreProvider, providers::RocksDBStoreProvider};
+use neo_core::persistence::{store_provider::IStoreProvider, providers::RocksDBStoreProvider};
 use neo_core::persistence::{SeekDirection, StorageConfig};
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::application_engine::ApplicationEngine;

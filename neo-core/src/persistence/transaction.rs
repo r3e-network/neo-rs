@@ -2,7 +2,7 @@
 
 use super::{data_cache::DataCacheResult, StoreCache, TrackState, Trackable};
 use crate::persistence::data_cache::DataCacheConfig;
-use crate::persistence::{i_store::IStore, i_store_snapshot::IStoreSnapshot};
+use crate::persistence::{store::IStore, store_snapshot::IStoreSnapshot};
 use crate::smart_contract::StorageKey;
 use std::sync::Arc;
 
