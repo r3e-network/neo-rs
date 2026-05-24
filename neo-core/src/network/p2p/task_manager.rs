@@ -1,51 +1,18 @@
-//! Task manager actor: tracks inventory tasks and relays to peers.
+//! Task manager actor: tracks peer sessions, inventory requests, and retries.
 //!
-//! This module implements the task manager that coordinates block and header
-//! synchronization across multiple peers, mirroring the C# `Neo.Network.P2P.TaskManager`.
+//! The actor-facing state stays in this module. Actor-independent decisions and
+//! flow helpers are split into focused child modules:
 //!
-//! # Architecture
+//! - `scheduling`: header and block-index request planning.
+//! - `request_flow`: request dispatch and peer task selection.
+//! - `completion_flow`: inventory completion and persistence callbacks.
+//! - `block_validation`: block/hash consistency checks.
+//! - `restart_flow` and `timeout_pruning`: restart and timer cleanup paths.
+//! - `known_hash_cache`, `state`, `session_lifecycle`, and `peer_commands`:
+//!   small support modules.
 //!
-//! ```text
-//! ┌─────────────────────────────────────────────────────────────┐
-//! │                    TaskManager Actor                         │
-//! │  ┌─────────────────────────────────────────────────────────┐│
-//! │  │                   Task Tracking                          ││
-//! │  │  ┌──────────┐  ┌──────────┐  ┌──────────────────────┐  ││
-//! │  │  │ Pending  │  │ In-Flight│  │ Known Hashes         │  ││
-//! │  │  │ Tasks    │  │ Requests │  │ (already have)       │  ││
-//! │  │  └──────────┘  └──────────┘  └──────────────────────┘  ││
-//! │  └─────────────────────────────────────────────────────────┘│
-//! │  ┌─────────────────────────────────────────────────────────┐│
-//! │  │                   Session Management                     ││
-//! │  │  ┌──────────┐  ┌──────────┐  ┌──────────────────────┐  ││
-//! │  │  │ Peer     │  │ Task     │  │ Timeout              │  ││
-//! │  │  │ Sessions │  │ Queues   │  │ Handling             │  ││
-//! │  │  └──────────┘  └──────────┘  └──────────────────────┘  ││
-//! │  └─────────────────────────────────────────────────────────┘│
-//! └─────────────────────────────────────────────────────────────┘
-//! ```
-//!
-//! # Key Components
-//!
-//! - [`TaskManager`]: Actor coordinating inventory synchronization
-//! - [`TaskManagerCommand`]: Messages for task registration and completion
-//! - [`TaskSession`]: Per-peer session tracking pending requests
-//!
-//! # Synchronization Flow
-//!
-//! 1. Receive `INV` message with block/header hashes
-//! 2. Filter out already-known hashes
-//! 3. Queue unknown hashes as pending tasks
-//! 4. Dispatch `GETDATA`/`GETHEADERS` to available peers
-//! 5. Track in-flight requests with timeout
-//! 6. Handle responses and mark tasks complete
-//! 7. Retry timed-out tasks with different peers
-//!
-//! # Configuration
-//!
-//! - `TIMER_INTERVAL`: 30s housekeeping interval
-//! - `TASK_TIMEOUT`: 60s request timeout
-//! - `MAX_CONCURRENT_TASKS`: 3 parallel requests per peer
+//! This keeps protocol behavior centralized while separating pure scheduling
+//! decisions from mailbox delivery.
 //
 // Copyright (C) 2015-2025 The Neo Project.
 //
@@ -58,28 +25,33 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use super::payloads::{
-    block::Block,
-    get_block_by_index_payload::GetBlockByIndexPayload,
-    header::Header,
-    inv_payload::{InvPayload, MAX_HASHES_COUNT},
-    InventoryType, VersionPayload,
-};
+use super::payloads::{block::Block, header::Header, inv_payload::InvPayload, VersionPayload};
 use super::task_session::TaskSession;
 use crate::akka::{
     Actor, ActorContext, ActorRef, ActorResult, Cancelable, EventStreamHandle, Props, Terminated,
 };
-use crate::ledger::{PersistCompleted, RelayResult, VerifyResult};
+use crate::ledger::{PersistCompleted, RelayResult};
 use crate::neo_system::NeoSystemContext;
-use crate::network::p2p::{NetworkMessage, ProtocolMessage, RemoteNodeCommand};
-use crate::smart_contract::native::LedgerContract;
 use crate::UInt256;
 use async_trait::async_trait;
 use std::any::Any;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use tracing::{trace, warn};
+use tracing::warn;
+
+mod block_validation;
+mod completion_flow;
+mod known_hash_cache;
+mod peer_commands;
+mod request_flow;
+mod restart_flow;
+mod scheduling;
+mod session_lifecycle;
+mod state;
+mod timeout_pruning;
+use known_hash_cache::KnownHashCache;
+use peer_commands::send_mempool;
 
 /// Interval for task manager housekeeping.
 const TIMER_INTERVAL: Duration = Duration::from_secs(30);
@@ -106,13 +78,28 @@ struct SessionEntry {
     session: TaskSession,
 }
 
+fn request_mempool_once(actor: &ActorRef, session: &mut TaskSession) -> bool {
+    if session.mempool_sent {
+        return false;
+    }
+
+    session.mempool_sent = true;
+    if let Err(error) = send_mempool(actor) {
+        warn!(
+            target: "neo",
+            actor = %actor.path(),
+            %error,
+            "failed to request mempool from peer"
+        );
+    }
+    true
+}
+
 /// Actor-independent state for the task manager.
 pub struct TaskManager {
     system: Option<Arc<NeoSystemContext>>,
     sessions: HashMap<String, SessionEntry>,
-    known_hashes: HashSet<UInt256>,
-    known_hash_order: VecDeque<UInt256>,
-    known_hash_capacity: usize,
+    known_hashes: KnownHashCache,
     event_stream: Option<EventStreamHandle>,
     last_seen_persisted_index: u32,
     global_inv_tasks: HashMap<UInt256, u32>,
@@ -126,9 +113,7 @@ impl TaskManager {
         Self {
             system: None,
             sessions: HashMap::with_capacity(32),
-            known_hashes: HashSet::with_capacity(4096),
-            known_hash_order: VecDeque::with_capacity(4096),
-            known_hash_capacity: 1024,
+            known_hashes: KnownHashCache::new(1024),
             event_stream: None,
             last_seen_persisted_index: 0,
             global_inv_tasks: HashMap::with_capacity(256),
@@ -140,798 +125,6 @@ impl TaskManager {
 
     pub fn props() -> Props {
         Props::new(|| TaskManagerActor::new(Self::new()))
-    }
-
-    fn attach_system(&mut self, context: Arc<NeoSystemContext>, ctx: &ActorContext) {
-        trace!(target: "neo", "task manager attached to system context");
-        let capacity = context.memory_pool().lock().capacity.max(100);
-        self.known_hash_capacity = capacity;
-        let stream = context.event_stream();
-        stream.subscribe::<PersistCompleted>(ctx.self_ref());
-        stream.subscribe::<RelayResult>(ctx.self_ref());
-        self.event_stream = Some(stream);
-        self.system = Some(context);
-    }
-
-    fn has_header_task(&self) -> bool {
-        self.global_inv_tasks.contains_key(&HEADER_TASK_HASH)
-    }
-
-    fn increment_inv_task(&mut self, hash: UInt256) -> bool {
-        let entry = self.global_inv_tasks.entry(hash).or_insert(0);
-        if *entry >= MAX_CONCURRENT_TASKS {
-            return false;
-        }
-        *entry += 1;
-        true
-    }
-
-    fn decrement_inv_task(&mut self, hash: &UInt256) {
-        if let Some(entry) = self.global_inv_tasks.get_mut(hash) {
-            if *entry > 1 {
-                *entry -= 1;
-            } else {
-                self.global_inv_tasks.remove(hash);
-            }
-        }
-    }
-
-    fn increment_index_task(&mut self, index: u32) -> bool {
-        let entry = self.global_index_tasks.entry(index).or_insert(0);
-        if *entry >= MAX_CONCURRENT_TASKS {
-            return false;
-        }
-        *entry += 1;
-        true
-    }
-
-    fn decrement_index_task(&mut self, index: u32) {
-        if let Some(entry) = self.global_index_tasks.get_mut(&index) {
-            if *entry > 1 {
-                *entry -= 1;
-            } else {
-                self.global_index_tasks.remove(&index);
-            }
-        }
-    }
-
-    fn forget_hash(&mut self, hash: &UInt256) {
-        if self.known_hashes.remove(hash) {
-            self.known_hash_order.retain(|candidate| candidate != hash);
-        }
-    }
-
-    fn remove_available_task_from_all(&mut self, hash: &UInt256) {
-        for entry in self.sessions.values_mut() {
-            entry.session.available_tasks.remove(hash);
-        }
-    }
-
-    fn register_session(
-        &mut self,
-        actor: ActorRef,
-        version: VersionPayload,
-        ctx: &mut ActorContext,
-    ) {
-        let path = actor.path().to_string();
-        if self.sessions.contains_key(&path) {
-            trace!(target: "neo", actor = %path, "task session already registered");
-            return;
-        }
-
-        if let Err(err) = ctx.watch(&actor) {
-            trace!(
-                target: "neo",
-                actor = %path,
-                error = %err,
-                "ignoring peer session that could not be watched"
-            );
-            return;
-        }
-
-        let session = TaskSession::new(&version);
-        self.sessions.insert(
-            path.clone(),
-            SessionEntry {
-                actor: actor.clone(),
-                session,
-            },
-        );
-        trace!(target: "neo", actor = %path, "task session registered successfully");
-        self.request_tasks_for_path(&path);
-    }
-
-    fn update_session(&mut self, actor: &ActorRef, last_block_index: u32) {
-        let path = actor.path().to_string();
-        if let Some(entry) = self.sessions.get_mut(&path) {
-            entry.session.update_last_block_index(last_block_index);
-        }
-        self.request_tasks_for_path(&path);
-    }
-
-    fn remove_session_by_ref(&mut self, actor: &ActorRef) {
-        let path = actor.path().to_string();
-        if let Some(entry) = self.sessions.remove(&path) {
-            for hash in entry.session.inv_tasks.keys() {
-                self.decrement_inv_task(hash);
-            }
-            for index in entry.session.index_tasks.keys() {
-                self.decrement_index_task(*index);
-            }
-        }
-        // Re-evaluate all remaining sessions so blocks assigned to the
-        // disconnected peer can be re-requested from someone else.
-        self.request_tasks_all();
-    }
-
-    fn is_known_hash(&self, hash: &UInt256) -> bool {
-        self.known_hashes.contains(hash)
-    }
-
-    fn record_known_hash(&mut self, hash: UInt256) {
-        if self.known_hashes.insert(hash) {
-            self.known_hash_order.push_back(hash);
-        }
-
-        while self.known_hash_order.len() > self.known_hash_capacity {
-            if let Some(evicted) = self.known_hash_order.pop_front() {
-                self.known_hashes.remove(&evicted);
-            } else {
-                break;
-            }
-        }
-    }
-
-    fn request_tasks_for_path(&mut self, path: &str) {
-        self.with_session_mut(path, |entry, this| {
-            this.request_tasks_entry(entry);
-        });
-    }
-
-    fn request_tasks_all(&mut self) {
-        let session_paths: Vec<String> = self.sessions.keys().cloned().collect();
-        for path in session_paths {
-            self.with_session_mut(&path, |entry, this| {
-                this.request_tasks_entry(entry);
-            });
-        }
-    }
-
-    fn request_tasks_entry(&mut self, entry: &mut SessionEntry) {
-        if entry.session.has_too_many_tasks() {
-            return;
-        }
-
-        let system = match &self.system {
-            Some(context) => Arc::clone(context),
-            None => return,
-        };
-
-        let actor = entry.actor.clone();
-        let session = &mut entry.session;
-
-        let store_cache = system.store_cache();
-        let ledger_contract = LedgerContract::new();
-
-        let current_height = ledger_contract
-            .current_index(&store_cache)
-            .unwrap_or(0)
-            .max(self.last_seen_persisted_index);
-
-        trace!(
-            target: "neo",
-            actor = %actor.path(),
-            current_height = current_height,
-            peer_height = session.last_block_index,
-            available_tasks = session.available_tasks.len(),
-            inv_tasks = session.inv_tasks.len(),
-            index_tasks = session.index_tasks.len(),
-            "requesting tasks from peer"
-        );
-
-        if !session.available_tasks.is_empty() {
-            session
-                .available_tasks
-                .retain(|hash| !self.known_hashes.contains(hash));
-            session
-                .available_tasks
-                .retain(|hash| !ledger_contract.contains_block(&store_cache, hash));
-
-            let candidates: Vec<UInt256> = session.available_tasks.iter().copied().collect();
-            let mut scheduled = Vec::with_capacity(candidates.len());
-            let mut to_remove = Vec::with_capacity(candidates.len());
-            for hash in candidates {
-                if self.increment_inv_task(hash) {
-                    session.register_inv_task(hash);
-                    scheduled.push(hash);
-                    to_remove.push(hash);
-                }
-            }
-            for hash in to_remove {
-                session.available_tasks.remove(&hash);
-            }
-
-            if !scheduled.is_empty() {
-                for group in InvPayload::create_group(InventoryType::Block, scheduled.clone()) {
-                    let message = NetworkMessage::new(ProtocolMessage::GetData(group));
-                    if let Err(error) = actor.tell(RemoteNodeCommand::Send(message)) {
-                        warn!(
-                            target: "neo",
-                            actor = %actor.path(),
-                            %error,
-                            "failed to request available tasks from peer"
-                        );
-                    }
-                }
-                return;
-            }
-        }
-
-        let current_height = ledger_contract
-            .current_index(&store_cache)
-            .unwrap_or(0)
-            .max(self.last_seen_persisted_index);
-
-        let ledger = system.ledger();
-        let header_cache = system.header_cache();
-        let mut header_height = header_cache
-            .last()
-            .map(|header| header.index())
-            .unwrap_or_else(|| ledger.highest_header_index());
-        header_height = header_height.max(ledger.highest_header_index());
-
-        let header_request_start = header_height.saturating_add(1);
-        if (!self.has_header_task()
-            || self
-                .global_inv_tasks
-                .get(&HEADER_TASK_HASH)
-                .copied()
-                .unwrap_or(0)
-                < MAX_CONCURRENT_TASKS)
-            && header_height < session.last_block_index
-            && session.should_request_headers(header_request_start, self.task_timeout)
-            && self.increment_inv_task(HEADER_TASK_HASH)
-        {
-            session.register_inv_task(HEADER_TASK_HASH);
-            session.record_header_request(header_request_start);
-            let payload = GetBlockByIndexPayload::create(header_request_start, -1);
-            let message = NetworkMessage::new(ProtocolMessage::GetHeaders(payload));
-            if let Err(error) = actor.tell(RemoteNodeCommand::Send(message)) {
-                warn!(
-                    target: "neo",
-                    actor = %actor.path(),
-                    %error,
-                    "failed to request headers from peer"
-                );
-                self.decrement_inv_task(&HEADER_TASK_HASH);
-                session.complete_inv_task(&HEADER_TASK_HASH);
-            }
-            // Do NOT return here — fall through to block requests.
-            // In fast sync the node is millions of headers behind; returning
-            // would starve block downloads until all headers are fetched.
-        }
-
-        if current_height < session.last_block_index {
-            // Find the first height that isn't already in-flight.
-            // We intentionally skip ONLY global_index_tasks (blocks being fetched
-            // by another session), NOT received_block.  Blocks in received_block
-            // have already been delivered to the blockchain actor so they don't
-            // need re-requesting, but they should NOT consume window slots.
-            let mut start_height = current_height + 1;
-            while self.global_index_tasks.contains_key(&start_height) {
-                start_height = start_height.saturating_add(1);
-                if start_height > session.last_block_index {
-                    break;
-                }
-            }
-
-            let global_window = MAX_BLOCK_INDEX_BATCH.saturating_mul(BLOCK_INDEX_WINDOW_MULTIPLIER);
-            let limit_height = current_height.saturating_add(global_window);
-
-            if self.global_index_tasks.is_empty() {
-                tracing::info!(
-                    target: "neo",
-                    actor = %actor.path(),
-                    start_height = start_height,
-                    limit_height = limit_height,
-                    peer_height = session.last_block_index,
-                    current_height = current_height,
-                    "block index request — pipeline empty"
-                );
-            }
-
-            if start_height <= session.last_block_index && start_height < limit_height {
-                let mut end_height = start_height;
-                while end_height < session.last_block_index
-                    && end_height + 1 < limit_height
-                    && !self.global_index_tasks.contains_key(&(end_height + 1))
-                {
-                    end_height += 1;
-                }
-
-                let count = (end_height - start_height + 1).min(MAX_BLOCK_INDEX_BATCH);
-                let mut granted = 0u32;
-                for offset in 0..count {
-                    let index = start_height + offset;
-                    if self.increment_index_task(index) {
-                        session.register_index_task(index);
-                        granted += 1;
-                    }
-                }
-
-                if granted > 0 {
-                    let payload = GetBlockByIndexPayload::create(start_height, granted as i16);
-                    let message = NetworkMessage::new(ProtocolMessage::GetBlockByIndex(payload));
-                    if let Err(error) = actor.tell(RemoteNodeCommand::Send(message)) {
-                        warn!(
-                            target: "neo",
-                            actor = %actor.path(),
-                            %error,
-                            "failed to request blocks by index from peer"
-                        );
-                        for offset in 0..granted {
-                            let index = start_height + offset;
-                            self.decrement_index_task(index);
-                            session.complete_index_task(index);
-                        }
-                    }
-                    return;
-                }
-            }
-        }
-
-        if !session.mempool_sent {
-            session.mempool_sent = true;
-            if let Err(error) = actor.tell(RemoteNodeCommand::Send(NetworkMessage::new(
-                ProtocolMessage::Mempool,
-            ))) {
-                warn!(
-                    target: "neo",
-                    actor = %actor.path(),
-                    %error,
-                    "failed to request mempool from peer"
-                );
-            }
-        }
-    }
-
-    fn with_session_mut<F>(&mut self, path: &str, mut f: F)
-    where
-        F: FnMut(&mut SessionEntry, &mut TaskManager),
-    {
-        if let Some(mut entry) = self.sessions.remove(path) {
-            f(&mut entry, self);
-            self.sessions.insert(path.to_string(), entry);
-        }
-    }
-
-    fn on_headers(&mut self, actor: &ActorRef) {
-        let path = actor.path().to_string();
-        if !self.sessions.contains_key(&path) {
-            trace!(target: "neo", actor = %path, "ignoring headers from unknown session");
-            return;
-        }
-
-        self.with_session_mut(&path, |entry, this| {
-            if entry.session.complete_inv_task(&HEADER_TASK_HASH) {
-                this.decrement_inv_task(&HEADER_TASK_HASH);
-            }
-            this.request_tasks_entry(entry);
-        });
-    }
-
-    fn on_new_tasks(&mut self, actor: &ActorRef, payload: InvPayload) {
-        let path = actor.path().to_string();
-        if payload.is_empty() {
-            return;
-        }
-
-        if !self.sessions.contains_key(&path) {
-            trace!(target: "neo", actor = %path, "ignoring NewTasks from unknown session");
-            return;
-        }
-
-        let system = match &self.system {
-            Some(context) => Arc::clone(context),
-            None => return,
-        };
-
-        let store_cache = system.store_cache();
-        let ledger_contract = LedgerContract::new();
-        let current_height = ledger_contract
-            .current_index(&store_cache)
-            .unwrap_or(0)
-            .max(self.last_seen_persisted_index);
-        let ledger = system.ledger();
-        let header_cache = system.header_cache();
-        let mut header_height = header_cache
-            .last()
-            .map(|header| header.index())
-            .unwrap_or_else(|| ledger.highest_header_index());
-        header_height = header_height.max(ledger.highest_header_index());
-        drop(store_cache);
-
-        let inventory_type = payload.inventory_type;
-        let hashes = payload.hashes.clone();
-        let actor_ref = actor.clone();
-        self.with_session_mut(&path, move |entry, this| {
-            if current_height < header_height
-                && (inventory_type == InventoryType::Transaction
-                    || (inventory_type == InventoryType::Block
-                        && current_height
-                            < entry
-                                .session
-                                .last_block_index
-                                .saturating_sub(MAX_HASHES_COUNT as u32)))
-            {
-                this.request_tasks_entry(entry);
-                return;
-            }
-
-            let mut pending = Vec::with_capacity(hashes.len());
-            for hash in hashes.iter().copied() {
-                if this.is_known_hash(&hash) {
-                    continue;
-                }
-
-                if inventory_type == InventoryType::Block
-                    && this.global_inv_tasks.contains_key(&hash)
-                {
-                    entry.session.available_tasks.insert(hash);
-                }
-
-                if this.global_inv_tasks.contains_key(&hash) {
-                    continue;
-                }
-
-                pending.push(hash);
-            }
-
-            if pending.is_empty() {
-                this.request_tasks_entry(entry);
-                return;
-            }
-
-            let mut scheduled = Vec::with_capacity(pending.len());
-            for hash in pending.into_iter() {
-                if this.increment_inv_task(hash) {
-                    entry.session.register_inv_task(hash);
-                    scheduled.push(hash);
-                }
-            }
-
-            if !scheduled.is_empty() {
-                for group in InvPayload::create_group(inventory_type, scheduled.clone()) {
-                    let message = NetworkMessage::new(ProtocolMessage::GetData(group));
-                    if let Err(error) = actor_ref.tell(RemoteNodeCommand::Send(message)) {
-                        warn!(
-                            target: "neo",
-                            actor = %actor_ref.path(),
-                            %error,
-                            "failed to request inventory data from peer"
-                        );
-                    }
-                }
-            } else {
-                this.request_tasks_entry(entry);
-            }
-        });
-
-        self.request_tasks_for_path(&path);
-    }
-
-    fn restart_tasks_for_session(
-        &mut self,
-        path: &str,
-        inventory_type: InventoryType,
-        hashes: &[UInt256],
-    ) {
-        self.with_session_mut(path, move |entry, this| {
-            let actor_ref = entry.actor.clone();
-            let mut scheduled = Vec::with_capacity(hashes.len());
-            for &hash in hashes {
-                if this.increment_inv_task(hash) {
-                    entry.session.register_inv_task(hash);
-                    scheduled.push(hash);
-                }
-            }
-
-            if !scheduled.is_empty() {
-                for group in InvPayload::create_group(inventory_type, scheduled.clone()) {
-                    let message = NetworkMessage::new(ProtocolMessage::GetData(group));
-                    if let Err(error) = actor_ref.tell(RemoteNodeCommand::Send(message)) {
-                        warn!(
-                            target: "neo",
-                            actor = %actor_ref.path(),
-                            %error,
-                            "failed to restart inventory fetch from peer"
-                        );
-                    }
-                }
-            }
-        });
-    }
-
-    fn on_restart_tasks(&mut self, actor: Option<ActorRef>, payload: InvPayload) {
-        let inventory_type = payload.inventory_type;
-        let hashes: Vec<UInt256> = payload.hashes.clone();
-
-        if let Some(actor_ref) = actor {
-            let path = actor_ref.path().to_string();
-            if self.sessions.contains_key(&path) {
-                for hash in hashes.iter() {
-                    self.forget_hash(hash);
-                    self.decrement_inv_task(hash);
-                }
-                self.restart_tasks_for_session(&path, inventory_type, &hashes);
-                self.request_tasks_for_path(&path);
-                return;
-            }
-
-            trace!(
-                target: "neo",
-                actor = %path,
-                "broadcasting RestartTasks from unknown session"
-            );
-        }
-
-        for hash in hashes.iter() {
-            self.forget_hash(hash);
-            while self.global_inv_tasks.contains_key(hash) {
-                self.decrement_inv_task(hash);
-            }
-        }
-
-        let session_paths: Vec<String> = self.sessions.keys().cloned().collect();
-        for path in session_paths {
-            self.restart_tasks_for_session(&path, inventory_type, &hashes);
-        }
-    }
-
-    fn complete_inventory(
-        &mut self,
-        actor: &ActorRef,
-        hash: UInt256,
-        block: Option<Block>,
-        block_index: Option<u32>,
-    ) {
-        if hash != HEADER_TASK_HASH {
-            self.record_known_hash(hash);
-        }
-        self.remove_available_task_from_all(&hash);
-
-        trace!(
-            target: "neo",
-            actor = %actor.path(),
-            hash = %hash,
-            block_index = ?block_index,
-            has_block = block.is_some(),
-            "inventory completed"
-        );
-
-        let path = actor.path().to_string();
-        let Some(mut entry) = self.sessions.remove(&path) else {
-            trace!(target: "neo", actor = %path, "inventory completion for unknown session");
-            return;
-        };
-
-        let actor_ref = entry.actor.clone();
-
-        if entry.session.complete_inv_task(&hash) {
-            self.decrement_inv_task(&hash);
-        }
-
-        let mut index_to_release = block_index;
-        if let Some(ref block_ref) = block {
-            index_to_release = Some(block_ref.index());
-        }
-
-        if let Some(index) = index_to_release {
-            if entry.session.complete_index_task(index) {
-                self.decrement_index_task(index);
-            }
-        }
-
-        let mut should_request = true;
-        let mut disconnect_peer = false;
-
-        if let Some(block_payload) = block {
-            // In C# should_request is false for blocks — the theory is that
-            // new requests will be triggered by PersistCompleted events.
-            // However, during fast sync blocks arrive faster than persistence
-            // can consume them, leaving long gaps where no new blocks are
-            // requested.  Setting should_request=true ensures immediate
-            // request chaining after each delivered block, keeping the download
-            // pipeline full.
-            should_request = true;
-            let mut block_payload = block_payload;
-            let index = block_payload.index();
-            let incoming_hash = block_payload.hash();
-            let conflict = entry
-                .session
-                .received_block
-                .get(&index)
-                .map(|existing| {
-                    let mut existing_clone = existing.clone();
-                    existing_clone.hash() != incoming_hash
-                })
-                .unwrap_or(false);
-
-            if conflict {
-                disconnect_peer = true;
-            } else if !entry.session.received_block.contains_key(&index) {
-                entry.session.store_received_block(index, block_payload);
-            }
-        }
-
-        if hash == HEADER_TASK_HASH {
-            entry.session.available_tasks.remove(&hash);
-        }
-
-        self.sessions.insert(path.clone(), entry);
-
-        if disconnect_peer {
-            if let Err(error) = actor_ref.tell(RemoteNodeCommand::Disconnect {
-                reason: "conflicting block received".to_string(),
-            }) {
-                warn!(
-                    target: "neo",
-                    actor = %actor_ref.path(),
-                    %error,
-                    "failed to disconnect peer after conflicting block"
-                );
-            }
-            return;
-        }
-
-        if should_request {
-            self.request_tasks_for_path(&path);
-        }
-    }
-
-    fn on_persist_completed(&mut self, block: &Block) {
-        self.last_seen_persisted_index = block.index();
-        let index = block.index();
-        let mut persisted = block.clone();
-        let hash = persisted.hash();
-
-        let session_count = self.sessions.len();
-        let mut to_disconnect = Vec::with_capacity(session_count);
-        let mut to_request = Vec::with_capacity(session_count);
-
-        for (path, entry) in self.sessions.iter_mut() {
-            if let Some(stored) = entry.session.received_block.remove(&index) {
-                let mut stored = stored;
-                if stored.hash() == hash {
-                    to_request.push(path.clone());
-                } else {
-                    to_disconnect.push(entry.actor.clone());
-                }
-            }
-        }
-
-        for actor in to_disconnect {
-            if let Err(error) = actor.tell(RemoteNodeCommand::Disconnect {
-                reason: "persisted block hash mismatch".to_string(),
-            }) {
-                warn!(
-                    target: "neo",
-                    actor = %actor.path(),
-                    %error,
-                    "failed to disconnect peer after mismatched block persistence"
-                );
-            }
-        }
-
-        for path in to_request {
-            self.request_tasks_for_path(&path);
-        }
-
-        // Clean up stale global_index_tasks below the current persisted height.
-        // These may accumulate from sessions that disconnected or timed out
-        // without delivering their assigned blocks.
-        self.global_index_tasks.retain(|&idx, _| idx > index);
-
-        // Re-evaluate all sessions after cleanup. Sessions with stale
-        // index_tasks below the persisted height should have those cleaned
-        // up too, so they can request new blocks.
-        let session_paths: Vec<String> = self.sessions.keys().cloned().collect();
-        for path in session_paths {
-            self.with_session_mut(&path, |entry, this| {
-                // Clean up stale per-session index tasks
-                entry.session.index_tasks.retain(|&idx, _| idx > index);
-                this.request_tasks_entry(entry);
-            });
-        }
-    }
-
-    fn on_relay_result(&mut self, result: &RelayResult) {
-        if result.result != VerifyResult::Invalid || result.inventory_type != InventoryType::Block {
-            return;
-        }
-
-        self.on_invalid_block(&result.hash, result.block_index);
-    }
-
-    fn on_invalid_block(&mut self, hash: &UInt256, block_index: Option<u32>) {
-        let mut offenders = Vec::with_capacity(self.sessions.len());
-
-        for entry in self.sessions.values() {
-            let mut matches = false;
-            if let Some(index) = block_index {
-                if let Some(stored) = entry.session.received_block.get(&index) {
-                    let mut candidate = stored.clone();
-                    matches = candidate.hash() == *hash;
-                }
-            } else {
-                for stored in entry.session.received_block.values() {
-                    let mut candidate = stored.clone();
-                    if candidate.hash() == *hash {
-                        matches = true;
-                        break;
-                    }
-                }
-            }
-
-            if matches {
-                offenders.push(entry.actor.clone());
-            }
-        }
-
-        for actor in offenders {
-            if let Err(error) = actor.tell(RemoteNodeCommand::Disconnect {
-                reason: "invalid block relayed".to_string(),
-            }) {
-                warn!(
-                    target: "neo",
-                    actor = %actor.path(),
-                    %error,
-                    "failed to disconnect peer carrying invalid block"
-                );
-            }
-        }
-
-        self.request_tasks_all();
-    }
-
-    fn prune_timeouts(&mut self) {
-        let timeout = self.task_timeout;
-
-        // Periodic sync status — helps diagnose stalls.
-        tracing::info!(
-            target: "neo",
-            persisted_height = self.last_seen_persisted_index,
-            global_index_tasks = self.global_index_tasks.len(),
-            global_inv_tasks = self.global_inv_tasks.len(),
-            sessions = self.sessions.len(),
-            "task_manager timer tick"
-        );
-
-        let session_paths: Vec<String> = self.sessions.keys().cloned().collect();
-        for path in session_paths {
-            self.with_session_mut(&path, |entry, this| {
-                let expired = entry.session.prune_timed_out_inv_tasks(timeout);
-                for hash in expired {
-                    this.decrement_inv_task(&hash);
-                }
-
-                let expired_indexes = entry.session.prune_timed_out_index_tasks(timeout);
-                for index in expired_indexes {
-                    this.decrement_index_task(index);
-                }
-
-                // Prune received_block entries at or below the persisted height.
-                // These blocks have already been persisted so keeping them around
-                // only prevents the start_height scan in request_tasks_entry from
-                // finding fresh ranges to request.
-                let persisted = this.last_seen_persisted_index;
-                entry
-                    .session
-                    .received_block
-                    .retain(|&idx, _| idx > persisted);
-            });
-        }
-        self.request_tasks_all();
     }
 }
 
@@ -1103,3 +296,6 @@ pub enum TaskManagerCommand {
     },
     TimerTick,
 }
+
+#[cfg(test)]
+mod tests;

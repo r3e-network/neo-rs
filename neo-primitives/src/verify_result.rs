@@ -209,6 +209,16 @@ mod tests {
     }
 
     #[test]
+    fn protocol_enum_guard_rejects_unknown_verify_result_serde_bytes() {
+        assert_eq!(
+            serde_json::from_str::<VerifyResult>("14").unwrap(),
+            VerifyResult::Unknown
+        );
+        assert!(serde_json::from_str::<VerifyResult>("15").is_err());
+        assert!(serde_json::from_str::<VerifyResult>("255").is_err());
+    }
+
+    #[test]
     fn test_verify_result_default() {
         assert_eq!(VerifyResult::default(), VerifyResult::Unknown);
     }

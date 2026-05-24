@@ -13,6 +13,7 @@ use super::{block::Block, header::Header};
 use crate::cryptography::MerkleTree;
 use crate::neo_io::serializable::helper::get_var_size;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use crate::CoreResult;
 use neo_primitives::{UInt256, UINT256_SIZE};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
@@ -46,15 +47,26 @@ impl MerkleBlockPayload {
 
     /// Creates from a block and filter flags.
     pub fn create(block: &mut Block, filter_bits: Vec<bool>) -> Self {
+        Self::try_create(block, filter_bits)
+            .expect("block transactions must be serializable to create a merkle block payload")
+    }
+
+    /// Creates from a block and filter flags, failing closed if any transaction
+    /// hash cannot be represented on the wire.
+    pub fn try_create(block: &mut Block, filter_bits: Vec<bool>) -> CoreResult<Self> {
         let tx_count = block.transactions.len() as u32;
-        let tx_hashes: Vec<UInt256> = block.transactions.iter_mut().map(|tx| tx.hash()).collect();
+        let tx_hashes: Vec<UInt256> = block
+            .transactions
+            .iter()
+            .map(|tx| tx.try_hash())
+            .collect::<CoreResult<Vec<_>>>()?;
         let mut tree = MerkleTree::new(&tx_hashes);
         let padded_flags = pad_flags(filter_bits, tree.depth());
         tree.trim(&padded_flags);
         let hashes = tree.to_hash_array();
         let flags = pack_flags(&padded_flags);
 
-        Self::new(block.header.clone(), tx_count, hashes, flags)
+        Ok(Self::new(block.header.clone(), tx_count, hashes, flags))
     }
 }
 
@@ -98,7 +110,27 @@ fn pack_flags(flags: &[bool]) -> Vec<u8> {
 #[allow(clippy::items_after_test_module)]
 #[cfg(test)]
 mod tests {
-    use super::pad_flags;
+    use super::{pad_flags, MerkleBlockPayload};
+    use crate::network::p2p::payloads::block::Block;
+    use crate::network::p2p::payloads::signer::Signer;
+    use crate::network::p2p::payloads::transaction::Transaction;
+    use crate::network::p2p::payloads::witness::Witness;
+    use crate::{UInt160, WitnessScope};
+    use neo_vm_rs::OpCode;
+
+    fn transaction_with_script(script: Vec<u8>) -> Transaction {
+        let mut tx = Transaction::new();
+        tx.set_version(0);
+        tx.set_nonce(0x0102_0304);
+        tx.set_system_fee(1);
+        tx.set_network_fee(1);
+        tx.set_valid_until_block(42);
+        tx.set_signers(vec![Signer::new(UInt160::zero(), WitnessScope::NONE)]);
+        tx.set_attributes(Vec::new());
+        tx.set_script(script);
+        tx.set_witnesses(vec![Witness::empty()]);
+        tx
+    }
 
     #[test]
     fn pad_flags_single_depth_adds_placeholder() {
@@ -117,6 +149,33 @@ mod tests {
 
         let padded = pad_flags(vec![true, true, true, true, true], 3);
         assert_eq!(padded, vec![true, true, true, true]);
+    }
+
+    #[test]
+    fn try_create_rejects_unserializable_transaction_hash() {
+        let mut block = Block::new();
+        block.transactions.push(transaction_with_script(vec![
+            OpCode::NOP.byte();
+            u16::MAX as usize + 1
+        ]));
+
+        assert!(MerkleBlockPayload::try_create(&mut block, vec![true]).is_err());
+    }
+
+    #[test]
+    fn try_create_matches_legacy_create_for_valid_block() {
+        let mut block = Block::new();
+        block
+            .transactions
+            .push(transaction_with_script(vec![OpCode::PUSH1.byte()]));
+        let mut legacy_block = block.clone();
+
+        let fallible = MerkleBlockPayload::try_create(&mut block, vec![true]).unwrap();
+        let legacy = MerkleBlockPayload::create(&mut legacy_block, vec![true]);
+
+        assert_eq!(fallible.hashes, legacy.hashes);
+        assert_eq!(fallible.flags, legacy.flags);
+        assert_eq!(fallible.tx_count, legacy.tx_count);
     }
 }
 impl Serializable for MerkleBlockPayload {

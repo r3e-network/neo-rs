@@ -40,6 +40,20 @@ fn set_gas_balance(snapshot: &DataCache, account: UInt160, amount: i64) {
     snapshot.update(key, StorageItem::from_bytes(bytes));
 }
 
+#[test]
+fn try_add_rejects_unhashable_transaction() {
+    let settings = ProtocolSettings::default();
+    let mut pool = MemoryPool::new(&settings);
+    let snapshot = DataCache::new(false);
+    let mut tx = Transaction::new();
+    tx.set_script(vec![OpCode::NOP.byte(); u16::MAX as usize + 1]);
+
+    assert_eq!(
+        pool.try_add(tx, &snapshot, &settings),
+        VerifyResult::Invalid
+    );
+}
+
 fn build_signed_transaction(
     settings: &ProtocolSettings,
     private_key: [u8; 32],

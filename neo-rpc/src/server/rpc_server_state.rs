@@ -489,8 +489,12 @@ mod tests {
         let (_system, state_store, server) = make_server_with_state(true);
 
         // Seed a local state root at height 1 via snapshot helpers so current snapshot updates.
-        state_store.update_local_state_root_snapshot(1, std::iter::empty());
-        state_store.update_local_state_root(1);
+        state_store
+            .update_local_state_root_snapshot(1, std::iter::empty())
+            .expect("stage local state root");
+        state_store
+            .update_local_state_root(1)
+            .expect("commit local state root");
         let root_hash = state_store
             .current_local_root_hash()
             .unwrap_or_else(UInt256::zero);
@@ -526,8 +530,12 @@ mod tests {
         let (_system, state_store, server) = make_server_with_state(false);
 
         // Install a state store with FullState disabled and seed a current local root at height 1.
-        state_store.update_local_state_root_snapshot(1, std::iter::empty());
-        state_store.update_local_state_root(1);
+        state_store
+            .update_local_state_root_snapshot(1, std::iter::empty())
+            .expect("stage local state root");
+        state_store
+            .update_local_state_root(1)
+            .expect("commit local state root");
 
         // Querying a non-current root should return UnsupportedState when FullState is false.
         let old_root = UInt256::from_bytes(&[1u8; 32]).expect("old root hash");

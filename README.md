@@ -181,14 +181,17 @@ All native contract hashes match the C# reference implementation:
 ## Build
 
 ```bash
-cargo build --workspace
+cargo build
 ```
 
 Release build for production:
 
 ```bash
-cargo build --workspace --release
+cargo build --release
 ```
+
+Use `cargo build --workspace` when you explicitly need optional crates such as
+TEE/HSM integrations, telemetry, tests, and benchmarks.
 
 ## Run the node
 

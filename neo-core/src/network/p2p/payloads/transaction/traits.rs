@@ -65,7 +65,7 @@ impl crate::IVerifiable for Transaction {
     }
 
     fn hash(&self) -> CoreResult<UInt256> {
-        Ok(Transaction::hash(self))
+        Transaction::try_hash(self)
     }
 
     fn get_hash_data(&self) -> Vec<u8> {
@@ -100,7 +100,7 @@ impl Transaction {
             .to_bytes();
 
         Ok(StackValue::Array(vec![
-            StackValue::ByteString(self.hash().to_bytes()),
+            StackValue::ByteString(self.try_hash()?.to_bytes()),
             StackValue::Integer(i64::from(self.version)),
             StackValue::Integer(i64::from(self.nonce)),
             StackValue::ByteString(sender),

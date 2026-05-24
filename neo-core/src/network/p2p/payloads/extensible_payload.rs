@@ -88,25 +88,50 @@ impl ExtensiblePayload {
 
     /// Returns the cached hash of the payload, computing it if necessary.
     pub fn ensure_hash(&mut self) -> UInt256 {
-        if let Some(hash) = self._hash {
-            return hash;
+        match self.try_hash() {
+            Ok(hash) => hash,
+            Err(err) => {
+                tracing::error!("ExtensiblePayload unsigned serialization failed: {err}");
+                UInt256::zero()
+            }
         }
-
-        let mut writer = BinaryWriter::new();
-        if let Err(err) = self.serialize_unsigned(&mut writer) {
-            tracing::error!("ExtensiblePayload unsigned serialization failed: {err}");
-            let hash = UInt256::zero();
-            self._hash = Some(hash);
-            return hash;
-        }
-        let hash = UInt256::from(crate::cryptography::Crypto::sha256(&writer.into_bytes()));
-        self._hash = Some(hash);
-        hash
     }
 
     /// Convenience accessor mirroring the C# hash property.
     pub fn hash(&mut self) -> UInt256 {
         self.ensure_hash()
+    }
+
+    /// Gets the hash of the payload, failing closed if unsigned serialization
+    /// fails.
+    pub fn try_hash(&mut self) -> CoreResult<UInt256> {
+        if let Some(hash) = self._hash {
+            return Ok(hash);
+        }
+
+        let hash_data = self.try_get_hash_data()?;
+        let hash = UInt256::from(crate::cryptography::Crypto::sha256(&hash_data));
+        self._hash = Some(hash);
+        Ok(hash)
+    }
+
+    /// Returns the unsigned serialization used for hashing.
+    pub fn get_hash_data(&self) -> Vec<u8> {
+        match self.try_get_hash_data() {
+            Ok(data) => data,
+            Err(err) => {
+                tracing::error!("Failed to serialize extensible payload unsigned data: {err}");
+                Vec::new()
+            }
+        }
+    }
+
+    /// Returns the unsigned serialization used for hashing, or an error if the
+    /// payload cannot be represented on the wire.
+    pub fn try_get_hash_data(&self) -> CoreResult<Vec<u8>> {
+        let mut writer = BinaryWriter::new();
+        self.serialize_unsigned(&mut writer)?;
+        Ok(writer.into_bytes())
     }
 
     fn serialize_unsigned(&self, writer: &mut BinaryWriter) -> IoResult<()> {
@@ -181,16 +206,11 @@ impl crate::IVerifiable for ExtensiblePayload {
 
     fn hash(&self) -> CoreResult<UInt256> {
         let mut clone = self.clone();
-        Ok(ExtensiblePayload::hash(&mut clone))
+        clone.try_hash()
     }
 
     fn get_hash_data(&self) -> Vec<u8> {
-        let mut writer = BinaryWriter::new();
-        if let Err(err) = self.serialize_unsigned(&mut writer) {
-            tracing::error!("Failed to serialize extensible payload unsigned data: {err}");
-            return Vec::new();
-        }
-        writer.into_bytes()
+        ExtensiblePayload::get_hash_data(self)
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -235,3 +255,43 @@ impl Serializable for ExtensiblePayload {
 
 // Use macro to reduce boilerplate
 crate::impl_default_via_new!(ExtensiblePayload);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn try_hash_matches_legacy_hash_for_valid_payload() {
+        let mut payload = ExtensiblePayload::new();
+        payload.category = "oracle".to_string();
+        payload.valid_block_start = 1;
+        payload.valid_block_end = 2;
+        payload.data = vec![1, 2, 3];
+
+        let expected = payload.clone().hash();
+
+        assert_eq!(payload.try_hash().expect("try hash"), expected);
+    }
+
+    #[test]
+    fn try_hash_rejects_oversized_category_without_caching_zero_hash() {
+        let mut payload = ExtensiblePayload::new();
+        payload.category = "x".repeat(MAX_CATEGORY_LENGTH + 1);
+
+        assert!(payload.try_hash().is_err());
+        assert_eq!(payload.hash(), UInt256::zero());
+        assert!(payload._hash.is_none());
+    }
+
+    #[test]
+    fn iverifiable_extensible_hash_uses_try_hash() {
+        let mut payload = ExtensiblePayload::new();
+        payload.category = "oracle".to_string();
+        payload.valid_block_start = 1;
+        payload.valid_block_end = 2;
+
+        let expected = payload.try_hash().expect("try hash");
+
+        assert_eq!(crate::IVerifiable::hash(&payload).unwrap(), expected);
+    }
+}

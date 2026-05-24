@@ -37,6 +37,18 @@ pub struct Block {
     pub transactions: Vec<Transaction>,
 }
 
+#[derive(Clone, Copy)]
+enum BlockVerifyMode<'a> {
+    Full,
+    Cached(&'a HeaderCache),
+}
+
+impl BlockVerifyMode<'_> {
+    fn is_cached(self) -> bool {
+        matches!(self, Self::Cached(_))
+    }
+}
+
 impl Block {
     /// Creates a new block.
     pub fn new() -> Self {
@@ -49,6 +61,17 @@ impl Block {
     /// Gets the hash of the block.
     pub fn hash(&mut self) -> UInt256 {
         Header::hash(&mut self.header)
+    }
+
+    /// Gets the hash of the block, failing closed if the header cannot be
+    /// serialized.
+    pub fn try_hash(&mut self) -> CoreResult<UInt256> {
+        self.header.try_hash()
+    }
+
+    /// Returns the unsigned header serialization used for block hashing.
+    pub fn try_get_hash_data(&self) -> CoreResult<Vec<u8>> {
+        self.header.try_get_hash_data()
     }
 
     /// Gets the version of the block.
@@ -104,15 +127,27 @@ impl Block {
 
     /// Rebuilds the merkle root.
     pub fn rebuild_merkle_root(&mut self) {
+        if let Err(error) = self.try_rebuild_merkle_root() {
+            tracing::error!(
+                target: "neo::block",
+                error = %error,
+                "Failed to rebuild block merkle root"
+            );
+        }
+    }
+
+    /// Rebuilds the merkle root, failing closed if any transaction hash cannot
+    /// be represented on the wire.
+    pub fn try_rebuild_merkle_root(&mut self) -> CoreResult<()> {
         if self.transactions.is_empty() {
             self.header.set_merkle_root(UInt256::default());
-            return;
+            return Ok(());
         }
-        let payload_hashes: Vec<UInt256> =
-            self.transactions.iter_mut().map(|tx| tx.hash()).collect();
+        let payload_hashes = self.transaction_hashes()?;
         if let Some(root) = crate::cryptography::MerkleTree::compute_root(&payload_hashes) {
             self.header.set_merkle_root(root);
         }
+        Ok(())
     }
 
     /// Verifies the block using persisted state with comprehensive security checks.
@@ -131,82 +166,157 @@ impl Block {
     /// This method includes comprehensive validation to prevent blocks with
     /// invalid transactions, oversized data, or malicious timestamps from being accepted.
     pub fn verify(&self, settings: &ProtocolSettings, store_cache: &StoreCache) -> bool {
-        // Step 1: Validate block size
-        if validate_block_size(self).is_err() {
-            tracing::warn!(
-                target: "neo::block",
-                block_index = self.header.index(),
-                block_size = self.size(),
-                max_size = MAX_BLOCK_SIZE,
-                "Block size validation failed"
-            );
+        self.verify_internal(settings, store_cache, BlockVerifyMode::Full)
+    }
+
+    fn verify_internal(
+        &self,
+        settings: &ProtocolSettings,
+        store_cache: &StoreCache,
+        mode: BlockVerifyMode<'_>,
+    ) -> bool {
+        if !self.verify_block_size(mode.is_cached()) {
             return false;
         }
 
-        // Step 2: Validate transaction count
-        if validate_transaction_count(self).is_err() {
-            tracing::warn!(
-                target: "neo::block",
-                block_index = self.header.index(),
-                tx_count = self.transactions.len(),
-                max_count = MAX_TRANSACTIONS_PER_BLOCK,
-                "Transaction count validation failed"
-            );
+        if !self.verify_transaction_count(mode.is_cached()) {
             return false;
         }
 
-        // Step 3: Validate timestamp bounds
-        if validate_timestamp_bounds(self.timestamp()).is_err() {
-            tracing::warn!(
-                target: "neo::block",
-                block_index = self.header.index(),
-                timestamp = self.timestamp(),
-                "Timestamp bounds validation failed"
-            );
+        if !self.verify_timestamp_bounds(mode.is_cached()) {
             return false;
         }
 
-        // Step 4: Verify header first
-        if !self.header.verify(settings, store_cache) {
+        if !self.verify_header_for_mode(settings, store_cache, mode) {
             return false;
         }
 
-        // Step 5: Validate witness scripts
-        if validate_witness_scripts(&self.header).is_err() {
-            tracing::warn!(
-                target: "neo::block",
-                block_index = self.header.index(),
-                "Witness script validation failed"
-            );
+        if !self.verify_witness_scripts(mode.is_cached()) {
             return false;
         }
 
-        // Step 6: Verify Merkle Root matches transactions
         if !self.verify_merkle_root() {
-            tracing::warn!(
-                target: "neo::block",
-                block_index = self.header.index(),
-                "Merkle root validation failed"
-            );
+            self.log_verify_failure("Merkle root validation failed", mode.is_cached());
             return false;
         }
 
-        // Step 7: Verify no duplicate transactions
         if !self.verify_no_duplicate_transactions() {
+            self.log_verify_failure("Duplicate transaction check failed", mode.is_cached());
+            return false;
+        }
+
+        self.verify_transactions(settings, store_cache)
+    }
+
+    fn verify_block_size(&self, cached: bool) -> bool {
+        if validate_block_size(self).is_err() {
+            if cached {
+                tracing::warn!(
+                    target: "neo::block",
+                    block_index = self.header.index(),
+                    block_size = self.size(),
+                    max_size = MAX_BLOCK_SIZE,
+                    "Block size validation failed (cached)"
+                );
+            } else {
+                tracing::warn!(
+                    target: "neo::block",
+                    block_index = self.header.index(),
+                    block_size = self.size(),
+                    max_size = MAX_BLOCK_SIZE,
+                    "Block size validation failed"
+                );
+            }
+            return false;
+        }
+        true
+    }
+
+    fn verify_transaction_count(&self, cached: bool) -> bool {
+        if validate_transaction_count(self).is_err() {
+            if cached {
+                tracing::warn!(
+                    target: "neo::block",
+                    block_index = self.header.index(),
+                    tx_count = self.transactions.len(),
+                    max_count = MAX_TRANSACTIONS_PER_BLOCK,
+                    "Transaction count validation failed (cached)"
+                );
+            } else {
+                tracing::warn!(
+                    target: "neo::block",
+                    block_index = self.header.index(),
+                    tx_count = self.transactions.len(),
+                    max_count = MAX_TRANSACTIONS_PER_BLOCK,
+                    "Transaction count validation failed"
+                );
+            }
+            return false;
+        }
+        true
+    }
+
+    fn verify_timestamp_bounds(&self, cached: bool) -> bool {
+        if validate_timestamp_bounds(self.timestamp()).is_err() {
+            if cached {
+                tracing::warn!(
+                    target: "neo::block",
+                    block_index = self.header.index(),
+                    timestamp = self.timestamp(),
+                    "Timestamp bounds validation failed (cached)"
+                );
+            } else {
+                tracing::warn!(
+                    target: "neo::block",
+                    block_index = self.header.index(),
+                    timestamp = self.timestamp(),
+                    "Timestamp bounds validation failed"
+                );
+            }
+            return false;
+        }
+        true
+    }
+
+    fn verify_header_for_mode(
+        &self,
+        settings: &ProtocolSettings,
+        store_cache: &StoreCache,
+        mode: BlockVerifyMode<'_>,
+    ) -> bool {
+        match mode {
+            BlockVerifyMode::Full => self.header.verify(settings, store_cache),
+            BlockVerifyMode::Cached(header_cache) => {
+                self.header
+                    .verify_with_cache(settings, store_cache, header_cache)
+            }
+        }
+    }
+
+    fn verify_witness_scripts(&self, cached: bool) -> bool {
+        if validate_witness_scripts(&self.header).is_err() {
+            self.log_verify_failure("Witness script validation failed", cached);
+            return false;
+        }
+        true
+    }
+
+    fn log_verify_failure(&self, message: &'static str, cached: bool) {
+        if cached {
             tracing::warn!(
                 target: "neo::block",
                 block_index = self.header.index(),
-                "Duplicate transaction check failed"
+                "{} (cached)",
+                message
             );
-            return false;
+        } else {
+            tracing::warn!(
+                target: "neo::block",
+                block_index = self.header.index(),
+                "{}",
+                message
+            );
         }
-
-        // Step 8: SECURITY FIX - Fully verify each transaction using persisted state
-        if !self.verify_transactions(settings, store_cache) {
-            return false;
-        }
-
-        true
     }
 
     /// Verifies all transactions in the block using full validation (state-independent
@@ -221,15 +331,18 @@ impl Block {
             .transactions
             .par_iter()
             .enumerate()
-            .find_any(|(_, tx)| tx.verify_state_independent(settings) != VerifyResult::Succeed);
+            .find_map_any(|(index, tx)| {
+                let result = tx.verify_state_independent(settings);
+                (result != VerifyResult::Succeed).then_some((index, tx, result))
+            });
 
-        if let Some((index, tx)) = failed {
+        if let Some((index, tx, result)) = failed {
             tracing::warn!(
                 target: "neo::block",
                 block_index,
                 tx_index = index,
-                tx_hash = %tx.hash(),
-                result = ?tx.verify_state_independent(settings),
+                tx_hash = %Self::transaction_hash_for_log(tx),
+                result = ?result,
                 "Transaction failed state-independent verification"
             );
             return false;
@@ -255,7 +368,7 @@ impl Block {
                     target: "neo::block",
                     block_index,
                     tx_index = index,
-                    tx_hash = %tx.hash(),
+                    tx_hash = %Self::transaction_hash_for_log(tx),
                     result = ?result,
                     "Transaction failed state-dependent verification"
                 );
@@ -264,6 +377,12 @@ impl Block {
             context.add_transaction(tx);
         }
         true
+    }
+
+    fn transaction_hash_for_log(tx: &Transaction) -> String {
+        tx.try_hash()
+            .map(|hash| hash.to_string())
+            .unwrap_or_else(|error| format!("<unhashable: {error}>"))
     }
 
     /// Verifies that the merkle root in the header matches the computed merkle root of transactions.
@@ -280,7 +399,18 @@ impl Block {
         // Compute merkle root from transaction hashes.
         // Transaction::hash() uses interior mutability (Mutex) to cache the hash,
         // so we can call it on &self without cloning.
-        let tx_hashes: Vec<UInt256> = self.transactions.iter().map(|tx| tx.hash()).collect();
+        let tx_hashes = match self.transaction_hashes() {
+            Ok(hashes) => hashes,
+            Err(error) => {
+                tracing::warn!(
+                    target: "neo::block",
+                    block_index = self.header.index(),
+                    error = %error,
+                    "Failed to compute transaction hashes for merkle root"
+                );
+                return false;
+            }
+        };
 
         match crate::cryptography::MerkleTree::compute_root(&tx_hashes) {
             Some(computed_root) => computed_root == *self.header.merkle_root(),
@@ -295,12 +425,30 @@ impl Block {
     fn verify_no_duplicate_transactions(&self) -> bool {
         let mut seen = std::collections::HashSet::with_capacity(self.transactions.len());
         for tx in &self.transactions {
-            // Transaction::hash() uses interior mutability to cache the hash.
-            if !seen.insert(tx.hash()) {
+            let hash = match tx.try_hash() {
+                Ok(hash) => hash,
+                Err(error) => {
+                    tracing::warn!(
+                        target: "neo::block",
+                        block_index = self.header.index(),
+                        error = %error,
+                        "Failed to compute transaction hash for duplicate check"
+                    );
+                    return false;
+                }
+            };
+            if !seen.insert(hash) {
                 return false; // Duplicate transaction found
             }
         }
         true
+    }
+
+    fn transaction_hashes(&self) -> CoreResult<Vec<UInt256>> {
+        self.transactions
+            .iter()
+            .map(Transaction::try_hash)
+            .collect()
     }
 
     /// Verifies the block using persisted state and cached headers.
@@ -312,85 +460,7 @@ impl Block {
         store_cache: &StoreCache,
         header_cache: &HeaderCache,
     ) -> bool {
-        // Step 1: Validate block size
-        if validate_block_size(self).is_err() {
-            tracing::warn!(
-                target: "neo::block",
-                block_index = self.header.index(),
-                block_size = self.size(),
-                max_size = MAX_BLOCK_SIZE,
-                "Block size validation failed (cached)"
-            );
-            return false;
-        }
-
-        // Step 2: Validate transaction count
-        if validate_transaction_count(self).is_err() {
-            tracing::warn!(
-                target: "neo::block",
-                block_index = self.header.index(),
-                tx_count = self.transactions.len(),
-                max_count = MAX_TRANSACTIONS_PER_BLOCK,
-                "Transaction count validation failed (cached)"
-            );
-            return false;
-        }
-
-        // Step 3: Validate timestamp bounds
-        if validate_timestamp_bounds(self.timestamp()).is_err() {
-            tracing::warn!(
-                target: "neo::block",
-                block_index = self.header.index(),
-                timestamp = self.timestamp(),
-                "Timestamp bounds validation failed (cached)"
-            );
-            return false;
-        }
-
-        // Step 4: Verify header with cache
-        if !self
-            .header
-            .verify_with_cache(settings, store_cache, header_cache)
-        {
-            return false;
-        }
-
-        // Step 5: Validate witness scripts
-        if validate_witness_scripts(&self.header).is_err() {
-            tracing::warn!(
-                target: "neo::block",
-                block_index = self.header.index(),
-                "Witness script validation failed (cached)"
-            );
-            return false;
-        }
-
-        // Step 6: Verify Merkle Root matches transactions
-        if !self.verify_merkle_root() {
-            tracing::warn!(
-                target: "neo::block",
-                block_index = self.header.index(),
-                "Merkle root validation failed (cached)"
-            );
-            return false;
-        }
-
-        // Step 7: Verify no duplicate transactions
-        if !self.verify_no_duplicate_transactions() {
-            tracing::warn!(
-                target: "neo::block",
-                block_index = self.header.index(),
-                "Duplicate transaction check failed (cached)"
-            );
-            return false;
-        }
-
-        // Step 8: SECURITY FIX - Fully verify each transaction using persisted state
-        if !self.verify_transactions(settings, store_cache) {
-            return false;
-        }
-
-        true
+        self.verify_internal(settings, store_cache, BlockVerifyMode::Cached(header_cache))
     }
 }
 
@@ -464,7 +534,7 @@ impl crate::IVerifiable for Block {
 
     fn hash(&self) -> CoreResult<UInt256> {
         let mut clone = self.clone();
-        Ok(Block::hash(&mut clone))
+        clone.try_hash()
     }
 
     fn get_hash_data(&self) -> Vec<u8> {
@@ -548,3 +618,104 @@ impl Serializable for Block {
 
 // Use macro to reduce boilerplate
 crate::impl_default_via_new!(Block);
+
+#[cfg(test)]
+mod tests {
+    use super::super::signer::Signer;
+    use super::*;
+    use crate::WitnessScope;
+    use neo_vm_rs::OpCode;
+
+    fn sample_header() -> Header {
+        let mut header = Header::new();
+        header.set_version(0);
+        header.set_prev_hash(UInt256::from_bytes(&[1; 32]).expect("prev hash"));
+        header.set_merkle_root(UInt256::from_bytes(&[2; 32]).expect("merkle root"));
+        header.set_timestamp(1_700_000_000_000);
+        header.set_nonce(0x0102_0304_0506_0708);
+        header.set_index(42);
+        header.set_primary_index(1);
+        header.set_next_consensus(UInt160::from_bytes(&[3; 20]).expect("next consensus"));
+        header.witness = Witness::new_with_scripts(Vec::new(), vec![OpCode::PUSH1.byte()]);
+        header
+    }
+
+    fn sample_block() -> Block {
+        Block {
+            header: sample_header(),
+            transactions: Vec::new(),
+        }
+    }
+
+    fn transaction_with_oversized_script() -> Transaction {
+        let mut tx = Transaction::new();
+        tx.set_version(0);
+        tx.set_nonce(0x0102_0304);
+        tx.set_system_fee(1);
+        tx.set_network_fee(100_000_000);
+        tx.set_valid_until_block(42);
+        tx.set_signers(vec![Signer::new(UInt160::zero(), WitnessScope::NONE)]);
+        tx.set_attributes(Vec::new());
+        tx.set_script(vec![OpCode::NOP.byte(); u16::MAX as usize + 1]);
+        tx.set_witnesses(vec![Witness::empty()]);
+        tx
+    }
+
+    #[test]
+    fn block_try_hash_delegates_to_header() {
+        let mut block = sample_block();
+        let mut header = block.header.clone();
+
+        assert_eq!(
+            block.try_hash().expect("block hash"),
+            header.try_hash().unwrap()
+        );
+    }
+
+    #[test]
+    fn iverifiable_block_hash_uses_try_hash() {
+        let block = sample_block();
+        let mut expected_source = block.clone();
+        let expected = expected_source.try_hash().expect("try hash");
+
+        assert_eq!(
+            <Block as crate::IVerifiable>::hash(&block).unwrap(),
+            expected
+        );
+    }
+
+    #[test]
+    fn block_try_get_hash_data_matches_header_hash_data() {
+        let block = sample_block();
+
+        assert_eq!(
+            block.try_get_hash_data().expect("block hash data"),
+            block.header.try_get_hash_data().expect("header hash data")
+        );
+    }
+
+    #[test]
+    fn try_rebuild_merkle_root_rejects_unserializable_transaction_hash() {
+        let mut block = sample_block();
+        block.transactions.push(transaction_with_oversized_script());
+
+        assert!(block.try_rebuild_merkle_root().is_err());
+    }
+
+    #[test]
+    fn verify_merkle_root_rejects_unserializable_transaction_hash() {
+        let mut block = sample_block();
+        block.transactions.push(transaction_with_oversized_script());
+        block.header.set_merkle_root(UInt256::default());
+
+        assert!(!block.verify_merkle_root());
+    }
+
+    #[test]
+    fn duplicate_transaction_check_rejects_unserializable_transaction_hash() {
+        let mut block = sample_block();
+        block.transactions.push(transaction_with_oversized_script());
+
+        assert!(!block.verify_no_duplicate_transactions());
+    }
+}

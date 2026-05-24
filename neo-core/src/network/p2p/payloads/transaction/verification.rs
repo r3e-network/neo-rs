@@ -4,6 +4,11 @@
 
 use super::*;
 
+enum StandardWitnessVerification {
+    NonStandard,
+    Verified { unscaled_verification_fee: i64 },
+}
+
 impl Transaction {
     /// Verifies the transaction.
     pub fn verify(
@@ -107,108 +112,38 @@ impl Transaction {
             .unwrap_or(PolicyContract::DEFAULT_EXEC_FEE_FACTOR)
             as i64;
 
-        let sign_data = self.get_sign_data(settings.network);
+        let sign_data = match self.get_sign_data(settings.network) {
+            Ok(data) => data,
+            Err(error) => {
+                tracing::warn!("Failed to get transaction sign data: {:?}", error);
+                return VerifyResult::Invalid;
+            }
+        };
 
         for (i, hash) in hashes.iter().enumerate() {
             let witness = &self.witnesses[i];
 
-            if let Some(public_key) =
-                Self::parse_single_signature_contract(&witness.verification_script)
-            {
-                if witness.script_hash() != *hash {
-                    return VerifyResult::Invalid;
+            match Self::verify_standard_witness(hash, witness, &sign_data) {
+                Ok(StandardWitnessVerification::Verified {
+                    unscaled_verification_fee,
+                }) => {
+                    net_fee_datoshi -= exec_fee_factor * unscaled_verification_fee;
                 }
-
-                let Some(signature) =
-                    Self::parse_single_signature_invocation(&witness.invocation_script)
-                else {
-                    return VerifyResult::Invalid;
-                };
-
-                let mut signature_bytes = [0u8; 64];
-                signature_bytes.copy_from_slice(signature);
-
-                let verified =
-                    match Secp256r1Crypto::verify(&sign_data, &signature_bytes, public_key) {
-                        Ok(result) => result,
-                        Err(_) => return VerifyResult::Invalid,
-                    };
-
-                if !verified {
-                    return VerifyResult::InvalidSignature;
-                }
-
-                net_fee_datoshi -= exec_fee_factor * Helper::signature_contract_cost();
-            } else if let Some((m, public_keys)) =
-                Helper::parse_multi_sig_contract(&witness.verification_script)
-            {
-                let Some(signatures) =
-                    Helper::parse_multi_sig_invocation(&witness.invocation_script, m)
-                else {
-                    return VerifyResult::Invalid;
-                };
-
-                if witness.script_hash() != *hash {
-                    return VerifyResult::Invalid;
-                }
-
-                if public_keys.is_empty() || signatures.len() != m {
-                    return VerifyResult::Invalid;
-                }
-
-                let total_keys = public_keys.len();
-                let mut sig_index = 0usize;
-                let mut key_index = 0usize;
-
-                while sig_index < m && key_index < total_keys {
-                    let signature = &signatures[sig_index];
-                    if signature.len() != 64 {
+                Ok(StandardWitnessVerification::NonStandard) => {
+                    let mut fee = 0i64;
+                    if !self.verify_witness(
+                        settings,
+                        snapshot,
+                        hash,
+                        witness,
+                        net_fee_datoshi,
+                        &mut fee,
+                    ) {
                         return VerifyResult::Invalid;
                     }
-
-                    let mut signature_bytes = [0u8; 64];
-                    signature_bytes.copy_from_slice(signature);
-
-                    let verified = match Secp256r1Crypto::verify(
-                        &sign_data,
-                        &signature_bytes,
-                        &public_keys[key_index],
-                    ) {
-                        Ok(result) => result,
-                        Err(_) => return VerifyResult::Invalid,
-                    };
-
-                    if verified {
-                        sig_index += 1;
-                    }
-
-                    key_index += 1;
-
-                    if m.saturating_sub(sig_index) > total_keys.saturating_sub(key_index) {
-                        return VerifyResult::InvalidSignature;
-                    }
+                    net_fee_datoshi -= fee;
                 }
-
-                if sig_index != m {
-                    return VerifyResult::InvalidSignature;
-                }
-
-                let n = public_keys.len() as i32;
-                net_fee_datoshi -=
-                    exec_fee_factor * Helper::multi_signature_contract_cost(m as i32, n);
-            } else {
-                let mut fee = 0i64;
-                if !self.verify_witness(
-                    settings,
-                    snapshot,
-                    hash,
-                    witness,
-                    net_fee_datoshi,
-                    &mut fee,
-                ) {
-                    return VerifyResult::Invalid;
-                }
-                net_fee_datoshi -= fee;
+                Err(result) => return result,
             }
 
             if net_fee_datoshi < 0 {
@@ -234,95 +169,112 @@ impl Transaction {
             return VerifyResult::Invalid;
         }
 
-        let sign_data = self.get_sign_data(settings.network);
+        let sign_data = match self.get_sign_data(settings.network) {
+            Ok(data) => data,
+            Err(error) => {
+                tracing::warn!("Failed to get transaction sign data: {:?}", error);
+                return VerifyResult::Invalid;
+            }
+        };
 
         for (i, hash) in hashes.iter().enumerate() {
             let witness = &self.witnesses[i];
 
-            if Helper::is_signature_contract(&witness.verification_script) {
-                if witness.verification_script.len() < 35 {
-                    return VerifyResult::Invalid;
-                }
-
-                if witness.script_hash() != *hash {
-                    return VerifyResult::Invalid;
-                }
-
-                let Some(signature) =
-                    Self::parse_single_signature_invocation(&witness.invocation_script)
-                else {
-                    return VerifyResult::Invalid;
-                };
-
-                let mut signature_bytes = [0u8; 64];
-                signature_bytes.copy_from_slice(signature);
-
-                let pubkey = &witness.verification_script[2..35];
-                let verified = match Secp256r1Crypto::verify(&sign_data, &signature_bytes, pubkey) {
-                    Ok(result) => result,
-                    Err(_) => return VerifyResult::Invalid,
-                };
-
-                if !verified {
-                    return VerifyResult::InvalidSignature;
-                }
-            } else if let Some((m, public_keys)) =
-                Helper::parse_multi_sig_contract(&witness.verification_script)
-            {
-                if witness.script_hash() != *hash {
-                    return VerifyResult::Invalid;
-                }
-
-                let Some(signatures) =
-                    Helper::parse_multi_sig_invocation(&witness.invocation_script, m)
-                else {
-                    return VerifyResult::Invalid;
-                };
-
-                if public_keys.is_empty() || signatures.len() != m {
-                    return VerifyResult::Invalid;
-                }
-
-                let total_keys = public_keys.len();
-                let mut sig_index = 0usize;
-                let mut key_index = 0usize;
-
-                while sig_index < m && key_index < total_keys {
-                    let signature = &signatures[sig_index];
-                    if signature.len() != 64 {
-                        return VerifyResult::Invalid;
-                    }
-
-                    let mut signature_bytes = [0u8; 64];
-                    signature_bytes.copy_from_slice(signature);
-
-                    let verified = match Secp256r1Crypto::verify(
-                        &sign_data,
-                        &signature_bytes,
-                        &public_keys[key_index],
-                    ) {
-                        Ok(result) => result,
-                        Err(_) => return VerifyResult::Invalid,
-                    };
-
-                    if verified {
-                        sig_index += 1;
-                    }
-
-                    key_index += 1;
-
-                    if m.saturating_sub(sig_index) > total_keys.saturating_sub(key_index) {
-                        return VerifyResult::InvalidSignature;
-                    }
-                }
-
-                if sig_index != m {
-                    return VerifyResult::InvalidSignature;
-                }
+            if let Err(result) = Self::verify_standard_witness(hash, witness, &sign_data) {
+                return result;
             }
         }
 
         VerifyResult::Succeed
+    }
+
+    fn verify_standard_witness(
+        hash: &UInt160,
+        witness: &Witness,
+        sign_data: &[u8],
+    ) -> Result<StandardWitnessVerification, VerifyResult> {
+        if let Some(public_key) =
+            Self::parse_single_signature_contract(&witness.verification_script)
+        {
+            if witness.script_hash() != *hash {
+                return Err(VerifyResult::Invalid);
+            }
+
+            let Some(signature) =
+                Self::parse_single_signature_invocation(&witness.invocation_script)
+            else {
+                return Err(VerifyResult::Invalid);
+            };
+
+            let mut signature_bytes = [0u8; 64];
+            signature_bytes.copy_from_slice(signature);
+
+            let verified = Secp256r1Crypto::verify(sign_data, &signature_bytes, public_key)
+                .map_err(|_| VerifyResult::Invalid)?;
+
+            if !verified {
+                return Err(VerifyResult::InvalidSignature);
+            }
+
+            return Ok(StandardWitnessVerification::Verified {
+                unscaled_verification_fee: Helper::signature_contract_cost(),
+            });
+        }
+
+        let Some((m, public_keys)) = Helper::parse_multi_sig_contract(&witness.verification_script)
+        else {
+            return Ok(StandardWitnessVerification::NonStandard);
+        };
+
+        if witness.script_hash() != *hash {
+            return Err(VerifyResult::Invalid);
+        }
+
+        let Some(signatures) = Helper::parse_multi_sig_invocation(&witness.invocation_script, m)
+        else {
+            return Err(VerifyResult::Invalid);
+        };
+
+        if public_keys.is_empty() || signatures.len() != m {
+            return Err(VerifyResult::Invalid);
+        }
+
+        let total_keys = public_keys.len();
+        let mut sig_index = 0usize;
+        let mut key_index = 0usize;
+
+        while sig_index < m && key_index < total_keys {
+            let signature = &signatures[sig_index];
+            if signature.len() != 64 {
+                return Err(VerifyResult::Invalid);
+            }
+
+            let mut signature_bytes = [0u8; 64];
+            signature_bytes.copy_from_slice(signature);
+
+            let verified =
+                Secp256r1Crypto::verify(sign_data, &signature_bytes, &public_keys[key_index])
+                    .map_err(|_| VerifyResult::Invalid)?;
+
+            if verified {
+                sig_index += 1;
+            }
+
+            key_index += 1;
+
+            if m.saturating_sub(sig_index) > total_keys.saturating_sub(key_index) {
+                return Err(VerifyResult::InvalidSignature);
+            }
+        }
+
+        if sig_index != m {
+            return Err(VerifyResult::InvalidSignature);
+        }
+
+        let n = public_keys.len() as i32;
+        Ok(StandardWitnessVerification::Verified {
+            unscaled_verification_fee: Helper::multi_signature_contract_cost(m as i32, n),
+        })
     }
 
     /// Verify a single witness.
@@ -445,14 +397,8 @@ impl Transaction {
     }
 
     /// Get signature data for the transaction.
-    pub(super) fn get_sign_data(&self, network: u32) -> Vec<u8> {
-        match helper::get_sign_data_vec(self, network) {
-            Ok(data) => data,
-            Err(e) => {
-                tracing::error!("Failed to get sign data for transaction: {:?}", e);
-                Vec::new()
-            }
-        }
+    pub(super) fn get_sign_data(&self, network: u32) -> CoreResult<Vec<u8>> {
+        helper::get_sign_data_vec(self, network)
     }
 
     pub(super) fn parse_single_signature_contract(script: &[u8]) -> Option<&[u8]> {
@@ -471,5 +417,64 @@ impl Transaction {
             return None;
         }
         Some(&invocation[2..66])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::WitnessScope;
+
+    fn transaction_with_oversized_script() -> Transaction {
+        let mut tx = Transaction::new();
+        tx.set_version(0);
+        tx.set_nonce(0x0102_0304);
+        tx.set_system_fee(1);
+        tx.set_network_fee(100_000_000);
+        tx.set_valid_until_block(42);
+        tx.set_signers(vec![Signer::new(UInt160::zero(), WitnessScope::NONE)]);
+        tx.set_attributes(Vec::new());
+        tx.set_script(vec![OpCode::NOP.byte(); u16::MAX as usize + 1]);
+        tx.set_witnesses(vec![Witness::empty()]);
+        tx
+    }
+
+    #[test]
+    fn get_sign_data_rejects_unserializable_transaction() {
+        let tx = transaction_with_oversized_script();
+        let settings = ProtocolSettings::default_settings();
+
+        assert!(tx.get_sign_data(settings.network).is_err());
+    }
+
+    #[test]
+    fn helper_get_sign_data_vec_rejects_unserializable_transaction() {
+        let tx = transaction_with_oversized_script();
+        let settings = ProtocolSettings::default_settings();
+
+        assert!(helper::get_sign_data_vec(&tx, settings.network).is_err());
+    }
+
+    #[test]
+    fn verify_state_independent_rejects_unserializable_sign_data() {
+        let tx = transaction_with_oversized_script();
+        let settings = ProtocolSettings::default_settings();
+
+        assert_eq!(
+            tx.verify_state_independent(&settings),
+            VerifyResult::Invalid
+        );
+    }
+
+    #[test]
+    fn verify_state_dependent_rejects_unserializable_sign_data() {
+        let tx = transaction_with_oversized_script();
+        let settings = ProtocolSettings::default_settings();
+        let snapshot = DataCache::new(true);
+
+        assert_eq!(
+            tx.verify_state_dependent_at_height(&settings, &snapshot, 1, None, &[]),
+            VerifyResult::Invalid
+        );
     }
 }

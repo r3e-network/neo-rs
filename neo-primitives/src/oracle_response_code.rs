@@ -225,4 +225,16 @@ mod tests {
         let deserialized: OracleResponseCode = serde_json::from_str(&serialized).unwrap();
         assert_eq!(deserialized, code);
     }
+
+    #[test]
+    fn protocol_enum_guard_rejects_unknown_oracle_response_code_bytes() {
+        assert_eq!(
+            OracleResponseCode::from_byte(0xff),
+            Some(OracleResponseCode::Error)
+        );
+        assert_eq!(OracleResponseCode::from_byte(0x11), None);
+        assert_eq!(OracleResponseCode::from_byte(0xfe), None);
+        assert!(serde_json::from_str::<OracleResponseCode>("17").is_err());
+        assert!(serde_json::from_str::<OracleResponseCode>("254").is_err());
+    }
 }

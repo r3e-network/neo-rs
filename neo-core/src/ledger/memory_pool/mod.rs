@@ -335,7 +335,17 @@ impl MemoryPool {
         snapshot: &DataCache,
         settings: &ProtocolSettings,
     ) -> VerifyResult {
-        let hash = tx.hash();
+        let hash = match tx.try_hash() {
+            Ok(hash) => hash,
+            Err(error) => {
+                tracing::warn!(
+                    target: "neo::mempool",
+                    error = %error,
+                    "transaction hash computation failed, rejecting mempool insert"
+                );
+                return VerifyResult::Invalid;
+            }
+        };
 
         if let Some(handler) = &self.new_transaction {
             let mut args = NewTransactionEventArgs {

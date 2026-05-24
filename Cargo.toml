@@ -68,6 +68,18 @@ members = [
     # === Benchmarks ===
     "benches-package",
 ]
+default-members = [
+    "neo-primitives",
+    "neo-crypto",
+    "neo-storage",
+    "neo-io",
+    "neo-json",
+    "neo-core",
+    "neo-p2p",
+    "neo-rpc",
+    "neo-consensus",
+    "neo-node",
+]
 exclude = [
     "target",
     "data",

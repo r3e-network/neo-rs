@@ -1,7 +1,6 @@
 //! Inventory handling (inv announcements, getdata, mempool, blocks) for `RemoteNode`.
 use super::RemoteNode;
 use crate::contains_transaction_type::ContainsTransactionType;
-use crate::cryptography::BloomFilter;
 use crate::ledger::blockchain::BlockchainCommand;
 use crate::neo_io::Serializable;
 use crate::network::p2p::messages::{NetworkMessage, ProtocolMessage};
@@ -160,7 +159,18 @@ impl RemoteNode {
             return Ok(());
         }
 
-        let hash = transaction.hash();
+        let hash = match transaction.try_hash() {
+            Ok(hash) => hash,
+            Err(error) => {
+                warn!(
+                    target: "neo",
+                    endpoint = %self.endpoint,
+                    error = %error,
+                    "transaction hash computation failed, rejecting"
+                );
+                return Ok(());
+            }
+        };
         if !self.known_hashes.try_add(hash) {
             return Ok(());
         }
@@ -216,7 +226,19 @@ impl RemoteNode {
         ctx: &mut crate::akka::ActorContext,
     ) -> crate::akka::ActorResult {
         let block_idx = block.index();
-        let hash = block.hash();
+        let hash = match block.try_hash() {
+            Ok(hash) => hash,
+            Err(error) => {
+                warn!(
+                    target: "neo",
+                    endpoint = %self.endpoint,
+                    block_index = block_idx,
+                    error = %error,
+                    "block hash computation failed, rejecting"
+                );
+                return Ok(());
+            }
+        };
         let current_height = self.system.current_block_index();
 
         // Skip blocks already persisted (safe to consume hash — won't be needed)
@@ -278,7 +300,18 @@ impl RemoteNode {
         mut payload: ExtensiblePayload,
         ctx: &mut crate::akka::ActorContext,
     ) -> crate::akka::ActorResult {
-        let hash = payload.hash();
+        let hash = match payload.try_hash() {
+            Ok(hash) => hash,
+            Err(error) => {
+                warn!(
+                    target: "neo",
+                    endpoint = %self.endpoint,
+                    error = %error,
+                    "extensible payload hash computation failed, rejecting"
+                );
+                return Ok(());
+            }
+        };
         if !self.known_hashes.try_add(hash) {
             return Ok(());
         }
@@ -351,7 +384,18 @@ impl RemoteNode {
                     }
                     if let Some(mut block) = self.system.try_get_block(&hash) {
                         if let Some(flags) = self.bloom_filter_flags(&block) {
-                            let payload = MerkleBlockPayload::create(&mut block, flags);
+                            let payload = match MerkleBlockPayload::try_create(&mut block, flags) {
+                                Ok(payload) => payload,
+                                Err(error) => {
+                                    warn!(
+                                        target: "neo",
+                                        hash = %hash,
+                                        error = %error,
+                                        "failed to build merkle block payload"
+                                    );
+                                    continue;
+                                }
+                            };
                             self.enqueue_message(NetworkMessage::new(
                                 ProtocolMessage::MerkleBlock(payload),
                             ))
@@ -442,7 +486,18 @@ impl RemoteNode {
             };
 
             if let Some(flags) = self.bloom_filter_flags(&block) {
-                let payload = MerkleBlockPayload::create(&mut block, flags);
+                let payload = match MerkleBlockPayload::try_create(&mut block, flags) {
+                    Ok(payload) => payload,
+                    Err(error) => {
+                        warn!(
+                            target: "neo",
+                            hash = %hash,
+                            error = %error,
+                            "failed to build merkle block payload"
+                        );
+                        continue;
+                    }
+                };
                 self.enqueue_message(NetworkMessage::new(ProtocolMessage::MerkleBlock(payload)))
                     .await?;
             } else {
@@ -469,28 +524,5 @@ impl RemoteNode {
                 "failed to notify task manager about inventory restart"
             );
         }
-    }
-
-    pub(super) fn bloom_filter_flags(&self, block: &Block) -> Option<Vec<bool>> {
-        let filter = self.bloom_filter.as_ref()?;
-        Some(
-            block
-                .transactions
-                .iter()
-                .map(|tx| Self::filter_matches_transaction(filter, tx))
-                .collect(),
-        )
-    }
-
-    fn filter_matches_transaction(filter: &BloomFilter, tx: &Transaction) -> bool {
-        let hash_bytes = tx.hash().to_array();
-        if filter.check(&hash_bytes) {
-            return true;
-        }
-
-        tx.signers().iter().any(|signer| {
-            let account_bytes = signer.account.as_bytes();
-            filter.check(account_bytes.as_ref())
-        })
     }
 }

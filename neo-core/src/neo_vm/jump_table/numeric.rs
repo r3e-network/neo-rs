@@ -1,22 +1,14 @@
 //! Numeric operations for the Neo Virtual Machine.
-//!
-//! This module provides the numeric operation handlers for the Neo VM.
 
-use crate::neo_vm::error::VmError;
-use crate::neo_vm::error::VmResult;
+use crate::neo_vm::error::{VmError, VmResult};
 use crate::neo_vm::execution_context::ExecutionContext;
 use crate::neo_vm::execution_engine::ExecutionEngine;
 use crate::neo_vm::jump_table::JumpTable;
 use crate::neo_vm::stack_item::StackItem;
-use neo_vm_rs::Instruction;
-use neo_vm_rs::{OpCode, StackValue};
-use num_bigint::BigInt;
-use num_traits::{One, Signed, ToPrimitive, Zero};
+use neo_vm_rs::semantics::{arithmetic, comparison};
+use neo_vm_rs::{Instruction, OpCode, StackValue};
+use num_traits::ToPrimitive;
 
-/// Maximum size for `BigInt` results in bytes (256 bits = 32 bytes)
-const MAX_BIGINT_SIZE: usize = 32;
-
-/// Helper to get current context or return error.
 #[inline]
 fn require_context(engine: &mut ExecutionEngine) -> VmResult<&mut ExecutionContext> {
     engine
@@ -24,33 +16,59 @@ fn require_context(engine: &mut ExecutionEngine) -> VmResult<&mut ExecutionConte
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))
 }
 
-/// Checks if a `BigInt` value exceeds the maximum allowed size.
-///
-/// Uses `BigInt::bits()` to compute the byte length without allocating a `Vec<u8>`.
-/// `bits()` returns the number of bits needed to represent the magnitude, so we
-/// add 1 for the sign bit and round up to whole bytes: `(bits + 8) / 8`.
-/// For zero, `bits()` returns 0 and the signed encoding is a single `0x00` byte.
 #[inline]
-fn check_bigint_size(value: &BigInt) -> VmResult<()> {
-    let bits = value.bits();
-    // Zero encodes as a single byte in signed two's-complement representation.
-    // For non-zero values: need `bits` magnitude bits + 1 sign bit, rounded up to bytes.
-    let byte_len = if bits == 0 {
-        1
-    } else {
-        (bits as usize + 8) / 8
-    };
-    if byte_len > MAX_BIGINT_SIZE {
-        return Err(VmError::invalid_operation_msg(format!(
-            "BigInt size {byte_len} bytes exceeds maximum {MAX_BIGINT_SIZE} bytes"
-        )));
+fn semantics_error(error: String) -> VmError {
+    VmError::invalid_operation_msg(error)
+}
+
+#[inline]
+fn value_from_stack_item(item: StackItem) -> VmResult<StackValue> {
+    match item {
+        StackItem::Buffer(buffer) => Ok(StackValue::ByteString(buffer.data())),
+        item => StackValue::try_from(item),
     }
-    Ok(())
+}
+
+#[inline]
+fn push_stack_value(ctx: &mut ExecutionContext, value: StackValue) -> VmResult<()> {
+    ctx.push(StackItem::try_from(value)?)
+}
+
+fn unary_numeric(
+    engine: &mut ExecutionEngine,
+    op: fn(StackValue) -> Result<StackValue, String>,
+) -> VmResult<()> {
+    let ctx = require_context(engine)?;
+    let value = value_from_stack_item(ctx.pop()?)?;
+    let result = op(value).map_err(semantics_error)?;
+    push_stack_value(ctx, result)
+}
+
+fn binary_numeric(
+    engine: &mut ExecutionEngine,
+    op: fn(StackValue, StackValue) -> Result<StackValue, String>,
+) -> VmResult<()> {
+    let ctx = require_context(engine)?;
+    let right = value_from_stack_item(ctx.pop()?)?;
+    let left = value_from_stack_item(ctx.pop()?)?;
+    let result = op(left, right).map_err(semantics_error)?;
+    push_stack_value(ctx, result)
+}
+
+fn ternary_numeric(
+    engine: &mut ExecutionEngine,
+    op: fn(StackValue, StackValue, StackValue) -> Result<StackValue, String>,
+) -> VmResult<()> {
+    let ctx = require_context(engine)?;
+    let third = value_from_stack_item(ctx.pop()?)?;
+    let second = value_from_stack_item(ctx.pop()?)?;
+    let first = value_from_stack_item(ctx.pop()?)?;
+    let result = op(first, second, third).map_err(semantics_error)?;
+    push_stack_value(ctx, result)
 }
 
 /// Registers the numeric operation handlers.
 pub fn register_handlers(jump_table: &mut JumpTable) {
-    // Unary operations
     jump_table.register(OpCode::INC, inc);
     jump_table.register(OpCode::DEC, dec);
     jump_table.register(OpCode::SIGN, sign);
@@ -60,7 +78,6 @@ pub fn register_handlers(jump_table: &mut JumpTable) {
     jump_table.register(OpCode::NOT, not);
     jump_table.register(OpCode::NZ, nz);
 
-    // Binary arithmetic
     jump_table.register(OpCode::ADD, add);
     jump_table.register(OpCode::SUB, sub);
     jump_table.register(OpCode::MUL, mul);
@@ -72,7 +89,6 @@ pub fn register_handlers(jump_table: &mut JumpTable) {
     jump_table.register(OpCode::MIN, min);
     jump_table.register(OpCode::MAX, max);
 
-    // Comparison operations
     jump_table.register(OpCode::LT, lt);
     jump_table.register(OpCode::LE, le);
     jump_table.register(OpCode::GT, gt);
@@ -81,369 +97,160 @@ pub fn register_handlers(jump_table: &mut JumpTable) {
     jump_table.register(OpCode::NUMNOTEQUAL, numnotequal);
     jump_table.register(OpCode::WITHIN, within);
 
-    // Logical operations
     jump_table.register(OpCode::BOOLAND, booland);
     jump_table.register(OpCode::BOOLOR, boolor);
 
-    // Advanced numeric operations
     jump_table.register(OpCode::MODMUL, modmul);
     jump_table.register(OpCode::MODPOW, modpow);
 }
 
-// ============================================================================
-// Unary Operations
-// ============================================================================
-
 #[inline]
 fn inc(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    let ctx = require_context(engine)?;
-    let value = ctx.pop()?.into_int()?;
-    let result = match value.to_i64() {
-        Some(value) if value.checked_add(1).is_some() => {
-            BigInt::from(neo_vm_rs::semantics::arithmetic::inc_i64(value))
-        }
-        _ => value + 1,
-    };
-    check_bigint_size(&result)?;
-    ctx.push(StackItem::from_int(result))
+    unary_numeric(engine, arithmetic::inc_value)
 }
 
 #[inline]
 fn dec(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    let ctx = require_context(engine)?;
-    let value = ctx.pop()?.into_int()?;
-    let result = match value.to_i64() {
-        Some(value) if value.checked_sub(1).is_some() => {
-            BigInt::from(neo_vm_rs::semantics::arithmetic::dec_i64(value))
-        }
-        _ => value - 1,
-    };
-    check_bigint_size(&result)?;
-    ctx.push(StackItem::from_int(result))
+    unary_numeric(engine, arithmetic::dec_value)
 }
 
 fn sign(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    let ctx = require_context(engine)?;
-    let value = ctx.pop()?.into_int()?;
-    let sign_val = if let Some(value) = value.to_i64() {
-        neo_vm_rs::semantics::arithmetic::sign_i64(value)
-    } else {
-        match value.sign() {
-            num_bigint::Sign::Minus => -1,
-            num_bigint::Sign::NoSign => 0,
-            num_bigint::Sign::Plus => 1,
-        }
-    };
-    ctx.push(StackItem::from_int(sign_val))
+    unary_numeric(engine, arithmetic::sign_value)
 }
 
 fn negate(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    let ctx = require_context(engine)?;
-    let value = ctx.pop()?.into_int()?;
-    let result = match value.to_i64() {
-        Some(value) if value.checked_neg().is_some() => {
-            BigInt::from(neo_vm_rs::semantics::arithmetic::negate_i64(value))
-        }
-        _ => -value,
-    };
-    check_bigint_size(&result)?;
-    ctx.push(StackItem::from_int(result))
+    unary_numeric(engine, arithmetic::negate_value)
 }
 
 fn abs(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    let ctx = require_context(engine)?;
-    let value = ctx.pop()?.into_int()?;
-    let result = match value.to_i64() {
-        Some(value) if value.checked_abs().is_some() => {
-            BigInt::from(neo_vm_rs::semantics::arithmetic::abs_i64(value))
-        }
-        _ => value.abs(),
-    };
-    check_bigint_size(&result)?;
-    ctx.push(StackItem::from_int(result))
+    unary_numeric(engine, arithmetic::abs_value)
 }
 
 fn sqrt(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    let ctx = require_context(engine)?;
-    let value = ctx.pop()?.into_int()?;
-    if value.is_negative() {
-        return Err(VmError::invalid_operation_msg(
-            "Square root of negative number",
-        ));
-    }
-    let result = if let Some(value) = value.to_i64() {
-        BigInt::from(
-            neo_vm_rs::semantics::arithmetic::sqrt_i64(value)
-                .map_err(VmError::invalid_operation_msg)?,
-        )
-    } else {
-        integer_sqrt(&value)
-    };
-    ctx.push(StackItem::from_int(result))
+    unary_numeric(engine, arithmetic::sqrt_value)
 }
 
 fn not(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
-    let x = ctx.pop()?.as_bool()?;
-    ctx.push(StackItem::from_bool(
-        neo_vm_rs::semantics::comparison::bool_not(x),
-    ))
+    let value = value_from_stack_item(ctx.pop()?)?;
+    let result = comparison::not_value(&value).map_err(semantics_error)?;
+    ctx.push(StackItem::from_bool(result))
 }
 
 fn nz(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
-    let value = ctx.pop()?.into_int()?;
-    let stack_value = StackValue::BigInteger(value.to_signed_bytes_le());
-    ctx.push(StackItem::from_bool(neo_vm_rs::semantics::comparison::nz(
-        &stack_value,
-    )))
+    let value = value_from_stack_item(ctx.pop()?)?;
+    let result = comparison::nz_value(&value).map_err(semantics_error)?;
+    ctx.push(StackItem::from_bool(result))
 }
-
-// ============================================================================
-// Binary Arithmetic Operations
-// ============================================================================
 
 #[inline]
 fn add(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    let ctx = require_context(engine)?;
-    let b = ctx.pop()?.into_int()?;
-    let a = ctx.pop()?.into_int()?;
-    let result = match (a.to_i64(), b.to_i64()) {
-        (Some(a), Some(b)) if a.checked_add(b).is_some() => {
-            BigInt::from(neo_vm_rs::semantics::arithmetic::add_i64(a, b))
-        }
-        _ => a + b,
-    };
-    check_bigint_size(&result)?;
-    ctx.push(StackItem::from_int(result))
+    binary_numeric(engine, arithmetic::add_values)
 }
 
 #[inline]
 fn sub(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    let ctx = require_context(engine)?;
-    let b = ctx.pop()?.into_int()?;
-    let a = ctx.pop()?.into_int()?;
-    let result = match (a.to_i64(), b.to_i64()) {
-        (Some(a), Some(b)) if a.checked_sub(b).is_some() => {
-            BigInt::from(neo_vm_rs::semantics::arithmetic::sub_i64(a, b))
-        }
-        _ => a - b,
-    };
-    check_bigint_size(&result)?;
-    ctx.push(StackItem::from_int(result))
+    binary_numeric(engine, arithmetic::sub_values)
 }
 
 #[inline]
 fn mul(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    let ctx = require_context(engine)?;
-    let b = ctx.pop()?.into_int()?;
-    let a = ctx.pop()?.into_int()?;
-    let result = match (a.to_i64(), b.to_i64()) {
-        (Some(a), Some(b)) if a.checked_mul(b).is_some() => {
-            BigInt::from(neo_vm_rs::semantics::arithmetic::mul_i64(a, b))
-        }
-        _ => a * b,
-    };
-    check_bigint_size(&result)?;
-    ctx.push(StackItem::from_int(result))
+    binary_numeric(engine, arithmetic::mul_values)
 }
 
 fn div(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    let ctx = require_context(engine)?;
-    let b = ctx.pop()?.into_int()?;
-    let a = ctx.pop()?.into_int()?;
-    if b.is_zero() {
-        return Err(VmError::invalid_operation_msg("Division by zero"));
-    }
-    let result = match (a.to_i64(), b.to_i64()) {
-        (Some(a), Some(b)) if a.checked_div(b).is_some() => BigInt::from(
-            neo_vm_rs::semantics::arithmetic::div_i64(a, b)
-                .map_err(VmError::invalid_operation_msg)?,
-        ),
-        _ => a / b,
-    };
-    ctx.push(StackItem::from_int(result))
+    binary_numeric(engine, arithmetic::div_values)
 }
 
 fn modulo(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    let ctx = require_context(engine)?;
-    let b = ctx.pop()?.into_int()?;
-    let a = ctx.pop()?.into_int()?;
-    if b.is_zero() {
-        return Err(VmError::invalid_operation_msg("Division by zero"));
-    }
-    let result = match (a.to_i64(), b.to_i64()) {
-        (Some(a), Some(b)) if a.checked_rem(b).is_some() => BigInt::from(
-            neo_vm_rs::semantics::arithmetic::modulo_i64(a, b)
-                .map_err(VmError::invalid_operation_msg)?,
-        ),
-        _ => a % b,
-    };
-    ctx.push(StackItem::from_int(result))
+    binary_numeric(engine, arithmetic::modulo_values)
 }
 
 fn pow(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let limits = *engine.limits();
     let ctx = require_context(engine)?;
-    let b = ctx.pop()?.into_int()?;
-    let a = ctx.pop()?.into_int()?;
-
-    let exponent_i32 = b
+    let exponent_item = ctx.pop()?;
+    let base = value_from_stack_item(ctx.pop()?)?;
+    let exponent_i32 = exponent_item
+        .as_int()?
         .to_i32()
         .ok_or_else(|| VmError::invalid_operation_msg("Exponent too large"))?;
     limits
         .assert_shift(exponent_i32)
         .map_err(VmError::invalid_operation_msg)?;
-
-    let result = match (a.to_i64(), b.to_i64()) {
-        (Some(base), Some(exponent))
-            if (0..=63).contains(&exponent) && base.checked_pow(exponent as u32).is_some() =>
-        {
-            BigInt::from(
-                neo_vm_rs::semantics::arithmetic::pow_i64(base, exponent)
-                    .map_err(VmError::invalid_operation_msg)?,
-            )
-        }
-        _ => a.pow(exponent_i32 as u32),
-    };
-    check_bigint_size(&result)?;
-    ctx.push(StackItem::from_int(result))
+    let exponent = value_from_stack_item(exponent_item)?;
+    let result = arithmetic::pow_values(base, exponent).map_err(semantics_error)?;
+    push_stack_value(ctx, result)
 }
 
 fn shl(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    let limits = *engine.limits();
-    let ctx = require_context(engine)?;
-    let b = ctx.pop()?.into_int()?;
-    let a = ctx.pop()?.into_int()?;
-
-    let shift_i32 = b
-        .to_i32()
-        .ok_or_else(|| VmError::invalid_operation_msg("Shift amount too large"))?;
-    limits
-        .assert_shift(shift_i32)
-        .map_err(VmError::invalid_operation_msg)?;
-
-    if shift_i32 == 0 {
-        return ctx.push(StackItem::from_int(a));
-    }
-
-    let result = if shift_i32 < 64 {
-        let result = a.clone() << (shift_i32 as u32);
-        match (a.to_i64(), result.to_i64()) {
-            (Some(value), Some(_)) => BigInt::from(
-                neo_vm_rs::semantics::arithmetic::shl_i64(value, i64::from(shift_i32))
-                    .map_err(VmError::invalid_operation_msg)?,
-            ),
-            _ => result,
-        }
-    } else {
-        a << (shift_i32 as u32)
-    };
-    check_bigint_size(&result)?;
-    ctx.push(StackItem::from_int(result))
+    shift(engine, arithmetic::shl_value, "Shift amount too large")
 }
 
 fn shr(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+    shift(engine, arithmetic::shr_value, "Shift amount too large")
+}
+
+fn shift(
+    engine: &mut ExecutionEngine,
+    op: fn(StackValue, i64) -> Result<StackValue, String>,
+    overflow_message: &'static str,
+) -> VmResult<()> {
     let limits = *engine.limits();
     let ctx = require_context(engine)?;
-    let b = ctx.pop()?.into_int()?;
-    let a = ctx.pop()?.into_int()?;
-
-    let shift_i32 = b
+    let shift_item = ctx.pop()?;
+    let value = value_from_stack_item(ctx.pop()?)?;
+    let shift_i32 = shift_item
+        .as_int()?
         .to_i32()
-        .ok_or_else(|| VmError::invalid_operation_msg("Shift amount too large"))?;
+        .ok_or_else(|| VmError::invalid_operation_msg(overflow_message))?;
     limits
         .assert_shift(shift_i32)
         .map_err(VmError::invalid_operation_msg)?;
-
-    if shift_i32 == 0 {
-        return ctx.push(StackItem::from_int(a));
-    }
-
-    let result = if shift_i32 < 64 {
-        let result = a.clone() >> (shift_i32 as u32);
-        match (a.to_i64(), result.to_i64()) {
-            (Some(value), Some(_)) => BigInt::from(
-                neo_vm_rs::semantics::arithmetic::shr_i64(value, i64::from(shift_i32))
-                    .map_err(VmError::invalid_operation_msg)?,
-            ),
-            _ => result,
-        }
-    } else {
-        a >> (shift_i32 as u32)
-    };
-    check_bigint_size(&result)?;
-    ctx.push(StackItem::from_int(result))
+    let result = op(value, i64::from(shift_i32)).map_err(semantics_error)?;
+    push_stack_value(ctx, result)
 }
 
 fn min(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    let ctx = require_context(engine)?;
-    let b = ctx.pop()?.into_int()?;
-    let a = ctx.pop()?.into_int()?;
-    let result = match (a.to_i64(), b.to_i64()) {
-        (Some(a), Some(b)) => StackItem::from_int(neo_vm_rs::semantics::arithmetic::min_i64(a, b)),
-        _ => StackItem::from_int(if a < b { a } else { b }),
-    };
-    ctx.push(result)
+    binary_numeric(engine, arithmetic::min_values)
 }
 
 fn max(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    let ctx = require_context(engine)?;
-    let b = ctx.pop()?.into_int()?;
-    let a = ctx.pop()?.into_int()?;
-    let result = match (a.to_i64(), b.to_i64()) {
-        (Some(a), Some(b)) => StackItem::from_int(neo_vm_rs::semantics::arithmetic::max_i64(a, b)),
-        _ => StackItem::from_int(if a > b { a } else { b }),
-    };
-    ctx.push(result)
+    binary_numeric(engine, arithmetic::max_values)
 }
-
-// ============================================================================
-// Comparison Operations
-// ============================================================================
 
 fn within(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
-    let b = ctx.pop()?.into_int()?;
-    let a = ctx.pop()?.into_int()?;
-    let x = ctx.pop()?.into_int()?;
-    let result = match (x.to_i64(), a.to_i64(), b.to_i64()) {
-        (Some(x), Some(a), Some(b)) => neo_vm_rs::semantics::arithmetic::within_i64(x, a, b),
-        _ => a <= x && x < b,
-    };
+    let upper = value_from_stack_item(ctx.pop()?)?;
+    let lower = value_from_stack_item(ctx.pop()?)?;
+    let value = value_from_stack_item(ctx.pop()?)?;
+    let result = arithmetic::within_values(value, lower, upper).map_err(semantics_error)?;
     ctx.push(StackItem::from_bool(result))
 }
 
-/// Helper for comparison operations with null handling
-fn compare_with_null<F>(
+fn compare_with_null(
     engine: &mut ExecutionEngine,
     null_null: bool,
     null_other: bool,
     other_null: bool,
-    cmp: F,
-    cmp_i64: fn(i64, i64) -> bool,
-) -> VmResult<()>
-where
-    F: FnOnce(&BigInt, &BigInt) -> bool,
-{
+    op: fn(&StackValue, &StackValue) -> Result<bool, String>,
+) -> VmResult<()> {
     let ctx = require_context(engine)?;
     if ctx.evaluation_stack().len() < 2 {
         return Err(VmError::insufficient_stack_items_msg(0, 0));
     }
-    let b = ctx.pop()?;
-    let a = ctx.pop()?;
+    let right = ctx.pop()?;
+    let left = ctx.pop()?;
 
-    let result = match (&a, &b) {
+    let result = match (&left, &right) {
         (StackItem::Null, StackItem::Null) => null_null,
         (StackItem::Null, _) => null_other,
         (_, StackItem::Null) => other_null,
         _ => {
-            let a_int = a.as_int()?;
-            let b_int = b.as_int()?;
-            match (a_int.to_i64(), b_int.to_i64()) {
-                (Some(a), Some(b)) => cmp_i64(a, b),
-                _ => cmp(&a_int, &b_int),
-            }
+            let left = value_from_stack_item(left)?;
+            let right = value_from_stack_item(right)?;
+            op(&left, &right).map_err(semantics_error)?
         }
     };
     ctx.push(StackItem::from_bool(result))
@@ -451,38 +258,17 @@ where
 
 #[inline]
 fn lt(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    compare_with_null(
-        engine,
-        false,
-        true,
-        false,
-        |a, b| a < b,
-        neo_vm_rs::semantics::comparison::less_than_i64,
-    )
+    compare_with_null(engine, false, true, false, comparison::less_than_values)
 }
 
 #[inline]
 fn le(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    compare_with_null(
-        engine,
-        true,
-        true,
-        false,
-        |a, b| a <= b,
-        neo_vm_rs::semantics::comparison::less_or_equal_i64,
-    )
+    compare_with_null(engine, true, true, false, comparison::less_or_equal_values)
 }
 
 #[inline]
 fn gt(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    compare_with_null(
-        engine,
-        false,
-        false,
-        true,
-        |a, b| a > b,
-        neo_vm_rs::semantics::comparison::greater_than_i64,
-    )
+    compare_with_null(engine, false, false, true, comparison::greater_than_values)
 }
 
 #[inline]
@@ -492,241 +278,183 @@ fn ge(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
         true,
         false,
         true,
-        |a, b| a >= b,
-        neo_vm_rs::semantics::comparison::greater_or_equal_i64,
+        comparison::greater_or_equal_values,
     )
 }
 
 fn numequal(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    let ctx = require_context(engine)?;
-    if ctx.evaluation_stack().len() < 2 {
-        return Err(VmError::insufficient_stack_items_msg(0, 0));
-    }
-    let b = ctx.pop()?;
-    let a = ctx.pop()?;
-
-    let result = match (&a, &b) {
-        (StackItem::Null, StackItem::Null) => true,
-        (StackItem::Null, _) | (_, StackItem::Null) => false,
-        (StackItem::Boolean(a_bool), StackItem::Boolean(b_bool)) => a_bool == b_bool,
-        (StackItem::Boolean(a_bool), _) => {
-            let bi = b.as_int()?;
-            if *a_bool {
-                bi.is_one()
-            } else {
-                bi.is_zero()
-            }
-        }
-        (_, StackItem::Boolean(b_bool)) => {
-            let ai = a.as_int()?;
-            if *b_bool {
-                ai.is_one()
-            } else {
-                ai.is_zero()
-            }
-        }
-        _ => {
-            let a_int = a.as_int()?;
-            let b_int = b.as_int()?;
-            match (a_int.to_i64(), b_int.to_i64()) {
-                (Some(a), Some(b)) => neo_vm_rs::semantics::comparison::num_equal_i64(a, b),
-                _ => a_int == b_int,
-            }
-        }
-    };
-    ctx.push(StackItem::from_bool(result))
+    numeric_equality(engine, true, false, comparison::num_equal_values)
 }
 
 fn numnotequal(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+    numeric_equality(engine, false, true, comparison::num_not_equal_values)
+}
+
+fn numeric_equality(
+    engine: &mut ExecutionEngine,
+    null_null: bool,
+    null_other: bool,
+    op: fn(&StackValue, &StackValue) -> Result<bool, String>,
+) -> VmResult<()> {
     let ctx = require_context(engine)?;
     if ctx.evaluation_stack().len() < 2 {
         return Err(VmError::insufficient_stack_items_msg(0, 0));
     }
-    let b = ctx.pop()?;
-    let a = ctx.pop()?;
+    let right = ctx.pop()?;
+    let left = ctx.pop()?;
 
-    let result = match (&a, &b) {
-        (StackItem::Null, StackItem::Null) => false,
-        (StackItem::Null, _) | (_, StackItem::Null) => true,
-        (StackItem::Boolean(a_bool), StackItem::Boolean(b_bool)) => a_bool != b_bool,
-        (StackItem::Boolean(a_bool), _) => {
-            let bi = b.as_int()?;
-            if *a_bool {
-                !bi.is_one()
-            } else {
-                !bi.is_zero()
-            }
-        }
-        (_, StackItem::Boolean(b_bool)) => {
-            let ai = a.as_int()?;
-            if *b_bool {
-                !ai.is_one()
-            } else {
-                !ai.is_zero()
-            }
-        }
+    let result = match (&left, &right) {
+        (StackItem::Null, StackItem::Null) => null_null,
+        (StackItem::Null, _) | (_, StackItem::Null) => null_other,
         _ => {
-            let a_int = a.as_int()?;
-            let b_int = b.as_int()?;
-            match (a_int.to_i64(), b_int.to_i64()) {
-                (Some(a), Some(b)) => neo_vm_rs::semantics::comparison::num_not_equal_i64(a, b),
-                _ => a_int != b_int,
-            }
+            let left = value_from_stack_item(left)?;
+            let right = value_from_stack_item(right)?;
+            op(&left, &right).map_err(semantics_error)?
         }
     };
     ctx.push(StackItem::from_bool(result))
 }
 
-// ============================================================================
-// Logical Operations
-// ============================================================================
-
 fn booland(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
-    let b = ctx.pop()?.as_bool()?;
-    let a = ctx.pop()?.as_bool()?;
-    ctx.push(StackItem::from_bool(
-        neo_vm_rs::semantics::comparison::bool_and(a, b),
-    ))
+    let right = ctx.pop()?.as_bool()?;
+    let left = ctx.pop()?.as_bool()?;
+    ctx.push(StackItem::from_bool(comparison::bool_and(left, right)))
 }
 
 fn boolor(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
-    let b = ctx.pop()?.as_bool()?;
-    let a = ctx.pop()?.as_bool()?;
-    ctx.push(StackItem::from_bool(
-        neo_vm_rs::semantics::comparison::bool_or(a, b),
-    ))
+    let right = ctx.pop()?.as_bool()?;
+    let left = ctx.pop()?.as_bool()?;
+    ctx.push(StackItem::from_bool(comparison::bool_or(left, right)))
 }
 
-// ============================================================================
-// Advanced Numeric Operations
-// ============================================================================
-
 fn modmul(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    let ctx = require_context(engine)?;
-    let modulus = ctx.pop()?.into_int()?;
-    let b = ctx.pop()?.into_int()?;
-    let a = ctx.pop()?.into_int()?;
-
-    if modulus.is_zero() {
-        return Err(VmError::division_by_zero_msg("division"));
-    }
-
-    let result = match (a.to_i64(), b.to_i64(), modulus.to_i64()) {
-        (Some(a), Some(b), Some(modulus)) => BigInt::from(
-            neo_vm_rs::semantics::arithmetic::modmul_i64(a, b, modulus)
-                .map_err(VmError::invalid_operation_msg)?,
-        ),
-        _ => (a * b) % modulus,
-    };
-    check_bigint_size(&result)?;
-    ctx.push(StackItem::from_int(result))
+    ternary_numeric(engine, arithmetic::modmul_values)
 }
 
 fn modpow(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    let ctx = require_context(engine)?;
-    let modulus = ctx.pop()?.into_int()?;
-    let exponent = ctx.pop()?.into_int()?;
-    let base = ctx.pop()?.into_int()?;
+    ternary_numeric(engine, arithmetic::modpow_values)
+}
 
-    // Exponent == -1 triggers modular inverse
-    if exponent == -BigInt::one() {
-        let result = mod_inverse(&base, &modulus)?;
-        check_bigint_size(&result)?;
-        return ctx.push(StackItem::from_int(result));
-    }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::neo_vm::script::Script;
+    use num_bigint::BigInt;
 
-    if exponent < -BigInt::one() {
-        return Err(VmError::invalid_operation_msg(
-            "Exponent less than -1 not supported",
-        ));
-    }
+    fn engine_with_stack(items: Vec<StackItem>) -> ExecutionEngine {
+        let mut engine = ExecutionEngine::new(None);
+        engine
+            .load_script(Script::new_relaxed(vec![OpCode::RET.byte()]), -1, 0)
+            .expect("load test script");
 
-    if modulus.is_zero() {
-        return Err(VmError::division_by_zero_msg("division"));
-    }
-
-    if exponent.is_negative() {
-        return Err(VmError::invalid_operation_msg(
-            "Negative exponent not supported",
-        ));
-    }
-
-    let result = match (base.to_i64(), exponent.to_i64(), modulus.to_i64()) {
-        (Some(base_i64), Some(exponent_i64), Some(modulus_i64))
-            if !base.is_negative() && modulus.is_positive() =>
-        {
-            BigInt::from(
-                neo_vm_rs::semantics::arithmetic::modpow_i64(base_i64, exponent_i64, modulus_i64)
-                    .map_err(VmError::invalid_operation_msg)?,
-            )
+        let ctx = engine.current_context_mut().expect("current context");
+        for item in items {
+            ctx.push(item).expect("push test item");
         }
-        _ => base.modpow(&exponent, &modulus),
-    };
-    check_bigint_size(&result)?;
-    ctx.push(StackItem::from_int(result))
-}
 
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-/// Integer square root using Newton's method (matches C# BigInteger.Sqrt)
-fn integer_sqrt(value: &BigInt) -> BigInt {
-    if value.is_zero() || value.is_one() {
-        return value.clone();
+        engine
     }
 
-    let mut x = value.clone();
-    let mut y: BigInt = (value + 1) / 2;
-
-    while y < x {
-        x = y.clone();
-        y = (&x + value / &x) / 2;
+    fn instruction(opcode: OpCode) -> Instruction {
+        Instruction::new(opcode, &[])
     }
-    x
-}
 
-/// Computes the modular inverse of `value` modulo `modulus`.
-fn mod_inverse(value: &BigInt, modulus: &BigInt) -> VmResult<BigInt> {
-    if !value.is_positive() {
-        return Err(VmError::invalid_operation_msg(
-            "Modular inverse requires positive value",
+    fn pop(engine: &mut ExecutionEngine) -> StackItem {
+        engine
+            .current_context_mut()
+            .expect("current context")
+            .pop()
+            .expect("result item")
+    }
+
+    fn run_bool(
+        left: StackItem,
+        right: StackItem,
+        opcode: OpCode,
+        op: fn(&mut ExecutionEngine, &Instruction) -> VmResult<()>,
+    ) -> bool {
+        let mut engine = engine_with_stack(vec![left, right]);
+        op(&mut engine, &instruction(opcode)).expect("comparison succeeds");
+        pop(&mut engine).as_bool().expect("boolean result")
+    }
+
+    #[test]
+    fn add_accepts_buffer_as_byte_string_operand() {
+        let mut engine = engine_with_stack(vec![
+            StackItem::from_buffer(vec![0x02]),
+            StackItem::from_i64(3),
+        ]);
+
+        add(&mut engine, &instruction(OpCode::ADD)).expect("ADD succeeds");
+
+        assert_eq!(pop(&mut engine).as_int().unwrap(), BigInt::from(5));
+    }
+
+    #[test]
+    fn ordered_comparisons_keep_core_null_policy() {
+        assert!(run_bool(
+            StackItem::Null,
+            StackItem::from_i64(1),
+            OpCode::LT,
+            lt
+        ));
+        assert!(!run_bool(
+            StackItem::from_i64(1),
+            StackItem::Null,
+            OpCode::LT,
+            lt
+        ));
+        assert!(run_bool(StackItem::Null, StackItem::Null, OpCode::LE, le));
+        assert!(run_bool(
+            StackItem::from_i64(1),
+            StackItem::Null,
+            OpCode::GT,
+            gt
+        ));
+        assert!(run_bool(StackItem::Null, StackItem::Null, OpCode::GE, ge));
+    }
+
+    #[test]
+    fn numeric_equality_preserves_null_special_cases() {
+        assert!(run_bool(
+            StackItem::Null,
+            StackItem::Null,
+            OpCode::NUMEQUAL,
+            numequal
+        ));
+        assert!(!run_bool(
+            StackItem::Null,
+            StackItem::from_i64(0),
+            OpCode::NUMEQUAL,
+            numequal
+        ));
+        assert!(run_bool(
+            StackItem::Null,
+            StackItem::from_i64(0),
+            OpCode::NUMNOTEQUAL,
+            numnotequal
         ));
     }
-    if modulus.is_zero() || modulus.is_one() {
-        return Err(VmError::invalid_operation_msg(
-            "Modular inverse requires modulus >= 2",
-        ));
+
+    #[test]
+    fn modpow_supports_modular_inverse() {
+        let mut engine = engine_with_stack(vec![
+            StackItem::from_i64(3),
+            StackItem::from_i64(-1),
+            StackItem::from_i64(11),
+        ]);
+
+        modpow(&mut engine, &instruction(OpCode::MODPOW)).expect("MODPOW succeeds");
+
+        assert_eq!(pop(&mut engine).as_int().unwrap(), BigInt::from(4));
     }
 
-    let mut r = value.clone();
-    let mut old_r = modulus.clone();
-    let mut s = BigInt::one();
-    let mut old_s = BigInt::zero();
+    #[test]
+    fn shift_rejects_values_above_engine_limit() {
+        let mut engine = engine_with_stack(vec![StackItem::from_i64(1), StackItem::from_i64(257)]);
 
-    while !r.is_zero() {
-        let q = &old_r / &r;
-        let new_r = &old_r % &r;
-        old_r = r;
-        r = new_r;
-
-        let new_s = &old_s - &q * &s;
-        old_s = s;
-        s = new_s;
+        assert!(shl(&mut engine, &instruction(OpCode::SHL)).is_err());
     }
-
-    let mut result = old_s % modulus;
-    if result.is_negative() {
-        result += modulus;
-    }
-
-    if !((value * &result) % modulus).is_one() {
-        return Err(VmError::invalid_operation_msg(
-            "No modular inverse exists for the given inputs",
-        ));
-    }
-
-    Ok(result)
 }

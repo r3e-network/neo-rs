@@ -540,9 +540,20 @@ impl NeoSystemContext {
                     let payload_block = convert_ledger_block(block);
                     let header_clone = payload_block.header.clone();
                     // insert_block will populate hash/header caches and advance height markers.
-                    ledger.insert_block(payload_block);
-                    // keep header cache warm for network queries
-                    header_cache.add(header_clone);
+                    match ledger.insert_block(payload_block) {
+                        Ok(_) => {
+                            // keep header cache warm for network queries
+                            header_cache.add(header_clone);
+                        }
+                        Err(err) => {
+                            warn!(
+                                target: "neo",
+                                index,
+                                error = %err,
+                                "failed to hydrate block into ledger cache"
+                            );
+                        }
+                    }
                 }
                 Ok(None) => break,
                 Err(err) => {
@@ -720,7 +731,7 @@ impl NeoSystemContext {
     }
 
     /// Adds a transaction to the in-memory pool and returns its hash.
-    pub fn record_transaction(&self, transaction: Transaction) -> UInt256 {
+    pub fn record_transaction(&self, transaction: Transaction) -> crate::CoreResult<UInt256> {
         self.ledger.insert_transaction(transaction)
     }
 
@@ -730,17 +741,17 @@ impl NeoSystemContext {
     }
 
     /// Registers a block with the in-memory ledger cache and returns its hash.
-    pub fn record_block(&self, block: Block) -> UInt256 {
+    pub fn record_block(&self, block: Block) -> crate::CoreResult<UInt256> {
         self.ledger.insert_block(block)
     }
 
     /// Registers an extensible payload with the in-memory ledger cache.
-    pub fn record_extensible(&self, payload: ExtensiblePayload) -> UInt256 {
-        let entry = RelayExtensibleEntry::new(payload.clone());
+    pub fn record_extensible(&self, payload: ExtensiblePayload) -> crate::CoreResult<UInt256> {
+        let entry = RelayExtensibleEntry::try_new(payload.clone())?;
         let hash = entry.hash();
         self.relay_cache.add(entry);
-        self.ledger.insert_extensible(payload);
-        hash
+        self.ledger.insert_extensible(payload)?;
+        Ok(hash)
     }
 
     /// Attempts to retrieve a recently relayed extensible payload from the cache.

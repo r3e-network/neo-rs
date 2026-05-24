@@ -305,7 +305,7 @@ impl NeoSystem {
             tx_cache_config,
         ));
         for tx in &ledger_block.transactions {
-            let tx_hash = tx.hash();
+            let tx_hash = tx.try_hash()?;
             set_storage_watch_context(
                 ledger_block.index(),
                 StorageWatchPhase::Application,
@@ -504,7 +504,7 @@ impl NeoSystem {
 
         // State root handlers must always run to keep the state trie up to date.
         // Other expensive handlers (application logs, etc.) are skipped during fast sync.
-        self.invoke_committing(&ledger_block, base_snapshot.as_ref(), &executed);
+        self.invoke_committing(&ledger_block, base_snapshot.as_ref(), &executed)?;
 
         let apply_tracked_started = if perf_enabled {
             Some(Instant::now())
@@ -540,7 +540,12 @@ impl NeoSystem {
 
         if update_runtime_cache {
             // Update in-memory caches with the payload block so networking queries can respond immediately.
-            self.context().record_block(block.clone());
+            self.context().record_block(block.clone()).map_err(|err| {
+                CoreError::system(format!(
+                    "failed to update runtime block cache for block {}: {err}",
+                    ledger_block.index()
+                ))
+            })?;
         } else {
             // Keep tip height moving for helper call sites during offline imports.
             self.context()
@@ -637,15 +642,21 @@ impl NeoSystem {
         block: &LedgerBlock,
         snapshot: &DataCache,
         application_executed: &[ApplicationExecuted],
-    ) {
+    ) -> CoreResult<()> {
         let is_fast_sync = self.context().is_fast_sync_mode();
         let handlers = { self.context().committing_handlers().read().clone() };
         for handler in handlers {
             if is_fast_sync && !handler.run_during_fast_sync() {
                 continue;
             }
-            handler.blockchain_committing_handler(self, block, snapshot, application_executed);
+            handler.try_blockchain_committing_handler(
+                self,
+                block,
+                snapshot,
+                application_executed,
+            )?;
         }
+        Ok(())
     }
 
     fn invoke_committed(&self, block: &LedgerBlock) {

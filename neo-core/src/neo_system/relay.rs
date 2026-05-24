@@ -4,6 +4,7 @@
 //! during network relay operations.
 
 use crate::network::p2p::payloads::extensible_payload::ExtensiblePayload;
+use crate::CoreResult;
 use neo_io_crate::{InventoryHash, RelayCache};
 use neo_primitives::UInt256;
 
@@ -28,9 +29,9 @@ impl RelayExtensibleEntry {
     /// Creates a new relay entry from an extensible payload.
     ///
     /// The hash is computed once during construction for efficient lookups.
-    pub(crate) fn new(mut payload: ExtensiblePayload) -> Self {
-        let hash = payload.hash();
-        Self { hash, payload }
+    pub(crate) fn try_new(mut payload: ExtensiblePayload) -> CoreResult<Self> {
+        let hash = payload.try_hash()?;
+        Ok(Self { hash, payload })
     }
 
     /// Returns a clone of the wrapped payload.

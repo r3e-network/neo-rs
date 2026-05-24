@@ -131,7 +131,9 @@ impl StoreCache {
             apply_tracked(&tracked, snapshot).map_err(|e| {
                 DataCacheError::CommitFailed(format!("storage write failed: {}", e))
             })?;
-            snapshot.commit();
+            snapshot
+                .try_commit()
+                .map_err(|e| DataCacheError::CommitFailed(e.to_string()))?;
             self.data_cache.commit();
         } else {
             let msg = "unable to obtain mutable snapshot for commit; changes not persisted";
@@ -191,6 +193,107 @@ impl StoreCache {
 mod tests {
     use super::*;
     use crate::persistence::providers::memory_store::MemoryStore;
+    use crate::persistence::{
+        i_store::{IStore, OnNewSnapshotDelegate},
+        i_write_store::IWriteStore,
+        storage::StorageError,
+    };
+    use std::any::Any;
+
+    #[derive(Clone)]
+    struct FailingStore;
+
+    impl IReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for FailingStore {
+        fn try_get(&self, _key: &Vec<u8>) -> Option<Vec<u8>> {
+            None
+        }
+
+        fn find(
+            &self,
+            _key_prefix: Option<&Vec<u8>>,
+            _direction: SeekDirection,
+        ) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)> + '_> {
+            Box::new(std::iter::empty())
+        }
+    }
+
+    impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for FailingStore {
+        fn try_get(&self, _key: &StorageKey) -> Option<StorageItem> {
+            None
+        }
+
+        fn find(
+            &self,
+            _key_prefix: Option<&StorageKey>,
+            _direction: SeekDirection,
+        ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
+            Box::new(std::iter::empty())
+        }
+    }
+
+    impl IWriteStore<Vec<u8>, Vec<u8>> for FailingStore {
+        fn delete(&mut self, _key: Vec<u8>) -> crate::error::CoreResult<()> {
+            Ok(())
+        }
+
+        fn put(&mut self, _key: Vec<u8>, _value: Vec<u8>) -> crate::error::CoreResult<()> {
+            Ok(())
+        }
+    }
+
+    impl IReadOnlyStore for FailingStore {}
+
+    impl IStore for FailingStore {
+        fn get_snapshot(&self) -> Arc<dyn IStoreSnapshot> {
+            Arc::new(FailingSnapshot {
+                store: Arc::new(self.clone()),
+            })
+        }
+
+        fn on_new_snapshot(&self, _handler: OnNewSnapshotDelegate) {}
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+    }
+
+    struct FailingSnapshot {
+        store: Arc<dyn IStore>,
+    }
+
+    impl IReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for FailingSnapshot {
+        fn try_get(&self, _key: &Vec<u8>) -> Option<Vec<u8>> {
+            None
+        }
+
+        fn find(
+            &self,
+            _key_prefix: Option<&Vec<u8>>,
+            _direction: SeekDirection,
+        ) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)> + '_> {
+            Box::new(std::iter::empty())
+        }
+    }
+
+    impl IWriteStore<Vec<u8>, Vec<u8>> for FailingSnapshot {
+        fn delete(&mut self, _key: Vec<u8>) -> crate::error::CoreResult<()> {
+            Ok(())
+        }
+
+        fn put(&mut self, _key: Vec<u8>, _value: Vec<u8>) -> crate::error::CoreResult<()> {
+            Ok(())
+        }
+    }
+
+    impl IStoreSnapshot for FailingSnapshot {
+        fn store(&self) -> Arc<dyn IStore> {
+            Arc::clone(&self.store)
+        }
+
+        fn try_commit(&mut self) -> Result<(), StorageError> {
+            Err(StorageError::CommitFailed("injected failure".to_string()))
+        }
+    }
 
     #[test]
     fn read_only_store_cache_rejects_commit() {
@@ -218,6 +321,21 @@ mod tests {
         );
         let result = cache.try_commit();
         assert!(matches!(result, Err(DataCacheError::CommitFailed(_))));
+    }
+
+    #[test]
+    fn try_commit_propagates_snapshot_commit_failure() {
+        let store: Arc<dyn IStore> = Arc::new(FailingStore);
+        let mut cache = StoreCache::new_from_store(store, false);
+        let key = StorageKey::new(11, b"commit-fail".to_vec());
+        cache.add(key, StorageItem::from_bytes(vec![4, 2]));
+
+        let result = cache.try_commit();
+
+        assert!(
+            matches!(result, Err(DataCacheError::CommitFailed(msg)) if msg.contains("injected failure"))
+        );
+        assert_eq!(cache.data_cache.tracked_items().len(), 1);
     }
 
     #[test]

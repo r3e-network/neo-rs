@@ -250,6 +250,21 @@ mod tests {
     }
 
     #[test]
+    fn protocol_enum_guard_preserves_unknown_message_command_bytes() {
+        let command = MessageCommand::from_byte(0x99);
+        assert_eq!(command, MessageCommand::Unknown(0x99));
+        assert_eq!(command.to_byte(), 0x99);
+        assert_eq!(command.as_byte(), 0x99);
+        assert_eq!(command.as_str(), "unknown");
+        assert!(!command.is_known());
+
+        let serialized = serde_json::to_string(&command).unwrap();
+        assert_eq!(serialized, "153");
+        let deserialized: MessageCommand = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized, command);
+    }
+
+    #[test]
     fn test_message_command_as_str() {
         assert_eq!(MessageCommand::Version.as_str(), "version");
         assert_eq!(MessageCommand::Transaction.as_str(), "tx");

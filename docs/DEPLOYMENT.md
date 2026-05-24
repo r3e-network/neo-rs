@@ -93,6 +93,7 @@ rustc --version  # Should be >= 1.75.0
 | `docker-compose` | Multi-container orchestration | Included with Docker Desktop |
 | `systemd` | Service management | Pre-installed on most Linux distros |
 | `prometheus` | Metrics collection | See [MONITORING.md](./MONITORING.md) |
+| `libudev-dev` / `systemd-devel` | Ledger hardware wallet HSM support | Required when building with `hsm-ledger` on Linux |
 
 ---
 
@@ -107,13 +108,16 @@ For production deployments, always use the release profile:
 git clone https://github.com/r3e-network/neo-rs.git
 cd neo-rs
 
-# Build all workspace crates in release mode
-cargo build --release --workspace
+# Build the default node crate set in release mode
+cargo build --release
 
 # Binaries will be available at:
 # - target/release/neo-node  (node daemon)
 # - target/release/neo-cli   (CLI client)
 ```
+
+Use `cargo build --release --workspace` for explicit full-workspace validation,
+including optional TEE/HSM, telemetry, integration test, and benchmark crates.
 
 ### Production Profile
 

@@ -1,5 +1,6 @@
 #![cfg(feature = "runtime")]
 
+use neo_core::error::{CoreError, CoreResult};
 use neo_core::i_event_handlers::i_committing_handler::ICommittingHandler;
 use neo_core::ledger::block::Block as LedgerBlock;
 use neo_core::ledger::blockchain_application_executed::ApplicationExecuted;
@@ -17,6 +18,8 @@ struct FastSyncCaptureHandler {
     observed_len: Arc<AtomicUsize>,
 }
 
+struct FailingCommittingHandler;
+
 impl ICommittingHandler for FastSyncCaptureHandler {
     fn run_during_fast_sync(&self) -> bool {
         true
@@ -31,6 +34,27 @@ impl ICommittingHandler for FastSyncCaptureHandler {
     ) {
         self.observed_len
             .store(application_executed_list.len(), Ordering::Relaxed);
+    }
+}
+
+impl ICommittingHandler for FailingCommittingHandler {
+    fn blockchain_committing_handler(
+        &self,
+        _system: &dyn std::any::Any,
+        _block: &LedgerBlock,
+        _snapshot: &DataCache,
+        _application_executed_list: &[ApplicationExecuted],
+    ) {
+    }
+
+    fn try_blockchain_committing_handler(
+        &self,
+        _system: &dyn std::any::Any,
+        _block: &LedgerBlock,
+        _snapshot: &DataCache,
+        _application_executed_list: &[ApplicationExecuted],
+    ) -> CoreResult<()> {
+        Err(CoreError::system("injected committing failure"))
     }
 }
 
@@ -63,4 +87,33 @@ async fn fast_sync_opt_in_handler_receives_application_executed_data() {
         observed_len.load(Ordering::Relaxed) > 0,
         "fast-sync handlers that opt in should still receive application execution data"
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn persist_block_stops_before_commit_when_committing_handler_fails() {
+    let system = NeoSystem::new(ProtocolSettings::mainnet(), None, None).expect("system");
+    system
+        .register_committing_handler(Arc::new(FailingCommittingHandler))
+        .expect("register handler");
+
+    let mut block = PayloadBlock::new();
+    let mut genesis = system.genesis_block().as_ref().clone();
+    let prev_hash = genesis.hash();
+    let mut header = Header::new();
+    header.set_index(1);
+    header.set_prev_hash(prev_hash);
+    header.set_merkle_root(UInt256::zero());
+    header.set_next_consensus(UInt160::zero());
+    header.set_timestamp(1);
+    header.witness = Witness::new();
+    block.header = header;
+    block.transactions = Vec::new();
+
+    let err = match system.persist_block(block) {
+        Ok(_) => panic!("committing handler should block persistence"),
+        Err(err) => err,
+    };
+
+    assert!(err.to_string().contains("injected committing failure"));
+    assert_eq!(system.ledger_context().current_height(), 0);
 }

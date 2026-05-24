@@ -6,7 +6,7 @@ use crate::neo_io::{
 };
 use crate::neo_vm::StackItem;
 use crate::smart_contract::i_interoperable::IInteroperable;
-use crate::UInt256;
+use crate::{CoreResult, UInt256};
 use neo_vm_rs::StackValue;
 use num_bigint::BigInt;
 
@@ -25,15 +25,30 @@ impl TrimmedBlock {
 
     /// Creates a trimmed block from a full block.
     pub fn from_block(block: &Block) -> Self {
-        Self::create(
-            block.header.clone(),
-            block.transactions.iter().map(|tx| tx.hash()).collect(),
-        )
+        Self::try_from_block(block)
+            .expect("block transactions must be serializable to create a trimmed block")
+    }
+
+    /// Creates a trimmed block from a full block, failing closed if any
+    /// transaction hash cannot be computed.
+    pub fn try_from_block(block: &Block) -> CoreResult<Self> {
+        let hashes = block
+            .transactions
+            .iter()
+            .map(|tx| tx.try_hash())
+            .collect::<CoreResult<Vec<_>>>()?;
+        Ok(Self::create(block.header.clone(), hashes))
     }
 
     /// Returns the block hash.
     pub fn hash(&self) -> UInt256 {
         self.header.hash()
+    }
+
+    /// Returns the block hash, failing closed if the header cannot be
+    /// serialized.
+    pub fn try_hash(&self) -> CoreResult<UInt256> {
+        self.header.try_hash()
     }
 
     /// Returns the block index.
@@ -119,8 +134,10 @@ impl IInteroperable for TrimmedBlock {
 mod tests {
     use super::*;
     use crate::ledger::BlockHeader;
+    use crate::network::p2p::payloads::Transaction;
     use crate::smart_contract::IInteroperable;
     use crate::{UInt160, UInt256, Witness};
+    use neo_vm_rs::OpCode;
     use neo_vm_rs::StackValue;
 
     fn sample_block() -> TrimmedBlock {
@@ -143,6 +160,12 @@ mod tests {
                 UInt256::from_bytes(&[5u8; 32]).unwrap(),
             ],
         )
+    }
+
+    fn transaction_with_script(script: Vec<u8>) -> Transaction {
+        let mut tx = Transaction::new();
+        tx.set_script(script);
+        tx
     }
 
     #[test]
@@ -172,5 +195,25 @@ mod tests {
         let expected = StackItem::try_from(block.to_stack_value()).unwrap();
 
         assert_eq!(block.to_stack_item().unwrap(), expected);
+    }
+
+    #[test]
+    fn try_from_block_rejects_unserializable_transaction_hash() {
+        let block = Block::new(
+            BlockHeader::default(),
+            vec![transaction_with_script(vec![
+                OpCode::NOP.byte();
+                u16::MAX as usize + 1
+            ])],
+        );
+
+        assert!(TrimmedBlock::try_from_block(&block).is_err());
+    }
+
+    #[test]
+    fn try_hash_matches_legacy_hash_for_valid_trimmed_block() {
+        let block = sample_block();
+
+        assert_eq!(block.try_hash().expect("try hash"), block.hash());
     }
 }

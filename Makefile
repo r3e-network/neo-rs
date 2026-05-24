@@ -30,6 +30,7 @@ help:
 	@echo "$(YELLOW)Building:$(NC)"
 	@echo "  make build          - Build the node in debug mode"
 	@echo "  make build-release  - Build the node in release mode"
+	@echo "  make build-all      - Build every workspace crate"
 	@echo "  make clean          - Clean build artifacts"
 	@echo ""
 	@echo "$(YELLOW)Running:$(NC)"
@@ -81,14 +82,20 @@ help:
 .PHONY: build
 build:
 	@echo "$(GREEN)Building Neo node in debug mode...$(NC)"
-	$(CARGO) build --workspace
+	$(CARGO) build
 	@echo "$(GREEN)Build complete!$(NC)"
 
 .PHONY: build-release
 build-release:
 	@echo "$(GREEN)Building Neo node in release mode...$(NC)"
-	$(CARGO) build --release --workspace
+	$(CARGO) build --release
 	@echo "$(GREEN)Release build complete!$(NC)"
+
+.PHONY: build-all
+build-all:
+	@echo "$(GREEN)Building all workspace crates...$(NC)"
+	$(CARGO) build --workspace
+	@echo "$(GREEN)Workspace build complete!$(NC)"
 
 .PHONY: clean
 clean:

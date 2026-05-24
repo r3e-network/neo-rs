@@ -10,6 +10,7 @@
 // modifications are permitted.
 
 use crate::{
+    error::CoreResult,
     ledger::{block::Block, blockchain_application_executed::ApplicationExecuted},
     persistence::data_cache::DataCache,
 };
@@ -36,4 +37,20 @@ pub trait ICommittingHandler {
         snapshot: &DataCache,
         application_executed_list: &[ApplicationExecuted],
     );
+
+    /// Fallible committing hook used by protocol-critical handlers.
+    ///
+    /// Existing best-effort plugins can keep implementing
+    /// `blockchain_committing_handler`; state-critical handlers override this
+    /// method so persistence can abort before the block is committed.
+    fn try_blockchain_committing_handler(
+        &self,
+        system: &dyn Any,
+        block: &Block,
+        snapshot: &DataCache,
+        application_executed_list: &[ApplicationExecuted],
+    ) -> CoreResult<()> {
+        self.blockchain_committing_handler(system, block, snapshot, application_executed_list);
+        Ok(())
+    }
 }

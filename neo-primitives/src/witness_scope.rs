@@ -366,6 +366,19 @@ mod tests {
     }
 
     #[test]
+    fn protocol_enum_guard_rejects_invalid_witness_scope_bytes() {
+        let combined = WitnessScope::CALLED_BY_ENTRY | WitnessScope::CUSTOM_CONTRACTS;
+        assert_eq!(WitnessScope::from_byte(0x11), Some(combined));
+        assert_eq!(WitnessScope::try_from(0x11), Ok(combined));
+        assert_eq!(WitnessScope::from_byte(0x02), None);
+        assert_eq!(WitnessScope::from_byte(0x81), None);
+        assert_eq!(
+            WitnessScope::try_from(0x81),
+            Err(InvalidWitnessScopeError(0x81))
+        );
+    }
+
+    #[test]
     fn test_witness_scope_is_valid() {
         assert!(WitnessScope::NONE.is_valid());
         assert!(WitnessScope::CALLED_BY_ENTRY.is_valid());

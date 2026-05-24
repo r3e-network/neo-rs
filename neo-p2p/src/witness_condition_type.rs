@@ -131,6 +131,16 @@ mod tests {
     }
 
     #[test]
+    fn protocol_enum_guard_rejects_unknown_witness_condition_type_bytes() {
+        assert_eq!(WitnessConditionType::from_byte(0x04), None);
+        assert_eq!(WitnessConditionType::from_byte(0x1a), None);
+        assert_eq!(WitnessConditionType::from_byte(0xff), None);
+        assert!(serde_json::from_str::<WitnessConditionType>("4").is_err());
+        assert!(serde_json::from_str::<WitnessConditionType>("26").is_err());
+        assert!(serde_json::from_str::<WitnessConditionType>("255").is_err());
+    }
+
+    #[test]
     fn test_witness_condition_type_roundtrip() {
         for cond_type in [
             WitnessConditionType::Boolean,

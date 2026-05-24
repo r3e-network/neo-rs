@@ -70,8 +70,19 @@ impl Blockchain {
 
     pub(super) async fn handle_persist_completed(&self, persist: PersistCompleted) {
         let PersistCompleted { block } = persist;
-        let hash = block.header.clone().hash();
         let index = block.index();
+        let hash = match Self::try_block_hash(block.as_ref()) {
+            Ok(hash) => hash,
+            Err(error) => {
+                tracing::warn!(
+                    target: "neo",
+                    error = %error,
+                    index,
+                    "persist completed block hash computation failed"
+                );
+                return;
+            }
+        };
         let tx_count = block.transactions.len();
         tracing::debug!(
             target: "neo",
@@ -90,10 +101,27 @@ impl Blockchain {
             }
         }
 
-        self.ledger.insert_block((*block).clone());
+        if let Err(error) = self.ledger.insert_block((*block).clone()) {
+            tracing::warn!(
+                target: "neo",
+                %error,
+                index,
+                "failed to insert persisted block into ledger cache"
+            );
+        }
 
         for transaction in &block.transactions {
-            let tx_hash = transaction.hash();
+            let tx_hash = match transaction.try_hash() {
+                Ok(hash) => hash,
+                Err(error) => {
+                    tracing::warn!(
+                        target: "neo",
+                        error = %error,
+                        "transaction hash computation failed while clearing ledger cache after persist"
+                    );
+                    continue;
+                }
+            };
             self.ledger.remove_transaction(&tx_hash);
         }
 
@@ -260,7 +288,17 @@ impl Blockchain {
                     continue;
                 }
 
-                let tx_hash = tx.hash();
+                let tx_hash = match tx.try_hash() {
+                    Ok(hash) => hash,
+                    Err(error) => {
+                        tracing::warn!(
+                            target: "neo",
+                            error = %error,
+                            "transaction hash computation failed while filling memory pool"
+                        );
+                        continue;
+                    }
+                };
                 let _ = pool.remove_unverified(&tx_hash);
 
                 let _ = pool.try_add(tx, snapshot, &settings);
@@ -364,8 +402,19 @@ impl Blockchain {
         _pre_verified: bool,
         ctx: &ActorContext,
     ) -> ActorResult {
-        let hash = block.header.clone().hash();
         let index = block.index();
+        let hash = match Self::try_block_hash(block.as_ref()) {
+            Ok(hash) => hash,
+            Err(error) => {
+                tracing::warn!(
+                    target: "neo",
+                    error = %error,
+                    index,
+                    "block hash computation failed, rejecting inventory"
+                );
+                return Ok(());
+            }
+        };
 
         let result = self.on_new_block(Arc::clone(&block), true).await;
 
@@ -405,12 +454,21 @@ impl Blockchain {
 
     pub(super) async fn handle_extensible_inventory(
         &self,
-        payload: ExtensiblePayload,
+        mut payload: ExtensiblePayload,
         relay: bool,
         ctx: &ActorContext,
     ) -> ActorResult {
-        let mut payload_for_hash = payload.clone();
-        let hash = payload_for_hash.hash();
+        let hash = match payload.try_hash() {
+            Ok(hash) => hash,
+            Err(error) => {
+                tracing::warn!(
+                    target: "neo",
+                    error = %error,
+                    "extensible payload hash computation failed, rejecting inventory"
+                );
+                return Ok(());
+            }
+        };
 
         let result = self.on_new_extensible(payload.clone()).await;
 
@@ -484,7 +542,17 @@ impl Blockchain {
             task.result
         };
 
-        let tx_hash = task.transaction.hash();
+        let tx_hash = match task.transaction.try_hash() {
+            Ok(hash) => hash,
+            Err(error) => {
+                tracing::warn!(
+                    target: "neo",
+                    error = %error,
+                    "transaction hash computation failed after preverification"
+                );
+                return;
+            }
+        };
 
         self.publish_inventory_relay_result(
             context,

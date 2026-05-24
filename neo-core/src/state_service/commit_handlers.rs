@@ -10,6 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
+use crate::error::{CoreError, CoreResult};
 use crate::i_event_handlers::{ICommittedHandler, ICommittingHandler};
 use crate::ledger::{block::Block, blockchain_application_executed::ApplicationExecuted};
 use crate::persistence::data_cache::DataCache;
@@ -23,7 +24,7 @@ pub struct StateServiceCommitHandlers {
     exception_policy: UnhandledExceptionPolicy,
     disabled: AtomicBool,
     /// Handle to the background thread computing the previous block's MPT state root.
-    pending_task: parking_lot::Mutex<Option<JoinHandle<()>>>,
+    pending_task: parking_lot::Mutex<Option<JoinHandle<Result<(), String>>>>,
 }
 
 impl StateServiceCommitHandlers {
@@ -55,12 +56,30 @@ impl StateServiceCommitHandlers {
         }
     }
 
+    fn join_pending(&self, phase: &'static str) -> CoreResult<()> {
+        let Some(handle) = self.pending_task.lock().take() else {
+            return Ok(());
+        };
+
+        match handle.join() {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(err)) => Err(CoreError::system(format!(
+                "state service commit handler failed during {phase}: {err}"
+            ))),
+            Err(payload) => {
+                let message = panic_message(&payload);
+                self.handle_panic(payload, phase);
+                Err(CoreError::system(format!(
+                    "state service commit handler panicked during {phase}: {message}"
+                )))
+            }
+        }
+    }
+
     /// Blocks until any pending background MPT computation completes.
     #[allow(dead_code)]
-    pub fn flush(&self) {
-        if let Some(handle) = self.pending_task.lock().take() {
-            let _ = handle.join();
-        }
+    pub fn flush(&self) -> CoreResult<()> {
+        self.join_pending("flush")
     }
 }
 
@@ -79,25 +98,40 @@ impl ICommittingHandler for StateServiceCommitHandlers {
 
     fn blockchain_committing_handler(
         &self,
+        system: &dyn Any,
+        block: &Block,
+        snapshot: &DataCache,
+        application_executed_list: &[ApplicationExecuted],
+    ) {
+        if let Err(err) = self.try_blockchain_committing_handler(
+            system,
+            block,
+            snapshot,
+            application_executed_list,
+        ) {
+            error!(
+                target: "neo::state_service",
+                error = %err,
+                "state service committing handler failed"
+            );
+        }
+    }
+
+    fn try_blockchain_committing_handler(
+        &self,
         _system: &dyn Any,
         block: &Block,
         snapshot: &DataCache,
         _application_executed_list: &[ApplicationExecuted],
-    ) {
+    ) -> CoreResult<()> {
         if self.disabled.load(Ordering::Relaxed) {
-            return;
+            return Err(CoreError::system(
+                "state service committing handler is disabled after a previous failure",
+            ));
         }
 
         // Wait for previous block's MPT to finish before starting this one.
-        if let Some(handle) = self.pending_task.lock().take() {
-            if handle.join().is_err() {
-                self.handle_panic(
-                    Box::new("background MPT thread panicked".to_string()),
-                    "committing (join)",
-                );
-                return;
-            }
-        }
+        self.join_pending("committing previous block")?;
 
         // Collect tracked items NOW while snapshot is still alive.
         let height = block.index();
@@ -111,15 +145,18 @@ impl ICommittingHandler for StateServiceCommitHandlers {
         let state_store = Arc::clone(&self.state_store);
         let disabled = self.disabled.load(Ordering::Relaxed);
         if disabled {
-            return;
+            return Err(CoreError::system(
+                "state service committing handler is disabled after a previous failure",
+            ));
         }
 
         let handle = std::thread::spawn(move || {
-            state_store.update_local_state_root_snapshot(height, changes.into_iter());
-            state_store.update_local_state_root(height);
+            state_store.update_local_state_root_snapshot(height, changes.into_iter())?;
+            state_store.update_local_state_root(height)
         });
 
         *self.pending_task.lock() = Some(handle);
+        self.join_pending("committing current block")
     }
 }
 
@@ -137,5 +174,82 @@ fn panic_message(payload: &Box<dyn Any + Send>) -> String {
         message.clone()
     } else {
         "unknown panic payload".to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ledger::block_header::BlockHeader;
+    use crate::smart_contract::{StorageItem, StorageKey};
+    use crate::state_service::state_store::{StateServiceSettings, StateStoreBackend};
+    use crate::{UInt160, UInt256, Witness};
+
+    struct FailingStateStoreBackend;
+
+    impl StateStoreBackend for FailingStateStoreBackend {
+        fn try_get(&self, _key: &[u8]) -> Option<Vec<u8>> {
+            None
+        }
+
+        fn put(&self, _key: Vec<u8>, _value: Vec<u8>) {}
+
+        fn delete(&self, _key: &[u8]) {}
+
+        fn commit(&self) -> Result<(), String> {
+            Err("injected state root commit failure".to_string())
+        }
+    }
+
+    fn test_block(index: u32) -> Block {
+        Block::new(
+            BlockHeader::new(
+                0,
+                UInt256::zero(),
+                UInt256::zero(),
+                index as u64,
+                index as u64,
+                index,
+                0,
+                UInt160::zero(),
+                vec![Witness::new()],
+            ),
+            Vec::new(),
+        )
+    }
+
+    #[test]
+    fn try_committing_handler_returns_err_when_current_state_root_commit_fails() {
+        let state_store = Arc::new(StateStore::new(
+            Arc::new(FailingStateStoreBackend),
+            StateServiceSettings::default(),
+        ));
+        let handler = StateServiceCommitHandlers::new(state_store);
+        let snapshot = DataCache::new(false);
+
+        let err = handler
+            .try_blockchain_committing_handler(&(), &test_block(1), &snapshot, &[])
+            .expect_err("state root commit failure should stop block commit");
+
+        assert!(err
+            .to_string()
+            .contains("injected state root commit failure"));
+    }
+
+    #[test]
+    fn try_committing_handler_stages_storage_changes_before_commit_gate() {
+        let state_store = Arc::new(StateStore::new_in_memory());
+        let handler = StateServiceCommitHandlers::new(Arc::clone(&state_store));
+        let snapshot = DataCache::new(false);
+        snapshot.add(
+            StorageKey::new(123, b"state-key".to_vec()),
+            StorageItem::from_bytes(b"state-value".to_vec()),
+        );
+
+        handler
+            .try_blockchain_committing_handler(&(), &test_block(1), &snapshot, &[])
+            .expect("state root commit");
+
+        assert_eq!(state_store.local_root_index(), Some(1));
     }
 }

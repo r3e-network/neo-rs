@@ -10,8 +10,20 @@ impl Blockchain {
         tx: &Transaction,
         snapshot: &StoreCache,
     ) -> bool {
+        let hash = match tx.try_hash() {
+            Ok(hash) => hash,
+            Err(error) => {
+                tracing::warn!(
+                    target: "neo",
+                    error = %error,
+                    "transaction hash computation failed during on-chain lookup"
+                );
+                return true;
+            }
+        };
+
         LedgerContract::new()
-            .contains_transaction(snapshot, &tx.hash())
+            .contains_transaction(snapshot, &hash)
             .unwrap_or(false)
     }
 
@@ -26,8 +38,20 @@ impl Blockchain {
             return false;
         }
 
+        let hash = match tx.try_hash() {
+            Ok(hash) => hash,
+            Err(error) => {
+                tracing::warn!(
+                    target: "neo",
+                    error = %error,
+                    "transaction hash computation failed during conflict lookup"
+                );
+                return true;
+            }
+        };
+
         LedgerContract::new()
-            .contains_conflict_hash(snapshot, &tx.hash(), &signers, max_traceable_blocks)
+            .contains_conflict_hash(snapshot, &hash, &signers, max_traceable_blocks)
             .unwrap_or(false)
     }
 
@@ -36,7 +60,17 @@ impl Blockchain {
             return VerifyResult::Invalid;
         };
 
-        let hash = transaction.hash();
+        let hash = match transaction.try_hash() {
+            Ok(hash) => hash,
+            Err(error) => {
+                tracing::warn!(
+                    target: "neo",
+                    error = %error,
+                    "transaction hash computation failed before mempool admission"
+                );
+                return VerifyResult::Invalid;
+            }
+        };
 
         let memory_pool = context.memory_pool_handle();
         if memory_pool.lock().contains_key(&hash) {

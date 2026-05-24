@@ -126,6 +126,23 @@ mod tests {
     }
 
     #[test]
+    fn protocol_enum_guard_preserves_unknown_message_flag_bits() {
+        let unknown = MessageFlags::from_byte(0x80);
+        assert_eq!(unknown.to_byte(), 0x80);
+        assert!(!unknown.is_compressed());
+        assert_eq!(unknown.to_string(), "Flags(0x80)");
+
+        let combined = MessageFlags::from_byte(0x81);
+        assert_eq!(combined.to_byte(), 0x81);
+        assert!(combined.is_compressed());
+
+        let serialized = serde_json::to_string(&combined).unwrap();
+        assert_eq!(serialized, "129");
+        let deserialized: MessageFlags = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.to_byte(), 0x81);
+    }
+
+    #[test]
     fn test_message_flags_set_compressed() {
         let mut flags = MessageFlags::NONE;
         assert!(!flags.is_compressed());

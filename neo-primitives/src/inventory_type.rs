@@ -87,6 +87,13 @@ mod tests {
     }
 
     #[test]
+    fn protocol_enum_guard_rejects_unknown_inventory_bytes() {
+        assert_eq!(InventoryType::from_byte(0x2a), None);
+        assert_eq!(InventoryType::from_byte(0x2f), None);
+        assert_eq!(InventoryType::from_byte(0xff), None);
+    }
+
+    #[test]
     fn test_inventory_type_display() {
         assert_eq!(InventoryType::Transaction.to_string(), "TX");
         assert_eq!(InventoryType::Block.to_string(), "Block");

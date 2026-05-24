@@ -3,7 +3,7 @@
 use crate::network::p2p::payloads::{
     block::Block, extensible_payload::ExtensiblePayload, header::Header, transaction::Transaction,
 };
-use crate::UInt256;
+use crate::{CoreResult, UInt256};
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -35,10 +35,10 @@ impl LedgerContext {
     }
 
     /// Inserts a transaction into the mempool cache and returns its hash.
-    pub fn insert_transaction(&self, transaction: Transaction) -> UInt256 {
-        let hash = transaction.hash();
+    pub fn insert_transaction(&self, transaction: Transaction) -> CoreResult<UInt256> {
+        let hash = transaction.try_hash()?;
         self.transactions_by_hash.write().insert(hash, transaction);
-        hash
+        Ok(hash)
     }
 
     /// Removes a transaction from the mempool cache if present.
@@ -52,10 +52,10 @@ impl LedgerContext {
     }
 
     /// Records a block and its header for quick access by hash or index.
-    pub fn insert_block(&self, mut block: Block) -> UInt256 {
+    pub fn insert_block(&self, mut block: Block) -> CoreResult<UInt256> {
         let header = block.header.clone();
         let index = header.index() as usize;
-        let hash = block.hash();
+        let hash = block.try_hash()?;
 
         self.blocks_by_hash.write().insert(hash, block);
 
@@ -77,7 +77,7 @@ impl LedgerContext {
 
         self.best_height.fetch_max(index as u32, Ordering::Relaxed);
         self.best_header.fetch_max(index as u32, Ordering::Relaxed);
-        hash
+        Ok(hash)
     }
 
     /// Retrieves a cached block by hash.
@@ -95,10 +95,10 @@ impl LedgerContext {
     }
 
     /// Stores an extensible payload in the cache.
-    pub fn insert_extensible(&self, mut payload: ExtensiblePayload) -> UInt256 {
-        let hash = payload.hash();
+    pub fn insert_extensible(&self, mut payload: ExtensiblePayload) -> crate::CoreResult<UInt256> {
+        let hash = payload.try_hash()?;
         self.extensibles_by_hash.write().insert(hash, payload);
-        hash
+        Ok(hash)
     }
 
     /// Tries to retrieve an extensible payload by hash.
@@ -166,7 +166,25 @@ impl LedgerContext {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::network::p2p::payloads::signer::Signer;
+    use crate::network::p2p::payloads::witness::Witness;
+    use crate::{UInt160, WitnessScope};
+    use neo_vm_rs::OpCode;
     use std::sync::atomic::Ordering;
+
+    fn transaction_with_script(script: Vec<u8>) -> Transaction {
+        let mut tx = Transaction::new();
+        tx.set_version(0);
+        tx.set_nonce(0x0102_0304);
+        tx.set_system_fee(1);
+        tx.set_network_fee(1);
+        tx.set_valid_until_block(42);
+        tx.set_signers(vec![Signer::new(UInt160::zero(), WitnessScope::NONE)]);
+        tx.set_attributes(Vec::new());
+        tx.set_script(script);
+        tx.set_witnesses(vec![Witness::empty()]);
+        tx
+    }
 
     #[test]
     fn detects_future_headers() {
@@ -183,5 +201,27 @@ mod tests {
 
         context.best_header.store(2, Ordering::Relaxed);
         assert!(context.has_future_headers());
+    }
+
+    #[test]
+    fn insert_transaction_rejects_unserializable_hash_without_zero_cache() {
+        let context = LedgerContext::default();
+        let tx = transaction_with_script(vec![OpCode::NOP.byte(); u16::MAX as usize + 1]);
+
+        assert!(context.insert_transaction(tx).is_err());
+        assert!(context.transactions_by_hash.read().is_empty());
+        assert!(context.get_transaction(&UInt256::zero()).is_none());
+    }
+
+    #[test]
+    fn insert_transaction_caches_valid_hash() {
+        let context = LedgerContext::default();
+        let tx = transaction_with_script(vec![OpCode::PUSH1.byte()]);
+        let expected = tx.try_hash().expect("hash");
+
+        let hash = context.insert_transaction(tx).expect("insert transaction");
+
+        assert_eq!(hash, expected);
+        assert!(context.get_transaction(&expected).is_some());
     }
 }

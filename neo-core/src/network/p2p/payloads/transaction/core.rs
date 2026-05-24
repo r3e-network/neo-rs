@@ -167,22 +167,40 @@ impl Transaction {
 
     /// Returns the unsigned serialization used for hashing.
     pub fn get_hash_data(&self) -> Vec<u8> {
-        let mut writer = BinaryWriter::new();
-        if let Err(e) = Self::serialize_unsigned(self, &mut writer) {
-            tracing::error!("Failed to serialize transaction unsigned data: {:?}", e);
-            return Vec::new();
+        match self.try_get_hash_data() {
+            Ok(data) => data,
+            Err(e) => {
+                tracing::error!("Failed to serialize transaction unsigned data: {:?}", e);
+                Vec::new()
+            }
         }
-        writer.into_bytes()
+    }
+
+    /// Returns the unsigned serialization used for hashing, or an error if the
+    /// transaction cannot be represented on the wire.
+    pub fn try_get_hash_data(&self) -> CoreResult<Vec<u8>> {
+        let mut writer = BinaryWriter::new();
+        Self::serialize_unsigned(self, &mut writer)?;
+        Ok(writer.into_bytes())
     }
 
     /// Serializes the transaction into bytes.
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut writer = BinaryWriter::new();
-        if let Err(e) = <Self as Serializable>::serialize(self, &mut writer) {
-            tracing::error!("Transaction serialization failed: {:?}", e);
-            return Vec::new();
+        match self.try_to_bytes() {
+            Ok(data) => data,
+            Err(e) => {
+                tracing::error!("Transaction serialization failed: {:?}", e);
+                Vec::new()
+            }
         }
-        writer.into_bytes()
+    }
+
+    /// Serializes the transaction into bytes, returning an error on invalid
+    /// wire representation instead of silently returning an empty buffer.
+    pub fn try_to_bytes(&self) -> CoreResult<Vec<u8>> {
+        let mut writer = BinaryWriter::new();
+        <Self as Serializable>::serialize(self, &mut writer)?;
+        Ok(writer.into_bytes())
     }
 
     /// Deserializes a transaction from bytes.
@@ -193,21 +211,28 @@ impl Transaction {
 
     /// Gets the hash of the transaction.
     pub fn hash(&self) -> UInt256 {
+        match self.try_hash() {
+            Ok(hash) => hash,
+            Err(e) => {
+                tracing::error!("Transaction serialization failed: {:?}", e);
+                UInt256::zero()
+            }
+        }
+    }
+
+    /// Gets the hash of the transaction, failing closed if unsigned
+    /// serialization fails.
+    pub fn try_hash(&self) -> CoreResult<UInt256> {
         let mut hash_guard = self._hash.lock();
         if let Some(hash) = *hash_guard {
-            return hash;
+            return Ok(hash);
         }
 
-        // Calculate hash from serialized unsigned data
         let mut writer = BinaryWriter::new();
-        // Serialization of a valid transaction should never fail
-        if let Err(e) = self.serialize_unsigned(&mut writer) {
-            tracing::error!("Transaction serialization failed: {:?}", e);
-            return UInt256::zero();
-        }
+        self.serialize_unsigned(&mut writer)?;
         let hash = UInt256::from(Crypto::sha256(&writer.into_bytes()));
         *hash_guard = Some(hash);
-        hash
+        Ok(hash)
     }
 
     /// Gets the sender (first signer) of the transaction.
@@ -245,5 +270,54 @@ impl Transaction {
             .iter()
             .filter(|attr| attr.get_type() == attr_type)
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::WitnessScope;
+
+    fn transaction_with_script(script: Vec<u8>) -> Transaction {
+        let mut tx = Transaction::new();
+        tx.set_version(0);
+        tx.set_nonce(0x0102_0304);
+        tx.set_system_fee(1);
+        tx.set_network_fee(1);
+        tx.set_valid_until_block(42);
+        tx.set_signers(vec![Signer::new(UInt160::zero(), WitnessScope::NONE)]);
+        tx.set_attributes(Vec::new());
+        tx.set_script(script);
+        tx.set_witnesses(vec![Witness::empty()]);
+        tx
+    }
+
+    #[test]
+    fn try_get_hash_data_rejects_oversized_script() {
+        let tx = transaction_with_script(vec![OpCode::NOP.byte(); u16::MAX as usize + 1]);
+
+        assert!(tx.try_get_hash_data().is_err());
+    }
+
+    #[test]
+    fn try_to_bytes_rejects_oversized_script() {
+        let tx = transaction_with_script(vec![OpCode::NOP.byte(); u16::MAX as usize + 1]);
+
+        assert!(tx.try_to_bytes().is_err());
+    }
+
+    #[test]
+    fn try_hash_rejects_oversized_script_without_caching_zero_hash() {
+        let tx = transaction_with_script(vec![OpCode::NOP.byte(); u16::MAX as usize + 1]);
+
+        assert!(tx.try_hash().is_err());
+        assert!(!matches!(*tx._hash.lock(), Some(hash) if hash == UInt256::zero()));
+    }
+
+    #[test]
+    fn verifiable_hash_rejects_oversized_script() {
+        let tx = transaction_with_script(vec![OpCode::NOP.byte(); u16::MAX as usize + 1]);
+
+        assert!(<Transaction as crate::IVerifiable>::hash(&tx).is_err());
     }
 }

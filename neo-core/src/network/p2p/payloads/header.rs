@@ -23,7 +23,7 @@ use crate::smart_contract::trigger_type::TriggerType;
 use crate::smart_contract::{ContractBasicMethod, ContractParameterType};
 use crate::validation::{
     validate_primary_index, validate_timestamp_bounds, validate_timestamp_progression,
-    validate_witness_scripts,
+    validate_witness_scripts, BlockValidationError,
 };
 use crate::{UInt160, UInt256};
 use serde::{Deserialize, Serialize};
@@ -50,6 +50,31 @@ pub struct Header {
 }
 
 const HEADER_VERIFY_GAS: i64 = 300_000_000;
+
+#[derive(Debug)]
+enum HeaderSelfValidationFailure {
+    Timestamp(BlockValidationError),
+    PrimaryIndex(BlockValidationError),
+    WitnessScripts(BlockValidationError),
+}
+
+impl HeaderSelfValidationFailure {
+    fn name(&self) -> &'static str {
+        match self {
+            Self::Timestamp(_) => "timestamp_bounds",
+            Self::PrimaryIndex(_) => "primary_index",
+            Self::WitnessScripts(_) => "witness_scripts",
+        }
+    }
+
+    fn error(&self) -> &BlockValidationError {
+        match self {
+            Self::Timestamp(error) | Self::PrimaryIndex(error) | Self::WitnessScripts(error) => {
+                error
+            }
+        }
+    }
+}
 
 impl Header {
     /// Creates a new header.
@@ -158,22 +183,46 @@ impl Header {
 
     /// Gets the hash of the header.
     pub fn hash(&mut self) -> UInt256 {
+        match self.try_hash() {
+            Ok(hash) => hash,
+            Err(err) => {
+                tracing::error!("Header unsigned serialization failed: {err}");
+                UInt256::zero()
+            }
+        }
+    }
+
+    /// Gets the hash of the header, failing closed if unsigned serialization
+    /// fails.
+    pub fn try_hash(&mut self) -> CoreResult<UInt256> {
         if let Some(hash) = self._hash {
-            return hash;
+            return Ok(hash);
         }
 
-        // Calculate hash from serialized data
-        let mut writer = BinaryWriter::new();
-        if let Err(err) = self.serialize_unsigned(&mut writer) {
-            tracing::error!("Header unsigned serialization failed: {err}");
-            let hash = UInt256::zero();
-            self._hash = Some(hash);
-            return hash;
-        }
+        let hash_data = self.try_get_hash_data()?;
         // Neo N3 block hashes use single SHA-256 over the unsigned header payload.
-        let hash = UInt256::from(crate::cryptography::Crypto::sha256(&writer.into_bytes()));
+        let hash = UInt256::from(crate::cryptography::Crypto::sha256(&hash_data));
         self._hash = Some(hash);
-        hash
+        Ok(hash)
+    }
+
+    /// Returns the unsigned serialization used for hashing.
+    pub fn get_hash_data(&self) -> Vec<u8> {
+        match self.try_get_hash_data() {
+            Ok(data) => data,
+            Err(err) => {
+                tracing::error!("Failed to serialize header unsigned data: {err}");
+                Vec::new()
+            }
+        }
+    }
+
+    /// Returns the unsigned serialization used for hashing, or an error if the
+    /// header cannot be represented on the wire.
+    pub fn try_get_hash_data(&self) -> CoreResult<Vec<u8>> {
+        let mut writer = BinaryWriter::new();
+        self.serialize_unsigned(&mut writer)?;
+        Ok(writer.into_bytes())
     }
 
     /// Serialize without witness
@@ -230,6 +279,51 @@ impl Header {
         }
 
         Ok(())
+    }
+
+    fn validate_self(
+        &self,
+        settings: &ProtocolSettings,
+    ) -> Result<(), HeaderSelfValidationFailure> {
+        validate_timestamp_bounds(self.timestamp)
+            .map_err(HeaderSelfValidationFailure::Timestamp)?;
+        validate_primary_index(self.primary_index, settings.validators_count)
+            .map_err(HeaderSelfValidationFailure::PrimaryIndex)?;
+        validate_witness_scripts(self).map_err(HeaderSelfValidationFailure::WitnessScripts)?;
+        Ok(())
+    }
+
+    fn log_self_validation_failure(
+        &self,
+        settings: &ProtocolSettings,
+        failure: &HeaderSelfValidationFailure,
+        cached: bool,
+    ) {
+        let validation = failure.name();
+        let error = failure.error();
+        if cached {
+            tracing::warn!(
+                target: "neo",
+                index = self.index,
+                timestamp = self.timestamp,
+                primary_index = self.primary_index,
+                validators_count = settings.validators_count,
+                validation,
+                error = %error,
+                "Header self validation failed (cached)"
+            );
+        } else {
+            debug!(
+                target: "neo",
+                index = self.index,
+                timestamp = self.timestamp,
+                primary_index = self.primary_index,
+                validators_count = settings.validators_count,
+                validation,
+                error = %error,
+                "Header self validation failed"
+            );
+        }
     }
 
     fn verify_witness_against_hash(
@@ -468,39 +562,8 @@ impl Header {
     /// - Chain continuity checks
     /// - Witness verification against consensus
     pub fn verify(&self, settings: &ProtocolSettings, store_cache: &StoreCache) -> bool {
-        // Step 1: Validate timestamp bounds
-        if let Err(e) = validate_timestamp_bounds(self.timestamp) {
-            debug!(
-                target: "neo",
-                index = self.index,
-                timestamp = self.timestamp,
-                error = %e,
-                "Header timestamp bounds validation failed"
-            );
-            return false;
-        }
-
-        // Step 2: Validate primary index
-        if let Err(e) = validate_primary_index(self.primary_index, settings.validators_count) {
-            debug!(
-                target: "neo",
-                index = self.index,
-                primary_index = self.primary_index,
-                validators_count = settings.validators_count,
-                error = %e,
-                "Header primary index validation failed"
-            );
-            return false;
-        }
-
-        // Step 3: Validate witness scripts
-        if let Err(e) = validate_witness_scripts(self) {
-            debug!(
-                target: "neo",
-                index = self.index,
-                error = %e,
-                "Header witness script validation failed"
-            );
+        if let Err(error) = self.validate_self(settings) {
+            self.log_self_validation_failure(settings, &error, false);
             return false;
         }
 
@@ -530,7 +593,18 @@ impl Header {
         };
 
         let prev_index = prev_trimmed.index();
-        let prev_hash = prev_trimmed.hash();
+        let prev_hash = match prev_trimmed.try_hash() {
+            Ok(hash) => hash,
+            Err(error) => {
+                debug!(
+                    target: "neo",
+                    index = self.index,
+                    error = %error,
+                    "verify: failed to hash previous trimmed block"
+                );
+                return false;
+            }
+        };
         let prev_header = prev_trimmed.header.clone();
         let prev_timestamp = prev_header.timestamp;
         let script_hash = prev_header.next_consensus;
@@ -583,45 +657,25 @@ impl Header {
         store_cache: &StoreCache,
         header_cache: &HeaderCache,
     ) -> bool {
-        // Step 1: Validate timestamp bounds
-        if let Err(e) = validate_timestamp_bounds(self.timestamp) {
-            tracing::warn!(
-                target: "neo",
-                index = self.index,
-                timestamp = self.timestamp,
-                error = %e,
-                "Header timestamp bounds validation failed (cached)"
-            );
-            return false;
-        }
-
-        // Step 2: Validate primary index
-        if let Err(e) = validate_primary_index(self.primary_index, settings.validators_count) {
-            tracing::warn!(
-                target: "neo",
-                index = self.index,
-                primary_index = self.primary_index,
-                validators_count = settings.validators_count,
-                error = %e,
-                "Header primary index validation failed (cached)"
-            );
-            return false;
-        }
-
-        // Step 3: Validate witness scripts
-        if let Err(e) = validate_witness_scripts(self) {
-            tracing::warn!(
-                target: "neo",
-                index = self.index,
-                error = %e,
-                "Header witness script validation failed (cached)"
-            );
+        if let Err(error) = self.validate_self(settings) {
+            self.log_self_validation_failure(settings, &error, true);
             return false;
         }
 
         // Step 4: Use cache for previous header if available
         if let Some(mut prev_header) = header_cache.last() {
-            let prev_hash = prev_header.hash();
+            let prev_hash = match prev_header.try_hash() {
+                Ok(hash) => hash,
+                Err(error) => {
+                    tracing::warn!(
+                        target: "neo",
+                        index = self.index,
+                        error = %error,
+                        "failed to hash cached previous header"
+                    );
+                    return false;
+                }
+            };
             let prev_index = prev_header.index();
             let prev_timestamp = prev_header.timestamp();
             let script_hash = *prev_header.next_consensus();
@@ -802,16 +856,11 @@ impl crate::IVerifiable for Header {
 
     fn hash(&self) -> CoreResult<UInt256> {
         let mut clone = self.clone();
-        Ok(Header::hash(&mut clone))
+        clone.try_hash()
     }
 
     fn get_hash_data(&self) -> Vec<u8> {
-        let mut writer = BinaryWriter::new();
-        if let Err(err) = self.serialize_unsigned(&mut writer) {
-            tracing::error!("Failed to serialize header unsigned data: {err}");
-            return Vec::new();
-        }
-        writer.into_bytes()
+        Header::get_hash_data(self)
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -844,6 +893,54 @@ mod tests {
         let mut settings = ProtocolSettings::default_settings();
         settings.validators_count = 7;
         settings
+    }
+
+    fn sample_header_for_hashing() -> Header {
+        let mut header = Header::new();
+        header.set_version(0);
+        header.set_prev_hash(UInt256::from_bytes(&[1; 32]).expect("prev hash"));
+        header.set_merkle_root(UInt256::from_bytes(&[2; 32]).expect("merkle root"));
+        header.set_timestamp(1_700_000_000_000);
+        header.set_nonce(0x0102_0304_0506_0708);
+        header.set_index(42);
+        header.set_primary_index(1);
+        header.set_next_consensus(UInt160::from_bytes(&[3; 20]).expect("next consensus"));
+        header.witness = sample_witness();
+        header
+    }
+
+    #[test]
+    fn try_hash_matches_legacy_hash_for_valid_header() {
+        let mut header = sample_header_for_hashing();
+        let mut legacy_header = header.clone();
+
+        assert_eq!(header.try_hash().expect("try hash"), legacy_header.hash());
+    }
+
+    #[test]
+    fn try_get_hash_data_matches_serialize_unsigned() {
+        let header = sample_header_for_hashing();
+        let mut writer = BinaryWriter::new();
+        header
+            .serialize_unsigned(&mut writer)
+            .expect("serialize unsigned");
+
+        assert_eq!(
+            header.try_get_hash_data().expect("hash data"),
+            writer.into_bytes()
+        );
+    }
+
+    #[test]
+    fn iverifiable_header_hash_uses_try_hash() {
+        let header = sample_header_for_hashing();
+        let mut expected_source = header.clone();
+        let expected = expected_source.try_hash().expect("try hash");
+
+        assert_eq!(
+            <Header as crate::IVerifiable>::hash(&header).unwrap(),
+            expected
+        );
     }
 
     fn insert_trimmed_block(store_cache: &mut StoreCache, header: &Header, block_hash: UInt256) {

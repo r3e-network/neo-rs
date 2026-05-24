@@ -64,6 +64,18 @@ mod tests {
         build_signed_transaction_with_attrs(settings, keypair, 1, Vec::new())
     }
 
+    fn transaction_with_oversized_script() -> Transaction {
+        let mut tx = Transaction::new();
+        tx.set_network_fee(1_0000_0000);
+        tx.set_system_fee(30);
+        tx.set_valid_until_block(1);
+        tx.set_script(vec![OpCode::NOP.byte(); u16::MAX as usize + 1]);
+        tx.set_signers(vec![Signer::new(UInt160::zero(), WitnessScope::NONE)]);
+        tx.set_attributes(Vec::new());
+        tx.set_witnesses(vec![Witness::empty()]);
+        tx
+    }
+
     fn build_signed_transaction_with_attrs(
         settings: &ProtocolSettings,
         keypair: &KeyPair,
@@ -202,8 +214,12 @@ mod tests {
         assert_eq!(designated.len(), 1);
 
         // Advance the local state root index to a height covered by the designation.
-        state_store.update_local_state_root_snapshot(height, std::iter::empty());
-        state_store.update_local_state_root(height);
+        state_store
+            .update_local_state_root_snapshot(height, std::iter::empty())
+            .expect("stage local state root");
+        state_store
+            .update_local_state_root(height)
+            .expect("commit local state root");
         assert_eq!(
             state_store.local_root_index(),
             Some(height),
@@ -392,6 +408,24 @@ mod tests {
         tx.set_signers(Vec::new());
 
         assert_eq!(blockchain.on_new_transaction(&tx), VerifyResult::Invalid);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn relay_rejects_unserializable_transaction_hash_before_pool_checks() {
+        let settings = ProtocolSettings::default();
+        let system = NeoSystem::new(settings.clone(), None, None).expect("neo system");
+
+        let mut blockchain = Blockchain::new(system.ledger_context());
+        blockchain.system_context = Some(system.context());
+
+        let tx = transaction_with_oversized_script();
+
+        assert_eq!(blockchain.on_new_transaction(&tx), VerifyResult::Invalid);
+        assert!(!system
+            .context()
+            .memory_pool_handle()
+            .lock()
+            .contains_key(&UInt256::zero()));
     }
 
     #[tokio::test(flavor = "multi_thread")]

@@ -1,7 +1,7 @@
 use crate::cryptography::Crypto;
 use crate::neo_io::serializable::helper::{deserialize_array, get_var_size, serialize_array};
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use crate::{UInt160, UInt256, Witness};
+use crate::{CoreResult, UInt160, UInt256, Witness};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
@@ -127,19 +127,28 @@ impl BlockHeader {
     /// Computes the header hash (matches C# CalculateHash).
     /// The result is cached; subsequent calls return the cached value.
     pub fn hash(&self) -> UInt256 {
+        match self.try_hash() {
+            Ok(hash) => hash,
+            Err(err) => {
+                tracing::error!("BlockHeader unsigned serialization failed: {err}");
+                UInt256::zero()
+            }
+        }
+    }
+
+    /// Computes the header hash, failing closed if unsigned serialization
+    /// fails.
+    pub fn try_hash(&self) -> CoreResult<UInt256> {
         let mut hash_guard = self._hash.lock();
         if let Some(hash) = *hash_guard {
-            return hash;
+            return Ok(hash);
         }
         let mut writer = BinaryWriter::new();
-        // SAFETY: serialize_unsigned writes to an in-memory Vec<u8>, which
-        // cannot produce I/O errors under normal operation.
-        self.serialize_unsigned(&mut writer)
-            .expect("Vec<u8> write cannot fail");
+        self.serialize_unsigned(&mut writer)?;
         // Neo N3 block hashes use single SHA-256 over the unsigned header payload.
         let hash = UInt256::from(Crypto::sha256(&writer.into_bytes()));
         *hash_guard = Some(hash);
-        hash
+        Ok(hash)
     }
 
     /// Returns the index (height) of the block header.

@@ -157,7 +157,7 @@ fn vm_integer_stack_value(value: &VmInteger) -> StackValue {
 
 #[inline]
 fn stack_value_truthy(value: StackValue) -> bool {
-    neo_vm_rs::semantics::comparison::nz(&value)
+    neo_vm_rs::semantics::comparison::boolean_value(&value)
 }
 
 fn convert_stack_value_with_neo_vm_rs(

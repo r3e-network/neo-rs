@@ -69,7 +69,7 @@ use crate::persistence::StoreCache;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::native::LedgerContract;
 use crate::state_service::{StateRoot, STATE_SERVICE_CATEGORY};
-use crate::{UInt160, UInt256};
+use crate::{CoreResult, UInt160, UInt256};
 use async_trait::async_trait;
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
@@ -142,6 +142,11 @@ impl Blockchain {
         Props::new(move || Self::new(ledger.clone()))
     }
 
+    fn try_block_hash(block: &Block) -> CoreResult<UInt256> {
+        let mut header = block.header.clone();
+        header.try_hash()
+    }
+
     fn persist_block_via_system(&self, block: &Arc<Block>) -> bool {
         let Some(context) = &self.system_context else {
             return false;
@@ -151,7 +156,18 @@ impl Blockchain {
             return false;
         };
 
-        let hash = block.header.clone().hash();
+        let hash = match Self::try_block_hash(block.as_ref()) {
+            Ok(hash) => hash,
+            Err(error) => {
+                tracing::warn!(
+                    target: "neo",
+                    error = %error,
+                    index = block.index(),
+                    "failed to compute block hash before persistence"
+                );
+                return false;
+            }
+        };
 
         match system.persist_block((**block).clone()) {
             Ok(_) => {

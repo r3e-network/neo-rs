@@ -16,7 +16,18 @@ impl Blockchain {
         };
 
         let block_index = block.index();
-        let hash = block.header.clone().hash();
+        let hash = match Self::try_block_hash(block.as_ref()) {
+            Ok(hash) => hash,
+            Err(error) => {
+                tracing::warn!(
+                    target: "neo",
+                    error = %error,
+                    index = block_index,
+                    "block hash computation failed, rejecting block"
+                );
+                return VerifyResult::Invalid;
+            }
+        };
 
         let store_cache = context.store_cache();
         let settings = context.settings();
@@ -64,7 +75,20 @@ impl Blockchain {
                     return VerifyResult::Invalid;
                 };
 
-                if header.hash() != hash {
+                let cached_header_hash = match header.try_hash() {
+                    Ok(hash) => hash,
+                    Err(error) => {
+                        tracing::warn!(
+                            target: "neo",
+                            error = %error,
+                            index = block_index,
+                            "cached header hash computation failed"
+                        );
+                        return VerifyResult::Invalid;
+                    }
+                };
+
+                if cached_header_hash != hash {
                     tracing::warn!(
                         target: "neo",
                         index = block_index,
@@ -219,7 +243,18 @@ impl Blockchain {
             };
 
             // Also insert into block_cache for dedup (matches on_new_block path)
-            let hash = block.header.clone().hash();
+            let hash = match Self::try_block_hash(block.as_ref()) {
+                Ok(hash) => hash,
+                Err(error) => {
+                    tracing::warn!(
+                        target: "neo",
+                        error = %error,
+                        index = next_index,
+                        "drain_unverified: block hash computation failed"
+                    );
+                    break;
+                }
+            };
             self._block_cache.insert(hash, Arc::clone(&block));
 
             let succeeded = self.persist_block_via_system(&block);
@@ -311,7 +346,14 @@ impl Blockchain {
             }
         }
 
-        context.record_extensible(payload);
+        if let Err(err) = context.record_extensible(payload) {
+            warn!(
+                target: "neo",
+                %err,
+                "failed to record extensible payload"
+            );
+            return VerifyResult::Invalid;
+        }
         VerifyResult::Succeed
     }
 

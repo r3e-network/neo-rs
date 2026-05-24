@@ -26,6 +26,7 @@ pub mod ledger_contract;
 pub(crate) mod method_macros;
 /// Base native contract implementation.
 pub mod native_contract;
+mod native_contract_cache;
 /// NEO token native contract.
 pub mod neo_token;
 /// Notary native contract.

@@ -102,6 +102,14 @@ mod tests {
     }
 
     #[test]
+    fn protocol_enum_guard_rejects_unknown_witness_rule_action_bytes() {
+        assert_eq!(WitnessRuleAction::from_byte(2), None);
+        assert_eq!(WitnessRuleAction::from_byte(255), None);
+        assert!(serde_json::from_str::<WitnessRuleAction>("2").is_err());
+        assert!(serde_json::from_str::<WitnessRuleAction>("255").is_err());
+    }
+
+    #[test]
     fn test_witness_rule_action_from_str() {
         assert_eq!(
             WitnessRuleAction::from_str("Deny").unwrap(),

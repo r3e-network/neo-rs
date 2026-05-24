@@ -840,6 +840,15 @@ mod tests {
         assert_eq!(WitnessRuleAction::Deny as u8, 0);
         assert_eq!(WitnessRuleAction::Allow as u8, 1);
     }
+
+    #[test]
+    fn protocol_enum_guard_rejects_unknown_witness_rule_action_bytes() {
+        assert_eq!(WitnessRuleAction::from_byte(2), None);
+        assert_eq!(WitnessRuleAction::from_byte(255), None);
+        assert!(serde_json::from_str::<WitnessRuleAction>("2").is_err());
+        assert!(serde_json::from_str::<WitnessRuleAction>("255").is_err());
+    }
+
     #[test]
     fn test_witness_condition_type_values() {
         assert_eq!(WitnessConditionType::Boolean as u8, 0x00);
@@ -852,6 +861,17 @@ mod tests {
         assert_eq!(WitnessConditionType::CalledByContract as u8, 0x28);
         assert_eq!(WitnessConditionType::CalledByGroup as u8, 0x29);
     }
+
+    #[test]
+    fn protocol_enum_guard_rejects_unknown_witness_condition_type_bytes() {
+        assert_eq!(WitnessConditionType::from_byte(0x04), None);
+        assert_eq!(WitnessConditionType::from_byte(0x1a), None);
+        assert_eq!(WitnessConditionType::from_byte(0xff), None);
+        assert!(serde_json::from_str::<WitnessConditionType>("4").is_err());
+        assert!(serde_json::from_str::<WitnessConditionType>("26").is_err());
+        assert!(serde_json::from_str::<WitnessConditionType>("255").is_err());
+    }
+
     #[test]
     fn test_witness_condition_validation() {
         // Boolean condition should be valid
