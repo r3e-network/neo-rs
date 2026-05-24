@@ -246,7 +246,7 @@ impl StateTrieManager {
     }
 
     /// Resets the trie to a specific root hash and block index.
-    /// Used for state rollback during chain reorganization.
+    /// Used for state rollback during fast sync or checkpoint recovery.
     ///
     /// Note: This creates a new trie with the given root hash. For full state
     /// mode, the historical trie nodes must still be available in the store.
