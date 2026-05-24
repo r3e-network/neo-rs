@@ -1,13 +1,9 @@
 use super::*;
-use crate::i_event_handlers::{
-    ILogHandler, ILoggingHandler, INotifyHandler, ITransactionAddedHandler,
-    ITransactionRemovedHandler, IWalletChangedHandler,
-};
+use crate::i_event_handlers::IWalletChangedHandler;
 use crate::ledger::Block as LedgerBlock;
 use crate::ledger::{
     block_header::BlockHeader as LedgerBlockHeader,
-    transaction_removal_reason::TransactionRemovalReason,
-    transaction_removed_event_args::TransactionRemovedEventArgs, Block,
+    Block,
 };
 use crate::neo_io::Serializable;
 use crate::neo_system::converters::{convert_ledger_block, convert_ledger_header};
@@ -16,32 +12,22 @@ use crate::neo_system::NeoSystemContext;
 use crate::network::p2p::payloads::witness::Witness as PayloadWitness;
 use crate::network::p2p::payloads::Transaction;
 use crate::network::p2p::ChannelsConfig;
-use crate::persistence::data_cache::DataCache;
 use crate::persistence::store::IStore;
 use crate::persistence::providers::memory_store::MemoryStore;
 use crate::persistence::StoreCache;
-use crate::smart_contract::application_engine::{ApplicationEngine, TEST_MODE_GAS};
 use crate::smart_contract::contract::Contract;
-use crate::smart_contract::log_event_args::LogEventArgs;
 use crate::smart_contract::native::trimmed_block::TrimmedBlock;
-use crate::smart_contract::notify_event_args::NotifyEventArgs;
-use crate::smart_contract::trigger_type::TriggerType;
-use crate::vm_runtime::StackItem;
 use crate::wallets::key_pair::KeyPair;
 use crate::wallets::IWalletProvider;
 use crate::wallets::{Version, Wallet, WalletAccount, WalletError, WalletResult};
 use crate::Witness;
-use crate::{IVerifiable, UInt160, UInt256};
+use crate::{UInt160, UInt256};
 use async_trait::async_trait;
-use once_cell::sync::Lazy;
-use parking_lot::Mutex;
 use std::any::Any;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc};
 use tokio::time::{sleep, timeout, Duration};
-
-static LOG_TEST_MUTEX: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
 #[derive(Debug)]
 struct DummyService;
@@ -271,97 +257,12 @@ fn convert_ledger_block_transfers_transactions() {
 
 #[derive(Default)]
 struct EventProbe {
-    added: AtomicUsize,
-    removed: AtomicUsize,
-    logs: AtomicUsize,
-    logging: AtomicUsize,
-    notify: AtomicUsize,
     wallet_changes: AtomicUsize,
 }
 
 impl EventProbe {
-    fn added(&self) -> usize {
-        self.added.load(Ordering::Relaxed)
-    }
-
-    fn removed(&self) -> usize {
-        self.removed.load(Ordering::Relaxed)
-    }
-
-    fn logs(&self) -> usize {
-        self.logs.load(Ordering::Relaxed)
-    }
-
-    fn logging(&self) -> usize {
-        self.logging.load(Ordering::Relaxed)
-    }
-
-    fn notifies(&self) -> usize {
-        self.notify.load(Ordering::Relaxed)
-    }
-
     fn wallet_changes(&self) -> usize {
         self.wallet_changes.load(Ordering::Relaxed)
-    }
-}
-
-impl ITransactionAddedHandler for EventProbe {
-    fn memory_pool_transaction_added_handler(&self, _sender: &dyn Any, _tx: &Transaction) {
-        self.added.fetch_add(1, Ordering::Relaxed);
-    }
-}
-
-impl ITransactionRemovedHandler for EventProbe {
-    fn memory_pool_transaction_removed_handler(
-        &self,
-        _sender: &dyn Any,
-        _args: &TransactionRemovedEventArgs,
-    ) {
-        self.removed.fetch_add(1, Ordering::Relaxed);
-    }
-}
-
-impl ILogHandler for EventProbe {
-    fn application_engine_log_handler(
-        &self,
-        _sender: &ApplicationEngine,
-        _log_event_args: &LogEventArgs,
-    ) {
-        self.logs.fetch_add(1, Ordering::Relaxed);
-    }
-}
-
-impl ILoggingHandler for EventProbe {
-    fn utility_logging_handler(&self, _source: &str, _level: LogLevel, _message: &str) {
-        self.logging.fetch_add(1, Ordering::Relaxed);
-    }
-}
-
-impl INotifyHandler for EventProbe {
-    fn application_engine_notify_handler(
-        &self,
-        _sender: &ApplicationEngine,
-        _notify_event_args: &NotifyEventArgs,
-    ) {
-        self.notify.fetch_add(1, Ordering::Relaxed);
-    }
-}
-
-struct LoggingGuard;
-
-impl LoggingGuard {
-    fn install<F>(hook: F) -> Self
-    where
-        F: Fn(String, ExternalLogLevel, String) + Send + Sync + 'static,
-    {
-        ExtensionsUtility::set_logging(Some(Box::new(hook)));
-        Self
-    }
-}
-
-impl Drop for LoggingGuard {
-    fn drop(&mut self) {
-        ExtensionsUtility::set_logging(None);
     }
 }
 
@@ -577,102 +478,6 @@ async fn add_unconnected_peers_tracks_queue() {
     assert_eq!(returned, expected);
 
     let _ = system.shutdown().await;
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn transaction_event_handlers_receive_callbacks() {
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
-    let handler = Arc::new(EventProbe::default());
-
-    system
-        .register_transaction_added_handler(handler.clone())
-        .expect("register added");
-    system
-        .register_transaction_removed_handler(handler.clone())
-        .expect("register removed");
-
-    let tx = Transaction::default();
-    let pool = system.mempool();
-    let args = TransactionRemovedEventArgs {
-        transactions: vec![tx.clone()],
-        reason: TransactionRemovalReason::CapacityExceeded,
-    };
-
-    {
-        let guard = pool.lock();
-        if let Some(callback) = &guard.transaction_added {
-            callback(&guard, &tx);
-        }
-        if let Some(callback) = &guard.transaction_removed {
-            callback(&guard, &args);
-        }
-    }
-
-    assert_eq!(handler.added(), 1);
-    assert_eq!(handler.removed(), 1);
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn log_and_logging_handlers_fire() {
-    let _log_guard = LOG_TEST_MUTEX.lock();
-
-    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
-    let handler = Arc::new(EventProbe::default());
-
-    system
-        .register_log_handler(handler.clone())
-        .expect("register log handler");
-    system
-        .register_logging_handler(handler.clone())
-        .expect("register logging handler");
-    system
-        .register_notify_handler(handler.clone())
-        .expect("register notify handler");
-
-    let system_ctx = system.context();
-    NativeHelpers::attach_system_context(system_ctx.clone());
-    let logging_ctx = Arc::downgrade(&system_ctx);
-    let _logging_guard = LoggingGuard::install(move |source, level, message| {
-        if let Some(ctx) = logging_ctx.upgrade() {
-            let local_level: LogLevel = level;
-            ctx.notify_logging_handlers(&source, local_level, &message);
-        }
-    });
-
-    let snapshot = Arc::new(DataCache::new(false));
-    let mut engine = ApplicationEngine::new(
-        TriggerType::Application,
-        None,
-        Arc::clone(&snapshot),
-        None,
-        ProtocolSettings::default(),
-        TEST_MODE_GAS,
-        None,
-    )
-    .expect("engine");
-    engine.set_runtime_context(Some(system_ctx.clone()));
-
-    // Push a log through the engine and invoke the logging hook.
-    let container: Arc<dyn IVerifiable> = Arc::new(Transaction::default());
-    let log_event = LogEventArgs::new(container, UInt160::default(), "hello".to_string());
-    engine.push_log(log_event);
-    ExtensionsUtility::set_log_level(ExternalLogLevel::Info);
-    ExtensionsUtility::log("test", ExternalLogLevel::Info, "message");
-    // Exercise both the Utility hook and direct notify; the hook increments log_counter.
-    system_ctx.notify_logging_handlers("test", LogLevel::Info, "message");
-    assert_eq!(handler.logs(), 1);
-    assert!(handler.logging() >= 1);
-
-    let notify = NotifyEventArgs::new(
-        Arc::new(Transaction::default()) as Arc<dyn IVerifiable>,
-        UInt160::default(),
-        "evt".to_string(),
-        vec![StackItem::from_int(1)],
-    );
-    engine.push_notification(notify);
-    assert_eq!(handler.notifies(), 1);
-
-    ExtensionsUtility::set_logging(None);
 }
 
 #[tokio::test(flavor = "multi_thread")]

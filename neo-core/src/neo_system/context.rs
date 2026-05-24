@@ -24,9 +24,7 @@ use crate::error::{CoreError, CoreResult};
 use crate::events::{broadcast_plugin_event, PluginEvent};
 use crate::extensions::log_level::LogLevel;
 use crate::i_event_handlers::{
-    ICommittedHandler, ICommittingHandler, ILogHandler, ILoggingHandler, INotifyHandler,
-    IServiceAddedHandler, ITransactionAddedHandler, ITransactionRemovedHandler,
-    IWalletChangedHandler,
+    ICommittedHandler, ICommittingHandler, IWalletChangedHandler,
 };
 use crate::ledger::{HeaderCache, LedgerContext, MemoryPool};
 use crate::network::p2p::{
@@ -66,8 +64,6 @@ pub struct NeoSystemContext {
     pub tx_router: ActorRef,
     /// Global service registry mirrored from the C# implementation.
     pub(crate) service_registry: Arc<ServiceRegistry>,
-    /// Registered callbacks for service additions.
-    pub service_added_handlers: Arc<RwLock<Vec<Arc<dyn IServiceAddedHandler + Send + Sync>>>>,
     /// Registered callbacks for wallet changes.
     pub wallet_changed_handlers: Arc<RwLock<Vec<Arc<dyn IWalletChangedHandler + Send + Sync>>>>,
     /// Currently active wallet, if any.
@@ -89,13 +85,6 @@ pub struct NeoSystemContext {
     pub(crate) system: RwLock<Option<Weak<NeoSystem>>>,
     pub(crate) committing_handlers: Arc<RwLock<Vec<Arc<dyn ICommittingHandler + Send + Sync>>>>,
     pub(crate) committed_handlers: Arc<RwLock<Vec<Arc<dyn ICommittedHandler + Send + Sync>>>>,
-    pub(crate) transaction_added_handlers:
-        Arc<RwLock<Vec<Arc<dyn ITransactionAddedHandler + Send + Sync>>>>,
-    pub(crate) transaction_removed_handlers:
-        Arc<RwLock<Vec<Arc<dyn ITransactionRemovedHandler + Send + Sync>>>>,
-    pub(crate) log_handlers: Arc<RwLock<Vec<Arc<dyn ILogHandler + Send + Sync>>>>,
-    pub(crate) logging_handlers: Arc<RwLock<Vec<Arc<dyn ILoggingHandler + Send + Sync>>>>,
-    pub(crate) notify_handlers: Arc<RwLock<Vec<Arc<dyn INotifyHandler + Send + Sync>>>>,
     /// Fast sync mode - disables expensive event publishing during initial sync
     pub(crate) fast_sync_mode: Arc<AtomicBool>,
 }
@@ -362,46 +351,6 @@ impl NeoSystemContext {
         Ok(())
     }
 
-    pub fn register_transaction_added_handler(
-        &self,
-        handler: Arc<dyn ITransactionAddedHandler + Send + Sync>,
-    ) -> CoreResult<()> {
-        self.transaction_added_handlers.write().push(handler);
-        Ok(())
-    }
-
-    pub fn register_transaction_removed_handler(
-        &self,
-        handler: Arc<dyn ITransactionRemovedHandler + Send + Sync>,
-    ) -> CoreResult<()> {
-        self.transaction_removed_handlers.write().push(handler);
-        Ok(())
-    }
-
-    pub fn register_log_handler(
-        &self,
-        handler: Arc<dyn ILogHandler + Send + Sync>,
-    ) -> CoreResult<()> {
-        self.log_handlers.write().push(handler);
-        Ok(())
-    }
-
-    pub fn register_logging_handler(
-        &self,
-        handler: Arc<dyn ILoggingHandler + Send + Sync>,
-    ) -> CoreResult<()> {
-        self.logging_handlers.write().push(handler);
-        Ok(())
-    }
-
-    pub fn register_notify_handler(
-        &self,
-        handler: Arc<dyn INotifyHandler + Send + Sync>,
-    ) -> CoreResult<()> {
-        self.notify_handlers.write().push(handler);
-        Ok(())
-    }
-
     pub fn register_wallet_changed_handler(
         &self,
         handler: Arc<dyn IWalletChangedHandler + Send + Sync>,
@@ -413,26 +362,11 @@ impl NeoSystemContext {
         Ok(())
     }
 
-    pub fn notify_application_log(&self, engine: &ApplicationEngine, args: &LogEventArgs) {
-        let handlers = { self.log_handlers.read().clone() };
-        for handler in handlers {
-            handler.application_engine_log_handler(engine, args);
-        }
-    }
+    pub fn notify_application_log(&self, _engine: &ApplicationEngine, _args: &LogEventArgs) {}
 
-    pub fn notify_logging_handlers(&self, source: &str, level: LogLevel, message: &str) {
-        let handlers = { self.logging_handlers.read().clone() };
-        for handler in handlers {
-            handler.utility_logging_handler(source, level, message);
-        }
-    }
+    pub fn notify_logging_handlers(&self, _source: &str, _level: LogLevel, _message: &str) {}
 
-    pub fn notify_application_notify(&self, engine: &ApplicationEngine, args: &NotifyEventArgs) {
-        let handlers = { self.notify_handlers.read().clone() };
-        for handler in handlers {
-            handler.application_engine_notify_handler(engine, args);
-        }
-    }
+    pub fn notify_application_notify(&self, _engine: &ApplicationEngine, _args: &NotifyEventArgs) {}
 
     pub fn notify_wallet_changed(&self, sender: &dyn Any, wallet: Option<Arc<dyn Wallet>>) {
         *self.current_wallet.write() = wallet.clone();
@@ -482,18 +416,6 @@ impl NeoSystemContext {
 
     pub fn committed_handlers(&self) -> Arc<RwLock<Vec<Arc<dyn ICommittedHandler + Send + Sync>>>> {
         Arc::clone(&self.committed_handlers)
-    }
-
-    pub fn transaction_added_handlers(
-        &self,
-    ) -> Arc<RwLock<Vec<Arc<dyn ITransactionAddedHandler + Send + Sync>>>> {
-        Arc::clone(&self.transaction_added_handlers)
-    }
-
-    pub fn transaction_removed_handlers(
-        &self,
-    ) -> Arc<RwLock<Vec<Arc<dyn ITransactionRemovedHandler + Send + Sync>>>> {
-        Arc::clone(&self.transaction_removed_handlers)
     }
 
     /// Access to the actor system event stream.

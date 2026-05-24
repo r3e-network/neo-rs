@@ -11,9 +11,7 @@ use super::NeoSystem;
 use crate::error::CoreResult;
 use crate::events::{broadcast_plugin_event, PluginEvent};
 use crate::i_event_handlers::{
-    ICommittedHandler, ICommittingHandler, ILogHandler, ILoggingHandler, INotifyHandler,
-    IServiceAddedHandler, ITransactionAddedHandler, ITransactionRemovedHandler,
-    IWalletChangedHandler,
+    ICommittedHandler, ICommittingHandler, IWalletChangedHandler,
 };
 
 impl NeoSystem {
@@ -51,46 +49,6 @@ impl NeoSystem {
         self.context().register_committed_handler(handler)
     }
 
-    /// Registers a handler invoked when transactions enter the memory pool.
-    pub fn register_transaction_added_handler(
-        &self,
-        handler: Arc<dyn ITransactionAddedHandler + Send + Sync>,
-    ) -> CoreResult<()> {
-        self.context().register_transaction_added_handler(handler)
-    }
-
-    /// Registers a handler invoked when transactions leave the memory pool.
-    pub fn register_transaction_removed_handler(
-        &self,
-        handler: Arc<dyn ITransactionRemovedHandler + Send + Sync>,
-    ) -> CoreResult<()> {
-        self.context().register_transaction_removed_handler(handler)
-    }
-
-    /// Registers a handler for `ApplicationEngine.Log` events.
-    pub fn register_log_handler(
-        &self,
-        handler: Arc<dyn ILogHandler + Send + Sync>,
-    ) -> CoreResult<()> {
-        self.context().register_log_handler(handler)
-    }
-
-    /// Registers a handler for `Utility.Logging` events.
-    pub fn register_logging_handler(
-        &self,
-        handler: Arc<dyn ILoggingHandler + Send + Sync>,
-    ) -> CoreResult<()> {
-        self.context().register_logging_handler(handler)
-    }
-
-    /// Registers a handler for `ApplicationEngine.Notify` events.
-    pub fn register_notify_handler(
-        &self,
-        handler: Arc<dyn INotifyHandler + Send + Sync>,
-    ) -> CoreResult<()> {
-        self.context().register_notify_handler(handler)
-    }
-
     /// Registers a handler for wallet provider changes.
     pub fn register_wallet_changed_handler(
         &self,
@@ -123,13 +81,7 @@ impl NeoSystem {
         Ok(())
     }
 
-    fn notify_service_added(&self, service: Arc<dyn Any + Send + Sync>, name: Option<String>) {
-        let sender: &dyn Any = self;
-        let handlers = { self.context().service_added_handlers.read().clone() };
-        for handler in handlers {
-            handler.neo_system_service_added_handler(sender, service.as_ref());
-        }
-
+    fn notify_service_added(&self, _service: Arc<dyn Any + Send + Sync>, name: Option<String>) {
         let system = { self.self_ref.lock().clone().upgrade() };
         if system.is_some() {
             let event = PluginEvent::ServiceAdded {
@@ -137,16 +89,6 @@ impl NeoSystem {
             };
             broadcast_plugin_event(&event);
         }
-    }
-
-    /// Registers a handler to be notified when services are added.
-    pub fn register_service_added_handler(
-        &self,
-        handler: Arc<dyn IServiceAddedHandler + Send + Sync>,
-    ) -> CoreResult<()> {
-        let context = self.context();
-        context.service_added_handlers.write().push(handler);
-        Ok(())
     }
 
     /// Returns the RPC service name for the current network (if configured).

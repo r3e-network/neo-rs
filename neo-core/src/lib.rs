@@ -228,9 +228,8 @@ pub(crate) mod sign;
 /// Matches C# `Neo.IEventHandlers` namespace.
 pub mod i_event_handlers {
     pub use crate::events::handlers::{
-        ICommittedHandler, ICommittingHandler, ILogHandler, ILoggingHandler,
-        IMessageReceivedHandler, INotifyHandler, IServiceAddedHandler,
-        ITransactionAddedHandler, ITransactionRemovedHandler, IWalletChangedHandler,
+        ICommittedHandler, ICommittingHandler,
+        IMessageReceivedHandler, IWalletChangedHandler,
     };
 }
 

@@ -23,27 +23,14 @@ pub(crate) fn attach_mempool_callbacks(
 ) {
     let mut pool = memory_pool.lock();
     let context_added = context.clone();
-    pool.transaction_added = Some(Box::new(move |sender, tx| {
-        let handlers = { context_added.transaction_added_handlers().read().clone() };
-        for handler in handlers {
-            handler.memory_pool_transaction_added_handler(sender, tx);
-        }
+    pool.transaction_added = Some(Box::new(move |_sender, tx| {
         context_added.broadcast_plugin_event(crate::events::PluginEvent::MempoolTransactionAdded {
             tx_hash: tx.hash().to_string(),
         });
     }));
 
     let context_removed = context.clone();
-    pool.transaction_removed = Some(Box::new(move |sender, args| {
-        let handlers = {
-            context_removed
-                .transaction_removed_handlers()
-                .read()
-                .clone()
-        };
-        for handler in handlers {
-            handler.memory_pool_transaction_removed_handler(sender, args);
-        }
+    pool.transaction_removed = Some(Box::new(move |_sender, args| {
         let hashes = args
             .transactions
             .iter()

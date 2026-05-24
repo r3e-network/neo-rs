@@ -71,10 +71,7 @@ use crate::error::{CoreError, CoreResult};
 use crate::events::{broadcast_plugin_event, PluginEvent};
 use crate::extensions::log_level::LogLevel;
 use crate::extensions::utility::ExtensionsUtility;
-#[cfg(test)]
-use crate::extensions::LogLevel as ExternalLogLevel;
 use crate::hardfork::Hardfork;
-use crate::i_event_handlers::IServiceAddedHandler;
 use crate::ledger::blockchain::{Blockchain, BlockchainCommand};
 use crate::ledger::{HeaderCache, LedgerContext, MemoryPool};
 use crate::network::p2p::{
@@ -198,8 +195,6 @@ impl NeoSystem {
         let genesis_block = Arc::new(super::converters::convert_ledger_block(genesis_ledger));
 
         let service_registry = Arc::new(ServiceRegistry::new());
-        let service_added_handlers: Arc<RwLock<Vec<Arc<dyn IServiceAddedHandler + Send + Sync>>>> =
-            Arc::new(RwLock::new(Vec::new()));
         let wallet_changed_handlers = Arc::new(RwLock::new(Vec::new()));
 
         let state_service_enabled = state_service_settings.is_some();
@@ -263,7 +258,6 @@ impl NeoSystem {
             task_manager: task_manager.clone(),
             tx_router: tx_router.clone(),
             service_registry: service_registry.clone(),
-            service_added_handlers: service_added_handlers.clone(),
             wallet_changed_handlers: wallet_changed_handlers.clone(),
             current_wallet: Arc::new(RwLock::new(None)),
             store_provider: store_provider.clone(),
@@ -280,11 +274,6 @@ impl NeoSystem {
             system: RwLock::new(None),
             committing_handlers: Arc::new(RwLock::new(Vec::new())),
             committed_handlers: Arc::new(RwLock::new(Vec::new())),
-            transaction_added_handlers: Arc::new(RwLock::new(Vec::new())),
-            transaction_removed_handlers: Arc::new(RwLock::new(Vec::new())),
-            log_handlers: Arc::new(RwLock::new(Vec::new())),
-            logging_handlers: Arc::new(RwLock::new(Vec::new())),
-            notify_handlers: Arc::new(RwLock::new(Vec::new())),
             fast_sync_mode: Arc::new(AtomicBool::new(false)),
         });
 
