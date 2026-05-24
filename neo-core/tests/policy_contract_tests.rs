@@ -2,8 +2,13 @@
 //!
 //! Tests for Neo.SmartContract.Native.PolicyContract functionality.
 
+use neo_core::hardfork::Hardfork;
+use neo_core::protocol_settings::ProtocolSettings;
+use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::smart_contract::native::policy_contract::PolicyContract;
 use neo_core::smart_contract::native::NativeContract;
+use neo_core::smart_contract::ContractParameterType;
+use std::collections::HashMap;
 
 /// Tests that PolicyContract has correct contract ID (-7)
 #[test]
@@ -177,6 +182,399 @@ fn test_policy_contract_methods() {
         !method_names.contains(&"getMaxBlockSystemFee"),
         "Should not have getMaxBlockSystemFee"
     );
+}
+
+#[test]
+fn test_policy_contract_method_metadata_matches_protocol() {
+    let policy = PolicyContract::new();
+    let expected_methods: &[(
+        &str,
+        bool,
+        u8,
+        &[ContractParameterType],
+        ContractParameterType,
+        Option<Hardfork>,
+        Option<Hardfork>,
+        &[&str],
+    )] = &[
+        (
+            "getFeePerByte",
+            true,
+            CallFlags::READ_STATES.bits(),
+            &[],
+            ContractParameterType::Integer,
+            None,
+            None,
+            &[],
+        ),
+        (
+            "getExecFeeFactor",
+            true,
+            CallFlags::READ_STATES.bits(),
+            &[],
+            ContractParameterType::Integer,
+            None,
+            None,
+            &[],
+        ),
+        (
+            "getExecPicoFeeFactor",
+            true,
+            CallFlags::READ_STATES.bits(),
+            &[],
+            ContractParameterType::Integer,
+            Some(Hardfork::HfFaun),
+            None,
+            &[],
+        ),
+        (
+            "getStoragePrice",
+            true,
+            CallFlags::READ_STATES.bits(),
+            &[],
+            ContractParameterType::Integer,
+            None,
+            None,
+            &[],
+        ),
+        (
+            "getMillisecondsPerBlock",
+            true,
+            CallFlags::READ_STATES.bits(),
+            &[],
+            ContractParameterType::Integer,
+            Some(Hardfork::HfEchidna),
+            None,
+            &[],
+        ),
+        (
+            "getMaxValidUntilBlockIncrement",
+            true,
+            CallFlags::READ_STATES.bits(),
+            &[],
+            ContractParameterType::Integer,
+            Some(Hardfork::HfEchidna),
+            None,
+            &[],
+        ),
+        (
+            "getMaxTraceableBlocks",
+            true,
+            CallFlags::READ_STATES.bits(),
+            &[],
+            ContractParameterType::Integer,
+            Some(Hardfork::HfEchidna),
+            None,
+            &[],
+        ),
+        (
+            "getAttributeFee",
+            true,
+            CallFlags::READ_STATES.bits(),
+            &[ContractParameterType::Integer],
+            ContractParameterType::Integer,
+            None,
+            Some(Hardfork::HfEchidna),
+            &["attributeType"],
+        ),
+        (
+            "getAttributeFee",
+            true,
+            CallFlags::READ_STATES.bits(),
+            &[ContractParameterType::Integer],
+            ContractParameterType::Integer,
+            Some(Hardfork::HfEchidna),
+            None,
+            &["attributeType"],
+        ),
+        (
+            "setFeePerByte",
+            false,
+            CallFlags::STATES.bits(),
+            &[ContractParameterType::Integer],
+            ContractParameterType::Void,
+            None,
+            None,
+            &["value"],
+        ),
+        (
+            "setExecFeeFactor",
+            false,
+            CallFlags::STATES.bits(),
+            &[ContractParameterType::Integer],
+            ContractParameterType::Void,
+            None,
+            None,
+            &["value"],
+        ),
+        (
+            "setStoragePrice",
+            false,
+            CallFlags::STATES.bits(),
+            &[ContractParameterType::Integer],
+            ContractParameterType::Void,
+            None,
+            None,
+            &["value"],
+        ),
+        (
+            "setMillisecondsPerBlock",
+            false,
+            (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
+            &[ContractParameterType::Integer],
+            ContractParameterType::Void,
+            Some(Hardfork::HfEchidna),
+            None,
+            &["value"],
+        ),
+        (
+            "setMaxValidUntilBlockIncrement",
+            false,
+            CallFlags::STATES.bits(),
+            &[ContractParameterType::Integer],
+            ContractParameterType::Void,
+            Some(Hardfork::HfEchidna),
+            None,
+            &["value"],
+        ),
+        (
+            "setMaxTraceableBlocks",
+            false,
+            CallFlags::STATES.bits(),
+            &[ContractParameterType::Integer],
+            ContractParameterType::Void,
+            Some(Hardfork::HfEchidna),
+            None,
+            &["value"],
+        ),
+        (
+            "setAttributeFee",
+            false,
+            CallFlags::STATES.bits(),
+            &[
+                ContractParameterType::Integer,
+                ContractParameterType::Integer,
+            ],
+            ContractParameterType::Void,
+            None,
+            Some(Hardfork::HfEchidna),
+            &["attributeType", "value"],
+        ),
+        (
+            "setAttributeFee",
+            false,
+            CallFlags::STATES.bits(),
+            &[
+                ContractParameterType::Integer,
+                ContractParameterType::Integer,
+            ],
+            ContractParameterType::Void,
+            Some(Hardfork::HfEchidna),
+            None,
+            &["attributeType", "value"],
+        ),
+        (
+            "isBlocked",
+            true,
+            CallFlags::READ_STATES.bits(),
+            &[ContractParameterType::Hash160],
+            ContractParameterType::Boolean,
+            None,
+            None,
+            &["account"],
+        ),
+        (
+            "blockAccount",
+            false,
+            CallFlags::STATES.bits(),
+            &[ContractParameterType::Hash160],
+            ContractParameterType::Boolean,
+            None,
+            Some(Hardfork::HfFaun),
+            &["account"],
+        ),
+        (
+            "blockAccount",
+            false,
+            (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
+            &[ContractParameterType::Hash160],
+            ContractParameterType::Boolean,
+            Some(Hardfork::HfFaun),
+            None,
+            &["account"],
+        ),
+        (
+            "unblockAccount",
+            false,
+            CallFlags::STATES.bits(),
+            &[ContractParameterType::Hash160],
+            ContractParameterType::Boolean,
+            None,
+            None,
+            &["account"],
+        ),
+        (
+            "getBlockedAccounts",
+            true,
+            CallFlags::READ_STATES.bits(),
+            &[],
+            ContractParameterType::InteropInterface,
+            Some(Hardfork::HfFaun),
+            None,
+            &[],
+        ),
+        (
+            "setWhitelistFeeContract",
+            false,
+            (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
+            &[
+                ContractParameterType::Hash160,
+                ContractParameterType::String,
+                ContractParameterType::Integer,
+                ContractParameterType::Integer,
+            ],
+            ContractParameterType::Void,
+            Some(Hardfork::HfFaun),
+            None,
+            &["contractHash", "method", "argCount", "fixedFee"],
+        ),
+        (
+            "removeWhitelistFeeContract",
+            false,
+            (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
+            &[
+                ContractParameterType::Hash160,
+                ContractParameterType::String,
+                ContractParameterType::Integer,
+            ],
+            ContractParameterType::Void,
+            Some(Hardfork::HfFaun),
+            None,
+            &["contractHash", "method", "argCount"],
+        ),
+        (
+            "getWhitelistFeeContracts",
+            true,
+            CallFlags::READ_STATES.bits(),
+            &[],
+            ContractParameterType::InteropInterface,
+            Some(Hardfork::HfFaun),
+            None,
+            &[],
+        ),
+        (
+            "recoverFund",
+            false,
+            CallFlags::ALL.bits(),
+            &[
+                ContractParameterType::Hash160,
+                ContractParameterType::Hash160,
+            ],
+            ContractParameterType::Boolean,
+            Some(Hardfork::HfFaun),
+            None,
+            &["account", "token"],
+        ),
+    ];
+
+    assert_eq!(policy.methods().len(), expected_methods.len());
+    for (method, (name, safe, flags, parameters, return_type, active_in, deprecated_in, names)) in
+        policy.methods().iter().zip(expected_methods.iter())
+    {
+        assert_eq!(method.name.as_str(), *name);
+        assert_eq!(method.cpu_fee, 1 << 15, "{name}");
+        assert_eq!(method.storage_fee, 0, "{name}");
+        assert_eq!(method.safe, *safe, "{name}");
+        assert_eq!(method.required_call_flags, *flags, "{name}");
+        assert_eq!(method.parameters.as_slice(), *parameters, "{name}");
+        assert_eq!(&method.return_type, return_type, "{name}");
+        assert_eq!(method.active_in, *active_in, "{name}");
+        assert_eq!(method.deprecated_in, *deprecated_in, "{name}");
+        let actual_names = method
+            .parameter_names
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        assert_eq!(actual_names, *names, "{name}");
+    }
+}
+
+#[test]
+fn test_policy_contract_event_metadata_hardforks() {
+    let policy = PolicyContract::new();
+    let settings = policy_event_settings();
+
+    assert!(policy.events(&settings, 19).is_empty());
+
+    let echidna_events = policy.events(&settings, 20);
+    assert_event_descriptors(
+        &echidna_events,
+        &[(
+            "MillisecondsPerBlockChanged",
+            &[
+                ("old", ContractParameterType::Integer),
+                ("new", ContractParameterType::Integer),
+            ],
+        )],
+    );
+
+    let faun_events = policy.events(&settings, 40);
+    assert_event_descriptors(
+        &faun_events,
+        &[
+            (
+                "MillisecondsPerBlockChanged",
+                &[
+                    ("old", ContractParameterType::Integer),
+                    ("new", ContractParameterType::Integer),
+                ],
+            ),
+            (
+                "WhitelistFeeChanged",
+                &[
+                    ("contract", ContractParameterType::Hash160),
+                    ("method", ContractParameterType::String),
+                    ("argCount", ContractParameterType::Integer),
+                    ("fee", ContractParameterType::Any),
+                ],
+            ),
+            (
+                "RecoveredFund",
+                &[("account", ContractParameterType::Hash160)],
+            ),
+        ],
+    );
+}
+
+fn policy_event_settings() -> ProtocolSettings {
+    let mut settings = ProtocolSettings::default();
+    settings.hardforks = HashMap::from([
+        (Hardfork::HfAspidochelone, 0),
+        (Hardfork::HfBasilisk, 0),
+        (Hardfork::HfCockatrice, 0),
+        (Hardfork::HfDomovoi, 0),
+        (Hardfork::HfEchidna, 20),
+        (Hardfork::HfFaun, 40),
+        (Hardfork::HfGorgon, 60),
+    ]);
+    settings
+}
+
+fn assert_event_descriptors(
+    events: &[neo_core::smart_contract::manifest::ContractEventDescriptor],
+    expected: &[(&str, &[(&str, ContractParameterType)])],
+) {
+    assert_eq!(events.len(), expected.len());
+    for (event, (name, parameters)) in events.iter().zip(expected.iter()) {
+        assert_eq!(event.name.as_str(), *name);
+        assert_eq!(event.parameters.len(), parameters.len(), "{name}");
+        for (parameter, (expected_name, expected_type)) in
+            event.parameters.iter().zip(parameters.iter())
+        {
+            assert_eq!(parameter.name.as_str(), *expected_name, "{name}");
+            assert_eq!(&parameter.param_type, expected_type, "{name}");
+        }
+    }
 }
 
 /// Tests that safe methods have correct flags

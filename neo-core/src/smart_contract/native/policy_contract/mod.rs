@@ -11,12 +11,11 @@ use crate::persistence::i_read_only_store::IReadOnlyStoreGeneric;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;
-use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::find_options::FindOptions;
-use crate::smart_contract::manifest::{ContractEventDescriptor, ContractParameterDefinition};
+use crate::smart_contract::manifest::ContractEventDescriptor;
 use crate::smart_contract::native::{NativeContract, NativeMethod};
 use crate::smart_contract::storage_key::StorageKey;
-use crate::smart_contract::{ContractParameterType, StorageItem};
+use crate::smart_contract::StorageItem;
 use crate::UInt160;
 use neo_primitives::TransactionAttributeType;
 use neo_vm_rs::{ExecutionEngineLimits, StackValue};
@@ -201,264 +200,10 @@ impl PolicyContract {
         let hash = UInt160::parse("0xcc5e4edd9f5f8dba8bb65734541df7a1c081c67b")
             .expect("PolicyContract hash should be valid");
 
-        let methods = vec![
-            NativeMethod::safe(
-                "getFeePerByte".to_string(),
-                Self::CPU_FEE,
-                Vec::new(),
-                ContractParameterType::Integer,
-            )
-            .with_required_call_flags(CallFlags::READ_STATES),
-            NativeMethod::safe(
-                "getExecFeeFactor".to_string(),
-                Self::CPU_FEE,
-                Vec::new(),
-                ContractParameterType::Integer,
-            )
-            .with_required_call_flags(CallFlags::READ_STATES),
-            NativeMethod::safe(
-                "getExecPicoFeeFactor".to_string(),
-                Self::CPU_FEE,
-                Vec::new(),
-                ContractParameterType::Integer,
-            )
-            .with_active_in(Hardfork::HfFaun)
-            .with_required_call_flags(CallFlags::READ_STATES),
-            NativeMethod::safe(
-                "getStoragePrice".to_string(),
-                Self::CPU_FEE,
-                Vec::new(),
-                ContractParameterType::Integer,
-            )
-            .with_required_call_flags(CallFlags::READ_STATES),
-            NativeMethod::safe(
-                "getMillisecondsPerBlock".to_string(),
-                Self::CPU_FEE,
-                Vec::new(),
-                ContractParameterType::Integer,
-            )
-            .with_active_in(Hardfork::HfEchidna)
-            .with_required_call_flags(CallFlags::READ_STATES),
-            NativeMethod::safe(
-                "getMaxValidUntilBlockIncrement".to_string(),
-                Self::CPU_FEE,
-                Vec::new(),
-                ContractParameterType::Integer,
-            )
-            .with_active_in(Hardfork::HfEchidna)
-            .with_required_call_flags(CallFlags::READ_STATES),
-            NativeMethod::safe(
-                "getMaxTraceableBlocks".to_string(),
-                Self::CPU_FEE,
-                Vec::new(),
-                ContractParameterType::Integer,
-            )
-            .with_active_in(Hardfork::HfEchidna)
-            .with_required_call_flags(CallFlags::READ_STATES),
-            // getAttributeFee overloads (hardfork switch at Echidna).
-            NativeMethod::safe(
-                "getAttributeFee".to_string(),
-                Self::CPU_FEE,
-                vec![ContractParameterType::Integer],
-                ContractParameterType::Integer,
-            )
-            .with_deprecated_in(Hardfork::HfEchidna)
-            .with_required_call_flags(CallFlags::READ_STATES)
-            .with_parameter_names(vec!["attributeType".to_string()]),
-            NativeMethod::safe(
-                "getAttributeFee".to_string(),
-                Self::CPU_FEE,
-                vec![ContractParameterType::Integer],
-                ContractParameterType::Integer,
-            )
-            .with_active_in(Hardfork::HfEchidna)
-            .with_required_call_flags(CallFlags::READ_STATES)
-            .with_parameter_names(vec!["attributeType".to_string()]),
-            // Setters.
-            NativeMethod::unsafe_method(
-                "setFeePerByte".to_string(),
-                Self::CPU_FEE,
-                CallFlags::STATES.bits(),
-                vec![ContractParameterType::Integer],
-                ContractParameterType::Void,
-            )
-            .with_parameter_names(vec!["value".to_string()]),
-            NativeMethod::unsafe_method(
-                "setExecFeeFactor".to_string(),
-                Self::CPU_FEE,
-                CallFlags::STATES.bits(),
-                vec![ContractParameterType::Integer],
-                ContractParameterType::Void,
-            )
-            .with_parameter_names(vec!["value".to_string()]),
-            NativeMethod::unsafe_method(
-                "setStoragePrice".to_string(),
-                Self::CPU_FEE,
-                CallFlags::STATES.bits(),
-                vec![ContractParameterType::Integer],
-                ContractParameterType::Void,
-            )
-            .with_parameter_names(vec!["value".to_string()]),
-            NativeMethod::unsafe_method(
-                "setMillisecondsPerBlock".to_string(),
-                Self::CPU_FEE,
-                (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
-                vec![ContractParameterType::Integer],
-                ContractParameterType::Void,
-            )
-            .with_active_in(Hardfork::HfEchidna)
-            .with_parameter_names(vec!["value".to_string()]),
-            NativeMethod::unsafe_method(
-                "setMaxValidUntilBlockIncrement".to_string(),
-                Self::CPU_FEE,
-                CallFlags::STATES.bits(),
-                vec![ContractParameterType::Integer],
-                ContractParameterType::Void,
-            )
-            .with_active_in(Hardfork::HfEchidna)
-            .with_parameter_names(vec!["value".to_string()]),
-            NativeMethod::unsafe_method(
-                "setMaxTraceableBlocks".to_string(),
-                Self::CPU_FEE,
-                CallFlags::STATES.bits(),
-                vec![ContractParameterType::Integer],
-                ContractParameterType::Void,
-            )
-            .with_active_in(Hardfork::HfEchidna)
-            .with_parameter_names(vec!["value".to_string()]),
-            // setAttributeFee overloads (hardfork switch at Echidna).
-            NativeMethod::unsafe_method(
-                "setAttributeFee".to_string(),
-                Self::CPU_FEE,
-                CallFlags::STATES.bits(),
-                vec![
-                    ContractParameterType::Integer,
-                    ContractParameterType::Integer,
-                ],
-                ContractParameterType::Void,
-            )
-            .with_deprecated_in(Hardfork::HfEchidna)
-            .with_parameter_names(vec!["attributeType".to_string(), "value".to_string()]),
-            NativeMethod::unsafe_method(
-                "setAttributeFee".to_string(),
-                Self::CPU_FEE,
-                CallFlags::STATES.bits(),
-                vec![
-                    ContractParameterType::Integer,
-                    ContractParameterType::Integer,
-                ],
-                ContractParameterType::Void,
-            )
-            .with_active_in(Hardfork::HfEchidna)
-            .with_parameter_names(vec!["attributeType".to_string(), "value".to_string()]),
-            // Account policy.
-            NativeMethod::safe(
-                "isBlocked".to_string(),
-                Self::CPU_FEE,
-                vec![ContractParameterType::Hash160],
-                ContractParameterType::Boolean,
-            )
-            .with_required_call_flags(CallFlags::READ_STATES)
-            .with_parameter_names(vec!["account".to_string()]),
-            // BlockAccount overloads (hardfork switch at Faun)
-            NativeMethod::unsafe_method(
-                "blockAccount".to_string(),
-                Self::CPU_FEE,
-                CallFlags::STATES.bits(),
-                vec![ContractParameterType::Hash160],
-                ContractParameterType::Boolean,
-            )
-            .with_deprecated_in(Hardfork::HfFaun)
-            .with_parameter_names(vec!["account".to_string()]),
-            NativeMethod::unsafe_method(
-                "blockAccount".to_string(),
-                Self::CPU_FEE,
-                (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
-                vec![ContractParameterType::Hash160],
-                ContractParameterType::Boolean,
-            )
-            .with_active_in(Hardfork::HfFaun)
-            .with_parameter_names(vec!["account".to_string()]),
-            NativeMethod::unsafe_method(
-                "unblockAccount".to_string(),
-                Self::CPU_FEE,
-                CallFlags::STATES.bits(),
-                vec![ContractParameterType::Hash160],
-                ContractParameterType::Boolean,
-            )
-            .with_parameter_names(vec!["account".to_string()]),
-            NativeMethod::safe(
-                "getBlockedAccounts".to_string(),
-                Self::CPU_FEE,
-                Vec::new(),
-                ContractParameterType::InteropInterface,
-            )
-            .with_active_in(Hardfork::HfFaun)
-            .with_required_call_flags(CallFlags::READ_STATES),
-            // Whitelist management (HF_Faun)
-            NativeMethod::unsafe_method(
-                "setWhitelistFeeContract".to_string(),
-                Self::CPU_FEE,
-                (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
-                vec![
-                    ContractParameterType::Hash160,
-                    ContractParameterType::String,
-                    ContractParameterType::Integer,
-                    ContractParameterType::Integer,
-                ],
-                ContractParameterType::Void,
-            )
-            .with_active_in(Hardfork::HfFaun)
-            .with_parameter_names(vec![
-                "contractHash".to_string(),
-                "method".to_string(),
-                "argCount".to_string(),
-                "fixedFee".to_string(),
-            ]),
-            NativeMethod::unsafe_method(
-                "removeWhitelistFeeContract".to_string(),
-                Self::CPU_FEE,
-                (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
-                vec![
-                    ContractParameterType::Hash160,
-                    ContractParameterType::String,
-                    ContractParameterType::Integer,
-                ],
-                ContractParameterType::Void,
-            )
-            .with_active_in(Hardfork::HfFaun)
-            .with_parameter_names(vec![
-                "contractHash".to_string(),
-                "method".to_string(),
-                "argCount".to_string(),
-            ]),
-            NativeMethod::safe(
-                "getWhitelistFeeContracts".to_string(),
-                Self::CPU_FEE,
-                Vec::new(),
-                ContractParameterType::InteropInterface,
-            )
-            .with_active_in(Hardfork::HfFaun)
-            .with_required_call_flags(CallFlags::READ_STATES),
-            // Recover fund (HF_Faun)
-            NativeMethod::unsafe_method(
-                "recoverFund".to_string(),
-                Self::CPU_FEE,
-                CallFlags::ALL.bits(),
-                vec![
-                    ContractParameterType::Hash160,
-                    ContractParameterType::Hash160,
-                ],
-                ContractParameterType::Boolean,
-            )
-            .with_active_in(Hardfork::HfFaun)
-            .with_parameter_names(vec!["account".to_string(), "token".to_string()]),
-        ];
-
         Self {
             id: Self::ID,
             hash,
-            methods,
+            methods: Self::native_methods(),
         }
     }
 }
@@ -467,6 +212,7 @@ impl PolicyContract {
 mod account;
 mod getters;
 mod helpers;
+mod metadata;
 mod native_impl;
 mod setters;
 mod snapshot;
