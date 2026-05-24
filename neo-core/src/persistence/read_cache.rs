@@ -81,18 +81,13 @@ impl ReadCacheStats {
     /// Records an eviction.
     #[inline]
     pub fn record_eviction(&self, bytes: usize) {
-        self.evictions.fetch_add(1, Ordering::Relaxed);
-        self.current_entries.fetch_sub(1, Ordering::Relaxed);
-        self.current_bytes.fetch_sub(bytes, Ordering::Relaxed);
+        self.record_cache_eviction(bytes, true);
     }
 
     /// Records a prefetch.
     #[inline]
     pub fn record_prefetch(&self, count: usize, bytes: usize) {
-        self.prefetches.fetch_add(count as u64, Ordering::Relaxed);
-        self.inserts.fetch_add(count as u64, Ordering::Relaxed);
-        self.current_entries.fetch_add(count, Ordering::Relaxed);
-        self.current_bytes.fetch_add(bytes, Ordering::Relaxed);
+        self.record_prefetch_batch(count, count, 0, bytes, true);
     }
 
     /// Records a prefetch hit.
@@ -104,9 +99,7 @@ impl ReadCacheStats {
     /// Records an insert.
     #[inline]
     pub fn record_insert(&self, bytes: usize) {
-        self.inserts.fetch_add(1, Ordering::Relaxed);
-        self.current_entries.fetch_add(1, Ordering::Relaxed);
-        self.current_bytes.fetch_add(bytes, Ordering::Relaxed);
+        self.record_cache_write(None, bytes, true);
     }
 
     /// Records a bloom filter negative lookup.
@@ -134,6 +127,67 @@ impl ReadCacheStats {
             current_bytes: self.current_bytes.load(Ordering::Relaxed),
             bloom_filter_negatives: self.bloom_filter_negatives.load(Ordering::Relaxed),
             bloom_filter_checks: self.bloom_filter_checks.load(Ordering::Relaxed),
+        }
+    }
+
+    #[inline]
+    fn record_cache_write(&self, old_bytes: Option<usize>, new_bytes: usize, enable_stats: bool) {
+        if enable_stats {
+            self.inserts.fetch_add(1, Ordering::Relaxed);
+        }
+
+        match old_bytes {
+            Some(old_bytes) => self.replace_current_bytes(old_bytes, new_bytes),
+            None => {
+                self.current_entries.fetch_add(1, Ordering::Relaxed);
+                self.current_bytes.fetch_add(new_bytes, Ordering::Relaxed);
+            }
+        }
+    }
+
+    #[inline]
+    fn record_prefetch_batch(
+        &self,
+        count: usize,
+        new_entries: usize,
+        old_bytes: usize,
+        new_bytes: usize,
+        enable_stats: bool,
+    ) {
+        if enable_stats {
+            self.prefetches.fetch_add(count as u64, Ordering::Relaxed);
+            self.inserts.fetch_add(count as u64, Ordering::Relaxed);
+        }
+
+        if new_entries > 0 {
+            self.current_entries
+                .fetch_add(new_entries, Ordering::Relaxed);
+        }
+        self.replace_current_bytes(old_bytes, new_bytes);
+    }
+
+    #[inline]
+    fn record_cache_eviction(&self, bytes: usize, enable_stats: bool) {
+        if enable_stats {
+            self.evictions.fetch_add(1, Ordering::Relaxed);
+        }
+        self.record_cache_removal(bytes);
+    }
+
+    #[inline]
+    fn record_cache_removal(&self, bytes: usize) {
+        self.current_entries.fetch_sub(1, Ordering::Relaxed);
+        self.current_bytes.fetch_sub(bytes, Ordering::Relaxed);
+    }
+
+    #[inline]
+    fn replace_current_bytes(&self, old_bytes: usize, new_bytes: usize) {
+        if new_bytes >= old_bytes {
+            self.current_bytes
+                .fetch_add(new_bytes - old_bytes, Ordering::Relaxed);
+        } else {
+            self.current_bytes
+                .fetch_sub(old_bytes - new_bytes, Ordering::Relaxed);
         }
     }
 }
@@ -367,10 +421,11 @@ where
                     let size = entry.size_bytes;
                     let key_clone = key.clone();
                     data.remove(key);
-                    drop(data);
 
                     self.lru_tracker.write().remove(&key_clone);
-                    self.stats.record_eviction(size);
+                    self.stats
+                        .record_cache_eviction(size, self.config.enable_stats);
+                    drop(data);
 
                     if self.config.enable_stats {
                         self.stats.record_miss();
@@ -384,8 +439,8 @@ where
             let value = entry.value.clone();
 
             // Update access order
-            drop(data);
             self.lru_tracker.write().record_access(key.clone());
+            drop(data);
 
             if self.config.enable_stats {
                 self.stats.record_hit();
@@ -409,16 +464,21 @@ where
     pub fn put(&self, key: K, value: V, size_bytes: usize) {
         let mut data = self.data.write();
 
-        // Check if we need to evict
-        while data.len() >= self.config.max_entries {
+        if data.contains_key(&key) {
+            self.lru_tracker.write().record_access(key.clone());
+        }
+
+        // Check if we need to evict for a new entry. Updates do not increase entry count.
+        while data.len() + usize::from(!data.contains_key(&key)) > self.config.max_entries {
             if !self.evict_lru(&mut data) {
                 break; // Could not evict, stop trying
             }
         }
 
         // Check if adding this would exceed byte limit
-        let current_bytes = self.stats.current_bytes.load(Ordering::Relaxed);
-        while current_bytes + size_bytes > self.config.max_bytes && !data.is_empty() {
+        while self.projected_bytes_after_put(&data, &key, size_bytes) > self.config.max_bytes
+            && !data.is_empty()
+        {
             if !self.evict_lru(&mut data) {
                 break;
             }
@@ -427,8 +487,10 @@ where
         // Insert new entry
         let entry = CacheEntry::new(value, size_bytes);
         let key_for_bloom = key.clone();
-        let is_new = data.insert(key.clone(), entry).is_none();
-        drop(data);
+        let old_size = data
+            .insert(key.clone(), entry)
+            .map(|entry| entry.size_bytes);
+        let is_new = old_size.is_none();
 
         // Update LRU tracker
         self.lru_tracker.write().record_access(key);
@@ -440,28 +502,46 @@ where
             }
         }
 
-        if self.config.enable_stats {
-            self.stats.record_insert(size_bytes);
-        }
+        self.stats
+            .record_cache_write(old_size, size_bytes, self.config.enable_stats);
+        drop(data);
 
         trace!(target: "neo", size_bytes, "cache insert");
     }
 
     /// Puts multiple values into the cache (for pre-fetching).
     pub fn put_batch(&self, items: Vec<(K, V, usize)>) {
+        if items.is_empty() {
+            return;
+        }
+
         let total_bytes: usize = items.iter().map(|(_, _, size)| size).sum();
 
         let mut data = self.data.write();
+        let mut final_sizes = HashMap::with_capacity(items.len());
+        for (key, _, size_bytes) in &items {
+            final_sizes.insert(key.clone(), *size_bytes);
+        }
+
+        {
+            let mut lru = self.lru_tracker.write();
+            for key in final_sizes.keys() {
+                if data.contains_key(key) {
+                    lru.record_access(key.clone());
+                }
+            }
+        }
 
         // Make room for new entries
-        while data.len() + items.len() > self.config.max_entries {
+        while self.projected_len_after_batch(&data, &final_sizes) > self.config.max_entries {
             if !self.evict_lru(&mut data) {
                 break;
             }
         }
 
-        let current_bytes = self.stats.current_bytes.load(Ordering::Relaxed);
-        while current_bytes + total_bytes > self.config.max_bytes && !data.is_empty() {
+        while self.projected_bytes_after_batch(&data, &final_sizes) > self.config.max_bytes
+            && !data.is_empty()
+        {
             if !self.evict_lru(&mut data) {
                 break;
             }
@@ -470,19 +550,22 @@ where
         let count = items.len();
         let mut lru = self.lru_tracker.write();
         let mut keys_for_bloom = Vec::with_capacity(count);
+        let mut new_entries = 0;
+        let mut old_bytes = 0;
+        let mut new_bytes = 0;
 
         for (key, value, size_bytes) in items {
             let entry = CacheEntry::new(value, size_bytes);
             let key_for_bloom = key.clone();
-            let is_new = data.insert(key.clone(), entry).is_none();
-            if is_new {
+            if let Some(old_entry) = data.insert(key.clone(), entry) {
+                old_bytes += old_entry.size_bytes;
+            } else {
+                new_entries += 1;
                 keys_for_bloom.push(key_for_bloom);
             }
+            new_bytes += size_bytes;
             lru.record_access(key);
         }
-
-        drop(data);
-        drop(lru);
 
         // Update bloom filter
         if let Some(ref bloom) = self.bloom_filter {
@@ -491,9 +574,15 @@ where
             }
         }
 
-        if self.config.enable_stats && count > 0 {
-            self.stats.record_prefetch(count, total_bytes);
-        }
+        self.stats.record_prefetch_batch(
+            count,
+            new_entries,
+            old_bytes,
+            new_bytes,
+            self.config.enable_stats,
+        );
+        drop(lru);
+        drop(data);
 
         debug!(target: "neo", count, total_bytes, "cache batch insert (prefetch)");
     }
@@ -504,13 +593,7 @@ where
 
         if let Some(entry) = data.remove(key) {
             self.lru_tracker.write().remove(key);
-
-            if self.config.enable_stats {
-                self.stats.current_entries.fetch_sub(1, Ordering::Relaxed);
-                self.stats
-                    .current_bytes
-                    .fetch_sub(entry.size_bytes, Ordering::Relaxed);
-            }
+            self.stats.record_cache_removal(entry.size_bytes);
 
             Some(entry.value)
         } else {
@@ -530,10 +613,8 @@ where
             bloom.clear();
         }
 
-        if self.config.enable_stats {
-            self.stats.current_entries.store(0, Ordering::Relaxed);
-            self.stats.current_bytes.store(0, Ordering::Relaxed);
-        }
+        self.stats.current_entries.store(0, Ordering::Relaxed);
+        self.stats.current_bytes.store(0, Ordering::Relaxed);
 
         debug!(target: "neo", "cache cleared");
     }
@@ -588,6 +669,48 @@ where
         }
     }
 
+    fn projected_len_after_batch(
+        &self,
+        data: &HashMap<K, CacheEntry<V>>,
+        final_sizes: &HashMap<K, usize>,
+    ) -> usize {
+        let new_entries = final_sizes
+            .keys()
+            .filter(|key| !data.contains_key(*key))
+            .count();
+        data.len() + new_entries
+    }
+
+    fn projected_bytes_after_put(
+        &self,
+        data: &HashMap<K, CacheEntry<V>>,
+        key: &K,
+        size_bytes: usize,
+    ) -> usize {
+        let current_bytes = self.stats.current_bytes.load(Ordering::Relaxed);
+        let old_bytes = data.get(key).map(|entry| entry.size_bytes).unwrap_or(0);
+        current_bytes
+            .saturating_sub(old_bytes)
+            .saturating_add(size_bytes)
+    }
+
+    fn projected_bytes_after_batch(
+        &self,
+        data: &HashMap<K, CacheEntry<V>>,
+        final_sizes: &HashMap<K, usize>,
+    ) -> usize {
+        let current_bytes = self.stats.current_bytes.load(Ordering::Relaxed);
+        let old_bytes = final_sizes
+            .keys()
+            .filter_map(|key| data.get(key).map(|entry| entry.size_bytes))
+            .sum::<usize>();
+        let new_bytes = final_sizes.values().sum::<usize>();
+
+        current_bytes
+            .saturating_sub(old_bytes)
+            .saturating_add(new_bytes)
+    }
+
     /// Evicts the least recently used entry.
     fn evict_lru(
         &self,
@@ -600,10 +723,8 @@ where
 
             if let Some(entry) = data.remove(&lru_key) {
                 self.lru_tracker.write().remove(&lru_key);
-
-                if self.config.enable_stats {
-                    self.stats.record_eviction(entry.size_bytes);
-                }
+                self.stats
+                    .record_cache_eviction(entry.size_bytes, self.config.enable_stats);
 
                 trace!(target: "neo", "cache eviction");
                 return true;

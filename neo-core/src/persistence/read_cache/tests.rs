@@ -110,6 +110,132 @@ fn read_cache_remove_clears_lru_tracker_entry() {
 }
 
 #[test]
+fn read_cache_update_existing_entry_does_not_evict_unrelated_key() {
+    let config = ReadCacheConfig {
+        max_entries: 2,
+        max_bytes: 1000,
+        enable_prefetch: false,
+        prefetch_count: 0,
+        prefetch_threshold: 0,
+        ttl: None,
+        enable_stats: true,
+        enable_bloom_filter: false,
+        bloom_filter_capacity: 1000,
+        bloom_filter_fpr: 0.01,
+    };
+
+    let cache = ReadCache::<String, String>::new(config);
+
+    cache.put("key1".to_string(), "value1".to_string(), 10);
+    cache.put("key2".to_string(), "value2".to_string(), 10);
+    cache.put("key2".to_string(), "value2b".to_string(), 30);
+
+    assert_eq!(cache.len(), 2);
+    assert_eq!(cache.get(&"key1".to_string()), Some("value1".to_string()));
+    assert_eq!(cache.get(&"key2".to_string()), Some("value2b".to_string()));
+
+    let stats = cache.stats();
+    assert_eq!(stats.evictions, 0);
+    assert_eq!(stats.current_entries, 2);
+    assert_eq!(stats.current_bytes, 40);
+}
+
+#[test]
+fn read_cache_byte_limit_recomputes_after_each_eviction() {
+    let config = ReadCacheConfig {
+        max_entries: 100,
+        max_bytes: 35,
+        enable_prefetch: false,
+        prefetch_count: 0,
+        prefetch_threshold: 0,
+        ttl: None,
+        enable_stats: true,
+        enable_bloom_filter: false,
+        bloom_filter_capacity: 1000,
+        bloom_filter_fpr: 0.01,
+    };
+
+    let cache = ReadCache::<String, String>::new(config);
+
+    cache.put("key1".to_string(), "value1".to_string(), 10);
+    cache.put("key2".to_string(), "value2".to_string(), 10);
+    cache.put("key3".to_string(), "value3".to_string(), 20);
+
+    assert_eq!(cache.len(), 2);
+    assert!(!cache.contains(&"key1".to_string()));
+    assert!(cache.contains(&"key2".to_string()));
+    assert!(cache.contains(&"key3".to_string()));
+
+    let stats = cache.stats();
+    assert_eq!(stats.evictions, 1);
+    assert_eq!(stats.current_entries, 2);
+    assert_eq!(stats.current_bytes, 30);
+}
+
+#[test]
+fn read_cache_byte_limit_still_applies_when_stats_are_disabled() {
+    let config = ReadCacheConfig {
+        max_entries: 100,
+        max_bytes: 25,
+        enable_prefetch: false,
+        prefetch_count: 0,
+        prefetch_threshold: 0,
+        ttl: None,
+        enable_stats: false,
+        enable_bloom_filter: false,
+        bloom_filter_capacity: 1000,
+        bloom_filter_fpr: 0.01,
+    };
+
+    let cache = ReadCache::<String, String>::new(config);
+
+    cache.put("key1".to_string(), "value1".to_string(), 20);
+    cache.put("key2".to_string(), "value2".to_string(), 20);
+
+    assert_eq!(cache.len(), 1);
+    assert!(!cache.contains(&"key1".to_string()));
+    assert!(cache.contains(&"key2".to_string()));
+
+    let stats = cache.stats();
+    assert_eq!(stats.evictions, 0);
+    assert_eq!(stats.inserts, 0);
+    assert_eq!(stats.current_entries, 1);
+    assert_eq!(stats.current_bytes, 20);
+}
+
+#[test]
+fn read_cache_put_batch_update_does_not_evict_unrelated_key() {
+    let config = ReadCacheConfig {
+        max_entries: 2,
+        max_bytes: 1000,
+        enable_prefetch: false,
+        prefetch_count: 0,
+        prefetch_threshold: 0,
+        ttl: None,
+        enable_stats: true,
+        enable_bloom_filter: false,
+        bloom_filter_capacity: 1000,
+        bloom_filter_fpr: 0.01,
+    };
+
+    let cache = ReadCache::<String, String>::new(config);
+
+    cache.put("key1".to_string(), "value1".to_string(), 10);
+    cache.put("key2".to_string(), "value2".to_string(), 10);
+    cache.put_batch(vec![("key2".to_string(), "value2b".to_string(), 30)]);
+
+    assert_eq!(cache.len(), 2);
+    assert_eq!(cache.get(&"key1".to_string()), Some("value1".to_string()));
+    assert_eq!(cache.get(&"key2".to_string()), Some("value2b".to_string()));
+
+    let stats = cache.stats();
+    assert_eq!(stats.evictions, 0);
+    assert_eq!(stats.prefetches, 1);
+    assert_eq!(stats.current_entries, 2);
+    assert_eq!(stats.current_bytes, 40);
+}
+
+#[test]
 fn read_cache_byte_limit_eviction() {
     let config = ReadCacheConfig {
         max_entries: 100,
