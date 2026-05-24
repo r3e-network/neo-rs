@@ -17,7 +17,6 @@ description = "IO operations and data structures for the Neo blockchain"
 # External dependencies
 bytes = { workspace = true }
 thiserror = { workspace = true }
-derive_more = { workspace = true }
 lru = { workspace = true }
 hashbrown = { workspace = true }
 serde = { workspace = true }

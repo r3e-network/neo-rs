@@ -5,7 +5,7 @@
 use hex::decode as hex_decode;
 use hex::encode as hex_encode;
 use neo_core::cryptography::{
-    Bls12381Crypto, Crypto, Ed25519Crypto, NamedCurveHash, NeoHash, Secp256k1Crypto,
+    Bls12381Crypto, Crypto, Ed25519Crypto, NamedCurveHash, Crypto, Secp256k1Crypto,
     Secp256r1Crypto,
 };
 use neo_core::hardfork::{Hardfork, HardforkManager};
@@ -343,7 +343,7 @@ fn test_crypto_lib_name() {
 #[test]
 fn test_sha256() {
     let data = b"Hello, World!";
-    let hash = NeoHash::sha256(data);
+    let hash = Crypto::sha256(data);
 
     // Known SHA256 hash of "Hello, World!"
     let expected =
@@ -360,7 +360,7 @@ fn test_sha256() {
 #[test]
 fn test_sha256_empty() {
     let data = b"";
-    let hash = NeoHash::sha256(data);
+    let hash = Crypto::sha256(data);
 
     // SHA256 of empty string
     let expected =
@@ -377,7 +377,7 @@ fn test_sha256_empty() {
 #[test]
 fn test_ripemd160() {
     let data = b"Hello, World!";
-    let hash = NeoHash::ripemd160(data);
+    let hash = Crypto::ripemd160(data);
 
     // Known RIPEMD160 hash of "Hello, World!" (verified with Python hashlib and OpenSSL)
     let expected = hex::decode("527a6a4b9a6da75607546842e0e00105350b1aaf").unwrap();
@@ -393,7 +393,7 @@ fn test_ripemd160() {
 #[test]
 fn test_ripemd160_empty() {
     let data = b"";
-    let hash = NeoHash::ripemd160(data);
+    let hash = Crypto::ripemd160(data);
 
     // RIPEMD160 of empty string
     let expected = hex::decode("9c1185a5c5e9fc54612808977ee8f548b2258d31").unwrap();
@@ -409,11 +409,11 @@ fn test_ripemd160_empty() {
 #[test]
 fn test_hash160() {
     let data = b"test";
-    let hash = NeoHash::hash160(data);
+    let hash = Crypto::hash160(data);
 
     // Hash160 is RIPEMD160(SHA256(data))
-    let sha256_result = NeoHash::sha256(data);
-    let expected = NeoHash::ripemd160(&sha256_result);
+    let sha256_result = Crypto::sha256(data);
+    let expected = Crypto::ripemd160(&sha256_result);
 
     assert_eq!(
         hash, expected,
@@ -425,11 +425,11 @@ fn test_hash160() {
 #[test]
 fn test_hash256() {
     let data = b"test";
-    let hash = NeoHash::hash256(data);
+    let hash = Crypto::hash256(data);
 
     // Hash256 is SHA256(SHA256(data))
-    let first_hash = NeoHash::sha256(data);
-    let expected = NeoHash::sha256(&first_hash);
+    let first_hash = Crypto::sha256(data);
+    let expected = Crypto::sha256(&first_hash);
 
     assert_eq!(hash, expected, "Hash256 should equal SHA256(SHA256(data))");
 }
@@ -1797,9 +1797,9 @@ fn test_hash_consistency() {
     let data = b"consistent test data";
 
     // Hash the same data multiple times
-    let hash1 = NeoHash::sha256(data);
-    let hash2 = NeoHash::sha256(data);
-    let hash3 = NeoHash::sha256(data);
+    let hash1 = Crypto::sha256(data);
+    let hash2 = Crypto::sha256(data);
+    let hash3 = Crypto::sha256(data);
 
     assert_eq!(hash1, hash2, "SHA256 should be deterministic");
     assert_eq!(hash2, hash3, "SHA256 should be deterministic");
@@ -1811,8 +1811,8 @@ fn test_hash_uniqueness() {
     let data1 = b"data one";
     let data2 = b"data two";
 
-    let hash1 = NeoHash::sha256(data1);
-    let hash2 = NeoHash::sha256(data2);
+    let hash1 = Crypto::sha256(data1);
+    let hash2 = Crypto::sha256(data2);
 
     assert_ne!(
         hash1, hash2,

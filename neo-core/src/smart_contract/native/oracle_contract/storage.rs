@@ -2,7 +2,7 @@ use super::{
     OracleContract, PendingRequest, DEFAULT_PRICE, MAX_PENDING_PER_URL, PREFIX_ID_LIST,
     PREFIX_PRICE, PREFIX_REQUEST, PREFIX_REQUEST_ID,
 };
-use crate::cryptography::NeoHash;
+use crate::cryptography::Crypto;
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::persistence::{i_read_only_store::IReadOnlyStoreGeneric, DataCache};
 use crate::smart_contract::binary_serializer::BinarySerializer;
@@ -251,7 +251,7 @@ impl OracleContract {
     }
 
     pub(super) fn compute_url_hash(&self, url: &str) -> [u8; 20] {
-        NeoHash::hash160(url.as_bytes())
+        Crypto::hash160(url.as_bytes())
     }
 
     fn serialize_id_list(&self, list: &[u64]) -> Result<Vec<u8>> {

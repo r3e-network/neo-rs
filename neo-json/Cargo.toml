@@ -14,11 +14,9 @@ readme.workspace = true
 description = "JSON types and utilities for Neo blockchain (matches C# Neo.Json)"
 
 [dependencies]
-log = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-derive_more = { workspace = true }
 hashbrown = { workspace = true }
 
 [dev-dependencies]

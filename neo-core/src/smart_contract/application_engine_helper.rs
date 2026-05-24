@@ -1,6 +1,6 @@
 //! ApplicationEngine.Helper - matches C# Neo.SmartContract.ApplicationEngine helper methods exactly
 
-use crate::cryptography::crypto_utils::NeoHash;
+use crate::cryptography::Crypto;
 use crate::hardfork::Hardfork;
 use crate::neo_vm::stack_item::{Array, Map, Struct};
 use crate::neo_vm::StackItem;
@@ -188,7 +188,7 @@ impl ApplicationEngine {
         // Create signature redeem script
         let script = crate::smart_contract::helper::Helper::signature_redeem_script(pubkey);
         // Hash the script
-        let hash_bytes = NeoHash::hash160(&script);
+        let hash_bytes = Crypto::hash160(&script);
         UInt160::from_bytes(&hash_bytes).expect("hash160 produces 20 bytes")
     }
 

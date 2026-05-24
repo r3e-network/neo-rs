@@ -1,6 +1,6 @@
 //! ApplicationEngine.Runtime - matches C# Neo.SmartContract.ApplicationEngine.Runtime.cs exactly
 
-use crate::cryptography::crypto_utils::NeoHash;
+use crate::cryptography::{Crypto, murmur128};
 use crate::hardfork::Hardfork;
 use crate::neo_config::{ADDRESS_SIZE, HASH_SIZE};
 use crate::neo_vm::{ExecutionEngine, StackItem, VmError, VmResult};
@@ -167,9 +167,9 @@ impl ApplicationEngine {
         let buffer = if aspid_enabled {
             let seed = network.wrapping_add(self.random_counter());
             self.increment_random_counter();
-            NeoHash::murmur128(self.nonce_bytes(), seed)
+            murmur128(self.nonce_bytes(), seed)
         } else {
-            let bytes = NeoHash::murmur128(self.nonce_bytes(), network);
+            let bytes = murmur128(self.nonce_bytes(), network);
             self.set_nonce_bytes(bytes);
             bytes
         };

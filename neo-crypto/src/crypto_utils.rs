@@ -20,7 +20,7 @@
 //!
 //! # Key Types
 //!
-//! - [`NeoHash`]: Hash function implementations (hash160, hash256, sha256, etc.)
+//! - [`Crypto`]: Hash function implementations (hash160, hash256, sha256, etc.)
 //! - [`Secp256r1Crypto`]: P-256 key generation, signing, verification
 //! - [`Secp256k1Crypto`]: secp256k1 operations for compatibility
 //! - [`Ed25519Crypto`]: `EdDSA` operations
@@ -40,13 +40,11 @@
 pub use crate::bls12381::Bls12381Crypto;
 pub use crate::constant_time::ConstantTime;
 pub use crate::encoding::{Base58, Hex};
+pub use crate::hash::Crypto;
 pub use crate::murmur;
-pub use crate::neo_hash::NeoHash;
 pub use crate::signature::{ECDsa, Ed25519Crypto, Secp256k1Crypto, Secp256r1Crypto, ECC};
 
 /// Convenience functions for Base58 encoding and decoding.
 pub mod base58 {
     pub use crate::encoding::base58::*;
 }
-
-// NOTE: Removed duplicate `pub mod hash` - use `crate::hash` or `NeoHash` instead

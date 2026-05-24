@@ -3,7 +3,7 @@
 //! This module provides Merkle tree functionality used for computing
 //! transaction and block payload roots.
 
-use neo_crypto::NeoHash;
+use neo_crypto::Crypto;
 use neo_primitives::UInt256;
 
 /// A node in the Merkle tree.
@@ -217,5 +217,5 @@ fn hash_pair(left: &UInt256, right: &UInt256) -> UInt256 {
     let mut bytes = [0u8; 64];
     bytes[..32].copy_from_slice(&left.to_array());
     bytes[32..].copy_from_slice(&right.to_array());
-    UInt256::from(NeoHash::hash256(&bytes))
+    UInt256::from(Crypto::hash256(&bytes))
 }

@@ -1,6 +1,6 @@
 //! Contract - matches C# Neo.SmartContract.Contract exactly
 
-use crate::cryptography::{ECPoint, NeoHash};
+use crate::cryptography::{ECPoint, Crypto};
 use crate::error::CoreError;
 use crate::script_builder::ScriptBuilder;
 use crate::smart_contract::ContractParameterType;
@@ -83,7 +83,7 @@ impl Contract {
     pub fn script_hash(&self) -> UInt160 {
         *self
             .script_hash_cache
-            .get_or_init(|| UInt160::from(NeoHash::hash160(&self.script)))
+            .get_or_init(|| UInt160::from(Crypto::hash160(&self.script)))
     }
 
     /// Creates a multi-sig contract
@@ -173,7 +173,7 @@ impl Contract {
         data.push(crate::protocol_settings::ProtocolSettings::default_settings().address_version);
         data.extend_from_slice(&self.script_hash().to_bytes());
 
-        let checksum = crate::cryptography::crypto_utils::NeoHash::hash256(&data);
+        let checksum = crate::cryptography::crypto_utils::Crypto::hash256(&data);
         data.extend_from_slice(&checksum[..4]);
 
         crate::cryptography::crypto_utils::Base58::encode(&data)

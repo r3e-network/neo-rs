@@ -1,6 +1,6 @@
 use hex::{decode as hex_decode, encode as hex_encode};
 use neo_core::cryptography::bloom_filter::BloomFilter;
-use neo_core::cryptography::{ECCurve, ECPoint, NeoHash};
+use neo_core::cryptography::{ECCurve, ECPoint, Crypto};
 use neo_core::ledger::create_genesis_block;
 use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable, SerializableExt};
 use neo_core::network::p2p::capabilities::{NodeCapability, NodeCapabilityType};
@@ -875,7 +875,7 @@ fn csharp_ut_witness_max_size_errors() {
 
 #[test]
 fn csharp_ut_extensible_payload_size_and_roundtrip() {
-    let sender = UInt160::from_bytes(&NeoHash::hash160(&[])).expect("empty script hash");
+    let sender = UInt160::from_bytes(&Crypto::hash160(&[])).expect("empty script hash");
     let mut payload = ExtensiblePayload::new();
     payload.category = "123".to_string();
     payload.valid_block_start = 0;

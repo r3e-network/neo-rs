@@ -1,4 +1,4 @@
-use neo_core::cryptography::{ECCurve, ECPoint, NeoHash, Secp256r1Crypto};
+use neo_core::cryptography::{ECCurve, ECPoint, Crypto, Secp256r1Crypto};
 use neo_core::ledger::{block::Block, block_header::BlockHeader};
 use neo_core::neo_io::BinaryWriter;
 use neo_core::neo_vm::StackItem;
@@ -1037,7 +1037,7 @@ fn oracle_post_persist_cleans_known_requests_and_mints_gas_for_designated_nodes(
 
     let script = Contract::create_signature_redeem_script(oracle_point);
     let account =
-        UInt160::from_bytes(&NeoHash::hash160(&script)).expect("convert designated account");
+        UInt160::from_bytes(&Crypto::hash160(&script)).expect("convert designated account");
     let gas = GasToken::new();
     let balance = gas.balance_of_snapshot(engine_snapshot.as_ref(), &account);
     let expected = BigInt::from(oracle.get_price(engine_snapshot.as_ref()));
@@ -1075,7 +1075,7 @@ fn oracle_post_persist_ignores_unknown_response_ids() {
 
     let script = Contract::create_signature_redeem_script(oracle_point);
     let account =
-        UInt160::from_bytes(&NeoHash::hash160(&script)).expect("convert designated account");
+        UInt160::from_bytes(&Crypto::hash160(&script)).expect("convert designated account");
     let gas = GasToken::new();
     let balance = gas.balance_of_snapshot(engine.snapshot_cache().as_ref(), &account);
 

@@ -2,7 +2,6 @@
 //! Neo.IO - matches C# Neo.IO exactly
 //! This crate provides IO functionality matching C# Neo.IO namespace
 
-pub mod actors;
 pub mod caching;
 
 mod binary_writer;
@@ -18,9 +17,6 @@ pub use i_serializable::ISerializable;
 pub use i_serializable_span::ISerializableSpan;
 pub use memory_reader::{IoError, IoResult, MemoryReader};
 pub use serializable::Serializable;
-
-// Re-export actors
-pub use actors::idle::Idle;
 
 // Re-export caching types
 pub use caching::{

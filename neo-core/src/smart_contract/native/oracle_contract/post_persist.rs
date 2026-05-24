@@ -1,5 +1,5 @@
 use super::OracleContract;
-use crate::cryptography::NeoHash;
+use crate::cryptography::Crypto;
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::network::p2p::payloads::transaction_attribute::TransactionAttribute;
 use crate::smart_contract::application_engine::ApplicationEngine;
@@ -104,7 +104,7 @@ impl OracleContract {
                 .into_iter()
                 .filter_map(|pk| {
                     let script = Contract::create_signature_redeem_script(pk);
-                    UInt160::from_bytes(&NeoHash::hash160(&script)).ok()
+                    UInt160::from_bytes(&Crypto::hash160(&script)).ok()
                 })
                 .collect(),
             Err(err) => {

@@ -51,8 +51,6 @@ pub mod mpt_trie;
 /// Murmur3 hash helpers used by Neo runtime and native contracts.
 pub mod murmur;
 pub mod named_curve_hash;
-/// Neo-specific hash facade.
-pub mod neo_hash;
 /// Signature and key helpers used by Neo cryptographic APIs.
 pub mod signature;
 
@@ -69,7 +67,6 @@ pub use mpt_trie::{
 };
 pub use murmur::{murmur128, murmur32};
 pub use named_curve_hash::NamedCurveHash;
-pub use neo_hash::NeoHash;
 pub use signature::{ECDsa, Ed25519Crypto, Secp256k1Crypto, Secp256r1Crypto, ECC};
 
 #[cfg(test)]

@@ -1,5 +1,5 @@
 use super::{TokenManagement, ID, PREFIX_NFT_UNIQUE_ID_SEED};
-use crate::cryptography::NeoHash;
+use crate::cryptography::Crypto;
 use crate::error::{CoreError, CoreResult};
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::native::NativeContract;
@@ -38,7 +38,7 @@ impl TokenManagement {
         let mut buffer = Vec::with_capacity(32 + seed_bytes.len());
         buffer.extend_from_slice(&block_hash.as_bytes());
         buffer.extend_from_slice(&seed_bytes);
-        let hash = NeoHash::hash160(&buffer);
+        let hash = Crypto::hash160(&buffer);
         let unique_id = UInt160::from_bytes(&hash).unwrap_or_default();
         Ok(unique_id)
     }
@@ -56,7 +56,7 @@ impl TokenManagement {
         let mut buffer = Vec::with_capacity(20 + name_bytes.len());
         buffer.extend_from_slice(&owner.as_bytes());
         buffer.extend_from_slice(name_bytes);
-        let hash = NeoHash::hash160(&buffer);
+        let hash = Crypto::hash160(&buffer);
         UInt160::from_bytes(&hash).unwrap_or_default()
     }
 }

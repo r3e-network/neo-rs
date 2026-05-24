@@ -3,7 +3,7 @@
 //! Matches C# Neo.Plugins.StateService.Network.StateRoot exactly.
 
 use crate::cryptography::Crypto;
-use crate::cryptography::NeoHash;
+use crate::cryptography::Crypto;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::network::p2p::payloads::Witness;
 use crate::persistence::DataCache;
@@ -64,7 +64,7 @@ impl StateRoot {
         }
 
         let unsigned_data = self.get_unsigned_data();
-        let hash = UInt256::from(NeoHash::hash256(&unsigned_data));
+        let hash = UInt256::from(Crypto::hash256(&unsigned_data));
         self.cached_hash = Some(hash);
         hash
     }

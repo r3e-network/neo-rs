@@ -4,7 +4,7 @@
 //! Note: This file contains basic tests that can run at the core level.
 //! More advanced VM and smart contract tests will be in their respective crates.
 
-use neo_core::cryptography::crypto_utils::{murmur, NeoHash};
+use neo_core::cryptography::crypto_utils::{murmur, Crypto};
 use neo_core::{Transaction, UInt160, UInt256};
 use std::str::FromStr;
 
@@ -16,7 +16,7 @@ use std::str::FromStr;
 #[test]
 fn test_crypto_sha256() {
     let input = b"Hello, world!";
-    let actual_hash = NeoHash::sha256(input);
+    let actual_hash = Crypto::sha256(input);
     let expected_hash = "315f5bdb76d078c43b8ac0064e4a0164612b1fce77c869345bfc94c75894edd3";
     assert_eq!(expected_hash, hex::encode(actual_hash));
 }
@@ -25,7 +25,7 @@ fn test_crypto_sha256() {
 #[test]
 fn test_crypto_ripemd160() {
     let input = b"Hello, world!";
-    let actual_hash = NeoHash::ripemd160(input);
+    let actual_hash = Crypto::ripemd160(input);
     let expected_hash = "58262d1fbdbe4530d8865d3518c6d6e41002610f";
     assert_eq!(expected_hash, hex::encode(actual_hash));
 }
@@ -115,14 +115,14 @@ fn test_transaction_hash_computation() {
 #[test]
 fn test_smart_contract_crypto_operations() {
     let data = b"test data for hash160";
-    let hash160_result = NeoHash::hash160(data);
+    let hash160_result = Crypto::hash160(data);
     assert_eq!(
         20,
         hash160_result.len(),
         "Hash160 should produce 20-byte result"
     );
 
-    let hash256_result = NeoHash::hash256(data);
+    let hash256_result = Crypto::hash256(data);
     assert_eq!(
         32,
         hash256_result.len(),
@@ -130,8 +130,8 @@ fn test_smart_contract_crypto_operations() {
     );
 
     // Test consistency
-    let hash160_result2 = NeoHash::hash160(data);
-    let hash256_result2 = NeoHash::hash256(data);
+    let hash160_result2 = Crypto::hash160(data);
+    let hash256_result2 = Crypto::hash256(data);
     assert_eq!(
         hash160_result, hash160_result2,
         "Hash160 should be deterministic"

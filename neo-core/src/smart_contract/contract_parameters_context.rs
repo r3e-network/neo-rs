@@ -1,6 +1,6 @@
 //! ContractParametersContext - matches C# Neo.SmartContract.ContractParametersContext exactly
 
-use crate::cryptography::{ECPoint, NeoHash};
+use crate::cryptography::{ECPoint, Crypto};
 use crate::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use crate::network::p2p::payloads::{transaction::Transaction, witness::Witness};
 use crate::persistence::DataCache;
@@ -406,7 +406,7 @@ impl ContractParametersContext {
         );
 
         let data_bytes = self.get_hash_data();
-        let hash_bytes = NeoHash::hash256(&data_bytes);
+        let hash_bytes = Crypto::hash256(&data_bytes);
         let hash = UInt256::from_bytes(&hash_bytes).unwrap_or_else(|_| UInt256::default());
         obj.insert(
             "hash".to_string(),

@@ -68,7 +68,7 @@
 //! directory to keep individual methods readable while preserving a single Rust
 //! module boundary (matching the C# layout).
 
-use crate::cryptography::crypto_utils::NeoHash;
+use crate::cryptography::Crypto;
 use crate::error::{CoreError as Error, Result};
 use crate::hardfork::Hardfork;
 use crate::ledger::Block;

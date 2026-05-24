@@ -425,7 +425,7 @@ impl ApplicationEngine {
         self.add_cpu_fee(fee)?;
 
         let script = Helper::signature_redeem_script(public_key);
-        let hash = UInt160::from_bytes(&NeoHash::hash160(&script))
+        let hash = UInt160::from_bytes(&Crypto::hash160(&script))
             .map_err(|e| Error::invalid_operation(format!("Invalid script hash: {}", e)))?;
 
         Ok(hash)
@@ -477,7 +477,7 @@ impl ApplicationEngine {
         self.add_cpu_fee(fee)?;
 
         let script = Helper::multi_sig_redeem_script(m, &public_keys);
-        let hash = UInt160::from_bytes(&NeoHash::hash160(&script))
+        let hash = UInt160::from_bytes(&Crypto::hash160(&script))
             .map_err(|e| Error::invalid_operation(format!("Invalid script hash: {}", e)))?;
 
         Ok(hash)
