@@ -5,7 +5,7 @@ use crate::config::{infer_magic_from_type, NodeConfig};
 use anyhow::{bail, Context, Result};
 #[cfg(feature = "full")]
 use neo_core::persistence::providers::{
-    rocksdb_store_provider::BatchCommitConfig, RocksDBStoreProvider,
+    rocksdb::BatchCommitConfig, RocksDBStoreProvider,
 };
 use neo_core::{
     persistence::{storage::StorageConfig, StoreProvider},

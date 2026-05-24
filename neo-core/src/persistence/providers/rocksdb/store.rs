@@ -1,175 +1,38 @@
-//! RocksDB-backed `IStore` implementation with snapshot support.
 use crate::{
     error::{CoreError, CoreResult},
     persistence::{
         read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric},
         store::{IStore, OnNewSnapshotDelegate},
-        store_provider::StoreProvider,
         store_snapshot::StoreSnapshot,
         write_store::WriteStore,
         read_cache::{ReadCacheConfig, StorageReadCache},
         seek_direction::SeekDirection,
-        storage::{CompactionStrategy, CompressionAlgorithm, StorageConfig},
-        write_batch_buffer::{WriteBatchBuffer, WriteBatchConfig, WriteBatchStatsSnapshot},
+        storage::StorageConfig,
+        write_batch_buffer::{WriteBatchConfig, WriteBatchStatsSnapshot},
     },
     smart_contract::{StorageItem, StorageKey},
 };
 use parking_lot::{Mutex, RwLock};
 use rocksdb::{
-    BlockBasedOptions, Cache, DBIteratorWithThreadMode, Direction, IteratorMode, Options,
-    ReadOptions, Snapshot as DbSnapshot, WriteBatch, WriteOptions, DB,
+    DBIteratorWithThreadMode, Direction, IteratorMode, ReadOptions, Snapshot as DbSnapshot,
+    WriteBatch, WriteOptions, DB,
 };
 use std::{collections::BTreeMap, fs, mem, path::PathBuf, sync::Arc, time::Instant};
 use tracing::{debug, error, warn};
 
-/// Re-export batch commit types from write_batch_buffer for backward compatibility.
-pub use crate::persistence::write_batch_buffer::{
-    WriteBatchConfig as BatchCommitConfig, WriteBatchStats as BatchCommitStats,
-    WriteBatchStatsSnapshot as BatchCommitStatsSnapshot,
-};
+use super::provider::{self, BatchCommitter, ReadAheadConfig};
 
-/// Enhanced batch committer using WriteBatchBuffer.
-struct BatchCommitter {
-    buffer: WriteBatchBuffer,
-}
-
-impl BatchCommitter {
-    fn new(db: Arc<DB>, config: WriteBatchConfig) -> Self {
-        let buffer = WriteBatchBuffer::new(db, config);
-
-        Self { buffer }
-    }
-}
-
-/// RocksDB-backed store provider compatible with Neo's `IStore`.
-#[derive(Debug, Clone)]
-pub struct RocksDBStoreProvider {
-    base_config: StorageConfig,
-    batch_config: BatchCommitConfig,
-    batch_stats: Arc<BatchCommitStats>,
-    /// Read cache configuration
-    read_cache_config: Option<ReadCacheConfig>,
-    /// Enable bloom filters for SST files
-    enable_bloom_filters: bool,
-    /// Enable read-ahead for sequential scans
-    enable_read_ahead: bool,
-}
-
-impl RocksDBStoreProvider {
-    pub fn new(base_config: StorageConfig) -> Self {
-        Self {
-            base_config,
-            batch_config: BatchCommitConfig::balanced(),
-            batch_stats: Arc::new(BatchCommitStats::new()),
-            read_cache_config: Some(ReadCacheConfig::default()),
-            enable_bloom_filters: true,
-            enable_read_ahead: true,
-        }
-    }
-
-    pub fn with_batch_config(mut self, config: BatchCommitConfig) -> Self {
-        self.batch_config = config;
-        self
-    }
-
-    pub fn with_read_cache(mut self, config: ReadCacheConfig) -> Self {
-        self.read_cache_config = Some(config);
-        self
-    }
-
-    pub fn without_read_cache(mut self) -> Self {
-        self.read_cache_config = None;
-        self
-    }
-
-    pub fn with_bloom_filters(mut self, enable: bool) -> Self {
-        self.enable_bloom_filters = enable;
-        self
-    }
-
-    pub fn with_read_ahead(mut self, enable: bool) -> Self {
-        self.enable_read_ahead = enable;
-        self
-    }
-
-    pub fn batch_stats(&self) -> Arc<BatchCommitStats> {
-        Arc::clone(&self.batch_stats)
-    }
-
-    fn resolved_path(&self, override_path: &str) -> PathBuf {
-        if override_path.is_empty() {
-            self.base_config.path.clone()
-        } else {
-            PathBuf::from(override_path)
-        }
-    }
-}
-
-impl StoreProvider for RocksDBStoreProvider {
-    fn name(&self) -> &str {
-        "RocksDBStore"
-    }
-
-    fn get_store(&self, path: &str) -> CoreResult<Arc<dyn IStore>> {
-        let resolved = self.resolved_path(path);
-        let config = StorageConfig {
-            path: resolved,
-            ..self.base_config.clone()
-        };
-        let store = RocksDbStore::open(
-            &config,
-            self.batch_config,
-            &self.read_cache_config,
-            self.enable_bloom_filters,
-            self.enable_read_ahead,
-        )
-        .map_err(|err| CoreError::Io {
-            message: format!(
-                "failed to open RocksDB store at {}: {err}",
-                config.path.display()
-            ),
-        })?;
-        Ok(Arc::new(store))
-    }
-}
-
-/// Read-ahead configuration for sequential scans.
-#[derive(Debug, Clone, Copy)]
-pub struct ReadAheadConfig {
-    /// Enable read-ahead
-    pub enabled: bool,
-    /// Read-ahead size in bytes
-    pub read_ahead_size: usize,
-    /// Verify checksums during iteration
-    pub verify_checksums: bool,
-    /// Fill cache during read-ahead
-    pub fill_cache: bool,
-}
-
-impl Default for ReadAheadConfig {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            read_ahead_size: 256 * 1024, // 256KB
-            verify_checksums: false,
-            fill_cache: true,
-        }
-    }
-}
-
-struct RocksDbStore {
-    db: Arc<DB>,
-    on_new_snapshot: Arc<RwLock<Vec<OnNewSnapshotDelegate>>>,
-    batch_committer: Arc<BatchCommitter>,
-    batch_config: RwLock<WriteBatchConfig>,
-    /// Optional read cache for frequently accessed keys
-    read_cache: Option<Arc<StorageReadCache>>,
-    /// Read-ahead configuration
-    read_ahead_config: ReadAheadConfig,
+pub struct RocksDbStore {
+    pub(crate) db: Arc<DB>,
+    pub(crate) on_new_snapshot: Arc<RwLock<Vec<OnNewSnapshotDelegate>>>,
+    pub(crate) batch_committer: Arc<BatchCommitter>,
+    pub(crate) batch_config: RwLock<WriteBatchConfig>,
+    pub(crate) read_cache: Option<Arc<StorageReadCache>>,
+    pub(crate) read_ahead_config: ReadAheadConfig,
 }
 
 impl RocksDbStore {
-    fn open(
+    pub(crate) fn open(
         config: &StorageConfig,
         batch_config: WriteBatchConfig,
         read_cache_config: &Option<ReadCacheConfig>,
@@ -189,7 +52,7 @@ impl RocksDbStore {
             }
         }
 
-        let options = build_db_options(config, enable_bloom_filters);
+        let options = provider::build_db_options(config, enable_bloom_filters);
         let db = if config.read_only {
             Arc::new(DB::open_for_read_only(&options, &config.path, false)?)
         } else {
@@ -222,7 +85,7 @@ impl RocksDbStore {
         key_or_prefix: &[u8],
         direction: SeekDirection,
     ) -> DBIteratorWithThreadMode<'_, DB> {
-        iterator_from(
+        provider::iterator_from(
             self.db.as_ref(),
             None,
             key_or_prefix,
@@ -486,7 +349,7 @@ impl Drop for RocksDbStore {
     }
 }
 
-struct RocksDbSnapshot {
+pub struct RocksDbSnapshot {
     store: Arc<RocksDbStore>,
     db: Arc<DB>,
     snapshot: DbSnapshot<'static>,
@@ -536,7 +399,7 @@ impl RocksDbSnapshot {
     }
 
     fn read_options(&self) -> ReadOptions {
-        build_read_options(Some(&self.snapshot), &self.read_ahead_config)
+        provider::build_read_options(Some(&self.snapshot), &self.read_ahead_config)
     }
 
     fn iterator_from(
@@ -544,7 +407,7 @@ impl RocksDbSnapshot {
         key_or_prefix: &[u8],
         direction: SeekDirection,
     ) -> DBIteratorWithThreadMode<'_, DB> {
-        iterator_from(
+        provider::iterator_from(
             self.db.as_ref(),
             Some(self.read_options()),
             key_or_prefix,
@@ -576,7 +439,7 @@ impl RocksDbSnapshot {
         };
 
         let mut items = BTreeMap::new();
-        let iterator = iterator_from(
+        let iterator = provider::iterator_from(
             self.db.as_ref(),
             Some(self.read_options()),
             prefix,
@@ -635,7 +498,7 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
         if direction == SeekDirection::Backward {
             if let Some(prefix) = key_prefix {
                 let mut items = Vec::new();
-                let iterator = iterator_from(
+                let iterator = provider::iterator_from(
                     self.db.as_ref(),
                     Some(self.read_options()),
                     prefix.as_slice(),
@@ -662,7 +525,7 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
         }
 
         let start = key_prefix.map(|k| k.as_slice()).unwrap_or(&[]);
-        let iterator = iterator_from(
+        let iterator = provider::iterator_from(
             self.db.as_ref(),
             Some(self.read_options()),
             start,
@@ -963,321 +826,5 @@ impl RocksDbStore {
     /// Forces a flush of pending batch writes.
     pub fn flush_batch_writes(&self) -> CoreResult<()> {
         self.batch_committer.buffer.force_flush()
-    }
-}
-
-/// Build read options with read-ahead configuration.
-fn build_read_options(
-    snapshot: Option<&DbSnapshot>,
-    read_ahead_config: &ReadAheadConfig,
-) -> ReadOptions {
-    let mut options = ReadOptions::default();
-
-    if let Some(snap) = snapshot {
-        options.set_snapshot(snap);
-    }
-
-    if read_ahead_config.enabled {
-        // Enable read-ahead for sequential scans
-        options.set_readahead_size(read_ahead_config.read_ahead_size);
-    }
-
-    options.set_verify_checksums(read_ahead_config.verify_checksums);
-    options.fill_cache(read_ahead_config.fill_cache);
-
-    options
-}
-
-fn iterator_from<'a>(
-    db: &'a DB,
-    read_options: Option<ReadOptions>,
-    key_or_prefix: &[u8],
-    direction: SeekDirection,
-    read_ahead_config: &ReadAheadConfig,
-) -> DBIteratorWithThreadMode<'a, DB> {
-    let mode = match direction {
-        SeekDirection::Forward => {
-            if key_or_prefix.is_empty() {
-                IteratorMode::Start
-            } else {
-                IteratorMode::From(key_or_prefix, Direction::Forward)
-            }
-        }
-        SeekDirection::Backward => {
-            if key_or_prefix.is_empty() {
-                IteratorMode::End
-            } else {
-                IteratorMode::From(key_or_prefix, Direction::Reverse)
-            }
-        }
-    };
-
-    let opts = read_options.unwrap_or_else(|| build_read_options(None, read_ahead_config));
-    db.iterator_opt(mode, opts)
-}
-
-fn build_db_options(config: &StorageConfig, enable_bloom_filters: bool) -> Options {
-    let mut options = Options::default();
-    options.create_if_missing(true);
-    options.set_error_if_exists(false);
-    if let Ok(parallelism) = std::thread::available_parallelism() {
-        options.increase_parallelism(parallelism.get() as i32);
-    }
-    options.set_compression_type(match config.compression_algorithm {
-        CompressionAlgorithm::None => rocksdb::DBCompressionType::None,
-        CompressionAlgorithm::Lz4 => rocksdb::DBCompressionType::Lz4,
-        CompressionAlgorithm::Zstd => rocksdb::DBCompressionType::Zstd,
-    });
-
-    match config.compaction_strategy {
-        CompactionStrategy::Level => {
-            options.set_compaction_style(rocksdb::DBCompactionStyle::Level)
-        }
-        CompactionStrategy::Universal => {
-            options.set_compaction_style(rocksdb::DBCompactionStyle::Universal)
-        }
-        CompactionStrategy::Fifo => options.set_compaction_style(rocksdb::DBCompactionStyle::Fifo),
-    }
-
-    if let Some(max_open) = config.max_open_files {
-        options.set_max_open_files(max_open as i32);
-    } else {
-        options.set_max_open_files(4000);
-    }
-
-    if let Ok(parallelism) = std::thread::available_parallelism() {
-        options.set_max_background_jobs(parallelism.get() as i32);
-    } else {
-        options.set_max_background_jobs(16);
-    }
-    options.set_bytes_per_sync(1048576); // 1MB — smooth I/O instead of bursty
-                                         // Enable optimize_filters_for_hits when bloom filters are enabled
-                                         // This reduces filter block size at the cost of slightly more disk seeks on negative lookups
-    options.set_optimize_filters_for_hits(enable_bloom_filters);
-
-    if let Some(write_buffer) = config.write_buffer_size {
-        options.set_write_buffer_size(write_buffer);
-    } else {
-        options.set_write_buffer_size(256 * 1024 * 1024); // 256MB for fewer flushes during sync
-    }
-    options.set_max_write_buffer_number(6);
-    options.set_min_write_buffer_number_to_merge(2);
-
-    // Advanced Performance Tuning
-    options.set_allow_mmap_reads(true);
-    options.set_allow_mmap_writes(false);
-    options.set_enable_pipelined_write(true);
-    options.set_memtable_prefix_bloom_ratio(0.1); // better hit rate on memtable lookups
-                                                  // Delay write stalls during heavy initial sync
-    options.set_level_zero_slowdown_writes_trigger(30);
-    options.set_level_zero_stop_writes_trigger(48);
-    options.set_max_total_wal_size(512 * 1024 * 1024); // 512MB WAL cap
-
-    // Configure block cache and bloom filters
-    let cache_size = config.cache_size.unwrap_or(256 * 1024 * 1024);
-    options.optimize_for_point_lookup((cache_size / 2) as u64);
-    let cache = Cache::new_lru_cache(cache_size);
-    let row_cache_size = (cache_size / 4).clamp(64 * 1024 * 1024, 512 * 1024 * 1024);
-    let row_cache = Cache::new_lru_cache(row_cache_size);
-    options.set_row_cache(&row_cache);
-    let mut table_options = BlockBasedOptions::default();
-    table_options.set_block_cache(&cache);
-
-    if enable_bloom_filters {
-        // Enable bloom filters with 10 bits per key for ~1% false positive rate
-        table_options.set_bloom_filter(10.0, false);
-        // Cache index and filter blocks in block cache
-        table_options.set_cache_index_and_filter_blocks(true);
-        table_options.set_pin_l0_filter_and_index_blocks_in_cache(true);
-    }
-
-    options.set_block_based_table_factory(&table_options);
-
-    if config.enable_statistics {
-        options.enable_statistics();
-    }
-
-    options
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::persistence::StoreCache;
-    use crate::smart_contract::{StorageItem, StorageKey};
-    use std::fs;
-    use tempfile::TempDir;
-
-    #[test]
-    fn opens_store_and_creates_directory() {
-        let tmp = TempDir::new().expect("tempdir");
-        let db_path = tmp.path().join("rocksdb");
-        let cfg = StorageConfig {
-            path: db_path.clone(),
-            ..Default::default()
-        };
-
-        let provider = RocksDBStoreProvider::new(cfg);
-        let store = provider
-            .get_store(db_path.to_str().unwrap())
-            .expect("rocksdb store");
-        assert!(db_path.exists(), "db path should be created");
-
-        // basic snapshot call to ensure the store is usable
-        let _snapshot = store.get_snapshot();
-    }
-
-    #[test]
-    fn returns_error_when_path_is_file() {
-        let tmp = TempDir::new().expect("tempdir");
-        let file_path = tmp.path().join("not-a-dir");
-        fs::write(&file_path, b"content").expect("write file");
-
-        let cfg = StorageConfig {
-            path: file_path.clone(),
-            ..Default::default()
-        };
-        let provider = RocksDBStoreProvider::new(cfg);
-
-        let result = provider.get_store(file_path.to_str().unwrap());
-        match result {
-            Ok(_) => panic!("expected failure when path is a file"),
-            Err(err) => {
-                assert!(
-                    err.to_string()
-                        .to_ascii_lowercase()
-                        .contains("failed to open rocksdb store"),
-                    "unexpected error: {err}"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn snapshot_commit_invalidates_read_cache_for_updated_keys() {
-        let tmp = TempDir::new().expect("tempdir");
-        let db_path = tmp.path().join("rocksdb-cache");
-        let cfg = StorageConfig {
-            path: db_path.clone(),
-            ..Default::default()
-        };
-
-        let provider = RocksDBStoreProvider::new(cfg);
-        let store = provider
-            .get_store(db_path.to_str().unwrap())
-            .expect("rocksdb store");
-
-        let key = StorageKey::new(1, vec![0x42]);
-        let value1 = StorageItem::from_bytes(vec![0x01]);
-        let value2 = StorageItem::from_bytes(vec![0x02]);
-
-        let mut writer = StoreCache::new_from_store(store.clone(), false);
-        writer.add(key.clone(), value1.clone());
-        writer.commit();
-
-        let reader = StoreCache::new_from_store(store.clone(), false);
-        assert_eq!(
-            reader
-                .get(&key)
-                .expect("value must exist after first write")
-                .get_value(),
-            value1.get_value()
-        );
-
-        let mut writer2 = StoreCache::new_from_store(store.clone(), false);
-        writer2.update(key.clone(), value2.clone());
-        writer2.commit();
-
-        let reader2 = StoreCache::new_from_store(store, false);
-        assert_eq!(
-            reader2
-                .get(&key)
-                .expect("updated value must be visible")
-                .get_value(),
-            value2.get_value()
-        );
-    }
-
-    #[test]
-    fn snapshot_reads_overlay_pending_writes_and_deletes() {
-        let tmp = TempDir::new().expect("tempdir");
-        let db_path = tmp.path().join("rocksdb-snapshot-overlay");
-        let cfg = StorageConfig {
-            path: db_path.clone(),
-            ..Default::default()
-        };
-
-        let provider = RocksDBStoreProvider::new(cfg);
-        let store = provider
-            .get_store(db_path.to_str().unwrap())
-            .expect("rocksdb store");
-
-        let existing_key = StorageKey::new(7, vec![0x01]).to_array();
-        let added_key = StorageKey::new(7, vec![0x02]).to_array();
-
-        let mut writer = StoreCache::new_from_store(store.clone(), false);
-        writer.add(
-            StorageKey::from_bytes(&existing_key),
-            StorageItem::from_bytes(vec![0xAA]),
-        );
-        writer.commit();
-
-        let mut snapshot = store.get_snapshot();
-        let snapshot_mut = Arc::get_mut(&mut snapshot).expect("exclusive snapshot");
-        snapshot_mut.delete(existing_key.clone()).unwrap();
-        snapshot_mut.put(added_key.clone(), vec![0xBB]).unwrap();
-
-        assert_eq!(snapshot.try_get(&existing_key), None);
-        assert_eq!(snapshot.try_get(&added_key), Some(vec![0xBB]));
-
-        let entries: Vec<_> = snapshot
-            .find(
-                Some(&StorageKey::new(7, vec![]).to_array()),
-                SeekDirection::Forward,
-            )
-            .collect();
-        assert_eq!(entries, vec![(added_key, vec![0xBB])]);
-    }
-
-    #[test]
-    fn backward_prefix_find_returns_expected_rows_in_store_and_snapshot_views() {
-        let tmp = TempDir::new().expect("tempdir");
-        let db_path = tmp.path().join("rocksdb-backward-prefix");
-        let cfg = StorageConfig {
-            path: db_path.clone(),
-            ..Default::default()
-        };
-
-        let provider = RocksDBStoreProvider::new(cfg);
-        let store = provider
-            .get_store(db_path.to_str().unwrap())
-            .expect("rocksdb store");
-
-        let key_a = StorageKey::new(-5, vec![0x1d, 0x00, 0x00, 0x00, 0x00]);
-        let key_b = StorageKey::new(-5, vec![0x1d, 0x00, 0x00, 0x00, 0x05]);
-        let key_other = StorageKey::new(-5, vec![0x1e, 0x00, 0x00, 0x00, 0x00]);
-
-        let mut writer = StoreCache::new_from_store(store.clone(), false);
-        writer.add(key_a.clone(), StorageItem::from_bytes(vec![0x01]));
-        writer.add(key_b.clone(), StorageItem::from_bytes(vec![0x02]));
-        writer.add(key_other, StorageItem::from_bytes(vec![0x03]));
-        writer.commit();
-
-        let prefix = StorageKey::create(-5, 0x1d);
-        let expected = vec![key_b.to_array(), key_a.to_array()];
-
-        let store_keys: Vec<Vec<u8>> = store
-            .find(Some(&prefix), SeekDirection::Backward)
-            .map(|(k, _)| k.to_array())
-            .collect();
-        assert_eq!(store_keys, expected);
-
-        let snapshot_cache = StoreCache::new_from_snapshot(store.get_snapshot());
-        let snapshot_keys: Vec<Vec<u8>> = snapshot_cache
-            .data_cache()
-            .find(Some(&prefix), SeekDirection::Backward)
-            .map(|(k, _)| k.to_array())
-            .collect();
-        assert_eq!(snapshot_keys, expected);
     }
 }
