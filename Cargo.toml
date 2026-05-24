@@ -24,9 +24,6 @@ members = [
     # Core (matches C# Neo.csproj)
     "neo-core",
 
-    # Mempool (extracted from neo-core)
-    "neo-mempool",
-
     # P2P networking
     "neo-p2p",
 
@@ -61,10 +58,6 @@ members = [
     "neo-telemetry",
 
     # === Application Layer ===
-    # NOTE: neo-config, neo-state, neo-mempool merged into neo-core
-    # CLI client — removed: functionality merged into neo-node
-    # "neo-cli",
-
     # Node daemon (standalone RPC server)
     "neo-node",
 
@@ -81,7 +74,6 @@ default-members = [
     "neo-storage",
     "neo-io",
     "neo-json",
-    "neo-state",
     "neo-core",
     "neo-p2p",
     "neo-rpc",
@@ -127,9 +119,7 @@ neo-io = { path = "neo-io", version = "0.7.2" }
 neo-json = { path = "neo-json", version = "0.7.2" }
 
 # Core layer
-neo-state = { path = "neo-state", version = "0.7.2" }
 neo-core = { path = "neo-core", version = "0.7.2" }
-neo-mempool = { path = "neo-mempool", version = "0.7.2" }
 neo-vm-rs = { path = "../neo-vm-rs" }
 neo-p2p = { path = "neo-p2p", version = "0.7.2" }
 neo-rpc = { path = "neo-rpc", version = "0.7.2" }
@@ -143,8 +133,6 @@ neo-hsm = { path = "neo-hsm", version = "0.7.2" }
 
 # Telemetry
 neo-telemetry = { path = "neo-telemetry", version = "0.7.2" }
-
-# NOTE: neo-config, neo-state, neo-mempool merged into neo-core
 
 # Application layer
 # neo-cli removed: functionality merged into neo-node

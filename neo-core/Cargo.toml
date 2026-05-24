@@ -89,8 +89,6 @@ neo-json = { path = "../neo-json" }
 # NOTE: neo-p2p and neo-consensus removed to fix layering violation
 # neo-core is Layer 1, should not depend on Layer 2 protocol crates
 neo-config = { workspace = true }
-neo-state = { workspace = true }
-neo-mempool = { workspace = true }
 neo-primitives = { path = "../neo-primitives" }
 neo-crypto = { path = "../neo-crypto" }
 neo-storage = { path = "../neo-storage" }

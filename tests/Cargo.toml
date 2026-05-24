@@ -23,8 +23,6 @@ neo-consensus = { path = "../neo-consensus" }
 neo-core = { path = "../neo-core" }
 neo-p2p = { path = "../neo-p2p" }
 
-# NOTE: neo-state, neo-mempool, neo-config merged into neo-core
-
 # Layer 4 - Services
 neo-rpc = { path = "../neo-rpc" }
 neo-telemetry = { path = "../neo-telemetry" }

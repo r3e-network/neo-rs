@@ -29,9 +29,6 @@
 //! This crate is part of **Layer 1 (Core)** in the neo-rs architecture:
 //!
 //! ```text
-//! Layer 2 (Service): neo-mempool
-//!            │
-//!            ▼
 //! Layer 1 (Core):   neo-core ◄── YOU ARE HERE
 //!            │
 //!            ▼
@@ -190,6 +187,10 @@ pub mod monitoring;
 /// Telemetry infrastructure for logging and tracing.
 pub mod telemetry;
 
+/// Application logs plugin support (requires `runtime` feature).
+#[cfg(feature = "runtime")]
+pub mod application_logs;
+
 // ============================================================================
 // C# Neo Project Modules
 // ============================================================================
@@ -272,25 +273,6 @@ pub mod state_service;
 pub mod services;
 
 // ============================================================================
-// Merged Modules (formerly separate crates)
-// ============================================================================
-
-/// Transaction mempool for pending transactions.
-///
-/// Provides lightweight mempool implementation for transaction management.
-/// For full C# parity, use `ledger::MemoryPool` instead.
-pub use neo_mempool as mempool;
-
-/// World state abstraction for Neo N3 blockchain.
-///
-/// Re-exported from the `neo_state` crate.
-pub use neo_state as state;
-
-/// Application logs plugin support (requires `runtime` feature).
-#[cfg(feature = "runtime")]
-pub mod application_logs;
-
-// ============================================================================
 // Runtime Components (requires `runtime` feature)
 // ============================================================================
 
@@ -350,18 +332,6 @@ pub use unhandled_exception_policy::UnhandledExceptionPolicy;
 pub use wallets::{KeyPair, Wallet};
 pub use witness::Witness;
 pub use witness_rule::{WitnessCondition, WitnessConditionType, WitnessRule, WitnessRuleAction};
-
-// Merged module re-exports
-pub use mempool::{
-    FeePolicy, Mempool, MempoolConfig, MempoolError, MempoolResult, TransactionEntry,
-    TransactionEntryParams, DEFAULT_EXPIRATION_BLOCKS, DEFAULT_MAX_TRANSACTIONS,
-};
-pub use state::{
-    AccountState, ContractStorage, MemoryMptStore, MemoryWorldState, MutableStateView,
-    SnapshotManager, SnapshotState, StateChanges, StateError, StateMut, StateResult, StateSnapshot,
-    StateTrieManager, StateView, StorageChange, StorageItem, StorageKey, WorldState,
-    MAX_SNAPSHOT_DEPTH,
-};
 
 // Runtime types (requires `runtime` feature)
 #[cfg(feature = "runtime")]

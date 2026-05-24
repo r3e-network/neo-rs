@@ -11,8 +11,6 @@
 //! - Verified/unverified transaction queues
 //! - Transaction reverification logic
 //! - Event callbacks for transaction lifecycle
-//!
-//! For lightweight use cases (testing, standalone tools), see the `neo-mempool` crate.
 
 /// Block structure and operations.
 pub mod block;
