@@ -1,21 +1,5 @@
-use super::{WitnessCondition, WitnessConditionType, WitnessRule};
+use super::{WitnessCondition, WitnessRule};
 use std::fmt;
-
-impl fmt::Display for WitnessConditionType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            WitnessConditionType::Boolean => write!(f, "Boolean"),
-            WitnessConditionType::Not => write!(f, "Not"),
-            WitnessConditionType::And => write!(f, "And"),
-            WitnessConditionType::Or => write!(f, "Or"),
-            WitnessConditionType::ScriptHash => write!(f, "ScriptHash"),
-            WitnessConditionType::Group => write!(f, "Group"),
-            WitnessConditionType::CalledByEntry => write!(f, "CalledByEntry"),
-            WitnessConditionType::CalledByContract => write!(f, "CalledByContract"),
-            WitnessConditionType::CalledByGroup => write!(f, "CalledByGroup"),
-        }
-    }
-}
 
 impl fmt::Display for WitnessCondition {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

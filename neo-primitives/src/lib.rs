@@ -42,6 +42,7 @@ pub mod uint160;
 pub mod uint256;
 pub mod verification;
 pub mod verify_result;
+pub mod witness_condition_type;
 pub mod witness_rule_action;
 pub mod witness_scope;
 
@@ -65,6 +66,7 @@ pub use transaction_removal_reason::TransactionRemovalReason;
 pub use uint160::{UInt160, UINT160_SIZE};
 pub use uint256::{UInt256, UINT256_SIZE};
 pub use verify_result::VerifyResult;
+pub use witness_condition_type::WitnessConditionType;
 pub use witness_scope::{InvalidWitnessScopeError, WitnessScope};
 
 // New trait re-exports for crate refactoring (Phase 1)
