@@ -357,10 +357,10 @@ pub use witness::Witness;
 pub use witness_rule::{WitnessCondition, WitnessConditionType, WitnessRule, WitnessRuleAction};
 
 // Merged module re-exports
-pub use chain::{
-    BlockIndex, BlockIndexEntry, BlockValidator, ChainError, ChainEvent, ChainEventSubscriber,
-    ChainResult, ChainState, ChainStateSnapshot, ForkChoice, ValidationResult,
-};
+    pub use chain::{
+        BlockIndex, BlockIndexEntry,
+        ChainError, ChainResult, ChainState, ChainStateSnapshot,
+    };
 pub use mempool::{
     FeePolicy, Mempool, MempoolConfig, MempoolError, MempoolResult, TransactionEntry,
     TransactionEntryParams, DEFAULT_EXPIRATION_BLOCKS, DEFAULT_MAX_TRANSACTIONS,
