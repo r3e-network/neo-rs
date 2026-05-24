@@ -1,14 +1,5 @@
-use super::{WitnessCondition, WitnessConditionType, WitnessRule, WitnessRuleAction};
+use super::{WitnessCondition, WitnessConditionType, WitnessRule};
 use std::fmt;
-
-impl fmt::Display for WitnessRuleAction {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            WitnessRuleAction::Deny => write!(f, "Deny"),
-            WitnessRuleAction::Allow => write!(f, "Allow"),
-        }
-    }
-}
 
 impl fmt::Display for WitnessConditionType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

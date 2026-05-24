@@ -59,63 +59,7 @@ mod json;
 mod serialization;
 mod stack_projection;
 
-/// The action to be taken if the current context meets with the rule (matches C# WitnessRuleAction exactly).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[repr(u8)]
-pub enum WitnessRuleAction {
-    /// Deny the witness if the condition is met.
-    Deny = 0,
-    /// Allow the witness if the condition is met.
-    Allow = 1,
-}
-
-impl WitnessRuleAction {
-    /// Converts the action to its wire-format byte.
-    pub fn to_byte(self) -> u8 {
-        self as u8
-    }
-
-    /// Creates an action from its wire-format byte.
-    pub fn from_byte(value: u8) -> Option<Self> {
-        match value {
-            0 => Some(Self::Deny),
-            1 => Some(Self::Allow),
-            _ => None,
-        }
-    }
-}
-
-impl Serialize for WitnessRuleAction {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_u8(self.to_byte())
-    }
-}
-
-impl<'de> Deserialize<'de> for WitnessRuleAction {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let byte = u8::deserialize(deserializer)?;
-        WitnessRuleAction::from_byte(byte)
-            .ok_or_else(|| D::Error::custom(format!("Invalid witness rule action byte: {byte}")))
-    }
-}
-
-impl FromStr for WitnessRuleAction {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "Deny" | "deny" => Ok(Self::Deny),
-            "Allow" | "allow" => Ok(Self::Allow),
-            other => Err(format!("Invalid witness rule action: {other}")),
-        }
-    }
-}
+pub use neo_primitives::WitnessRuleAction;
 
 /// The type of witness condition (matches C# WitnessConditionType exactly).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

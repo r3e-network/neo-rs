@@ -41,7 +41,10 @@ pub mod uint160;
 pub mod uint256;
 pub mod verification;
 pub mod verify_result;
+pub mod witness_rule_action;
 pub mod witness_scope;
+
+pub use witness_rule_action::WitnessRuleAction;
 
 #[cfg(test)]
 mod tests;
