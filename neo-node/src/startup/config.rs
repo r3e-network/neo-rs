@@ -1,10 +1,6 @@
-//! Startup utilities for neo-node.
-//!
-//! This module contains functions for:
-//! - Storage provider selection and validation
-//! - Configuration validation
-//! - Seed node resolution
+//! Startup configuration, storage provider selection, and validation.
 
+use crate::cli::NodeCli;
 use crate::config::{infer_magic_from_type, NodeConfig};
 use anyhow::{bail, Context, Result};
 #[cfg(feature = "full")]
@@ -14,14 +10,19 @@ use neo_core::persistence::providers::{
 use neo_core::{
     persistence::{storage::StorageConfig, IStoreProvider},
     protocol_settings::ProtocolSettings,
+    state_service::state_store::StateServiceSettings,
+    UnhandledExceptionPolicy,
 };
-use std::{fs, path::Path, sync::Arc};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 use tracing::{info, warn};
 
 pub(crate) const STORAGE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Selects the appropriate storage provider based on backend name.
-pub fn select_store_provider(
+pub(crate) fn select_store_provider(
     backend: Option<&str>,
     storage_config: StorageConfig,
 ) -> Result<Option<Arc<dyn IStoreProvider>>> {
@@ -83,8 +84,7 @@ fn rocksdb_batch_config_from_env() -> BatchCommitConfig {
     }
 }
 
-/// Checks storage network markers and version compatibility.
-pub fn check_storage_network(path: &str, magic: u32, read_only: bool) -> Result<()> {
+pub(crate) fn check_storage_network(path: &str, magic: u32, read_only: bool) -> Result<()> {
     let storage_path = Path::new(path);
     if !storage_path.exists() {
         if read_only {
@@ -155,8 +155,7 @@ pub fn check_storage_network(path: &str, magic: u32, read_only: bool) -> Result<
     Ok(())
 }
 
-/// Checks if a bind address is publicly accessible.
-pub fn is_public_bind(bind: &str) -> bool {
+pub(crate) fn is_public_bind(bind: &str) -> bool {
     bind.parse::<std::net::IpAddr>()
         .map(|ip| !ip.is_loopback())
         .unwrap_or(true)
@@ -171,8 +170,7 @@ fn has_default_rpc_credentials(user: &str, pass: &str) -> bool {
     normalized.starts_with("change-me-") || normalized == "change-me" || normalized == "changeme"
 }
 
-/// Validates the node configuration.
-pub fn validate_node_config(
+pub(crate) fn validate_node_config(
     node_config: &NodeConfig,
     storage_path: Option<&str>,
     backend_name: Option<&str>,
@@ -290,15 +288,13 @@ pub fn validate_node_config(
         }
     }
 
-    // Validate plugin-backed configs to match C# plugin load behavior.
     let _ = node_config.oracle_service_settings(protocol_settings)?;
     let _ = node_config.dbft_settings(protocol_settings)?;
 
     Ok(())
 }
 
-/// Checks storage backend accessibility.
-pub fn check_storage_access(
+pub(crate) fn check_storage_access(
     backend: Option<&str>,
     storage_path: Option<&str>,
     storage_config: StorageConfig,
@@ -320,9 +316,8 @@ pub fn check_storage_access(
     Ok(())
 }
 
-/// Builds a summary of enabled features.
 #[allow(clippy::useless_vec)]
-pub fn build_feature_summary() -> String {
+pub(crate) fn build_feature_summary() -> String {
     #[allow(unused_mut)]
     let mut features = vec!["plugins: rpc-server,tokens-tracker,application-logs"];
 
@@ -338,10 +333,78 @@ pub fn build_feature_summary() -> String {
     features.join("; ")
 }
 
+pub(crate) fn build_state_service_settings(
+    cli: &NodeCli,
+    node_config: &NodeConfig,
+    storage_path: Option<&str>,
+    protocol_settings: &ProtocolSettings,
+) -> Result<Option<StateServiceSettings>> {
+    if cli.state_root {
+        let default_state_dir = PathBuf::from("StateRoot");
+        let requested_state_dir = cli
+            .state_root_path
+            .clone()
+            .unwrap_or_else(|| default_state_dir.clone());
+        let mut state_path = requested_state_dir.to_string_lossy().to_string();
+        if state_path.contains("{0}") {
+            state_path = state_path.replace("{0}", &format!("{:08X}", protocol_settings.network));
+        }
+        let resolved_state_dir = if PathBuf::from(&state_path).is_absolute() {
+            PathBuf::from(&state_path)
+        } else if let Some(storage_root) = storage_path {
+            PathBuf::from(storage_root).join(state_path)
+        } else {
+            PathBuf::from(state_path)
+        };
+        let state_path = resolved_state_dir.to_string_lossy().to_string();
+        info!(
+            target: "neo",
+            path = %state_path,
+            full_state = cli.state_root_full_state,
+            "state root calculation enabled"
+        );
+        return Ok(Some(StateServiceSettings {
+            full_state: cli.state_root_full_state,
+            path: state_path,
+            network: protocol_settings.network,
+            auto_verify: false,
+            max_find_result_items: 100,
+            exception_policy: UnhandledExceptionPolicy::StopPlugin,
+        }));
+    }
+
+    let Some(mut settings) = node_config.state_service_settings(protocol_settings)? else {
+        return Ok(None);
+    };
+
+    if settings.network != protocol_settings.network {
+        warn!(
+            target: "neo",
+            configured = format_args!("0x{:08x}", settings.network),
+            expected = format_args!("0x{:08x}", protocol_settings.network),
+            "state service network mismatch; skipping"
+        );
+        return Ok(None);
+    }
+
+    let store_path = crate::config::resolve_state_service_store_path(&settings);
+    settings.path = store_path.to_string_lossy().to_string();
+
+    info!(
+        target: "neo",
+        path = %settings.path,
+        full_state = settings.full_state,
+        auto_verify = settings.auto_verify,
+        "state root calculation enabled"
+    );
+    Ok(Some(settings))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zeroize::Zeroizing;
+#[cfg(test)]
+use zeroize::Zeroizing;
 
     #[test]
     fn validate_requires_storage_path_for_rocksdb() {
@@ -517,12 +580,10 @@ mod tests {
         let tmp = tempfile::TempDir::new().expect("temp dir");
         let path = tmp.path().join("store");
         fs::create_dir_all(&path).expect("create dir");
-        // Missing markers should fail
         let err = check_storage_network(path.to_str().unwrap(), 0x1, true)
             .expect_err("missing markers should fail in read-only");
         assert!(err.to_string().to_ascii_lowercase().contains("marker"));
 
-        // Add markers and succeed
         fs::write(path.join("NETWORK_MAGIC"), "0x00000001").expect("write magic");
         fs::write(path.join("VERSION"), STORAGE_VERSION).expect("write version");
         check_storage_network(path.to_str().unwrap(), 0x1, true)
@@ -532,7 +593,7 @@ mod tests {
     #[test]
     fn bundled_mainnet_config_is_check_config_valid() {
         let cfg: NodeConfig =
-            toml::from_str(include_str!("../../neo_mainnet_node.toml")).expect("parse mainnet");
+            toml::from_str(include_str!("../../../neo_mainnet_node.toml")).expect("parse mainnet");
         let settings = cfg.protocol_settings();
         validate_node_config(
             &cfg,
@@ -546,7 +607,7 @@ mod tests {
 
     #[test]
     fn bundled_production_config_is_check_config_valid() {
-        let cfg: NodeConfig = toml::from_str(include_str!("../../neo_production_node.toml"))
+        let cfg: NodeConfig = toml::from_str(include_str!("../../../neo_production_node.toml"))
             .expect("parse production");
         let settings = cfg.protocol_settings();
         validate_node_config(
