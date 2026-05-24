@@ -13,10 +13,10 @@ use super::seek_direction::SeekDirection;
 use crate::smart_contract::{StorageItem, StorageKey};
 
 /// This interface provides methods to read from the database.
-pub trait IReadOnlyStore: IReadOnlyStoreGeneric<StorageKey, StorageItem> {}
+pub trait ReadOnlyStore: ReadOnlyStoreGeneric<StorageKey, StorageItem> {}
 
 /// This interface provides methods to read from the database (generic version).
-pub trait IReadOnlyStoreGeneric<TKey, TValue>
+pub trait ReadOnlyStoreGeneric<TKey, TValue>
 where
     TKey: Clone,
     TValue: Clone,

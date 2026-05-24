@@ -8,7 +8,7 @@ use crate::smart_contract::application_engine::{
     ApplicationEngine, MAX_NOTIFICATION_COUNT, MAX_NOTIFICATION_SIZE,
 };
 use crate::smart_contract::binary_serializer::BinarySerializer;
-use crate::smart_contract::interoperable::IInteroperable;
+use crate::smart_contract::interoperable::Interoperable;
 use crate::smart_contract::notify_event_args::NotifyEventArgs;
 use crate::smart_contract::trigger_type::TriggerType;
 use crate::UInt160;

@@ -162,7 +162,7 @@ impl Header {
             return false;
         }
 
-        let container: Arc<dyn crate::IVerifiable> = Arc::new(self.clone());
+        let container: Arc<dyn crate::Verifiable> = Arc::new(self.clone());
         let snapshot_arc = Arc::new(snapshot.clone());
 
         let mut engine = match ApplicationEngine::new(

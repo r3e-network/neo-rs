@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::thread::JoinHandle;
 
 use crate::error::{CoreError, CoreResult};
-use crate::i_event_handlers::{ICommittedHandler, ICommittingHandler};
+use crate::i_event_handlers::{CommittedHandler, CommittingHandler};
 use crate::ledger::{block::Block, blockchain_application_executed::ApplicationExecuted};
 use crate::persistence::data_cache::DataCache;
 use crate::state_service::StateStore;
@@ -91,7 +91,7 @@ impl Drop for StateServiceCommitHandlers {
     }
 }
 
-impl ICommittingHandler for StateServiceCommitHandlers {
+impl CommittingHandler for StateServiceCommitHandlers {
     fn run_during_fast_sync(&self) -> bool {
         true
     }
@@ -160,7 +160,7 @@ impl ICommittingHandler for StateServiceCommitHandlers {
     }
 }
 
-impl ICommittedHandler for StateServiceCommitHandlers {
+impl CommittedHandler for StateServiceCommitHandlers {
     fn blockchain_committed_handler(&self, _system: &dyn Any, _block: &Block) {
         // MPT persist is now handled by the background thread spawned in
         // blockchain_committing_handler. No work needed here.

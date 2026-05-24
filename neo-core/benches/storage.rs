@@ -5,7 +5,7 @@
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use neo_core::persistence::{
-    read_only_store::IReadOnlyStoreGeneric, write_store::IWriteStore, providers::MemoryStore,
+    read_only_store::ReadOnlyStoreGeneric, write_store::WriteStore, providers::MemoryStore,
     seek_direction::SeekDirection,
 };
 use neo_core::smart_contract::{StorageItem, StorageKey};
@@ -55,7 +55,7 @@ fn bench_memory_store_read_write(c: &mut Criterion) {
         group.throughput(Throughput::Bytes(*size as u64));
         group.bench_with_input(BenchmarkId::new("read", size), size, |b, _| {
             b.iter(|| {
-                let result = IReadOnlyStoreGeneric::try_get(&store, black_box(&raw_key));
+                let result = ReadOnlyStoreGeneric::try_get(&store, black_box(&raw_key));
                 black_box(result)
             });
         });
@@ -180,7 +180,7 @@ fn bench_batch_operations(c: &mut Criterion) {
 
         b.iter(|| {
             for key in &keys {
-                let _ = IReadOnlyStoreGeneric::try_get(&store, black_box(key));
+                let _ = ReadOnlyStoreGeneric::try_get(&store, black_box(key));
             }
             black_box(())
         });
@@ -201,7 +201,7 @@ fn bench_batch_operations(c: &mut Criterion) {
 
         b.iter(|| {
             for key in &keys {
-                let _ = IReadOnlyStoreGeneric::try_get(&store, black_box(key));
+                let _ = ReadOnlyStoreGeneric::try_get(&store, black_box(key));
             }
             black_box(())
         });
@@ -229,7 +229,7 @@ fn bench_seek_operations(c: &mut Criterion) {
         let start_bytes = start_key.to_array();
 
         b.iter(|| {
-            let result: Vec<_> = IReadOnlyStoreGeneric::find(
+            let result: Vec<_> = ReadOnlyStoreGeneric::find(
                 &store,
                 black_box(Some(&start_bytes)),
                 SeekDirection::Forward,
@@ -256,7 +256,7 @@ fn bench_seek_operations(c: &mut Criterion) {
         let start_bytes = start_key.to_array();
 
         b.iter(|| {
-            let result: Vec<_> = IReadOnlyStoreGeneric::find(
+            let result: Vec<_> = ReadOnlyStoreGeneric::find(
                 &store,
                 black_box(Some(&start_bytes)),
                 SeekDirection::Backward,

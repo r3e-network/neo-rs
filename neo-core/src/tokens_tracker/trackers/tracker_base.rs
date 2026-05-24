@@ -6,7 +6,7 @@
 use crate::extensions::log_level::LogLevel;
 use crate::neo_io::{MemoryReader, Serializable, SerializableExt};
 use crate::neo_ledger::{ApplicationExecuted, Block};
-use crate::persistence::{DataCache, IStore, IStoreSnapshot, SeekDirection};
+use crate::persistence::{DataCache, IStore, StoreSnapshot, SeekDirection};
 use crate::vm_runtime::StackItem;
 use crate::{NeoSystem, UInt160};
 use num_bigint::BigInt;
@@ -71,7 +71,7 @@ pub struct TrackerBase {
     /// Database store.
     pub db: Arc<dyn IStore>,
     /// Current snapshot for batch operations.
-    snapshot: Option<Arc<dyn IStoreSnapshot>>,
+    snapshot: Option<Arc<dyn StoreSnapshot>>,
     /// Reference to the Neo system.
     pub neo_system: Arc<NeoSystem>,
 }

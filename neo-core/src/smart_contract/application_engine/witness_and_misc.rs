@@ -634,7 +634,7 @@ impl ApplicationEngine {
     }
 
     pub(super) fn initialize_nonce_data(
-        container: Option<&Arc<dyn IVerifiable>>,
+        container: Option<&Arc<dyn Verifiable>>,
         persisting_block: Option<&Block>,
     ) -> [u8; 16] {
         let mut data = [0u8; 16];

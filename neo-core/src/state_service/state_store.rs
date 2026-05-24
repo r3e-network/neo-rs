@@ -56,7 +56,7 @@ use super::state_root::StateRoot;
 use crate::error::CoreResult;
 use crate::neo_io::{BinaryWriter, Serializable};
 use crate::persistence::{
-    store::IStore, store_provider::IStoreProvider, seek_direction::SeekDirection, TrackState,
+    store::IStore, store_provider::StoreProvider, seek_direction::SeekDirection, TrackState,
 };
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::native::LedgerContract;
@@ -224,7 +224,7 @@ impl StateStore {
     /// reads validator designations from the same store. This mirrors the C# StateService
     /// behaviour where the plugin uses the node's database for both state and validator lookups.
     pub fn open_with_provider(
-        provider: Arc<dyn IStoreProvider>,
+        provider: Arc<dyn StoreProvider>,
         path: &str,
         settings: StateServiceSettings,
         protocol_settings: Arc<ProtocolSettings>,

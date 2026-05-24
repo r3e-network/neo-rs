@@ -10,9 +10,9 @@ use neo_core::smart_contract::manifest::{
 use neo_core::smart_contract::native::ContractManagement;
 use neo_core::smart_contract::storage_context::StorageContext;
 use neo_core::smart_contract::trigger_type::TriggerType;
-use neo_core::smart_contract::IInteroperable;
+use neo_core::smart_contract::Interoperable;
 use neo_core::witness::Witness;
-use neo_core::{IVerifiable, NativeContract, UInt160, WitnessScope};
+use neo_core::{Verifiable, NativeContract, UInt160, WitnessScope};
 use neo_vm_rs::ExecutionEngineLimits;
 use neo_vm_rs::OpCode;
 use std::sync::Arc;
@@ -47,7 +47,7 @@ fn make_engine(
     let mut tx = Transaction::new();
     tx.set_signers(vec![Signer::new(sender, WitnessScope::GLOBAL)]);
     tx.add_witness(Witness::new());
-    let container: Arc<dyn IVerifiable> = Arc::new(tx);
+    let container: Arc<dyn Verifiable> = Arc::new(tx);
 
     neo_core::smart_contract::application_engine::ApplicationEngine::new(
         TriggerType::Application,

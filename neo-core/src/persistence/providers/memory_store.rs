@@ -11,10 +11,10 @@
 
 use super::memory_snapshot::MemorySnapshot;
 use crate::persistence::{
-    read_only_store::{IReadOnlyStore, IReadOnlyStoreGeneric},
+    read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric},
     store::{IStore, OnNewSnapshotDelegate},
-    store_snapshot::IStoreSnapshot,
-    write_store::IWriteStore,
+    store_snapshot::StoreSnapshot,
+    write_store::WriteStore,
     seek_direction::SeekDirection,
 };
 use crate::smart_contract::{storage_key::StorageKey, StorageItem};
@@ -49,7 +49,7 @@ impl Default for MemoryStore {
     }
 }
 
-impl IReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MemoryStore {
+impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MemoryStore {
     fn try_get(&self, key: &Vec<u8>) -> Option<Vec<u8>> {
         self.inner_data.read().get(key).cloned()
     }
@@ -80,7 +80,7 @@ impl IReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MemoryStore {
     }
 }
 
-impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for MemoryStore {
+impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for MemoryStore {
     fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {
         let raw_key = key.to_array();
         self.inner_data
@@ -123,7 +123,7 @@ impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for MemoryStore {
     }
 }
 
-impl IWriteStore<Vec<u8>, Vec<u8>> for MemoryStore {
+impl WriteStore<Vec<u8>, Vec<u8>> for MemoryStore {
     fn delete(&mut self, key: Vec<u8>) -> crate::error::CoreResult<()> {
         self.inner_data.write().remove(&key);
         Ok(())
@@ -135,10 +135,10 @@ impl IWriteStore<Vec<u8>, Vec<u8>> for MemoryStore {
     }
 }
 
-impl IReadOnlyStore for MemoryStore {}
+impl ReadOnlyStore for MemoryStore {}
 
 impl IStore for MemoryStore {
-    fn get_snapshot(&self) -> Arc<dyn IStoreSnapshot> {
+    fn get_snapshot(&self) -> Arc<dyn StoreSnapshot> {
         let snapshot = Arc::new(MemorySnapshot::new(
             Arc::new(self.clone()),
             self.inner_data.clone(),

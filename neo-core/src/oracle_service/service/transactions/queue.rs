@@ -7,7 +7,7 @@ use crate::network::p2p::payloads::Transaction;
 use crate::persistence::DataCache;
 use crate::smart_contract::native::{LedgerContract, OracleContract, Role, RoleManagement};
 use crate::smart_contract::Contract;
-use crate::IVerifiable;
+use crate::Verifiable;
 use std::collections::BTreeMap;
 use std::time::SystemTime;
 use tracing::{debug, warn};

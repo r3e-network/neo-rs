@@ -17,7 +17,7 @@ use neo_core::smart_contract::manifest::{
 };
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::witness::Witness;
-use neo_core::{IVerifiable, UInt160, WitnessScope};
+use neo_core::{Verifiable, UInt160, WitnessScope};
 use neo_vm_rs::OpCode;
 use neo_vm_rs::StackItemType;
 use num_bigint::BigInt;
@@ -136,7 +136,7 @@ fn runtime_get_random_same_block_matches_csharp() {
     ];
 
     let tx = make_test_transaction(UInt160::zero());
-    let container: Arc<dyn IVerifiable> = Arc::new(tx);
+    let container: Arc<dyn Verifiable> = Arc::new(tx);
     let mut engine_1 = ApplicationEngine::new(
         TriggerType::Application,
         Some(Arc::clone(&container)),

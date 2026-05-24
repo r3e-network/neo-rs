@@ -1,6 +1,6 @@
 use neo_core::neo_io::{MemoryReader, Serializable};
 use neo_core::persistence::{
-    providers::RocksDBStoreProvider, IStoreProvider, SeekDirection, StorageConfig, StorageKey,
+    providers::RocksDBStoreProvider, StoreProvider, SeekDirection, StorageConfig, StorageKey,
     StoreCache,
 };
 use neo_core::smart_contract::contract_state::ContractState;

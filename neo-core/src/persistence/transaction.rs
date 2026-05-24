@@ -2,7 +2,7 @@
 
 use super::{data_cache::DataCacheResult, StoreCache, TrackState, Trackable};
 use crate::persistence::data_cache::DataCacheConfig;
-use crate::persistence::{store::IStore, store_snapshot::IStoreSnapshot};
+use crate::persistence::{store::IStore, store_snapshot::StoreSnapshot};
 use crate::smart_contract::StorageKey;
 use std::sync::Arc;
 
@@ -24,13 +24,13 @@ impl StoreTransaction {
     }
 
     /// Creates a transaction backed by a snapshot.
-    pub fn from_snapshot(snapshot: Arc<dyn IStoreSnapshot>) -> Self {
+    pub fn from_snapshot(snapshot: Arc<dyn StoreSnapshot>) -> Self {
         Self::from_snapshot_with_config(snapshot, DataCacheConfig::default())
     }
 
     /// Creates a transaction backed by a snapshot using a custom cache config.
     pub fn from_snapshot_with_config(
-        snapshot: Arc<dyn IStoreSnapshot>,
+        snapshot: Arc<dyn StoreSnapshot>,
         config: DataCacheConfig,
     ) -> Self {
         Self {

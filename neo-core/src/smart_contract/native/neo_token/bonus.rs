@@ -7,7 +7,7 @@ use super::*;
 impl NeoToken {
     pub fn unclaimed_gas<S>(&self, snapshot: &S, account: &UInt160, end: u32) -> CoreResult<BigInt>
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         let Some(state) = self.get_account_state(snapshot, account)? else {
             return Ok(BigInt::zero());
@@ -17,7 +17,7 @@ impl NeoToken {
 
     pub fn balance_of_snapshot<S>(&self, snapshot: &S, account: &UInt160) -> CoreResult<BigInt>
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         let state = self.get_account_state(snapshot, account)?;
         Ok(state
@@ -31,7 +31,7 @@ impl NeoToken {
         account: &UInt160,
     ) -> CoreResult<Option<NeoAccountState>>
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         let key = StorageKey::create_with_uint160(Self::ID, PREFIX_ACCOUNT, account);
         let Some(item) = snapshot.try_get(&key) else {
@@ -49,7 +49,7 @@ impl NeoToken {
         end: u32,
     ) -> CoreResult<BigInt>
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         if state.balance().is_zero() {
             return Ok(BigInt::zero());
@@ -89,7 +89,7 @@ impl NeoToken {
         mut end: u32,
     ) -> CoreResult<BigInt>
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         if start >= end {
             return Ok(BigInt::zero());
@@ -120,7 +120,7 @@ impl NeoToken {
 
     pub(super) fn latest_gas_per_vote<S>(&self, snapshot: &S, vote_to: &ECPoint) -> BigInt
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         let key = StorageKey::create_with_bytes(
             Self::ID,
@@ -135,7 +135,7 @@ impl NeoToken {
 
     pub(super) fn get_sorted_gas_records<S>(&self, snapshot: &S, end: u32) -> Vec<(u32, BigInt)>
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         let prefix = StorageKey::create(Self::ID, Self::PREFIX_GAS_PER_BLOCK);
         let mut records = Vec::with_capacity(8);

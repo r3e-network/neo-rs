@@ -27,7 +27,6 @@
 //! }
 //! ```
 
-use crate::{UInt160, UInt256};
 
 pub use errors::*;
 pub use peer::*;

@@ -3,7 +3,7 @@
 //
 
 use super::*;
-use crate::persistence::{IReadOnlyStoreGeneric, SeekDirection};
+use crate::persistence::{ReadOnlyStoreGeneric, SeekDirection};
 use crate::smart_contract::find_options::FindOptions;
 use crate::smart_contract::iterators::storage_iterator::StorageIterator;
 use crate::smart_contract::StorageItem;

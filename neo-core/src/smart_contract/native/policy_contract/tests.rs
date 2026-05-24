@@ -18,7 +18,7 @@ use crate::smart_contract::native::{
 use crate::smart_contract::storage_key::StorageKey;
 use crate::smart_contract::trigger_type::TriggerType;
 use crate::vm_runtime::StackItem;
-use crate::{IVerifiable, UInt160, UInt256};
+use crate::{Verifiable, UInt160, UInt256};
 use neo_primitives::TransactionAttributeType;
 use neo_vm_rs::{ExecutionEngineLimits, OpCode, StackValue, VmState as VMState};
 use num_bigint::BigInt;
@@ -169,7 +169,7 @@ fn make_engine(
         tx.set_signers(signers);
         tx.set_witnesses(vec![Witness::empty(); tx.signers().len()]);
         tx.set_script(vec![OpCode::NOP.byte()]);
-        Some(Arc::new(tx) as Arc<dyn IVerifiable>)
+        Some(Arc::new(tx) as Arc<dyn Verifiable>)
     };
 
     ApplicationEngine::new(
@@ -196,7 +196,7 @@ fn make_engine_with_script(
     tx.set_witnesses(vec![Witness::empty(); tx.signers().len()]);
     tx.set_script(script.clone());
 
-    let container: Arc<dyn IVerifiable> = Arc::new(tx);
+    let container: Arc<dyn Verifiable> = Arc::new(tx);
     let mut engine = ApplicationEngine::new(
         TriggerType::Application,
         Some(container),

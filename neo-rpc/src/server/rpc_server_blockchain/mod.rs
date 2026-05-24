@@ -18,7 +18,7 @@ use neo_core::network::p2p::payloads::{
     block::Block, header::Header, transaction::Transaction, witness::Witness as PayloadWitness,
 };
 use neo_core::persistence::seek_direction::SeekDirection;
-use neo_core::persistence::IReadOnlyStoreGeneric;
+use neo_core::persistence::ReadOnlyStoreGeneric;
 use neo_core::smart_contract::contract_state::ContractState;
 use neo_core::smart_contract::native::{
     contract_management::ContractManagement,

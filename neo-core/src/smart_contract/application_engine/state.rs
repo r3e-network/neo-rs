@@ -3,7 +3,7 @@ use super::*;
 impl ApplicationEngine {
     pub fn new(
         trigger: TriggerType,
-        script_container: Option<Arc<dyn IVerifiable>>,
+        script_container: Option<Arc<dyn Verifiable>>,
         snapshot_cache: Arc<DataCache>,
         persisting_block: Option<Block>,
         protocol_settings: ProtocolSettings,
@@ -23,7 +23,7 @@ impl ApplicationEngine {
 
     pub fn new_with_shared_block(
         trigger: TriggerType,
-        script_container: Option<Arc<dyn IVerifiable>>,
+        script_container: Option<Arc<dyn Verifiable>>,
         snapshot_cache: Arc<DataCache>,
         persisting_block: Option<Arc<Block>>,
         protocol_settings: ProtocolSettings,
@@ -91,7 +91,7 @@ impl ApplicationEngine {
     #[allow(clippy::too_many_arguments)]
     pub fn new_with_preloaded_native(
         trigger: TriggerType,
-        script_container: Option<Arc<dyn IVerifiable>>,
+        script_container: Option<Arc<dyn Verifiable>>,
         snapshot_cache: Arc<DataCache>,
         persisting_block: Option<Arc<Block>>,
         protocol_settings: ProtocolSettings,
@@ -423,7 +423,7 @@ impl ApplicationEngine {
         &self.protocol_settings
     }
 
-    pub fn script_container(&self) -> Option<&Arc<dyn IVerifiable>> {
+    pub fn script_container(&self) -> Option<&Arc<dyn Verifiable>> {
         self.script_container.as_ref()
     }
 

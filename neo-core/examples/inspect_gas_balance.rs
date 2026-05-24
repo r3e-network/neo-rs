@@ -1,6 +1,6 @@
 #[cfg(feature = "rocksdb")]
 use neo_core::persistence::{
-    providers::RocksDBStoreProvider, IStoreProvider, StorageConfig, StorageKey, StoreCache,
+    providers::RocksDBStoreProvider, StoreProvider, StorageConfig, StorageKey, StoreCache,
 };
 #[cfg(feature = "rocksdb")]
 use neo_core::UInt160;

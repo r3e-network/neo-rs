@@ -1,6 +1,6 @@
 //! LogEventArgs - matches C# Neo.SmartContract.LogEventArgs exactly
 
-use crate::{IVerifiable, UInt160};
+use crate::{Verifiable, UInt160};
 use std::fmt;
 use std::sync::Arc;
 
@@ -8,7 +8,7 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct LogEventArgs {
     /// The container that containing the executed script
-    pub script_container: Arc<dyn IVerifiable>,
+    pub script_container: Arc<dyn Verifiable>,
 
     /// The script hash of the contract that sends the log
     pub script_hash: UInt160,
@@ -19,7 +19,7 @@ pub struct LogEventArgs {
 
 impl LogEventArgs {
     /// Initializes a new instance
-    pub fn new(container: Arc<dyn IVerifiable>, script_hash: UInt160, message: String) -> Self {
+    pub fn new(container: Arc<dyn Verifiable>, script_hash: UInt160, message: String) -> Self {
         Self {
             script_container: container,
             script_hash,

@@ -1,5 +1,5 @@
 use neo_core::persistence::{
-    providers::RocksDBStoreProvider, IReadOnlyStoreGeneric, IStoreProvider, SeekDirection,
+    providers::RocksDBStoreProvider, ReadOnlyStoreGeneric, StoreProvider, SeekDirection,
     StorageConfig, StoreCache,
 };
 use neo_core::smart_contract::StorageKey;

@@ -74,8 +74,8 @@ mod tests {
         transaction.set_script(vec![0x01, 0x02, 0x03]);
         let transaction_hash = transaction.hash();
 
-        let container: Arc<dyn crate::IVerifiable> =
-            Arc::new(transaction.clone()) as Arc<dyn crate::IVerifiable>;
+        let container: Arc<dyn crate::Verifiable> =
+            Arc::new(transaction.clone()) as Arc<dyn crate::Verifiable>;
         let block = Block::new(BlockHeader::default(), vec![transaction.clone()]);
         let snapshot = Arc::new(DataCache::new(false));
 

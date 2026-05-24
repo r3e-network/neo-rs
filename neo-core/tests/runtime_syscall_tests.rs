@@ -80,7 +80,7 @@ fn runtime_current_signers_returns_transaction_signers() {
     let mut tx = Transaction::new();
     tx.set_signers(vec![signer.clone()]);
 
-    let container: Arc<dyn neo_core::IVerifiable> = Arc::new(tx);
+    let container: Arc<dyn neo_core::Verifiable> = Arc::new(tx);
     let mut engine = ApplicationEngine::new(
         TriggerType::Application,
         Some(container),
@@ -177,7 +177,7 @@ fn runtime_get_script_container_returns_stack_item() {
     tx.set_script(vec![OpCode::PUSH1.byte()]);
     let account = UInt160::from_bytes(&[1u8; 20]).expect("account");
     tx.add_signer(Signer::new(account, WitnessScope::NONE));
-    let container: Arc<dyn neo_core::IVerifiable> = Arc::new(tx.clone());
+    let container: Arc<dyn neo_core::Verifiable> = Arc::new(tx.clone());
     let mut engine = ApplicationEngine::new(
         TriggerType::Application,
         Some(container),
@@ -326,7 +326,7 @@ fn runtime_log_emits_event() {
     let snapshot = Arc::new(DataCache::new(false));
     let mut tx = Transaction::new();
     tx.set_script(vec![0x01]);
-    let container: Arc<dyn neo_core::IVerifiable> = Arc::new(tx);
+    let container: Arc<dyn neo_core::Verifiable> = Arc::new(tx);
     let mut engine = ApplicationEngine::new(
         TriggerType::Application,
         Some(container),
@@ -355,7 +355,7 @@ fn runtime_log_syscall_allows_notify() {
     let snapshot = Arc::new(DataCache::new(false));
     let mut tx = Transaction::new();
     tx.set_script(vec![0x01]);
-    let container: Arc<dyn neo_core::IVerifiable> = Arc::new(tx);
+    let container: Arc<dyn neo_core::Verifiable> = Arc::new(tx);
     let mut engine = ApplicationEngine::new(
         TriggerType::Application,
         Some(container),
@@ -571,7 +571,7 @@ fn runtime_check_witness_accepts_valid_signer() {
     tx.set_script(vec![0x01]);
 
     let snapshot = Arc::new(DataCache::new(false));
-    let container: Arc<dyn neo_core::IVerifiable> = Arc::new(tx);
+    let container: Arc<dyn neo_core::Verifiable> = Arc::new(tx);
     let mut engine = ApplicationEngine::new(
         TriggerType::Application,
         Some(container),
@@ -626,7 +626,7 @@ fn runtime_check_witness_returns_false_without_matching_signer() {
     tx.set_script(vec![0x01]);
 
     let snapshot = Arc::new(DataCache::new(false));
-    let container: Arc<dyn neo_core::IVerifiable> = Arc::new(tx);
+    let container: Arc<dyn neo_core::Verifiable> = Arc::new(tx);
     let mut engine = ApplicationEngine::new(
         TriggerType::Application,
         Some(container),
@@ -831,7 +831,7 @@ fn add_contract_to_snapshot(snapshot: &DataCache, contract: &ContractState) {
 }
 
 fn make_runtime_engine(snapshot: Arc<DataCache>, tx: Transaction) -> ApplicationEngine {
-    let container: Arc<dyn neo_core::IVerifiable> = Arc::new(tx);
+    let container: Arc<dyn neo_core::Verifiable> = Arc::new(tx);
     ApplicationEngine::new(
         TriggerType::Application,
         Some(container),
@@ -985,7 +985,7 @@ fn make_engine_with_sign_data() -> (ApplicationEngine, Vec<u8>) {
     sign_data.extend_from_slice(&settings.network.to_le_bytes());
     sign_data.extend_from_slice(&hash.as_bytes());
 
-    let container: Arc<dyn neo_core::IVerifiable> = Arc::new(tx);
+    let container: Arc<dyn neo_core::Verifiable> = Arc::new(tx);
     let engine = ApplicationEngine::new(
         TriggerType::Application,
         Some(container),

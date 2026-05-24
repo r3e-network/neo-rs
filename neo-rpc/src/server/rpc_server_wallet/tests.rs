@@ -11,7 +11,7 @@ use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::helper::Helper as ContractHelper;
 use neo_core::smart_contract::native::LedgerContract;
 use neo_core::smart_contract::{StorageItem, StorageKey};
-use neo_core::IVerifiable;
+use neo_core::Verifiable;
 use neo_core::NeoSystem;
 use neo_core::UInt256;
 use neo_core::Witness;
@@ -105,7 +105,7 @@ fn mint_gas(
     let mut container = Transaction::new();
     container.set_signers(vec![Signer::new(account, WitnessScope::GLOBAL)]);
     container.add_witness(Witness::new());
-    let script_container: Arc<dyn IVerifiable> = Arc::new(container);
+    let script_container: Arc<dyn Verifiable> = Arc::new(container);
     let mut engine = ApplicationEngine::new(
         TriggerType::Application,
         Some(script_container),

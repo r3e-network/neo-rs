@@ -15,8 +15,8 @@ use std::any::Any;
 use std::sync::Arc;
 
 /// A provider used to create IStore instances.
-pub trait IStoreProvider: Send + Sync + Any {
-    /// Gets the name of the IStoreProvider.
+pub trait StoreProvider: Send + Sync + Any {
+    /// Gets the name of the StoreProvider.
     fn name(&self) -> &str;
 
     /// Creates a new instance of the IStore interface.

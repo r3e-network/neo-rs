@@ -18,7 +18,7 @@ use crate::smart_contract::ContractParameterType;
 use crate::vm_runtime::StackItem;
 use crate::wallets::KeyPair;
 use crate::witness::Witness;
-use crate::{IVerifiable, UInt160, WitnessScope};
+use crate::{Verifiable, UInt160, WitnessScope};
 use neo_vm_rs::OpCode;
 use std::sync::Arc;
 
@@ -104,7 +104,7 @@ fn make_engine(
         let mut tx = Transaction::new();
         tx.set_signers(vec![Signer::new(account, WitnessScope::GLOBAL)]);
         tx.add_witness(Witness::new());
-        Arc::new(tx) as Arc<dyn IVerifiable>
+        Arc::new(tx) as Arc<dyn Verifiable>
     });
 
     ApplicationEngine::new(

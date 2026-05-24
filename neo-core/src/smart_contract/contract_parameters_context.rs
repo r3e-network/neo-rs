@@ -10,7 +10,7 @@ use crate::smart_contract::contract_parameter::ContractParameter;
 use crate::smart_contract::contract_parameter::ContractParameterValue;
 use crate::smart_contract::contract_parameter_type::ContractParameterType;
 use crate::smart_contract::helper::Helper as ContractHelper;
-use crate::{IVerifiable, UInt160, UInt256};
+use crate::{Verifiable, UInt160, UInt256};
 use base64::{engine::general_purpose, Engine as _};
 use neo_vm_rs::OpCode;
 use num_traits::ToPrimitive;
@@ -116,7 +116,7 @@ impl ContextItem {
     }
 }
 
-/// The context used to add witnesses for IVerifiable (matches C# ContractParametersContext)
+/// The context used to add witnesses for Verifiable (matches C# ContractParametersContext)
 pub struct ContractParametersContext {
     /// Serialized verifiable payload (unsigned)
     verifiable_bytes: Vec<u8>,
@@ -139,7 +139,7 @@ impl ContractParametersContext {
     /// Creates a new context
     pub fn new(
         snapshot_cache: Arc<DataCache>,
-        verifiable: impl IVerifiable + Serializable + 'static,
+        verifiable: impl Verifiable + Serializable + 'static,
         network: u32,
     ) -> Self {
         Self::new_with_type(snapshot_cache, verifiable, network, None)
@@ -148,13 +148,13 @@ impl ContractParametersContext {
     /// Creates a new context with an explicit type name (for parity with C# ToJson()).
     pub fn new_with_type(
         snapshot_cache: Arc<DataCache>,
-        verifiable: impl IVerifiable + Serializable + 'static,
+        verifiable: impl Verifiable + Serializable + 'static,
         network: u32,
         verifiable_type: Option<String>,
     ) -> Self {
         let script_hashes = verifiable.get_script_hashes_for_verifying(snapshot_cache.as_ref());
         let verifiable_type =
-            verifiable_type.unwrap_or_else(|| "Neo.Network.P2P.Payloads.IVerifiable".to_string());
+            verifiable_type.unwrap_or_else(|| "Neo.Network.P2P.Payloads.Verifiable".to_string());
         let mut writer = BinaryWriter::new();
         let _ = verifiable.serialize(&mut writer);
         let verifiable_bytes = writer.into_bytes();
@@ -433,7 +433,7 @@ impl ContractParametersContext {
     /// Creates from JSON
     pub fn from_json(
         json: &serde_json::Value,
-        verifiable: impl IVerifiable + Serializable + 'static,
+        verifiable: impl Verifiable + Serializable + 'static,
         snapshot: Arc<DataCache>,
     ) -> Result<Self, String> {
         let obj = json.as_object().ok_or("Expected object")?;

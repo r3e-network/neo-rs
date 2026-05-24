@@ -4,7 +4,7 @@ use crate::ledger::{block_header::BlockHeader, Block};
 use crate::neo_io::{
     serializable::helper::get_var_size, BinaryWriter, IoResult, MemoryReader, Serializable,
 };
-use crate::smart_contract::interoperable::IInteroperable;
+use crate::smart_contract::interoperable::Interoperable;
 use crate::vm_runtime::StackItem;
 use crate::{CoreResult, UInt256};
 use neo_vm_rs::StackValue;
@@ -109,7 +109,7 @@ impl Serializable for TrimmedBlock {
     }
 }
 
-impl IInteroperable for TrimmedBlock {
+impl Interoperable for TrimmedBlock {
     fn from_stack_item(&mut self, _stack_item: StackItem) -> Result<(), CoreError> {
         // Not supported in C# implementation (throws NotSupportedException)
         Err(CoreError::invalid_operation(
@@ -125,7 +125,7 @@ impl IInteroperable for TrimmedBlock {
         })
     }
 
-    fn clone_box(&self) -> Box<dyn IInteroperable> {
+    fn clone_box(&self) -> Box<dyn Interoperable> {
         Box::new(self.clone())
     }
 }
@@ -135,7 +135,7 @@ mod tests {
     use super::*;
     use crate::ledger::BlockHeader;
     use crate::network::p2p::payloads::Transaction;
-    use crate::smart_contract::IInteroperable;
+    use crate::smart_contract::Interoperable;
     use crate::{UInt160, UInt256, Witness};
     use neo_vm_rs::OpCode;
     use neo_vm_rs::StackValue;

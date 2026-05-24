@@ -2,7 +2,7 @@ use super::{deserialize_deposit, Notary, DEFAULT_MAX_NOT_VALID_BEFORE_DELTA};
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::hardfork::Hardfork;
 use crate::network::p2p::payloads::{TransactionAttribute, TransactionAttributeType};
-use crate::persistence::read_only_store::IReadOnlyStoreGeneric;
+use crate::persistence::read_only_store::ReadOnlyStoreGeneric;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::native::{

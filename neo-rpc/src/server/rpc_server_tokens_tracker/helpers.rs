@@ -9,6 +9,7 @@ use neo_core::tokens_tracker::{
     find_range, Nep11Tracker, Nep11TransferKey, Nep17Tracker, Nep17TransferKey, TokenTransfer,
     TokensTrackerService,
 };
+use neo_core::tokens_tracker::trackers::tracker_base::TokenTransferKeyView;
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::UInt160;
 use neo_vm_rs::OpCode;

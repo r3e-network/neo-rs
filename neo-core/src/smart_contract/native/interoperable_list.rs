@@ -1,16 +1,16 @@
 //! InteroperableList - matches C# Neo.SmartContract.Native.InteroperableList exactly
 
-use crate::smart_contract::interoperable::IInteroperable;
+use crate::smart_contract::interoperable::Interoperable;
 use crate::vm_runtime::StackItem;
 use std::ops::{Deref, DerefMut};
 
 /// A list that can be converted to/from StackItem (matches C# InteroperableList\<T>)
 #[derive(Clone, Debug)]
-pub struct InteroperableList<T: IInteroperable + Clone> {
+pub struct InteroperableList<T: Interoperable + Clone> {
     items: Vec<T>,
 }
 
-impl<T: IInteroperable + Clone> InteroperableList<T> {
+impl<T: Interoperable + Clone> InteroperableList<T> {
     /// Creates a new empty list
     pub fn new() -> Self {
         Self { items: Vec::new() }
@@ -56,13 +56,13 @@ impl<T: IInteroperable + Clone> InteroperableList<T> {
     }
 }
 
-impl<T: IInteroperable + Clone> Default for InteroperableList<T> {
+impl<T: Interoperable + Clone> Default for InteroperableList<T> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T: IInteroperable + Clone> Deref for InteroperableList<T> {
+impl<T: Interoperable + Clone> Deref for InteroperableList<T> {
     type Target = Vec<T>;
     
     fn deref(&self) -> &Self::Target {
@@ -70,13 +70,13 @@ impl<T: IInteroperable + Clone> Deref for InteroperableList<T> {
     }
 }
 
-impl<T: IInteroperable + Clone> DerefMut for InteroperableList<T> {
+impl<T: Interoperable + Clone> DerefMut for InteroperableList<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.items
     }
 }
 
-impl<T: IInteroperable + Clone + Default> IInteroperable for InteroperableList<T> {
+impl<T: Interoperable + Clone + Default> Interoperable for InteroperableList<T> {
     fn from_stack_item(&mut self, stack_item: StackItem) {
         self.items.clear();
         
@@ -98,7 +98,7 @@ impl<T: IInteroperable + Clone + Default> IInteroperable for InteroperableList<T
         StackItem::from_array(items)
     }
     
-    fn clone_box(&self) -> Box<dyn IInteroperable> {
+    fn clone_box(&self) -> Box<dyn Interoperable> {
         Box::new(self.clone())
     }
 }

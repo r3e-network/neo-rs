@@ -1,5 +1,3 @@
-use std::fmt;
-use std::net::SocketAddr;
 
 // ============ Peer Types ============
 

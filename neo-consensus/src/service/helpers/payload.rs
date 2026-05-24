@@ -20,7 +20,7 @@ impl ConsensusService {
             data,
         );
 
-        // Sign the payload as an ExtensiblePayload ("dBFT") IVerifiable:
+        // Sign the payload as an ExtensiblePayload ("dBFT") Verifiable:
         // signature is over `[network:4][payload_hash:32]`.
         if let Ok(sign_data) = self.dbft_sign_data(&payload) {
             match self.sign(&sign_data) {

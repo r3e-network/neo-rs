@@ -579,7 +579,7 @@ mod tests {
         lifecycle::HandshakeGateDecision, message_handlers, register_message_received_handler,
         PendingKnownHashes, RemoteNode, UInt256,
     };
-    use crate::i_event_handlers::IMessageReceivedHandler;
+    use crate::i_event_handlers::MessageReceivedHandler;
     use crate::network::p2p::payloads::extensible_payload::ExtensiblePayload;
     use crate::network::p2p::{
         local_node::RelayInventory,
@@ -714,7 +714,7 @@ mod tests {
         invocations: AtomicUsize,
     }
 
-    impl IMessageReceivedHandler for TestHandler {
+    impl MessageReceivedHandler for TestHandler {
         fn remote_node_message_received_handler(
             &self,
             _system: &dyn std::any::Any,

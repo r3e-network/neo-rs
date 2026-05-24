@@ -172,7 +172,7 @@ impl Header {
 // Use macro to reduce boilerplate
 crate::impl_default_via_new!(Header);
 
-impl crate::IVerifiable for Header {
+impl crate::Verifiable for Header {
     fn get_script_hashes_for_verifying(&self, snapshot: &DataCache) -> Vec<UInt160> {
         if self.prev_hash == UInt256::default() {
             return vec![self.witness.script_hash()];

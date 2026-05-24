@@ -9,7 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use super::{inventory::IInventory, witness::Witness, InventoryType};
+use super::{inventory::Inventory, witness::Witness, InventoryType};
 use crate::macros::ValidateLength;
 use crate::neo_io::serializable::helper::get_var_size;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
@@ -83,7 +83,7 @@ impl ExtensiblePayload {
         }
 
         // Verify witness with max gas of 0.06 GAS
-        crate::IVerifiable::verify_witnesses(self, settings, snapshot, 6_000_000)
+        crate::Verifiable::verify_witnesses(self, settings, snapshot, 6_000_000)
     }
 
     /// Returns the cached hash of the payload, computing it if necessary.
@@ -177,7 +177,7 @@ impl ExtensiblePayload {
     }
 }
 
-impl IInventory for ExtensiblePayload {
+impl Inventory for ExtensiblePayload {
     fn inventory_type(&self) -> InventoryType {
         InventoryType::Extensible
     }
@@ -187,7 +187,7 @@ impl IInventory for ExtensiblePayload {
     }
 }
 
-impl crate::IVerifiable for ExtensiblePayload {
+impl crate::Verifiable for ExtensiblePayload {
     fn get_script_hashes_for_verifying(&self, _snapshot: &DataCache) -> Vec<UInt160> {
         vec![self.sender]
     }
@@ -292,6 +292,6 @@ mod tests {
 
         let expected = payload.try_hash().expect("try hash");
 
-        assert_eq!(crate::IVerifiable::hash(&payload).unwrap(), expected);
+        assert_eq!(crate::Verifiable::hash(&payload).unwrap(), expected);
     }
 }

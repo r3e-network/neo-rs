@@ -1,15 +1,15 @@
 //! Storage value traits for Neo blockchain.
 //!
-//! This module provides the `IStorageValue` trait that abstracts storage value
+//! This module provides the `StorageValue` trait that abstracts storage value
 //! operations without requiring VM types. This breaks the circular dependency
-//! between neo-storage and neo-vm (Chain 1: `StorageItem` → `IInteroperable`).
+//! between neo-storage and neo-vm (Chain 1: `StorageItem` → `Interoperable`).
 //!
 //! # Example
 //!
 //! ```rust
-//! use neo_primitives::IStorageValue;
+//! use neo_primitives::StorageValue;
 //!
-//! // Vec<u8> implements IStorageValue by default
+//! // Vec<u8> implements StorageValue by default
 //! let value = vec![0x01, 0x02, 0x03];
 //! let bytes = value.to_storage_bytes();
 //! let restored = Vec::<u8>::from_storage_bytes(&bytes).unwrap();
@@ -73,16 +73,16 @@ pub type StorageValueResult<T> = Result<T, StorageValueError>;
 /// Trait for types that can be stored in contract storage.
 ///
 /// This trait abstracts storage serialization without requiring VM types,
-/// breaking the circular dependency with `IInteroperable` (neo-vm).
+/// breaking the circular dependency with `Interoperable` (neo-vm).
 ///
 /// # Design Rationale
 ///
-/// The Neo C# implementation has `StorageItem` that can cache `IInteroperable`
+/// The Neo C# implementation has `StorageItem` that can cache `Interoperable`
 /// objects. This creates a dependency from storage to VM types. By using this
 /// trait, we can:
 ///
-/// 1. Define a simple `StorageItem<V: IStorageValue>` in neo-storage
-/// 2. Have neo-core implement `IStorageValue` for types that need VM integration
+/// 1. Define a simple `StorageItem<V: StorageValue>` in neo-storage
+/// 2. Have neo-core implement `StorageValue` for types that need VM integration
 /// 3. Avoid any dependency from neo-storage to neo-vm
 ///
 /// # Performance
@@ -90,7 +90,7 @@ pub type StorageValueResult<T> = Result<T, StorageValueError>;
 /// Default implementations use simple byte copies. Custom implementations
 /// can optimize for specific data layouts. All methods are marked `#[inline]`
 /// to enable monomorphization for hot paths.
-pub trait IStorageValue: Clone + Send + Sync + 'static {
+pub trait StorageValue: Clone + Send + Sync + 'static {
     /// Serializes the value to bytes for storage.
     ///
     /// # Returns
@@ -124,7 +124,7 @@ pub trait IStorageValue: Clone + Send + Sync + 'static {
 /// Default implementation for byte vectors.
 ///
 /// This is the most common case for storage values - raw bytes.
-impl IStorageValue for Vec<u8> {
+impl StorageValue for Vec<u8> {
     #[inline]
     fn to_storage_bytes(&self) -> Vec<u8> {
         self.clone()
@@ -142,7 +142,7 @@ impl IStorageValue for Vec<u8> {
 }
 
 /// Implementation for fixed-size byte arrays.
-impl<const N: usize> IStorageValue for [u8; N] {
+impl<const N: usize> StorageValue for [u8; N] {
     #[inline]
     fn to_storage_bytes(&self) -> Vec<u8> {
         self.to_vec()
@@ -209,7 +209,7 @@ mod tests {
         assert!(debug_str.contains("DeserializationFailed"));
     }
 
-    // ============ Vec<u8> IStorageValue Tests ============
+    // ============ Vec<u8> StorageValue Tests ============
 
     #[test]
     fn test_vec_u8_to_storage_bytes() {
@@ -260,7 +260,7 @@ mod tests {
         assert_eq!(original.storage_size(), 1000);
     }
 
-    // ============ [u8; N] IStorageValue Tests ============
+    // ============ [u8; N] StorageValue Tests ============
 
     #[test]
     fn test_fixed_array_to_storage_bytes() {
@@ -314,14 +314,14 @@ mod tests {
 
     // ============ Custom Implementation Test ============
 
-    /// A mock struct to demonstrate custom IStorageValue implementation.
+    /// A mock struct to demonstrate custom StorageValue implementation.
     #[derive(Clone, Debug, PartialEq)]
     struct MockStorageValue {
         id: u32,
         data: Vec<u8>,
     }
 
-    impl IStorageValue for MockStorageValue {
+    impl StorageValue for MockStorageValue {
         fn to_storage_bytes(&self) -> Vec<u8> {
             let mut bytes = Vec::with_capacity(4 + self.data.len());
             bytes.extend_from_slice(&self.id.to_le_bytes());
@@ -370,7 +370,7 @@ mod tests {
 
     #[test]
     fn test_trait_object_vec() {
-        fn use_storage_value<V: IStorageValue>(value: &V) -> Vec<u8> {
+        fn use_storage_value<V: StorageValue>(value: &V) -> Vec<u8> {
             value.to_storage_bytes()
         }
 
@@ -381,7 +381,7 @@ mod tests {
 
     #[test]
     fn test_trait_object_fixed_array() {
-        fn use_storage_value<V: IStorageValue>(value: &V) -> usize {
+        fn use_storage_value<V: StorageValue>(value: &V) -> usize {
             value.storage_size()
         }
 

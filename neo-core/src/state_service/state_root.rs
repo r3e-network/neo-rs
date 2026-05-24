@@ -13,7 +13,7 @@ use crate::smart_contract::{
     native::{role_management::RoleManagement, Role},
     Contract,
 };
-use crate::{IVerifiable, UInt160, UInt256};
+use crate::{Verifiable, UInt160, UInt256};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};
@@ -265,7 +265,7 @@ impl Serializable for StateRoot {
     }
 }
 
-impl IVerifiable for StateRoot {
+impl Verifiable for StateRoot {
     fn get_script_hashes_for_verifying(&self, snapshot: &DataCache) -> Vec<UInt160> {
         let validators = RoleManagement::new()
             .get_designated_by_role_at(snapshot, Role::StateValidator, self.index)

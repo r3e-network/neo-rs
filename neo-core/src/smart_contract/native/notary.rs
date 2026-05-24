@@ -7,7 +7,7 @@
 use crate::cryptography::Crypto;
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::network::p2p::payloads::{Transaction, TransactionAttributeType};
-use crate::persistence::read_only_store::IReadOnlyStoreGeneric;
+use crate::persistence::read_only_store::ReadOnlyStoreGeneric;
 use crate::persistence::DataCache;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;

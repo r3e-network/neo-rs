@@ -2,8 +2,8 @@
 
 use super::memory_store::MemoryStore;
 use crate::persistence::{
-    read_only_store::IReadOnlyStoreGeneric, store::IStore, store_snapshot::IStoreSnapshot,
-    write_store::IWriteStore, seek_direction::SeekDirection,
+    read_only_store::ReadOnlyStoreGeneric, store::IStore, store_snapshot::StoreSnapshot,
+    write_store::WriteStore, seek_direction::SeekDirection,
 };
 use parking_lot::RwLock;
 use std::collections::BTreeMap;
@@ -38,7 +38,7 @@ impl MemorySnapshot {
     }
 }
 
-impl IReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MemorySnapshot {
+impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MemorySnapshot {
     fn try_get(&self, key: &Vec<u8>) -> Option<Vec<u8>> {
         // Check write batch first
         if let Some(batch_value) = self.write_batch.read().get(key) {
@@ -85,7 +85,7 @@ impl IReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MemorySnapshot {
     }
 }
 
-impl IWriteStore<Vec<u8>, Vec<u8>> for MemorySnapshot {
+impl WriteStore<Vec<u8>, Vec<u8>> for MemorySnapshot {
     fn delete(&mut self, key: Vec<u8>) -> crate::error::CoreResult<()> {
         self.write_batch.write().insert(key, None);
         Ok(())
@@ -97,7 +97,7 @@ impl IWriteStore<Vec<u8>, Vec<u8>> for MemorySnapshot {
     }
 }
 
-impl IStoreSnapshot for MemorySnapshot {
+impl StoreSnapshot for MemorySnapshot {
     fn store(&self) -> Arc<dyn IStore> {
         self.store.clone()
     }

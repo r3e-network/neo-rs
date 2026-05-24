@@ -8,7 +8,7 @@ use super::security_fixes::{
 use super::AccountState;
 use crate::error::{CoreError, CoreResult};
 use crate::network::p2p::payloads::{Transaction, TransactionAttribute, TransactionAttributeType};
-use crate::persistence::read_only_store::IReadOnlyStoreGeneric;
+use crate::persistence::read_only_store::ReadOnlyStoreGeneric;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::helper::Helper;
@@ -633,7 +633,7 @@ impl GasToken {
     /// Gets total supply from a snapshot (used by RPC/tests).
     pub fn total_supply_snapshot<S>(&self, snapshot: &S) -> BigInt
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         let key = Self::total_supply_key();
         snapshot
@@ -645,7 +645,7 @@ impl GasToken {
     /// Reads the balance of `account` from the snapshot.
     pub fn balance_of_snapshot<S>(&self, snapshot: &S, account: &UInt160) -> BigInt
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         let key = StorageKey::create_with_uint160(Self::ID, ACCOUNT_PREFIX, account);
         snapshot

@@ -7,7 +7,7 @@
 //! # Architecture
 //!
 //! The tracker is designed to work as an integrated component (not a plugin):
-//! - `TokensTracker` implements `ICommittingHandler` and `ICommittedHandler`
+//! - `TokensTracker` implements `CommittingHandler` and `CommittedHandler`
 //! - Trackers index data during block commit events
 //! - RPC handlers query the indexed data
 //!

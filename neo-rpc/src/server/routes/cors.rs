@@ -8,7 +8,7 @@ use warp::http::header::{
 use warp::reply::Response as HttpResponse;
 
 #[derive(Clone)]
-pub(super) struct BasicAuth {
+pub struct BasicAuth {
     pub(super) user: Vec<u8>,
     pub(super) pass: Vec<u8>,
 }
@@ -126,7 +126,7 @@ pub(super) fn apply_cors(
     }
 }
 
-pub(super) fn verify_basic_auth(header: Option<&str>, auth: &BasicAuth) -> bool {
+pub fn verify_basic_auth(header: Option<&str>, auth: &BasicAuth) -> bool {
     let header = match header {
         Some(value) => value.trim(),
         None => return false,

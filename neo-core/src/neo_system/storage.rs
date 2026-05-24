@@ -12,7 +12,7 @@ use crate::state_service::{
 
 /// Initializes store, cache, and state store from a provider and optional path.
 pub(crate) fn init_store(
-    store_provider: Arc<dyn crate::persistence::store_provider::IStoreProvider>,
+    store_provider: Arc<dyn crate::persistence::store_provider::StoreProvider>,
     storage_path: Option<String>,
     settings: Arc<ProtocolSettings>,
     state_service_settings: Option<StateServiceSettings>,

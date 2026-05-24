@@ -6,7 +6,7 @@ use crate::smart_contract::native::{Role, RoleManagement};
 use crate::wallets::Wallet;
 use std::sync::Arc;
 
-impl crate::i_event_handlers::ICommittingHandler for OracleService {
+impl crate::i_event_handlers::CommittingHandler for OracleService {
     fn blockchain_committing_handler(
         &self,
         system: &dyn std::any::Any,
@@ -53,7 +53,7 @@ impl crate::i_event_handlers::ICommittingHandler for OracleService {
     }
 }
 
-impl crate::i_event_handlers::IWalletChangedHandler for OracleService {
+impl crate::i_event_handlers::WalletChangedHandler for OracleService {
     fn wallet_provider_wallet_changed_handler(
         &self,
         _sender: &dyn std::any::Any,

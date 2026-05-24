@@ -11,7 +11,7 @@ use crate::neo_io::serializable::helper::{
 };
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::smart_contract::{
-    helper::Helper, interoperable::IInteroperable, manifest::ContractManifest,
+    helper::Helper, interoperable::Interoperable, manifest::ContractManifest,
     method_token::MethodToken, CallFlags,
 };
 use crate::vm_runtime::StackItem;
@@ -262,7 +262,7 @@ impl NefFile {
     }
 }
 
-impl IInteroperable for ContractState {
+impl Interoperable for ContractState {
     fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
         self.from_stack_value(StackValue::try_from(stack_item).map_err(|error| {
             CoreError::invalid_format(format!(
@@ -279,7 +279,7 @@ impl IInteroperable for ContractState {
         })
     }
 
-    fn clone_box(&self) -> Box<dyn IInteroperable> {
+    fn clone_box(&self) -> Box<dyn Interoperable> {
         Box::new(self.clone())
     }
 }

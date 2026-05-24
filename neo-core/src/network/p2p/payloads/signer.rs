@@ -13,7 +13,7 @@ use crate::error::CoreError;
 use crate::macros::{OptionExt, ValidateLength};
 use crate::neo_io::serializable::helper::get_var_size;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use crate::smart_contract::IInteroperable;
+use crate::smart_contract::Interoperable;
 use crate::vm_runtime::StackItem;
 use crate::witness_rule::{WitnessRule, WitnessRuleAction};
 use crate::{
@@ -431,7 +431,7 @@ impl Serializable for Signer {
     }
 }
 
-impl IInteroperable for Signer {
+impl Interoperable for Signer {
     fn from_stack_item(&mut self, _stack_item: StackItem) -> Result<(), CoreError> {
         // This operation is not supported for Signer.
         // The C# implementation throws NotSupportedException.
@@ -448,7 +448,7 @@ impl IInteroperable for Signer {
         })
     }
 
-    fn clone_box(&self) -> Box<dyn IInteroperable> {
+    fn clone_box(&self) -> Box<dyn Interoperable> {
         Box::new(self.clone())
     }
 }
@@ -459,7 +459,7 @@ crate::impl_hash_for_fields!(Signer, account, scopes);
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::smart_contract::IInteroperable;
+    use crate::smart_contract::Interoperable;
     use neo_vm_rs::StackValue;
 
     #[test]

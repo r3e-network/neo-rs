@@ -5,7 +5,7 @@ use neo_core::neo_io::{Serializable, SerializableExt};
 use neo_core::neo_system::NeoSystem;
 use neo_core::persistence::providers::MemoryStoreProvider;
 use neo_core::persistence::IStore;
-use neo_core::persistence::IStoreProvider;
+use neo_core::persistence::StoreProvider;
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::manifest::{
     ContractAbi, ContractManifest, ContractMethodDescriptor, ContractParameterDefinition,

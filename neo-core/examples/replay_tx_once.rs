@@ -1,7 +1,7 @@
 use base64::Engine as _;
 use neo_core::persistence::data_cache::DataCacheConfig;
 use neo_core::persistence::{
-    providers::RocksDBStoreProvider, DataCache, IStoreProvider, SeekDirection, StorageConfig,
+    providers::RocksDBStoreProvider, DataCache, StoreProvider, SeekDirection, StorageConfig,
     StoreCache,
 };
 use neo_core::protocol_settings::ProtocolSettings;
@@ -14,7 +14,7 @@ use neo_core::smart_contract::native::ledger_contract::{HashOrIndex, LedgerContr
 use neo_core::smart_contract::native::LedgerTransactionStates;
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::smart_contract::{StorageItem, StorageKey};
-use neo_core::{IVerifiable, UInt256};
+use neo_core::{Verifiable, UInt256};
 use neo_vm_rs::OpCode;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -268,7 +268,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
     ));
 
-    let container: Arc<dyn IVerifiable> = Arc::new(tx.clone());
+    let container: Arc<dyn Verifiable> = Arc::new(tx.clone());
     let mut tx_engine = ApplicationEngine::new_with_shared_block(
         TriggerType::Application,
         Some(container),

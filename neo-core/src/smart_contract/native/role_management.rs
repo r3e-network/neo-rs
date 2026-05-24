@@ -271,7 +271,7 @@ mod tests {
     use crate::smart_contract::{native::NativeHelpers, StorageItem};
     use crate::vm_runtime::StackItem;
     use crate::witness::Witness;
-    use crate::{ECCurve, ECPoint, IVerifiable, UInt256, WitnessScope};
+    use crate::{ECCurve, ECPoint, Verifiable, UInt256, WitnessScope};
     use neo_vm_rs::OpCode;
     use neo_vm_rs::StackValue;
     use std::sync::Arc;
@@ -320,7 +320,7 @@ mod tests {
         let mut container = Transaction::new();
         container.set_signers(vec![Signer::new(UInt160::zero(), WitnessScope::GLOBAL)]);
         container.add_witness(Witness::new());
-        let script_container: Arc<dyn IVerifiable> = Arc::new(container);
+        let script_container: Arc<dyn Verifiable> = Arc::new(container);
 
         ApplicationEngine::new(
             TriggerType::Application,
@@ -345,7 +345,7 @@ mod tests {
         tx.set_witnesses(vec![Witness::empty(); tx.signers().len()]);
         tx.set_script(vec![OpCode::RET.byte()]);
 
-        let script_container: Arc<dyn IVerifiable> = Arc::new(tx);
+        let script_container: Arc<dyn Verifiable> = Arc::new(tx);
         ApplicationEngine::new(
             TriggerType::Application,
             Some(script_container),

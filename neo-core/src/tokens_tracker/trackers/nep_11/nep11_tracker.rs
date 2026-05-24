@@ -52,7 +52,7 @@ impl Nep11Tracker {
 
     fn handle_notification(
         &mut self,
-        container: Option<&Arc<dyn crate::IVerifiable>>,
+        container: Option<&Arc<dyn crate::Verifiable>>,
         asset: &UInt160,
         state_items: &[StackItem],
         transfers: &mut Vec<TransferRecord>,

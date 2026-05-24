@@ -7,7 +7,7 @@ use super::settings::TokensTrackerSettings;
 use super::trackers::nep_11::Nep11Tracker;
 use super::trackers::nep_17::Nep17Tracker;
 use super::trackers::tracker_base::Tracker;
-use crate::i_event_handlers::{ICommittedHandler, ICommittingHandler};
+use crate::i_event_handlers::{CommittedHandler, CommittingHandler};
 use crate::neo_ledger::{ApplicationExecuted, Block};
 use crate::persistence::{DataCache, IStore};
 use crate::NeoSystem;
@@ -20,7 +20,7 @@ use tracing::error;
 
 /// Runtime handler for token balance/transfer tracking.
 ///
-/// Implements `ICommittingHandler` and `ICommittedHandler` to index
+/// Implements `CommittingHandler` and `CommittedHandler` to index
 /// token transfers during block commits.
 pub struct TokensTracker {
     settings: TokensTrackerSettings,
@@ -112,7 +112,7 @@ impl TokensTracker {
     }
 }
 
-impl ICommittingHandler for TokensTracker {
+impl CommittingHandler for TokensTracker {
     fn blockchain_committing_handler(
         &self,
         system: &dyn Any,
@@ -149,7 +149,7 @@ impl ICommittingHandler for TokensTracker {
     }
 }
 
-impl ICommittedHandler for TokensTracker {
+impl CommittedHandler for TokensTracker {
     fn blockchain_committed_handler(&self, system: &dyn Any, _block: &Block) {
         let Some(system) = system.downcast_ref::<NeoSystem>() else {
             return;

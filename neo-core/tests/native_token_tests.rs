@@ -11,10 +11,10 @@ use neo_core::smart_contract::manifest::{
 };
 use neo_core::smart_contract::native::{ContractManagement, GasToken, NativeContract, NeoToken};
 use neo_core::smart_contract::trigger_type::TriggerType;
-use neo_core::smart_contract::IInteroperable;
+use neo_core::smart_contract::Interoperable;
 use neo_core::wallets::KeyPair;
 use neo_core::witness::Witness;
-use neo_core::{IVerifiable, UInt160, WitnessScope};
+use neo_core::{Verifiable, UInt160, WitnessScope};
 use neo_vm_rs::ExecutionEngineLimits;
 use neo_vm_rs::OpCode;
 use num_bigint::BigInt;
@@ -97,7 +97,7 @@ fn make_engine(snapshot: Arc<DataCache>, signer: UInt160) -> ApplicationEngine {
     container.set_signers(vec![Signer::new(signer, WitnessScope::GLOBAL)]);
     // Add a witness for the signer to pass check_witness validation
     container.add_witness(Witness::new());
-    let script_container: Arc<dyn IVerifiable> = Arc::new(container);
+    let script_container: Arc<dyn Verifiable> = Arc::new(container);
     ApplicationEngine::new(
         TriggerType::Application,
         Some(script_container),
@@ -260,7 +260,7 @@ fn gas_transfer_triggers_on_nep17_payment_with_native_caller() {
     let mut container = Transaction::new();
     container.set_signers(vec![Signer::new(sender, WitnessScope::GLOBAL)]);
     container.add_witness(Witness::new());
-    let script_container: Arc<dyn IVerifiable> = Arc::new(container);
+    let script_container: Arc<dyn Verifiable> = Arc::new(container);
     let mut engine = ApplicationEngine::new(
         TriggerType::Application,
         Some(script_container),
@@ -368,7 +368,7 @@ fn gas_transfer_passes_raw_any_payload_into_on_nep17_payment() {
     let mut container = Transaction::new();
     container.set_signers(vec![Signer::new(sender, WitnessScope::GLOBAL)]);
     container.add_witness(Witness::new());
-    let script_container: Arc<dyn IVerifiable> = Arc::new(container);
+    let script_container: Arc<dyn Verifiable> = Arc::new(container);
     let mut engine = ApplicationEngine::new(
         TriggerType::Application,
         Some(script_container),
@@ -475,7 +475,7 @@ fn system_contract_call_gas_transfer_passes_raw_any_payload_into_on_nep17_paymen
     let mut container = Transaction::new();
     container.set_signers(vec![Signer::new(sender, WitnessScope::GLOBAL)]);
     container.add_witness(Witness::new());
-    let script_container: Arc<dyn IVerifiable> = Arc::new(container);
+    let script_container: Arc<dyn Verifiable> = Arc::new(container);
     let mut engine = ApplicationEngine::new(
         TriggerType::Application,
         Some(script_container),

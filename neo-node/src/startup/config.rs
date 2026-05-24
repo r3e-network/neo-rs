@@ -8,7 +8,7 @@ use neo_core::persistence::providers::{
     rocksdb_store_provider::BatchCommitConfig, RocksDBStoreProvider,
 };
 use neo_core::{
-    persistence::{storage::StorageConfig, IStoreProvider},
+    persistence::{storage::StorageConfig, StoreProvider},
     protocol_settings::ProtocolSettings,
     state_service::state_store::StateServiceSettings,
     UnhandledExceptionPolicy,
@@ -25,7 +25,7 @@ pub(crate) const STORAGE_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub(crate) fn select_store_provider(
     backend: Option<&str>,
     storage_config: StorageConfig,
-) -> Result<Option<Arc<dyn IStoreProvider>>> {
+) -> Result<Option<Arc<dyn StoreProvider>>> {
     let Some(name) = backend else {
         return Ok(None);
     };
@@ -46,7 +46,7 @@ pub(crate) fn select_store_provider(
             #[cfg(feature = "full")]
             {
                 let batch_config = rocksdb_batch_config_from_env();
-                let provider: Arc<dyn IStoreProvider> = Arc::new(
+                let provider: Arc<dyn StoreProvider> = Arc::new(
                     RocksDBStoreProvider::new(storage_config).with_batch_config(batch_config),
                 );
                 Ok(Some(provider))

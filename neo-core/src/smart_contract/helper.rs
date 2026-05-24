@@ -14,7 +14,7 @@ use crate::smart_contract::native::contract_management::ContractManagement;
 use crate::smart_contract::native::NativeRegistry;
 use crate::smart_contract::trigger_type::TriggerType;
 use crate::smart_contract::ContractParameterType;
-use crate::{IVerifiable, UInt160, UInt256};
+use crate::{Verifiable, UInt160, UInt256};
 use neo_vm_rs::OpCode;
 use neo_vm_rs::VmState as VMState;
 use std::any::Any;
@@ -289,7 +289,7 @@ impl Helper {
     ///
     /// # Returns
     /// `true` if all witnesses verify successfully, `false` otherwise
-    pub fn verify_witnesses<V: IVerifiable>(
+    pub fn verify_witnesses<V: Verifiable>(
         verifiable: &V,
         settings: &ProtocolSettings,
         snapshot: &DataCache,
@@ -349,7 +349,7 @@ impl Helper {
     ///
     /// # Returns
     /// `Ok(fee)` with consumed gas if verification succeeds, `Err` otherwise
-    pub fn verify_witness<V: IVerifiable>(
+    pub fn verify_witness<V: Verifiable>(
         verifiable: &V,
         settings: &ProtocolSettings,
         snapshot: &DataCache,
@@ -367,7 +367,7 @@ impl Helper {
         // Create verification engine
         let cloned_snapshot = Arc::new(snapshot.clone_cache());
         let container_hash = verifiable.hash()?;
-        let container: Arc<dyn IVerifiable> = if let Some(transaction) = verifiable.as_transaction()
+        let container: Arc<dyn Verifiable> = if let Some(transaction) = verifiable.as_transaction()
         {
             Arc::new(transaction.clone())
         } else {
@@ -505,13 +505,13 @@ impl Helper {
 ///
 /// This enables crypto syscalls like `System.Crypto.CheckSig` to resolve the
 /// signable message (`network || container_hash`) without requiring the caller
-/// to clone arbitrary `IVerifiable` implementations into an `Arc`.
+/// to clone arbitrary `Verifiable` implementations into an `Arc`.
 struct VerifiableHashContainer {
     hash: UInt256,
     hash_data: Vec<u8>,
 }
 
-impl IVerifiable for VerifiableHashContainer {
+impl Verifiable for VerifiableHashContainer {
     fn verify(&self) -> bool {
         true
     }

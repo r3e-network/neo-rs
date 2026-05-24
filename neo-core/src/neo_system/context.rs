@@ -24,7 +24,7 @@ use crate::error::{CoreError, CoreResult};
 use crate::events::{broadcast_plugin_event, PluginEvent};
 use crate::extensions::log_level::LogLevel;
 use crate::i_event_handlers::{
-    ICommittedHandler, ICommittingHandler, IWalletChangedHandler,
+    CommittedHandler, CommittingHandler, WalletChangedHandler,
 };
 use crate::ledger::{HeaderCache, LedgerContext, MemoryPool};
 use crate::network::p2p::{
@@ -34,7 +34,7 @@ use crate::network::p2p::{
     },
     LocalNode,
 };
-use crate::persistence::{store::IStore, store_provider::IStoreProvider, StoreCache};
+use crate::persistence::{store::IStore, store_provider::StoreProvider, StoreCache};
 use crate::protocol_settings::ProtocolSettings;
 use crate::services::SystemContext;
 use crate::services::{
@@ -45,7 +45,7 @@ use crate::smart_contract::log_event_args::LogEventArgs;
 use crate::smart_contract::native::ledger_contract::{HashOrIndex, LedgerContract};
 use crate::smart_contract::notify_event_args::NotifyEventArgs;
 use crate::state_service::StateStore;
-use crate::wallets::{IWalletProvider, Wallet};
+use crate::wallets::{WalletProvider, Wallet};
 use neo_primitives::{UInt160, UInt256};
 
 use super::core::NeoSystem;
@@ -65,11 +65,11 @@ pub struct NeoSystemContext {
     /// Global service registry mirrored from the C# implementation.
     pub(crate) service_registry: Arc<ServiceRegistry>,
     /// Registered callbacks for wallet changes.
-    pub wallet_changed_handlers: Arc<RwLock<Vec<Arc<dyn IWalletChangedHandler + Send + Sync>>>>,
+    pub wallet_changed_handlers: Arc<RwLock<Vec<Arc<dyn WalletChangedHandler + Send + Sync>>>>,
     /// Currently active wallet, if any.
     pub current_wallet: Arc<RwLock<Option<Arc<dyn Wallet>>>>,
     /// Store provider used to instantiate persistence backends.
-    pub store_provider: Arc<dyn IStoreProvider>,
+    pub store_provider: Arc<dyn StoreProvider>,
     /// Active persistence store.
     pub store: Arc<dyn IStore>,
     /// Cached genesis block shared with the blockchain actor.
@@ -83,8 +83,8 @@ pub struct NeoSystemContext {
     pub(crate) settings: Arc<ProtocolSettings>,
     pub(crate) relay_cache: Arc<RelayExtensibleCache>,
     pub(crate) system: RwLock<Option<Weak<NeoSystem>>>,
-    pub(crate) committing_handlers: Arc<RwLock<Vec<Arc<dyn ICommittingHandler + Send + Sync>>>>,
-    pub(crate) committed_handlers: Arc<RwLock<Vec<Arc<dyn ICommittedHandler + Send + Sync>>>>,
+    pub(crate) committing_handlers: Arc<RwLock<Vec<Arc<dyn CommittingHandler + Send + Sync>>>>,
+    pub(crate) committed_handlers: Arc<RwLock<Vec<Arc<dyn CommittedHandler + Send + Sync>>>>,
     /// Fast sync mode - disables expensive event publishing during initial sync
     pub(crate) fast_sync_mode: Arc<AtomicBool>,
 }
@@ -337,7 +337,7 @@ impl NeoSystemContext {
 
     pub fn register_committing_handler(
         &self,
-        handler: Arc<dyn ICommittingHandler + Send + Sync>,
+        handler: Arc<dyn CommittingHandler + Send + Sync>,
     ) -> CoreResult<()> {
         self.committing_handlers.write().push(handler);
         Ok(())
@@ -345,7 +345,7 @@ impl NeoSystemContext {
 
     pub fn register_committed_handler(
         &self,
-        handler: Arc<dyn ICommittedHandler + Send + Sync>,
+        handler: Arc<dyn CommittedHandler + Send + Sync>,
     ) -> CoreResult<()> {
         self.committed_handlers.write().push(handler);
         Ok(())
@@ -353,7 +353,7 @@ impl NeoSystemContext {
 
     pub fn register_wallet_changed_handler(
         &self,
-        handler: Arc<dyn IWalletChangedHandler + Send + Sync>,
+        handler: Arc<dyn WalletChangedHandler + Send + Sync>,
     ) -> CoreResult<()> {
         let handler_clone = handler.clone();
         self.wallet_changed_handlers.write().push(handler);
@@ -383,7 +383,7 @@ impl NeoSystemContext {
 
     pub fn attach_wallet_provider(
         context: &Arc<Self>,
-        provider: Arc<dyn IWalletProvider + Send + Sync>,
+        provider: Arc<dyn WalletProvider + Send + Sync>,
     ) -> CoreResult<()> {
         let receiver = provider.wallet_changed();
         let provider_thread = Arc::clone(&provider);
@@ -410,11 +410,11 @@ impl NeoSystemContext {
 
     pub fn committing_handlers(
         &self,
-    ) -> Arc<RwLock<Vec<Arc<dyn ICommittingHandler + Send + Sync>>>> {
+    ) -> Arc<RwLock<Vec<Arc<dyn CommittingHandler + Send + Sync>>>> {
         Arc::clone(&self.committing_handlers)
     }
 
-    pub fn committed_handlers(&self) -> Arc<RwLock<Vec<Arc<dyn ICommittedHandler + Send + Sync>>>> {
+    pub fn committed_handlers(&self) -> Arc<RwLock<Vec<Arc<dyn CommittedHandler + Send + Sync>>>> {
         Arc::clone(&self.committed_handlers)
     }
 

@@ -22,7 +22,7 @@ impl NeoToken {
     /// native NEO contract. Returns `None` when the committee cache has not been populated yet.
     pub fn committee_from_snapshot<S>(&self, snapshot: &S) -> Option<Vec<ECPoint>>
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         let key = StorageKey::create(Self::ID, Self::PREFIX_COMMITTEE);
         let item = snapshot.try_get(&key)?;
@@ -80,7 +80,7 @@ impl NeoToken {
         settings: &ProtocolSettings,
     ) -> CoreResult<Vec<(ECPoint, BigInt)>>
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         let key = StorageKey::create(Self::ID, Self::PREFIX_COMMITTEE);
         if let Some(item) = snapshot.try_get(&key) {
@@ -177,7 +177,7 @@ impl NeoToken {
         settings: &ProtocolSettings,
     ) -> CoreResult<Vec<(ECPoint, BigInt)>>
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         let voters_key = StorageKey::create(Self::ID, Self::PREFIX_VOTERS_COUNT);
         let voters_count = snapshot
@@ -254,7 +254,7 @@ impl NeoToken {
         settings: &ProtocolSettings,
     ) -> CoreResult<Vec<(ECPoint, BigInt)>>
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         let standby = &settings.standby_committee;
         if standby.is_empty() {
@@ -317,7 +317,7 @@ impl NeoToken {
         settings: &ProtocolSettings,
     ) -> CoreResult<Vec<ECPoint>>
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         let validators_count = usize::try_from(settings.validators_count.max(0)).unwrap_or(0);
         let committee = self.compute_committee_members(snapshot, settings)?;
@@ -337,7 +337,7 @@ impl NeoToken {
         settings: &ProtocolSettings,
     ) -> CoreResult<Vec<ECPoint>>
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         let committee = self.committee_from_cache_with_votes(snapshot, settings)?;
         let mut validators: Vec<ECPoint> = committee

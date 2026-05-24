@@ -3,7 +3,7 @@ use super::stack_value::{
     stack_value_to_bytes, stack_value_to_stack_item,
 };
 use crate::error::CoreError;
-use crate::smart_contract::interoperable::IInteroperable;
+use crate::smart_contract::interoperable::Interoperable;
 use crate::vm_runtime::StackItem;
 use crate::UInt160;
 use neo_vm_rs::StackValue;
@@ -55,7 +55,7 @@ impl Default for TokenState {
     }
 }
 
-impl IInteroperable for TokenState {
+impl Interoperable for TokenState {
     fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
         self.from_stack_value(stack_item_to_stack_value(stack_item, "TokenState")?)
     }
@@ -64,7 +64,7 @@ impl IInteroperable for TokenState {
         stack_value_to_stack_item(self.to_stack_value(), "TokenState")
     }
 
-    fn clone_box(&self) -> Box<dyn IInteroperable> {
+    fn clone_box(&self) -> Box<dyn Interoperable> {
         Box::new(self.clone())
     }
 }
@@ -143,7 +143,7 @@ impl AccountState {
     }
 }
 
-impl IInteroperable for AccountState {
+impl Interoperable for AccountState {
     fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
         self.from_stack_value(stack_item_to_stack_value(stack_item, "AccountState")?)
     }
@@ -152,7 +152,7 @@ impl IInteroperable for AccountState {
         stack_value_to_stack_item(self.to_stack_value(), "AccountState")
     }
 
-    fn clone_box(&self) -> Box<dyn IInteroperable> {
+    fn clone_box(&self) -> Box<dyn Interoperable> {
         Box::new(self.clone())
     }
 }
@@ -187,7 +187,7 @@ impl NFTState {
     }
 }
 
-impl IInteroperable for NFTState {
+impl Interoperable for NFTState {
     fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
         self.from_stack_value(stack_item_to_stack_value(stack_item, "NFTState")?)
     }
@@ -196,7 +196,7 @@ impl IInteroperable for NFTState {
         stack_value_to_stack_item(self.to_stack_value(), "NFTState")
     }
 
-    fn clone_box(&self) -> Box<dyn IInteroperable> {
+    fn clone_box(&self) -> Box<dyn Interoperable> {
         Box::new(self.clone())
     }
 }

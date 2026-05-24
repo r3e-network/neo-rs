@@ -10,7 +10,7 @@ use crate::wallet_provider::NodeWalletProvider;
 use anyhow::{bail, Context, Result};
 use neo_core::{
     application_logs::ApplicationLogsService,
-    i_event_handlers::{ICommittedHandler, ICommittingHandler, IWalletChangedHandler},
+    i_event_handlers::{CommittedHandler, CommittingHandler, WalletChangedHandler},
     neo_system::NeoSystem,
     network::p2p::channels_config::ChannelsConfig,
     oracle_service::OracleService,
@@ -21,7 +21,7 @@ use neo_core::{
         verification::StateServiceVerification,
     },
     tokens_tracker::{TokensTracker, TokensTrackerService},
-    wallets::{IWalletProvider, Nep6Wallet, Wallet as CoreWallet},
+    wallets::{WalletProvider, Nep6Wallet, Wallet as CoreWallet},
 };
 use neo_rpc::server::{
     RpcServer, RpcServerApplicationLogs, RpcServerBlockchain, RpcServerNode, RpcServerOracle,
@@ -332,7 +332,7 @@ pub(crate) fn setup_wallet_provider(
     }
 
     let provider = Arc::new(NodeWalletProvider::new());
-    let provider_trait: Arc<dyn IWalletProvider + Send + Sync> = provider.clone();
+    let provider_trait: Arc<dyn WalletProvider + Send + Sync> = provider.clone();
     system
         .attach_wallet_provider(provider_trait)
         .map_err(|e| anyhow::anyhow!(e.to_string()))
@@ -383,7 +383,7 @@ pub(crate) fn maybe_enable_state_service_verification(
 
     system
         .register_wallet_changed_handler(Arc::new(StateServiceVerification::new(system.clone()))
-            as Arc<dyn IWalletChangedHandler + Send + Sync>)
+            as Arc<dyn WalletChangedHandler + Send + Sync>)
         .map_err(|e| anyhow::anyhow!(e.to_string()))
         .context("failed to register state verification handler")?;
 
@@ -429,7 +429,7 @@ pub(crate) fn maybe_enable_dbft_consensus(
                 .add_service::<DbftConsensusController, _>(Arc::clone(&controller))
                 .map_err(|e| anyhow::anyhow!(e.to_string()))
                 .context("failed to register dBFT consensus service")?;
-            controller as Arc<dyn IWalletChangedHandler + Send + Sync>
+            controller as Arc<dyn WalletChangedHandler + Send + Sync>
         })
         .map_err(|e| anyhow::anyhow!(e.to_string()))
         .context("failed to register dBFT wallet handler")?;
@@ -494,12 +494,12 @@ pub(crate) fn maybe_enable_application_logs(
         .context("failed to register ApplicationLogs service")?;
     system
         .register_committing_handler(
-            Arc::clone(&service) as Arc<dyn ICommittingHandler + Send + Sync>
+            Arc::clone(&service) as Arc<dyn CommittingHandler + Send + Sync>
         )
         .map_err(|e| anyhow::anyhow!(e.to_string()))
         .context("failed to register ApplicationLogs committing handler")?;
     system
-        .register_committed_handler(Arc::clone(&service) as Arc<dyn ICommittedHandler + Send + Sync>)
+        .register_committed_handler(Arc::clone(&service) as Arc<dyn CommittedHandler + Send + Sync>)
         .map_err(|e| anyhow::anyhow!(e.to_string()))
         .context("failed to register ApplicationLogs committed handler")?;
 
@@ -557,12 +557,12 @@ pub(crate) fn maybe_enable_tokens_tracker(
     ));
     system
         .register_committing_handler(
-            Arc::clone(&tracker) as Arc<dyn ICommittingHandler + Send + Sync>
+            Arc::clone(&tracker) as Arc<dyn CommittingHandler + Send + Sync>
         )
         .map_err(|e| anyhow::anyhow!(e.to_string()))
         .context("failed to register TokensTracker committing handler")?;
     system
-        .register_committed_handler(Arc::clone(&tracker) as Arc<dyn ICommittedHandler + Send + Sync>)
+        .register_committed_handler(Arc::clone(&tracker) as Arc<dyn CommittedHandler + Send + Sync>)
         .map_err(|e| anyhow::anyhow!(e.to_string()))
         .context("failed to register TokensTracker committed handler")?;
 
@@ -622,13 +622,13 @@ pub(crate) fn maybe_enable_oracle_service(
         .context("failed to register OracleService")?;
     system
         .register_committing_handler(
-            Arc::clone(&service) as Arc<dyn ICommittingHandler + Send + Sync>
+            Arc::clone(&service) as Arc<dyn CommittingHandler + Send + Sync>
         )
         .map_err(|e| anyhow::anyhow!(e.to_string()))
         .context("failed to register OracleService committing handler")?;
     system
         .register_wallet_changed_handler(
-            Arc::clone(&service) as Arc<dyn IWalletChangedHandler + Send + Sync>
+            Arc::clone(&service) as Arc<dyn WalletChangedHandler + Send + Sync>
         )
         .map_err(|e| anyhow::anyhow!(e.to_string()))
         .context("failed to register OracleService wallet handler")?;

@@ -11,7 +11,7 @@ use neo_core::smart_contract::manifest::{
 };
 use neo_core::smart_contract::native::trimmed_block::TrimmedBlock;
 use neo_core::smart_contract::ContractParameterType;
-use neo_core::{IVerifiable, UInt160, UInt256, Witness};
+use neo_core::{Verifiable, UInt160, UInt256, Witness};
 use neo_vm_rs::OpCode;
 
 const CONTRACT_MANAGEMENT_ID: i32 = -1;
@@ -105,7 +105,7 @@ impl ManualWitness {
     }
 }
 
-impl IVerifiable for ManualWitness {
+impl Verifiable for ManualWitness {
     fn verify(&self) -> bool {
         true
     }

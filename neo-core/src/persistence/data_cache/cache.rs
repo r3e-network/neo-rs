@@ -3,7 +3,7 @@ use super::prefetch::PrefetchPattern;
 use super::storage_watch::log_watched_storage_event;
 use super::trackable::{DataCacheConfig, DataCacheError, DataCacheResult, InnerState, Trackable};
 use crate::persistence::read_cache::{ReadCache, ReadCacheStatsSnapshot};
-use crate::persistence::read_only_store::{IReadOnlyStore, IReadOnlyStoreGeneric};
+use crate::persistence::read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric};
 use crate::persistence::seek_direction::SeekDirection;
 use crate::smart_contract::{StorageItem, StorageKey};
 use parking_lot::RwLock;
@@ -946,9 +946,9 @@ impl DataCache {
     }
 }
 
-impl IReadOnlyStore for DataCache {}
+impl ReadOnlyStore for DataCache {}
 
-impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for DataCache {
+impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for DataCache {
     fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {
         self.get(key)
     }

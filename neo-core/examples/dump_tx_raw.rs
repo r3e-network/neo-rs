@@ -1,5 +1,5 @@
 use neo_core::persistence::{
-    providers::RocksDBStoreProvider, IStoreProvider, StorageConfig, StoreCache,
+    providers::RocksDBStoreProvider, StoreProvider, StorageConfig, StoreCache,
 };
 use neo_core::smart_contract::native::ledger_contract::LedgerContract;
 use neo_core::UInt256;

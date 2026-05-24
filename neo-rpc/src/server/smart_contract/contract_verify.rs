@@ -90,7 +90,7 @@ pub(super) fn invoke_contract_verify(
     tx.set_witnesses(witnesses);
     tx.set_script(vec![OpCode::RET.byte()]);
 
-    let tx_container = Arc::new(tx) as Arc<dyn neo_core::IVerifiable>;
+    let tx_container = Arc::new(tx) as Arc<dyn neo_core::Verifiable>;
     let mut engine = ApplicationEngine::new(
         TriggerType::Verification,
         Some(tx_container),

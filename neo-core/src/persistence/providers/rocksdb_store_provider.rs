@@ -2,11 +2,11 @@
 use crate::{
     error::{CoreError, CoreResult},
     persistence::{
-        read_only_store::{IReadOnlyStore, IReadOnlyStoreGeneric},
+        read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric},
         store::{IStore, OnNewSnapshotDelegate},
-        store_provider::IStoreProvider,
-        store_snapshot::IStoreSnapshot,
-        write_store::IWriteStore,
+        store_provider::StoreProvider,
+        store_snapshot::StoreSnapshot,
+        write_store::WriteStore,
         read_cache::{ReadCacheConfig, StorageReadCache},
         seek_direction::SeekDirection,
         storage::{CompactionStrategy, CompressionAlgorithm, StorageConfig},
@@ -105,7 +105,7 @@ impl RocksDBStoreProvider {
     }
 }
 
-impl IStoreProvider for RocksDBStoreProvider {
+impl StoreProvider for RocksDBStoreProvider {
     fn name(&self) -> &str {
         "RocksDBStore"
     }
@@ -232,7 +232,7 @@ impl RocksDbStore {
     }
 }
 
-impl IReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbStore {
+impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbStore {
     fn try_get(&self, key: &Vec<u8>) -> Option<Vec<u8>> {
         // Check read cache first
         // Note: Vec<u8> doesn't implement StorageKey, so we skip caching for raw bytes
@@ -283,7 +283,7 @@ impl IReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbStore {
     }
 }
 
-impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbStore {
+impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbStore {
     fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {
         // Check read cache first (bloom filter will be checked inside)
         if let Some(ref cache) = self.read_cache {
@@ -374,9 +374,9 @@ impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbStore {
     }
 }
 
-impl IReadOnlyStore for RocksDbStore {}
+impl ReadOnlyStore for RocksDbStore {}
 
-impl IWriteStore<Vec<u8>, Vec<u8>> for RocksDbStore {
+impl WriteStore<Vec<u8>, Vec<u8>> for RocksDbStore {
     fn delete(&mut self, key: Vec<u8>) -> CoreResult<()> {
         self.db.delete(&key).map_err(|err| {
             error!(target: "neo", error = %err, "rocksdb delete failed");
@@ -420,7 +420,7 @@ impl IWriteStore<Vec<u8>, Vec<u8>> for RocksDbStore {
 }
 
 impl IStore for RocksDbStore {
-    fn get_snapshot(&self) -> Arc<dyn IStoreSnapshot> {
+    fn get_snapshot(&self) -> Arc<dyn StoreSnapshot> {
         let store_arc = Arc::new(self.clone());
         let snapshot = Arc::new(RocksDbSnapshot::new(
             self.db.clone(),
@@ -614,7 +614,7 @@ impl RocksDbSnapshot {
     }
 }
 
-impl IReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
+impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
     fn try_get(&self, key: &Vec<u8>) -> Option<Vec<u8>> {
         if let Some(change) = self.pending_change(key.as_slice()) {
             return change;
@@ -673,7 +673,7 @@ impl IReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
     }
 }
 
-impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbSnapshot {
+impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbSnapshot {
     fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {
         let raw = key.to_array();
         if let Some(change) = self.pending_change(raw.as_slice()) {
@@ -792,9 +792,9 @@ impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbSnapshot {
     }
 }
 
-impl IReadOnlyStore for RocksDbSnapshot {}
+impl ReadOnlyStore for RocksDbSnapshot {}
 
-impl IWriteStore<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
+impl WriteStore<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
     fn delete(&mut self, key: Vec<u8>) -> CoreResult<()> {
         self.write_batch.lock().delete(key.clone());
         self.pending_changes.lock().insert(key.clone(), None);
@@ -816,7 +816,7 @@ impl IWriteStore<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
     }
 }
 
-impl IStoreSnapshot for RocksDbSnapshot {
+impl StoreSnapshot for RocksDbSnapshot {
     fn store(&self) -> Arc<dyn IStore> {
         self.store.clone() as Arc<dyn IStore>
     }

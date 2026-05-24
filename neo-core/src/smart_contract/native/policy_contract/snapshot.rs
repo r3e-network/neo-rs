@@ -8,7 +8,7 @@ impl PolicyContract {
     /// Reads the MaxTraceableBlocks value directly from storage.
     pub fn get_max_traceable_blocks_snapshot<S>(snapshot: &S) -> Option<u32>
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         let key = Self::max_traceable_blocks_key();
         snapshot
@@ -19,7 +19,7 @@ impl PolicyContract {
     /// Reads the MillisecondsPerBlock value directly from storage.
     pub fn get_milliseconds_per_block_snapshot<S>(snapshot: &S) -> Option<u32>
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         let key = Self::milliseconds_per_block_key();
         snapshot
@@ -30,7 +30,7 @@ impl PolicyContract {
     /// Reads FeePerByte from a snapshot, falling back to defaults if not configured.
     pub fn get_fee_per_byte_snapshot<S>(&self, snapshot: &S) -> Result<i64>
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         let key = Self::fee_per_byte_key();
         match snapshot.try_get(&key) {
@@ -49,7 +49,7 @@ impl PolicyContract {
         block_height: u32,
     ) -> Result<u32>
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         let key = Self::exec_fee_factor_key();
         match snapshot.try_get(&key) {
@@ -74,7 +74,7 @@ impl PolicyContract {
         attribute_type: TransactionAttributeType,
     ) -> Result<i64>
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         self.get_attribute_fee_for_type(snapshot, attribute_type as u8)
     }
@@ -82,7 +82,7 @@ impl PolicyContract {
     /// Reads the attribute fee for the given attribute type (byte) from the snapshot.
     pub fn get_attribute_fee_for_type<S>(&self, snapshot: &S, attribute_type: u8) -> Result<i64>
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         let _ = TransactionAttributeType::from_byte(attribute_type).ok_or_else(|| {
             Error::invalid_operation(format!("Attribute type {attribute_type} is not supported."))
@@ -104,7 +104,7 @@ impl PolicyContract {
         settings: &ProtocolSettings,
     ) -> Result<u32>
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         let key = Self::max_valid_until_block_increment_key();
         match snapshot.try_get(&key) {
@@ -122,7 +122,7 @@ impl PolicyContract {
     /// Checks whether the provided account hash is blocked in the snapshot.
     pub fn is_blocked_snapshot<S>(&self, snapshot: &S, account: &UInt160) -> Result<bool>
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         Ok(snapshot
             .try_get(&Self::blocked_account_key(account))
@@ -132,7 +132,7 @@ impl PolicyContract {
     /// Returns all blocked accounts in the current snapshot.
     pub fn blocked_accounts_snapshot<S>(&self, snapshot: &S) -> std::collections::HashSet<UInt160>
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         let mut blocked = std::collections::HashSet::new();
         let prefix = StorageKey::new(Self::ID, vec![Self::PREFIX_BLOCKED_ACCOUNT]);

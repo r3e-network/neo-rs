@@ -1,4 +1,4 @@
-use neo_primitives::{IStorageValue, StorageValueResult};
+use neo_primitives::{StorageValue, StorageValueResult};
 use serde::{Deserialize, Serialize};
 
 /// Storage item for Neo blockchain.
@@ -85,10 +85,10 @@ impl From<&[u8]> for StorageItem {
     }
 }
 
-/// Implement `IStorageValue` trait from neo-primitives.
+/// Implement `StorageValue` trait from neo-primitives.
 ///
 /// This allows `StorageItem` to be used with generic storage abstractions
-/// that require the `IStorageValue` trait, breaking the circular dependency
+/// that require the `StorageValue` trait, breaking the circular dependency
 /// between neo-storage and neo-vm.
 ///
 /// # Serialization Format
@@ -98,7 +98,7 @@ impl From<&[u8]> for StorageItem {
 /// - N bytes: raw value data
 ///
 /// This matches the expected format for neo-core compatibility.
-impl IStorageValue for StorageItem {
+impl StorageValue for StorageItem {
     fn to_storage_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(1 + self.value.len());
         bytes.push(u8::from(self.is_constant));
@@ -312,7 +312,7 @@ mod tests {
 
     #[test]
     fn test_storage_item_istorage_value_trait_object() {
-        fn use_storage_value<V: IStorageValue>(value: &V) -> usize {
+        fn use_storage_value<V: StorageValue>(value: &V) -> usize {
             value.storage_size()
         }
 

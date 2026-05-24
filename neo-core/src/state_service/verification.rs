@@ -619,7 +619,7 @@ impl StateServiceVerification {
     }
 }
 
-impl crate::i_event_handlers::IWalletChangedHandler for StateServiceVerification {
+impl crate::i_event_handlers::WalletChangedHandler for StateServiceVerification {
     fn wallet_provider_wallet_changed_handler(
         &self,
         _sender: &dyn std::any::Any,

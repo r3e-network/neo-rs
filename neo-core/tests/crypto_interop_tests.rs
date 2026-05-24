@@ -7,7 +7,7 @@ use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::wallets::KeyPair;
-use neo_core::IVerifiable;
+use neo_core::Verifiable;
 use neo_vm_rs::OpCode;
 use std::sync::Arc;
 
@@ -20,7 +20,7 @@ fn sample_transaction() -> Transaction {
 
 fn make_engine(tx: Transaction, settings: ProtocolSettings) -> ApplicationEngine {
     let snapshot = Arc::new(DataCache::new(false));
-    let container: Arc<dyn IVerifiable> = Arc::new(tx);
+    let container: Arc<dyn Verifiable> = Arc::new(tx);
     let mut engine = ApplicationEngine::new(
         TriggerType::Application,
         Some(container),

@@ -7,7 +7,7 @@ use neo_consensus::{
 };
 use neo_core::akka::{Actor, ActorContext, ActorRef, ActorResult, Cancelable, Props};
 use neo_core::cryptography::MerkleTree;
-use neo_core::i_event_handlers::IMessageReceivedHandler;
+use neo_core::i_event_handlers::MessageReceivedHandler;
 use neo_core::ledger::{
     PersistCompleted, RelayResult, TransactionVerificationContext, VerifyResult,
 };
@@ -105,7 +105,7 @@ impl DbftConsensusController {
     }
 }
 
-impl neo_core::i_event_handlers::IWalletChangedHandler for DbftConsensusController {
+impl neo_core::i_event_handlers::WalletChangedHandler for DbftConsensusController {
     fn wallet_provider_wallet_changed_handler(
         &self,
         _sender: &dyn std::any::Any,
@@ -134,7 +134,7 @@ impl DbftMessageFilter {
     }
 }
 
-impl IMessageReceivedHandler for DbftMessageFilter {
+impl MessageReceivedHandler for DbftMessageFilter {
     fn remote_node_message_received_handler(&self, _system: &dyn Any, message: &Message) -> bool {
         if message.command != MessageCommand::Transaction {
             return true;

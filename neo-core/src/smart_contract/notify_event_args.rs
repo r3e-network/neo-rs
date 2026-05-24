@@ -1,9 +1,9 @@
 //! NotifyEventArgs - matches C# Neo.SmartContract.NotifyEventArgs exactly
 
 use crate::error::CoreError;
-use crate::smart_contract::interoperable::IInteroperable;
+use crate::smart_contract::interoperable::Interoperable;
 use crate::vm_runtime::StackItem;
-use crate::{IVerifiable, UInt160};
+use crate::{Verifiable, UInt160};
 use std::fmt;
 use std::sync::Arc;
 
@@ -12,7 +12,7 @@ use std::sync::Arc;
 pub struct NotifyEventArgs {
     /// The container that containing the executed script.
     /// This can be None when the contract is invoked by system (e.g., OnPersist/PostPersist).
-    pub script_container: Option<Arc<dyn IVerifiable>>,
+    pub script_container: Option<Arc<dyn Verifiable>>,
 
     /// The script hash of the contract that sends the log
     pub script_hash: UInt160,
@@ -27,7 +27,7 @@ pub struct NotifyEventArgs {
 impl NotifyEventArgs {
     /// Initializes a new instance with a container
     pub fn new(
-        container: Arc<dyn IVerifiable>,
+        container: Arc<dyn Verifiable>,
         script_hash: UInt160,
         event_name: String,
         state: Vec<StackItem>,
@@ -42,7 +42,7 @@ impl NotifyEventArgs {
 
     /// Initializes a new instance with an optional container (for system invocations)
     pub fn new_with_optional_container(
-        container: Option<Arc<dyn IVerifiable>>,
+        container: Option<Arc<dyn Verifiable>>,
         script_hash: UInt160,
         event_name: String,
         state: Vec<StackItem>,
@@ -66,7 +66,7 @@ impl fmt::Debug for NotifyEventArgs {
     }
 }
 
-impl IInteroperable for NotifyEventArgs {
+impl Interoperable for NotifyEventArgs {
     fn from_stack_item(&mut self, _stack_item: StackItem) -> Result<(), CoreError> {
         // Not supported in C# implementation (throws NotSupportedException)
         Err(CoreError::invalid_operation(
@@ -84,7 +84,7 @@ impl IInteroperable for NotifyEventArgs {
         ]))
     }
 
-    fn clone_box(&self) -> Box<dyn IInteroperable> {
+    fn clone_box(&self) -> Box<dyn Interoperable> {
         Box::new(self.clone())
     }
 }

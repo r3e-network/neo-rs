@@ -1,4 +1,4 @@
-use neo_core::persistence::{providers::RocksDBStoreProvider, IStoreProvider, StorageConfig};
+use neo_core::persistence::{providers::RocksDBStoreProvider, StoreProvider, StorageConfig};
 use neo_core::state_service::state_store::{SnapshotBackedStateStoreBackend, StateStoreSnapshot};
 use neo_crypto::mpt_trie::{Trie, TrieEntry};
 use neo_primitives::UInt256;

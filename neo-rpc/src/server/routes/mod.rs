@@ -29,7 +29,8 @@ mod handlers;
 #[path = "tests.rs"]
 mod tests;
 
-use cors::{apply_cors, verify_basic_auth, BasicAuth, CorsConfig};
+use cors::{apply_cors, verify_basic_auth, CorsConfig};
+pub use cors::BasicAuth;
 use handlers::{handle_get_request, handle_post_request, query_to_request_value};
 
 const MAX_PARAMS_DEPTH: usize = 32;

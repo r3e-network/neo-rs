@@ -111,7 +111,7 @@ use crate::smart_contract::storage_context::StorageContext;
 use crate::smart_contract::storage_item::StorageItem;
 use crate::smart_contract::storage_key::StorageKey;
 use crate::smart_contract::trigger_type::TriggerType;
-use crate::IVerifiable;
+use crate::Verifiable;
 use crate::{UInt160, UInt256, WitnessCondition, WitnessRuleAction};
 use neo_vm_rs::interpret_with_stack_and_syscalls_at;
 use neo_vm_rs::interpret_with_stack_and_syscalls_at_with_result_limit;
@@ -179,11 +179,11 @@ impl VmEngineHost {
 
 #[derive(Clone)]
 struct VerifiableInterop {
-    container: Arc<dyn IVerifiable>,
+    container: Arc<dyn Verifiable>,
 }
 
 impl VerifiableInterop {
-    fn new(container: Arc<dyn IVerifiable>) -> Self {
+    fn new(container: Arc<dyn Verifiable>) -> Self {
         Self { container }
     }
 }
@@ -196,7 +196,7 @@ impl fmt::Debug for VerifiableInterop {
 
 impl VmInteropInterface for VerifiableInterop {
     fn interface_type(&self) -> &str {
-        "IVerifiable"
+        "Verifiable"
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -221,7 +221,7 @@ struct PendingNativeCall {
 
 pub struct ApplicationEngine {
     trigger: TriggerType,
-    script_container: Option<Arc<dyn IVerifiable>>,
+    script_container: Option<Arc<dyn Verifiable>>,
     persisting_block: Option<Arc<Block>>,
     protocol_settings: ProtocolSettings,
     gas_limit: i64,

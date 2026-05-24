@@ -1,13 +1,13 @@
 //! StorageItem - matches C# Neo.SmartContract.StorageItem.
 //!
 //! The implementation mirrors the behaviour of `Neo.SmartContract.StorageItem`,
-//! including support for cached `BigInteger` and `IInteroperable` payloads,
+//! including support for cached `BigInteger` and `Interoperable` payloads,
 //! var-size accounting, and replica cloning semantics used across the ledger.
 
 use crate::neo_io::serializable::helper::get_var_size_bytes;
 use crate::neo_io::{IoResult, MemoryReader};
 use crate::smart_contract::binary_serializer::BinarySerializer;
-use crate::smart_contract::interoperable::IInteroperable;
+use crate::smart_contract::interoperable::Interoperable;
 use neo_vm_rs::ExecutionEngineLimits;
 use num_bigint::BigInt;
 use std::borrow::Cow;
@@ -17,7 +17,7 @@ use std::fmt;
 #[derive(Debug)]
 enum StorageCache {
     BigInteger(BigInt),
-    Interoperable(Box<dyn IInteroperable>),
+    Interoperable(Box<dyn Interoperable>),
 }
 
 impl Clone for StorageCache {

@@ -1,5 +1,5 @@
 use neo_core::neo_vm::StackItem;
-use neo_core::smart_contract::{IInteroperable, NotifyEventArgs};
+use neo_core::smart_contract::{Interoperable, NotifyEventArgs};
 use neo_core::UInt160;
 
 #[test]

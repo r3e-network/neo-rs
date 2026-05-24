@@ -17,7 +17,7 @@ use neo_core::smart_contract::native::ledger_contract::LedgerContract;
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::smart_contract::ApplicationEngine;
 use neo_core::vm_runtime::{InteropInterface as VmInteropInterface, StackItem};
-use neo_core::IVerifiable;
+use neo_core::Verifiable;
 use rand::random;
 use uuid::Uuid;
 
@@ -121,7 +121,7 @@ impl Session {
             } else {
                 tx.set_witnesses(vec![Witness::new(); signer_list.len()]);
             }
-            Arc::new(tx) as Arc<dyn IVerifiable>
+            Arc::new(tx) as Arc<dyn Verifiable>
         });
 
         let diagnostic_box = diagnostic.clone().map(|diag| {

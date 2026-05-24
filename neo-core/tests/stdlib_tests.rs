@@ -12,7 +12,7 @@ use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::smart_contract::native::{NativeContract, StdLib};
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::witness::Witness;
-use neo_core::{IVerifiable, UInt160, WitnessScope};
+use neo_core::{Verifiable, UInt160, WitnessScope};
 use neo_vm_rs::OpCode;
 use num_traits::ToPrimitive;
 use std::collections::{BTreeMap, HashMap};
@@ -27,7 +27,7 @@ fn make_engine_with_settings(settings: ProtocolSettings) -> ApplicationEngine {
     let mut container = Transaction::new();
     container.set_signers(vec![Signer::new(UInt160::zero(), WitnessScope::GLOBAL)]);
     container.add_witness(Witness::new());
-    let script_container: Arc<dyn IVerifiable> = Arc::new(container);
+    let script_container: Arc<dyn Verifiable> = Arc::new(container);
     ApplicationEngine::new(
         TriggerType::Application,
         Some(script_container),
@@ -45,7 +45,7 @@ fn make_engine_with_height(height: Option<u32>) -> ApplicationEngine {
     let mut container = Transaction::new();
     container.set_signers(vec![Signer::new(UInt160::zero(), WitnessScope::GLOBAL)]);
     container.add_witness(Witness::new());
-    let script_container: Arc<dyn IVerifiable> = Arc::new(container);
+    let script_container: Arc<dyn Verifiable> = Arc::new(container);
     let persisting_block = height.map(|index| {
         let header = BlockHeader {
             index,

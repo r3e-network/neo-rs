@@ -12,7 +12,7 @@ use neo_core::smart_contract::manifest::{
 };
 use neo_core::smart_contract::native::{ContractManagement, CryptoLib, NativeContract, NeoToken};
 use neo_core::smart_contract::{
-    ApplicationEngine, Contract, ContractParameterType, ContractState, FindOptions, IInteroperable,
+    ApplicationEngine, Contract, ContractParameterType, ContractState, FindOptions, Interoperable,
     NefFile, StorageItem, StorageKey, TriggerType,
 };
 use neo_core::wallets::helper::Helper as WalletHelper;

@@ -1,5 +1,5 @@
 //! Message handler registry for remote node inbound notifications.
-use crate::i_event_handlers::IMessageReceivedHandler;
+use crate::i_event_handlers::MessageReceivedHandler;
 use parking_lot::RwLock;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -8,7 +8,7 @@ use std::sync::{
 
 pub(crate) struct MessageHandlerEntry {
     pub(crate) id: usize,
-    pub(crate) handler: Arc<dyn IMessageReceivedHandler + Send + Sync>,
+    pub(crate) handler: Arc<dyn MessageReceivedHandler + Send + Sync>,
 }
 
 static MESSAGE_HANDLERS: OnceLock<RwLock<Vec<MessageHandlerEntry>>> = OnceLock::new();
@@ -48,7 +48,7 @@ fn remove_handler(id: usize) {
 
 /// Registers a new message-received handler (parity with C# `RemoteNode.MessageReceived`).
 pub fn register_message_received_handler(
-    handler: Arc<dyn IMessageReceivedHandler + Send + Sync>,
+    handler: Arc<dyn MessageReceivedHandler + Send + Sync>,
 ) -> MessageHandlerSubscription {
     let id = NEXT_HANDLER_ID.fetch_add(1, Ordering::Relaxed);
     let entry = MessageHandlerEntry { id, handler };

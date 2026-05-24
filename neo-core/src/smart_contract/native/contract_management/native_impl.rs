@@ -5,7 +5,7 @@
 use super::*;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::binary_serializer::BinarySerializer;
-use crate::smart_contract::interoperable::IInteroperable;
+use crate::smart_contract::interoperable::Interoperable;
 use crate::smart_contract::manifest::ContractEventDescriptor;
 use crate::smart_contract::storage_context::StorageContext;
 use neo_vm_rs::ExecutionEngineLimits;

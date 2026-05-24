@@ -5,7 +5,7 @@
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
 use crate::neo_config::ADDRESS_SIZE;
-use crate::smart_contract::interoperable::IInteroperable;
+use crate::smart_contract::interoperable::Interoperable;
 use crate::vm_runtime::StackItem;
 use crate::{ECCurve, ECPoint};
 use base64::{engine::general_purpose, Engine as _};
@@ -174,7 +174,7 @@ impl Serialize for ContractGroup {
     }
 }
 
-impl IInteroperable for ContractGroup {
+impl Interoperable for ContractGroup {
     fn from_stack_item(&mut self, stack_item: StackItem) -> std::result::Result<(), Error> {
         match StackValue::try_from(stack_item)
             .map_err(|error| {
@@ -200,7 +200,7 @@ impl IInteroperable for ContractGroup {
         })
     }
 
-    fn clone_box(&self) -> Box<dyn IInteroperable> {
+    fn clone_box(&self) -> Box<dyn Interoperable> {
         Box::new(self.clone())
     }
 }

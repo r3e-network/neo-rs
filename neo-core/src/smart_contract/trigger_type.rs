@@ -11,7 +11,7 @@ bitflags! {
         const ON_PERSIST = 0x01;
         /// Indicate that the contract is triggered by the system to execute the PostPersist method of the native contracts.
         const POST_PERSIST = 0x02;
-        /// Indicates that the contract is triggered by the verification of an IVerifiable.
+        /// Indicates that the contract is triggered by the verification of an Verifiable.
         const VERIFICATION = 0x20;
         /// Indicates that the contract is triggered by the execution of transactions.
         const APPLICATION = 0x40;

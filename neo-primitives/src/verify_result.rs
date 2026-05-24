@@ -7,7 +7,7 @@ use crate::protocol_enum;
 
 protocol_enum! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-    /// Represents a verifying result of `IInventory`.
+    /// Represents a verifying result of `Inventory`.
     pub VerifyResult {
         Succeed = 0,
         AlreadyExists = 1,

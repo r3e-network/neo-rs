@@ -17,7 +17,7 @@ use crate::smart_contract::native::{
     ContractManagement, LedgerContract, OracleContract, PolicyContract,
 };
 use crate::smart_contract::{ApplicationEngine, Contract, TriggerType};
-use crate::IVerifiable;
+use crate::Verifiable;
 use crate::{UInt160, WitnessScope};
 use std::collections::HashMap;
 use std::sync::Arc;

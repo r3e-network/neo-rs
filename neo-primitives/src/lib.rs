@@ -70,7 +70,7 @@ pub use blockchain::{
     BlockchainProvider, IBlock, IHeader, IMessage, ITransaction, PeerId, PeerInfo, PeerRegistry,
     RelayError, RelayResult, SendError, SendResult,
 };
-pub use storage::{IStorageValue, StorageValueError, StorageValueResult};
+pub use storage::{StorageValue, StorageValueError, StorageValueResult};
 pub use verification::{
-    IBlockchainSnapshot, IVerificationContext, IWitness, VerificationError, VerificationResult,
+    BlockchainSnapshot, IVerificationContext, IWitness, VerificationError, VerificationResult,
 };

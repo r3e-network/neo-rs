@@ -2,7 +2,6 @@ use super::errors::*;
 use super::marker_traits::*;
 use super::peer::*;
 use crate::UInt256;
-use std::sync::Arc;
 
 // ============ Service Traits ============
 

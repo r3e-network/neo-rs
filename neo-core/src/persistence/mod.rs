@@ -19,13 +19,13 @@
 //! - **Production nodes**: RocksDB-backed storage with full feature support
 //! - **DataCache**: C# parity caching layer with track states and commit logic
 //! - **Smart contract storage**: Integration with `StorageKey`/`StorageItem` types
-//! - **Store providers**: `IStoreProvider` implementations with snapshot support
+//! - **Store providers**: `StoreProvider` implementations with snapshot support
 //!
 //! ## When to use neo-storage
 //!
 //! - **Trait bounds**: When you need to accept any storage backend generically
 //! - **No neo-core dependency**: For standalone tools that only need storage interfaces
-//! - **Testing**: Mock implementations using the simple `IReadOnlyStore`/`IWriteStore` traits
+//! - **Testing**: Mock implementations using the simple `ReadOnlyStore`/`WriteStore` traits
 //!
 //! This module provides persistence functionality matching the C# Neo.Persistence namespace.
 
@@ -52,11 +52,11 @@ pub mod transaction;
 pub mod write_batch_buffer;
 
 pub use data_cache::{DataCache, Trackable};
-pub use read_only_store::{IReadOnlyStore, IReadOnlyStoreGeneric};
+pub use read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric};
 pub use store::IStore;
-pub use store_provider::IStoreProvider;
-pub use store_snapshot::IStoreSnapshot;
-pub use write_store::IWriteStore;
+pub use store_provider::StoreProvider;
+pub use store_snapshot::StoreSnapshot;
+pub use write_store::WriteStore;
 pub use read_cache::{
     PrefetchHint, ReadCache, ReadCacheConfig, ReadCacheStats, ReadCacheStatsSnapshot,
     StorageReadCache,

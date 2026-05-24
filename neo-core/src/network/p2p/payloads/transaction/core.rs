@@ -318,6 +318,6 @@ mod tests {
     fn verifiable_hash_rejects_oversized_script() {
         let tx = transaction_with_script(vec![OpCode::NOP.byte(); u16::MAX as usize + 1]);
 
-        assert!(<Transaction as crate::IVerifiable>::hash(&tx).is_err());
+        assert!(<Transaction as crate::Verifiable>::hash(&tx).is_err());
     }
 }

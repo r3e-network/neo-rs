@@ -10,7 +10,7 @@
 // modifications are permitted.
 
 use super::{
-    read_only_store::IReadOnlyStoreGeneric, store::IStore, write_store::IWriteStore,
+    read_only_store::ReadOnlyStoreGeneric, store::IStore, write_store::WriteStore,
     storage::StorageError,
 };
 use std::sync::Arc;
@@ -19,8 +19,8 @@ use std::sync::Arc;
 pub type SnapshotCommitResult = Result<(), StorageError>;
 
 /// This interface provides methods for reading, writing, and committing from/to snapshot.
-pub trait IStoreSnapshot:
-    IReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> + IWriteStore<Vec<u8>, Vec<u8>> + Send + Sync
+pub trait StoreSnapshot:
+    ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> + WriteStore<Vec<u8>, Vec<u8>> + Send + Sync
 {
     /// Get the underlying store
     fn store(&self) -> Arc<dyn IStore>;

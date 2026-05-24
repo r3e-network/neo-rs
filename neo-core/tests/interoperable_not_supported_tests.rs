@@ -3,7 +3,7 @@ use neo_core::neo_vm::StackItem;
 use neo_core::network::p2p::payloads::{Signer, WitnessScope};
 use neo_core::smart_contract::native::trimmed_block::TrimmedBlock;
 use neo_core::smart_contract::notify_event_args::NotifyEventArgs;
-use neo_core::smart_contract::IInteroperable;
+use neo_core::smart_contract::Interoperable;
 use neo_core::UInt160;
 
 #[test]

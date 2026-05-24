@@ -92,7 +92,7 @@ impl ApplicationEngine {
 
     pub fn push_interop_container(
         &mut self,
-        container: Arc<dyn IVerifiable>,
+        container: Arc<dyn Verifiable>,
     ) -> Result<(), String> {
         let interop = VerifiableInterop::new(container);
         self.push(StackItem::from_interface(interop))

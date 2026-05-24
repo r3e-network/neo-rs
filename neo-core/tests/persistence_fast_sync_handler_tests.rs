@@ -1,7 +1,7 @@
 #![cfg(feature = "runtime")]
 
 use neo_core::error::{CoreError, CoreResult};
-use neo_core::i_event_handlers::ICommittingHandler;
+use neo_core::i_event_handlers::CommittingHandler;
 use neo_core::ledger::block::Block as LedgerBlock;
 use neo_core::ledger::blockchain_application_executed::ApplicationExecuted;
 use neo_core::neo_system::NeoSystem;
@@ -20,7 +20,7 @@ struct FastSyncCaptureHandler {
 
 struct FailingCommittingHandler;
 
-impl ICommittingHandler for FastSyncCaptureHandler {
+impl CommittingHandler for FastSyncCaptureHandler {
     fn run_during_fast_sync(&self) -> bool {
         true
     }
@@ -37,7 +37,7 @@ impl ICommittingHandler for FastSyncCaptureHandler {
     }
 }
 
-impl ICommittingHandler for FailingCommittingHandler {
+impl CommittingHandler for FailingCommittingHandler {
     fn blockchain_committing_handler(
         &self,
         _system: &dyn std::any::Any,

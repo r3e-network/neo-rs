@@ -15,7 +15,7 @@ use crate::neo_io::serializable::helper::{
 use crate::network::p2p::payloads::signer::Signer;
 use crate::network::p2p::payloads::transaction::HEADER_SIZE;
 use crate::script_builder::ScriptBuilder;
-use crate::IVerifiable as CoreIVerifiable;
+use crate::Verifiable as CoreIVerifiable;
 use crate::{
     cryptography::{crypto_utils::Base58, CryptoError},
     network::p2p,
@@ -49,7 +49,7 @@ use std::sync::Arc;
 pub struct Helper;
 
 impl Helper {
-    /// Signs an IVerifiable with the specified private key.
+    /// Signs an Verifiable with the specified private key.
     /// Matches C# Sign method
     pub fn sign(
         verifiable: &dyn CoreIVerifiable,

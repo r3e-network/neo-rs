@@ -11,7 +11,7 @@ use super::NeoSystem;
 use crate::error::CoreResult;
 use crate::events::{broadcast_plugin_event, PluginEvent};
 use crate::i_event_handlers::{
-    ICommittedHandler, ICommittingHandler, IWalletChangedHandler,
+    CommittedHandler, CommittingHandler, WalletChangedHandler,
 };
 
 impl NeoSystem {
@@ -36,7 +36,7 @@ impl NeoSystem {
     /// Registers a handler invoked before block commit.
     pub fn register_committing_handler(
         &self,
-        handler: Arc<dyn ICommittingHandler + Send + Sync>,
+        handler: Arc<dyn CommittingHandler + Send + Sync>,
     ) -> CoreResult<()> {
         self.context().register_committing_handler(handler)
     }
@@ -44,7 +44,7 @@ impl NeoSystem {
     /// Registers a handler invoked after block commit completes.
     pub fn register_committed_handler(
         &self,
-        handler: Arc<dyn ICommittedHandler + Send + Sync>,
+        handler: Arc<dyn CommittedHandler + Send + Sync>,
     ) -> CoreResult<()> {
         self.context().register_committed_handler(handler)
     }
@@ -52,7 +52,7 @@ impl NeoSystem {
     /// Registers a handler for wallet provider changes.
     pub fn register_wallet_changed_handler(
         &self,
-        handler: Arc<dyn IWalletChangedHandler + Send + Sync>,
+        handler: Arc<dyn WalletChangedHandler + Send + Sync>,
     ) -> CoreResult<()> {
         self.context().register_wallet_changed_handler(handler)
     }
@@ -60,7 +60,7 @@ impl NeoSystem {
     /// Attaches a wallet provider so wallet-change notifications propagate to handlers.
     pub fn attach_wallet_provider(
         &self,
-        provider: Arc<dyn crate::wallets::IWalletProvider + Send + Sync>,
+        provider: Arc<dyn crate::wallets::WalletProvider + Send + Sync>,
     ) -> CoreResult<()> {
         NeoSystemContext::attach_wallet_provider(&self.context(), provider)
     }

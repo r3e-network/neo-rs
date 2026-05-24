@@ -1,7 +1,7 @@
 use super::GasToken;
 use crate::error::{CoreError, CoreResult};
 use crate::impl_native_contract;
-use crate::persistence::read_only_store::IReadOnlyStoreGeneric;
+use crate::persistence::read_only_store::ReadOnlyStoreGeneric;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::manifest::ContractEventDescriptor;

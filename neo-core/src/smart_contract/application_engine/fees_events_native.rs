@@ -431,7 +431,7 @@ impl ApplicationEngine {
     }
 
     /// Gets the script container (transaction or block).
-    pub fn get_script_container(&self) -> Option<&Arc<dyn IVerifiable>> {
+    pub fn get_script_container(&self) -> Option<&Arc<dyn Verifiable>> {
         self.script_container.as_ref()
     }
 

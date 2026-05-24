@@ -11,13 +11,13 @@ use std::{any::Any, sync::Arc};
 
 /// Handler of Committed event from Blockchain.
 /// Triggered after a new block is committed and state has been updated.
-pub trait ICommittedHandler {
+pub trait CommittedHandler {
     fn blockchain_committed_handler(&self, system: &dyn Any, block: &Block);
 }
 
 /// Handler of Committing event from Blockchain.
 /// Triggered when a new block is committing, state is still in the cache.
-pub trait ICommittingHandler {
+pub trait CommittingHandler {
     /// Indicates whether this handler should run during fast sync
     fn run_during_fast_sync(&self) -> bool {
         false
@@ -46,13 +46,13 @@ pub trait ICommittingHandler {
 
 /// Handler of MessageReceived event from RemoteNode.
 /// Triggered when a new message is received from a peer.
-pub trait IMessageReceivedHandler {
+pub trait MessageReceivedHandler {
     fn remote_node_message_received_handler(&self, system: &dyn Any, message: &Message) -> bool;
 }
 
-/// Handler of WalletChanged event from the IWalletProvider.
+/// Handler of WalletChanged event from the WalletProvider.
 /// Triggered when a new wallet is assigned to the node.
-pub trait IWalletChangedHandler {
+pub trait WalletChangedHandler {
     fn wallet_provider_wallet_changed_handler(
         &self,
         sender: &dyn Any,

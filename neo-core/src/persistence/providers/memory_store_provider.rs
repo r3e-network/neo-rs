@@ -11,7 +11,7 @@
 
 use super::memory_store::MemoryStore;
 use crate::error::CoreResult;
-use crate::persistence::{store::IStore, store_provider::IStoreProvider};
+use crate::persistence::{store::IStore, store_provider::StoreProvider};
 use std::sync::Arc;
 
 /// A provider for creating MemoryStore instances.
@@ -30,7 +30,7 @@ impl Default for MemoryStoreProvider {
     }
 }
 
-impl IStoreProvider for MemoryStoreProvider {
+impl StoreProvider for MemoryStoreProvider {
     fn name(&self) -> &str {
         "Memory"
     }

@@ -10,19 +10,19 @@
 // modifications are permitted.
 
 use super::{
-    read_only_store::IReadOnlyStore, store_snapshot::IStoreSnapshot, write_store::IWriteStore,
+    read_only_store::ReadOnlyStore, store_snapshot::StoreSnapshot, write_store::WriteStore,
 };
 use std::any::Any;
 use std::sync::Arc;
 
 /// Delegate for OnNewSnapshot event
-pub type OnNewSnapshotDelegate = Box<dyn Fn(&dyn IStore, Arc<dyn IStoreSnapshot>) + Send + Sync>;
+pub type OnNewSnapshotDelegate = Box<dyn Fn(&dyn IStore, Arc<dyn StoreSnapshot>) + Send + Sync>;
 
 /// This interface provides methods for reading, writing from/to database.
 /// Developers should implement this interface to provide new storage engines for NEO.
-pub trait IStore: IReadOnlyStore + IWriteStore<Vec<u8>, Vec<u8>> + Send + Sync + Any {
+pub trait IStore: ReadOnlyStore + WriteStore<Vec<u8>, Vec<u8>> + Send + Sync + Any {
     /// Creates a snapshot of the database.
-    fn get_snapshot(&self) -> Arc<dyn IStoreSnapshot>;
+    fn get_snapshot(&self) -> Arc<dyn StoreSnapshot>;
 
     /// Event raised when a new snapshot is created
     fn on_new_snapshot(&self, handler: OnNewSnapshotDelegate);

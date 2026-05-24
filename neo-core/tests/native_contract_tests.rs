@@ -7,7 +7,7 @@ use neo_core::script_builder::ScriptBuilder;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::smart_contract::contract_state::ContractState;
-use neo_core::smart_contract::interoperable::IInteroperable;
+use neo_core::smart_contract::interoperable::Interoperable;
 use neo_core::smart_contract::native::{
     is_active_for, ContractManagement, CryptoLib, FungibleToken, GasToken, HardforkActivable,
     LedgerContract, NativeContract, NativeRegistry, NeoToken, Notary, OracleContract,

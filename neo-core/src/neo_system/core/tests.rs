@@ -1,5 +1,5 @@
 use super::*;
-use crate::i_event_handlers::IWalletChangedHandler;
+use crate::i_event_handlers::WalletChangedHandler;
 use crate::ledger::Block as LedgerBlock;
 use crate::ledger::{
     block_header::BlockHeader as LedgerBlockHeader,
@@ -18,7 +18,7 @@ use crate::persistence::StoreCache;
 use crate::smart_contract::contract::Contract;
 use crate::smart_contract::native::trimmed_block::TrimmedBlock;
 use crate::wallets::key_pair::KeyPair;
-use crate::wallets::IWalletProvider;
+use crate::wallets::WalletProvider;
 use crate::wallets::{Version, Wallet, WalletAccount, WalletError, WalletResult};
 use crate::Witness;
 use crate::{UInt160, UInt256};
@@ -266,7 +266,7 @@ impl EventProbe {
     }
 }
 
-impl IWalletChangedHandler for EventProbe {
+impl WalletChangedHandler for EventProbe {
     fn wallet_provider_wallet_changed_handler(
         &self,
         _sender: &dyn Any,
@@ -409,7 +409,7 @@ impl TestWalletProvider {
     }
 }
 
-impl IWalletProvider for TestWalletProvider {
+impl WalletProvider for TestWalletProvider {
     fn as_any(&self) -> &dyn Any {
         self
     }

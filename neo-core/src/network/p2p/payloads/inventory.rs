@@ -10,11 +10,11 @@
 // modifications are permitted.
 
 use super::InventoryType;
-use crate::IVerifiable;
+use crate::Verifiable;
 use crate::UInt256;
 
 /// Represents a message that can be relayed on the NEO network.
-pub trait IInventory: IVerifiable {
+pub trait Inventory: Verifiable {
     /// The type of the inventory.
     fn inventory_type(&self) -> InventoryType;
 

@@ -1649,9 +1649,9 @@ fn contract_management_manifest_validation_uses_neo_vm_rs_stack_value() {
     assert!(
         !validation_section.contains("manifest.to_stack_item()")
             && !validation_section.contains("BinarySerializer::serialize(")
-            && !source.contains("use crate::smart_contract::interoperable::IInteroperable;"),
+            && !source.contains("use crate::smart_contract::interoperable::Interoperable;"),
         "ContractManagement manifest validation should not bounce through local StackItem or \
-         IInteroperable"
+         Interoperable"
     );
 }
 
@@ -1679,8 +1679,8 @@ fn native_pure_data_states_project_through_neo_vm_rs_stack_value() {
         "TransactionState should parse direct StackValue inputs"
     );
     assert!(
-        !transaction_state.contains("use crate::smart_contract::interoperable::IInteroperable")
-            && !transaction_state.contains("impl IInteroperable for TransactionState")
+        !transaction_state.contains("use crate::smart_contract::interoperable::Interoperable")
+            && !transaction_state.contains("impl Interoperable for TransactionState")
             && !transaction_state.contains("from_stack_item")
             && !transaction_state.contains("to_stack_item")
             && !transaction_state.contains("StackItem::try_from")
@@ -1724,7 +1724,7 @@ fn native_pure_data_states_project_through_neo_vm_rs_stack_value() {
     );
     assert!(
         !oracle_request.contains("use crate::neo_vm::StackItem")
-            && !oracle_request.contains("impl IInteroperable for OracleRequest")
+            && !oracle_request.contains("impl Interoperable for OracleRequest")
             && !oracle_request.contains("from_stack_item")
             && !oracle_request.contains("to_stack_item"),
         "OracleRequest is pure native request data and should not keep local StackItem adapters"
@@ -1805,7 +1805,7 @@ fn native_pure_data_states_project_through_neo_vm_rs_stack_value() {
         "Notary Deposit should expose direct StackValue projection and parsing"
     );
     assert!(
-        !deposit_section.contains("impl IInteroperable for Deposit")
+        !deposit_section.contains("impl Interoperable for Deposit")
             && !deposit_section.contains("from_stack_item")
             && !deposit_section.contains("to_stack_item"),
         "Notary Deposit uses custom persisted encoding and should not keep local StackItem \
@@ -1827,7 +1827,7 @@ fn native_pure_data_states_project_through_neo_vm_rs_stack_value() {
     );
     assert!(
         !hash_index_state.contains("use crate::neo_vm::StackItem")
-            && !hash_index_state.contains("impl IInteroperable for HashIndexState")
+            && !hash_index_state.contains("impl Interoperable for HashIndexState")
             && !hash_index_state.contains("from_stack_item")
             && !hash_index_state.contains("to_stack_item"),
         "HashIndexState is pure ledger data and should not keep local StackItem adapters"
@@ -1851,7 +1851,7 @@ fn native_pure_data_states_project_through_neo_vm_rs_stack_value() {
     );
     assert!(
         !account_state.contains("use crate::neo_vm::StackItem")
-            && !account_state.contains("impl IInteroperable for AccountState")
+            && !account_state.contains("impl Interoperable for AccountState")
             && !account_state.contains("from_stack_item")
             && !account_state.contains("to_stack_item"),
         "native AccountState is pure persisted GAS data and should not keep local StackItem \
@@ -1896,7 +1896,7 @@ fn native_pure_data_states_project_through_neo_vm_rs_stack_value() {
          local StackItem"
     );
     assert!(
-        !policy_whitelist_section.contains("impl IInteroperable for WhitelistedContract")
+        !policy_whitelist_section.contains("impl Interoperable for WhitelistedContract")
             && !policy_whitelist_section.contains("from_stack_item")
             && !policy_whitelist_section.contains("to_stack_item")
             && !policy_whitelist_section.contains("StackItem::try_from"),

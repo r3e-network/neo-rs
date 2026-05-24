@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use crate::error::CoreResult;
-use crate::persistence::store_provider::IStoreProvider;
+use crate::persistence::store_provider::StoreProvider;
 use crate::protocol_settings::ProtocolSettings;
 
 use super::NeoSystem;
@@ -27,7 +27,7 @@ use super::NeoSystem;
 #[derive(Default)]
 pub struct NeoSystemBuilder {
     settings: Option<ProtocolSettings>,
-    storage_provider: Option<Arc<dyn IStoreProvider>>,
+    storage_provider: Option<Arc<dyn StoreProvider>>,
     storage_path: Option<String>,
 }
 
@@ -48,7 +48,7 @@ impl NeoSystemBuilder {
     /// Sets the storage provider for persistence.
     ///
     /// If not specified, defaults to the memory store provider.
-    pub fn with_storage_provider(mut self, provider: Arc<dyn IStoreProvider>) -> Self {
+    pub fn with_storage_provider(mut self, provider: Arc<dyn StoreProvider>) -> Self {
         self.storage_provider = Some(provider);
         self
     }

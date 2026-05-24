@@ -7,7 +7,7 @@ use neo_core::ledger::{create_genesis_block, Block, BlockHeader};
 use neo_core::neo_vm::StackItem;
 use neo_core::network::p2p::payloads::{NotaryAssisted, Signer, Transaction, TransactionAttribute};
 use neo_core::persistence::DataCache;
-use neo_core::persistence::IReadOnlyStoreGeneric;
+use neo_core::persistence::ReadOnlyStoreGeneric;
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::binary_serializer::BinarySerializer;
@@ -20,7 +20,7 @@ use neo_core::smart_contract::native::{
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::smart_contract::{Contract, ContractParameterType, StorageItem, StorageKey};
 use neo_core::wallets::KeyPair;
-use neo_core::{IVerifiable, Result as CoreResult, UInt160, UInt256, WitnessScope};
+use neo_core::{Verifiable, Result as CoreResult, UInt160, UInt256, WitnessScope};
 use neo_vm_rs::ExecutionEngineLimits;
 use neo_vm_rs::OpCode;
 use num_bigint::BigInt;
@@ -137,7 +137,7 @@ fn try_token_transfer(
     amount: &BigInt,
     data: Vec<u8>,
 ) -> CoreResult<bool> {
-    let container = Arc::new(tx) as Arc<dyn IVerifiable>;
+    let container = Arc::new(tx) as Arc<dyn Verifiable>;
     let mut engine = ApplicationEngine::new(
         TriggerType::Application,
         Some(container),
@@ -204,7 +204,7 @@ fn call_notary_int(
     method: &str,
     args: Vec<Vec<u8>>,
 ) -> BigInt {
-    let container = tx.map(|t| Arc::new(t) as Arc<dyn IVerifiable>);
+    let container = tx.map(|t| Arc::new(t) as Arc<dyn Verifiable>);
     let mut engine = ApplicationEngine::new(
         TriggerType::Application,
         container,
@@ -233,7 +233,7 @@ fn call_notary_bool(
     method: &str,
     args: Vec<Vec<u8>>,
 ) -> bool {
-    let container = tx.map(|t| Arc::new(t) as Arc<dyn IVerifiable>);
+    let container = tx.map(|t| Arc::new(t) as Arc<dyn Verifiable>);
     let mut engine = ApplicationEngine::new(
         TriggerType::Application,
         container,
@@ -1189,7 +1189,7 @@ fn check_set_max_not_valid_before_delta() {
     let committee_address = NativeHelpers::committee_address(&settings, Some(snapshot.as_ref()));
 
     let tx = make_tx_with_signer(committee_address);
-    let container = Arc::new(tx) as Arc<dyn IVerifiable>;
+    let container = Arc::new(tx) as Arc<dyn Verifiable>;
     let mut engine = ApplicationEngine::new(
         TriggerType::Application,
         Some(container),
@@ -1260,7 +1260,7 @@ fn check_on_persist_fee_per_key_update() {
     // Update NotaryAssisted fee after OnPersist.
     let committee_address = NativeHelpers::committee_address(&settings, Some(snapshot.as_ref()));
     let tx = make_tx_with_signer(committee_address);
-    let container = Arc::new(tx) as Arc<dyn IVerifiable>;
+    let container = Arc::new(tx) as Arc<dyn Verifiable>;
     let mut engine = ApplicationEngine::new(
         TriggerType::Application,
         Some(container),

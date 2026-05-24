@@ -70,7 +70,7 @@ fn iverifiable_header_hash_uses_try_hash() {
     let expected = expected_source.try_hash().expect("try hash");
 
     assert_eq!(
-        <Header as crate::IVerifiable>::hash(&header).unwrap(),
+        <Header as crate::Verifiable>::hash(&header).unwrap(),
         expected
     );
 }

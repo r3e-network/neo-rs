@@ -65,15 +65,15 @@
 //! let hash = UInt256::zero();
 //! ```
 //!
-//! ## IVerifiable Trait
+//! ## Verifiable Trait
 //!
-//! The [`IVerifiable`] trait is central to blockchain validation. It is implemented
+//! The [`Verifiable`] trait is central to blockchain validation. It is implemented
 //! by types that can be cryptographically verified, such as blocks and transactions:
 //!
 //! ```rust,no_run
-//! use neo_core::IVerifiable;
+//! use neo_core::Verifiable;
 //!
-//! fn verify_container<T: IVerifiable>(container: &T) -> bool {
+//! fn verify_container<T: Verifiable>(container: &T) -> bool {
 //!     container.verify()
 //! }
 //! ```
@@ -230,8 +230,8 @@ pub(crate) mod sign;
 /// Matches C# `Neo.IEventHandlers` namespace.
 pub mod i_event_handlers {
     pub use crate::events::handlers::{
-        ICommittedHandler, ICommittingHandler,
-        IMessageReceivedHandler, IWalletChangedHandler,
+        CommittedHandler, CommittingHandler,
+        MessageReceivedHandler, WalletChangedHandler,
     };
 }
 
@@ -419,14 +419,14 @@ pub use neo_crypto::{ct_hash_eq, ct_hash_slice_eq, Crypto, CryptoError, HashAlgo
 pub use neo_storage::{StorageItem, StorageKey};
 
 // ============================================================================
-// IVerifiable Trait
+// Verifiable Trait
 // ============================================================================
 
 /// Trait for verifiable blockchain objects.
 ///
 /// This trait defines the interface for objects that can be cryptographically
 /// verified, such as blocks and transactions. It consolidates witness-handling
-/// behaviour from C# `IVerifiable` with the helper methods required by the
+/// behaviour from C# `Verifiable` with the helper methods required by the
 /// runtime.
 ///
 /// # Implementors
@@ -438,10 +438,10 @@ pub use neo_storage::{StorageItem, StorageKey};
 /// # Example
 ///
 /// ```rust,no_run
-/// use neo_core::IVerifiable;
+/// use neo_core::Verifiable;
 /// use neo_primitives::UInt256;
 ///
-/// fn verify_and_hash<T: IVerifiable>(item: &T) -> Option<UInt256> {
+/// fn verify_and_hash<T: Verifiable>(item: &T) -> Option<UInt256> {
 ///     if item.verify() {
 ///         item.hash().ok()
 ///     } else {
@@ -449,7 +449,7 @@ pub use neo_storage::{StorageItem, StorageKey};
 ///     }
 /// }
 /// ```
-pub trait IVerifiable: std::any::Any + Send + Sync {
+pub trait Verifiable: std::any::Any + Send + Sync {
     /// Verifies the cryptographic validity of the object.
     ///
     /// # Returns

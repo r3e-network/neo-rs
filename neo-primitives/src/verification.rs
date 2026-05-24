@@ -8,7 +8,7 @@
 //!
 //! - `IVerificationContext`: Abstracts witness verification without VM dependency
 //! - `IWitness`: Represents witness data (invocation + verification scripts)
-//! - `IBlockchainSnapshot`: Read-only blockchain state for verification
+//! - `BlockchainSnapshot`: Read-only blockchain state for verification
 //!
 //! # Example
 //!
@@ -198,7 +198,7 @@ pub trait IVerificationContext: Send + Sync {
 ///
 /// By abstracting through this trait, verification logic (in neo-p2p)
 /// doesn't depend on concrete `DataCache` or `Blockchain` types (in neo-core).
-pub trait IBlockchainSnapshot: Send + Sync {
+pub trait BlockchainSnapshot: Send + Sync {
     /// Gets the current block height.
     fn height(&self) -> u32;
 
@@ -352,7 +352,7 @@ mod tests {
         }
     }
 
-    impl IBlockchainSnapshot for MockSnapshot {
+    impl BlockchainSnapshot for MockSnapshot {
         fn height(&self) -> u32 {
             self.height
         }
@@ -499,7 +499,7 @@ mod tests {
         assert_eq!(verifier.get_remaining_gas(), 0);
     }
 
-    // ============ IBlockchainSnapshot Tests ============
+    // ============ BlockchainSnapshot Tests ============
 
     #[test]
     fn test_mock_snapshot_height() {
@@ -567,7 +567,7 @@ mod tests {
 
     #[test]
     fn test_snapshot_as_trait_object() {
-        fn accept_snapshot(s: &dyn IBlockchainSnapshot) -> u32 {
+        fn accept_snapshot(s: &dyn BlockchainSnapshot) -> u32 {
             s.height()
         }
 

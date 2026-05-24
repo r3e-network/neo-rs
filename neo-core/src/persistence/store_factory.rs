@@ -10,7 +10,7 @@
 // modifications are permitted.
 
 use super::{
-    store::IStore, store_provider::IStoreProvider,
+    store::IStore, store_provider::StoreProvider,
     providers::memory_store_provider::MemoryStoreProvider,
 };
 use crate::error::{CoreError, CoreResult};
@@ -20,11 +20,11 @@ use parking_lot::RwLock;
 use std::sync::Arc;
 
 /// Global registry of store providers.
-static PROVIDERS: Lazy<RwLock<HashMap<String, Arc<dyn IStoreProvider>>>> = Lazy::new(|| {
+static PROVIDERS: Lazy<RwLock<HashMap<String, Arc<dyn StoreProvider>>>> = Lazy::new(|| {
     let mut providers = HashMap::new();
 
     // Register default memory provider
-    let mem_provider = Arc::new(MemoryStoreProvider::new()) as Arc<dyn IStoreProvider>;
+    let mem_provider = Arc::new(MemoryStoreProvider::new()) as Arc<dyn StoreProvider>;
     providers.insert("Memory".to_string(), mem_provider.clone());
     providers.insert("".to_string(), mem_provider); // Default case
 
@@ -36,13 +36,13 @@ pub struct StoreFactory;
 
 impl StoreFactory {
     /// Register a store provider.
-    pub fn register_provider(provider: Arc<dyn IStoreProvider>) {
+    pub fn register_provider(provider: Arc<dyn StoreProvider>) {
         let mut providers = PROVIDERS.write();
         providers.insert(provider.name().to_string(), provider);
     }
 
     /// Get store provider by name.
-    pub fn get_store_provider(name: &str) -> Option<Arc<dyn IStoreProvider>> {
+    pub fn get_store_provider(name: &str) -> Option<Arc<dyn StoreProvider>> {
         let providers = PROVIDERS.read();
         providers.get(name).cloned()
     }

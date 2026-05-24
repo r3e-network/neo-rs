@@ -11,7 +11,7 @@ use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::contract_parameter_type::ContractParameterType;
 use crate::smart_contract::log_event_args::LogEventArgs;
 use crate::smart_contract::ContractParameterDefinition;
-use crate::smart_contract::IInteroperable;
+use crate::smart_contract::Interoperable;
 use crate::UInt160;
 use neo_vm_rs::StackItemType;
 use num_bigint::{BigInt, Sign};
@@ -62,7 +62,7 @@ impl ApplicationEngine {
         {
             self.push(transaction.to_stack_item().map_err(|e| e.to_string())?)
         } else {
-            Err("Script container does not implement IInteroperable".to_string())
+            Err("Script container does not implement Interoperable".to_string())
         }
     }
 

@@ -25,7 +25,7 @@ use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::smart_contract::Contract;
 use neo_core::smart_contract::{StorageItem, StorageKey};
 use neo_core::wallets::KeyPair;
-use neo_core::{IVerifiable, NeoSystem, UInt160, UInt256, WitnessScope};
+use neo_core::{Verifiable, NeoSystem, UInt160, UInt256, WitnessScope};
 use neo_json::JToken;
 use neo_vm_rs::OpCode;
 use neo_vm_rs::VmState as VMState;
@@ -195,7 +195,7 @@ fn mint_gas(
     let mut container = Transaction::new();
     container.set_signers(vec![Signer::new(account, WitnessScope::GLOBAL)]);
     container.add_witness(Witness::new());
-    let script_container: Arc<dyn IVerifiable> = Arc::new(container);
+    let script_container: Arc<dyn Verifiable> = Arc::new(container);
     let mut engine = ApplicationEngine::new(
         TriggerType::Application,
         Some(script_container),

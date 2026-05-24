@@ -4,7 +4,7 @@ use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::witness::Witness;
-use neo_core::{IVerifiable, UInt160, WitnessScope};
+use neo_core::{Verifiable, UInt160, WitnessScope};
 use std::sync::Arc;
 
 fn sample_hash(tag: u8) -> UInt160 {
@@ -18,7 +18,7 @@ fn make_engine_with_signer(signer: Signer) -> ApplicationEngine {
     let mut tx = Transaction::new();
     tx.set_signers(vec![signer]);
     tx.add_witness(Witness::new());
-    let container: Arc<dyn IVerifiable> = Arc::new(tx);
+    let container: Arc<dyn Verifiable> = Arc::new(tx);
 
     ApplicationEngine::new(
         TriggerType::Application,

@@ -175,7 +175,7 @@ impl NeoToken {
         pubkey: &ECPoint,
     ) -> CoreResult<BigInt>
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         if let Some(state) = self.get_candidate_state(snapshot, pubkey)? {
             if state.registered {
@@ -194,7 +194,7 @@ impl NeoToken {
         pubkey: &ECPoint,
     ) -> CoreResult<Option<CandidateState>>
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         let key =
             StorageKey::create_with_bytes(Self::ID, Self::PREFIX_CANDIDATE, pubkey.as_bytes());
@@ -245,7 +245,7 @@ impl NeoToken {
         snapshot: &S,
     ) -> CoreResult<Vec<(ECPoint, BigInt)>>
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         let prefix = StorageKey::create(Self::ID, Self::PREFIX_CANDIDATE);
         let mut candidates = Vec::new();
@@ -285,7 +285,7 @@ impl NeoToken {
     /// Snapshot helper for retrieving the registered candidates (limited to 256).
     pub fn get_candidates_snapshot<S>(&self, snapshot: &S) -> CoreResult<Vec<(ECPoint, BigInt)>>
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         let candidates = self.get_candidates_internal(snapshot)?;
         Ok(candidates.into_iter().take(256).collect())
@@ -361,7 +361,7 @@ impl NeoToken {
     /// Internal helper to get GAS per block at specific height
     pub(super) fn get_gas_per_block_internal<S>(&self, snapshot: &S, index: u32) -> BigInt
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         let records = self.get_sorted_gas_records(snapshot, index);
         records

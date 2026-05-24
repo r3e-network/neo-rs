@@ -7,7 +7,7 @@
 //! This crate provides the **single source of truth** for all storage-related
 //! functionality in the Neo ecosystem. It includes:
 //!
-//! - **Storage traits**: `IReadOnlyStore`, `IWriteStore`, `IStore`, `ISnapshot`
+//! - **Storage traits**: `ReadOnlyStore`, `WriteStore`, `IStore`, `ISnapshot`
 //! - **Storage types**: `StorageKey`, `StorageItem`, `SeekDirection`, `TrackState`
 //! - **Cache**: `DataCache`, `Trackable` for in-memory caching with tracking
 //! - **Hash utilities**: C#-compatible xxhash3 implementation for storage keys
@@ -15,8 +15,8 @@
 //!
 //! ## Core Components
 //!
-//! - [`IReadOnlyStore`]: Read-only storage operations (`try_get`, contains)
-//! - [`IWriteStore`]: Write operations (put, delete)
+//! - [`ReadOnlyStore`]: Read-only storage operations (`try_get`, contains)
+//! - [`WriteStore`]: Write operations (put, delete)
 //! - [`IStore`]: Combined read/write interface
 //! - [`ISnapshot`]: Point-in-time snapshot with seek/find operations
 //! - [`StorageKey`]: Storage key with contract ID and key suffix (C# parity)
@@ -28,10 +28,10 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use neo_storage::{IReadOnlyStore, StorageKey, StorageItem};
+//! use neo_storage::{ReadOnlyStore, StorageKey, StorageItem};
 //! use neo_primitives::UInt160;
 //!
-//! fn read_value<S: IReadOnlyStore>(store: &S, key: &StorageKey) -> Option<StorageItem> {
+//! fn read_value<S: ReadOnlyStore>(store: &S, key: &StorageKey) -> Option<StorageItem> {
 //!     store.try_get(key)
 //! }
 //!

@@ -1,9 +1,9 @@
 use super::*;
 use crate::network::p2p::payloads::Witness;
-use crate::persistence::read_only_store::{IReadOnlyStore, IReadOnlyStoreGeneric};
+use crate::persistence::read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric};
 use crate::persistence::store::{IStore, OnNewSnapshotDelegate};
-use crate::persistence::store_snapshot::IStoreSnapshot;
-use crate::persistence::write_store::IWriteStore;
+use crate::persistence::store_snapshot::StoreSnapshot;
+use crate::persistence::write_store::WriteStore;
 use crate::persistence::providers::memory_store_provider::MemoryStoreProvider;
 use crate::persistence::storage::StorageError;
 use crate::persistence::DataCache;
@@ -37,7 +37,7 @@ impl StateStoreBackend for FailingStateStoreBackend {
 #[derive(Clone)]
 struct FailingSnapshotStore;
 
-impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for FailingSnapshotStore {
+impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for FailingSnapshotStore {
     fn try_get(&self, _key: &StorageKey) -> Option<StorageItem> {
         None
     }
@@ -51,7 +51,7 @@ impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for FailingSnapshotStore {
     }
 }
 
-impl IWriteStore<Vec<u8>, Vec<u8>> for FailingSnapshotStore {
+impl WriteStore<Vec<u8>, Vec<u8>> for FailingSnapshotStore {
     fn delete(&mut self, _key: Vec<u8>) -> CoreResult<()> {
         Ok(())
     }
@@ -61,10 +61,10 @@ impl IWriteStore<Vec<u8>, Vec<u8>> for FailingSnapshotStore {
     }
 }
 
-impl IReadOnlyStore for FailingSnapshotStore {}
+impl ReadOnlyStore for FailingSnapshotStore {}
 
 impl IStore for FailingSnapshotStore {
-    fn get_snapshot(&self) -> Arc<dyn IStoreSnapshot> {
+    fn get_snapshot(&self) -> Arc<dyn StoreSnapshot> {
         Arc::new(FailingCoreSnapshot {
             store: Arc::new(self.clone()),
         })
@@ -81,7 +81,7 @@ struct FailingCoreSnapshot {
     store: Arc<dyn IStore>,
 }
 
-impl IReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for FailingCoreSnapshot {
+impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for FailingCoreSnapshot {
     fn try_get(&self, _key: &Vec<u8>) -> Option<Vec<u8>> {
         None
     }
@@ -95,7 +95,7 @@ impl IReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for FailingCoreSnapshot {
     }
 }
 
-impl IWriteStore<Vec<u8>, Vec<u8>> for FailingCoreSnapshot {
+impl WriteStore<Vec<u8>, Vec<u8>> for FailingCoreSnapshot {
     fn delete(&mut self, _key: Vec<u8>) -> CoreResult<()> {
         Ok(())
     }
@@ -105,7 +105,7 @@ impl IWriteStore<Vec<u8>, Vec<u8>> for FailingCoreSnapshot {
     }
 }
 
-impl IStoreSnapshot for FailingCoreSnapshot {
+impl StoreSnapshot for FailingCoreSnapshot {
     fn store(&self) -> Arc<dyn IStore> {
         Arc::clone(&self.store)
     }

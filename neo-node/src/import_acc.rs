@@ -12,7 +12,7 @@ use neo_core::{
     neo_io::{MemoryReader, Serializable},
     neo_system::NeoSystem,
     network::p2p::payloads::block::Block,
-    persistence::{providers::RocksDBStoreProvider, IStoreProvider, StorageConfig, StoreCache},
+    persistence::{providers::RocksDBStoreProvider, StoreProvider, StorageConfig, StoreCache},
     smart_contract::native::LedgerContract,
 };
 use std::{

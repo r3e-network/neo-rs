@@ -4,7 +4,7 @@ use super::{
 };
 use crate::cryptography::Crypto;
 use crate::error::{CoreError as Error, CoreResult as Result};
-use crate::persistence::{read_only_store::IReadOnlyStoreGeneric, DataCache};
+use crate::persistence::{read_only_store::ReadOnlyStoreGeneric, DataCache};
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::native::oracle_request::OracleRequest;
 use crate::smart_contract::storage_key::StorageKey;

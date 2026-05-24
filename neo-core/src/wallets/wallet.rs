@@ -6,7 +6,7 @@
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::contract::Contract;
 use crate::wallets::{
-    wallet_factory::IWalletFactory, key_pair::KeyPair, wallet_account::WalletAccount, Version,
+    wallet_factory::WalletFactory, key_pair::KeyPair, wallet_account::WalletAccount, Version,
 };
 use crate::Transaction;
 use crate::{UInt160, UInt256};
@@ -147,7 +147,7 @@ pub trait Wallet: Send + Sync {
 /// Static wallet factory methods.
 /// This matches the static methods in the C# Wallet class.
 pub struct WalletManager {
-    factories: Vec<Box<dyn IWalletFactory>>,
+    factories: Vec<Box<dyn WalletFactory>>,
 }
 
 impl WalletManager {
@@ -159,7 +159,7 @@ impl WalletManager {
     }
 
     /// Registers a wallet factory.
-    pub fn register_factory(&mut self, factory: Box<dyn IWalletFactory>) {
+    pub fn register_factory(&mut self, factory: Box<dyn WalletFactory>) {
         self.factories.push(factory);
     }
 
@@ -245,7 +245,7 @@ impl WalletManager {
     }
 
     /// Gets the appropriate factory for the specified path.
-    fn get_factory(&self, path: &str) -> Option<&dyn IWalletFactory> {
+    fn get_factory(&self, path: &str) -> Option<&dyn WalletFactory> {
         self.factories
             .iter()
             .find(|factory| factory.handle(path))

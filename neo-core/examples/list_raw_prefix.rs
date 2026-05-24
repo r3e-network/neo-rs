@@ -1,5 +1,5 @@
 use neo_core::persistence::{
-    providers::RocksDBStoreProvider, IReadOnlyStoreGeneric, IStoreProvider, SeekDirection,
+    providers::RocksDBStoreProvider, ReadOnlyStoreGeneric, StoreProvider, SeekDirection,
     StorageConfig,
 };
 use std::path::PathBuf;
@@ -36,7 +36,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let snapshot = store.get_snapshot();
 
     let mut count = 0usize;
-    let iter = <dyn neo_core::persistence::IStoreSnapshot as IReadOnlyStoreGeneric<
+    let iter = <dyn neo_core::persistence::StoreSnapshot as ReadOnlyStoreGeneric<
         Vec<u8>,
         Vec<u8>,
     >>::find(snapshot.as_ref(), Some(&prefix), SeekDirection::Forward);

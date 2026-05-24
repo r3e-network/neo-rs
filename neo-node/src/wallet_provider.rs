@@ -1,6 +1,6 @@
 //! Wallet provider for propagating RPC wallet changes into NeoSystem.
 
-use neo_core::wallets::{IWalletProvider, Wallet};
+use neo_core::wallets::{WalletProvider, Wallet};
 use parking_lot::{Mutex, RwLock};
 use std::any::Any;
 use std::sync::{mpsc, Arc};
@@ -34,7 +34,7 @@ impl NodeWalletProvider {
     }
 }
 
-impl IWalletProvider for NodeWalletProvider {
+impl WalletProvider for NodeWalletProvider {
     fn as_any(&self) -> &dyn Any {
         self
     }

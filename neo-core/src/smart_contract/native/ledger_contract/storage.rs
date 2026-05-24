@@ -11,7 +11,7 @@ use super::{HashOrIndex, LedgerContract, PersistedTransactionState};
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::hardfork::Hardfork;
 use crate::ledger::Block;
-use crate::persistence::{read_only_store::IReadOnlyStoreGeneric, DataCache};
+use crate::persistence::{read_only_store::ReadOnlyStoreGeneric, DataCache};
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::native::{policy_contract::PolicyContract, trimmed_block::TrimmedBlock};
 use crate::smart_contract::{StorageItem, StorageKey};
@@ -22,7 +22,7 @@ impl LedgerContract {
     /// Gets the current block hash from the persisted state.
     pub fn current_hash<S>(&self, snapshot: &S) -> Result<UInt256>
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         let key = current_block_storage_key(self.id);
         if let Some(item) = snapshot.try_get(&key) {
@@ -35,7 +35,7 @@ impl LedgerContract {
     /// Gets the current block index (height) from the persisted state.
     pub fn current_index<S>(&self, snapshot: &S) -> Result<u32>
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         let key = current_block_storage_key(self.id);
         if let Some(item) = snapshot.try_get(&key) {
@@ -48,7 +48,7 @@ impl LedgerContract {
     /// Retrieves a block by hash or index.
     pub fn get_block<S>(&self, snapshot: &S, hash_or_index: HashOrIndex) -> Result<Option<Block>>
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         match hash_or_index {
             HashOrIndex::Hash(hash) => self.try_read_block(snapshot, &hash),
@@ -65,7 +65,7 @@ impl LedgerContract {
     /// Checks whether a block exists in storage.
     pub fn contains_block<S>(&self, snapshot: &S, hash: &UInt256) -> bool
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         let key = block_storage_key(self.id, hash);
         snapshot.try_get(&key).is_some()
@@ -74,7 +74,7 @@ impl LedgerContract {
     /// Checks whether a transaction exists in storage.
     pub fn contains_transaction<S>(&self, snapshot: &S, hash: &UInt256) -> Result<bool>
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         Ok(self.try_read_transaction_state(snapshot, hash)?.is_some())
     }
@@ -87,7 +87,7 @@ impl LedgerContract {
         max_traceable_blocks: u32,
     ) -> Result<bool>
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         if signers.is_empty() {
             return Ok(false);
@@ -127,7 +127,7 @@ impl LedgerContract {
         settings: &ProtocolSettings,
     ) -> Result<u32>
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         let current_index = self.current_index(snapshot)?;
         let mut value = if settings.is_hardfork_enabled(Hardfork::HfEchidna, current_index) {
@@ -146,7 +146,7 @@ impl LedgerContract {
 
     pub(super) fn try_read_block<S>(&self, snapshot: &S, hash: &UInt256) -> Result<Option<Block>>
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         let key = block_storage_key(self.id, hash);
         let item = match snapshot.try_get(&key) {
@@ -169,7 +169,7 @@ impl LedgerContract {
 
     pub(super) fn load_block_hash<S>(&self, snapshot: &S, index: u32) -> Result<Option<UInt256>>
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         let key = block_hash_storage_key(self.id, index);
         if let Some(item) = snapshot.try_get(&key) {
@@ -183,14 +183,14 @@ impl LedgerContract {
 
     pub fn get_block_hash_by_index<S>(&self, snapshot: &S, index: u32) -> Result<Option<UInt256>>
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         self.load_block_hash(snapshot, index)
     }
 
     pub fn get_trimmed_block<S>(&self, snapshot: &S, hash: &UInt256) -> Result<Option<TrimmedBlock>>
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         let key = block_storage_key(self.id, hash);
         tracing::debug!(
@@ -213,7 +213,7 @@ impl LedgerContract {
         hash: &UInt256,
     ) -> Result<Option<PersistedTransactionState>>
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         let key = transaction_storage_key(self.id, hash);
         match self.read_transaction_record(snapshot, &key)? {
@@ -228,7 +228,7 @@ impl LedgerContract {
         key: &StorageKey,
     ) -> Result<Option<TransactionStateRecord>>
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         snapshot
             .try_get(key)
@@ -242,7 +242,7 @@ impl LedgerContract {
         hash: &UInt256,
     ) -> Result<Option<PersistedTransactionState>>
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         self.try_read_transaction_state(snapshot, hash)
     }
@@ -414,7 +414,7 @@ fn put_item(snapshot: &DataCache, key: StorageKey, item: StorageItem) {
 
 pub(super) fn max_traceable_blocks_from_snapshot<S>(snapshot: &S, default: u32) -> u32
 where
-    S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+    S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
 {
     PolicyContract::get_max_traceable_blocks_snapshot(snapshot)
         .filter(|&value| value > 0)

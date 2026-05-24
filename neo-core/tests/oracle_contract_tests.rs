@@ -25,7 +25,7 @@ use neo_core::smart_contract::storage_item::StorageItem;
 use neo_core::smart_contract::storage_key::StorageKey;
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::smart_contract::{Contract, ContractParameterType};
-use neo_core::{IVerifiable, UInt160};
+use neo_core::{Verifiable, UInt160};
 use neo_vm_rs::ExecutionEngineLimits;
 use neo_vm_rs::OpCode;
 use num_bigint::BigInt;
@@ -178,7 +178,7 @@ fn oracle_method_and_event_metadata_snapshot() {
 }
 
 fn setup_post_persist_engine(snapshot: Arc<DataCache>, block: Block) -> ApplicationEngine {
-    let script_container: Arc<dyn IVerifiable> = Arc::new(Transaction::new());
+    let script_container: Arc<dyn Verifiable> = Arc::new(Transaction::new());
     ApplicationEngine::new(
         TriggerType::PostPersist,
         Some(script_container),
@@ -311,7 +311,7 @@ fn make_callback_contract(id: i32, name: &str) -> ContractState {
 }
 
 fn make_request_engine(snapshot: Arc<DataCache>) -> ApplicationEngine {
-    let script_container: Arc<dyn IVerifiable> = Arc::new(Transaction::new());
+    let script_container: Arc<dyn Verifiable> = Arc::new(Transaction::new());
     let mut engine = ApplicationEngine::new(
         TriggerType::Application,
         Some(script_container),
@@ -341,7 +341,7 @@ fn make_response_transaction(id: u64, code: OracleResponseCode, result: Vec<u8>)
 
 fn make_response_engine(snapshot: Arc<DataCache>, tx: Transaction) -> ApplicationEngine {
     let script = tx.script().to_vec();
-    let script_container: Arc<dyn IVerifiable> = Arc::new(tx);
+    let script_container: Arc<dyn Verifiable> = Arc::new(tx);
     let mut engine = ApplicationEngine::new(
         TriggerType::Application,
         Some(script_container),

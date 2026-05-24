@@ -210,7 +210,7 @@ impl ExternalVmHost<'_> {
                     .ok_or_else(|| "No script container".to_string())?;
 
                 let Some(transaction) = container.as_ref().as_transaction() else {
-                    return Err("Script container does not implement IInteroperable".to_string());
+                    return Err("Script container does not implement Interoperable".to_string());
                 };
 
                 stack.push(

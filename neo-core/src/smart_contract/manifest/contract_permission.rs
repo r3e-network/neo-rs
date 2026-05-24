@@ -6,7 +6,7 @@ use super::{ContractManifest, ContractPermissionDescriptor, WildCardContainer};
 use crate::error::CoreError;
 use crate::error::CoreError as Error;
 use crate::error::CoreResult;
-use crate::smart_contract::interoperable::IInteroperable;
+use crate::smart_contract::interoperable::Interoperable;
 use crate::vm_runtime::StackItem;
 use crate::ECPoint;
 use crate::UInt160;
@@ -156,7 +156,7 @@ impl ContractPermission {
     }
 }
 
-impl IInteroperable for ContractPermission {
+impl Interoperable for ContractPermission {
     fn from_stack_item(&mut self, stack_item: StackItem) -> std::result::Result<(), CoreError> {
         self.from_stack_value(StackValue::try_from(stack_item).map_err(|error| {
             CoreError::invalid_format(format!(
@@ -173,7 +173,7 @@ impl IInteroperable for ContractPermission {
         })
     }
 
-    fn clone_box(&self) -> Box<dyn IInteroperable> {
+    fn clone_box(&self) -> Box<dyn Interoperable> {
         Box::new(self.clone())
     }
 }
@@ -181,7 +181,7 @@ impl IInteroperable for ContractPermission {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::smart_contract::interoperable::IInteroperable;
+    use crate::smart_contract::interoperable::Interoperable;
     use neo_vm_rs::StackValue;
 
     #[test]

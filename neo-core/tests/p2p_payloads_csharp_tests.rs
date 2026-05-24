@@ -17,7 +17,7 @@ use neo_core::network::p2p::payloads::{
 use neo_core::persistence::{DataCache, StorageItem, StorageKey};
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::native::{LedgerContract, NativeContract, PolicyContract};
-use neo_core::{IVerifiable, UInt160, UInt256};
+use neo_core::{Verifiable, UInt160, UInt256};
 use neo_vm_rs::OpCode;
 use neo_vm_rs::VmState as VMState;
 use serde_json::json;

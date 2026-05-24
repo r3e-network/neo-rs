@@ -10,7 +10,7 @@
 // modifications are permitted.
 
 use super::{
-    inventory::IInventory, signer::Signer, transaction_attribute::TransactionAttribute,
+    inventory::Inventory, signer::Signer, transaction_attribute::TransactionAttribute,
     witness::Witness, InventoryType, TransactionAttributeType,
 };
 use crate::cryptography::{Crypto, Secp256r1Crypto};
@@ -25,10 +25,10 @@ use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::helper::Helper;
 use crate::smart_contract::native::{ContractManagement, LedgerContract, PolicyContract};
 use crate::smart_contract::trigger_type::TriggerType;
-use crate::smart_contract::{ContractBasicMethod, ContractParameterType, IInteroperable};
+use crate::smart_contract::{ContractBasicMethod, ContractParameterType, Interoperable};
 use crate::vm_runtime::StackItem;
 use crate::wallets::helper::Helper as WalletHelper;
-use crate::{ledger::VerifyResult, CoreResult, IVerifiable, UInt160, UInt256};
+use crate::{ledger::VerifyResult, CoreResult, Verifiable, UInt160, UInt256};
 use base64::{engine::general_purpose, Engine as _};
 use neo_vm_rs::OpCode;
 use parking_lot::Mutex;

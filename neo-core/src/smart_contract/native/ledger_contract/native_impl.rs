@@ -5,13 +5,13 @@ use super::{
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::hardfork::Hardfork;
 use crate::network::p2p::payloads::transaction_attribute::TransactionAttribute;
-use crate::persistence::read_only_store::IReadOnlyStoreGeneric;
+use crate::persistence::read_only_store::ReadOnlyStoreGeneric;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::native::{
     policy_contract::PolicyContract, NativeContract, NativeMethod,
 };
-use crate::smart_contract::{IInteroperable, StorageItem, StorageKey};
+use crate::smart_contract::{Interoperable, StorageItem, StorageKey};
 use crate::vm_runtime::StackItem;
 use crate::{UInt160, UInt256};
 use neo_vm_rs::ExecutionEngineLimits;
@@ -342,7 +342,7 @@ impl LedgerContract {
 
     fn resolve_max_traceable_blocks<S>(&self, engine: &ApplicationEngine, snapshot: &S) -> u32
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         let settings = engine.protocol_settings();
         let mut value = if engine.is_hardfork_enabled(Hardfork::HfEchidna) {
@@ -367,7 +367,7 @@ impl LedgerContract {
         max_traceable: u32,
     ) -> Result<Option<PersistedTransactionState>>
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         if let Some(state) = self.try_read_transaction_state(snapshot, hash)? {
             if Self::is_traceable_block(current_index, state.block_index(), max_traceable) {
@@ -386,7 +386,7 @@ impl LedgerContract {
         max_traceable: u32,
     ) -> Result<Option<PersistedTransactionState>>
     where
-        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+        S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         if let Some(block) = self.try_read_block(snapshot, block_hash)? {
             if !Self::is_traceable_block(current_index, block.index(), max_traceable) {

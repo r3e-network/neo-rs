@@ -94,6 +94,6 @@ pub(in crate::service) fn compute_header_hash(
         .write_serializable(&next_consensus)
         .expect("infallible: in-memory write");
 
-    // Matches C# `IVerifiable.CalculateHash()` (single SHA-256 over unsigned bytes).
+    // Matches C# `Verifiable.CalculateHash()` (single SHA-256 over unsigned bytes).
     UInt256::from(neo_crypto::Crypto::sha256(&writer.into_bytes()))
 }

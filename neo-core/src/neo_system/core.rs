@@ -78,7 +78,7 @@ use crate::network::p2p::{
     payloads::block::Block, timeouts, LocalNode, TaskManager, TaskManagerCommand,
 };
 use crate::persistence::{
-    store::IStore, store_provider::IStoreProvider, StoreCache, StoreFactory,
+    store::IStore, store_provider::StoreProvider, StoreCache, StoreFactory,
 };
 pub use crate::protocol_settings::ProtocolSettings;
 use crate::services::{LedgerService, MempoolService, PeerManagerService, StateStoreService};
@@ -130,7 +130,7 @@ pub struct NeoSystem {
     pub(crate) local_node: ActorRef,
     task_manager: ActorRef,
     tx_router: ActorRef,
-    store_provider: Arc<dyn IStoreProvider>,
+    store_provider: Arc<dyn StoreProvider>,
     store: Arc<dyn IStore>,
     ledger: Arc<LedgerContext>,
     genesis_block: Arc<Block>,
@@ -170,7 +170,7 @@ impl NeoSystem {
     /// * `state_service_settings` - Optional state service settings for state root calculation
     pub fn new(
         settings: ProtocolSettings,
-        storage_provider: Option<Arc<dyn IStoreProvider>>,
+        storage_provider: Option<Arc<dyn StoreProvider>>,
         storage_path: Option<String>,
     ) -> CoreResult<Arc<Self>> {
         Self::new_with_state_service(settings, storage_provider, storage_path, None)
@@ -181,7 +181,7 @@ impl NeoSystem {
     /// Use this method when you need to enable state root calculation and validation.
     pub fn new_with_state_service(
         settings: ProtocolSettings,
-        storage_provider: Option<Arc<dyn IStoreProvider>>,
+        storage_provider: Option<Arc<dyn StoreProvider>>,
         storage_path: Option<String>,
         state_service_settings: Option<crate::state_service::state_store::StateServiceSettings>,
     ) -> CoreResult<Arc<Self>> {
@@ -469,7 +469,7 @@ impl NeoSystem {
     }
 
     /// Returns the configured store provider.
-    pub fn store_provider(&self) -> Arc<dyn IStoreProvider> {
+    pub fn store_provider(&self) -> Arc<dyn StoreProvider> {
         self.store_provider.clone()
     }
 

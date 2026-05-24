@@ -318,7 +318,7 @@ impl NeoSystem {
                 None
             };
             tx_snapshot.reset();
-            let container: Arc<dyn crate::IVerifiable> = Arc::new(tx.clone());
+            let container: Arc<dyn crate::Verifiable> = Arc::new(tx.clone());
             let mut tx_engine = ApplicationEngine::new_with_preloaded_native(
                 TriggerType::Application,
                 Some(container),

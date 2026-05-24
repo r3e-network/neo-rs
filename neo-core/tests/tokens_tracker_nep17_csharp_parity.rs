@@ -8,7 +8,7 @@ use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::transaction::Transaction;
 use neo_core::network::p2p::payloads::witness::Witness;
 use neo_core::persistence::providers::MemoryStoreProvider;
-use neo_core::persistence::IStoreProvider;
+use neo_core::persistence::StoreProvider;
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::native::{GasToken, NativeContract, NeoToken};
 use neo_core::smart_contract::notify_event_args::NotifyEventArgs;
@@ -39,7 +39,7 @@ async fn nep17_tracker_matches_csharp_history_indexing() {
     tx.set_signers(vec![Signer::new(source, WitnessScope::CALLED_BY_ENTRY)]);
     tx.set_witnesses(vec![Witness::empty()]);
     let tx_hash = tx.hash();
-    let tx_container: Arc<dyn neo_core::IVerifiable> = Arc::new(tx.clone());
+    let tx_container: Arc<dyn neo_core::Verifiable> = Arc::new(tx.clone());
 
     let block = Block::new(
         BlockHeader {

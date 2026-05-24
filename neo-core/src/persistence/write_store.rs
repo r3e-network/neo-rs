@@ -12,7 +12,7 @@
 use crate::error::CoreResult;
 
 /// This interface provides methods to write to the database.
-pub trait IWriteStore<TKey, TValue> {
+pub trait WriteStore<TKey, TValue> {
     /// Deletes an entry from the store.
     fn delete(&mut self, key: TKey) -> CoreResult<()>;
 

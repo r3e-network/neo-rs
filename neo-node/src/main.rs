@@ -98,10 +98,10 @@ mod tests {
     use super::*;
     use clap::Parser;
     use neo_core::{
-        i_event_handlers::IWalletChangedHandler,
+        i_event_handlers::WalletChangedHandler,
         neo_system::NeoSystem,
         protocol_settings::ProtocolSettings,
-        wallets::{IWalletProvider, Wallet as CoreWallet},
+        wallets::{WalletProvider, Wallet as CoreWallet},
     };
     use std::any::Any;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -114,7 +114,7 @@ mod tests {
         changes: AtomicUsize,
     }
 
-    impl IWalletChangedHandler for WalletChangeProbe {
+    impl WalletChangedHandler for WalletChangeProbe {
         fn wallet_provider_wallet_changed_handler(
             &self,
             _sender: &dyn Any,

@@ -1,4 +1,6 @@
 use super::*;
+use crate::UInt160;
+use crate::UInt256;
 
 // ============ Mock Implementations ============
 

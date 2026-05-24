@@ -73,7 +73,7 @@ pub mod witness_scope;
 pub use crate::ledger::VerifyResult;
 // Re-export witness_rule types from root module (avoid duplicate files)
 pub use crate::witness_rule::{WitnessCondition, WitnessRule, WitnessRuleAction};
-pub use crate::IVerifiable;
+pub use crate::Verifiable;
 pub use addr_payload::AddrPayload;
 pub use block::Block;
 pub use conflicts::Conflicts;
@@ -85,7 +85,7 @@ pub use get_blocks_payload::GetBlocksPayload;
 pub use header::Header;
 pub use headers_payload::HeadersPayload;
 pub use high_priority_attribute::HighPriorityAttribute;
-pub use inventory::IInventory;
+pub use inventory::Inventory;
 pub use inv_payload::InvPayload;
 pub use inventory_type::InventoryType;
 pub use merkle_block_payload::MerkleBlockPayload;

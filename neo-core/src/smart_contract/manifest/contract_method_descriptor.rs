@@ -1,7 +1,7 @@
 //! ContractMethodDescriptor - matches C# Neo.SmartContract.Manifest.ContractMethodDescriptor exactly
 
 use crate::error::CoreError;
-use crate::smart_contract::interoperable::IInteroperable;
+use crate::smart_contract::interoperable::Interoperable;
 use crate::smart_contract::manifest::ContractParameterDefinition;
 use crate::smart_contract::ContractParameterType;
 use crate::vm_runtime::StackItem;
@@ -191,7 +191,7 @@ impl ContractMethodDescriptor {
     }
 }
 
-impl IInteroperable for ContractMethodDescriptor {
+impl Interoperable for ContractMethodDescriptor {
     fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
         self.from_stack_value(StackValue::try_from(stack_item).map_err(|error| {
             CoreError::invalid_format(format!(
@@ -208,7 +208,7 @@ impl IInteroperable for ContractMethodDescriptor {
         })
     }
 
-    fn clone_box(&self) -> Box<dyn IInteroperable> {
+    fn clone_box(&self) -> Box<dyn Interoperable> {
         Box::new(self.clone())
     }
 }

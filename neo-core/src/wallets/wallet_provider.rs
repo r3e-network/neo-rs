@@ -14,8 +14,8 @@ use std::any::Any;
 use std::sync::{mpsc, Arc};
 
 /// A provider for obtaining wallet instance.
-/// Matches C# IWalletProvider exactly
-pub trait IWalletProvider: Send + Sync + Any {
+/// Matches C# WalletProvider exactly
+pub trait WalletProvider: Send + Sync + Any {
     /// Returns a type-erased view of the provider for event dispatch.
     fn as_any(&self) -> &dyn Any;
 

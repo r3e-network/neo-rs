@@ -10,7 +10,7 @@
 // modifications are permitted.
 
 use super::{
-    header::Header, inventory::IInventory, transaction::Transaction, witness::Witness,
+    header::Header, inventory::Inventory, transaction::Transaction, witness::Witness,
     InventoryType,
 };
 use crate::constants::{MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK};
@@ -475,7 +475,7 @@ impl crate::validation::BlockLike for Block {
     }
 }
 
-impl IInventory for Block {
+impl Inventory for Block {
     fn inventory_type(&self) -> InventoryType {
         InventoryType::Block
     }
@@ -485,7 +485,7 @@ impl IInventory for Block {
     }
 }
 
-impl crate::IVerifiable for Block {
+impl crate::Verifiable for Block {
     fn get_script_hashes_for_verifying(&self, snapshot: &DataCache) -> Vec<UInt160> {
         self.header.get_script_hashes_for_verifying(snapshot)
     }
@@ -610,7 +610,7 @@ mod tests {
         let expected = expected_source.try_hash().expect("try hash");
 
         assert_eq!(
-            <Block as crate::IVerifiable>::hash(&block).unwrap(),
+            <Block as crate::Verifiable>::hash(&block).unwrap(),
             expected
         );
     }

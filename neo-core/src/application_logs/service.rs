@@ -1,10 +1,10 @@
 //! ApplicationLogs service for capturing execution logs and serving RPC queries.
 
-use crate::i_event_handlers::{ICommittedHandler, ICommittingHandler};
+use crate::i_event_handlers::{CommittedHandler, CommittingHandler};
 use crate::ledger::block::Block as LedgerBlock;
 use crate::ledger::blockchain_application_executed::ApplicationExecuted;
 use crate::neo_system::NeoSystem;
-use crate::persistence::{DataCache, IStore, IStoreSnapshot};
+use crate::persistence::{DataCache, IStore, StoreSnapshot};
 use crate::smart_contract::{NotifyEventArgs, TriggerType};
 use crate::unhandled_exception_policy::UnhandledExceptionPolicy;
 use crate::vm_runtime::rpc_json::{stack_item_rpc_json, stack_items_rpc_json_per_item};
@@ -25,7 +25,7 @@ use super::ApplicationLogsSettings;
 pub struct ApplicationLogsService {
     settings: ApplicationLogsSettings,
     store: Arc<dyn IStore>,
-    snapshot: Mutex<Option<Arc<dyn IStoreSnapshot>>>,
+    snapshot: Mutex<Option<Arc<dyn StoreSnapshot>>>,
     disabled: AtomicBool,
 }
 
@@ -210,7 +210,7 @@ impl ApplicationLogsService {
     }
 }
 
-impl ICommittingHandler for ApplicationLogsService {
+impl CommittingHandler for ApplicationLogsService {
     fn blockchain_committing_handler(
         &self,
         system: &dyn Any,
@@ -249,7 +249,7 @@ impl ICommittingHandler for ApplicationLogsService {
     }
 }
 
-impl ICommittedHandler for ApplicationLogsService {
+impl CommittedHandler for ApplicationLogsService {
     fn blockchain_committed_handler(&self, system: &dyn Any, _block: &LedgerBlock) {
         if self.disabled.load(Ordering::Relaxed) {
             return;

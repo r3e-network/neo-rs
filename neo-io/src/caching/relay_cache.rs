@@ -9,7 +9,7 @@ pub trait InventoryHash<TKey>
 where
     TKey: Clone + Eq + Hash,
 {
-    /// Returns the hash associated with the inventory item (matches C# `IInventory.Hash`).
+    /// Returns the hash associated with the inventory item (matches C# `Inventory.Hash`).
     fn inventory_hash(&self) -> &TKey;
 }
 

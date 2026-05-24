@@ -10,8 +10,8 @@
 // modifications are permitted.
 use crate::{protocol_settings::ProtocolSettings, wallets::Wallet};
 
-/// Wallet factory interface matching C# IWalletFactory exactly
-pub trait IWalletFactory {
+/// Wallet factory interface matching C# WalletFactory exactly
+pub trait WalletFactory {
     /// Determines whether the factory can handle the specified path.
     /// Matches C# Handle method
     fn handle(&self, path: &str) -> bool;

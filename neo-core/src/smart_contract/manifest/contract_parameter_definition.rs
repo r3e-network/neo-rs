@@ -1,7 +1,7 @@
 //! ContractParameterDefinition - matches C# Neo.SmartContract.Manifest.ContractParameterDefinition exactly
 
 use crate::error::CoreError;
-use crate::smart_contract::interoperable::IInteroperable;
+use crate::smart_contract::interoperable::Interoperable;
 use crate::smart_contract::ContractParameterType;
 use crate::vm_runtime::StackItem;
 use neo_vm_rs::StackValue;
@@ -105,7 +105,7 @@ impl ContractParameterDefinition {
     }
 }
 
-impl IInteroperable for ContractParameterDefinition {
+impl Interoperable for ContractParameterDefinition {
     fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
         self.from_stack_value(StackValue::try_from(stack_item).map_err(|error| {
             CoreError::invalid_format(format!(
@@ -122,7 +122,7 @@ impl IInteroperable for ContractParameterDefinition {
         })
     }
 
-    fn clone_box(&self) -> Box<dyn IInteroperable> {
+    fn clone_box(&self) -> Box<dyn Interoperable> {
         Box::new(self.clone())
     }
 }

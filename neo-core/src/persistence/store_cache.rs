@@ -2,9 +2,9 @@
 
 use super::{
     data_cache::{DataCache, DataCacheConfig, DataCacheError, DataCacheResult},
-    read_only_store::{IReadOnlyStore, IReadOnlyStoreGeneric},
+    read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric},
     store::IStore,
-    store_snapshot::IStoreSnapshot,
+    store_snapshot::StoreSnapshot,
     seek_direction::SeekDirection,
     track_state::TrackState,
 };
@@ -20,7 +20,7 @@ type StoreFindFn =
 pub struct StoreCache {
     data_cache: DataCache,
     store: Option<Arc<dyn IStore>>,
-    snapshot: Option<Arc<dyn IStoreSnapshot>>,
+    snapshot: Option<Arc<dyn StoreSnapshot>>,
 }
 
 impl StoreCache {
@@ -62,13 +62,13 @@ impl StoreCache {
     }
 
     /// Initializes a new instance of the StoreCache class with a snapshot.
-    pub fn new_from_snapshot(snapshot: Arc<dyn IStoreSnapshot>) -> Self {
+    pub fn new_from_snapshot(snapshot: Arc<dyn StoreSnapshot>) -> Self {
         Self::new_from_snapshot_with_config(snapshot, DataCacheConfig::default())
     }
 
     /// Initializes a new instance with a snapshot and custom cache configuration.
     pub fn new_from_snapshot_with_config(
-        snapshot: Arc<dyn IStoreSnapshot>,
+        snapshot: Arc<dyn StoreSnapshot>,
         config: DataCacheConfig,
     ) -> Self {
         let snapshot_for_get = snapshot.clone();
@@ -195,7 +195,7 @@ mod tests {
     use crate::persistence::providers::memory_store::MemoryStore;
     use crate::persistence::{
         store::{IStore, OnNewSnapshotDelegate},
-        write_store::IWriteStore,
+        write_store::WriteStore,
         storage::StorageError,
     };
     use std::any::Any;
@@ -203,7 +203,7 @@ mod tests {
     #[derive(Clone)]
     struct FailingStore;
 
-    impl IReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for FailingStore {
+    impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for FailingStore {
         fn try_get(&self, _key: &Vec<u8>) -> Option<Vec<u8>> {
             None
         }
@@ -217,7 +217,7 @@ mod tests {
         }
     }
 
-    impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for FailingStore {
+    impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for FailingStore {
         fn try_get(&self, _key: &StorageKey) -> Option<StorageItem> {
             None
         }
@@ -231,7 +231,7 @@ mod tests {
         }
     }
 
-    impl IWriteStore<Vec<u8>, Vec<u8>> for FailingStore {
+    impl WriteStore<Vec<u8>, Vec<u8>> for FailingStore {
         fn delete(&mut self, _key: Vec<u8>) -> crate::error::CoreResult<()> {
             Ok(())
         }
@@ -241,10 +241,10 @@ mod tests {
         }
     }
 
-    impl IReadOnlyStore for FailingStore {}
+    impl ReadOnlyStore for FailingStore {}
 
     impl IStore for FailingStore {
-        fn get_snapshot(&self) -> Arc<dyn IStoreSnapshot> {
+        fn get_snapshot(&self) -> Arc<dyn StoreSnapshot> {
             Arc::new(FailingSnapshot {
                 store: Arc::new(self.clone()),
             })
@@ -261,7 +261,7 @@ mod tests {
         store: Arc<dyn IStore>,
     }
 
-    impl IReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for FailingSnapshot {
+    impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for FailingSnapshot {
         fn try_get(&self, _key: &Vec<u8>) -> Option<Vec<u8>> {
             None
         }
@@ -275,7 +275,7 @@ mod tests {
         }
     }
 
-    impl IWriteStore<Vec<u8>, Vec<u8>> for FailingSnapshot {
+    impl WriteStore<Vec<u8>, Vec<u8>> for FailingSnapshot {
         fn delete(&mut self, _key: Vec<u8>) -> crate::error::CoreResult<()> {
             Ok(())
         }
@@ -285,7 +285,7 @@ mod tests {
         }
     }
 
-    impl IStoreSnapshot for FailingSnapshot {
+    impl StoreSnapshot for FailingSnapshot {
         fn store(&self) -> Arc<dyn IStore> {
             Arc::clone(&self.store)
         }
@@ -464,7 +464,7 @@ pub fn apply_tracked<T>(
     writer: &mut T,
 ) -> crate::error::CoreResult<()>
 where
-    T: super::write_store::IWriteStore<Vec<u8>, Vec<u8>> + ?Sized,
+    T: super::write_store::WriteStore<Vec<u8>, Vec<u8>> + ?Sized,
 {
     for (key, trackable) in tracked {
         match trackable.state {
@@ -478,9 +478,9 @@ where
     Ok(())
 }
 
-impl IReadOnlyStore for StoreCache {}
+impl ReadOnlyStore for StoreCache {}
 
-impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for StoreCache {
+impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for StoreCache {
     fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {
         self.get(key)
     }

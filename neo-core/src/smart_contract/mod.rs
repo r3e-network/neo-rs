@@ -64,7 +64,7 @@ pub use execution_context_state::ExecutionContextState;
 pub use find_options::FindOptions;
 pub use helper::Helper;
 pub use diagnostic::IDiagnostic;
-pub use interoperable::IInteroperable;
+pub use interoperable::Interoperable;
 pub use interop_descriptor::InteropDescriptor;
 pub use interop_parameter_descriptor::InteropParameterDescriptor;
 pub use json_serializer::JsonSerializer;

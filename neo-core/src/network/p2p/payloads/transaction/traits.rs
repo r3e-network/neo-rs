@@ -6,7 +6,7 @@ use super::*;
 use crate::error::CoreError;
 use neo_vm_rs::StackValue;
 
-impl IInventory for Transaction {
+impl Inventory for Transaction {
     fn inventory_type(&self) -> InventoryType {
         InventoryType::Transaction
     }
@@ -16,7 +16,7 @@ impl IInventory for Transaction {
     }
 }
 
-impl crate::IVerifiable for Transaction {
+impl crate::Verifiable for Transaction {
     /// Performs basic structural validation of the transaction.
     ///
     /// # Security Note
@@ -112,7 +112,7 @@ impl Transaction {
     }
 }
 
-impl IInteroperable for Transaction {
+impl Interoperable for Transaction {
     fn from_stack_item(&mut self, _stack_item: StackItem) -> Result<(), CoreError> {
         // This operation is not supported for Transaction.
         // The C# implementation throws NotSupportedException.
@@ -129,7 +129,7 @@ impl IInteroperable for Transaction {
         })
     }
 
-    fn clone_box(&self) -> Box<dyn IInteroperable> {
+    fn clone_box(&self) -> Box<dyn Interoperable> {
         Box::new(self.clone())
     }
 }

@@ -10,7 +10,7 @@ use crate::error::CoreResult as Result;
 use crate::neo_config::{MAX_SCRIPT_LENGTH, MAX_SCRIPT_SIZE};
 use crate::neo_io::serializable::helper::{get_var_size, get_var_size_str};
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use crate::smart_contract::interoperable::IInteroperable;
+use crate::smart_contract::interoperable::Interoperable;
 use crate::smart_contract::manifest::{
     ContractAbi, ContractGroup, ContractPermission, ContractPermissionDescriptor, WildCardContainer,
 };
@@ -470,7 +470,7 @@ impl Serializable for ContractManifest {
     }
 }
 
-impl IInteroperable for ContractManifest {
+impl Interoperable for ContractManifest {
     fn from_stack_item(&mut self, stack_item: StackItem) -> std::result::Result<(), Error> {
         self.from_stack_value(StackValue::try_from(stack_item).map_err(|error| {
             Error::invalid_format(format!(
@@ -487,7 +487,7 @@ impl IInteroperable for ContractManifest {
         })
     }
 
-    fn clone_box(&self) -> Box<dyn IInteroperable> {
+    fn clone_box(&self) -> Box<dyn Interoperable> {
         Box::new(self.clone())
     }
 }
@@ -717,7 +717,7 @@ fn parse_extra_bytes(bytes: &[u8]) -> Option<Value> {
 #[cfg(test)]
 mod manifest_extra_escape_tests {
     use super::*;
-    use crate::smart_contract::IInteroperable;
+    use crate::smart_contract::Interoperable;
     use neo_vm_rs::StackValue;
 
     /// Bug #10 regression — manifest `extra` JSON must use C# JavaScriptEncoder.Default
