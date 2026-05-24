@@ -3,9 +3,11 @@
 //! This module provides production-ready caching capabilities that match
 //! the C# Neo caching functionality exactly.
 
+use lru::LruCache as InnerLruCache;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::hash::Hash;
+use std::num::NonZeroUsize;
 use std::time::{Duration, Instant};
 /// Cache configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,12 +55,8 @@ where
     K: Clone + Eq + Hash,
     V: Clone,
 {
-    /// Maximum capacity
-    capacity: usize,
     /// Cache data
-    data: HashMap<K, V>,
-    /// Access order tracking
-    access_order: VecDeque<K>,
+    data: InnerLruCache<K, V>,
     /// Cache statistics
     stats: CacheStats,
     /// Enable statistics tracking
@@ -73,9 +71,7 @@ where
     /// Creates a new LRU cache with the specified capacity
     pub fn new(capacity: usize) -> Self {
         Self {
-            capacity,
-            data: HashMap::with_capacity(capacity),
-            access_order: VecDeque::with_capacity(capacity),
+            data: InnerLruCache::new(non_zero_capacity(capacity)),
             stats: CacheStats::default(),
             enable_stats: true,
         }
@@ -84,9 +80,7 @@ where
     /// Creates a new LRU cache with configuration
     pub fn with_config(config: &CacheConfig) -> Self {
         Self {
-            capacity: config.max_entries,
-            data: HashMap::with_capacity(config.max_entries),
-            access_order: VecDeque::with_capacity(config.max_entries),
+            data: InnerLruCache::new(non_zero_capacity(config.max_entries)),
             stats: CacheStats::default(),
             enable_stats: config.enable_stats,
         }
@@ -95,8 +89,6 @@ where
     /// Gets a value from the cache (production implementation)
     pub fn get(&mut self, key: &K) -> Option<V> {
         if let Some(value) = self.data.get(key).cloned() {
-            self.move_to_front(key);
-
             // Update statistics
             if self.enable_stats {
                 self.stats.hits += 1;
@@ -115,34 +107,20 @@ where
 
     /// Puts a value into the cache (production implementation)
     pub fn put(&mut self, key: K, value: V) {
-        if self.data.contains_key(&key) {
-            // Update existing entry
-            self.data.insert(key.clone(), value);
-            self.move_to_front(&key);
-        } else {
-            // Add new entry
-            if self.data.len() >= self.capacity {
-                // Evict least recently used
-                self.evict_lru();
-            }
+        let was_full = self.data.len() == self.data.cap().get();
+        let replaced_existing = self.data.put(key, value).is_some();
 
-            self.data.insert(key.clone(), value);
-            self.access_order.push_front(key);
-
-            if self.enable_stats {
-                self.stats.entries = self.data.len();
+        if self.enable_stats {
+            if was_full && !replaced_existing {
+                self.stats.evictions += 1;
             }
+            self.stats.entries = self.data.len();
         }
     }
 
     /// Removes a value from the cache
     pub fn remove(&mut self, key: &K) -> Option<V> {
-        if let Some(value) = self.data.remove(key) {
-            // Remove from access order
-            if let Some(pos) = self.access_order.iter().position(|k| k == key) {
-                self.access_order.remove(pos);
-            }
-
+        if let Some(value) = self.data.pop(key) {
             if self.enable_stats {
                 self.stats.entries = self.data.len();
             }
@@ -156,7 +134,6 @@ where
     /// Clears the cache
     pub fn clear(&mut self) {
         self.data.clear();
-        self.access_order.clear();
 
         if self.enable_stats {
             self.stats.entries = 0;
@@ -180,31 +157,12 @@ where
 
     /// Gets the cache capacity
     pub fn capacity(&self) -> usize {
-        self.capacity
+        self.data.cap().get()
     }
+}
 
-    /// Moves a key to the front of the access order
-    fn move_to_front(&mut self, key: &K) {
-        // Remove from current position
-        if let Some(pos) = self.access_order.iter().position(|k| k == key) {
-            self.access_order.remove(pos);
-        }
-
-        // Add to front
-        self.access_order.push_front(key.clone());
-    }
-
-    /// Evicts the least recently used entry
-    fn evict_lru(&mut self) {
-        if let Some(lru_key) = self.access_order.pop_back() {
-            self.data.remove(&lru_key);
-
-            if self.enable_stats {
-                self.stats.evictions += 1;
-                self.stats.entries = self.data.len();
-            }
-        }
-    }
+fn non_zero_capacity(capacity: usize) -> NonZeroUsize {
+    NonZeroUsize::new(capacity).unwrap_or_else(|| NonZeroUsize::new(1).expect("1 is non-zero"))
 }
 
 /// TTL Cache entry
@@ -511,7 +469,7 @@ mod tests {
             enable_stats: false,
         };
         let cache: LruCache<String, i32> = LruCache::with_config(&config);
-        assert_eq!(cache.capacity, 5);
+        assert_eq!(cache.capacity(), 5);
     }
 
     // ============================================================================
