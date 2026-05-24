@@ -1,0 +1,328 @@
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use neo_core::network::p2p::payloads::signer::Signer;
+use neo_core::network::p2p::payloads::witness::Witness;
+use neo_core::smart_contract::contract_parameter::ContractParameter;
+use neo_core::wallets::helper::Helper as WalletHelper;
+use neo_core::UInt160;
+use neo_json::{JArray, JObject, JToken, MAX_SAFE_INTEGER};
+use std::str::FromStr;
+use uuid::Uuid;
+
+use super::model::{Address, BlockHashOrIndex, ContractNameOrHashOrId, SignersAndWitnesses};
+use super::rpc_error::RpcError;
+use super::rpc_exception::RpcException;
+
+mod signers;
+#[cfg(test)]
+#[path = "tests.rs"]
+mod tests;
+
+use signers::parse_witness_scope;
+
+/// Context supplied when converting RPC parameters.
+#[derive(Debug, Clone, Copy)]
+pub struct ConversionContext {
+    pub address_version: u8,
+}
+
+impl ConversionContext {
+    pub const fn new(address_version: u8) -> Self {
+        Self { address_version }
+    }
+}
+
+/// Trait implemented by types that can be constructed from a JSON-RPC token.
+pub trait RpcConvertible: Sized {
+    fn from_token(token: &JToken, ctx: &ConversionContext) -> Result<Self, RpcException>;
+}
+
+pub struct ParameterConverter;
+
+impl ParameterConverter {
+    pub fn convert<T: RpcConvertible>(
+        token: &JToken,
+        ctx: &ConversionContext,
+    ) -> Result<T, RpcException> {
+        T::from_token(token, ctx)
+    }
+}
+
+impl RpcConvertible for String {
+    fn from_token(token: &JToken, _ctx: &ConversionContext) -> Result<Self, RpcException> {
+        expect_string(token, "Expected string value")
+    }
+}
+
+impl RpcConvertible for bool {
+    fn from_token(token: &JToken, _ctx: &ConversionContext) -> Result<Self, RpcException> {
+        Ok(token.as_boolean())
+    }
+}
+
+macro_rules! impl_numeric_convertible {
+    ($($ty:ty),+) => {
+        $(
+            impl RpcConvertible for $ty {
+                fn from_token(token: &JToken, _ctx: &ConversionContext) -> Result<Self, RpcException> {
+                    let value = numeric_from_token(token)?;
+                    if value.is_nan() || value.is_infinite() {
+                        return Err(invalid_params(format!(
+                            "Invalid numeric value: {}",
+                            token.to_string_value()
+                        )));
+                    }
+
+                    let min = <$ty>::MIN as f64;
+                    let max = <$ty>::MAX as f64;
+                    if value < min || value > max {
+                        return Err(invalid_params(format!("Numeric value out of range for {}: {}", stringify!($ty), value)));
+                    }
+
+                    if !matches!(stringify!($ty), "f32" | "f64") {
+                        let max_safe = MAX_SAFE_INTEGER as f64;
+                        if value < -max_safe || value > max_safe {
+                            return Err(invalid_params(format!(
+                                "Numeric value out of safe range for {}: {}",
+                                stringify!($ty),
+                                value
+                            )));
+                        }
+                        let rounded = value.round();
+                        if (value - rounded).abs() > f64::EPSILON {
+                            return Err(invalid_params(format!("Non-integer value for {}: {}", stringify!($ty), value)));
+                        }
+                        return Ok(rounded as $ty);
+                    }
+
+                    Ok(value as $ty)
+                }
+            }
+        )+
+    };
+}
+
+impl_numeric_convertible!(i8, u8, i16, u16, i32, u32, i64, u64, f64);
+
+impl RpcConvertible for Vec<u8> {
+    fn from_token(token: &JToken, _ctx: &ConversionContext) -> Result<Self, RpcException> {
+        let text = expect_string(token, "Expected Base64 string")?;
+        BASE64_STANDARD
+            .decode(text.trim())
+            .map_err(|_| invalid_params("Invalid Base64-encoded bytes"))
+    }
+}
+
+impl RpcConvertible for Address {
+    fn from_token(token: &JToken, ctx: &ConversionContext) -> Result<Self, RpcException> {
+        let text = expect_string(token, "Expected address string")?;
+        parse_address(&text, ctx.address_version)
+    }
+}
+
+impl RpcConvertible for Vec<Address> {
+    fn from_token(token: &JToken, ctx: &ConversionContext) -> Result<Self, RpcException> {
+        let array = expect_array(token)?;
+        let mut result = Self::with_capacity(array.count());
+        for (index, item) in array.children().iter().enumerate() {
+            let token = item
+                .as_ref()
+                .ok_or_else(|| invalid_params(format!("Null address entry at index {index}")))?;
+            result.push(<Address as RpcConvertible>::from_token(token, ctx)?);
+        }
+        Ok(result)
+    }
+}
+
+impl RpcConvertible for BlockHashOrIndex {
+    fn from_token(token: &JToken, _ctx: &ConversionContext) -> Result<Self, RpcException> {
+        match token {
+            JToken::Number(value) => {
+                if value.is_nan() || value.is_infinite() {
+                    return Err(invalid_params(format!(
+                        "Invalid block index value: {}",
+                        token.to_string_value()
+                    )));
+                }
+                let rounded = value.round();
+                if (value - rounded).abs() > f64::EPSILON {
+                    return Err(invalid_params(format!(
+                        "Invalid block index value: {}",
+                        token.to_string_value()
+                    )));
+                }
+                if rounded < 0.0 || rounded > f64::from(u32::MAX) {
+                    return Err(invalid_params(format!(
+                        "Invalid block index value: {}",
+                        token.to_string_value()
+                    )));
+                }
+                Ok(Self::from_index(rounded as u32))
+            }
+            JToken::String(text) => Self::try_parse(text)
+                .ok_or_else(|| invalid_params(format!("Invalid block hash or index: {text}"))),
+            _ => Err(invalid_params("Expected block hash or index string")),
+        }
+    }
+}
+
+impl RpcConvertible for ContractNameOrHashOrId {
+    fn from_token(token: &JToken, _ctx: &ConversionContext) -> Result<Self, RpcException> {
+        match token {
+            JToken::Number(value) => {
+                if value.is_nan() || value.is_infinite() {
+                    return Err(invalid_params(format!(
+                        "Invalid contract identifier: {}",
+                        token.to_string_value()
+                    )));
+                }
+                let rounded = value.round();
+                if (value - rounded).abs() > f64::EPSILON {
+                    return Err(invalid_params(format!(
+                        "Invalid contract identifier: {}",
+                        token.to_string_value()
+                    )));
+                }
+                if rounded < f64::from(i32::MIN) || rounded > f64::from(i32::MAX) {
+                    return Err(invalid_params(format!(
+                        "Invalid contract identifier: {}",
+                        token.to_string_value()
+                    )));
+                }
+                Ok(Self::from_id(rounded as i32))
+            }
+            JToken::String(text) => Self::try_parse(text)
+                .ok_or_else(|| invalid_params(format!("Invalid contract identifier: {text}"))),
+            _ => Err(invalid_params("Expected contract identifier string")),
+        }
+    }
+}
+
+impl RpcConvertible for Uuid {
+    fn from_token(token: &JToken, _ctx: &ConversionContext) -> Result<Self, RpcException> {
+        let text = expect_string(token, "Expected UUID string")?;
+        Self::from_str(text.trim()).map_err(|_| invalid_params(format!("Invalid UUID: {text}")))
+    }
+}
+
+impl RpcConvertible for SignersAndWitnesses {
+    fn from_token(token: &JToken, ctx: &ConversionContext) -> Result<Self, RpcException> {
+        signers::parse_signers_and_witnesses(token, ctx)
+    }
+}
+
+impl RpcConvertible for Vec<ContractParameter> {
+    fn from_token(token: &JToken, _ctx: &ConversionContext) -> Result<Self, RpcException> {
+        let array = expect_array(token)?;
+        let mut parameters = Self::with_capacity(array.count());
+        for (index, item) in array.children().iter().enumerate() {
+            let token = item.as_ref().ok_or_else(|| {
+                invalid_params(format!("Invalid contract parameter at index {index}"))
+            })?;
+            let value = jtoken_to_serde(token);
+            let parameter = ContractParameter::from_json(&value).map_err(|e| {
+                invalid_params(format!("Invalid contract parameter at index {index}: {e}"))
+            })?;
+            parameters.push(parameter);
+        }
+        Ok(parameters)
+    }
+}
+
+pub(super) fn parse_address(text: &str, address_version: u8) -> Result<Address, RpcException> {
+    let mut result = None;
+    if UInt160::try_parse(text, &mut result) {
+        if let Some(hash) = result {
+            return Ok(Address::new(hash, address_version));
+        }
+    }
+
+    WalletHelper::to_script_hash(text, address_version)
+        .map(|hash| Address::new(hash, address_version))
+        .map_err(|_| invalid_params(format!("Invalid address: {text}")))
+}
+
+pub(super) fn parse_uint160(text: &str) -> Result<UInt160, RpcException> {
+    let mut result = None;
+    if UInt160::try_parse(text, &mut result) {
+        if let Some(value) = result {
+            return Ok(value);
+        }
+    }
+    Err(invalid_params(format!("Invalid UInt160 value: {text}")))
+}
+
+/// Converts a `JToken` into a `serde_json::Value` for downstream APIs that expect serde JSON.
+pub(super) fn jtoken_to_serde(token: &JToken) -> serde_json::Value {
+    match token {
+        JToken::Null => serde_json::Value::Null,
+        JToken::Boolean(b) => serde_json::Value::Bool(*b),
+        JToken::Number(n) => serde_json::Number::from_f64(*n)
+            .map_or(serde_json::Value::Null, serde_json::Value::Number),
+        JToken::String(s) => serde_json::Value::String(s.clone()),
+        JToken::Array(arr) => serde_json::Value::Array(
+            arr.children()
+                .iter()
+                .map(|item| {
+                    item.as_ref()
+                        .map_or(serde_json::Value::Null, jtoken_to_serde)
+                })
+                .collect(),
+        ),
+        JToken::Object(obj) => {
+            let mut map = serde_json::Map::new();
+            for (key, value) in obj.iter() {
+                map.insert(
+                    key.clone(),
+                    value
+                        .as_ref()
+                        .map_or(serde_json::Value::Null, jtoken_to_serde),
+                );
+            }
+            serde_json::Value::Object(map)
+        }
+    }
+}
+
+pub(super) fn expect_array(token: &JToken) -> Result<&JArray, RpcException> {
+    match token {
+        JToken::Array(array) => Ok(array),
+        _ => Err(invalid_params("Expected JSON array")),
+    }
+}
+
+pub(super) fn expect_object(token: &JToken) -> Result<&JObject, RpcException> {
+    match token {
+        JToken::Object(obj) => Ok(obj),
+        _ => Err(invalid_params("Expected JSON object")),
+    }
+}
+
+pub(super) fn expect_string(
+    token: &JToken,
+    context: impl Into<String>,
+) -> Result<String, RpcException> {
+    token
+        .as_string()
+        .ok_or_else(|| invalid_params(context.into()))
+}
+
+pub(super) fn numeric_from_token(token: &JToken) -> Result<f64, RpcException> {
+    match token {
+        JToken::String(value) => {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                return Ok(0.0);
+            }
+            trimmed
+                .parse::<f64>()
+                .map_err(|_| invalid_params("Expected numeric value"))
+        }
+        _ => token
+            .as_number()
+            .ok_or_else(|| invalid_params("Expected numeric value")),
+    }
+}
+
+pub(super) fn invalid_params<T: Into<String>>(message: T) -> RpcException {
+    RpcException::from(RpcError::invalid_params().with_data(message.into()))
+}
