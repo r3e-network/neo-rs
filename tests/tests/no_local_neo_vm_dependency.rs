@@ -1778,12 +1778,9 @@ fn native_pure_data_states_project_through_neo_vm_rs_stack_value() {
         );
     }
 
-    let notary =
-        fs::read_to_string(workspace.join("neo-core/src/smart_contract/native/notary.rs")).unwrap();
-    let deposit_section = notary
-        .split("/// Serializes a Deposit")
-        .next()
-        .expect("Deposit section");
+    let deposit_section =
+        fs::read_to_string(workspace.join("neo-core/src/smart_contract/native/notary/deposit.rs"))
+            .unwrap();
     assert!(
         deposit_section.contains("use neo_vm_rs::StackValue;"),
         "Notary Deposit should import neo_vm_rs::StackValue directly for native data projection"
@@ -1827,7 +1824,7 @@ fn native_pure_data_states_project_through_neo_vm_rs_stack_value() {
         fs::read_to_string(workspace.join("neo-core/src/smart_contract/native/account_state.rs"))
             .unwrap();
     let gas_token =
-        fs::read_to_string(workspace.join("neo-core/src/smart_contract/native/gas_token.rs"))
+        fs::read_to_string(workspace.join("neo-core/src/smart_contract/native/gas_token/mod.rs"))
             .unwrap();
     assert!(
         account_state.contains("use neo_vm_rs::StackValue;"),
@@ -2125,11 +2122,11 @@ fn neo_token_committee_payloads_use_neo_vm_rs_stack_value() {
 fn token_management_states_project_through_neo_vm_rs_stack_value() {
     let workspace = workspace_root();
     let source =
-        read_source(workspace.join("neo-core/src/smart_contract/native/token_management/mod.rs"));
-    let state_section = source
-        .split("#[derive(Debug, Clone)]\npub struct TokenManagement")
-        .next()
-        .expect("token-management state section");
+        read_source(workspace.join("neo-core/src/smart_contract/native/token_management/state.rs"));
+    let storage = read_source(
+        workspace.join("neo-core/src/smart_contract/native/token_management/storage.rs"),
+    );
+    let state_section = source.as_str();
 
     assert!(
         source.contains("use neo_vm_rs::StackValue;"),
@@ -2168,20 +2165,20 @@ fn token_management_states_project_through_neo_vm_rs_stack_value() {
         "TokenManagement state to_stack_item paths should adapt from direct StackValue projections"
     );
     assert!(
-        source.contains("BinarySerializer::deserialize_stack_value_with_limits"),
+        storage.contains("BinarySerializer::deserialize_stack_value_with_limits"),
         "TokenManagement persisted state reads should deserialize directly into \
          neo_vm_rs::StackValue"
     );
     assert!(
-        source.contains("BinarySerializer::serialize_stack_value"),
+        storage.contains("BinarySerializer::serialize_stack_value"),
         "TokenManagement persisted state writes should serialize direct StackValue projections"
     );
     assert!(
-        !source.contains("BinarySerializer::deserialize("),
+        !storage.contains("BinarySerializer::deserialize("),
         "TokenManagement should not deserialize persisted state through local StackItem"
     );
     assert!(
-        !source.contains(".to_stack_item()?"),
+        !storage.contains(".to_stack_item()?"),
         "TokenManagement should not bounce persisted state writes through local StackItem callers"
     );
     for local_builder in [
@@ -2202,11 +2199,10 @@ fn token_management_states_project_through_neo_vm_rs_stack_value() {
 #[test]
 fn role_management_designated_nodes_storage_uses_neo_vm_rs_stack_value() {
     let workspace = workspace_root();
-    let source =
-        fs::read_to_string(
-            workspace.join("neo-core/src/smart_contract/native/role_management/storage.rs"),
-        )
-        .unwrap();
+    let source = fs::read_to_string(
+        workspace.join("neo-core/src/smart_contract/native/role_management/storage.rs"),
+    )
+    .unwrap();
     let serialization_section = source
         .split("/// Serializes public keys to bytes")
         .nth(1)
@@ -2543,8 +2539,8 @@ fn stack_item_primitive_truthiness_reuses_neo_vm_rs_rules() {
         fs::read_to_string(workspace.join("neo-core/src/neo_vm/stack_item/stack_item.rs")).unwrap();
 
     assert!(
-        stack_item.contains("neo_vm_rs::semantics::comparison::nz"),
-        "StackItem primitive truthiness should reuse neo-vm-rs truthiness rules"
+        stack_item.contains("neo_vm_rs::semantics::comparison::boolean_value"),
+        "StackItem primitive truthiness should reuse neo-vm-rs StackValue truthiness rules"
     );
     assert!(
         stack_item.contains("StackValue::ByteString(b.clone())"),
@@ -2687,15 +2683,15 @@ fn boolean_numeric_opcodes_reuse_neo_vm_rs_comparison_semantics() {
         fs::read_to_string(workspace.join("neo-core/src/neo_vm/jump_table/numeric.rs")).unwrap();
 
     assert!(
-        numeric.contains("neo_vm_rs::semantics::comparison::bool_not"),
-        "NOT should reuse neo-vm-rs boolean comparison semantics after local truthiness conversion"
+        numeric.contains("comparison::not_value(&value)"),
+        "NOT should reuse neo-vm-rs strict boolean comparison semantics through StackValue"
     );
     assert!(
-        numeric.contains("neo_vm_rs::semantics::comparison::bool_and"),
+        numeric.contains("comparison::bool_and(left, right)"),
         "BOOLAND should reuse neo-vm-rs boolean comparison semantics after local truthiness conversion"
     );
     assert!(
-        numeric.contains("neo_vm_rs::semantics::comparison::bool_or"),
+        numeric.contains("comparison::bool_or(left, right)"),
         "BOOLOR should reuse neo-vm-rs boolean comparison semantics after local truthiness conversion"
     );
     assert!(
@@ -2719,12 +2715,12 @@ fn nz_reuses_neo_vm_rs_truthiness_semantics() {
         fs::read_to_string(workspace.join("neo-core/src/neo_vm/jump_table/numeric.rs")).unwrap();
 
     assert!(
-        numeric.contains("neo_vm_rs::semantics::comparison::nz"),
-        "NZ should reuse neo-vm-rs truthiness semantics after adapting the local integer"
+        numeric.contains("comparison::nz_value(&value)"),
+        "NZ should reuse neo-vm-rs numeric nonzero semantics through StackValue"
     );
     assert!(
-        numeric.contains("StackValue::BigInteger(value.to_signed_bytes_le())"),
-        "NZ should preserve local BigInt width by adapting through StackValue::BigInteger"
+        numeric.contains("let value = value_from_stack_item(ctx.pop()?)?;"),
+        "NZ should adapt the local stack item into a neo-vm-rs StackValue before evaluation"
     );
     assert!(
         !numeric.contains("StackItem::from_bool(!value.is_zero())"),
@@ -2739,18 +2735,17 @@ fn sign_reuses_neo_vm_rs_i64_semantics_with_bigint_fallback() {
         fs::read_to_string(workspace.join("neo-core/src/neo_vm/jump_table/numeric.rs")).unwrap();
 
     assert!(
-        numeric.contains("neo_vm_rs::semantics::arithmetic::sign_i64"),
-        "SIGN should reuse neo-vm-rs arithmetic sign semantics for values that fit in i64"
+        numeric.contains("unary_numeric(engine, arithmetic::sign_value)"),
+        "SIGN should reuse neo-vm-rs StackValue arithmetic sign semantics"
     );
     assert!(
-        numeric.contains("value.to_i64()"),
-        "SIGN should only delegate through the neo-vm-rs i64 helper after checking the \
-         local BigInt fits in i64"
+        numeric.contains("fn value_from_stack_item(item: StackItem) -> VmResult<StackValue>"),
+        "SIGN should adapt local VM values at the StackValue boundary"
     );
     assert!(
-        numeric.contains("value.sign()"),
-        "SIGN must keep a BigInt fallback so wide VM integers preserve local 32-byte \
-         integer semantics"
+        !numeric.contains("value.sign()"),
+        "SIGN should not keep a local BigInt sign fallback after neo-vm-rs owns BigInt \
+         StackValue semantics"
     );
 
     assert_eq!(execute_sign(BigInt::from(i64::MIN)), BigInt::from(-1));
@@ -2769,22 +2764,21 @@ fn sqrt_reuses_neo_vm_rs_i64_semantics_with_bigint_fallback() {
         fs::read_to_string(workspace.join("neo-core/src/neo_vm/jump_table/numeric.rs")).unwrap();
 
     assert!(
-        numeric.contains("neo_vm_rs::semantics::arithmetic::sqrt_i64"),
-        "SQRT should reuse neo-vm-rs arithmetic sqrt semantics when the operand fits in i64"
+        numeric.contains("unary_numeric(engine, arithmetic::sqrt_value)"),
+        "SQRT should reuse neo-vm-rs StackValue arithmetic sqrt semantics"
     );
     assert!(
-        numeric.contains("value.to_i64()"),
-        "SQRT should only delegate through neo-vm-rs after checking the local BigInt \
-         operand fits in i64"
+        numeric.contains("fn value_from_stack_item(item: StackItem) -> VmResult<StackValue>"),
+        "SQRT should adapt local VM values at the StackValue boundary"
     );
     assert!(
-        numeric.contains("value.is_negative()"),
-        "SQRT must keep the local negative-value guard"
+        !numeric.contains("value.is_negative()"),
+        "SQRT should not keep a local negative-value guard after neo-vm-rs owns the rule"
     );
     assert!(
-        numeric.contains("integer_sqrt(&value)"),
-        "SQRT must keep the BigInt fallback so wide VM integers preserve local 32-byte \
-         integer semantics"
+        !numeric.contains("integer_sqrt(&value)"),
+        "SQRT should not keep a local BigInt fallback after neo-vm-rs owns BigInt \
+         StackValue semantics"
     );
 
     assert_eq!(
@@ -2803,24 +2797,23 @@ fn checked_unary_arithmetic_reuses_neo_vm_rs_i64_semantics_with_bigint_fallback(
     let numeric =
         fs::read_to_string(workspace.join("neo-core/src/neo_vm/jump_table/numeric.rs")).unwrap();
 
-    for helper in ["inc_i64", "dec_i64", "negate_i64", "abs_i64"] {
+    for helper in ["inc_value", "dec_value", "negate_value", "abs_value"] {
         assert!(
-            numeric.contains(&format!("neo_vm_rs::semantics::arithmetic::{helper}")),
-            "checked unary arithmetic should reuse neo-vm-rs::{helper} when the local \
-             BigInt operation is representable as i64"
+            numeric.contains(&format!("unary_numeric(engine, arithmetic::{helper})")),
+            "checked unary arithmetic should reuse neo-vm-rs StackValue helper {helper}"
         );
     }
     for guard in ["checked_add", "checked_sub", "checked_neg", "checked_abs"] {
         assert!(
-            numeric.contains(guard),
-            "checked unary arithmetic must guard neo-vm-rs wrapping helpers with \
-             local checked arithmetic"
+            !numeric.contains(guard),
+            "checked unary arithmetic should not keep local checked {guard} fallbacks after \
+             neo-vm-rs owns BigInt StackValue semantics"
         );
     }
     assert!(
-        numeric.matches("check_bigint_size(&result)?").count() >= 5,
-        "checked unary arithmetic must keep BigInt fallbacks so local 32-byte integer \
-         semantics are preserved when neo-vm-rs i64 helpers would wrap"
+        !numeric.contains("check_bigint_size(&result)?"),
+        "checked unary arithmetic should not keep local BigInt fallback sizing after \
+         neo-vm-rs owns StackValue integer result sizing"
     );
 
     assert_eq!(
@@ -2879,11 +2872,16 @@ fn checked_binary_arithmetic_reuses_neo_vm_rs_i64_semantics_with_bigint_fallback
     let numeric =
         fs::read_to_string(workspace.join("neo-core/src/neo_vm/jump_table/numeric.rs")).unwrap();
 
-    for helper in ["add_i64", "sub_i64", "mul_i64", "div_i64", "modulo_i64"] {
+    for helper in [
+        "add_values",
+        "sub_values",
+        "mul_values",
+        "div_values",
+        "modulo_values",
+    ] {
         assert!(
-            numeric.contains(&format!("neo_vm_rs::semantics::arithmetic::{helper}")),
-            "checked binary arithmetic should reuse neo-vm-rs::{helper} when the local \
-             BigInt operation is representable as i64"
+            numeric.contains(&format!("binary_numeric(engine, arithmetic::{helper})")),
+            "checked binary arithmetic should reuse neo-vm-rs StackValue helper {helper}"
         );
     }
     for guard in [
@@ -2894,15 +2892,15 @@ fn checked_binary_arithmetic_reuses_neo_vm_rs_i64_semantics_with_bigint_fallback
         "checked_rem",
     ] {
         assert!(
-            numeric.contains(guard),
-            "checked binary arithmetic must guard neo-vm-rs wrapping helpers with \
-             local checked arithmetic"
+            !numeric.contains(guard),
+            "checked binary arithmetic should not keep local checked {guard} fallbacks after \
+             neo-vm-rs owns BigInt StackValue semantics"
         );
     }
     assert!(
-        numeric.matches("check_bigint_size(&result)?").count() >= 8,
-        "checked binary arithmetic must keep BigInt fallbacks so local 32-byte integer \
-         semantics are preserved when neo-vm-rs i64 helpers would wrap"
+        !numeric.contains("check_bigint_size(&result)?"),
+        "checked binary arithmetic should not keep local BigInt fallback sizing after \
+         neo-vm-rs owns StackValue integer result sizing"
     );
 
     assert_eq!(
@@ -2976,20 +2974,20 @@ fn pow_and_modmul_reuse_neo_vm_rs_i64_semantics_with_bigint_fallback() {
     let numeric =
         fs::read_to_string(workspace.join("neo-core/src/neo_vm/jump_table/numeric.rs")).unwrap();
 
-    for helper in ["pow_i64", "modmul_i64"] {
+    for helper in ["pow_values", "modmul_values"] {
         assert!(
-            numeric.contains(&format!("neo_vm_rs::semantics::arithmetic::{helper}")),
-            "POW/MODMUL should reuse neo-vm-rs::{helper} when operands fit the helper semantics"
+            numeric.contains(&format!("arithmetic::{helper}")),
+            "POW/MODMUL should reuse neo-vm-rs StackValue helper {helper}"
         );
     }
     assert!(
-        numeric.contains("checked_pow"),
-        "POW must guard neo-vm-rs wrapping pow with checked i64 arithmetic"
+        numeric.contains(".assert_shift(exponent_i32)"),
+        "POW must keep the local execution-limit guard before delegating to neo-vm-rs"
     );
     assert!(
-        numeric.contains("a.pow(exponent_i32 as u32)") && numeric.contains("(a * b) % modulus"),
-        "POW/MODMUL must keep BigInt fallbacks so wide VM integers preserve local \
-         32-byte integer semantics"
+        !numeric.contains("a.pow(exponent_i32 as u32)") && !numeric.contains("(a * b) % modulus"),
+        "POW/MODMUL should not keep local BigInt fallbacks after neo-vm-rs owns \
+         StackValue integer semantics"
     );
 
     assert_eq!(
@@ -3034,21 +3032,20 @@ fn modpow_reuses_neo_vm_rs_i64_semantics_with_bigint_and_inverse_fallback() {
         fs::read_to_string(workspace.join("neo-core/src/neo_vm/jump_table/numeric.rs")).unwrap();
 
     assert!(
-        numeric.contains("neo_vm_rs::semantics::arithmetic::modpow_i64"),
-        "MODPOW should reuse neo-vm-rs::modpow_i64 when operands fit the helper semantics"
+        numeric.contains("ternary_numeric(engine, arithmetic::modpow_values)"),
+        "MODPOW should reuse neo-vm-rs StackValue modular exponentiation semantics"
     );
     assert!(
-        numeric.contains("(base.to_i64(), exponent.to_i64(), modulus.to_i64())"),
-        "MODPOW should only delegate through neo-vm-rs after checking operands fit in i64"
+        numeric.contains("fn ternary_numeric("),
+        "MODPOW should delegate through the shared StackValue ternary adapter"
     );
     assert!(
-        numeric.contains("modulus.is_positive()"),
-        "MODPOW must keep local BigInt semantics for non-positive modulus cases instead of \
-         adopting neo-vm-rs i64 remainder behavior broadly"
+        !numeric.contains("modulus.is_positive()"),
+        "MODPOW should not keep local modulus sign handling after neo-vm-rs owns the rule"
     );
     assert!(
-        numeric.contains("mod_inverse(&base, &modulus)?") && numeric.contains("base.modpow"),
-        "MODPOW must preserve local modular-inverse handling and BigInt fallback"
+        !numeric.contains("mod_inverse(&base, &modulus)?") && !numeric.contains("base.modpow"),
+        "MODPOW should not keep local modular-inverse or BigInt fallback logic"
     );
 
     assert_eq!(
@@ -3089,26 +3086,25 @@ fn shift_opcodes_reuse_neo_vm_rs_i64_semantics_with_bigint_fallback() {
     let numeric =
         fs::read_to_string(workspace.join("neo-core/src/neo_vm/jump_table/numeric.rs")).unwrap();
 
-    for helper in ["shl_i64", "shr_i64"] {
+    for helper in ["shl_value", "shr_value"] {
         assert!(
-            numeric.contains(&format!("neo_vm_rs::semantics::arithmetic::{helper}")),
-            "SHL/SHR should reuse neo-vm-rs::{helper} when operands fit the helper semantics"
+            numeric.contains(&format!("shift(engine, arithmetic::{helper}")),
+            "SHL/SHR should reuse neo-vm-rs StackValue helper {helper}"
         );
     }
     assert!(
-        numeric.contains("result.to_i64()"),
-        "SHL/SHR should only delegate through neo-vm-rs after checking the local \
-         BigInt result still fits in i64"
+        numeric.contains(".assert_shift(shift_i32)"),
+        "SHL/SHR should keep local execution-limit validation before delegating"
     );
     assert!(
-        numeric.contains("shift_i32 < 64"),
-        "SHL/SHR must keep local max_shift=256 behavior instead of adopting \
-         neo-vm-rs's narrower i64 shift range"
+        !numeric.contains("shift_i32 < 64"),
+        "SHL/SHR should not keep the old i64-helper-specific shift range branch"
     );
     assert!(
-        numeric.contains("a << (shift_i32 as u32)") && numeric.contains("a >> (shift_i32 as u32)"),
-        "SHL/SHR must keep BigInt fallbacks so wide VM integers preserve local \
-         32-byte integer semantics"
+        !numeric.contains("a << (shift_i32 as u32)")
+            && !numeric.contains("a >> (shift_i32 as u32)"),
+        "SHL/SHR should not keep local BigInt fallbacks after neo-vm-rs owns \
+         StackValue integer semantics"
     );
 
     assert_eq!(
@@ -3146,23 +3142,22 @@ fn min_max_reuse_neo_vm_rs_i64_semantics_with_bigint_fallback() {
         fs::read_to_string(workspace.join("neo-core/src/neo_vm/jump_table/numeric.rs")).unwrap();
 
     assert!(
-        numeric.contains("neo_vm_rs::semantics::arithmetic::min_i64"),
-        "MIN should reuse neo-vm-rs arithmetic min semantics when both operands fit in i64"
+        numeric.contains("binary_numeric(engine, arithmetic::min_values)"),
+        "MIN should reuse neo-vm-rs StackValue arithmetic min semantics"
     );
     assert!(
-        numeric.contains("neo_vm_rs::semantics::arithmetic::max_i64"),
-        "MAX should reuse neo-vm-rs arithmetic max semantics when both operands fit in i64"
+        numeric.contains("binary_numeric(engine, arithmetic::max_values)"),
+        "MAX should reuse neo-vm-rs StackValue arithmetic max semantics"
     );
     assert!(
-        numeric.matches(".to_i64()").count() >= 2,
-        "MIN/MAX should only delegate through neo-vm-rs after checking both local \
-         BigInt operands fit in i64"
+        numeric.contains("fn binary_numeric("),
+        "MIN/MAX should delegate through the shared StackValue binary adapter"
     );
     assert!(
-        numeric.contains("if a < b { a } else { b }")
-            && numeric.contains("if a > b { a } else { b }"),
-        "MIN/MAX must keep BigInt fallbacks so wide VM integers preserve local 32-byte \
-         integer semantics"
+        !numeric.contains("if a < b { a } else { b }")
+            && !numeric.contains("if a > b { a } else { b }"),
+        "MIN/MAX should not keep local BigInt fallbacks after neo-vm-rs owns \
+         StackValue integer semantics"
     );
 
     assert_eq!(
@@ -3205,18 +3200,17 @@ fn within_reuses_neo_vm_rs_i64_semantics_with_bigint_fallback() {
         fs::read_to_string(workspace.join("neo-core/src/neo_vm/jump_table/numeric.rs")).unwrap();
 
     assert!(
-        numeric.contains("neo_vm_rs::semantics::arithmetic::within_i64"),
-        "WITHIN should reuse neo-vm-rs arithmetic range semantics when all operands fit in i64"
+        numeric.contains("arithmetic::within_values(value, lower, upper)"),
+        "WITHIN should reuse neo-vm-rs StackValue range semantics"
     );
     assert!(
-        numeric.contains("(x.to_i64(), a.to_i64(), b.to_i64())"),
-        "WITHIN should only delegate through neo-vm-rs after checking all local BigInt \
-         operands fit in i64"
+        numeric.contains("let value = value_from_stack_item(ctx.pop()?)?;"),
+        "WITHIN should adapt local VM values at the StackValue boundary"
     );
     assert!(
-        numeric.contains("a <= x && x < b"),
-        "WITHIN must keep the BigInt fallback so wide VM integers preserve local 32-byte \
-         integer semantics"
+        !numeric.contains("a <= x && x < b"),
+        "WITHIN should not keep a local BigInt fallback after neo-vm-rs owns \
+         StackValue integer semantics"
     );
 
     assert!(execute_within(
@@ -3248,29 +3242,31 @@ fn numeric_comparisons_reuse_neo_vm_rs_i64_semantics_with_bigint_fallback() {
         fs::read_to_string(workspace.join("neo-core/src/neo_vm/jump_table/numeric.rs")).unwrap();
 
     for helper in [
-        "less_than_i64",
-        "less_or_equal_i64",
-        "greater_than_i64",
-        "greater_or_equal_i64",
-        "num_equal_i64",
-        "num_not_equal_i64",
+        "less_than_values",
+        "less_or_equal_values",
+        "greater_than_values",
+        "greater_or_equal_values",
+        "num_equal_values",
+        "num_not_equal_values",
     ] {
         assert!(
-            numeric.contains(&format!("neo_vm_rs::semantics::comparison::{helper}")),
-            "numeric comparisons should reuse neo-vm-rs::{helper} when operands fit in i64"
+            numeric.contains(&format!("comparison::{helper}")),
+            "numeric comparisons should reuse neo-vm-rs StackValue helper {helper}"
         );
     }
     assert!(
-        numeric.contains("(a_int.to_i64(), b_int.to_i64())"),
-        "numeric comparisons should only delegate through neo-vm-rs after checking both \
-         local BigInt operands fit in i64"
+        numeric.contains("fn compare_with_null(")
+            && numeric.contains("fn numeric_equality(")
+            && numeric.contains("let left = value_from_stack_item(left)?;"),
+        "numeric comparisons should preserve local null policy and otherwise adapt through \
+         StackValue"
     );
     assert!(
-        numeric.contains("cmp(&a_int, &b_int)")
-            && numeric.contains("a_int == b_int")
-            && numeric.contains("a_int != b_int"),
-        "numeric comparisons must keep BigInt fallbacks so wide VM integers preserve \
-         local 32-byte integer semantics"
+        !numeric.contains("cmp(&a_int, &b_int)")
+            && !numeric.contains("a_int == b_int")
+            && !numeric.contains("a_int != b_int"),
+        "numeric comparisons should not keep local BigInt fallback comparisons after \
+         neo-vm-rs owns StackValue integer semantics"
     );
 
     assert!(execute_binary_bool(
@@ -3336,26 +3332,26 @@ fn bitwise_opcodes_reuse_neo_vm_rs_i64_semantics_with_bigint_fallback() {
         fs::read_to_string(workspace.join("neo-core/src/neo_vm/jump_table/bitwisee.rs")).unwrap();
 
     for helper in [
-        "bitwise_not_i64",
-        "bitwise_and_i64",
-        "bitwise_or_i64",
-        "bitwise_xor_i64",
+        "invert_value",
+        "bitwise_and_values",
+        "bitwise_or_values",
+        "bitwise_xor_values",
     ] {
         assert!(
-            bitwise.contains(&format!("neo_vm_rs::semantics::arithmetic::{helper}")),
-            "bitwise opcode handlers should reuse neo-vm-rs::{helper} for i64 operands"
+            bitwise.contains(&format!("arithmetic::{helper}")),
+            "bitwise opcode handlers should reuse neo-vm-rs StackValue helper {helper}"
         );
     }
     assert!(
-        bitwise.contains("x.to_i64()") && bitwise.contains("(a.to_i64(), b.to_i64())"),
-        "bitwise opcode handlers should only delegate through neo-vm-rs after checking \
-         local BigInt operands fit in i64"
+        bitwise.contains("fn value_from_stack_item(item: StackItem) -> VmResult<StackValue>")
+            && bitwise.contains("fn binary_bitwise("),
+        "bitwise opcode handlers should adapt local operands through StackValue"
     );
     assert!(
-        bitwise.contains("StackItem::from_int(!x)")
-            && bitwise.contains("StackItem::from_int(bigint_op(a, b))"),
-        "bitwise opcode handlers must keep BigInt fallbacks so wide VM integers preserve \
-         local integer semantics"
+        !bitwise.contains("StackItem::from_int(!x)")
+            && !bitwise.contains("StackItem::from_int(bigint_op(a, b))"),
+        "bitwise opcode handlers should not keep local BigInt fallbacks after neo-vm-rs \
+         owns StackValue integer semantics"
     );
 
     assert_eq!(
