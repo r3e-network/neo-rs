@@ -357,35 +357,72 @@ impl BaseNativeContract {
     }
 }
 
-/// Macro to help implement native contracts.
+/// Macro to generate boilerplate `NativeContract` method bodies.
+///
+/// Place this inside an `impl NativeContract for YourType { ... }` block.
+/// It expands to definitions for `hash()`, `name()`, `methods()`, `invoke()`
+/// (delegating to `self.invoke_method`), and `as_any()`.
+///
+/// # Forms
+///
+/// - **Field hash**: `impl_native_contract!(hash_field, "Name", methods_field);`
+///   The hash is read from `self.hash_field`.
+/// - **Expr hash**: `impl_native_contract!(expr, "Name", methods_field);`
+///   The hash is the given expression.
 #[macro_export]
 macro_rules! impl_native_contract {
-    ($contract:ty, $hash:expr, $name:expr, $methods:expr) => {
-        impl NativeContract for $contract {
-            fn hash(&self) -> UInt160 {
-                $hash
-            }
+    // Arm 1: hash is a struct field (ident) — generates `self.$hash_field`
+    ($hash_field:ident, $name:expr, $methods_field:ident) => {
+        fn hash(&self) -> $crate::UInt160 {
+            self.$hash_field
+        }
 
-            fn name(&self) -> &str {
-                $name
-            }
+        fn name(&self) -> &str {
+            $name
+        }
 
-            fn methods(&self) -> &[NativeMethod] {
-                &$methods
-            }
+        fn methods(&self) -> &[$crate::smart_contract::native::NativeMethod] {
+            &self.$methods_field
+        }
 
-            fn invoke(
-                &self,
-                engine: &mut ApplicationEngine,
-                method: &str,
-                args: &[Vec<u8>],
-            ) -> Result<Vec<u8>> {
-                self.invoke_method(engine, method, args)
-            }
+        fn invoke(
+            &self,
+            engine: &mut $crate::smart_contract::application_engine::ApplicationEngine,
+            method: &str,
+            args: &[::std::vec::Vec<u8>],
+        ) -> $crate::error::CoreResult<::std::vec::Vec<u8>> {
+            self.invoke_method(engine, method, args)
+        }
 
-            fn as_any(&self) -> &dyn Any {
-                self
-            }
+        fn as_any(&self) -> &dyn ::std::any::Any {
+            self
+        }
+    };
+    // Arm 2: hash is an arbitrary expression
+    ($hash:expr, $name:expr, $methods_field:ident) => {
+        fn hash(&self) -> $crate::UInt160 {
+            $hash
+        }
+
+        fn name(&self) -> &str {
+            $name
+        }
+
+        fn methods(&self) -> &[$crate::smart_contract::native::NativeMethod] {
+            &self.$methods_field
+        }
+
+        fn invoke(
+            &self,
+            engine: &mut $crate::smart_contract::application_engine::ApplicationEngine,
+            method: &str,
+            args: &[::std::vec::Vec<u8>],
+        ) -> $crate::error::CoreResult<::std::vec::Vec<u8>> {
+            self.invoke_method(engine, method, args)
+        }
+
+        fn as_any(&self) -> &dyn ::std::any::Any {
+            self
         }
     };
 }

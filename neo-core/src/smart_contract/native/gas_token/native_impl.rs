@@ -1,33 +1,22 @@
 use super::GasToken;
 use crate::error::{CoreError, CoreResult};
+use crate::impl_native_contract;
 use crate::persistence::i_read_only_store::IReadOnlyStoreGeneric;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::manifest::ContractEventDescriptor;
 use crate::smart_contract::native::fungible_token::PREFIX_ACCOUNT as ACCOUNT_PREFIX;
 use crate::smart_contract::native::{
-    LedgerContract, NativeContract, NativeHelpers, NativeMethod, NeoToken, PolicyContract,
+    LedgerContract, NativeContract, NativeHelpers, NeoToken, PolicyContract,
 };
 use crate::smart_contract::storage_key::StorageKey;
-use crate::UInt160;
 use num_bigint::BigInt;
-use std::any::Any;
 
 impl NativeContract for GasToken {
+    impl_native_contract!(*super::GAS_HASH, Self::NAME, methods);
+
     fn id(&self) -> i32 {
         Self::ID
-    }
-
-    fn hash(&self) -> UInt160 {
-        *super::GAS_HASH
-    }
-
-    fn name(&self) -> &str {
-        Self::NAME
-    }
-
-    fn methods(&self) -> &[NativeMethod] {
-        &self.methods
     }
 
     fn is_active(&self, _settings: &ProtocolSettings, _block_height: u32) -> bool {
@@ -65,21 +54,6 @@ impl NativeContract for GasToken {
         self.mint(engine, &account, &amount, false)
     }
 
-    fn invoke(
-        &self,
-        engine: &mut ApplicationEngine,
-        method: &str,
-        args: &[Vec<u8>],
-    ) -> CoreResult<Vec<u8>> {
-        self.invoke_method(engine, method, args)
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    /// OnPersist: Burns system+network fees from senders, mints network fees to primary validator.
-    /// Matches C# GasToken.OnPersistAsync exactly.
     fn on_persist(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
         let block = engine
             .persisting_block()

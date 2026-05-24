@@ -5,6 +5,7 @@
 
 use crate::error::CoreError;
 use crate::error::CoreResult;
+use crate::impl_native_contract;
 use crate::hardfork::Hardfork;
 use crate::persistence::seek_direction::SeekDirection;
 use crate::protocol_settings::ProtocolSettings;
@@ -20,7 +21,6 @@ use num_bigint::BigInt;
 use num_traits::Signed;
 use num_traits::ToPrimitive;
 use num_traits::Zero;
-use std::any::Any;
 
 mod events;
 mod ids;
@@ -62,27 +62,21 @@ impl Default for TokenManagement {
 }
 
 impl NativeContract for TokenManagement {
+    impl_native_contract!(
+        UInt160::from([
+            0xae, 0x00, 0xc5, 0x7d, 0xae, 0xb2, 0x0f, 0x9b, 0x65, 0x4f, 0x32, 0x65, 0xa9, 0x18,
+            0xf4, 0x4a, 0x8a, 0x40, 0xe0, 0x49,
+        ]),
+        "TokenManagement",
+        methods
+    );
+
     fn id(&self) -> i32 {
         ID
     }
 
-    fn hash(&self) -> UInt160 {
-        UInt160::from([
-            0xae, 0x00, 0xc5, 0x7d, 0xae, 0xb2, 0x0f, 0x9b, 0x65, 0x4f, 0x32, 0x65, 0xa9, 0x18,
-            0xf4, 0x4a, 0x8a, 0x40, 0xe0, 0x49,
-        ])
-    }
-
-    fn name(&self) -> &str {
-        "TokenManagement"
-    }
-
     fn active_in(&self) -> Option<Hardfork> {
         Some(Hardfork::HfFaun)
-    }
-
-    fn methods(&self) -> &[NativeMethod] {
-        &self.methods
     }
 
     fn supported_standards(&self, _settings: &ProtocolSettings, _block_height: u32) -> Vec<String> {
@@ -91,19 +85,6 @@ impl NativeContract for TokenManagement {
 
     fn activations(&self) -> Vec<Hardfork> {
         vec![Hardfork::HfFaun]
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn invoke(
-        &self,
-        engine: &mut ApplicationEngine,
-        method: &str,
-        args: &[Vec<u8>],
-    ) -> CoreResult<Vec<u8>> {
-        self.invoke_method(engine, method, args)
     }
 }
 

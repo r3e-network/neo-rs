@@ -21,7 +21,6 @@ use neo_primitives::TransactionAttributeType;
 use neo_vm_rs::{ExecutionEngineLimits, StackValue};
 use num_bigint::{BigInt, Sign};
 use num_traits::{ToPrimitive, Zero};
-use std::any::Any;
 
 /// Whitelisted fee contract info.
 #[derive(Debug, Clone, PartialEq, Eq)]

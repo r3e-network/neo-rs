@@ -5,6 +5,7 @@
 
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::hardfork::Hardfork;
+use crate::impl_native_contract;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::manifest::ContractEventDescriptor;
 use crate::smart_contract::native::{LedgerContract, NativeContract, NativeMethod, Role};
@@ -228,20 +229,10 @@ impl RoleManagement {
 }
 
 impl NativeContract for RoleManagement {
+    impl_native_contract!(hash, "RoleManagement", methods);
+
     fn id(&self) -> i32 {
         self.id
-    }
-
-    fn hash(&self) -> UInt160 {
-        self.hash
-    }
-
-    fn name(&self) -> &str {
-        "RoleManagement"
-    }
-
-    fn methods(&self) -> &[NativeMethod] {
-        &self.methods
     }
 
     fn events(
@@ -254,19 +245,6 @@ impl NativeContract for RoleManagement {
 
     fn activations(&self) -> Vec<Hardfork> {
         vec![Hardfork::HfEchidna]
-    }
-
-    fn invoke(
-        &self,
-        engine: &mut ApplicationEngine,
-        method: &str,
-        args: &[Vec<u8>],
-    ) -> Result<Vec<u8>> {
-        self.invoke_method(engine, method, args)
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
     }
 }
 

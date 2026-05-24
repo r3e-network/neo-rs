@@ -3,23 +3,14 @@
 //
 
 use super::*;
+use crate::impl_native_contract;
 use crate::smart_contract::native::security_fixes::{SafeArithmetic, StateValidator};
 
 impl NativeContract for NeoToken {
+    impl_native_contract!(*NEO_HASH, Self::NAME, methods);
+
     fn id(&self) -> i32 {
         Self::ID
-    }
-
-    fn hash(&self) -> UInt160 {
-        *NEO_HASH
-    }
-
-    fn name(&self) -> &str {
-        Self::NAME
-    }
-
-    fn methods(&self) -> &[NativeMethod] {
-        &self.methods
     }
 
     fn is_active(&self, _settings: &ProtocolSettings, _block_height: u32) -> bool {
@@ -110,19 +101,6 @@ impl NativeContract for NeoToken {
         }
 
         Ok(())
-    }
-
-    fn invoke(
-        &self,
-        engine: &mut ApplicationEngine,
-        method: &str,
-        args: &[Vec<u8>],
-    ) -> CoreResult<Vec<u8>> {
-        self.invoke_method(engine, method, args)
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 
     /// OnPersist: Refresh committee if required.

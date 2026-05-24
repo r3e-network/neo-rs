@@ -5,6 +5,7 @@
 
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
+use crate::impl_native_contract;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::native::{NativeContract, NativeMethod};
 use crate::UInt160;
@@ -80,33 +81,10 @@ impl StdLib {
 }
 
 impl NativeContract for StdLib {
+    impl_native_contract!(hash, "StdLib", methods);
+
     fn id(&self) -> i32 {
         self.id
-    }
-
-    fn hash(&self) -> UInt160 {
-        self.hash
-    }
-
-    fn name(&self) -> &str {
-        "StdLib"
-    }
-
-    fn methods(&self) -> &[NativeMethod] {
-        &self.methods
-    }
-
-    fn invoke(
-        &self,
-        engine: &mut ApplicationEngine,
-        method: &str,
-        args: &[Vec<u8>],
-    ) -> Result<Vec<u8>> {
-        self.invoke_method(engine, method, args)
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
     }
 }
 

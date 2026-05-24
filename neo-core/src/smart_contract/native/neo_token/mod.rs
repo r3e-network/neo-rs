@@ -38,7 +38,6 @@ use neo_vm_rs::StackValue;
 use num_bigint::BigInt;
 use num_traits::{Signed, ToPrimitive, Zero};
 use once_cell::sync::Lazy;
-use std::any::Any;
 
 static NEO_HASH: Lazy<UInt160> =
     Lazy::new(|| Helper::get_contract_hash(&UInt160::zero(), 0, "NeoToken"));
