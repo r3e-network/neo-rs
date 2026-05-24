@@ -1,28 +1,22 @@
 //! Node-related RPC handlers (port of `RpcServer.Node.cs`).
 
-use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::{internal_error, invalid_params};
 use crate::server::rpc_method_attribute::RpcMethodDescriptor;
+use crate::server::rpc_relay;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
-use async_trait::async_trait;
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use hex;
-use neo_core::akka::{Actor, ActorContext, ActorRef, ActorResult, ActorSystem, Props};
 use neo_core::hardfork::Hardfork;
-use neo_core::ledger::{BlockchainCommand, RelayResult, VerifyResult};
+use neo_core::ledger::BlockchainCommand;
 use neo_core::neo_io::{MemoryReader, Serializable};
 use neo_core::neo_system::TransactionRouterMessage;
 use neo_core::network::p2p::local_node::LocalNode;
 use neo_core::network::p2p::payloads::{block::Block, transaction::Transaction};
-use parking_lot::Mutex;
 use serde_json::{json, Map, Value};
-use std::any::Any;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::runtime::{Handle, Runtime};
-use tokio::sync::oneshot;
 use tokio::task::block_in_place;
 
 pub struct RpcServerNode;
@@ -194,7 +188,7 @@ impl RpcServerNode {
             .map_err(|_| invalid_params("Invalid transaction payload"))?;
         let transaction = Transaction::from_bytes(&raw)
             .map_err(|err| invalid_params(format!("Invalid transaction: {err}")))?;
-        let relay_result = Self::with_relay_responder(server, |sender| {
+        let relay_result = rpc_relay::with_relay_responder(server, |sender| {
             server
                 .system()
                 .tx_router_actor()
@@ -207,7 +201,7 @@ impl RpcServerNode {
                 )
                 .map_err(|err| internal_error(err.to_string()))
         })?;
-        Self::map_relay_result(relay_result)
+        rpc_relay::map_relay_result(relay_result)
     }
 
     fn submit_block(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
@@ -218,7 +212,7 @@ impl RpcServerNode {
         let mut reader = MemoryReader::new(&raw);
         let block = <Block as Serializable>::deserialize(&mut reader)
             .map_err(|err| invalid_params(format!("Invalid block: {err}")))?;
-        let relay_result = Self::with_relay_responder(server, |sender| {
+        let relay_result = rpc_relay::with_relay_responder(server, |sender| {
             server
                 .system()
                 .blockchain_actor()
@@ -232,7 +226,7 @@ impl RpcServerNode {
                 )
                 .map_err(|err| internal_error(err.to_string()))
         })?;
-        Self::map_relay_result(relay_result)
+        rpc_relay::map_relay_result(relay_result)
     }
 
     fn with_local_node<F>(server: &RpcServer, func: F) -> Result<Value, RpcException>
@@ -291,110 +285,16 @@ impl RpcServerNode {
 
         None
     }
-
-    fn map_relay_result(result: RelayResult) -> Result<Value, RpcException> {
-        match result.result {
-            VerifyResult::Succeed => Ok(json!({ "hash": result.hash.to_string() })),
-            VerifyResult::AlreadyExists => Err(RpcException::from(RpcError::already_exists())),
-            VerifyResult::AlreadyInPool => Err(RpcException::from(RpcError::already_in_pool())),
-            VerifyResult::OutOfMemory => Err(RpcException::from(RpcError::mempool_cap_reached())),
-            VerifyResult::InvalidScript => Err(RpcException::from(RpcError::invalid_script())),
-            VerifyResult::InvalidAttribute => {
-                Err(RpcException::from(RpcError::invalid_attribute()))
-            }
-            VerifyResult::InvalidSignature => {
-                Err(RpcException::from(RpcError::invalid_signature()))
-            }
-            VerifyResult::OverSize => Err(RpcException::from(RpcError::invalid_size())),
-            VerifyResult::Expired => Err(RpcException::from(RpcError::expired_transaction())),
-            VerifyResult::InsufficientFunds => {
-                Err(RpcException::from(RpcError::insufficient_funds()))
-            }
-            VerifyResult::PolicyFail => Err(RpcException::from(RpcError::policy_failed())),
-            VerifyResult::UnableToVerify => Err(RpcException::from(
-                RpcError::verification_failed().with_data("UnableToVerify"),
-            )),
-            VerifyResult::Invalid => Err(RpcException::from(
-                RpcError::verification_failed().with_data("Invalid"),
-            )),
-            VerifyResult::HasConflicts => Err(RpcException::from(
-                RpcError::verification_failed().with_data("HasConflicts"),
-            )),
-            VerifyResult::Unknown => Err(RpcException::from(
-                RpcError::verification_failed().with_data("Unknown"),
-            )),
-        }
-    }
-
-    fn with_relay_responder<F>(server: &RpcServer, send: F) -> Result<RelayResult, RpcException>
-    where
-        F: FnOnce(ActorRef) -> Result<(), RpcException>,
-    {
-        let system = server.system();
-        let actor_system = system.actor_system();
-        let (responder, rx) = Self::spawn_relay_responder(actor_system)?;
-        if let Err(err) = send(responder.clone()) {
-            let _ = actor_system.stop(&responder);
-            return Err(err);
-        }
-        let result = rx
-            .blocking_recv()
-            .map_err(|_| internal_error("relay result channel closed"))?;
-        let _ = actor_system.stop(&responder);
-        Ok(result)
-    }
-
-    fn spawn_relay_responder(
-        actor_system: &ActorSystem,
-    ) -> Result<(ActorRef, oneshot::Receiver<RelayResult>), RpcException> {
-        let (tx, rx) = oneshot::channel();
-        let completion = Arc::new(Mutex::new(Some(tx)));
-        let props = {
-            let completion = completion;
-            Props::new(move || RelayResultResponder {
-                completion: completion.clone(),
-            })
-        };
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos();
-        let actor = actor_system
-            .actor_of(props, format!("rpc-relay-{unique}"))
-            .map_err(|err| internal_error(err.to_string()))?;
-        Ok((actor, rx))
-    }
-}
-
-struct RelayResultResponder {
-    completion: Arc<Mutex<Option<oneshot::Sender<RelayResult>>>>,
-}
-
-#[async_trait]
-impl Actor for RelayResultResponder {
-    async fn handle(
-        &mut self,
-        message: Box<dyn Any + Send>,
-        ctx: &mut ActorContext,
-    ) -> ActorResult {
-        if let Ok(result) = message.downcast::<RelayResult>() {
-            let mut guard = self.completion.lock();
-            if let Some(tx) = guard.take() {
-                let _ = tx.send(*result);
-            }
-            let _ = ctx.stop_self();
-        }
-        Ok(())
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::client::models::RpcPeers;
+    use crate::server::rpc_error::RpcError;
     use crate::server::rpc_server_settings::RpcServerConfig;
     use neo_core::extensions::io::serializable::SerializableExtensions;
-    use neo_core::ledger::TransactionVerificationContext;
+    use neo_core::ledger::{TransactionVerificationContext, VerifyResult};
     use neo_core::neo_io::BinaryWriter;
     use neo_core::network::p2p::helper::get_sign_data_vec;
     use neo_core::network::p2p::payloads::oracle_response::{OracleResponse, MAX_RESULT_SIZE};

@@ -1,5 +1,6 @@
 use super::*;
 use crate::server::rpc_server_settings::RpcServerConfig;
+use neo_core::ledger::VerifyResult;
 use neo_core::neo_io::BinaryWriter;
 use neo_core::network::p2p::helper::get_sign_data_vec;
 use neo_core::network::p2p::payloads::conflicts::Conflicts;

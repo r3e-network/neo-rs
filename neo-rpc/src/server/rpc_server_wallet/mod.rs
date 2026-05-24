@@ -3,7 +3,6 @@
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use neo_core::big_decimal::BigDecimal;
 use neo_core::cryptography::{ECCurve, ECPoint};
-use neo_core::ledger::{RelayResult, VerifyResult};
 use neo_core::neo_system::TransactionRouterMessage;
 use neo_core::network::p2p::payloads::conflicts::Conflicts;
 use neo_core::network::p2p::payloads::signer::Signer;
@@ -39,13 +38,13 @@ use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::runtime::{Builder as RuntimeBuilder, Handle, RuntimeFlavor};
-use uuid::Uuid;
 use zeroize::Zeroizing;
 
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::{internal_error, invalid_params};
 use crate::server::rpc_method_attribute::RpcMethodDescriptor;
+use crate::server::rpc_relay;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 
 pub struct RpcServerWallet;
@@ -913,7 +912,7 @@ impl RpcServerWallet {
             return Err(RpcException::from(RpcError::wallet_fee_limit()));
         }
 
-        match Self::with_relay_responder(server, |sender| {
+        match rpc_relay::with_relay_responder(server, |sender| {
             server
                 .system()
                 .tx_router_actor()
@@ -927,7 +926,7 @@ impl RpcServerWallet {
                 .map_err(|err| internal_error(err.to_string()))
         }) {
             Ok(relay_result) => {
-                Self::map_relay_result(relay_result)?;
+                rpc_relay::map_relay_result(relay_result)?;
                 Ok(tx.to_json(server.system().settings()))
             }
             Err(err) => {
@@ -953,94 +952,6 @@ impl RpcServerWallet {
                 Ok(json)
             }
         }
-    }
-
-    fn map_relay_result(result: RelayResult) -> Result<Value, RpcException> {
-        match result.result {
-            VerifyResult::Succeed => Ok(json!({ "hash": result.hash.to_string() })),
-            VerifyResult::AlreadyExists => Err(RpcException::from(RpcError::already_exists())),
-            VerifyResult::AlreadyInPool => Err(RpcException::from(RpcError::already_in_pool())),
-            VerifyResult::OutOfMemory => Err(RpcException::from(RpcError::mempool_cap_reached())),
-            VerifyResult::InvalidScript => Err(RpcException::from(RpcError::invalid_script())),
-            VerifyResult::InvalidAttribute => {
-                Err(RpcException::from(RpcError::invalid_attribute()))
-            }
-            VerifyResult::InvalidSignature => {
-                Err(RpcException::from(RpcError::invalid_signature()))
-            }
-            VerifyResult::OverSize => Err(RpcException::from(RpcError::invalid_size())),
-            VerifyResult::Expired => Err(RpcException::from(RpcError::expired_transaction())),
-            VerifyResult::InsufficientFunds => {
-                Err(RpcException::from(RpcError::insufficient_funds()))
-            }
-            VerifyResult::PolicyFail => Err(RpcException::from(RpcError::policy_failed())),
-            VerifyResult::UnableToVerify => Err(RpcException::from(
-                RpcError::verification_failed().with_data("UnableToVerify"),
-            )),
-            VerifyResult::Invalid => Err(RpcException::from(
-                RpcError::verification_failed().with_data("Invalid"),
-            )),
-            VerifyResult::HasConflicts => Err(RpcException::from(
-                RpcError::verification_failed().with_data("HasConflicts"),
-            )),
-            VerifyResult::Unknown => Err(RpcException::from(
-                RpcError::verification_failed().with_data("Unknown"),
-            )),
-        }
-    }
-
-    fn with_relay_responder<F>(server: &RpcServer, send: F) -> Result<RelayResult, RpcException>
-    where
-        F: FnOnce(neo_core::akka::ActorRef) -> Result<(), RpcException>,
-    {
-        use async_trait::async_trait;
-        use neo_core::akka::{Actor, ActorContext, ActorResult, Props};
-        use neo_core::ledger::RelayResult;
-        use parking_lot::Mutex;
-        use tokio::runtime::Handle;
-
-        struct RelayResponder {
-            tx: std::sync::Arc<Mutex<Option<tokio::sync::oneshot::Sender<RelayResult>>>>,
-        }
-
-        #[async_trait]
-        impl Actor for RelayResponder {
-            async fn pre_start(&mut self, _ctx: &mut ActorContext) -> ActorResult {
-                Ok(())
-            }
-            async fn handle(
-                &mut self,
-                msg: Box<dyn std::any::Any + Send>,
-                _ctx: &mut ActorContext,
-            ) -> ActorResult {
-                if let Ok(result) = msg.downcast::<RelayResult>() {
-                    let mut tx_guard = self.tx.lock();
-                    if let Some(sender) = tx_guard.take() {
-                        let _ = sender.send(*result);
-                    }
-                }
-                Ok(())
-            }
-        }
-
-        let system = server.system();
-        let actor_system = system.actor_system();
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        let responder = RelayResponder {
-            tx: std::sync::Arc::new(Mutex::new(Some(tx))),
-        };
-        let props = Props::new(move || RelayResponder {
-            tx: std::sync::Arc::clone(&responder.tx),
-        });
-        let actor_ref = actor_system
-            .actor_of(props, format!("relay_responder_{}", Uuid::new_v4()))
-            .map_err(|err| internal_error(err.to_string()))?;
-
-        send(actor_ref)?;
-
-        let result = tokio::task::block_in_place(|| Handle::current().block_on(rx))
-            .map_err(|err| internal_error(err.to_string()))?;
-        Ok(result)
     }
 }
 

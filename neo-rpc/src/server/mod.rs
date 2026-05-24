@@ -13,6 +13,7 @@ mod rpc_error_factory;
 mod rpc_exception;
 pub mod rpc_helpers;
 mod rpc_method_attribute;
+mod rpc_relay;
 mod rpc_server;
 mod rpc_server_application_logs;
 mod rpc_server_blockchain;
