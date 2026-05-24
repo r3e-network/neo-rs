@@ -13,7 +13,6 @@ use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::contract_state::{ContractState, NefFile};
 use crate::smart_contract::manifest::ContractManifest;
 use crate::smart_contract::native::{NativeContract, NativeMethod, PolicyContract};
-use crate::smart_contract::ContractParameterType;
 use crate::smart_contract::StorageKey;
 use crate::UInt160;
 use neo_vm_rs::{ExecutionEngineLimits, StackValue};
@@ -209,155 +208,6 @@ impl ContractManagement {
         // ContractManagement contract hash: 0xfffdc93764dbaddd97c48f252a53ea4643faa3fd
         let hash = Self::contract_hash();
 
-        let methods = vec![
-            NativeMethod::new(
-                "getContract".to_string(),
-                1 << 15,
-                true,
-                0x01,
-                vec![ContractParameterType::Hash160],
-                ContractParameterType::Array,
-            ),
-            NativeMethod::new(
-                "deploy".to_string(),
-                0,
-                false,
-                0x0B,
-                vec![
-                    ContractParameterType::ByteArray,
-                    ContractParameterType::ByteArray,
-                ],
-                ContractParameterType::Array,
-            ),
-            NativeMethod::new(
-                "deploy".to_string(),
-                0,
-                false,
-                0x0B,
-                vec![
-                    ContractParameterType::ByteArray,
-                    ContractParameterType::ByteArray,
-                    ContractParameterType::Any,
-                ],
-                ContractParameterType::Array,
-            ),
-            NativeMethod::new(
-                "update".to_string(),
-                0,
-                false,
-                0x0B,
-                vec![
-                    ContractParameterType::ByteArray,
-                    ContractParameterType::ByteArray,
-                ],
-                ContractParameterType::Void,
-            ),
-            NativeMethod::new(
-                "update".to_string(),
-                0,
-                false,
-                0x0B,
-                vec![
-                    ContractParameterType::ByteArray,
-                    ContractParameterType::ByteArray,
-                    ContractParameterType::Any,
-                ],
-                ContractParameterType::Void,
-            ),
-            NativeMethod::new(
-                "destroy".to_string(),
-                1 << 15,
-                false,
-                0x0B,
-                Vec::new(),
-                ContractParameterType::Void,
-            ),
-            NativeMethod::new(
-                "getMinimumDeploymentFee".to_string(),
-                1 << 15,
-                true,
-                0x01,
-                Vec::new(),
-                ContractParameterType::Integer,
-            ),
-            NativeMethod::new(
-                "setMinimumDeploymentFee".to_string(),
-                1 << 15,
-                false,
-                0x03,
-                vec![ContractParameterType::Integer],
-                ContractParameterType::Void,
-            ),
-            NativeMethod::new(
-                "hasMethod".to_string(),
-                1 << 15,
-                true,
-                0x01,
-                vec![
-                    ContractParameterType::Hash160,
-                    ContractParameterType::String,
-                    ContractParameterType::Integer,
-                ],
-                ContractParameterType::Boolean,
-            ),
-            NativeMethod::new(
-                "getContractById".to_string(),
-                1 << 15,
-                true,
-                0x01,
-                vec![ContractParameterType::Integer],
-                ContractParameterType::Array,
-            ),
-            NativeMethod::new(
-                "isContract".to_string(),
-                1 << 14,
-                true,
-                0x01,
-                vec![ContractParameterType::Hash160],
-                ContractParameterType::Boolean,
-            )
-            .with_active_in(crate::hardfork::Hardfork::HfEchidna),
-            NativeMethod::new(
-                "getContractHashes".to_string(),
-                1 << 15,
-                true,
-                0x01,
-                Vec::new(),
-                ContractParameterType::InteropInterface,
-            ),
-        ];
-        let methods = methods
-            .into_iter()
-            .map(|method| match method.name.as_str() {
-                "getContract" => method.with_parameter_names(vec!["hash".to_string()]),
-                "deploy" if method.parameters.len() == 2 => {
-                    method.with_parameter_names(vec!["nefFile".to_string(), "manifest".to_string()])
-                }
-                "deploy" => method.with_parameter_names(vec![
-                    "nefFile".to_string(),
-                    "manifest".to_string(),
-                    "data".to_string(),
-                ]),
-                "update" if method.parameters.len() == 2 => {
-                    method.with_parameter_names(vec!["nefFile".to_string(), "manifest".to_string()])
-                }
-                "update" => method.with_parameter_names(vec![
-                    "nefFile".to_string(),
-                    "manifest".to_string(),
-                    "data".to_string(),
-                ]),
-                "setMinimumDeploymentFee" => method.with_parameter_names(vec!["value".to_string()]),
-                "hasMethod" => method.with_parameter_names(vec![
-                    "hash".to_string(),
-                    "method".to_string(),
-                    "pcount".to_string(),
-                ]),
-                "getContractById" => method.with_parameter_names(vec!["id".to_string()]),
-                "isContract" => method.with_parameter_names(vec!["hash".to_string()]),
-                _ => method,
-            })
-            .collect();
-
         let storage = ContractStorage {
             contracts: HashMap::new(),
             contract_ids: HashMap::new(),
@@ -369,7 +219,7 @@ impl ContractManagement {
         Self {
             id: Self::ID,
             hash,
-            methods,
+            methods: Self::native_methods(),
             storage: Arc::new(RwLock::new(storage)),
         }
     }
@@ -378,6 +228,7 @@ impl ContractManagement {
 // Include implementation files
 mod deploy;
 mod destroy;
+mod metadata;
 mod native_impl;
 mod query;
 #[cfg(test)]

@@ -6,7 +6,7 @@ use super::*;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::i_interoperable::IInteroperable;
-use crate::smart_contract::manifest::{ContractEventDescriptor, ContractParameterDefinition};
+use crate::smart_contract::manifest::ContractEventDescriptor;
 use crate::smart_contract::storage_context::StorageContext;
 use neo_vm_rs::ExecutionEngineLimits;
 
@@ -51,35 +51,7 @@ impl NativeContract for ContractManagement {
         _settings: &ProtocolSettings,
         _block_height: u32,
     ) -> Vec<ContractEventDescriptor> {
-        vec![
-            ContractEventDescriptor::new(
-                "Deploy".to_string(),
-                vec![ContractParameterDefinition::new(
-                    "Hash".to_string(),
-                    ContractParameterType::Hash160,
-                )
-                .expect("Deploy.Hash")],
-            )
-            .expect("Deploy event descriptor"),
-            ContractEventDescriptor::new(
-                "Update".to_string(),
-                vec![ContractParameterDefinition::new(
-                    "Hash".to_string(),
-                    ContractParameterType::Hash160,
-                )
-                .expect("Update.Hash")],
-            )
-            .expect("Update event descriptor"),
-            ContractEventDescriptor::new(
-                "Destroy".to_string(),
-                vec![ContractParameterDefinition::new(
-                    "Hash".to_string(),
-                    ContractParameterType::Hash160,
-                )
-                .expect("Destroy.Hash")],
-            )
-            .expect("Destroy event descriptor"),
-        ]
+        Self::event_descriptors()
     }
 
     fn invoke(

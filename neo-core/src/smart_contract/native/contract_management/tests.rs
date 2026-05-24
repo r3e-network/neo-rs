@@ -15,6 +15,7 @@ use crate::smart_contract::manifest::{
     ContractParameterDefinition, ContractPermission, WildCardContainer,
 };
 use crate::smart_contract::trigger_type::TriggerType;
+use crate::smart_contract::ContractParameterType;
 use crate::wallets::KeyPair;
 use crate::witness::Witness;
 use crate::{IVerifiable, UInt160, WitnessScope};
