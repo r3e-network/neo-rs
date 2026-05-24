@@ -37,6 +37,8 @@
 
 /// Bloom filter implementation for probabilistic set membership testing.
 pub mod bloom_filter;
+/// BLS12-381 signature helpers for Neo.
+pub mod bls12381;
 pub mod crypto_utils;
 pub mod ecc;
 pub mod error;
@@ -46,9 +48,9 @@ pub mod named_curve_hash;
 
 // Re-exports
 pub use bloom_filter::BloomFilter;
+pub use bls12381::Bls12381Crypto;
 pub use crypto_utils::{
-    Base58, Bls12381Crypto, ConstantTime, ECDsa, Ed25519Crypto, Hex, NeoHash, Secp256k1Crypto,
-    Secp256r1Crypto, ECC,
+    Base58, ConstantTime, ECDsa, Ed25519Crypto, Hex, NeoHash, Secp256k1Crypto, Secp256r1Crypto, ECC,
 };
 pub use ecc::{ECCurve, ECPoint};
 pub use error::{CryptoError, CryptoResult};
