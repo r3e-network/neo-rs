@@ -25,7 +25,7 @@ use crate::server::rpc_server::RpcServer;
 use crate::server::session::Session;
 use crate::server::tree_node::TreeNode;
 
-use neo_core::neo_vm::stack_item::StackItem;
+use neo_core::vm_runtime::StackItem;
 
 const INVALID_OPERATION_CODE: i32 = -2146233079;
 

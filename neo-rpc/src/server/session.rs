@@ -6,8 +6,6 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use neo_core::neo_system::NeoSystem;
-use neo_core::neo_vm::stack_item::InteropInterface as VmInteropInterface;
-use neo_core::neo_vm::stack_item::StackItem;
 use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::transaction::Transaction;
 use neo_core::network::p2p::payloads::transaction_attribute::TransactionAttribute;
@@ -18,6 +16,7 @@ use neo_core::smart_contract::iterators::{IIterator, IteratorInterop, StorageIte
 use neo_core::smart_contract::native::ledger_contract::LedgerContract;
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::smart_contract::ApplicationEngine;
+use neo_core::vm_runtime::{InteropInterface as VmInteropInterface, StackItem};
 use neo_core::IVerifiable;
 use rand::random;
 use uuid::Uuid;

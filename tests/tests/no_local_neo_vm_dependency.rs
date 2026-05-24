@@ -4717,6 +4717,31 @@ fn rpc_client_stack_models_use_neo_vm_rs_stackvalue_directly() {
 }
 
 #[test]
+fn rpc_server_imports_host_runtime_through_vm_runtime_boundary() {
+    let workspace = workspace_root();
+    for relative in [
+        "neo-rpc/src/server/diagnostic.rs",
+        "neo-rpc/src/server/session.rs",
+        "neo-rpc/src/server/rpc_server_tokens_tracker.rs",
+        "neo-rpc/src/server/smart_contract/helpers.rs",
+        "neo-rpc/src/server/smart_contract/invocation.rs",
+        "neo-rpc/src/server/smart_contract/tests.rs",
+    ] {
+        let source = fs::read_to_string(workspace.join(relative)).unwrap();
+        assert!(
+            source.contains("neo_core::vm_runtime"),
+            "{relative} should import host-runtime-only local VM types through the \
+             vm_runtime boundary"
+        );
+        assert!(
+            !source.contains("neo_core::neo_vm"),
+            "{relative} should not import host-runtime-only local VM types through the \
+             neo_vm implementation tree"
+        );
+    }
+}
+
+#[test]
 fn rpc_error_type_does_not_expose_local_vm_error() {
     let workspace = workspace_root();
     let rpc_error = fs::read_to_string(workspace.join("neo-rpc/src/error.rs")).unwrap();

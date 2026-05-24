@@ -4,7 +4,6 @@ use crate::server::rpc_helpers::{internal_error, invalid_params};
 use crate::server::rpc_method_attribute::RpcMethodDescriptor;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
-use neo_core::neo_vm::StackItem;
 use neo_core::script_builder::ScriptBuilder;
 use neo_core::smart_contract::application_engine::TEST_MODE_GAS;
 use neo_core::smart_contract::call_flags::CallFlags;
@@ -15,6 +14,7 @@ use neo_core::tokens_tracker::{
     Nep17Tracker, Nep17TransferKey, TokenBalance, TokenTransfer, TokenTransferKeyView,
     TokensTrackerService,
 };
+use neo_core::vm_runtime::StackItem;
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::UInt160;
 use neo_vm_rs::{OpCode, VmState as VMState};

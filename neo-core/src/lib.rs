@@ -118,6 +118,9 @@ pub mod script_builder;
 /// Script bytecode validation helpers backed by external NeoVM metadata.
 pub mod script_validation;
 
+/// Host-specific VM runtime adapters.
+pub mod vm_runtime;
+
 /// System-wide protocol constants.
 ///
 /// Network magic numbers, port defaults, fee constants, and size limits.
