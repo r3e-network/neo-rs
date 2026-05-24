@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 /// Storage item for Neo blockchain.
 ///
 /// Represents a value stored in the blockchain state.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct StorageItem {
     /// The stored value.
     value: Vec<u8>,
@@ -64,12 +64,6 @@ impl StorageItem {
     #[must_use]
     pub fn size(&self) -> usize {
         self.value.len()
-    }
-}
-
-impl Default for StorageItem {
-    fn default() -> Self {
-        Self::new(Vec::new())
     }
 }
 

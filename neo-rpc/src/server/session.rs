@@ -12,7 +12,8 @@ use neo_core::network::p2p::payloads::transaction_attribute::TransactionAttribut
 use neo_core::network::p2p::payloads::witness::Witness;
 use neo_core::persistence::store_cache::StoreCache;
 use neo_core::smart_contract::call_flags::CallFlags;
-use neo_core::smart_contract::iterators::{IIterator, IteratorInterop, StorageIterator};
+use neo_core::smart_contract::iterators::iterator::StorageIterator as _;
+use neo_core::smart_contract::iterators::{IteratorInterop, StorageIterator};
 use neo_core::smart_contract::native::ledger_contract::LedgerContract;
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::smart_contract::ApplicationEngine;
@@ -79,7 +80,7 @@ impl StorageSessionIterator {
 
 impl SessionIterator for StorageSessionIterator {
     fn next(&mut self) -> bool {
-        IIterator::next(&mut self.iterator)
+        self.iterator.next()
     }
 
     fn value(&self) -> StackItem {
@@ -87,7 +88,7 @@ impl SessionIterator for StorageSessionIterator {
     }
 
     fn dispose(&mut self) {
-        IIterator::dispose(&mut self.iterator);
+        self.iterator.dispose();
     }
 }
 

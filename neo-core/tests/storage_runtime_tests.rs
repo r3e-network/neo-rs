@@ -6,7 +6,7 @@ use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::smart_contract::contract_parameter_type::ContractParameterType;
 use neo_core::smart_contract::contract_state::{ContractState, NefFile};
 use neo_core::smart_contract::find_options::FindOptions;
-use neo_core::smart_contract::iterators::IIterator;
+use neo_core::smart_contract::iterators::iterator::StorageIterator as _;
 use neo_core::smart_contract::manifest::{
     ContractAbi, ContractManifest, ContractMethodDescriptor, ContractPermission, WildCardContainer,
 };

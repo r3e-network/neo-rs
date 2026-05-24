@@ -7,6 +7,5 @@ pub mod iterator_interop;
 /// Storage iterator implementation.
 pub mod storage_iterator;
 
-pub use self::iterator::IIterator;
 pub use self::iterator_interop::IteratorInterop;
 pub use self::storage_iterator::StorageIterator;

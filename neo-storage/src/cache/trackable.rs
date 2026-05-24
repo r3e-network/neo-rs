@@ -8,7 +8,7 @@ use crate::types::{StorageItem, TrackState};
 ///
 /// Used by [`DataCache`](super::DataCache) to track the state of each entry
 /// for efficient commit operations.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Trackable {
     /// The storage item data.
     pub item: StorageItem,
@@ -68,20 +68,6 @@ impl Trackable {
         matches!(self.state, TrackState::Deleted)
     }
 }
-
-impl Default for Trackable {
-    fn default() -> Self {
-        Self::unchanged(StorageItem::default())
-    }
-}
-
-impl PartialEq for Trackable {
-    fn eq(&self, other: &Self) -> bool {
-        self.item == other.item && self.state == other.state
-    }
-}
-
-impl Eq for Trackable {}
 
 #[cfg(test)]
 mod tests {

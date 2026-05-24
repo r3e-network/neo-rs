@@ -179,7 +179,7 @@ fn stack_item_to_json_with_budget(
                 if let Value::Object(obj) = &mut value {
                     obj.insert(
                         "interface".to_string(),
-                        Value::String("IIterator".to_string()),
+                        Value::String("StorageIterator".to_string()),
                     );
                     obj.insert("id".to_string(), Value::String(iterator_id.to_string()));
                 }

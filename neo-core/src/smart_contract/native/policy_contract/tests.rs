@@ -9,7 +9,7 @@ use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::contract::Contract;
-use crate::smart_contract::iterators::iterator::IIterator;
+use crate::smart_contract::iterators::iterator::StorageIterator;
 use crate::smart_contract::iterators::IteratorInterop;
 use crate::smart_contract::native::{
     AccountState, ContractManagement, GasToken, NativeContract, NativeHelpers, NeoToken,

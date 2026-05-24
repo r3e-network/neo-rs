@@ -1,6 +1,4 @@
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
-use neo_core::network::p2p::payloads::signer::Signer;
-use neo_core::network::p2p::payloads::witness::Witness;
 use neo_core::smart_contract::contract_parameter::ContractParameter;
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::UInt160;
@@ -17,7 +15,6 @@ mod signers;
 #[path = "tests.rs"]
 mod tests;
 
-use signers::parse_witness_scope;
 
 /// Context supplied when converting RPC parameters.
 #[derive(Debug, Clone, Copy)]

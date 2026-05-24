@@ -7,7 +7,7 @@ use neo_core::network::p2p::payloads::witness::Witness;
 use neo_core::{WitnessRule, WitnessScope};
 use neo_json::JToken;
 
-use super::super::model::{Address, SignersAndWitnesses};
+use super::super::model::SignersAndWitnesses;
 use super::super::rpc_exception::RpcException;
 use super::{
     expect_array, expect_object, expect_string, invalid_params, jtoken_to_serde, parse_address,

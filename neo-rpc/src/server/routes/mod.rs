@@ -1,22 +1,17 @@
 use super::middleware::{GovernorRateLimiter, RateLimitConfig};
 use super::rpc_error::RpcError;
-use super::rpc_server::{RpcServer, RPC_ERR_TOTAL, RPC_REQ_TOTAL};
-use super::rpc_server_settings::{RpcServerConfig, RpcServerSettings, UnhandledExceptionPolicy};
+use super::rpc_server::RpcServer;
+use super::rpc_server_settings::RpcServerConfig;
 
-use bytes::Bytes;
 use parking_lot::RwLock;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use std::collections::HashSet;
 use std::convert::Infallible;
-use std::net::{IpAddr, SocketAddr};
-use std::panic::{self, AssertUnwindSafe};
+use std::net::SocketAddr;
 use std::sync::{Arc, Weak};
-use subtle::ConstantTimeEq;
-use tracing::error;
 use warp::http::header::{
-    HeaderValue, ACCESS_CONTROL_ALLOW_CREDENTIALS, ACCESS_CONTROL_ALLOW_HEADERS,
-    ACCESS_CONTROL_ALLOW_METHODS, ACCESS_CONTROL_ALLOW_ORIGIN, CONTENT_TYPE, VARY,
+    HeaderValue, CONTENT_TYPE,
     WWW_AUTHENTICATE,
 };
 use warp::http::StatusCode;
@@ -29,9 +24,9 @@ mod handlers;
 #[path = "tests.rs"]
 mod tests;
 
-use cors::{apply_cors, verify_basic_auth, CorsConfig};
+use cors::{apply_cors, CorsConfig};
 pub use cors::BasicAuth;
-use handlers::{handle_get_request, handle_post_request, query_to_request_value};
+use handlers::handle_post_request;
 
 const MAX_PARAMS_DEPTH: usize = 32;
 

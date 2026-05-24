@@ -1,12 +1,11 @@
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::{internal_error, invalid_params};
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use neo_core::script_builder::ScriptBuilder;
 use neo_core::smart_contract::application_engine::TEST_MODE_GAS;
 use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::tokens_tracker::{
-    find_range, Nep11Tracker, Nep11TransferKey, Nep17Tracker, Nep17TransferKey, TokenTransfer,
+    find_range, Nep11TransferKey, Nep17TransferKey, TokenTransfer,
     TokensTrackerService,
 };
 use neo_core::tokens_tracker::trackers::tracker_base::TokenTransferKeyView;

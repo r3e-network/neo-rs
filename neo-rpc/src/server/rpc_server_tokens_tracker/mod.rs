@@ -10,8 +10,8 @@ use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::smart_contract::native::contract_management::ContractManagement;
 use neo_core::smart_contract::{ApplicationEngine, TriggerType};
 use neo_core::tokens_tracker::{
-    find_prefix, find_range, Nep11BalanceKey, Nep11Tracker, Nep11TransferKey, Nep17BalanceKey,
-    Nep17Tracker, Nep17TransferKey, TokenBalance, TokenTransfer,
+    find_prefix, Nep11BalanceKey, Nep11Tracker, Nep17BalanceKey,
+    Nep17Tracker, TokenBalance,
 };
 use neo_core::vm_runtime::StackItem;
 use neo_core::wallets::helper::Helper as WalletHelper;

@@ -4,7 +4,7 @@ use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::binary_serializer::BinarySerializer;
 use neo_core::smart_contract::find_options::FindOptions;
-use neo_core::smart_contract::iterators::IIterator;
+use neo_core::smart_contract::iterators::iterator::StorageIterator as _;
 use neo_core::smart_contract::storage_context::StorageContext;
 use neo_core::smart_contract::storage_item::StorageItem;
 use neo_core::smart_contract::storage_key::StorageKey;

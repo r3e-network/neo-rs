@@ -18,7 +18,7 @@ impl IteratorInterop {
 
 impl VmInteropInterface for IteratorInterop {
     fn interface_type(&self) -> &str {
-        "IIterator"
+        "StorageIterator"
     }
 
     fn as_any(&self) -> &dyn Any {

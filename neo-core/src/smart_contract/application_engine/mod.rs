@@ -97,7 +97,7 @@ use crate::smart_contract::execution_context_state::ExecutionContextState;
 use crate::smart_contract::find_options::FindOptions;
 use crate::smart_contract::helper::Helper;
 use crate::smart_contract::diagnostic::IDiagnostic;
-use crate::smart_contract::iterators::iterator::IIterator;
+use crate::smart_contract::iterators::iterator::StorageIterator as _;
 use crate::smart_contract::iterators::{IteratorInterop, StorageIterator};
 use crate::smart_contract::log_event_args::LogEventArgs;
 use crate::smart_contract::manifest::ContractMethodDescriptor;

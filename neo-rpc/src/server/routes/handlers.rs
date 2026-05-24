@@ -1,21 +1,17 @@
-use super::cors::{apply_cors, verify_basic_auth, BasicAuth, CorsConfig};
+use super::cors::{apply_cors, verify_basic_auth};
 use super::{
     build_http_response, error_response, exceeds_max_depth, success_response, RpcFilters,
     RpcQueryParams, RequestOutcome, MAX_PARAMS_DEPTH,
 };
-use crate::server::middleware::GovernorRateLimiter;
 use crate::server::rpc_error::RpcError;
-use crate::server::rpc_server::{RpcServer, RPC_ERR_TOTAL, RPC_REQ_TOTAL};
+use crate::server::rpc_server::{RPC_ERR_TOTAL, RPC_REQ_TOTAL};
 use crate::server::rpc_server_settings::{RpcServerSettings, UnhandledExceptionPolicy};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use bytes::Bytes;
-use parking_lot::RwLock;
-use serde::Deserialize;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value};
 use std::convert::Infallible;
 use std::net::{IpAddr, SocketAddr};
 use std::panic::{self, AssertUnwindSafe};
-use std::sync::{Arc, Weak};
 use tracing::error;
 use warp::http::header::HeaderValue;
 use warp::reply::Response as HttpResponse;

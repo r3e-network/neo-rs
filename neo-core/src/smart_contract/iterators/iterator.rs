@@ -1,9 +1,9 @@
-//! IIterator - matches C# Neo.SmartContract.Iterators.IIterator exactly
+//! StorageIterator - matches C# Neo.SmartContract.Iterators.IIterator exactly
 
 use crate::smart_contract::interoperable::SmartContractStackItem;
 
-/// Represents iterators in smart contract (matches C# IIterator)
-pub trait IIterator: std::fmt::Debug {
+/// Represents iterators in smart contract (matches C# StorageIterator)
+pub trait StorageIterator: std::fmt::Debug {
     /// Advances the iterator to the next element of the collection
     fn next(&mut self) -> bool;
 

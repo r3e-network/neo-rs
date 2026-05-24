@@ -2,7 +2,7 @@
 
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::find_options::FindOptions;
-use crate::smart_contract::iterators::iterator::IIterator;
+use crate::smart_contract::iterators::iterator::StorageIterator as Iter;
 use crate::smart_contract::storage_item::StorageItem;
 use crate::smart_contract::storage_key::StorageKey;
 use crate::vm_runtime::StackItem;
@@ -45,7 +45,7 @@ impl StorageIterator {
     }
 }
 
-impl IIterator for StorageIterator {
+impl Iter for StorageIterator {
     fn next(&mut self) -> bool {
         match self.current {
             None => {
