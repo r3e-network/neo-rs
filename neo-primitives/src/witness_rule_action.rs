@@ -1,47 +1,17 @@
 //! WitnessRuleAction — matches C# Neo.Network.P2P.Payloads.WitnessRuleAction exactly.
 
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::fmt;
+use crate::protocol_enum;
 use std::str::FromStr;
 
-/// The action to be taken if the current context meets with the rule.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-#[repr(u8)]
-pub enum WitnessRuleAction {
-    /// Deny the witness if the condition is met.
-    #[default]
-    Deny = 0,
-    /// Allow the witness if the condition is met.
-    Allow = 1,
-}
-
-impl WitnessRuleAction {
-    /// Converts to byte representation.
-    pub fn to_byte(self) -> u8 {
-        self as u8
-    }
-
-    /// Creates from byte representation.
-    pub fn from_byte(value: u8) -> Option<Self> {
-        match value {
-            0 => Some(Self::Deny),
-            1 => Some(Self::Allow),
-            _ => None,
-        }
-    }
-
-    /// Returns the string representation.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Deny => "Deny",
-            Self::Allow => "Allow",
-        }
-    }
-}
-
-impl fmt::Display for WitnessRuleAction {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.as_str())
+protocol_enum! {
+    /// The action to be taken if the current context meets with the rule.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+    pub WitnessRuleAction {
+        /// Deny the witness if the condition is met.
+        #[default]
+        Deny = 0,
+        /// Allow the witness if the condition is met.
+        Allow = 1,
     }
 }
 
@@ -54,27 +24,6 @@ impl FromStr for WitnessRuleAction {
             "allow" => Ok(Self::Allow),
             other => Err(format!("Invalid witness rule action: {other}")),
         }
-    }
-}
-
-impl Serialize for WitnessRuleAction {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_u8(self.to_byte())
-    }
-}
-
-impl<'de> Deserialize<'de> for WitnessRuleAction {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let byte = u8::deserialize(deserializer)?;
-        WitnessRuleAction::from_byte(byte).ok_or_else(|| {
-            serde::de::Error::custom(format!("Invalid witness rule action byte: {byte}"))
-        })
     }
 }
 

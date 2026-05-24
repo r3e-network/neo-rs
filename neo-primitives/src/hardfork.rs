@@ -118,16 +118,9 @@ impl TryFrom<u8> for Hardfork {
 }
 
 /// Error returned when parsing a hardfork from a string fails.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("Unknown hardfork: '{0}'")]
 pub struct HardforkParseError(pub String);
-
-impl fmt::Display for HardforkParseError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Unknown hardfork: '{}'", self.0)
-    }
-}
-
-impl std::error::Error for HardforkParseError {}
 
 #[cfg(test)]
 mod tests {
