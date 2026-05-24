@@ -9,9 +9,9 @@ use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::smart_contract::contract_state::ContractState;
 use neo_core::smart_contract::i_interoperable::IInteroperable;
 use neo_core::smart_contract::native::{
-    is_active_for, ContractManagement, CryptoLib, GasToken, HardforkActivable, LedgerContract,
-    NativeContract, NativeRegistry, NeoToken, Notary, OracleContract, PolicyContract,
-    RoleManagement, StdLib, TreasuryContract,
+    is_active_for, ContractManagement, CryptoLib, FungibleToken, GasToken, HardforkActivable,
+    LedgerContract, NativeContract, NativeRegistry, NeoToken, Notary, OracleContract,
+    PolicyContract, RoleManagement, StdLib, TreasuryContract,
 };
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::{UInt160, UInt256};
@@ -367,4 +367,51 @@ fn test_genesis_native_state() {
         let expected_json: Value = serde_json::from_str(expected).expect("expected json");
         assert_eq!(actual, expected_json, "{name} is wrong");
     }
+}
+
+#[test]
+fn test_nep17_helper_matches_gas_native_methods_exactly() {
+    let gas = GasToken::new();
+    let expected = <GasToken as FungibleToken>::ft_nep17_methods();
+
+    assert_eq!(gas.methods(), expected.as_slice());
+    assert_nep17_helper_raw_metadata(&expected);
+}
+
+#[test]
+fn test_nep17_helper_matches_neo_native_method_prefix_exactly() {
+    let neo = NeoToken::new();
+    let expected = <NeoToken as FungibleToken>::ft_nep17_methods();
+    let neo_prefix = &neo.methods()[..expected.len()];
+
+    assert_eq!(neo_prefix, expected.as_slice());
+    assert_nep17_helper_raw_metadata(&expected);
+}
+
+fn assert_nep17_helper_raw_metadata(methods: &[neo_core::smart_contract::native::NativeMethod]) {
+    assert_eq!(methods.len(), 5);
+
+    for method in methods {
+        assert_eq!(method.active_in, None, "{}", method.name);
+        assert_eq!(method.deprecated_in, None, "{}", method.name);
+    }
+
+    let balance_of = methods
+        .iter()
+        .find(|method| method.name == "balanceOf")
+        .expect("balanceOf metadata");
+    assert_eq!(
+        balance_of.required_call_flags,
+        CallFlags::READ_STATES.bits()
+    );
+    assert_eq!(balance_of.storage_fee, 0);
+    assert_eq!(balance_of.parameter_names, ["account"]);
+
+    let transfer = methods
+        .iter()
+        .find(|method| method.name == "transfer")
+        .expect("transfer metadata");
+    assert_eq!(transfer.required_call_flags, CallFlags::ALL.bits());
+    assert_eq!(transfer.storage_fee, 50);
+    assert_eq!(transfer.parameter_names, ["from", "to", "amount", "data"]);
 }
