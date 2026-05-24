@@ -6,20 +6,15 @@
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::hardfork::Hardfork;
 use crate::neo_vm::StackItem;
-use crate::persistence::{DataCache, SeekDirection};
 use crate::smart_contract::application_engine::ApplicationEngine;
-use crate::smart_contract::binary_serializer::BinarySerializer;
-use crate::smart_contract::call_flags::CallFlags;
-use crate::smart_contract::manifest::{ContractEventDescriptor, ContractParameterDefinition};
+use crate::smart_contract::manifest::ContractEventDescriptor;
 use crate::smart_contract::native::{LedgerContract, NativeContract, NativeMethod, Role};
-use crate::smart_contract::storage_key::StorageKey;
-use crate::smart_contract::ContractParameterType;
-use crate::{ECCurve, ECPoint, UInt160};
-use neo_vm_rs::ExecutionEngineLimits;
-use neo_vm_rs::StackValue;
+use crate::UInt160;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
-use std::convert::TryInto;
+
+mod metadata;
+mod storage;
 
 /// The RoleManagement native contract.
 pub struct RoleManagement {
@@ -39,41 +34,10 @@ impl RoleManagement {
         let hash = UInt160::parse("0x49cf4e5378ffcd4dec034fd98a174c5491e395e2")
             .expect("Valid RoleManagement contract hash");
 
-        let methods = vec![
-            NativeMethod::safe(
-                "getDesignatedByRole".to_string(),
-                Self::CPU_FEE,
-                vec![
-                    ContractParameterType::Integer,
-                    ContractParameterType::Integer,
-                ],
-                ContractParameterType::Array,
-            ),
-            NativeMethod::unsafe_method(
-                "designateAsRole".to_string(),
-                Self::CPU_FEE,
-                (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
-                vec![ContractParameterType::Integer, ContractParameterType::Array],
-                ContractParameterType::Void,
-            ),
-        ];
-        let methods = methods
-            .into_iter()
-            .map(|method| match method.name.as_str() {
-                "getDesignatedByRole" => method
-                    .with_parameter_names(vec!["role".to_string(), "index".to_string()])
-                    .with_required_call_flags(CallFlags::READ_STATES),
-                "designateAsRole" => {
-                    method.with_parameter_names(vec!["role".to_string(), "nodes".to_string()])
-                }
-                _ => method,
-            })
-            .collect();
-
         Self {
             id: Self::ID,
             hash,
-            methods,
+            methods: Self::native_methods(),
         }
     }
 
@@ -261,98 +225,6 @@ impl RoleManagement {
 
         Ok((role, index))
     }
-
-    fn find_designation_bytes(
-        &self,
-        snapshot: &DataCache,
-        role: Role,
-        index: u32,
-    ) -> Result<Option<Vec<u8>>> {
-        let prefix = Self::role_prefix_key(role);
-        let iter = snapshot.find(Some(&prefix), SeekDirection::Backward);
-        for (key, item) in iter {
-            if let Some(designation_index) = Self::parse_designation_index(&key, role) {
-                if designation_index <= index {
-                    return Ok(Some(item.get_value()));
-                }
-            }
-        }
-        Ok(None)
-    }
-
-    fn parse_designation_index(key: &StorageKey, role: Role) -> Option<u32> {
-        let suffix = key.suffix();
-        if suffix.first().copied() != Some(role as u8) || suffix.len() != 5 {
-            return None;
-        }
-        let bytes: [u8; 4] = suffix[1..].try_into().ok()?;
-        Some(u32::from_be_bytes(bytes))
-    }
-
-    fn role_prefix_key(role: Role) -> StorageKey {
-        StorageKey::create(Self::ID, role as u8)
-    }
-
-    fn role_key_suffix(role: Role, index: u32) -> Vec<u8> {
-        let mut suffix = vec![role as u8];
-        suffix.extend_from_slice(&index.to_be_bytes());
-        suffix
-    }
-
-    /// Gets designated nodes for a role at a specific block index.
-    /// This is a public API used by other native contracts like Notary.
-    pub fn get_designated_by_role_at(
-        &self,
-        snapshot: &DataCache,
-        role: Role,
-        index: u32,
-    ) -> Result<Vec<ECPoint>> {
-        match self.find_designation_bytes(snapshot, role, index)? {
-            Some(bytes) => self.parse_public_keys(&bytes),
-            None => Ok(vec![]),
-        }
-    }
-
-    /// Serializes public keys to bytes.
-    pub(crate) fn serialize_public_keys(&self, public_keys: &[ECPoint]) -> Result<Vec<u8>> {
-        let value = StackValue::Array(
-            public_keys
-                .iter()
-                .map(|pubkey| StackValue::ByteString(pubkey.as_bytes().to_vec()))
-                .collect(),
-        );
-        BinarySerializer::serialize_stack_value(&value, &ExecutionEngineLimits::default())
-            .map_err(|e| Error::native_contract(format!("Failed to serialize public keys: {e}")))
-    }
-
-    /// Parses public keys from bytes (little-endian count + compressed points).
-    fn parse_public_keys(&self, data: &[u8]) -> Result<Vec<ECPoint>> {
-        if data.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let value = BinarySerializer::deserialize_stack_value(data).map_err(|e| {
-            Error::native_contract(format!("Failed to deserialize public keys: {e}"))
-        })?;
-
-        let StackValue::Array(items) = value else {
-            return Err(Error::native_contract(
-                "Public keys payload must be an array".to_string(),
-            ));
-        };
-
-        let mut keys = Vec::with_capacity(items.len());
-        for element in items {
-            let bytes = element
-                .to_byte_string_bytes()
-                .ok_or_else(|| Error::native_contract("Invalid public key item"))?;
-            let pubkey = ECPoint::decode_compressed_with_curve(ECCurve::secp256r1(), &bytes)
-                .map_err(|e| Error::native_contract(format!("Invalid public key encoding: {e}")))?;
-            keys.push(pubkey);
-        }
-
-        Ok(keys)
-    }
 }
 
 impl NativeContract for RoleManagement {
@@ -377,51 +249,7 @@ impl NativeContract for RoleManagement {
         settings: &crate::protocol_settings::ProtocolSettings,
         block_height: u32,
     ) -> Vec<ContractEventDescriptor> {
-        if settings.is_hardfork_enabled(Hardfork::HfEchidna, block_height) {
-            vec![ContractEventDescriptor::new(
-                "Designation".to_string(),
-                vec![
-                    ContractParameterDefinition::new(
-                        "Role".to_string(),
-                        ContractParameterType::Integer,
-                    )
-                    .expect("Designation.Role"),
-                    ContractParameterDefinition::new(
-                        "BlockIndex".to_string(),
-                        ContractParameterType::Integer,
-                    )
-                    .expect("Designation.BlockIndex"),
-                    ContractParameterDefinition::new(
-                        "Old".to_string(),
-                        ContractParameterType::Array,
-                    )
-                    .expect("Designation.Old"),
-                    ContractParameterDefinition::new(
-                        "New".to_string(),
-                        ContractParameterType::Array,
-                    )
-                    .expect("Designation.New"),
-                ],
-            )
-            .expect("Designation event descriptor")]
-        } else {
-            vec![ContractEventDescriptor::new(
-                "Designation".to_string(),
-                vec![
-                    ContractParameterDefinition::new(
-                        "Role".to_string(),
-                        ContractParameterType::Integer,
-                    )
-                    .expect("Designation.Role"),
-                    ContractParameterDefinition::new(
-                        "BlockIndex".to_string(),
-                        ContractParameterType::Integer,
-                    )
-                    .expect("Designation.BlockIndex"),
-                ],
-            )
-            .expect("Designation event descriptor")]
-        }
+        Self::event_descriptors(settings, block_height)
     }
 
     fn activations(&self) -> Vec<Hardfork> {
@@ -456,13 +284,18 @@ mod tests {
     use crate::ledger::{Block, BlockHeader};
     use crate::neo_vm::StackItem;
     use crate::network::p2p::payloads::{signer::Signer, transaction::Transaction};
+    use crate::persistence::DataCache;
     use crate::protocol_settings::ProtocolSettings;
     use crate::script_builder::ScriptBuilder;
+    use crate::smart_contract::binary_serializer::BinarySerializer;
+    use crate::smart_contract::call_flags::CallFlags;
+    use crate::smart_contract::storage_key::StorageKey;
     use crate::smart_contract::trigger_type::TriggerType;
     use crate::smart_contract::{native::NativeHelpers, StorageItem};
     use crate::witness::Witness;
-    use crate::{IVerifiable, UInt256, WitnessScope};
+    use crate::{ECCurve, ECPoint, IVerifiable, UInt256, WitnessScope};
     use neo_vm_rs::OpCode;
+    use neo_vm_rs::StackValue;
     use std::sync::Arc;
 
     fn sample_point(tag: u8) -> ECPoint {
@@ -578,6 +411,34 @@ mod tests {
         let encoded = contract.serialize_public_keys(&keys).unwrap();
         let decoded = contract.parse_public_keys(&encoded).unwrap();
         assert_eq!(decoded, keys);
+    }
+
+    #[test]
+    fn role_key_suffix_is_role_plus_big_endian_index() {
+        assert_eq!(
+            RoleManagement::role_key_suffix(Role::Oracle, 0x0102_0304),
+            vec![Role::Oracle as u8, 0x01, 0x02, 0x03, 0x04]
+        );
+    }
+
+    #[test]
+    fn serialize_public_keys_uses_stack_value_array_payload() {
+        let contract = RoleManagement::new();
+        let keys = vec![sample_point(0xAA), sample_point(0xBB)];
+        let encoded = contract.serialize_public_keys(&keys).unwrap();
+        let value = BinarySerializer::deserialize_stack_value(&encoded).unwrap();
+
+        let StackValue::Array(items) = value else {
+            panic!("RoleManagement public keys must serialize as StackValue::Array");
+        };
+        assert_eq!(items.len(), keys.len());
+        for (item, key) in items.iter().zip(keys.iter()) {
+            let bytes = item
+                .to_byte_string_bytes()
+                .expect("public key item should be ByteString-compatible");
+            assert_eq!(bytes.len(), 33);
+            assert_eq!(bytes, key.to_bytes());
+        }
     }
 
     #[test]

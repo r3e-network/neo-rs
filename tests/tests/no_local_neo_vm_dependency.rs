@@ -2203,8 +2203,10 @@ fn token_management_states_project_through_neo_vm_rs_stack_value() {
 fn role_management_designated_nodes_storage_uses_neo_vm_rs_stack_value() {
     let workspace = workspace_root();
     let source =
-        fs::read_to_string(workspace.join("neo-core/src/smart_contract/native/role_management.rs"))
-            .unwrap();
+        fs::read_to_string(
+            workspace.join("neo-core/src/smart_contract/native/role_management/storage.rs"),
+        )
+        .unwrap();
     let serialization_section = source
         .split("/// Serializes public keys to bytes")
         .nth(1)
@@ -2213,7 +2215,6 @@ fn role_management_designated_nodes_storage_uses_neo_vm_rs_stack_value() {
     let parsing_section = source
         .split("/// Parses public keys from bytes")
         .nth(1)
-        .and_then(|tail| tail.split("impl NativeContract for RoleManagement").next())
         .expect("role-management public-key parsing section");
 
     assert!(

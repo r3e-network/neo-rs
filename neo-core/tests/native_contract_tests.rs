@@ -214,10 +214,82 @@ fn test_active_deprecated_in_role_management() {
         .contract_state(&settings, 20)
         .expect("contract state after");
 
-    assert_eq!(before.manifest.abi.events.len(), 1);
-    assert_eq!(before.manifest.abi.events[0].parameters.len(), 2);
-    assert_eq!(after.manifest.abi.events.len(), 1);
-    assert_eq!(after.manifest.abi.events[0].parameters.len(), 4);
+    assert_event_descriptors(
+        &before.manifest.abi.events,
+        &[(
+            "Designation",
+            &[
+                ("Role", ContractParameterType::Integer),
+                ("BlockIndex", ContractParameterType::Integer),
+            ],
+        )],
+    );
+    assert_event_descriptors(
+        &after.manifest.abi.events,
+        &[(
+            "Designation",
+            &[
+                ("Role", ContractParameterType::Integer),
+                ("BlockIndex", ContractParameterType::Integer),
+                ("Old", ContractParameterType::Array),
+                ("New", ContractParameterType::Array),
+            ],
+        )],
+    );
+}
+
+#[test]
+fn test_role_management_method_metadata_matches_protocol() {
+    let role_mgmt = RoleManagement::new();
+    let expected_methods: &[(
+        &str,
+        bool,
+        u8,
+        &[ContractParameterType],
+        ContractParameterType,
+        &[&str],
+    )] = &[
+        (
+            "getDesignatedByRole",
+            true,
+            CallFlags::READ_STATES.bits(),
+            &[
+                ContractParameterType::Integer,
+                ContractParameterType::Integer,
+            ],
+            ContractParameterType::Array,
+            &["role", "index"],
+        ),
+        (
+            "designateAsRole",
+            false,
+            (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
+            &[ContractParameterType::Integer, ContractParameterType::Array],
+            ContractParameterType::Void,
+            &["role", "nodes"],
+        ),
+    ];
+
+    assert_eq!(role_mgmt.methods().len(), expected_methods.len());
+    for (method, (name, safe, flags, parameters, return_type, names)) in
+        role_mgmt.methods().iter().zip(expected_methods.iter())
+    {
+        assert_eq!(method.name.as_str(), *name);
+        assert_eq!(method.cpu_fee, 1 << 15, "{name}");
+        assert_eq!(method.storage_fee, 0, "{name}");
+        assert_eq!(method.safe, *safe, "{name}");
+        assert_eq!(method.required_call_flags, *flags, "{name}");
+        assert_eq!(method.parameters.as_slice(), *parameters, "{name}");
+        assert_eq!(&method.return_type, return_type, "{name}");
+        assert_eq!(method.active_in, None, "{name}");
+        assert_eq!(method.deprecated_in, None, "{name}");
+        let actual_names = method
+            .parameter_names
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        assert_eq!(actual_names, *names, "{name}");
+    }
 }
 
 #[test]
