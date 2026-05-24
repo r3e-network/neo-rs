@@ -25,14 +25,12 @@ use crate::persistence::{i_read_only_store::IReadOnlyStoreGeneric, seek_directio
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;
-use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::helper::Helper;
-use crate::smart_contract::manifest::{ContractEventDescriptor, ContractParameterDefinition};
+use crate::smart_contract::manifest::ContractEventDescriptor;
 use crate::smart_contract::native::ledger_contract::LedgerContract;
 use crate::smart_contract::storage_context::StorageContext;
 use crate::smart_contract::storage_key::StorageKey;
 use crate::smart_contract::Contract;
-use crate::smart_contract::ContractParameterType;
 use crate::smart_contract::StorageItem;
 use crate::UInt160;
 use lazy_static::lazy_static;
@@ -85,6 +83,7 @@ impl NeoToken {
 mod bonus;
 mod committee;
 mod governance;
+mod metadata;
 mod methods;
 mod native_impl;
 mod nep17;

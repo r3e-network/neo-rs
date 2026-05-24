@@ -14,6 +14,7 @@ use neo_core::smart_contract::native::{
     PolicyContract, RoleManagement, StdLib, TreasuryContract,
 };
 use neo_core::smart_contract::trigger_type::TriggerType;
+use neo_core::smart_contract::ContractParameterType;
 use neo_core::{UInt160, UInt256};
 use neo_vm_rs::OpCode;
 use neo_vm_rs::VmState as VMState;
@@ -388,6 +389,356 @@ fn test_nep17_helper_matches_neo_native_method_prefix_exactly() {
     assert_nep17_helper_raw_metadata(&expected);
 }
 
+#[test]
+fn test_neo_token_method_metadata_matches_protocol() {
+    let neo = NeoToken::new();
+    let expected_nep17 = <NeoToken as FungibleToken>::ft_nep17_methods();
+    let nep17_len = expected_nep17.len();
+    let expected_methods: &[(
+        &str,
+        i64,
+        bool,
+        u8,
+        &[ContractParameterType],
+        ContractParameterType,
+        Option<Hardfork>,
+        Option<Hardfork>,
+        &[&str],
+    )] = &[
+        (
+            "unclaimedGas",
+            1 << 17,
+            true,
+            CallFlags::READ_STATES.bits(),
+            &[
+                ContractParameterType::Hash160,
+                ContractParameterType::Integer,
+            ],
+            ContractParameterType::Integer,
+            None,
+            None,
+            &["account", "end"],
+        ),
+        (
+            "getAccountState",
+            1 << 15,
+            true,
+            CallFlags::READ_STATES.bits(),
+            &[ContractParameterType::Hash160],
+            ContractParameterType::Array,
+            None,
+            None,
+            &["account"],
+        ),
+        (
+            "getCandidates",
+            1 << 22,
+            true,
+            CallFlags::READ_STATES.bits(),
+            &[],
+            ContractParameterType::Array,
+            None,
+            None,
+            &[],
+        ),
+        (
+            "getAllCandidates",
+            1 << 22,
+            true,
+            CallFlags::READ_STATES.bits(),
+            &[],
+            ContractParameterType::InteropInterface,
+            None,
+            None,
+            &[],
+        ),
+        (
+            "getCandidateVote",
+            1 << 15,
+            true,
+            CallFlags::READ_STATES.bits(),
+            &[ContractParameterType::PublicKey],
+            ContractParameterType::Integer,
+            None,
+            None,
+            &["pubKey"],
+        ),
+        (
+            "getCommittee",
+            1 << 16,
+            true,
+            CallFlags::READ_STATES.bits(),
+            &[],
+            ContractParameterType::Array,
+            None,
+            None,
+            &[],
+        ),
+        (
+            "getCommitteeAddress",
+            1 << 16,
+            true,
+            CallFlags::READ_STATES.bits(),
+            &[],
+            ContractParameterType::Hash160,
+            Some(Hardfork::HfCockatrice),
+            None,
+            &[],
+        ),
+        (
+            "getNextBlockValidators",
+            1 << 16,
+            true,
+            CallFlags::READ_STATES.bits(),
+            &[],
+            ContractParameterType::Array,
+            None,
+            None,
+            &[],
+        ),
+        (
+            "getGasPerBlock",
+            1 << 15,
+            true,
+            CallFlags::READ_STATES.bits(),
+            &[],
+            ContractParameterType::Integer,
+            None,
+            None,
+            &[],
+        ),
+        (
+            "getRegisterPrice",
+            1 << 15,
+            true,
+            CallFlags::READ_STATES.bits(),
+            &[],
+            ContractParameterType::Integer,
+            None,
+            None,
+            &[],
+        ),
+        (
+            "onNEP17Payment",
+            0,
+            false,
+            (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
+            &[
+                ContractParameterType::Hash160,
+                ContractParameterType::Integer,
+                ContractParameterType::Any,
+            ],
+            ContractParameterType::Void,
+            Some(Hardfork::HfEchidna),
+            None,
+            &["from", "amount", "data"],
+        ),
+        (
+            "registerCandidate",
+            0,
+            false,
+            CallFlags::STATES.bits(),
+            &[ContractParameterType::PublicKey],
+            ContractParameterType::Boolean,
+            None,
+            Some(Hardfork::HfEchidna),
+            &["pubkey"],
+        ),
+        (
+            "registerCandidate",
+            0,
+            false,
+            (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
+            &[ContractParameterType::PublicKey],
+            ContractParameterType::Boolean,
+            Some(Hardfork::HfEchidna),
+            None,
+            &["pubkey"],
+        ),
+        (
+            "unregisterCandidate",
+            1 << 16,
+            false,
+            CallFlags::STATES.bits(),
+            &[ContractParameterType::PublicKey],
+            ContractParameterType::Boolean,
+            None,
+            Some(Hardfork::HfEchidna),
+            &["pubkey"],
+        ),
+        (
+            "unregisterCandidate",
+            1 << 16,
+            false,
+            (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
+            &[ContractParameterType::PublicKey],
+            ContractParameterType::Boolean,
+            Some(Hardfork::HfEchidna),
+            None,
+            &["pubkey"],
+        ),
+        (
+            "vote",
+            1 << 16,
+            false,
+            CallFlags::STATES.bits(),
+            &[
+                ContractParameterType::Hash160,
+                ContractParameterType::PublicKey,
+            ],
+            ContractParameterType::Boolean,
+            None,
+            Some(Hardfork::HfEchidna),
+            &["account", "voteTo"],
+        ),
+        (
+            "vote",
+            1 << 16,
+            false,
+            (CallFlags::STATES | CallFlags::ALLOW_NOTIFY).bits(),
+            &[
+                ContractParameterType::Hash160,
+                ContractParameterType::PublicKey,
+            ],
+            ContractParameterType::Boolean,
+            Some(Hardfork::HfEchidna),
+            None,
+            &["account", "voteTo"],
+        ),
+        (
+            "setGasPerBlock",
+            1 << 15,
+            false,
+            CallFlags::STATES.bits(),
+            &[ContractParameterType::Integer],
+            ContractParameterType::Void,
+            None,
+            None,
+            &["gasPerBlock"],
+        ),
+        (
+            "setRegisterPrice",
+            1 << 15,
+            false,
+            CallFlags::STATES.bits(),
+            &[ContractParameterType::Integer],
+            ContractParameterType::Void,
+            None,
+            None,
+            &["registerPrice"],
+        ),
+    ];
+
+    assert_eq!(&neo.methods()[..nep17_len], expected_nep17.as_slice());
+    assert_eq!(neo.methods().len(), nep17_len + expected_methods.len());
+    for (
+        method,
+        (name, fee, safe, flags, parameters, return_type, active_in, deprecated_in, names),
+    ) in neo.methods()[nep17_len..]
+        .iter()
+        .zip(expected_methods.iter())
+    {
+        assert_eq!(method.name.as_str(), *name);
+        assert_eq!(method.cpu_fee, *fee, "{name}");
+        assert_eq!(method.storage_fee, 0, "{name}");
+        assert_eq!(method.safe, *safe, "{name}");
+        assert_eq!(method.required_call_flags, *flags, "{name}");
+        assert_eq!(method.parameters.as_slice(), *parameters, "{name}");
+        assert_eq!(&method.return_type, return_type, "{name}");
+        assert_eq!(method.active_in, *active_in, "{name}");
+        assert_eq!(method.deprecated_in, *deprecated_in, "{name}");
+        let actual_names = method
+            .parameter_names
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        assert_eq!(actual_names, *names, "{name}");
+    }
+}
+
+#[test]
+fn test_neo_token_metadata_hardforks() {
+    let neo = NeoToken::new();
+    let settings = neo_token_metadata_settings();
+
+    assert_eq!(
+        neo.supported_standards(&settings, 39),
+        vec!["NEP-17".to_string()]
+    );
+    assert_eq!(
+        neo.supported_standards(&settings, 40),
+        vec!["NEP-17".to_string(), "NEP-27".to_string()]
+    );
+
+    assert_event_descriptors(
+        &neo.events(&settings, 19),
+        &[
+            (
+                "Transfer",
+                &[
+                    ("from", ContractParameterType::Hash160),
+                    ("to", ContractParameterType::Hash160),
+                    ("amount", ContractParameterType::Integer),
+                ],
+            ),
+            (
+                "CandidateStateChanged",
+                &[
+                    ("pubkey", ContractParameterType::PublicKey),
+                    ("registered", ContractParameterType::Boolean),
+                    ("votes", ContractParameterType::Integer),
+                ],
+            ),
+            (
+                "Vote",
+                &[
+                    ("account", ContractParameterType::Hash160),
+                    ("from", ContractParameterType::PublicKey),
+                    ("to", ContractParameterType::PublicKey),
+                    ("amount", ContractParameterType::Integer),
+                ],
+            ),
+        ],
+    );
+    assert_event_descriptors(
+        &neo.events(&settings, 20),
+        &[
+            (
+                "Transfer",
+                &[
+                    ("from", ContractParameterType::Hash160),
+                    ("to", ContractParameterType::Hash160),
+                    ("amount", ContractParameterType::Integer),
+                ],
+            ),
+            (
+                "CandidateStateChanged",
+                &[
+                    ("pubkey", ContractParameterType::PublicKey),
+                    ("registered", ContractParameterType::Boolean),
+                    ("votes", ContractParameterType::Integer),
+                ],
+            ),
+            (
+                "Vote",
+                &[
+                    ("account", ContractParameterType::Hash160),
+                    ("from", ContractParameterType::PublicKey),
+                    ("to", ContractParameterType::PublicKey),
+                    ("amount", ContractParameterType::Integer),
+                ],
+            ),
+            (
+                "CommitteeChanged",
+                &[
+                    ("old", ContractParameterType::Array),
+                    ("new", ContractParameterType::Array),
+                ],
+            ),
+        ],
+    );
+}
+
 fn assert_nep17_helper_raw_metadata(methods: &[neo_core::smart_contract::native::NativeMethod]) {
     assert_eq!(methods.len(), 5);
 
@@ -414,4 +765,35 @@ fn assert_nep17_helper_raw_metadata(methods: &[neo_core::smart_contract::native:
     assert_eq!(transfer.required_call_flags, CallFlags::ALL.bits());
     assert_eq!(transfer.storage_fee, 50);
     assert_eq!(transfer.parameter_names, ["from", "to", "amount", "data"]);
+}
+
+fn neo_token_metadata_settings() -> ProtocolSettings {
+    let mut settings = ProtocolSettings::default();
+    settings.hardforks = HashMap::from([
+        (Hardfork::HfAspidochelone, 0),
+        (Hardfork::HfBasilisk, 0),
+        (Hardfork::HfCockatrice, 20),
+        (Hardfork::HfDomovoi, 30),
+        (Hardfork::HfEchidna, 40),
+        (Hardfork::HfFaun, 60),
+        (Hardfork::HfGorgon, 80),
+    ]);
+    settings
+}
+
+fn assert_event_descriptors(
+    events: &[neo_core::smart_contract::manifest::ContractEventDescriptor],
+    expected: &[(&str, &[(&str, ContractParameterType)])],
+) {
+    assert_eq!(events.len(), expected.len());
+    for (event, (name, parameters)) in events.iter().zip(expected.iter()) {
+        assert_eq!(event.name.as_str(), *name);
+        assert_eq!(event.parameters.len(), parameters.len(), "{name}");
+        for (parameter, (expected_name, expected_type)) in
+            event.parameters.iter().zip(parameters.iter())
+        {
+            assert_eq!(parameter.name.as_str(), *expected_name, "{name}");
+            assert_eq!(&parameter.param_type, expected_type, "{name}");
+        }
+    }
 }

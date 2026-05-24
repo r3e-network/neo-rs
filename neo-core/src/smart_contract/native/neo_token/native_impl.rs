@@ -27,11 +27,7 @@ impl NativeContract for NeoToken {
     }
 
     fn supported_standards(&self, settings: &ProtocolSettings, block_height: u32) -> Vec<String> {
-        if settings.is_hardfork_enabled(crate::hardfork::Hardfork::HfEchidna, block_height) {
-            vec!["NEP-17".to_string(), "NEP-27".to_string()]
-        } else {
-            vec!["NEP-17".to_string()]
-        }
+        Self::supported_standards_metadata(settings, block_height)
     }
 
     fn events(
@@ -39,99 +35,7 @@ impl NativeContract for NeoToken {
         settings: &ProtocolSettings,
         block_height: u32,
     ) -> Vec<ContractEventDescriptor> {
-        let mut events = vec![
-            ContractEventDescriptor::new(
-                "Transfer".to_string(),
-                vec![
-                    ContractParameterDefinition::new(
-                        "from".to_string(),
-                        ContractParameterType::Hash160,
-                    )
-                    .expect("Transfer.from"),
-                    ContractParameterDefinition::new(
-                        "to".to_string(),
-                        ContractParameterType::Hash160,
-                    )
-                    .expect("Transfer.to"),
-                    ContractParameterDefinition::new(
-                        "amount".to_string(),
-                        ContractParameterType::Integer,
-                    )
-                    .expect("Transfer.amount"),
-                ],
-            )
-            .expect("Transfer event descriptor"),
-            ContractEventDescriptor::new(
-                "CandidateStateChanged".to_string(),
-                vec![
-                    ContractParameterDefinition::new(
-                        "pubkey".to_string(),
-                        ContractParameterType::PublicKey,
-                    )
-                    .expect("CandidateStateChanged.pubkey"),
-                    ContractParameterDefinition::new(
-                        "registered".to_string(),
-                        ContractParameterType::Boolean,
-                    )
-                    .expect("CandidateStateChanged.registered"),
-                    ContractParameterDefinition::new(
-                        "votes".to_string(),
-                        ContractParameterType::Integer,
-                    )
-                    .expect("CandidateStateChanged.votes"),
-                ],
-            )
-            .expect("CandidateStateChanged event descriptor"),
-            ContractEventDescriptor::new(
-                "Vote".to_string(),
-                vec![
-                    ContractParameterDefinition::new(
-                        "account".to_string(),
-                        ContractParameterType::Hash160,
-                    )
-                    .expect("Vote.account"),
-                    ContractParameterDefinition::new(
-                        "from".to_string(),
-                        ContractParameterType::PublicKey,
-                    )
-                    .expect("Vote.from"),
-                    ContractParameterDefinition::new(
-                        "to".to_string(),
-                        ContractParameterType::PublicKey,
-                    )
-                    .expect("Vote.to"),
-                    ContractParameterDefinition::new(
-                        "amount".to_string(),
-                        ContractParameterType::Integer,
-                    )
-                    .expect("Vote.amount"),
-                ],
-            )
-            .expect("Vote event descriptor"),
-        ];
-
-        if settings.is_hardfork_enabled(crate::hardfork::Hardfork::HfCockatrice, block_height) {
-            events.push(
-                ContractEventDescriptor::new(
-                    "CommitteeChanged".to_string(),
-                    vec![
-                        ContractParameterDefinition::new(
-                            "old".to_string(),
-                            ContractParameterType::Array,
-                        )
-                        .expect("CommitteeChanged.old"),
-                        ContractParameterDefinition::new(
-                            "new".to_string(),
-                            ContractParameterType::Array,
-                        )
-                        .expect("CommitteeChanged.new"),
-                    ],
-                )
-                .expect("CommitteeChanged event descriptor"),
-            );
-        }
-
-        events
+        Self::event_descriptors(settings, block_height)
     }
 
     fn initialize(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
