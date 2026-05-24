@@ -479,9 +479,7 @@ pub mod crypto {
 /// Contains storage traits and abstractions.
 /// Kept for backward compatibility; no current downstream consumers.
 pub mod storage {
-    pub use neo_storage::{
-        IReadOnlyStore, ISnapshot, IStore, IWriteStore, StorageItem, StorageKey,
-    };
+    pub use neo_storage::{StorageItem, StorageKey};
 }
 
 /// Re-exports smart contract types for backward compatibility.

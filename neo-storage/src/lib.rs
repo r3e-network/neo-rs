@@ -44,15 +44,12 @@ pub mod cache;
 pub mod error;
 pub mod hash_utils;
 pub mod key_builder;
-pub mod traits;
 pub mod types;
 
-// Re-exports
 pub use cache::{ClonedCache, DataCache, DataCacheError, DataCacheResult, Trackable};
 pub use error::{StorageError, StorageResult};
 pub use hash_utils::{
     default_xx_hash3_seed, hash_code_combine_i32, xx_hash3_32, DEFAULT_XX_HASH3_SEED,
 };
 pub use key_builder::{KeyBuilder, KeyBuilderError};
-pub use traits::{IReadOnlyStore, ISnapshot, IStore, IWriteStore};
 pub use types::{SeekDirection, StorageItem, StorageKey, TrackState};
