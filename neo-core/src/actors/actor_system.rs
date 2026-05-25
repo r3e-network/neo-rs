@@ -4,7 +4,7 @@ use super::{
     context::ActorContext,
     error::{AkkaError, AkkaResult},
     event_stream::{EventStream, EventStreamHandle},
-    mailbox::Mailbox,
+    mailbox::{DefaultMailbox, Mailbox},
     message::{MailboxMessage, SystemMessage, Terminated},
     props::Props,
     scheduler::Scheduler,
@@ -149,7 +149,7 @@ impl ActorSystemInner {
         let system = Arc::clone(self);
         let actor_ref = ActorRef::new(path.clone(), tx.clone(), Arc::downgrade(self));
         let actor = props.create();
-        let mailbox = props.create_mailbox();
+        let mailbox = DefaultMailbox::default();
         let cell = ActorCell::new(system, actor, props, mailbox, rx, actor_ref.clone(), parent);
 
         self.actor_tasks.spawn_on(
@@ -262,7 +262,7 @@ struct ActorCell {
     system: Arc<ActorSystemInner>,
     actor: Box<dyn Actor>,
     props: Props,
-    mailbox: Box<dyn Mailbox>,
+    mailbox: DefaultMailbox,
     commands: mpsc::Receiver<MailboxCommand>,
     self_ref: ActorRef,
     parent: Option<ActorRef>,
@@ -274,7 +274,7 @@ impl ActorCell {
         system: Arc<ActorSystemInner>,
         actor: Box<dyn Actor>,
         props: Props,
-        mailbox: Box<dyn Mailbox>,
+        mailbox: DefaultMailbox,
         commands: mpsc::Receiver<MailboxCommand>,
         self_ref: ActorRef,
         parent: Option<ActorRef>,

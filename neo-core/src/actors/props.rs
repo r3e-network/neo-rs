@@ -1,7 +1,4 @@
-use super::{
-    actor::Actor,
-    mailbox::{DefaultMailbox, Mailbox},
-};
+use super::actor::Actor;
 use std::{fmt, sync::Arc};
 
 /// Actor factory used when spawning a new instance.
@@ -22,10 +19,6 @@ impl Props {
 
     pub(crate) fn create(&self) -> Box<dyn Actor> {
         (self.factory)()
-    }
-
-    pub(crate) fn create_mailbox(&self) -> Box<dyn Mailbox> {
-        Box::new(DefaultMailbox::default())
     }
 }
 
