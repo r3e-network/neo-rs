@@ -28,7 +28,7 @@ bytes = { workspace = true }
 # tokio kept for monitoring and persistence/backup modules
 # Consider moving these to neo-node in future refactoring
 tokio = { workspace = true, features = ["sync", "time", "fs", "io-util", "rt"] }
-tokio-util = { workspace = true, features = ["rt"] }
+tokio-util = { workspace = true, features = ["codec", "rt"] }
 async-trait = { workspace = true }
 rand = { workspace = true }
 sha2 = { workspace = true }

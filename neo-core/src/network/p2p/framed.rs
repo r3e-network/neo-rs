@@ -1,13 +1,16 @@
 //! Tokio-based framing helpers for Neo P2P streams with timeouts, size guards, and vectored I/O.
 use super::{channels_config::ChannelsConfig, message::PAYLOAD_MAX_SIZE};
 use crate::network::{NetworkError, NetworkResult};
+use bytes::{BufMut, BytesMut};
 use std::io::IoSlice;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::{timeout, Duration};
+use tokio_util::codec::{Decoder, Encoder};
 
 /// Initial buffer capacity for reading small messages.
 const INITIAL_READ_CAPACITY: usize = 256;
+const FRAME_HEADER_LEN: usize = 2;
 
 /// Buffer size for vectored writes.
 const WRITE_BUFFER_SIZE: usize = 4096;
@@ -16,6 +19,131 @@ const WRITE_BUFFER_SIZE: usize = 4096;
 /// size guards, and vectored I/O support.
 pub struct FramedSocket<'a> {
     stream: &'a mut TcpStream,
+    read_buffer: BytesMut,
+}
+
+/// Neo P2P message codec for flags + command + var-bytes payload frames.
+#[derive(Clone, Debug)]
+pub struct NeoMessageCodec {
+    max_payload_size: usize,
+}
+
+impl NeoMessageCodec {
+    pub fn new(max_payload_size: usize) -> Self {
+        Self { max_payload_size }
+    }
+
+    fn read_var_int(src: &[u8]) -> NetworkResult<Option<(u64, usize)>> {
+        let Some(prefix) = src.first().copied() else {
+            return Ok(None);
+        };
+
+        match prefix {
+            0xFD => {
+                if src.len() < 3 {
+                    return Ok(None);
+                }
+                Ok(Some((u16::from_le_bytes([src[1], src[2]]) as u64, 3)))
+            }
+            0xFE => {
+                if src.len() < 5 {
+                    return Ok(None);
+                }
+                Ok(Some((
+                    u32::from_le_bytes([src[1], src[2], src[3], src[4]]) as u64,
+                    5,
+                )))
+            }
+            0xFF => {
+                if src.len() < 9 {
+                    return Ok(None);
+                }
+                Ok(Some((
+                    u64::from_le_bytes([
+                        src[1], src[2], src[3], src[4], src[5], src[6], src[7], src[8],
+                    ]),
+                    9,
+                )))
+            }
+            value => Ok(Some((value as u64, 1))),
+        }
+    }
+
+    fn write_var_int(value: u64, dst: &mut Vec<u8>) {
+        if value < 0xFD {
+            dst.push(value as u8);
+        } else if value <= 0xFFFF {
+            dst.push(0xFD);
+            dst.extend_from_slice(&(value as u16).to_le_bytes());
+        } else if value <= 0xFFFF_FFFF {
+            dst.push(0xFE);
+            dst.extend_from_slice(&(value as u32).to_le_bytes());
+        } else {
+            dst.push(0xFF);
+            dst.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+}
+
+impl Default for NeoMessageCodec {
+    fn default() -> Self {
+        Self::new(PAYLOAD_MAX_SIZE)
+    }
+}
+
+impl Decoder for NeoMessageCodec {
+    type Item = Vec<u8>;
+    type Error = NetworkError;
+
+    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+        if src.len() < FRAME_HEADER_LEN + 1 {
+            return Ok(None);
+        }
+
+        let Some((payload_length, varint_len)) = Self::read_var_int(&src[FRAME_HEADER_LEN..])?
+        else {
+            return Ok(None);
+        };
+
+        if payload_length > self.max_payload_size as u64 {
+            return Err(NetworkError::InvalidMessage(format!(
+                "Payload length {} exceeds maximum {}",
+                payload_length, self.max_payload_size
+            )));
+        }
+
+        let payload_length = usize::try_from(payload_length).map_err(|_| {
+            NetworkError::InvalidMessage(format!(
+                "Payload length {} exceeds maximum {}",
+                payload_length, self.max_payload_size
+            ))
+        })?;
+        let frame_len = FRAME_HEADER_LEN
+            .checked_add(varint_len)
+            .and_then(|len| len.checked_add(payload_length))
+            .ok_or_else(|| NetworkError::InvalidMessage("Frame length overflow".to_string()))?;
+
+        if src.len() < frame_len {
+            return Ok(None);
+        }
+
+        let frame = src.split_to(frame_len);
+        let mut message = Vec::with_capacity(frame_len.max(INITIAL_READ_CAPACITY));
+        message.extend_from_slice(&frame[..FRAME_HEADER_LEN]);
+        Self::write_var_int(payload_length as u64, &mut message);
+        message.extend_from_slice(&frame[FRAME_HEADER_LEN + varint_len..]);
+        Ok(Some(message))
+    }
+}
+
+impl<'a> Encoder<&'a [u8]> for NeoMessageCodec {
+    type Error = NetworkError;
+
+    fn encode(&mut self, item: &'a [u8], dst: &mut BytesMut) -> Result<(), Self::Error> {
+        dst.reserve(item.len());
+        dst.put_slice(item);
+        Ok(())
+    }
 }
 
 /// Runtime framing configuration to keep read behaviour consistent across the stack.
@@ -131,6 +259,7 @@ impl Default for WriteBuffer {
 mod tests {
     use super::*;
     use crate::network::error::NetworkError;
+    use tokio::io::AsyncWriteExt;
     use tokio::net::{TcpListener, TcpStream};
 
     async fn silent_pair() -> Option<(TcpStream, TcpStream)> {
@@ -204,6 +333,106 @@ mod tests {
     }
 
     #[test]
+    fn neo_message_codec_decodes_complete_frame() {
+        let mut codec = NeoMessageCodec::default();
+        let mut input = BytesMut::from(&[0x00, 0x01, 0x03, 0xAA, 0xBB, 0xCC][..]);
+
+        let frame = codec
+            .decode(&mut input)
+            .expect("decode succeeds")
+            .expect("frame is complete");
+
+        assert_eq!(frame, vec![0x00, 0x01, 0x03, 0xAA, 0xBB, 0xCC]);
+        assert!(input.is_empty());
+    }
+
+    #[test]
+    fn neo_message_codec_waits_for_partial_frame() {
+        let mut codec = NeoMessageCodec::default();
+        let mut input = BytesMut::from(&[0x00, 0x01, 0xFD, 0x03][..]);
+
+        let frame = codec.decode(&mut input).expect("partial decode succeeds");
+
+        assert!(frame.is_none());
+        assert_eq!(&input[..], &[0x00, 0x01, 0xFD, 0x03]);
+    }
+
+    #[test]
+    fn neo_message_codec_rejects_oversized_payload() {
+        let mut codec = NeoMessageCodec::new(1);
+        let mut input = BytesMut::from(&[0x00, 0x01, 0x02][..]);
+
+        let result = codec.decode(&mut input);
+
+        assert!(matches!(result, Err(NetworkError::InvalidMessage(_))));
+    }
+
+    #[test]
+    fn neo_message_codec_canonicalizes_var_int_prefix() {
+        let mut codec = NeoMessageCodec::default();
+        let mut input = BytesMut::from(&[0x00, 0x01, 0xFD, 0x01, 0x00, 0xAA][..]);
+
+        let frame = codec
+            .decode(&mut input)
+            .expect("decode succeeds")
+            .expect("frame is complete");
+
+        assert_eq!(frame, vec![0x00, 0x01, 0x01, 0xAA]);
+    }
+
+    #[tokio::test]
+    async fn read_frame_decodes_message_from_stream() {
+        let Some((mut client_stream, mut server_stream)) = silent_pair().await else {
+            return;
+        };
+        let mut framed = FramedSocket::new(&mut client_stream);
+        let cfg = FrameConfig {
+            read_timeout_handshake: Duration::from_secs(1),
+            read_timeout_active: Duration::from_secs(1),
+            write_timeout: Duration::from_secs(1),
+            shutdown_timeout: Duration::from_secs(1),
+            use_vectored_io: true,
+            buffer_small_writes: true,
+        };
+
+        server_stream
+            .write_all(&[0x00, 0x01, 0x03, 0xAA, 0xBB, 0xCC])
+            .await
+            .expect("server writes frame");
+
+        let frame = framed.read_frame(&cfg, false).await.expect("frame reads");
+
+        assert_eq!(frame, vec![0x00, 0x01, 0x03, 0xAA, 0xBB, 0xCC]);
+    }
+
+    #[tokio::test]
+    async fn read_frame_preserves_buffered_next_frame() {
+        let Some((mut client_stream, mut server_stream)) = silent_pair().await else {
+            return;
+        };
+        let mut framed = FramedSocket::new(&mut client_stream);
+        let cfg = FrameConfig {
+            read_timeout_handshake: Duration::from_secs(1),
+            read_timeout_active: Duration::from_secs(1),
+            write_timeout: Duration::from_secs(1),
+            shutdown_timeout: Duration::from_secs(1),
+            use_vectored_io: true,
+            buffer_small_writes: true,
+        };
+
+        server_stream
+            .write_all(&[0x00, 0x01, 0x01, 0xAA, 0x00, 0x02, 0x01, 0xBB])
+            .await
+            .expect("server writes frames");
+
+        let first = framed.read_frame(&cfg, false).await.expect("first frame");
+        let second = framed.read_frame(&cfg, false).await.expect("second frame");
+
+        assert_eq!(first, vec![0x00, 0x01, 0x01, 0xAA]);
+        assert_eq!(second, vec![0x00, 0x02, 0x01, 0xBB]);
+    }
+
+    #[test]
     fn write_buffer_basic_operations() {
         let mut buf = WriteBuffer::new(10);
         assert!(buf.is_empty());
@@ -263,7 +492,10 @@ mod tests {
 
 impl<'a> FramedSocket<'a> {
     pub fn new(stream: &'a mut TcpStream) -> Self {
-        Self { stream }
+        Self {
+            stream,
+            read_buffer: BytesMut::with_capacity(INITIAL_READ_CAPACITY),
+        }
     }
 
     /// Reads a full P2P message frame (flags + command + var-bytes payload) with a timeout applied to
@@ -283,37 +515,26 @@ impl<'a> FramedSocket<'a> {
             cfg.read_timeout_handshake
         };
 
-        // Read header (flags + command)
-        let mut header = [0u8; 2];
-        self.read_exact_slice(&mut header, timeout_duration, "header")
-            .await?;
+        let mut codec = NeoMessageCodec::default();
+        loop {
+            if let Some(frame) = codec.decode(&mut self.read_buffer)? {
+                return Ok(frame);
+            }
 
-        // Read payload length (var_int)
-        let (payload_length, varint_len) = self.read_var_int_len(timeout_duration).await?;
-
-        // Calculate total message size and pre-allocate buffer
-        let total_len = 2 + varint_len + payload_length as usize;
-        let mut message_bytes = Vec::with_capacity(total_len.max(INITIAL_READ_CAPACITY));
-
-        // Write header
-        message_bytes.extend_from_slice(&header);
-
-        // Write var_int bytes (we need to reconstruct them)
-        Self::write_var_int_to_vec(payload_length, &mut message_bytes);
-
-        // Read payload directly into buffer
-        if payload_length > 0 {
-            let payload_start = message_bytes.len();
-            message_bytes.resize(payload_start + payload_length as usize, 0);
-            self.read_exact_slice(
-                &mut message_bytes[payload_start..],
+            let bytes_read = timeout(
                 timeout_duration,
-                "payload",
+                self.stream.read_buf(&mut self.read_buffer),
             )
-            .await?;
-        }
+            .await
+            .map_err(|_| NetworkError::Timeout)?
+            .map_err(|err| NetworkError::ConnectionError(format!("Failed to read frame: {err}")))?;
 
-        Ok(message_bytes)
+            if bytes_read == 0 {
+                return Err(NetworkError::ConnectionError(
+                    "Connection closed while reading frame".to_string(),
+                ));
+            }
+        }
     }
 
     /// Writes a frame using vectored I/O to reduce syscalls.
@@ -435,96 +656,5 @@ impl<'a> FramedSocket<'a> {
                 })?;
         }
         Ok(())
-    }
-
-    async fn read_exact_slice(
-        &mut self,
-        buf: &mut [u8],
-        timeout_duration: Duration,
-        context: &str,
-    ) -> NetworkResult<()> {
-        timeout(timeout_duration, self.stream.read_exact(buf))
-            .await
-            .map_err(|_| NetworkError::Timeout)?
-            .map_err(|e| NetworkError::ConnectionError(format!("Failed to read {context}: {e}")))?;
-        Ok(())
-    }
-
-    /// Reads a var_int and returns (value, byte_length) without allocating.
-    async fn read_var_int_len(
-        &mut self,
-        timeout_duration: Duration,
-    ) -> NetworkResult<(u64, usize)> {
-        let mut first = [0u8; 1];
-        self.read_exact_slice(&mut first, timeout_duration, "varint prefix")
-            .await?;
-
-        match first[0] {
-            0xFD => {
-                let mut buffer = [0u8; 2];
-                self.read_exact_slice(&mut buffer, timeout_duration, "varint (u16)")
-                    .await?;
-                let value = u16::from_le_bytes(buffer) as u64;
-                if value > PAYLOAD_MAX_SIZE as u64 {
-                    return Err(NetworkError::InvalidMessage(format!(
-                        "Payload length {} exceeds maximum {}",
-                        value, PAYLOAD_MAX_SIZE
-                    )));
-                }
-                Ok((value, 3))
-            }
-            0xFE => {
-                let mut buffer = [0u8; 4];
-                self.read_exact_slice(&mut buffer, timeout_duration, "varint (u32)")
-                    .await?;
-                let value = u32::from_le_bytes(buffer) as u64;
-                if value > PAYLOAD_MAX_SIZE as u64 {
-                    return Err(NetworkError::InvalidMessage(format!(
-                        "Payload length {} exceeds maximum {}",
-                        value, PAYLOAD_MAX_SIZE
-                    )));
-                }
-                Ok((value, 5))
-            }
-            0xFF => {
-                let mut buffer = [0u8; 8];
-                self.read_exact_slice(&mut buffer, timeout_duration, "varint (u64)")
-                    .await?;
-                let value = u64::from_le_bytes(buffer);
-                if value > PAYLOAD_MAX_SIZE as u64 {
-                    return Err(NetworkError::InvalidMessage(format!(
-                        "Payload length {} exceeds maximum {}",
-                        value, PAYLOAD_MAX_SIZE
-                    )));
-                }
-                Ok((value, 9))
-            }
-            value => {
-                let val = value as u64;
-                if val > PAYLOAD_MAX_SIZE as u64 {
-                    return Err(NetworkError::InvalidMessage(format!(
-                        "Payload length {} exceeds maximum {}",
-                        val, PAYLOAD_MAX_SIZE
-                    )));
-                }
-                Ok((val, 1))
-            }
-        }
-    }
-
-    /// Writes a var_int to a Vec without allocating a separate buffer.
-    fn write_var_int_to_vec(value: u64, vec: &mut Vec<u8>) {
-        if value < 0xFD {
-            vec.push(value as u8);
-        } else if value <= 0xFFFF {
-            vec.push(0xFD);
-            vec.extend_from_slice(&(value as u16).to_le_bytes());
-        } else if value <= 0xFFFF_FFFF {
-            vec.push(0xFE);
-            vec.extend_from_slice(&(value as u32).to_le_bytes());
-        } else {
-            vec.push(0xFF);
-            vec.extend_from_slice(&value.to_le_bytes());
-        }
     }
 }

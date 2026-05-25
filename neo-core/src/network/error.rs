@@ -35,6 +35,12 @@ pub enum NetworkError {
 /// Result type for network operations.
 pub type NetworkResult<T> = Result<T, NetworkError>;
 
+impl From<std::io::Error> for NetworkError {
+    fn from(error: std::io::Error) -> Self {
+        Self::ConnectionError(error.to_string())
+    }
+}
+
 impl NetworkError {
     /// Returns true when the error represents a timeout condition.
     pub fn is_timeout(&self) -> bool {
