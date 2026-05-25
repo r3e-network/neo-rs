@@ -22,6 +22,9 @@ pub mod unknown_capability;
 pub use archival_node_capability::archival_node;
 pub use disable_compression_capability::{disable_compression, DisableCompressionCapability};
 pub use full_node_capability::full_node;
+pub(crate) use node_capability::{
+    deserialize_node_capabilities, node_capabilities_size, serialize_node_capabilities,
+};
 pub use node_capability::{NodeCapability, MAX_UNKNOWN_CAPABILITY_DATA};
 pub use node_capability_type::NodeCapabilityType;
 pub use server_capability::{tcp_server, ws_server, ServerCapability};

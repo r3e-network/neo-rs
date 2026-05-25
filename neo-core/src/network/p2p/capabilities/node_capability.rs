@@ -2,6 +2,7 @@
 
 use crate::neo_io::{helper, BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 use super::node_capability_type::NodeCapabilityType;
 
@@ -107,6 +108,40 @@ impl NodeCapability {
         }
         Ok(())
     }
+}
+
+pub(crate) fn node_capabilities_size(capabilities: &[NodeCapability]) -> usize {
+    helper::get_var_size_serializable_slice(capabilities)
+}
+
+pub(crate) fn serialize_node_capabilities(
+    capabilities: &[NodeCapability],
+    writer: &mut BinaryWriter,
+) -> IoResult<()> {
+    helper::serialize_array(capabilities, writer)
+}
+
+pub(crate) fn deserialize_node_capabilities(
+    reader: &mut MemoryReader,
+    max: usize,
+) -> IoResult<Vec<NodeCapability>> {
+    let capabilities = helper::deserialize_array(reader, max)?;
+    ensure_unique_known_capabilities(&capabilities)?;
+    Ok(capabilities)
+}
+
+fn ensure_unique_known_capabilities(capabilities: &[NodeCapability]) -> IoResult<()> {
+    let mut seen_types = HashSet::new();
+    for capability in capabilities {
+        if matches!(capability, NodeCapability::Unknown { .. }) {
+            continue;
+        }
+
+        if !seen_types.insert(capability.capability_type()) {
+            return Err(IoError::invalid_data("Duplicate capability type"));
+        }
+    }
+    Ok(())
 }
 
 impl Serializable for NodeCapability {

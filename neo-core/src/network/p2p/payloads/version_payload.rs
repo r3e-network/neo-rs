@@ -9,12 +9,14 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use crate::neo_io::serializable::helper::{get_var_size, get_var_size_str};
-use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use crate::network::p2p::capabilities::NodeCapability;
+use crate::neo_io::serializable::helper::get_var_size_str;
+use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
+use crate::network::p2p::capabilities::{
+    deserialize_node_capabilities, node_capabilities_size, serialize_node_capabilities,
+    NodeCapability,
+};
 use crate::protocol_settings::ProtocolSettings;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
 
 /// Protocol version constant
 pub const PROTOCOL_VERSION: u32 = 0;
@@ -76,7 +78,7 @@ impl Serializable for VersionPayload {
         4 + // Timestamp
         4 + // Nonce
         get_var_size_str(&self.user_agent) + // UserAgent
-        get_var_size(self.capabilities.len() as u64) + self.capabilities.iter().map(|c| c.size()).sum::<usize>()
+        node_capabilities_size(&self.capabilities)
         // Capabilities
     }
 
@@ -86,11 +88,7 @@ impl Serializable for VersionPayload {
         writer.write_u32(self.timestamp)?;
         writer.write_u32(self.nonce)?;
         writer.write_var_string(&self.user_agent)?;
-        writer.write_var_uint(self.capabilities.len() as u64)?;
-        for capability in &self.capabilities {
-            writer.write_serializable(capability)?;
-        }
-        Ok(())
+        serialize_node_capabilities(&self.capabilities, writer)
     }
 
     fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
@@ -100,23 +98,7 @@ impl Serializable for VersionPayload {
         let nonce = reader.read_u32()?;
         let user_agent = reader.read_var_string(1024)?;
 
-        // Read capabilities
-        let capability_count = reader.read_var_int(MAX_CAPABILITIES as u64)? as usize;
-        let mut capabilities = Vec::with_capacity(capability_count);
-        for _ in 0..capability_count {
-            capabilities.push(<NodeCapability as Serializable>::deserialize(reader)?);
-        }
-
-        // Check for duplicate capability types (excluding UnknownCapability)
-        let mut seen_types = HashSet::new();
-        for capability in &capabilities {
-            if !matches!(capability, NodeCapability::Unknown { .. }) {
-                let cap_type = capability.capability_type();
-                if !seen_types.insert(cap_type) {
-                    return Err(IoError::invalid_data("Duplicate capability type"));
-                }
-            }
-        }
+        let capabilities = deserialize_node_capabilities(reader, MAX_CAPABILITIES)?;
 
         Ok(Self {
             network,

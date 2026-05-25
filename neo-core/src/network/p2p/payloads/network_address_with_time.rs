@@ -1,10 +1,12 @@
 //! Network address descriptor with timestamp (mirrors `NetworkAddressWithTime.cs`).
 
-use crate::neo_io::{helper, BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use crate::network::p2p::capabilities::{NodeCapability, ServerCapability};
+use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use crate::network::p2p::capabilities::{
+    deserialize_node_capabilities, node_capabilities_size, serialize_node_capabilities,
+    NodeCapability, ServerCapability,
+};
 use crate::network::p2p::payloads::version_payload::MAX_CAPABILITIES;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
 /// Sent with an AddrPayload to respond to GetAddr messages.
@@ -62,8 +64,7 @@ impl Serializable for NetworkAddressWithTime {
     fn size(&self) -> usize {
         4 + // timestamp
         16 + // mapped address
-        helper::get_var_size(self.capabilities.len() as u64)
-            + self.capabilities.iter().map(|c| c.size()).sum::<usize>()
+        node_capabilities_size(&self.capabilities)
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
@@ -74,11 +75,7 @@ impl Serializable for NetworkAddressWithTime {
             return Err(IoError::invalid_data("Too many capabilities"));
         }
 
-        writer.write_var_int(self.capabilities.len() as u64)?;
-        for capability in &self.capabilities {
-            writer.write_serializable(capability)?;
-        }
-        Ok(())
+        serialize_node_capabilities(&self.capabilities, writer)
     }
 
     fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
@@ -89,24 +86,7 @@ impl Serializable for NetworkAddressWithTime {
             .map_err(|_| IoError::invalid_data("Invalid IP address length"))?;
         let address = Self::unmap_from_ipv6(&addr_array);
 
-        let count = reader.read_var_int(MAX_CAPABILITIES as u64)? as usize;
-        if count > MAX_CAPABILITIES {
-            return Err(IoError::invalid_data("Too many capabilities"));
-        }
-
-        let mut capabilities = Vec::with_capacity(count);
-        for _ in 0..count {
-            capabilities.push(<NodeCapability as Serializable>::deserialize(reader)?);
-        }
-
-        let filtered: Vec<_> = capabilities
-            .iter()
-            .filter(|cap| !matches!(cap, NodeCapability::Unknown { .. }))
-            .collect();
-        let seen: HashSet<_> = filtered.iter().map(|cap| cap.capability_type()).collect();
-        if seen.len() != filtered.len() {
-            return Err(IoError::invalid_data("Duplicate capability type"));
-        }
+        let capabilities = deserialize_node_capabilities(reader, MAX_CAPABILITIES)?;
 
         Ok(Self {
             timestamp,
