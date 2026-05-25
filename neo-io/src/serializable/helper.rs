@@ -64,3 +64,24 @@ pub fn deserialize_array<T: Serializable>(
     }
     Ok(result)
 }
+
+/// Deserializes an array whose length must exactly match `expected`.
+///
+/// This is useful for Neo wire formats where one vector's length is defined by
+/// an earlier field, for example transaction witnesses matching signer count.
+pub fn deserialize_exact_array<T: Serializable>(
+    reader: &mut MemoryReader,
+    expected: usize,
+    mismatch_message: &'static str,
+) -> IoResult<Vec<T>> {
+    let count = reader.read_var_int(expected as u64)? as usize;
+    if count != expected {
+        return Err(IoError::invalid_data(mismatch_message));
+    }
+
+    let mut result = Vec::with_capacity(count);
+    for _ in 0..count {
+        result.push(T::deserialize(reader)?);
+    }
+    Ok(result)
+}

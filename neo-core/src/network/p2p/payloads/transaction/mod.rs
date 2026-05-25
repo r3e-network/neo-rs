@@ -15,7 +15,9 @@ use super::{
 };
 use crate::cryptography::{Crypto, Secp256r1Crypto};
 use crate::hardfork::Hardfork;
-use crate::neo_io::serializable::helper::get_var_size;
+use crate::neo_io::serializable::helper::{
+    deserialize_exact_array, get_var_size_bytes, get_var_size_serializable_slice, serialize_array,
+};
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::network::p2p::helper;
 use crate::persistence::DataCache;
@@ -28,7 +30,7 @@ use crate::smart_contract::trigger_type::TriggerType;
 use crate::smart_contract::{ContractBasicMethod, ContractParameterType, Interoperable};
 use crate::vm_runtime::StackItem;
 use crate::wallets::helper::Helper as WalletHelper;
-use crate::{ledger::VerifyResult, CoreResult, Verifiable, UInt160, UInt256};
+use crate::{ledger::VerifyResult, CoreResult, UInt160, UInt256, Verifiable};
 use base64::{engine::general_purpose, Engine as _};
 use neo_vm_rs::OpCode;
 use parking_lot::Mutex;

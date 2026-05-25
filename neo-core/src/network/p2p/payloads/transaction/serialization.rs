@@ -13,17 +13,8 @@ impl Transaction {
         writer.write_i64(self.network_fee)?;
         writer.write_u32(self.valid_until_block)?;
 
-        // Write signers
-        writer.write_var_uint(self.signers.len() as u64)?;
-        for signer in &self.signers {
-            writer.write_serializable(signer)?;
-        }
-
-        // Write attributes
-        writer.write_var_uint(self.attributes.len() as u64)?;
-        for attr in &self.attributes {
-            writer.write_serializable(attr)?;
-        }
+        serialize_array(&self.signers, writer)?;
+        serialize_array(&self.attributes, writer)?;
 
         if self.script.len() > u16::MAX as usize {
             return Err(IoError::invalid_data(
@@ -146,14 +137,10 @@ impl Serializable for Transaction {
         }
 
         let size = HEADER_SIZE
-            + get_var_size(self.signers.len() as u64)
-            + self.signers.iter().map(|s| s.size()).sum::<usize>()
-            + get_var_size(self.attributes.len() as u64)
-            + self.attributes.iter().map(|a| a.size()).sum::<usize>()
-            + get_var_size(self.script.len() as u64)
-            + self.script.len()
-            + get_var_size(self.witnesses.len() as u64)
-            + self.witnesses.iter().map(|w| w.size()).sum::<usize>();
+            + get_var_size_serializable_slice(&self.signers)
+            + get_var_size_serializable_slice(&self.attributes)
+            + get_var_size_bytes(&self.script)
+            + get_var_size_serializable_slice(&self.witnesses);
 
         *size_guard = Some(size);
         size
@@ -161,26 +148,13 @@ impl Serializable for Transaction {
 
     fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
         self.serialize_unsigned(writer)?;
-        writer.write_var_uint(self.witnesses.len() as u64)?;
-        for witness in &self.witnesses {
-            writer.write_serializable(witness)?;
-        }
-        Ok(())
+        serialize_array(&self.witnesses, writer)
     }
 
     fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
         let mut tx = Self::deserialize_unsigned(reader)?;
 
-        let witness_count = reader.read_var_int(tx.signers.len() as u64)? as usize;
-        if witness_count != tx.signers.len() {
-            return Err(IoError::invalid_data("Witness count mismatch"));
-        }
-
-        let mut witnesses = Vec::with_capacity(witness_count);
-        for _ in 0..witness_count {
-            witnesses.push(<Witness as Serializable>::deserialize(reader)?);
-        }
-        tx.witnesses = witnesses;
+        tx.witnesses = deserialize_exact_array(reader, tx.signers.len(), "Witness count mismatch")?;
 
         tx.invalidate_size();
         Ok(tx)
