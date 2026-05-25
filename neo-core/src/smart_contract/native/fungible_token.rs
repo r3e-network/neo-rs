@@ -12,9 +12,9 @@
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
 use crate::smart_contract::application_engine::ApplicationEngine;
+use crate::smart_contract::native::method_macros::neo_native_methods;
 use crate::smart_contract::native::native_contract::NativeMethod;
 use crate::smart_contract::native::NativeContract;
-use crate::smart_contract::ContractParameterType;
 use crate::vm_runtime::StackItem;
 use crate::UInt160;
 use num_bigint::BigInt;
@@ -159,53 +159,35 @@ pub trait FungibleToken: NativeContract {
     where
         Self: Sized,
     {
-        vec![
-            NativeMethod::safe(
-                "symbol".to_string(),
-                0,
-                Vec::new(),
-                ContractParameterType::String,
-            ),
-            NativeMethod::safe(
-                "decimals".to_string(),
-                0,
-                Vec::new(),
-                ContractParameterType::Integer,
-            ),
-            NativeMethod::safe(
-                "totalSupply".to_string(),
-                1 << 15,
-                Vec::new(),
-                ContractParameterType::Integer,
-            )
-            .with_required_call_flags(crate::smart_contract::call_flags::CallFlags::READ_STATES),
-            NativeMethod::safe(
-                "balanceOf".to_string(),
-                1 << 15,
-                vec![ContractParameterType::Hash160],
-                ContractParameterType::Integer,
-            )
-            .with_required_call_flags(crate::smart_contract::call_flags::CallFlags::READ_STATES)
-            .with_parameter_names(vec!["account".to_string()]),
-            NativeMethod::unsafe_method(
-                "transfer".to_string(),
-                1 << 17,
-                crate::smart_contract::call_flags::CallFlags::ALL.bits(),
-                vec![
-                    ContractParameterType::Hash160,
-                    ContractParameterType::Hash160,
-                    ContractParameterType::Integer,
-                    ContractParameterType::Any,
-                ],
-                ContractParameterType::Boolean,
-            )
-            .with_storage_fee(50)
-            .with_parameter_names(vec![
-                "from".to_string(),
-                "to".to_string(),
-                "amount".to_string(),
-                "data".to_string(),
-            ]),
+        neo_native_methods![
+            safe "symbol",
+            fee = 0,
+            flags = [],
+            params = [],
+            returns = String;
+            safe "decimals",
+            fee = 0,
+            flags = [],
+            params = [],
+            returns = Integer;
+            safe "totalSupply",
+            fee = 1 << 15,
+            flags = [READ_STATES],
+            params = [],
+            returns = Integer;
+            safe "balanceOf",
+            fee = 1 << 15,
+            flags = [READ_STATES],
+            params = [Hash160],
+            returns = Integer,
+            names = ["account"];
+            unsafe "transfer",
+            fee = 1 << 17,
+            flags = [ALL],
+            params = [Hash160, Hash160, Integer, Any],
+            returns = Boolean,
+            storage_fee = 50,
+            names = ["from", "to", "amount", "data"];
         ]
     }
 }
