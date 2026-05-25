@@ -1,3 +1,4 @@
+use super::mailbox::DefaultMailbox;
 use super::*;
 use async_trait::async_trait;
 use parking_lot::Mutex;

@@ -4,7 +4,7 @@ use super::{
     context::ActorContext,
     error::{AkkaError, AkkaResult},
     event_stream::{EventStream, EventStreamHandle},
-    mailbox::{DefaultMailbox, Mailbox},
+    mailbox::DefaultMailbox,
     message::{MailboxMessage, SystemMessage, Terminated},
     props::Props,
     scheduler::Scheduler,
