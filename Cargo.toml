@@ -200,6 +200,7 @@ bytes = "1.5"
 hashbrown = { version = "0.14", features = ["serde"] }
 indexmap = { version = "2.1", features = ["serde"] }
 lru = "0.12"
+fastbloom = { version = "0.17", default-features = false }
 dashmap = "5.5"
 
 # === Storage ===

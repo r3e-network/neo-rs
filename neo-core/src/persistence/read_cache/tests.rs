@@ -401,6 +401,85 @@ fn bloom_filter_basic_operations() {
 }
 
 #[test]
+fn bloom_filter_prehashed_operations_have_no_false_negatives() {
+    let bloom = BloomFilter::new(16, 0.01);
+    let hash = xxhash_rust::xxh3::xxh3_64(b"prehashed-key");
+
+    assert!(!bloom.might_contain_hash(hash));
+
+    bloom.insert_hash(hash);
+
+    assert!(bloom.might_contain_hash(hash));
+    assert_eq!(bloom.len(), 1);
+}
+
+#[test]
+fn bloom_filter_byte_and_hash_paths_share_source_hash() {
+    let key = b"cross-path-key";
+    let hash = xxhash_rust::xxh3::xxh3_64(key);
+
+    let bytes_first = BloomFilter::new(16, 0.01);
+    bytes_first.insert_bytes(key);
+    assert!(bytes_first.might_contain_hash(hash));
+
+    let hash_first = BloomFilter::new(16, 0.01);
+    hash_first.insert_hash(hash);
+    assert!(hash_first.might_contain_bytes(key));
+}
+
+#[test]
+fn bloom_filter_should_rebuild_at_capacity() {
+    let bloom = BloomFilter::new(2, 0.01);
+
+    assert!(!bloom.should_rebuild());
+
+    bloom.insert_hash(1);
+    assert!(!bloom.should_rebuild());
+
+    bloom.insert_hash(2);
+    assert!(bloom.should_rebuild());
+}
+
+#[test]
+fn bloom_filter_accepts_boundary_configuration_without_panicking() {
+    let bloom = BloomFilter::new(0, 0.0);
+
+    assert!(bloom.is_empty());
+    bloom.insert_bytes(b"key1");
+
+    assert!(bloom.might_contain_bytes(b"key1"));
+    assert_eq!(bloom.len(), 1);
+    assert!(bloom.should_rebuild());
+}
+
+#[test]
+fn bloom_filter_concurrent_insert_has_no_false_negatives() {
+    let bloom = Arc::new(BloomFilter::new(1024, 0.01));
+    let mut handles = Vec::new();
+
+    for shard in 0..4 {
+        let bloom = Arc::clone(&bloom);
+        handles.push(std::thread::spawn(move || {
+            for offset in 0..250 {
+                bloom.insert_hash((shard * 1_000 + offset) as u64);
+            }
+        }));
+    }
+
+    for handle in handles {
+        handle.join().expect("bloom insert thread panicked");
+    }
+
+    for shard in 0..4 {
+        for offset in 0..250 {
+            assert!(bloom.might_contain_hash((shard * 1_000 + offset) as u64));
+        }
+    }
+
+    assert_eq!(bloom.len(), 1000);
+}
+
+#[test]
 fn bloom_filter_negative_lookup_in_cache() {
     let config = ReadCacheConfig {
         max_entries: 100,
@@ -435,6 +514,32 @@ fn bloom_filter_negative_lookup_in_cache() {
 }
 
 #[test]
+fn storage_key_bloom_hash_matches_id_little_endian_plus_key_bytes() {
+    use crate::smart_contract::StorageKey;
+
+    let key = StorageKey::new(-42, b"contract-storage-key".to_vec());
+    let mut expected = xxhash_rust::xxh3::Xxh3::new();
+    expected.update(&(-42i32).to_le_bytes());
+    expected.update(b"contract-storage-key");
+
+    assert_eq!(key.hash_for_bloom(), expected.digest());
+}
+
+#[test]
+fn read_cache_bloom_positive_after_remove_still_returns_map_miss() {
+    let cache = ReadCache::<String, String>::with_defaults();
+    let key = "key1".to_string();
+
+    cache.put(key.clone(), "value1".to_string(), 10);
+    assert!(cache.fast_bloom_check(&key));
+    assert_eq!(cache.remove(&key), Some("value1".to_string()));
+
+    assert!(cache.fast_bloom_check(&key));
+    assert_eq!(cache.get(&key), None);
+    assert!(!cache.contains(&key));
+}
+
+#[test]
 fn read_cache_with_storage_key() {
     use crate::smart_contract::StorageKey;
 
@@ -451,4 +556,28 @@ fn read_cache_with_storage_key() {
 
     let stats = cache.stats();
     assert_eq!(stats.hits, 2);
+}
+
+#[test]
+fn read_cache_storage_key_put_batch_has_no_bloom_false_negatives() {
+    use crate::smart_contract::StorageKey;
+
+    let cache = ReadCache::<StorageKey, String>::with_defaults();
+    let keys = [
+        StorageKey::new(1, b"alpha".to_vec()),
+        StorageKey::new(1, b"beta".to_vec()),
+        StorageKey::new(2, b"alpha".to_vec()),
+    ];
+
+    cache.put_batch(
+        keys.iter()
+            .enumerate()
+            .map(|(index, key)| (key.clone(), format!("value{index}"), 20))
+            .collect(),
+    );
+
+    for (index, key) in keys.iter().enumerate() {
+        assert!(cache.fast_bloom_check(key));
+        assert_eq!(cache.get(key), Some(format!("value{index}")));
+    }
 }
