@@ -2,16 +2,23 @@
 // state.rs - LocalNode state management
 //
 
-use super::helpers::current_unix_timestamp;
 use super::*;
 use crate::network::p2p::{BanList, InboundRateLimiter, PeerReputationTracker};
 use crate::wallets::KeyPair;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone)]
 pub(super) struct RemoteActorEntry {
     pub(super) actor: ActorRef,
     pub(super) snapshot: RemoteNodeSnapshot,
     pub(super) version: VersionPayload,
+}
+
+fn current_unix_timestamp() -> u64 {
+    match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(duration) => duration.as_secs(),
+        Err(error) => error.duration().as_secs(),
+    }
 }
 
 /// Represents the local node in the P2P network (mirrors C# Neo.Network.P2P.LocalNode).
