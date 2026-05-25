@@ -67,6 +67,42 @@ fn hash_set_cache_capacity_change_trims_on_next_insert_attempt() {
 }
 
 #[test]
+fn hash_set_cache_duplicate_insert_after_capacity_reduction_still_trims() {
+    let mut cache = HashSetCache::new(3);
+
+    assert!(cache.try_add(1));
+    assert!(cache.try_add(2));
+    assert!(cache.try_add(3));
+    cache.set_capacity(2);
+    assert!(!cache.try_add(1));
+
+    assert_eq!(cache.iter().copied().collect::<Vec<_>>(), vec![2, 3]);
+    assert!(!cache.contains(&1));
+}
+
+#[test]
+fn hash_set_cache_zero_capacity_constructor_uses_default_capacity() {
+    let mut cache = HashSetCache::new(0);
+
+    for value in 0..1025 {
+        assert!(cache.try_add(value));
+    }
+
+    assert_eq!(cache.count(), 1024);
+    assert!(!cache.contains(&0));
+    assert!(cache.contains(&1));
+    assert!(cache.contains(&1024));
+}
+
+#[test]
+fn hash_set_cache_try_new_rejects_zero_capacity() {
+    match HashSetCache::<i32>::try_new(0) {
+        Err(error) => assert_eq!(error, "capacity must be greater than zero"),
+        Ok(_) => panic!("zero-capacity HashSetCache::try_new should fail"),
+    }
+}
+
+#[test]
 fn hash_set_cache_zero_capacity_after_set_keeps_no_items() {
     let mut cache = HashSetCache::new(1);
 
@@ -75,6 +111,20 @@ fn hash_set_cache_zero_capacity_after_set_keeps_no_items() {
     assert_eq!(cache.count(), 0);
     assert!(!cache.contains(&1));
     assert!(cache.try_add(1));
+}
+
+#[test]
+fn hash_set_cache_capacity_can_recover_after_zero_capacity() {
+    let mut cache = HashSetCache::new(1);
+
+    cache.set_capacity(0);
+    assert!(cache.try_add(1));
+    cache.set_capacity(2);
+    assert!(cache.try_add(2));
+    assert!(cache.try_add(3));
+
+    assert_eq!(cache.count(), 2);
+    assert_eq!(cache.iter().copied().collect::<Vec<_>>(), vec![2, 3]);
 }
 
 #[test]
@@ -88,6 +138,31 @@ fn hash_set_cache_copy_to_preserves_insertion_order() {
     cache.copy_to(&mut values, 1).unwrap();
 
     assert_eq!(values, [0, 1, 2, 3, 0]);
+}
+
+#[test]
+fn hash_set_cache_iter_and_into_iter_preserve_fifo_order() {
+    let mut cache = HashSetCache::new(3);
+    cache.add(1);
+    cache.add(2);
+    cache.add(3);
+
+    assert_eq!(cache.iter().copied().collect::<Vec<_>>(), vec![1, 2, 3]);
+    assert_eq!(cache.into_iter().collect::<Vec<_>>(), vec![1, 2, 3]);
+}
+
+#[test]
+fn hash_set_cache_clear_preserves_configured_capacity() {
+    let mut cache = HashSetCache::new(2);
+    cache.add(1);
+    cache.add(2);
+    cache.clear();
+
+    assert!(cache.try_add(3));
+    assert!(cache.try_add(4));
+    assert!(cache.try_add(5));
+
+    assert_eq!(cache.iter().copied().collect::<Vec<_>>(), vec![4, 5]);
 }
 
 #[test]
