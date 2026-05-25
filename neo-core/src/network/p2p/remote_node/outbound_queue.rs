@@ -116,11 +116,11 @@ impl OutboundQueues {
     ) -> Result<(), QueuePushError> {
         let command = message.command();
         let queue = self.lane_mut(command);
-        if queue.len() >= max_queue_size {
-            return Err(QueuePushError::Full);
-        }
         if queue.has_duplicate_single_command(command) {
             return Err(QueuePushError::Duplicate);
+        }
+        if queue.len() >= max_queue_size {
+            return Err(QueuePushError::Full);
         }
         queue.push_back(message);
         Ok(())
@@ -366,6 +366,42 @@ mod tests {
         queues
             .push_back(NetworkMessage::new(ProtocolMessage::FilterClear), 2)
             .expect_err("high lane should be full");
+    }
+
+    #[test]
+    fn duplicate_single_command_wins_over_full_queue() {
+        let mut queues = OutboundQueues::default();
+
+        queues
+            .push_back(
+                NetworkMessage::new(ProtocolMessage::Ping(PingPayload::create_with_nonce(1, 42))),
+                1,
+            )
+            .unwrap();
+
+        let err = queues
+            .push_back(
+                NetworkMessage::new(ProtocolMessage::Ping(PingPayload::create_with_nonce(2, 42))),
+                1,
+            )
+            .expect_err("duplicate single command should be detected before capacity");
+
+        assert_eq!(err, QueuePushError::Duplicate);
+    }
+
+    #[test]
+    fn non_duplicate_message_still_reports_full_queue() {
+        let mut queues = OutboundQueues::default();
+
+        queues
+            .push_back(NetworkMessage::new(ProtocolMessage::Reject(vec![1])), 1)
+            .unwrap();
+
+        let err = queues
+            .push_back(NetworkMessage::new(ProtocolMessage::Reject(vec![2])), 1)
+            .expect_err("non-duplicate message should report capacity");
+
+        assert_eq!(err, QueuePushError::Full);
     }
 
     #[test]
