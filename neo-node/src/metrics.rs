@@ -102,6 +102,7 @@ pub fn update_metrics(
 }
 
 /// Gathers all metrics in Prometheus text format.
+#[allow(dead_code)]
 pub fn gather() -> Vec<u8> {
     neo_telemetry::gather_prometheus()
 }

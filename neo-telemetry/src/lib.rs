@@ -61,7 +61,9 @@ pub use logging::init_logging;
 pub use metrics::{Metrics, MetricsServer};
 
 // Public exports - Node-specific (merged from neo-node)
-pub use node_health::{HealthState, NodeHealthServer, DEFAULT_MAX_HEADER_LAG};
+pub use node_health::{
+    serve_health_with_state, HealthState, NodeHealthServer, DEFAULT_MAX_HEADER_LAG,
+};
 pub use node_logging::{init_node_logging, LoggingGuard};
 pub use node_metrics::{
     gather_prometheus, update_node_metrics, update_storage_metrics, update_timeout_metrics,

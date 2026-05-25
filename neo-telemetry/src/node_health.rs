@@ -8,6 +8,7 @@ use hyper::{
     Body, Request, Response, Server, StatusCode,
 };
 use serde::Serialize;
+use std::future::Future;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -92,37 +93,87 @@ impl NodeHealthServer {
 
     /// Start the health server
     pub async fn start(self) -> anyhow::Result<()> {
-        let addr = SocketAddr::from(([127, 0, 0, 1], self.port));
-
-        let state = self.state.clone();
-        let storage_path = self.storage_path.clone();
-        let storage_version = self.storage_version.clone();
-        let rpc_enabled = self.rpc_enabled;
-        let max_header_lag = self.max_header_lag;
-
-        let make_svc = make_service_fn(move |_conn| {
-            let state = state.clone();
-            let storage_path = storage_path.clone();
-            let storage_version = storage_version.clone();
-
-            async move {
-                Ok::<_, hyper::Error>(service_fn(move |req| {
-                    handle_request(
-                        req,
-                        state.clone(),
-                        storage_path.clone(),
-                        storage_version.clone(),
-                        rpc_enabled,
-                        max_header_lag,
-                    )
-                }))
-            }
-        });
-
-        tracing::info!("Health server starting on {}", addr);
-        Server::bind(&addr).serve(make_svc).await?;
-        Ok(())
+        serve_health(
+            self.port,
+            self.max_header_lag,
+            self.storage_path,
+            self.storage_version,
+            self.rpc_enabled,
+            self.state,
+            true,
+            std::future::pending(),
+        )
+        .await
     }
+}
+
+/// Serves the health endpoint with shared runtime state until shutdown resolves.
+pub async fn serve_health_with_state<F>(
+    port: u16,
+    max_header_lag: u32,
+    storage_path: Option<String>,
+    storage_version: String,
+    rpc_enabled: bool,
+    health_state: Arc<RwLock<HealthState>>,
+    shutdown: F,
+) -> anyhow::Result<()>
+where
+    F: Future<Output = ()> + Send + 'static,
+{
+    serve_health(
+        port,
+        max_header_lag,
+        storage_path,
+        storage_version,
+        rpc_enabled,
+        health_state,
+        false,
+        shutdown,
+    )
+    .await
+}
+
+async fn serve_health<F>(
+    port: u16,
+    max_header_lag: u32,
+    storage_path: Option<String>,
+    storage_version: String,
+    rpc_enabled: bool,
+    health_state: Arc<RwLock<HealthState>>,
+    expose_root: bool,
+    shutdown: F,
+) -> anyhow::Result<()>
+where
+    F: Future<Output = ()> + Send + 'static,
+{
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+
+    let make_svc = make_service_fn(move |_conn| {
+        let state = health_state.clone();
+        let storage_path = storage_path.clone();
+        let storage_version = storage_version.clone();
+
+        async move {
+            Ok::<_, hyper::Error>(service_fn(move |req| {
+                handle_request(
+                    req,
+                    state.clone(),
+                    storage_path.clone(),
+                    storage_version.clone(),
+                    rpc_enabled,
+                    max_header_lag,
+                    expose_root,
+                )
+            }))
+        }
+    });
+
+    tracing::info!("Health server starting on {}", addr);
+    Server::bind(&addr)
+        .serve(make_svc)
+        .with_graceful_shutdown(shutdown)
+        .await?;
+    Ok(())
 }
 
 async fn handle_request(
@@ -132,6 +183,7 @@ async fn handle_request(
     storage_version: String,
     rpc_enabled: bool,
     max_header_lag: u32,
+    expose_root: bool,
 ) -> Result<Response<Body>, hyper::Error> {
     match (req.method(), req.uri().path()) {
         (&hyper::Method::GET, "/healthz") | (&hyper::Method::GET, "/readyz") => {
@@ -169,7 +221,7 @@ async fn handle_request(
             let body = crate::node_metrics::gather_prometheus();
             Ok(Response::new(Body::from(body)))
         }
-        (&hyper::Method::GET, "/") => {
+        (&hyper::Method::GET, "/") if expose_root => {
             let info = serde_json::json!({
                 "service": "neo-node",
                 "version": env!("CARGO_PKG_VERSION"),
