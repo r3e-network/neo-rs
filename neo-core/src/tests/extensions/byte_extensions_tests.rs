@@ -22,6 +22,7 @@ mod byte_extensions_tests {
 
         assert_eq!(bytes.xx_hash3_32(42), bytes.xx_hash3_32(42));
         assert_ne!(bytes.xx_hash3_32(42), bytes.xx_hash3_32(43));
+        assert_eq!(bytes.xx_hash3_32(42), neo_storage::xx_hash3_32(bytes, 42));
     }
 
     #[test]
