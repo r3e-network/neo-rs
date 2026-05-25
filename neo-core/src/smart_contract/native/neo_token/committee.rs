@@ -6,6 +6,15 @@ use super::*;
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BinaryHeap, HashMap};
 
+fn committee_public_key_from_stack_value(value: &StackValue) -> Result<ECPoint, String> {
+    let bytes = match value {
+        StackValue::ByteString(bytes) | StackValue::Buffer(bytes) => bytes,
+        _ => return Err("committee entry public key must be byte array".to_string()),
+    };
+
+    ECPoint::from_bytes(bytes).map_err(|e| format!("invalid committee public key: {e}"))
+}
+
 impl NeoToken {
     /// Determines whether the committee should be refreshed at the specified height.
     /// Committee is refreshed when height is a multiple of committee_members_count.
@@ -33,13 +42,6 @@ impl NeoToken {
     }
 
     pub(super) fn decode_committee_stack_value(value: StackValue) -> Result<Vec<ECPoint>, String> {
-        fn stack_value_to_bytes(value: &StackValue) -> Option<Vec<u8>> {
-            match value {
-                StackValue::ByteString(bytes) | StackValue::Buffer(bytes) => Some(bytes.clone()),
-                _ => None,
-            }
-        }
-
         fn decode_entry(entry: &StackValue) -> Result<Option<ECPoint>, String> {
             let elements = match entry {
                 StackValue::Struct(items) | StackValue::Array(items) => items,
@@ -49,11 +51,7 @@ impl NeoToken {
             let first = elements
                 .first()
                 .ok_or_else(|| "committee entry missing public key".to_string())?;
-            let key_bytes = stack_value_to_bytes(first)
-                .ok_or_else(|| "committee entry public key must be byte array".to_string())?;
-            let point = ECPoint::from_bytes(&key_bytes)
-                .map_err(|e| format!("invalid committee public key: {e}"))?;
-            Ok(Some(point))
+            Ok(Some(committee_public_key_from_stack_value(first)?))
         }
 
         match value {
@@ -101,13 +99,6 @@ impl NeoToken {
     pub(super) fn decode_committee_with_votes_value(
         value: StackValue,
     ) -> Result<Vec<(ECPoint, BigInt)>, String> {
-        fn stack_value_to_bytes(value: &StackValue) -> Option<Vec<u8>> {
-            match value {
-                StackValue::ByteString(bytes) | StackValue::Buffer(bytes) => Some(bytes.clone()),
-                _ => None,
-            }
-        }
-
         fn stack_value_to_bigint(value: &StackValue) -> Option<BigInt> {
             match value {
                 StackValue::Integer(value) => Some(BigInt::from(*value)),
@@ -129,10 +120,7 @@ impl NeoToken {
                 return Ok(None);
             }
 
-            let key_bytes = stack_value_to_bytes(&elements[0])
-                .ok_or_else(|| "committee entry public key must be byte array".to_string())?;
-            let point = ECPoint::from_bytes(&key_bytes)
-                .map_err(|e| format!("invalid committee public key: {e}"))?;
+            let point = committee_public_key_from_stack_value(&elements[0])?;
             let votes = stack_value_to_bigint(&elements[1])
                 .ok_or_else(|| "invalid committee votes".to_string())?;
 
@@ -347,5 +335,57 @@ impl NeoToken {
             .collect();
         validators.sort();
         Ok(validators)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_committee_point() -> ECPoint {
+        let encoded =
+            hex::decode("03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c")
+                .expect("hex");
+        ECPoint::from_bytes(&encoded).expect("valid ECPoint")
+    }
+
+    #[test]
+    fn committee_public_key_from_stack_value_accepts_byte_arrays() {
+        let point = sample_committee_point();
+        let bytes = point.as_bytes().to_vec();
+
+        assert_eq!(
+            committee_public_key_from_stack_value(&StackValue::ByteString(bytes.clone())).unwrap(),
+            point
+        );
+        assert_eq!(
+            committee_public_key_from_stack_value(&StackValue::Buffer(bytes)).unwrap(),
+            point
+        );
+    }
+
+    #[test]
+    fn committee_public_key_from_stack_value_rejects_non_byte_arrays() {
+        let invalid_values = [
+            StackValue::Integer(1),
+            StackValue::Boolean(true),
+            StackValue::BigInteger(vec![1]),
+            StackValue::Null,
+        ];
+
+        for value in invalid_values {
+            assert_eq!(
+                committee_public_key_from_stack_value(&value).unwrap_err(),
+                "committee entry public key must be byte array"
+            );
+        }
+    }
+
+    #[test]
+    fn committee_public_key_from_stack_value_reports_invalid_points() {
+        let err = committee_public_key_from_stack_value(&StackValue::ByteString(vec![1, 2, 3]))
+            .unwrap_err();
+
+        assert!(err.starts_with("invalid committee public key:"));
     }
 }
