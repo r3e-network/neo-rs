@@ -2,6 +2,7 @@
 
 use crate::constants::ADDRESS_SIZE;
 use crate::error::{PrimitiveError, PrimitiveResult};
+use crate::uint_hex::{format_reversed_hex, parse_reversed_hex};
 use ripemd::Ripemd160;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -209,23 +210,7 @@ impl UInt160 {
 
     /// Tries to parse a `UInt160` from a hexadecimal string.
     pub fn try_parse(s: &str, result: &mut Option<Self>) -> bool {
-        let s = s
-            .strip_prefix("0x")
-            .or_else(|| s.strip_prefix("0X"))
-            .unwrap_or(s);
-
-        if s.len() != UINT160_SIZE * 2 {
-            return false;
-        }
-
-        let mut bytes = [0u8; UINT160_SIZE];
-        if hex::decode_to_slice(s, &mut bytes).is_err() {
-            return false;
-        }
-
-        bytes.reverse();
-
-        match Self::from_bytes(&bytes) {
+        match parse_reversed_hex::<UINT160_SIZE>(s).and_then(|bytes| Self::from_bytes(&bytes)) {
             Ok(uint) => {
                 *result = Some(uint);
                 true
@@ -238,9 +223,7 @@ impl UInt160 {
     #[inline]
     #[must_use]
     pub fn to_hex_string(&self) -> String {
-        let mut bytes = self.to_array();
-        bytes.reverse();
-        format!("0x{}", hex::encode(bytes))
+        format_reversed_hex(self.to_array())
     }
 
     /// Gets a hash code for the current `UInt160` instance.

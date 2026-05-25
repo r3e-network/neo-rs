@@ -45,6 +45,7 @@ pub mod transaction_attribute_type;
 pub mod transaction_removal_reason;
 pub mod uint160;
 pub mod uint256;
+mod uint_hex;
 pub mod verification;
 pub mod verify_result;
 pub mod witness_condition_type;
