@@ -118,58 +118,78 @@ pub mod reputation {
     pub const VALID_TRANSACTION_RELAY: i32 = 1;
 }
 
+use governor::{
+    middleware::StateInformationMiddleware, DefaultDirectRateLimiter, Quota, RateLimiter,
+};
 use std::net::IpAddr;
+use std::num::NonZeroU32;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 
 /// Token bucket rate limiter for inbound connections.
 #[derive(Debug)]
 pub struct InboundRateLimiter {
-    /// Current number of tokens available.
-    tokens: f64,
-    /// Maximum burst size.
-    burst_size: f64,
-    /// Tokens added per second.
+    limiter: DefaultDirectRateLimiter<StateInformationMiddleware>,
+    burst_size: usize,
     rate_per_sec: f64,
-    /// Last time tokens were updated.
+    last_available_tokens: f64,
     last_update: Instant,
+    disabled: bool,
 }
 
 impl InboundRateLimiter {
     /// Creates a new rate limiter with the specified rate and burst size.
     pub fn new(rate_per_sec: usize, burst_size: usize) -> Self {
+        let disabled = rate_per_sec == 0 || burst_size == 0;
+        let quota = inbound_quota(rate_per_sec, burst_size);
         Self {
-            tokens: burst_size as f64,
-            burst_size: burst_size as f64,
+            limiter: RateLimiter::direct(quota).with_middleware::<StateInformationMiddleware>(),
+            burst_size,
             rate_per_sec: rate_per_sec as f64,
+            last_available_tokens: if disabled { 0.0 } else { burst_size as f64 },
             last_update: Instant::now(),
+            disabled,
         }
     }
 
     /// Attempts to acquire a token. Returns true if a token was available.
     pub fn acquire(&mut self) -> bool {
-        let now = Instant::now();
-        let elapsed = now.duration_since(self.last_update).as_secs_f64();
-        self.last_update = now;
+        if self.disabled {
+            return false;
+        }
 
-        // Add tokens based on elapsed time
-        self.tokens = (self.tokens + elapsed * self.rate_per_sec).min(self.burst_size);
-
-        if self.tokens >= 1.0 {
-            self.tokens -= 1.0;
-            true
-        } else {
-            false
+        self.last_update = Instant::now();
+        match self.limiter.check() {
+            Ok(snapshot) => {
+                self.last_available_tokens = snapshot.remaining_burst_capacity() as f64;
+                true
+            }
+            Err(_) => {
+                self.last_available_tokens = 0.0;
+                false
+            }
         }
     }
 
     /// Returns the current number of available tokens.
     pub fn available_tokens(&self) -> f64 {
+        if self.disabled {
+            return 0.0;
+        }
+
         let elapsed = Instant::now()
             .duration_since(self.last_update)
             .as_secs_f64();
-        (self.tokens + elapsed * self.rate_per_sec).min(self.burst_size)
+        (self.last_available_tokens + elapsed * self.rate_per_sec).min(self.burst_size as f64)
     }
+}
+
+fn inbound_quota(rate_per_sec: usize, burst_size: usize) -> Quota {
+    let rate = NonZeroU32::new(rate_per_sec.clamp(1, u32::MAX as usize) as u32)
+        .expect("clamped rate is non-zero");
+    let burst = NonZeroU32::new(burst_size.clamp(1, u32::MAX as usize) as u32)
+        .expect("clamped burst is non-zero");
+    Quota::per_second(rate).allow_burst(burst)
 }
 
 impl Default for InboundRateLimiter {
@@ -178,6 +198,29 @@ impl Default for InboundRateLimiter {
             DEFAULT_INBOUND_CONNECTION_RATE,
             DEFAULT_INBOUND_CONNECTION_BURST,
         )
+    }
+}
+
+#[cfg(test)]
+mod inbound_rate_limiter_tests {
+    use super::InboundRateLimiter;
+
+    #[test]
+    fn inbound_rate_limiter_allows_initial_burst_then_rejects() {
+        let mut limiter = InboundRateLimiter::new(10, 2);
+
+        assert!(limiter.acquire());
+        assert!(limiter.acquire());
+        assert!(!limiter.acquire());
+        assert!(limiter.available_tokens() < 1.0);
+    }
+
+    #[test]
+    fn inbound_rate_limiter_zero_capacity_rejects() {
+        let mut limiter = InboundRateLimiter::new(10, 0);
+
+        assert!(!limiter.acquire());
+        assert_eq!(limiter.available_tokens(), 0.0);
     }
 }
 
