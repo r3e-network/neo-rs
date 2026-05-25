@@ -20,6 +20,20 @@ pub(crate) fn new_read_buffer() -> BytesMut {
     BytesMut::with_capacity(INITIAL_READ_CAPACITY)
 }
 
+async fn write_all_with_timeout<W>(
+    writer: &mut W,
+    timeout_duration: Duration,
+    data: &[u8],
+) -> NetworkResult<()>
+where
+    W: AsyncWrite + Unpin,
+{
+    timeout(timeout_duration, writer.write_all(data))
+        .await
+        .map_err(|_| NetworkError::Timeout)?
+        .map_err(|e| NetworkError::ConnectionError(format!("Failed to write frame: {e}")))
+}
+
 async fn write_all_vectored_with_timeout<W>(
     writer: &mut W,
     timeout_duration: Duration,
@@ -482,6 +496,75 @@ mod tests {
     }
 }
 
+/// Writes a frame using vectored I/O to reduce syscalls.
+pub(crate) async fn write_frame_vectored<W>(
+    writer: &mut W,
+    cfg: &FrameConfig,
+    buffers: &[&[u8]],
+) -> NetworkResult<()>
+where
+    W: AsyncWrite + Unpin,
+{
+    if buffers.is_empty() {
+        return Ok(());
+    }
+
+    if buffers.len() == 1 || !cfg.use_vectored_io {
+        for buf in buffers {
+            write_all_with_timeout(writer, cfg.write_timeout, buf).await?;
+        }
+        return Ok(());
+    }
+
+    write_all_vectored_with_timeout(writer, cfg.write_timeout, buffers).await
+}
+
+/// Writes a complete message frame with optional buffering.
+pub(crate) async fn write_frame<W>(
+    writer: &mut W,
+    cfg: &FrameConfig,
+    data: &[u8],
+    write_buffer: &mut WriteBuffer,
+) -> NetworkResult<()>
+where
+    W: AsyncWrite + Unpin,
+{
+    if !cfg.buffer_small_writes || data.len() >= write_buffer.threshold {
+        flush_write_buffer(writer, cfg, write_buffer).await?;
+        write_all_with_timeout(writer, cfg.write_timeout, data).await?;
+    } else if data.len() <= write_buffer.remaining_capacity() {
+        write_buffer.push(data);
+
+        if write_buffer.should_flush() {
+            flush_write_buffer(writer, cfg, write_buffer).await?;
+        }
+    } else {
+        flush_write_buffer(writer, cfg, write_buffer).await?;
+        write_all_with_timeout(writer, cfg.write_timeout, data).await?;
+    }
+
+    Ok(())
+}
+
+/// Flushes any pending buffered writes.
+pub(crate) async fn flush_write_buffer<W>(
+    writer: &mut W,
+    cfg: &FrameConfig,
+    write_buffer: &mut WriteBuffer,
+) -> NetworkResult<()>
+where
+    W: AsyncWrite + Unpin,
+{
+    if !write_buffer.is_empty() {
+        let buffered = write_buffer.take();
+        timeout(cfg.write_timeout, writer.write_all(&buffered))
+            .await
+            .map_err(|_| NetworkError::Timeout)?
+            .map_err(|e| NetworkError::ConnectionError(format!("Failed to flush buffer: {e}")))?;
+    }
+    Ok(())
+}
+
 impl<'a> FramedSocket<'a> {
     pub fn new(stream: &'a mut TcpStream) -> Self {
         Self {
@@ -536,93 +619,5 @@ impl<'a> FramedSocket<'a> {
                 ));
             }
         }
-    }
-
-    /// Writes a frame using vectored I/O to reduce syscalls.
-    ///
-    /// This is more efficient when writing multiple buffers as it avoids
-    /// copying them into a single buffer first.
-    pub async fn write_frame_vectored(
-        &mut self,
-        cfg: &FrameConfig,
-        buffers: &[&[u8]],
-    ) -> NetworkResult<()> {
-        if buffers.is_empty() {
-            return Ok(());
-        }
-
-        // Use write_all for single buffer (simpler, same efficiency)
-        if buffers.len() == 1 || !cfg.use_vectored_io {
-            for buf in buffers {
-                timeout(cfg.write_timeout, self.stream.write_all(buf))
-                    .await
-                    .map_err(|_| NetworkError::Timeout)?
-                    .map_err(|e| {
-                        NetworkError::ConnectionError(format!("Failed to write frame: {e}"))
-                    })?;
-            }
-            return Ok(());
-        }
-
-        write_all_vectored_with_timeout(self.stream, cfg.write_timeout, buffers).await
-    }
-
-    /// Writes a complete message frame with optional buffering.
-    pub async fn write_frame(
-        &mut self,
-        cfg: &FrameConfig,
-        data: &[u8],
-        write_buffer: &mut WriteBuffer,
-    ) -> NetworkResult<()> {
-        if !cfg.buffer_small_writes || data.len() >= write_buffer.threshold {
-            self.flush(cfg, write_buffer).await?;
-
-            // Write large data directly
-            timeout(cfg.write_timeout, self.stream.write_all(data))
-                .await
-                .map_err(|_| NetworkError::Timeout)?
-                .map_err(|e| {
-                    NetworkError::ConnectionError(format!("Failed to write frame: {e}"))
-                })?;
-        } else if data.len() <= write_buffer.remaining_capacity() {
-            // Data fits in buffer
-            write_buffer.push(data);
-
-            // Flush if we've reached the threshold
-            if write_buffer.should_flush() {
-                self.flush(cfg, write_buffer).await?;
-            }
-        } else {
-            // Data doesn't fit, flush buffer first then write data directly
-            self.flush(cfg, write_buffer).await?;
-
-            // Write data directly (it's larger than buffer threshold anyway)
-            timeout(cfg.write_timeout, self.stream.write_all(data))
-                .await
-                .map_err(|_| NetworkError::Timeout)?
-                .map_err(|e| {
-                    NetworkError::ConnectionError(format!("Failed to write frame: {e}"))
-                })?;
-        }
-
-        Ok(())
-    }
-
-    /// Flushes any pending buffered writes.
-    pub async fn flush(
-        &mut self,
-        cfg: &FrameConfig,
-        write_buffer: &mut WriteBuffer,
-    ) -> NetworkResult<()> {
-        if !write_buffer.is_empty() {
-            let buffered = write_buffer.take();
-            timeout(cfg.write_timeout, self.stream.write_all(&buffered))
-                .await
-                .map_err(|_| NetworkError::Timeout)?
-                .map_err(|e| {
-                    NetworkError::ConnectionError(format!("Failed to flush buffer: {e}"))
-                })?;
-        }
-        Ok(())
     }
 }

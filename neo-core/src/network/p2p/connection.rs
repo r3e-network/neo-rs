@@ -8,7 +8,10 @@
 
 use super::{
     channels_config::ChannelsConfig,
-    framed::{new_read_buffer, FrameConfig, FramedSocket, WriteBuffer},
+    framed::{
+        flush_write_buffer, new_read_buffer, write_frame, write_frame_vectored, FrameConfig,
+        FramedSocket, WriteBuffer,
+    },
 };
 use crate::network::{
     error::{NetworkError, NetworkResult},
@@ -239,11 +242,13 @@ impl PeerConnection {
         );
         tracing::debug!("First bytes: {:02x?}", &bytes[..24.min(bytes.len())]);
 
-        // Use framed socket for buffered writes
-        let mut framed = FramedSocket::new(&mut self.stream);
-        framed
-            .write_frame(&self.frame_config, &bytes, &mut self.write_buffer)
-            .await?;
+        write_frame(
+            &mut self.stream,
+            &self.frame_config,
+            &bytes,
+            &mut self.write_buffer,
+        )
+        .await?;
 
         // Update statistics
         self.stats.messages_sent += 1;
@@ -287,12 +292,8 @@ impl PeerConnection {
             buffers.push(bytes);
         }
 
-        // Use vectored I/O for efficient multi-message send
-        let mut framed = FramedSocket::new(&mut self.stream);
         let buffer_refs: Vec<&[u8]> = buffers.iter().map(|b| b.as_slice()).collect();
-        framed
-            .write_frame_vectored(&self.frame_config, &buffer_refs)
-            .await?;
+        write_frame_vectored(&mut self.stream, &self.frame_config, &buffer_refs).await?;
 
         // Update statistics
         self.stats.messages_sent += messages.len() as u64;
@@ -306,10 +307,7 @@ impl PeerConnection {
 
     /// Flushes any pending buffered writes.
     pub async fn flush(&mut self) -> NetworkResult<()> {
-        let mut framed = FramedSocket::new(&mut self.stream);
-        framed
-            .flush(&self.frame_config, &mut self.write_buffer)
-            .await
+        flush_write_buffer(&mut self.stream, &self.frame_config, &mut self.write_buffer).await
     }
 
     /// Receives a message from the peer (matches C# RemoteNode.ReceiveMessage exactly)
