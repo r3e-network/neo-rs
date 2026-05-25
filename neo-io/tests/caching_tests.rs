@@ -133,6 +133,19 @@ fn io_cache_zero_capacity_keeps_no_items() {
     assert_eq!(fifo.values(), Vec::<i32>::new());
 }
 
+#[test]
+fn io_cache_get_and_duplicate_add_do_not_refresh_fifo_order() {
+    let cache = IoCache::new(2, |value: &i32| *value);
+    cache.add(1);
+    cache.add(2);
+    assert_eq!(cache.get(&1), Some(1));
+    cache.add(1);
+    cache.add(3);
+
+    assert_eq!(cache.values(), vec![2, 3]);
+    assert!(!cache.contains_key(&1));
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct MockPoint(Vec<u8>);
 
