@@ -36,8 +36,9 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::{oneshot, Mutex};
+use tokio_util::{sync::CancellationToken, task::TaskTracker};
 use tracing::{debug, error, info, trace, warn};
 
 use bloom_filter::BloomFilterState;
@@ -48,6 +49,8 @@ pub use message_handlers::{
 };
 use outbound_queue::OutboundMessageQueue;
 use pending_known_hashes::PendingKnownHashes;
+
+const READER_TASK_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(1);
 
 /// Remote node actor responsible for protocol negotiation and message relay.
 pub struct RemoteNode {
@@ -65,6 +68,8 @@ pub struct RemoteNode {
     handshake_complete: bool,
     handshake_done: Arc<AtomicBool>,
     reader_spawned: bool,
+    reader_tasks: TaskTracker,
+    reader_cancellation: CancellationToken,
     known_hashes: HashSetCache<UInt256>,
     sent_hashes: HashSetCache<UInt256>,
     pending_known_hashes: PendingKnownHashes,
@@ -155,6 +160,8 @@ impl RemoteNode {
             handshake_complete: false,
             handshake_done: Arc::new(AtomicBool::new(false)),
             reader_spawned: false,
+            reader_tasks: TaskTracker::new(),
+            reader_cancellation: CancellationToken::new(),
             known_hashes: HashSetCache::new(cache_capacity),
             sent_hashes: HashSetCache::new(cache_capacity),
             pending_known_hashes: PendingKnownHashes::new(cache_capacity),
@@ -534,6 +541,7 @@ impl Actor for RemoteNode {
     }
 
     async fn post_stop(&mut self, ctx: &mut ActorContext) -> ActorResult {
+        self.stop_reader().await;
         {
             let mut connection = self.connection.lock().await;
             if let Err(err) = connection.close().await {

@@ -66,21 +66,27 @@ impl RemoteNode {
         let connection = Arc::clone(&self.connection);
         let endpoint = self.endpoint;
         let handshake_done = Arc::clone(&self.handshake_done);
-        tokio::spawn(async move {
+        let cancellation = self.reader_cancellation.child_token();
+        let _ = self.reader_tasks.spawn(async move {
             loop {
-                let result = {
-                    let mut guard = connection.lock().await;
-                    debug!(target: "neo", endpoint = %guard.address, "waiting for inbound message");
-                    let done = handshake_done.load(Ordering::Relaxed);
-                    guard.receive_message(done).await.map(|msg| (msg, done))
+                let result = tokio::select! {
+                    _ = cancellation.cancelled() => break,
+                    result = async {
+                        let mut guard = connection.lock().await;
+                        debug!(target: "neo", endpoint = %guard.address, "waiting for inbound message");
+                        let done = handshake_done.load(Ordering::Relaxed);
+                        guard.receive_message(done).await.map(|msg| (msg, done))
+                    } => result,
                 };
 
                 match result {
                     Ok((message, _done)) => {
                         let command = message.command();
-                        if let Err(err) =
-                            actor.tell_async(RemoteNodeCommand::Inbound(message)).await
-                        {
+                        let delivered = tokio::select! {
+                            _ = cancellation.cancelled() => break,
+                            delivered = actor.tell_async(RemoteNodeCommand::Inbound(message)) => delivered,
+                        };
+                        if let Err(err) = delivered {
                             warn!(target: "neo", error = %err, "failed to deliver inbound message to remote node actor");
                             break;
                         } else {
@@ -127,11 +133,32 @@ impl RemoteNode {
                     }
                 }
 
-                yield_now().await;
+                tokio::select! {
+                    _ = cancellation.cancelled() => break,
+                    _ = yield_now() => {}
+                }
             }
         });
 
         self.reader_spawned = true;
+    }
+
+    pub(super) async fn stop_reader(&mut self) {
+        self.reader_cancellation.cancel();
+        self.reader_tasks.close();
+        if tokio::time::timeout(
+            super::READER_TASK_SHUTDOWN_TIMEOUT,
+            self.reader_tasks.wait(),
+        )
+        .await
+        .is_err()
+        {
+            warn!(
+                target: "neo",
+                endpoint = %self.endpoint,
+                "timed out waiting for remote node reader task to stop"
+            );
+        }
     }
 
     pub(super) fn arm_handshake_timeout(&mut self, ctx: &ActorContext) {
