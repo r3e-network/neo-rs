@@ -73,4 +73,16 @@ mod tests {
         assert!(!MessageCommand::Ping.allows_compression());
         assert!(!MessageCommand::Unknown(0x99).allows_compression());
     }
+
+    #[test]
+    fn extended_parse_aliases_preserve_legacy_unknown_commands() {
+        assert_eq!(
+            MessageCommand::parse_str("versionwithpayload").unwrap(),
+            MessageCommand::Unknown(0x55)
+        );
+        assert_eq!(
+            MessageCommand::parse_str("extendedc0").unwrap(),
+            MessageCommand::Unknown(0xc0)
+        );
+    }
 }

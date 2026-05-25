@@ -332,16 +332,12 @@ macro_rules! protocol_enum_with_unknown {
 /// macro has two public API modes:
 /// - `from_byte = result` keeps a fallible `from_byte(u8) -> Result<Self, E>`.
 /// - `from_byte = infallible` keeps `from_byte(u8) -> Self`.
+#[doc(hidden)]
 #[macro_export]
-macro_rules! p2p_message_command {
+macro_rules! __p2p_message_command_enum {
     (
         $(#[$enum_meta:meta])*
-        $vis:vis $name:ident {
-            error = $error_ty:ty;
-            parse_error = $parse_error:expr;
-            from_byte = result;
-            extended_aliases = true;
-        }
+        $vis:vis $name:ident
     ) => {
         $crate::protocol_enum_with_unknown! {
             $(#[$enum_meta])*
@@ -399,53 +395,58 @@ macro_rules! p2p_message_command {
                 Alert = 0x40 => "alert",
             }
         }
+    };
+}
 
-        impl $name {
-            /// Creates a command value from its byte representation.
-            pub fn from_byte(byte: u8) -> ::std::result::Result<Self, $error_ty> {
-                Ok(Self::from_byte_unchecked(byte))
-            }
-
-            /// Parses a command from its textual form.
-            pub fn parse_str(s: &str) -> ::std::result::Result<Self, $error_ty> {
-                match s {
-                    "version" => Ok(Self::Version),
-                    "verack" => Ok(Self::Verack),
-                    "getaddr" => Ok(Self::GetAddr),
-                    "addr" => Ok(Self::Addr),
-                    "ping" => Ok(Self::Ping),
-                    "pong" => Ok(Self::Pong),
-                    "getheaders" => Ok(Self::GetHeaders),
-                    "headers" => Ok(Self::Headers),
-                    "getblocks" => Ok(Self::GetBlocks),
-                    "mempool" => Ok(Self::Mempool),
-                    "inv" => Ok(Self::Inv),
-                    "getdata" => Ok(Self::GetData),
-                    "getblkbyidx" => Ok(Self::GetBlockByIndex),
-                    "notfound" => Ok(Self::NotFound),
-                    "tx" => Ok(Self::Transaction),
-                    "block" => Ok(Self::Block),
-                    "extensible" => Ok(Self::Extensible),
-                    "reject" => Ok(Self::Reject),
-                    "filterload" => Ok(Self::FilterLoad),
-                    "filteradd" => Ok(Self::FilterAdd),
-                    "filterclear" => Ok(Self::FilterClear),
-                    "merkleblock" => Ok(Self::MerkleBlock),
-                    "alert" => Ok(Self::Alert),
-                    "versionwithpayload" => Ok(Self::Unknown(0x55)),
-                    "extended83" => Ok(Self::Unknown(0x83)),
-                    "extended85" => Ok(Self::Unknown(0x85)),
-                    "extended86" => Ok(Self::Unknown(0x86)),
-                    "extendedbb" => Ok(Self::Unknown(0xbb)),
-                    "extendedbd" => Ok(Self::Unknown(0xbd)),
-                    "extendedbf" => Ok(Self::Unknown(0xbf)),
-                    "extendedc0" => Ok(Self::Unknown(0xc0)),
-                    "unknown" => Ok(Self::Unknown(0xff)),
-                    other => Err(($parse_error)(other)),
-                }
-            }
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __p2p_message_command_parse {
+    ($name:ident, $source:expr, $parse_error:expr, $extended_aliases:expr) => {{
+        match $source {
+            "version" => Ok($name::Version),
+            "verack" => Ok($name::Verack),
+            "getaddr" => Ok($name::GetAddr),
+            "addr" => Ok($name::Addr),
+            "ping" => Ok($name::Ping),
+            "pong" => Ok($name::Pong),
+            "getheaders" => Ok($name::GetHeaders),
+            "headers" => Ok($name::Headers),
+            "getblocks" => Ok($name::GetBlocks),
+            "mempool" => Ok($name::Mempool),
+            "inv" => Ok($name::Inv),
+            "getdata" => Ok($name::GetData),
+            "getblkbyidx" => Ok($name::GetBlockByIndex),
+            "notfound" => Ok($name::NotFound),
+            "tx" => Ok($name::Transaction),
+            "block" => Ok($name::Block),
+            "extensible" => Ok($name::Extensible),
+            "reject" => Ok($name::Reject),
+            "filterload" => Ok($name::FilterLoad),
+            "filteradd" => Ok($name::FilterAdd),
+            "filterclear" => Ok($name::FilterClear),
+            "merkleblock" => Ok($name::MerkleBlock),
+            "alert" => Ok($name::Alert),
+            "unknown" => Ok($name::Unknown(0xff)),
+            other if $extended_aliases => match other {
+                "versionwithpayload" => Ok($name::Unknown(0x55)),
+                "extended83" => Ok($name::Unknown(0x83)),
+                "extended85" => Ok($name::Unknown(0x85)),
+                "extended86" => Ok($name::Unknown(0x86)),
+                "extendedbb" => Ok($name::Unknown(0xbb)),
+                "extendedbd" => Ok($name::Unknown(0xbd)),
+                "extendedbf" => Ok($name::Unknown(0xbf)),
+                "extendedc0" => Ok($name::Unknown(0xc0)),
+                other => Err(($parse_error)(other)),
+            },
+            other => Err(($parse_error)(other)),
         }
+    }};
+}
 
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __p2p_message_command_shared_impls {
+    ($name:ident, $error_ty:ty) => {
         impl ::std::fmt::Display for $name {
             fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
                 write!(f, "{}", self.as_str())
@@ -468,6 +469,39 @@ macro_rules! p2p_message_command {
                 serializer.serialize_u8(self.to_byte())
             }
         }
+    };
+}
+
+/// Generates Neo P2P `MessageCommand` definitions from the shared command table.
+#[macro_export]
+macro_rules! p2p_message_command {
+    (
+        $(#[$enum_meta:meta])*
+        $vis:vis $name:ident {
+            error = $error_ty:ty;
+            parse_error = $parse_error:expr;
+            from_byte = result;
+            extended_aliases = true;
+        }
+    ) => {
+        $crate::__p2p_message_command_enum! {
+            $(#[$enum_meta])*
+            $vis $name
+        }
+
+        impl $name {
+            /// Creates a command value from its byte representation.
+            pub fn from_byte(byte: u8) -> ::std::result::Result<Self, $error_ty> {
+                Ok(Self::from_byte_unchecked(byte))
+            }
+
+            /// Parses a command from its textual form.
+            pub fn parse_str(s: &str) -> ::std::result::Result<Self, $error_ty> {
+                $crate::__p2p_message_command_parse!($name, s, $parse_error, true)
+            }
+        }
+
+        $crate::__p2p_message_command_shared_impls!($name, $error_ty);
 
         impl<'de> ::serde::Deserialize<'de> for $name {
             fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
@@ -489,61 +523,9 @@ macro_rules! p2p_message_command {
             extended_aliases = false;
         }
     ) => {
-        $crate::protocol_enum_with_unknown! {
+        $crate::__p2p_message_command_enum! {
             $(#[$enum_meta])*
-            $vis $name {
-                from_byte = from_byte_unchecked;
-                unknown
-                /// Command value that is not recognised by this implementation.
-                Unknown(u8) => "unknown";
-
-                /// Version handshake message.
-                Version = 0x00 => "version",
-                /// Version acknowledgment message.
-                Verack = 0x01 => "verack",
-                /// Request for peer addresses.
-                GetAddr = 0x10 => "getaddr",
-                /// Response with peer addresses.
-                Addr = 0x11 => "addr",
-                /// Ping message for keepalive.
-                Ping = 0x18 => "ping",
-                /// Pong response to ping.
-                Pong = 0x19 => "pong",
-                /// Request for block headers.
-                GetHeaders = 0x20 => "getheaders",
-                /// Response with block headers.
-                Headers = 0x21 => "headers",
-                /// Request for block hashes.
-                GetBlocks = 0x24 => "getblocks",
-                /// Request for mempool transactions.
-                Mempool = 0x25 => "mempool",
-                /// Inventory announcement.
-                Inv = 0x27 => "inv",
-                /// Request for specific data.
-                GetData = 0x28 => "getdata",
-                /// Request block by index.
-                GetBlockByIndex = 0x29 => "getblkbyidx",
-                /// Data not found response.
-                NotFound = 0x2a => "notfound",
-                /// Transaction payload.
-                Transaction = 0x2b => "tx",
-                /// Block payload.
-                Block = 0x2c => "block",
-                /// Extensible message payload.
-                Extensible = 0x2e => "extensible",
-                /// Rejection message.
-                Reject = 0x2f => "reject",
-                /// Load bloom filter.
-                FilterLoad = 0x30 => "filterload",
-                /// Add to bloom filter.
-                FilterAdd = 0x31 => "filteradd",
-                /// Clear bloom filter.
-                FilterClear = 0x32 => "filterclear",
-                /// Merkle block for SPV.
-                MerkleBlock = 0x38 => "merkleblock",
-                /// Alert message.
-                Alert = 0x40 => "alert",
-            }
+            $vis $name
         }
 
         impl $name {
@@ -554,58 +536,11 @@ macro_rules! p2p_message_command {
 
             /// Parses a command from its textual form.
             pub fn parse_str(s: &str) -> ::std::result::Result<Self, $error_ty> {
-                match s {
-                    "version" => Ok(Self::Version),
-                    "verack" => Ok(Self::Verack),
-                    "getaddr" => Ok(Self::GetAddr),
-                    "addr" => Ok(Self::Addr),
-                    "ping" => Ok(Self::Ping),
-                    "pong" => Ok(Self::Pong),
-                    "getheaders" => Ok(Self::GetHeaders),
-                    "headers" => Ok(Self::Headers),
-                    "getblocks" => Ok(Self::GetBlocks),
-                    "mempool" => Ok(Self::Mempool),
-                    "inv" => Ok(Self::Inv),
-                    "getdata" => Ok(Self::GetData),
-                    "getblkbyidx" => Ok(Self::GetBlockByIndex),
-                    "notfound" => Ok(Self::NotFound),
-                    "tx" => Ok(Self::Transaction),
-                    "block" => Ok(Self::Block),
-                    "extensible" => Ok(Self::Extensible),
-                    "reject" => Ok(Self::Reject),
-                    "filterload" => Ok(Self::FilterLoad),
-                    "filteradd" => Ok(Self::FilterAdd),
-                    "filterclear" => Ok(Self::FilterClear),
-                    "merkleblock" => Ok(Self::MerkleBlock),
-                    "alert" => Ok(Self::Alert),
-                    "unknown" => Ok(Self::Unknown(0xff)),
-                    other => Err(($parse_error)(other)),
-                }
+                $crate::__p2p_message_command_parse!($name, s, $parse_error, false)
             }
         }
 
-        impl ::std::fmt::Display for $name {
-            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-                write!(f, "{}", self.as_str())
-            }
-        }
-
-        impl ::std::str::FromStr for $name {
-            type Err = $error_ty;
-
-            fn from_str(s: &str) -> ::std::result::Result<Self, Self::Err> {
-                Self::parse_str(s)
-            }
-        }
-
-        impl ::serde::Serialize for $name {
-            fn serialize<S>(&self, serializer: S) -> ::std::result::Result<S::Ok, S::Error>
-            where
-                S: ::serde::Serializer,
-            {
-                serializer.serialize_u8(self.to_byte())
-            }
-        }
+        $crate::__p2p_message_command_shared_impls!($name, $error_ty);
 
         impl<'de> ::serde::Deserialize<'de> for $name {
             fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>

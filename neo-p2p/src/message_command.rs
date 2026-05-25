@@ -69,6 +69,7 @@ mod tests {
             MessageCommand::Transaction
         );
         assert!(MessageCommand::parse_str("invalid").is_err());
+        assert!(MessageCommand::parse_str("versionwithpayload").is_err());
     }
 
     #[test]
