@@ -1,6 +1,6 @@
 //! Metrics recorder for collecting and storing telemetry data.
 
-use parking_lot::RwLock;
+use dashmap::DashMap;
 use std::collections::HashMap;
 
 use super::metrics::{Counter, Gauge, Histogram};
@@ -8,9 +8,9 @@ use super::metrics::{Counter, Gauge, Histogram};
 /// Central metrics recorder that stores all metrics.
 #[derive(Default)]
 pub struct MetricsRecorder {
-    counters: RwLock<HashMap<String, Counter>>,
-    gauges: RwLock<HashMap<String, Gauge>>,
-    histograms: RwLock<HashMap<String, Histogram>>,
+    counters: DashMap<String, Counter>,
+    gauges: DashMap<String, Gauge>,
+    histograms: DashMap<String, Histogram>,
 }
 
 impl MetricsRecorder {
@@ -21,66 +21,66 @@ impl MetricsRecorder {
 
     /// Records a gauge value.
     pub fn record_gauge(&self, name: &str, value: f64) {
-        let gauges = self.gauges.read();
-        if let Some(gauge) = gauges.get(name) {
+        if let Some(gauge) = self.gauges.get(name) {
             gauge.set(value);
             return;
         }
-        drop(gauges);
 
-        let mut gauges = self.gauges.write();
-        let gauge = gauges.entry(name.to_string()).or_default();
-        gauge.set(value);
+        self.gauges.entry(name.to_string()).or_default().set(value);
     }
 
     /// Increments a counter.
     pub fn increment_counter(&self, name: &str, amount: u64) {
-        let counters = self.counters.read();
-        if let Some(counter) = counters.get(name) {
+        if let Some(counter) = self.counters.get(name) {
             counter.increment_by(amount);
             return;
         }
-        drop(counters);
 
-        let mut counters = self.counters.write();
-        let counter = counters.entry(name.to_string()).or_default();
-        counter.increment_by(amount);
+        self.counters
+            .entry(name.to_string())
+            .or_default()
+            .increment_by(amount);
     }
 
     /// Records a histogram observation.
     pub fn record_histogram(&self, name: &str, value: f64) {
-        let histograms = self.histograms.read();
-        if let Some(histogram) = histograms.get(name) {
+        if let Some(histogram) = self.histograms.get(name) {
             histogram.observe(value);
             return;
         }
-        drop(histograms);
 
-        let mut histograms = self.histograms.write();
-        let histogram = histograms.entry(name.to_string()).or_default();
-        histogram.observe(value);
+        self.histograms
+            .entry(name.to_string())
+            .or_default()
+            .observe(value);
     }
 
     /// Returns a snapshot of all current metrics.
     pub fn snapshot(&self) -> MetricsSnapshot {
-        let counters = self.counters.read();
-        let gauges = self.gauges.read();
-        let histograms = self.histograms.read();
-
         MetricsSnapshot {
-            counters: counters.iter().map(|(k, v)| (k.clone(), v.get())).collect(),
-            gauges: gauges.iter().map(|(k, v)| (k.clone(), v.get())).collect(),
-            histograms: histograms
+            counters: self
+                .counters
                 .iter()
-                .map(|(k, v)| {
+                .map(|entry| (entry.key().clone(), entry.value().get()))
+                .collect(),
+            gauges: self
+                .gauges
+                .iter()
+                .map(|entry| (entry.key().clone(), entry.value().get()))
+                .collect(),
+            histograms: self
+                .histograms
+                .iter()
+                .map(|entry| {
+                    let histogram = entry.value();
                     (
-                        k.clone(),
+                        entry.key().clone(),
                         HistogramSnapshot {
-                            count: v.count(),
-                            sum: v.sum(),
-                            min: v.min(),
-                            max: v.max(),
-                            avg: v.avg(),
+                            count: histogram.count(),
+                            sum: histogram.sum(),
+                            min: histogram.min(),
+                            max: histogram.max(),
+                            avg: histogram.avg(),
                         },
                     )
                 })
@@ -90,19 +90,19 @@ impl MetricsRecorder {
 
     /// Returns the current value of a gauge, if it exists.
     pub fn get_gauge(&self, name: &str) -> Option<f64> {
-        self.gauges.read().get(name).map(|g| g.get())
+        self.gauges.get(name).map(|g| g.get())
     }
 
     /// Returns the current value of a counter, if it exists.
     pub fn get_counter(&self, name: &str) -> Option<u64> {
-        self.counters.read().get(name).map(|c| c.get())
+        self.counters.get(name).map(|c| c.get())
     }
 
     /// Clears all metrics.
     pub fn clear(&self) {
-        self.counters.write().clear();
-        self.gauges.write().clear();
-        self.histograms.write().clear();
+        self.counters.clear();
+        self.gauges.clear();
+        self.histograms.clear();
     }
 }
 
