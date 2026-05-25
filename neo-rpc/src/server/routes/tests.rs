@@ -1,3 +1,5 @@
+use super::cors::verify_basic_auth;
+use super::handlers::process_body;
 use super::*;
 use crate::server::middleware::{RateLimitCheckResult, RateLimitTier};
 use crate::server::rpc_method_attribute::RpcMethodDescriptor;
@@ -5,6 +7,7 @@ use crate::server::rpc_server::RpcHandler;
 use crate::server::rpc_server_blockchain::RpcServerBlockchain;
 use crate::server::rpc_server_node::RpcServerNode;
 use crate::server::rpc_server_settings::RpcServerConfig;
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use neo_core::neo_io::BinaryWriter;
 use neo_core::neo_system::NeoSystem;
 use neo_core::network::p2p::helper::get_sign_data_vec;
@@ -20,6 +23,7 @@ use neo_vm_rs::OpCode;
 use neo_vm_rs::VmState as VMState;
 use parking_lot::RwLock;
 use std::sync::Arc;
+use warp::http::header::{ACCESS_CONTROL_ALLOW_ORIGIN, VARY};
 
 fn build_test_routes(
     settings: RpcServerConfig,
@@ -31,8 +35,7 @@ fn build_test_routes(
 }
 
 fn build_filters_with_handlers() -> (Arc<RwLock<RpcServer>>, RpcFilters) {
-    let system =
-        NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
     let mut server = RpcServer::new(system, RpcServerConfig::default());
     server.register_handlers(RpcServerBlockchain::register_handlers());
     server.register_handlers(RpcServerNode::register_handlers());
@@ -97,8 +100,7 @@ fn rate_limit_check_result_is_handled_properly() {
 }
 
 fn build_filters_with_panic_handler() -> (Arc<RwLock<RpcServer>>, RpcFilters) {
-    let system =
-        NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
     let mut server = RpcServer::new(system, RpcServerConfig::default());
     server.register_handlers(RpcServerBlockchain::register_handlers());
     server.register_handlers(vec![RpcHandler::new(
@@ -122,8 +124,7 @@ fn build_filters_with_auth(
     auth: Arc<Option<BasicAuth>>,
     include_wallet: bool,
 ) -> (Arc<RwLock<RpcServer>>, RpcFilters) {
-    let system =
-        NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
     let mut server = RpcServer::new(system, RpcServerConfig::default());
     server.register_handlers(RpcServerBlockchain::register_handlers());
     server.register_handlers(RpcServerNode::register_handlers());

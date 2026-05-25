@@ -15,14 +15,19 @@ use neo_core::smart_contract::native::NativeRegistry;
 use neo_core::smart_contract::{
     ContractParameterType, ContractState, NefFile, StorageItem, StorageKey,
 };
-use neo_core::tokens_tracker::TokensTrackerSettings;
+use neo_core::tokens_tracker::{
+    find_range, Nep11TransferKey, Nep17TransferKey, TokenTransfer, TokensTrackerService,
+    TokensTrackerSettings,
+};
 use neo_core::NativeContract;
 use neo_core::UInt256;
 use neo_vm_rs::OpCode;
 use neo_vm_rs::VmState as VMState;
 use num_bigint::BigInt;
+use num_traits::ToPrimitive;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 fn find_handler<'a>(handlers: &'a [RpcHandler], name: &str) -> &'a RpcHandler {
     handlers
@@ -147,11 +152,9 @@ fn build_nep11_properties_contract() -> ContractState {
     let mut manifest = ContractManifest::new("Nep11Properties".to_string());
     manifest.supported_standards.push("NEP-11".to_string());
 
-    let parameter = ContractParameterDefinition::new(
-        "tokenId".to_string(),
-        ContractParameterType::ByteArray,
-    )
-    .expect("parameter");
+    let parameter =
+        ContractParameterDefinition::new("tokenId".to_string(), ContractParameterType::ByteArray)
+            .expect("parameter");
     let method = ContractMethodDescriptor::new(
         "properties".to_string(),
         vec![parameter],
@@ -185,9 +188,8 @@ async fn get_nep17_balances_reports_asset_metadata() {
     store_contract_state(&system, &contract);
     let store_cache = system.store_cache();
     let snapshot = Arc::new(store_cache.data_cache().clone());
-    let contract_lookup =
-        ContractManagement::get_contract_from_snapshot(snapshot.as_ref(), &asset)
-            .expect("contract lookup");
+    let contract_lookup = ContractManagement::get_contract_from_snapshot(snapshot.as_ref(), &asset)
+        .expect("contract lookup");
     assert!(contract_lookup.is_some());
     let mut script = ScriptBuilder::new();
     emit_contract_call(&mut script, &asset, "decimals").expect("emit decimals");
@@ -236,8 +238,8 @@ async fn get_nep17_balances_reports_asset_metadata() {
     let mut prefix = Vec::with_capacity(1 + UInt160::LENGTH);
     prefix.push(balance_prefix);
     prefix.extend_from_slice(&user.to_bytes());
-    let entries = find_prefix::<Nep17BalanceKey, TokenBalance>(store.as_ref(), &prefix)
-        .expect("find prefix");
+    let entries =
+        find_prefix::<Nep17BalanceKey, TokenBalance>(store.as_ref(), &prefix).expect("find prefix");
     assert_eq!(entries.len(), 1);
 
     let server = RpcServer::new(system, RpcServerConfig::default());
@@ -620,10 +622,7 @@ async fn get_nep17_transfers_orders_by_timestamp_descending() {
     assert_eq!(sent[1].get("timestamp").and_then(Value::as_u64), Some(t1));
     assert_eq!(
         sent[0].get("transferaddress").and_then(Value::as_str),
-        Some(
-            WalletHelper::to_address(&other, server.system().settings().address_version)
-                .as_str()
-        )
+        Some(WalletHelper::to_address(&other, server.system().settings().address_version).as_str())
     );
 
     let received = obj
