@@ -1,12 +1,15 @@
-//! Per-IP and per-method rate limiting using Token Bucket algorithm
+//! Per-IP and per-method rate limiting using `governor`.
 //!
-//! Lock-free implementation using `DashMap` for concurrent rate limiting.
+//! Concurrent implementation using `DashMap` for per-IP state and
+//! `governor`'s GCRA limiter for each method-cost tier.
 //! Supports different rate limits for different RPC methods based on computational cost.
 
 use dashmap::DashMap;
+use governor::{DefaultDirectRateLimiter, Quota, RateLimiter};
 use std::{
     collections::HashMap,
     net::IpAddr,
+    num::NonZeroU32,
     time::{Duration, Instant},
 };
 
@@ -120,18 +123,16 @@ impl Default for RateLimitConfig {
     }
 }
 
-/// Per-IP token bucket state for a specific tier
-struct TokenBucket {
-    /// Available tokens
-    tokens: f64,
-    /// Last refill timestamp
-    last_refill: Instant,
+/// Per-IP limiter state for a specific tier.
+struct RateLimitBucket {
+    /// Direct limiter for this IP/tier bucket.
+    limiter: DefaultDirectRateLimiter,
 }
 
 /// Per-IP rate limit state across all tiers
 struct IpRateLimitState {
     /// Buckets for each rate limit tier
-    buckets: HashMap<RateLimitTier, TokenBucket>,
+    buckets: HashMap<RateLimitTier, RateLimitBucket>,
     /// Last access time for cleanup
     last_access: Instant,
 }
@@ -148,17 +149,24 @@ impl IpRateLimitState {
         &mut self,
         tier: RateLimitTier,
         config: &RateLimitConfig,
-    ) -> &mut TokenBucket {
-        self.buckets.entry(tier).or_insert_with(|| TokenBucket {
-            tokens: config.burst as f64,
-            last_refill: Instant::now(),
+    ) -> &mut RateLimitBucket {
+        self.buckets.entry(tier).or_insert_with(|| RateLimitBucket {
+            limiter: RateLimiter::direct(quota_from_config(config)),
         })
     }
 }
 
+fn quota_from_config(config: &RateLimitConfig) -> Quota {
+    let max_rps =
+        NonZeroU32::new(config.max_rps).expect("rate limiter quota requires a positive max_rps");
+    let burst =
+        NonZeroU32::new(config.burst).expect("rate limiter quota requires a positive burst");
+    Quota::per_second(max_rps).allow_burst(burst)
+}
+
 /// Lock-free per-IP rate limiter using `DashMap`
 ///
-/// Uses token bucket algorithm with automatic cleanup of stale entries.
+/// Uses `governor`'s GCRA rate limiter with automatic cleanup of stale entries.
 /// Supports per-method rate limiting with different tiers.
 pub struct GovernorRateLimiter {
     default_config: RateLimitConfig,
@@ -270,8 +278,9 @@ impl GovernorRateLimiter {
             }
         });
 
-        let max_rps = f64::from(config.max_rps);
-        let burst = f64::from(config.burst.max(1));
+        if config.max_rps == 0 || config.burst == 0 {
+            return RateLimitCheckResult::Blocked;
+        }
 
         // Get or create state for this IP
         let mut entry = self.states.entry(ip).or_insert_with(IpRateLimitState::new);
@@ -281,18 +290,7 @@ impl GovernorRateLimiter {
 
         // Get or create bucket for this tier
         let bucket = entry.get_or_create_bucket(tier, &config);
-        let now = Instant::now();
-
-        // Refill tokens based on elapsed time
-        let elapsed = now.duration_since(bucket.last_refill).as_secs_f64();
-        if elapsed > 0.0 {
-            bucket.tokens = elapsed.mul_add(max_rps, bucket.tokens).min(burst);
-            bucket.last_refill = now;
-        }
-
-        // Check if we have tokens available
-        if bucket.tokens >= 1.0 {
-            bucket.tokens -= 1.0;
+        if bucket.limiter.check().is_ok() {
             RateLimitCheckResult::Allowed
         } else {
             RateLimitCheckResult::Blocked
@@ -511,6 +509,21 @@ mod tests {
             RateLimitTier::from_method("getversion"),
             RateLimitTier::Cheap
         );
+    }
+
+    #[test]
+    fn test_scaled_zero_tier_blocks_when_limiter_enabled() {
+        let limiter = GovernorRateLimiter::new(RateLimitConfig {
+            max_rps: 1,
+            burst: 1,
+        });
+        let ip: IpAddr = "127.0.0.1".parse().unwrap();
+
+        assert_eq!(
+            limiter.check_for_method(ip, "sendrawtransaction"),
+            RateLimitCheckResult::Blocked
+        );
+        assert!(limiter.is_enabled());
     }
 
     #[test]

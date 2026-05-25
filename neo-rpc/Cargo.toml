@@ -56,6 +56,7 @@ sha1 = { version = "0.10", optional = true }
 
 # Rate limiting (server feature)
 dashmap = { workspace = true, optional = true }
+governor = { workspace = true, optional = true }
 
 # HTTP client (client feature)
 reqwest = { workspace = true, optional = true }
@@ -106,6 +107,7 @@ server = [
     "dep:zeroize",
     "dep:subtle",
     "dep:dashmap",
+    "dep:governor",
     "dep:futures",
     "dep:tokio-rustls",
     "dep:rustls",
