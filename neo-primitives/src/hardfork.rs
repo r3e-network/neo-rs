@@ -2,30 +2,31 @@
 //!
 //! Matches C# Neo.Hardfork enum exactly.
 
+use crate::protocol_enum_repr;
 use serde::{Deserialize, Serialize};
-use std::fmt;
 use std::str::FromStr;
 
-/// Represents a hardfork in the Neo blockchain (matches C# Hardfork enum exactly).
-///
-/// Hardforks are named after mythological creatures in alphabetical order.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-#[repr(u8)]
-pub enum Hardfork {
-    /// Aspidochelone hardfork - First Neo N3 hardfork.
-    HfAspidochelone = 0,
-    /// Basilisk hardfork.
-    HfBasilisk = 1,
-    /// Cockatrice hardfork.
-    HfCockatrice = 2,
-    /// Domovoi hardfork.
-    HfDomovoi = 3,
-    /// Echidna hardfork.
-    HfEchidna = 4,
-    /// Faun hardfork.
-    HfFaun = 5,
-    /// Gorgon hardfork.
-    HfGorgon = 6,
+protocol_enum_repr! {
+    /// Represents a hardfork in the Neo blockchain (matches C# Hardfork enum exactly).
+    ///
+    /// Hardforks are named after mythological creatures in alphabetical order.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+    pub Hardfork {
+        /// Aspidochelone hardfork - First Neo N3 hardfork.
+        HfAspidochelone = 0 => "HF_Aspidochelone",
+        /// Basilisk hardfork.
+        HfBasilisk = 1 => "HF_Basilisk",
+        /// Cockatrice hardfork.
+        HfCockatrice = 2 => "HF_Cockatrice",
+        /// Domovoi hardfork.
+        HfDomovoi = 3 => "HF_Domovoi",
+        /// Echidna hardfork.
+        HfEchidna = 4 => "HF_Echidna",
+        /// Faun hardfork.
+        HfFaun = 5 => "HF_Faun",
+        /// Gorgon hardfork.
+        HfGorgon = 6 => "HF_Gorgon",
+    }
 }
 
 impl Hardfork {
@@ -52,42 +53,19 @@ impl Hardfork {
     /// Returns the hardfork name as a string.
     #[must_use]
     pub const fn name(&self) -> &'static str {
-        match self {
-            Self::HfAspidochelone => "HF_Aspidochelone",
-            Self::HfBasilisk => "HF_Basilisk",
-            Self::HfCockatrice => "HF_Cockatrice",
-            Self::HfDomovoi => "HF_Domovoi",
-            Self::HfEchidna => "HF_Echidna",
-            Self::HfFaun => "HF_Faun",
-            Self::HfGorgon => "HF_Gorgon",
-        }
+        self.as_str()
     }
 
     /// Returns the hardfork index (0-based).
     #[must_use]
     pub const fn index(&self) -> u8 {
-        *self as u8
+        self.to_byte()
     }
 
     /// Creates a hardfork from its index.
     #[must_use]
     pub const fn from_index(index: u8) -> Option<Self> {
-        match index {
-            0 => Some(Self::HfAspidochelone),
-            1 => Some(Self::HfBasilisk),
-            2 => Some(Self::HfCockatrice),
-            3 => Some(Self::HfDomovoi),
-            4 => Some(Self::HfEchidna),
-            5 => Some(Self::HfFaun),
-            6 => Some(Self::HfGorgon),
-            _ => None,
-        }
-    }
-}
-
-impl fmt::Display for Hardfork {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.name())
+        Self::from_byte(index)
     }
 }
 
@@ -113,7 +91,7 @@ impl TryFrom<u8> for Hardfork {
     type Error = HardforkParseError;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
-        Self::from_index(value).ok_or_else(|| HardforkParseError(value.to_string()))
+        Self::from_byte(value).ok_or_else(|| HardforkParseError(value.to_string()))
     }
 }
 
