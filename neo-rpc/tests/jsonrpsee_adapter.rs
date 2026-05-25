@@ -5,27 +5,19 @@ use neo_core::protocol_settings::ProtocolSettings;
 use neo_rpc::server::{
     build_jsonrpsee_module, build_jsonrpsee_module_with_disabled, RpcException, RpcHandler,
     RpcMethodDescriptor, RpcServer, RpcServerBlockchain, RpcServerConfig, RpcServerNode,
-    ServerRpcError,
+    RpcServerUtilities, ServerRpcError, JSONRPSEE_READ_ONLY_METHODS,
 };
 use parking_lot::RwLock;
 use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::sync::Arc;
 
-const INITIAL_READ_ONLY_METHODS: &[&str] = &[
-    "getbestblockhash",
-    "getblockcount",
-    "getblockheadercount",
-    "getconnectioncount",
-    "getrawmempool",
-    "getversion",
-];
-
 fn build_server_with_handlers() -> Arc<RwLock<RpcServer>> {
     let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
     let mut server = RpcServer::new(system, RpcServerConfig::default());
     server.register_handlers(RpcServerBlockchain::register_handlers());
     server.register_handlers(RpcServerNode::register_handlers());
+    server.register_handlers(RpcServerUtilities::register_handlers());
     Arc::new(RwLock::new(server))
 }
 
@@ -33,6 +25,7 @@ fn find_handler(method: &str) -> RpcHandler {
     RpcServerBlockchain::register_handlers()
         .into_iter()
         .chain(RpcServerNode::register_handlers())
+        .chain(RpcServerUtilities::register_handlers())
         .find(|handler| handler.descriptor().name.eq_ignore_ascii_case(method))
         .expect("registered handler")
 }
@@ -67,10 +60,10 @@ async fn module_registers_initial_read_only_methods() {
     let module = build_jsonrpsee_module(Arc::downgrade(&server)).expect("module");
     let methods = module.method_names().collect::<HashSet<_>>();
 
-    for method in INITIAL_READ_ONLY_METHODS {
+    for method in JSONRPSEE_READ_ONLY_METHODS {
         assert!(methods.contains(method), "missing {method}");
     }
-    assert_eq!(methods.len(), INITIAL_READ_ONLY_METHODS.len());
+    assert_eq!(methods.len(), JSONRPSEE_READ_ONLY_METHODS.len());
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -78,7 +71,7 @@ async fn initial_read_only_methods_match_registered_handlers() {
     let server = build_server_with_handlers();
     let module = build_jsonrpsee_module(Arc::downgrade(&server)).expect("module");
 
-    for (id, method) in INITIAL_READ_ONLY_METHODS.iter().enumerate() {
+    for (id, method) in JSONRPSEE_READ_ONLY_METHODS.iter().enumerate() {
         let response = raw_response(
             &module,
             json!({
