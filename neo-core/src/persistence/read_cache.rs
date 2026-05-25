@@ -16,7 +16,7 @@ use tracing::{debug, trace};
 
 mod bloom_filter;
 mod prefetch;
-pub use bloom_filter::{BloomFilter, BloomFilterKey};
+pub use bloom_filter::{BloomFilter, BloomFilterKey, NegativeLookupBloom};
 pub use prefetch::{PrefetchHint, PrefetchingIterator};
 
 /// Cache entry with metadata.
@@ -331,7 +331,7 @@ where
     config: ReadCacheConfig,
     data: RwLock<LruCache<K, CacheEntry<V>>>,
     stats: Arc<ReadCacheStats>,
-    bloom_filter: Option<Arc<BloomFilter>>,
+    bloom_filter: Option<Arc<NegativeLookupBloom>>,
 }
 
 impl<K, V> ReadCache<K, V>
@@ -342,7 +342,7 @@ where
     /// Creates a new read cache with the specified configuration.
     pub fn new(config: ReadCacheConfig) -> Self {
         let bloom_filter = if config.enable_bloom_filter {
-            Some(Arc::new(BloomFilter::new(
+            Some(Arc::new(NegativeLookupBloom::new(
                 config.bloom_filter_capacity,
                 config.bloom_filter_fpr,
             )))

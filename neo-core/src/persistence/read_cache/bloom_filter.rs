@@ -2,15 +2,20 @@ use crate::smart_contract::StorageKey;
 use fastbloom::AtomicBloomFilter;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-/// A concurrent bloom filter for probabilistic membership testing.
-/// Used to avoid expensive store lookups for keys that definitely don't exist.
-pub struct BloomFilter {
+/// A concurrent negative-lookup bloom filter for read-cache membership testing.
+///
+/// This is deliberately separate from `neo_crypto::BloomFilter`, which implements
+/// Neo P2P protocol filter semantics.
+pub struct NegativeLookupBloom {
     filter: AtomicBloomFilter,
     count: AtomicUsize,
     capacity: usize,
 }
 
-impl BloomFilter {
+/// Backwards-compatible alias for the read-cache negative lookup filter.
+pub type BloomFilter = NegativeLookupBloom;
+
+impl NegativeLookupBloom {
     /// Creates a new bloom filter with the specified capacity and false positive rate.
     ///
     /// Capacity is the expected number of elements.

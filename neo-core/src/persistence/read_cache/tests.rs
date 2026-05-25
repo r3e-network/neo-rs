@@ -501,7 +501,7 @@ fn read_cache_stats_hit_rate() {
 
 #[test]
 fn bloom_filter_basic_operations() {
-    let bloom = BloomFilter::new(1000, 0.01);
+    let bloom = NegativeLookupBloom::new(1000, 0.01);
 
     // Check non-existent key
     assert!(!bloom.might_contain_bytes(b"key1"));
@@ -523,7 +523,7 @@ fn bloom_filter_basic_operations() {
 
 #[test]
 fn bloom_filter_prehashed_operations_have_no_false_negatives() {
-    let bloom = BloomFilter::new(16, 0.01);
+    let bloom = NegativeLookupBloom::new(16, 0.01);
     let hash = xxhash_rust::xxh3::xxh3_64(b"prehashed-key");
 
     assert!(!bloom.might_contain_hash(hash));
@@ -539,18 +539,18 @@ fn bloom_filter_byte_and_hash_paths_share_source_hash() {
     let key = b"cross-path-key";
     let hash = xxhash_rust::xxh3::xxh3_64(key);
 
-    let bytes_first = BloomFilter::new(16, 0.01);
+    let bytes_first = NegativeLookupBloom::new(16, 0.01);
     bytes_first.insert_bytes(key);
     assert!(bytes_first.might_contain_hash(hash));
 
-    let hash_first = BloomFilter::new(16, 0.01);
+    let hash_first = NegativeLookupBloom::new(16, 0.01);
     hash_first.insert_hash(hash);
     assert!(hash_first.might_contain_bytes(key));
 }
 
 #[test]
 fn bloom_filter_should_rebuild_at_capacity() {
-    let bloom = BloomFilter::new(2, 0.01);
+    let bloom = NegativeLookupBloom::new(2, 0.01);
 
     assert!(!bloom.should_rebuild());
 
@@ -563,7 +563,7 @@ fn bloom_filter_should_rebuild_at_capacity() {
 
 #[test]
 fn bloom_filter_accepts_boundary_configuration_without_panicking() {
-    let bloom = BloomFilter::new(0, 0.0);
+    let bloom = NegativeLookupBloom::new(0, 0.0);
 
     assert!(bloom.is_empty());
     bloom.insert_bytes(b"key1");
@@ -575,7 +575,7 @@ fn bloom_filter_accepts_boundary_configuration_without_panicking() {
 
 #[test]
 fn bloom_filter_concurrent_insert_has_no_false_negatives() {
-    let bloom = Arc::new(BloomFilter::new(1024, 0.01));
+    let bloom = Arc::new(NegativeLookupBloom::new(1024, 0.01));
     let mut handles = Vec::new();
 
     for shard in 0..4 {
