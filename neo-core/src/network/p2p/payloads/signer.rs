@@ -11,7 +11,9 @@
 
 use crate::error::CoreError;
 use crate::macros::{OptionExt, ValidateLength};
-use crate::neo_io::serializable::helper::get_var_size;
+use crate::neo_io::serializable::helper::{
+    deserialize_array, get_var_size, get_var_size_serializable_slice, serialize_array,
+};
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::smart_contract::Interoperable;
 use crate::vm_runtime::StackItem;
@@ -302,8 +304,7 @@ impl Serializable for Signer {
         let mut size = UINT160_SIZE + 1;
 
         if self.scopes.contains(WitnessScope::CUSTOM_CONTRACTS) {
-            size += get_var_size(self.allowed_contracts.len() as u64)
-                + self.allowed_contracts.len() * UINT160_SIZE;
+            size += get_var_size_serializable_slice(&self.allowed_contracts);
         }
 
         if self.scopes.contains(WitnessScope::CUSTOM_GROUPS) {
@@ -316,8 +317,7 @@ impl Serializable for Signer {
         }
 
         if self.scopes.contains(WitnessScope::WITNESS_RULES) {
-            size += get_var_size(self.rules.len() as u64)
-                + self.rules.iter().map(|r| r.size()).sum::<usize>();
+            size += get_var_size_serializable_slice(&self.rules);
         }
 
         size
@@ -331,10 +331,7 @@ impl Serializable for Signer {
         if self.scopes.contains(WitnessScope::CUSTOM_CONTRACTS) {
             self.allowed_contracts
                 .validate_max_length(MAX_SUBITEMS, "Allowed contracts")?;
-            writer.write_var_uint(self.allowed_contracts.len() as u64)?;
-            for contract in &self.allowed_contracts {
-                writer.write_serializable(contract)?;
-            }
+            serialize_array(&self.allowed_contracts, writer)?;
         }
 
         // Write allowed groups if flag is set
@@ -356,10 +353,7 @@ impl Serializable for Signer {
         // Write rules if flag is set
         if self.scopes.contains(WitnessScope::WITNESS_RULES) {
             self.rules.validate_max_length(MAX_SUBITEMS, "Rules")?;
-            writer.write_var_uint(self.rules.len() as u64)?;
-            for rule in &self.rules {
-                writer.write_serializable(rule)?;
-            }
+            serialize_array(&self.rules, writer)?;
         }
 
         Ok(())
@@ -393,11 +387,7 @@ impl Serializable for Signer {
 
         // Read allowed contracts if flag is set
         if scopes.contains(WitnessScope::CUSTOM_CONTRACTS) {
-            let count = reader.read_var_int(MAX_SUBITEMS as u64)? as usize;
-            allowed_contracts.reserve(count);
-            for _ in 0..count {
-                allowed_contracts.push(<UInt160 as Serializable>::deserialize(reader)?);
-            }
+            allowed_contracts = deserialize_array(reader, MAX_SUBITEMS)?;
         }
 
         // Read allowed groups if flag is set
@@ -414,11 +404,7 @@ impl Serializable for Signer {
 
         // Read rules if flag is set
         if scopes.contains(WitnessScope::WITNESS_RULES) {
-            let count = reader.read_var_int(MAX_SUBITEMS as u64)? as usize;
-            rules.reserve(count);
-            for _ in 0..count {
-                rules.push(<WitnessRule as Serializable>::deserialize(reader)?);
-            }
+            rules = deserialize_array(reader, MAX_SUBITEMS)?;
         }
 
         Ok(Self {
@@ -500,6 +486,43 @@ mod tests {
     fn signer_deserialize_rejects_global_combined_scope() {
         let mut data = vec![0u8; UINT160_SIZE];
         data.push((WitnessScope::GLOBAL | WitnessScope::CALLED_BY_ENTRY).bits());
+        let mut reader = MemoryReader::new(&data);
+
+        assert!(<Signer as Serializable>::deserialize(&mut reader).is_err());
+    }
+
+    #[test]
+    fn signer_deserialize_rejects_too_many_allowed_contracts() {
+        let mut writer = BinaryWriter::new();
+        writer.write_serializable(&UInt160::zero()).unwrap();
+        writer
+            .write_u8(WitnessScope::CUSTOM_CONTRACTS.bits())
+            .unwrap();
+        writer.write_var_uint((MAX_SUBITEMS + 1) as u64).unwrap();
+        for value in 0..=MAX_SUBITEMS {
+            let contract = UInt160::from_bytes(&[value as u8; UINT160_SIZE]).unwrap();
+            writer.write_serializable(&contract).unwrap();
+        }
+        let data = writer.into_bytes();
+        let mut reader = MemoryReader::new(&data);
+
+        assert!(<Signer as Serializable>::deserialize(&mut reader).is_err());
+    }
+
+    #[test]
+    fn signer_deserialize_rejects_too_many_rules() {
+        let mut writer = BinaryWriter::new();
+        writer.write_serializable(&UInt160::zero()).unwrap();
+        writer.write_u8(WitnessScope::WITNESS_RULES.bits()).unwrap();
+        writer.write_var_uint((MAX_SUBITEMS + 1) as u64).unwrap();
+        let rule = WitnessRule::new(
+            WitnessRuleAction::Allow,
+            WitnessCondition::Boolean { value: true },
+        );
+        for _ in 0..=MAX_SUBITEMS {
+            writer.write_serializable(&rule).unwrap();
+        }
+        let data = writer.into_bytes();
         let mut reader = MemoryReader::new(&data);
 
         assert!(<Signer as Serializable>::deserialize(&mut reader).is_err());
