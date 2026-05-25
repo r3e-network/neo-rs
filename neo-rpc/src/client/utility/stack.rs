@@ -14,17 +14,7 @@ pub fn stack_item_from_json(json: &JObject) -> Result<StackValue, String> {
         .ok_or("StackItem entry missing 'type' field")?;
 
     match item_type.as_str() {
-        "Any" => {
-            let value = json.get("value");
-            let text = value
-                .and_then(|token| token.as_string())
-                .or_else(|| value.map(std::string::ToString::to_string));
-            if let Some(text) = text {
-                Ok(StackValue::ByteString(text.into_bytes()))
-            } else {
-                Ok(StackValue::Null)
-            }
-        }
+        "Any" => Ok(fallback_text_or_null(json)),
         "Boolean" => {
             let value = json
                 .get("value")
@@ -43,46 +33,10 @@ pub fn stack_item_from_json(json: &JObject) -> Result<StackValue, String> {
                 .ok_or("Invalid integer stack item value")?;
             Ok(integer_stack_value(integer))
         }
-        "ByteString" => {
-            let value_token = json
-                .get("value")
-                .ok_or("ByteString stack item missing 'value' field")?;
-            let data = parse_base64_token(value_token, "value")?;
-            Ok(StackValue::ByteString(data))
-        }
-        "Buffer" => {
-            let value_token = json
-                .get("value")
-                .ok_or("Buffer stack item missing 'value' field")?;
-            let data = parse_base64_token(value_token, "value")?;
-            Ok(StackValue::Buffer(data))
-        }
-        "Array" => {
-            let values = json
-                .get("value")
-                .and_then(|token| token.as_array())
-                .ok_or("Array stack item missing 'value' array")?;
-            let mut items = Vec::with_capacity(values.len());
-            for value in values.children() {
-                let token = value.as_ref().ok_or("Array entries must be objects")?;
-                let obj = token.as_object().ok_or("Array entries must be objects")?;
-                items.push(stack_item_from_json(obj)?);
-            }
-            Ok(StackValue::Array(items))
-        }
-        "Struct" => {
-            let values = json
-                .get("value")
-                .and_then(|token| token.as_array())
-                .ok_or("Struct stack item missing 'value' array")?;
-            let mut items = Vec::with_capacity(values.len());
-            for value in values.children() {
-                let token = value.as_ref().ok_or("Struct entries must be objects")?;
-                let obj = token.as_object().ok_or("Struct entries must be objects")?;
-                items.push(stack_item_from_json(obj)?);
-            }
-            Ok(StackValue::Struct(items))
-        }
+        "ByteString" => parse_base64_stack_value(json, "ByteString", StackValue::ByteString),
+        "Buffer" => parse_base64_stack_value(json, "Buffer", StackValue::Buffer),
+        "Array" => parse_stack_sequence(json, "Array", StackValue::Array),
+        "Struct" => parse_stack_sequence(json, "Struct", StackValue::Struct),
         "Map" => {
             let values = json
                 .get("value")
@@ -117,18 +71,7 @@ pub fn stack_item_from_json(json: &JObject) -> Result<StackValue, String> {
             )?)))
         }
         "InteropInterface" => Ok(StackValue::Interop(0)),
-        _other => {
-            let value = json.get("value");
-            let text = value
-                .and_then(|token| token.as_string())
-                .or_else(|| value.map(std::string::ToString::to_string));
-
-            if let Some(text) = text {
-                Ok(StackValue::ByteString(text.into_bytes()))
-            } else {
-                Ok(StackValue::Null)
-            }
-        }
+        _other => Ok(fallback_text_or_null(json)),
     }
 }
 
@@ -155,16 +98,10 @@ pub fn stack_item_to_json(item: &StackValue) -> Result<JObject, String> {
             );
         }
         StackValue::ByteString(bytes) => {
-            json.insert(
-                "value".to_string(),
-                JToken::String(general_purpose::STANDARD.encode(bytes)),
-            );
+            insert_base64_value(&mut json, bytes);
         }
         StackValue::Buffer(bytes) => {
-            json.insert(
-                "value".to_string(),
-                JToken::String(general_purpose::STANDARD.encode(bytes)),
-            );
+            insert_base64_value(&mut json, bytes);
         }
         StackValue::Pointer(index) => {
             json.insert("value".to_string(), JToken::Number(*index as f64));
@@ -197,6 +134,60 @@ pub fn stack_item_to_json(item: &StackValue) -> Result<JObject, String> {
     }
 
     Ok(json)
+}
+
+fn fallback_text_or_null(json: &JObject) -> StackValue {
+    let value = json.get("value");
+    let text = value
+        .and_then(|token| token.as_string())
+        .or_else(|| value.map(std::string::ToString::to_string));
+
+    if let Some(text) = text {
+        StackValue::ByteString(text.into_bytes())
+    } else {
+        StackValue::Null
+    }
+}
+
+fn parse_base64_stack_value(
+    json: &JObject,
+    type_name: &str,
+    make_value: impl FnOnce(Vec<u8>) -> StackValue,
+) -> Result<StackValue, String> {
+    let value_token = json
+        .get("value")
+        .ok_or_else(|| format!("{type_name} stack item missing 'value' field"))?;
+    let data = parse_base64_token(value_token, "value")?;
+    Ok(make_value(data))
+}
+
+fn parse_stack_sequence(
+    json: &JObject,
+    type_name: &str,
+    make_value: impl FnOnce(Vec<StackValue>) -> StackValue,
+) -> Result<StackValue, String> {
+    let values = json
+        .get("value")
+        .and_then(|token| token.as_array())
+        .ok_or_else(|| format!("{type_name} stack item missing 'value' array"))?;
+    let mut items = Vec::with_capacity(values.len());
+    for value in values.children() {
+        let token = value
+            .as_ref()
+            .ok_or_else(|| format!("{type_name} entries must be objects"))?;
+        let obj = token
+            .as_object()
+            .ok_or_else(|| format!("{type_name} entries must be objects"))?;
+        items.push(stack_item_from_json(obj)?);
+    }
+    Ok(make_value(items))
+}
+
+fn insert_base64_value(json: &mut JObject, bytes: &[u8]) {
+    json.insert(
+        "value".to_string(),
+        JToken::String(general_purpose::STANDARD.encode(bytes)),
+    );
 }
 
 pub fn stack_value_to_bigint(value: &StackValue) -> Result<BigInt, String> {
