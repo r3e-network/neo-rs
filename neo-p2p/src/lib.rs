@@ -185,22 +185,30 @@ pub mod message_flags;
 pub mod node_capability_type;
 
 /// Oracle response code enumeration.
-pub mod oracle_response_code;
+pub mod oracle_response_code {
+    pub use neo_primitives::OracleResponseCode;
+}
 
 /// P2P trait definitions.
 pub mod traits;
 
 /// Transaction removal reason enumeration.
-pub mod transaction_removal_reason;
+pub mod transaction_removal_reason {
+    pub use neo_primitives::TransactionRemovalReason;
+}
 
 /// Verification result enumeration.
 pub mod verify_result;
 
 /// Witness condition type enumeration.
-pub mod witness_condition_type;
+pub mod witness_condition_type {
+    pub use neo_primitives::WitnessConditionType;
+}
 
 /// Witness rule action enumeration.
-pub mod witness_rule_action;
+pub mod witness_rule_action {
+    pub use neo_primitives::WitnessRuleAction;
+}
 
 // ============================================================================
 // Public Re-exports
