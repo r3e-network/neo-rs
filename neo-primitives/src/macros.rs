@@ -704,6 +704,19 @@ macro_rules! protocol_message_flags {
             }
         }
 
+        impl ::std::fmt::Display for $name {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                let raw = self.to_byte();
+                if raw == 0 {
+                    write!(f, "None")
+                } else if self.is_compressed() {
+                    write!(f, "Compressed")
+                } else {
+                    write!(f, "Flags(0x{raw:02x})")
+                }
+            }
+        }
+
         impl ::serde::Serialize for $name {
             fn serialize<S>(&self, serializer: S) -> ::std::result::Result<S::Ok, S::Error>
             where

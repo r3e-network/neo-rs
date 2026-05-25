@@ -9,7 +9,7 @@ protocol_message_flags! {
     /// The C# implementation treats this as a `[Flags]` enum, so we preserve the raw
     /// byte rather than rejecting unknown combinations. Future protocol extensions
     /// can therefore add bits without breaking the Rust node.
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
     pub MessageFlags {
         warn_target = "neo";
         from_byte = from_byte_unchecked;
@@ -33,6 +33,7 @@ mod tests {
         assert_eq!(unknown.to_byte(), 0x80);
         assert_eq!(unknown.as_byte(), 0x80);
         assert!(!unknown.is_compressed());
+        assert_eq!(unknown.to_string(), "Flags(0x80)");
         assert_eq!(
             MessageFlags::from_bits(0x80)
                 .expect("unknown bits retained")
@@ -48,5 +49,13 @@ mod tests {
         assert_eq!(serialized, "129");
         let deserialized: MessageFlags = serde_json::from_str(&serialized).unwrap();
         assert_eq!(deserialized.to_byte(), 0x81);
+    }
+
+    #[test]
+    fn default_and_display_match_p2p_api() {
+        assert_eq!(MessageFlags::default(), MessageFlags::NONE);
+        assert_eq!(MessageFlags::NONE.to_string(), "None");
+        assert_eq!(MessageFlags::COMPRESSED.to_string(), "Compressed");
+        assert_eq!(MessageFlags::from_byte(0x80).unwrap().to_string(), "Flags(0x80)");
     }
 }
