@@ -3,7 +3,6 @@
 //! The StdLib contract provides standard utility functions for smart contracts,
 //! including string manipulation, JSON operations, and mathematical functions.
 
-use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
 use crate::impl_native_contract;
 use crate::smart_contract::application_engine::ApplicationEngine;
@@ -49,34 +48,7 @@ impl StdLib {
         method: &str,
         args: &[Vec<u8>],
     ) -> Result<Vec<u8>> {
-        match method {
-            "serialize" => self.serialize(engine, args),
-            "deserialize" => self.deserialize(engine, args),
-            "jsonSerialize" => self.json_serialize(engine, args),
-            "jsonDeserialize" => self.json_deserialize(engine, args),
-            "atoi" => self.atoi(args),
-            "itoa" => self.itoa(args),
-            "base64Encode" => self.base64_encode(args),
-            "base64Decode" => self.base64_decode(args),
-            "base64UrlEncode" => self.base64_url_encode(args),
-            "base64UrlDecode" => self.base64_url_decode(args),
-            "base58Encode" => self.base58_encode(args),
-            "base58Decode" => self.base58_decode(args),
-            "base58CheckEncode" => self.base58_check_encode(args),
-            "base58CheckDecode" => self.base58_check_decode(args),
-            "hexEncode" => self.hex_encode(args),
-            "hexDecode" => self.hex_decode(args),
-            "memoryCompare" => self.memory_compare(args),
-            "memorySearch" => self.memory_search(args),
-            "stringSplit" => self.string_split(engine, args),
-            "strLen" => self.str_len(args),
-            // Legacy alias for backward compatibility
-            "stringLen" => self.str_len(args),
-            _ => Err(Error::native_contract(format!(
-                "Unknown method: {}",
-                method
-            ))),
-        }
+        self.dispatch_method(engine, method, args)
     }
 }
 

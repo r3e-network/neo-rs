@@ -7,6 +7,7 @@ use crate::smart_contract::trigger_type::TriggerType;
 use crate::smart_contract::BinarySerializer;
 use crate::smart_contract::ContractParameterType;
 use num_bigint::BigInt;
+use std::collections::HashSet;
 use std::sync::Arc;
 
 fn create_stdlib() -> StdLib {
@@ -291,6 +292,44 @@ fn test_method_metadata_snapshot() {
             .collect::<Vec<_>>();
         assert_eq!(actual_names, *parameter_names, "{name}");
     }
+}
+
+#[test]
+fn test_metadata_methods_all_dispatch() {
+    let stdlib = create_stdlib();
+    let mut engine = make_engine();
+    let mut seen = HashSet::new();
+
+    for method in stdlib.methods() {
+        if !seen.insert(method.name.as_str()) {
+            continue;
+        }
+
+        let error = stdlib
+            .invoke_method(&mut engine, method.name.as_str(), &[])
+            .expect_err("empty args should fail inside the method");
+        let message = error.to_string();
+        assert!(
+            !message.contains("Unknown method:"),
+            "{} is declared in metadata but not accepted by dispatch",
+            method.name
+        );
+    }
+
+    assert!(seen.contains("strLen"));
+    assert!(!seen.contains("stringLen"));
+
+    let alias_error = stdlib
+        .invoke_method(&mut engine, "stringLen", &[])
+        .expect_err("legacy alias should dispatch to strLen validation");
+    assert!(!alias_error.to_string().contains("Unknown method:"));
+
+    let missing_error = stdlib
+        .invoke_method(&mut engine, "__missing__", &[])
+        .expect_err("unknown method should be rejected");
+    assert!(missing_error
+        .to_string()
+        .contains("Unknown method: __missing__"));
 }
 
 #[test]
