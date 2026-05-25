@@ -12,12 +12,13 @@ use neo_core::wallets::wallet_account::WalletAccount;
 use neo_core::wallets::{KeyPair, Version, Wallet, WalletError, WalletResult};
 use neo_core::{UInt160, UInt256};
 use neo_tee::{SealedKey, TeeError, TeeWallet as EnclaveWallet};
-use neo_vm_rs::OpCode;
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+
+use crate::wallet_scripts::signature_invocation;
 
 pub struct TeeWalletAdapter {
     name: String,
@@ -559,20 +560,6 @@ fn signature_contract_from_public_key(public_key: &[u8]) -> WalletResult<Contrac
     ))
 }
 
-fn signature_invocation(signature: &[u8]) -> WalletResult<Vec<u8>> {
-    if signature.len() != 64 {
-        return Err(WalletError::SigningFailed(
-            "Signature must be 64 bytes".to_string(),
-        ));
-    }
-
-    let mut invocation = Vec::with_capacity(signature.len() + 2);
-    invocation.push(OpCode::PUSHDATA1.byte());
-    invocation.push(signature.len() as u8);
-    invocation.extend_from_slice(signature);
-    Ok(invocation)
-}
-
 fn map_tee_error(err: TeeError) -> WalletError {
     match err {
         TeeError::Other(message) if message.contains("Wallet is locked") => {
@@ -589,6 +576,7 @@ mod tests {
     use neo_core::smart_contract::helper::Helper as ContractHelper;
     use neo_core::WitnessScope;
     use neo_crypto::Secp256r1Crypto;
+    use neo_vm_rs::OpCode;
     use tempfile::tempdir;
 
     #[tokio::test]

@@ -52,6 +52,7 @@ mod tee_integration;
 #[cfg(feature = "tee")]
 mod tee_wallet;
 mod wallet_provider;
+mod wallet_scripts;
 
 use anyhow::Result;
 use clap::Parser;

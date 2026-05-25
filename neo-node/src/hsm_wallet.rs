@@ -12,12 +12,12 @@ use neo_core::wallets::wallet_account::WalletAccount;
 use neo_core::wallets::{Version, Wallet, WalletError, WalletResult};
 use neo_core::{UInt160, UInt256};
 use neo_hsm::{HsmKeyInfo, HsmSigner};
-use neo_vm_rs::OpCode;
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::hsm_integration::HsmRuntime;
+use crate::wallet_scripts::signature_invocation;
 
 pub struct HsmWallet {
     name: String,
@@ -252,7 +252,7 @@ impl Wallet for HsmWallet {
     }
 
     fn get_default_account(&self) -> Option<Arc<dyn WalletAccount>> {
-        let hash = *self.default_account.read()?;
+        let hash = (*self.default_account.read())?;
         self.accounts
             .read()
             .get(&hash)
@@ -439,20 +439,6 @@ fn signature_contract_from_public_key(public_key: &[u8]) -> WalletResult<Contrac
         vec![ContractParameterType::Signature],
         Contract::create_signature_redeem_script(point),
     ))
-}
-
-fn signature_invocation(signature: &[u8]) -> WalletResult<Vec<u8>> {
-    if signature.len() != 64 {
-        return Err(WalletError::SigningFailed(
-            "Signature must be 64 bytes".to_string(),
-        ));
-    }
-
-    let mut invocation = Vec::with_capacity(signature.len() + 2);
-    invocation.push(OpCode::PUSHDATA1.byte());
-    invocation.push(signature.len() as u8);
-    invocation.extend_from_slice(signature);
-    Ok(invocation)
 }
 
 #[cfg(test)]
