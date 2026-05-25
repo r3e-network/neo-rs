@@ -4,7 +4,7 @@
 //! specialised cache wrappers.
 
 use crate::IoResult;
-use linked_hash_map::LinkedHashMap;
+use indexmap::IndexMap;
 use parking_lot::Mutex;
 use std::hash::Hash;
 use std::sync::Arc;
@@ -14,7 +14,7 @@ struct CacheInner<TKey, TValue>
 where
     TKey: Eq + Hash + Clone,
 {
-    entries: LinkedHashMap<TKey, TValue>,
+    entries: IndexMap<TKey, TValue>,
 }
 
 impl<TKey, TValue> CacheInner<TKey, TValue>
@@ -23,12 +23,12 @@ where
 {
     fn with_capacity(capacity: usize) -> Self {
         Self {
-            entries: LinkedHashMap::with_capacity(capacity),
+            entries: IndexMap::with_capacity(capacity),
         }
     }
 
     fn remove_oldest(&mut self) {
-        self.entries.pop_front();
+        self.entries.shift_remove_index(0);
     }
 }
 
@@ -201,7 +201,7 @@ where
     ///
     /// Returns `true` if the item was found and removed, `false` otherwise.
     pub fn remove_key(&self, key: &TKey) -> bool {
-        self.inner.lock().entries.remove(key).is_some()
+        self.inner.lock().entries.shift_remove(key).is_some()
     }
 
     /// Removes an item (C# Remove(TValue)).

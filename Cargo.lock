@@ -2154,12 +2154,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "linked-hash-map"
-version = "0.5.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0717cef1bc8b636c6e1c1bbdefc09e6322da8a9321966e8928ef80d20f7f770f"
-
-[[package]]
 name = "linux-raw-sys"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2545,7 +2539,6 @@ dependencies = [
  "futures",
  "hashbrown 0.14.5",
  "indexmap 2.13.0",
- "linked-hash-map",
  "lru",
  "neo-primitives",
  "parking_lot",
