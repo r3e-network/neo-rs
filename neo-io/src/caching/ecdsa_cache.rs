@@ -2,7 +2,6 @@
 
 use super::fifo_cache::FIFOCache;
 use std::hash::Hash;
-use std::ops::{Deref, DerefMut};
 
 /// Cache item storing an elliptic-curve key and its associated signer instance.
 #[derive(Clone)]
@@ -66,24 +65,11 @@ where
     }
 }
 
-impl<TPoint, TSigner> Deref for ECDsaCache<TPoint, TSigner>
-where
-    TPoint: Eq + Hash + Clone,
-    TSigner: Clone,
-{
-    type Target = FIFOCache<TPoint, ECDsaCacheItem<TPoint, TSigner>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
+impl_cache_wrapper_deref! {
+    impl<TPoint, TSigner> for ECDsaCache<TPoint, TSigner>
+    where {
+        TPoint: Eq + Hash + Clone,
+        TSigner: Clone,
     }
-}
-
-impl<TPoint, TSigner> DerefMut for ECDsaCache<TPoint, TSigner>
-where
-    TPoint: Eq + Hash + Clone,
-    TSigner: Clone,
-{
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner
-    }
+    => FIFOCache<TPoint, ECDsaCacheItem<TPoint, TSigner>>
 }

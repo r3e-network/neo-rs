@@ -2,7 +2,6 @@
 
 use super::cache::Cache;
 use std::hash::Hash;
-use std::ops::{Deref, DerefMut};
 
 /// FIFO cache matching C# `FIFOCache`<`TKey`, `TValue`>.
 pub struct FIFOCache<TKey, TValue>
@@ -29,24 +28,11 @@ where
     }
 }
 
-impl<TKey, TValue> Deref for FIFOCache<TKey, TValue>
-where
-    TKey: Eq + Hash + Clone,
-    TValue: Clone,
-{
-    type Target = Cache<TKey, TValue>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
+impl_cache_wrapper_deref! {
+    impl<TKey, TValue> for FIFOCache<TKey, TValue>
+    where {
+        TKey: Eq + Hash + Clone,
+        TValue: Clone,
     }
-}
-
-impl<TKey, TValue> DerefMut for FIFOCache<TKey, TValue>
-where
-    TKey: Eq + Hash + Clone,
-    TValue: Clone,
-{
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner
-    }
+    => Cache<TKey, TValue>
 }

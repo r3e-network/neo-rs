@@ -2,7 +2,6 @@
 
 use super::fifo_cache::FIFOCache;
 use std::hash::Hash;
-use std::ops::{Deref, DerefMut};
 
 /// Trait representing an elliptic-curve point that can be encoded to a compressed byte array.
 pub trait EncodablePoint: Clone + Send + Sync + 'static {
@@ -33,22 +32,10 @@ where
     }
 }
 
-impl<TPoint> Deref for ECPointCache<TPoint>
-where
-    TPoint: EncodablePoint + Eq + Hash,
-{
-    type Target = FIFOCache<Vec<u8>, TPoint>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
+impl_cache_wrapper_deref! {
+    impl<TPoint> for ECPointCache<TPoint>
+    where {
+        TPoint: EncodablePoint + Eq + Hash,
     }
-}
-
-impl<TPoint> DerefMut for ECPointCache<TPoint>
-where
-    TPoint: EncodablePoint + Eq + Hash,
-{
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner
-    }
+    => FIFOCache<Vec<u8>, TPoint>
 }
