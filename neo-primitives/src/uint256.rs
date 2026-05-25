@@ -227,33 +227,16 @@ impl UInt256 {
             return false;
         }
 
-        if !s.chars().all(|c| c.is_ascii_hexdigit()) {
+        let mut bytes = [0u8; UINT256_SIZE];
+        if hex::decode_to_slice(s, &mut bytes).is_err() {
             return false;
         }
 
-        match hex::decode(s) {
-            Ok(mut bytes) => {
-                bytes.reverse();
+        bytes.reverse();
 
-                let mut uint = Self::new();
-
-                let mut value1_bytes = [0u8; 8];
-                let mut value2_bytes = [0u8; 8];
-                let mut value3_bytes = [0u8; 8];
-                let mut value4_bytes = [0u8; 8];
-
-                value1_bytes.copy_from_slice(&bytes[0..8]);
-                value2_bytes.copy_from_slice(&bytes[8..16]);
-                value3_bytes.copy_from_slice(&bytes[16..24]);
-                value4_bytes.copy_from_slice(&bytes[24..HASH_SIZE]);
-
-                uint.value1 = u64::from_le_bytes(value1_bytes);
-                uint.value2 = u64::from_le_bytes(value2_bytes);
-                uint.value3 = u64::from_le_bytes(value3_bytes);
-                uint.value4 = u64::from_le_bytes(value4_bytes);
-
+        match Self::from_bytes(&bytes) {
+            Ok(uint) => {
                 *result = Some(uint);
-
                 true
             }
             Err(_) => false,

@@ -218,13 +218,10 @@ impl UInt160 {
             return false;
         }
 
-        if !s.chars().all(|c| c.is_ascii_hexdigit()) {
+        let mut bytes = [0u8; UINT160_SIZE];
+        if hex::decode_to_slice(s, &mut bytes).is_err() {
             return false;
         }
-
-        let Ok(mut bytes) = hex::decode(s) else {
-            return false;
-        };
 
         bytes.reverse();
 
