@@ -3,7 +3,7 @@
 use crate::device::HsmDeviceInfo;
 use crate::error::{HsmError, HsmResult};
 use async_trait::async_trait;
-use neo_crypto::Crypto;
+use neo_crypto::{Base58, Crypto};
 use serde::{Deserialize, Serialize};
 
 /// Information about a key stored in the HSM
@@ -57,14 +57,7 @@ impl HsmKeyInfo {
     pub fn neo_address(&self, address_version: u8) -> String {
         let mut data = vec![address_version];
         data.extend_from_slice(&self.script_hash);
-
-        // Double SHA256 for checksum
-        let hash1 = Crypto::sha256(&data);
-        let hash2 = Crypto::sha256(&hash1);
-        let checksum = &hash2[..4];
-
-        data.extend_from_slice(checksum);
-        bs58::encode(data).into_string()
+        Base58::encode_check(&data)
     }
 }
 
@@ -182,5 +175,30 @@ mod tests {
         let script_hash = script_hash_from_public_key(&public_key).expect("script hash");
         assert_eq!(hex::encode(script_hash), SAMPLE_SCRIPT_HASH);
         assert_ne!(script_hash, Crypto::hash160(&public_key));
+    }
+
+    #[test]
+    fn neo_address_uses_base58_check_with_requested_version() {
+        let script_hash = [0xAB; 20];
+        let key = HsmKeyInfo::new("key", Vec::new(), script_hash);
+        let address = key.neo_address(0x17);
+
+        let mut payload = vec![0x17];
+        payload.extend_from_slice(&script_hash);
+
+        assert_eq!(address, Base58::encode_check(&payload));
+        assert_eq!(Base58::decode_check(&address).unwrap(), payload);
+    }
+
+    #[test]
+    fn neo_address_preserves_zero_script_hash_payload() {
+        let script_hash = [0; 20];
+        let key = HsmKeyInfo::new("key", Vec::new(), script_hash);
+        let address = key.neo_address(0x35);
+
+        let mut payload = vec![0x35];
+        payload.extend_from_slice(&script_hash);
+
+        assert_eq!(Base58::decode_check(&address).unwrap(), payload);
     }
 }

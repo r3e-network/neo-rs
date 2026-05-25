@@ -2,6 +2,7 @@
 
 use crate::enclave::{seal_data, unseal_data, SealedData, TeeEnclave};
 use crate::error::{TeeError, TeeResult};
+use neo_crypto::Base58;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use zeroize::Zeroizing;
@@ -99,14 +100,7 @@ impl SealedKey {
         // Address = Base58Check(0x35 || script_hash)
         let mut data = vec![0x35u8]; // Neo N3 address version
         data.extend_from_slice(&self.script_hash);
-
-        // Add checksum (first 4 bytes of double SHA256)
-        use sha2::{Digest, Sha256};
-        let hash1 = Sha256::digest(&data);
-        let hash2 = Sha256::digest(hash1);
-        data.extend_from_slice(&hash2[..4]);
-
-        bs58::encode(&data).into_string()
+        Base58::encode_check(&data)
     }
 }
 
@@ -115,6 +109,47 @@ mod tests {
     use super::*;
     use crate::enclave::EnclaveConfig;
     use tempfile::tempdir;
+
+    fn sealed_key_with_script_hash(script_hash: [u8; 20]) -> SealedKey {
+        SealedKey {
+            sealed_data: SealedData {
+                ciphertext: Vec::new(),
+                nonce: [0; 12],
+                aad: Vec::new(),
+                counter: 0,
+                version: SealedData::CURRENT_VERSION,
+                context: None,
+            },
+            public_key: Vec::new(),
+            label: None,
+            script_hash,
+            created_at: 0,
+        }
+    }
+
+    #[test]
+    fn address_uses_base58_check_with_neo_n3_version() {
+        let script_hash = [0xAB; 20];
+        let sealed = sealed_key_with_script_hash(script_hash);
+        let address = sealed.address();
+
+        let mut payload = vec![0x35];
+        payload.extend_from_slice(&script_hash);
+
+        assert_eq!(address, Base58::encode_check(&payload));
+        assert_eq!(Base58::decode_check(&address).unwrap(), payload);
+    }
+
+    #[test]
+    fn address_preserves_zero_script_hash_payload() {
+        let sealed = sealed_key_with_script_hash([0; 20]);
+        let address = sealed.address();
+
+        let mut payload = vec![0x35];
+        payload.extend_from_slice(&[0; 20]);
+
+        assert_eq!(Base58::decode_check(&address).unwrap(), payload);
+    }
 
     #[test]
     fn test_seal_unseal_key() {

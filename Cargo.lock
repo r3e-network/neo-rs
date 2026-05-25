@@ -2545,7 +2545,6 @@ version = "0.7.2"
 dependencies = [
  "anyhow",
  "async-trait",
- "bs58",
  "byteorder",
  "cryptoki",
  "hex",
@@ -2739,7 +2738,6 @@ dependencies = [
  "anyhow",
  "async-trait",
  "base64 0.22.1",
- "bs58",
  "hex",
  "hkdf",
  "libloading 0.8.9",
