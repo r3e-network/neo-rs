@@ -39,9 +39,7 @@ impl Actor for LocalNodeActor {
         if let Some(handle) = self.listener.take() {
             handle.abort();
         }
-        for handle in self.spawned_tasks.drain(..) {
-            handle.abort();
-        }
+        self.stop_background_tasks().await;
         Ok(())
     }
 }

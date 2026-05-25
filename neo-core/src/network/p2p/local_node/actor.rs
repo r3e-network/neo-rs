@@ -5,6 +5,7 @@
 use super::state::LocalNode;
 use super::*;
 use crate::network::p2p::validate_peer_endpoint;
+use std::future::Future;
 use tokio::time::timeout;
 
 /// Actor responsible for orchestrating peer management, mirroring C# `LocalNode` behaviour.
@@ -12,9 +13,10 @@ pub struct LocalNodeActor {
     pub(super) state: Arc<LocalNode>,
     pub(super) peer: PeerState,
     pub(super) listener: Option<JoinHandle<()>>,
-    /// Tracked handles for spawned background tasks (connection attempts, reputation updates).
-    /// Aborted on actor shutdown to prevent leaked tasks.
-    pub(super) spawned_tasks: Vec<JoinHandle<()>>,
+    /// Tracked background tasks (connection attempts, reputation updates).
+    pub(super) spawned_tasks: TaskTracker,
+    /// Cancellation signal for tracked tasks during actor shutdown.
+    pub(super) task_cancellation: CancellationToken,
     /// Connect requests received before Configure; replayed once Configure arrives.
     pub(super) deferred_connects: Vec<(SocketAddr, bool)>,
 }
@@ -27,7 +29,8 @@ impl LocalNodeActor {
             state,
             peer,
             listener: None,
-            spawned_tasks: Vec::new(),
+            spawned_tasks: TaskTracker::new(),
+            task_cancellation: CancellationToken::new(),
             deferred_connects: Vec::new(),
         }
     }
@@ -137,9 +140,9 @@ impl LocalNodeActor {
                     // SECURITY: Record successful handshake in reputation tracker
                     let tracker = self.state.reputation_tracker();
                     let ip = snapshot.remote_address.ip();
-                    self.spawned_tasks.push(tokio::spawn(async move {
+                    self.spawn_background(async move {
                         tracker.record_contribution(ip, "handshake_success").await;
-                    }));
+                    });
 
                     let _ = reply.send(true);
                 } else {
@@ -162,9 +165,9 @@ impl LocalNodeActor {
                 // SECURITY: Record connection failure in reputation tracker
                 let tracker = self.state.reputation_tracker();
                 let ip = endpoint.ip();
-                self.spawned_tasks.push(tokio::spawn(async move {
+                self.spawn_background(async move {
                     tracker.record_violation(ip, "handshake_failure").await;
-                }));
+                });
 
                 Ok(())
             }
@@ -415,11 +418,8 @@ impl LocalNodeActor {
         endpoint: SocketAddr,
         is_trusted: bool,
     ) {
-        // Prune completed tasks to avoid unbounded growth.
-        self.spawned_tasks.retain(|h| !h.is_finished());
-
         let actor = ctx.self_ref();
-        self.spawned_tasks.push(tokio::spawn(async move {
+        self.spawn_background(async move {
             match timeout(TCP_CONNECTION_TIMEOUT, TcpStream::connect(endpoint)).await {
                 Ok(Ok(stream)) => {
                     if let Err(err) = stream.set_nodelay(true) {
@@ -481,7 +481,34 @@ impl LocalNodeActor {
                     }
                 }
             }
-        }));
+        });
+    }
+
+    fn spawn_background<F>(&self, task: F)
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        let cancel = self.task_cancellation.child_token();
+        let _ = self.spawned_tasks.spawn(async move {
+            tokio::select! {
+                _ = cancel.cancelled() => {}
+                _ = task => {}
+            }
+        });
+    }
+
+    pub(super) async fn stop_background_tasks(&mut self) {
+        self.task_cancellation.cancel();
+        self.spawned_tasks.close();
+        if tokio::time::timeout(BACKGROUND_TASK_SHUTDOWN_TIMEOUT, self.spawned_tasks.wait())
+            .await
+            .is_err()
+        {
+            warn!(
+                target: "neo",
+                "timed out waiting for local node background tasks to stop"
+            );
+        }
     }
 
     fn send_inventory_to_peers(
@@ -734,5 +761,21 @@ mod tests {
         let endpoints = actor.resolve_seed_endpoints().await;
 
         assert_eq!(endpoints, vec!["[::1]:20333".parse().unwrap()]);
+    }
+
+    #[tokio::test]
+    async fn stop_background_tasks_cancels_tracked_background_tasks() {
+        let settings = Arc::new(ProtocolSettings::default());
+        let node = Arc::new(LocalNode::new(settings, 10333, "/agent".to_string()));
+        let mut actor = LocalNodeActor::new(node);
+
+        actor.spawn_background(async {
+            std::future::pending::<()>().await;
+        });
+
+        tokio::time::timeout(Duration::from_millis(200), actor.stop_background_tasks())
+            .await
+            .expect("tracked background task did not stop promptly");
+        assert!(actor.task_cancellation.is_cancelled());
     }
 }
