@@ -6,6 +6,7 @@
 
 use crate::smart_contract::{StorageItem, StorageKey};
 use hashbrown::HashMap;
+use lru::LruCache;
 use parking_lot::RwLock;
 use std::hash::Hash;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -14,10 +15,8 @@ use std::time::{Duration, Instant};
 use tracing::{debug, trace};
 
 mod bloom_filter;
-mod lru_tracker;
 mod prefetch;
 pub use bloom_filter::{BloomFilter, BloomFilterKey};
-use lru_tracker::LruTracker;
 pub use prefetch::{PrefetchHint, PrefetchingIterator};
 
 /// Cache entry with metadata.
@@ -330,9 +329,8 @@ where
     V: Clone,
 {
     config: ReadCacheConfig,
-    data: RwLock<HashMap<K, CacheEntry<V>>>,
+    data: RwLock<LruCache<K, CacheEntry<V>>>,
     stats: Arc<ReadCacheStats>,
-    lru_tracker: RwLock<LruTracker<K>>,
     bloom_filter: Option<Arc<BloomFilter>>,
 }
 
@@ -354,9 +352,8 @@ where
 
         Self {
             config,
-            data: RwLock::new(HashMap::new()),
+            data: RwLock::new(LruCache::unbounded()),
             stats: Arc::new(ReadCacheStats::new()),
-            lru_tracker: RwLock::new(LruTracker::new()),
             bloom_filter,
         }
     }
@@ -413,19 +410,14 @@ where
 
         let mut data = self.data.write();
 
-        if let Some(entry) = data.get_mut(key) {
+        if let Some(entry) = data.peek(key) {
             // Check TTL
             if let Some(ttl) = self.config.ttl {
                 if entry.last_access.elapsed() > ttl {
                     // Entry expired
-                    let size = entry.size_bytes;
-                    let key_clone = key.clone();
-                    data.remove(key);
-
-                    self.lru_tracker.write().remove(&key_clone);
+                    let entry = data.pop(key).expect("peeked cache entry must exist");
                     self.stats
-                        .record_cache_eviction(size, self.config.enable_stats);
-                    drop(data);
+                        .record_cache_eviction(entry.size_bytes, self.config.enable_stats);
 
                     if self.config.enable_stats {
                         self.stats.record_miss();
@@ -433,14 +425,12 @@ where
                     return None;
                 }
             }
+        }
 
+        if let Some(entry) = data.get_mut(key) {
             // Update entry
             entry.record_access();
             let value = entry.value.clone();
-
-            // Update access order
-            self.lru_tracker.write().record_access(key.clone());
-            drop(data);
 
             if self.config.enable_stats {
                 self.stats.record_hit();
@@ -449,8 +439,6 @@ where
             trace!(target: "neo", "cache hit");
             Some(value)
         } else {
-            drop(data);
-
             if self.config.enable_stats {
                 self.stats.record_miss();
             }
@@ -463,13 +451,14 @@ where
     /// Puts a value into the cache.
     pub fn put(&self, key: K, value: V, size_bytes: usize) {
         let mut data = self.data.write();
+        let existed = data.peek(&key).is_some();
 
-        if data.contains_key(&key) {
-            self.lru_tracker.write().record_access(key.clone());
+        if existed {
+            let _ = data.get_mut(&key);
         }
 
         // Check if we need to evict for a new entry. Updates do not increase entry count.
-        while data.len() + usize::from(!data.contains_key(&key)) > self.config.max_entries {
+        while data.len() + usize::from(!existed) > self.config.max_entries {
             if !self.evict_lru(&mut data) {
                 break; // Could not evict, stop trying
             }
@@ -487,13 +476,8 @@ where
         // Insert new entry
         let entry = CacheEntry::new(value, size_bytes);
         let key_for_bloom = key.clone();
-        let old_size = data
-            .insert(key.clone(), entry)
-            .map(|entry| entry.size_bytes);
+        let old_size = data.put(key, entry).map(|entry| entry.size_bytes);
         let is_new = old_size.is_none();
-
-        // Update LRU tracker
-        self.lru_tracker.write().record_access(key);
 
         // Update bloom filter for new entries
         if is_new {
@@ -504,7 +488,6 @@ where
 
         self.stats
             .record_cache_write(old_size, size_bytes, self.config.enable_stats);
-        drop(data);
 
         trace!(target: "neo", size_bytes, "cache insert");
     }
@@ -523,12 +506,9 @@ where
             final_sizes.insert(key.clone(), *size_bytes);
         }
 
-        {
-            let mut lru = self.lru_tracker.write();
-            for key in final_sizes.keys() {
-                if data.contains_key(key) {
-                    lru.record_access(key.clone());
-                }
+        for key in final_sizes.keys() {
+            if data.peek(key).is_some() {
+                let _ = data.get_mut(key);
             }
         }
 
@@ -548,7 +528,6 @@ where
         }
 
         let count = items.len();
-        let mut lru = self.lru_tracker.write();
         let mut keys_for_bloom = Vec::with_capacity(count);
         let mut new_entries = 0;
         let mut old_bytes = 0;
@@ -557,14 +536,13 @@ where
         for (key, value, size_bytes) in items {
             let entry = CacheEntry::new(value, size_bytes);
             let key_for_bloom = key.clone();
-            if let Some(old_entry) = data.insert(key.clone(), entry) {
+            if let Some(old_entry) = data.put(key, entry) {
                 old_bytes += old_entry.size_bytes;
             } else {
                 new_entries += 1;
                 keys_for_bloom.push(key_for_bloom);
             }
             new_bytes += size_bytes;
-            lru.record_access(key);
         }
 
         // Update bloom filter
@@ -581,8 +559,6 @@ where
             new_bytes,
             self.config.enable_stats,
         );
-        drop(lru);
-        drop(data);
 
         debug!(target: "neo", count, total_bytes, "cache batch insert (prefetch)");
     }
@@ -591,8 +567,7 @@ where
     pub fn remove(&self, key: &K) -> Option<V> {
         let mut data = self.data.write();
 
-        if let Some(entry) = data.remove(key) {
-            self.lru_tracker.write().remove(key);
+        if let Some(entry) = data.pop(key) {
             self.stats.record_cache_removal(entry.size_bytes);
 
             Some(entry.value)
@@ -604,10 +579,8 @@ where
     /// Clears the cache.
     pub fn clear(&self) {
         let mut data = self.data.write();
-        let mut lru = self.lru_tracker.write();
 
         data.clear();
-        lru.clear();
 
         if let Some(ref bloom) = self.bloom_filter {
             bloom.clear();
@@ -625,7 +598,7 @@ where
         if !self.fast_bloom_check(key) {
             return false;
         }
-        self.data.read().contains_key(key)
+        self.data.read().peek(key).is_some()
     }
 
     /// Returns the number of entries in the cache.
@@ -655,7 +628,7 @@ where
         }
 
         let data = self.data.read();
-        if let Some(entry) = data.get(key) {
+        if let Some(entry) = data.peek(key) {
             entry.access_count >= self.config.prefetch_threshold
         } else {
             false
@@ -671,24 +644,24 @@ where
 
     fn projected_len_after_batch(
         &self,
-        data: &HashMap<K, CacheEntry<V>>,
+        data: &LruCache<K, CacheEntry<V>>,
         final_sizes: &HashMap<K, usize>,
     ) -> usize {
         let new_entries = final_sizes
             .keys()
-            .filter(|key| !data.contains_key(*key))
+            .filter(|key| data.peek(*key).is_none())
             .count();
         data.len() + new_entries
     }
 
     fn projected_bytes_after_put(
         &self,
-        data: &HashMap<K, CacheEntry<V>>,
+        data: &LruCache<K, CacheEntry<V>>,
         key: &K,
         size_bytes: usize,
     ) -> usize {
         let current_bytes = self.stats.current_bytes.load(Ordering::Relaxed);
-        let old_bytes = data.get(key).map(|entry| entry.size_bytes).unwrap_or(0);
+        let old_bytes = data.peek(key).map(|entry| entry.size_bytes).unwrap_or(0);
         current_bytes
             .saturating_sub(old_bytes)
             .saturating_add(size_bytes)
@@ -696,13 +669,13 @@ where
 
     fn projected_bytes_after_batch(
         &self,
-        data: &HashMap<K, CacheEntry<V>>,
+        data: &LruCache<K, CacheEntry<V>>,
         final_sizes: &HashMap<K, usize>,
     ) -> usize {
         let current_bytes = self.stats.current_bytes.load(Ordering::Relaxed);
         let old_bytes = final_sizes
             .keys()
-            .filter_map(|key| data.get(key).map(|entry| entry.size_bytes))
+            .filter_map(|key| data.peek(key).map(|entry| entry.size_bytes))
             .sum::<usize>();
         let new_bytes = final_sizes.values().sum::<usize>();
 
@@ -712,25 +685,16 @@ where
     }
 
     /// Evicts the least recently used entry.
-    fn evict_lru(
-        &self,
-        data: &mut parking_lot::RwLockWriteGuard<HashMap<K, CacheEntry<V>>>,
-    ) -> bool {
-        let lru = self.lru_tracker.read();
+    fn evict_lru(&self, data: &mut LruCache<K, CacheEntry<V>>) -> bool {
+        if let Some((_key, entry)) = data.pop_lru() {
+            self.stats
+                .record_cache_eviction(entry.size_bytes, self.config.enable_stats);
 
-        if let Some(lru_key) = lru.find_lru() {
-            drop(lru);
-
-            if let Some(entry) = data.remove(&lru_key) {
-                self.lru_tracker.write().remove(&lru_key);
-                self.stats
-                    .record_cache_eviction(entry.size_bytes, self.config.enable_stats);
-
-                trace!(target: "neo", "cache eviction");
-                return true;
-            }
+            trace!(target: "neo", "cache eviction");
+            true
+        } else {
+            false
         }
-        false
     }
 }
 
