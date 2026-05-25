@@ -1,17 +1,13 @@
 //! Tracks recently announced hashes to avoid duplicate inventory processing.
-use indexmap::IndexMap;
+use lru::LruCache;
+use std::num::NonZeroUsize;
 use std::time::{Duration, Instant};
 
 use crate::UInt256;
 
-#[derive(Clone, Copy)]
-struct PendingKnownHash {
-    timestamp: Instant,
-}
-
 /// Tracks hashes announced by peers to avoid re-requesting/duplicating inventories.
 pub(crate) struct PendingKnownHashes {
-    inner: IndexMap<UInt256, PendingKnownHash>,
+    inner: LruCache<UInt256, Instant>,
     capacity: usize,
 }
 
@@ -21,14 +17,16 @@ const MAX_PENDING_TTL: Duration = Duration::from_secs(60);
 
 impl PendingKnownHashes {
     pub(crate) fn new(capacity: usize) -> Self {
+        let effective_capacity =
+            NonZeroUsize::new(capacity.max(1)).expect("capacity.max(1) is non-zero");
         Self {
-            inner: IndexMap::with_capacity(capacity),
+            inner: LruCache::new(effective_capacity),
             capacity,
         }
     }
 
     pub(crate) fn contains(&self, hash: &UInt256) -> bool {
-        self.inner.contains_key(hash)
+        self.inner.contains(hash)
     }
 
     /// Attempts to add a hash to the pending set.
@@ -41,33 +39,32 @@ impl PendingKnownHashes {
 
         // If at capacity after pruning, remove oldest entry to make room
         if self.inner.len() >= self.capacity && !self.inner.is_empty() {
-            self.inner.shift_remove_index(0);
+            self.inner.pop_lru();
         }
 
-        if self.inner.contains_key(&hash) {
+        if self.inner.contains(&hash) {
             return false;
         }
 
-        self.inner.insert(hash, PendingKnownHash { timestamp });
+        self.inner.put(hash, timestamp);
         true
     }
 
     pub(crate) fn remove(&mut self, hash: &UInt256) -> bool {
-        self.inner.shift_remove(hash).is_some()
+        self.inner.pop(hash).is_some()
     }
 
     pub(crate) fn clear(&mut self) {
-        let capacity = self.inner.capacity();
-        self.inner = IndexMap::with_capacity(capacity);
+        self.inner.clear();
     }
 
     pub(crate) fn prune_older_than(&mut self, cutoff: Instant) -> usize {
         let mut removed = 0;
-        while let Some((_, entry)) = self.inner.first() {
-            if entry.timestamp >= cutoff {
+        while let Some((_, timestamp)) = self.inner.peek_lru() {
+            if *timestamp >= cutoff {
                 break;
             }
-            if self.inner.shift_remove_index(0).is_none() {
+            if self.inner.pop_lru().is_none() {
                 break;
             }
             removed += 1;
@@ -125,7 +122,22 @@ mod tests {
         assert!(cache.try_add(hash, now));
         assert!(!cache.try_add(hash, now + Duration::from_secs(1)));
 
-        assert_eq!(cache.inner.get(&hash).unwrap().timestamp, now);
+        assert_eq!(*cache.inner.peek(&hash).unwrap(), now);
+    }
+
+    #[test]
+    fn contains_does_not_promote_recency() {
+        let now = Instant::now();
+        let mut cache = PendingKnownHashes::new(2);
+
+        assert!(cache.try_add(make_hash(1), now));
+        assert!(cache.try_add(make_hash(2), now));
+        assert!(cache.contains(&make_hash(1)));
+        assert!(cache.try_add(make_hash(3), now));
+
+        assert!(!cache.contains(&make_hash(1)));
+        assert!(cache.contains(&make_hash(2)));
+        assert!(cache.contains(&make_hash(3)));
     }
 
     #[test]
@@ -153,6 +165,25 @@ mod tests {
         assert!(!cache.contains(&make_hash(1)));
         assert!(cache.contains(&make_hash(2)));
         assert_eq!(cache.inner.len(), 1);
+    }
+
+    #[test]
+    fn remove_keeps_remaining_fifo_order() {
+        let now = Instant::now();
+        let mut cache = PendingKnownHashes::new(3);
+
+        assert!(cache.try_add(make_hash(1), now));
+        assert!(cache.try_add(make_hash(2), now));
+        assert!(cache.try_add(make_hash(3), now));
+        assert!(cache.remove(&make_hash(2)));
+        assert!(cache.try_add(make_hash(4), now));
+        assert!(cache.try_add(make_hash(5), now));
+
+        assert!(!cache.contains(&make_hash(1)));
+        assert!(!cache.contains(&make_hash(2)));
+        assert!(cache.contains(&make_hash(3)));
+        assert!(cache.contains(&make_hash(4)));
+        assert!(cache.contains(&make_hash(5)));
     }
 
     #[test]
