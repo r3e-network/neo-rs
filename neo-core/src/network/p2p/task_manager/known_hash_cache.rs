@@ -1,19 +1,21 @@
-use crate::collections::BoundedFifoSet;
 use crate::UInt256;
+use indexmap::IndexSet;
 
 pub(super) struct KnownHashCache {
-    hashes: BoundedFifoSet<UInt256>,
+    hashes: IndexSet<UInt256>,
+    capacity: usize,
 }
 
 impl KnownHashCache {
     pub(super) fn new(capacity: usize) -> Self {
         Self {
-            hashes: BoundedFifoSet::with_capacity(capacity),
+            hashes: IndexSet::with_capacity(capacity),
+            capacity,
         }
     }
 
     pub(super) fn set_capacity(&mut self, capacity: usize) {
-        self.hashes.set_capacity(capacity);
+        self.capacity = capacity;
     }
 
     pub(super) fn contains(&self, hash: &UInt256) -> bool {
@@ -21,11 +23,19 @@ impl KnownHashCache {
     }
 
     pub(super) fn remember(&mut self, hash: UInt256) -> bool {
-        self.hashes.insert(hash)
+        let inserted = self.hashes.insert(hash);
+        self.trim_to_capacity();
+        inserted
     }
 
     pub(super) fn forget(&mut self, hash: &UInt256) -> bool {
-        self.hashes.remove(hash)
+        self.hashes.shift_remove(hash)
+    }
+
+    fn trim_to_capacity(&mut self) {
+        while self.hashes.len() > self.capacity {
+            self.hashes.shift_remove_index(0);
+        }
     }
 }
 
@@ -93,5 +103,15 @@ mod tests {
         assert!(!cache.contains(&b));
         assert!(cache.contains(&c));
         assert!(cache.contains(&d));
+    }
+
+    #[test]
+    fn zero_capacity_keeps_no_items_but_reports_new_insert() {
+        let mut cache = KnownHashCache::new(0);
+        let hash = UInt256::from([1u8; 32]);
+
+        assert!(cache.remember(hash));
+        assert!(!cache.contains(&hash));
+        assert!(cache.remember(hash));
     }
 }

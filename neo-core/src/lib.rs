@@ -124,9 +124,6 @@ pub mod vm_runtime;
 /// Network magic numbers, port defaults, fee constants, and size limits.
 pub mod constants;
 
-#[cfg(any(test, feature = "runtime"))]
-pub(crate) mod collections;
-
 /// Transaction containment type enumeration.
 /// Transaction type containment checking.
 ///
