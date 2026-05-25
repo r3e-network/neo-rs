@@ -281,17 +281,7 @@ impl PeerConnection {
             return Ok(());
         }
 
-        // Flush any pending buffered data first
-        if !self.write_buffer.is_empty() {
-            let buffered = self.write_buffer.take();
-            tokio::time::timeout(
-                self.frame_config.write_timeout,
-                self.stream.write_all(&buffered),
-            )
-            .await
-            .map_err(|_| NetworkError::Timeout)?
-            .map_err(|e| NetworkError::ConnectionError(format!("Failed to flush buffer: {e}")))?;
-        }
+        self.flush().await?;
 
         // Serialize all messages
         let mut buffers: Vec<Vec<u8>> = Vec::with_capacity(messages.len());
@@ -322,17 +312,10 @@ impl PeerConnection {
 
     /// Flushes any pending buffered writes.
     pub async fn flush(&mut self) -> NetworkResult<()> {
-        if !self.write_buffer.is_empty() {
-            let buffered = self.write_buffer.take();
-            tokio::time::timeout(
-                self.frame_config.write_timeout,
-                self.stream.write_all(&buffered),
-            )
+        let mut framed = FramedSocket::new(&mut self.stream);
+        framed
+            .flush(&self.frame_config, &mut self.write_buffer)
             .await
-            .map_err(|_| NetworkError::Timeout)?
-            .map_err(|e| NetworkError::ConnectionError(format!("Failed to flush buffer: {e}")))?;
-        }
-        Ok(())
     }
 
     /// Receives a message from the peer (matches C# RemoteNode.ReceiveMessage exactly)
@@ -591,6 +574,38 @@ mod tests {
         // Clean up
         drop(connection);
         server_handle.abort();
+    }
+
+    #[tokio::test]
+    async fn flush_sends_buffered_small_message() {
+        let Some((client_stream, server_stream)) = tcp_pair().await else {
+            return;
+        };
+        let mut client = PeerConnection::from_channels_config(
+            client_stream,
+            "127.0.0.1:0".parse().unwrap(),
+            false,
+            &ChannelsConfig::default(),
+        );
+        let mut server = PeerConnection::from_channels_config(
+            server_stream,
+            "127.0.0.1:0".parse().unwrap(),
+            true,
+            &ChannelsConfig::default(),
+        );
+
+        let message =
+            NetworkMessage::new(ProtocolMessage::Ping(PingPayload::create_with_nonce(7, 77)));
+
+        client.send_message(&message).await.expect("send buffers");
+        client.flush().await.expect("flush writes buffered message");
+
+        let received = tokio::time::timeout(Duration::from_secs(1), server.receive_message(false))
+            .await
+            .expect("server receive timed out")
+            .expect("server receives flushed message");
+
+        assert_ping(&received, 7, 77);
     }
 
     #[tokio::test]

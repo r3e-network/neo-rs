@@ -597,16 +597,7 @@ impl<'a> FramedSocket<'a> {
         write_buffer: &mut WriteBuffer,
     ) -> NetworkResult<()> {
         if !cfg.buffer_small_writes || data.len() >= write_buffer.threshold {
-            // Flush any pending buffered data first
-            if !write_buffer.is_empty() {
-                let buffered = write_buffer.take();
-                timeout(cfg.write_timeout, self.stream.write_all(&buffered))
-                    .await
-                    .map_err(|_| NetworkError::Timeout)?
-                    .map_err(|e| {
-                        NetworkError::ConnectionError(format!("Failed to flush buffer: {e}"))
-                    })?;
-            }
+            self.flush(cfg, write_buffer).await?;
 
             // Write large data directly
             timeout(cfg.write_timeout, self.stream.write_all(data))
@@ -621,25 +612,11 @@ impl<'a> FramedSocket<'a> {
 
             // Flush if we've reached the threshold
             if write_buffer.should_flush() {
-                let buffered = write_buffer.take();
-                timeout(cfg.write_timeout, self.stream.write_all(&buffered))
-                    .await
-                    .map_err(|_| NetworkError::Timeout)?
-                    .map_err(|e| {
-                        NetworkError::ConnectionError(format!("Failed to flush buffer: {e}"))
-                    })?;
+                self.flush(cfg, write_buffer).await?;
             }
         } else {
             // Data doesn't fit, flush buffer first then write data directly
-            if !write_buffer.is_empty() {
-                let buffered = write_buffer.take();
-                timeout(cfg.write_timeout, self.stream.write_all(&buffered))
-                    .await
-                    .map_err(|_| NetworkError::Timeout)?
-                    .map_err(|e| {
-                        NetworkError::ConnectionError(format!("Failed to flush buffer: {e}"))
-                    })?;
-            }
+            self.flush(cfg, write_buffer).await?;
 
             // Write data directly (it's larger than buffer threshold anyway)
             timeout(cfg.write_timeout, self.stream.write_all(data))
