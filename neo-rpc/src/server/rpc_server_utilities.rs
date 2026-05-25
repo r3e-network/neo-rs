@@ -1,9 +1,7 @@
-use bs58;
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 use std::sync::Arc;
 
-use neo_core::UInt160;
+use neo_core::wallets::Helper as WalletHelper;
 
 use super::rpc_error::RpcError;
 use super::rpc_exception::RpcException;
@@ -116,7 +114,7 @@ impl RpcServer {
     #[must_use]
     pub fn validate_address(&self, address: &str) -> Value {
         let address_version = self.system().settings().address_version;
-        let is_valid = parse_address_with_version(address, address_version).is_ok();
+        let is_valid = WalletHelper::to_script_hash(address, address_version).is_ok();
 
         json!({
             "address": address,
@@ -167,27 +165,6 @@ fn normalize_version(version: &str) -> String {
     version.to_string()
 }
 
-fn parse_address_with_version(address: &str, version: u8) -> Result<UInt160, ()> {
-    let decoded = bs58::decode(address).into_vec().map_err(|_| ())?;
-    if decoded.len() != 25 {
-        return Err(());
-    }
-
-    if decoded[0] != version {
-        return Err(());
-    }
-
-    let data = &decoded[..21];
-    let checksum = &decoded[21..];
-    let first_hash = Sha256::digest(data);
-    let second_hash = Sha256::digest(first_hash);
-    if checksum != &second_hash[..4] {
-        return Err(());
-    }
-
-    UInt160::from_bytes(&decoded[1..21]).map_err(|_| ())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -195,6 +172,7 @@ mod tests {
     use crate::server::rpc_server_settings::RpcServerConfig;
     use neo_core::neo_system::NeoSystem;
     use neo_core::protocol_settings::ProtocolSettings;
+    use neo_core::UInt160;
 
     fn find_handler<'a>(handlers: &'a [RpcHandler], name: &str) -> &'a RpcHandler {
         handlers
