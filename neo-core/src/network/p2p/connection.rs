@@ -16,7 +16,7 @@ use crate::network::{
 };
 use bytes::BytesMut;
 use std::net::SocketAddr;
-use tokio::{io::AsyncWriteExt, net::TcpStream, sync::mpsc};
+use tokio::{io::AsyncWriteExt, net::TcpStream};
 
 /// Connection state (matches C# Neo RemoteNode state exactly)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -106,9 +106,6 @@ pub struct PeerConnection {
     /// Whether we have received and processed peer handshake metadata
     pub node_info_set: bool,
 
-    /// Message sender channel (bounded to apply backpressure)
-    pub message_tx: mpsc::Sender<NetworkMessage>,
-
     /// Whether this is an inbound connection
     pub inbound: bool,
 
@@ -157,8 +154,6 @@ impl PeerConnection {
         inbound: bool,
         frame_config: FrameConfig,
     ) -> Self {
-        // Bounded channel provides backpressure when the receiver falls behind.
-        let (message_tx, _) = mpsc::channel(1024);
         let now = std::time::Instant::now();
 
         Self {
@@ -167,7 +162,6 @@ impl PeerConnection {
             stream,
             address,
             node_info_set: false,
-            message_tx,
             inbound,
             compression_allowed: false,
             last_activity: now,
