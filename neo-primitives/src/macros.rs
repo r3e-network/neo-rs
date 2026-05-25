@@ -114,7 +114,7 @@ macro_rules! protocol_enum {
             fn deserialize<D: ::serde::Deserializer<'de>>(
                 deserializer: D,
             ) -> ::std::result::Result<Self, D::Error> {
-                let byte = u8::deserialize(deserializer)?;
+                let byte = <u8 as ::serde::Deserialize>::deserialize(deserializer)?;
                 Self::from_byte(byte).ok_or_else(|| {
                     ::serde::de::Error::custom(format!(
                         "Invalid {} byte: {}",
@@ -258,6 +258,110 @@ macro_rules! protocol_enum_with_unknown {
                     $(#[$variant_meta])*
                     $variant = $byte $(=> $display)?
                 ),+
+            }
+        }
+    };
+}
+
+/// Generates the Neo P2P message flag wrapper while preserving unknown bits.
+///
+/// Neo treats message flags as a raw byte with bit flags. Only bit `0x01`
+/// currently means "compressed"; all other bits must round-trip for forward
+/// compatibility.
+#[macro_export]
+macro_rules! protocol_message_flags {
+    (
+        $(#[$meta:meta])*
+        $vis:vis $name:ident {
+            warn_target = $warn_target:literal;
+            from_byte = $from_byte:ident;
+        }
+    ) => {
+        $(#[$meta])*
+        $vis struct $name(u8);
+
+        impl $name {
+            /// No flags are set.
+            pub const NONE: Self = Self(0x00);
+            /// The payload is compressed.
+            pub const COMPRESSED: Self = Self(0x01);
+
+            /// Creates a new flag set with the given raw value.
+            #[must_use]
+            pub const fn new(value: u8) -> Self {
+                Self(value)
+            }
+
+            /// Converts the flags to their byte representation.
+            #[must_use]
+            #[inline]
+            pub const fn to_byte(self) -> u8 {
+                self.0
+            }
+
+            /// Alias for [`Self::to_byte`]; retained for backward compatibility.
+            #[must_use]
+            #[inline]
+            pub const fn as_byte(self) -> u8 {
+                self.to_byte()
+            }
+
+            /// Parses the flags from their byte representation.
+            ///
+            /// This method accepts any byte value, logging a warning for unknown
+            /// bits but preserving them for forward compatibility.
+            #[must_use]
+            pub fn $from_byte(byte: u8) -> Self {
+                if byte & !Self::COMPRESSED.0 != 0 {
+                    ::tracing::warn!(
+                        target: $warn_target,
+                        "message flags include unknown bits (0x{:02x}); preserving raw value",
+                        byte
+                    );
+                }
+                Self(byte)
+            }
+
+            /// Returns `true` when the compressed flag is set.
+            #[must_use]
+            #[inline]
+            pub const fn is_compressed(self) -> bool {
+                self.0 & Self::COMPRESSED.0 != 0
+            }
+
+            /// Sets the compressed flag.
+            pub fn set_compressed(&mut self, compressed: bool) {
+                if compressed {
+                    self.0 |= Self::COMPRESSED.0;
+                } else {
+                    self.0 &= !Self::COMPRESSED.0;
+                }
+            }
+
+            /// Returns a new flag set with the compressed flag updated.
+            #[must_use]
+            pub fn with_compressed(mut self, compressed: bool) -> Self {
+                self.set_compressed(compressed);
+                self
+            }
+        }
+
+        impl ::serde::Serialize for $name {
+            fn serialize<S>(&self, serializer: S) -> ::std::result::Result<S::Ok, S::Error>
+            where
+                S: ::serde::Serializer,
+            {
+                serializer.serialize_u8(self.to_byte())
+            }
+        }
+
+        impl<'de> ::serde::Deserialize<'de> for $name {
+            fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
+            where
+                D: ::serde::Deserializer<'de>,
+            {
+                let value = <u8 as ::serde::Deserialize>::deserialize(deserializer)?;
+                Ok(Self(value))
             }
         }
     };
