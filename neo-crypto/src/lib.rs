@@ -64,7 +64,10 @@ pub use mpt_trie::{
 };
 pub use murmur::{murmur128, murmur32};
 pub use named_curve_hash::NamedCurveHash;
-pub use signature::{ECDsa, Ed25519Crypto, Secp256k1Crypto, Secp256r1Crypto, ECC};
+pub use signature::{
+    ECDsa, Ed25519Crypto, Secp256k1Crypto, Secp256r1Crypto, ECC, NEOFS_ECDSA_SHA512_PREFIX,
+    NEOFS_ECDSA_SHA512_SIGNATURE_LEN,
+};
 
 #[cfg(test)]
 mod tests {

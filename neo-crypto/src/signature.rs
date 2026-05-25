@@ -9,7 +9,10 @@ use ed25519_dalek::{
 };
 use ed25519_dalek::{Signer as _, Verifier as _};
 use p256::{
-    ecdsa::{signature::hazmat::PrehashVerifier, Signature, SigningKey, VerifyingKey},
+    ecdsa::{
+        signature::hazmat::{PrehashSigner, PrehashVerifier},
+        Signature, SigningKey, VerifyingKey,
+    },
     PublicKey as P256PublicKey, SecretKey as P256SecretKey,
 };
 use rand::{rngs::OsRng, RngCore};
@@ -142,6 +145,12 @@ impl Secp256k1Crypto {
 /// ECDSA operations for secp256r1 (P-256, Neo's primary curve).
 pub struct Secp256r1Crypto;
 
+/// Signature prefix used by NeoFS ECDSA_SHA512 signatures.
+pub const NEOFS_ECDSA_SHA512_PREFIX: u8 = 0x04;
+
+/// Serialized NeoFS ECDSA_SHA512 signature length: one prefix byte plus raw P-256 ECDSA.
+pub const NEOFS_ECDSA_SHA512_SIGNATURE_LEN: usize = 65;
+
 impl Secp256r1Crypto {
     /// Generates a new random private key.
     pub fn generate_private_key() -> [u8; 32] {
@@ -179,6 +188,50 @@ impl Secp256r1Crypto {
             .map_err(|e| CryptoError::invalid_signature(format!("Invalid signature: {e}")))?;
 
         Ok(verifying_key.verify(message, &signature).is_ok())
+    }
+
+    /// Signs NeoFS data using P-256 over a SHA-512 prehash.
+    ///
+    /// NeoFS serializes this signature as `0x04 || raw_ecdsa_signature`.
+    pub fn sign_neofs_sha512(
+        data: &[u8],
+        private_key: &[u8; 32],
+    ) -> CryptoResult<[u8; NEOFS_ECDSA_SHA512_SIGNATURE_LEN]> {
+        let signing_key = SigningKey::try_from(private_key.as_slice())
+            .map_err(|e| CryptoError::invalid_key(format!("Invalid private key: {e}")))?;
+        let digest = Crypto::sha512(data);
+        let signature: Signature = signing_key
+            .sign_prehash(&digest)
+            .map_err(|e| CryptoError::invalid_signature(format!("Failed to sign: {e}")))?;
+
+        let mut output = [0u8; NEOFS_ECDSA_SHA512_SIGNATURE_LEN];
+        output[0] = NEOFS_ECDSA_SHA512_PREFIX;
+        output[1..].copy_from_slice(&signature.to_bytes());
+        Ok(output)
+    }
+
+    /// Verifies a NeoFS P-256 signature over a SHA-512 prehash.
+    ///
+    /// The verifier preserves current NeoFS behavior by requiring a 65-byte signature while
+    /// ignoring the first byte instead of enforcing the `0x04` prefix.
+    pub fn verify_neofs_sha512(
+        data: &[u8],
+        signature: &[u8],
+        public_key: &[u8],
+    ) -> CryptoResult<bool> {
+        if signature.len() != NEOFS_ECDSA_SHA512_SIGNATURE_LEN {
+            return Err(CryptoError::invalid_signature(format!(
+                "NeoFS signature must be {NEOFS_ECDSA_SHA512_SIGNATURE_LEN} bytes"
+            )));
+        }
+
+        let public_key = P256PublicKey::from_sec1_bytes(public_key)
+            .map_err(|e| CryptoError::invalid_key(format!("Invalid public key: {e}")))?;
+        let verifying_key = VerifyingKey::from(public_key);
+        let signature = Signature::try_from(&signature[1..])
+            .map_err(|e| CryptoError::invalid_signature(format!("Invalid signature: {e}")))?;
+        let digest = Crypto::sha512(data);
+        Ok(verifying_key.verify_prehash(&digest, &signature).is_ok())
     }
 }
 
@@ -451,7 +504,7 @@ impl Crypto {
 
 #[cfg(test)]
 mod tests {
-    use super::Secp256k1Crypto;
+    use super::{Secp256k1Crypto, Secp256r1Crypto, NEOFS_ECDSA_SHA512_PREFIX};
 
     #[test]
     fn test_secp256k1_operations() {
@@ -463,5 +516,71 @@ mod tests {
         let is_valid = Secp256k1Crypto::verify(message, &signature, &public_key).unwrap();
 
         assert!(is_valid);
+    }
+
+    #[test]
+    fn neofs_p256_sha512_signs_and_verifies() {
+        let private_key = Secp256r1Crypto::generate_private_key();
+        let public_key = Secp256r1Crypto::derive_public_key(&private_key).unwrap();
+        let message = b"neofs bearer token";
+
+        let signature = Secp256r1Crypto::sign_neofs_sha512(message, &private_key).unwrap();
+
+        assert_eq!(signature.len(), 65);
+        assert_eq!(signature[0], NEOFS_ECDSA_SHA512_PREFIX);
+        assert!(Secp256r1Crypto::verify_neofs_sha512(message, &signature, &public_key).unwrap());
+    }
+
+    #[test]
+    fn neofs_p256_sha512_rejects_mutated_inputs() {
+        let private_key = Secp256r1Crypto::generate_private_key();
+        let public_key = Secp256r1Crypto::derive_public_key(&private_key).unwrap();
+        let message = b"neofs bearer token";
+        let signature = Secp256r1Crypto::sign_neofs_sha512(message, &private_key).unwrap();
+
+        assert!(!Secp256r1Crypto::verify_neofs_sha512(
+            b"different message",
+            &signature,
+            &public_key
+        )
+        .unwrap());
+
+        let mut mutated = signature;
+        mutated[64] ^= 0x01;
+        assert!(!Secp256r1Crypto::verify_neofs_sha512(message, &mutated, &public_key).unwrap());
+
+        assert!(
+            Secp256r1Crypto::verify_neofs_sha512(message, &signature[..64], &public_key).is_err()
+        );
+        assert!(Secp256r1Crypto::verify_neofs_sha512(message, &signature, &[0x02]).is_err());
+    }
+
+    #[test]
+    fn neofs_p256_sha512_preserves_ignored_prefix_behavior() {
+        let private_key = Secp256r1Crypto::generate_private_key();
+        let public_key = Secp256r1Crypto::derive_public_key(&private_key).unwrap();
+        let message = b"neofs bearer token";
+        let mut signature = Secp256r1Crypto::sign_neofs_sha512(message, &private_key).unwrap();
+        signature[0] = 0xff;
+
+        assert!(Secp256r1Crypto::verify_neofs_sha512(message, &signature, &public_key).unwrap());
+    }
+
+    #[test]
+    fn neofs_p256_sha512_rejects_regular_p256_signature() {
+        let private_key = Secp256r1Crypto::generate_private_key();
+        let public_key = Secp256r1Crypto::derive_public_key(&private_key).unwrap();
+        let message = b"neofs bearer token";
+        let signature = Secp256r1Crypto::sign(message, &private_key).unwrap();
+        let mut neofs_shaped_signature = [0u8; 65];
+        neofs_shaped_signature[0] = NEOFS_ECDSA_SHA512_PREFIX;
+        neofs_shaped_signature[1..].copy_from_slice(&signature);
+
+        assert!(!Secp256r1Crypto::verify_neofs_sha512(
+            message,
+            &neofs_shaped_signature,
+            &public_key
+        )
+        .unwrap());
     }
 }

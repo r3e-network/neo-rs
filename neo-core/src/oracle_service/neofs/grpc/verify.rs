@@ -1,8 +1,6 @@
 use super::super::proto::neofs_v2;
-use p256::ecdsa::signature::hazmat::PrehashVerifier;
-use p256::ecdsa::{Signature as P256Signature, VerifyingKey as P256VerifyingKey};
+use crate::cryptography::{Secp256r1Crypto, NEOFS_ECDSA_SHA512_SIGNATURE_LEN};
 use prost::Message;
-use sha2::{Digest, Sha512};
 
 pub(super) fn validate_neofs_response<B: Message>(
     body: &B,
@@ -69,21 +67,35 @@ pub(super) fn verify_neofs_signature_bytes(
     signature: &neofs_v2::refs::Signature,
     data: &[u8],
 ) -> bool {
-    if signature.key.is_empty() || signature.sign.len() != 65 {
+    if signature.key.is_empty() || signature.sign.len() != NEOFS_ECDSA_SHA512_SIGNATURE_LEN {
         return false;
     }
-    let verifying_key = match P256VerifyingKey::from_sec1_bytes(&signature.key) {
-        Ok(key) => key,
-        Err(_) => return false,
-    };
-    let sig = match P256Signature::from_slice(&signature.sign[1..]) {
-        Ok(sig) => sig,
-        Err(_) => return false,
-    };
-    let digest = Sha512::digest(data);
-    verifying_key.verify_prehash(&digest, &sig).is_ok()
+    Secp256r1Crypto::verify_neofs_sha512(data, &signature.sign, &signature.key).unwrap_or(false)
 }
 
 fn is_neofs_status_success(status: &neofs_v2::status::Status) -> bool {
     status.code < 1024
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{neofs_v2, verify_neofs_signature_bytes};
+    use crate::cryptography::Secp256r1Crypto;
+    use crate::oracle_service::neofs::auth::sign_neofs_sha512;
+    use crate::wallets::KeyPair;
+
+    #[test]
+    fn verifies_neofs_signature_from_core_signing_path() {
+        let private_key = Secp256r1Crypto::generate_private_key();
+        let key = KeyPair::from_private_key(&private_key).expect("test key");
+        let data = b"neofs response body";
+        let signature = neofs_v2::refs::Signature {
+            key: key.compressed_public_key(),
+            sign: sign_neofs_sha512(data, &key).expect("neofs signature"),
+            scheme: neofs_v2::refs::SignatureScheme::EcdsaSha512 as i32,
+        };
+
+        assert!(verify_neofs_signature_bytes(&signature, data));
+        assert!(!verify_neofs_signature_bytes(&signature, b"mutated"));
+    }
 }

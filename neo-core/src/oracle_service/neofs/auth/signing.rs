@@ -1,12 +1,11 @@
+use crate::cryptography::Secp256r1Crypto;
 use crate::neo_io::BinaryWriter;
 use crate::wallets::KeyPair;
 use base64::Engine as _;
-use p256::ecdsa::signature::hazmat::PrehashSigner;
 use p256::ecdsa::signature::Signer as P256Signer;
 use p256::ecdsa::{Signature as P256Signature, SigningKey as P256SigningKey};
 use rand::rngs::OsRng;
 use rand::RngCore;
-use sha2::{Digest, Sha512};
 
 pub(crate) fn sign_neofs_bearer(
     token: &str,
@@ -28,17 +27,9 @@ pub(crate) fn sign_neofs_bearer(
 }
 
 pub(crate) fn sign_neofs_sha512(data: &[u8], key: &KeyPair) -> Result<Vec<u8>, String> {
-    let signing_key = P256SigningKey::from_bytes(key.private_key().into())
-        .map_err(|err| format!("invalid neofs key: {err}"))?;
-    let digest = Sha512::digest(data);
-    let signature: P256Signature = signing_key
-        .sign_prehash(&digest)
-        .map_err(|err| format!("failed to sign bearer token: {err}"))?;
-    let sig_bytes = signature.to_bytes();
-    let mut output = Vec::with_capacity(1 + sig_bytes.len());
-    output.push(0x04);
-    output.extend_from_slice(&sig_bytes);
-    Ok(output)
+    Secp256r1Crypto::sign_neofs_sha512(data, key.private_key())
+        .map(|signature| signature.to_vec())
+        .map_err(|err| format!("failed to sign bearer token: {err}"))
 }
 
 fn sign_neofs_wallet_connect(data: &[u8], key: &KeyPair) -> Result<Vec<u8>, String> {
