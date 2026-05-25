@@ -2,7 +2,6 @@
 use super::RemoteNode;
 use crate::network::p2p::messages::{NetworkMessage, ProtocolMessage};
 use crate::network::p2p::payloads::addr_payload::{AddrPayload, MAX_COUNT_TO_SEND};
-use crate::network::MessageCommand;
 use crate::runtime::{ActorContext, ActorResult};
 use rand::{seq::IteratorRandom, thread_rng};
 use tracing::trace;
@@ -156,30 +155,6 @@ impl RemoteNode {
                 message.command(),
                 payload,
             ),
-        )
-    }
-    pub(super) fn is_single_command(command: MessageCommand) -> bool {
-        matches!(
-            command,
-            MessageCommand::Addr
-                | MessageCommand::GetAddr
-                | MessageCommand::GetBlocks
-                | MessageCommand::GetHeaders
-                | MessageCommand::Mempool
-                | MessageCommand::Ping
-                | MessageCommand::Pong
-        )
-    }
-    pub(super) fn is_high_priority(command: MessageCommand) -> bool {
-        matches!(
-            command,
-            MessageCommand::Alert
-                | MessageCommand::Extensible
-                | MessageCommand::FilterAdd
-                | MessageCommand::FilterClear
-                | MessageCommand::FilterLoad
-                | MessageCommand::GetAddr
-                | MessageCommand::Mempool
         )
     }
 }

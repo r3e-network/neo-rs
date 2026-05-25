@@ -19,6 +19,34 @@ neo_primitives::p2p_message_command! {
 
 neo_primitives::__p2p_message_command_compression_impl!(pub(crate) MessageCommand);
 
+impl MessageCommand {
+    pub(crate) fn is_single_queued(self) -> bool {
+        matches!(
+            self,
+            MessageCommand::Addr
+                | MessageCommand::GetAddr
+                | MessageCommand::GetBlocks
+                | MessageCommand::GetHeaders
+                | MessageCommand::Mempool
+                | MessageCommand::Ping
+                | MessageCommand::Pong
+        )
+    }
+
+    pub(crate) fn is_high_priority_queue(self) -> bool {
+        matches!(
+            self,
+            MessageCommand::Alert
+                | MessageCommand::Extensible
+                | MessageCommand::FilterAdd
+                | MessageCommand::FilterClear
+                | MessageCommand::FilterLoad
+                | MessageCommand::GetAddr
+                | MessageCommand::Mempool
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -69,5 +97,45 @@ mod tests {
             MessageCommand::parse_str("extendedc0").unwrap(),
             MessageCommand::Unknown(0xc0)
         );
+    }
+
+    #[test]
+    fn outbound_queue_single_command_set_matches_remote_node_policy() {
+        let single = [
+            MessageCommand::Addr,
+            MessageCommand::GetAddr,
+            MessageCommand::GetBlocks,
+            MessageCommand::GetHeaders,
+            MessageCommand::Mempool,
+            MessageCommand::Ping,
+            MessageCommand::Pong,
+        ];
+
+        for command in single {
+            assert!(command.is_single_queued(), "{command:?}");
+        }
+
+        assert!(!MessageCommand::Inv.is_single_queued());
+        assert!(!MessageCommand::Unknown(0x99).is_single_queued());
+    }
+
+    #[test]
+    fn outbound_queue_high_priority_set_matches_remote_node_policy() {
+        let high_priority = [
+            MessageCommand::Alert,
+            MessageCommand::Extensible,
+            MessageCommand::FilterAdd,
+            MessageCommand::FilterClear,
+            MessageCommand::FilterLoad,
+            MessageCommand::GetAddr,
+            MessageCommand::Mempool,
+        ];
+
+        for command in high_priority {
+            assert!(command.is_high_priority_queue(), "{command:?}");
+        }
+
+        assert!(!MessageCommand::Ping.is_high_priority_queue());
+        assert!(!MessageCommand::Unknown(0x99).is_high_priority_queue());
     }
 }

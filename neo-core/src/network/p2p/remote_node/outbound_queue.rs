@@ -46,7 +46,7 @@ impl OutboundMessageQueue {
     }
 
     fn has_duplicate_single_command(&self, command: MessageCommand) -> bool {
-        RemoteNode::is_single_command(command)
+        command.is_single_queued()
             && self
                 .queued_single_commands
                 .get(command.to_byte() as usize)
@@ -63,7 +63,7 @@ impl OutboundMessageQueue {
     }
 
     fn set_queued_single_command(&mut self, command: MessageCommand, value: bool) {
-        if !RemoteNode::is_single_command(command) {
+        if !command.is_single_queued() {
             return;
         }
         if let Some(mut queued) = self
@@ -86,7 +86,7 @@ impl RemoteNode {
 
     pub(super) async fn enqueue_message(&mut self, message: NetworkMessage) -> ActorResult {
         let command = message.command();
-        let is_high_priority = Self::is_high_priority(command);
+        let is_high_priority = command.is_high_priority_queue();
 
         let message_size = Self::estimate_message_size(&message);
         if !self.check_memory_quota(message_size) {
