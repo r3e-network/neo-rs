@@ -46,6 +46,20 @@ impl StateServiceCommitHandlers {
             error = panic_message(&payload),
             "state service handler panicked"
         );
+        self.apply_exception_policy();
+    }
+
+    fn handle_error(&self, err: &CoreError, phase: &'static str) {
+        error!(
+            target: "neo::state_service",
+            phase,
+            error = %err,
+            "state service handler failed"
+        );
+        self.apply_exception_policy();
+    }
+
+    fn apply_exception_policy(&self) {
         match self.exception_policy {
             UnhandledExceptionPolicy::StopPlugin => {
                 self.disabled.store(true, Ordering::SeqCst);
@@ -109,11 +123,7 @@ impl CommittingHandler for StateServiceCommitHandlers {
             snapshot,
             application_executed_list,
         ) {
-            error!(
-                target: "neo::state_service",
-                error = %err,
-                "state service committing handler failed"
-            );
+            self.handle_error(&err, "committing");
         }
     }
 
@@ -201,6 +211,17 @@ mod tests {
         }
     }
 
+    fn state_store_with_policy(exception_policy: UnhandledExceptionPolicy) -> Arc<StateStore> {
+        let settings = StateServiceSettings {
+            exception_policy,
+            ..StateServiceSettings::default()
+        };
+        Arc::new(StateStore::new(
+            Arc::new(FailingStateStoreBackend),
+            settings,
+        ))
+    }
+
     fn test_block(index: u32) -> Block {
         Block::new(
             BlockHeader::new(
@@ -220,16 +241,50 @@ mod tests {
 
     #[test]
     fn try_committing_handler_returns_err_when_current_state_root_commit_fails() {
-        let state_store = Arc::new(StateStore::new(
-            Arc::new(FailingStateStoreBackend),
-            StateServiceSettings::default(),
+        let handler = StateServiceCommitHandlers::new(state_store_with_policy(
+            UnhandledExceptionPolicy::StopPlugin,
         ));
-        let handler = StateServiceCommitHandlers::new(state_store);
         let snapshot = DataCache::new(false);
 
         let err = handler
             .try_blockchain_committing_handler(&(), &test_block(1), &snapshot, &[])
             .expect_err("state root commit failure should stop block commit");
+
+        assert!(err
+            .to_string()
+            .contains("injected state root commit failure"));
+    }
+
+    #[test]
+    fn committing_handler_disables_after_error_when_policy_stops_plugin() {
+        let handler = StateServiceCommitHandlers::new(state_store_with_policy(
+            UnhandledExceptionPolicy::StopPlugin,
+        ));
+        let snapshot = DataCache::new(false);
+
+        handler.blockchain_committing_handler(&(), &test_block(1), &snapshot, &[]);
+
+        let err = handler
+            .try_blockchain_committing_handler(&(), &test_block(2), &snapshot, &[])
+            .expect_err("stop-plugin policy should disable future state root commits");
+
+        assert!(err
+            .to_string()
+            .contains("disabled after a previous failure"));
+    }
+
+    #[test]
+    fn committing_handler_keeps_running_after_error_when_policy_continues() {
+        let handler = StateServiceCommitHandlers::new(state_store_with_policy(
+            UnhandledExceptionPolicy::Continue,
+        ));
+        let snapshot = DataCache::new(false);
+
+        handler.blockchain_committing_handler(&(), &test_block(1), &snapshot, &[]);
+
+        let err = handler
+            .try_blockchain_committing_handler(&(), &test_block(2), &snapshot, &[])
+            .expect_err("continue policy should leave handler enabled");
 
         assert!(err
             .to_string()
