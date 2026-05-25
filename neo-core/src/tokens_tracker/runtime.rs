@@ -106,16 +106,9 @@ impl TokensTracker {
     }
 
     fn apply_exception_policy(&self) -> bool {
-        use crate::unhandled_exception_policy::UnhandledExceptionPolicy;
-        match self.settings.exception_policy {
-            UnhandledExceptionPolicy::Ignore | UnhandledExceptionPolicy::Continue => true,
-            UnhandledExceptionPolicy::StopPlugin => {
-                self.disabled.store(true, Ordering::Relaxed);
-                false
-            }
-            UnhandledExceptionPolicy::StopNode => std::process::exit(1),
-            UnhandledExceptionPolicy::Terminate => std::process::abort(),
-        }
+        self.settings
+            .exception_policy
+            .apply(|| self.disabled.store(true, Ordering::Relaxed))
     }
 
     fn run_tracker_action<F>(&self, tracker: &str, action: &str, f: F) -> bool

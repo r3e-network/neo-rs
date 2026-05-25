@@ -6,7 +6,6 @@ use crate::ledger::blockchain_application_executed::ApplicationExecuted;
 use crate::neo_system::NeoSystem;
 use crate::persistence::{DataCache, IStore, StoreSnapshot};
 use crate::smart_contract::{NotifyEventArgs, TriggerType};
-use crate::unhandled_exception_policy::UnhandledExceptionPolicy;
 use crate::vm_runtime::rpc_json::{stack_item_rpc_json, stack_items_rpc_json_per_item};
 use crate::vm_runtime::StackItem;
 use crate::UInt256;
@@ -82,14 +81,9 @@ impl ApplicationLogsService {
             error = panic_message(&payload),
             "application logs handler panicked"
         );
-        match self.settings.exception_policy {
-            UnhandledExceptionPolicy::StopPlugin => {
-                self.disabled.store(true, Ordering::SeqCst);
-            }
-            UnhandledExceptionPolicy::StopNode => std::process::exit(1),
-            UnhandledExceptionPolicy::Terminate => std::process::abort(),
-            UnhandledExceptionPolicy::Ignore | UnhandledExceptionPolicy::Continue => {}
-        }
+        self.settings
+            .exception_policy
+            .apply(|| self.disabled.store(true, Ordering::SeqCst));
     }
 
     fn write_log(&self, prefix: u8, hash: &UInt256, value: Value) {

@@ -60,14 +60,8 @@ impl StateServiceCommitHandlers {
     }
 
     fn apply_exception_policy(&self) {
-        match self.exception_policy {
-            UnhandledExceptionPolicy::StopPlugin => {
-                self.disabled.store(true, Ordering::SeqCst);
-            }
-            UnhandledExceptionPolicy::StopNode => std::process::exit(1),
-            UnhandledExceptionPolicy::Terminate => std::process::abort(),
-            UnhandledExceptionPolicy::Ignore | UnhandledExceptionPolicy::Continue => {}
-        }
+        self.exception_policy
+            .apply(|| self.disabled.store(true, Ordering::SeqCst));
     }
 
     fn join_pending(&self, phase: &'static str) -> CoreResult<()> {
