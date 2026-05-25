@@ -1,3 +1,14 @@
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __protocol_enum_display {
+    ($variant:ident) => {
+        stringify!($variant)
+    };
+    ($variant:ident, $display:expr) => {
+        $display
+    };
+}
+
 /// Generates a `#[repr(u8)]` protocol enum with standard boilerplate.
 ///
 /// Each variant is specified as `Name = BYTE_VALUE`, optionally preceded by
@@ -22,6 +33,18 @@
 ///     }
 /// }
 /// ```
+///
+/// Custom display names can be supplied for protocol enums whose canonical
+/// string form does not match the Rust variant name:
+///
+/// ```rust,ignore
+/// protocol_enum! {
+///     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+///     pub NamedCurveHash {
+///         Secp256k1SHA256 = 0x16 => "secp256k1SHA256",
+///     }
+/// }
+/// ```
 #[macro_export]
 macro_rules! protocol_enum {
     (
@@ -29,7 +52,7 @@ macro_rules! protocol_enum {
         $vis:vis $name:ident {
             $(
                 $(#[$variant_meta:meta])*
-                $variant:ident = $byte:expr
+                $variant:ident = $byte:expr $(=> $display:expr)?
             ),+ $(,)?
         }
     ) => {
@@ -43,12 +66,14 @@ macro_rules! protocol_enum {
         }
 
         impl $name {
+            /// Returns the protocol byte assigned to this enum value.
             #[must_use]
             #[inline]
             pub const fn to_byte(self) -> u8 {
                 self as u8
             }
 
+            /// Parses this enum from its protocol byte.
             #[must_use]
             pub const fn from_byte(value: u8) -> Option<Self> {
                 match value {
@@ -59,11 +84,12 @@ macro_rules! protocol_enum {
                 }
             }
 
+            /// Returns the canonical display name for this enum value.
             #[must_use]
             pub const fn as_str(self) -> &'static str {
                 match self {
                     $(
-                        Self::$variant => stringify!($variant),
+                        Self::$variant => $crate::__protocol_enum_display!($variant $(, $display)?),
                     )+
                 }
             }
