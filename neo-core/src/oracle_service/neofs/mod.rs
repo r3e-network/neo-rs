@@ -48,6 +48,14 @@ struct NeoFsAuth {
     wallet_connect: bool,
 }
 
+fn decode_raw_base58(value: &str, expected_len: Option<usize>) -> Option<Vec<u8>> {
+    let decoded = crate::cryptography::Base58::decode(value).ok()?;
+    if expected_len.is_some_and(|len| decoded.len() != len) {
+        return None;
+    }
+    Some(decoded)
+}
+
 pub(crate) struct OracleNeoFsProtocol {
     client: reqwest::Client,
 }

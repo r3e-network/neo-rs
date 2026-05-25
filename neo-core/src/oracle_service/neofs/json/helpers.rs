@@ -1,5 +1,7 @@
 use base64::Engine as _;
 
+use super::super::decode_raw_base58;
+
 pub(crate) fn push_json_field(output: &mut String, first: &mut bool, name: &str, value: &str) {
     if !*first {
         output.push_str(", ");
@@ -21,12 +23,7 @@ pub(crate) fn json_u64_string(value: u64) -> String {
 }
 
 pub(crate) fn base64_from_base58(value: &str, expected_len: Option<usize>) -> Option<String> {
-    let decoded = bs58::decode(value).into_vec().ok()?;
-    if let Some(expected_len) = expected_len {
-        if decoded.len() != expected_len {
-            return None;
-        }
-    }
+    let decoded = decode_raw_base58(value, expected_len)?;
     if decoded.is_empty() {
         return None;
     }

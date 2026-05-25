@@ -1,4 +1,4 @@
-use super::{NeoFsCommand, NeoFsRange, NeoFsRequest};
+use super::{decode_raw_base58, NeoFsCommand, NeoFsRange, NeoFsRequest};
 
 pub(super) fn parse_neofs_request(url: &str) -> Result<NeoFsRequest, String> {
     let (_, suffix) = url
@@ -75,10 +75,7 @@ pub(super) fn parse_neofs_range(raw: &str) -> Result<NeoFsRange, String> {
 }
 
 fn validate_neofs_id(value: &str, kind: &str) -> Result<(), String> {
-    let decoded = bs58::decode(value)
-        .into_vec()
-        .map_err(|_| format!("invalid neofs {} id", kind))?;
-    if decoded.len() != 32 {
+    if decode_raw_base58(value, Some(32)).is_none() {
         return Err(format!("invalid neofs {} id", kind));
     }
     Ok(())

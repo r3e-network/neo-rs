@@ -1,3 +1,4 @@
+use super::super::super::decode_raw_base58;
 use super::super::super::proto::neofs_v2;
 use super::super::super::NeoFsRequest;
 
@@ -13,11 +14,5 @@ pub(crate) fn build_neofs_grpc_address(
 }
 
 fn decode_neofs_id_bytes(value: &str, expected_len: usize) -> Result<Vec<u8>, String> {
-    let decoded = bs58::decode(value)
-        .into_vec()
-        .map_err(|_| "invalid neofs id".to_string())?;
-    if decoded.len() != expected_len {
-        return Err("invalid neofs id".to_string());
-    }
-    Ok(decoded)
+    decode_raw_base58(value, Some(expected_len)).ok_or_else(|| "invalid neofs id".to_string())
 }
