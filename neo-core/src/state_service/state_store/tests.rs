@@ -1,11 +1,11 @@
 use super::*;
 use crate::network::p2p::payloads::Witness;
+use crate::persistence::providers::memory_store_provider::MemoryStoreProvider;
 use crate::persistence::read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric};
+use crate::persistence::storage::StorageError;
 use crate::persistence::store::{IStore, OnNewSnapshotDelegate};
 use crate::persistence::store_snapshot::StoreSnapshot;
 use crate::persistence::write_store::WriteStore;
-use crate::persistence::providers::memory_store_provider::MemoryStoreProvider;
-use crate::persistence::storage::StorageError;
 use crate::persistence::DataCache;
 use crate::persistence::TrackState;
 use crate::protocol_settings::ProtocolSettings;
@@ -367,6 +367,34 @@ fn update_local_state_root_snapshot_rejects_reference_root_mismatch() {
     assert!(err.contains("state root mismatch at height 1"));
     assert!(store.state_snapshot.read().is_none());
     assert!(store.local_root_index().is_none());
+}
+
+#[test]
+fn load_reference_roots_parses_jsonl_with_uint256_parse() {
+    let mut store = StateStore::new_in_memory();
+    let mut reference_file = tempfile::NamedTempFile::new().expect("reference file");
+    let root_hash = format!("0x{}", "22".repeat(32));
+
+    writeln!(reference_file, "not json").expect("write invalid line");
+    writeln!(
+        reference_file,
+        "{{ \"height\": 7, \"roothash\": \"{}\" }}",
+        root_hash
+    )
+    .expect("write reference root");
+    writeln!(
+        reference_file,
+        "{{\"height\":8,\"roothash\":\"not-a-hash\"}}"
+    )
+    .expect("write invalid hash");
+
+    store.load_reference_roots(reference_file.path().to_str().unwrap());
+
+    assert_eq!(
+        store.reference_roots.get(&7),
+        Some(&UInt256::parse(&root_hash).expect("reference hash"))
+    );
+    assert!(!store.reference_roots.contains_key(&8));
 }
 
 #[test]

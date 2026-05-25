@@ -56,7 +56,7 @@ use super::state_root::StateRoot;
 use crate::error::CoreResult;
 use crate::neo_io::{BinaryWriter, Serializable};
 use crate::persistence::{
-    store::IStore, store_provider::StoreProvider, seek_direction::SeekDirection, TrackState,
+    seek_direction::SeekDirection, store::IStore, store_provider::StoreProvider, TrackState,
 };
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::native::LedgerContract;
@@ -64,6 +64,7 @@ use crate::smart_contract::{StorageItem, StorageKey};
 use crate::unhandled_exception_policy::UnhandledExceptionPolicy;
 use crate::UInt256;
 use parking_lot::RwLock;
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{info, warn};
@@ -84,6 +85,12 @@ pub use settings::StateServiceSettings;
 pub use snapshot::StateSnapshot;
 pub use verification_result::StateRootVerificationResult;
 pub use verifier::StateRootVerifier;
+
+#[derive(Deserialize)]
+struct ReferenceRootLine {
+    height: u32,
+    roothash: String,
+}
 
 /// Maximum number of state roots to cache before persistence.
 pub const MAX_CACHE_COUNT: usize = 100;
@@ -149,41 +156,15 @@ impl StateStore {
         let mut count = 0u32;
         for line in reader.lines() {
             let Ok(line) = line else { continue };
-            // Parse {"height": N, "roothash": "0x..."}
-            let Some(h_start) = line.find("\"height\"") else {
-                continue;
-            };
-            let h_rest = &line[h_start + 8..];
-            let h_rest = h_rest.trim_start_matches(|c: char| c == ':' || c.is_whitespace());
-            let h_end = h_rest
-                .find(|c: char| !c.is_ascii_digit())
-                .unwrap_or(h_rest.len());
-            let Ok(height) = h_rest[..h_end].parse::<u32>() else {
-                continue;
-            };
-            let Some(r_start) = line.find("\"roothash\"") else {
-                continue;
-            };
-            let r_rest = &line[r_start + 10..];
-            let Some(q1) = r_rest.find('"') else {
-                continue;
-            };
-            let r_rest = &r_rest[q1 + 1..];
-            let Some(q2) = r_rest.find('"') else {
-                continue;
-            };
-            let hash_str = r_rest[..q2].trim_start_matches("0x");
-            if hash_str.len() != 64 {
+            if line.trim().is_empty() {
                 continue;
             }
-            let Ok(hash_bytes) = hex::decode(hash_str) else {
+
+            let Ok(reference) = serde_json::from_str::<ReferenceRootLine>(&line) else {
                 continue;
             };
-            // C# displays hashes in BE; convert to LE for UInt256
-            let mut le_bytes = hash_bytes;
-            le_bytes.reverse();
-            if let Ok(hash) = UInt256::from_bytes(&le_bytes) {
-                self.reference_roots.insert(height, hash);
+            if let Ok(hash) = UInt256::parse(&reference.roothash) {
+                self.reference_roots.insert(reference.height, hash);
                 count += 1;
             }
         }
