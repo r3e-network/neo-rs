@@ -10,10 +10,7 @@ use std::collections::HashSet;
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::{Arc, Weak};
-use warp::http::header::{
-    HeaderValue, CONTENT_TYPE,
-    WWW_AUTHENTICATE,
-};
+use warp::http::header::{HeaderValue, CONTENT_TYPE, WWW_AUTHENTICATE};
 use warp::http::StatusCode;
 use warp::reply::Response as HttpResponse;
 use warp::Filter;
@@ -24,9 +21,11 @@ mod handlers;
 #[path = "tests.rs"]
 mod tests;
 
-use cors::{apply_cors, CorsConfig};
 pub use cors::BasicAuth;
+use cors::{apply_cors, CorsConfig};
 use handlers::handle_post_request;
+#[cfg(feature = "jsonrpsee-server")]
+pub(in crate::server) use handlers::{invoke_rpc_handler, lookup_rpc_handler};
 
 const MAX_PARAMS_DEPTH: usize = 32;
 

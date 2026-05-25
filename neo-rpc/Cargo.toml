@@ -44,6 +44,8 @@ tracing = { workspace = true }
 # Web server (server feature)
 warp = { version = "0.3", optional = true, features = ["compression-gzip"] }
 hyper = { workspace = true, optional = true }
+# jsonrpsee 0.26 raises MSRV to Rust 1.85; this workspace is Rust 1.75.
+jsonrpsee = { version = "0.24.10", optional = true, default-features = false, features = ["server"] }
 
 # TLS (server feature)
 tokio-rustls = { version = "0.24", optional = true }
@@ -127,4 +129,8 @@ client = [
     "dep:regex",
     "dep:rand",
     "dep:zeroize",
+]
+jsonrpsee-server = [
+    "server",
+    "dep:jsonrpsee",
 ]

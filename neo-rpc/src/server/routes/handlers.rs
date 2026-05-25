@@ -1,17 +1,19 @@
 use super::cors::{apply_cors, verify_basic_auth};
 use super::{
-    build_http_response, error_response, exceeds_max_depth, success_response, RpcFilters,
-    RpcQueryParams, RequestOutcome, MAX_PARAMS_DEPTH,
+    build_http_response, error_response, exceeds_max_depth, success_response, RequestOutcome,
+    RpcFilters, RpcQueryParams, MAX_PARAMS_DEPTH,
 };
 use crate::server::rpc_error::RpcError;
-use crate::server::rpc_server::{RPC_ERR_TOTAL, RPC_REQ_TOTAL};
+use crate::server::rpc_server::{RpcHandler, RpcServer, RPC_ERR_TOTAL, RPC_REQ_TOTAL};
 use crate::server::rpc_server_settings::{RpcServerSettings, UnhandledExceptionPolicy};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use bytes::Bytes;
+use parking_lot::RwLock;
 use serde_json::{Map, Value};
 use std::convert::Infallible;
 use std::net::{IpAddr, SocketAddr};
 use std::panic::{self, AssertUnwindSafe};
+use std::sync::Arc;
 use tracing::error;
 use warp::http::header::HeaderValue;
 use warp::reply::Response as HttpResponse;
@@ -23,9 +25,9 @@ pub(super) async fn handle_post_request(
     auth_header: Option<String>,
     body: Bytes,
 ) -> Result<HttpResponse, Infallible> {
-    let client_ip = remote.map(|addr| addr.ip()).unwrap_or_else(|| {
-        "127.0.0.1".parse().unwrap()
-    });
+    let client_ip = remote
+        .map(|addr| addr.ip())
+        .unwrap_or_else(|| "127.0.0.1".parse().unwrap());
 
     if let Some(limiter) = filters.rate_limiter.as_ref() {
         let check_result = limiter.check(client_ip);
@@ -61,9 +63,9 @@ pub(super) async fn handle_get_request(
     raw_query: String,
     max_query_len: u64,
 ) -> Result<HttpResponse, Infallible> {
-    let client_ip = remote.map(|addr| addr.ip()).unwrap_or_else(|| {
-        "127.0.0.1".parse().unwrap()
-    });
+    let client_ip = remote
+        .map(|addr| addr.ip())
+        .unwrap_or_else(|| "127.0.0.1".parse().unwrap());
 
     if let Some(limiter) = filters.rate_limiter.as_ref() {
         let check_result = limiter.check(client_ip);
@@ -102,7 +104,8 @@ pub(super) async fn handle_get_request(
                 (Some(error_response(None, RpcError::bad_request())), false)
             }
             Some(Value::Object(obj)) => {
-                let outcome = process_object(obj, &filters, auth_header.as_deref(), Some(client_ip));
+                let outcome =
+                    process_object(obj, &filters, auth_header.as_deref(), Some(client_ip));
                 (outcome.response, outcome.unauthorized)
             }
             Some(_) => (
@@ -253,13 +256,7 @@ fn process_object(
         return RequestOutcome::error(error_response(id, RpcError::internal_server_error()), false);
     };
 
-    let handler = {
-        let server_guard = server_arc.read();
-        let guard = server_guard.handlers_guard();
-        guard.get(&method_key).cloned()
-    };
-
-    let Some(handler) = handler else {
+    let Some(handler) = lookup_rpc_handler(&server_arc, &method_key) else {
         RPC_ERR_TOTAL.inc();
         return RequestOutcome::error(
             error_response(id, RpcError::method_not_found().with_data(method)),
@@ -279,24 +276,44 @@ fn process_object(
         }
     }
 
+    match invoke_rpc_handler(&server_arc, handler, &method, params.as_slice()) {
+        Ok(result) => RequestOutcome::response(success_response(id, result)),
+        Err(err) => {
+            RPC_ERR_TOTAL.inc();
+            RequestOutcome::error(error_response(id, err), false)
+        }
+    }
+}
+
+pub(in crate::server) fn lookup_rpc_handler(
+    server_arc: &Arc<RwLock<RpcServer>>,
+    method_key: &str,
+) -> Option<Arc<RpcHandler>> {
+    let server_guard = server_arc.read();
+    let guard = server_guard.handlers_guard();
+    guard.get(method_key).cloned()
+}
+
+pub(in crate::server) fn invoke_rpc_handler(
+    server_arc: &Arc<RwLock<RpcServer>>,
+    handler: Arc<RpcHandler>,
+    method: &str,
+    params: &[Value],
+) -> Result<Value, RpcError> {
     let policy = RpcServerSettings::current().exception_policy();
     let callback = handler.callback();
     let call_result = panic::catch_unwind(AssertUnwindSafe(|| {
         let server_guard = server_arc.read();
-        (callback)(&server_guard, params.as_slice())
+        (callback)(&server_guard, params)
     }));
 
     match call_result {
-        Ok(Ok(result)) => RequestOutcome::response(success_response(id, result)),
-        Ok(Err(err)) => {
-            RPC_ERR_TOTAL.inc();
-            RequestOutcome::error(error_response(id, RpcError::from(err)), false)
-        }
+        Ok(Ok(result)) => Ok(result),
+        Ok(Err(err)) => Err(RpcError::from(err)),
         Err(payload) => {
-            RPC_ERR_TOTAL.inc();
             error!(
                 target: "neo::rpc",
-                method = method.as_str(),
+                method,
                 error = panic_message(&payload),
                 "rpc handler panicked"
             );
@@ -311,7 +328,7 @@ fn process_object(
                 | UnhandledExceptionPolicy::Log
                 | UnhandledExceptionPolicy::Continue => {}
             }
-            RequestOutcome::error(error_response(id, RpcError::internal_server_error()), false)
+            Err(RpcError::internal_server_error())
         }
     }
 }
