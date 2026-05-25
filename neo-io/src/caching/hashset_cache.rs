@@ -1,7 +1,7 @@
 //! `HashSetCache` - faithful port of Neo.IO.Caching.HashSetCache
 
-use super::keyed_collection_slim::KeyedCollectionSlim;
 use crate::{IoError, IoResult};
+use indexmap::IndexSet;
 use std::hash::Hash;
 
 /// A cache that uses a hash set to store items (matches C# `HashSetCache<T>`).
@@ -10,7 +10,7 @@ where
     T: Eq + Hash + Clone,
 {
     capacity: usize,
-    items: KeyedCollectionSlim<T, T>,
+    items: IndexSet<T>,
 }
 
 impl<T> HashSetCache<T>
@@ -47,7 +47,7 @@ where
         let initial_capacity = effective_capacity.min(4096);
         Self {
             capacity: effective_capacity,
-            items: KeyedCollectionSlim::with_selector(initial_capacity, |item: &T| item.clone()),
+            items: IndexSet::with_capacity(initial_capacity),
         }
     }
 
@@ -63,7 +63,7 @@ where
         let initial_capacity = capacity.min(4096);
         Ok(Self {
             capacity,
-            items: KeyedCollectionSlim::with_selector(initial_capacity, |item: &T| item.clone()),
+            items: IndexSet::with_capacity(initial_capacity),
         })
     }
 
@@ -71,16 +71,16 @@ where
     #[inline]
     #[must_use]
     pub fn count(&self) -> usize {
-        self.items.count()
+        self.items.len()
     }
 
     /// Attempts to add an item; evicts the oldest when the capacity is exceeded (C# `TryAdd`).
     pub fn try_add(&mut self, item: T) -> bool {
-        if !self.items.try_add(item) {
+        if !self.items.insert(item) {
             return false;
         }
-        if self.items.count() > self.capacity {
-            self.items.remove_first();
+        if self.items.len() > self.capacity {
+            self.items.shift_remove_index(0);
         }
         true
     }
@@ -94,7 +94,8 @@ where
     /// Clears all items (C# `Clear`).
     #[inline]
     pub fn clear(&mut self) {
-        self.items.clear();
+        let capacity = self.items.capacity();
+        self.items = IndexSet::with_capacity(capacity);
     }
 
     /// Removes a collection of items from the cache (C# `ExceptWith`).
@@ -103,7 +104,7 @@ where
         I: IntoIterator<Item = T>,
     {
         for item in items {
-            self.items.remove(&item);
+            self.items.shift_remove(&item);
         }
     }
 
@@ -116,7 +117,7 @@ where
     /// Removes an item from the cache (C# `Remove`).
     #[inline]
     pub fn remove(&mut self, item: &T) -> bool {
-        self.items.remove(item)
+        self.items.shift_remove(item)
     }
 
     /// Copies the elements into the destination slice starting at `start_index` (C# `CopyTo`).
@@ -159,6 +160,6 @@ where
     type IntoIter = std::vec::IntoIter<T>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.items.iter().cloned().collect::<Vec<_>>().into_iter()
+        self.items.into_iter().collect::<Vec<_>>().into_iter()
     }
 }

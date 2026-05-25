@@ -110,6 +110,34 @@ fn hash_set_cache_excepts_with_removes_items() {
     assert!(!cache.contains(&3));
 }
 
+#[test]
+fn hash_set_cache_duplicate_does_not_refresh_fifo_order() {
+    let mut cache = HashSetCache::new(2);
+
+    assert!(cache.try_add(1));
+    assert!(cache.try_add(2));
+    assert!(!cache.try_add(1));
+    assert!(cache.try_add(3));
+
+    assert_eq!(cache.count(), 2);
+    assert!(!cache.contains(&1));
+    assert!(cache.contains(&2));
+    assert!(cache.contains(&3));
+}
+
+#[test]
+fn hash_set_cache_copy_to_preserves_insertion_order() {
+    let mut cache = HashSetCache::new(3);
+    cache.add(1);
+    cache.add(2);
+    cache.add(3);
+
+    let mut values = [0; 5];
+    cache.copy_to(&mut values, 1).unwrap();
+
+    assert_eq!(values, [0, 1, 2, 3, 0]);
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct MockPoint(Vec<u8>);
 
