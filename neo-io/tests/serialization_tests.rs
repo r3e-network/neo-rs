@@ -3,7 +3,10 @@
 //! These tests ensure full compatibility with C# Neo's ISerializable functionality.
 //! Tests are based on the C# Neo.IO.ISerializable test suite.
 
-use neo_io::serializable::helper::{deserialize_exact_array, get_var_size, serialize_array};
+use neo_io::serializable::helper::{
+    deserialize_array_with, deserialize_exact_array, get_var_size, get_var_size_for_slice,
+    serialize_array, serialize_array_with,
+};
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 
 #[cfg(test)]
@@ -283,6 +286,25 @@ mod tests {
             deserialize_exact_array::<TestSerializable>(&mut reader, 1, "count mismatch").is_err()
         );
         assert_eq!(reader.position(), 1);
+    }
+
+    #[test]
+    fn test_custom_array_helpers_preserve_wire_layout() {
+        let items = vec![0xAA, 0xBB, 0xCC];
+
+        assert_eq!(get_var_size_for_slice(&items, |_| 1), 4);
+
+        let mut writer = BinaryWriter::new();
+        serialize_array_with(&items, &mut writer, |item, writer| writer.write_u8(*item)).unwrap();
+        let bytes = writer.into_bytes();
+
+        assert_eq!(bytes, vec![0x03, 0xAA, 0xBB, 0xCC]);
+
+        let mut reader = MemoryReader::new(&bytes);
+        let decoded = deserialize_array_with(&mut reader, 3, |reader| reader.read_u8()).unwrap();
+
+        assert_eq!(decoded, items);
+        assert_eq!(reader.position(), bytes.len());
     }
 
     /// Test error handling during serialization (matches C# exception behavior exactly)

@@ -48,7 +48,7 @@
 //! ```
 
 use crate::neo_config::ADDRESS_SIZE;
-use crate::neo_io::serializable::helper::get_var_size;
+use crate::neo_io::serializable::helper::get_var_size_serializable_slice;
 
 mod display;
 mod helpers;
@@ -141,8 +141,7 @@ impl WitnessCondition {
             WitnessCondition::Boolean { .. } => 1, // bool
             WitnessCondition::Not { condition } => condition.size(),
             WitnessCondition::And { conditions } | WitnessCondition::Or { conditions } => {
-                get_var_size(conditions.len() as u64)
-                    + conditions.iter().map(|c| c.size()).sum::<usize>()
+                get_var_size_serializable_slice(conditions)
             }
             WitnessCondition::ScriptHash { .. } => ADDRESS_SIZE,
             WitnessCondition::Group { group } | WitnessCondition::CalledByGroup { group } => {

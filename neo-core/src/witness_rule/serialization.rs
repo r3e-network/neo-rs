@@ -1,5 +1,6 @@
 use super::helpers::{read_group_bytes, ECPOINT_COMPRESSED_SIZE};
 use super::{WitnessCondition, WitnessConditionType, WitnessRule, WitnessRuleAction};
+use crate::neo_io::serializable::helper::serialize_array;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::UInt160;
 
@@ -26,10 +27,7 @@ impl Serializable for WitnessCondition {
                         "Composite witness condition exceeds max subitems",
                     ));
                 }
-                writer.write_var_int(conditions.len() as u64)?;
-                for condition in conditions {
-                    <WitnessCondition as Serializable>::serialize(condition, writer)?;
-                }
+                serialize_array(conditions, writer)?;
             }
             WitnessCondition::ScriptHash { hash } => Serializable::serialize(hash, writer)?,
             WitnessCondition::Group { group } | WitnessCondition::CalledByGroup { group } => {

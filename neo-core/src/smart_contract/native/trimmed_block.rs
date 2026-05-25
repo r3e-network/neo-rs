@@ -2,7 +2,8 @@ use crate::error::CoreError;
 use crate::extensions::io::memory_reader::MemoryReaderExtensions;
 use crate::ledger::{block_header::BlockHeader, Block};
 use crate::neo_io::{
-    serializable::helper::get_var_size, BinaryWriter, IoResult, MemoryReader, Serializable,
+    serializable::helper::get_var_size_serializable_slice, BinaryWriter, IoResult, MemoryReader,
+    Serializable,
 };
 use crate::smart_contract::interoperable::Interoperable;
 use crate::vm_runtime::StackItem;
@@ -103,9 +104,7 @@ impl Serializable for TrimmedBlock {
     }
 
     fn size(&self) -> usize {
-        self.header.size()
-            + get_var_size(self.hashes.len() as u64)
-            + self.hashes.iter().map(|hash| hash.size()).sum::<usize>()
+        self.header.size() + get_var_size_serializable_slice(&self.hashes)
     }
 }
 

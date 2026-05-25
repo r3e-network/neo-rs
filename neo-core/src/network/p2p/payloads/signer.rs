@@ -12,7 +12,8 @@
 use crate::error::CoreError;
 use crate::macros::{OptionExt, ValidateLength};
 use crate::neo_io::serializable::helper::{
-    deserialize_array, get_var_size, get_var_size_serializable_slice, serialize_array,
+    deserialize_array, deserialize_array_with, get_var_size_for_slice,
+    get_var_size_serializable_slice, serialize_array, serialize_array_with,
 };
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::smart_contract::Interoperable;
@@ -308,12 +309,7 @@ impl Serializable for Signer {
         }
 
         if self.scopes.contains(WitnessScope::CUSTOM_GROUPS) {
-            size += get_var_size(self.allowed_groups.len() as u64)
-                + self
-                    .allowed_groups
-                    .iter()
-                    .map(|g| g.as_bytes().len())
-                    .sum::<usize>();
+            size += get_var_size_for_slice(&self.allowed_groups, |group| group.as_bytes().len());
         }
 
         if self.scopes.contains(WitnessScope::WITNESS_RULES) {
@@ -338,16 +334,15 @@ impl Serializable for Signer {
         if self.scopes.contains(WitnessScope::CUSTOM_GROUPS) {
             self.allowed_groups
                 .validate_max_length(MAX_SUBITEMS, "Allowed groups")?;
-            writer.write_var_uint(self.allowed_groups.len() as u64)?;
-            for group in &self.allowed_groups {
+            serialize_array_with(&self.allowed_groups, writer, |group, writer| {
                 let encoded = group
                     .encode_point(true)
                     .map_err(|e| IoError::invalid_data(e.to_string()))?;
                 if encoded.len() != 33 {
                     return Err(IoError::invalid_data("Group must be compressed"));
                 }
-                writer.write_bytes(&encoded)?;
-            }
+                writer.write_bytes(&encoded)
+            })?;
         }
 
         // Write rules if flag is set
@@ -392,14 +387,11 @@ impl Serializable for Signer {
 
         // Read allowed groups if flag is set
         if scopes.contains(WitnessScope::CUSTOM_GROUPS) {
-            let count = reader.read_var_int(MAX_SUBITEMS as u64)? as usize;
-            allowed_groups.reserve(count);
-            for _ in 0..count {
+            allowed_groups = deserialize_array_with(reader, MAX_SUBITEMS, |reader| {
                 let encoded = reader.read_bytes(ECPOINT_COMPRESSED_SIZE)?;
-                let point = ECPoint::decode_compressed_with_curve(ECCurve::secp256r1(), &encoded)
-                    .map_err(|e| IoError::invalid_data(e.to_string()))?;
-                allowed_groups.push(point);
-            }
+                ECPoint::decode_compressed_with_curve(ECCurve::secp256r1(), &encoded)
+                    .map_err(|e| IoError::invalid_data(e.to_string()))
+            })?;
         }
 
         // Read rules if flag is set
