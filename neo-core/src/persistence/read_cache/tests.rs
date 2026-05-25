@@ -410,6 +410,42 @@ fn read_cache_ttl_expiration_updates_cache_accounting() {
 }
 
 #[test]
+fn read_cache_contains_does_not_expire_ttl_entry() {
+    let config = ReadCacheConfig {
+        max_entries: 100,
+        max_bytes: 1000,
+        enable_prefetch: false,
+        prefetch_count: 0,
+        prefetch_threshold: 0,
+        ttl: Some(Duration::from_millis(1)),
+        enable_stats: true,
+        enable_bloom_filter: false,
+        bloom_filter_capacity: 1000,
+        bloom_filter_fpr: 0.01,
+    };
+
+    let cache = ReadCache::<String, String>::new(config);
+    let key = "key1".to_string();
+
+    cache.put(key.clone(), "value1".to_string(), 10);
+    std::thread::sleep(Duration::from_millis(10));
+
+    assert!(cache.contains(&key));
+    let stats = cache.stats();
+    assert_eq!(stats.current_entries, 1);
+    assert_eq!(stats.current_bytes, 10);
+    assert_eq!(stats.misses, 0);
+    assert_eq!(stats.evictions, 0);
+
+    assert_eq!(cache.get(&key), None);
+    let stats = cache.stats();
+    assert_eq!(stats.current_entries, 0);
+    assert_eq!(stats.current_bytes, 0);
+    assert_eq!(stats.misses, 1);
+    assert_eq!(stats.evictions, 1);
+}
+
+#[test]
 fn read_cache_remove() {
     let cache = ReadCache::<String, String>::with_defaults();
 
@@ -418,6 +454,27 @@ fn read_cache_remove() {
     let removed = cache.remove(&"key1".to_string());
     assert_eq!(removed, Some("value1".to_string()));
     assert_eq!(cache.get(&"key1".to_string()), None);
+}
+
+#[test]
+fn read_cache_remove_updates_occupancy_without_hit_miss_or_eviction() {
+    let cache = ReadCache::<String, String>::with_defaults();
+
+    cache.put("key1".to_string(), "value1".to_string(), 10);
+    cache.put("key2".to_string(), "value2".to_string(), 20);
+
+    assert_eq!(
+        cache.remove(&"key1".to_string()),
+        Some("value1".to_string())
+    );
+
+    let stats = cache.stats();
+    assert_eq!(stats.current_entries, 1);
+    assert_eq!(stats.current_bytes, 20);
+    assert_eq!(stats.hits, 0);
+    assert_eq!(stats.misses, 0);
+    assert_eq!(stats.evictions, 0);
+    assert_eq!(stats.inserts, 2);
 }
 
 #[test]
@@ -431,6 +488,26 @@ fn read_cache_clear() {
 
     assert!(cache.is_empty());
     assert_eq!(cache.get(&"key1".to_string()), None);
+}
+
+#[test]
+fn read_cache_clear_preserves_history_counters_and_zeroes_occupancy() {
+    let cache = ReadCache::<String, String>::with_defaults();
+
+    cache.put("key1".to_string(), "value1".to_string(), 10);
+    cache.put("key2".to_string(), "value2".to_string(), 20);
+    assert_eq!(cache.get(&"key1".to_string()), Some("value1".to_string()));
+    assert_eq!(cache.get(&"missing".to_string()), None);
+
+    cache.clear();
+
+    let stats = cache.stats();
+    assert_eq!(stats.hits, 1);
+    assert_eq!(stats.misses, 1);
+    assert_eq!(stats.inserts, 2);
+    assert_eq!(stats.current_entries, 0);
+    assert_eq!(stats.current_bytes, 0);
+    assert_eq!(cache.len(), 0);
 }
 
 #[test]
@@ -449,6 +526,75 @@ fn read_cache_put_batch() {
 
     let stats = cache.stats();
     assert_eq!(stats.prefetches, 3);
+}
+
+#[test]
+fn read_cache_stats_disabled_keeps_exact_occupancy_for_updates_batches_and_remove() {
+    let config = ReadCacheConfig {
+        max_entries: 100,
+        max_bytes: 1000,
+        enable_prefetch: false,
+        prefetch_count: 0,
+        prefetch_threshold: 0,
+        ttl: None,
+        enable_stats: false,
+        enable_bloom_filter: false,
+        bloom_filter_capacity: 1000,
+        bloom_filter_fpr: 0.01,
+    };
+
+    let cache = ReadCache::<String, String>::new(config);
+
+    cache.put("key1".to_string(), "value1".to_string(), 10);
+    cache.put("key2".to_string(), "value2".to_string(), 20);
+    cache.put("key1".to_string(), "value1b".to_string(), 15);
+    cache.put_batch(vec![
+        ("key2".to_string(), "value2b".to_string(), 5),
+        ("key3".to_string(), "value3".to_string(), 30),
+    ]);
+
+    assert_eq!(
+        cache.remove(&"key1".to_string()),
+        Some("value1b".to_string())
+    );
+
+    let stats = cache.stats();
+    assert_eq!(stats.inserts, 0);
+    assert_eq!(stats.prefetches, 0);
+    assert_eq!(stats.evictions, 0);
+    assert_eq!(stats.current_entries, 2);
+    assert_eq!(stats.current_bytes, 35);
+    assert_eq!(cache.get(&"key2".to_string()), Some("value2b".to_string()));
+    assert_eq!(cache.get(&"key3".to_string()), Some("value3".to_string()));
+}
+
+#[test]
+fn read_cache_keeps_single_entry_larger_than_byte_limit() {
+    let config = ReadCacheConfig {
+        max_entries: 100,
+        max_bytes: 10,
+        enable_prefetch: false,
+        prefetch_count: 0,
+        prefetch_threshold: 0,
+        ttl: None,
+        enable_stats: true,
+        enable_bloom_filter: false,
+        bloom_filter_capacity: 1000,
+        bloom_filter_fpr: 0.01,
+    };
+
+    let cache = ReadCache::<String, String>::new(config);
+
+    cache.put("oversize".to_string(), "value".to_string(), 20);
+
+    assert_eq!(
+        cache.get(&"oversize".to_string()),
+        Some("value".to_string())
+    );
+    let stats = cache.stats();
+    assert_eq!(stats.current_entries, 1);
+    assert_eq!(stats.current_bytes, 20);
+    assert_eq!(stats.evictions, 0);
 }
 
 #[test]
