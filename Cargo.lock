@@ -2445,6 +2445,7 @@ name = "neo-json"
 version = "0.7.2"
 dependencies = [
  "hashbrown 0.14.5",
+ "indexmap 2.13.0",
  "serde",
  "serde_json",
  "thiserror 1.0.69",

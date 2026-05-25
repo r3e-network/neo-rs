@@ -21,7 +21,7 @@ impl<'a, K: Clone + Eq + std::hash::Hash, V> KeyCollection<'a, K, V> {
     /// Gets key at index
     #[must_use]
     pub fn get(&self, index: usize) -> Option<&K> {
-        self.dict.items.get(index).map(|(k, _)| k)
+        self.dict.items.get_index(index).map(|(k, _)| k)
     }
 
     /// Checks if contains key
