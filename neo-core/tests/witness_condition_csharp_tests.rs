@@ -1,4 +1,4 @@
-use neo_core::neo_io::{MemoryReader, Serializable, SerializableExt};
+use neo_core::neo_io::{IoError, MemoryReader, Serializable, SerializableExt};
 use neo_core::{UInt160, WitnessCondition, WitnessRule, WitnessRuleAction};
 use serde_json::Value;
 use std::str::FromStr;
@@ -10,6 +10,22 @@ fn group_bytes() -> Vec<u8> {
     let point =
         neo_core::ECPoint::decode(&encoded, neo_core::ECCurve::secp256r1()).expect("valid ECPoint");
     point.encode_point(true).expect("compress")
+}
+
+fn assert_invalid_data_value<T>(result: Result<T, IoError>, expected: &str) {
+    match result {
+        Err(IoError::InvalidData { value, .. }) => assert_eq!(value, expected),
+        Err(error) => panic!("expected InvalidData({expected}), got {error:?}"),
+        Ok(_) => panic!("expected InvalidData({expected}), got Ok"),
+    }
+}
+
+fn assert_format<T>(result: Result<T, IoError>) {
+    match result {
+        Err(IoError::Format) => {}
+        Err(error) => panic!("expected Format, got {error:?}"),
+        Ok(_) => panic!("expected Format, got Ok"),
+    }
 }
 
 #[test]
@@ -199,6 +215,68 @@ fn witness_group_condition_wire_format_matches_csharp() {
     let mut reader = MemoryReader::new(&bytes);
     let decoded = <WitnessCondition as Serializable>::deserialize(&mut reader).expect("decode");
     assert_eq!(decoded, condition);
+}
+
+#[test]
+fn composite_condition_empty_lists_keep_csharp_errors() {
+    let mut and_reader = MemoryReader::new(&[0x02, 0x00]);
+    assert_invalid_data_value(
+        <WitnessCondition as Serializable>::deserialize(&mut and_reader),
+        "Invalid AND witness condition length",
+    );
+    assert_eq!(and_reader.position(), 2);
+
+    let mut or_reader = MemoryReader::new(&[0x03, 0x00]);
+    assert_invalid_data_value(
+        <WitnessCondition as Serializable>::deserialize(&mut or_reader),
+        "Invalid OR witness condition length",
+    );
+    assert_eq!(or_reader.position(), 2);
+}
+
+#[test]
+fn composite_condition_over_max_counts_keep_format_errors() {
+    let mut single_byte = MemoryReader::new(&[0x02, 0x11]);
+    assert_format(<WitnessCondition as Serializable>::deserialize(
+        &mut single_byte,
+    ));
+    assert_eq!(single_byte.position(), 2);
+
+    let mut multi_byte = MemoryReader::new(&[0x03, 0xFD, 0x11, 0x00]);
+    assert_format(<WitnessCondition as Serializable>::deserialize(
+        &mut multi_byte,
+    ));
+    assert_eq!(multi_byte.position(), 4);
+}
+
+#[test]
+fn composite_condition_accepts_exactly_max_subitems() {
+    let mut bytes = vec![0x02, WitnessCondition::MAX_SUBITEMS as u8];
+    for _ in 0..WitnessCondition::MAX_SUBITEMS {
+        bytes.extend_from_slice(&[0x00, 0x01]);
+    }
+
+    let mut reader = MemoryReader::new(&bytes);
+    let condition = <WitnessCondition as Serializable>::deserialize(&mut reader)
+        .expect("exact max subitems should deserialize");
+
+    let WitnessCondition::And { conditions } = condition else {
+        panic!("expected And condition");
+    };
+    assert_eq!(conditions.len(), WitnessCondition::MAX_SUBITEMS);
+    assert_eq!(reader.position(), bytes.len());
+}
+
+#[test]
+fn composite_condition_depth_exhaustion_consumes_count_not_child_type() {
+    let bytes = [0x02, 0x01, 0x00, 0x01];
+    let mut reader = MemoryReader::new(&bytes);
+
+    assert_invalid_data_value(
+        WitnessCondition::deserialize_with_depth(&mut reader, 1),
+        "Max nesting depth exceeded",
+    );
+    assert_eq!(reader.position(), 2);
 }
 
 #[test]

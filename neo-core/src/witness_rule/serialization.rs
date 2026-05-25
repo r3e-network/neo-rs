@@ -1,6 +1,6 @@
 use super::helpers::{read_group_bytes, ECPOINT_COMPRESSED_SIZE};
 use super::{WitnessCondition, WitnessConditionType, WitnessRule, WitnessRuleAction};
-use crate::neo_io::serializable::helper::serialize_array;
+use crate::neo_io::serializable::helper::{deserialize_array_with, serialize_array};
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::UInt160;
 
@@ -58,13 +58,11 @@ impl WitnessCondition {
         max_depth: usize,
         error_msg: &'static str,
     ) -> IoResult<Vec<WitnessCondition>> {
-        let count = reader.read_var_int(Self::MAX_SUBITEMS as u64)? as usize;
-        if count == 0 || count > Self::MAX_SUBITEMS {
+        let conditions = deserialize_array_with(reader, Self::MAX_SUBITEMS, |reader| {
+            Self::deserialize_with_depth(reader, max_depth - 1)
+        })?;
+        if conditions.is_empty() {
             return Err(IoError::invalid_data(error_msg));
-        }
-        let mut conditions = Vec::with_capacity(count);
-        for _ in 0..count {
-            conditions.push(Self::deserialize_with_depth(reader, max_depth - 1)?);
         }
         Ok(conditions)
     }
