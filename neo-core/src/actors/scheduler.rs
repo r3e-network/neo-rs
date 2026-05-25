@@ -4,7 +4,7 @@ use std::time::Duration;
 use tokio::runtime::Handle;
 use tokio::task;
 use tokio::time;
-use tokio_util::sync::CancellationToken;
+use tokio_util::sync::{CancellationToken, DropGuard};
 
 #[derive(Clone)]
 pub struct Scheduler {
@@ -47,7 +47,7 @@ impl Scheduler {
             }
         });
 
-        ScheduleHandle { token }
+        ScheduleHandle::new(token)
     }
 
     pub fn schedule_tell_repeatedly<M>(
@@ -95,7 +95,7 @@ impl Scheduler {
             }
         });
 
-        ScheduleHandle { token }
+        ScheduleHandle::new(token)
     }
 
     pub fn schedule_tell_once_cancelable<M>(
@@ -126,13 +126,21 @@ impl Scheduler {
     }
 }
 
-#[derive(Clone)]
 #[must_use = "scheduled messages are cancelled when the handle is dropped"]
 pub struct ScheduleHandle {
     token: CancellationToken,
+    _drop_guard: DropGuard,
 }
 
 impl ScheduleHandle {
+    fn new(token: CancellationToken) -> Self {
+        let drop_guard = token.clone().drop_guard();
+        Self {
+            token,
+            _drop_guard: drop_guard,
+        }
+    }
+
     pub fn cancel(&self) {
         self.token.cancel();
     }
@@ -142,8 +150,8 @@ impl ScheduleHandle {
     }
 }
 
-impl Drop for ScheduleHandle {
-    fn drop(&mut self) {
-        self.cancel();
+impl Clone for ScheduleHandle {
+    fn clone(&self) -> Self {
+        Self::new(self.token.clone())
     }
 }

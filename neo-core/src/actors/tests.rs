@@ -377,6 +377,40 @@ async fn scheduler_repeated_messages_stop_when_handle_is_dropped() -> AkkaResult
     Ok(())
 }
 
+#[tokio::test]
+async fn dropping_cloned_schedule_handle_cancels_repeated_messages() -> AkkaResult<()> {
+    let system = ActorSystem::new("akka-scheduler-drop-clone")?;
+    let counter = Arc::new(AtomicUsize::new(0));
+    let actor_counter = counter.clone();
+    let ticker = system.actor_of(
+        Props::new(move || TickActor {
+            counter: actor_counter.clone(),
+        }),
+        "ticker",
+    )?;
+
+    let scheduler = system.scheduler();
+    let handle = scheduler.schedule_tell_repeatedly(
+        Duration::from_millis(50),
+        Duration::from_millis(5),
+        ticker.clone(),
+        Tick,
+        None,
+    );
+    let cloned = handle.clone();
+    drop(cloned);
+
+    sleep(Duration::from_millis(80)).await;
+    assert_eq!(
+        0,
+        counter.load(Ordering::SeqCst),
+        "dropping any cloned schedule handle should cancel repeated messages"
+    );
+
+    system.shutdown().await?;
+    Ok(())
+}
+
 #[derive(Clone)]
 enum PriorityMsg {
     High(u32),
