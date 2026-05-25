@@ -4,7 +4,7 @@ use super::{
     context::ActorContext,
     error::{AkkaError, AkkaResult},
     event_stream::{EventStream, EventStreamHandle},
-    mailbox::{default_mailbox_factory, Mailbox},
+    mailbox::Mailbox,
     message::{MailboxMessage, SystemMessage, Terminated},
     props::Props,
     scheduler::Scheduler,
@@ -206,8 +206,7 @@ impl ActorSystem {
     pub fn new(name: impl Into<String>) -> AkkaResult<Self> {
         let name = name.into();
         let inner = ActorSystemInner::new(name.clone())?;
-        let guardian_props =
-            Props::new(|| Guardian).with_mailbox_factory(default_mailbox_factory());
+        let guardian_props = Props::new(|| Guardian);
         let user_guardian = inner.clone().spawn_root(guardian_props, "user")?;
 
         Ok(Self {

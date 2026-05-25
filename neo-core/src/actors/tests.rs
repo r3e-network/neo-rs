@@ -4,7 +4,7 @@ use parking_lot::Mutex;
 use std::any::Any;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use tokio::sync::{oneshot, Mutex as AsyncMutex};
+use tokio::sync::oneshot;
 use tokio::time::{sleep, timeout, Duration};
 
 #[derive(Default)]
@@ -411,136 +411,29 @@ async fn dropping_cloned_schedule_handle_cancels_repeated_messages() -> AkkaResu
     Ok(())
 }
 
-#[derive(Clone)]
-enum PriorityMsg {
-    High(u32),
-    Low(u32),
-}
+#[test]
+fn default_mailbox_prioritizes_system_messages() {
+    let mut mailbox = DefaultMailbox::default();
 
-struct PriorityActor {
-    log: Arc<AsyncMutex<Vec<String>>>,
-}
+    mailbox.enqueue(MailboxMessage::User(Envelope::new("first", None)));
+    mailbox.enqueue(MailboxMessage::System(SystemMessage::Stop));
+    mailbox.enqueue(MailboxMessage::User(Envelope::new("second", None)));
 
-#[async_trait]
-impl Actor for PriorityActor {
-    async fn handle(
-        &mut self,
-        message: Box<dyn Any + Send>,
-        _ctx: &mut ActorContext,
-    ) -> ActorResult {
-        if let Ok(msg) = message.downcast::<PriorityMsg>() {
-            let label = match *msg {
-                PriorityMsg::High(v) => format!("high-{v}"),
-                PriorityMsg::Low(v) => format!("low-{v}"),
-            };
-            self.log.lock().await.push(label);
-            Ok(())
-        } else {
-            Ok(())
-        }
-    }
-}
-
-#[tokio::test]
-async fn priority_mailbox_delivers_high_priority_first() -> AkkaResult<()> {
-    let system = ActorSystem::new("akka-priority")?;
-    let log = Arc::new(AsyncMutex::new(Vec::new()));
-    let log_clone = log.clone();
-
-    let props = Props::new(move || PriorityActor {
-        log: log_clone.clone(),
-    })
-    .with_mailbox_factory(priority_mailbox_factory(
-        PriorityMailboxConfig::default().with_priority(|message| {
-            message
-                .as_user()
-                .and_then(|env| env.downcast_ref::<PriorityMsg>())
-                .map(|msg| matches!(msg, PriorityMsg::High(_)))
-                .unwrap_or(false)
-        }),
+    assert!(matches!(
+        mailbox.dequeue(),
+        Some(MailboxMessage::System(SystemMessage::Stop))
     ));
 
-    let actor = system.actor_of(props, "priority")?;
-    let actor_high = actor.clone();
-    let actor_low_second = actor.clone();
-
-    tokio::join!(
-        async {
-            actor.tell(PriorityMsg::Low(1)).unwrap();
-        },
-        async {
-            actor_high.tell(PriorityMsg::High(3)).unwrap();
-        },
-        async {
-            actor_low_second.tell(PriorityMsg::Low(2)).unwrap();
-        },
+    let first = mailbox.dequeue().expect("first user message");
+    assert_eq!(
+        first.as_user().and_then(|env| env.downcast_ref::<&str>()),
+        Some(&"first")
     );
 
-    sleep(Duration::from_millis(30)).await;
-
-    let entries = log.lock().await.clone();
-    assert_eq!(entries.len(), 3);
-    let index_high = entries
-        .iter()
-        .position(|entry| entry == "high-3")
-        .expect("high priority message processed");
-    let index_low2 = entries
-        .iter()
-        .position(|entry| entry == "low-2")
-        .expect("second low priority message processed");
-    assert!(index_high < index_low2);
-
-    system.shutdown().await?;
-    Ok(())
-}
-
-#[derive(Clone)]
-struct DuplicateMsg(u32);
-
-#[test]
-fn priority_mailbox_drops_duplicates() {
-    let config = PriorityMailboxConfig::default().with_dropper(|message, view| {
-        let incoming = match message
-            .as_user()
-            .and_then(|env| env.downcast_ref::<DuplicateMsg>())
-        {
-            Some(value) => value,
-            None => return false,
-        };
-
-        view.iter().any(|existing| {
-            existing
-                .as_user()
-                .and_then(|env| env.downcast_ref::<DuplicateMsg>())
-                .map(|queued| queued.0 == incoming.0)
-                .unwrap_or(false)
-        })
-    });
-
-    let mut mailbox = PriorityMailbox::new(config);
-
-    mailbox.enqueue(MailboxMessage::User(Envelope::new(DuplicateMsg(1), None)));
-    mailbox.enqueue(MailboxMessage::User(Envelope::new(DuplicateMsg(1), None)));
-    mailbox.enqueue(MailboxMessage::User(Envelope::new(DuplicateMsg(2), None)));
-
-    let first = mailbox.dequeue().expect("first message");
-    let second = mailbox.dequeue().expect("second message");
-    let third = mailbox.dequeue();
-
-    let extract = |message: MailboxMessage| -> DuplicateMsg {
-        match message {
-            MailboxMessage::User(envelope) => *envelope
-                .message
-                .downcast::<DuplicateMsg>()
-                .expect("duplicate message"),
-            MailboxMessage::System(_) => panic!("unexpected system message"),
-        }
-    };
-
-    let first_msg = extract(first);
-    let second_msg = extract(second);
-
-    assert_eq!(first_msg.0, 1);
-    assert_eq!(second_msg.0, 2);
-    assert!(third.is_none());
+    let second = mailbox.dequeue().expect("second user message");
+    assert_eq!(
+        second.as_user().and_then(|env| env.downcast_ref::<&str>()),
+        Some(&"second")
+    );
+    assert!(mailbox.is_empty());
 }

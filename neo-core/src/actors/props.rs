@@ -1,15 +1,12 @@
 use super::{
     actor::Actor,
-    mailbox::{
-        default_mailbox_factory, mailbox_factory_from, Mailbox, MailboxFactory,
-    },
+    mailbox::{DefaultMailbox, Mailbox},
 };
 use std::{fmt, sync::Arc};
 
 /// Actor factory used when spawning a new instance.
 pub struct Props {
     factory: Arc<dyn Fn() -> Box<dyn Actor> + Send + Sync>,
-    mailbox_factory: MailboxFactory,
 }
 
 impl Props {
@@ -20,13 +17,7 @@ impl Props {
     {
         Self {
             factory: Arc::new(move || Box::new(factory()) as Box<dyn Actor>),
-            mailbox_factory: default_mailbox_factory(),
         }
-    }
-
-    pub fn with_mailbox_factory(mut self, factory: MailboxFactory) -> Self {
-        self.mailbox_factory = factory;
-        self
     }
 
     pub(crate) fn create(&self) -> Box<dyn Actor> {
@@ -34,15 +25,7 @@ impl Props {
     }
 
     pub(crate) fn create_mailbox(&self) -> Box<dyn Mailbox> {
-        (self.mailbox_factory)()
-    }
-
-    pub fn with_mailbox<M>(mut self, factory: M) -> Self
-    where
-        M: Fn() -> Box<dyn Mailbox> + Send + Sync + 'static,
-    {
-        self.mailbox_factory = mailbox_factory_from(factory);
-        self
+        Box::new(DefaultMailbox::default())
     }
 }
 
@@ -50,7 +33,6 @@ impl Clone for Props {
     fn clone(&self) -> Self {
         Self {
             factory: Arc::clone(&self.factory),
-            mailbox_factory: Arc::clone(&self.mailbox_factory),
         }
     }
 }

@@ -20,10 +20,7 @@ pub use actor_system::{ActorPath, ActorSystem, ActorSystemHandle};
 pub use context::ActorContext;
 pub use error::{AkkaError, AkkaResult};
 pub use event_stream::EventStreamHandle;
-pub use mailbox::{
-    default_mailbox_factory, priority_mailbox_factory, Cancelable, DefaultMailbox, Mailbox,
-    MailboxFactory, PriorityMailbox, PriorityMailboxConfig,
-};
+pub use mailbox::{Cancelable, DefaultMailbox, Mailbox};
 pub use message::{Envelope, MailboxMessage, SystemMessage, Terminated};
 pub use props::Props;
 pub use scheduler::{ScheduleHandle, Scheduler};
