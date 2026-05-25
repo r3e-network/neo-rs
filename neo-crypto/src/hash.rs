@@ -7,15 +7,7 @@
 //!   when comparing hash values in security-sensitive contexts.
 
 use crate::error::{CryptoError, CryptoResult};
-use blake2::{
-    digest::{
-        block_buffer::BlockBuffer,
-        consts::U32,
-        core_api::{BlockSizeUser, BufferKindUser, UpdateCore, VariableOutputCore},
-        Output,
-    },
-    Blake2b, Blake2b512, Blake2bVarCore, Blake2s256,
-};
+use blake2::{digest::consts::U32, Blake2b, Blake2b512, Blake2s256};
 use ripemd::Ripemd160;
 use sha2::{Digest, Sha256, Sha512};
 use sha3::{Keccak256, Sha3_256, Sha3_512};
@@ -50,16 +42,12 @@ fn blake2b_with_salt(data: &[u8], salt: &[u8], output_size: usize) -> CryptoResu
         ));
     }
 
-    let mut core = Blake2bVarCore::new_with_params(salt, &[], 0, output_size);
-    let mut buffer = BlockBuffer::<
-        <Blake2bVarCore as BlockSizeUser>::BlockSize,
-        <Blake2bVarCore as BufferKindUser>::BufferKind,
-    >::default();
-    buffer.digest_blocks(data, |blocks| core.update_blocks(blocks));
-
-    let mut full = Output::<Blake2bVarCore>::default();
-    core.finalize_variable_core(&mut buffer, &mut full);
-    Ok(full[..output_size].to_vec())
+    Ok(blake2b_simd::Params::new()
+        .hash_length(output_size)
+        .salt(salt)
+        .hash(data)
+        .as_bytes()
+        .to_vec())
 }
 
 impl Crypto {

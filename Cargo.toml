@@ -179,6 +179,7 @@ sha2 = "0.10"
 sha3 = "0.10"
 ripemd = "0.1"
 blake2 = "0.10"
+blake2b_simd = "1.0.4"
 
 # Random number generation
 rand = "0.8"
