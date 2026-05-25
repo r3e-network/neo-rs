@@ -3,6 +3,9 @@
 //! Critical transaction validation edge cases from C# UT_Transaction.cs
 //! ensuring behavioral compatibility between Neo-RS and Neo-CS.
 
+mod common;
+
+use common::{test_byte_array as get_test_byte_array, test_transaction as create_test_transaction};
 use neo_core::ledger::{TransactionVerificationContext, VerifyResult};
 use neo_core::neo_io::Serializable;
 use neo_core::neo_vm::StackItem;
@@ -13,30 +16,6 @@ use neo_core::{
     Transaction, TransactionAttribute, UInt160, WitnessScope, HEADER_SIZE, MAX_TRANSACTION_SIZE,
 };
 use neo_vm_rs::OpCode;
-
-// ============================================================================
-// Test Helper Functions
-// ============================================================================
-
-fn create_test_transaction() -> Transaction {
-    let mut tx = Transaction::new();
-    tx.set_version(0);
-    tx.set_nonce(0x01020304);
-    tx.set_system_fee(100_000_000); // 1 GAS
-    tx.set_network_fee(1);
-    tx.set_valid_until_block(0x01020304);
-    tx.set_script(vec![0x11]); // PUSH1 opcode
-
-    // Create signer with correct API
-    let signer = Signer::new(UInt160::zero(), WitnessScope::CALLED_BY_ENTRY);
-    tx.add_signer(signer);
-    tx.add_witness(Witness::empty());
-    tx
-}
-
-fn get_test_byte_array(size: usize, fill_byte: u8) -> Vec<u8> {
-    vec![fill_byte; size]
-}
 
 // ============================================================================
 // Transaction Edge Case Tests

@@ -3,7 +3,10 @@
 //! This module implements critical transaction validation edge cases from C# UT_Transaction.cs
 //! to ensure complete behavioral compatibility between Neo-RS and Neo-CS.
 
+mod common;
+
 use base64::{engine::general_purpose, Engine as _};
+use common::{test_byte_array as get_test_byte_array, test_transaction as create_test_transaction};
 use neo_core::big_decimal::BigDecimal;
 use neo_core::neo_io::serializable::helper::{
     get_var_size, get_var_size_bytes, get_var_size_serializable_slice,
@@ -151,22 +154,6 @@ impl MockTransactionVerificationContext {
 // Test Helper Functions
 // ============================================================================
 
-fn create_test_transaction() -> Transaction {
-    let mut tx = Transaction::new();
-    tx.set_version(0);
-    tx.set_nonce(0x01020304);
-    tx.set_system_fee(100_000_000); // 1 GAS
-    tx.set_network_fee(1);
-    tx.set_valid_until_block(0x01020304);
-    tx.set_script(vec![0x11]); // PUSH1 opcode
-
-    let signer = Signer::new(UInt160::zero(), WitnessScope::CALLED_BY_ENTRY);
-    tx.set_signers(vec![signer]);
-    tx.set_attributes(vec![]);
-    tx.set_witnesses(vec![Witness::empty()]);
-    tx
-}
-
 fn create_transaction_with_fee(network_fee: i64, system_fee: i64) -> Transaction {
     let mut tx = Transaction::new();
     tx.set_network_fee(network_fee);
@@ -178,10 +165,6 @@ fn create_transaction_with_fee(network_fee: i64, system_fee: i64) -> Transaction
     tx.set_attributes(vec![]);
     tx.set_witnesses(vec![Witness::empty()]);
     tx
-}
-
-fn get_test_byte_array(size: usize, fill_byte: u8) -> Vec<u8> {
-    vec![fill_byte; size]
 }
 
 fn make_signature_invocation_with(signature: &[u8]) -> Vec<u8> {
