@@ -4,7 +4,7 @@ use crate::neo_vm::execution_engine::ExecutionEngine;
 use crate::neo_vm::VmResult;
 use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::ApplicationEngine;
-use sha2::{Digest, Sha256};
+use crate::Crypto;
 
 /// The price of CheckSig in GAS (1 << 15 = 32768 * 30 = 983040)
 pub const CHECK_SIG_PRICE: i64 = 1 << 15;
@@ -127,21 +127,13 @@ impl ApplicationEngine {
     /// SHA256 hash
     pub fn crypto_sha256(&mut self) -> Result<(), String> {
         let data = self.pop_bytes()?;
-        let mut hasher = Sha256::new();
-        hasher.update(&data);
-        let result = hasher.finalize();
-        self.push_bytes(result.to_vec())
+        self.push_bytes(Crypto::sha256(&data).to_vec())
     }
 
     /// RIPEMD160 hash
     pub fn crypto_ripemd160(&mut self) -> Result<(), String> {
         let data = self.pop_bytes()?;
-        use ripemd::Digest as RipemdDigest;
-        use ripemd::Ripemd160;
-        let mut hasher = Ripemd160::new();
-        hasher.update(&data);
-        let result = hasher.finalize();
-        self.push_bytes(result.to_vec())
+        self.push_bytes(Crypto::ripemd160(&data).to_vec())
     }
 
     /// Verifies a signature using secp256r1.
