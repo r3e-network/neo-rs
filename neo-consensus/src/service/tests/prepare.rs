@@ -4,12 +4,33 @@ use crate::messages::{
 };
 use crate::{ConsensusError, ConsensusMessageType};
 use crate::{ConsensusEvent, ConsensusService};
+use neo_core::cryptography::MerkleTree;
 use neo_primitives::UInt256;
 use tokio::sync::mpsc;
 
 use super::super::helpers::{
     compute_header_hash, compute_merkle_root, compute_next_consensus_address,
 };
+
+#[test]
+fn consensus_merkle_root_matches_core_merkle_tree() {
+    assert_eq!(compute_merkle_root(&[]), UInt256::zero());
+
+    for hashes in [
+        vec![UInt256::from([0x11; 32])],
+        vec![UInt256::from([0x11; 32]), UInt256::from([0x22; 32])],
+        vec![
+            UInt256::from([0x11; 32]),
+            UInt256::from([0x22; 32]),
+            UInt256::from([0x33; 32]),
+        ],
+    ] {
+        assert_eq!(
+            compute_merkle_root(&hashes),
+            MerkleTree::compute_root(&hashes).expect("non-empty merkle root")
+        );
+    }
+}
 
 #[tokio::test]
 async fn consensus_round_emits_block_committed() {

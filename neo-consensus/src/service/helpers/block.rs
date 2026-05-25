@@ -2,30 +2,7 @@ use crate::context::ValidatorInfo;
 use neo_primitives::{UInt160, UInt256};
 
 pub(in crate::service) fn compute_merkle_root(hashes: &[UInt256]) -> UInt256 {
-    use neo_crypto::Crypto;
-
-    match hashes.len() {
-        0 => UInt256::zero(),
-        1 => hashes[0],
-        _ => {
-            let mut level: Vec<UInt256> = hashes.to_vec();
-            while level.len() > 1 {
-                if level.len() % 2 == 1 {
-                    level.push(*level.last().unwrap());
-                }
-                let mut next = Vec::with_capacity(level.len() / 2);
-                for pair in level.chunks(2) {
-                    let mut buf = Vec::with_capacity(64);
-                    buf.extend_from_slice(&pair[0].to_bytes());
-                    buf.extend_from_slice(&pair[1].to_bytes());
-                    let h = Crypto::hash256(&buf);
-                    next.push(UInt256::from(h));
-                }
-                level = next;
-            }
-            level[0]
-        }
-    }
+    neo_core::cryptography::MerkleTree::compute_root(hashes).unwrap_or_else(UInt256::zero)
 }
 
 pub(in crate::service) fn compute_next_consensus_address(validators: &[ValidatorInfo]) -> UInt160 {
