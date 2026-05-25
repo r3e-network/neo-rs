@@ -2,6 +2,7 @@ use super::NeoToken;
 use crate::hardfork::Hardfork;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::manifest::{ContractEventDescriptor, ContractParameterDefinition};
+use crate::smart_contract::native::metadata_macros::event_descriptor;
 use crate::smart_contract::native::method_macros::neo_native_methods;
 use crate::smart_contract::native::{FungibleToken, NativeMethod};
 use crate::smart_contract::ContractParameterType;
@@ -49,27 +50,10 @@ impl NeoToken {
         block_height: u32,
     ) -> Vec<ContractEventDescriptor> {
         let mut events = vec![
-            ContractEventDescriptor::new(
-                "Transfer".to_string(),
-                vec![
-                    ContractParameterDefinition::new(
-                        "from".to_string(),
-                        ContractParameterType::Hash160,
-                    )
-                    .expect("Transfer.from"),
-                    ContractParameterDefinition::new(
-                        "to".to_string(),
-                        ContractParameterType::Hash160,
-                    )
-                    .expect("Transfer.to"),
-                    ContractParameterDefinition::new(
-                        "amount".to_string(),
-                        ContractParameterType::Integer,
-                    )
-                    .expect("Transfer.amount"),
-                ],
-            )
-            .expect("Transfer event descriptor"),
+            event_descriptor!(
+                "Transfer",
+                ["from" => Hash160, "to" => Hash160, "amount" => Integer]
+            ),
             ContractEventDescriptor::new(
                 "CandidateStateChanged".to_string(),
                 vec![

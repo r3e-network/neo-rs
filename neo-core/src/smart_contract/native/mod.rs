@@ -21,6 +21,7 @@ pub mod hash_index_state;
 pub mod helpers;
 /// Ledger native contract.
 pub mod ledger_contract;
+pub(crate) mod metadata_macros;
 pub(crate) mod method_macros;
 /// Base native contract implementation.
 pub mod native_contract;

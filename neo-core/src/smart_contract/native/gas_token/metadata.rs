@@ -1,7 +1,7 @@
 use super::GasToken;
-use crate::smart_contract::manifest::{ContractEventDescriptor, ContractParameterDefinition};
+use crate::smart_contract::manifest::ContractEventDescriptor;
+use crate::smart_contract::native::metadata_macros::event_descriptor;
 use crate::smart_contract::native::{FungibleToken, NativeMethod};
-use crate::smart_contract::ContractParameterType;
 
 impl GasToken {
     pub(super) fn native_methods() -> Vec<NativeMethod> {
@@ -13,23 +13,9 @@ impl GasToken {
     }
 
     pub(super) fn event_descriptors() -> Vec<ContractEventDescriptor> {
-        vec![ContractEventDescriptor::new(
-            "Transfer".to_string(),
-            vec![
-                ContractParameterDefinition::new(
-                    "from".to_string(),
-                    ContractParameterType::Hash160,
-                )
-                .expect("Transfer.from"),
-                ContractParameterDefinition::new("to".to_string(), ContractParameterType::Hash160)
-                    .expect("Transfer.to"),
-                ContractParameterDefinition::new(
-                    "amount".to_string(),
-                    ContractParameterType::Integer,
-                )
-                .expect("Transfer.amount"),
-            ],
-        )
-        .expect("Transfer event descriptor")]
+        vec![event_descriptor!(
+            "Transfer",
+            ["from" => Hash160, "to" => Hash160, "amount" => Integer]
+        )]
     }
 }
