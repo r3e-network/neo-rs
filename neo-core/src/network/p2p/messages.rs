@@ -1,7 +1,7 @@
 //! Message framing and serialization (mirrors `Neo.Network.P2P.Message`).
 
 use super::{
-    message::PAYLOAD_MAX_SIZE,
+    message::Message,
     message_command::MessageCommand,
     message_flags::MessageFlags,
     payloads::{
@@ -10,12 +10,10 @@ use super::{
         PingPayload, Transaction, VersionPayload,
     },
 };
-use crate::compression::{
-    compress_lz4, decompress_lz4, CompressionError, COMPRESSION_MIN_SIZE, COMPRESSION_THRESHOLD,
-};
+#[cfg(test)]
+use crate::compression::COMPRESSION_MIN_SIZE;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::network::{NetworkError, NetworkResult};
-use neo_io_crate::var_int::encoded_len as var_int_len;
 
 /// Header metadata attached to every P2P message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,68 +68,18 @@ impl NetworkMessage {
     /// - Single allocation for the output buffer
     pub fn to_bytes(&self, allow_compression: bool) -> NetworkResult<Vec<u8>> {
         let payload_bytes = self.payload.serialize()?;
-        if payload_bytes.len() > PAYLOAD_MAX_SIZE {
-            return Err(NetworkError::InvalidMessage(format!(
-                "Payload exceeds maximum size ({} > {})",
-                payload_bytes.len(),
-                PAYLOAD_MAX_SIZE
-            )));
-        }
-
-        let should_compress = allow_compression
-            && self.payload.should_try_compress()
-            && payload_bytes.len() >= COMPRESSION_MIN_SIZE;
-
-        let (final_payload, flags) = if should_compress {
-            if let Ok(compressed) = compress_lz4(&payload_bytes) {
-                // Honour the threshold check from the C# implementation.
-                if compressed.len() + COMPRESSION_THRESHOLD < payload_bytes.len() {
-                    (compressed, MessageFlags::COMPRESSED)
-                } else {
-                    (payload_bytes, MessageFlags::NONE)
-                }
-            } else {
-                (payload_bytes, MessageFlags::NONE)
-            }
-        } else {
-            (payload_bytes, MessageFlags::NONE)
-        };
-
-        // Calculate exact capacity needed: 1 (flags) + 1 (command) + varint + payload
-        let varint_size = var_int_len(final_payload.len() as u64);
-        let total_size = 1 + 1 + varint_size + final_payload.len();
-        let mut writer = BinaryWriter::with_capacity(total_size);
-
-        writer.write_u8(flags.to_byte()).map_err(map_io_error)?;
-        writer
-            .write_u8(self.header.command.to_byte())
-            .map_err(map_io_error)?;
-        writer
-            .write_var_bytes(&final_payload)
-            .map_err(map_io_error)?;
-        Ok(writer.into_bytes())
+        let message = Message::create_from_payload_bytes(
+            self.header.command,
+            payload_bytes,
+            allow_compression && self.payload.should_try_compress(),
+        )?;
+        message.to_bytes(allow_compression).map_err(map_io_error)
     }
 
     /// Decodes a message that was previously produced by [`Self::to_bytes`].
     pub fn from_bytes(bytes: &[u8]) -> NetworkResult<Self> {
-        if bytes.len() < 2 {
-            return Err(NetworkError::InvalidMessage(
-                "Message is too short (missing header)".to_string(),
-            ));
-        }
-
         let mut reader = MemoryReader::new(bytes);
-        let flags_byte = reader.read_u8().map_err(map_io_error)?;
-        let command_byte = reader.read_u8().map_err(map_io_error)?;
-
-        let flags = MessageFlags::from_byte(flags_byte)?;
-        let command = MessageCommand::from_byte(command_byte)?;
-
-        let payload_len = reader
-            .read_var_int(PAYLOAD_MAX_SIZE as u64)
-            .map_err(map_io_error)? as usize;
-        let payload_raw = reader.read_bytes(payload_len).map_err(map_io_error)?;
-        let wire_payload = payload_raw.clone();
+        let message = <Message as Serializable>::deserialize(&mut reader).map_err(map_io_error)?;
 
         if reader.remaining() != 0 {
             return Err(NetworkError::InvalidMessage(
@@ -139,19 +87,15 @@ impl NetworkMessage {
             ));
         }
 
-        let payload_data = if flags.is_compressed() {
-            decompress_lz4(&payload_raw, PAYLOAD_MAX_SIZE).map_err(map_compression_error)?
-        } else {
-            payload_raw
-        };
-
-        let payload = ProtocolMessage::deserialize(command, &payload_data)?;
+        let payload = message.to_protocol_message()?;
 
         Ok(Self {
-            header: MessageHeader { command },
-            flags,
+            header: MessageHeader {
+                command: message.command,
+            },
+            flags: message.flags,
             payload,
-            wire_payload: Some(wire_payload),
+            wire_payload: Some(message.payload_compressed),
         })
     }
 }
@@ -399,10 +343,6 @@ fn map_io_error(error: IoError) -> NetworkError {
     NetworkError::InvalidMessage(error.to_string())
 }
 
-fn map_compression_error(error: CompressionError) -> NetworkError {
-    NetworkError::InvalidMessage(error.to_string())
-}
-
 trait PayloadSerializable {
     fn serialize_to_vec(&self) -> IoResult<Vec<u8>>;
 }
@@ -465,7 +405,7 @@ mod tests {
     }
 
     #[test]
-    fn network_message_uses_inclusive_compression_min_size_threshold() {
+    fn network_message_uses_strict_compression_min_size_threshold() {
         let payload =
             ProtocolMessage::FilterAdd(FilterAddPayload::new(vec![0xAB; COMPRESSION_MIN_SIZE - 1]));
         assert_eq!(payload.to_bytes().unwrap().len(), COMPRESSION_MIN_SIZE);
@@ -473,7 +413,7 @@ mod tests {
 
         let encoded = message.to_bytes(true).unwrap();
 
-        assert_eq!(encoded[0], MessageFlags::COMPRESSED.to_byte());
+        assert_eq!(encoded[0], MessageFlags::NONE.to_byte());
         assert_eq!(encoded[1], MessageCommand::FilterAdd.to_byte());
     }
 }

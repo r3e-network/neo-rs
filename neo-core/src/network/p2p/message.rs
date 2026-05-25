@@ -68,6 +68,15 @@ impl Message {
             Vec::new()
         };
 
+        Self::create_from_payload_bytes(command, payload_bytes, enable_compression)
+    }
+
+    /// Creates a new message from already serialized payload bytes.
+    pub(crate) fn create_from_payload_bytes(
+        command: MessageCommand,
+        payload_bytes: Vec<u8>,
+        enable_compression: bool,
+    ) -> Result<Self> {
         if payload_bytes.len() > PAYLOAD_MAX_SIZE {
             return Err(NetworkError::InvalidMessage(format!(
                 "Payload exceeds maximum size ({} > {})",
