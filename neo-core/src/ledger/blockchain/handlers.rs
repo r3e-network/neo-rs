@@ -328,7 +328,7 @@ impl Blockchain {
             match item.payload {
                 InventoryPayload::Raw(inventory_type, payload) => {
                     let cache_key = InventoryCacheKey::new(inventory_type, &payload);
-                    if let Some(cached) = self.inventory_cache_get(&cache_key) {
+                    if let Some(cached) = self.inventory_cache_get(&cache_key).await {
                         self.handle_reverify_payload(cached, ctx).await;
                         continue;
                     }

@@ -9,8 +9,10 @@ use super::*;
 mod tests {
     use super::{
         classify_import_block, should_schedule_reverify_idle, Blockchain, ImportDisposition,
-        StateRoot, VerifyResult, STATE_SERVICE_CATEGORY,
+        InventoryCacheKey, InventoryPayload, StateRoot, VerifyResult, MAX_REVERIFY_INVENTORY_CACHE,
+        STATE_SERVICE_CATEGORY,
     };
+    use crate::ledger::LedgerContext;
     use crate::neo_io::BinaryWriter;
     use crate::network::p2p::payloads::extensible_payload::ExtensiblePayload;
     use crate::network::p2p::payloads::witness::Witness as PayloadWitness;
@@ -38,6 +40,7 @@ mod tests {
     use neo_vm_rs::ExecutionEngineLimits;
     use neo_vm_rs::OpCode;
     use num_bigint::BigInt;
+    use std::sync::Arc;
     use tokio::time::{sleep, timeout, Duration};
 
     fn sign_extensible_payload(
@@ -120,6 +123,35 @@ mod tests {
         store.commit();
     }
 
+    fn test_blockchain() -> Blockchain {
+        Blockchain::new(Arc::new(LedgerContext::default()))
+    }
+
+    fn inventory_cache_key(index: u32) -> InventoryCacheKey {
+        let mut bytes = [0u8; 32];
+        bytes[..4].copy_from_slice(&index.to_le_bytes());
+        InventoryCacheKey {
+            inventory_type: InventoryType::Transaction,
+            payload_hash: UInt256::from_bytes(&bytes).expect("test hash"),
+        }
+    }
+
+    fn raw_payload_bytes(index: u32) -> Vec<u8> {
+        index.to_le_bytes().to_vec()
+    }
+
+    fn raw_inventory_payload(index: u32) -> InventoryPayload {
+        InventoryPayload::Raw(InventoryType::Transaction, raw_payload_bytes(index))
+    }
+
+    async fn cached_raw_bytes(blockchain: &Blockchain, key: &InventoryCacheKey) -> Option<Vec<u8>> {
+        match blockchain.inventory_cache_get(key).await {
+            Some(InventoryPayload::Raw(_, bytes)) => Some(bytes),
+            Some(payload) => panic!("unexpected cached payload: {payload:?}"),
+            None => None,
+        }
+    }
+
     #[test]
     fn classify_import_block_returns_already_seen_for_past_height() {
         assert_eq!(classify_import_block(10, 5), ImportDisposition::AlreadySeen);
@@ -144,6 +176,78 @@ mod tests {
         assert!(should_schedule_reverify_idle(true, false));
         assert!(!should_schedule_reverify_idle(false, false));
         assert!(!should_schedule_reverify_idle(true, true));
+    }
+
+    #[tokio::test]
+    async fn inventory_cache_keeps_first_payload_for_duplicate_key() {
+        let blockchain = test_blockchain();
+        let key = inventory_cache_key(7);
+
+        blockchain
+            .inventory_cache_insert(key, raw_inventory_payload(1))
+            .await;
+        blockchain
+            .inventory_cache_insert(key, raw_inventory_payload(2))
+            .await;
+
+        assert_eq!(
+            cached_raw_bytes(&blockchain, &key).await,
+            Some(raw_payload_bytes(1))
+        );
+    }
+
+    #[tokio::test]
+    async fn inventory_cache_get_does_not_refresh_fifo_order() {
+        let blockchain = test_blockchain();
+        let first_key = inventory_cache_key(0);
+
+        for index in 0..MAX_REVERIFY_INVENTORY_CACHE as u32 {
+            blockchain
+                .inventory_cache_insert(inventory_cache_key(index), raw_inventory_payload(index))
+                .await;
+        }
+
+        assert_eq!(
+            cached_raw_bytes(&blockchain, &first_key).await,
+            Some(raw_payload_bytes(0))
+        );
+
+        blockchain
+            .inventory_cache_insert(
+                inventory_cache_key(MAX_REVERIFY_INVENTORY_CACHE as u32),
+                raw_inventory_payload(MAX_REVERIFY_INVENTORY_CACHE as u32),
+            )
+            .await;
+
+        assert_eq!(cached_raw_bytes(&blockchain, &first_key).await, None);
+        assert_eq!(
+            cached_raw_bytes(&blockchain, &inventory_cache_key(1)).await,
+            Some(raw_payload_bytes(1))
+        );
+    }
+
+    #[tokio::test]
+    async fn inventory_cache_duplicate_insert_does_not_refresh_fifo_order() {
+        let blockchain = test_blockchain();
+        let first_key = inventory_cache_key(0);
+
+        for index in 0..MAX_REVERIFY_INVENTORY_CACHE as u32 {
+            blockchain
+                .inventory_cache_insert(inventory_cache_key(index), raw_inventory_payload(index))
+                .await;
+        }
+
+        blockchain
+            .inventory_cache_insert(first_key, raw_inventory_payload(999))
+            .await;
+        blockchain
+            .inventory_cache_insert(
+                inventory_cache_key(MAX_REVERIFY_INVENTORY_CACHE as u32),
+                raw_inventory_payload(MAX_REVERIFY_INVENTORY_CACHE as u32),
+            )
+            .await;
+
+        assert_eq!(cached_raw_bytes(&blockchain, &first_key).await, None);
     }
 
     #[tokio::test(flavor = "multi_thread")]
