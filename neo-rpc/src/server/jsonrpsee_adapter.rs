@@ -11,7 +11,14 @@ use serde_json::Value;
 use std::collections::HashSet;
 use std::sync::{Arc, Weak};
 
-const INITIAL_METHODS: &[&str] = &["getblockcount", "getversion"];
+const INITIAL_READ_ONLY_METHODS: &[&str] = &[
+    "getbestblockhash",
+    "getblockcount",
+    "getblockheadercount",
+    "getconnectioncount",
+    "getrawmempool",
+    "getversion",
+];
 
 /// Shared context used by the optional jsonrpsee RPC module.
 #[derive(Clone)]
@@ -38,7 +45,7 @@ pub fn build_jsonrpsee_module_with_disabled(
     disabled: Arc<HashSet<String>>,
 ) -> Result<RpcModule<JsonRpseeContext>, RegisterMethodError> {
     let mut module = RpcModule::new(JsonRpseeContext::new(server, disabled));
-    for method in INITIAL_METHODS {
+    for method in INITIAL_READ_ONLY_METHODS {
         register_neo_method(&mut module, method)?;
     }
     Ok(module)

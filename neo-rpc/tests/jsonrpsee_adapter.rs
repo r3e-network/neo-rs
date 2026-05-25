@@ -12,6 +12,15 @@ use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::sync::Arc;
 
+const INITIAL_READ_ONLY_METHODS: &[&str] = &[
+    "getbestblockhash",
+    "getblockcount",
+    "getblockheadercount",
+    "getconnectioncount",
+    "getrawmempool",
+    "getversion",
+];
+
 fn build_server_with_handlers() -> Arc<RwLock<RpcServer>> {
     let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
     let mut server = RpcServer::new(system, RpcServerConfig::default());
@@ -58,36 +67,37 @@ async fn module_registers_initial_read_only_methods() {
     let module = build_jsonrpsee_module(Arc::downgrade(&server)).expect("module");
     let methods = module.method_names().collect::<HashSet<_>>();
 
-    assert!(methods.contains("getblockcount"));
-    assert!(methods.contains("getversion"));
-    assert_eq!(methods.len(), 2);
+    for method in INITIAL_READ_ONLY_METHODS {
+        assert!(methods.contains(method), "missing {method}");
+    }
+    assert_eq!(methods.len(), INITIAL_READ_ONLY_METHODS.len());
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn getblockcount_matches_registered_handler() {
+async fn initial_read_only_methods_match_registered_handlers() {
     let server = build_server_with_handlers();
     let module = build_jsonrpsee_module(Arc::downgrade(&server)).expect("module");
-    let response = raw_response(
-        &module,
-        json!({
-            "jsonrpc": "2.0",
-            "method": "getblockcount",
-            "params": [],
-            "id": 7
-        }),
-    )
-    .await;
 
-    assert_eq!(response["jsonrpc"], "2.0");
-    assert_eq!(response["id"], 7);
-    assert_eq!(
-        response["result"],
-        direct_handler_result(&server, "getblockcount")
-    );
+    for (id, method) in INITIAL_READ_ONLY_METHODS.iter().enumerate() {
+        let response = raw_response(
+            &module,
+            json!({
+                "jsonrpc": "2.0",
+                "method": method,
+                "params": [],
+                "id": id
+            }),
+        )
+        .await;
+
+        assert_eq!(response["jsonrpc"], "2.0");
+        assert_eq!(response["id"], id);
+        assert_eq!(response["result"], direct_handler_result(&server, method));
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn getversion_matches_registered_handler_without_params() {
+async fn getversion_accepts_omitted_params() {
     let server = build_server_with_handlers();
     let module = build_jsonrpsee_module(Arc::downgrade(&server)).expect("module");
     let response = raw_response(
