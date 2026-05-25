@@ -2511,6 +2511,7 @@ dependencies = [
 name = "neo-crypto"
 version = "0.7.2"
 dependencies = [
+ "base64 0.22.1",
  "bitvec",
  "blake2",
  "blake2b_simd",

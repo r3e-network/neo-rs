@@ -56,7 +56,7 @@ pub mod signature;
 pub use bloom_filter::BloomFilter;
 pub use bls12381::Bls12381Crypto;
 pub use ecc::{ECCurve, ECPoint};
-pub use encoding::{Base58, Hex};
+pub use encoding::{Base58, Base64, Hex};
 pub use error::{CryptoError, CryptoResult};
 pub use hash::{ct_hash_eq, ct_hash_slice_eq, Crypto, HashAlgorithm};
 pub use mpt_trie::{

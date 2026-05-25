@@ -12,7 +12,7 @@ use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::smart_contract::native::{NativeContract, StdLib};
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::witness::Witness;
-use neo_core::{Verifiable, UInt160, WitnessScope};
+use neo_core::{UInt160, Verifiable, WitnessScope};
 use neo_vm_rs::OpCode;
 use num_traits::ToPrimitive;
 use std::collections::{BTreeMap, HashMap};
@@ -1164,6 +1164,25 @@ fn stdlib_base64_url_parity() {
 }
 
 #[test]
+fn stdlib_base64_url_decode_faults_on_invalid_utf8() {
+    let stdlib = StdLib::new();
+    let mut sb = ScriptBuilder::new();
+    emit_stdlib_call(
+        &mut sb,
+        stdlib.hash(),
+        "base64UrlDecode",
+        vec![StackItem::from_byte_string(b"_w".to_vec())],
+    );
+    sb.emit_opcode(OpCode::RET);
+
+    let mut engine = make_engine_with_height(Some(7_300_000));
+    engine
+        .load_script(sb.to_array(), CallFlags::ALL, None)
+        .expect("load script");
+    assert!(engine.execute().is_err());
+}
+
+#[test]
 fn stdlib_hex_encode_decode_parity() {
     let stdlib = StdLib::new();
     let mut sb = ScriptBuilder::new();
@@ -1179,6 +1198,12 @@ fn stdlib_hex_encode_decode_parity() {
         "hexDecode",
         vec![StackItem::from_byte_string(b"00010203".to_vec())],
     );
+    emit_stdlib_call(
+        &mut sb,
+        stdlib.hash(),
+        "hexDecode",
+        vec![StackItem::from_byte_string(b"AABBCC".to_vec())],
+    );
     sb.emit_opcode(OpCode::RET);
 
     let mut settings = ProtocolSettings::default();
@@ -1191,10 +1216,12 @@ fn stdlib_hex_encode_decode_parity() {
         .expect("load script");
     engine.execute().expect("execute");
 
-    assert_eq!(engine.result_stack().len(), 2);
-    let decoded = engine.result_stack().peek(0).unwrap().as_bytes().unwrap();
+    assert_eq!(engine.result_stack().len(), 3);
+    let decoded_upper = engine.result_stack().peek(0).unwrap().as_bytes().unwrap();
+    assert_eq!(decoded_upper, vec![0xaa, 0xbb, 0xcc]);
+    let decoded = engine.result_stack().peek(1).unwrap().as_bytes().unwrap();
     assert_eq!(decoded, vec![0x00, 0x01, 0x02, 0x03]);
-    let encoded = engine.result_stack().peek(1).unwrap().as_bytes().unwrap();
+    let encoded = engine.result_stack().peek(2).unwrap().as_bytes().unwrap();
     assert_eq!(String::from_utf8(encoded).unwrap(), "00010203");
 }
 

@@ -1,40 +1,28 @@
 use super::StdLib;
-use crate::cryptography::{Base58, Hex};
+use crate::cryptography::{Base58, Base64, Hex};
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
-use base64::{engine::general_purpose, Engine as _};
-
-fn strip_base64_whitespace(input: &str) -> String {
-    input.chars().filter(|c| !c.is_whitespace()).collect()
-}
 
 impl StdLib {
     pub(super) fn base64_encode(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         let data = self.validate_single_arg(args, "base64Encode")?;
-        let encoded = general_purpose::STANDARD.encode(data);
-        Ok(encoded.into_bytes())
+        Ok(Base64::encode(data).into_bytes())
     }
 
     pub(super) fn base64_decode(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         let string_data = self.validate_string_arg(args, "base64Decode")?;
-        let normalized = strip_base64_whitespace(&string_data);
-        let decoded = general_purpose::STANDARD
-            .decode(normalized.as_bytes())
-            .map_err(|_| Error::native_contract("Invalid base64 data"))?;
-        Ok(decoded)
+        Base64::decode_lenient(&string_data)
+            .map_err(|_| Error::native_contract("Invalid base64 data"))
     }
 
     pub(super) fn base64_url_encode(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         let string_data = self.validate_string_arg(args, "base64UrlEncode")?;
-        let encoded = general_purpose::URL_SAFE_NO_PAD.encode(string_data.as_bytes());
-        Ok(encoded.into_bytes())
+        Ok(Base64::url_encode_no_pad(string_data.as_bytes()).into_bytes())
     }
 
     pub(super) fn base64_url_decode(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         let string_data = self.validate_string_arg(args, "base64UrlDecode")?;
-        let normalized = strip_base64_whitespace(&string_data);
-        let decoded = general_purpose::URL_SAFE_NO_PAD
-            .decode(normalized.as_bytes())
+        let decoded = Base64::url_decode_no_pad_lenient(&string_data)
             .map_err(|_| Error::native_contract("Invalid base64url data"))?;
         let decoded_string = String::from_utf8(decoded)
             .map_err(|_| Error::native_contract("Invalid UTF-8 string"))?;

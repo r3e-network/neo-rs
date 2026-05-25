@@ -1,6 +1,7 @@
 //! Encoding helpers used by Neo cryptographic APIs.
 
 use crate::error::{CryptoError, CryptoResult};
+use base64::{engine::general_purpose, Engine as _};
 
 /// Base58 encoding/decoding utilities.
 pub struct Base58;
@@ -44,6 +45,43 @@ fn map_base58_check_decode_error(error: bs58::decode::Error) -> CryptoError {
         }
         error => CryptoError::encoding_error(format!("Base58 decode error: {error}")),
     }
+}
+
+/// Base64 encoding/decoding utilities.
+pub struct Base64;
+
+impl Base64 {
+    /// Encodes data to a standard padded Base64 string.
+    #[must_use]
+    pub fn encode(data: &[u8]) -> String {
+        general_purpose::STANDARD.encode(data)
+    }
+
+    /// Decodes standard padded Base64, ignoring ASCII/Unicode whitespace.
+    pub fn decode_lenient(s: &str) -> CryptoResult<Vec<u8>> {
+        let normalized = strip_whitespace(s);
+        general_purpose::STANDARD
+            .decode(normalized.as_bytes())
+            .map_err(|e| CryptoError::encoding_error(format!("Base64 decode error: {e}")))
+    }
+
+    /// Encodes data to URL-safe Base64 without padding.
+    #[must_use]
+    pub fn url_encode_no_pad(data: &[u8]) -> String {
+        general_purpose::URL_SAFE_NO_PAD.encode(data)
+    }
+
+    /// Decodes URL-safe Base64 without padding, ignoring ASCII/Unicode whitespace.
+    pub fn url_decode_no_pad_lenient(s: &str) -> CryptoResult<Vec<u8>> {
+        let normalized = strip_whitespace(s);
+        general_purpose::URL_SAFE_NO_PAD
+            .decode(normalized.as_bytes())
+            .map_err(|e| CryptoError::encoding_error(format!("Base64Url decode error: {e}")))
+    }
+}
+
+fn strip_whitespace(input: &str) -> String {
+    input.chars().filter(|c| !c.is_whitespace()).collect()
 }
 
 /// Hex encoding/decoding utilities.
@@ -92,7 +130,7 @@ pub mod base58 {
 
 #[cfg(test)]
 mod tests {
-    use super::Base58;
+    use super::{Base58, Base64};
 
     #[test]
     fn test_base58_encoding() {
@@ -129,5 +167,45 @@ mod tests {
             err.contains("checksum"),
             "unexpected invalid checksum error: {err}"
         );
+    }
+
+    #[test]
+    fn base64_standard_round_trips_known_vector() {
+        let encoded = Base64::encode(&[1, 2, 3, 4]);
+        assert_eq!(encoded, "AQIDBA==");
+
+        let decoded = Base64::decode_lenient(&encoded).unwrap();
+        assert_eq!(decoded, [1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn base64_standard_decode_ignores_whitespace() {
+        let decoded = Base64::decode_lenient("A \r Q \t I \n D").unwrap();
+        assert_eq!(decoded, [1, 2, 3]);
+    }
+
+    #[test]
+    fn base64_url_no_pad_round_trips_known_vector() {
+        let data = b"Subject=test@example.com&Issuer=https://example.com";
+        let encoded = Base64::url_encode_no_pad(data);
+        assert_eq!(
+            encoded,
+            "U3ViamVjdD10ZXN0QGV4YW1wbGUuY29tJklzc3Vlcj1odHRwczovL2V4YW1wbGUuY29t"
+        );
+
+        let decoded = Base64::url_decode_no_pad_lenient(&encoded).unwrap();
+        assert_eq!(decoded, data);
+    }
+
+    #[test]
+    fn base64_url_decode_ignores_whitespace() {
+        let decoded = Base64::url_decode_no_pad_lenient("U 3 \t V \n \riamVjdA").unwrap();
+        assert_eq!(decoded, b"Subject");
+    }
+
+    #[test]
+    fn base64_rejects_invalid_input() {
+        assert!(Base64::decode_lenient("@@@").is_err());
+        assert!(Base64::url_decode_no_pad_lenient("@@@").is_err());
     }
 }

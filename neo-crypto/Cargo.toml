@@ -38,6 +38,7 @@ rand = { workspace = true }
 # Encoding
 hex = { workspace = true }
 bs58 = { workspace = true }
+base64 = { workspace = true }
 
 # Serialization
 serde = { workspace = true }
