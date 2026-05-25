@@ -84,20 +84,32 @@ pub static STATE_ROOT_INGEST_REJECTED: Lazy<Gauge> = Lazy::new(|| {
 });
 
 /// Counter for accepted state roots
-pub static STATE_ROOT_INGEST_ACCEPTED_COUNTER: Lazy<Counter> =
-    Lazy::new(|| register_counter("neo_state_roots_accepted", "Counter of accepted state roots since process start"));
+pub static STATE_ROOT_INGEST_ACCEPTED_COUNTER: Lazy<Counter> = Lazy::new(|| {
+    register_counter(
+        "neo_state_roots_accepted",
+        "Counter of accepted state roots since process start",
+    )
+});
 
 /// Counter for rejected state roots
-pub static STATE_ROOT_INGEST_REJECTED_COUNTER: Lazy<Counter> =
-    Lazy::new(|| register_counter("neo_state_roots_rejected", "Counter of rejected state roots since process start"));
+pub static STATE_ROOT_INGEST_REJECTED_COUNTER: Lazy<Counter> = Lazy::new(|| {
+    register_counter(
+        "neo_state_roots_rejected",
+        "Counter of rejected state roots since process start",
+    )
+});
 
 /// Free disk space
 pub static DISK_FREE_BYTES: Lazy<Gauge> =
     Lazy::new(|| register_gauge("neo_storage_free_bytes", "Free bytes on storage path disk"));
 
 /// Total disk space
-pub static DISK_TOTAL_BYTES: Lazy<Gauge> =
-    Lazy::new(|| register_gauge("neo_storage_total_bytes", "Total bytes on storage path disk"));
+pub static DISK_TOTAL_BYTES: Lazy<Gauge> = Lazy::new(|| {
+    register_gauge(
+        "neo_storage_total_bytes",
+        "Total bytes on storage path disk",
+    )
+});
 
 // Internal tracking for deltas
 static STATE_ROOT_ACCEPTED_LAST: AtomicU64 = AtomicU64::new(0);
@@ -200,6 +212,8 @@ pub fn gather_prometheus() -> Vec<u8> {
     let _ = &*STATE_VALIDATED_LAG;
     let _ = &*STATE_ROOT_INGEST_ACCEPTED;
     let _ = &*STATE_ROOT_INGEST_REJECTED;
+    let _ = &*STATE_ROOT_INGEST_ACCEPTED_COUNTER;
+    let _ = &*STATE_ROOT_INGEST_REJECTED_COUNTER;
 
     let encoder = TextEncoder::new();
     let metric_families = prometheus::gather();

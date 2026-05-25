@@ -6,70 +6,16 @@
 use neo_core::network::p2p::timeouts::TimeoutStats;
 use neo_core::telemetry::Telemetry;
 use once_cell::sync::Lazy;
-use prometheus::{Counter, Encoder, Gauge, TextEncoder};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use sysinfo::{DiskExt, System, SystemExt};
-
-fn register_gauge_best_effort(name: &str, help: &str) -> Gauge {
-    let gauge = Gauge::new(name, help).unwrap_or_else(|_| {
-        Gauge::new("neo_invalid_metric", "Invalid")
-            .expect("fallback gauge creation should never fail")
-    });
-    let _ = prometheus::register(Box::new(gauge.clone()));
-    gauge
-}
-
-fn register_counter_best_effort(name: &str, help: &str) -> Counter {
-    let counter = Counter::new(name, help).unwrap_or_else(|_| {
-        Counter::new("neo_invalid_counter", "Invalid")
-            .expect("fallback counter creation should never fail")
-    });
-    let _ = prometheus::register(Box::new(counter.clone()));
-    counter
-}
 
 /// Global telemetry instance for the node.
 pub static TELEMETRY: Lazy<Arc<Telemetry>> =
     Lazy::new(|| Arc::new(Telemetry::new("neo-node", env!("CARGO_PKG_VERSION"))));
 
-static HEADER_HEIGHT: Lazy<Gauge> =
-    Lazy::new(|| register_gauge_best_effort("neo_header_height", "Highest header seen"));
-static BLOCK_HEIGHT: Lazy<Gauge> =
-    Lazy::new(|| register_gauge_best_effort("neo_block_height", "Highest block persisted"));
-static HEADER_LAG: Lazy<Gauge> =
-    Lazy::new(|| register_gauge_best_effort("neo_header_lag", "Header lag in blocks"));
-static MEMPOOL_SIZE: Lazy<Gauge> =
-    Lazy::new(|| register_gauge_best_effort("neo_mempool_size", "Mempool size (transactions)"));
-static TIMEOUT_HANDSHAKE: Lazy<Gauge> =
-    Lazy::new(|| register_gauge_best_effort("neo_p2p_timeouts_handshake", "Handshake timeouts"));
-static TIMEOUT_READ: Lazy<Gauge> =
-    Lazy::new(|| register_gauge_best_effort("neo_p2p_timeouts_read", "Read timeouts"));
-static TIMEOUT_WRITE: Lazy<Gauge> =
-    Lazy::new(|| register_gauge_best_effort("neo_p2p_timeouts_write", "Write timeouts"));
-static PEER_COUNT: Lazy<Gauge> =
-    Lazy::new(|| register_gauge_best_effort("neo_peer_count", "Peer count"));
-static DISK_FREE_BYTES: Lazy<Gauge> =
-    Lazy::new(|| register_gauge_best_effort("neo_storage_free_bytes", "Free bytes on storage path disk"));
-static DISK_TOTAL_BYTES: Lazy<Gauge> =
-    Lazy::new(|| register_gauge_best_effort("neo_storage_total_bytes", "Total bytes on storage path disk"));
-static STATE_LOCAL_ROOT_INDEX: Lazy<Gauge> =
-    Lazy::new(|| register_gauge_best_effort("neo_state_local_root_index", "Current local state root index (block height) if known, otherwise -1"));
-static STATE_VALIDATED_ROOT_INDEX: Lazy<Gauge> =
-    Lazy::new(|| register_gauge_best_effort("neo_state_validated_root_index", "Current validated state root index if known, otherwise -1"));
-static STATE_VALIDATED_LAG: Lazy<Gauge> =
-    Lazy::new(|| register_gauge_best_effort("neo_state_validated_lag", "Difference between local and validated state roots; -1 when unknown"));
-static STATE_ROOT_INGEST_ACCEPTED: Lazy<Gauge> =
-    Lazy::new(|| register_gauge_best_effort("neo_state_roots_accepted_total", "Total accepted state roots since process start"));
-static STATE_ROOT_INGEST_REJECTED: Lazy<Gauge> =
-    Lazy::new(|| register_gauge_best_effort("neo_state_roots_rejected_total", "Total rejected state roots since process start"));
-static STATE_ROOT_INGEST_ACCEPTED_COUNTER: Lazy<Counter> =
-    Lazy::new(|| register_counter_best_effort("neo_state_roots_accepted", "Counter of accepted state roots since process start"));
-static STATE_ROOT_INGEST_REJECTED_COUNTER: Lazy<Counter> =
-    Lazy::new(|| register_counter_best_effort("neo_state_roots_rejected", "Counter of rejected state roots since process start"));
-static STATE_ROOT_INGEST_ACCEPTED_LAST: Lazy<std::sync::atomic::AtomicU64> =
-    Lazy::new(|| std::sync::atomic::AtomicU64::new(0));
-static STATE_ROOT_INGEST_REJECTED_LAST: Lazy<std::sync::atomic::AtomicU64> =
-    Lazy::new(|| std::sync::atomic::AtomicU64::new(0));
+static STATE_ROOT_INGEST_ACCEPTED_LAST: AtomicU64 = AtomicU64::new(0);
+static STATE_ROOT_INGEST_REJECTED_LAST: AtomicU64 = AtomicU64::new(0);
 
 /// Returns the global telemetry instance.
 #[allow(dead_code)]
@@ -86,14 +32,14 @@ pub fn telemetry() -> &'static Arc<Telemetry> {
 pub fn update_metrics(
     block_height: u32,
     header_height: u32,
-    header_lag: u32,
+    _header_lag: u32,
     mempool_size: u32,
     timeouts: TimeoutStats,
     peer_count: usize,
     storage_path: Option<&str>,
     state_local_root: Option<u32>,
     state_validated_root: Option<u32>,
-    state_validated_lag: Option<u32>,
+    _state_validated_lag: Option<u32>,
     state_root_accepted: u64,
     state_root_rejected: u64,
 ) {
@@ -111,35 +57,35 @@ pub fn update_metrics(
         state_root_rejected,
     );
 
-    // Update Prometheus gauges for backward compatibility
-    BLOCK_HEIGHT.set(block_height as f64);
-    HEADER_HEIGHT.set(header_height as f64);
-    HEADER_LAG.set(header_lag as f64);
-    MEMPOOL_SIZE.set(mempool_size as f64);
-    TIMEOUT_HANDSHAKE.set(timeouts.handshake as f64);
-    TIMEOUT_READ.set(timeouts.read as f64);
-    TIMEOUT_WRITE.set(timeouts.write as f64);
-    PEER_COUNT.set(peer_count as f64);
-    STATE_LOCAL_ROOT_INDEX.set(state_local_root.map(|v| v as f64).unwrap_or(-1.0));
-    STATE_VALIDATED_ROOT_INDEX.set(state_validated_root.map(|v| v as f64).unwrap_or(-1.0));
-    STATE_VALIDATED_LAG.set(state_validated_lag.map(|v| v as f64).unwrap_or(-1.0));
-    STATE_ROOT_INGEST_ACCEPTED.set(state_root_accepted as f64);
-    STATE_ROOT_INGEST_REJECTED.set(state_root_rejected as f64);
+    // Update shared Prometheus metrics in neo-telemetry.
+    neo_telemetry::update_node_metrics(
+        block_height,
+        header_height,
+        mempool_size,
+        peer_count,
+        state_local_root,
+        state_validated_root,
+        state_root_accepted,
+        state_root_rejected,
+    );
+    neo_telemetry::update_timeout_metrics(
+        timeouts.handshake as u64,
+        timeouts.read as u64,
+        timeouts.write as u64,
+    );
 
     // Increment counters based on deltas to avoid double counting.
-    let prev_accepted = STATE_ROOT_INGEST_ACCEPTED_LAST
-        .swap(state_root_accepted, std::sync::atomic::Ordering::Relaxed);
-    let prev_rejected = STATE_ROOT_INGEST_REJECTED_LAST
-        .swap(state_root_rejected, std::sync::atomic::Ordering::Relaxed);
+    let prev_accepted =
+        STATE_ROOT_INGEST_ACCEPTED_LAST.swap(state_root_accepted, Ordering::Relaxed);
+    let prev_rejected =
+        STATE_ROOT_INGEST_REJECTED_LAST.swap(state_root_rejected, Ordering::Relaxed);
     if state_root_accepted > prev_accepted {
-        STATE_ROOT_INGEST_ACCEPTED_COUNTER.inc_by((state_root_accepted - prev_accepted) as f64);
         TELEMETRY.increment_counter_by(
             "neo_state_roots_accepted",
             state_root_accepted - prev_accepted,
         );
     }
     if state_root_rejected > prev_rejected {
-        STATE_ROOT_INGEST_REJECTED_COUNTER.inc_by((state_root_rejected - prev_rejected) as f64);
         TELEMETRY.increment_counter_by(
             "neo_state_roots_rejected",
             state_root_rejected - prev_rejected,
@@ -149,8 +95,7 @@ pub fn update_metrics(
     // Update storage metrics
     if let Some(path) = storage_path {
         if let Some((free, total)) = disk_usage_for(path) {
-            DISK_FREE_BYTES.set(free as f64);
-            DISK_TOTAL_BYTES.set(total as f64);
+            neo_telemetry::update_storage_metrics(free, total);
             TELEMETRY.record_storage_metrics(free, total);
         }
     }
@@ -158,29 +103,7 @@ pub fn update_metrics(
 
 /// Gathers all metrics in Prometheus text format.
 pub fn gather() -> Vec<u8> {
-    let _ = &*HEADER_HEIGHT;
-    let _ = &*BLOCK_HEIGHT;
-    let _ = &*HEADER_LAG;
-    let _ = &*MEMPOOL_SIZE;
-    let _ = &*TIMEOUT_HANDSHAKE;
-    let _ = &*TIMEOUT_READ;
-    let _ = &*TIMEOUT_WRITE;
-    let _ = &*PEER_COUNT;
-    let _ = &*DISK_FREE_BYTES;
-    let _ = &*DISK_TOTAL_BYTES;
-    let _ = &*STATE_LOCAL_ROOT_INDEX;
-    let _ = &*STATE_VALIDATED_ROOT_INDEX;
-    let _ = &*STATE_VALIDATED_LAG;
-    let _ = &*STATE_ROOT_INGEST_ACCEPTED;
-    let _ = &*STATE_ROOT_INGEST_REJECTED;
-    let _ = &*STATE_ROOT_INGEST_ACCEPTED_COUNTER;
-    let _ = &*STATE_ROOT_INGEST_REJECTED_COUNTER;
-
-    let encoder = TextEncoder::new();
-    let metric_families = prometheus::gather();
-    let mut buffer = Vec::new();
-    encoder.encode(&metric_families, &mut buffer).unwrap_or(());
-    buffer
+    neo_telemetry::gather_prometheus()
 }
 
 /// Gathers metrics from the telemetry system in the specified format.
@@ -244,5 +167,32 @@ mod tests {
 
         let prom = gather_telemetry("prometheus");
         assert!(prom.contains("test_prom_metric"));
+    }
+
+    #[test]
+    fn update_metrics_delegates_prometheus_export_to_neo_telemetry() {
+        update_metrics(
+            100,
+            105,
+            5,
+            12,
+            TimeoutStats {
+                handshake: 1,
+                read: 2,
+                write: 3,
+            },
+            8,
+            None,
+            Some(100),
+            Some(95),
+            Some(5),
+            7,
+            1,
+        );
+
+        let text = String::from_utf8(gather()).expect("prometheus text is UTF-8");
+        assert!(text.contains("neo_block_height"));
+        assert!(text.contains("neo_p2p_timeouts_handshake"));
+        assert!(text.contains("neo_state_roots_accepted"));
     }
 }

@@ -64,8 +64,8 @@ pub use metrics::{Metrics, MetricsServer};
 pub use node_health::{HealthState, NodeHealthServer, DEFAULT_MAX_HEADER_LAG};
 pub use node_logging::{init_node_logging, LoggingGuard};
 pub use node_metrics::{
-    gather_prometheus, update_node_metrics, BlockMetrics, MempoolMetrics, NetworkMetrics,
-    NodeMetrics, StateRootMetrics, StorageMetrics,
+    gather_prometheus, update_node_metrics, update_storage_metrics, update_timeout_metrics,
+    BlockMetrics, MempoolMetrics, NetworkMetrics, NodeMetrics, StateRootMetrics, StorageMetrics,
 };
 
 // Public exports - System

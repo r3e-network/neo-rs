@@ -39,6 +39,7 @@ neo-p2p = { path = "../neo-p2p" }
 neo-crypto = { path = "../neo-crypto" }
 neo-vm-rs = { workspace = true }
 neo-rpc = { path = "../neo-rpc", features = ["server"] }
+neo-telemetry = { workspace = true }
 
 # TEMPORARILY DISABLED: neo-plugins being refactored
 # neo-plugins = { path = "../neo-plugins" }
