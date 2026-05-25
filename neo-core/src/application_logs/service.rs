@@ -16,7 +16,7 @@ use std::any::Any;
 use std::panic::{self, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tracing::{error, warn};
+use tracing::error;
 
 use super::ApplicationLogsSettings;
 
@@ -62,16 +62,17 @@ impl ApplicationLogsService {
         *guard = Some(self.store.get_snapshot());
     }
 
-    fn commit_batch(&self) {
+    fn commit_batch(&self) -> Result<(), String> {
         let mut guard = self.snapshot.lock();
         let Some(snapshot_arc) = guard.as_mut() else {
-            return;
+            return Ok(());
         };
-        if let Some(snapshot) = Arc::get_mut(snapshot_arc) {
-            if let Err(err) = snapshot.try_commit() {
-                warn!(target: "neo::application_logs", error = %err, "application logs commit failed");
-            }
-        }
+        let Some(snapshot) = Arc::get_mut(snapshot_arc) else {
+            return Err("application logs commit failed: snapshot is still shared".to_string());
+        };
+        snapshot
+            .try_commit()
+            .map_err(|err| format!("application logs commit failed: {err}"))
     }
 
     fn handle_panic(&self, payload: Box<dyn Any + Send>, phase: &'static str) {
@@ -86,27 +87,35 @@ impl ApplicationLogsService {
             .apply(|| self.disabled.store(true, Ordering::SeqCst));
     }
 
-    fn write_log(&self, prefix: u8, hash: &UInt256, value: Value) {
+    fn handle_error(&self, err: &str, phase: &'static str) {
+        error!(
+            target: "neo::application_logs",
+            phase,
+            error = err,
+            "application logs handler failed"
+        );
+        self.settings
+            .exception_policy
+            .apply(|| self.disabled.store(true, Ordering::SeqCst));
+    }
+
+    fn write_log(&self, prefix: u8, hash: &UInt256, value: Value) -> Result<(), String> {
         let mut guard = self.snapshot.lock();
         let Some(snapshot_arc) = guard.as_mut() else {
-            return;
+            return Ok(());
         };
         let Some(snapshot) = Arc::get_mut(snapshot_arc) else {
-            return;
+            return Err("application logs write failed: snapshot is still shared".to_string());
         };
         let mut key = Vec::with_capacity(1 + 32);
         key.push(prefix);
         key.extend_from_slice(&hash.to_bytes());
-        match serde_json::to_vec(&value) {
-            Ok(bytes) => {
-                if let Err(err) = snapshot.put(key, bytes) {
-                    warn!(target: "neo::application_logs", error = %err, "failed to write application log to storage");
-                }
-            }
-            Err(err) => {
-                warn!(target: "neo::application_logs", error = %err, "failed to serialize application log")
-            }
-        }
+        let bytes = serde_json::to_vec(&value)
+            .map_err(|err| format!("failed to serialize application log: {err}"))?;
+        snapshot
+            .put(key, bytes)
+            .map_err(|err| format!("failed to write application log to storage: {err}"))?;
+        Ok(())
     }
 
     fn read_log(&self, prefix: u8, hash: &UInt256) -> Option<Value> {
@@ -221,12 +230,12 @@ impl CommittingHandler for ApplicationLogsService {
         if system.settings().network != self.settings.network {
             return;
         }
-        let result = panic::catch_unwind(AssertUnwindSafe(|| {
+        let result = panic::catch_unwind(AssertUnwindSafe(|| -> Result<(), String> {
             self.start_batch();
 
             let block_hash = block.hash();
             let block_log = self.block_log_json(&block_hash, application_executed_list);
-            self.write_log(Self::PREFIX_BLOCK, &block_hash, block_log);
+            self.write_log(Self::PREFIX_BLOCK, &block_hash, block_log)?;
 
             for exec in application_executed_list {
                 let Some(tx) = exec.transaction.as_ref() else {
@@ -234,11 +243,14 @@ impl CommittingHandler for ApplicationLogsService {
                 };
                 let tx_hash = tx.hash();
                 let tx_log = self.transaction_log_json(&tx_hash, exec);
-                self.write_log(Self::PREFIX_TX, &tx_hash, tx_log);
+                self.write_log(Self::PREFIX_TX, &tx_hash, tx_log)?;
             }
+            Ok(())
         }));
-        if let Err(payload) = result {
-            self.handle_panic(payload, "committing");
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(err)) => self.handle_error(&err, "committing"),
+            Err(payload) => self.handle_panic(payload, "committing"),
         }
     }
 }
@@ -254,11 +266,11 @@ impl CommittedHandler for ApplicationLogsService {
         if system.settings().network != self.settings.network {
             return;
         }
-        let result = panic::catch_unwind(AssertUnwindSafe(|| {
-            self.commit_batch();
-        }));
-        if let Err(payload) = result {
-            self.handle_panic(payload, "committed");
+        let result = panic::catch_unwind(AssertUnwindSafe(|| self.commit_batch()));
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(err)) => self.handle_error(&err, "committed"),
+            Err(payload) => self.handle_panic(payload, "committed"),
         }
     }
 }
@@ -329,4 +341,170 @@ fn notification_to_json(event: &NotifyEventArgs) -> Value {
     notification.insert("state".to_string(), state);
 
     Value::Object(notification)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::persistence::{
+        read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric},
+        storage::StorageError,
+        store::OnNewSnapshotDelegate,
+        write_store::WriteStore,
+        SeekDirection,
+    };
+    use crate::smart_contract::{StorageItem, StorageKey};
+    use crate::unhandled_exception_policy::UnhandledExceptionPolicy;
+
+    #[derive(Clone)]
+    struct FailingStore;
+
+    impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for FailingStore {
+        fn try_get(&self, _key: &Vec<u8>) -> Option<Vec<u8>> {
+            None
+        }
+
+        fn find(
+            &self,
+            _key_prefix: Option<&Vec<u8>>,
+            _direction: SeekDirection,
+        ) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)> + '_> {
+            Box::new(std::iter::empty())
+        }
+    }
+
+    impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for FailingStore {
+        fn try_get(&self, _key: &StorageKey) -> Option<StorageItem> {
+            None
+        }
+
+        fn find(
+            &self,
+            _key_prefix: Option<&StorageKey>,
+            _direction: SeekDirection,
+        ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
+            Box::new(std::iter::empty())
+        }
+    }
+
+    impl ReadOnlyStore for FailingStore {}
+
+    impl WriteStore<Vec<u8>, Vec<u8>> for FailingStore {
+        fn delete(&mut self, _key: Vec<u8>) -> crate::error::CoreResult<()> {
+            Ok(())
+        }
+
+        fn put(&mut self, _key: Vec<u8>, _value: Vec<u8>) -> crate::error::CoreResult<()> {
+            Ok(())
+        }
+    }
+
+    impl IStore for FailingStore {
+        fn get_snapshot(&self) -> Arc<dyn StoreSnapshot> {
+            Arc::new(FailingSnapshot {
+                store: Arc::new(self.clone()),
+            })
+        }
+
+        fn on_new_snapshot(&self, _handler: OnNewSnapshotDelegate) {}
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+    }
+
+    struct FailingSnapshot {
+        store: Arc<dyn IStore>,
+    }
+
+    impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for FailingSnapshot {
+        fn try_get(&self, _key: &Vec<u8>) -> Option<Vec<u8>> {
+            None
+        }
+
+        fn find(
+            &self,
+            _key_prefix: Option<&Vec<u8>>,
+            _direction: SeekDirection,
+        ) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)> + '_> {
+            Box::new(std::iter::empty())
+        }
+    }
+
+    impl WriteStore<Vec<u8>, Vec<u8>> for FailingSnapshot {
+        fn delete(&mut self, _key: Vec<u8>) -> crate::error::CoreResult<()> {
+            Ok(())
+        }
+
+        fn put(&mut self, _key: Vec<u8>, _value: Vec<u8>) -> crate::error::CoreResult<()> {
+            Err(crate::error::CoreError::invalid_operation(
+                "injected application logs write failure",
+            ))
+        }
+    }
+
+    impl StoreSnapshot for FailingSnapshot {
+        fn store(&self) -> Arc<dyn IStore> {
+            Arc::clone(&self.store)
+        }
+
+        fn try_commit(&mut self) -> crate::persistence::store_snapshot::SnapshotCommitResult {
+            Err(StorageError::CommitFailed(
+                "injected application logs commit failure".to_string(),
+            ))
+        }
+    }
+
+    fn settings(exception_policy: UnhandledExceptionPolicy) -> ApplicationLogsSettings {
+        ApplicationLogsSettings {
+            exception_policy,
+            ..ApplicationLogsSettings::default()
+        }
+    }
+
+    #[test]
+    fn commit_batch_propagates_snapshot_try_commit_failure() {
+        let service = ApplicationLogsService::new(
+            settings(UnhandledExceptionPolicy::Ignore),
+            Arc::new(FailingStore),
+        );
+        service.start_batch();
+
+        let err = service
+            .commit_batch()
+            .expect_err("application logs commit should propagate snapshot commit failure");
+
+        assert!(err.contains("injected application logs commit failure"));
+    }
+
+    #[test]
+    fn write_log_propagates_snapshot_put_failure() {
+        let service = ApplicationLogsService::new(
+            settings(UnhandledExceptionPolicy::Ignore),
+            Arc::new(FailingStore),
+        );
+        service.start_batch();
+
+        let err = service
+            .write_log(
+                ApplicationLogsService::PREFIX_BLOCK,
+                &UInt256::zero(),
+                Value::Null,
+            )
+            .expect_err("application logs write should propagate snapshot put failure");
+
+        assert!(err.contains("injected application logs write failure"));
+    }
+
+    #[test]
+    fn commit_error_disables_service_when_policy_stops_plugin() {
+        let service = ApplicationLogsService::new(
+            settings(UnhandledExceptionPolicy::StopPlugin),
+            Arc::new(FailingStore),
+        );
+
+        service.handle_error("injected failure", "committed");
+
+        assert!(service.disabled.load(Ordering::SeqCst));
+    }
 }
