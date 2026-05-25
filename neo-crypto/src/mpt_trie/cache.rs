@@ -3,6 +3,7 @@ use super::node::Node;
 use neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_primitives::UInt256;
 use neo_primitives::UINT256_SIZE;
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -136,18 +137,21 @@ where
     }
 
     fn resolve_internal(&mut self, hash: &UInt256) -> MptResult<&mut MptTrackable> {
-        if !self.entries.contains_key(hash) {
-            let node = self.load_from_store(hash)?;
-            self.entries.insert(*hash, MptTrackable::new(node));
+        let store = Arc::clone(&self.store);
+        let prefix = self.prefix;
+
+        match self.entries.entry(*hash) {
+            Entry::Occupied(entry) => Ok(entry.into_mut()),
+            Entry::Vacant(entry) => {
+                let node = Self::load_from_store_snapshot(&store, prefix, hash)?;
+                Ok(entry.insert(MptTrackable::new(node)))
+            }
         }
-        self.entries
-            .get_mut(hash)
-            .ok_or_else(|| MptError::invalid("entry missing after insertion"))
     }
 
-    fn load_from_store(&self, hash: &UInt256) -> MptResult<Option<Node>> {
-        let key = self.key(hash);
-        let Some(bytes) = self.store.try_get(&key)? else {
+    fn load_from_store_snapshot(store: &S, prefix: u8, hash: &UInt256) -> MptResult<Option<Node>> {
+        let key = Self::key_for(prefix, hash);
+        let Some(bytes) = store.try_get(&key)? else {
             return Ok(None);
         };
         let mut reader = MemoryReader::new(&bytes);
@@ -156,8 +160,12 @@ where
     }
 
     fn key(&self, hash: &UInt256) -> Vec<u8> {
+        Self::key_for(self.prefix, hash)
+    }
+
+    fn key_for(prefix: u8, hash: &UInt256) -> Vec<u8> {
         let mut buffer = Vec::with_capacity(1 + UINT256_SIZE);
-        buffer.push(self.prefix);
+        buffer.push(prefix);
         buffer.extend_from_slice(&hash.to_bytes());
         buffer
     }
