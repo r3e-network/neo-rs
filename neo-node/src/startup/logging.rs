@@ -1,5 +1,6 @@
 //! Health endpoint and metrics pump setup.
 
+use super::tasks::BackgroundTasks;
 use crate::cli::NodeCli;
 use crate::config::NodeConfig;
 use neo_core::neo_system::NeoSystem;
@@ -8,7 +9,8 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{error, info};
 
-pub(crate) async fn start_health_endpoint_if_enabled(
+pub(crate) fn start_health_endpoint_if_enabled(
+    tasks: &BackgroundTasks,
     cli: &NodeCli,
     node_config: &NodeConfig,
     health_state: Arc<RwLock<crate::health::HealthState>>,
@@ -22,14 +24,18 @@ pub(crate) async fn start_health_endpoint_if_enabled(
         .unwrap_or(crate::health::DEFAULT_MAX_HEADER_LAG);
     let storage_for_health = node_config.storage_path();
     let rpc_enabled_for_health = node_config.rpc.enabled;
+    let shutdown = tasks.cancellation_token();
 
-    tokio::spawn(async move {
+    tasks.spawn("health endpoint", async move {
         if let Err(e) = crate::health::serve_health_with_state(
             health_port,
             max_lag,
             storage_for_health,
             rpc_enabled_for_health,
             health_state,
+            async move {
+                shutdown.cancelled().await;
+            },
         )
         .await
         {
@@ -40,16 +46,17 @@ pub(crate) async fn start_health_endpoint_if_enabled(
 }
 
 pub(crate) fn spawn_metrics_pump(
+    tasks: &BackgroundTasks,
     system: Arc<NeoSystem>,
     storage_path: Option<String>,
     health_state: Arc<RwLock<crate::health::HealthState>>,
-) -> (tokio::sync::watch::Sender<bool>, tokio::task::JoinHandle<()>) {
-    let (pump_shutdown_tx, mut pump_shutdown_rx) = tokio::sync::watch::channel(false);
+) {
+    let shutdown = tasks.cancellation_token();
     let metrics_storage_path = storage_path;
     let metrics_system = system;
     let pump_health_state = health_state;
 
-    let handle = tokio::spawn(async move {
+    tasks.spawn("metrics pump", async move {
         let tick = std::time::Duration::from_secs(1);
         const FAST_SYNC_ENABLE_LAG: u32 = 5_000;
         const FAST_SYNC_DISABLE_LAG: u32 = 500;
@@ -57,12 +64,7 @@ pub(crate) fn spawn_metrics_pump(
         loop {
             tokio::select! {
                 _ = tokio::time::sleep(tick) => {}
-                _ = pump_shutdown_rx.changed() => {
-                    if *pump_shutdown_rx.borrow() {
-                        break;
-                    }
-                    continue;
-                }
+                _ = shutdown.cancelled() => break,
             }
 
             let block_height = metrics_system.current_block_index();
@@ -142,6 +144,23 @@ pub(crate) fn spawn_metrics_pump(
             }
         }
     });
+}
 
-    (pump_shutdown_tx, handle)
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use neo_core::protocol_settings::ProtocolSettings;
+    use std::time::Duration;
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn metrics_pump_exits_on_background_shutdown() {
+        let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("neo system");
+        let tasks = BackgroundTasks::new();
+        let health_state = Arc::new(RwLock::new(crate::health::HealthState::default()));
+
+        spawn_metrics_pump(&tasks, system.clone(), None, health_state);
+
+        assert!(tasks.shutdown(Duration::from_secs(1)).await);
+        system.shutdown().await.expect("system shutdown");
+    }
 }

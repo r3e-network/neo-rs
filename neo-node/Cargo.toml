@@ -64,6 +64,7 @@ parking_lot = { workspace = true }
 
 # Async runtime
 tokio.workspace = true
+tokio-util = { workspace = true, features = ["rt"] }
 hyper.workspace = true
 
 # Logging

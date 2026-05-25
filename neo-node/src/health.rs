@@ -12,6 +12,7 @@ use hyper::{
 };
 use serde::Serialize;
 use std::fs;
+use std::future::Future;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -26,14 +27,18 @@ pub struct HealthState {
     pub is_syncing: bool,
 }
 
-/// Serves the health endpoint with shared state from the runtime.
-pub async fn serve_health_with_state(
+/// Serves the health endpoint with shared runtime state until shutdown resolves.
+pub async fn serve_health_with_state<F>(
     port: u16,
     max_header_lag: u32,
     storage_path: Option<String>,
     rpc_enabled: bool,
     health_state: Arc<RwLock<HealthState>>,
-) -> anyhow::Result<()> {
+    shutdown: F,
+) -> anyhow::Result<()>
+where
+    F: Future<Output = ()> + Send + 'static,
+{
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
 
     let make_svc = make_service_fn(move |_conn| {
@@ -59,7 +64,10 @@ pub async fn serve_health_with_state(
         }
     });
 
-    Server::bind(&addr).serve(make_svc).await?;
+    Server::bind(&addr)
+        .serve(make_svc)
+        .with_graceful_shutdown(shutdown)
+        .await?;
     Ok(())
 }
 
@@ -139,4 +147,62 @@ fn verify_storage_markers(path: &str, _expected_magic: u32) -> bool {
         .ok()
         .map(|contents| contents.trim() == crate::startup::STORAGE_VERSION)
         .unwrap_or(true) // Allow missing marker for new installations
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hyper::{Client, Uri};
+    use std::net::TcpListener;
+    use tokio::sync::oneshot;
+    use tokio::time::{sleep, timeout, Duration};
+
+    #[tokio::test]
+    async fn health_server_exits_on_shutdown_signal() {
+        let port = free_local_port();
+        let health_state = Arc::new(RwLock::new(HealthState::default()));
+        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+
+        let server = tokio::spawn(serve_health_with_state(
+            port,
+            DEFAULT_MAX_HEADER_LAG,
+            None,
+            true,
+            health_state,
+            async move {
+                let _ = shutdown_rx.await;
+            },
+        ));
+
+        let uri = format!("http://127.0.0.1:{port}/healthz")
+            .parse::<Uri>()
+            .expect("valid health URI");
+        wait_for_ok_health(uri).await;
+
+        let _ = shutdown_tx.send(());
+        timeout(Duration::from_secs(1), server)
+            .await
+            .expect("health server should stop")
+            .expect("health server task should join")
+            .expect("health server shutdown should be clean");
+    }
+
+    fn free_local_port() -> u16 {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind local port");
+        listener.local_addr().expect("local address").port()
+    }
+
+    async fn wait_for_ok_health(uri: Uri) {
+        let client = Client::new();
+        for _ in 0..50 {
+            match client.get(uri.clone()).await {
+                Ok(response) => {
+                    assert_eq!(response.status(), StatusCode::OK);
+                    return;
+                }
+                Err(_) => sleep(Duration::from_millis(20)).await,
+            }
+        }
+        panic!("health endpoint did not become available");
+    }
 }

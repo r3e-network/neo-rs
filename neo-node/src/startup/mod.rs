@@ -10,6 +10,7 @@ mod logging;
 pub(crate) mod services;
 mod signal;
 mod run;
+mod tasks;
 
 pub(crate) use config::STORAGE_VERSION;
 pub(crate) use run::run;

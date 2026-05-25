@@ -16,6 +16,7 @@ use super::services::{
 #[cfg(feature = "tee")]
 use super::services::{maybe_enable_tee_runtime, maybe_enable_tee_wallet};
 use super::signal::wait_for_shutdown_signal;
+use super::tasks::{BackgroundTasks, DEFAULT_BACKGROUND_TASK_SHUTDOWN};
 use crate::cli::NodeCli;
 use crate::config::NodeConfig;
 use crate::rpc_consensus::RpcServerConsensus;
@@ -262,16 +263,25 @@ pub(crate) async fn run(cli: NodeCli) -> Result<()> {
     }
 
     let health_state = Arc::new(RwLock::new(crate::health::HealthState::default()));
-    start_health_endpoint_if_enabled(&cli, &node_config, health_state.clone()).await;
-    let (pump_shutdown_tx, metrics_handle) =
-        spawn_metrics_pump(system.clone(), storage_path.clone(), health_state.clone());
+    let background_tasks = BackgroundTasks::new();
+    start_health_endpoint_if_enabled(&background_tasks, &cli, &node_config, health_state.clone());
+    spawn_metrics_pump(
+        &background_tasks,
+        system.clone(),
+        storage_path.clone(),
+        health_state.clone(),
+    );
 
     info!(target: "neo", "node running, press Ctrl+C to stop");
 
     wait_for_shutdown_signal().await;
 
-    let _ = pump_shutdown_tx.send(true);
-    let _ = metrics_handle.await;
+    if !background_tasks
+        .shutdown(DEFAULT_BACKGROUND_TASK_SHUTDOWN)
+        .await
+    {
+        warn!(target: "neo", "background task shutdown timed out");
+    }
 
     if let Some(server) = rpc_server {
         if let Some(mut guard) = server.try_write() {
