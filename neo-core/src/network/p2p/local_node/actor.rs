@@ -2,7 +2,6 @@
 // actor.rs - LocalNodeActor implementation
 //
 
-use super::helpers::parse_seed_entry;
 use super::state::LocalNode;
 use super::*;
 use crate::network::p2p::validate_peer_endpoint;
@@ -632,16 +631,19 @@ impl LocalNodeActor {
     async fn resolve_seed_endpoints(&self) -> Vec<SocketAddr> {
         let mut endpoints = Vec::with_capacity(self.state.seed_list().len() * 2);
         for entry in self.state.seed_list() {
-            if let Some((host, port)) = parse_seed_entry(&entry) {
-                match lookup_host((host.as_str(), port)).await {
-                    Ok(iter) => {
-                        for addr in iter {
-                            endpoints.push(addr);
-                        }
+            let seed = entry.trim();
+            if seed.is_empty() {
+                continue;
+            }
+
+            match lookup_host(seed).await {
+                Ok(iter) => {
+                    for addr in iter {
+                        endpoints.push(addr);
                     }
-                    Err(error) => {
-                        warn!(target: "neo", seed = %entry, error = %error, "failed to resolve seed");
-                    }
+                }
+                Err(error) => {
+                    warn!(target: "neo", seed = %entry, error = %error, "failed to resolve seed");
                 }
             }
         }
@@ -710,5 +712,27 @@ impl LocalNodeActor {
                 }
             }
         }));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn resolve_seed_endpoints_delegates_to_standard_socket_parser() {
+        let settings = Arc::new(ProtocolSettings::default());
+        let node = Arc::new(LocalNode::new(settings, 10333, "/agent".to_string()));
+        node.set_seed_list([
+            " [::1]:20333 ".to_string(),
+            "127.0.0.1".to_string(),
+            String::new(),
+            "  ".to_string(),
+        ]);
+
+        let actor = LocalNodeActor::new(node);
+        let endpoints = actor.resolve_seed_endpoints().await;
+
+        assert_eq!(endpoints, vec!["[::1]:20333".parse().unwrap()]);
     }
 }
