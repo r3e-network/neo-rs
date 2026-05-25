@@ -1,7 +1,6 @@
 //! ApplicationEngine.OpCodePrices - matches C# Neo.SmartContract.ApplicationEngine.OpCodePrices.cs exactly
 
 use crate::smart_contract::ApplicationEngine;
-use std::collections::HashMap;
 
 impl ApplicationEngine {
     /// The prices of all opcodes (in execution units, before ExecFeeFactor).
@@ -23,12 +22,4 @@ impl ApplicationEngine {
         Self::OPCODE_PRICE_TABLE[opcode as usize]
     }
 
-    /// Creates the default opcode price table.
-    pub fn create_opcode_price_table() -> HashMap<u8, i64> {
-        let mut table = HashMap::new();
-        for opcode in 0..=255u8 {
-            table.insert(opcode, Self::OPCODE_PRICE_TABLE[opcode as usize]);
-        }
-        table
-    }
 }
