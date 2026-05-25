@@ -20,8 +20,6 @@ pub use caching::{
     ecdsa_cache::{ECDsaCache, ECDsaCacheItem},
     fifo_cache::FIFOCache,
     hashset_cache::HashSetCache,
-    indexed_queue::IndexedQueue,
     lru_cache::LRUCache,
-    reflection_cache_attribute::ReflectionCacheAttribute,
     relay_cache::{InventoryHash, RelayCache},
 };
