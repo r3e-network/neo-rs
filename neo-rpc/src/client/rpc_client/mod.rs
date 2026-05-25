@@ -13,6 +13,7 @@ mod builder;
 mod client;
 mod helpers;
 mod hooks;
+mod wallet;
 
 #[cfg(test)]
 mod tests;
