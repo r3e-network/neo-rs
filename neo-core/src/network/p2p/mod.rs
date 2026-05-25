@@ -48,6 +48,7 @@ pub mod capabilities;
 pub mod channels_config;
 pub mod connection;
 pub mod framed;
+mod framed_codec;
 pub mod helper;
 #[cfg(feature = "runtime")]
 pub mod local_node;
