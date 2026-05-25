@@ -584,10 +584,14 @@ mod tests {
     use crate::network::p2p::{
         local_node::RelayInventory,
         message::Message,
-        payloads::{block::Block, signer::Signer, transaction::Transaction, witness::Witness},
+        messages::{NetworkMessage, ProtocolMessage},
+        payloads::{
+            block::Block, ping_payload::PingPayload, signer::Signer, transaction::Transaction,
+            witness::Witness,
+        },
         timeouts,
     };
-    use crate::network::MessageCommand;
+    use crate::network::{MessageCommand, MessageFlags};
     use crate::{UInt160, WitnessScope};
     use neo_vm_rs::OpCode;
     use std::sync::{
@@ -710,6 +714,27 @@ mod tests {
         drop(subscription);
         let count = message_handlers::with_handlers(|handlers| handlers.len());
         assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn build_wire_message_reconstructs_flagged_compressed_message_for_handlers() {
+        let mut message =
+            NetworkMessage::new(ProtocolMessage::Ping(PingPayload::create_with_nonce(7, 77)));
+        message.flags = MessageFlags::COMPRESSED;
+
+        let wire = RemoteNode::build_wire_message(&message).expect("wire message");
+
+        assert_eq!(wire.command, MessageCommand::Ping);
+        assert!(wire.is_compressed());
+        assert_ne!(wire.payload_compressed(), wire.payload());
+
+        match wire.to_protocol_message().expect("ping payload") {
+            ProtocolMessage::Ping(payload) => {
+                assert_eq!(payload.last_block_index, 7);
+                assert_eq!(payload.nonce, 77);
+            }
+            other => panic!("expected ping payload, got {other:?}"),
+        }
     }
 
     #[test]

@@ -150,27 +150,13 @@ impl RemoteNode {
                 return None;
             }
         };
-        let mut wire = crate::network::p2p::message::Message {
-            flags: message.flags,
-            command: message.command(),
-            payload_raw: payload.clone(),
-            payload_compressed: payload.clone(),
-        };
-        if wire.flags.is_compressed() {
-            match crate::compression::compress_lz4(&wire.payload_raw) {
-                Ok(compressed) => wire.payload_compressed = compressed,
-                Err(err) => {
-                    tracing::warn!(
-                        target: "neo",
-                        error = %err,
-                        "failed to recompress payload for message handlers"
-                    );
-                    wire.flags = crate::network::MessageFlags::NONE;
-                    wire.payload_compressed = wire.payload_raw.clone();
-                }
-            }
-        }
-        Some(wire)
+        Some(
+            crate::network::p2p::message::Message::from_payload_with_flags(
+                message.flags,
+                message.command(),
+                payload,
+            ),
+        )
     }
     pub(super) fn is_single_command(command: MessageCommand) -> bool {
         matches!(

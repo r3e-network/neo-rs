@@ -125,6 +125,41 @@ impl Message {
         Ok(message)
     }
 
+    /// Reconstructs a message from uncompressed payload bytes while preserving
+    /// an explicit flag state supplied by a higher protocol layer.
+    pub(crate) fn from_payload_with_flags(
+        flags: MessageFlags,
+        command: MessageCommand,
+        payload_bytes: Vec<u8>,
+    ) -> Self {
+        let mut message = Self {
+            flags,
+            command,
+            payload_raw: payload_bytes,
+            payload_compressed: Vec::new(),
+        };
+
+        if message.is_compressed() {
+            match compress_lz4(&message.payload_raw) {
+                Ok(compressed) => message.payload_compressed = compressed,
+                Err(err) => {
+                    tracing::warn!(
+                        target: "neo",
+                        error = %err,
+                        command = ?message.command,
+                        "failed to recompress payload for message handlers"
+                    );
+                    message.flags = MessageFlags::NONE;
+                    message.payload_compressed.clone_from(&message.payload_raw);
+                }
+            }
+        } else {
+            message.payload_compressed.clone_from(&message.payload_raw);
+        }
+
+        message
+    }
+
     /// Returns `true` when the payload is currently compressed.
     pub fn is_compressed(&self) -> bool {
         self.flags.is_compressed()
@@ -333,6 +368,80 @@ mod tests {
 
         let mut reader = MemoryReader::new(&compressed);
         let decoded = <Message as Serializable>::deserialize(&mut reader).unwrap();
+        assert_eq!(decoded.payload(), data.as_slice());
+    }
+
+    #[test]
+    fn from_payload_with_flags_forces_existing_compression_flag() {
+        let data = vec![0xCD; COMPRESSION_MIN_SIZE + 64];
+
+        let message = Message::from_payload_with_flags(
+            MessageFlags::COMPRESSED,
+            MessageCommand::Ping,
+            data.clone(),
+        );
+
+        assert!(message.is_compressed());
+        assert_eq!(message.payload(), data.as_slice());
+        assert_ne!(message.payload_compressed(), data.as_slice());
+
+        let bytes = message.to_bytes(true).unwrap();
+        let mut reader = MemoryReader::new(&bytes);
+        let decoded = <Message as Serializable>::deserialize(&mut reader).unwrap();
+        assert_eq!(decoded.command, MessageCommand::Ping);
+        assert_eq!(decoded.payload(), data.as_slice());
+    }
+
+    #[test]
+    fn from_payload_with_flags_compresses_small_payload_when_flagged() {
+        let data = b"tiny".to_vec();
+
+        let message = Message::from_payload_with_flags(
+            MessageFlags::COMPRESSED,
+            MessageCommand::Ping,
+            data.clone(),
+        );
+
+        assert!(message.is_compressed());
+        assert_eq!(message.payload(), data.as_slice());
+        assert_ne!(message.payload_compressed(), data.as_slice());
+    }
+
+    #[test]
+    fn from_payload_with_flags_keeps_uncompressed_payload_raw() {
+        let data = b"plain".to_vec();
+
+        let message = Message::from_payload_with_flags(
+            MessageFlags::NONE,
+            MessageCommand::Ping,
+            data.clone(),
+        );
+
+        assert!(!message.is_compressed());
+        assert_eq!(message.payload(), data.as_slice());
+        assert_eq!(message.payload_compressed(), data.as_slice());
+        assert_eq!(
+            message.to_bytes(true).unwrap()[0],
+            MessageFlags::NONE.to_byte()
+        );
+    }
+
+    #[test]
+    fn from_payload_with_flags_preserves_unknown_compressed_bits() {
+        let data = b"flagged".to_vec();
+        let flags = MessageFlags::from_byte(0x81).unwrap();
+
+        let message = Message::from_payload_with_flags(flags, MessageCommand::Ping, data.clone());
+
+        assert_eq!(message.flags.to_byte(), 0x81);
+        assert!(message.is_compressed());
+
+        let bytes = message.to_bytes(true).unwrap();
+        assert_eq!(bytes[0], 0x81);
+
+        let mut reader = MemoryReader::new(&bytes);
+        let decoded = <Message as Serializable>::deserialize(&mut reader).unwrap();
+        assert_eq!(decoded.flags.to_byte(), 0x81);
         assert_eq!(decoded.payload(), data.as_slice());
     }
 
