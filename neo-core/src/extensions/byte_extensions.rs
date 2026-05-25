@@ -74,11 +74,7 @@ impl ByteExtensions for &[u8] {
             return self.to_hex_string();
         }
 
-        let mut result = String::with_capacity(self.len() * 2);
-        for &byte in self.iter().rev() {
-            result.push_str(&format!("{:02x}", byte));
-        }
-        result
+        hex::encode(self.iter().rev().copied().collect::<Vec<_>>())
     }
 
     fn as_read_only_span(&self) -> &[u8] {
