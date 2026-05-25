@@ -6,41 +6,69 @@ use std::fmt;
 use std::str::FromStr;
 
 /// Types of events that can be subscribed to
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum WsEventType {
-    /// New block added to the chain
-    BlockAdded,
-    /// Transaction added to mempool
-    TransactionAdded,
-    /// Transaction(s) removed from mempool
-    TransactionRemoved,
-    /// Contract notification event
-    Notification,
+macro_rules! ws_event_types {
+    (
+        $(#[$enum_meta:meta])*
+        $vis:vis enum $name:ident {
+            $(
+                $(#[$variant_meta:meta])*
+                $variant:ident => $wire:literal
+            ),+ $(,)?
+        }
+    ) => {
+        $(#[$enum_meta])*
+        $vis enum $name {
+            $(
+                $(#[$variant_meta])*
+                $variant,
+            )+
+        }
+
+        impl $name {
+            /// Returns the JSON-RPC/WebSocket wire name for this event type.
+            #[must_use]
+            pub const fn as_str(self) -> &'static str {
+                match self {
+                    $(
+                        Self::$variant => $wire,
+                    )+
+                }
+            }
+        }
+
+        impl fmt::Display for $name {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str(self.as_str())
+            }
+        }
+
+        impl FromStr for $name {
+            type Err = String;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                match s {
+                    $(
+                        $wire => Ok(Self::$variant),
+                    )+
+                    _ => Err(format!("unknown event type: {s}")),
+                }
+            }
+        }
+    };
 }
 
-impl fmt::Display for WsEventType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::BlockAdded => write!(f, "block_added"),
-            Self::TransactionAdded => write!(f, "transaction_added"),
-            Self::TransactionRemoved => write!(f, "transaction_removed"),
-            Self::Notification => write!(f, "notification"),
-        }
-    }
-}
-
-impl FromStr for WsEventType {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "block_added" => Ok(Self::BlockAdded),
-            "transaction_added" => Ok(Self::TransactionAdded),
-            "transaction_removed" => Ok(Self::TransactionRemoved),
-            "notification" => Ok(Self::Notification),
-            _ => Err(format!("unknown event type: {s}")),
-        }
+ws_event_types! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    pub enum WsEventType {
+        /// New block added to the chain
+        BlockAdded => "block_added",
+        /// Transaction added to mempool
+        TransactionAdded => "transaction_added",
+        /// Transaction(s) removed from mempool
+        TransactionRemoved => "transaction_removed",
+        /// Contract notification event
+        Notification => "notification",
     }
 }
 
@@ -146,13 +174,6 @@ impl WsNotification {
     /// Create a new notification from an event
     #[must_use]
     pub fn from_event(event: &WsEvent) -> Self {
-        let method = match event {
-            WsEvent::BlockAdded { .. } => "block_added",
-            WsEvent::TransactionAdded { .. } => "transaction_added",
-            WsEvent::TransactionRemoved { .. } => "transaction_removed",
-            WsEvent::Notification { .. } => "notification",
-        };
-
         let params = match event {
             WsEvent::BlockAdded { hash, height } => {
                 serde_json::json!({ "hash": hash, "height": height })
@@ -174,7 +195,7 @@ impl WsNotification {
 
         Self {
             jsonrpc: "2.0",
-            method: method.to_string(),
+            method: event.event_type().as_str().to_string(),
             params,
         }
     }
