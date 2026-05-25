@@ -1,8 +1,7 @@
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
-use crate::server::rpc_helpers::{internal_error, invalid_params};
+use crate::server::rpc_helpers::{expect_base64_param, internal_error, invalid_params};
 use crate::server::rpc_server::{RpcHandler, RpcServer};
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use neo_core::cryptography::{ECCurve, ECPoint};
 use neo_core::oracle_service::{OracleService, OracleServiceError};
 use serde_json::{json, Value};
@@ -42,20 +41,6 @@ fn oracle_service(server: &RpcServer) -> Result<Arc<OracleService>, RpcException
         .get_service::<OracleService>()
         .map_err(|e| internal_error(e.to_string()))?
         .ok_or_else(|| RpcException::from(RpcError::oracle_disabled()))
-}
-
-#[inline]
-fn expect_base64_param(
-    params: &[Value],
-    index: usize,
-    method: &str,
-) -> Result<Vec<u8>, RpcException> {
-    let text = params.get(index).and_then(|v| v.as_str()).ok_or_else(|| {
-        invalid_params(format!("{} expects base64 parameter {}", method, index + 1))
-    })?;
-    BASE64_STANDARD
-        .decode(text.trim())
-        .map_err(|_| invalid_params("Invalid Base64-encoded bytes"))
 }
 
 fn map_oracle_error(err: OracleServiceError) -> RpcException {

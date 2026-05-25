@@ -1,9 +1,12 @@
 //! Node-related RPC handlers (port of `RpcServer.Node.cs`).
 
 use crate::server::rpc_exception::RpcException;
-use crate::server::rpc_helpers::{internal_error, invalid_params};
+use crate::server::rpc_helpers::{
+    expect_base64_param_with_decode_message, internal_error, invalid_params,
+};
 use crate::server::rpc_relay;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
+#[cfg(test)]
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use hex;
 use neo_core::hardfork::Hardfork;
@@ -174,11 +177,12 @@ impl RpcServerNode {
     }
 
     fn send_raw_transaction(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        let payload =
-            crate::server::rpc_helpers::expect_string_param(params, 0, "sendrawtransaction")?;
-        let raw = BASE64_STANDARD
-            .decode(payload.trim())
-            .map_err(|_| invalid_params("Invalid transaction payload"))?;
+        let raw = expect_base64_param_with_decode_message(
+            params,
+            0,
+            "sendrawtransaction",
+            "Invalid transaction payload",
+        )?;
         let transaction = Transaction::from_bytes(&raw)
             .map_err(|err| invalid_params(format!("Invalid transaction: {err}")))?;
         let relay_result = rpc_relay::with_relay_responder(server, |sender| {
@@ -198,10 +202,12 @@ impl RpcServerNode {
     }
 
     fn submit_block(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        let payload = crate::server::rpc_helpers::expect_string_param(params, 0, "submitblock")?;
-        let raw = BASE64_STANDARD
-            .decode(payload.trim())
-            .map_err(|_| invalid_params("Invalid block payload"))?;
+        let raw = expect_base64_param_with_decode_message(
+            params,
+            0,
+            "submitblock",
+            "Invalid block payload",
+        )?;
         let mut reader = MemoryReader::new(&raw);
         let block = <Block as Serializable>::deserialize(&mut reader)
             .map_err(|err| invalid_params(format!("Invalid block: {err}")))?;

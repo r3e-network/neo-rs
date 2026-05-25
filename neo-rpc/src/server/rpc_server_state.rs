@@ -2,7 +2,9 @@
 
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
-use crate::server::rpc_helpers::internal_error;
+use crate::server::rpc_helpers::{
+    decode_base64_text, expect_base64_param_with_message, internal_error,
+};
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::Engine as _;
@@ -116,14 +118,10 @@ impl RpcServerState {
         let prefix =
             Self::parse_base64(params, 2, "findstates", "Base64 prefix for storage search")?;
         let from = match params.get(3) {
-            Some(Value::String(s)) if !s.is_empty() => {
-                Some(BASE64_STANDARD.decode(s).map_err(|_| {
-                    RpcException::from(
-                        RpcError::invalid_params()
-                            .with_data("findstates expects Base64-encoded 'from' parameter"),
-                    )
-                })?)
-            }
+            Some(Value::String(s)) if !s.is_empty() => Some(decode_base64_text(
+                s,
+                "findstates expects Base64-encoded 'from' parameter",
+            )?),
             _ => None,
         };
         let count = match params.get(4) {
@@ -280,18 +278,11 @@ impl RpcServerState {
         method: &str,
         descriptor: &str,
     ) -> Result<Vec<u8>, RpcException> {
-        let value = params.get(idx).and_then(Value::as_str).ok_or_else(|| {
-            RpcException::from(
-                RpcError::invalid_params()
-                    .with_data(format!("{method} expects {descriptor} at index {idx}")),
-            )
-        })?;
-        BASE64_STANDARD.decode(value).map_err(|_| {
-            RpcException::from(
-                RpcError::invalid_params()
-                    .with_data(format!("{method} expects {descriptor} at index {idx}")),
-            )
-        })
+        expect_base64_param_with_message(
+            params,
+            idx,
+            format!("{method} expects {descriptor} at index {idx}"),
+        )
     }
 
     fn expect_u32(params: &[Value], idx: usize, method: &str) -> Result<u32, RpcException> {

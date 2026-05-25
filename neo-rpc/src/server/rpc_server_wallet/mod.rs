@@ -1,5 +1,6 @@
 //! RPC wallet endpoints mirroring RpcServer.Wallet.cs.
 
+#[cfg(test)]
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use neo_core::big_decimal::BigDecimal;
 use neo_core::cryptography::{ECCurve, ECPoint};
@@ -42,7 +43,9 @@ use zeroize::Zeroizing;
 
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
-use crate::server::rpc_helpers::{internal_error, invalid_params};
+use crate::server::rpc_helpers::{
+    expect_base64_param_with_decode_message, internal_error, invalid_params,
+};
 use crate::server::rpc_relay;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 
@@ -237,10 +240,12 @@ impl RpcServerWallet {
     }
 
     fn calculate_network_fee(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        let payload = Self::expect_string_param(params, 0, "calculatenetworkfee")?;
-        let raw = BASE64_STANDARD.decode(payload.trim()).map_err(|_| {
-            RpcException::from(RpcError::invalid_params().with_data("Invalid transaction payload"))
-        })?;
+        let raw = expect_base64_param_with_decode_message(
+            params,
+            0,
+            "calculatenetworkfee",
+            "Invalid transaction payload",
+        )?;
         let transaction = Transaction::from_bytes(&raw).map_err(|err| {
             RpcException::from(
                 RpcError::invalid_params().with_data(format!("Invalid transaction: {err}")),

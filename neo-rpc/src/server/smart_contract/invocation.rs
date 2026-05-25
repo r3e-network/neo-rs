@@ -1,6 +1,7 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
+use crate::server::rpc_helpers::expect_base64_param_with_decode_message;
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::transaction::Transaction;
@@ -61,10 +62,12 @@ pub(super) fn invoke_function(server: &RpcServer, params: &[Value]) -> Result<Va
 }
 
 pub(super) fn invoke_script(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-    let script_base64 = expect_string_param(params, 0, "invokescript")?;
-    let script = BASE64_STANDARD
-        .decode(script_base64.trim())
-        .map_err(|_| invalid_params("invalid script payload"))?;
+    let script = expect_base64_param_with_decode_message(
+        params,
+        0,
+        "invokescript",
+        "invalid script payload",
+    )?;
     let (signers, witnesses) = parse_signers_and_witnesses(server, params.get(1))?;
     let use_diagnostic = params
         .get(2)
