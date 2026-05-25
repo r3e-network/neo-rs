@@ -2512,6 +2512,7 @@ dependencies = [
 name = "neo-primitives"
 version = "0.7.2"
 dependencies = [
+ "bitflags 2.11.0",
  "bs58",
  "hex",
  "num-bigint",

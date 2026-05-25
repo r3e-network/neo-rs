@@ -370,7 +370,7 @@ impl Serializable for Signer {
         let scopes_byte = reader.read_u8()?;
         // Use OptionExt trait to reduce boilerplate
         let scopes =
-            WitnessScope::from_bits(scopes_byte).ok_or_invalid_data("Invalid witness scope")?;
+            WitnessScope::from_byte(scopes_byte).ok_or_invalid_data("Invalid witness scope")?;
 
         let mut allowed_contracts = Vec::new();
         let mut allowed_groups = Vec::new();
@@ -494,5 +494,14 @@ mod tests {
 
         let expected = StackItem::try_from(signer.to_stack_value()).unwrap();
         assert_eq!(signer.to_stack_item().unwrap(), expected);
+    }
+
+    #[test]
+    fn signer_deserialize_rejects_global_combined_scope() {
+        let mut data = vec![0u8; UINT160_SIZE];
+        data.push((WitnessScope::GLOBAL | WitnessScope::CALLED_BY_ENTRY).bits());
+        let mut reader = MemoryReader::new(&data);
+
+        assert!(<Signer as Serializable>::deserialize(&mut reader).is_err());
     }
 }

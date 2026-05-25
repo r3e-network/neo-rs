@@ -2,37 +2,50 @@
 //!
 //! Matches C# `Neo.Network.P2P.Payloads.WitnessScope` exactly.
 
-use serde::{Deserialize, Serialize};
+use bitflags::bitflags;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
 use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not};
 use std::str::FromStr;
+
+bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    struct WitnessScopeFlags: u8 {
+        const NONE = 0x00;
+        const CALLED_BY_ENTRY = 0x01;
+        const CUSTOM_CONTRACTS = 0x10;
+        const CUSTOM_GROUPS = 0x20;
+        const WITNESS_RULES = 0x40;
+        const GLOBAL = 0x80;
+    }
+}
 
 /// Represents the scope of a witness (matches C# `WitnessScope` `Flags` enum exactly).
 ///
 /// This is a flags enum that defines the different scopes that can be applied to a witness,
 /// controlling which contracts and operations the witness can authorize.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct WitnessScope(u8);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct WitnessScope(WitnessScopeFlags);
 
 impl WitnessScope {
     /// Indicates that no contract was witnessed. Only sign the transaction.
-    pub const NONE: Self = Self(0x00);
+    pub const NONE: Self = Self(WitnessScopeFlags::NONE);
 
     /// Indicates that the calling contract must be the entry contract.
-    pub const CALLED_BY_ENTRY: Self = Self(0x01);
+    pub const CALLED_BY_ENTRY: Self = Self(WitnessScopeFlags::CALLED_BY_ENTRY);
 
     /// Custom hash for contract-specific.
-    pub const CUSTOM_CONTRACTS: Self = Self(0x10);
+    pub const CUSTOM_CONTRACTS: Self = Self(WitnessScopeFlags::CUSTOM_CONTRACTS);
 
     /// Custom pubkey for group members.
-    pub const CUSTOM_GROUPS: Self = Self(0x20);
+    pub const CUSTOM_GROUPS: Self = Self(WitnessScopeFlags::CUSTOM_GROUPS);
 
     /// Indicates that the current context must satisfy the specified rules.
-    pub const WITNESS_RULES: Self = Self(0x40);
+    pub const WITNESS_RULES: Self = Self(WitnessScopeFlags::WITNESS_RULES);
 
     /// Global scope allows this witness in all contexts (default Neo 2 behavior).
     /// This cannot be combined with other flags.
-    pub const GLOBAL: Self = Self(0x80);
+    pub const GLOBAL: Self = Self(WitnessScopeFlags::GLOBAL);
 
     // C# naming convention aliases
     /// Alias for [`CALLED_BY_ENTRY`](Self::CALLED_BY_ENTRY) (C# naming convention).
@@ -63,10 +76,11 @@ impl WitnessScope {
     /// Checks if this scope has the specified flag.
     #[must_use]
     pub const fn has_flag(self, flag: Self) -> bool {
-        if flag.0 == 0 {
-            return self.0 == 0;
+        let flag_bits = flag.bits();
+        if flag_bits == 0 {
+            return self.bits() == 0;
         }
-        (self.0 & flag.0) == flag.0
+        (self.bits() & flag_bits) == flag_bits
     }
 
     /// Checks if this scope contains the specified flag (alias for `has_flag`).
@@ -78,13 +92,15 @@ impl WitnessScope {
     /// Combines this scope with another scope using bitwise OR.
     #[must_use]
     pub const fn combine(self, other: Self) -> Self {
-        Self(self.0 | other.0)
+        Self(WitnessScopeFlags::from_bits_retain(
+            self.bits() | other.bits(),
+        ))
     }
 
     /// Returns the raw bit representation of the scope.
     #[must_use]
     pub const fn bits(self) -> u8 {
-        self.0
+        self.0.bits()
     }
 
     /// Creates a scope from a raw bit representation.
@@ -96,7 +112,7 @@ impl WitnessScope {
     /// Returns true if the scope shares any flags with `other`.
     #[must_use]
     pub const fn intersects(self, other: Self) -> bool {
-        self.0 & other.0 != 0
+        self.bits() & other.bits() != 0
     }
 
     /// Creates a `WitnessScope` from a byte value.
@@ -115,7 +131,7 @@ impl WitnessScope {
                     if (value & 0x80) != 0 && value != 0x80 {
                         Option::None
                     } else {
-                        Some(Self(value))
+                        Some(Self(WitnessScopeFlags::from_bits_retain(value)))
                     }
                 } else {
                     Option::None
@@ -127,25 +143,44 @@ impl WitnessScope {
     /// Converts the `WitnessScope` to a byte value.
     #[must_use]
     pub const fn to_byte(self) -> u8 {
-        self.0
+        self.bits()
     }
 
     /// Validates that the scope combination is valid.
     #[must_use]
     pub fn is_valid(self) -> bool {
-        let value = self.0;
-
-        if self.has_flag(Self::GLOBAL) && value != Self::GLOBAL.0 {
+        if self.has_flag(Self::GLOBAL) && self != Self::GLOBAL {
             return false;
         }
 
-        let valid_flags = Self::CALLED_BY_ENTRY.0
-            | Self::CUSTOM_CONTRACTS.0
-            | Self::CUSTOM_GROUPS.0
-            | Self::WITNESS_RULES.0
-            | Self::GLOBAL.0;
+        let valid_flags = Self::CALLED_BY_ENTRY.bits()
+            | Self::CUSTOM_CONTRACTS.bits()
+            | Self::CUSTOM_GROUPS.bits()
+            | Self::WITNESS_RULES.bits()
+            | Self::GLOBAL.bits();
 
-        (value & !valid_flags) == 0
+        (self.bits() & !valid_flags) == 0
+    }
+}
+
+impl Serialize for WitnessScope {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_u8(self.to_byte())
+    }
+}
+
+impl<'de> Deserialize<'de> for WitnessScope {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = u8::deserialize(deserializer)?;
+        Self::from_byte(value).ok_or_else(|| {
+            serde::de::Error::custom(format!("Invalid witness scope: 0x{value:02X}"))
+        })
     }
 }
 
@@ -208,36 +243,45 @@ impl FromStr for WitnessScope {
 
 impl fmt::Display for WitnessScope {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match *self {
-            Self::NONE => write!(f, "None"),
-            Self::CALLED_BY_ENTRY => write!(f, "CalledByEntry"),
-            Self::CUSTOM_CONTRACTS => write!(f, "CustomContracts"),
-            Self::CUSTOM_GROUPS => write!(f, "CustomGroups"),
-            Self::WITNESS_RULES => write!(f, "WitnessRules"),
-            Self::GLOBAL => write!(f, "Global"),
-            _ => {
-                let mut parts = Vec::new();
-                if self.has_flag(Self::CALLED_BY_ENTRY) {
-                    parts.push("CalledByEntry");
-                }
-                if self.has_flag(Self::CUSTOM_CONTRACTS) {
-                    parts.push("CustomContracts");
-                }
-                if self.has_flag(Self::CUSTOM_GROUPS) {
-                    parts.push("CustomGroups");
-                }
-                if self.has_flag(Self::WITNESS_RULES) {
-                    parts.push("WitnessRules");
-                }
-                if self.has_flag(Self::GLOBAL) {
-                    parts.push("Global");
-                }
-                if parts.is_empty() {
-                    write!(f, "None")
-                } else {
-                    write!(f, "{}", parts.join(" | "))
-                }
-            }
+        if *self == Self::NONE {
+            return write!(f, "None");
+        }
+        if *self == Self::CALLED_BY_ENTRY {
+            return write!(f, "CalledByEntry");
+        }
+        if *self == Self::CUSTOM_CONTRACTS {
+            return write!(f, "CustomContracts");
+        }
+        if *self == Self::CUSTOM_GROUPS {
+            return write!(f, "CustomGroups");
+        }
+        if *self == Self::WITNESS_RULES {
+            return write!(f, "WitnessRules");
+        }
+        if *self == Self::GLOBAL {
+            return write!(f, "Global");
+        }
+
+        let mut parts = Vec::new();
+        if self.has_flag(Self::CALLED_BY_ENTRY) {
+            parts.push("CalledByEntry");
+        }
+        if self.has_flag(Self::CUSTOM_CONTRACTS) {
+            parts.push("CustomContracts");
+        }
+        if self.has_flag(Self::CUSTOM_GROUPS) {
+            parts.push("CustomGroups");
+        }
+        if self.has_flag(Self::WITNESS_RULES) {
+            parts.push("WitnessRules");
+        }
+        if self.has_flag(Self::GLOBAL) {
+            parts.push("Global");
+        }
+        if parts.is_empty() {
+            write!(f, "None")
+        } else {
+            write!(f, "{}", parts.join(" | "))
         }
     }
 }
@@ -271,7 +315,7 @@ impl BitAndAssign for WitnessScope {
 impl Not for WitnessScope {
     type Output = Self;
     fn not(self) -> Self::Output {
-        Self(!self.0)
+        Self(WitnessScopeFlags::from_bits_retain(!self.bits()))
     }
 }
 
@@ -366,9 +410,11 @@ mod tests {
     fn protocol_enum_guard_rejects_invalid_witness_scope_bytes() {
         let combined = WitnessScope::CALLED_BY_ENTRY | WitnessScope::CUSTOM_CONTRACTS;
         assert_eq!(WitnessScope::from_byte(0x11), Some(combined));
+        assert_eq!(WitnessScope::from_bits(0x11), Some(combined));
         assert_eq!(WitnessScope::try_from(0x11), Ok(combined));
         assert_eq!(WitnessScope::from_byte(0x02), None);
         assert_eq!(WitnessScope::from_byte(0x81), None);
+        assert_eq!(WitnessScope::from_bits(0x81), None);
         assert_eq!(
             WitnessScope::try_from(0x81),
             Err(InvalidWitnessScopeError(0x81))
@@ -384,6 +430,9 @@ mod tests {
         // Combined flags (non-global) should be valid
         let combined = WitnessScope::CALLED_BY_ENTRY | WitnessScope::CUSTOM_CONTRACTS;
         assert!(combined.is_valid());
+
+        let invalid_global = WitnessScope::GLOBAL | WitnessScope::CALLED_BY_ENTRY;
+        assert!(!invalid_global.is_valid());
     }
 
     #[test]
@@ -394,6 +443,13 @@ mod tests {
             "CalledByEntry"
         );
         assert_eq!(format!("{}", WitnessScope::GLOBAL), "Global");
+        assert_eq!(
+            format!(
+                "{}",
+                WitnessScope::CALLED_BY_ENTRY | WitnessScope::CUSTOM_CONTRACTS
+            ),
+            "CalledByEntry | CustomContracts"
+        );
     }
 
     #[test]
@@ -408,6 +464,7 @@ mod tests {
             WitnessScope::GLOBAL
         );
         assert!(WitnessScope::from_str("Invalid").is_err());
+        assert!(WitnessScope::from_str("Global | CalledByEntry").is_err());
     }
 
     #[test]
@@ -434,5 +491,15 @@ mod tests {
 
         let masked = scope & WitnessScope::CALLED_BY_ENTRY;
         assert_eq!(masked, WitnessScope::CALLED_BY_ENTRY);
+    }
+
+    #[test]
+    fn serde_roundtrip_uses_validated_numeric_scope() {
+        let scope = WitnessScope::CALLED_BY_ENTRY | WitnessScope::CUSTOM_CONTRACTS;
+
+        assert_eq!(serde_json::to_string(&scope).unwrap(), "17");
+        assert_eq!(serde_json::from_str::<WitnessScope>("17").unwrap(), scope);
+        assert!(serde_json::from_str::<WitnessScope>("2").is_err());
+        assert!(serde_json::from_str::<WitnessScope>("129").is_err());
     }
 }

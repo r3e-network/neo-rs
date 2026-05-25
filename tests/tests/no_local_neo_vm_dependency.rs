@@ -395,7 +395,8 @@ fn exception_handling_facades_are_removed() {
     let context_path = workspace.join("neo-core/src/neo_vm/exception_handling_context.rs");
     let state_path = workspace.join("neo-core/src/neo_vm/exception_handling_state.rs");
     let vm_module = read_source(workspace.join("neo-core/src/neo_vm/mod.rs"));
-    let execution_context = read_source(workspace.join("neo-core/src/neo_vm/execution_context/context.rs"));
+    let execution_context =
+        read_source(workspace.join("neo-core/src/neo_vm/execution_context/context.rs"));
     let exception_runtime =
         read_source(workspace.join("neo-core/src/neo_vm/execution_engine/exception.rs"));
     let mut context = ExceptionHandlingContext::new(-1, 42);
@@ -701,7 +702,8 @@ fn smart_contract_script_helpers_use_neo_vm_rs_opcode_byte_metadata() {
         "neo-core/src/wallets/helper.rs",
         "neo-core/src/smart_contract/application_engine/interop_host.rs",
     ] {
-        let source = fs::read_to_string(workspace.join(relative)).unwrap();
+        let source = fs::read_to_string(workspace.join(relative))
+            .unwrap_or_else(|error| panic!("failed to read {relative}: {error}"));
         assert!(
             source.contains(".byte()"),
             "{relative} should use neo-vm-rs OpCode::byte() metadata for script bytes"
@@ -734,12 +736,13 @@ fn witness_and_rpc_script_bytes_use_neo_vm_rs_opcode_metadata() {
         "neo-core/src/state_service/verification.rs",
         "neo-node/src/hsm_wallet.rs",
         "neo-node/src/tee_wallet.rs",
-        "neo-rpc/src/server/rpc_server_node.rs",
+        "neo-rpc/src/server/rpc_server_node/mod.rs",
         "neo-rpc/src/server/rpc_server_wallet/mod.rs",
         "neo-rpc/src/server/smart_contract/contract_verify.rs",
         "neo-rpc/src/client/wallet_api.rs",
     ] {
-        let source = fs::read_to_string(workspace.join(relative)).unwrap();
+        let source = fs::read_to_string(workspace.join(relative))
+            .unwrap_or_else(|error| panic!("failed to read {relative}: {error}"));
         for cast in [
             "OpCode::PUSHDATA1 as u8",
             "OpCode::PUSH0 as u8",
@@ -766,7 +769,8 @@ fn remaining_production_script_bytes_use_neo_vm_rs_opcode_metadata() {
         "neo-core/src/wallets/wallet_account.rs",
         "neo-rpc/src/server/session.rs",
     ] {
-        let source = fs::read_to_string(workspace.join(relative)).unwrap();
+        let source = fs::read_to_string(workspace.join(relative))
+            .unwrap_or_else(|error| panic!("failed to read {relative}: {error}"));
         for cast in [
             "OpCode::PUSHDATA1 as u8",
             "OpCode::PUSH1 as u8",
@@ -848,16 +852,17 @@ fn vm_state_byte_serialization_uses_neo_vm_rs_mapping() {
     for relative in [
         "neo-core/src/smart_contract/native/ledger_contract/state.rs",
         "neo-core/src/smart_contract/native/transaction_state.rs",
-        "neo-rpc/src/server/rpc_server_node.rs",
+        "neo-rpc/src/server/rpc_server_node/mod.rs",
         "neo-core/src/oracle_service/service/tests/response_tx.rs",
         "neo-core/tests/ledger_contract_tests.rs",
         "neo-core/tests/p2p_payloads_csharp_tests.rs",
         "neo-core/tests/runtime_syscall_tests.rs",
-        "neo-rpc/src/server/routes.rs",
+        "neo-rpc/src/server/routes/mod.rs",
         "neo-rpc/src/server/rpc_server_blockchain/tests.rs",
         "neo-rpc/src/server/rpc_server_wallet/tests.rs",
     ] {
-        let source = fs::read_to_string(workspace.join(relative)).unwrap();
+        let source = fs::read_to_string(workspace.join(relative))
+            .unwrap_or_else(|error| panic!("failed to read {relative}: {error}"));
         for cast in [
             "VMState::NONE as u8",
             "VMState::HALT as u8",
@@ -4890,7 +4895,7 @@ fn rpc_server_imports_host_runtime_through_vm_runtime_boundary() {
     for relative in [
         "neo-rpc/src/server/diagnostic.rs",
         "neo-rpc/src/server/session.rs",
-        "neo-rpc/src/server/rpc_server_tokens_tracker.rs",
+        "neo-rpc/src/server/rpc_server_tokens_tracker/mod.rs",
         "neo-rpc/src/server/smart_contract/helpers.rs",
         "neo-rpc/src/server/smart_contract/invocation.rs",
         "neo-rpc/src/server/smart_contract/tests.rs",
