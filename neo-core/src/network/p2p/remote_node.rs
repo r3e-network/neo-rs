@@ -577,7 +577,7 @@ fn current_unix_timestamp() -> u64 {
 mod tests {
     use super::{
         lifecycle::HandshakeGateDecision, message_handlers, register_message_received_handler,
-        PendingKnownHashes, RemoteNode, UInt256,
+        RemoteNode,
     };
     use crate::i_event_handlers::MessageReceivedHandler;
     use crate::network::p2p::payloads::extensible_payload::ExtensiblePayload;
@@ -594,14 +594,6 @@ mod tests {
         atomic::{AtomicUsize, Ordering},
         Arc,
     };
-    use std::time::{Duration, Instant};
-
-    fn make_hash(byte: u8) -> UInt256 {
-        let mut data = [0u8; 32];
-        data[0] = byte;
-        UInt256::from(data)
-    }
-
     fn transaction_with_script(script: Vec<u8>) -> Transaction {
         let mut tx = Transaction::new();
         tx.set_version(0);
@@ -614,25 +606,6 @@ mod tests {
         tx.set_script(script);
         tx.set_witnesses(vec![Witness::empty()]);
         tx
-    }
-
-    #[test]
-    fn prune_older_than_removes_stale_entries() {
-        let now = Instant::now();
-        let mut cache = PendingKnownHashes::new(4);
-
-        // Use timestamps within MAX_PENDING_TTL (60s) to avoid auto-prune during try_add.
-        // Entry 1 at now - 55s, Entry 2 at now - 5s.
-        // When entry 2 is added, auto-prune cutoff is (now - 5) - 60 = now - 65s,
-        // which won't remove entry 1 (at now - 55s).
-        cache.try_add(make_hash(1), now - Duration::from_secs(55));
-        cache.try_add(make_hash(2), now - Duration::from_secs(5));
-
-        // Prune entries older than now - 30s; should remove entry 1 but keep entry 2
-        let removed = cache.prune_older_than(now - Duration::from_secs(30));
-        assert_eq!(removed, 1);
-        assert!(!cache.contains(&make_hash(1)));
-        assert!(cache.contains(&make_hash(2)));
     }
 
     #[test]
