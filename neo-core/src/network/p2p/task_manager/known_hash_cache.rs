@@ -1,21 +1,19 @@
+use crate::collections::BoundedFifoSet;
 use crate::UInt256;
-use indexmap::IndexSet;
 
 pub(super) struct KnownHashCache {
-    hashes: IndexSet<UInt256>,
-    capacity: usize,
+    hashes: BoundedFifoSet<UInt256>,
 }
 
 impl KnownHashCache {
     pub(super) fn new(capacity: usize) -> Self {
         Self {
-            hashes: IndexSet::with_capacity(capacity),
-            capacity,
+            hashes: BoundedFifoSet::with_capacity(capacity),
         }
     }
 
     pub(super) fn set_capacity(&mut self, capacity: usize) {
-        self.capacity = capacity;
+        self.hashes.set_capacity(capacity);
     }
 
     pub(super) fn contains(&self, hash: &UInt256) -> bool {
@@ -23,17 +21,11 @@ impl KnownHashCache {
     }
 
     pub(super) fn remember(&mut self, hash: UInt256) -> bool {
-        let inserted = self.hashes.insert(hash);
-
-        while self.hashes.len() > self.capacity {
-            self.hashes.shift_remove_index(0);
-        }
-
-        inserted
+        self.hashes.insert(hash)
     }
 
     pub(super) fn forget(&mut self, hash: &UInt256) -> bool {
-        self.hashes.shift_remove(hash)
+        self.hashes.remove(hash)
     }
 }
 
