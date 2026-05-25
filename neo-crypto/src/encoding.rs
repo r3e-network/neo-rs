@@ -1,7 +1,6 @@
 //! Encoding helpers used by Neo cryptographic APIs.
 
 use crate::error::{CryptoError, CryptoResult};
-use crate::hash::Crypto;
 
 /// Base58 encoding/decoding utilities.
 pub struct Base58;
@@ -23,32 +22,27 @@ impl Base58 {
     /// Encodes data to `Base58Check` with a 4-byte Neo/Bitcoin-style checksum.
     #[must_use]
     pub fn encode_check(data: &[u8]) -> String {
-        let mut payload = Vec::with_capacity(data.len() + 4);
-        payload.extend_from_slice(data);
-        let checksum = Crypto::hash256(data);
-        payload.extend_from_slice(&checksum[..4]);
-        bs58::encode(payload).into_string()
+        bs58::encode(data).with_check().into_string()
     }
 
     /// Decodes `Base58Check` bytes and verifies the 4-byte checksum.
     pub fn decode_check(s: &str) -> CryptoResult<Vec<u8>> {
-        let bytes = bs58::decode(s)
+        bs58::decode(s)
+            .with_check(None)
             .into_vec()
-            .map_err(|e| CryptoError::encoding_error(format!("Base58 decode error: {e}")))?;
+            .map_err(map_base58_check_decode_error)
+    }
+}
 
-        if bytes.len() < 4 {
-            return Err(CryptoError::encoding_error(
-                "Invalid Base58Check payload: too short",
-            ));
+fn map_base58_check_decode_error(error: bs58::decode::Error) -> CryptoError {
+    match error {
+        bs58::decode::Error::NoChecksum => {
+            CryptoError::encoding_error("Invalid Base58Check payload: too short")
         }
-
-        let (payload, checksum) = bytes.split_at(bytes.len() - 4);
-        let expected = Crypto::hash256(payload);
-        if checksum != &expected[..4] {
-            return Err(CryptoError::encoding_error("Invalid Base58Check checksum"));
+        bs58::decode::Error::InvalidChecksum { .. } => {
+            CryptoError::encoding_error("Invalid Base58Check checksum")
         }
-
-        Ok(payload.to_vec())
+        error => CryptoError::encoding_error(format!("Base58 decode error: {error}")),
     }
 }
 
@@ -107,5 +101,33 @@ mod tests {
         let decoded = Base58::decode(&encoded).unwrap();
 
         assert_eq!(data, decoded.as_slice());
+    }
+
+    #[test]
+    fn base58_check_matches_known_vector() {
+        let data = [1, 2, 3];
+        let encoded = Base58::encode_check(&data);
+        assert_eq!(encoded, "3DUz7ncyT");
+
+        let decoded = Base58::decode_check(&encoded).unwrap();
+        assert_eq!(decoded, data);
+    }
+
+    #[test]
+    fn base58_check_rejects_short_payload() {
+        let err = Base58::decode_check("1").unwrap_err().to_string();
+        assert!(
+            err.contains("too short"),
+            "unexpected short payload error: {err}"
+        );
+    }
+
+    #[test]
+    fn base58_check_rejects_invalid_checksum() {
+        let err = Base58::decode_check("3DUz7ncyU").unwrap_err().to_string();
+        assert!(
+            err.contains("checksum"),
+            "unexpected invalid checksum error: {err}"
+        );
     }
 }

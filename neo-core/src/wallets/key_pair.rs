@@ -3,7 +3,7 @@
 //! This module provides cryptographic key pair functionality,
 //! converted from the C# Neo KeyPair class (@neo-sharp/src/Neo/Wallets/KeyPair.cs).
 
-use crate::cryptography::{ECCurve, ECDsa, ECC};
+use crate::cryptography::{Base58, CryptoError, ECCurve, ECDsa, ECC};
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::neo_config::HASH_SIZE;
 use crate::smart_contract::helper::Helper;
@@ -190,25 +190,9 @@ impl KeyPair {
 
     /// Decodes a WIF string to a private key.
     fn decode_wif(wif: &str) -> Result<[u8; HASH_SIZE]> {
-        let decoded = bs58::decode(wif)
-            .into_vec()
-            .map_err(|e| Error::Base58Decode {
-                message: e.to_string(),
-            })?;
+        let data = Base58::decode_check(wif).map_err(map_wif_decode_error)?;
 
-        // Verify checksum manually
-        if decoded.len() < 4 {
-            return Err(Error::InvalidWif);
-        }
-
-        let (data, checksum) = decoded.split_at(decoded.len() - 4);
-        let computed_checksum = &crate::cryptography::Crypto::hash256(data)[0..4];
-        // Constant-time comparison to prevent timing side-channel on checksum validation
-        if !bool::from(checksum.ct_eq(computed_checksum)) {
-            return Err(Error::InvalidWif);
-        }
-
-        if decoded.len() != 38 {
+        if data.len() != 34 {
             return Err(Error::InvalidWif);
         }
 
@@ -229,16 +213,12 @@ impl KeyPair {
 
     /// Encodes a private key to WIF format.
     fn encode_wif(private_key: &[u8; HASH_SIZE]) -> String {
-        let mut data = Vec::with_capacity(37);
+        let mut data = Vec::with_capacity(34);
         data.push(0x80); // Version byte for mainnet
         data.extend_from_slice(private_key);
         data.push(0x01); // Compressed flag
 
-        // Add checksum manually
-        let checksum = &crate::cryptography::Crypto::hash256(&data)[0..4];
-        data.extend_from_slice(checksum);
-
-        bs58::encode(data).into_string()
+        Base58::encode_check(&data)
     }
 
     /// Encrypts a private key using NEP-2 standard.
@@ -417,6 +397,19 @@ impl KeyPair {
         script.push(OpCode::SYSCALL.byte());
         script.extend_from_slice(b"System.Crypto.CheckWitness");
         Ok(script)
+    }
+}
+
+fn map_wif_decode_error(error: CryptoError) -> Error {
+    match error {
+        CryptoError::EncodingError { message } if message.starts_with("Base58 decode error: ") => {
+            Error::Base58Decode {
+                message: message
+                    .trim_start_matches("Base58 decode error: ")
+                    .to_string(),
+            }
+        }
+        _ => Error::InvalidWif,
     }
 }
 
