@@ -4,6 +4,10 @@ use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
 use base64::{engine::general_purpose, Engine as _};
 
+fn strip_base64_whitespace(input: &str) -> String {
+    input.chars().filter(|c| !c.is_whitespace()).collect()
+}
+
 impl StdLib {
     pub(super) fn base64_encode(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         let data = self.validate_single_arg(args, "base64Encode")?;
@@ -13,7 +17,7 @@ impl StdLib {
 
     pub(super) fn base64_decode(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         let string_data = self.validate_string_arg(args, "base64Decode")?;
-        let normalized: String = string_data.chars().filter(|c| !c.is_whitespace()).collect();
+        let normalized = strip_base64_whitespace(&string_data);
         let decoded = general_purpose::STANDARD
             .decode(normalized.as_bytes())
             .map_err(|_| Error::native_contract("Invalid base64 data"))?;
@@ -28,7 +32,7 @@ impl StdLib {
 
     pub(super) fn base64_url_decode(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         let string_data = self.validate_string_arg(args, "base64UrlDecode")?;
-        let normalized: String = string_data.chars().filter(|c| !c.is_whitespace()).collect();
+        let normalized = strip_base64_whitespace(&string_data);
         let decoded = general_purpose::URL_SAFE_NO_PAD
             .decode(normalized.as_bytes())
             .map_err(|_| Error::native_contract("Invalid base64url data"))?;
