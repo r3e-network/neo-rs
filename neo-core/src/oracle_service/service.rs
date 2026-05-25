@@ -97,14 +97,6 @@ struct OracleTask {
     timestamp: SystemTime,
 }
 
-/// Entry for request deduplication.
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-struct DedupEntry {
-    url: String,
-    timestamp: SystemTime,
-}
-
 /// Oracle service runtime.
 pub struct OracleService {
     settings: OracleServiceSettings,
@@ -114,8 +106,8 @@ pub struct OracleService {
     wallet: RwLock<Option<Arc<dyn Wallet>>>,
     pending_queue: Mutex<HashMap<u64, OracleTask>>,
     finished_cache: Mutex<HashMap<u64, SystemTime>>,
-    /// Deduplication cache: URL -> entry with timestamp
-    dedup_cache: Mutex<HashMap<String, DedupEntry>>,
+    /// Deduplication cache: URL -> completed timestamp.
+    dedup_cache: Mutex<HashMap<String, SystemTime>>,
     /// In-flight requests to prevent concurrent duplicate processing
     in_flight: Mutex<HashSet<String>>,
     cancel: AtomicBool,
@@ -142,8 +134,8 @@ impl OracleService {
         let now = SystemTime::now();
 
         // Clean up expired entries
-        dedup_cache.retain(|_, entry| {
-            if let Ok(elapsed) = now.duration_since(entry.timestamp) {
+        dedup_cache.retain(|_, timestamp| {
+            if let Ok(elapsed) = now.duration_since(*timestamp) {
                 elapsed < DEDUP_CACHE_TTL
             } else {
                 true
@@ -162,8 +154,8 @@ impl OracleService {
         }
 
         // Check if we've seen this URL recently
-        if let Some(entry) = dedup_cache.get(url) {
-            if let Ok(elapsed) = now.duration_since(entry.timestamp) {
+        if let Some(timestamp) = dedup_cache.get(url) {
+            if let Ok(elapsed) = now.duration_since(*timestamp) {
                 if elapsed < DEDUP_CACHE_TTL {
                     tracing::debug!(
                         target: "neo::oracle",
@@ -188,13 +180,7 @@ impl OracleService {
         let mut in_flight = self.in_flight.lock();
 
         in_flight.remove(url);
-        dedup_cache.insert(
-            url.to_string(),
-            DedupEntry {
-                url: url.to_string(),
-                timestamp: SystemTime::now(),
-            },
-        );
+        dedup_cache.insert(url.to_string(), SystemTime::now());
 
         tracing::debug!(
             target: "neo::oracle",
